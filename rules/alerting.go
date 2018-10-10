@@ -120,6 +120,8 @@ type AlertingRule struct {
 	annotations labels.Labels
 	// Time in seconds taken to evaluate rule.
 	evaluationDuration time.Duration
+	// Unix timestamp of last evaluation of rule
+	evaluationTimestamp time.Time
 	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
 	// only after the restoration.
 	restored bool
@@ -256,6 +258,20 @@ func (r *AlertingRule) GetEvaluationDuration() time.Duration {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	return r.evaluationDuration
+}
+
+// SetEvaluationTimestamp updates evaluationTimestamp to the Unix timestamp of when the rule was last evaluated.
+func (r *AlertingRule) SetEvaluationTimestamp(ts time.Time) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	r.evaluationTimestamp = ts
+}
+
+// GetEvaluationTimestamp returns the time the evaluation took place.
+func (r *AlertingRule) GetEvaluationTimestamp() time.Time {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	return r.evaluationTimestamp
 }
 
 // SetRestored updates the restoration state of the alerting rule.

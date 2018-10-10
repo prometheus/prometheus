@@ -11,6 +11,7 @@
           <tr>
             <td colspan="3"><h2><a href="#{{reReplaceAll "([^a-zA-Z0-9])" "$1" .Name}}" name="{{reReplaceAll "([^a-zA-Z0-9])" "$1" .Name}}">{{.Name}}</h2></td>
             <td><h2>{{humanizeDuration .GetEvaluationDuration.Seconds}}</h2></td>
+            <td><h2>{{.GetEvaluationTimestamp}}</h2></td>
           </tr>
         </thead>
         <tbody>
@@ -19,6 +20,7 @@
             <td style="font-weight:bold">State</td>
             <td style="font-weight:bold">Error</td>
             <td style="font-weight:bold">Evaluation Time</td>
+            <td style="font-weight:bold">Last Evaluation</td>
           </tr>
           {{range .Rules}}
           <tr>
@@ -34,6 +36,7 @@
               {{end}}
             </td>
             <td>{{humanizeDuration .GetEvaluationDuration.Seconds}}</td>
+            <td>{{.GetEvaluationTimestamp.UTC}}</h2></td>
           </tr>
           {{end}}
       {{else}}

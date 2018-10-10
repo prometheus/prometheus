@@ -160,6 +160,8 @@ type Rule interface {
 	Health() RuleHealth
 	SetEvaluationDuration(time.Duration)
 	GetEvaluationDuration() time.Duration
+	SetEvaluationTimestamp(time.Time)
+	GetEvaluationTimestamp() time.Time
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
 	HTMLSnippet(pathPrefix string) html_template.HTML
@@ -175,6 +177,7 @@ type Group struct {
 	opts                 *ManagerOptions
 	evaluationDuration   time.Duration
 	mtx                  sync.Mutex
+	evaluationTimestamp  time.Time
 
 	shouldRestore bool
 
@@ -226,9 +229,9 @@ func (g *Group) run(ctx context.Context) {
 	iter := func() {
 		iterationsScheduled.Inc()
 
-		start := time.Now()
+		g.SetEvaluationTimestamp(time.Now())
 		g.Eval(ctx, evalTimestamp)
-		timeSinceStart := time.Since(start)
+		timeSinceStart := time.Since(g.evaluationTimestamp)
 
 		iterationDuration.Observe(timeSinceStart.Seconds())
 		g.SetEvaluationDuration(timeSinceStart)
@@ -311,6 +314,20 @@ func (g *Group) SetEvaluationDuration(dur time.Duration) {
 	g.evaluationDuration = dur
 }
 
+// SetEvaluationTimestamp updates evaluationTimestamp to the Unix timestamp of when the rule was last evaluated.
+func (g *Group) SetEvaluationTimestamp(ts time.Time) {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	g.evaluationTimestamp = ts
+}
+
+// GetEvaluationTimestamp returns the time the evaluation took place.
+func (g *Group) GetEvaluationTimestamp() string {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	return g.evaluationTimestamp.UTC().Format("15:04:06 MST")
+}
+
 // evalTimestamp returns the immediately preceding consistently slotted evaluation time.
 func (g *Group) evalTimestamp() time.Time {
 	var (
@@ -381,6 +398,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			evalTotal.Inc()
 
+			rule.SetEvaluationTimestamp(time.Now())
 			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
