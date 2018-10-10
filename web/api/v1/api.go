@@ -31,6 +31,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -49,6 +50,11 @@ import (
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
+)
+
+const (
+	namespace = "prometheus"
+	subsystem = "api"
 )
 
 type status string
@@ -77,6 +83,13 @@ var corsHeaders = map[string]string{
 	"Access-Control-Allow-Origin":   "*",
 	"Access-Control-Expose-Headers": "Date",
 }
+
+var remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "remote_read_queries",
+	Help:      "The current number of remote read queries being executed or waiting.",
+})
 
 type apiError struct {
 	typ errorType
@@ -137,6 +150,11 @@ type API struct {
 	logger                log.Logger
 	remoteReadSampleLimit int
 	remoteReadGate        *gate.Gate
+}
+
+func init() {
+	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
+	prometheus.MustRegister(remoteReadQueries)
 }
 
 // NewAPI returns an initialized API type.
@@ -762,7 +780,10 @@ func (api *API) serveFlags(r *http.Request) (interface{}, *apiError, func()) {
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	api.remoteReadGate.Start(r.Context())
+	remoteReadQueries.Inc()
+
 	defer api.remoteReadGate.Done()
+	defer remoteReadQueries.Dec()
 
 	req, err := remote.DecodeReadRequest(r)
 	if err != nil {
@@ -1081,10 +1102,6 @@ func parseDuration(s string) (time.Duration, error) {
 		return time.Duration(d), nil
 	}
 	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
-}
-
-func init() {
-	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
 }
 
 func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
