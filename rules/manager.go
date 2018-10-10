@@ -175,8 +175,8 @@ type Group struct {
 	rules                []Rule
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
 	opts                 *ManagerOptions
-	evaluationDuration   time.Duration
 	mtx                  sync.Mutex
+	evaluationDuration   time.Duration
 	evaluationTimestamp  time.Time
 
 	shouldRestore bool
@@ -229,12 +229,13 @@ func (g *Group) run(ctx context.Context) {
 	iter := func() {
 		iterationsScheduled.Inc()
 
-		g.SetEvaluationTimestamp(time.Now())
+		start := time.Now()
 		g.Eval(ctx, evalTimestamp)
-		timeSinceStart := time.Since(g.evaluationTimestamp)
+		timeSinceStart := time.Since(start)
 
 		iterationDuration.Observe(timeSinceStart.Seconds())
 		g.SetEvaluationDuration(timeSinceStart)
+		g.SetEvaluationTimestamp(time.Now())
 	}
 
 	// The assumption here is that since the ticker was started after having
@@ -314,7 +315,7 @@ func (g *Group) SetEvaluationDuration(dur time.Duration) {
 	g.evaluationDuration = dur
 }
 
-// SetEvaluationTimestamp updates evaluationTimestamp to the Unix timestamp of when the rule was last evaluated.
+// SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule was last evaluated.
 func (g *Group) SetEvaluationTimestamp(ts time.Time) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
@@ -394,11 +395,11 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				sp.Finish()
 				evalDuration.Observe(time.Since(t).Seconds())
 				rule.SetEvaluationDuration(time.Since(t))
+				rule.SetEvaluationTimestamp(time.Now())
 			}(time.Now())
 
 			evalTotal.Inc()
 
-			rule.SetEvaluationTimestamp(time.Now())
 			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally

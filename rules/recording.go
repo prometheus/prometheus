@@ -38,10 +38,11 @@ type RecordingRule struct {
 	mtx sync.Mutex
 	// The health of the recording rule.
 	health RuleHealth
-	// Unix timestamp of last evaluation of rule
+	// Timestamp of last evaluation of the recording rule.
 	evaluationTimestamp time.Time
 	// The last error seen by the recording rule.
-	lastError          error
+	lastError error
+	// Duration of how long it took to evaluate the recording rule.
 	evaluationDuration time.Duration
 }
 
@@ -158,7 +159,7 @@ func (rule *RecordingRule) GetEvaluationDuration() time.Duration {
 	return rule.evaluationDuration
 }
 
-// SetEvaluationTimestamp updates evaluationTimestamp to the Unix timestamp of when the rule was last evaluated.
+// SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule was last evaluated.
 func (rule *RecordingRule) SetEvaluationTimestamp(ts time.Time) {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()
