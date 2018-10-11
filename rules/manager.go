@@ -235,7 +235,7 @@ func (g *Group) run(ctx context.Context) {
 
 		iterationDuration.Observe(timeSinceStart.Seconds())
 		g.SetEvaluationDuration(timeSinceStart)
-		g.SetEvaluationTimestamp(time.Now())
+		g.SetEvaluationTimestamp(start)
 	}
 
 	// The assumption here is that since the ticker was started after having
@@ -315,18 +315,18 @@ func (g *Group) SetEvaluationDuration(dur time.Duration) {
 	g.evaluationDuration = dur
 }
 
-// SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule was last evaluated.
+// SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule group was last evaluated.
 func (g *Group) SetEvaluationTimestamp(ts time.Time) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 	g.evaluationTimestamp = ts
 }
 
-// GetEvaluationTimestamp returns the time the evaluation took place.
-func (g *Group) GetEvaluationTimestamp() string {
+// GetEvaluationTimestamp returns the time the last evaluation of the rule group took place.
+func (g *Group) GetEvaluationTimestamp() time.Time {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	return g.evaluationTimestamp.UTC().Format("15:04:06 MST")
+	return g.evaluationTimestamp
 }
 
 // evalTimestamp returns the immediately preceding consistently slotted evaluation time.
@@ -395,7 +395,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				sp.Finish()
 				evalDuration.Observe(time.Since(t).Seconds())
 				rule.SetEvaluationDuration(time.Since(t))
-				rule.SetEvaluationTimestamp(time.Now())
+				rule.SetEvaluationTimestamp(t)
 			}(time.Now())
 
 			evalTotal.Inc()
