@@ -418,12 +418,12 @@ func (h *Head) Init() error {
 	}
 
 	// Backfill the checkpoint first if it exists.
-	cp, n, err := LastCheckpoint(h.wal.Dir())
+	dir, startFrom, err := LastCheckpoint(h.wal.Dir())
 	if err != nil && err != ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
 	}
 	if err == nil {
-		sr, err := wal.NewSegmentsReader(filepath.Join(h.wal.Dir(), cp))
+		sr, err := wal.NewSegmentsReader(filepath.Join(h.wal.Dir(), dir))
 		if err != nil {
 			return errors.Wrap(err, "open checkpoint")
 		}
@@ -434,11 +434,11 @@ func (h *Head) Init() error {
 		if err := h.loadWAL(wal.NewReader(sr)); err != nil {
 			return errors.Wrap(err, "backfill checkpoint")
 		}
-		n++
+		startFrom++
 	}
 
 	// Backfill segments from the last checkpoint onwards
-	sr, err := wal.NewSegmentsRangeReader(h.wal.Dir(), n, -1)
+	sr, err := wal.NewSegmentsRangeReader(h.wal.Dir(), startFrom, -1)
 	if err != nil {
 		return errors.Wrap(err, "open WAL segments")
 	}
@@ -493,18 +493,18 @@ func (h *Head) Truncate(mint int64) (err error) {
 	}
 	start = time.Now()
 
-	m, n, err := h.wal.Segments()
+	first, last, err := h.wal.Segments()
 	if err != nil {
 		return errors.Wrap(err, "get segment range")
 	}
-	n-- // Never consider last segment for checkpoint.
-	if n < 0 {
+	last-- // Never consider last segment for checkpoint.
+	if last < 0 {
 		return nil // no segments yet.
 	}
 	// The lower third of segments should contain mostly obsolete samples.
 	// If we have less than three segments, it's not worth checkpointing yet.
-	n = m + (n-m)/3
-	if n <= m {
+	last = first + (last-first)/3
+	if last <= first {
 		return nil
 	}
 
@@ -512,18 +512,18 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return h.series.getByID(id) != nil
 	}
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = Checkpoint(h.wal, m, n, keep, mint); err != nil {
+	if _, err = Checkpoint(h.wal, first, last, keep, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		return errors.Wrap(err, "create checkpoint")
 	}
-	if err := h.wal.Truncate(n + 1); err != nil {
+	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
 		// Leftover segments will just be ignored in the future if there's a checkpoint
 		// that supersedes them.
 		level.Error(h.logger).Log("msg", "truncating segments failed", "err", err)
 	}
 	h.metrics.checkpointDeleteTotal.Inc()
-	if err := DeleteCheckpoints(h.wal.Dir(), n); err != nil {
+	if err := DeleteCheckpoints(h.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond
 		// occupying disk space.
 		// They will just be ignored since a higher checkpoint exists.
@@ -533,7 +533,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
 
 	level.Info(h.logger).Log("msg", "WAL checkpoint complete",
-		"low", m, "high", n, "duration", time.Since(start))
+		"first", first, "last", last, "duration", time.Since(start))
 
 	return nil
 }
