@@ -32,6 +32,7 @@
             <th>State</th>
             <th>Labels</th>
             <th>Last Scrape</th>
+            <th>Scrape Duration</th>
             <th>Error</th>
           </tr>
         </thead>
@@ -63,6 +64,9 @@
             </td>
             <td class="last-scrape">
               {{if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}
+            </td>
+            <td class="scrape-duration">
+              {{humanizeDuration .LastScrapeDuration.Seconds}}
             </td>
             <td class="errors">
               {{if .LastError}}
