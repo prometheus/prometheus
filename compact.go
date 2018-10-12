@@ -524,6 +524,10 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 // populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) error {
+	if len(blocks) == 0 {
+		return errors.New("cannot populate block from no readers")
+	}
+
 	var (
 		set        ChunkSeriesSet
 		allSymbols = make(map[string]struct{}, 1<<16)
@@ -595,13 +599,17 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			continue
 		}
 
-		if len(dranges) > 0 {
-			// Re-encode the chunk to not have deleted values.
-			for i, chk := range chks {
+		for i, chk := range chks {
+			if chk.MinTime < meta.MinTime || chk.MaxTime > meta.MaxTime {
+				return errors.Errorf("found chunk with minTime: %d maxTime: %d outside of compacted minTime: %d maxTime: %d",
+					chk.MinTime, chk.MaxTime, meta.MinTime, meta.MaxTime)
+			}
+
+			if len(dranges) > 0 {
+				// Re-encode the chunk to not have deleted values.
 				if !chk.OverlapsClosedInterval(dranges[0].Mint, dranges[len(dranges)-1].Maxt) {
 					continue
 				}
-
 				newChunk := chunkenc.NewXORChunk()
 				app, err := newChunk.Appender()
 				if err != nil {
@@ -617,6 +625,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 				chks[i].Chunk = newChunk
 			}
 		}
+
 		if err := chunkw.WriteChunks(chks...); err != nil {
 			return errors.Wrap(err, "write chunks")
 		}
@@ -791,7 +800,6 @@ func (c *compactionMerger) Next() bool {
 	var chks []chunks.Meta
 
 	d := c.compare()
-	// Both sets contain the current series. Chain them into a single one.
 	if d > 0 {
 		lset, chks, c.intervals = c.b.At()
 		c.l = append(c.l[:0], lset...)
@@ -805,8 +813,10 @@ func (c *compactionMerger) Next() bool {
 
 		c.aok = c.a.Next()
 	} else {
+		// Both sets contain the current series. Chain them into a single one.
 		l, ca, ra := c.a.At()
 		_, cb, rb := c.b.At()
+
 		for _, r := range rb {
 			ra = ra.add(r)
 		}

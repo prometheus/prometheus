@@ -245,12 +245,14 @@ func expandSeriesIterator(it SeriesIterator) (r []sample, err error) {
 	return r, it.Err()
 }
 
-// Index: labels -> postings -> chunkMetas -> chunkRef
-// ChunkReader: ref -> vals
-func createIdxChkReaders(tc []struct {
+type seriesSamples struct {
 	lset   map[string]string
 	chunks [][]sample
-}) (IndexReader, ChunkReader) {
+}
+
+// Index: labels -> postings -> chunkMetas -> chunkRef
+// ChunkReader: ref -> vals
+func createIdxChkReaders(tc []seriesSamples) (IndexReader, ChunkReader) {
 	sort.Slice(tc, func(i, j int) bool {
 		return labels.Compare(labels.FromMap(tc[i].lset), labels.FromMap(tc[i].lset)) < 0
 	})
@@ -322,17 +324,11 @@ func TestBlockQuerier(t *testing.T) {
 	}
 
 	cases := struct {
-		data []struct {
-			lset   map[string]string
-			chunks [][]sample
-		}
+		data []seriesSamples
 
 		queries []query
 	}{
-		data: []struct {
-			lset   map[string]string
-			chunks [][]sample
-		}{
+		data: []seriesSamples{
 			{
 				lset: map[string]string{
 					"a": "a",
@@ -528,18 +524,12 @@ func TestBlockQuerierDelete(t *testing.T) {
 	}
 
 	cases := struct {
-		data []struct {
-			lset   map[string]string
-			chunks [][]sample
-		}
+		data []seriesSamples
 
 		tombstones TombstoneReader
 		queries    []query
 	}{
-		data: []struct {
-			lset   map[string]string
-			chunks [][]sample
-		}{
+		data: []seriesSamples{
 			{
 				lset: map[string]string{
 					"a": "a",
