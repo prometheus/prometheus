@@ -17,13 +17,17 @@ package main
 
 import (
 	"log"
+	"time"
 
-	"github.com/prometheus/prometheus/web/ui"
 	"github.com/shurcooL/vfsgen"
+
+	"github.com/prometheus/prometheus/pkg/modtimevfs"
+	"github.com/prometheus/prometheus/web/ui"
 )
 
 func main() {
-	err := vfsgen.Generate(ui.Assets, vfsgen.Options{
+	fs := modtimevfs.New(ui.Assets, time.Unix(1, 0))
+	err := vfsgen.Generate(fs, vfsgen.Options{
 		PackageName:  "ui",
 		BuildTags:    "!dev",
 		VariableName: "Assets",
