@@ -1,3 +1,9 @@
+## 2.4.3 / 2018-10-04
+
+* [BUGFIX] Fix panic when using custom EC2 API for SD #4672
+* [BUGFIX] Fix panic when Zookeeper SD cannot connect to servers #4669
+* [BUGFIX] Make the skip_head an optional parameter for snapshot API #4674
+
 ## 2.4.2 / 2018-09-21
 
  The last release didn't have bugfix included due to a vendoring error.
