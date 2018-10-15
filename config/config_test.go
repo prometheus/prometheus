@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/discovery/azure"
+	"github.com/prometheus/prometheus/discovery/collins"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
@@ -454,6 +455,42 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-collins",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				CollinsSDConfigs: []*collins.SDConfig{
+					{
+						ClientUser:   "blake",
+						ClientSecret: "admin:first",
+						CollinsURL:   "http://localhost:9000",
+						Group: "job1",
+						Query: "status = ^allocated$ and state = ^running$ and type = ^server_node$",
+						AttributeDiscovery: collins.AttributeDiscovery{
+							Labels: []string{"host", "nodeclass", "pool", "primary_role", "secondary_role"},
+						},
+						PortScrapeConfig: []*collins.PortScrapeConfig{
+							{
+								AttrMatch: map[string]string{
+									"nodeclass":    "nodeclass1",
+									"primary_role": "primary_role1",
+								},
+								Ports: []int{
+									9100,
+								},
+							},
+						},
+						RefreshInterval: model.Duration(15 * time.Minute),
+					},
+				},
+			},
+		},
+		{
 			JobName: "service-nerve",
 
 			ScrapeInterval: model.Duration(15 * time.Second),
@@ -613,7 +650,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	testutil.Assert(t, len(matches) == 7, "wrong number of secret matches found")
+	testutil.Assert(t, len(matches) == 8, "wrong number of secret matches found")
 	testutil.Assert(t, !strings.Contains(yamlConfig, "mysecret"),
 		"yaml marshal reveals authentication credentials.")
 }

@@ -16,6 +16,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/discovery/collins"
 	"reflect"
 	"sync"
 	"time"
@@ -371,6 +372,11 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	for _, c := range cfg.AzureSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return azure.NewDiscovery(c, log.With(m.logger, "discovery", "azure")), nil
+		})
+	}
+	for _, c := range cfg.CollinsSDConfigs {
+		add(c, func() (Discoverer, error) {
+			return collins.NewDiscovery(c, log.With(m.logger, "discovery", "collins")), nil
 		})
 	}
 	for _, c := range cfg.TritonSDConfigs {

@@ -168,6 +168,10 @@ tls_config:
 # List of Azure service discovery configurations.
 azure_sd_configs:
   [ - <azure_sd_config> ... ]
+  
+# List of Collins service discovery configurations.
+collins_sd_configs:
+  [ - <collins_sd_config> ... ]
 
 # List of Consul service discovery configurations.
 consul_sd_configs:
@@ -289,6 +293,57 @@ client_secret: <secret>
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+```
+
+### `<collins_sd_configs>`
+
+Collins SD configurations allow retrieving scrape targets from Collins.
+
+The following meta labels are available on targets during relabeling by default:
+
+* `__meta_collins_status`: the current status of the asset
+* `__meta_collins_state`: the current state of the asset
+* `__meta_collins_host`: the hostname
+* `__meta_collins_primary_role`: the primary role of the asset
+* `__meta_collins_secondary_role`: the secondary role of the asset
+* `__meta_collins_nodeclass`: the nodeclass (profile) of the asset
+* `__meta_collins_pool`: the pool (cluster) to which the asset belongs.
+
+See below for the configuration options for Collins discovery:
+
+```yaml
+# The information to access the Collins API.
+# Collins user.
+[ collins_user: <string> | default = blake ]
+
+# Collins user secret for login.
+collins_pass: <secret>
+
+# The url where collins is hosted.
+collins_url: <string>
+
+# The group, to help identify service discovery metrics in advanced configurations.
+group: <string>
+
+# The query to fetch assets from collisn
+[ query: <string> | default = "status = ^allocated$ and state = ^running$ and type = ^server_node$" ]
+
+# Refresh interval to re-read the asset list.
+[ refresh_interval: <duration> | default = 15m ]
+
+# Collins attributes to be available as __meta_collins_* tags for the metrics.
+attributes:
+# The labels to assign to assets when performing service discovery.
+# This can be used to dynamically add new labels to metrics
+  [ labels: <list of collins_attributes> ]
+  
+# Config to figure out ports, that will be scraped from each matched host.
+port_scrape_config:
+# attribute_match is a struct of type map[string]string
+  - [ attribute_match: ]
+      [ <labelName>: <labelValue> ]
+# The ports to scrape metrics from, on hosts matched by [ attribute_match ]
+    [ ports : <list of port numbers (int)> ] 
 ```
 
 ### `<consul_sd_config>`
@@ -1132,6 +1187,10 @@ tls_config:
 # List of Azure service discovery configurations.
 azure_sd_configs:
   [ - <azure_sd_config> ... ]
+  
+# List of Collins service discovery configurations.
+collins_sd_configs:
+  [ - <collins_sd_config> ... ]
 
 # List of Consul service discovery configurations.
 consul_sd_configs:

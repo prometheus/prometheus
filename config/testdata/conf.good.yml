@@ -202,6 +202,27 @@ scrape_configs:
       client_secret: mysecret
       port: 9100
 
+- job_name: service-collins
+  collins_sd_configs:
+    - collins_user: blake
+      collins_pass: admin:first
+      collins_url: http://localhost:9000
+      group: job1
+      query: status = ^allocated$ and state = ^running$ and type = ^server_node$
+      attributes:
+        labels:
+          - host
+          - nodeclass
+          - pool
+          - primary_role
+          - secondary_role
+      port_scrape_config:
+        - attribute_match:
+            nodeclass: nodeclass1
+            primary_role: primary_role1
+          ports:
+            - 9100
+
 - job_name: service-nerve
   nerve_sd_configs:
     - servers:
