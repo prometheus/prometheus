@@ -149,9 +149,8 @@ func (vec Vector) ContainsSameLabelset() bool {
 		hash := s.Metric.Hash()
 		if _, ok := l[hash]; ok {
 			return true
-		} else {
-			l[hash] = struct{}{}
 		}
+		l[hash] = struct{}{}
 	}
 	return false
 }
@@ -193,9 +192,8 @@ func (m Matrix) ContainsSameLabelset() bool {
 		hash := ss.Metric.Hash()
 		if _, ok := l[hash]; ok {
 			return true
-		} else {
-			l[hash] = struct{}{}
 		}
+		l[hash] = struct{}{}
 	}
 	return false
 }
