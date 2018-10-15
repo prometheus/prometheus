@@ -469,8 +469,8 @@ var expectedConf = &Config{
 						ClientUser:   "blake",
 						ClientSecret: "admin:first",
 						CollinsURL:   "http://localhost:9000",
-						Group: "job1",
-						Query: "status = ^allocated$ and state = ^running$ and type = ^server_node$",
+						Group:        "job1",
+						Query:        "status = ^allocated$ and state = ^running$ and type = ^server_node$",
 						AttributeDiscovery: collins.AttributeDiscovery{
 							Labels: []string{"host", "nodeclass", "pool", "primary_role", "secondary_role"},
 						},

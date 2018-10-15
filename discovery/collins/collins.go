@@ -25,7 +25,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/tumblr/go-collins/collins"
+	"gopkg.in/tumblr/go-collins.v0/collins"
 )
 
 const (
