@@ -428,6 +428,12 @@
 			"revisionTime": "2018-01-24T18:54:31Z"
 		},
 		{
+			"checksumSHA1": "p3IB18uJRs4dL2K5yx24MrLYE9A=",
+			"path": "github.com/google/go-querystring/query",
+			"revision": "44c6ddd0a2342c386950e880b658017258da92fc",
+			"revisionTime": "2018-09-16T13:16:37Z"
+		},
+		{
 			"checksumSHA1": "/yFfUp3tGt6cK22UVzbq8SjPDCU=",
 			"origin": "k8s.io/client-go/1.5/vendor/github.com/google/gofuzz",
 			"path": "github.com/google/gofuzz",
@@ -902,6 +908,12 @@
 			"revisionTime": "2017-06-08T03:40:07Z"
 		},
 		{
+			"checksumSHA1": "2jWv9jtFWTTbWxG99Onf2wOjYK4=",
+			"path": "github.com/schallert/iso8601",
+			"revision": "d517014719747d85b8053ce9eb6f2c5d5bb02638",
+			"revisionTime": "2015-11-02T17:49:22Z"
+		},
+		{
 			"checksumSHA1": "fSVkjXu8SIkCLI9RTt/vnkg9M5A=",
 			"path": "github.com/shurcooL/httpfs/filter",
 			"revision": "809beceb23714880abc4a382a00c05f89d13b1cc",
@@ -1345,6 +1357,18 @@
 			"path": "gopkg.in/inf.v0",
 			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
 			"revisionTime": "2016-09-30T00:14:02Z"
+		},
+		{
+			"checksumSHA1": "lrbBviQzyErl0HWaxzpmyh5PGpo=",
+			"path": "gopkg.in/tumblr/go-collins.v0/collins",
+			"revision": "96f4cd6792f7ac11a76ca462c0b05b0a6c443d51",
+			"revisionTime": "2018-04-12T19:12:24Z"
+		},
+		{
+			"checksumSHA1": "8Tl65XV3tUA1tN0mqAQX2CYsGEI=",
+			"path": "gopkg.in/tumblr/go-collins.v0/collins/sseclient",
+			"revision": "96f4cd6792f7ac11a76ca462c0b05b0a6c443d51",
+			"revisionTime": "2018-04-12T19:12:24Z"
 		},
 		{
 			"checksumSHA1": "HmUAWd1Jm25cGH4Pyf3Zgp2RhkI=",
