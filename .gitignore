@@ -5,6 +5,7 @@
 /*.yml
 /*.rules
 *.exe
+.idea
 
 /prometheus
 /promtool
