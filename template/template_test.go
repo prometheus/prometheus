@@ -15,6 +15,9 @@ package template
 
 import (
 	"context"
+	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"math"
 	"net/url"
 	"testing"
@@ -256,7 +259,7 @@ func TestTemplateExpansion(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
+	expandFailuresExpectation := 0
 	for _, s := range scenarios {
 		queryFunc := func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
 			return s.queryResult, nil
@@ -269,15 +272,35 @@ func TestTemplateExpansion(t *testing.T) {
 		} else {
 			result, err = expander.Expand()
 		}
+
+		mF, errForMetricFamily := expandFailuresMetricFamily()
+		testutil.Ok(t, errForMetricFamily)
+
 		if s.shouldFail {
 			testutil.NotOk(t, err, "%v", s.text)
+			expandFailuresExpectation++
 			continue
 		}
 
+		testutil.Equals(t, float64(expandFailuresExpectation), mF.Metric[0].Counter.GetValue())
 		testutil.Ok(t, err)
 
 		if err == nil {
 			testutil.Equals(t, result, s.output)
 		}
 	}
+}
+
+func expandFailuresMetricFamily() (*dto.MetricFamily, error) {
+	metrics, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return nil, err
+	}
+	expandFailuresMetricName := "prometheus_template_expand_failures_total"
+	for _, mF := range metrics {
+		if *mF.Name == expandFailuresMetricName {
+			return mF, nil
+		}
+	}
+	return nil, fmt.Errorf("metric family couldn't be found with the name %s", expandFailuresMetricName)
 }
