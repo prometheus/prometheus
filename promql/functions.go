@@ -310,7 +310,7 @@ func funcClampMax(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Min(max, float64(el.V))
+		el.V = math.Min(max, el.V)
 	}
 	return vec
 }
@@ -323,7 +323,7 @@ func funcClampMin(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Max(min, float64(el.V))
+		el.V = math.Max(min, el.V)
 	}
 	return vec
 }
@@ -344,7 +344,7 @@ func funcRound(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Floor(float64(el.V)*toNearestInverse+0.5) / toNearestInverse
+		el.V = math.Floor(el.V*toNearestInverse+0.5) / toNearestInverse
 	}
 	return vec
 }
@@ -406,7 +406,7 @@ func funcFloor(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Floor(float64(el.V))
+		el.V = math.Floor(el.V)
 	}
 	return vec
 }
@@ -416,7 +416,7 @@ func funcMaxOverTime(ev *evaluator, args Expressions) Value {
 	return aggrOverTime(ev, args, func(values []Point) float64 {
 		max := math.Inf(-1)
 		for _, v := range values {
-			max = math.Max(max, float64(v.V))
+			max = math.Max(max, v.V)
 		}
 		return max
 	})
@@ -427,7 +427,7 @@ func funcMinOverTime(ev *evaluator, args Expressions) Value {
 	return aggrOverTime(ev, args, func(values []Point) float64 {
 		min := math.Inf(1)
 		for _, v := range values {
-			min = math.Min(min, float64(v.V))
+			min = math.Min(min, v.V)
 		}
 		return min
 	})
@@ -478,7 +478,7 @@ func funcStddevOverTime(ev *evaluator, args Expressions) Value {
 			count++
 		}
 		avg := sum / count
-		return math.Sqrt(float64(squaredSum/count - avg*avg))
+		return math.Sqrt(squaredSum/count - avg*avg)
 	})
 }
 
@@ -503,7 +503,7 @@ func funcAbs(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Abs(float64(el.V))
+		el.V = math.Abs(el.V)
 	}
 	return vec
 }
@@ -537,7 +537,7 @@ func funcCeil(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Ceil(float64(el.V))
+		el.V = math.Ceil(el.V)
 	}
 	return vec
 }
@@ -549,7 +549,7 @@ func funcExp(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Exp(float64(el.V))
+		el.V = math.Exp(el.V)
 	}
 	return vec
 }
@@ -561,7 +561,7 @@ func funcSqrt(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Sqrt(float64(el.V))
+		el.V = math.Sqrt(el.V)
 	}
 	return vec
 }
@@ -573,7 +573,7 @@ func funcLn(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Log(float64(el.V))
+		el.V = math.Log(el.V)
 	}
 	return vec
 }
@@ -585,7 +585,7 @@ func funcLog2(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Log2(float64(el.V))
+		el.V = math.Log2(el.V)
 	}
 	return vec
 }
@@ -597,7 +597,7 @@ func funcLog10(ev *evaluator, args Expressions) Value {
 		el := &vec[i]
 
 		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Log10(float64(el.V))
+		el.V = math.Log10(el.V)
 	}
 	return vec
 }
@@ -761,7 +761,7 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 		prev := samples.Points[0].V
 		for _, sample := range samples.Points[1:] {
 			current := sample.V
-			if current != prev && !(math.IsNaN(float64(current)) && math.IsNaN(float64(prev))) {
+			if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
 				changes++
 			}
 			prev = current
@@ -789,7 +789,7 @@ func funcLabelReplace(ev *evaluator, args Expressions) Value {
 	if err != nil {
 		ev.errorf("invalid regular expression in label_replace(): %s", regexStr)
 	}
-	if !model.LabelNameRE.MatchString(string(dst)) {
+	if !model.LabelNameRE.MatchString(dst) {
 		ev.errorf("invalid destination label name in label_replace(): %s", dst)
 	}
 
@@ -1255,7 +1255,7 @@ func (s vectorByValueHeap) Len() int {
 }
 
 func (s vectorByValueHeap) Less(i, j int) bool {
-	if math.IsNaN(float64(s[i].V)) {
+	if math.IsNaN(s[i].V) {
 		return true
 	}
 	return s[i].V < s[j].V
@@ -1284,7 +1284,7 @@ func (s vectorByReverseValueHeap) Len() int {
 }
 
 func (s vectorByReverseValueHeap) Less(i, j int) bool {
-	if math.IsNaN(float64(s[i].V)) {
+	if math.IsNaN(s[i].V) {
 		return true
 	}
 	return s[i].V > s[j].V
