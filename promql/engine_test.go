@@ -323,6 +323,7 @@ load 10s
 			},
 			Start: time.Unix(1, 0),
 		},
+		// Range queries.
 		{
 			Query: "metric[20s]",
 			Result: Matrix{Series{
@@ -331,7 +332,6 @@ load 10s
 			},
 			Start: time.Unix(10, 0),
 		},
-		// Range queries.
 		{
 			Query: "1",
 			Result: Matrix{Series{
@@ -457,6 +457,7 @@ load 10s
 			},
 			Start: time.Unix(1, 0),
 		},
+		// Range queries.
 		{
 			Query:      "metric[20s]",
 			MaxSamples: 2,
@@ -478,7 +479,6 @@ load 10s
 			},
 			Start: time.Unix(10, 0),
 		},
-		// Range queries.
 		{
 			Query:      "1",
 			MaxSamples: 3,
