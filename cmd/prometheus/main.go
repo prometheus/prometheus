@@ -248,7 +248,7 @@ func main() {
 	level.Info(logger).Log("vm_limits", prom_runtime.VmLimits())
 
 	var (
-		localStorage  = &tsdb.ReadyStorage{}
+		localStorage  = tsdb.NewReadyStorage(prometheus.DefaultRegisterer)
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime, time.Duration(cfg.RemoteFlushDeadline))
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)

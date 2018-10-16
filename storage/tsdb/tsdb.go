@@ -35,8 +35,9 @@ var ErrNotReady = errors.New("TSDB not ready")
 // ReadyStorage implements the Storage interface while allowing to set the actual
 // storage at a later point in time.
 type ReadyStorage struct {
-	mtx sync.RWMutex
-	a   *adapter
+	mtx                sync.RWMutex
+	a                  *adapter
+	lastSamplesAddTime prometheus.Gauge
 }
 
 // Set the storage.
@@ -44,7 +45,7 @@ func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	s.a = &adapter{db: db, startTimeMargin: startTimeMargin}
+	s.a = &adapter{db: db, startTimeMargin: startTimeMargin, lastSamplesAddTime: &s.lastSamplesAddTime}
 }
 
 // Get the storage.
@@ -94,6 +95,18 @@ func (s *ReadyStorage) Close() error {
 	return nil
 }
 
+func NewReadyStorage(reg prometheus.Registerer) *ReadyStorage {
+	rs := &ReadyStorage{}
+	rs.lastSamplesAddTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_last_sample_written_seconds",
+		Help: "Timestamp of the last time we added samples to local storage.",
+	})
+	if reg != nil {
+		reg.MustRegister(rs.lastSamplesAddTime)
+	}
+	return rs
+}
+
 // Adapter return an adapter as storage.Storage.
 func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
 	return &adapter{db: db, startTimeMargin: startTimeMargin}
@@ -101,8 +114,9 @@ func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
 
 // adapter implements a storage.Storage around TSDB.
 type adapter struct {
-	db              *tsdb.DB
-	startTimeMargin int64
+	db                 *tsdb.DB
+	startTimeMargin    int64
+	lastSamplesAddTime *prometheus.Gauge
 }
 
 // Options of the DB storage.
@@ -176,7 +190,7 @@ func (a adapter) Querier(_ context.Context, mint, maxt int64) (storage.Querier, 
 
 // Appender returns a new appender against the storage.
 func (a adapter) Appender() (storage.Appender, error) {
-	return appender{a: a.db.Appender()}, nil
+	return appender{a: a.db.Appender(), lastSamplesAddTime: a.lastSamplesAddTime}, nil
 }
 
 // Close closes the storage and all its underlying resources.
@@ -220,7 +234,8 @@ func (s series) Labels() labels.Labels            { return toLabels(s.s.Labels()
 func (s series) Iterator() storage.SeriesIterator { return storage.SeriesIterator(s.s.Iterator()) }
 
 type appender struct {
-	a tsdb.Appender
+	a                  tsdb.Appender
+	lastSamplesAddTime *prometheus.Gauge
 }
 
 func (a appender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
@@ -236,6 +251,8 @@ func (a appender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	case tsdb.ErrOutOfBounds:
 		return 0, storage.ErrOutOfBounds
 	}
+	m := *(a.lastSamplesAddTime)
+	m.SetToCurrentTime()
 	return ref, err
 }
 
@@ -252,6 +269,8 @@ func (a appender) AddFast(_ labels.Labels, ref uint64, t int64, v float64) error
 	case tsdb.ErrOutOfBounds:
 		return storage.ErrOutOfBounds
 	}
+	m := *(a.lastSamplesAddTime)
+	m.SetToCurrentTime()
 	return err
 }
 
