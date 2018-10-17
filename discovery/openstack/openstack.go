@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -63,6 +62,7 @@ type SDConfig struct {
 	Region           string                `yaml:"region"`
 	RefreshInterval  model.Duration        `yaml:"refresh_interval,omitempty"`
 	Port             int                   `yaml:"port"`
+	AllTenants       bool                  `yaml:"all_tenants,omitempty"`
 	TLSConfig        config_util.TLSConfig `yaml:"tls_config,omitempty"`
 }
 
@@ -168,7 +168,7 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (Discovery, error) {
 		return hypervisor, nil
 	case OpenStackRoleInstance:
 		instance := NewInstanceDiscovery(client, &opts,
-			time.Duration(conf.RefreshInterval), conf.Port, conf.Region, l)
+			time.Duration(conf.RefreshInterval), conf.Port, conf.Region, conf.AllTenants, l)
 		return instance, nil
 	default:
 		return nil, errors.New("unknown OpenStack discovery role")
