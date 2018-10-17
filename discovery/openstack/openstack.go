@@ -142,7 +142,7 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (Discovery, error) {
 			DomainID:         conf.DomainID,
 		}
 	}
-	client, err := openstack.NewClient(conf.IdentityEndpoint)
+	client, err := openstack.NewClient(opts.IdentityEndpoint)
 	if err != nil {
 		return nil, err
 	}
