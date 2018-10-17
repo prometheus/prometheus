@@ -2,7 +2,7 @@
           <form class="query_form form-inline">
             <div class="row">
               <div class="col-lg-10">
-                <textarea rows="1" placeholder="Expression (press Shift+Enter for newlines)" name="expr" id="expr{{id}}" class="form-control expression_input" data-provide="typeahead" autocomplete="off">{{expr}}</textarea>
+                <textarea rows="1" placeholder="Expression (press Shift+Enter for newlines)" name="expr" id="expr{{id}}" class="form-control expression_input" data-provide="typeahead" autocomplete="off" spellcheck="false">{{expr}}</textarea>
               </div>
               <div class="col-lg-2">
                 <div class="eval_stats pull-right"></div>
