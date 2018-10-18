@@ -47,11 +47,12 @@ var (
 			Help: "Total number of service discovery configurations that failed to load.",
 		},
 	)
-	discoveredTargets = prometheus.NewGauge(
+	discoveredTargets = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "prometheus_sd_discovered_targets",
 			Help: "Current number of discovered targets.",
 		},
+		[]string{"name", "config"},
 	)
 	receivedUpdates = prometheus.NewCounter(
 		prometheus.CounterOpts{
@@ -106,12 +107,12 @@ type provider struct {
 	config interface{}
 }
 
-// NewManager is the Discovery Manager constructor
-func NewManager(ctx context.Context, logger log.Logger) *Manager {
+// NewManager is the Discovery Manager constructor.
+func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager)) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	return &Manager{
+	mgr := &Manager{
 		logger:         logger,
 		syncCh:         make(chan map[string][]*targetgroup.Group),
 		targets:        make(map[poolKey]map[string]*targetgroup.Group),
@@ -120,12 +121,26 @@ func NewManager(ctx context.Context, logger log.Logger) *Manager {
 		updatert:       5 * time.Second,
 		triggerSend:    make(chan struct{}, 1),
 	}
+	for _, option := range options {
+		option(mgr)
+	}
+	return mgr
+}
+
+// Name sets the name of the manager.
+func Name(n string) func(*Manager) {
+	return func(m *Manager) {
+		m.mtx.Lock()
+		defer m.mtx.Unlock()
+		m.name = n
+	}
 }
 
 // Manager maintains a set of discovery providers and sends each update to a map channel.
 // Targets are grouped by the target set name.
 type Manager struct {
 	logger         log.Logger
+	name           string
 	mtx            sync.RWMutex
 	ctx            context.Context
 	discoverCancel []context.CancelFunc
@@ -166,9 +181,15 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	for pk := range m.targets {
+		if _, ok := cfg[pk.setName]; !ok {
+			discoveredTargets.DeleteLabelValues(m.name, pk.setName)
+		}
+	}
 	m.cancelDiscoverers()
 	for name, scfg := range cfg {
 		m.registerProviders(scfg, name)
+		discoveredTargets.WithLabelValues(m.name, name).Set(0)
 	}
 	for _, prov := range m.providers {
 		m.startProvider(m.ctx, prov)
@@ -279,16 +300,16 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	defer m.mtx.Unlock()
 
 	tSets := map[string][]*targetgroup.Group{}
-	var n int
 	for pkey, tsets := range m.targets {
+		var n int
 		for _, tg := range tsets {
 			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
 			// to signal that it needs to stop all scrape loops for this target set.
 			tSets[pkey.setName] = append(tSets[pkey.setName], tg)
 			n += len(tg.Targets)
 		}
+		discoveredTargets.WithLabelValues(m.name, pkey.setName).Set(float64(n))
 	}
-	discoveredTargets.Set(float64(n))
 	return tSets
 }
 
