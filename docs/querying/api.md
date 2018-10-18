@@ -499,7 +499,8 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
         "job": "prometheus"
       },
       "type": "gauge",
-      "help": "Number of goroutines that currently exist."
+      "help": "Number of goroutines that currently exist.",
+      "unit": ""
     },
     {
       "target": {
@@ -507,7 +508,8 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
         "job": "prometheus"
       },
       "type": "gauge",
-      "help": "Number of goroutines that currently exist."
+      "help": "Number of goroutines that currently exist.",
+      "unit": ""
     }
   ]
 }
@@ -530,7 +532,8 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
       },
       "metric": "prometheus_treecache_zookeeper_failures_total",
       "type": "counter",
-      "help": "The total number of ZooKeeper failures."
+      "help": "The total number of ZooKeeper failures.",
+      "unit": ""
     },
     {
       "target": {
@@ -539,7 +542,8 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
       },
       "metric": "prometheus_tsdb_reloads_total",
       "type": "counter",
-      "help": "Number of times the database reloaded block data from disk."
+      "help": "Number of times the database reloaded block data from disk.",
+      "unit": ""
     },
     // ...
   ]
