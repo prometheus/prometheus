@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"fmt"
 	"math"
 	"path/filepath"
 	"runtime"
@@ -462,19 +461,16 @@ func (h *Head) Truncate(mint int64) error {
 	}
 	// The lower third of segments should contain mostly obsolete samples.
 	// If we have less than three segments, it's not worth checkpointing yet.
-	// n = m + (n-m)/3
-	// if n <= m {
-	// 	fmt.Println("no checkpoint2")
-	// 	return nil
-	// }
+	n = m + (n-m)/3
+	if n <= m {
+		return nil
+	}
 
 	keep := func(id uint64) bool {
 		return h.series.getByID(id) != nil
 	}
-	if t, err := Checkpoint(h.logger, h.wal, m, n, keep, mint); err != nil {
+	if _, err = Checkpoint(h.logger, h.wal, m, n, keep, mint); err != nil {
 		return errors.Wrap(err, "create checkpoint")
-	} else {
-		fmt.Printf("%+v \n", t)
 	}
 	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
 
@@ -568,11 +564,18 @@ func (h *Head) Appender() Appender {
 func (h *Head) appender() *headAppender {
 	return &headAppender{
 		head:         h,
-		minValidTime: h.MaxTime() - h.chunkRange/2,
+		minValidTime: max(h.MinTime(), h.MaxTime()-h.chunkRange/2),
 		mint:         math.MaxInt64,
 		maxt:         math.MinInt64,
 		samples:      h.getAppendBuffer(),
 	}
+}
+
+func max(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (h *Head) getAppendBuffer() []RefSample {

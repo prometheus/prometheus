@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -260,7 +259,6 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 		return nil, errors.Wrap(r.Err(), "read segments")
 	}
 
-	fmt.Println("mint checkpoint", time.Unix(mint/1000, 0).String())
 	// Flush remaining records.
 	if err := cp.Log(recs...); err != nil {
 		return nil, errors.Wrap(err, "flush records")

@@ -382,41 +382,27 @@ func (db *DB) compact() (changes bool, err error) {
 			return changes, nil
 		default:
 		}
-
-		minHead := db.head.MinTime()
-		maxHead := db.head.MaxTime()
-		maxBlock := minHead + db.opts.BlockRanges[0]
-
-		// // Make sure we have at least 30% of db.opts.BlockRanges[0] remains in the head
-		// // so we can append samples with timestamp in the recent past.
-		if maxHead-minHead <= db.opts.BlockRanges[0]+(db.opts.BlockRanges[0]/3) {
-			break
-		}
-
 		// The head has a compactable range if 1.5 level 0 ranges are between the oldest
 		// and newest timestamp. The 0.5 acts as a buffer of the appendable window.
-		// if db.head.MaxTime()-db.head.MinTime() <= db.opts.BlockRanges[0]/2*3 {
-		// 	break
-		// }
-
-		// mint, maxt := rangeForTimestamp(db.head.MinTime(), db.opts.BlockRanges[0])
+		if db.head.MaxTime()-db.head.MinTime() <= db.opts.BlockRanges[0]/2*3 {
+			break
+		}
+		mint := db.head.MinTime()
+		_, maxt := rangeForTimestamp(mint, db.opts.BlockRanges[0])
 
 		// Wrap head into a range that bounds all reads to it.
 		head := &rangeHead{
 			head: db.head,
-			mint: minHead,
-			// mint: mint,
+			mint: mint,
 			// We remove 1 millisecond from maxt because block
 			// intervals are half-open: [b.MinTime, b.MaxTime). But
 			// chunk intervals are closed: [c.MinTime, c.MaxTime];
 			// so in order to make sure that overlaps are evaluated
 			// consistently, we explicitly remove the last value
 			// from the block interval here.
-			maxt: maxBlock - 1,
-			// maxt: maxt - 1,
+			maxt: maxt - 1,
 		}
-		if _, err = db.compactor.Write(db.dir, head, minHead, maxBlock, nil); err != nil {
-			// if _, err = db.compactor.Write(db.dir, head, mint, maxt, nil); err != nil {
+		if _, err = db.compactor.Write(db.dir, head, mint, maxt, nil); err != nil {
 			return changes, errors.Wrap(err, "persist head block")
 		}
 		changes = true
@@ -834,7 +820,6 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 func rangeForTimestamp(t int64, width int64) (mint, maxt int64) {
 	mint = (t / width) * width
 	return mint, mint + width
-
 }
 
 // Delete implements deletion of metrics. It only has atomicity guarantees on a per-block basis.
