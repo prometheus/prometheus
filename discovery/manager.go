@@ -181,9 +181,15 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	for pk := range m.targets {
+		if _, ok := cfg[pk.setName]; !ok {
+			discoveredTargets.DeleteLabelValues(m.name, pk.setName)
+		}
+	}
 	m.cancelDiscoverers()
 	for name, scfg := range cfg {
 		m.registerProviders(scfg, name)
+		discoveredTargets.WithLabelValues(m.name, name).Set(0)
 	}
 	for _, prov := range m.providers {
 		m.startProvider(m.ctx, prov)
