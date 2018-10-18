@@ -171,9 +171,7 @@ type Options struct {
 	RemoteReadConcurrencyLimit int
 }
 
-type instrumentHandlerFunc func(handlerName string, handler http.HandlerFunc) http.HandlerFunc
-
-func instrumentHandlerWithPrefix(prefix string) instrumentHandlerFunc {
+func instrumentHandlerWithPrefix(prefix string) func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
 	return func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
 		return instrumentHandler(prefix+handlerName, handler)
 	}
