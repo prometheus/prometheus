@@ -569,7 +569,7 @@ func main() {
 				if err != nil {
 					return fmt.Errorf("opening storage failed: %s", err)
 				}
-				level.Info(logger).Log("msg", "TSDB started")
+				level.Info(logger).Log("msg", "TSDB started by tc_dc")
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
