@@ -504,6 +504,14 @@ func (s *baseChunkSeries) Next() bool {
 		err      error
 	)
 
+	// Optimistically pre allocate the slices.
+	if lsetLen := len(s.lset); lsetLen > 0 {
+		lset = make(labels.Labels, lsetLen)
+	}
+	if chksLen := len(s.chks); chksLen > 0 {
+		chkMetas = make([]chunks.Meta, chksLen)
+	}
+
 	for s.p.Next() {
 		ref := s.p.At()
 		if err := s.index.Series(ref, &lset, &chkMetas); err != nil {

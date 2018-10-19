@@ -793,7 +793,11 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 		}
 	}
 	if maxt >= db.head.MinTime() {
-		blocks = append(blocks, db.head)
+		blocks = append(blocks, &rangeHead{
+			head: db.head,
+			mint: mint,
+			maxt: maxt,
+		})
 	}
 
 	sq := &querier{
