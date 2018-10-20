@@ -2,6 +2,7 @@ var Prometheus = Prometheus || {};
 var graphTemplate;
 
 var SECOND = 1000;
+var METRICS_MAX_SIZE = 10000;
 
 /**
  * Graph
@@ -239,7 +240,13 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           return;
         }
 
-        pageConfig.allMetrics = json.data; // todo: do we need self.allMetrics? Or can it just live on the page
+        if (json.data.length > METRICS_MAX_SIZE) {
+          $("#graph_wrapper0").prepend(
+              "<div class=\"alert alert-warning\"><strong>Warning!</strong> Too many metrics. Displaying the first " +
+              METRICS_MAX_SIZE + " of " + json.data.length + " total items.</div>"
+          );
+        }
+        pageConfig.allMetrics = json.data.splice(0, METRICS_MAX_SIZE); // todo: do we need self.allMetrics? Or can it just live on the page
         for (var i = 0; i < pageConfig.allMetrics.length; i++) {
           self.insertMetric[0].options.add(new Option(pageConfig.allMetrics[i], pageConfig.allMetrics[i]));
         }
