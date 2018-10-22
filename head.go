@@ -1014,14 +1014,13 @@ func (h *headIndexReader) LabelValues(names ...string) (index.StringTuples, erro
 	if len(names) != 1 {
 		return nil, errInvalidSize
 	}
-	var sl []string
 
 	h.head.symMtx.RLock()
-	defer h.head.symMtx.RUnlock()
-
+	sl := make([]string, 0, len(h.head.values[names[0]]))
 	for s := range h.head.values[names[0]] {
 		sl = append(sl, s)
 	}
+	h.head.symMtx.RUnlock()
 	sort.Strings(sl)
 
 	return index.NewStringTuples(sl, len(names))
