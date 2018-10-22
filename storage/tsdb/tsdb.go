@@ -145,6 +145,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 		RetentionDuration: uint64(time.Duration(opts.Retention).Seconds() * 1000),
 		BlockRanges:       rngs,
 		NoLockfile:        opts.NoLockfile,
+		MergeSmallChunks:  true,
 	})
 	if err != nil {
 		return nil, err

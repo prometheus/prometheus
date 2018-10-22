@@ -64,11 +64,12 @@ type Compactor interface {
 
 // LeveledCompactor implements the Compactor interface.
 type LeveledCompactor struct {
-	dir       string
-	metrics   *compactorMetrics
-	logger    log.Logger
-	ranges    []int64
-	chunkPool chunkenc.Pool
+	dir              string
+	metrics          *compactorMetrics
+	logger           log.Logger
+	ranges           []int64
+	chunkPool        chunkenc.Pool
+	mergeSmallChunks bool
 }
 
 type compactorMetrics struct {
@@ -126,7 +127,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 // NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool) (*LeveledCompactor, error) {
+func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeSmallChunks bool) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.Errorf("at least one range must be provided")
 	}
@@ -134,10 +135,11 @@ func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, ranges []int64, 
 		pool = chunkenc.NewPool()
 	}
 	return &LeveledCompactor{
-		ranges:    ranges,
-		chunkPool: pool,
-		logger:    l,
-		metrics:   newCompactorMetrics(r),
+		ranges:           ranges,
+		chunkPool:        pool,
+		logger:           l,
+		metrics:          newCompactorMetrics(r),
+		mergeSmallChunks: mergeSmallChunks,
 	}, nil
 }
 
@@ -524,6 +526,10 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 // populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) error {
+	if len(blocks) == 0 {
+		return errors.New("cannot populate block from no readers")
+	}
+
 	var (
 		set        ChunkSeriesSet
 		allSymbols = make(map[string]struct{}, 1<<16)
@@ -595,13 +601,17 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			continue
 		}
 
-		if len(dranges) > 0 {
-			// Re-encode the chunk to not have deleted values.
-			for i, chk := range chks {
+		for i, chk := range chks {
+			if chk.MinTime < meta.MinTime || chk.MaxTime > meta.MaxTime {
+				return errors.Errorf("found chunk with minTime: %d maxTime: %d outside of compacted minTime: %d maxTime: %d",
+					chk.MinTime, chk.MaxTime, meta.MinTime, meta.MaxTime)
+			}
+
+			if len(dranges) > 0 {
+				// Re-encode the chunk to not have deleted values.
 				if !chk.OverlapsClosedInterval(dranges[0].Mint, dranges[len(dranges)-1].Maxt) {
 					continue
 				}
-
 				newChunk := chunkenc.NewXORChunk()
 				app, err := newChunk.Appender()
 				if err != nil {
@@ -617,6 +627,15 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 				chks[i].Chunk = newChunk
 			}
 		}
+
+		if c.mergeSmallChunks {
+			if newChks, err := mergeChunks(chks, scaleChunkSize(meta.MaxTime-meta.MinTime)); err == nil {
+				chks = newChks
+			} else {
+				level.Warn(c.logger).Log("msg", "failed to merge chunks", "err", err)
+			}
+		}
+
 		if err := chunkw.WriteChunks(chks...); err != nil {
 			return errors.Wrap(err, "write chunks")
 		}
@@ -671,6 +690,78 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 	}
 	return nil
+}
+
+// scaleChunkSize calculates the maximum number of samples per chunk as 1 sample per minute.
+// For example 360 minutes (21600000 milliseconds) will scale to 360 samples per chunk.
+func scaleChunkSize(blockLength int64) int {
+	n := int(blockLength / 1000 / 60)
+	if n < 120 {
+		return 120
+	}
+	if n > 12000 {
+		return 12000
+	}
+	return n
+}
+
+func mergeChunks(chks []chunks.Meta, maxSamples int) ([]chunks.Meta, error) {
+	newChks := make([]chunks.Meta, 0, len(chks))
+	for len(chks) > 0 {
+		// If this is the last chunk, we cannot do a merge
+		if len(chks) == 1 {
+			return append(newChks, chks[0]), nil
+		}
+
+		// If this chunk cannot be merged with the next, do not bother creating a new chunk
+		if !canMergeChunks(chks[0].Chunk, chks[1].Chunk, maxSamples) {
+			newChks = append(newChks, chks[0])
+			chks = chks[1:]
+			continue
+		}
+
+		newChunk, nAppended, err := newMergedChunk(chks, maxSamples)
+		if err != nil {
+			return nil, err
+		}
+
+		newChks = append(newChks, newChunk)
+		chks = chks[nAppended:]
+	}
+	return newChks, nil
+}
+
+func newMergedChunk(chkMetas []chunks.Meta, maxSamples int) (chunks.Meta, int, error) {
+	newChunk := chunkenc.NewXORChunk()
+	app, err := newChunk.Appender()
+	if err != nil {
+		return chunks.Meta{}, 0, err
+	}
+
+	chunksAppended := 0
+	for _, chkMeta := range chkMetas {
+		if !canMergeChunks(newChunk, chkMeta.Chunk, maxSamples) {
+			break
+		}
+		it := chkMeta.Chunk.Iterator()
+		for it.Next() {
+			app.Append(it.At())
+		}
+		if err := it.Err(); err != nil {
+			return chunks.Meta{}, 0, err
+		}
+		chunksAppended++
+	}
+
+	return chunks.Meta{
+		MinTime: chkMetas[0].MinTime,
+		MaxTime: chkMetas[chunksAppended-1].MaxTime,
+		Chunk:   newChunk,
+	}, chunksAppended, nil
+}
+
+func canMergeChunks(chk1, chk2 chunkenc.Chunk, maxSamples int) bool {
+	return chk1.NumSamples()+chk2.NumSamples() <= maxSamples
 }
 
 type compactionSeriesSet struct {
@@ -791,7 +882,6 @@ func (c *compactionMerger) Next() bool {
 	var chks []chunks.Meta
 
 	d := c.compare()
-	// Both sets contain the current series. Chain them into a single one.
 	if d > 0 {
 		lset, chks, c.intervals = c.b.At()
 		c.l = append(c.l[:0], lset...)
@@ -805,8 +895,10 @@ func (c *compactionMerger) Next() bool {
 
 		c.aok = c.a.Next()
 	} else {
+		// Both sets contain the current series. Chain them into a single one.
 		l, ca, ra := c.a.At()
 		_, cb, rb := c.b.At()
+
 		for _, r := range rb {
 			ra = ra.add(r)
 		}

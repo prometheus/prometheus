@@ -48,6 +48,7 @@ var DefaultOptions = &Options{
 	RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
 	BlockRanges:       ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
 	NoLockfile:        false,
+	MergeSmallChunks:  true,
 }
 
 // Options of the DB storage.
@@ -63,6 +64,9 @@ type Options struct {
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
+
+	// MergeSmallChunks will merge smaller chunks during compaction.
+	MergeSmallChunks bool
 }
 
 // Appender allows appending a batch of data. It must be completed with a
@@ -249,7 +253,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		db.lockf = lockf
 	}
 
-	db.compactor, err = NewLeveledCompactor(r, l, opts.BlockRanges, db.chunkPool)
+	db.compactor, err = NewLeveledCompactor(r, l, opts.BlockRanges, db.chunkPool, opts.MergeSmallChunks)
 	if err != nil {
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
