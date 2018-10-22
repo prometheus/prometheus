@@ -32,7 +32,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		Logger:        nil,
 		Reg:           nil,
 		MaxConcurrent: 10,
-		MaxSamples:    10,
+		MaxSamples:    50000000,
 		Timeout:       100 * time.Second,
 	}
 	engine := NewEngine(opts)
