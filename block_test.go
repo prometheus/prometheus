@@ -15,11 +15,14 @@ package tsdb
 
 import (
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/tsdb/index"
+	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
 )
 
@@ -72,4 +75,45 @@ func createEmptyBlock(t *testing.T, dir string, meta *BlockMeta) *Block {
 	b, err := OpenBlock(dir, nil)
 	testutil.Ok(t, err)
 	return b
+}
+
+// createPopulatedBlock creates a block with nSeries series, and nSamples samples.
+func createPopulatedBlock(tb testing.TB, dir string, nSeries, nSamples int) *Block {
+	head, err := NewHead(nil, nil, nil, 2*60*60*1000)
+	testutil.Ok(tb, err)
+	defer head.Close()
+
+	lbls, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), nSeries)
+	testutil.Ok(tb, err)
+	refs := make([]uint64, nSeries)
+
+	for n := 0; n < nSamples; n++ {
+		app := head.Appender()
+		ts := n * 1000
+		for i, lbl := range lbls {
+			if refs[i] != 0 {
+				err := app.AddFast(refs[i], int64(ts), rand.Float64())
+				if err == nil {
+					continue
+				}
+			}
+			ref, err := app.Add(lbl, int64(ts), rand.Float64())
+			testutil.Ok(tb, err)
+			refs[i] = ref
+		}
+		err := app.Commit()
+		testutil.Ok(tb, err)
+	}
+
+	compactor, err := NewLeveledCompactor(nil, log.NewNopLogger(), []int64{1000000}, nil)
+	testutil.Ok(tb, err)
+
+	testutil.Ok(tb, os.MkdirAll(dir, 0777))
+
+	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime(), nil)
+	testutil.Ok(tb, err)
+
+	blk, err := OpenBlock(filepath.Join(dir, ulid.String()), nil)
+	testutil.Ok(tb, err)
+	return blk
 }
