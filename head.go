@@ -1427,6 +1427,9 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 
 // append adds the sample (t, v) to the series.
 func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
+	// Based on Gorilla white papers this offers near-optimal compression ratio
+	// so anything bigger that this has diminishing returns and increases
+	// the time range within which we have to decompress all samples.
 	const samplesPerChunk = 120
 
 	c := s.head()
