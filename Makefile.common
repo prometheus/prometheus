@@ -16,7 +16,7 @@
 # !!! Open PRs only against the prometheus/prometheus/Makefile.common repository!
 
 # Example usage :
-# Create the main Makefile in the root project directory. 
+# Create the main Makefile in the root project directory.
 # include Makefile.common
 # customTarget:
 # 	@echo ">> Running customTarget"
@@ -28,9 +28,26 @@ unexport GOBIN
 GO           ?= go
 GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
+GOOPTS       ?=
+ifneq (,$(wildcard go.mod))
+	ifeq ($(shell $(GO) version | grep -E 'go1\.(10|[0-9])\.'),)
+		# Always use the local vendor/ directory to satisfy the dependencies.
+		GOOPTS      := $(GOOPTS) -mod=vendor
+		# Enable module support forcibly just in case the directory is inside GOPATH.
+		GO111MODULE := on
+
+		unexport GOVENDOR
+	else
+$(warning This repository requires Go >= 1.11 because of Go modules)
+$(warning Some recipes may not work as expected as the current Go runtime is '$(shell $(GO) version)')
+	endif
+else
+	# This repository isn't using Go modules (yet).
+	GOVENDOR    := $(FIRST_GOPATH)/bin/govendor
+	GO111MODULE := auto
+endif
 PROMU        := $(FIRST_GOPATH)/bin/promu
 STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
-GOVENDOR     := $(FIRST_GOPATH)/bin/govendor
 pkgs          = ./...
 
 PREFIX                  ?= $(shell pwd)
@@ -70,37 +87,46 @@ common-check_license:
 .PHONY: common-test-short
 common-test-short:
 	@echo ">> running short tests"
-	$(GO) test -short $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) test -short $(GOOPTS) $(pkgs)
 
 .PHONY: common-test
 common-test:
 	@echo ">> running all tests"
-	$(GO) test -race $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) test -race $(GOOPTS) $(pkgs)
 
 .PHONY: common-format
 common-format:
 	@echo ">> formatting code"
-	$(GO) fmt $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) fmt $(GOOPTS) $(pkgs)
 
 .PHONY: common-vet
 common-vet:
 	@echo ">> vetting code"
-	$(GO) vet $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) vet $(GOOPTS) $(pkgs)
 
 .PHONY: common-staticcheck
 common-staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
-	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 
 .PHONY: common-unused
 common-unused: $(GOVENDOR)
+ifdef GOVENDOR
 	@echo ">> running check for unused packages"
 	@$(GOVENDOR) list +unused | grep . && exit 1 || echo 'No unused packages'
+else
+	@echo ">> running check for unused/missing packages in go.mod"
+	GO111MODULE=$(GO111MODULE) $(GO) mod tidy
+	@git diff --exit-code
+	@echo ">> running check for unused packages in vendor/"
+	GO111MODULE=$(GO111MODULE) $(GO) mod vendor
+	@git diff --exit-code
+endif
 
 .PHONY: common-build
 common-build: promu
 	@echo ">> building binaries"
-	$(PROMU) build --prefix $(PREFIX)
+	GO111MODULE=$(GO111MODULE) $(PROMU) build --prefix $(PREFIX)
 
 .PHONY: common-tarball
 common-tarball: promu
@@ -121,12 +147,14 @@ common-docker-tag-latest:
 
 .PHONY: promu
 promu:
-	GOOS= GOARCH= $(GO) get -u github.com/prometheus/promu
+	GOOS= GOARCH= GO111MODULE=off $(GO) get -u github.com/prometheus/promu
 
 .PHONY: $(STATICCHECK)
 $(STATICCHECK):
-	GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck
+	GOOS= GOARCH= GO111MODULE=off $(GO) get -u honnef.co/go/tools/cmd/staticcheck
 
+ifdef GOVENDOR
 .PHONY: $(GOVENDOR)
 $(GOVENDOR):
 	GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
+endif

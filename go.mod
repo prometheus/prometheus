@@ -146,4 +146,6 @@ require (
 	k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
 	k8s.io/client-go v8.0.0+incompatible
 	k8s.io/kube-openapi v0.0.0-20180629012420-d83b052f768a // indirect
+	labix.org/v2/mgo v0.0.0-20140701140051-000000000287 // indirect
+	launchpad.net/gocheck v0.0.0-20140225173054-000000000087 // indirect
 )

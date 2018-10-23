@@ -7,7 +7,6 @@ executors:
   golang:
     docker:
     - image: circleci/golang:1.11
-    working_directory: /go/src/github.com/prometheus/prometheus
 
 jobs:
   test:
@@ -18,6 +17,7 @@ jobs:
     - checkout
     - run: make promu
     - run: make check_license style unused staticcheck build
+    - run: git diff --exit-code
     - store_artifacts:
         path: prometheus
         destination: /build/prometheus
