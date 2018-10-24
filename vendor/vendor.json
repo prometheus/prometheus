@@ -738,10 +738,9 @@
 		},
 		{
 			"checksumSHA1": "jhWbikPpDRvfqYPOvEbZUXzg7KM=",
-			"origin": "github.com/cockroachdb/cockroach/vendor/github.com/petermattis/goid",
 			"path": "github.com/petermattis/goid",
-			"revision": "84bc9597164f671c0130543778228928d6865c5c",
-			"revisionTime": "2017-06-08T03:40:07Z"
+			"revision": "0ded85884ba5c4c9267fcd5a149061f7c3455eee",
+			"revisionTime": "2017-05-04T14:41:40Z"
 		},
 		{
 			"checksumSHA1": "ynJSWoF6v+3zMnh9R0QmmG6iGV8=",
