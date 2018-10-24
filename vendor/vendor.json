@@ -291,12 +291,6 @@
 			"revisionTime": "2016-11-01T19:39:35Z"
 		},
 		{
-			"checksumSHA1": "ADZfj+c4ny5T+Y3Mlw77sXaRNHw=",
-			"path": "github.com/dgryski/go-bits",
-			"revision": "2ad8d707cc05b1815ce6ff2543bb5e8d8f9298ef",
-			"revisionTime": "2016-06-01T07:36:36Z"
-		},
-		{
 			"checksumSHA1": "17vYJDDMJO63/G/tRFIUuSlMCbE=",
 			"path": "github.com/ghodss/yaml",
 			"revision": "73d445a93680fa1a78ae23a5839bad48f32ba1ee",
@@ -919,12 +913,6 @@
 			"revisionTime": "2018-07-11T16:37:06Z"
 		},
 		{
-			"checksumSHA1": "STxYqRb4gnlSr3mRpT+Igfdz/kM=",
-			"path": "github.com/spf13/pflag",
-			"revision": "e57e3eeb33f795204c1ca35f56c44f83227c6e66",
-			"revisionTime": "2017-05-08T18:43:26Z"
-		},
-		{
 			"checksumSHA1": "iydUphwYqZRq3WhstEdGsbvBAKs=",
 			"path": "github.com/stretchr/testify/assert",
 			"revision": "d77da356e56a7428ad25149ca77381849a6a5232",
@@ -1085,18 +1073,6 @@
 			"path": "golang.org/x/sys/windows",
 			"revision": "7138fd3d9dc8335c567ca206f4333fb75eb05d56",
 			"revisionTime": "2018-06-27T13:57:12Z"
-		},
-		{
-			"checksumSHA1": "PjYlbMS0ttyZYlaevvjA/gV3g1c=",
-			"path": "golang.org/x/sys/windows/registry",
-			"revision": "c200b10b5d5e122be351b67af224adc6128af5bf",
-			"revisionTime": "2016-10-22T18:22:21Z"
-		},
-		{
-			"checksumSHA1": "uVlUSSKplihZG7N+QJ6fzDZ4Kh8=",
-			"path": "golang.org/x/sys/windows/svc/eventlog",
-			"revision": "c200b10b5d5e122be351b67af224adc6128af5bf",
-			"revisionTime": "2016-10-22T18:22:21Z"
 		},
 		{
 			"checksumSHA1": "faFDXp++cLjLBlvsr+izZ+go1WU=",
