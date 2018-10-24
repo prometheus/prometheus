@@ -126,7 +126,7 @@ require (
 	golang.org/x/net v0.0.0-20180320002117-6078986fec03
 	golang.org/x/oauth2 v0.0.0-20160608215109-65a8d08c6292
 	golang.org/x/sync v0.0.0-20180314180146-1d60e4601c6f // indirect
-	golang.org/x/sys v0.0.0-20180909124046-d0be0721c37e // indirect
+	golang.org/x/sys v0.0.0-20180627142611-7138fd3d9dc8 // indirect
 	golang.org/x/text v0.3.0 // indirect
 	golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
 	golang.org/x/tools v0.0.0-20181023010539-40a48ad93fbe // indirect
