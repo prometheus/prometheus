@@ -27,7 +27,6 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -46,22 +45,23 @@ const (
 
 // InstanceDiscovery discovers OpenStack instances.
 type InstanceDiscovery struct {
-	provider *gophercloud.ProviderClient
-	authOpts *gophercloud.AuthOptions
-	region   string
-	interval time.Duration
-	logger   log.Logger
-	port     int
+	provider   *gophercloud.ProviderClient
+	authOpts   *gophercloud.AuthOptions
+	region     string
+	interval   time.Duration
+	logger     log.Logger
+	port       int
+	allTenants bool
 }
 
 // NewInstanceDiscovery returns a new instance discovery.
 func NewInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	interval time.Duration, port int, region string, l log.Logger) *InstanceDiscovery {
+	interval time.Duration, port int, region string, allTenants bool, l log.Logger) *InstanceDiscovery {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
 	return &InstanceDiscovery{provider: provider, authOpts: opts,
-		region: region, interval: interval, port: port, logger: l}
+		region: region, interval: interval, port: port, allTenants: allTenants, logger: l}
 }
 
 // Run implements the Discoverer interface.
@@ -153,7 +153,9 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-servers
-	opts := servers.ListOpts{}
+	opts := servers.ListOpts{
+		AllTenants: i.allTenants,
+	}
 	pager := servers.List(client, opts)
 	tg := &targetgroup.Group{
 		Source: fmt.Sprintf("OS_" + i.region),

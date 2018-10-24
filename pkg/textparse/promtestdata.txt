@@ -526,3 +526,4 @@ prometheus_treecache_watcher_goroutines 0
 # HELP prometheus_treecache_zookeeper_failures_total The total number of ZooKeeper failures.
 # TYPE prometheus_treecache_zookeeper_failures_total counter
 prometheus_treecache_zookeeper_failures_total 0
+# EOF

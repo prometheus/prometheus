@@ -615,13 +615,13 @@ func TestScrapeLoopMetadata(t *testing.T) {
 	)
 	defer cancel()
 
-	total, _, err := sl.append([]byte(`
-# TYPE test_metric counter
+	total, _, err := sl.append([]byte(`# TYPE test_metric counter
 # HELP test_metric some help text
-# other comment
+# UNIT test_metric metric
 test_metric 1
 # TYPE test_metric_no_help gauge
-# HELP test_metric_no_type other help text`), time.Now())
+# HELP test_metric_no_type other help text
+# EOF`), "application/openmetrics-text", time.Now())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, total)
 
@@ -629,16 +629,19 @@ test_metric 1
 	testutil.Assert(t, ok, "expected metadata to be present")
 	testutil.Assert(t, textparse.MetricTypeCounter == md.Type, "unexpected metric type")
 	testutil.Equals(t, "some help text", md.Help)
+	testutil.Equals(t, "metric", md.Unit)
 
 	md, ok = cache.getMetadata("test_metric_no_help")
 	testutil.Assert(t, ok, "expected metadata to be present")
 	testutil.Assert(t, textparse.MetricTypeGauge == md.Type, "unexpected metric type")
 	testutil.Equals(t, "", md.Help)
+	testutil.Equals(t, "", md.Unit)
 
 	md, ok = cache.getMetadata("test_metric_no_type")
 	testutil.Assert(t, ok, "expected metadata to be present")
-	testutil.Assert(t, textparse.MetricTypeUntyped == md.Type, "unexpected metric type")
+	testutil.Assert(t, textparse.MetricTypeUnknown == md.Type, "unexpected metric type")
 	testutil.Equals(t, "other help text", md.Help)
+	testutil.Equals(t, "", md.Unit)
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
@@ -824,7 +827,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 
 		now := time.Now()
 
-		_, _, err := sl.append([]byte(test.scrapeLabels), now)
+		_, _, err := sl.append([]byte(test.scrapeLabels), "", now)
 		if err != nil {
 			t.Fatalf("Unexpected append error: %s", err)
 		}
@@ -870,7 +873,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	beforeMetricValue := beforeMetric.GetCounter().GetValue()
 
 	now := time.Now()
-	_, _, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), now)
+	_, _, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
 	if err != errSampleLimit {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
@@ -922,11 +925,11 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1`), now)
+	_, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1`), "", now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
-	_, _, err = sl.append([]byte(`metric_a{b="1",a="1"} 2`), now.Add(time.Minute))
+	_, _, err = sl.append([]byte(`metric_a{b="1",a="1"} 2`), "", now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
@@ -961,11 +964,11 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, err := sl.append([]byte("metric_a 1\n"), now)
+	_, _, err := sl.append([]byte("metric_a 1\n"), "", now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
-	_, _, err = sl.append([]byte(""), now.Add(time.Second))
+	_, _, err = sl.append([]byte(""), "", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
@@ -1006,11 +1009,11 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, err := sl.append([]byte("metric_a 1 1000\n"), now)
+	_, _, err := sl.append([]byte("metric_a 1 1000\n"), "", now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
-	_, _, err = sl.append([]byte(""), now.Add(time.Second))
+	_, _, err = sl.append([]byte(""), "", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
@@ -1120,7 +1123,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 	)
 
 	now := time.Unix(1, 0)
-	_, _, err := sl.append([]byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\n"), now)
+	_, _, err := sl.append([]byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\n"), "", now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
@@ -1153,7 +1156,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	)
 
 	now := time.Now().Add(20 * time.Minute)
-	total, added, err := sl.append([]byte("normal 1\n"), now)
+	total, added, err := sl.append([]byte("normal 1\n"), "", now)
 	if total != 1 {
 		t.Error("expected 1 metric")
 		return
@@ -1177,8 +1180,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			accept := r.Header.Get("Accept")
-			if !strings.HasPrefix(accept, "text/plain;") {
-				t.Errorf("Expected Accept header to prefer text/plain, got %q", accept)
+			if !strings.HasPrefix(accept, "application/openmetrics-text;") {
+				t.Errorf("Expected Accept header to prefer application/openmetrics-text, got %q", accept)
 			}
 
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
@@ -1209,7 +1212,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	}
 	var buf bytes.Buffer
 
-	if err := ts.scrape(context.Background(), &buf); err != nil {
+	if _, err := ts.scrape(context.Background(), &buf); err != nil {
 		t.Fatalf("Unexpected scrape error: %s", err)
 	}
 	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
@@ -1249,7 +1252,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 	}()
 
 	go func() {
-		if err := ts.scrape(ctx, ioutil.Discard); err != context.Canceled {
+		if _, err := ts.scrape(ctx, ioutil.Discard); err != context.Canceled {
 			errc <- fmt.Errorf("Expected context cancelation error but got: %s", err)
 		}
 		close(errc)
@@ -1291,7 +1294,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 		client: http.DefaultClient,
 	}
 
-	if err := ts.scrape(context.Background(), ioutil.Discard); !strings.Contains(err.Error(), "404") {
+	if _, err := ts.scrape(context.Background(), ioutil.Discard); !strings.Contains(err.Error(), "404") {
 		t.Fatalf("Expected \"404 NotFound\" error but got: %s", err)
 	}
 }
@@ -1319,9 +1322,9 @@ func (ts *testScraper) report(start time.Time, duration time.Duration, err error
 	ts.lastError = err
 }
 
-func (ts *testScraper) scrape(ctx context.Context, w io.Writer) error {
+func (ts *testScraper) scrape(ctx context.Context, w io.Writer) (string, error) {
 	if ts.scrapeFunc != nil {
-		return ts.scrapeFunc(ctx, w)
+		return "", ts.scrapeFunc(ctx, w)
 	}
-	return ts.scrapeErr
+	return "", ts.scrapeErr
 }

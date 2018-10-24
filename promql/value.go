@@ -47,8 +47,8 @@ const (
 
 // String represents a string value.
 type String struct {
-	V string
 	T int64
+	V string
 }
 
 func (s String) String() string {
