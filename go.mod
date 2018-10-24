@@ -30,6 +30,7 @@ require (
 	github.com/elastic/gosigar v0.9.0 // indirect
 	github.com/elazarl/go-bindata-assetfs v1.0.0 // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
+	github.com/fsnotify/fsnotify v1.4.7 // indirect
 	github.com/getsentry/raven-go v0.1.0 // indirect
 	github.com/ghodss/yaml v0.0.0-20150909031657-73d445a93680 // indirect
 	github.com/go-ini/ini v1.21.1 // indirect
@@ -41,6 +42,7 @@ require (
 	github.com/gogo/protobuf v0.0.0-20171123125729-971cbfd2e72b
 	github.com/golang/glog v0.0.0-20141105023935-44145f04b68c // indirect
 	github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4 // indirect
+	github.com/golang/protobuf v0.0.0-20180622174009-9eb2c01ac278 // indirect
 	github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
 	github.com/google/btree v0.0.0-20180124185431-e89373fe6b4a // indirect
 	github.com/google/gofuzz v0.0.0-20150304233714-bbcb9da2d746 // indirect
@@ -61,6 +63,7 @@ require (
 	github.com/hashicorp/memberlist v0.1.0 // indirect
 	github.com/hashicorp/serf v0.0.0-20161007004122-1d4fa605f6ff // indirect
 	github.com/hashicorp/yamux v0.0.0-20181012175058-2f1d1f20f75d // indirect
+	github.com/hpcloud/tail v1.0.0 // indirect
 	github.com/influxdata/influxdb v0.0.0-20170331210902-15e594fc09f1
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.2.0+incompatible // indirect
@@ -87,7 +90,8 @@ require (
 	github.com/oklog/oklog v0.0.0-20170918173356-f857583a70c3
 	github.com/oklog/ulid v0.0.0-20170117200651-66bb6560562f // indirect
 	github.com/olekukonko/tablewriter v0.0.0-20180912035003-be2c049b30cc // indirect
-	github.com/onsi/gomega v1.4.2 // indirect
+	github.com/onsi/ginkgo v1.6.0 // indirect
+	github.com/onsi/gomega v1.4.1 // indirect
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20170113013457-1de4cc2120e7
 	github.com/opentracing/basictracer-go v1.0.0 // indirect
 	github.com/opentracing/opentracing-go v1.0.1
@@ -121,6 +125,9 @@ require (
 	golang.org/x/crypto v0.0.0-20180621125126-a49355c7e3f8 // indirect
 	golang.org/x/net v0.0.0-20180906233101-161cd47e91fd
 	golang.org/x/oauth2 v0.0.0-20160608215109-65a8d08c6292
+	golang.org/x/sync v0.0.0-20180314180146-1d60e4601c6f // indirect
+	golang.org/x/sys v0.0.0-20180909124046-d0be0721c37e // indirect
+	golang.org/x/text v0.3.0 // indirect
 	golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
 	golang.org/x/tools v0.0.0-20181023010539-40a48ad93fbe // indirect
 	google.golang.org/api v0.0.0-20180506000402-20530fd5d65a
@@ -129,8 +136,10 @@ require (
 	google.golang.org/genproto v0.0.0-20170531203552-aa2eb687b4d3
 	google.golang.org/grpc v0.0.0-20170516193736-3419b4295567
 	gopkg.in/alecthomas/kingpin.v2 v2.2.5
+	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/fsnotify/fsnotify.v1 v1.3.0
 	gopkg.in/inf.v0 v0.9.0 // indirect
+	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/vmihailenco/msgpack.v2 v2.9.1 // indirect
 	gopkg.in/yaml.v2 v2.2.1
 	k8s.io/api v0.0.0-20180628040859-072894a440bd
