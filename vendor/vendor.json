@@ -890,10 +890,9 @@
 		},
 		{
 			"checksumSHA1": "Tfr8KDPvbtpyhncImGklqZwaAmk=",
-			"origin": "github.com/cockroachdb/cockroach/vendor/github.com/sasha-s/go-deadlock",
 			"path": "github.com/sasha-s/go-deadlock",
-			"revision": "84bc9597164f671c0130543778228928d6865c5c",
-			"revisionTime": "2017-06-08T03:40:07Z"
+			"revision": "341000892f3dd25f440e6231e8533eb3688ed7ec",
+			"revisionTime": "2016-12-01T23:51:24Z"
 		},
 		{
 			"checksumSHA1": "fSVkjXu8SIkCLI9RTt/vnkg9M5A=",
