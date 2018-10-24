@@ -297,11 +297,10 @@
 			"revisionTime": "2016-06-01T07:36:36Z"
 		},
 		{
-			"checksumSHA1": "ww7LVo7jNJ1o6sfRcromEHKyY+o=",
-			"origin": "k8s.io/client-go/1.5/vendor/github.com/ghodss/yaml",
+			"checksumSHA1": "17vYJDDMJO63/G/tRFIUuSlMCbE=",
 			"path": "github.com/ghodss/yaml",
-			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
-			"revisionTime": "2016-09-30T00:14:02Z"
+			"revision": "73d445a93680fa1a78ae23a5839bad48f32ba1ee",
+			"revisionTime": "2015-09-09T03:16:57Z"
 		},
 		{
 			"checksumSHA1": "cVyhKIRI2gQrgpn5qrBeAqErmWM=",
