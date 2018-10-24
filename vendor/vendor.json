@@ -425,11 +425,10 @@
 			"revisionTime": "2018-01-24T18:54:31Z"
 		},
 		{
-			"checksumSHA1": "/yFfUp3tGt6cK22UVzbq8SjPDCU=",
-			"origin": "k8s.io/client-go/1.5/vendor/github.com/google/gofuzz",
+			"checksumSHA1": "MGFnNo7z324UK7kjSC5v+G+CsCI=",
 			"path": "github.com/google/gofuzz",
-			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
-			"revisionTime": "2016-09-30T00:14:02Z"
+			"revision": "bbcb9da2d746f8bdbd6a936686a0a6067ada0ec5",
+			"revisionTime": "2015-03-04T23:37:14Z"
 		},
 		{
 			"checksumSHA1": "P+F/VP7siicTrlxbwrUs9+WMD4w=",
