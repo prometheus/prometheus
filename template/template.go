@@ -36,19 +36,19 @@ import (
 )
 
 var (
-	expansionFailures = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_template_expansion_failures_total",
-		Help: "The total number of template expansion failures.",
+	textTemplateExpansionFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_text_template_expansion_failures_total",
+		Help: "The total number of text template expansion failures.",
 	})
-	expansionTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_template_expansions_total",
-		Help: "The total number of template expansions.",
+	textTemplateExpansionTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_text_template_expansions_total",
+		Help: "The total number of text template expansions.",
 	})
 )
 
 func init() {
-	prometheus.MustRegister(expansionFailures)
-	prometheus.MustRegister(expansionTotal)
+	prometheus.MustRegister(textTemplateExpansionFailures)
+	prometheus.MustRegister(textTemplateExpansionTotal)
 }
 
 // A version of vector that's easier to use from templates.
@@ -292,11 +292,11 @@ func (te Expander) Expand() (result string, resultErr error) {
 			}
 		}
 		if resultErr != nil {
-			expansionFailures.Inc()
+			textTemplateExpansionFailures.Inc()
 		}
 	}()
 
-	expansionTotal.Inc()
+	textTemplateExpansionTotal.Inc()
 
 	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
 	if err != nil {
