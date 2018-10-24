@@ -360,10 +360,9 @@
 		},
 		{
 			"checksumSHA1": "URsJa4y/sUUw/STmbeYx9EKqaYE=",
-			"origin": "k8s.io/client-go/1.5/vendor/github.com/golang/glog",
 			"path": "github.com/golang/glog",
-			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
-			"revisionTime": "2016-09-30T00:14:02Z"
+			"revision": "44145f04b68cf362d9c4df2182967c2275eaefed",
+			"revisionTime": "2014-09-23T20:47:00Z"
 		},
 		{
 			"checksumSHA1": "7HCVg+tAuow1iTlDhu/cxPMSzpo=",
