@@ -1,0 +1,18 @@
+# sudo is enabled because it provides more memory which was needed to run go test -race
+sudo: required
+dist: trusty
+language: go
+
+go:
+  - 1.9.x
+  - 1.10.x
+
+go_import_path: github.com/prometheus/tsdb
+
+install:
+  - go get -v -t ./...
+
+script:
+  # `check_license` target is omitted due to some missing license headers
+  # `staticcheck` target is omitted due to linting errors
+  - make style unused test
