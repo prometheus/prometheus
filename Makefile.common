@@ -111,7 +111,8 @@ common-staticcheck: $(STATICCHECK)
 ifdef STATICCHECK
 	GO111MODULE=off $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 else
-	GOOS= GOARCH= GO111MODULE=$(GO111MODULE) $(GO) run $(GOOPTS) honnef.co/go/tools/cmd/staticcheck -ignore "$(STATICCHECK_IGNORE)" -checks "SA*" $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) install -v $(GOOPTS) honnef.co/go/tools/cmd/staticcheck
+	$(FIRST_GOPATH)/bin/staticcheck -ignore "$(STATICCHECK_IGNORE)" -checks "SA*" $(pkgs)
 endif
 
 .PHONY: common-unused
