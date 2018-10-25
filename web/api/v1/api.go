@@ -498,40 +498,51 @@ type DroppedTarget struct {
 
 // TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
-	ActiveTargets  map[string][]*Target        `json:"activeTargets"`
-	DroppedTargets map[string][]*DroppedTarget `json:"droppedTargets"`
+	ActiveTargets  []*Target        `json:"activeTargets"`
+	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
 }
 
 func (api *API) targets(r *http.Request) (interface{}, *apiError, func()) {
-	tActive := api.targetRetriever.TargetsActive()
-	tDropped := api.targetRetriever.TargetsDropped()
-	res := &TargetDiscovery{ActiveTargets: make(map[string][]*Target, len(tActive)), DroppedTargets: make(map[string][]*DroppedTarget, len(tDropped))}
-
-	for tset, targets := range tActive {
-		for _, target := range targets {
-			lastErrStr := ""
-			lastErr := target.LastError()
-			if lastErr != nil {
-				lastErrStr = lastErr.Error()
-			}
-
-			res.ActiveTargets[tset] = append(res.ActiveTargets[tset], &Target{
-				DiscoveredLabels: target.DiscoveredLabels().Map(),
-				Labels:           target.Labels().Map(),
-				ScrapeURL:        target.URL().String(),
-				LastError:        lastErrStr,
-				LastScrape:       target.LastScrape(),
-				Health:           target.Health(),
-			})
+	flatten := func(targets map[string][]*scrape.Target) []*scrape.Target {
+		var n int
+		keys := make([]string, 0, len(targets))
+		for k := range targets {
+			keys = append(keys, k)
+			n += len(targets[k])
 		}
+		sort.Strings(keys)
+		res := make([]*scrape.Target, 0, n)
+		for _, k := range keys {
+			res = append(res, targets[k]...)
+		}
+		return res
 	}
 
-	for tset, tt := range tDropped {
-		for _, t := range tt {
-			res.DroppedTargets[tset] = append(res.DroppedTargets[tset], &DroppedTarget{
-				DiscoveredLabels: t.DiscoveredLabels().Map(),
-			})
+	tActive := flatten(api.targetRetriever.TargetsActive())
+	tDropped := flatten(api.targetRetriever.TargetsDropped())
+	res := &TargetDiscovery{ActiveTargets: make([]*Target, 0, len(tActive)), DroppedTargets: make([]*DroppedTarget, 0, len(tDropped))}
+
+	for _, target := range tActive {
+		lastErrStr := ""
+		lastErr := target.LastError()
+		if lastErr != nil {
+			lastErrStr = lastErr.Error()
 		}
+
+		res.ActiveTargets = append(res.ActiveTargets, &Target{
+			DiscoveredLabels: target.DiscoveredLabels().Map(),
+			Labels:           target.Labels().Map(),
+			ScrapeURL:        target.URL().String(),
+			LastError:        lastErrStr,
+			LastScrape:       target.LastScrape(),
+			Health:           target.Health(),
+		})
+	}
+
+	for _, t := range tDropped {
+		res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
+			DiscoveredLabels: t.DiscoveredLabels().Map(),
+		})
 	}
 	return res, nil, nil
 }
