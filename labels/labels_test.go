@@ -16,6 +16,7 @@ package labels
 import (
 	"fmt"
 	"math/rand"
+	"path/filepath"
 	"sort"
 	"testing"
 
@@ -87,7 +88,7 @@ func TestCompareAndEquals(t *testing.T) {
 }
 
 func BenchmarkSliceSort(b *testing.B) {
-	lbls, err := ReadLabels("../testdata/20kseries.json", 20000)
+	lbls, err := ReadLabels(filepath.Join("..", "testdata", "20kseries.json"), 20000)
 	testutil.Ok(b, err)
 
 	for len(lbls) < 20e6 {

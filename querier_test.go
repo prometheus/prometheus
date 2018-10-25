@@ -19,6 +19,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 
@@ -1263,7 +1264,7 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 	} {
 		for _, j := range []int{1, 2, 4, 8, 16, 32} {
 			b.Run(fmt.Sprintf("series=%d,blocks=%d", k, j), func(b *testing.B) {
-				lbls, err := labels.ReadLabels("testdata/20kseries.json", k)
+				lbls, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), k)
 				testutil.Ok(b, err)
 
 				sort.Sort(labels.Slice(lbls))
