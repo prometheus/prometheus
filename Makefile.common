@@ -33,21 +33,22 @@ ifneq (,$(wildcard go.mod))
 	ifeq ($(shell $(GO) version | grep -E 'go1\.(10|[0-9])\.'),)
 		# Always use the local vendor/ directory to satisfy the dependencies.
 		GOOPTS      := $(GOOPTS) -mod=vendor
-		# Enable module support forcibly just in case the directory is inside GOPATH.
+		# Enable module support forcibly just in case the directory is inside GOPATH (and Travis CI).
 		GO111MODULE := on
 
 		unexport GOVENDOR
+		unexport STATICCHECK
 	else
 $(warning This repository requires Go >= 1.11 because of Go modules)
 $(warning Some recipes may not work as expected as the current Go runtime is '$(shell $(GO) version)')
 	endif
 else
-	# This repository isn't using Go modules (yet).
+# This repository isn't using Go modules (yet).
 	GOVENDOR    := $(FIRST_GOPATH)/bin/govendor
+	STATICCHECK := $(FIRST_GOPATH)/bin/staticcheck
 	GO111MODULE := auto
 endif
 PROMU        := $(FIRST_GOPATH)/bin/promu
-STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
 pkgs          = ./...
 
 PREFIX                  ?= $(shell pwd)
@@ -107,7 +108,11 @@ common-vet:
 .PHONY: common-staticcheck
 common-staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
-	GO111MODULE=$(GO111MODULE) $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
+ifdef STATICCHECK
+	GO111MODULE=off $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
+else
+	GO111MODULE=$(GO111MODULE) $(GO) run $(GOOPTS) honnef.co/go/tools/cmd/staticcheck -ignore "$(STATICCHECK_IGNORE)" -checks "SA*" $(pkgs)
+endif
 
 .PHONY: common-unused
 common-unused: $(GOVENDOR)
@@ -149,11 +154,11 @@ common-docker-tag-latest:
 promu:
 	GOOS= GOARCH= GO111MODULE=off $(GO) get -u github.com/prometheus/promu
 
+ifneq (,$(wildcard go.mod))
 .PHONY: $(STATICCHECK)
 $(STATICCHECK):
 	GOOS= GOARCH= GO111MODULE=off $(GO) get -u honnef.co/go/tools/cmd/staticcheck
 
-ifdef GOVENDOR
 .PHONY: $(GOVENDOR)
 $(GOVENDOR):
 	GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor

@@ -3,6 +3,7 @@ module github.com/prometheus/prometheus
 require (
 	github.com/Azure/azure-sdk-for-go v0.0.0-20161028183111-bd73d950fa44
 	github.com/Azure/go-autorest v10.8.1+incompatible
+	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/OneOfOne/xxhash v1.2.2 // indirect
 	github.com/StackExchange/wmi v0.0.0-20180725035823-b12b22c5341f // indirect
 	github.com/VividCortex/ewma v1.1.1 // indirect
@@ -142,6 +143,7 @@ require (
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/vmihailenco/msgpack.v2 v2.9.1 // indirect
 	gopkg.in/yaml.v2 v2.2.0
+	honnef.co/go/tools v0.0.0-20180910201051-f1b53a58b022
 	k8s.io/api v0.0.0-20180628040859-072894a440bd
 	k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
 	k8s.io/client-go v8.0.0+incompatible
