@@ -84,7 +84,6 @@ github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4 h1:6UVLWz0fIIrv0
 github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4/go.mod h1:cIg4eruTrX1D+g88fzRXU5OdNfaM+9IcxsU14FzY7Hc=
 github.com/golang/protobuf v0.0.0-20180622174009-9eb2c01ac278 h1:K8gwDJfG+B1LjkmxrSw1L6P6dQ089va1xLQSz7JTNps=
 github.com/golang/protobuf v0.0.0-20180622174009-9eb2c01ac278/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
-github.com/golang/protobuf v1.2.0 h1:P3YflyNX/ehuJFLhxviNdFxQPkGK5cDcApsge1SqnvM=
 github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec h1:ZaSUjYC8aWT/om43c8YVz0SqjT8ABtqw7REbZGsCroE=
 github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec/go.mod h1:/XxbfmMg8lxefKM7IXC3fBNl/7bRcc72aCRzEWrmP2Q=
 github.com/google/btree v0.0.0-20180124185431-e89373fe6b4a h1:ZJu5NB1Bk5ms4vw0Xu4i+jD32SE9jQXyfnOvwhHqlT0=
@@ -296,7 +295,6 @@ gopkg.in/yaml.v2 v2.2.0 h1:ucE2Go3MGv/WipgucyA7X3+4pRLSbl5sd8WaEs60obQ=
 gopkg.in/yaml.v2 v2.2.0/go.mod h1:hI93XBmqTisBFMUTm0b8Fm+jr3Dg1NNxqwp+5A1VGuI=
 honnef.co/go/tools v0.0.0-20180910201051-f1b53a58b022 h1:6BZ1uHan+VqtcF3xb+hOvKSWhvQy/nk+ZRtQJJLBWIM=
 honnef.co/go/tools v0.0.0-20180910201051-f1b53a58b022/go.mod h1:rf3lG4BRIbNafJWhAfAdb/ePZxsR/4RtNHQocxwk9r4=
-honnef.co/go/tools v0.0.0-20180920025451-e3ad64cb4ed3 h1:LyX67rVB0kBUFoROrQfzKwdrYLH1cRzHibxdJW85J1c=
 k8s.io/api v0.0.0-20180628040859-072894a440bd h1:HzgYeLDS1jLxw8DGr68KJh9cdQ5iZJizG0HZWstIhfQ=
 k8s.io/api v0.0.0-20180628040859-072894a440bd/go.mod h1:iuAfoD4hCxJ8Onx9kaTIt30j7jUFS00AXQi6QMi99vA=
 k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d h1:MZjlsu9igBoVPZkXpIGoxI6EonqNsXXZU7hhvfQLkd4=
