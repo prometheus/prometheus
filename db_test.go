@@ -242,7 +242,7 @@ Outer:
 		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
 		testutil.Ok(t, err)
 
-		expSamples := make([]sample, 0, len(c.remaint))
+		expSamples := make([]Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
 			expSamples = append(expSamples, sample{ts, smpls[ts]})
 		}
@@ -469,7 +469,7 @@ Outer:
 		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
 		testutil.Ok(t, err)
 
-		expSamples := make([]sample, 0, len(c.remaint))
+		expSamples := make([]Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
 			expSamples = append(expSamples, sample{ts, smpls[ts]})
 		}
@@ -748,7 +748,7 @@ func TestTombstoneClean(t *testing.T) {
 		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
 		testutil.Ok(t, err)
 
-		expSamples := make([]sample, 0, len(c.remaint))
+		expSamples := make([]Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
 			expSamples = append(expSamples, sample{ts, smpls[ts]})
 		}

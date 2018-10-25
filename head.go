@@ -1312,6 +1312,14 @@ type sample struct {
 	v float64
 }
 
+func (s sample) T() int64 {
+	return s.t
+}
+
+func (s sample) V() float64 {
+	return s.v
+}
+
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
