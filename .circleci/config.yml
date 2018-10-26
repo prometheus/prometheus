@@ -16,7 +16,7 @@ jobs:
     steps:
     - checkout
     - run: make promu
-    - run: make check_license staticcheck style unused build
+    - run: make check_license style unused staticcheck build
     - run: git diff --exit-code
     - store_artifacts:
         path: prometheus

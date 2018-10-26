@@ -45,7 +45,6 @@ $(warning Some recipes may not work as expected as the current Go runtime is '$(
 else
 # This repository isn't using Go modules (yet).
 	GOVENDOR    := $(FIRST_GOPATH)/bin/govendor
-	STATICCHECK := $(FIRST_GOPATH)/bin/staticcheck
 	GO111MODULE := auto
 endif
 PROMU        := $(FIRST_GOPATH)/bin/promu
@@ -108,16 +107,15 @@ common-vet:
 .PHONY: common-staticcheck
 common-staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
-ifdef STATICCHECK
-	GO111MODULE=off $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
+ifeq (,$(wildcard go.mod))
+	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 else
-	GO111MODULE=$(GO111MODULE) $(GO) install -v $(GOOPTS) honnef.co/go/tools/cmd/staticcheck
-	$(FIRST_GOPATH)/bin/staticcheck -ignore "$(STATICCHECK_IGNORE)" -checks "SA*" $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) run $(GOOPTS) honnef.co/go/tools/cmd/staticcheck -ignore "$(STATICCHECK_IGNORE)" -checks "SA*" $(pkgs)
 endif
 
 .PHONY: common-unused
 common-unused: $(GOVENDOR)
-ifdef GOVENDOR
+ifeq (,$(wildcard go.mod))
 	@echo ">> running check for unused packages"
 	@$(GOVENDOR) list +unused | grep . && exit 1 || echo 'No unused packages'
 else
@@ -155,7 +153,7 @@ common-docker-tag-latest:
 promu:
 	GOOS= GOARCH= GO111MODULE=off $(GO) get -u github.com/prometheus/promu
 
-ifneq (,$(wildcard go.mod))
+ifeq (,$(wildcard go.mod))
 .PHONY: $(STATICCHECK)
 $(STATICCHECK):
 	GOOS= GOARCH= GO111MODULE=off $(GO) get -u honnef.co/go/tools/cmd/staticcheck
