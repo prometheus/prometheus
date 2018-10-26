@@ -110,6 +110,38 @@
                       <div class="legend"></div>
                     </div>
                     <div role="tabpanel" class="tab-pane active console reload" id="console{{id}}">
+                      <div class="clearfix">
+                        <!-- Extracted to force grouped inputs. -->
+                        <div class="prometheus_input_group pull-left">
+
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="dec_moment"
+                              title="Rewind the moment.">
+                            <i class="glyphicon glyphicon-backward"></i>
+                          </button>
+
+                          <input
+                              class="pull-left date_input input"
+                              id="moment{{id}}"
+                              title="Moment of console (UTC)"
+                              placeholder="Moment"
+                              data-format="yyyy-MM-dd"
+                              type="text"
+                              name="moment_input"
+                              size="16"
+                              value="{{moment}}">
+
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="inc_moment"
+                              title="Advance the moment.">
+                            <i class="glyphicon glyphicon-forward"></i>
+                          </button>
+                        </div>
+                      </div>
                       <table class="table table-condensed table-hover console_table">
                         <thead>
                           <th>Element</th>

@@ -135,6 +135,26 @@ Prometheus.Graph.prototype.initialize = function() {
     return self.stacked.val() === '1';
   };
 
+  self.moment = graphWrapper.find("input[name=moment_input]");
+  self.moment.datetimepicker({
+    locale: 'en',
+    format: 'YYYY-MM-DD HH:mm:ss',
+    toolbarPlacement: 'bottom',
+    sideBySide: true,
+    showTodayButton: true,
+    showClear: true,
+    showClose: true,
+    timeZone: 'UTC',
+  });
+  if (self.options.timestamp) {
+    var date = new Date(self.options.timestamp*1000)
+    self.moment.data('DateTimePicker').date(date);
+  } else if (self.options.moment_input) {
+    self.moment.data('DateTimePicker').date(self.options.moment_input);
+  } 
+  self.moment.on("dp.change", function() { self.submitQuery(); });
+
+
   var styleStackBtn = function() {
     var icon = self.stackedBtn.find('.glyphicon');
     if (self.isStacked()) {
@@ -174,6 +194,9 @@ Prometheus.Graph.prototype.initialize = function() {
 
   self.queryForm.find("button[name=inc_end]").click(function() { self.increaseEnd(); });
   self.queryForm.find("button[name=dec_end]").click(function() { self.decreaseEnd(); });
+
+  self.queryForm.find("button[name=inc_moment]").click(function() { self.increaseMoment(); });
+  self.queryForm.find("button[name=dec_moment]").click(function() { self.decreaseMoment(); });
 
   self.insertMetric.change(function() {
     self.expr.selection("replace", {text: self.insertMetric.val(), mode: "before"});
@@ -307,7 +330,8 @@ Prometheus.Graph.prototype.getOptions = function() {
     "range_input",
     "end_input",
     "step_input",
-    "stacked"
+    "stacked",
+    "moment_input"
   ];
 
   self.queryForm.find("input").each(function(index, element) {
@@ -399,6 +423,42 @@ Prometheus.Graph.prototype.decreaseEnd = function() {
   self.submitQuery();
 };
 
+Prometheus.Graph.prototype.getMoment = function() {
+  var self = this;
+  if (!self.moment || !self.moment.val()) {
+    return moment();
+  }
+  return self.moment.data('DateTimePicker').date();
+};
+
+Prometheus.Graph.prototype.getOrSetMoment = function() {
+  var self = this;
+  var date = self.getMoment();
+  self.setMoment(date);
+  return date;
+};
+
+Prometheus.Graph.prototype.setMoment = function(date) {
+  var self = this;
+  self.moment.data('DateTimePicker').date(date);
+};
+
+Prometheus.Graph.prototype.increaseMoment = function() {
+  var self = this;
+  var newDate = moment(self.getOrSetMoment());
+  newDate.add(10, 'seconds');
+  self.setMoment(newDate);
+  self.submitQuery();
+};
+
+Prometheus.Graph.prototype.decreaseMoment = function() {
+  var self = this;
+  var newDate = moment(self.getOrSetMoment());
+  newDate.subtract(10, 'seconds');
+  self.setMoment(newDate);
+  self.submitQuery();
+};
+
 Prometheus.Graph.prototype.submitQuery = function() {
   var self = this;
   self.clearError();
@@ -413,6 +473,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
   var rangeSeconds = self.parseDuration(self.rangeInput.val());
   var resolution = parseInt(self.queryForm.find("input[name=step_input]").val()) || Math.max(Math.floor(rangeSeconds / 250), 1);
   var endDate = self.getEndDate() / 1000;
+  var moment = self.getMoment() / 1000;
 
   if (self.queryXhr) {
     self.queryXhr.abort();
@@ -429,7 +490,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
     url = PATH_PREFIX + "/api/v1/query_range";
     success = function(json, textStatus) { self.handleGraphResponse(json, textStatus); };
   } else {
-    params.time = startTime / 1000;
+    params.time = moment;
     url = PATH_PREFIX + "/api/v1/query";
     success = function(json, textStatus) { self.handleConsoleResponse(json, textStatus); };
   }
@@ -773,6 +834,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     self.showError("Unsupported value type!");
     break;
   }
+  self.handleChange();
 };
 
 Prometheus.Graph.prototype.remove = function() {
