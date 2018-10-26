@@ -1,3 +1,7 @@
+## 2.5.0-rc.1 / 2018-10-29
+
+* [BUGFIX] Fix accidental breaking change in targets API exposition format.
+
 ## 2.5.0-rc.0 / 2018-10-24
 
 * [CHANGE] Marathon SD: Various changes to adapt to Marathon 1.5+. #4499
