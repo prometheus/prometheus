@@ -28,4 +28,4 @@ DOCKER_IMAGE_NAME       ?= prometheus
 .PHONY: assets
 assets:
 	@echo ">> writing assets"
-	cd $(PREFIX)/web/ui && go generate
+	cd $(PREFIX)/web/ui && $(GO) generate $(GOOPTS)
