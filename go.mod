@@ -143,6 +143,8 @@ require (
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/vmihailenco/msgpack.v2 v2.9.1 // indirect
 	gopkg.in/yaml.v2 v2.2.0
+	// honnef.co/go/tools is pinned to the next branch which supports Go modules.
+	// TODO: switch back to master once it is up-to-date.
 	honnef.co/go/tools v0.0.0-20180910201051-f1b53a58b022
 	k8s.io/api v0.0.0-20180628040859-072894a440bd
 	k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
