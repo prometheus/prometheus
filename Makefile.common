@@ -45,7 +45,9 @@ $(warning Some recipes may not work as expected as the current Go runtime is '$(
 else
 # This repository isn't using Go modules (yet).
 	GOVENDOR    := $(FIRST_GOPATH)/bin/govendor
-	GO111MODULE := auto
+	STATICCHECK := $(FIRST_GOPATH)/bin/staticcheck
+
+	unexport GO111MODULE
 endif
 PROMU        := $(FIRST_GOPATH)/bin/promu
 pkgs          = ./...
@@ -156,7 +158,7 @@ promu:
 ifeq (,$(wildcard go.mod))
 .PHONY: $(STATICCHECK)
 $(STATICCHECK):
-	GOOS= GOARCH= GO111MODULE=off $(GO) get -u honnef.co/go/tools/cmd/staticcheck
+	GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck
 
 .PHONY: $(GOVENDOR)
 $(GOVENDOR):
