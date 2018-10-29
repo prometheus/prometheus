@@ -30,17 +30,19 @@ GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 GOOPTS       ?=
 ifneq (,$(wildcard go.mod))
-	ifeq ($(shell $(GO) version | grep -E 'go1\.(10|[0-9])\.'),)
-		# Always use the local vendor/ directory to satisfy the dependencies.
-		GOOPTS      := $(GOOPTS) -mod=vendor
-		# Enable module support forcibly just in case the directory is inside GOPATH (and Travis CI).
-		GO111MODULE := on
+ifeq ($(shell $(GO) version | grep -E 'go1\.(10|[0-9])\.'),)
+ifneq (,$(wildcard vendor))
+	# Always use the local vendor/ directory to satisfy the dependencies.
+	GOOPTS      := $(GOOPTS) -mod=vendor
+endif
+	# Enable module support forcibly just in case the directory is inside GOPATH (and Travis CI).
+	GO111MODULE := on
 
-		unexport GOVENDOR
-	else
+	unexport GOVENDOR
+else
 $(warning This repository requires Go >= 1.11 because of Go modules)
 $(warning Some recipes may not work as expected as the current Go runtime is '$(shell $(GO) version)')
-	endif
+endif
 else
 # This repository isn't using Go modules (yet).
 	GOVENDOR    := $(FIRST_GOPATH)/bin/govendor
@@ -123,9 +125,11 @@ else
 	@echo ">> running check for unused/missing packages in go.mod"
 	GO111MODULE=$(GO111MODULE) $(GO) mod tidy
 	@git diff --exit-code -- go.sum go.mod
+ifneq (,$(wildcard vendor))
 	@echo ">> running check for unused packages in vendor/"
 	GO111MODULE=$(GO111MODULE) $(GO) mod vendor
 	@git diff --exit-code -- go.sum go.mod vendor/
+endif
 endif
 
 .PHONY: common-build
