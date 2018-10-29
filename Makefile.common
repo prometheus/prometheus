@@ -114,10 +114,10 @@ common-vet:
 .PHONY: common-staticcheck
 common-staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
-ifndef GO111MODULE
-	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
+ifdef GO111MODULE
+	GO111MODULE=$(GO111MODULE) $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" -checks "SA*" $(pkgs)
 else
-	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" -checks "SA*" $(pkgs)
+	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 endif
 
 .PHONY: common-unused
