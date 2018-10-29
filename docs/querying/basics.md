@@ -144,6 +144,27 @@ a `job` label set to `prometheus`:
 
     http_requests_total{job="prometheus"}[5m]
 
+Here a diagram showing a translation from instant to range vector:
+
+```
+@t-210s     @t-180s     @t-150s     @t-120s     @t-90s      @t-60s      @t-30s       @t
+  o-----------o-----------o-----------o-----------<-----------o-----------o----------->
+ [1]         [6]         [4]         [7]         [8]         [5]         [6]         [3]      vector
+  o-----------o-----------o-----------o-----------<-----------o-----------o----------->
+                                                [7,8]       [8,5]       [5,6]       [6,3]     vector[30s]
+  o-----------o-----------o-----------o-----------<-----------o-----------o----------->
+                                               [4,7,8]     [7,8,5]     [8,5,6]     [5,6,3]    vector[60s]
+  o-----------o-----------o-----------o-----------<-----------o-----------o----------->
+                                              [6,4,7,8]   [4,7,8,5]   [7,8,5,6]   [8,5,6,3]   vector[90s]
+  o-----------o-----------o-----------o-----------<-----------o-----------o----------->
+                                             [1,6,4,7,8] [6,4,7,8,5] [4,7,8,5,6] [7,8,5,6,3]  vector[120s]
+```
+
+In the example above the query timeframe is start=@t-90s / end=@t but in order
+to compute the first value of range vectors prometheus uses historical data
+before the start of the query, therefore, to compute `vector[120s]` from @t-90s
+we use data of `vector` from @t-210s.
+
 ### Offset modifier
 
 The `offset` modifier allows changing the time offset for individual
