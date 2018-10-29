@@ -874,8 +874,12 @@ tls_config:
 
 By default every app listed in Marathon will be scraped by Prometheus. If not all
 of your services provide Prometheus metrics, you can use a Marathon label and
-Prometheus relabeling to control which instances will actually be scraped. Also
-by default all apps will show up as a single job in Prometheus (the one specified
+Prometheus relabeling to control which instances will actually be scraped.
+See [the Prometheus marathon-sd configuration file](/documentation/examples/prometheus-marathon.yml)
+for a practical example on how to set up your Marathon app and your Prometheus
+configuration.
+
+By default, all apps will show up as a single job in Prometheus (the one specified
 in the configuration file), which can also be changed using relabeling.
 
 ### `<nerve_sd_config>`
