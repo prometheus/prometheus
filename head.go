@@ -1338,6 +1338,7 @@ type memSeries struct {
 	ref          uint64
 	lset         labels.Labels
 	chunks       []*memChunk
+	headChunk    *memChunk
 	chunkRange   int64
 	firstChunkID int
 
@@ -1371,6 +1372,7 @@ func (s *memSeries) cut(mint int64) *memChunk {
 		maxTime: math.MinInt64,
 	}
 	s.chunks = append(s.chunks, c)
+	s.headChunk = c
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
@@ -1439,6 +1441,11 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 	}
 	s.chunks = append(s.chunks[:0], s.chunks[k:]...)
 	s.firstChunkID += k
+	if len(s.chunks) == 0 {
+		s.headChunk = nil
+	} else {
+		s.headChunk = s.chunks[len(s.chunks)-1]
+	}
 
 	return k
 }
@@ -1521,10 +1528,7 @@ func (s *memSeries) iterator(id int) chunkenc.Iterator {
 }
 
 func (s *memSeries) head() *memChunk {
-	if len(s.chunks) == 0 {
-		return nil
-	}
-	return s.chunks[len(s.chunks)-1]
+	return s.headChunk
 }
 
 type memChunk struct {
