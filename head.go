@@ -242,6 +242,9 @@ func (h *Head) processWALSamples(
 ) (unknownRefs uint64) {
 	defer close(output)
 
+	// Mitigate lock contention in getByID.
+	refSeries := map[uint64]*memSeries{}
+
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
 	for samples := range input {
@@ -249,10 +252,14 @@ func (h *Head) processWALSamples(
 			if s.T < minValidTime || s.Ref%total != partition {
 				continue
 			}
-			ms := h.series.getByID(s.Ref)
+			ms := refSeries[s.Ref]
 			if ms == nil {
-				unknownRefs++
-				continue
+				ms = h.series.getByID(s.Ref)
+				if ms == nil {
+					unknownRefs++
+					continue
+				}
+				refSeries[s.Ref] = ms
 			}
 			_, chunkCreated := ms.append(s.T, s.V)
 			if chunkCreated {
