@@ -1,6 +1,10 @@
+## 2.5.0-rc.2 / 2018-10-31
+
+* [CHANGE] Group targets by scrape config instead of job name. #4806 #4526
+
 ## 2.5.0-rc.1 / 2018-10-29
 
-* [BUGFIX] Fix accidental breaking change in targets API exposition format.
+* [BUGFIX] Fix accidental breaking change in targets API exposition format. #4783
 
 ## 2.5.0-rc.0 / 2018-10-24
 
