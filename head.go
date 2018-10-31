@@ -336,6 +336,7 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 		series  []RefSeries
 		samples []RefSample
 		tstones []Stone
+		err     error
 	)
 	for r.Next() {
 		series, samples, tstones = series[:0], samples[:0], tstones[:0]
@@ -343,7 +344,7 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 
 		switch dec.Type(rec) {
 		case RecordSeries:
-			series, err := dec.Series(rec, series)
+			series, err = dec.Series(rec, series)
 			if err != nil {
 				return errors.Wrap(err, "decode series")
 			}
@@ -355,7 +356,8 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 				}
 			}
 		case RecordSamples:
-			samples, err := dec.Samples(rec, samples)
+			samples, err = dec.Samples(rec, samples)
+			s := samples
 			if err != nil {
 				return errors.Wrap(err, "decode samples")
 			}
@@ -376,8 +378,9 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 				firstInput <- append(buf[:0], samples[:n]...)
 				samples = samples[n:]
 			}
+			samples = s // Keep whole slice for reuse.
 		case RecordTombstones:
-			tstones, err := dec.Tombstones(rec, tstones)
+			tstones, err = dec.Tombstones(rec, tstones)
 			if err != nil {
 				return errors.Wrap(err, "decode tombstones")
 			}
