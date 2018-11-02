@@ -29,6 +29,8 @@ import (
 	"time"
 	"unsafe"
 
+	html_template "html/template"
+
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/go-kit/kit/log"
@@ -1181,7 +1183,7 @@ type queryDataWithExpr struct {
 const alertTestingSampleInterval = 15 * time.Second
 
 func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) {
-	result := newAlertsTestResult() // Final result variables.
+	result := newAlertsTestResult()
 
 	mint, maxt, ruleString, apiErr := parseAlertsTestingBody(r)
 	if apiErr != nil {
@@ -1256,18 +1258,6 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 			}
 			matrix = downsampleMatrix(matrix, 256, false)
 
-			htmlSnippet := string(alertingRule.HTMLSnippet(""))
-			// Removing the hyperlinks from the HTML snippet.
-			var ar rulefmt.Rule
-			if err = yaml.Unmarshal([]byte(htmlSnippet), &ar); err != nil {
-				return nil, &apiError{errorInternal, err}, nil
-			}
-			ar.Alert, ar.Expr = rl.Alert, rl.Expr
-			bytes, err := yaml.Marshal(ar)
-			if err != nil {
-				return nil, &apiError{errorInternal, err}, nil
-			}
-
 			// Querying the expression for its graph.
 			_, res, apiErr := rangeQuery(api, r.Context(), rl.Expr, mint, maxt, alertTestingSampleInterval)
 			if apiErr != nil {
@@ -1285,7 +1275,7 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 			result.RuleResults = append(result.RuleResults, ruleResult{
 				Name:        rl.Alert,
 				Alerts:      activeAlerts,
-				HTMLSnippet: string(bytes),
+				HTMLSnippet: htmlSnippetWithoutLinks(alertingRule),
 				MatrixResult: queryData{
 					Result:     matrix,
 					ResultType: matrix.Type(),
@@ -1348,32 +1338,59 @@ func min(a, b int) int {
 func downsampleMatrix(matrix promql.Matrix, maxSamples int, avg bool) promql.Matrix {
 	var newMatrix promql.Matrix
 	for _, series := range matrix {
-		if len(series.Points) > maxSamples {
-			// Limiting till 'maxSamples' or 'maxSamples+1' samples.
-			step := len(series.Points) / maxSamples
-			var filtered []promql.Point
-			if avg {
-				for i := 0; i < maxSamples; i++ {
-					var v float64
-					for j := i * step; j < min((i+1)*step, len(series.Points)); j++ {
-						v += series.Points[j].V
-					}
-					filtered = append(filtered, promql.Point{T: series.Points[i*step].T, V: v})
-				}
-			} else {
-				for i := 0; i < maxSamples; i++ {
-					filtered = append(filtered, series.Points[i*step])
-				}
-			}
-			// Adding the last sample if not added. We would want the
-			// first and the last sample after downsampling for proper
-			// limits in the graph.
-			if (maxSamples-1)*step < len(series.Points)-1 {
-				filtered = append(filtered, series.Points[len(series.Points)-1])
-			}
-			series.Points = filtered
+		if len(series.Points) <= maxSamples {
+			newMatrix = append(newMatrix, series)
+			continue
 		}
+		// Limiting till 'maxSamples' or 'maxSamples+1' samples.
+		step := len(series.Points) / maxSamples
+		var filtered []promql.Point
+		if avg {
+			for i := 0; i < maxSamples; i++ {
+				var v float64
+				for j := i * step; j < min((i+1)*step, len(series.Points)); j++ {
+					v += series.Points[j].V
+				}
+				filtered = append(filtered, promql.Point{T: series.Points[i*step].T, V: v})
+			}
+		} else {
+			for i := 0; i < maxSamples; i++ {
+				filtered = append(filtered, series.Points[i*step])
+			}
+		}
+		// Adding the last sample if not added. We would want the
+		// first and the last sample after downsampling for proper
+		// limits in the graph.
+		if (maxSamples-1)*step < len(series.Points)-1 {
+			filtered = append(filtered, series.Points[len(series.Points)-1])
+		}
+		series.Points = filtered
 		newMatrix = append(newMatrix, series)
 	}
 	return newMatrix
+}
+
+// htmlSnippetWithoutLinks returns the HTML Snippet similar to rules.AlertingRule.HTMLSnippet(..),
+// but without the hyperlinks.
+func htmlSnippetWithoutLinks(r *rules.AlertingRule) string {
+	labels := make(map[string]string, len(r.Labels()))
+	for _, l := range r.Labels() {
+		labels[l.Name] = html_template.HTMLEscapeString(l.Value)
+	}
+	annotations := make(map[string]string, len(r.Annotations()))
+	for _, l := range r.Annotations() {
+		annotations[l.Name] = html_template.HTMLEscapeString(l.Value)
+	}
+	ar := rulefmt.Rule{
+		Alert:       r.Name(),
+		Expr:        r.Query().String(),
+		For:         model.Duration(r.Duration()),
+		Labels:      labels,
+		Annotations: annotations,
+	}
+	byt, err := yaml.Marshal(ar)
+	if err != nil {
+		return fmt.Sprintf("error marshalling alerting rule: %q", html_template.HTMLEscapeString(err.Error()))
+	}
+	return string(byt)
 }
