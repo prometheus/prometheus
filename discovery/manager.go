@@ -314,11 +314,13 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 }
 
 func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
+	var added bool
 	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
 		t := reflect.TypeOf(cfg).String()
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
 				p.subs = append(p.subs, setName)
+				added = true
 				return
 			}
 		}
@@ -337,6 +339,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 			subs:   []string{setName},
 		}
 		m.providers = append(m.providers, &provider)
+		added = true
 	}
 
 	for _, c := range cfg.DNSSDConfigs {
@@ -401,7 +404,13 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	}
 	if len(cfg.StaticConfigs) > 0 {
 		add(setName, func() (Discoverer, error) {
-			return &StaticProvider{cfg.StaticConfigs}, nil
+			return &StaticProvider{TargetGroups: cfg.StaticConfigs}, nil
+		})
+	}
+	if !added {
+		// Add an empty target group to force the refresh of the corresponding scrape pool.
+		add(setName, func() (Discoverer, error) {
+			return &StaticProvider{TargetGroups: []*targetgroup.Group{&targetgroup.Group{}}}, nil
 		})
 	}
 }
