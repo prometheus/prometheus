@@ -29,3 +29,4 @@ DOCKER_IMAGE_NAME       ?= prometheus
 assets:
 	@echo ">> writing assets"
 	cd $(PREFIX)/web/ui && go generate
+	gofmt -w $(PREFIX)/web/ui/assets_vfsdata.go
