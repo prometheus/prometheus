@@ -55,6 +55,16 @@ var (
 			CertFile:           "shouldnotexist.cert",
 		},
 	}
+	groupsconf = SDConfig{
+		Account:         "testAccount",
+		DNSSuffix:       "triton.example.com",
+		Endpoint:        "127.0.0.1",
+		Groups:          []string{"foo", "bar"},
+		Port:            443,
+		Version:         1,
+		RefreshInterval: 1,
+		TLSConfig:       config.TLSConfig{InsecureSkipVerify: true},
+	}
 )
 
 func TestTritonSDNew(t *testing.T) {
@@ -74,6 +84,20 @@ func TestTritonSDNewBadConfig(t *testing.T) {
 	td, err := New(nil, &badconf)
 	testutil.NotOk(t, err, "")
 	testutil.Assert(t, td == nil, "")
+}
+
+func TestTritonSDNewGroupsConfig(t *testing.T) {
+	td, err := New(nil, &groupsconf)
+	testutil.Ok(t, err)
+	testutil.Assert(t, td != nil, "")
+	testutil.Assert(t, td.client != nil, "")
+	testutil.Assert(t, td.interval != 0, "")
+	testutil.Assert(t, td.sdConfig != nil, "")
+	testutil.Equals(t, groupsconf.Account, td.sdConfig.Account)
+	testutil.Equals(t, groupsconf.DNSSuffix, td.sdConfig.DNSSuffix)
+	testutil.Equals(t, groupsconf.Endpoint, td.sdConfig.Endpoint)
+	testutil.Equals(t, groupsconf.Groups, td.sdConfig.Groups)
+	testutil.Equals(t, groupsconf.Port, td.sdConfig.Port)
 }
 
 func TestTritonSDRun(t *testing.T) {
@@ -112,6 +136,7 @@ func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 	var (
 		dstr = `{"containers":[
 		 	{
+                                "groups":["foo","bar","baz"],
 				"server_uuid":"44454c4c-5000-104d-8037-b7c04f5a5131",
 				"vm_alias":"server01",
 				"vm_brand":"lx",

@@ -118,13 +118,15 @@ type AlertingRule struct {
 	labels labels.Labels
 	// Non-identifying key/value pairs.
 	annotations labels.Labels
-	// Time in seconds taken to evaluate rule.
-	evaluationDuration time.Duration
 	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
 	// only after the restoration.
 	restored bool
 	// Protects the below.
 	mtx sync.Mutex
+	// Time in seconds taken to evaluate rule.
+	evaluationDuration time.Duration
+	// Timestamp of last evaluation of rule.
+	evaluationTimestamp time.Time
 	// The health of the alerting rule.
 	health RuleHealth
 	// The last error seen by the alerting rule.
@@ -256,6 +258,20 @@ func (r *AlertingRule) GetEvaluationDuration() time.Duration {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	return r.evaluationDuration
+}
+
+// SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule was last evaluated.
+func (r *AlertingRule) SetEvaluationTimestamp(ts time.Time) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	r.evaluationTimestamp = ts
+}
+
+// GetEvaluationTimestamp returns the time the evaluation took place.
+func (r *AlertingRule) GetEvaluationTimestamp() time.Time {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	return r.evaluationTimestamp
 }
 
 // SetRestored updates the restoration state of the alerting rule.

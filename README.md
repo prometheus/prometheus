@@ -27,7 +27,7 @@ Prometheus' main distinguishing features as compared to other monitoring systems
 
 ## Architecture overview
 
-![](https://cdn.rawgit.com/prometheus/prometheus/c34257d069c630685da35bcef084632ffd5d6209/documentation/images/architecture.svg)
+![](https://cdn.jsdelivr.net/gh/prometheus/prometheus@c34257d069c630685da35bcef084632ffd5d6209/documentation/images/architecture.svg)
 
 ## Install
 

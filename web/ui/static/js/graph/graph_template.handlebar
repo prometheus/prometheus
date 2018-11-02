@@ -2,7 +2,7 @@
           <form class="query_form form-inline">
             <div class="row">
               <div class="col-lg-10">
-                <textarea rows="1" placeholder="Expression (press Shift+Enter for newlines)" name="expr" id="expr{{id}}" class="form-control expression_input" data-provide="typeahead" autocomplete="off">{{expr}}</textarea>
+                <textarea rows="1" placeholder="Expression (press Shift+Enter for newlines)" name="expr" id="expr{{id}}" class="form-control expression_input" data-provide="typeahead" autocomplete="off" spellcheck="false">{{expr}}</textarea>
               </div>
               <div class="col-lg-2">
                 <div class="eval_stats pull-right"></div>
@@ -110,6 +110,38 @@
                       <div class="legend"></div>
                     </div>
                     <div role="tabpanel" class="tab-pane active console reload" id="console{{id}}">
+                      <div class="clearfix">
+                        <!-- Extracted to force grouped inputs. -->
+                        <div class="prometheus_input_group pull-left">
+
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="dec_moment"
+                              title="Rewind the moment.">
+                            <i class="glyphicon glyphicon-backward"></i>
+                          </button>
+
+                          <input
+                              class="pull-left date_input input"
+                              id="moment{{id}}"
+                              title="Moment of console (UTC)"
+                              placeholder="Moment"
+                              data-format="yyyy-MM-dd"
+                              type="text"
+                              name="moment_input"
+                              size="16"
+                              value="{{moment}}">
+
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="inc_moment"
+                              title="Advance the moment.">
+                            <i class="glyphicon glyphicon-forward"></i>
+                          </button>
+                        </div>
+                      </div>
                       <table class="table table-condensed table-hover console_table">
                         <thead>
                           <th>Element</th>

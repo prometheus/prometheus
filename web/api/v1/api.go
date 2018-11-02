@@ -36,6 +36,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -55,6 +56,11 @@ import (
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
+)
+
+const (
+	namespace = "prometheus"
+	subsystem = "api"
 )
 
 type status string
@@ -83,6 +89,13 @@ var corsHeaders = map[string]string{
 	"Access-Control-Allow-Origin":   "*",
 	"Access-Control-Expose-Headers": "Date",
 }
+
+var remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "remote_read_queries",
+	Help:      "The current number of remote read queries being executed or waiting.",
+})
 
 type apiError struct {
 	typ errorType
@@ -143,6 +156,11 @@ type API struct {
 	logger                log.Logger
 	remoteReadSampleLimit int
 	remoteReadGate        *gate.Gate
+}
+
+func init() {
+	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
+	prometheus.MustRegister(remoteReadQueries)
 }
 
 // NewAPI returns an initialized API type.
@@ -497,40 +515,51 @@ type DroppedTarget struct {
 
 // TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
-	ActiveTargets  map[string][]*Target        `json:"activeTargets"`
-	DroppedTargets map[string][]*DroppedTarget `json:"droppedTargets"`
+	ActiveTargets  []*Target        `json:"activeTargets"`
+	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
 }
 
 func (api *API) targets(r *http.Request) (interface{}, *apiError, func()) {
-	tActive := api.targetRetriever.TargetsActive()
-	tDropped := api.targetRetriever.TargetsDropped()
-	res := &TargetDiscovery{ActiveTargets: make(map[string][]*Target, len(tActive)), DroppedTargets: make(map[string][]*DroppedTarget, len(tDropped))}
-
-	for tset, targets := range tActive {
-		for _, target := range targets {
-			lastErrStr := ""
-			lastErr := target.LastError()
-			if lastErr != nil {
-				lastErrStr = lastErr.Error()
-			}
-
-			res.ActiveTargets[tset] = append(res.ActiveTargets[tset], &Target{
-				DiscoveredLabels: target.DiscoveredLabels().Map(),
-				Labels:           target.Labels().Map(),
-				ScrapeURL:        target.URL().String(),
-				LastError:        lastErrStr,
-				LastScrape:       target.LastScrape(),
-				Health:           target.Health(),
-			})
+	flatten := func(targets map[string][]*scrape.Target) []*scrape.Target {
+		var n int
+		keys := make([]string, 0, len(targets))
+		for k := range targets {
+			keys = append(keys, k)
+			n += len(targets[k])
 		}
+		sort.Strings(keys)
+		res := make([]*scrape.Target, 0, n)
+		for _, k := range keys {
+			res = append(res, targets[k]...)
+		}
+		return res
 	}
 
-	for tset, tt := range tDropped {
-		for _, t := range tt {
-			res.DroppedTargets[tset] = append(res.DroppedTargets[tset], &DroppedTarget{
-				DiscoveredLabels: t.DiscoveredLabels().Map(),
-			})
+	tActive := flatten(api.targetRetriever.TargetsActive())
+	tDropped := flatten(api.targetRetriever.TargetsDropped())
+	res := &TargetDiscovery{ActiveTargets: make([]*Target, 0, len(tActive)), DroppedTargets: make([]*DroppedTarget, 0, len(tDropped))}
+
+	for _, target := range tActive {
+		lastErrStr := ""
+		lastErr := target.LastError()
+		if lastErr != nil {
+			lastErrStr = lastErr.Error()
 		}
+
+		res.ActiveTargets = append(res.ActiveTargets, &Target{
+			DiscoveredLabels: target.DiscoveredLabels().Map(),
+			Labels:           target.Labels().Map(),
+			ScrapeURL:        target.URL().String(),
+			LastError:        lastErrStr,
+			LastScrape:       target.LastScrape(),
+			Health:           target.Health(),
+		})
+	}
+
+	for _, t := range tDropped {
+		res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
+			DiscoveredLabels: t.DiscoveredLabels().Map(),
+		})
 	}
 	return res, nil, nil
 }
@@ -572,6 +601,7 @@ Outer:
 						Metric: md.Metric,
 						Type:   md.Type,
 						Help:   md.Help,
+						Unit:   md.Unit,
 					})
 				}
 				continue
@@ -582,6 +612,7 @@ Outer:
 					Target: t.Labels(),
 					Type:   md.Type,
 					Help:   md.Help,
+					Unit:   md.Unit,
 				})
 			}
 		}
@@ -597,6 +628,7 @@ type metricMetadata struct {
 	Metric string               `json:"metric,omitempty"`
 	Type   textparse.MetricType `json:"type"`
 	Help   string               `json:"help"`
+	Unit   string               `json:"unit"`
 }
 
 // AlertmanagerDiscovery has all the active Alertmanagers.
@@ -779,7 +811,10 @@ func (api *API) serveFlags(r *http.Request) (interface{}, *apiError, func()) {
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	api.remoteReadGate.Start(r.Context())
+	remoteReadQueries.Inc()
+
 	defer api.remoteReadGate.Done()
+	defer remoteReadQueries.Dec()
 
 	req, err := remote.DecodeReadRequest(r)
 	if err != nil {
@@ -922,9 +957,15 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError, func()) {
 	if !api.enableAdmin {
 		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil
 	}
-	skipHead, err := strconv.ParseBool(r.FormValue("skip_head"))
-	if err != nil {
-		return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+	var (
+		skipHead bool
+		err      error
+	)
+	if r.FormValue("skip_head") != "" {
+		skipHead, err = strconv.ParseBool(r.FormValue("skip_head"))
+		if err != nil {
+			return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+		}
 	}
 
 	db := api.db()
@@ -1098,10 +1139,6 @@ func parseDuration(s string) (time.Duration, error) {
 		return time.Duration(d), nil
 	}
 	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
-}
-
-func init() {
-	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
 }
 
 func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {

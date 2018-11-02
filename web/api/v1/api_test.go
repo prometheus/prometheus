@@ -62,16 +62,29 @@ func (t testTargetRetriever) TargetsActive() map[string][]*scrape.Target {
 					model.SchemeLabel:      "http",
 					model.AddressLabel:     "example.com:8080",
 					model.MetricsPathLabel: "/metrics",
+					model.JobLabel:         "test",
 				}),
 				nil,
 				url.Values{},
+			),
+		},
+		"blackbox": {
+			scrape.NewTarget(
+				labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "localhost:9115",
+					model.MetricsPathLabel: "/probe",
+					model.JobLabel:         "blackbox",
+				}),
+				nil,
+				url.Values{"target": []string{"example.com"}},
 			),
 		},
 	}
 }
 func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return map[string][]*scrape.Target{
-		"test": {
+		"blackbox": {
 			scrape.NewTarget(
 				nil,
 				labels.FromMap(map[string]string{
@@ -152,7 +165,15 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	storage := testutil.NewStorage(m.testing)
 	defer storage.Close()
 
-	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	engineOpts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       100 * time.Second,
+	}
+
+	engine := promql.NewEngine(engineOpts)
 	opts := &rules.ManagerOptions{
 		QueryFunc:  rules.EngineQueryFunc(engine, storage),
 		Appendable: storage,
@@ -227,11 +248,11 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
-			now:            func() time.Time { return now },
-			config:         func() config.Config { return samplePrometheusCfg },
-			flagsMap:       sampleFlagMap,
-			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
-			rulesRetriever: algr,
+			now:                   func() time.Time { return now },
+			config:                func() config.Config { return samplePrometheusCfg },
+			flagsMap:              sampleFlagMap,
+			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever:        algr,
 		}
 
 		testEndpoints(t, api, true)
@@ -280,11 +301,11 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
-			now:            func() time.Time { return now },
-			config:         func() config.Config { return samplePrometheusCfg },
-			flagsMap:       sampleFlagMap,
-			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
-			rulesRetriever: algr,
+			now:                   func() time.Time { return now },
+			config:                func() config.Config { return samplePrometheusCfg },
+			flagsMap:              sampleFlagMap,
+			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever:        algr,
 		}
 
 		testEndpoints(t, api, false)
@@ -621,25 +642,31 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 		{
 			endpoint: api.targets,
 			response: &TargetDiscovery{
-				ActiveTargets: map[string][]*Target{
-					"test": {
-						{
-							DiscoveredLabels: map[string]string{},
-							Labels:           map[string]string{},
-							ScrapeURL:        "http://example.com:8080/metrics",
-							Health:           "unknown",
+				ActiveTargets: []*Target{
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels: map[string]string{
+							"job": "blackbox",
 						},
+						ScrapeURL: "http://localhost:9115/probe?target=example.com",
+						Health:    "unknown",
+					},
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels: map[string]string{
+							"job": "test",
+						},
+						ScrapeURL: "http://example.com:8080/metrics",
+						Health:    "unknown",
 					},
 				},
-				DroppedTargets: map[string][]*DroppedTarget{
-					"test": {
-						{
-							DiscoveredLabels: map[string]string{
-								"__address__":      "http://dropped.example.com:9115",
-								"__metrics_path__": "/probe",
-								"__scheme__":       "http",
-								"job":              "blackbox",
-							},
+				DroppedTargets: []*DroppedTarget{
+					{
+						DiscoveredLabels: map[string]string{
+							"__address__":      "http://dropped.example.com:9115",
+							"__metrics_path__": "/probe",
+							"__scheme__":       "http",
+							"job":              "blackbox",
 						},
 					},
 				},

@@ -40,7 +40,8 @@ type Collector interface {
 	// Collector may yield any Metric it sees fit in its Collect method.
 	//
 	// This method idempotently sends the same descriptors throughout the
-	// lifetime of the Collector.
+	// lifetime of the Collector. It may be called concurrently and
+	// therefore must be implemented in a concurrency safe way.
 	//
 	// If a Collector encounters an error while executing this method, it
 	// must send an invalid descriptor (created with NewInvalidDesc) to

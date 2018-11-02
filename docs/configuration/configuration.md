@@ -477,8 +477,9 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 #### `instance`
 
-The `instance` role discovers one target per Nova instance. The target
-address defaults to the first private IP address of the instance.
+The `instance` role discovers one target per network interface of Nova
+instance. The target address defaults to the private IP address of the network
+interface.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -488,6 +489,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
 * `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
 * `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
+* `__meta_openstack_address_pool`: the pool of the private IP.
 * `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
 
 See below for the configuration options for OpenStack discovery:
@@ -529,12 +531,20 @@ region: <string>
 [ project_name: <string> ]
 [ project_id: <string> ]
 
+# Whether the service discovery should list all instances for all projects.
+# It is only relevant for the 'instance' role and usually requires admin permissions.
+[ all_tenants: <boolean> | default: false ]
+
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
 
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 ### `<file_sd_config>`
@@ -864,8 +874,12 @@ tls_config:
 
 By default every app listed in Marathon will be scraped by Prometheus. If not all
 of your services provide Prometheus metrics, you can use a Marathon label and
-Prometheus relabeling to control which instances will actually be scraped. Also
-by default all apps will show up as a single job in Prometheus (the one specified
+Prometheus relabeling to control which instances will actually be scraped.
+See [the Prometheus marathon-sd configuration file](/documentation/examples/prometheus-marathon.yml)
+for a practical example on how to set up your Marathon app and your Prometheus
+configuration.
+
+By default, all apps will show up as a single job in Prometheus (the one specified
 in the configuration file), which can also be changed using relabeling.
 
 ### `<nerve_sd_config>`
@@ -929,10 +943,12 @@ discovery endpoints.
 
 The following meta labels are available on targets during relabeling:
 
-* `__meta_triton_machine_id`: the UUID of the target container
+* `__meta_triton_groups`: the list of groups belonging to the target joined by a comma separator
 * `__meta_triton_machine_alias`: the alias of the target container
+* `__meta_triton_machine_brand`: the brand of the target container
+* `__meta_triton_machine_id`: the UUID of the target container
 * `__meta_triton_machine_image`: the target containers image type
-* `__meta_triton_machine_server_id`: the server UUID for the target container
+* `__meta_triton_server_id`: the server UUID for the target container
 
 ```yaml
 # The information to access the Triton discovery API.
@@ -946,6 +962,11 @@ dns_suffix: <string>
 # The Triton discovery endpoint (e.g. 'cmon.us-east-3b.triton.zone'). This is
 # often the same value as dns_suffix.
 endpoint: <string>
+
+# A list of groups for which targets are retrieved. If omitted, all containers
+# available to the requesting account are scraped.
+groups: 
+  [ - <string> ... ]
 
 # The port to use for discovery and metric scraping.
 [ port: <int> | default = 9163 ]
@@ -1215,7 +1236,7 @@ tls_config:
 # Configures the queue used to write to remote storage.
 queue_config:
   # Number of samples to buffer per shard before we start dropping them.
-  [ capacity: <int> | default = 100000 ]
+  [ capacity: <int> | default = 10000 ]
   # Maximum number of shards, i.e. amount of concurrency.
   [ max_shards: <int> | default = 1000 ]
   # Maximum number of samples per send.
@@ -1223,7 +1244,7 @@ queue_config:
   # Maximum time a sample will wait in buffer.
   [ batch_send_deadline: <duration> | default = 5s ]
   # Maximum number of times to retry a batch on recoverable errors.
-  [ max_retries: <int> | default = 10 ]
+  [ max_retries: <int> | default = 3 ]
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]
   # Maximum retry delay.

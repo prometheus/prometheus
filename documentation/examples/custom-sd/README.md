@@ -9,7 +9,7 @@ This directory (`documentation/examples/custom-sd`) contains an example custom s
 as well as a file_sd adapter usage. `adapter-usage` contains the `Discoverer` implementation for a basic Consul
 service discovery mechanism. It simply queries Consul for all it's known services (except Consul itself), 
 and sends them along with all the other service data as labels as a TargetGroup.
-The `adapter` directory contains the adapter code you will want to important and pass your `Discoverer` 
+The `adapter` directory contains the adapter code you will want to import and pass your `Discoverer` 
 implementation to.
 
 # Usage

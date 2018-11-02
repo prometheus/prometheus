@@ -13,7 +13,7 @@
 ## Proposal
 **Use case. Why is this important?**
 
-*Nice to have' is not a good use case :)*
+*“Nice to have” is not a good use case. :)*
 
 ## Bug Report
 **What did you do?**

@@ -28,7 +28,14 @@ import (
 func BenchmarkRangeQuery(b *testing.B) {
 	storage := testutil.NewStorage(b)
 	defer storage.Close()
-	engine := NewEngine(nil, nil, 10, 100*time.Second)
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    50000000,
+		Timeout:       100 * time.Second,
+	}
+	engine := NewEngine(opts)
 
 	metrics := []labels.Labels{}
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))

@@ -160,6 +160,8 @@ type Rule interface {
 	Health() RuleHealth
 	SetEvaluationDuration(time.Duration)
 	GetEvaluationDuration() time.Duration
+	SetEvaluationTimestamp(time.Time)
+	GetEvaluationTimestamp() time.Time
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
 	HTMLSnippet(pathPrefix string) html_template.HTML
@@ -173,8 +175,9 @@ type Group struct {
 	rules                []Rule
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
 	opts                 *ManagerOptions
-	evaluationDuration   time.Duration
 	mtx                  sync.Mutex
+	evaluationDuration   time.Duration
+	evaluationTimestamp  time.Time
 
 	shouldRestore bool
 
@@ -232,6 +235,7 @@ func (g *Group) run(ctx context.Context) {
 
 		iterationDuration.Observe(timeSinceStart.Seconds())
 		g.SetEvaluationDuration(timeSinceStart)
+		g.SetEvaluationTimestamp(start)
 	}
 
 	// The assumption here is that since the ticker was started after having
@@ -311,6 +315,20 @@ func (g *Group) SetEvaluationDuration(dur time.Duration) {
 	g.evaluationDuration = dur
 }
 
+// SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule group was last evaluated.
+func (g *Group) SetEvaluationTimestamp(ts time.Time) {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	g.evaluationTimestamp = ts
+}
+
+// GetEvaluationTimestamp returns the time the last evaluation of the rule group took place.
+func (g *Group) GetEvaluationTimestamp() time.Time {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	return g.evaluationTimestamp
+}
+
 // evalTimestamp returns the immediately preceding consistently slotted evaluation time.
 func (g *Group) evalTimestamp() time.Time {
 	var (
@@ -377,6 +395,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				sp.Finish()
 				evalDuration.Observe(time.Since(t).Seconds())
 				rule.SetEvaluationDuration(time.Since(t))
+				rule.SetEvaluationTimestamp(t)
 			}(time.Now())
 
 			evalTotal.Inc()

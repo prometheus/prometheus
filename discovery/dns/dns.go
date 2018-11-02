@@ -181,6 +181,9 @@ func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*targe
 		target := model.LabelValue("")
 		switch addr := record.(type) {
 		case *dns.SRV:
+			// Remove the final dot from rooted DNS names to make them look more usual.
+			addr.Target = strings.TrimRight(addr.Target, ".")
+
 			target = hostPort(addr.Target, int(addr.Port))
 		case *dns.A:
 			target = hostPort(addr.A.String(), d.port)
