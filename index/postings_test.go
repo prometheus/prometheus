@@ -20,21 +20,22 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
 )
 
 func TestMemPostings_addFor(t *testing.T) {
 	p := NewMemPostings()
-	p.m[allPostingsKey] = []uint64{1, 2, 3, 4, 6, 7, 8}
+	p.m[allPostingsKey.Name] = map[string][]uint64{}
+	p.m[allPostingsKey.Name][allPostingsKey.Value] = []uint64{1, 2, 3, 4, 6, 7, 8}
 
 	p.addFor(5, allPostingsKey)
 
-	testutil.Equals(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey])
+	testutil.Equals(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey.Name][allPostingsKey.Value])
 }
 
 func TestMemPostings_ensureOrder(t *testing.T) {
 	p := NewUnorderedMemPostings()
+	p.m["a"] = map[string][]uint64{}
 
 	for i := 0; i < 100; i++ {
 		l := make([]uint64, 100)
@@ -43,17 +44,19 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		}
 		v := fmt.Sprintf("%d", i)
 
-		p.m[labels.Label{"a", v}] = l
+		p.m["a"][v] = l
 	}
 
 	p.EnsureOrder()
 
-	for _, l := range p.m {
-		ok := sort.SliceIsSorted(l, func(i, j int) bool {
-			return l[i] < l[j]
-		})
-		if !ok {
-			t.Fatalf("postings list %v is not sorted", l)
+	for _, e := range p.m {
+		for _, l := range e {
+			ok := sort.SliceIsSorted(l, func(i, j int) bool {
+				return l[i] < l[j]
+			})
+			if !ok {
+				t.Fatalf("postings list %v is not sorted", l)
+			}
 		}
 	}
 }
