@@ -544,7 +544,7 @@ type Reader struct {
 
 	// Cached hashmaps of section offsets.
 	labels   map[string]uint64
-	postings map[labels.Label]uint64
+	postings map[string]map[string]uint64
 	// Cache of read symbols. Strings that are returned when reading from the
 	// block are always backed by true strings held in here rather than
 	// strings that are backed by byte slices from the mmap'd index file. This
@@ -608,7 +608,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		c:        c,
 		symbols:  map[uint32]string{},
 		labels:   map[string]uint64{},
-		postings: map[labels.Label]uint64{},
+		postings: map[string]map[string]uint64{},
 		crc32:    newCRC32(),
 	}
 
@@ -653,11 +653,15 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "read label index table")
 	}
+	r.postings[""] = map[string]uint64{}
 	err = r.readOffsetTable(r.toc.postingsTable, func(key []string, off uint64) error {
 		if len(key) != 2 {
 			return errors.Errorf("unexpected key length %d", len(key))
 		}
-		r.postings[labels.Label{Name: symbols[key[0]], Value: symbols[key[1]]}] = off
+		if _, ok := r.postings[key[0]]; !ok {
+			r.postings[symbols[key[0]]] = map[string]uint64{}
+		}
+		r.postings[key[0]][symbols[key[1]]] = off
 		return nil
 	})
 	if err != nil {
@@ -684,14 +688,16 @@ type Range struct {
 func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
 	m := map[labels.Label]Range{}
 
-	for l, start := range r.postings {
-		d := r.decbufAt(int(start))
-		if d.err() != nil {
-			return nil, d.err()
-		}
-		m[l] = Range{
-			Start: int64(start) + 4,
-			End:   int64(start) + 4 + int64(d.len()),
+	for k, e := range r.postings {
+		for v, start := range e {
+			d := r.decbufAt(int(start))
+			if d.err() != nil {
+				return nil, d.err()
+			}
+			m[labels.Label{Name: k, Value: v}] = Range{
+				Start: int64(start) + 4,
+				End:   int64(start) + 4 + int64(d.len()),
+			}
 		}
 	}
 	return m, nil
@@ -934,10 +940,11 @@ func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) err
 
 // Postings returns a postings list for the given label pair.
 func (r *Reader) Postings(name, value string) (Postings, error) {
-	off, ok := r.postings[labels.Label{
-		Name:  name,
-		Value: value,
-	}]
+	e, ok := r.postings[name]
+	if !ok {
+		return EmptyPostings(), nil
+	}
+	off, ok := e[value]
 	if !ok {
 		return EmptyPostings(), nil
 	}
