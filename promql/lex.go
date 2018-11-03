@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2018 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -137,6 +137,7 @@ const (
 	itemRightBracket
 	itemComma
 	itemAssign
+	itemColon
 	itemSemicolon
 	itemString
 	itemNumber
@@ -245,6 +246,7 @@ var itemTypeStr = map[ItemType]string{
 	itemRightBracket: "]",
 	itemComma:        ",",
 	itemAssign:       "=",
+	itemColon:        ":",
 	itemSemicolon:    ";",
 	itemBlank:        "_",
 	itemTimes:        "x",
@@ -336,6 +338,7 @@ type lexer struct {
 	parenDepth  int  // Nesting depth of ( ) exprs.
 	braceOpen   bool // Whether a { is opened.
 	bracketOpen bool // Whether a [ is opened.
+	gotColon    bool // Whether we got a ':' after [ was opened.
 	stringOpen  rune // Quote rune of the string currently being read.
 
 	// seriesDesc is set when a series description for the testing
@@ -520,8 +523,15 @@ func lexStatements(l *lexer) stateFn {
 		l.stringOpen = r
 		return lexRawString
 	case isAlpha(r) || r == ':':
-		l.backup()
-		return lexKeywordOrIdentifier
+		if !l.bracketOpen {
+			l.backup()
+			return lexKeywordOrIdentifier
+		}
+		if l.gotColon {
+			return l.errorf("unexpected colon %q", r)
+		}
+		l.emit(itemColon)
+		l.gotColon = true
 	case r == '(':
 		l.emit(itemLeftParen)
 		l.parenDepth++
@@ -541,6 +551,7 @@ func lexStatements(l *lexer) stateFn {
 		if l.bracketOpen {
 			return l.errorf("unexpected left bracket %q", r)
 		}
+		l.gotColon = false
 		l.emit(itemLeftBracket)
 		l.bracketOpen = true
 		return lexDuration

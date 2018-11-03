@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2018 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -443,6 +443,120 @@ var tests = []struct {
 			{itemNumber, 11, `4`},
 		},
 		seriesDesc: true,
+	},
+	// Test subquery.
+	{
+		input: `test_name{on!~"bar"}[4m:4s]`,
+		expected: []item{
+			{itemIdentifier, 0, `test_name`},
+			{itemLeftBrace, 9, `{`},
+			{itemIdentifier, 10, `on`},
+			{itemNEQRegex, 12, `!~`},
+			{itemString, 14, `"bar"`},
+			{itemRightBrace, 19, `}`},
+			{itemLeftBracket, 20, `[`},
+			{itemDuration, 21, `4m`},
+			{itemColon, 23, `:`},
+			{itemDuration, 24, `4s`},
+			{itemRightBracket, 26, `]`},
+		},
+	},
+	{
+		input: `test:name{on!~"bar"}[4m:4s]`,
+		expected: []item{
+			{itemMetricIdentifier, 0, `test:name`},
+			{itemLeftBrace, 9, `{`},
+			{itemIdentifier, 10, `on`},
+			{itemNEQRegex, 12, `!~`},
+			{itemString, 14, `"bar"`},
+			{itemRightBrace, 19, `}`},
+			{itemLeftBracket, 20, `[`},
+			{itemDuration, 21, `4m`},
+			{itemColon, 23, `:`},
+			{itemDuration, 24, `4s`},
+			{itemRightBracket, 26, `]`},
+		},
+	}, {
+		input: `test:name{on!~"b:ar"}[4m:4s]`,
+		expected: []item{
+			{itemMetricIdentifier, 0, `test:name`},
+			{itemLeftBrace, 9, `{`},
+			{itemIdentifier, 10, `on`},
+			{itemNEQRegex, 12, `!~`},
+			{itemString, 14, `"b:ar"`},
+			{itemRightBrace, 20, `}`},
+			{itemLeftBracket, 21, `[`},
+			{itemDuration, 22, `4m`},
+			{itemColon, 24, `:`},
+			{itemDuration, 25, `4s`},
+			{itemRightBracket, 27, `]`},
+		},
+	}, {
+		input: `test:name{on!~"b:ar"}[4m:]`,
+		expected: []item{
+			{itemMetricIdentifier, 0, `test:name`},
+			{itemLeftBrace, 9, `{`},
+			{itemIdentifier, 10, `on`},
+			{itemNEQRegex, 12, `!~`},
+			{itemString, 14, `"b:ar"`},
+			{itemRightBrace, 20, `}`},
+			{itemLeftBracket, 21, `[`},
+			{itemDuration, 22, `4m`},
+			{itemColon, 24, `:`},
+			{itemRightBracket, 25, `]`},
+		},
+	}, { // Nested Subquery.
+		input: `min_over_time(sum(rate(testname{foo="bar"}[5m])[4m:4s])[5m:5s])`,
+		expected: []item{
+			{itemIdentifier, 0, `min_over_time`},
+			{itemLeftParen, 13, `(`},
+			{itemSum, 14, `sum`},
+			{itemLeftParen, 17, `(`},
+			{itemIdentifier, 18, `rate`},
+			{itemLeftParen, 22, `(`},
+			{itemIdentifier, 23, `testname`},
+			{itemLeftBrace, 31, `{`},
+			{itemIdentifier, 32, `foo`},
+			{itemEQL, 35, `=`},
+			{itemString, 36, `"bar"`},
+			{itemRightBrace, 41, `}`},
+			{itemLeftBracket, 42, `[`},
+			{itemDuration, 43, `5m`},
+			{itemRightBracket, 45, `]`},
+			{itemRightParen, 46, `)`},
+			{itemLeftBracket, 47, `[`},
+			{itemDuration, 48, `4m`},
+			{itemColon, 50, `:`},
+			{itemDuration, 51, `4s`},
+			{itemRightBracket, 53, `]`},
+			{itemRightParen, 54, `)`},
+			{itemLeftBracket, 55, `[`},
+			{itemDuration, 56, `5m`},
+			{itemColon, 58, `:`},
+			{itemDuration, 59, `5s`},
+			{itemRightBracket, 61, `]`},
+			{itemRightParen, 62, `)`},
+		},
+	},
+	{
+		input: `test:name{o:n!~"bar"}[4m:4s]`,
+		fail:  true,
+	},
+	{
+		input: `test:name{on!~"bar"}[4m:4s:4h]`,
+		fail:  true,
+	},
+	{
+		input: `test:name{on!~"bar"}[4m:4s:]`,
+		fail:  true,
+	},
+	{
+		input: `test:name{on!~"bar"}[4m::]`,
+		fail:  true,
+	},
+	{
+		input: `test:name{on!~"bar"}[:4s]`,
+		fail:  true,
 	},
 }
 
