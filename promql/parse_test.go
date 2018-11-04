@@ -1394,6 +1394,88 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "illegal character U+002E '.' in escape sequence",
 	},
+	// Subquery on unary expressions.
+	{
+		input: `foo{bar="baz"}[10m:6s]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				},
+			},
+			Range:      10 * time.Minute,
+			StepExists: true,
+			Step:       6 * time.Second,
+		},
+	}, {
+		input: `foo[10m:]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				},
+			},
+			Range:      10 * time.Minute,
+			StepExists: false,
+		},
+	}, {
+		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`,
+		expected: &Call{
+			Func: mustGetFunction("min_over_time"),
+			Args: Expressions{
+				&SubqueryExpr{
+					Expr: &Call{
+						Func: mustGetFunction("rate"),
+						Args: Expressions{
+							&MatrixSelector{
+								Name:  "foo",
+								Range: 2 * time.Second,
+								LabelMatchers: []*labels.Matcher{
+									mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+									mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+								},
+							},
+						},
+					},
+					Range:      5 * time.Minute,
+					StepExists: true,
+					Step:       5 * time.Second,
+				},
+			},
+		},
+	}, {
+		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
+		expected: &SubqueryExpr{
+			Expr: &Call{
+				Func: mustGetFunction("min_over_time"),
+				Args: Expressions{
+					&SubqueryExpr{
+						Expr: &Call{
+							Func: mustGetFunction("rate"),
+							Args: Expressions{
+								&MatrixSelector{
+									Name:  "foo",
+									Range: 2 * time.Second,
+									LabelMatchers: []*labels.Matcher{
+										mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+										mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+									},
+								},
+							},
+						},
+						Range:      5 * time.Minute,
+						StepExists: false,
+					},
+				},
+			},
+			Range:      4 * time.Minute,
+			StepExists: true,
+			Step:       3 * time.Second,
+		},
+	},
 }
 
 func TestParseExpressions(t *testing.T) {
