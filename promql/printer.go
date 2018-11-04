@@ -78,6 +78,9 @@ func tree(node Node, level string) string {
 	case *UnaryExpr:
 		t += tree(n.Expr, level)
 
+	case *SubqueryExpr:
+		t += tree(n.Expr, level)
+
 	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
 		// nothing to do
 
@@ -194,6 +197,14 @@ func (node *MatrixSelector) String() string {
 		offset = fmt.Sprintf(" offset %s", model.Duration(node.Offset))
 	}
 	return fmt.Sprintf("%s[%s]%s", vecSelector.String(), model.Duration(node.Range), offset)
+}
+
+func (node *SubqueryExpr) String() string {
+	step := ""
+	if node.StepExists {
+		step = fmt.Sprintf("%s", model.Duration(node.Step))
+	}
+	return fmt.Sprintf("%s[%s:%s]", node.Expr.String(), model.Duration(node.Range), step)
 }
 
 func (node *NumberLiteral) String() string {
