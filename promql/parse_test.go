@@ -942,10 +942,6 @@ var testExpr = []struct {
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
 		errMsg: "metric name must not be set twice: \"foo\" or \"bar\"",
-		// }, {
-		// 	input:  `:foo`,
-		// 	fail:   true,
-		// 	errMsg: "bla",
 	},
 	// Test matrix selector.
 	{
@@ -1051,11 +1047,11 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric OFFSET 1m[5m]`,
 		fail:   true,
-		errMsg: "could not parse remaining input \"[5m]\"...",
+		errMsg: "parse error at char 25: unexpected \"]\" in subquery selector, expected \":\"",
 	}, {
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
-		errMsg: "could not parse remaining input \"[5m]\"...",
+		errMsg: "parse error at char 15: unexpected \"]\" in subquery selector, expected \":\"",
 	},
 	// Test aggregation.
 	{
@@ -1394,7 +1390,7 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "illegal character U+002E '.' in escape sequence",
 	},
-	// Subquery on unary expressions.
+	// Subquery.
 	{
 		input: `foo{bar="baz"}[10m:6s]`,
 		expected: &SubqueryExpr{
@@ -1475,6 +1471,73 @@ var testExpr = []struct {
 			StepExists: true,
 			Step:       3 * time.Second,
 		},
+	}, {
+		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
+		expected: &SubqueryExpr{
+			Expr: &AggregateExpr{
+				Op:      itemSum,
+				Without: true,
+				Expr: &VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					},
+				},
+				Grouping: []string{"and", "by", "avg", "count", "alert", "annotations"},
+			},
+			Range:      30 * time.Minute,
+			StepExists: true,
+			Step:       10 * time.Second,
+		},
+	}, {
+		input: `some_metric OFFSET 1m [10m:5s]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+				},
+				Offset: 1 * time.Minute,
+			},
+			Range:      10 * time.Minute,
+			StepExists: true,
+			Step:       5 * time.Second,
+		},
+	}, {
+		input: `(foo + bar{nm="val"})[5m:]`,
+		expected: &SubqueryExpr{
+			Expr: &ParenExpr{
+				Expr: &BinaryExpr{
+					Op: itemADD,
+					VectorMatching: &VectorMatching{
+						Card: CardOneToOne,
+					},
+					LHS: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+						},
+					},
+					RHS: &VectorSelector{
+						Name: "bar",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+						},
+					},
+				},
+			},
+			Range:      5 * time.Minute,
+			StepExists: false,
+		},
+	}, {
+		input:  "test[5d] OFFSET 10s [10m:5s]",
+		fail:   true,
+		errMsg: "parse error at char 29: expected scalar or vector selector for subquery \"test[5d] offset 10s[10m:5s]\", got matrix instead",
+	}, {
+		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
+		fail:   true,
+		errMsg: "parse error at char 27: could not parse remaining input \"[10m:5s]\"...",
 	},
 }
 

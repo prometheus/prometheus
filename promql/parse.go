@@ -463,6 +463,10 @@ func (p *parser) expr() Expr {
 		// If the next token is not an operator the expression is done.
 		op := p.peek().typ
 		if !op.isOperator() {
+			// Check for subquery.
+			if op == itemLeftBracket {
+				expr = p.subqueryOrRangeSelector(expr, false)
+			}
 			return expr
 		}
 		p.next() // Consume operator.
@@ -583,7 +587,7 @@ func (p *parser) unaryExpr() Expr {
 
 	// Expression might be followed by a range selector.
 	if p.peek().typ == itemLeftBracket {
-		e = p.rangeOrSubquerySelector(e)
+		e = p.subqueryOrRangeSelector(e, true)
 	}
 
 	// Parse optional offset.
@@ -603,13 +607,17 @@ func (p *parser) unaryExpr() Expr {
 	return e
 }
 
-// rangeOrSubquerySelector parses a Matrix (a.k.a. range) selector based on a given
-// Vector selector (or) a Subquery based on given Expr.
+// subqueryOrRangeSelector parses a Subquery based on given Expr (or)
+// a Matrix (a.k.a. range) selector based on a given Vector selector.
 //
 //		<Vector_selector> '[' <duration> ']' | (<Vector_selector>|<Scalar_expr>) '[' <duration> ':' [<duration>] ']'
 //
-func (p *parser) rangeOrSubquerySelector(expr Expr) Expr {
-	const ctx = "range/subquery selector"
+func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
+	ctx := "subquery selector"
+	if checkRange {
+		ctx = "range/subquery selector"
+	}
+
 	p.next()
 
 	var erange time.Duration
@@ -621,18 +629,23 @@ func (p *parser) rangeOrSubquerySelector(expr Expr) Expr {
 		p.error(err)
 	}
 
-	itm := p.expectOneOf(itemRightBracket, itemColon, ctx)
-	if itm.typ == itemRightBracket {
-		// Range selector.
-		vs, ok := expr.(*VectorSelector)
-		if !ok {
-			p.errorf("range specification must be preceded by a metric selector, but follows a %T instead", expr)
+	var itm item
+	if checkRange {
+		itm = p.expectOneOf(itemRightBracket, itemColon, ctx)
+		if itm.typ == itemRightBracket {
+			// Range selector.
+			vs, ok := expr.(*VectorSelector)
+			if !ok {
+				p.errorf("range specification must be preceded by a metric selector, but follows a %T instead", expr)
+			}
+			return &MatrixSelector{
+				Name:          vs.Name,
+				LabelMatchers: vs.LabelMatchers,
+				Range:         erange,
+			}
 		}
-		return &MatrixSelector{
-			Name:          vs.Name,
-			LabelMatchers: vs.LabelMatchers,
-			Range:         erange,
-		}
+	} else {
+		itm = p.expect(itemColon, ctx)
 	}
 
 	// Subquery.
@@ -644,6 +657,9 @@ func (p *parser) rangeOrSubquerySelector(expr Expr) Expr {
 		estepExists = true
 		estepStr := itm.val
 		estep, err = parseDuration(estepStr)
+		if err != nil {
+			p.error(err)
+		}
 		p.expect(itemRightBracket, ctx)
 	}
 
@@ -1147,8 +1163,8 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 
 	case *SubqueryExpr:
 		ty := p.checkType(n.Expr)
-		if ty != ValueTypeScalar && ty != ValueTypeVector {
-			p.errorf("expected scalar or vector selector for subquery %s, got %s instead", n.String(), ty)
+		if ty != ValueTypeVector {
+			p.errorf("expected scalar or vector selector for subquery %q, got %s instead", n.String(), ty)
 		}
 
 	case *NumberLiteral, *MatrixSelector, *StringLiteral, *VectorSelector:
