@@ -20,6 +20,7 @@ div.query-history button {
   border: none;
   outline: none;
   padding: 0;
+  color: inherit;
 }
 
 div.query-history.is-checked {
