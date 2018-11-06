@@ -717,6 +717,8 @@ Available meta labels:
 * `__meta_kubernetes_pod_container_port_number`: Number of the container port.
 * `__meta_kubernetes_pod_container_port_protocol`: Protocol of the container port.
 * `__meta_kubernetes_pod_ready`: Set to `true` or `false` for the pod's ready state.
+* `__meta_kubernetes_pod_phase`: Set to `Pending`, `Running`, `Succeeded`, `Failed` or `Unknown`
+  in the [lifecycle](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase).
 * `__meta_kubernetes_pod_node_name`: The name of the node the pod is scheduled onto.
 * `__meta_kubernetes_pod_host_ip`: The current host IP of the pod object.
 * `__meta_kubernetes_pod_uid`: The UID of the pod object.

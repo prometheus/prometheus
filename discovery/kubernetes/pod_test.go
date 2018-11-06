@@ -70,6 +70,7 @@ func makeMultiPortPods() *v1.Pod {
 		Status: v1.PodStatus{
 			PodIP:  "1.2.3.4",
 			HostIP: "2.3.4.5",
+			Phase:  "Running",
 			Conditions: []v1.PodCondition{
 				{
 					Type:   v1.PodReady,
@@ -105,6 +106,7 @@ func makePods() *v1.Pod {
 		Status: v1.PodStatus{
 			PodIP:  "1.2.3.4",
 			HostIP: "2.3.4.5",
+			Phase:  "Running",
 			Conditions: []v1.PodCondition{
 				{
 					Type:   v1.PodReady,
@@ -135,6 +137,7 @@ func expectedPodTargetGroups(ns string) map[string]*targetgroup.Group {
 				"__meta_kubernetes_pod_ip":        "1.2.3.4",
 				"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
 				"__meta_kubernetes_pod_ready":     "true",
+				"__meta_kubernetes_pod_phase":     "Running",
 				"__meta_kubernetes_pod_uid":       "abc123",
 			},
 			Source: key,
@@ -184,6 +187,7 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 					"__meta_kubernetes_pod_ip":                        "1.2.3.4",
 					"__meta_kubernetes_pod_host_ip":                   "2.3.4.5",
 					"__meta_kubernetes_pod_ready":                     "true",
+					"__meta_kubernetes_pod_phase":                     "Running",
 					"__meta_kubernetes_pod_uid":                       "abc123",
 					"__meta_kubernetes_pod_controller_kind":           "testcontrollerkind",
 					"__meta_kubernetes_pod_controller_name":           "testcontrollername",
