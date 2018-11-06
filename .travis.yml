@@ -13,6 +13,5 @@ install:
   - go get -v -t ./...
 
 script:
-  # `check_license` target is omitted due to some missing license headers
   # `staticcheck` target is omitted due to linting errors
-  - make style unused test
+  - make check_license style unused test
