@@ -183,11 +183,6 @@ const (
 
 	keywordsStart
 	// Keywords.
-	itemAlert
-	itemIf
-	itemFor
-	itemLabels
-	itemAnnotations
 	itemOffset
 	itemBy
 	itemWithout
@@ -219,11 +214,6 @@ var key = map[string]ItemType{
 	"quantile":     itemQuantile,
 
 	// Keywords.
-	"alert":       itemAlert,
-	"if":          itemIf,
-	"for":         itemFor,
-	"labels":      itemLabels,
-	"annotations": itemAnnotations,
 	"offset":      itemOffset,
 	"by":          itemBy,
 	"without":     itemWithout,
