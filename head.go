@@ -1026,6 +1026,21 @@ func (h *headIndexReader) LabelValues(names ...string) (index.StringTuples, erro
 	return index.NewStringTuples(sl, len(names))
 }
 
+// LabelNames returns all the unique label names present in the head.
+func (h *headIndexReader) LabelNames() ([]string, error) {
+	h.head.symMtx.RLock()
+	defer h.head.symMtx.RUnlock()
+	labelNames := make([]string, 0, len(h.head.values))
+	for name := range h.head.values {
+		if name == "" {
+			continue
+		}
+		labelNames = append(labelNames, name)
+	}
+	sort.Strings(labelNames)
+	return labelNames, nil
+}
+
 // Postings returns the postings list iterator for the label pair.
 func (h *headIndexReader) Postings(name, value string) (index.Postings, error) {
 	return h.head.postings.Get(name, value), nil
@@ -1087,9 +1102,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 func (h *headIndexReader) LabelIndices() ([][]string, error) {
 	h.head.symMtx.RLock()
 	defer h.head.symMtx.RUnlock()
-
 	res := [][]string{}
-
 	for s := range h.head.values {
 		res = append(res, []string{s})
 	}
