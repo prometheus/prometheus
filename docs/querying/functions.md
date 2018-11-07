@@ -261,7 +261,7 @@ returned unchanged.
 If `src_label` and `dst_label` are the same, the label's value will be altered based on the regex. 
 If they are different, a new `dst_label` will be added.
 
-This example will add a new label "container_name" having the same values as "container" as (.+) selects everything:
+This example will add a new label "container_name" having the same values as "container" (if "container is not empty):
 
 ```
 label_replace(kube_pod_container_resource_requests_cpu_cores, "container_name", "$1", "container", "(.+)" )
