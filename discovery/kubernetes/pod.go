@@ -142,6 +142,7 @@ const (
 	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
 	podContainerPortProtocolLabel = metaLabelPrefix + "pod_container_port_protocol"
 	podReadyLabel                 = metaLabelPrefix + "pod_ready"
+	podPhaseLabel                 = metaLabelPrefix + "pod_phase"
 	podLabelPrefix                = metaLabelPrefix + "pod_label_"
 	podAnnotationPrefix           = metaLabelPrefix + "pod_annotation_"
 	podNodeNameLabel              = metaLabelPrefix + "pod_node_name"
@@ -167,6 +168,7 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podNameLabel:     lv(pod.ObjectMeta.Name),
 		podIPLabel:       lv(pod.Status.PodIP),
 		podReadyLabel:    podReady(pod),
+		podPhaseLabel:    lv(string(pod.Status.Phase)),
 		podNodeNameLabel: lv(pod.Spec.NodeName),
 		podHostIPLabel:   lv(pod.Status.HostIP),
 		podUID:           lv(string(pod.ObjectMeta.UID)),

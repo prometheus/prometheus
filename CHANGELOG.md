@@ -1,13 +1,6 @@
-## 2.5.0-rc.2 / 2018-10-31
+## 2.5.0 / 2018-11-06
 
 * [CHANGE] Group targets by scrape config instead of job name. #4806 #4526
-
-## 2.5.0-rc.1 / 2018-10-29
-
-* [BUGFIX] Fix accidental breaking change in targets API exposition format. #4783
-
-## 2.5.0-rc.0 / 2018-10-24
-
 * [CHANGE] Marathon SD: Various changes to adapt to Marathon 1.5+. #4499
 * [CHANGE] Discovery: Split `prometheus_sd_discovered_targets` metric by scrape and notify (Alertmanager SD) as well as by section in the respective configuration. #4753
 * [FEATURE] Add OpenMetrics support for scraping (EXPERIMENTAL). #4700

@@ -123,6 +123,11 @@ common-docker-tag-latest:
 promu:
 	GOOS= GOARCH= $(GO) get -u github.com/prometheus/promu
 
+.PHONY: proto
+proto:
+	@echo ">> generating code from proto files"
+	@./scripts/genproto.sh
+
 .PHONY: $(STATICCHECK)
 $(STATICCHECK):
 	GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck

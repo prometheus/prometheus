@@ -16,7 +16,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"net/url"
 	"os"
@@ -26,16 +25,13 @@ import (
 	"time"
 
 	"gopkg.in/alecthomas/kingpin.v2"
-	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/api/prometheus/v1"
 	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
@@ -59,10 +55,6 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
-
-	updateCmd := app.Command("update", "Update the resources to newer formats.")
-	updateRulesCmd := updateCmd.Command("rules", "Update rules from the 1.x to 2.x format.")
-	ruleFilesUp := updateRulesCmd.Arg("rule-files", "The rule files to update.").Required().ExistingFiles()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
@@ -110,9 +102,6 @@ func main() {
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics())
-
-	case updateRulesCmd.FullCommand():
-		os.Exit(UpdateRules(*ruleFilesUp...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryServer, *queryExpr))
@@ -294,74 +283,6 @@ func checkRules(filename string) (int, []error) {
 	}
 
 	return numRules, nil
-}
-
-// UpdateRules updates the rule files.
-func UpdateRules(files ...string) int {
-	failed := false
-
-	for _, f := range files {
-		if err := updateRules(f); err != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:", err)
-			failed = true
-		}
-	}
-
-	if failed {
-		return 1
-	}
-	return 0
-}
-
-func updateRules(filename string) error {
-	fmt.Println("Updating", filename)
-
-	content, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return err
-	}
-
-	rules, err := promql.ParseStmts(string(content))
-	if err != nil {
-		return err
-	}
-
-	yamlRG := &rulefmt.RuleGroups{
-		Groups: []rulefmt.RuleGroup{{
-			Name: filename,
-		}},
-	}
-
-	yamlRules := make([]rulefmt.Rule, 0, len(rules))
-
-	for _, rule := range rules {
-		switch r := rule.(type) {
-		case *promql.AlertStmt:
-			yamlRules = append(yamlRules, rulefmt.Rule{
-				Alert:       r.Name,
-				Expr:        r.Expr.String(),
-				For:         model.Duration(r.Duration),
-				Labels:      r.Labels.Map(),
-				Annotations: r.Annotations.Map(),
-			})
-		case *promql.RecordStmt:
-			yamlRules = append(yamlRules, rulefmt.Rule{
-				Record: r.Name,
-				Expr:   r.Expr.String(),
-				Labels: r.Labels.Map(),
-			})
-		default:
-			panic("unknown statement type")
-		}
-	}
-
-	yamlRG.Groups[0].Rules = yamlRules
-	y, err := yaml.Marshal(yamlRG)
-	if err != nil {
-		return err
-	}
-
-	return ioutil.WriteFile(filename+".yml", y, 0666)
 }
 
 var checkMetricsUsage = strings.TrimSpace(`

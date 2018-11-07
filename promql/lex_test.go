@@ -249,21 +249,6 @@ var tests = []struct {
 	},
 	// Test keywords.
 	{
-		input:    "alert",
-		expected: []item{{itemAlert, 0, "alert"}},
-	}, {
-		input:    "if",
-		expected: []item{{itemIf, 0, "if"}},
-	}, {
-		input:    "for",
-		expected: []item{{itemFor, 0, "for"}},
-	}, {
-		input:    "labels",
-		expected: []item{{itemLabels, 0, "labels"}},
-	}, {
-		input:    "annotations",
-		expected: []item{{itemAnnotations, 0, "annotations"}},
-	}, {
 		input:    "offset",
 		expected: []item{{itemOffset, 0, "offset"}},
 	}, {
