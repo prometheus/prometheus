@@ -289,13 +289,13 @@ func (w *WAL) Repair(origErr error) error {
 	if err != nil {
 		return errors.Wrap(err, "list segments")
 	}
-	level.Warn(w.logger).Log("msg", "deleting all segments behind corruption")
+	level.Warn(w.logger).Log("msg", "deleting all segments behind corruption", "segment", cerr.Segment)
 
 	for _, s := range segs {
-		if s.n <= cerr.Segment {
+		if s.index <= cerr.Segment {
 			continue
 		}
-		if w.segment.i == s.n {
+		if w.segment.i == s.index {
 			// The active segment needs to be removed,
 			// close it first (Windows!). Can be closed safely
 			// as we set the current segment to repaired file
@@ -304,14 +304,14 @@ func (w *WAL) Repair(origErr error) error {
 				return errors.Wrap(err, "close active segment")
 			}
 		}
-		if err := os.Remove(filepath.Join(w.dir, s.s)); err != nil {
-			return errors.Wrap(err, "delete segment")
+		if err := os.Remove(filepath.Join(w.dir, s.name)); err != nil {
+			return errors.Wrapf(err, "delete segment:%v", s.index)
 		}
 	}
 	// Regardless of the corruption offset, no record reaches into the previous segment.
 	// So we can safely repair the WAL by removing the segment and re-inserting all
 	// its records up to the corruption.
-	level.Warn(w.logger).Log("msg", "rewrite corrupted segment")
+	level.Warn(w.logger).Log("msg", "rewrite corrupted segment", "segment", cerr.Segment)
 
 	fn := SegmentName(w.dir, cerr.Segment)
 	tmpfn := fn + ".repair"
@@ -523,9 +523,9 @@ func (w *WAL) log(rec []byte, final bool) error {
 	return nil
 }
 
-// Segments returns the range [m, n] of currently existing segments.
-// If no segments are found, m and n are -1.
-func (w *WAL) Segments() (m, n int, err error) {
+// Segments returns the range [first, n] of currently existing segments.
+// If no segments are found, first and n are -1.
+func (w *WAL) Segments() (first, last int, err error) {
 	refs, err := listSegments(w.dir)
 	if err != nil {
 		return 0, 0, err
@@ -533,7 +533,7 @@ func (w *WAL) Segments() (m, n int, err error) {
 	if len(refs) == 0 {
 		return -1, -1, nil
 	}
-	return refs[0].n, refs[len(refs)-1].n, nil
+	return refs[0].index, refs[len(refs)-1].index, nil
 }
 
 // Truncate drops all segments before i.
@@ -549,10 +549,10 @@ func (w *WAL) Truncate(i int) (err error) {
 		return err
 	}
 	for _, r := range refs {
-		if r.n >= i {
+		if r.index >= i {
 			break
 		}
-		if err = os.Remove(filepath.Join(w.dir, r.s)); err != nil {
+		if err = os.Remove(filepath.Join(w.dir, r.name)); err != nil {
 			return err
 		}
 	}
@@ -595,8 +595,8 @@ func (w *WAL) Close() (err error) {
 }
 
 type segmentRef struct {
-	s string
-	n int
+	name  string
+	index int
 }
 
 func listSegments(dir string) (refs []segmentRef, err error) {
@@ -613,11 +613,11 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		if len(refs) > 0 && k > last+1 {
 			return nil, errors.New("segments are not sequential")
 		}
-		refs = append(refs, segmentRef{s: fn, n: k})
+		refs = append(refs, segmentRef{name: fn, index: k})
 		last = k
 	}
 	sort.Slice(refs, func(i, j int) bool {
-		return refs[i].n < refs[j].n
+		return refs[i].index < refs[j].index
 	})
 	return refs, nil
 }
@@ -628,8 +628,8 @@ func NewSegmentsReader(dir string) (io.ReadCloser, error) {
 }
 
 // NewSegmentsRangeReader returns a new reader over the given WAL segment range.
-// If m or n are -1, the range is open on the respective end.
-func NewSegmentsRangeReader(dir string, m, n int) (io.ReadCloser, error) {
+// If first or last are -1, the range is open on the respective end.
+func NewSegmentsRangeReader(dir string, first, last int) (io.ReadCloser, error) {
 	refs, err := listSegments(dir)
 	if err != nil {
 		return nil, err
@@ -637,13 +637,13 @@ func NewSegmentsRangeReader(dir string, m, n int) (io.ReadCloser, error) {
 	var segs []*Segment
 
 	for _, r := range refs {
-		if m >= 0 && r.n < m {
+		if first >= 0 && r.index < first {
 			continue
 		}
-		if n >= 0 && r.n > n {
+		if last >= 0 && r.index > last {
 			break
 		}
-		s, err := OpenReadSegment(filepath.Join(dir, r.s))
+		s, err := OpenReadSegment(filepath.Join(dir, r.name))
 		if err != nil {
 			return nil, err
 		}

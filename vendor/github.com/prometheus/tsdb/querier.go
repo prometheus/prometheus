@@ -249,7 +249,7 @@ func tuplesByPrefix(m *labels.PrefixMatcher, ts StringTuples) ([]string, error) 
 }
 
 func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
-	// If the matcher selects an empty value, it selects all the series which dont
+	// If the matcher selects an empty value, it selects all the series which don't
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
 	if m.Matches("") {

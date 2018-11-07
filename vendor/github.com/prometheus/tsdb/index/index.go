@@ -38,6 +38,8 @@ const (
 
 	indexFormatV1 = 1
 	indexFormatV2 = 2
+
+	labelNameSeperator = "\xff"
 )
 
 type indexWriterSeries struct {
@@ -850,9 +852,8 @@ func (r *Reader) SymbolTable() map[uint32]string {
 
 // LabelValues returns value tuples that exist for the given label name tuples.
 func (r *Reader) LabelValues(names ...string) (StringTuples, error) {
-	const sep = "\xff"
 
-	key := strings.Join(names, sep)
+	key := strings.Join(names, labelNameSeperator)
 	off, ok := r.labels[key]
 	if !ok {
 		// XXX(fabxc): hot fix. Should return a partial data error and handle cases
@@ -882,14 +883,12 @@ type emptyStringTuples struct{}
 func (emptyStringTuples) At(i int) ([]string, error) { return nil, nil }
 func (emptyStringTuples) Len() int                   { return 0 }
 
-// LabelIndices returns a for which labels or label tuples value indices exist.
+// LabelIndices returns a slice of label names for which labels or label tuples value indices exist.
+// NOTE: This is deprecated. Use `LabelNames()` instead.
 func (r *Reader) LabelIndices() ([][]string, error) {
-	const sep = "\xff"
-
 	res := [][]string{}
-
 	for s := range r.labels {
-		res = append(res, strings.Split(s, sep))
+		res = append(res, strings.Split(s, labelNameSeperator))
 	}
 	return res, nil
 }
@@ -933,6 +932,30 @@ func (r *Reader) Postings(name, value string) (Postings, error) {
 // are sorted.
 func (r *Reader) SortedPostings(p Postings) Postings {
 	return p
+}
+
+// LabelNames returns all the unique label names present in the index.
+func (r *Reader) LabelNames() ([]string, error) {
+	labelNamesMap := make(map[string]struct{}, len(r.labels))
+	for key := range r.labels {
+		// 'key' contains the label names concatenated with the
+		// delimiter 'labelNameSeperator'.
+		names := strings.Split(key, labelNameSeperator)
+		for _, name := range names {
+			if name == allPostingsKey.Name {
+				// This is not from any metric.
+				// It is basically an empty label name.
+				continue
+			}
+			labelNamesMap[name] = struct{}{}
+		}
+	}
+	labelNames := make([]string, 0, len(labelNamesMap))
+	for name := range labelNamesMap {
+		labelNames = append(labelNames, name)
+	}
+	sort.Strings(labelNames)
+	return labelNames, nil
 }
 
 type stringTuples struct {
