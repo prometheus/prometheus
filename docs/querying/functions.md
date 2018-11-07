@@ -258,6 +258,15 @@ timeseries is returned with the label `dst_label` replaced by the expansion of
 second etc. If the regular expression doesn't match then the timeseries is
 returned unchanged.
 
+If `src_label` and `dst_label` are the same, the label's value will be altered based on the regex. 
+If they are different, a new `dst_label` will be added.
+
+This example will add a new label "container_name" having the same values as "container" as (.+) selects everything:
+
+```
+label_replace(kube_pod_container_resource_requests_cpu_cores, "container_name", "$1", "container", "(.+)" )
+```
+
 This example will return a vector with each time series having a `foo`
 label with the value `a` added to it:
 
