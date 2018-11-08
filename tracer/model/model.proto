@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package model;
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/timestamp.proto";
+
+message Trace {
+  uint64 trace_id = 1;
+  repeated Span spans = 2 [(gogoproto.nullable) = false];
+}
+
+message Span {
+  SpanContext span_context = 1 [(gogoproto.nullable) = false, (gogoproto.embed) = true];
+  uint64 parent_span_id = 2 [(gogoproto.nullable) = true];
+  google.protobuf.Timestamp start = 3 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+  google.protobuf.Timestamp end = 4 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+  string operation_name = 5;
+  repeated KeyValue tags = 6 [(gogoproto.nullable) = false];
+  repeated LogRecord logs = 7 [(gogoproto.nullable) = false];
+}
+
+message SpanContext {
+	uint64 trace_id  = 1;
+	uint64 span_id  = 2;
+  repeated Baggage baggage = 3 [(gogoproto.nullable) = false];
+}
+
+message LogRecord {
+  google.protobuf.Timestamp timestamp = 1 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+  repeated KeyValue fields = 2 [(gogoproto.nullable) = false];
+}
+
+message KeyValue {
+  string key = 1;
+  Type type = 2;
+
+  enum Type {
+    Bool = 0; Error = 1; Float64 = 3;
+    Int64 = 5; String = 6; Uint64 = 9;
+  }
+
+  bool bool = 3;
+  string error = 4;
+  double float64 = 6;
+  int64 int64 = 8;
+  string string = 9;
+  uint64 uint64 = 11;
+}
+
+
+
+message Baggage {
+	string key = 1;
+  string value = 2;
+}

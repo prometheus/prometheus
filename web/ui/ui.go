@@ -38,10 +38,17 @@ var static http.FileSystem = filter.Keep(
 	http.Dir(importPathToDir("github.com/prometheus/prometheus/web/ui/static")),
 	func(path string, fi os.FileInfo) bool {
 		return fi.IsDir() ||
-			(!strings.HasSuffix(path, "map.js") &&
+
+			(!strings.Contains(path, "/zipkin-ui/") &&
+				!strings.HasSuffix(path, "map.js") &&
 				!strings.HasSuffix(path, "/bootstrap.js") &&
 				!strings.HasSuffix(path, "/bootstrap-theme.css") &&
-				!strings.HasSuffix(path, "/bootstrap.css"))
+				!strings.HasSuffix(path, "/bootstrap.css")) ||
+
+			(strings.Contains(path, "/zipkin-ui/") &&
+				(strings.HasSuffix(path, "/zipkin-ui.min.css") ||
+					strings.HasSuffix(path, "/zipkin-ui.min.js") ||
+					strings.Contains(path, "/fonts")))
 	},
 )
 

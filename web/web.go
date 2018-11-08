@@ -33,11 +33,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
-
-	"google.golang.org/grpc"
-
 	template_text "text/template"
+	"time"
 
 	"github.com/cockroachdb/cmux"
 	"github.com/go-kit/kit/log"
@@ -50,9 +47,6 @@ import (
 	"github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"github.com/prometheus/tsdb"
-	"golang.org/x/net/netutil"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -61,10 +55,15 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	tracerApi "github.com/prometheus/prometheus/tracer/api"
+	tracer "github.com/prometheus/prometheus/tracer/client"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
+	"github.com/prometheus/tsdb"
+	"golang.org/x/net/netutil"
+	"google.golang.org/grpc"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
@@ -86,6 +85,7 @@ var (
 		},
 		[]string{"handler"},
 	)
+	globalTracer = tracer.NewTracer(1500)
 )
 
 func init() {
@@ -256,6 +256,11 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/targets", readyf(h.targets))
 	router.Get("/version", readyf(h.version))
 	router.Get("/service-discovery", readyf(h.serviceDiscovery))
+	router.Get("/traces/", readyf(h.traces))
+	router.Get("/traces/traces/:id", readyf(h.traces))
+
+	// Adding Zipkin UI API routes in router
+	tracerApi.Register(logger, router, globalTracer)
 
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
 
@@ -453,6 +458,8 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
+	opentracing.SetGlobalTracer(globalTracer)
+
 	httpSrv := &http.Server{
 		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
 		ErrorLog:    errlog,
@@ -619,6 +626,10 @@ func toFloat64(f *io_prometheus_client.MetricFamily) float64 {
 
 func (h *Handler) flags(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "flags.html", h.flagsMap)
+}
+
+func (h *Handler) traces(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "traces.html", "")
 }
 
 func (h *Handler) serveConfig(w http.ResponseWriter, r *http.Request) {
@@ -838,6 +849,7 @@ func (h *Handler) getTemplate(name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error reading base template: %s", err)
 	}
+
 	err = appendf(name)
 	if err != nil {
 		return "", fmt.Errorf("error reading page template %s: %s", name, err)
