@@ -167,6 +167,7 @@ type Options struct {
 	ConsoleLibrariesPath       string
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
+	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
 }
@@ -727,6 +728,7 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
+		"uiTitle":      func() string { return opts.PageTitle },
 		"buildVersion": func() string { return opts.Version.Revision },
 		"stripLabels": func(lset map[string]string, labels ...string) map[string]string {
 			for _, ln := range labels {

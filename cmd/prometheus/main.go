@@ -150,6 +150,9 @@ func main() {
 	a.Flag("web.console.libraries", "Path to the console library directory.").
 		Default("console_libraries").StringVar(&cfg.web.ConsoleLibrariesPath)
 
+	a.Flag("web.ui-title", "Title of Prometheus instance.").
+		Default("Prometheus Time Series Collection and Processing Server").StringVar(&cfg.web.PageTitle)
+
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 
