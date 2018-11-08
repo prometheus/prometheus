@@ -46,6 +46,10 @@ const (
 // before.
 var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 
+// page is an in memory buffer used to batch disk writes.
+// Records bigger than the page size are split and flushed separately.
+// A flush is triggered when a single records doesn't fit the page size or
+// when the next record can't fit in the remaining free page space.
 type page struct {
 	alloc   int
 	flushed int
@@ -397,7 +401,7 @@ func (w *WAL) flushPage(clear bool) error {
 
 	// No more data will fit into the page. Enqueue and clear it.
 	if clear {
-		p.alloc = pageSize // write till end of page
+		p.alloc = pageSize // Write till end of page.
 		w.pageCompletions.Inc()
 	}
 	n, err := w.segment.Write(p.buf[p.flushed:p.alloc])
@@ -465,13 +469,14 @@ func (w *WAL) Log(recs ...[]byte) error {
 }
 
 // log writes rec to the log and forces a flush of the current page if its
-// the final record of a batch.
+// the final record of a batch, the record is bigger than the page size or
+// the current page is full.
 func (w *WAL) log(rec []byte, final bool) error {
-	// If the record is too big to fit within pages in the current
+	// If the record is too big to fit within the active page in the current
 	// segment, terminate the active segment and advance to the next one.
 	// This ensures that records do not cross segment boundaries.
-	left := w.page.remaining() - recordHeaderSize                                   // Active pages.
-	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages.
+	left := w.page.remaining() - recordHeaderSize                                   // Free space in the active page.
+	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages in the active segment.
 
 	if len(rec) > left {
 		if err := w.nextSegment(); err != nil {
@@ -511,7 +516,9 @@ func (w *WAL) log(rec []byte, final bool) error {
 		copy(buf[recordHeaderSize:], part)
 		p.alloc += len(part) + recordHeaderSize
 
-		// If we wrote a full record, we can fit more records of the batch
+		// By definition when a record is split it means its size is bigger than
+		// the page boundary so the current page would be full and needs to be flushed.
+		// On contrary if we wrote a full record, we can fit more records of the batch
 		// into the page before flushing it.
 		if final || typ != recFull || w.page.full() {
 			if err := w.flushPage(false); err != nil {
