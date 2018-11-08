@@ -1,0 +1,215 @@
+<div>
+  <form role="form" id="submitForm">
+    <div class="row">
+      <div class="form-group col-md-3">
+        <label for="timeStamp" data-i18n="traces.servicename">Service Name</label>
+        <div class="clearfix">
+          <select data-placeholder="Service Name" class="form-control input-sm" name="serviceName" id="serviceName">
+        </select>
+        </div>
+      </div>
+
+      <div class="form-group col-md-3">
+        <label for="timeStamp" data-i18n="traces.spanname">Span Name</label>
+        <div class="clearfix">
+          <select data-placeholder="Span Name" class="form-control input-sm" name="spanName" id="spanName">
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group col-md-6">
+        <label for="lookback" data-i18n="traces.lookback">Lookback</label>
+        <div class="clearfix">
+          <select class="form-control input-sm" name="lookback" id="lookback">
+            <option value="300000" data-i18n="traces.lookback.5min">5 min</option>
+            <option value="1800000" data-i18n="traces.lookback.30min">30 min</option>
+            <option value="3600000" data-i18n="traces.lookback.1hour">1 hour</option>
+            <option value="10800000" data-i18n="traces.lookback.3hours">3 hours</option>
+            <option value="21600000" data-i18n="traces.lookback.6hours">6 hours</option>
+            <option value="43200000" data-i18n="traces.lookback.12hours">12 hours</option>
+            <option value="86400000" data-i18n="traces.lookback.1day">1 day</option>
+            <option value="172800000" data-i18n="traces.lookback.2days">2 days</option>
+            <option value="604800000" data-i18n="traces.lookback.7days">7 days</option>
+            <option value="custom" data-i18n="traces.lookback.custom">Custom</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" id="custom-lookback" style="display: none;">
+      <div class="col-md-6"></div>
+
+      <div id="start-ts" class="form-group col-md-3">
+        <label for="timeStamp" data-i18n="traces.stime">Start time</label>
+        <div>
+          <input class="form-control input-sm date-input" type="text">
+          <input class="form-control input-sm time-input" type="text">
+          <input class="timestamp-value" id="startTs" name="startTs" type="hidden" value="{{startTs}}">
+        </div>
+      </div>
+
+      <div id="end-ts" class="form-group col-md-3">
+        <label for="timeStamp" data-i18n="traces.etime">End time</label>
+        <div>
+          <input class="form-control input-sm date-input" type="text">
+          <input class="form-control input-sm time-input" type="text">
+          <input class="timestamp-value" id="endTs" name="endTs" type="hidden" value="{{endTs}}">
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="form-group col-md-6">
+        <label for="annotationQuery" data-i18n="traces.annotationQuery">Tags Query</label>
+        <div class="clearfix">
+          <input type="text" class="form-control input-sm" id="annotationQuery" name="annotationQuery"
+                     value="{{annotationQuery}}" style="width: 100%"
+                     placeholder='e.g. "http.method":"get|GET","http.url":"/metrics"'>
+        </div>
+      </div>
+
+      <div class="form-group col-md-2">
+        <label for="minDuration" data-i18n="traces.duration">Duration (μs) >=</label>
+        <input class="form-control input-sm" id="minDuration" name="minDuration" type="text" value="{{minDuration}}">
+      </div>
+
+      <div class="form-group col-md-2">
+        <label for="maxDuration" data-i18n="traces.duration">Duration (μs) <=</label>
+        <input class="form-control input-sm" id="maxDuration" name="maxDuration" type="text" value="{{maxDuration}}">
+      </div>
+
+      <div class="form-group col-md-2">
+        <label for="limit" data-i18n="traces.limit">Limit</label>
+        <input class="form-control input-sm" id="limit" name="limit" type="text" value="{{limit}}">
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-6">
+        <div class="btn-toolbar">
+          <button type="submit" class="btn btn-primary" data-i18n="traces.findBtn">Find Traces</button>
+          <button type="button" class="btn btn-default info-request">
+            <span class="glyphicon glyphicon-question-sign"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="col-md-3">
+      </div>
+
+      <div class="form-group col-md-3">
+        <label for="sortOrder" data-i18n="traces.sort">Sort</label>
+        <select class="sort-order js-sort-order form-control input-sm" form="submitForm" name="sortOrder" id="sortOrder">
+          {{#sortOrderOptions}}
+            <option value="{{value}}" {{sortOrderSelected}} data-i18n="{{value}}">{{text}}</option>{{/sortOrderOptions}}
+        </select>
+      </div>
+    </div>
+
+    {{#queryWasPerformed}}
+    <div id="trace-filters" class="row">
+      <div class="col-md-3">
+        <div>
+          Showing:  <span class="filter-current">{{count}}</span>
+          of <span class="filter-total">{{count}}</span>
+        </div>
+
+        <div class="service-tags">
+          Services:
+          <span class='label service-tag-filtered' data-service-name="{{serviceName}}">{{serviceName}}</span>
+        </div>
+      </div>
+    </div>
+    {{/queryWasPerformed}}
+  </form>
+</div>
+
+{{#queryError}}
+  <div class="alert alert-danger" id="query-error-msg">
+    <p>Error executing query: {{ queryError }}</p>
+  </div>
+{{/queryError}}
+{{^queryWasPerformed}}
+  <div class="alert alert-info" id="help-msg">
+    <p data-i18n="traces.des">Please select the criteria for your trace lookup.</p>
+  </div>
+{{/queryWasPerformed}}
+{{#queryWasPerformed}}
+  <ul id="traces">
+    {{#traces}}
+      <li class="trace {{infoClass}}" data-traceId="{{traceId}}" data-duration="{{duration}}"
+          data-timestamp="{{timestamp}}" data-service-percentage="{{servicePercentage}}">
+        <a href="{{contextRoot}}traces/{{traceId}}">
+          <div class="bar-block">
+            <span class="bar-graphic" style="width:{{width}}%;"></span>
+            <span class="bar-label">{{durationStr}}</span>
+            <span class="bar-label">{{totalSpans}} spans</span>
+          </div>
+          <div class="bar-block">
+            <span class="bar-graphic" style="width:{{servicePercentage}}%;"></span>
+            <span class="bar-label">{{serviceName}} {{servicePercentage}}%</span>
+          </div>
+        </a>
+        <div class="trace-details services">
+          {{#serviceDurations}}
+            <span class="label label-default service-filter-label" data-service-name="{{name}}">{{name}}
+              x{{count}} {{max}}ms</span>
+          {{/serviceDurations}}
+        </div>
+        <div class="trace-details timestamp pull-right">
+          <time class="label timeago" datetime="{{startTs}}">{{startTs}}</time>
+        </div>
+      </li>
+    {{/traces}}
+  </ul>
+{{/queryWasPerformed}}
+
+<!-- help panel for different lookup options -->
+<div class="modal fade" id="infoPanel" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+        <h4 class="modal-title" data-i18n="modal.title">How to find a trace</h4>
+      </div>
+      <div class="modal-body">
+        <h4 data-i18n="modal.title2">Service names</h4>
+        <p data-i18n="modal.p2">First off you have select a service to lookup by. All traces are indexed by service
+          names.</p>
+        <p data-i18n="modal.p3">Once that is done you have two options to pick from. See notes on each below.</p>
+
+        <h4 data-i18n="modal.title3">1. Lookups by span name</h4>
+        <p data-i18n="modal.p4">Span names are generally method names or HTTP endpoints. This allows you to look
+          up traces that accessed a particular part of the service.</p>
+
+        <h4 data-i18n="modal.title5">2. Lookups by key/value</h4>
+        <p data-i18n="modal.p6">Key / value are tags attached to the trace spans. This could be
+          things like the url hit, response codes or exceptions.
+          Input should be given as comma delimited "key":"value" (similar to an unnested json).
+          The key should be a tag name. The value can be a regex to be checked on the corresponding tag value.    
+          All key/value pair are AND against each other. This means at least one span in the trace must match all of these.
+          See below for a few examples.</p>
+        <table class="table table-bordered">
+          <thead>
+          <tr>
+            <td><strong>Purpose</strong></td>
+            <td><strong>Query</strong></td>
+          </tr>
+          </thead>
+          <tbody>
+          <tr>
+            <td>HTTP GET requests to /metrics</td>
+            <td>"http.method":"get|GET","http.url":"/metrics"</td>
+          </tr>
+          </tbody>
+        </table>
+
+        <h4 data-i18n="modal.title6">Dates and limits</h4>
+        <p data-i18n="modal.p7">You can pick a time interval to guide the selection of traces. When
+          doing a lookup, the traces in that time interval (upto the given limit) are returned.
+          You can sort the retreived traces in many different orders. 
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,209 @@
+#trace-container {
+  font-size: 12px;
+  margin-bottom: 50px;
+}
+
+#trace-container .binary-annotation {
+  display: none;
+}
+
+#trace-container .rect-element {
+  border-style: dashed;
+  border-width: medium;
+  position: absolute;
+  z-index: 1;
+  border-color: #d9534f;
+}
+
+#trace-container .span {
+  cursor: pointer;
+  display: none;
+  position: relative;
+  border-bottom: solid 1px #fff;
+  border-top: solid 1px #fff;
+}
+
+#trace-container .service-span:hover {
+  background: #eee;
+  border-color: #ccc;
+}
+
+#trace-container .span:after {
+  content: ".";
+  display: block;
+  clear: both;
+  visibility: hidden;
+  line-height: 0;
+  height: 0;
+}
+
+#trace-container .span .handle {
+  overflow: hidden;
+  white-space: nowrap;
+  float: left;
+  opacity: 0.25;
+}
+
+/* ensure spans are shown even if the don't have a name */
+#trace-container .span .handle .service-name:after {
+  content: ".";
+  visibility: hidden;
+}
+
+#trace-container .span.highlight .handle,
+#trace-container .service-span:hover .handle {
+  opacity: 1;
+}
+
+#trace-container .span .handle .expander {
+  margin-left: -1.1em;
+  color: #000;
+  padding: 2px;
+  margin-right: 0.25em;
+  cursor: pointer;
+  font-family: monospace;
+}
+
+#trace-container .span .handle .service-name {
+  background: #0084b4;
+  color: #fff;
+  padding: 2px;
+}
+
+#trace-container .span .duration-container {
+  position: relative;
+  margin-left: 155px;
+}
+
+#trace-container #timeLabel.span {
+  overflow: visible;
+  display: block;
+  white-space: nowrap;
+}
+
+#trace-container #timeLabel.span .handle {
+  opacity: 1;
+}
+
+#trace-container #timeLabel.span .time-marker {
+  margin-left: -1%;
+}
+
+#trace-container .span .time-marker {
+  position: absolute;
+  color: #333;
+}
+
+#trace-container .span .time-marker-0 { left: 0; }
+#trace-container .span .time-marker-1 { left: 20%; }
+#trace-container .span .time-marker-2 { left: 40%; }
+#trace-container .span .time-marker-3 { left: 60%; }
+#trace-container .span .time-marker-4 { left: 80%; }
+#trace-container .span .time-marker-5 { left: 99.5%; }
+
+#trace-container .span .duration {
+  position: absolute;
+  background: #ccc;
+  overflow: visible;
+  white-space: nowrap;
+  padding: 2px;
+}
+
+#trace-container .span .duration .annotation {
+  position: absolute;
+  top: 5px;
+  height: 10px;
+  width: 10px;
+  background: #fff;
+  border: solid 1px #000;
+  border-radius: 1em;
+  margin-left: -6px;
+}
+
+/* Core annotations like "sr" "ss" are hidden to make more obvious user-defined ones */
+#trace-container .span .duration .annotation.core {
+  display: none;
+}
+
+#trace-container .span .duration .annotation[data-value="error"] {
+  border: solid 1px #ff0000;
+  background: #ff0000;
+}
+
+#trace-container .span .duration .tooltip {
+  white-space: normal;
+}
+
+#trace-container .span.depth-0 .duration { background: rgba(66, 146, 198, 0.1); }
+#trace-container .span.depth-1 .duration { background: rgba(66, 146, 198, 0.20); }
+#trace-container .span.depth-2 .duration { background: rgba(66, 146, 198, 0.40); }
+#trace-container .span.depth-3 .duration { background: rgba(66, 146, 198, 0.60); }
+#trace-container .span.depth-4 .duration { background: rgba(66, 146, 198, 0.80); }
+#trace-container .span.depth-5 .duration { background: rgba(66, 146, 198, 1); }
+
+#trace-container .span[data-error-type="transient"] .handle .service-name {
+  background: #8a6d3b;
+}
+
+#trace-container .span[data-error-type="transient"].depth-0 .duration { background: rgba(230, 215, 140, 0.1); }
+#trace-container .span[data-error-type="transient"].depth-1 .duration { background: rgba(230, 215, 140, 0.20); }
+#trace-container .span[data-error-type="transient"].depth-2 .duration { background: rgba(230, 215, 140, 0.40); }
+#trace-container .span[data-error-type="transient"].depth-3 .duration { background: rgba(230, 215, 140, 0.60); }
+#trace-container .span[data-error-type="transient"].depth-4 .duration { background: rgba(230, 215, 140, 0.80); }
+#trace-container .span[data-error-type="transient"].depth-5 .duration { background: rgba(230, 215, 140, 1); }
+
+#trace-container .span[data-error-type="critical"] .handle .service-name {
+  background: #a94442;
+}
+
+#trace-container .span[data-error-type="critical"].depth-0 .duration { background: rgba(230, 162, 161, 0.1); }
+#trace-container .span[data-error-type="critical"].depth-1 .duration { background: rgba(230, 162, 161, 0.20); }
+#trace-container .span[data-error-type="critical"].depth-2 .duration { background: rgba(230, 162, 161, 0.40); }
+#trace-container .span[data-error-type="critical"].depth-3 .duration { background: rgba(230, 162, 161, 0.60); }
+#trace-container .span[data-error-type="critical"].depth-4 .duration { background: rgba(230, 162, 161, 0.80); }
+#trace-container .span[data-error-type="critical"].depth-5 .duration { background: rgba(230, 162, 161, 1); }
+
+#trace-controls form {
+  margin-bottom: 10px;
+}
+
+/* hide the fact that these are links */
+#trace-controls .nav-pills a {
+  color: #000;
+  cursor: default;
+  background: rgba(0, 0, 0, 0);
+}
+
+#trace-controls .nav-pills .badge {
+  background: #428bca;
+}
+
+#spanPanel tr.anno-error-transient {
+  color: #8a6d3b;
+  background: #fcf8e3;
+}
+
+#spanPanel tr.anno-error-critical {
+  color: #a94442;
+  background: #f2dede;
+}
+
+#spanPanel #binaryAnnotations td.value {
+  word-break: break-all;
+  max-width: 75%;
+}
+
+#spanPanel #debugInfo td.value {
+  word-break: break-all;
+  max-width: 75%;
+}
+
+.modal-header .save {
+  float: right;
+  margin-right: 5px;
+}
+
+.save {
+  opacity: 0.2;
+}
+

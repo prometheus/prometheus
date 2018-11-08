@@ -1,0 +1,208 @@
+<div id='trace-controls' class='row'>
+  <ul class='nav nav-pills'>
+    <li class=''><a href='#'><strong data-i18n="trace.duration">Duration:</strong> <span class='badge'>{{duration}}</span></a></li>
+    <li class=''><a href='#'><strong data-i18n="trace.service">Services:</strong> <span class='badge'>{{services}}</span></a></li>
+    <li class=''><a href='#'><strong data-i18n="trace.depth">Depth:</strong> <span class='badge'>{{depth}}</span></a></li>
+    <li class=''><a href='#'><strong data-i18n="trace.spans">Total Spans:</strong> <span class='badge'>{{totalSpans}}</span></a></li>
+    {{#logsUrl}}
+    <li class='navbar-right'><a href='{{ logsUrl }}' id='traceLogsLink'><span class='btn btn-primary btn-xs badge'>Logs</span></a></li>
+    {{/logsUrl}}
+  </ul>
+
+  <div class='trace-details services'>
+  {{#serviceCounts}}
+    <span class='label label-default service-filter-label service-tag-filtered' data-service-name='{{name}}'>{{name}} x{{count}}</span>
+  {{/serviceCounts}}
+  </div>
+</div>
+
+<div class='row' id='trace-container'>
+  <div id='timeLabel' class='span'>
+    <div class='handle'>Services</div>
+    <div class='duration-container'>
+      {{#timeMarkers}}
+      <div class='time-marker time-marker-{{index}}'>{{time}}</div>
+      {{/timeMarkers}}
+    </div>
+  </div>
+
+  {{#spans}}
+  <div
+    id='{{spanId}}'
+    class='span service-span depth-{{depthClass}}'
+    data-keys='id,traceId,parentId,spanName,serviceNames,serviceName,durationStr,duration'
+    data-id='{{spanId}}'
+    data-trace-id='{{traceId}}'
+    data-parent-id='{{parentId}}'
+    data-span-name='{{spanName}}'
+    data-service-name='{{serviceName}}'
+    data-service-names='{{serviceNames}}'
+    data-duration-str='{{durationStr}}'
+    data-duration='{{duration}}'
+    data-children='{{children}}'
+    data-error-type='{{errorType}}'
+  >
+    <div class='handle'>
+      <div class='service-name' style='margin-left: {{depth}}px'>
+        <span class='expander'>+</span>
+        {{serviceName}}
+      </div>
+    </div>
+
+    <div class='duration-container'>
+      {{#timeMarkers}}
+      <div class='time-marker time-marker-{{index}}'>.</div>
+      {{/timeMarkers}}
+
+      <div class='duration' style='left: {{left}}%; width: {{width}}%'>
+        {{durationStr}} : {{spanName}}
+        {{#annotations}}
+        <div class='annotation{{#isCore}} core{{/isCore}}'
+          style='left: {{left}}%; width: {{width}}px'
+          title='{{value}}'
+          data-keys='endpoint,value,timestamp,relativeTime,serviceName'
+          data-endpoint='{{endpoint}}'
+          data-value='{{value}}'
+          data-timestamp='{{timestamp}}'
+          data-relative-time='{{relativeTime}}'
+          data-service-name='{{serviceName}}'
+        ></div>
+        {{/annotations}}
+      </div>
+    </div>
+
+    {{#binaryAnnotations}}
+    <div class='binary-annotation'
+      data-keys='key,value,type'
+      data-key='{{key}}'
+      data-value='{{value}}'
+      data-type='{{annotationType}}'
+    ></div>
+    {{/binaryAnnotations}}
+  </div>
+  {{/spans}}
+</div>
+
+<div class='modal fade' id='spanPanel' tabindex='-1'>
+  <div class='modal-dialog modal-lg'>
+    <div class='modal-content'>
+      <div class='modal-header'>
+        <button type='button' class='close' data-dismiss='modal' aria-hidden='true'>&times;</button>
+        <h4 class='modal-title'></h4>
+        <h5>AKA: <span class='service-names'></span></h5>
+      </div>
+      <div class='modal-body'>
+        <table id='annotations' class='table table-striped'>
+          <thead><tr>
+            <th>Date Time</th>
+            <th>Relative Time</th>
+            <th>Annotation</th>
+            <th>Address</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td data-key='timestamp' class="local-datetime"></td>
+              <td data-key='relativeTime'></td>
+              <td data-key='value'></td>
+              <td data-key='endpoint'></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table id='binaryAnnotations' class='table table-striped'>
+          <thead><tr>
+            <th>Key</th>
+            <th>Value</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td class='key' data-key='key'></td>
+              <td class='value' data-key='value'></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <button class="btn btn-info btn-xs pull-right" type="button" data-toggle="collapse"
+                data-target="#moreInfo" aria-expanded="false" aria-controls="moreInfo" data-i18n="trace.more">More Info</button>
+        <hr/>
+        <div class='clearfix'></div>
+        <div id='moreInfo' class='collapse'>
+          <table class='table table-striped'>
+            <tbody>
+              <tr>
+                <td class='key' data-key='key'></td>
+                <td class='value' data-key='value'></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class='row  hidden' id='trace-container-backup'>
+  <div id='timeLabel-backup' class='span'>
+    <div class='handle'>Services</div>
+    <div class='duration-container'>
+      {{#timeMarkersBackup}}
+      <div class='time-marker time-marker-{{index}}'>{{time}}</div>
+      {{/timeMarkersBackup}}
+    </div>
+  </div>
+
+  {{#spansBackup}}
+  <div
+    id='{{spanId}}'
+    class='span service-span depth-{{depthClass}}'
+    data-keys='id,traceId,parentId,spanName,serviceNames,serviceName,durationStr,duration'
+    data-id='{{spanId}}'
+    data-trace-id='{{traceId}}'
+    data-parent-id='{{parentId}}'
+    data-span-name='{{spanName}}'
+    data-service-name='{{serviceName}}'
+    data-service-names='{{serviceNames}}'
+    data-duration-str='{{durationStr}}'
+    data-duration='{{duration}}'
+    data-children='{{children}}'
+  >
+    <div class='handle'>
+      <div class='service-name' style='margin-left: {{depth}}px'>
+        <span class='expander'>+</span>
+        {{serviceName}}
+      </div>
+    </div>
+
+    <div class='duration-container'>
+      {{#timeMarkersBackup}}
+      <div class='time-marker time-marker-{{index}}'>.</div>
+      {{/timeMarkersBackup}}
+
+      <div class='duration' style='left: {{left}}%; width: {{width}}%'>
+        {{durationStr}} : {{spanName}}
+        {{#annotations}}
+        <div class='annotation{{#isCore}} core{{/isCore}}'
+          style='left: {{left}}%; width: {{width}}px'
+          title='{{value}}'
+          data-keys='endpoint,value,timestamp,relativeTime,serviceName'
+          data-endpoint='{{endpoint}}'
+          data-value='{{value}}'
+          data-timestamp='{{timestamp}}'
+          data-relative-time='{{relativeTime}}'
+          data-service-name='{{serviceName}}'
+        ></div>
+        {{/annotations}}
+      </div>
+    </div>
+
+    {{#binaryAnnotations}}
+    <div class='binary-annotation'
+      data-keys='key,value,type'
+      data-key='{{key}}'
+      data-value='{{value}}'
+      data-type='{{annotationType}}'
+    ></div>
+    {{/binaryAnnotations}}
+  </div>
+  {{/spansBackup}}
+</div>

@@ -1,0 +1,213 @@
+#trace-filters .label {
+  margin-right: 5px;
+}
+
+#trace-filters .service-filter-label {
+  cursor: default;
+  padding-right: 0;
+}
+
+.date-input, .time-input {
+  width: 49%;
+  display: inline-block;
+}
+
+.service-filter-remove {
+  cursor: pointer;
+  border-radius: 0;
+  margin-left: 5px;
+}
+
+.service-filter-remove:hover {
+  background: red;
+}
+
+.service-tag-filtered {
+  background: #0084B4;
+}
+
+#traces {
+  list-style: none;
+  margin: 10px 0 0 0;
+  padding: 0;
+}
+
+#traces a {
+  text-decoration: none;
+}
+
+#traces li {
+  display: block;
+  padding: 5px 0;
+  padding-bottom: 20px;
+  margin: 20px 0px 20px;
+  list-style: none;
+
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  border-radius: 4px;
+
+  background-color: rgba(255,255,255,1);
+
+  -webkit-transition: background-color .3s;
+}
+
+#traces li:after {
+  content: '';
+  display: block;
+  width: 75%;
+  margin: 15px auto -35px;
+  border-bottom: 1px solid #EEE;
+}
+
+#traces li:first-child {
+  margin-top: 0px;
+}
+
+#traces li:hover {
+  background-color: rgba(221,238,246,1);
+}
+
+
+#traces li div {
+  display: block;
+  padding: 2px 0px;
+  margin-bottom: 0px;
+  color: #999;
+
+  -webkit-transition: .3s;
+}
+
+#traces li .bar-block {
+  position: relative;
+  line-height: 20px;
+  padding: 0px;
+  margin: 2px 0;
+  background-color: rgba(255, 255, 255, .75);
+
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  border-radius: 4px;
+}
+
+#traces li .bar-graphic {
+  position: absolute;
+  top: 0px;
+  left: 0px;
+  display: block;
+  height: 20px;
+  z-index: 0;
+
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  border-radius: 4px;
+
+  background-color: #c0deed;
+
+  -webkit-transition: .3s;
+}
+
+#traces li:hover .bar-graphic {
+  background-color: #0084B4;
+}
+
+#traces li.trace-error-transient .bar-graphic {
+  background-color: #fcf8e3;;
+}
+
+#traces li.trace-error-transient:hover .bar-graphic {
+  background-color: #8a6d3b;
+}
+
+#traces li.trace-error-critical .bar-graphic {
+  background-color: #f2dede;
+}
+
+#traces li.trace-error-critical:hover .bar-graphic {
+  background-color: #a94442;
+}
+
+#traces li .bar-label {
+  position: relative;
+  margin-left: 6px;
+  padding: 2px 4px;
+  color: #0084B4;
+  font-weight: bold;
+  z-index: 1;
+
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  border-radius: 4px;
+
+  -webkit-transition: .3s;
+}
+
+#traces li:hover .bar-label {
+  color: #FFF;
+  background-color: rgba(0,132,180,.35);
+}
+
+#traces li.trace-error-transient .bar-label {
+  color: #8a6d3b;
+}
+
+#traces li.trace-error-transient:hover .bar-label {
+  color: #FFF;
+  background-color: rgba(138,109,59,.35);
+}
+
+#traces li.trace-error-critical .bar-label {
+  color: #a94442;
+}
+
+#traces li.trace-error-critical:hover .bar-label {
+  color: #FFF;
+  background-color: rgba(169,68,66,.35);
+}
+
+#traces li div span.label {
+  -webkit-transition: .3s;
+}
+
+#traces li div p {
+  margin-bottom: 0;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 11px;
+}
+
+#traces li .trace-details {
+  display: inline-block;
+}
+
+#traces li .services {
+  width: 80%;
+}
+
+#traces li .timestamp {
+  width: 19%;
+  text-align: right;
+}
+
+#traces li:hover .services .label {
+  background-color: #F89406;
+}
+
+#traces li:hover .services .service-tag-filtered {
+  background-color: #0084B4;
+}
+
+#traces li .services .label:hover,
+#traces li .services .label:hover span {
+  background-color: red;
+}
+
+#traces li .timestamp .label {
+  background-color: #FAFAFA;
+  color: #AAA;
+}
+
+#traces li:hover .timestamp .label {
+  background-color: #FFF;
+  color: #666;
+}

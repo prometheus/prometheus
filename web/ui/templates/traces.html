@@ -1,0 +1,13 @@
+{{define "head"}}
+
+    <!-- base tag is used to tell Zipkin UI about route paths -->
+    <base href="{{ pathPrefix }}/traces/">
+
+    <script type="text/javascript" src="{{ pathPrefix }}/static/vendor/zipkin-ui/zipkin-ui.min.js?v={{ buildVersion }}"></script>
+    <link href="{{ pathPrefix }}/static/vendor/zipkin-ui/zipkin-ui.min.css?v={{ buildVersion }}" rel="stylesheet">
+
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/graph.css?v={{ buildVersion }}">
+
+{{end}}
+
+{{define "content"}}<!-- nix -->{{end}}
