@@ -573,6 +573,15 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError, func()) {
 	return res, nil, nil
 }
 
+func matchLabels(lset labels.Labels, matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if !m.Matches(lset.Get(m.Name)) {
+			return false
+		}
+	}
+	return true
+}
+
 func (api *API) targetMetadata(r *http.Request) (interface{}, *apiError, func()) {
 	limit := -1
 	if s := r.FormValue("limit"); s != "" {
@@ -590,17 +599,14 @@ func (api *API) targetMetadata(r *http.Request) (interface{}, *apiError, func())
 	metric := r.FormValue("metric")
 
 	var res []metricMetadata
-Outer:
 	for _, tt := range api.targetRetriever.TargetsActive() {
 		for _, t := range tt {
 			if limit >= 0 && len(res) >= limit {
 				break
 			}
-			for _, m := range matchers {
-				// Filter targets that don't satisfy the label matchers.
-				if !m.Matches(t.Labels().Get(m.Name)) {
-					continue Outer
-				}
+			// Filter targets that don't satisfy the label matchers.
+			if !matchLabels(t.Labels(), matchers) {
+				continue
 			}
 			// If no metric is specified, get the full list for the target.
 			if metric == "" {
