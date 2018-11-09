@@ -3,24 +3,27 @@
 // license that can be found in the LICENSE file.
 
 // Package oauth2 provides support for making
-// OAuth2 authorized and authenticated HTTP requests.
+// OAuth2 authorized and authenticated HTTP requests,
+// as specified in RFC 6749.
 // It can additionally grant authorization with Bearer JWT.
 package oauth2 // import "golang.org/x/oauth2"
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2/internal"
 )
 
 // NoContext is the default context you should supply if not using
 // your own context.Context (see https://golang.org/x/net/context).
+//
+// Deprecated: Use context.Background() or context.TODO() instead.
 var NoContext = context.TODO()
 
 // RegisterBrokenAuthHeaderProvider registers an OAuth2 server
@@ -37,6 +40,8 @@ func RegisterBrokenAuthHeaderProvider(tokenURL string) {
 
 // Config describes a typical 3-legged OAuth2 flow, with both the
 // client application information and the server's endpoint URLs.
+// For the client credentials 2-legged OAuth2 flow, see the clientcredentials
+// package (https://golang.org/x/oauth2/clientcredentials).
 type Config struct {
 	// ClientID is the application's ID.
 	ClientID string
@@ -113,21 +118,30 @@ func SetAuthURLParam(key, value string) AuthCodeOption {
 // that asks for permissions for the required scopes explicitly.
 //
 // State is a token to protect the user from CSRF attacks. You must
-// always provide a non-zero string and validate that it matches the
+// always provide a non-empty string and validate that it matches the
 // the state query parameter on your redirect callback.
 // See http://tools.ietf.org/html/rfc6749#section-10.12 for more info.
 //
 // Opts may include AccessTypeOnline or AccessTypeOffline, as well
 // as ApprovalForce.
+// It can also be used to pass the PKCE challange.
+// See https://www.oauth.com/oauth2-servers/pkce/ for more info.
 func (c *Config) AuthCodeURL(state string, opts ...AuthCodeOption) string {
 	var buf bytes.Buffer
 	buf.WriteString(c.Endpoint.AuthURL)
 	v := url.Values{
 		"response_type": {"code"},
 		"client_id":     {c.ClientID},
-		"redirect_uri":  internal.CondVal(c.RedirectURL),
-		"scope":         internal.CondVal(strings.Join(c.Scopes, " ")),
-		"state":         internal.CondVal(state),
+	}
+	if c.RedirectURL != "" {
+		v.Set("redirect_uri", c.RedirectURL)
+	}
+	if len(c.Scopes) > 0 {
+		v.Set("scope", strings.Join(c.Scopes, " "))
+	}
+	if state != "" {
+		// TODO(light): Docs say never to omit state; don't allow empty.
+		v.Set("state", state)
 	}
 	for _, opt := range opts {
 		opt.setValue(v)
@@ -150,15 +164,17 @@ func (c *Config) AuthCodeURL(state string, opts ...AuthCodeOption) string {
 // and when other authorization grant types are not available."
 // See https://tools.ietf.org/html/rfc6749#section-4.3 for more info.
 //
-// The HTTP client to use is derived from the context.
-// If nil, http.DefaultClient is used.
+// The provided context optionally controls which HTTP client is used. See the HTTPClient variable.
 func (c *Config) PasswordCredentialsToken(ctx context.Context, username, password string) (*Token, error) {
-	return retrieveToken(ctx, c, url.Values{
+	v := url.Values{
 		"grant_type": {"password"},
 		"username":   {username},
 		"password":   {password},
-		"scope":      internal.CondVal(strings.Join(c.Scopes, " ")),
-	})
+	}
+	if len(c.Scopes) > 0 {
+		v.Set("scope", strings.Join(c.Scopes, " "))
+	}
+	return retrieveToken(ctx, c, v)
 }
 
 // Exchange converts an authorization code into a token.
@@ -166,18 +182,25 @@ func (c *Config) PasswordCredentialsToken(ctx context.Context, username, passwor
 // It is used after a resource provider redirects the user back
 // to the Redirect URI (the URL obtained from AuthCodeURL).
 //
-// The HTTP client to use is derived from the context.
-// If a client is not provided via the context, http.DefaultClient is used.
+// The provided context optionally controls which HTTP client is used. See the HTTPClient variable.
 //
 // The code will be in the *http.Request.FormValue("code"). Before
 // calling Exchange, be sure to validate FormValue("state").
-func (c *Config) Exchange(ctx context.Context, code string) (*Token, error) {
-	return retrieveToken(ctx, c, url.Values{
-		"grant_type":   {"authorization_code"},
-		"code":         {code},
-		"redirect_uri": internal.CondVal(c.RedirectURL),
-		"scope":        internal.CondVal(strings.Join(c.Scopes, " ")),
-	})
+//
+// Opts may include the PKCE verifier code if previously used in AuthCodeURL.
+// See https://www.oauth.com/oauth2-servers/pkce/ for more info.
+func (c *Config) Exchange(ctx context.Context, code string, opts ...AuthCodeOption) (*Token, error) {
+	v := url.Values{
+		"grant_type": {"authorization_code"},
+		"code":       {code},
+	}
+	if c.RedirectURL != "" {
+		v.Set("redirect_uri", c.RedirectURL)
+	}
+	for _, opt := range opts {
+		opt.setValue(v)
+	}
+	return retrieveToken(ctx, c, v)
 }
 
 // Client returns an HTTP client using the provided token.
@@ -288,20 +311,20 @@ var HTTPClient internal.ContextKey
 // NewClient creates an *http.Client from a Context and TokenSource.
 // The returned client is not valid beyond the lifetime of the context.
 //
+// Note that if a custom *http.Client is provided via the Context it
+// is used only for token acquisition and is not used to configure the
+// *http.Client returned from NewClient.
+//
 // As a special case, if src is nil, a non-OAuth2 client is returned
 // using the provided context. This exists to support related OAuth2
 // packages.
 func NewClient(ctx context.Context, src TokenSource) *http.Client {
 	if src == nil {
-		c, err := internal.ContextClient(ctx)
-		if err != nil {
-			return &http.Client{Transport: internal.ErrorTransport{err}}
-		}
-		return c
+		return internal.ContextClient(ctx)
 	}
 	return &http.Client{
 		Transport: &Transport{
-			Base:   internal.ContextTransport(ctx),
+			Base:   internal.ContextClient(ctx).Transport,
 			Source: ReuseTokenSource(nil, src),
 		},
 	}
