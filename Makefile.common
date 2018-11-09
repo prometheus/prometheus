@@ -68,7 +68,7 @@ DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 DOCKER_REPO             ?= prom
 
 .PHONY: all
-all: style staticcheck unused build test
+all: precheck style staticcheck unused build test
 
 # This rule is used to forward a target like "build" to "common-build".  This
 # allows a new "build" target to be defined in a Makefile which includes this
@@ -195,3 +195,19 @@ ifdef GOVENDOR
 $(GOVENDOR):
 	GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
 endif
+
+.PHONY: precheck
+precheck::
+
+define PRECHECK_COMMAND_template =
+precheck:: $(1)_precheck
+
+
+PRECHECK_COMMAND_$(1) ?= $(1) $$(strip $$(PRECHECK_OPTIONS_$(1)))
+.PHONE: $(1)_precheck
+$(1)_precheck:
+	@if ! $$(PRECHECK_COMMAND_$(1)) 1>/dev/null 2>&1; then \
+		echo "Execution of '$$(PRECHECK_COMMAND_$(1))' command failed. Is $(1) installed?"; \
+		exit 1; \
+	fi
+endef

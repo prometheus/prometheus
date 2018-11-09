@@ -25,6 +25,10 @@ STATICCHECK_IGNORE = \
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
+# Go modules needs the bzr binary because of the dependency on launchpad.net/gocheck.
+$(eval $(call PRECHECK_COMMAND_template,bzr))
+PRECHECK_OPTIONS_bzr = version
+
 .PHONY: assets
 assets:
 	@echo ">> writing assets"
