@@ -29,8 +29,13 @@ GO           ?= go
 GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 GOOPTS       ?=
+
+GO_VERSION        ?= $(shell $(GO) version)
+GO_VERSION_NUMBER ?= $(word 3, $(GO_VERSION))
+PRE_GO_111        ?= $(shell echo $(GO_VERSION_NUMBER) | grep -E 'go1\.(10|[0-9])\.')
+
 unexport GOVENDOR
-ifeq ($(shell $(GO) version | grep -E 'go1\.(10|[0-9])\.'),)
+ifeq (, $(PRE_GO_111))
 	ifneq (,$(wildcard go.mod))
 		# Enforce Go modules support just in case the directory is inside GOPATH (and for Travis CI).
 		GO111MODULE := on
@@ -44,7 +49,7 @@ else
 	ifneq (,$(wildcard go.mod))
 		ifneq (,$(wildcard vendor))
 $(warning This repository requires Go >= 1.11 because of Go modules)
-$(warning Some recipes may not work as expected as the current Go runtime is '$(shell $(GO) version)')
+$(warning Some recipes may not work as expected as the current Go runtime is '$(GO_VERSION_NUMBER)')
 		endif
 	else
 		# This repository isn't using Go modules (yet).
