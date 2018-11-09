@@ -58,7 +58,7 @@ func request_Admin_DeleteSeries_0(ctx context.Context, marshaler runtime.Marshal
 	var protoReq SeriesDeleteRequest
 	var metadata runtime.ServerMetadata
 
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 

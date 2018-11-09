@@ -29,3 +29,12 @@ DOCKER_IMAGE_NAME       ?= prometheus
 assets:
 	@echo ">> writing assets"
 	cd $(PREFIX)/web/ui && $(GO) generate $(GOOPTS)
+	@$(GOFMT) -w ./web/ui
+
+.PHONY: check_assets
+check_assets: assets
+	@echo ">> checking that assets are up-to-date"
+	@if ! (cd $(PREFIX)/web/ui && git diff --exit-code); then \
+		echo "Run 'make assets' and commit the changes to fix the error."; \
+		exit 1; \
+	fi
