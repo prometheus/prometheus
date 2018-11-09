@@ -29,7 +29,7 @@ const tombstoneFilename = "tombstones"
 
 const (
 	// MagicTombstone is 4 bytes at the head of a tombstone file.
-	MagicTombstone = 0x130BA30
+	MagicTombstone = 0x0130BA30
 
 	tombstoneFormatV1 = 1
 )

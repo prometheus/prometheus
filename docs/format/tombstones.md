@@ -8,7 +8,7 @@ The stones section is 0 padded to a multiple of 4 for fast scans.
 
 ```
 ┌────────────────────────────┬─────────────────────┐
-│ magic(0x130BA30) <4b>      │ version(1) <1 byte> │
+│ magic(0x0130BA30) <4b>     │ version(1) <1 byte> │
 ├────────────────────────────┴─────────────────────┤
 │ ┌──────────────────────────────────────────────┐ │
 │ │                Tombstone 1                   │ │
