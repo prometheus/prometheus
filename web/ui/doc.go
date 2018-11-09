@@ -15,7 +15,7 @@
 package ui
 
 import (
-	// The blank import is to make govendor happy.
+	// The blank import is to make Go modules happy.
 	_ "github.com/shurcooL/vfsgen"
 )
 
