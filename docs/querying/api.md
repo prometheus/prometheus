@@ -292,11 +292,15 @@ $ curl 'localhost:9090/api/v1/labels?match[]=call|le|.*name'
         "name"
     ]
 }
-$ curl 'localhost:9090/api/v1/labels?match[]=.*name&match[]=dial.*'
+$ curl 'localhost:9090/api/v1/labels?match[]=c.*&match[]=.*job.*'
 {
     "status": "success",
     "data": [
-        "dialer_name"
+        "call",
+        "code",
+        "config",
+        "job",
+        "scrape_job"
     ]
 }
 ```

@@ -406,15 +406,19 @@ func (api *API) labelNames(r *http.Request) (interface{}, *apiError, func()) {
 		return nil, &apiError{errorExec, err}, nil
 	}
 
+	if len(matchers) == 0 {
+		return names, nil, nil
+	}
+
 	var filteredNames []string
 Outer:
 	for _, n := range names {
 		for _, m := range matchers {
-			if !m.Matches(n) {
+			if m.Matches(n) {
+				filteredNames = append(filteredNames, n)
 				continue Outer
 			}
 		}
-		filteredNames = append(filteredNames, n)
 	}
 
 	return filteredNames, nil, nil
