@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/url"
@@ -57,6 +58,7 @@ func main() {
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
+	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
 	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
 	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
@@ -104,13 +106,13 @@ func main() {
 		os.Exit(CheckMetrics())
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(*queryServer, *queryExpr))
+		os.Exit(QueryInstant(*queryServer, *queryExpr, *queryCmdFmt))
 
 	case queryRangeCmd.FullCommand():
-		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep))
+		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, *queryCmdFmt))
 
 	case querySeriesCmd.FullCommand():
-		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd))
+		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd, *queryCmdFmt))
 
 	case debugPprofCmd.FullCommand():
 		os.Exit(debugPprof(*debugPprofServer))
@@ -122,7 +124,7 @@ func main() {
 		os.Exit(debugAll(*debugAllServer))
 
 	case queryLabelsCmd.FullCommand():
-		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName))
+		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryCmdFmt))
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(*testRulesFiles...))
@@ -316,7 +318,7 @@ func CheckMetrics() int {
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url string, query string) int {
+func QueryInstant(url, query, format string) int {
 	config := api.Config{
 		Address: url,
 	}
@@ -339,13 +341,18 @@ func QueryInstant(url string, query string) int {
 		return 1
 	}
 
+	if format == "json" {
+		json.NewEncoder(os.Stdout).Encode(val)
+		return 0
+	}
+
 	fmt.Println(val.String())
 
 	return 0
 }
 
 // QueryRange performs a range query against a Prometheus server.
-func QueryRange(url, query, start, end string, step time.Duration) int {
+func QueryRange(url, query, start, end string, step time.Duration, format string) int {
 	config := api.Config{
 		Address: url,
 	}
@@ -400,12 +407,17 @@ func QueryRange(url, query, start, end string, step time.Duration) int {
 		return 1
 	}
 
+	if format == "json" {
+		json.NewEncoder(os.Stdout).Encode(val)
+		return 0
+	}
+
 	fmt.Println(val.String())
 	return 0
 }
 
 // QuerySeries queries for a series against a Prometheus server.
-func QuerySeries(url *url.URL, matchers []string, start string, end string) int {
+func QuerySeries(url *url.URL, matchers []string, start, end, format string) int {
 	config := api.Config{
 		Address: url.String(),
 	}
@@ -454,6 +466,11 @@ func QuerySeries(url *url.URL, matchers []string, start string, end string) int 
 		return 1
 	}
 
+	if format == "json" {
+		json.NewEncoder(os.Stdout).Encode(val)
+		return 0
+	}
+
 	for _, v := range val {
 		fmt.Println(v)
 	}
@@ -461,7 +478,7 @@ func QuerySeries(url *url.URL, matchers []string, start string, end string) int 
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, name string) int {
+func QueryLabels(url *url.URL, name, format string) int {
 	config := api.Config{
 		Address: url.String(),
 	}
@@ -482,6 +499,11 @@ func QueryLabels(url *url.URL, name string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
 		return 1
+	}
+
+	if format == "json" {
+		json.NewEncoder(os.Stdout).Encode(val)
+		return 0
 	}
 
 	for _, v := range val {
