@@ -474,23 +474,36 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	return mat, nil
 }
 
+// cumulativeSubqueryOffset returns the sum of range of all subqueries in the path.
+func (ng *Engine) cumulativeSubqueryOffset(path []Node) time.Duration {
+	var subqMaxOffset time.Duration
+	for _, node := range path {
+		switch n := node.(type) {
+		case *SubqueryExpr:
+			subqMaxOffset += n.Range
+		}
+	}
+	return subqMaxOffset
+}
+
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
-	Inspect(s.Expr, func(node Node, _ []Node) error {
+	Inspect(s.Expr, func(node Node, path []Node) error {
+		subqMaxOffset := ng.cumulativeSubqueryOffset(path)
 		switch n := node.(type) {
 		case *VectorSelector:
-			if maxOffset < LookbackDelta {
-				maxOffset = LookbackDelta
+			if maxOffset < LookbackDelta+subqMaxOffset {
+				maxOffset = LookbackDelta + subqMaxOffset
 			}
-			if n.Offset+LookbackDelta > maxOffset {
-				maxOffset = n.Offset + LookbackDelta
+			if n.Offset+LookbackDelta+subqMaxOffset > maxOffset {
+				maxOffset = n.Offset + LookbackDelta + subqMaxOffset
 			}
 		case *MatrixSelector:
-			if maxOffset < n.Range {
-				maxOffset = n.Range
+			if maxOffset < n.Range+subqMaxOffset {
+				maxOffset = n.Range + subqMaxOffset
 			}
-			if n.Offset+n.Range > maxOffset {
-				maxOffset = n.Offset + n.Range
+			if n.Offset+n.Range+subqMaxOffset > maxOffset {
+				maxOffset = n.Offset + n.Range + subqMaxOffset
 			}
 		}
 		return nil
@@ -853,6 +866,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 		}
 
+		// TODO(codesome): Accept Subquery too in place of MatrixSelector.
+
 		// Check if the function has a matrix argument.
 		var matrixArgIndex int
 		var matrixArg bool
@@ -1048,6 +1063,20 @@ func (ev *evaluator) eval(expr Expr) Value {
 			panic(fmt.Errorf("cannot do range evaluation of matrix selector"))
 		}
 		return ev.matrixSelector(e)
+
+	case *SubqueryExpr:
+		newEv := &evaluator{
+			startTimestamp: ev.endTimestamp - int64(e.Range/time.Millisecond),
+			endTimestamp:   ev.endTimestamp,
+			interval:       ev.interval, // TODO(codesome): this will be 0 for instant vector, fix it.
+			ctx:            ev.ctx,
+			maxSamples:     ev.maxSamples,
+			logger:         ev.logger,
+		}
+		if e.StepExists {
+			newEv.interval = int64(e.Step / time.Millisecond)
+		}
+		return newEv.eval(e.Expr)
 	}
 
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))

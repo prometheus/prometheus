@@ -121,9 +121,6 @@ type SubqueryExpr struct {
 	Range      time.Duration
 	Step       time.Duration
 	StepExists bool
-
-	// The series are populated at query preparation time.
-	series []storage.Series
 }
 
 // NumberLiteral represents a number.
@@ -275,6 +272,11 @@ func Walk(v Visitor, node Node, path []Node) error {
 
 	case *Call:
 		if err := Walk(v, n.Args, path); err != nil {
+			return err
+		}
+
+	case *SubqueryExpr:
+		if err := Walk(v, n.Expr, path); err != nil {
 			return err
 		}
 

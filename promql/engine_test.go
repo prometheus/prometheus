@@ -470,6 +470,30 @@ load 10s
 			Start: time.Unix(10, 0),
 		},
 		{
+			Query:      "metric[20s:10s]",
+			MaxSamples: 2,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query:      "metric[20s:5s]",
+			MaxSamples: 3,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
 			Query:      "metric[20s]",
 			MaxSamples: 0,
 			Result: Result{
