@@ -829,6 +829,20 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	return mat
 }
 
+// subqIntoMatrixSelector evaluates given SubqueryExpr and returns an equivalent
+// evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
+func (ev *evaluator) subqIntoMatrixSelector(subq *SubqueryExpr) *MatrixSelector {
+	val := ev.eval(subq).(Matrix)
+	ms := &MatrixSelector{
+		Range:  subq.Range,
+		series: make([]storage.Series, 0, len(val)),
+	}
+	for _, s := range val {
+		ms.series = append(ms.series, NewStorageSeries(&s))
+	}
+	return ms
+}
+
 // eval evaluates the given expression as the given AST expression node requires.
 func (ev *evaluator) eval(expr Expr) Value {
 	// This is the top-level evaluation method.
@@ -866,8 +880,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 		}
 
-		// TODO(codesome): Accept Subquery too in place of MatrixSelector.
-
 		// Check if the function has a matrix argument.
 		var matrixArgIndex int
 		var matrixArg bool
@@ -876,6 +888,15 @@ func (ev *evaluator) eval(expr Expr) Value {
 			if ok {
 				matrixArgIndex = i
 				matrixArg = true
+				break
+			}
+			// SubqueryExpr can be used in place of MatrixSelector.
+			subq, ok := a.(*SubqueryExpr)
+			if ok {
+				matrixArgIndex = i
+				matrixArg = true
+				// Replacing SubqueryExpr with MatrixSelector.
+				e.Args[i] = ev.subqIntoMatrixSelector(subq)
 				break
 			}
 		}

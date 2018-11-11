@@ -482,6 +482,34 @@ load 10s
 			Start: time.Unix(10, 0),
 		},
 		{
+			Query:      "rate(metric[20s])",
+			MaxSamples: 3,
+			Result: Result{
+				nil,
+				Vector{
+					Sample{
+						Point:  Point{V: 0.1, T: 10000},
+						Metric: labels.Labels{},
+					},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query:      "rate(metric[20s:10s])",
+			MaxSamples: 4,
+			Result: Result{
+				nil,
+				Vector{
+					Sample{
+						Point:  Point{V: 0.1, T: 10000},
+						Metric: labels.Labels{},
+					},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
 			Query:      "metric[20s:5s]",
 			MaxSamples: 3,
 			Result: Result{
@@ -489,6 +517,20 @@ load 10s
 				Matrix{Series{
 					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query:      "rate(metric[20s:5s])",
+			MaxSamples: 4,
+			Result: Result{
+				nil,
+				Vector{
+					Sample{
+						Point:  Point{V: 0.0625, T: 10000},
+						Metric: labels.Labels{},
+					},
 				},
 			},
 			Start: time.Unix(10, 0),
