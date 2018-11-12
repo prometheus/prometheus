@@ -30,6 +30,7 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -49,6 +50,15 @@ const (
 	maxInt64 = 9223372036854774784
 	// The smallest SampleValue that can be converted to an int64 without underflow.
 	minInt64 = -9223372036854775808
+)
+
+var (
+	// LookbackDelta determines the time since the last sample after which a time
+	// series is considered stale.
+	LookbackDelta = 5 * time.Minute
+
+	// GlobalEvaluationInterval is the value of EvaluationInterval in the GlobalConfig.
+	GlobalEvaluationInterval time.Duration
 )
 
 type engineMetrics struct {
@@ -1089,13 +1099,15 @@ func (ev *evaluator) eval(expr Expr) Value {
 		newEv := &evaluator{
 			startTimestamp: ev.endTimestamp - int64(e.Range/time.Millisecond),
 			endTimestamp:   ev.endTimestamp,
-			interval:       ev.interval, // TODO(codesome): this will be 0 for instant vector, fix it.
+			interval:       int64(GlobalEvaluationInterval / time.Millisecond),
 			ctx:            ev.ctx,
 			maxSamples:     ev.maxSamples,
 			logger:         ev.logger,
 		}
 		if e.StepExists {
 			newEv.interval = int64(e.Step / time.Millisecond)
+		} else if newEv.interval == 0 {
+			newEv.interval = int64(time.Duration(config.DefaultGlobalConfig.EvaluationInterval) / time.Millisecond)
 		}
 		return newEv.eval(e.Expr)
 	}
@@ -1838,10 +1850,6 @@ func shouldDropMetricName(op ItemType) bool {
 		return false
 	}
 }
-
-// LookbackDelta determines the time since the last sample after which a time
-// series is considered stale.
-var LookbackDelta = 5 * time.Minute
 
 // documentedType returns the internal type to the equivalent
 // user facing terminology as defined in the documentation.
