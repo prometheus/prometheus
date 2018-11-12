@@ -32,7 +32,7 @@ PRECHECK_OPTIONS_bzr = version
 .PHONY: assets
 assets:
 	@echo ">> writing assets"
-	cd $(PREFIX)/web/ui && $(GO) generate $(GOOPTS)
+	cd $(PREFIX)/web/ui && GO111MODULE=$(GO111MODULE) $(GO) generate $(GOOPTS)
 	@$(GOFMT) -w ./web/ui
 
 .PHONY: check_assets
