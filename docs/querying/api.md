@@ -245,13 +245,9 @@ GET /api/v1/labels
 POST /api/v1/labels
 ```
 
-URL query parameters:
-
-- `match[]=<regex_matcher>`: Repeated regex matcher to filter out label names. It is optional, without matcher API returns all the label names.
-
 The `data` section of the JSON response is a list of string label names.
 
-These are some examples with and without matchers.
+Here is an example.
 
 ```json
 $ curl 'localhost:9090/api/v1/labels'
@@ -279,28 +275,6 @@ $ curl 'localhost:9090/api/v1/labels'
         "scrape_job",
         "slice",
         "version"
-    ]
-}
-$ curl 'localhost:9090/api/v1/labels?match[]=call|le|.*name'
-{
-    "status": "success",
-    "data": [
-        "call",
-        "dialer_name",
-        "le",
-        "listener_name",
-        "name"
-    ]
-}
-$ curl 'localhost:9090/api/v1/labels?match[]=c.*&match[]=.*job.*'
-{
-    "status": "success",
-    "data": [
-        "call",
-        "code",
-        "config",
-        "job",
-        "scrape_job"
     ]
 }
 ```

@@ -383,20 +383,6 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 }
 
 func (api *API) labelNames(r *http.Request) (interface{}, *apiError, func()) {
-	// Report any errors in matchers before getting the label names.
-	// All matchers are considered as regex matchers.
-	if err := r.ParseForm(); err != nil {
-		return nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %v", err)}, nil
-	}
-	var matchers []*labels.Matcher
-	for _, s := range r.Form["match[]"] {
-		m, err := labels.NewMatcher(labels.MatchRegexp, "", s)
-		if err != nil {
-			return nil, &apiError{errorBadData, err}, nil
-		}
-		matchers = append(matchers, m)
-	}
-
 	db := api.db()
 	if db == nil {
 		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil
@@ -405,23 +391,7 @@ func (api *API) labelNames(r *http.Request) (interface{}, *apiError, func()) {
 	if err != nil {
 		return nil, &apiError{errorExec, err}, nil
 	}
-
-	if len(matchers) == 0 {
-		return names, nil, nil
-	}
-
-	var filteredNames []string
-Outer:
-	for _, n := range names {
-		for _, m := range matchers {
-			if m.Matches(n) {
-				filteredNames = append(filteredNames, n)
-				continue Outer
-			}
-		}
-	}
-
-	return filteredNames, nil, nil
+	return names, nil, nil
 }
 
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError, func()) {
