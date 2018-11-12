@@ -1581,21 +1581,26 @@ func TestParseSeries(t *testing.T) {
 }
 
 func TestRecoverParserRuntime(t *testing.T) {
-	var p *parser
+	p := newParser("foo bar")
 	var err error
-	defer p.recover(&err)
 
+	defer func() {
+		if err != errUnexpected {
+			t.Fatalf("wrong error message: %q, expected %q", err, errUnexpected)
+		}
+
+		if _, ok := <-p.lex.items; ok {
+			t.Fatalf("lex.items was not closed")
+		}
+	}()
+	defer p.recover(&err)
 	// Cause a runtime panic.
 	var a []int
 	a[123] = 1
-
-	if err != errUnexpected {
-		t.Fatalf("wrong error message: %q, expected %q", err, errUnexpected)
-	}
 }
 
 func TestRecoverParserError(t *testing.T) {
-	var p *parser
+	p := newParser("foo bar")
 	var err error
 
 	e := fmt.Errorf("custom error")
