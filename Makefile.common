@@ -62,6 +62,12 @@ PROMU        := $(FIRST_GOPATH)/bin/promu
 STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
 pkgs          = ./...
 
+GO_VERSION        ?= $(shell $(GO) version)
+GO_BUILD_PLATFORM ?= $(subst /,-,$(lastword $(GO_VERSION)))
+
+PROMU_VERSION ?= 0.2.0
+PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
+
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
@@ -166,8 +172,12 @@ common-docker-tag-latest:
 	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):latest"
 
 .PHONY: promu
-promu:
-	GOOS= GOARCH= GO111MODULE=off $(GO) get -u github.com/prometheus/promu
+promu: $(PROMU)
+
+$(PROMU):
+	curl -s -L $(PROMU_URL) | tar -xvz -C /tmp
+	mkdir -v -p $(FIRST_GOPATH)/bin
+	cp -v /tmp/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(PROMU)
 
 .PHONY: proto
 proto:
