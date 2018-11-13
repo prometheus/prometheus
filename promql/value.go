@@ -257,11 +257,11 @@ func (r *Result) String() string {
 
 // StorageSeries simulates promql.Series as storage.Series.
 type StorageSeries struct {
-	series *Series
+	series Series
 }
 
 // NewStorageSeries returns a StorageSeries fromfor series.
-func NewStorageSeries(series *Series) *StorageSeries {
+func NewStorageSeries(series Series) *StorageSeries {
 	return &StorageSeries{
 		series: series,
 	}
@@ -281,7 +281,7 @@ type storageSeriesIterator struct {
 	curr   int
 }
 
-func newStorageSeriesIterator(series *Series) *storageSeriesIterator {
+func newStorageSeriesIterator(series Series) *storageSeriesIterator {
 	return &storageSeriesIterator{
 		points: series.Points,
 		curr:   -1,

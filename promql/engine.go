@@ -848,7 +848,7 @@ func (ev *evaluator) subqIntoMatrixSelector(subq *SubqueryExpr) *MatrixSelector 
 		series: make([]storage.Series, 0, len(val)),
 	}
 	for _, s := range val {
-		ms.series = append(ms.series, NewStorageSeries(&s))
+		ms.series = append(ms.series, NewStorageSeries(s))
 	}
 	return ms
 }
