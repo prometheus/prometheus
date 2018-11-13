@@ -46,6 +46,10 @@ const (
 // before.
 var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 
+// page is an in memory buffer used to batch disk writes.
+// Records bigger than the page size are split and flushed separately.
+// A flush is triggered when a single records doesn't fit the page size or
+// when the next record can't fit in the remaining free page space.
 type page struct {
 	alloc   int
 	flushed int
@@ -289,13 +293,13 @@ func (w *WAL) Repair(origErr error) error {
 	if err != nil {
 		return errors.Wrap(err, "list segments")
 	}
-	level.Warn(w.logger).Log("msg", "deleting all segments behind corruption")
+	level.Warn(w.logger).Log("msg", "deleting all segments behind corruption", "segment", cerr.Segment)
 
 	for _, s := range segs {
-		if s.n <= cerr.Segment {
+		if s.index <= cerr.Segment {
 			continue
 		}
-		if w.segment.i == s.n {
+		if w.segment.i == s.index {
 			// The active segment needs to be removed,
 			// close it first (Windows!). Can be closed safely
 			// as we set the current segment to repaired file
@@ -304,14 +308,14 @@ func (w *WAL) Repair(origErr error) error {
 				return errors.Wrap(err, "close active segment")
 			}
 		}
-		if err := os.Remove(filepath.Join(w.dir, s.s)); err != nil {
-			return errors.Wrap(err, "delete segment")
+		if err := os.Remove(filepath.Join(w.dir, s.name)); err != nil {
+			return errors.Wrapf(err, "delete segment:%v", s.index)
 		}
 	}
 	// Regardless of the corruption offset, no record reaches into the previous segment.
 	// So we can safely repair the WAL by removing the segment and re-inserting all
 	// its records up to the corruption.
-	level.Warn(w.logger).Log("msg", "rewrite corrupted segment")
+	level.Warn(w.logger).Log("msg", "rewrite corrupted segment", "segment", cerr.Segment)
 
 	fn := SegmentName(w.dir, cerr.Segment)
 	tmpfn := fn + ".repair"
@@ -397,7 +401,7 @@ func (w *WAL) flushPage(clear bool) error {
 
 	// No more data will fit into the page. Enqueue and clear it.
 	if clear {
-		p.alloc = pageSize // write till end of page
+		p.alloc = pageSize // Write till end of page.
 		w.pageCompletions.Inc()
 	}
 	n, err := w.segment.Write(p.buf[p.flushed:p.alloc])
@@ -465,13 +469,14 @@ func (w *WAL) Log(recs ...[]byte) error {
 }
 
 // log writes rec to the log and forces a flush of the current page if its
-// the final record of a batch.
+// the final record of a batch, the record is bigger than the page size or
+// the current page is full.
 func (w *WAL) log(rec []byte, final bool) error {
-	// If the record is too big to fit within pages in the current
+	// If the record is too big to fit within the active page in the current
 	// segment, terminate the active segment and advance to the next one.
 	// This ensures that records do not cross segment boundaries.
-	left := w.page.remaining() - recordHeaderSize                                   // Active pages.
-	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages.
+	left := w.page.remaining() - recordHeaderSize                                   // Free space in the active page.
+	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages in the active segment.
 
 	if len(rec) > left {
 		if err := w.nextSegment(); err != nil {
@@ -511,7 +516,9 @@ func (w *WAL) log(rec []byte, final bool) error {
 		copy(buf[recordHeaderSize:], part)
 		p.alloc += len(part) + recordHeaderSize
 
-		// If we wrote a full record, we can fit more records of the batch
+		// By definition when a record is split it means its size is bigger than
+		// the page boundary so the current page would be full and needs to be flushed.
+		// On contrary if we wrote a full record, we can fit more records of the batch
 		// into the page before flushing it.
 		if final || typ != recFull || w.page.full() {
 			if err := w.flushPage(false); err != nil {
@@ -523,9 +530,9 @@ func (w *WAL) log(rec []byte, final bool) error {
 	return nil
 }
 
-// Segments returns the range [m, n] of currently existing segments.
-// If no segments are found, m and n are -1.
-func (w *WAL) Segments() (m, n int, err error) {
+// Segments returns the range [first, n] of currently existing segments.
+// If no segments are found, first and n are -1.
+func (w *WAL) Segments() (first, last int, err error) {
 	refs, err := listSegments(w.dir)
 	if err != nil {
 		return 0, 0, err
@@ -533,7 +540,7 @@ func (w *WAL) Segments() (m, n int, err error) {
 	if len(refs) == 0 {
 		return -1, -1, nil
 	}
-	return refs[0].n, refs[len(refs)-1].n, nil
+	return refs[0].index, refs[len(refs)-1].index, nil
 }
 
 // Truncate drops all segments before i.
@@ -549,10 +556,10 @@ func (w *WAL) Truncate(i int) (err error) {
 		return err
 	}
 	for _, r := range refs {
-		if r.n >= i {
+		if r.index >= i {
 			break
 		}
-		if err = os.Remove(filepath.Join(w.dir, r.s)); err != nil {
+		if err = os.Remove(filepath.Join(w.dir, r.name)); err != nil {
 			return err
 		}
 	}
@@ -595,8 +602,8 @@ func (w *WAL) Close() (err error) {
 }
 
 type segmentRef struct {
-	s string
-	n int
+	name  string
+	index int
 }
 
 func listSegments(dir string) (refs []segmentRef, err error) {
@@ -613,11 +620,11 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		if len(refs) > 0 && k > last+1 {
 			return nil, errors.New("segments are not sequential")
 		}
-		refs = append(refs, segmentRef{s: fn, n: k})
+		refs = append(refs, segmentRef{name: fn, index: k})
 		last = k
 	}
 	sort.Slice(refs, func(i, j int) bool {
-		return refs[i].n < refs[j].n
+		return refs[i].index < refs[j].index
 	})
 	return refs, nil
 }
@@ -628,8 +635,8 @@ func NewSegmentsReader(dir string) (io.ReadCloser, error) {
 }
 
 // NewSegmentsRangeReader returns a new reader over the given WAL segment range.
-// If m or n are -1, the range is open on the respective end.
-func NewSegmentsRangeReader(dir string, m, n int) (io.ReadCloser, error) {
+// If first or last are -1, the range is open on the respective end.
+func NewSegmentsRangeReader(dir string, first, last int) (io.ReadCloser, error) {
 	refs, err := listSegments(dir)
 	if err != nil {
 		return nil, err
@@ -637,13 +644,13 @@ func NewSegmentsRangeReader(dir string, m, n int) (io.ReadCloser, error) {
 	var segs []*Segment
 
 	for _, r := range refs {
-		if m >= 0 && r.n < m {
+		if first >= 0 && r.index < first {
 			continue
 		}
-		if n >= 0 && r.n > n {
+		if last >= 0 && r.index > last {
 			break
 		}
-		s, err := OpenReadSegment(filepath.Join(dir, r.s))
+		s, err := OpenReadSegment(filepath.Join(dir, r.name))
 		if err != nil {
 			return nil, err
 		}

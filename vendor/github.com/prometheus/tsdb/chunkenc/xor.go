@@ -384,3 +384,42 @@ func (it *xorIterator) readValue() bool {
 	it.numRead++
 	return true
 }
+
+// MergeChunks vertically merges a and b, i.e., if there is any sample
+// with same timestamp in both a and b, the sample in a is discarded.
+func MergeChunks(a, b Chunk) (*XORChunk, error) {
+	newChunk := NewXORChunk()
+	app, err := newChunk.Appender()
+	if err != nil {
+		return nil, err
+	}
+	ait := a.Iterator()
+	bit := b.Iterator()
+	aok, bok := ait.Next(), bit.Next()
+	for aok && bok {
+		at, av := ait.At()
+		bt, bv := bit.At()
+		if at < bt {
+			app.Append(at, av)
+			aok = ait.Next()
+		} else if bt < at {
+			app.Append(bt, bv)
+			bok = bit.Next()
+		} else {
+			app.Append(bt, bv)
+			aok = ait.Next()
+			bok = bit.Next()
+		}
+	}
+	for aok {
+		at, av := ait.At()
+		app.Append(at, av)
+		aok = ait.Next()
+	}
+	for bok {
+		bt, bv := bit.At()
+		app.Append(bt, bv)
+		bok = bit.Next()
+	}
+	return newChunk, nil
+}

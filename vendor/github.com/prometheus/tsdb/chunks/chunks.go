@@ -198,6 +198,38 @@ func (w *Writer) write(b []byte) error {
 	return err
 }
 
+// MergeOverlappingChunks removes the samples whose timestamp is overlapping.
+// The first appearing sample is retained in case there is overlapping.
+func MergeOverlappingChunks(chks []Meta) ([]Meta, error) {
+	if len(chks) < 2 {
+		return chks, nil
+	}
+	newChks := make([]Meta, 0, len(chks)) // Will contain the merged chunks.
+	newChks = append(newChks, chks[0])
+	last := 0
+	for _, c := range chks[1:] {
+		// We need to check only the last chunk in newChks.
+		// Reason: (1) newChks[last-1].MaxTime < newChks[last].MinTime (non overlapping)
+		//         (2) As chks are sorted w.r.t. MinTime, newChks[last].MinTime < c.MinTime.
+		// So never overlaps with newChks[last-1] or anything before that.
+		if c.MinTime > newChks[last].MaxTime {
+			newChks = append(newChks, c)
+			continue
+		}
+		nc := &newChks[last]
+		if c.MaxTime > nc.MaxTime {
+			nc.MaxTime = c.MaxTime
+		}
+		chk, err := chunkenc.MergeChunks(nc.Chunk, c.Chunk)
+		if err != nil {
+			return nil, err
+		}
+		nc.Chunk = chk
+	}
+
+	return newChks, nil
+}
+
 func (w *Writer) WriteChunks(chks ...Meta) error {
 	// Calculate maximum space we need and cut a new segment in case
 	// we don't fit into the current one.

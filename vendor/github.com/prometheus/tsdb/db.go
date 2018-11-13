@@ -532,9 +532,6 @@ func (db *DB) reload() (err error) {
 	sort.Slice(blocks, func(i, j int) bool {
 		return blocks[i].Meta().MinTime < blocks[j].Meta().MinTime
 	})
-	if err := validateBlockSequence(blocks); err != nil {
-		return errors.Wrap(err, "invalid block sequence")
-	}
 
 	// Swap in new blocks first for subsequently created readers to be seen.
 	// Then close previous blocks, which may block for pending readers to complete.
@@ -567,25 +564,6 @@ func (db *DB) reload() (err error) {
 	maxt := blocks[len(blocks)-1].Meta().MaxTime
 
 	return errors.Wrap(db.head.Truncate(maxt), "head truncate failed")
-}
-
-// validateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
-func validateBlockSequence(bs []*Block) error {
-	if len(bs) <= 1 {
-		return nil
-	}
-
-	var metas []BlockMeta
-	for _, b := range bs {
-		metas = append(metas, b.meta)
-	}
-
-	overlaps := OverlappingBlocks(metas)
-	if len(overlaps) > 0 {
-		return errors.Errorf("block time ranges overlap: %s", overlaps)
-	}
-
-	return nil
 }
 
 // TimeRange specifies minTime and maxTime range.
@@ -793,7 +771,11 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 		}
 	}
 	if maxt >= db.head.MinTime() {
-		blocks = append(blocks, db.head)
+		blocks = append(blocks, &rangeHead{
+			head: db.head,
+			mint: mint,
+			maxt: maxt,
+		})
 	}
 
 	sq := &querier{
@@ -876,6 +858,49 @@ func (db *DB) CleanTombstones() (err error) {
 		}
 	}
 	return errors.Wrap(db.reload(), "reload blocks")
+}
+
+// labelNames returns all the unique label names from the Block Readers.
+func labelNames(brs ...BlockReader) (map[string]struct{}, error) {
+	labelNamesMap := make(map[string]struct{})
+	for _, br := range brs {
+		ir, err := br.Index()
+		if err != nil {
+			return nil, errors.Wrap(err, "get IndexReader")
+		}
+		names, err := ir.LabelNames()
+		if err != nil {
+			return nil, errors.Wrap(err, "LabelNames() from IndexReader")
+		}
+		for _, name := range names {
+			labelNamesMap[name] = struct{}{}
+		}
+		if err = ir.Close(); err != nil {
+			return nil, errors.Wrap(err, "close IndexReader")
+		}
+	}
+	return labelNamesMap, nil
+}
+
+// LabelNames returns all the unique label names present in the DB in sorted order.
+func (db *DB) LabelNames() ([]string, error) {
+	brs := []BlockReader{db.head}
+	for _, b := range db.Blocks() {
+		brs = append(brs, b)
+	}
+
+	labelNamesMap, err := labelNames(brs...)
+	if err != nil {
+		return nil, err
+	}
+
+	labelNames := make([]string, 0, len(labelNamesMap))
+	for name := range labelNamesMap {
+		labelNames = append(labelNames, name)
+	}
+	sort.Strings(labelNames)
+
+	return labelNames, nil
 }
 
 func isBlockDir(fi os.FileInfo) bool {

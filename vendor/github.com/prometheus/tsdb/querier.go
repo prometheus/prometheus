@@ -249,7 +249,7 @@ func tuplesByPrefix(m *labels.PrefixMatcher, ts StringTuples) ([]string, error) 
 }
 
 func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
-	// If the matcher selects an empty value, it selects all the series which dont
+	// If the matcher selects an empty value, it selects all the series which don't
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
 	if m.Matches("") {
@@ -499,8 +499,8 @@ func (s *baseChunkSeries) Err() error { return s.err }
 
 func (s *baseChunkSeries) Next() bool {
 	var (
-		lset     labels.Labels
-		chkMetas []chunks.Meta
+		lset     = make(labels.Labels, len(s.lset))
+		chkMetas = make([]chunks.Meta, len(s.chks))
 		err      error
 	)
 
@@ -690,64 +690,87 @@ func (s *chainedSeries) Labels() labels.Labels {
 }
 
 func (s *chainedSeries) Iterator() SeriesIterator {
-	return newChainedSeriesIterator(s.series...)
+	return newVerticalMergeSeriesIterator(s.series...)
 }
 
-// chainedSeriesIterator implements a series iterater over a list
-// of time-sorted, non-overlapping iterators.
-type chainedSeriesIterator struct {
-	series []Series // series in time order
+// verticalMergeSeriesIterator implements a series iterater over a list
+// of time-sorted, overlapping iterators.
+type verticalMergeSeriesIterator struct {
+	a, b                  SeriesIterator
+	aok, bok, initialized bool
 
-	i   int
-	cur SeriesIterator
+	curT int64
+	curV float64
 }
 
-func newChainedSeriesIterator(s ...Series) *chainedSeriesIterator {
-	return &chainedSeriesIterator{
-		series: s,
-		i:      0,
-		cur:    s[0].Iterator(),
-	}
-}
-
-func (it *chainedSeriesIterator) Seek(t int64) bool {
-	// We just scan the chained series sequentially as they are already
-	// pre-selected by relevant time and should be accessed sequentially anyway.
-	for i, s := range it.series[it.i:] {
-		cur := s.Iterator()
-		if !cur.Seek(t) {
-			continue
+func newVerticalMergeSeriesIterator(s ...Series) SeriesIterator {
+	if len(s) == 1 {
+		return s[0].Iterator()
+	} else if len(s) == 2 {
+		return &verticalMergeSeriesIterator{
+			a: s[0].Iterator(),
+			b: s[1].Iterator(),
 		}
-		it.cur = cur
-		it.i += i
-		return true
 	}
-	return false
+	return &verticalMergeSeriesIterator{
+		a: s[0].Iterator(),
+		b: newVerticalMergeSeriesIterator(s[1:]...),
+	}
 }
 
-func (it *chainedSeriesIterator) Next() bool {
-	if it.cur.Next() {
-		return true
-	}
-	if err := it.cur.Err(); err != nil {
-		return false
-	}
-	if it.i == len(it.series)-1 {
-		return false
-	}
-
-	it.i++
-	it.cur = it.series[it.i].Iterator()
-
+func (it *verticalMergeSeriesIterator) Seek(t int64) bool {
+	it.aok, it.bok = it.a.Seek(t), it.b.Seek(t)
+	it.initialized = true
 	return it.Next()
 }
 
-func (it *chainedSeriesIterator) At() (t int64, v float64) {
-	return it.cur.At()
+func (it *verticalMergeSeriesIterator) Next() bool {
+	if !it.initialized {
+		it.aok = it.a.Next()
+		it.bok = it.b.Next()
+		it.initialized = true
+	}
+
+	if !it.aok && !it.bok {
+		return false
+	}
+
+	if !it.aok {
+		it.curT, it.curV = it.b.At()
+		it.bok = it.b.Next()
+		return true
+	}
+	if !it.bok {
+		it.curT, it.curV = it.a.At()
+		it.aok = it.a.Next()
+		return true
+	}
+
+	acurT, acurV := it.a.At()
+	bcurT, bcurV := it.b.At()
+	if acurT < bcurT {
+		it.curT, it.curV = acurT, acurV
+		it.aok = it.a.Next()
+	} else if acurT > bcurT {
+		it.curT, it.curV = bcurT, bcurV
+		it.bok = it.b.Next()
+	} else {
+		it.curT, it.curV = bcurT, bcurV
+		it.aok = it.a.Next()
+		it.bok = it.b.Next()
+	}
+	return true
 }
 
-func (it *chainedSeriesIterator) Err() error {
-	return it.cur.Err()
+func (it *verticalMergeSeriesIterator) At() (t int64, v float64) {
+	return it.curT, it.curV
+}
+
+func (it *verticalMergeSeriesIterator) Err() error {
+	if it.a.Err() != nil {
+		return it.a.Err()
+	}
+	return it.b.Err()
 }
 
 // chunkSeriesIterator implements a series iterator on top
