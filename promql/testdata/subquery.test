@@ -1,0 +1,182 @@
+## The following tests are from selectors.test
+
+load 10s
+	http_requests{job="api-server", instance="0", group="production"}	0+10x1000 100+30x1000
+	http_requests{job="api-server", instance="1", group="production"}	0+20x1000 200+30x1000
+	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000
+	http_requests{job="api-server", instance="1", group="canary"}		0+40x2000
+
+eval instant at 8000s rate(http_requests[1m:10s])
+	{job="api-server", instance="0", group="production"} 1
+	{job="api-server", instance="1", group="production"} 2
+	{job="api-server", instance="0", group="canary"} 3
+	{job="api-server", instance="1", group="canary"} 4
+
+eval instant at 18000s rate(http_requests[1m:10s])
+	{job="api-server", instance="0", group="production"} 3
+	{job="api-server", instance="1", group="production"} 3
+	{job="api-server", instance="0", group="canary"} 8
+	{job="api-server", instance="1", group="canary"} 4
+
+eval instant at 8000s rate(http_requests{group=~"pro.*"}[1m:10s])
+	{job="api-server", instance="0", group="production"} 1
+	{job="api-server", instance="1", group="production"} 2
+
+eval instant at 18000s rate(http_requests{group=~".*ry", instance="1"}[1m:10s])
+	{job="api-server", instance="1", group="canary"} 4
+
+
+## The following tests are from functions.test
+
+# Testdata for resets() and changes().
+clear
+load 5m
+	http_requests{path="/foo"}	1 2 3 0 1 0 0 1 2 0
+	http_requests{path="/bar"}	1 2 3 4 5 1 2 3 4 5
+	http_requests{path="/biz"}	0 0 0 0 0 1 1 1 1 1
+
+# Tests for resets().
+eval instant at 50m resets(http_requests[5m:5m])
+	{path="/foo"} 0
+	{path="/bar"} 0
+	{path="/biz"} 0
+
+eval instant at 50m resets(http_requests[20m:5m])
+	{path="/foo"} 1
+	{path="/bar"} 0
+	{path="/biz"} 0
+
+eval instant at 50m resets(http_requests[30m:5m])
+	{path="/foo"} 2
+	{path="/bar"} 1
+	{path="/biz"} 0
+
+eval instant at 50m resets(http_requests[50m:5m])
+	{path="/foo"} 3
+	{path="/bar"} 1
+	{path="/biz"} 0
+
+eval instant at 50m resets(nonexistent_metric[50m:5m])
+
+# Tests for changes().
+eval instant at 50m changes(http_requests[5m:5m])
+	{path="/foo"} 0
+	{path="/bar"} 0
+	{path="/biz"} 0
+
+eval instant at 50m changes(http_requests[20m:5m])
+	{path="/foo"} 3
+	{path="/bar"} 3
+	{path="/biz"} 0
+
+eval instant at 50m changes(http_requests[30m:5m])
+	{path="/foo"} 4
+	{path="/bar"} 5
+	{path="/biz"} 1
+
+eval instant at 50m changes(http_requests[50m:5m])
+	{path="/foo"} 8
+	{path="/bar"} 9
+	{path="/biz"} 1
+
+eval instant at 50m changes(nonexistent_metric[50m:5m])
+
+clear
+
+load 5m
+  x{a="b"} NaN NaN NaN
+  x{a="c"} 0 NaN 0
+
+eval instant at 15m changes(x[15m:5m])
+  {a="b"} 0
+  {a="c"} 2
+
+# Tests for delta().
+clear
+load 5m
+	http_requests{path="/foo"}	0 50 100 150 200
+	http_requests{path="/bar"}	200 150 100 50 0
+
+eval instant at 20m delta(http_requests[20m:5m])
+	{path="/foo"} 200
+	{path="/bar"} -200
+
+# Tests for deriv().
+clear
+load 5m
+	testcounter_reset_middle	0+10x4 0+10x5
+	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+
+# deriv should return the same as rate in simple cases.
+eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[50m:5m])
+	{group="canary", instance="1", job="app-server"} 0.26666666666666666
+
+# positive trends
+clear
+load 10s
+	http_requests{job="api-server", instance="0", group="production"}	0+10x1000 100+30x1000
+	http_requests{job="api-server", instance="1", group="production"}	0+20x1000 200+30x1000
+	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000
+	http_requests{job="api-server", instance="1", group="canary"}		0+40x2000
+
+eval instant at 8000s holt_winters(http_requests[1m:10s], 0.01, 0.1)
+	{job="api-server", instance="0", group="production"} 8000
+	{job="api-server", instance="1", group="production"} 16000
+	{job="api-server", instance="0", group="canary"} 24000
+	{job="api-server", instance="1", group="canary"} 32000
+
+# negative trends
+clear
+load 10s
+	http_requests{job="api-server", instance="0", group="production"}	8000-10x1000
+	http_requests{job="api-server", instance="1", group="production"}	0-20x1000
+	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300-80x1000
+	http_requests{job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
+
+eval instant at 8000s holt_winters(http_requests[1m:10s], 0.01, 0.1)
+	{job="api-server", instance="0", group="production"} 0
+	{job="api-server", instance="1", group="production"} -16000
+	{job="api-server", instance="0", group="canary"} 24000
+	{job="api-server", instance="1", group="canary"} -32000
+
+# Tests for stddev_over_time and stdvar_over_time #4927.
+clear
+load 10s
+  metric 1.5990505637277868 1.5990505637277868 1.5990505637277868
+
+eval instant at 1m stdvar_over_time(metric[1m:10s])
+  {} 0
+
+eval instant at 1m stddev_over_time(metric[1m:10s])
+  {} 0
+
+# Test duplicate labelset in promql output.
+clear
+load 5m
+  testmetric1{src="a",dst="b"} 0
+  testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m:5m])
+
+# Tests for *_over_time
+clear
+load 10s
+	data{type="numbers"} 2 0 3
+	data{type="some_nan"} 2 0 NaN
+	data{type="some_nan2"} 2 NaN 1
+	data{type="some_nan3"} NaN 0 1
+	data{type="only_nan"} NaN NaN NaN
+
+eval instant at 1m min_over_time(data[1m:10s])
+	{type="numbers"} 0
+	{type="some_nan"} 0
+	{type="some_nan2"} 1
+	{type="some_nan3"} 0
+	{type="only_nan"} NaN
+
+eval instant at 1m max_over_time(data[1m:10s])
+	{type="numbers"} 3
+	{type="some_nan"} 2
+	{type="some_nan2"} 2
+	{type="some_nan3"} 1
+	{type="only_nan"} NaN
