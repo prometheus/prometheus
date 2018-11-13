@@ -1104,6 +1104,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 			maxSamples:     ev.maxSamples,
 			logger:         ev.logger,
 		}
+		if ev.startTimestamp < newEv.startTimestamp {
+			newEv.startTimestamp = ev.startTimestamp
+		}
 		if e.StepExists {
 			newEv.interval = int64(e.Step / time.Millisecond)
 		} else if newEv.interval == 0 {
