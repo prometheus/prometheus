@@ -46,7 +46,7 @@ Debian packages [are available](https://packages.debian.org/sid/net/prometheus).
 
 ### Docker images
 
-Docker images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus).
+Docker images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus) or [Docker Hub](https://hub.docker.com/r/prom/prometheus/).
 
 You can launch a Prometheus container for trying it out with
 
