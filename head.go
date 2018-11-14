@@ -225,7 +225,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
-		tombstones: NewMemTombstones(),
+		tombstones: newMemTombstones(),
 	}
 	h.metrics = newHeadMetrics(h, r)
 

@@ -70,4 +70,4 @@ type mockBReader struct {
 
 func (r *mockBReader) Index() (IndexReader, error)          { return r.ir, nil }
 func (r *mockBReader) Chunks() (ChunkReader, error)         { return r.cr, nil }
-func (r *mockBReader) Tombstones() (TombstoneReader, error) { return NewMemTombstones(), nil }
+func (r *mockBReader) Tombstones() (TombstoneReader, error) { return newMemTombstones(), nil }

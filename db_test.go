@@ -782,7 +782,7 @@ func TestTombstoneClean(t *testing.T) {
 		}
 
 		for _, b := range db.Blocks() {
-			testutil.Equals(t, NewMemTombstones(), b.tombstones)
+			testutil.Equals(t, newMemTombstones(), b.tombstones)
 		}
 	}
 }
@@ -811,7 +811,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 		block := createEmptyBlock(t, blockDir, meta)
 
 		// Add some some fake tombstones to trigger the compaction.
-		tomb := NewMemTombstones()
+		tomb := newMemTombstones()
 		tomb.addInterval(0, Interval{0, 1})
 		block.tombstones = tomb
 

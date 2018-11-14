@@ -30,7 +30,7 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 
 	ref := uint64(0)
 
-	stones := NewMemTombstones()
+	stones := newMemTombstones()
 	// Generate the tombstones.
 	for i := 0; i < 100; i++ {
 		ref += uint64(rand.Int31n(10)) + 1
@@ -125,7 +125,7 @@ func TestAddingNewIntervals(t *testing.T) {
 
 // TestMemTombstonesConcurrency to make sure they are safe to access from different goroutines.
 func TestMemTombstonesConcurrency(t *testing.T) {
-	tomb := NewMemTombstones()
+	tomb := newMemTombstones()
 	totalRuns := 100
 	var wg sync.WaitGroup
 	wg.Add(2)

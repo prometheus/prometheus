@@ -483,7 +483,7 @@ Outer:
 		querier := &blockQuerier{
 			index:      ir,
 			chunks:     cr,
-			tombstones: NewMemTombstones(),
+			tombstones: newMemTombstones(),
 
 			mint: c.mint,
 			maxt: c.maxt,
@@ -756,7 +756,7 @@ func TestBaseChunkSeries(t *testing.T) {
 		bcs := &baseChunkSeries{
 			p:          index.NewListPostings(tc.postings),
 			index:      mi,
-			tombstones: NewMemTombstones(),
+			tombstones: newMemTombstones(),
 		}
 
 		i := 0

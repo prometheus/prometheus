@@ -338,7 +338,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 Outer:
 	for _, c := range cases {
 		// Reset the tombstones.
-		head.tombstones = NewMemTombstones()
+		head.tombstones = newMemTombstones()
 
 		// Delete the ranges.
 		for _, r := range c.intervals {
@@ -521,7 +521,7 @@ func TestDelete_e2e(t *testing.T) {
 	}
 	for _, del := range dels {
 		// Reset the deletes everytime.
-		hb.tombstones = NewMemTombstones()
+		hb.tombstones = newMemTombstones()
 		for _, r := range del.drange {
 			testutil.Ok(t, hb.Delete(r.Mint, r.Maxt, del.ms...))
 		}

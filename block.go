@@ -457,7 +457,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
-	stones := NewMemTombstones()
+	stones := newMemTombstones()
 
 	var lset labels.Labels
 	var chks []chunks.Meta
@@ -565,7 +565,7 @@ func (pb *Block) Snapshot(dir string) error {
 	return nil
 }
 
-// Returns true if the block overlaps [mint, maxt].
+// OverlapsClosedInterval returns true if the block overlaps [mint, maxt].
 func (pb *Block) OverlapsClosedInterval(mint, maxt int64) bool {
 	// The block itself is a half-open interval
 	// [pb.meta.MinTime, pb.meta.MaxTime).
