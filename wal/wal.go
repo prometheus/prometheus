@@ -96,8 +96,9 @@ func (e *CorruptionErr) Error() string {
 }
 
 // OpenWriteSegment opens segment k in dir. The returned segment is ready for new appends.
-func OpenWriteSegment(dir string, k int) (*Segment, error) {
-	f, err := os.OpenFile(SegmentName(dir, k), os.O_WRONLY|os.O_APPEND, 0666)
+func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
+	segName := SegmentName(dir, k)
+	f, err := os.OpenFile(segName, os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +113,7 @@ func OpenWriteSegment(dir string, k int) (*Segment, error) {
 	// If it was torn mid-record, a full read (which the caller should do anyway
 	// to ensure integrity) will detect it as a corruption by the end.
 	if d := stat.Size() % pageSize; d != 0 {
+		level.Warn(logger).Log("msg", "last page of the wal is torn, filling it with zeros", "segment", segName)
 		if _, err := f.Write(make([]byte, pageSize-d)); err != nil {
 			f.Close()
 			return nil, errors.Wrap(err, "zero-pad torn page")
@@ -229,7 +231,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 			return nil, err
 		}
 	} else {
-		if w.segment, err = OpenWriteSegment(w.dir, j); err != nil {
+		if w.segment, err = OpenWriteSegment(w.logger, w.dir, j); err != nil {
 			return nil, err
 		}
 		// Correctly initialize donePages.
@@ -752,6 +754,10 @@ func (r *Reader) next() (err error) {
 
 		// Gobble up zero bytes.
 		if typ == recPageTerm {
+			// recPageTerm is a single byte that indicates that the rest of the page is padded.
+			// If it's the first byte in a page, buf is too small and we have to resize buf to fit pageSize-1 bytes.
+			buf = r.buf[1:]
+
 			// We are pedantic and check whether the zeros are actually up
 			// to a page boundary.
 			// It's not strictly necessary but may catch sketchy state early.

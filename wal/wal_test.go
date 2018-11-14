@@ -217,6 +217,14 @@ func TestWAL_FuzzWriteRead(t *testing.T) {
 
 func TestWAL_Repair(t *testing.T) {
 	for name, cf := range map[string]func(f *os.File){
+		// Ensures that the page buffer is big enough to fit and entyre page size without panicing.
+		// https://github.com/prometheus/tsdb/pull/414
+		"bad_header": func(f *os.File) {
+			_, err := f.Seek(pageSize, 0)
+			testutil.Ok(t, err)
+			_, err = f.Write([]byte{byte(recPageTerm)})
+			testutil.Ok(t, err)
+		},
 		"bad_fragment_sequence": func(f *os.File) {
 			_, err := f.Seek(pageSize, 0)
 			testutil.Ok(t, err)
