@@ -23,7 +23,7 @@ All Prometheus services are available as Docker images on
 [Docker Hub[(https://hub.docker.com/u/prom/).
 
 Running Prometheus on Docker is as simple as `docker run -p 9090:9090
-quay.io/prometheus/prometheus`. This starts Prometheus with a sample
+prom/prometheus`. This starts Prometheus with a sample
 configuration and exposes it on port 9090.
 
 The Prometheus image uses a volume to store the actual metrics. For
@@ -40,14 +40,14 @@ Bind-mount your `prometheus.yml` from the host by running:
 
 ```bash
 docker run -p 9090:9090 -v /tmp/prometheus.yml:/etc/prometheus/prometheus.yml \
-       quay.io/prometheus/prometheus
+       prom/prometheus
 ```
 
 Or use an additional volume for the config:
 
 ```bash
 docker run -p 9090:9090 -v /prometheus-data \
-       quay.io/prometheus/prometheus --config.file=/prometheus-data/prometheus.yml
+       prom/prometheus --config.file=/prometheus-data/prometheus.yml
 ```
 
 ### Custom image
@@ -61,7 +61,7 @@ For this, create a new directory with a Prometheus configuration and a
 `Dockerfile` like this:
 
 ```Dockerfile
-FROM quay.io/prometheus/prometheus
+FROM prom/prometheus
 ADD prometheus.yml /etc/prometheus/
 ```
 
