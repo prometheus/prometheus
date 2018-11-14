@@ -78,6 +78,7 @@ type SDConfig struct {
 	ClientID        string             `yaml:"client_id,omitempty"`
 	ClientSecret    config_util.Secret `yaml:"client_secret,omitempty"`
 	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
+	Tags            map[string]*string `yaml:"tags,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -249,7 +250,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		return tg, fmt.Errorf("could not create Azure client: %s", err)
 	}
 
-	machines, err := client.getVMs()
+	machines, err := client.getVMs((*d.cfg).Tags)
 	if err != nil {
 		return tg, fmt.Errorf("could not get virtual machines: %s", err)
 	}
@@ -257,7 +258,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	level.Debug(d.logger).Log("msg", "Found virtual machines during Azure discovery.", "count", len(machines))
 
 	// Load the vms managed by scale sets.
-	scaleSets, err := client.getScaleSets()
+	scaleSets, err := client.getScaleSets((*d.cfg).Tags)
 	if err != nil {
 		return tg, fmt.Errorf("could not get virtual machine scale sets: %s", err)
 	}
@@ -358,7 +359,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	return tg, nil
 }
 
-func (client *azureClient) getVMs() ([]virtualMachine, error) {
+func (client *azureClient) getVMs(filterTags map[string]*string) ([]virtualMachine, error) {
 	var vms []virtualMachine
 	result, err := client.vm.ListAll()
 	if err != nil {
@@ -366,7 +367,9 @@ func (client *azureClient) getVMs() ([]virtualMachine, error) {
 	}
 
 	for _, vm := range *result.Value {
-		vms = append(vms, mapFromVM(vm))
+		if IncludesTags(filterTags, vm.Tags) {
+			vms = append(vms, mapFromVM(vm))
+		}
 	}
 
 	// If we still have results, keep going until we have no more.
@@ -377,27 +380,37 @@ func (client *azureClient) getVMs() ([]virtualMachine, error) {
 		}
 
 		for _, vm := range *result.Value {
-			vms = append(vms, mapFromVM(vm))
+			if IncludesTags(filterTags, vm.Tags) {
+				vms = append(vms, mapFromVM(vm))
+			}
 		}
 	}
 
 	return vms, nil
 }
 
-func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, error) {
+func (client *azureClient) getScaleSets(filterTags map[string]*string) ([]compute.VirtualMachineScaleSet, error) {
 	var scaleSets []compute.VirtualMachineScaleSet
 	result, err := client.vmss.ListAll()
 	if err != nil {
 		return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
 	}
-	scaleSets = append(scaleSets, *result.Value...)
+	for _, scaleSet := range *result.Value {
+		if IncludesTags(filterTags, scaleSet.Tags) {
+			scaleSets = append(scaleSets, scaleSet)
+		}
+	}
 
 	for result.NextLink != nil {
 		result, err = client.vmss.ListAllNextResults(result)
 		if err != nil {
 			return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
 		}
-		scaleSets = append(scaleSets, *result.Value...)
+		for _, scaleSet := range *result.Value {
+			if IncludesTags(filterTags, scaleSet.Tags) {
+				scaleSets = append(scaleSets, scaleSet)
+			}
+		}
 	}
 
 	return scaleSets, nil
@@ -503,4 +516,19 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (n
 	}
 
 	return result, nil
+}
+
+func IncludesTags(filterTags map[string]*string, providedTags *map[string]*string) bool {
+	for name, filterValue := range filterTags {
+		if len(filterTags) == 0 {
+			continue
+		}
+		if providedTags == nil {
+			return false
+		}
+		if providedValue, ok := (*providedTags)[name]; !ok || *providedValue != *filterValue {
+			return false
+		}
+	}
+	return true
 }

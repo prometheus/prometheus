@@ -193,3 +193,155 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		t.Errorf("Expected %v got %v", expectedVM, actualVM)
 	}
 }
+
+func TestIncludesTags(t *testing.T) {
+	empty := ""
+	a := "a"
+	a2 := "a"
+	b := "b"
+	c := "c"
+
+	// nil tags on vm
+	if !IncludesTags(
+		map[string]*string{},
+		nil,
+	) {
+		t.Error()
+	}
+
+	if IncludesTags(
+		map[string]*string{
+			"a": &a,
+		},
+		nil,
+	) {
+		t.Error()
+	}
+
+	// Empty tags
+	if !IncludesTags(
+		map[string]*string{},
+		&map[string]*string{},
+	) {
+		t.Error()
+	}
+
+	if !IncludesTags(
+		map[string]*string{},
+		&map[string]*string{
+			"empty": &empty,
+		},
+	) {
+		t.Error()
+	}
+
+	if !IncludesTags(
+		map[string]*string{},
+		&map[string]*string{
+			"a": &a,
+		},
+	) {
+		t.Error()
+	}
+
+	if !IncludesTags(
+		map[string]*string{
+			"a": &a,
+		},
+		&map[string]*string{
+			"a": &a,
+		},
+	) {
+		t.Error()
+	}
+
+	if !IncludesTags(
+		map[string]*string{
+			"a": &a,
+		},
+		&map[string]*string{
+			"a": &a2,
+		},
+	) {
+		t.Error()
+	}
+
+	if !IncludesTags(
+		map[string]*string{
+			"empty": &empty,
+		},
+		&map[string]*string{
+			"empty": &empty,
+		},
+	) {
+		t.Error()
+	}
+
+	if IncludesTags(
+		map[string]*string{
+			"empty": &empty,
+			"a":     &a,
+		},
+		&map[string]*string{
+			"empty": &empty,
+		},
+	) {
+		t.Error()
+	}
+
+	if IncludesTags(
+		map[string]*string{
+			"empty": &empty,
+			"a":     &a,
+		},
+		&map[string]*string{
+			"a": &a,
+		},
+	) {
+		t.Error()
+	}
+
+	if IncludesTags(
+		map[string]*string{
+			"a": &a,
+		},
+		&map[string]*string{
+			"a": &b,
+		},
+	) {
+		t.Error()
+	}
+
+	if IncludesTags(
+		map[string]*string{
+			"a": &a,
+		},
+		&map[string]*string{},
+	) {
+		t.Error()
+	}
+
+	if IncludesTags(
+		map[string]*string{
+			"empty": &empty,
+		},
+		&map[string]*string{},
+	) {
+		t.Error()
+	}
+
+	if IncludesTags(
+		map[string]*string{
+			"a": &a,
+			"b": &b,
+			"c": &c,
+		},
+		&map[string]*string{
+			"a": &a,
+			"b": &b,
+			"c": &a,
+		},
+	) {
+		t.Error()
+	}
+}
