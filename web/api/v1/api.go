@@ -284,15 +284,7 @@ func (api *API) query(r *http.Request) (interface{}, *apiError, func()) {
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
-		switch res.Err.(type) {
-		case promql.ErrQueryCanceled:
-			return nil, &apiError{errorCanceled, res.Err}, qry.Close
-		case promql.ErrQueryTimeout:
-			return nil, &apiError{errorTimeout, res.Err}, qry.Close
-		case promql.ErrStorage:
-			return nil, &apiError{errorInternal, res.Err}, qry.Close
-		}
-		return nil, &apiError{errorExec, res.Err}, qry.Close
+		return nil, returnAPIError(res.Err), qry.Close
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -358,13 +350,7 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
-		switch res.Err.(type) {
-		case promql.ErrQueryCanceled:
-			return nil, &apiError{errorCanceled, res.Err}, qry.Close
-		case promql.ErrQueryTimeout:
-			return nil, &apiError{errorTimeout, res.Err}, qry.Close
-		}
-		return nil, &apiError{errorExec, res.Err}, qry.Close
+		return nil, returnAPIError(res.Err), qry.Close
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -378,6 +364,23 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, qry.Close
+}
+
+func returnAPIError(err error) *apiError {
+	if err == nil {
+		return nil
+	}
+
+	switch err.(type) {
+	case promql.ErrQueryCanceled:
+		return &apiError{errorCanceled, err}
+	case promql.ErrQueryTimeout:
+		return &apiError{errorTimeout, err}
+	case promql.ErrStorage:
+		return &apiError{errorInternal, err}
+	}
+
+	return &apiError{errorExec, err}
 }
 
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError, func()) {
