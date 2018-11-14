@@ -26,7 +26,8 @@ func TestQueryRange(t *testing.T) {
 	s, getURL := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
 	defer s.Close()
 
-	exitCode := QueryRange(s.URL, "up", "0", "300", 0)
+	p := &promqlPrinter{}
+	exitCode := QueryRange(s.URL, "up", "0", "300", 0, p)
 	expectedPath := "/api/v1/query_range"
 	if getURL().Path != expectedPath {
 		t.Errorf("unexpected URL path %s (wanted %s)", getURL().Path, expectedPath)
@@ -43,7 +44,7 @@ func TestQueryRange(t *testing.T) {
 		t.Error()
 	}
 
-	exitCode = QueryRange(s.URL, "up", "0", "300", 10*time.Millisecond)
+	exitCode = QueryRange(s.URL, "up", "0", "300", 10*time.Millisecond, p)
 	if getURL().Path != expectedPath {
 		t.Errorf("unexpected URL path %s (wanted %s)", getURL().Path, expectedPath)
 	}
