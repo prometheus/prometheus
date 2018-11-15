@@ -497,7 +497,7 @@ func (p *parser) unaryExpr() Expr {
 // subqueryOrRangeSelector parses a Subquery based on given Expr (or)
 // a Matrix (a.k.a. range) selector based on a given Vector selector.
 //
-//		<Vector_selector> '[' <duration> ']' | (<Vector_selector>|<Scalar_expr>) '[' <duration> ':' [<duration>] ']'
+//		<Vector_selector> '[' <duration> ']' | <Vector_selector> '[' <duration> ':' [<duration>] ']'
 //
 func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 	ctx := "subquery selector"

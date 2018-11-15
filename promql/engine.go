@@ -30,7 +30,6 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -58,8 +57,22 @@ var (
 	LookbackDelta = 5 * time.Minute
 
 	// GlobalEvaluationInterval is the value of EvaluationInterval in the GlobalConfig.
-	GlobalEvaluationInterval time.Duration
+	GlobalEvaluationInterval    time.Duration
+	globalEvaluationIntervalMtx sync.RWMutex
 )
+
+// SetGlobalEvaluationInterval sets GlobalEvaluationInterval.
+func SetGlobalEvaluationInterval(ev time.Duration) {
+	globalEvaluationIntervalMtx.Lock()
+	defer globalEvaluationIntervalMtx.Unlock()
+	GlobalEvaluationInterval = ev
+}
+
+func getGlobalEvaluationInterval() time.Duration {
+	globalEvaluationIntervalMtx.RLock()
+	defer globalEvaluationIntervalMtx.RUnlock()
+	return GlobalEvaluationInterval
+}
 
 type engineMetrics struct {
 	currentQueries       prometheus.Gauge
@@ -894,15 +907,13 @@ func (ev *evaluator) eval(expr Expr) Value {
 		var matrixArgIndex int
 		var matrixArg bool
 		for i, a := range e.Args {
-			_, ok := a.(*MatrixSelector)
-			if ok {
+			if _, ok := a.(*MatrixSelector); ok {
 				matrixArgIndex = i
 				matrixArg = true
 				break
 			}
 			// SubqueryExpr can be used in place of MatrixSelector.
-			subq, ok := a.(*SubqueryExpr)
-			if ok {
+			if subq, ok := a.(*SubqueryExpr); ok {
 				matrixArgIndex = i
 				matrixArg = true
 				// Replacing SubqueryExpr with MatrixSelector.
@@ -1099,7 +1110,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		newEv := &evaluator{
 			startTimestamp: ev.endTimestamp - int64(e.Range/time.Millisecond),
 			endTimestamp:   ev.endTimestamp,
-			interval:       int64(GlobalEvaluationInterval / time.Millisecond),
+			interval:       int64(getGlobalEvaluationInterval() / time.Millisecond),
 			ctx:            ev.ctx,
 			maxSamples:     ev.maxSamples,
 			logger:         ev.logger,
@@ -1109,8 +1120,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 		if e.StepExists {
 			newEv.interval = int64(e.Step / time.Millisecond)
-		} else if newEv.interval == 0 {
-			newEv.interval = int64(time.Duration(config.DefaultGlobalConfig.EvaluationInterval) / time.Millisecond)
 		}
 		return newEv.eval(e.Expr)
 	}
