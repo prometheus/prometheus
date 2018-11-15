@@ -1,0 +1,140 @@
+{{ template "head" . }}
+
+{{ template "prom_content_head" . }}
+  <h1>Node Overview - {{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</h1>
+
+  <h3>CPU Usage</h3>
+  <div id="cpuGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#cpuGraph"),
+    expr: "sum by (mode)(irate(wmi_cpu_time_total{job='node',instance='{{ .Params.instance }}',mode!='idle'}[5m]))",
+    renderer: 'area',
+    max: {{ with printf "count(count by (cpu)(wmi_cpu_time_total{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value }}{{ else}}undefined{{end}},
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: 'Cores'
+  })
+  </script>
+
+  <h3>Network Utilization</h3>
+  <div id="networkioGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#networkioGraph"),
+    expr: [
+      "irate(wmi_net_bytes_sent_total{job='node',instance='{{ .Params.instance }}',nic!~'^isatap_ec2_internal'}[5m])",
+      "irate(wmi_net_bytes_received_total{job='node',instance='{{ .Params.instance }}',nic!~'^isatap_ec2_internal'}[5m])",
+    ],
+    min: 0,
+    name: [ 'sent', 'received' ],
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yUnits: "B",
+    yTitle: 'Network IO'
+  })
+  </script>
+
+  <h3>Disk I/O Utilization</h3>
+  <div id="diskioGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#diskioGraph"),
+    expr: [
+      "100 - irate(wmi_logical_disk_idle_seconds_total{job='node',instance='{{ .Params.instance }}',volume!~'^HarddiskVolume.*$'}[5m]) * 100",
+    ],
+    min: 0,
+    name: '[[ volume ]]',
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yUnits: "%",
+    yTitle: 'Disk I/O Utilization'
+  })
+  </script>
+
+  <h3>Memory</h3>
+  <div id="memoryGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#memoryGraph"),
+    renderer: 'area',
+    expr: [
+      "wmi_cs_physical_memory_bytes{job='node',instance='{{ .Params.instance }}'}",
+      "wmi_os_physical_memory_free_bytes{job='node',instance='{{ .Params.instance }}'}",
+      "wmi_cs_physical_memory__bytes{job='node',instance='{{ .Params.instance }}'} - wmi_os_physical_memory_free_bytes{job='node',instance='{{.Params.instance}}'}",
+      "wmi_os_virtual_memory_bytes{job='node',instance='{{ .Params.instance }}'}",
+    ],
+    name: ["Physical", "Free", "Used", "Virtual"],
+    min: 0,
+    yUnits: "B",
+    yAxisFormatter: PromConsole.NumberFormatter.humanize1024,
+    yHoverFormatter: PromConsole.NumberFormatter.humanize1024,
+    yTitle: 'Memory'
+  })
+  </script>
+
+{{ template "prom_right_table_head" }}
+  <tr><th colspan="2">Overview</th></tr>
+  <tr>
+    <td>User CPU</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "sum(irate(wmi_cpu_time_total{job='node',instance='%s',mode='user'}[5m])) * 100 / count(count by (cpu)(wmi_cpu_time_total{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.1f") }}</td>
+  </tr>
+  <tr>
+    <td>Privileged CPU</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "sum(irate(wmi_cpu_time_total{job='node',instance='%s',mode='privileged'}[5m])) * 100 / count(count by (cpu)(wmi_cpu_time_total{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.1f") }}</td>
+  </tr>
+  <tr>
+    <td>Memory Total</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "wmi_cs_physical_memory_bytes{job='node',instance='%s'}" .Params.instance) "B" "humanize1024") }}</td>
+  </tr>
+  <tr>
+    <td>Memory Free</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "wmi_os_physical_memory_free_bytes{job='node',instance='%s'}" .Params.instance) "B" "humanize1024") }}</td>
+  </tr>
+<tr>
+  <th colspan="2">Network</th>
+</tr>
+{{ range printf "wmi_net_bytes_received_total{job='node',instance='%s',nic!='isatap_ec2_internal'}" .Params.instance | query | sortByLabel "nic" }}
+  <tr>
+    <td>{{ .Labels.nic }} Received</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(wmi_net_bytes_received_total{job='node',instance='%s',nic='%s'}[5m])" .Labels.instance .Labels.nic) "B/s" "humanize") }}</td>
+  </tr>
+  <tr>
+    <td>{{ .Labels.nic }} Transmitted</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(wmi_net_bytes_sent_total{job='node',instance='%s',nic='%s'}[5m])" .Labels.instance .Labels.nic) "B/s" "humanize") }}</td>
+  </tr>
+{{ end }}
+</tr>
+<tr>
+  <th colspan="2">Disks</th>
+</tr>
+{{ range printf "wmi_logical_disk_size_bytes{job='node',instance='%s',volume!~'^HarddiskVolume.*$'}" .Params.instance | query | sortByLabel "volume" }}
+  <tr>
+    <td>{{ .Labels.volume }} Utilization</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "100 - irate(wmi_logical_disk_idle_seconds_total{job='node',instance='%s',volume='%s'}[5m]) * 100" .Labels.instance .Labels.volume) "%" "printf.1f") }}</td>
+  </tr>
+{{ end }}
+{{ range printf "wmi_logical_disk_size_bytes{job='node',instance='%s',volume!~'^HarddiskVolume.*$'}" .Params.instance | query | sortByLabel "volume" }}
+  <tr>
+    <td>{{ .Labels.volume }} Throughput</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(wmi_logical_disk_read_bytes_total{job='node',instance='%s',volume='%s'}[5m]) + irate(wmi_logical_disk_write_bytes_total{job='node',instance='%s',volume='%s'}[5m])" .Labels.instance .Labels.volume .Labels.instance .Labels.volume) "B/s" "humanize") }}</td>
+  </tr>
+{{ end }}
+<tr>
+  <th colspan="2">Filesystem Fullness</th>
+</tr>
+{{ define "roughlyNearZero" }}
+{{ if gt .1 . }}~0{{ else }}{{ printf "%.1f" . }}{{ end }}
+{{ end }}
+{{ range printf "wmi_logical_disk_size_bytes{job='node',instance='%s',volume!~'^HarddiskVolume.*$'}" .Params.instance | query | sortByLabel "volume" }}
+  <tr>
+    <td>{{ .Labels.volume }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "100 - wmi_logical_disk_free_bytes{job='node',instance='%s',volume='%s'} / wmi_logical_disk_size_bytes{job='node'} * 100" .Labels.instance .Labels.volume) "%" "roughlyNearZero") }}</td>
+  </tr>
+{{ end }}
+</tr>
+{{ template "prom_right_table_tail" }}
+
+{{ template "prom_content_tail" . }}
+
+{{ template "tail" }}
