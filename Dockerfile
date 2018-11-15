@@ -17,6 +17,6 @@ VOLUME     [ "/prometheus" ]
 WORKDIR    /prometheus
 ENTRYPOINT [ "/bin/prometheus", \
              "--storage.tsdb.path=/prometheus", \
-             "--web.console.libraries=/usr/share/prometheus/console_libraries", \
-             "--web.console.templates=/usr/share/prometheus/consoles" ]
-CMD        [ "--config.file=/etc/prometheus/prometheus.yml" ]
+             "--web.console.libraries=/etc/prometheus/console_libraries", \
+             "--web.console.templates=/etc/prometheus/consoles", \
+             "--config.file=/etc/prometheus/prometheus.yml" ]
