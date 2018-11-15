@@ -26,21 +26,15 @@ import (
 type RecordType uint8
 
 const (
-	RecordInvalid    RecordType = 255
-	RecordSeries     RecordType = 1
-	RecordSamples    RecordType = 2
+	// RecordInvalid is returned for unrecognised WAL record types.
+	RecordInvalid RecordType = 255
+	// RecordSeries is used to match WAL records of type Series.
+	RecordSeries RecordType = 1
+	// RecordSamples is used to match WAL records of type Samples.
+	RecordSamples RecordType = 2
+	// RecordTombstones is used to match WAL records of type Tombstones.
 	RecordTombstones RecordType = 3
 )
-
-type RecordLogger interface {
-	Log(recs ...[]byte) error
-}
-
-type RecordReader interface {
-	Next() bool
-	Err() error
-	Record() []byte
-}
 
 // RecordDecoder decodes series, sample, and tombstone records.
 // The zero value is ready to use.
