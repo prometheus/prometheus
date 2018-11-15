@@ -24,13 +24,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
-
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	config_util "github.com/prometheus/common/config"
@@ -49,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/testutil"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 type testTargetRetriever struct{}
@@ -809,36 +810,46 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				t.Fatal(err)
 			}
 			resp, apiErr, _ := test.endpoint(req.WithContext(ctx))
-			if apiErr != nil {
-				if test.errType == errorNone {
-					t.Fatalf("Unexpected error: %s", apiErr)
-				}
-				if test.errType != apiErr.typ {
-					t.Fatalf("Expected error of type %q but got type %q", test.errType, apiErr.typ)
-				}
-				continue
-			}
-			if apiErr == nil && test.errType != errorNone {
-				t.Fatalf("Expected error of type %q but got none", test.errType)
-			}
-			if !reflect.DeepEqual(resp, test.response) {
-				respJSON, err := json.Marshal(resp)
-				if err != nil {
-					t.Fatalf("failed to marshal response as JSON: %v", err.Error())
-				}
-
-				expectedRespJSON, err := json.Marshal(test.response)
-				if err != nil {
-					t.Fatalf("failed to marshal expected response as JSON: %v", err.Error())
-				}
-
-				t.Fatalf(
-					"Response does not match, expected:\n%+v\ngot:\n%+v",
-					string(expectedRespJSON),
-					string(respJSON),
-				)
-			}
+			assertAPIError(t, apiErr, test.errType)
+			assertAPIResponse(t, resp, test.response)
 		}
+	}
+}
+
+func assertAPIError(t *testing.T, got *apiError, exp errorType) {
+	t.Helper()
+
+	if got != nil {
+		if exp == errorNone {
+			t.Fatalf("Unexpected error: %s", got)
+		}
+		if exp != got.typ {
+			t.Fatalf("Expected error of type %q but got type %q (%q)", exp, got.typ, got)
+		}
+		return
+	}
+	if got == nil && exp != errorNone {
+		t.Fatalf("Expected error of type %q but got none", exp)
+	}
+}
+
+func assertAPIResponse(t *testing.T, got interface{}, exp interface{}) {
+	if !reflect.DeepEqual(exp, got) {
+		respJSON, err := json.Marshal(got)
+		if err != nil {
+			t.Fatalf("failed to marshal response as JSON: %v", err.Error())
+		}
+
+		expectedRespJSON, err := json.Marshal(exp)
+		if err != nil {
+			t.Fatalf("failed to marshal expected response as JSON: %v", err.Error())
+		}
+
+		t.Fatalf(
+			"Response does not match, expected:\n%+v\ngot:\n%+v",
+			string(expectedRespJSON),
+			string(respJSON),
+		)
 	}
 }
 
@@ -941,6 +952,211 @@ func TestReadEndpoint(t *testing.T) {
 	}
 	if !reflect.DeepEqual(result, expected) {
 		t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
+	}
+}
+
+type fakeDB struct {
+	err    error
+	closer func()
+}
+
+func (f *fakeDB) CleanTombstones() error                                  { return f.err }
+func (f *fakeDB) Delete(mint, maxt int64, ms ...tsdbLabels.Matcher) error { return f.err }
+func (f *fakeDB) Dir() string {
+	dir, _ := ioutil.TempDir("", "fakeDB")
+	f.closer = func() {
+		os.RemoveAll(dir)
+	}
+	return dir
+}
+func (f *fakeDB) Snapshot(dir string, withHead bool) error { return f.err }
+
+func TestAdminEndpoints(t *testing.T) {
+	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: fmt.Errorf("some error")}
+	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
+	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
+	deleteAPI := func(api *API) apiFunc { return api.deleteSeries }
+
+	for i, tc := range []struct {
+		db          *fakeDB
+		enableAdmin bool
+		endpoint    func(api *API) apiFunc
+		method      string
+		values      url.Values
+
+		errType errorType
+	}{
+		// Tests for the snapshot endpoint.
+		{
+			db:          tsdb,
+			enableAdmin: false,
+			endpoint:    snapshotAPI,
+
+			errType: errorUnavailable,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    snapshotAPI,
+
+			errType: errorNone,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    snapshotAPI,
+			values:      map[string][]string{"skip_head": []string{"true"}},
+
+			errType: errorNone,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    snapshotAPI,
+			values:      map[string][]string{"skip_head": []string{"xxx"}},
+
+			errType: errorBadData,
+		},
+		{
+			db:          tsdbWithError,
+			enableAdmin: true,
+			endpoint:    snapshotAPI,
+
+			errType: errorInternal,
+		},
+		{
+			db:          nil,
+			enableAdmin: true,
+			endpoint:    snapshotAPI,
+
+			errType: errorUnavailable,
+		},
+		// Tests for the cleanTombstones endpoint.
+		{
+			db:          tsdb,
+			enableAdmin: false,
+			endpoint:    cleanAPI,
+
+			errType: errorUnavailable,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    cleanAPI,
+
+			errType: errorNone,
+		},
+		{
+			db:          tsdbWithError,
+			enableAdmin: true,
+			endpoint:    cleanAPI,
+
+			errType: errorInternal,
+		},
+		{
+			db:          nil,
+			enableAdmin: true,
+			endpoint:    cleanAPI,
+
+			errType: errorUnavailable,
+		},
+		// Tests for the deleteSeries endpoint.
+		{
+			db:          tsdb,
+			enableAdmin: false,
+			endpoint:    deleteAPI,
+
+			errType: errorUnavailable,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+
+			errType: errorBadData,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"123"}},
+
+			errType: errorBadData,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"up"}, "start": []string{"xxx"}},
+
+			errType: errorBadData,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"up"}, "end": []string{"xxx"}},
+
+			errType: errorBadData,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"up"}},
+
+			errType: errorNone,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"up{job!=\"foo\"}", "{job=~\"bar.+\"}", "up{instance!~\"fred.+\"}"}},
+
+			errType: errorNone,
+		},
+		{
+			db:          tsdbWithError,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"up"}},
+
+			errType: errorInternal,
+		},
+		{
+			db:          nil,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+
+			errType: errorUnavailable,
+		},
+	} {
+		tc := tc
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			api := &API{
+				db: func() TSDBAdmin {
+					if tc.db != nil {
+						return tc.db
+					}
+					return nil
+				},
+				ready:       func(f http.HandlerFunc) http.HandlerFunc { return f },
+				enableAdmin: tc.enableAdmin,
+			}
+			defer func() {
+				if tc.db != nil && tc.db.closer != nil {
+					tc.db.closer()
+				}
+			}()
+
+			endpoint := tc.endpoint(api)
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			if err != nil {
+				t.Fatalf("Error when creating test request: %s", err)
+			}
+			_, apiErr, _ := endpoint(req)
+			assertAPIError(t, apiErr, tc.errType)
+		})
 	}
 }
 
