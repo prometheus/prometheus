@@ -15,7 +15,10 @@ import (
 // needs to match the shape of the XML expected to be decoded.
 // If the shape doesn't match unmarshaling will fail.
 func UnmarshalXML(v interface{}, d *xml.Decoder, wrapper string) error {
-	n, _ := XMLToStruct(d, nil)
+	n, err := XMLToStruct(d, nil)
+	if err != nil {
+		return err
+	}
 	if n.Children != nil {
 		for _, root := range n.Children {
 			for _, c := range root {
@@ -23,7 +26,7 @@ func UnmarshalXML(v interface{}, d *xml.Decoder, wrapper string) error {
 					c = wrappedChild[0] // pull out wrapped element
 				}
 
-				err := parse(reflect.ValueOf(v), c, "")
+				err = parse(reflect.ValueOf(v), c, "")
 				if err != nil {
 					if err == io.EOF {
 						return nil
@@ -49,9 +52,15 @@ func parse(r reflect.Value, node *XMLNode, tag reflect.StructTag) error {
 	if t == "" {
 		switch rtype.Kind() {
 		case reflect.Struct:
-			t = "structure"
+			// also it can't be a time object
+			if _, ok := r.Interface().(*time.Time); !ok {
+				t = "structure"
+			}
 		case reflect.Slice:
-			t = "list"
+			// also it can't be a byte slice
+			if _, ok := r.Interface().([]byte); !ok {
+				t = "list"
+			}
 		case reflect.Map:
 			t = "map"
 		}
@@ -111,11 +120,8 @@ func parseStruct(r reflect.Value, node *XMLNode, tag reflect.StructTag) error {
 		elems := node.Children[name]
 
 		if elems == nil { // try to find the field in attributes
-			for _, a := range node.Attr {
-				if name == a.Name.Local {
-					// turn this into a text node for de-serializing
-					elems = []*XMLNode{{Text: a.Value}}
-				}
+			if val, ok := node.findElem(name); ok {
+				elems = []*XMLNode{{Text: val}}
 			}
 		}
 

@@ -395,7 +395,7 @@ func main() {
 	var g group.Group
 	{
 		// Termination handler.
-		term := make(chan os.Signal)
+		term := make(chan os.Signal, 1)
 		signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 		cancel := make(chan struct{})
 		g.Add(
@@ -474,7 +474,7 @@ func main() {
 
 		// Make sure that sighup handler is registered with a redirect to the channel before the potentially
 		// long and synchronous tsdb init.
-		hup := make(chan os.Signal)
+		hup := make(chan os.Signal, 1)
 		signal.Notify(hup, syscall.SIGHUP)
 		cancel := make(chan struct{})
 		g.Add(

@@ -193,7 +193,7 @@ func TestQueryError(t *testing.T) {
 		Timeout:       10 * time.Second,
 	}
 	engine := NewEngine(opts)
-	errStorage := ErrStorage(fmt.Errorf("storage error"))
+	errStorage := ErrStorage{fmt.Errorf("storage error")}
 	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
 	})

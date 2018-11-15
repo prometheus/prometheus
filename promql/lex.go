@@ -434,6 +434,13 @@ func (l *lexer) run() {
 	close(l.items)
 }
 
+// Release resources used by lexer.
+func (l *lexer) close() {
+	for range l.items {
+		// Consume.
+	}
+}
+
 // lineComment is the character that starts a line comment.
 const lineComment = "#"
 
