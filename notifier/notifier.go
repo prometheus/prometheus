@@ -33,8 +33,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	old_ctx "golang.org/x/net/context"
-	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -124,7 +122,7 @@ type Options struct {
 	ExternalLabels model.LabelSet
 	RelabelConfigs []*config.RelabelConfig
 	// Used for sending HTTP requests to the Alertmanager.
-	Do func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error)
+	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
 	Registerer prometheus.Registerer
 }
@@ -206,12 +204,19 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 	return m
 }
 
+func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return client.Do(req.WithContext(ctx))
+}
+
 // NewManager is the manager constructor.
 func NewManager(o *Options, logger log.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	if o.Do == nil {
-		o.Do = ctxhttp.Do
+		o.Do = do
 	}
 	if logger == nil {
 		logger = log.NewNopLogger()
