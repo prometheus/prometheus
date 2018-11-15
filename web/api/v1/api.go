@@ -34,7 +34,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"github.com/prometheus/tsdb"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -49,7 +49,6 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 const (
@@ -131,6 +130,14 @@ func setCORS(w http.ResponseWriter) {
 
 type apiFunc func(r *http.Request) (interface{}, *apiError, func())
 
+// TSDBAdmin defines the tsdb interfaces used by the v1 API for admin operations.
+type TSDBAdmin interface {
+	CleanTombstones() error
+	Delete(mint, maxt int64, ms ...tsdbLabels.Matcher) error
+	Dir() string
+	Snapshot(dir string, withHead bool) error
+}
+
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
@@ -145,7 +152,7 @@ type API struct {
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 
-	db                    func() *tsdb.DB
+	db                    func() TSDBAdmin
 	enableAdmin           bool
 	logger                log.Logger
 	remoteReadSampleLimit int
@@ -166,7 +173,7 @@ func NewAPI(
 	configFunc func() config.Config,
 	flagsMap map[string]string,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
-	db func() *tsdb.DB,
+	db func() TSDBAdmin,
 	enableAdmin bool,
 	logger log.Logger,
 	rr rulesRetriever,
@@ -950,7 +957,7 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError, func()) {
 	if r.FormValue("skip_head") != "" {
 		skipHead, err = strconv.ParseBool(r.FormValue("skip_head"))
 		if err != nil {
-			return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+			return nil, &apiError{errorBadData, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
 		}
 	}
 
