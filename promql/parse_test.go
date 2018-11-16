@@ -1468,6 +1468,36 @@ var testExpr = []struct {
 			Step:       3 * time.Second,
 		},
 	}, {
+		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 4m)[4m:3s]`,
+		expected: &SubqueryExpr{
+			Expr: &Call{
+				Func: mustGetFunction("min_over_time"),
+				Args: Expressions{
+					&SubqueryExpr{
+						Expr: &Call{
+							Func: mustGetFunction("rate"),
+							Args: Expressions{
+								&MatrixSelector{
+									Name:  "foo",
+									Range: 2 * time.Second,
+									LabelMatchers: []*labels.Matcher{
+										mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+										mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+									},
+								},
+							},
+						},
+						Range:      5 * time.Minute,
+						StepExists: false,
+						Offset:     4 * time.Minute,
+					},
+				},
+			},
+			Range:      4 * time.Minute,
+			StepExists: true,
+			Step:       3 * time.Second,
+		},
+	}, {
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
 		expected: &SubqueryExpr{
 			Expr: &AggregateExpr{
@@ -1525,6 +1555,34 @@ var testExpr = []struct {
 			},
 			Range:      5 * time.Minute,
 			StepExists: false,
+		},
+	}, {
+		input: `(foo + bar{nm="val"})[5m:] offset 10m`,
+		expected: &SubqueryExpr{
+			Expr: &ParenExpr{
+				Expr: &BinaryExpr{
+					Op: itemADD,
+					VectorMatching: &VectorMatching{
+						Card: CardOneToOne,
+					},
+					LHS: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+						},
+					},
+					RHS: &VectorSelector{
+						Name: "bar",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+						},
+					},
+				},
+			},
+			Range:      5 * time.Minute,
+			StepExists: false,
+			Offset:     10 * time.Minute,
 		},
 	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",

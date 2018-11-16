@@ -119,6 +119,7 @@ type MatrixSelector struct {
 type SubqueryExpr struct {
 	Expr       Expr
 	Range      time.Duration
+	Offset     time.Duration
 	Step       time.Duration
 	StepExists bool
 }

@@ -353,6 +353,13 @@ func (p *parser) expr() Expr {
 			// Check for subquery.
 			if op == itemLeftBracket {
 				expr = p.subqueryOrRangeSelector(expr, false)
+				if s, ok := expr.(*SubqueryExpr); ok {
+					// Parse optional offset.
+					if p.peek().typ == itemOffset {
+						offset := p.offset()
+						s.Offset = offset
+					}
+				}
 			}
 			return expr
 		}
@@ -485,6 +492,8 @@ func (p *parser) unaryExpr() Expr {
 		case *VectorSelector:
 			s.Offset = offset
 		case *MatrixSelector:
+			s.Offset = offset
+		case *SubqueryExpr:
 			s.Offset = offset
 		default:
 			p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
