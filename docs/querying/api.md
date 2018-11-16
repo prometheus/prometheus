@@ -24,6 +24,10 @@ and one of the following HTTP response codes:
 Other non-`2xx` codes may be returned for errors occurring before the API
 endpoint is reached.
 
+An array of warnings may be returned if there are errors that do
+not inhibit the request execution. All of the data that was successfully
+collected will be returned in the data field.
+
 The JSON response envelope format is as follows:
 
 ```
@@ -34,7 +38,11 @@ The JSON response envelope format is as follows:
   // Only set if status is "error". The data field may still hold
   // additional data.
   "errorType": "<string>",
-  "error": "<string>"
+  "error": "<string>",
+
+  // Only if there were warnings while executing the request.
+  // There will still be data in the data field.
+  "warnings": ["<string>"]
 }
 ```
 
