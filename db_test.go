@@ -1388,12 +1388,15 @@ func TestDB_LabelNames(t *testing.T) {
 		}
 
 		// Addings more samples to head with new label names
-		// so that we can test db.LabelNames() (the union).
+		// so that we can test (head+disk).LabelNames() (the union).
 		appendSamples(db, 5, 9, tst.sampleLabels2)
 
 		// Testing DB (union).
-		labelNames, err = db.LabelNames()
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		testutil.Ok(t, err)
+		labelNames, err = q.LabelNames()
+		testutil.Ok(t, err)
+		testutil.Ok(t, q.Close())
 		testutil.Equals(t, tst.exp2, labelNames)
 	}
 }
