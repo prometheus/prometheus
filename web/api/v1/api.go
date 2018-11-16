@@ -376,11 +376,13 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 }
 
 func (api *API) labelNames(r *http.Request) (interface{}, *apiError, func()) {
-	db := api.db()
-	if db == nil {
-		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil
+	q, err := api.Queryable.Querier(r.Context(), math.MinInt64, math.MaxInt64)
+	if err != nil {
+		return nil, &apiError{errorExec, err}, nil
 	}
-	names, err := db.LabelNames()
+	defer q.Close()
+
+	names, err := q.LabelNames()
 	if err != nil {
 		return nil, &apiError{errorExec, err}, nil
 	}

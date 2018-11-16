@@ -173,6 +173,7 @@ func (q *errQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.
 	return errSeriesSet{err: q.err}, q.err
 }
 func (*errQuerier) LabelValues(name string) ([]string, error) { return nil, nil }
+func (*errQuerier) LabelNames() ([]string, error)             { return nil, nil }
 func (*errQuerier) Close() error                              { return nil }
 
 // errSeriesSet implements storage.SeriesSet which always returns error.

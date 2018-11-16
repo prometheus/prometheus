@@ -202,6 +202,7 @@ func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storag
 }
 
 func (q querier) LabelValues(name string) ([]string, error) { return q.q.LabelValues(name) }
+func (q querier) LabelNames() ([]string, error)             { return q.q.LabelNames() }
 func (q querier) Close() error                              { return q.q.Close() }
 
 type seriesSet struct {
