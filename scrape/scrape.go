@@ -809,7 +809,7 @@ mainLoop:
 		}
 
 		b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
-		buf := bytes.NewBuffer(b)
+		buf = bytes.NewBuffer(b)
 
 		contentType, scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
 		cancel()
