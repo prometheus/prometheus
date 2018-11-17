@@ -248,9 +248,9 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
+			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
 			config:                func() config.Config { return samplePrometheusCfg },
-			flagsMap:              sampleFlagMap,
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr,
 		}
@@ -301,15 +301,51 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
+			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
 			config:                func() config.Config { return samplePrometheusCfg },
-			flagsMap:              sampleFlagMap,
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr,
 		}
 
 		testEndpoints(t, api, false)
 	})
+
+}
+
+func TestLabelNames(t *testing.T) {
+	// TestEndpoints doesn't have enough label names to test api.labelNames
+	// endpoint properly. Hence we test it separately.
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo1="bar", baz="abc"} 0+100x100
+			test_metric1{foo2="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
+	`)
+	testutil.Ok(t, err)
+	defer suite.Close()
+	testutil.Ok(t, suite.Run())
+
+	api := &API{
+		Queryable: suite.Storage(),
+	}
+	request := func(m string) (*http.Request, error) {
+		if m == http.MethodPost {
+			r, err := http.NewRequest(m, "http://example.com", nil)
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			return r, err
+		}
+		return http.NewRequest(m, "http://example.com", nil)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		ctx := context.Background()
+		req, err := request(method)
+		testutil.Ok(t, err)
+		resp, apiErr, _ := api.labelNames(req.WithContext(ctx))
+		assertAPIError(t, apiErr, "")
+		assertAPIResponse(t, resp, []string{"__name__", "baz", "foo", "foo1", "foo2", "xyz"})
+	}
 }
 
 func setupRemote(s storage.Storage) *httptest.Server {
@@ -775,6 +811,11 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 					"name": "not!!!allowed",
 				},
 				errType: errorBadData,
+			},
+			// Label names.
+			{
+				endpoint: api.labelNames,
+				response: []string{"__name__", "foo"},
 			},
 		}...)
 	}
