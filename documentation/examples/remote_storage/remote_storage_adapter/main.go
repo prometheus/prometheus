@@ -56,6 +56,7 @@ type config struct {
 	listenAddr              string
 	telemetryPath           string
 	logLevel                string
+	logFormat               string
 }
 
 var (
@@ -104,7 +105,16 @@ func main() {
 	if err := logLevel.Set(cfg.logLevel); err != nil {
 		panic(fmt.Sprintf("Error setting log level: %v", err))
 	}
-	logger := promlog.New(logLevel)
+
+	logFormat := promlog.AllowedFormat{}
+	if err := logFormat.Set(cfg.logFormat); err != nil {
+		panic(fmt.Sprintf("Error setting log format: %v", err))
+	}
+
+	logger := promlog.New(&promlog.Config{
+		Level:  &logLevel,
+		Format: &logFormat,
+	})
 
 	writers, readers := buildClients(logger, cfg)
 	if err := serve(logger, cfg.listenAddr, writers, readers); err != nil {
@@ -148,6 +158,7 @@ func parseFlags() *config {
 	flag.StringVar(&cfg.listenAddr, "web.listen-address", ":9201", "Address to listen on for web endpoints.")
 	flag.StringVar(&cfg.telemetryPath, "web.telemetry-path", "/metrics", "Address to listen on for web endpoints.")
 	flag.StringVar(&cfg.logLevel, "log.level", "debug", "Only log messages with the given severity or above. One of: [debug, info, warn, error]")
+	flag.StringVar(&cfg.logFormat, "log.format", "logfmt", "Output format of log messages. One of: [logfmt, json]")
 
 	flag.Parse()
 
