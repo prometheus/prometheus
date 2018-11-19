@@ -315,6 +315,10 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 					return
 				}
 
+				if networkInterface.Properties == nil {
+					continue
+				}
+
 				// Unfortunately Azure does not return information on whether a VM is deallocated.
 				// This information is available via another API call however the Go SDK does not
 				// yet support this. On deallocated machines, this value happens to be nil so it
