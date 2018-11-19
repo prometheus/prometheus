@@ -470,34 +470,8 @@ load 10s
 			Start: time.Unix(10, 0),
 		},
 		{
-			Query:      "metric[20s:10s]",
-			MaxSamples: 2,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-			},
-			Start: time.Unix(10, 0),
-		},
-		{
 			Query:      "rate(metric[20s])",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Vector{
-					Sample{
-						Point:  Point{V: 0.1, T: 10000},
-						Metric: labels.Labels{},
-					},
-				},
-			},
-			Start: time.Unix(10, 0),
-		},
-		{
-			Query:      "rate(metric[20s:10s])",
-			MaxSamples: 4,
 			Result: Result{
 				nil,
 				Vector{
@@ -517,20 +491,6 @@ load 10s
 				Matrix{Series{
 					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric")},
-				},
-			},
-			Start: time.Unix(10, 0),
-		},
-		{
-			Query:      "rate(metric[20s:5s])",
-			MaxSamples: 4,
-			Result: Result{
-				nil,
-				Vector{
-					Sample{
-						Point:  Point{V: 0.0625, T: 10000},
-						Metric: labels.Labels{},
-					},
 				},
 			},
 			Start: time.Unix(10, 0),
@@ -676,4 +636,106 @@ func TestRecoverEvaluatorError(t *testing.T) {
 	defer ev.recover(&err)
 
 	panic(e)
+}
+
+func TestSubquerySelector(t *testing.T) {
+	test, err := NewTest(t, `
+load 10s
+  metric 1 2
+`)
+
+	if err != nil {
+		t.Fatalf("unexpected error creating test: %q", err)
+	}
+	defer test.Close()
+
+	err = test.Run()
+	if err != nil {
+		t.Fatalf("unexpected error initializing test: %q", err)
+	}
+
+	cases := []struct {
+		Query  string
+		Result Result
+		Start  time.Time
+	}{
+		{
+			Query: "metric[20s:10s]",
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query: "rate(metric[20s:10s])",
+			Result: Result{
+				nil,
+				Vector{
+					Sample{
+						Point:  Point{V: 0.1, T: 10000},
+						Metric: labels.Labels{},
+					},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query: "metric[20s:5s]",
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query: "metric[20s:5s] offset 2s",
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 3000}, {V: 1, T: 8000}, {V: 2, T: 13000}, {V: 2, T: 18000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start: time.Unix(20, 0),
+		},
+		{
+			Query: "rate(metric[20s:5s])",
+			Result: Result{
+				nil,
+				Vector{
+					Sample{
+						Point:  Point{V: 0.0625, T: 10000},
+						Metric: labels.Labels{},
+					},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+	}
+
+	engine := test.QueryEngine()
+	for _, c := range cases {
+		var err error
+		var qry Query
+
+		qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+		if err != nil {
+			t.Fatalf("unexpected error creating query: %q", err)
+		}
+		res := qry.Exec(test.Context())
+		if res.Err != nil && res.Err != c.Result.Err {
+			t.Fatalf("unexpected error running query: %q, expected to get result: %q", res.Err, c.Result.Value)
+		}
+		if !reflect.DeepEqual(res.Value, c.Result.Value) {
+			t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
+		}
+	}
+
 }
