@@ -1108,8 +1108,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *SubqueryExpr:
 		newEv := &evaluator{
-			startTimestamp: ev.endTimestamp - int64(e.Range/time.Millisecond),
-			endTimestamp:   ev.endTimestamp,
+			endTimestamp:   ev.endTimestamp - int64(e.Offset/time.Millisecond),
+			startTimestamp: ev.endTimestamp - int64(e.Offset/time.Millisecond) - int64(e.Range/time.Millisecond),
 			interval:       int64(getGlobalEvaluationInterval() / time.Millisecond),
 			ctx:            ev.ctx,
 			maxSamples:     ev.maxSamples,
