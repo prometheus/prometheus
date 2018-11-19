@@ -71,7 +71,7 @@ github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/types
 github.com/gogo/protobuf/sortkeys
 github.com/gogo/protobuf/jsonpb
-# github.com/golang/glog v0.0.0-20141105023935-44145f04b68c
+# github.com/golang/glog v0.0.0-20141105023935-44145f04b68c => github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352
 github.com/golang/glog
 # github.com/golang/protobuf v0.0.0-20180622174009-9eb2c01ac278
 github.com/golang/protobuf/proto
@@ -320,7 +320,6 @@ k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
 # k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
-k8s.io/apimachinery/pkg/util/runtime
 k8s.io/apimachinery/pkg/apis/meta/v1
 k8s.io/apimachinery/pkg/runtime
 k8s.io/apimachinery/pkg/watch
@@ -335,6 +334,7 @@ k8s.io/apimachinery/pkg/selection
 k8s.io/apimachinery/pkg/conversion/queryparams
 k8s.io/apimachinery/pkg/util/errors
 k8s.io/apimachinery/pkg/util/json
+k8s.io/apimachinery/pkg/util/runtime
 k8s.io/apimachinery/pkg/util/sets
 k8s.io/apimachinery/pkg/util/net
 k8s.io/apimachinery/pkg/util/wait

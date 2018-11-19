@@ -76,8 +76,6 @@ github.com/go-stack/stack v1.5.4 h1:ACUuwAbOuCKT3mK+Az9UrqaSheA8lDWOfm0+ZT62NHY=
 github.com/go-stack/stack v1.5.4/go.mod h1:v0f6uXyyMGvRgIKkXu+yp6POWl0qKG85gN/melR3HDY=
 github.com/gogo/protobuf v0.0.0-20171123125729-971cbfd2e72b h1:9pWlytbUHf1Oz1gJGJMNt325N5hzLeW/Mik1lQbjN9M=
 github.com/gogo/protobuf v0.0.0-20171123125729-971cbfd2e72b/go.mod h1:r8qH/GZQm5c6nD/R0oafs1akxWv10x8SbQlK7atdtwQ=
-github.com/golang/glog v0.0.0-20141105023935-44145f04b68c h1:CbdkBQ1/PiAo0FYJhQGwASD8wrgNvTdf01g6+O9tNuA=
-github.com/golang/glog v0.0.0-20141105023935-44145f04b68c/go.mod h1:SBH7ygxi8pfUlaOkMMuAQtPIUF8ecWP5IEl/CR7VP2Q=
 github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4 h1:6UVLWz0fIIrv0UVj6t0A7cL48n8IyAdLVQqAYzEfsKI=
 github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4/go.mod h1:cIg4eruTrX1D+g88fzRXU5OdNfaM+9IcxsU14FzY7Hc=
 github.com/golang/protobuf v0.0.0-20180622174009-9eb2c01ac278 h1:K8gwDJfG+B1LjkmxrSw1L6P6dQ089va1xLQSz7JTNps=
@@ -153,6 +151,8 @@ github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORN
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0 h1:45sCR5RtlFHMR4UwH9sdQ5TC8v0qDQCHnXt+kaKSTVE=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
+github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352 h1:IwAUUBomA7q2TedTHQ3ebjwXVp8aHwi453m7AFn0vCk=
+github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352/go.mod h1:WUD00rCUd6ntFOOuzJbT/MRrM+6X0Zufa6wWYBcf4zY=
 github.com/lib/pq v1.0.0 h1:X5PMW56eZitiTeO7tKzZxFCSpbFZJtkMMooicw2us9A=
 github.com/lib/pq v1.0.0/go.mod h1:5WUZQaWbwv1U+lTReE5YruASi9Al49XbQIvNi/34Woo=
 github.com/lightstep/lightstep-tracer-go v0.15.6 h1:D0GGa7afJ7GcQvu5as6ssLEEKYXvRgKI5d5cevtz8r4=
