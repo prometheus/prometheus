@@ -429,7 +429,7 @@ func (db *DB) compact() (err error) {
 		default:
 		}
 
-		if _, err := db.compactor.Compact(db.dir, plan...); err != nil {
+		if _, err := db.compactor.Compact(db.dir, plan, db.blocks); err != nil {
 			return errors.Wrapf(err, "compact %s", plan)
 		}
 		runtime.GC()
@@ -858,49 +858,6 @@ func (db *DB) CleanTombstones() (err error) {
 		}
 	}
 	return errors.Wrap(db.reload(), "reload blocks")
-}
-
-// labelNames returns all the unique label names from the Block Readers.
-func labelNames(brs ...BlockReader) (map[string]struct{}, error) {
-	labelNamesMap := make(map[string]struct{})
-	for _, br := range brs {
-		ir, err := br.Index()
-		if err != nil {
-			return nil, errors.Wrap(err, "get IndexReader")
-		}
-		names, err := ir.LabelNames()
-		if err != nil {
-			return nil, errors.Wrap(err, "LabelNames() from IndexReader")
-		}
-		for _, name := range names {
-			labelNamesMap[name] = struct{}{}
-		}
-		if err = ir.Close(); err != nil {
-			return nil, errors.Wrap(err, "close IndexReader")
-		}
-	}
-	return labelNamesMap, nil
-}
-
-// LabelNames returns all the unique label names present in the DB in sorted order.
-func (db *DB) LabelNames() ([]string, error) {
-	brs := []BlockReader{db.head}
-	for _, b := range db.Blocks() {
-		brs = append(brs, b)
-	}
-
-	labelNamesMap, err := labelNames(brs...)
-	if err != nil {
-		return nil, err
-	}
-
-	labelNames := make([]string, 0, len(labelNamesMap))
-	for name := range labelNamesMap {
-		labelNames = append(labelNames, name)
-	}
-	sort.Strings(labelNames)
-
-	return labelNames, nil
 }
 
 func isBlockDir(fi os.FileInfo) bool {

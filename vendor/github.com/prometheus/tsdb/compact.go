@@ -60,7 +60,9 @@ type Compactor interface {
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
-	Compact(dest string, dirs ...string) (ulid.ULID, error)
+	// Can optionally pass a list of already open blocks,
+	// to avoid having to reopen them.
+	Compact(dest string, dirs []string, open []*Block) (ulid.ULID, error)
 }
 
 // LeveledCompactor implements the Compactor interface.
@@ -365,7 +367,7 @@ func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 
 // Compact creates a new block in the compactor's directory from the blocks in the
 // provided directories.
-func (c *LeveledCompactor) Compact(dest string, dirs ...string) (uid ulid.ULID, err error) {
+func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (uid ulid.ULID, err error) {
 	var (
 		blocks      []BlockReader
 		bs          []*Block
@@ -374,17 +376,32 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (uid ulid.ULID, 
 		overlapping = false
 		lastMaxT    = int64(math.MinInt64)
 	)
+	start := time.Now()
 
 	for _, d := range dirs {
-		b, err := OpenBlock(d, c.chunkPool)
-		if err != nil {
-			return uid, err
-		}
-		defer b.Close()
-
 		meta, err := readMetaFile(d)
 		if err != nil {
 			return uid, err
+		}
+
+		var b *Block
+
+		// Use already open blocks if we can, to avoid
+		// having the index data in memory twice.
+		for _, o := range open {
+			if meta.ULID == o.Meta().ULID {
+				b = o
+				break
+			}
+		}
+
+		if b == nil {
+			var err error
+			b, err = OpenBlock(d, c.chunkPool)
+			if err != nil {
+				return uid, err
+			}
+			defer b.Close()
 		}
 
 		if meta.MinTime < lastMaxT {
@@ -415,6 +432,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (uid ulid.ULID, 
 				"maxt", meta.MaxTime,
 				"ulid", meta.ULID,
 				"sources", fmt.Sprintf("%v", uids),
+				"duration", time.Since(start),
 			)
 		} else {
 			level.Info(c.logger).Log(
@@ -424,6 +442,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (uid ulid.ULID, 
 				"maxt", meta.MaxTime,
 				"ulid", meta.ULID,
 				"sources", fmt.Sprintf("%v", uids),
+				"duration", time.Since(start),
 			)
 		}
 		return uid, nil
@@ -559,7 +578,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, overlapping bool,
 	}
 
 	// Create an empty tombstones file.
-	if err := writeTombstoneFile(tmp, NewMemTombstones()); err != nil {
+	if err := writeTombstoneFile(tmp, newMemTombstones()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
 

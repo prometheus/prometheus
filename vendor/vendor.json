@@ -835,10 +835,10 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "bykezOu0nj8dXXVuNOibdjXf1xI=",
+			"checksumSHA1": "I6Gyze5g9UZ0cZ+THn1EedFKU28=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "94e5ec1febc4eea116a9089facafe49c73056ca1",
-			"revisionTime": "2018-11-13T06:33:32Z"
+			"revision": "4103678763b03ffb5b02a67c00f6dfcc5abf9ead",
+			"revisionTime": "2018-11-19T14:13:25Z"
 		},
 		{
 			"checksumSHA1": "LyptBvJD/MixOLnO88xOxWLuDDk=",
