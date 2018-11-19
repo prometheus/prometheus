@@ -1108,19 +1108,29 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *SubqueryExpr:
 		newEv := &evaluator{
-			endTimestamp:   ev.endTimestamp - int64(e.Offset/time.Millisecond),
-			startTimestamp: ev.endTimestamp - int64(e.Offset/time.Millisecond) - int64(e.Range/time.Millisecond),
-			interval:       int64(getGlobalEvaluationInterval() / time.Millisecond),
-			ctx:            ev.ctx,
-			maxSamples:     ev.maxSamples,
-			logger:         ev.logger,
-		}
-		if ev.startTimestamp < newEv.startTimestamp {
-			newEv.startTimestamp = ev.startTimestamp
+			endTimestamp: ev.endTimestamp - int64(e.Offset/time.Millisecond),
+			interval:     int64(getGlobalEvaluationInterval() / time.Millisecond),
+			ctx:          ev.ctx,
+			maxSamples:   ev.maxSamples,
+			logger:       ev.logger,
 		}
 		if e.StepExists {
 			newEv.interval = int64(e.Step / time.Millisecond)
 		}
+
+		// Calculate number of steps of the subquery evaluation.
+		rangeMillis := (int64(e.Range / time.Millisecond))
+		numSteps := (rangeMillis + (newEv.interval / 2)) / newEv.interval
+		if ev.startTimestamp < (newEv.endTimestamp - rangeMillis) {
+			// If the original evaluator has startTimestamp before subquery startTimestamp,
+			// have starting step on/before that.
+			numSteps = (newEv.endTimestamp - ev.startTimestamp + (newEv.interval / 2)) / newEv.interval
+		}
+
+		// Align the startTimestamp with the subquery step.
+		correctedRange := newEv.interval * numSteps
+		newEv.startTimestamp = newEv.endTimestamp - correctedRange
+
 		return newEv.eval(e.Expr)
 	}
 
