@@ -123,8 +123,8 @@
             labels: {
               severity: 'warning',
             },
-            message: {
-              description: "Prometheus {{ $labels.namespace }}/{{ $labels.pod}} isn't ingesting samples.",
+            annotations: {
+              message: "Prometheus {{ $labels.namespace }}/{{ $labels.pod}} isn't ingesting samples.",
             },
           },
           {
