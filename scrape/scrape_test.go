@@ -1252,8 +1252,11 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 	}()
 
 	go func() {
-		if _, err := ts.scrape(ctx, ioutil.Discard); err != context.Canceled {
-			errc <- fmt.Errorf("Expected context cancelation error but got: %s", err)
+		_, err := ts.scrape(ctx, ioutil.Discard)
+		if err == nil {
+			errc <- fmt.Errorf("Expected error but got nil")
+		} else if ctx.Err() != context.Canceled {
+			errc <- fmt.Errorf("Expected context cancelation error but got: %s", ctx.Err())
 		}
 		close(errc)
 	}()
