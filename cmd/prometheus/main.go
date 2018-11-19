@@ -365,6 +365,8 @@ func main() {
 				}
 				files = append(files, fs...)
 			}
+			// Add replay to re-build alert state
+			ruleManager.Replay(time.Duration(cfg.GlobalConfig.EvaluationInterval), files)
 			return ruleManager.Update(time.Duration(cfg.GlobalConfig.EvaluationInterval), files)
 		},
 	}

@@ -1,0 +1,9 @@
+groups:
+  - name: test
+    rules:
+    - alert: http_requests_alerts
+      expr: http_requests > 100
+      for: 3m
+    - alert: db_requests_alerts
+      expr: db_requests > 100
+      for: 5m

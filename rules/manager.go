@@ -27,7 +27,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/common/model"
@@ -661,6 +661,64 @@ func (m *Manager) Stop() {
 	}
 
 	level.Info(m.logger).Log("msg", "Rule manager stopped")
+}
+
+func (m *Manager) Replay(interval time.Duration, files []string) error {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	groups, errs := m.LoadGroups(interval, files...)
+	if errs != nil {
+		for _, e := range errs {
+			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
+		}
+		return errors.New("error loading rules, previous rule set restored")
+	}
+	m.restored = true
+
+	var wg sync.WaitGroup
+	for _, newg := range groups {
+		wg.Add(1)
+
+		// If there is an old group with the same identifier, stop it and wait for
+		// it to finish the current iteration. Then copy it into the new group.
+		gn := groupKey(newg.name, newg.file)
+		oldg, ok := m.groups[gn]
+		delete(m.groups, gn)
+
+		evalTimestamp := newg.evalTimestamp()
+		go func(newg *Group) {
+			if ok {
+				oldg.stop()
+				newg.CopyState(oldg)
+			}
+			replayCount := 0
+			for _, rule := range newg.Rules() {
+				if rule, ok := rule.(*AlertingRule); ok {
+					holdCount := int(rule.HoldDuration().Nanoseconds() / newg.Interval().Nanoseconds())
+					if holdCount > replayCount {
+						replayCount = holdCount
+					}
+				}
+			}
+			if replayCount > 0 {
+				for i := replayCount - 1; i >= 0; i-- {
+					// Wait with starting evaluation until the rule manager
+					// is told to run. This is necessary to avoid running
+					// queries against a bootstrapping storage.
+					<-m.block
+					replayTimestamp := evalTimestamp.Add(-newg.interval * time.Duration(i))
+					// FIXME: Record rule could be skipped during replay
+					newg.Eval(m.opts.Context, replayTimestamp)
+					level.Info(m.logger).Log("msg", "Completed replay eval", "groupName", newg.name, "replayTimestamp", replayTimestamp)
+				}
+			}
+			level.Info(m.logger).Log("msg", "Completed scheduling replay rules", "groupName", newg.name, "ruleNumber", len(newg.rules))
+			wg.Done()
+		}(newg)
+	}
+	wg.Wait()
+	return nil
 }
 
 // Update the rule manager's state as the config requires. If

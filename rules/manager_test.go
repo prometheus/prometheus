@@ -724,3 +724,50 @@ func TestNotify(t *testing.T) {
 	group.Eval(ctx, time.Unix(6, 0))
 	testutil.Equals(t, 1, len(lastNotified))
 }
+
+func TestReplay(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75
+	`)
+	testutil.Ok(t, err)
+	defer suite.Close()
+
+	err = suite.Run()
+	testutil.Ok(t, err)
+
+	notifyCount := 0
+
+	files := []string{"fixtures/alerts.yaml"}
+	storage := testutil.NewStorage(t)
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		NotifyFunc: func(ctx context.Context, expr string, alerts ...*Alert) {
+			notifyCount++
+		},
+		Context: context.Background(),
+		Logger:  log.NewNopLogger(),
+	})
+	ruleManager.Run()
+	defer ruleManager.Stop()
+
+	oneMin, _ := time.ParseDuration("1m")
+	err = ruleManager.Replay(oneMin, files)
+	testutil.Ok(t, err)
+
+	delay, _ := time.ParseDuration("500ms")
+	time.Sleep(delay)
+
+	testutil.Equals(t, 10, notifyCount)
+}
