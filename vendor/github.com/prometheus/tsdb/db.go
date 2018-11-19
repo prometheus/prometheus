@@ -429,7 +429,7 @@ func (db *DB) compact() (err error) {
 		default:
 		}
 
-		if _, err := db.compactor.Compact(db.dir, plan...); err != nil {
+		if _, err := db.compactor.Compact(db.dir, plan, db.blocks); err != nil {
 			return errors.Wrapf(err, "compact %s", plan)
 		}
 		runtime.GC()
@@ -793,7 +793,11 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 		}
 	}
 	if maxt >= db.head.MinTime() {
-		blocks = append(blocks, db.head)
+		blocks = append(blocks, &rangeHead{
+			head: db.head,
+			mint: mint,
+			maxt: maxt,
+		})
 	}
 
 	sq := &querier{

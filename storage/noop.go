@@ -34,6 +34,10 @@ func (noopQuerier) LabelValues(name string) ([]string, error) {
 	return nil, nil
 }
 
+func (noopQuerier) LabelNames() ([]string, error) {
+	return nil, nil
+}
+
 func (noopQuerier) Close() error {
 	return nil
 }

@@ -29,7 +29,7 @@ const tombstoneFilename = "tombstones"
 
 const (
 	// MagicTombstone is 4 bytes at the head of a tombstone file.
-	MagicTombstone = 0x130BA30
+	MagicTombstone = 0x0130BA30
 
 	tombstoneFormatV1 = 1
 )
@@ -113,10 +113,10 @@ type Stone struct {
 	intervals Intervals
 }
 
-func readTombstones(dir string) (*memTombstones, error) {
+func readTombstones(dir string) (TombstoneReader, error) {
 	b, err := ioutil.ReadFile(filepath.Join(dir, tombstoneFilename))
 	if os.IsNotExist(err) {
-		return NewMemTombstones(), nil
+		return newMemTombstones(), nil
 	} else if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func readTombstones(dir string) (*memTombstones, error) {
 		return nil, errors.New("checksum did not match")
 	}
 
-	stonesMap := NewMemTombstones()
+	stonesMap := newMemTombstones()
 
 	for d.len() > 0 {
 		k := d.uvarint64()
@@ -167,7 +167,9 @@ type memTombstones struct {
 	mtx         sync.RWMutex
 }
 
-func NewMemTombstones() *memTombstones {
+// newMemTombstones creates new in memory TombstoneReader
+// that allows adding new intervals.
+func newMemTombstones() *memTombstones {
 	return &memTombstones{intvlGroups: make(map[uint64]Intervals)}
 }
 
@@ -208,7 +210,7 @@ func (t *memTombstones) addInterval(ref uint64, itvs ...Interval) {
 	}
 }
 
-func (memTombstones) Close() error {
+func (*memTombstones) Close() error {
 	return nil
 }
 

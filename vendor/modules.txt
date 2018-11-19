@@ -186,7 +186,7 @@ github.com/prometheus/common/route
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
 # github.com/prometheus/procfs v0.0.0-20160411190841-abf152e5f3e9
 github.com/prometheus/procfs
-# github.com/prometheus/tsdb v0.0.0-20181003080831-0ce41118ed20
+# github.com/prometheus/tsdb v0.2.0
 github.com/prometheus/tsdb
 github.com/prometheus/tsdb/labels
 github.com/prometheus/tsdb/chunkenc

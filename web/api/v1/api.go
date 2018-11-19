@@ -228,6 +228,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/query_range", wrap(api.queryRange))
 	r.Post("/query_range", wrap(api.queryRange))
 
+	r.Get("/labels", wrap(api.labelNames))
+	r.Post("/labels", wrap(api.labelNames))
 	r.Get("/label/:name/values", wrap(api.labelValues))
 
 	r.Get("/series", wrap(api.series))
@@ -388,6 +390,20 @@ func returnAPIError(err error) *apiError {
 	}
 
 	return &apiError{errorExec, err}
+}
+
+func (api *API) labelNames(r *http.Request) (interface{}, *apiError, func()) {
+	q, err := api.Queryable.Querier(r.Context(), math.MinInt64, math.MaxInt64)
+	if err != nil {
+		return nil, &apiError{errorExec, err}, nil
+	}
+	defer q.Close()
+
+	names, err := q.LabelNames()
+	if err != nil {
+		return nil, &apiError{errorExec, err}, nil
+	}
+	return names, nil, nil
 }
 
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError, func()) {
