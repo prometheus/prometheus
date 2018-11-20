@@ -33,17 +33,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
+	"gopkg.in/alecthomas/kingpin.v2"
 
 	influx "github.com/influxdata/influxdb/client/v2"
 
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/promlog/flag"
+
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/graphite"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/opentsdb"
 	"github.com/prometheus/prometheus/prompb"
-
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 type config struct {
