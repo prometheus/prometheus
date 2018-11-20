@@ -103,7 +103,7 @@ require (
 	github.com/pmezard/go-difflib v0.0.0-20151028094244-d8ed2627bdf0 // indirect
 	github.com/prometheus/client_golang v0.0.0-20181001174001-0a8115f42e03
 	github.com/prometheus/client_model v0.0.0-20180712105110-5c3871d89910
-	github.com/prometheus/common v0.0.0-20181116084131-1f2c4f3cd6db
+	github.com/prometheus/common v0.0.0-20181119215939-b36ad289a3ea
 	github.com/prometheus/procfs v0.0.0-20160411190841-abf152e5f3e9 // indirect
 	github.com/prometheus/tsdb v0.0.0-20181003080831-0ce41118ed20
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a // indirect
