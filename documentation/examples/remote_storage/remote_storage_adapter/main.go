@@ -29,6 +29,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
@@ -145,6 +146,13 @@ func parseFlags() *config {
 		Default("/metrics").StringVar(&cfg.telemetryPath)
 
 	flag.AddFlags(a, &cfg.promlogConfig)
+
+	_, err := a.Parse(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error parsing commandline arguments"))
+		a.Usage(os.Args[1:])
+		os.Exit(2)
+	}
 
 	return cfg
 }
