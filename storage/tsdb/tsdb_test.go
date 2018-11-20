@@ -14,7 +14,6 @@
 package tsdb_test
 
 import (
-	"math"
 	"testing"
 
 	dto "github.com/prometheus/client_model/go"
@@ -35,13 +34,13 @@ func TestMetrics(t *testing.T) {
 
 	// Check initial values.
 	testutil.Ok(t, startTime.Write(metrics))
-	testutil.Equals(t, float64(math.MaxInt64), metrics.Gauge.GetValue())
+	testutil.Equals(t, float64(model.Latest)/1000, metrics.Gauge.GetValue())
 
 	testutil.Ok(t, headMinTime.Write(metrics))
-	testutil.Equals(t, float64(math.MaxInt64), metrics.Gauge.GetValue())
+	testutil.Equals(t, float64(model.Latest)/1000, metrics.Gauge.GetValue())
 
 	testutil.Ok(t, headMaxTime.Write(metrics))
-	testutil.Equals(t, float64(math.MinInt64), metrics.Gauge.GetValue())
+	testutil.Equals(t, float64(model.Earliest)/1000, metrics.Gauge.GetValue())
 
 	app, err := db.Appender()
 	testutil.Ok(t, err)
@@ -53,12 +52,12 @@ func TestMetrics(t *testing.T) {
 
 	// Check after adding some samples.
 	testutil.Ok(t, startTime.Write(metrics))
-	testutil.Equals(t, float64(1), metrics.Gauge.GetValue())
+	testutil.Equals(t, 0.001, metrics.Gauge.GetValue())
 
 	testutil.Ok(t, headMinTime.Write(metrics))
-	testutil.Equals(t, float64(1), metrics.Gauge.GetValue())
+	testutil.Equals(t, 0.001, metrics.Gauge.GetValue())
 
 	testutil.Ok(t, headMaxTime.Write(metrics))
-	testutil.Equals(t, float64(3), metrics.Gauge.GetValue())
+	testutil.Equals(t, 0.003, metrics.Gauge.GetValue())
 
 }
