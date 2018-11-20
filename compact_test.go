@@ -737,7 +737,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 		if len(db.Blocks()) > 0 {
 			break
 		}
-		time.Sleep(30 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 	testutil.Assert(t, len(db.Blocks()) > 0, "No block was persisted after the set timeout.")
 }
