@@ -32,7 +32,6 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -469,7 +468,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		s.req = req
 	}
 
-	resp, err := ctxhttp.Do(ctx, s.client, s.req)
+	resp, err := s.client.Do(s.req.WithContext(ctx))
 	if err != nil {
 		return "", err
 	}

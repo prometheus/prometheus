@@ -26,7 +26,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context/ctxhttp"
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/prompb"
@@ -90,7 +89,7 @@ func (c *Client) Store(ctx context.Context, req *prompb.WriteRequest) error {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	httpResp, err := ctxhttp.Do(ctx, c.client, httpReq)
+	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
 	if err != nil {
 		// Errors from client.Do are from (for example) network errors, so are
 		// recoverable.
@@ -144,7 +143,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	httpResp, err := ctxhttp.Do(ctx, c.client, httpReq)
+	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("error sending request: %v", err)
 	}

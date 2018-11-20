@@ -24,13 +24,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
-
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	config_util "github.com/prometheus/common/config"
@@ -49,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/testutil"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 type testTargetRetriever struct{}
@@ -247,9 +248,9 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
+			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
 			config:                func() config.Config { return samplePrometheusCfg },
-			flagsMap:              sampleFlagMap,
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr,
 		}
@@ -300,15 +301,51 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
+			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
 			config:                func() config.Config { return samplePrometheusCfg },
-			flagsMap:              sampleFlagMap,
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr,
 		}
 
 		testEndpoints(t, api, false)
 	})
+
+}
+
+func TestLabelNames(t *testing.T) {
+	// TestEndpoints doesn't have enough label names to test api.labelNames
+	// endpoint properly. Hence we test it separately.
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo1="bar", baz="abc"} 0+100x100
+			test_metric1{foo2="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
+	`)
+	testutil.Ok(t, err)
+	defer suite.Close()
+	testutil.Ok(t, suite.Run())
+
+	api := &API{
+		Queryable: suite.Storage(),
+	}
+	request := func(m string) (*http.Request, error) {
+		if m == http.MethodPost {
+			r, err := http.NewRequest(m, "http://example.com", nil)
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			return r, err
+		}
+		return http.NewRequest(m, "http://example.com", nil)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		ctx := context.Background()
+		req, err := request(method)
+		testutil.Ok(t, err)
+		resp, apiErr, _ := api.labelNames(req.WithContext(ctx))
+		assertAPIError(t, apiErr, "")
+		assertAPIResponse(t, resp, []string{"__name__", "baz", "foo", "foo1", "foo2", "xyz"})
+	}
 }
 
 func setupRemote(s storage.Storage) *httptest.Server {
@@ -775,6 +812,11 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				},
 				errType: errorBadData,
 			},
+			// Label names.
+			{
+				endpoint: api.labelNames,
+				response: []string{"__name__", "foo"},
+			},
 		}...)
 	}
 
@@ -809,36 +851,46 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				t.Fatal(err)
 			}
 			resp, apiErr, _ := test.endpoint(req.WithContext(ctx))
-			if apiErr != nil {
-				if test.errType == errorNone {
-					t.Fatalf("Unexpected error: %s", apiErr)
-				}
-				if test.errType != apiErr.typ {
-					t.Fatalf("Expected error of type %q but got type %q", test.errType, apiErr.typ)
-				}
-				continue
-			}
-			if apiErr == nil && test.errType != errorNone {
-				t.Fatalf("Expected error of type %q but got none", test.errType)
-			}
-			if !reflect.DeepEqual(resp, test.response) {
-				respJSON, err := json.Marshal(resp)
-				if err != nil {
-					t.Fatalf("failed to marshal response as JSON: %v", err.Error())
-				}
-
-				expectedRespJSON, err := json.Marshal(test.response)
-				if err != nil {
-					t.Fatalf("failed to marshal expected response as JSON: %v", err.Error())
-				}
-
-				t.Fatalf(
-					"Response does not match, expected:\n%+v\ngot:\n%+v",
-					string(expectedRespJSON),
-					string(respJSON),
-				)
-			}
+			assertAPIError(t, apiErr, test.errType)
+			assertAPIResponse(t, resp, test.response)
 		}
+	}
+}
+
+func assertAPIError(t *testing.T, got *apiError, exp errorType) {
+	t.Helper()
+
+	if got != nil {
+		if exp == errorNone {
+			t.Fatalf("Unexpected error: %s", got)
+		}
+		if exp != got.typ {
+			t.Fatalf("Expected error of type %q but got type %q (%q)", exp, got.typ, got)
+		}
+		return
+	}
+	if got == nil && exp != errorNone {
+		t.Fatalf("Expected error of type %q but got none", exp)
+	}
+}
+
+func assertAPIResponse(t *testing.T, got interface{}, exp interface{}) {
+	if !reflect.DeepEqual(exp, got) {
+		respJSON, err := json.Marshal(got)
+		if err != nil {
+			t.Fatalf("failed to marshal response as JSON: %v", err.Error())
+		}
+
+		expectedRespJSON, err := json.Marshal(exp)
+		if err != nil {
+			t.Fatalf("failed to marshal expected response as JSON: %v", err.Error())
+		}
+
+		t.Fatalf(
+			"Response does not match, expected:\n%+v\ngot:\n%+v",
+			string(expectedRespJSON),
+			string(respJSON),
+		)
 	}
 }
 
@@ -941,6 +993,211 @@ func TestReadEndpoint(t *testing.T) {
 	}
 	if !reflect.DeepEqual(result, expected) {
 		t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
+	}
+}
+
+type fakeDB struct {
+	err    error
+	closer func()
+}
+
+func (f *fakeDB) CleanTombstones() error                                  { return f.err }
+func (f *fakeDB) Delete(mint, maxt int64, ms ...tsdbLabels.Matcher) error { return f.err }
+func (f *fakeDB) Dir() string {
+	dir, _ := ioutil.TempDir("", "fakeDB")
+	f.closer = func() {
+		os.RemoveAll(dir)
+	}
+	return dir
+}
+func (f *fakeDB) Snapshot(dir string, withHead bool) error { return f.err }
+
+func TestAdminEndpoints(t *testing.T) {
+	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: fmt.Errorf("some error")}
+	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
+	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
+	deleteAPI := func(api *API) apiFunc { return api.deleteSeries }
+
+	for i, tc := range []struct {
+		db          *fakeDB
+		enableAdmin bool
+		endpoint    func(api *API) apiFunc
+		method      string
+		values      url.Values
+
+		errType errorType
+	}{
+		// Tests for the snapshot endpoint.
+		{
+			db:          tsdb,
+			enableAdmin: false,
+			endpoint:    snapshotAPI,
+
+			errType: errorUnavailable,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    snapshotAPI,
+
+			errType: errorNone,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    snapshotAPI,
+			values:      map[string][]string{"skip_head": []string{"true"}},
+
+			errType: errorNone,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    snapshotAPI,
+			values:      map[string][]string{"skip_head": []string{"xxx"}},
+
+			errType: errorBadData,
+		},
+		{
+			db:          tsdbWithError,
+			enableAdmin: true,
+			endpoint:    snapshotAPI,
+
+			errType: errorInternal,
+		},
+		{
+			db:          nil,
+			enableAdmin: true,
+			endpoint:    snapshotAPI,
+
+			errType: errorUnavailable,
+		},
+		// Tests for the cleanTombstones endpoint.
+		{
+			db:          tsdb,
+			enableAdmin: false,
+			endpoint:    cleanAPI,
+
+			errType: errorUnavailable,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    cleanAPI,
+
+			errType: errorNone,
+		},
+		{
+			db:          tsdbWithError,
+			enableAdmin: true,
+			endpoint:    cleanAPI,
+
+			errType: errorInternal,
+		},
+		{
+			db:          nil,
+			enableAdmin: true,
+			endpoint:    cleanAPI,
+
+			errType: errorUnavailable,
+		},
+		// Tests for the deleteSeries endpoint.
+		{
+			db:          tsdb,
+			enableAdmin: false,
+			endpoint:    deleteAPI,
+
+			errType: errorUnavailable,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+
+			errType: errorBadData,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"123"}},
+
+			errType: errorBadData,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"up"}, "start": []string{"xxx"}},
+
+			errType: errorBadData,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"up"}, "end": []string{"xxx"}},
+
+			errType: errorBadData,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"up"}},
+
+			errType: errorNone,
+		},
+		{
+			db:          tsdb,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"up{job!=\"foo\"}", "{job=~\"bar.+\"}", "up{instance!~\"fred.+\"}"}},
+
+			errType: errorNone,
+		},
+		{
+			db:          tsdbWithError,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": []string{"up"}},
+
+			errType: errorInternal,
+		},
+		{
+			db:          nil,
+			enableAdmin: true,
+			endpoint:    deleteAPI,
+
+			errType: errorUnavailable,
+		},
+	} {
+		tc := tc
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			api := &API{
+				db: func() TSDBAdmin {
+					if tc.db != nil {
+						return tc.db
+					}
+					return nil
+				},
+				ready:       func(f http.HandlerFunc) http.HandlerFunc { return f },
+				enableAdmin: tc.enableAdmin,
+			}
+			defer func() {
+				if tc.db != nil && tc.db.closer != nil {
+					tc.db.closer()
+				}
+			}()
+
+			endpoint := tc.endpoint(api)
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			if err != nil {
+				t.Fatalf("Error when creating test request: %s", err)
+			}
+			_, apiErr, _ := endpoint(req)
+			assertAPIError(t, apiErr, tc.errType)
+		})
 	}
 }
 

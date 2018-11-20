@@ -233,6 +233,8 @@ func Uname(uname *Utsname) error {
 //sys	Dup(fd int) (nfd int, err error)
 //sys	Dup2(from int, to int) (err error)
 //sys	Exit(code int)
+//sys	Faccessat(dirfd int, path string, mode uint32, flags int) (err error)
+//sys	Fadvise(fd int, offset int64, length int64, advice int) (err error) = SYS_POSIX_FADVISE
 //sys	Fchdir(fd int) (err error)
 //sys	Fchflags(fd int, flags int) (err error)
 //sys	Fchmod(fd int, mode uint32) (err error)
@@ -322,7 +324,6 @@ func Uname(uname *Utsname) error {
 // __msync13
 // __ntp_gettime30
 // __posix_chown
-// __posix_fadvise50
 // __posix_fchown
 // __posix_lchown
 // __posix_rename
