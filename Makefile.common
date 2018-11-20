@@ -214,7 +214,7 @@ precheck:: $(1)_precheck
 
 
 PRECHECK_COMMAND_$(1) ?= $(1) $$(strip $$(PRECHECK_OPTIONS_$(1)))
-.PHONE: $(1)_precheck
+.PHONY: $(1)_precheck
 $(1)_precheck:
 	@if ! $$(PRECHECK_COMMAND_$(1)) 1>/dev/null 2>&1; then \
 		echo "Execution of '$$(PRECHECK_COMMAND_$(1))' command failed. Is $(1) installed?"; \
