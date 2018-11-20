@@ -290,6 +290,7 @@ type IPAddress struct {
 type PortMapping struct {
 	Labels        map[string]string `json:"labels"`
 	ContainerPort uint32            `json:"containerPort"`
+	HostPort      uint32            `json:"hostPort"`
 	ServicePort   uint32            `json:"servicePort"`
 }
 
@@ -467,6 +468,12 @@ func targetsForApp(app *App) []model.LabelSet {
 		// Iterate over the ports we gathered using one of the methods above.
 		for i, port := range ports {
 
+			// A zero port can appear in a portMapping, which means it is auto-generated.
+			// The allocated port appears at the corresponding index in the task's 'ports' array.
+			if port == 0 && len(t.Ports) == len(ports) {
+				port = t.Ports[i]
+			}
+
 			// Each port represents a possible Prometheus target.
 			targetAddress := targetEndpoint(&t, port, app.isContainerNet())
 			target := model.LabelSet{
@@ -520,8 +527,10 @@ func extractPortMapping(portMappings []PortMapping, containerNet bool) ([]uint32
 			// If the app is in a container network, connect directly to the container port.
 			ports[i] = portMappings[i].ContainerPort
 		} else {
-			// Otherwise, connect to the randomly-generated service port.
-			ports[i] = portMappings[i].ServicePort
+			// Otherwise, connect to the allocated host port for the container.
+			// Note that this host port is likely set to 0 in the app definition, which means it is
+			// automatically generated and needs to be extracted from the task's 'ports' array at a later stage.
+			ports[i] = portMappings[i].HostPort
 		}
 	}
 
