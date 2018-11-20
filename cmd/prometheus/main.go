@@ -106,10 +106,7 @@ func main() {
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
 		},
-		promlogConfig: promlog.Config{
-			Level:  new(promlog.AllowedLevel),
-			Format: new(promlog.AllowedFormat),
-		},
+		promlogConfig: promlog.Config{},
 	}
 
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server")
