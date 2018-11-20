@@ -19,10 +19,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
 )
 
@@ -681,4 +684,60 @@ func TestCompaction_populateBlock(t *testing.T) {
 			return
 		}
 	}
+}
+
+// TestDisableAutoCompactions checks that we can
+// disable and enable the auto compaction.
+// This is needed for unit tests that rely on
+// checking state before and after a compaction.
+func TestDisableAutoCompactions(t *testing.T) {
+	db, close := openTestDB(t, nil)
+	defer close()
+	defer db.Close()
+
+	blockRange := DefaultOptions.BlockRanges[0]
+	label := labels.FromStrings("foo", "bar")
+
+	// Trigger a compaction to check that it was skipped and
+	// no new blocks were created when compaction is disabled.
+	db.DisableCompactions()
+	app := db.Appender()
+	for i := int64(0); i < 3; i++ {
+		_, err := app.Add(label, i*blockRange, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(label, i*blockRange+1000, 0)
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, app.Commit())
+
+	select {
+	case db.compactc <- struct{}{}:
+	default:
+	}
+
+	m := &dto.Metric{}
+	for x := 0; x < 10; x++ {
+		db.metrics.compactionsSkipped.Write(m)
+		if *m.Counter.Value > float64(0) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	testutil.Assert(t, *m.Counter.Value > float64(0), "No compaction was skipped after the set timeout.")
+	testutil.Equals(t, 0, len(db.blocks))
+
+	// Enable the compaction, trigger it and check that the block is persisted.
+	db.EnableCompactions()
+	select {
+	case db.compactc <- struct{}{}:
+	default:
+	}
+	for x := 0; x < 10; x++ {
+		if len(db.Blocks()) > 0 {
+			break
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	testutil.Assert(t, len(db.Blocks()) > 0, "No block was persisted after the set timeout.")
 }
