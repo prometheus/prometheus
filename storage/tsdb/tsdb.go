@@ -133,7 +133,7 @@ var (
 func registerMetrics(db *tsdb.DB, r prometheus.Registerer) {
 
 	startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_lowest_timestamp_second",
+		Name: "prometheus_tsdb_lowest_timestamp_seconds",
 		Help: "Lowest timestamp value stored in the database.",
 	}, func() float64 {
 		bb := db.Blocks()
@@ -143,13 +143,13 @@ func registerMetrics(db *tsdb.DB, r prometheus.Registerer) {
 		return float64(db.Blocks()[0].Meta().MinTime) / 1000
 	})
 	headMinTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_head_min_time_second",
+		Name: "prometheus_tsdb_head_min_time_seconds",
 		Help: "Minimum time bound of the head block.",
 	}, func() float64 {
 		return float64(db.Head().MinTime()) / 1000
 	})
 	headMaxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_head_max_time_second",
+		Name: "prometheus_tsdb_head_max_time_seconds",
 		Help: "Maximum timestamp of the head block.",
 	}, func() float64 {
 		return float64(db.Head().MaxTime()) / 1000
