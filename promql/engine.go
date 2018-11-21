@@ -68,12 +68,6 @@ func SetGlobalEvaluationInterval(ev time.Duration) {
 	GlobalEvaluationInterval = ev
 }
 
-func getGlobalEvaluationInterval() time.Duration {
-	globalEvaluationIntervalMtx.RLock()
-	defer globalEvaluationIntervalMtx.RUnlock()
-	return GlobalEvaluationInterval
-}
-
 type engineMetrics struct {
 	currentQueries       prometheus.Gauge
 	maxConcurrentQueries prometheus.Gauge
@@ -544,7 +538,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		params := &storage.SelectParams{
 			Start: timestamp.FromTime(s.Start),
 			End:   timestamp.FromTime(s.End),
-			Step:  int64(s.Interval / time.Millisecond),
+			Step:  durationToInt64Millis(s.Interval),
 		}
 
 		switch n := node.(type) {
@@ -858,6 +852,7 @@ func (ev *evaluator) subqIntoMatrixSelector(subq *SubqueryExpr) *MatrixSelector 
 	val := ev.eval(subq).(Matrix)
 	ms := &MatrixSelector{
 		Range:  subq.Range,
+		Offset: subq.Offset,
 		series: make([]storage.Series, 0, len(val)),
 	}
 	for _, s := range val {
@@ -1107,34 +1102,34 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return ev.matrixSelector(e)
 
 	case *SubqueryExpr:
+		offsetMillis := durationToInt64Millis(e.Offset)
+		rangeMillis := durationToInt64Millis(e.Range)
 		newEv := &evaluator{
-			endTimestamp: ev.endTimestamp - int64(e.Offset/time.Millisecond),
-			interval:     int64(getGlobalEvaluationInterval() / time.Millisecond),
+			endTimestamp: ev.endTimestamp - offsetMillis,
 			ctx:          ev.ctx,
 			maxSamples:   ev.maxSamples,
 			logger:       ev.logger,
 		}
+
 		if e.StepExists {
-			newEv.interval = int64(e.Step / time.Millisecond)
+			newEv.interval = durationToInt64Millis(e.Step)
+		} else {
+			globalEvaluationIntervalMtx.RLock()
+			newEv.interval = durationToInt64Millis(GlobalEvaluationInterval)
+			globalEvaluationIntervalMtx.RUnlock()
 		}
 
-		// Calculate number of steps of the subquery evaluation.
-		rangeMillis := (int64(e.Range / time.Millisecond))
-		numSteps := (rangeMillis + (newEv.interval / 2)) / newEv.interval
-		if ev.startTimestamp < (newEv.endTimestamp - rangeMillis) {
-			// If the original evaluator has startTimestamp before subquery startTimestamp,
-			// have starting step on/before that.
-			numSteps = (newEv.endTimestamp - ev.startTimestamp + (newEv.interval / 2)) / newEv.interval
-		}
-
-		// Align the startTimestamp with the subquery step.
-		correctedRange := newEv.interval * numSteps
-		newEv.startTimestamp = newEv.endTimestamp - correctedRange
+		numAlignedSteps := (offsetMillis+rangeMillis)/newEv.interval + 1
+		newEv.startTimestamp = ev.startTimestamp - numAlignedSteps*newEv.interval
 
 		return newEv.eval(e.Expr)
 	}
 
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
+}
+
+func durationToInt64Millis(d time.Duration) int64 {
+	return int64(d / time.Millisecond)
 }
 
 // vectorSelector evaluates a *VectorSelector expression.
