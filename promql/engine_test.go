@@ -699,7 +699,7 @@ load 10s
 			Result: Result{
 				nil,
 				Matrix{Series{
-					Points: []Point{{V: 1, T: 3000}, {V: 1, T: 8000}, {V: 2, T: 13000}, {V: 2, T: 18000}},
+					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}, {V: 2, T: 15000}},
 					Metric: labels.FromStrings("__name__", "metric")},
 				},
 			},
