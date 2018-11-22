@@ -781,11 +781,8 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	buf := bytes.NewBuffer(make([]byte, 0, 16000))
-
 mainLoop:
 	for {
-		buf.Reset()
 		select {
 		case <-sl.ctx.Done():
 			close(sl.stopped)
