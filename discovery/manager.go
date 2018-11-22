@@ -408,7 +408,9 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 		})
 	}
 	if !added {
-		// Add an empty target group to force the refresh of the corresponding scrape pool.
+		// Add an empty target group to force the refresh of the corresponding
+		// scrape pool and to notify the receiver that this target set has no
+		// current targets.
 		add(setName, func() (Discoverer, error) {
 			return &StaticProvider{TargetGroups: []*targetgroup.Group{&targetgroup.Group{}}}, nil
 		})

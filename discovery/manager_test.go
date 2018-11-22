@@ -795,7 +795,10 @@ scrape_configs:
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", false)
 }
 
-func TestTargetSetRecreatesEmptyTargetGroup(t *testing.T) {
+// TestTargetSetRecreatesEmptyStaticConfigs ensures that reloading a config file after
+// removing all targets from the static_configs sends an update with empty targetGroups.
+// This is required to signal the receiver that this target set has no current targets.
+func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	cfg := &config.Config{}
 
 	sOne := `
