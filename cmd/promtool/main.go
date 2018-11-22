@@ -510,18 +510,22 @@ func parseTime(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
 }
 
+var profilesList = map[string]string{
+	"/debug/pprof/profile":      "cpu.pb",
+	"/debug/pprof/trace":        "trace.pb",
+	"/debug/pprof/block":        "block.pb",
+	"/debug/pprof/goroutine":    "goroutine.pb",
+	"/debug/pprof/heap":         "heap.pb",
+	"/debug/pprof/mutex":        "mutex.pb",
+	"/debug/pprof/threadcreate": "threadcreate.pb",
+}
+
 func debugPprof(url string) int {
 	w, err := newDebugWriter(debugWriterConfig{
-		serverURL:   url,
-		tarballName: "debug.tar.gz",
-		pathToFileName: map[string]string{
-			"/debug/pprof/block":        "block.pb",
-			"/debug/pprof/goroutine":    "goroutine.pb",
-			"/debug/pprof/heap":         "heap.pb",
-			"/debug/pprof/mutex":        "mutex.pb",
-			"/debug/pprof/threadcreate": "threadcreate.pb",
-		},
-		postProcess: pprofPostProcess,
+		serverURL:      url,
+		tarballName:    "debug.tar.gz",
+		pathToFileName: profilesList,
+		postProcess:    pprofPostProcess,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
@@ -548,17 +552,10 @@ func debugMetrics(url string) int {
 
 func debugAll(url string) int {
 	w, err := newDebugWriter(debugWriterConfig{
-		serverURL:   url,
-		tarballName: "debug.tar.gz",
-		pathToFileName: map[string]string{
-			"/debug/pprof/block":        "block.pb",
-			"/debug/pprof/goroutine":    "goroutine.pb",
-			"/debug/pprof/heap":         "heap.pb",
-			"/debug/pprof/mutex":        "mutex.pb",
-			"/debug/pprof/threadcreate": "threadcreate.pb",
-			"/metrics":                  "metrics.txt",
-		},
-		postProcess: allPostProcess,
+		serverURL:      url,
+		tarballName:    "debug.tar.gz",
+		pathToFileName: profilesList,
+		postProcess:    allPostProcess,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
