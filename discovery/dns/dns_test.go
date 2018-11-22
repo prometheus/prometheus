@@ -100,10 +100,37 @@ func TestDNS(t *testing.T) {
 			},
 		},
 		{
-			name: "SRV record query",
+			name: "SRV record query without trimming dot",
 			config: SDConfig{
 				Names:           []string{"_mysql._tcp.db.example.com."},
 				RefreshInterval: model.Duration(time.Minute),
+				TrimFinalDot:    false,
+			},
+			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+				return &dns.Msg{
+						Answer: []dns.RR{
+							&dns.SRV{Port: 3306, Target: "db1.example.com."},
+							&dns.SRV{Port: 3306, Target: "db2.example.com."},
+						},
+					},
+					nil
+			},
+			expected: []*targetgroup.Group{
+				&targetgroup.Group{
+					Source: "_mysql._tcp.db.example.com.",
+					Targets: []model.LabelSet{
+						{"__address__": "db1.example.com.:3306", "__meta_dns_name": "_mysql._tcp.db.example.com."},
+						{"__address__": "db2.example.com.:3306", "__meta_dns_name": "_mysql._tcp.db.example.com."},
+					},
+				},
+			},
+		},
+		{
+			name: "SRV record query with trimming dot",
+			config: SDConfig{
+				Names:           []string{"_mysql._tcp.db.example.com."},
+				RefreshInterval: model.Duration(time.Minute),
+				TrimFinalDot:    true,
 			},
 			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
@@ -129,6 +156,7 @@ func TestDNS(t *testing.T) {
 			config: SDConfig{
 				Names:           []string{"_mysql._tcp.db.example.com."},
 				RefreshInterval: model.Duration(time.Minute),
+				TrimFinalDot:    true,
 			},
 			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
 				return &dns.Msg{

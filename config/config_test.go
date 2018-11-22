@@ -218,6 +218,7 @@ var expectedConf = &Config{
 						},
 						RefreshInterval: model.Duration(15 * time.Second),
 						Type:            "SRV",
+						TrimFinalDot:    false,
 					},
 					{
 						Names: []string{
@@ -225,6 +226,7 @@ var expectedConf = &Config{
 						},
 						RefreshInterval: model.Duration(30 * time.Second),
 						Type:            "SRV",
+						TrimFinalDot:    true,
 					},
 				},
 			},

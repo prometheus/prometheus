@@ -95,9 +95,11 @@ scrape_configs:
     names:
     - first.dns.address.domain.com
     - second.dns.address.domain.com
+    trim_final_dot: false
   - names:
     - first.dns.address.domain.com
     # refresh_interval defaults to 30s.
+    # trim_final_dot defaults to true.
 
   relabel_configs:
   - source_labels: [job]

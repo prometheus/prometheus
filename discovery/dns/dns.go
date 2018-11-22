@@ -59,6 +59,7 @@ var (
 	DefaultSDConfig = SDConfig{
 		RefreshInterval: model.Duration(30 * time.Second),
 		Type:            "SRV",
+		TrimFinalDot:    true,
 	}
 )
 
@@ -67,7 +68,8 @@ type SDConfig struct {
 	Names           []string       `yaml:"names"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Type            string         `yaml:"type"`
-	Port            int            `yaml:"port"` // Ignored for SRV records
+	Port            int            `yaml:"port"`           // Ignored for SRV records.
+	TrimFinalDot    bool           `yaml:"trim_final_dot"` // Only for SRV records.
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -105,6 +107,7 @@ type Discovery struct {
 	names  []string
 	port   int
 	qtype  uint16
+	trim   bool
 	logger log.Logger
 
 	lookupFn func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error)
@@ -129,6 +132,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) *Discovery {
 		names:    conf.Names,
 		qtype:    qtype,
 		port:     conf.Port,
+		trim:     conf.TrimFinalDot,
 		logger:   logger,
 		lookupFn: lookupWithSearchPath,
 	}
@@ -186,9 +190,9 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 		var target model.LabelValue
 		switch addr := record.(type) {
 		case *dns.SRV:
-			// Remove the final dot from rooted DNS names to make them look more usual.
-			addr.Target = strings.TrimRight(addr.Target, ".")
-
+			if d.trim {
+				addr.Target = strings.TrimRight(addr.Target, ".")
+			}
 			target = hostPort(addr.Target, int(addr.Port))
 		case *dns.A:
 			target = hostPort(addr.A.String(), d.port)

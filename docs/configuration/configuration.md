@@ -405,6 +405,9 @@ names:
 
 # The time after which the provided names are refreshed.
 [ refresh_interval: <duration> | default = 30s ]
+
+# Trim the final dot from SRV records.
+[ trim_final_dot: <boolean> | default = true ]
 ```
 
 Where `<domain_name>` is a valid DNS domain name.
