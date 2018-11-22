@@ -15,6 +15,7 @@ package promql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -105,7 +106,7 @@ func raise(line int, format string, v ...interface{}) error {
 	}
 }
 
-func (t *Test) parseLoad(lines []string, i int) (int, *loadCmd, error) {
+func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	if !patLoad.MatchString(lines[i]) {
 		return i, nil, raise(i, "invalid load command. (load <step:duration>)")
 	}
@@ -196,9 +197,8 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	return i, cmd, nil
 }
 
-// parse the given command sequence and appends it to the test.
-func (t *Test) parse(input string) error {
-	// Trim lines and remove comments.
+// getLines returns trimmed lines after removing the comments.
+func getLines(input string) []string {
 	lines := strings.Split(input, "\n")
 	for i, l := range lines {
 		l = strings.TrimSpace(l)
@@ -207,8 +207,13 @@ func (t *Test) parse(input string) error {
 		}
 		lines[i] = l
 	}
-	var err error
+	return lines
+}
 
+// parse the given command sequence and appends it to the test.
+func (t *Test) parse(input string) error {
+	lines := getLines(input)
+	var err error
 	// Scan for steps line by line.
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
@@ -221,7 +226,7 @@ func (t *Test) parse(input string) error {
 		case c == "clear":
 			cmd = &clearCmd{}
 		case c == "load":
-			i, cmd, err = t.parseLoad(lines, i)
+			i, cmd, err = parseLoad(lines, i)
 		case strings.HasPrefix(c, "eval"):
 			i, cmd, err = t.parseEval(lines, i)
 		default:
@@ -559,4 +564,134 @@ func parseNumber(s string) (float64, error) {
 		return 0, fmt.Errorf("error parsing number: %s", err)
 	}
 	return f, nil
+}
+
+// LazyLoader lazily loads samples into storage.
+// This is specifically implemented for unit testing of rules.
+type LazyLoader struct {
+	testutil.T
+
+	loadCmd *loadCmd
+
+	storage storage.Storage
+
+	queryEngine *Engine
+	context     context.Context
+	cancelCtx   context.CancelFunc
+}
+
+// NewLazyLoader returns an initialized empty LazyLoader.
+func NewLazyLoader(t testutil.T, input string) (*LazyLoader, error) {
+	ll := &LazyLoader{
+		T: t,
+	}
+	err := ll.parse(input)
+	ll.clear()
+	return ll, err
+}
+
+// parse the given load command.
+func (ll *LazyLoader) parse(input string) error {
+	lines := getLines(input)
+	// Accepts only 'load' command.
+	for i := 0; i < len(lines); i++ {
+		l := lines[i]
+		if len(l) == 0 {
+			continue
+		}
+		if strings.ToLower(patSpace.Split(l, 2)[0]) == "load" {
+			_, cmd, err := parseLoad(lines, i)
+			if err != nil {
+				return err
+			}
+			ll.loadCmd = cmd
+			return nil
+		} else {
+			return raise(i, "invalid command %q", l)
+		}
+	}
+	return errors.New("no \"load\" command found")
+}
+
+// clear the current test storage of all inserted samples.
+func (ll *LazyLoader) clear() {
+	if ll.storage != nil {
+		if err := ll.storage.Close(); err != nil {
+			ll.T.Fatalf("closing test storage: %s", err)
+		}
+	}
+	if ll.cancelCtx != nil {
+		ll.cancelCtx()
+	}
+	ll.storage = testutil.NewStorage(ll)
+
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 20,
+		MaxSamples:    10000,
+		Timeout:       100 * time.Second,
+	}
+
+	ll.queryEngine = NewEngine(opts)
+	ll.context, ll.cancelCtx = context.WithCancel(context.Background())
+}
+
+// appendTill appends the defined time series to the storage till the given timestamp (in milliseconds).
+func (ll *LazyLoader) appendTill(ts int64) error {
+	app, err := ll.storage.Appender()
+	if err != nil {
+		return err
+	}
+	for h, smpls := range ll.loadCmd.defs {
+		m := ll.loadCmd.metrics[h]
+		for i, s := range smpls {
+			if s.T > ts {
+				// Removing the already added samples.
+				ll.loadCmd.defs[h] = smpls[i:]
+				break
+			}
+			if _, err := app.Add(m, s.T, s.V); err != nil {
+				return err
+			}
+		}
+	}
+	return app.Commit()
+}
+
+// WithSamplesTill loads the samples till given timestamp and executes the given function.
+func (ll *LazyLoader) WithSamplesTill(ts time.Time, fn func(error)) {
+	tsMilli := ts.Sub(time.Unix(0, 0)) / time.Millisecond
+	fn(ll.appendTill(int64(tsMilli)))
+}
+
+// QueryEngine returns the LazyLoader's query engine.
+func (ll *LazyLoader) QueryEngine() *Engine {
+	return ll.queryEngine
+}
+
+// Queryable allows querying the LazyLoader's data.
+// Note: only the samples till the max timestamp used
+//       in `WithSamplesTill` can be queried.
+func (ll *LazyLoader) Queryable() storage.Queryable {
+	return ll.storage
+}
+
+// Context returns the LazyLoader's context.
+func (ll *LazyLoader) Context() context.Context {
+	return ll.context
+}
+
+// Storage returns the LazyLoader's storage.
+func (ll *LazyLoader) Storage() storage.Storage {
+	return ll.storage
+}
+
+// Close closes resources associated with the LazyLoader.
+func (ll *LazyLoader) Close() {
+	ll.cancelCtx()
+
+	if err := ll.storage.Close(); err != nil {
+		ll.T.Fatalf("closing test storage: %s", err)
+	}
 }
