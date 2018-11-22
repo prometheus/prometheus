@@ -14,6 +14,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,8 @@ import (
 
 	"gopkg.in/alecthomas/kingpin.v2"
 
+	"github.com/google/pprof/profile"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/api/prometheus/v1"
 	config_util "github.com/prometheus/common/config"
@@ -510,58 +513,85 @@ func parseTime(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
 }
 
-var profilesList = map[string]string{
-	"/debug/pprof/profile":      "cpu.pb",
-	"/debug/pprof/trace":        "trace.pb",
-	"/debug/pprof/block":        "block.pb",
-	"/debug/pprof/goroutine":    "goroutine.pb",
-	"/debug/pprof/heap":         "heap.pb",
-	"/debug/pprof/mutex":        "mutex.pb",
-	"/debug/pprof/threadcreate": "threadcreate.pb",
+type endpointsGroup struct {
+	urlToFilename map[string]string
+	postProcess   func(b []byte) ([]byte, error)
 }
 
+var (
+	pprofEndpoints = []endpointsGroup{
+		{
+			urlToFilename: map[string]string{
+				"/debug/pprof/profile?seconds=30": "cpu.pb",
+				"/debug/pprof/block":              "block.pb",
+				"/debug/pprof/goroutine":          "goroutine.pb",
+				"/debug/pprof/heap":               "heap.pb",
+				"/debug/pprof/mutex":              "mutex.pb",
+				"/debug/pprof/threadcreate":       "threadcreate.pb",
+			},
+			postProcess: func(b []byte) ([]byte, error) {
+				p, err := profile.Parse(bytes.NewReader(b))
+				if err != nil {
+					return nil, err
+				}
+				var buf bytes.Buffer
+				if err := p.WriteUncompressed(&buf); err != nil {
+					return nil, errors.Wrap(err, "writing the profile to the buffer")
+				}
+
+				return buf.Bytes(), nil
+			},
+		},
+		{
+			urlToFilename: map[string]string{
+				"/debug/pprof/trace?seconds=30": "trace.pb",
+			},
+		},
+	}
+	metricsEndpoints = []endpointsGroup{
+		{
+			urlToFilename: map[string]string{
+				"/metrics": "metrics.txt",
+			},
+		},
+	}
+	allEndpoints = append(pprofEndpoints, metricsEndpoints...)
+)
+
 func debugPprof(url string) int {
-	w, err := newDebugWriter(debugWriterConfig{
+	if err := debugWrite(debugWriterConfig{
 		serverURL:      url,
 		tarballName:    "debug.tar.gz",
-		pathToFileName: profilesList,
-		postProcess:    pprofPostProcess,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+		endPointGroups: pprofEndpoints,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
 		return 1
 	}
-	return w.Write()
+	return 0
 }
 
 func debugMetrics(url string) int {
-	w, err := newDebugWriter(debugWriterConfig{
-		serverURL:   url,
-		tarballName: "debug.tar.gz",
-		pathToFileName: map[string]string{
-			"/metrics": "metrics.txt",
-		},
-		postProcess: metricsPostProcess,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+	if err := debugWrite(debugWriterConfig{
+		serverURL:      url,
+		tarballName:    "debug.tar.gz",
+		endPointGroups: metricsEndpoints,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
 		return 1
 	}
-	return w.Write()
+	return 0
 }
 
 func debugAll(url string) int {
-	w, err := newDebugWriter(debugWriterConfig{
+	if err := debugWrite(debugWriterConfig{
 		serverURL:      url,
 		tarballName:    "debug.tar.gz",
-		pathToFileName: profilesList,
-		postProcess:    allPostProcess,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+		endPointGroups: allEndpoints,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
 		return 1
 	}
-	return w.Write()
+	return 0
 }
 
 type printer interface {
@@ -580,7 +610,7 @@ func (p *promqlPrinter) printSeries(val []model.LabelSet) {
 		fmt.Println(v)
 	}
 }
-func (j *promqlPrinter) printLabelValues(val model.LabelValues) {
+func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
 	for _, v := range val {
 		fmt.Println(v)
 	}
