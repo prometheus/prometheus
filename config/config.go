@@ -342,10 +342,16 @@ type ScrapeConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) (err error) {
 	*c = DefaultScrapeConfig
+	defer func() {
+		if err != nil && c.JobName != "" {
+			err = fmt.Errorf("scrape_config %q: %v", c.JobName, err)
+		}
+	}()
+
 	type plain ScrapeConfig
-	err := unmarshal((*plain)(c))
+	err = unmarshal((*plain)(c))
 	if err != nil {
 		return err
 	}
@@ -356,7 +362,11 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.Validate(); err != nil {
+	if err = c.HTTPClientConfig.Validate(); err != nil {
+		return err
+	}
+
+	if err = c.ServiceDiscoveryConfig.Validate(); err != nil {
 		return err
 	}
 
@@ -364,7 +374,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.RelabelConfigs) == 0 {
 		for _, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
 			for _, t := range tg.Targets {
-				if err := CheckTargetAddress(t[model.AddressLabel]); err != nil {
+				if err = CheckTargetAddress(t[model.AddressLabel]); err != nil {
 					return err
 				}
 			}
@@ -426,6 +436,10 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	if err := c.HTTPClientConfig.Validate(); err != nil {
+		return err
+	}
+
+	if err := c.ServiceDiscoveryConfig.Validate(); err != nil {
 		return err
 	}
 

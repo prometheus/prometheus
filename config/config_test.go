@@ -751,6 +751,10 @@ var expectedErrors = []struct {
 		filename: "section_key_dup.bad.yml",
 		errMsg:   "field scrape_configs already set in type config.plain",
 	},
+	{
+		filename: "nil_sd_configs.bad.yml",
+		errMsg:   "nil value not allowed",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {

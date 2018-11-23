@@ -14,6 +14,8 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
@@ -62,4 +64,77 @@ type ServiceDiscoveryConfig struct {
 func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain ServiceDiscoveryConfig
 	return unmarshal((*plain)(c))
+}
+
+// Validate validates ServiceDiscoveryConfig to check that it doesn't contain nil pointers.
+func (c *ServiceDiscoveryConfig) Validate() error {
+	err := func(s string) error {
+		return fmt.Errorf("%s_sd_config: nil value not allowed", s)
+	}
+	for _, cfg := range c.StaticConfigs {
+		if cfg == nil {
+			return err("static")
+		}
+	}
+	for _, cfg := range c.DNSSDConfigs {
+		if cfg == nil {
+			return err("dns")
+		}
+	}
+	for _, cfg := range c.FileSDConfigs {
+		if cfg == nil {
+			return err("file")
+		}
+	}
+	for _, cfg := range c.ConsulSDConfigs {
+		if cfg == nil {
+			return err("consul")
+		}
+	}
+	for _, cfg := range c.ServersetSDConfigs {
+		if cfg == nil {
+			return err("serverset")
+		}
+	}
+	for _, cfg := range c.NerveSDConfigs {
+		if cfg == nil {
+			return err("nerve")
+		}
+	}
+	for _, cfg := range c.MarathonSDConfigs {
+		if cfg == nil {
+			return err("marathon")
+		}
+	}
+	for _, cfg := range c.KubernetesSDConfigs {
+		if cfg == nil {
+			return err("kubernetes")
+		}
+	}
+	for _, cfg := range c.GCESDConfigs {
+		if cfg == nil {
+			return err("gce")
+		}
+	}
+	for _, cfg := range c.EC2SDConfigs {
+		if cfg == nil {
+			return err("ec2")
+		}
+	}
+	for _, cfg := range c.OpenstackSDConfigs {
+		if cfg == nil {
+			return err("openstack")
+		}
+	}
+	for _, cfg := range c.AzureSDConfigs {
+		if cfg == nil {
+			return err("azure")
+		}
+	}
+	for _, cfg := range c.TritonSDConfigs {
+		if cfg == nil {
+			return err("triton")
+		}
+	}
+	return nil
 }
