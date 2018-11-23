@@ -699,11 +699,33 @@ load 10s
 			Result: Result{
 				nil,
 				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}, {V: 2, T: 15000}},
+					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start: time.Unix(12, 0),
+		},
+		{
+			Query: "metric[20s:5s] offset 6s",
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric")},
 				},
 			},
 			Start: time.Unix(20, 0),
+		},
+		{
+			Query: "metric[20s:5s] offset 6s",
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start: time.Unix(35, 0),
 		},
 		{
 			Query: "rate(metric[20s:5s])",

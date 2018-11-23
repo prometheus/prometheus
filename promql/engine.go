@@ -1120,7 +1120,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 
 		numAlignedSteps := (offsetMillis+rangeMillis)/newEv.interval + 1
-		newEv.startTimestamp = ev.startTimestamp - numAlignedSteps*newEv.interval
+		// TODO(codesome): Should this be the first aligned step on/before (ev.startTimestamp - offset - range)?
+		newEv.startTimestamp = -numAlignedSteps * newEv.interval
 
 		return newEv.eval(e.Expr)
 	}
