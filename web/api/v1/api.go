@@ -34,7 +34,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"github.com/prometheus/tsdb"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -49,7 +49,6 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 const (
@@ -131,6 +130,14 @@ func setCORS(w http.ResponseWriter) {
 
 type apiFunc func(r *http.Request) (interface{}, *apiError, func())
 
+// TSDBAdmin defines the tsdb interfaces used by the v1 API for admin operations.
+type TSDBAdmin interface {
+	CleanTombstones() error
+	Delete(mint, maxt int64, ms ...tsdbLabels.Matcher) error
+	Dir() string
+	Snapshot(dir string, withHead bool) error
+}
+
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
@@ -145,7 +152,7 @@ type API struct {
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 
-	db                    func() *tsdb.DB
+	db                    func() TSDBAdmin
 	enableAdmin           bool
 	logger                log.Logger
 	remoteReadSampleLimit int
@@ -166,7 +173,7 @@ func NewAPI(
 	configFunc func() config.Config,
 	flagsMap map[string]string,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
-	db func() *tsdb.DB,
+	db func() TSDBAdmin,
 	enableAdmin bool,
 	logger log.Logger,
 	rr rulesRetriever,
@@ -221,6 +228,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/query_range", wrap(api.queryRange))
 	r.Post("/query_range", wrap(api.queryRange))
 
+	r.Get("/labels", wrap(api.labelNames))
+	r.Post("/labels", wrap(api.labelNames))
 	r.Get("/label/:name/values", wrap(api.labelValues))
 
 	r.Get("/series", wrap(api.series))
@@ -284,15 +293,7 @@ func (api *API) query(r *http.Request) (interface{}, *apiError, func()) {
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
-		switch res.Err.(type) {
-		case promql.ErrQueryCanceled:
-			return nil, &apiError{errorCanceled, res.Err}, qry.Close
-		case promql.ErrQueryTimeout:
-			return nil, &apiError{errorTimeout, res.Err}, qry.Close
-		case promql.ErrStorage:
-			return nil, &apiError{errorInternal, res.Err}, qry.Close
-		}
-		return nil, &apiError{errorExec, res.Err}, qry.Close
+		return nil, returnAPIError(res.Err), qry.Close
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -358,13 +359,7 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
-		switch res.Err.(type) {
-		case promql.ErrQueryCanceled:
-			return nil, &apiError{errorCanceled, res.Err}, qry.Close
-		case promql.ErrQueryTimeout:
-			return nil, &apiError{errorTimeout, res.Err}, qry.Close
-		}
-		return nil, &apiError{errorExec, res.Err}, qry.Close
+		return nil, returnAPIError(res.Err), qry.Close
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -378,6 +373,37 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, qry.Close
+}
+
+func returnAPIError(err error) *apiError {
+	if err == nil {
+		return nil
+	}
+
+	switch err.(type) {
+	case promql.ErrQueryCanceled:
+		return &apiError{errorCanceled, err}
+	case promql.ErrQueryTimeout:
+		return &apiError{errorTimeout, err}
+	case promql.ErrStorage:
+		return &apiError{errorInternal, err}
+	}
+
+	return &apiError{errorExec, err}
+}
+
+func (api *API) labelNames(r *http.Request) (interface{}, *apiError, func()) {
+	q, err := api.Queryable.Querier(r.Context(), math.MinInt64, math.MaxInt64)
+	if err != nil {
+		return nil, &apiError{errorExec, err}, nil
+	}
+	defer q.Close()
+
+	names, err := q.LabelNames()
+	if err != nil {
+		return nil, &apiError{errorExec, err}, nil
+	}
+	return names, nil, nil
 }
 
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError, func()) {
@@ -947,7 +973,7 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError, func()) {
 	if r.FormValue("skip_head") != "" {
 		skipHead, err = strconv.ParseBool(r.FormValue("skip_head"))
 		if err != nil {
-			return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+			return nil, &apiError{errorBadData, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
 		}
 	}
 

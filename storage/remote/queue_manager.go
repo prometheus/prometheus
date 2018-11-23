@@ -149,7 +149,7 @@ type QueueManager struct {
 	queueName      string
 	logLimiter     *rate.Limiter
 
-	shardsMtx   sync.Mutex
+	shardsMtx   sync.RWMutex
 	shards      *shards
 	numShards   int
 	reshardChan chan int
@@ -218,9 +218,9 @@ func (t *QueueManager) Append(s *model.Sample) error {
 		return nil
 	}
 
-	t.shardsMtx.Lock()
+	t.shardsMtx.RLock()
 	enqueued := t.shards.enqueue(&snew)
-	t.shardsMtx.Unlock()
+	t.shardsMtx.RUnlock()
 
 	if enqueued {
 		queueLength.WithLabelValues(t.queueName).Inc()

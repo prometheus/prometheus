@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -73,7 +74,13 @@ func (api *API) HTTPHandler(grpcAddr string) (http.Handler, error) {
 	enc := new(protoutil.JSONPb)
 	mux := runtime.NewServeMux(runtime.WithMarshalerOption(enc.ContentType(), enc))
 
-	opts := []grpc.DialOption{grpc.WithInsecure()}
+	opts := []grpc.DialOption{
+		grpc.WithInsecure(),
+		// Replace the default dialer that connects through proxy when HTTP_PROXY is set.
+		grpc.WithDialer(func(addr string, _ time.Duration) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+		}),
+	}
 
 	err := pb.RegisterAdminHandlerFromEndpoint(ctx, mux, grpcAddr, opts)
 	if err != nil {

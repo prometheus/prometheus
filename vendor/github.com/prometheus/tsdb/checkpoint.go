@@ -38,7 +38,7 @@ type CheckpointStats struct {
 	TotalTombstones   int // Processed tombstones including dropped ones.
 }
 
-// LastCheckpoint returns the directory name of the most recent checkpoint.
+// LastCheckpoint returns the directory name and index of the most recent checkpoint.
 // If dir does not contain any checkpoints, ErrNotFound is returned.
 func LastCheckpoint(dir string) (string, int, error) {
 	files, err := ioutil.ReadDir(dir)
@@ -55,18 +55,17 @@ func LastCheckpoint(dir string) (string, int, error) {
 		if !fi.IsDir() {
 			return "", 0, errors.Errorf("checkpoint %s is not a directory", fi.Name())
 		}
-		k, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
+		idx, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
 		if err != nil {
 			continue
 		}
-		return fi.Name(), k, nil
+		return fi.Name(), idx, nil
 	}
 	return "", 0, ErrNotFound
 }
 
-// DeleteCheckpoints deletes all checkpoints in dir that have an index
-// below n.
-func DeleteCheckpoints(dir string, n int) error {
+// DeleteCheckpoints deletes all checkpoints in a directory below a given index.
+func DeleteCheckpoints(dir string, maxIndex int) error {
 	var errs MultiError
 
 	files, err := ioutil.ReadDir(dir)
@@ -77,8 +76,8 @@ func DeleteCheckpoints(dir string, n int) error {
 		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
 			continue
 		}
-		k, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
-		if err != nil || k >= n {
+		index, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
+		if err != nil || index >= maxIndex {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
@@ -90,7 +89,7 @@ func DeleteCheckpoints(dir string, n int) error {
 
 const checkpointPrefix = "checkpoint."
 
-// Checkpoint creates a compacted checkpoint of segments in range [m, n] in the given WAL.
+// Checkpoint creates a compacted checkpoint of segments in range [first, last] in the given WAL.
 // It includes the most recent checkpoint if it exists.
 // All series not satisfying keep and samples below mint are dropped.
 //
@@ -98,7 +97,7 @@ const checkpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(w *wal.WAL, m, n int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
+func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 
 	var sr io.Reader
@@ -107,27 +106,28 @@ func Checkpoint(w *wal.WAL, m, n int, keep func(id uint64) bool, mint int64) (*C
 	// files if there is an error somewhere.
 	var closers []io.Closer
 	{
-		lastFn, k, err := LastCheckpoint(w.Dir())
+		dir, idx, err := LastCheckpoint(w.Dir())
 		if err != nil && err != ErrNotFound {
 			return nil, errors.Wrap(err, "find last checkpoint")
 		}
+		last := idx + 1
 		if err == nil {
-			if m > k+1 {
-				return nil, errors.New("unexpected gap to last checkpoint")
+			if from > last {
+				return nil, fmt.Errorf("unexpected gap to last checkpoint. expected:%v, requested:%v", last, from)
 			}
 			// Ignore WAL files below the checkpoint. They shouldn't exist to begin with.
-			m = k + 1
+			from = last
 
-			last, err := wal.NewSegmentsReader(filepath.Join(w.Dir(), lastFn))
+			r, err := wal.NewSegmentsReader(filepath.Join(w.Dir(), dir))
 			if err != nil {
 				return nil, errors.Wrap(err, "open last checkpoint")
 			}
-			defer last.Close()
-			closers = append(closers, last)
-			sr = last
+			defer r.Close()
+			closers = append(closers, r)
+			sr = r
 		}
 
-		segsr, err := wal.NewSegmentsRangeReader(w.Dir(), m, n)
+		segsr, err := wal.NewSegmentsRangeReader(w.Dir(), from, to)
 		if err != nil {
 			return nil, errors.Wrap(err, "create segment reader")
 		}
@@ -141,7 +141,7 @@ func Checkpoint(w *wal.WAL, m, n int, keep func(id uint64) bool, mint int64) (*C
 		}
 	}
 
-	cpdir := filepath.Join(w.Dir(), fmt.Sprintf("checkpoint.%06d", n))
+	cpdir := filepath.Join(w.Dir(), fmt.Sprintf("checkpoint.%06d", to))
 	cpdirtmp := cpdir + ".tmp"
 
 	if err := os.MkdirAll(cpdirtmp, 0777); err != nil {

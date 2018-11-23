@@ -24,14 +24,14 @@
 // holds a value of type syscall.Errno.
 package unix // import "golang.org/x/sys/unix"
 
+import "strings"
+
 // ByteSliceFromString returns a NUL-terminated slice of bytes
 // containing the text of s. If s contains a NUL byte at any
 // location, it returns (nil, EINVAL).
 func ByteSliceFromString(s string) ([]byte, error) {
-	for i := 0; i < len(s); i++ {
-		if s[i] == 0 {
-			return nil, EINVAL
-		}
+	if strings.IndexByte(s, 0) != -1 {
+		return nil, EINVAL
 	}
 	a := make([]byte, len(s)+1)
 	copy(a, s)

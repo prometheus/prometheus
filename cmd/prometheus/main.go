@@ -101,11 +101,12 @@ func main() {
 
 		prometheusURL string
 
-		logLevel promlog.AllowedLevel
+		promlogConfig promlog.Config
 	}{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
 		},
+		promlogConfig: promlog.Config{},
 	}
 
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server")
@@ -149,6 +150,9 @@ func main() {
 
 	a.Flag("web.console.libraries", "Path to the console library directory.").
 		Default("console_libraries").StringVar(&cfg.web.ConsoleLibrariesPath)
+
+	a.Flag("web.page-title", "Document title of Prometheus instance.").
+		Default("Prometheus Time Series Collection and Processing Server").StringVar(&cfg.web.PageTitle)
 
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
@@ -201,7 +205,7 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they would load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	promlogflag.AddFlags(a, &cfg.logLevel)
+	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
@@ -230,7 +234,7 @@ func main() {
 
 	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
 
-	logger := promlog.New(cfg.logLevel)
+	logger := promlog.New(&cfg.promlogConfig)
 
 	// XXX(fabxc): Kubernetes does background logging which we can only customize by modifying
 	// a global variable.
@@ -395,7 +399,7 @@ func main() {
 	var g group.Group
 	{
 		// Termination handler.
-		term := make(chan os.Signal)
+		term := make(chan os.Signal, 1)
 		signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 		cancel := make(chan struct{})
 		g.Add(
@@ -474,7 +478,7 @@ func main() {
 
 		// Make sure that sighup handler is registered with a redirect to the channel before the potentially
 		// long and synchronous tsdb init.
-		hup := make(chan os.Signal)
+		hup := make(chan os.Signal, 1)
 		signal.Notify(hup, syscall.SIGHUP)
 		cancel := make(chan struct{})
 		g.Add(

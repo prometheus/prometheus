@@ -30,9 +30,26 @@ import (
 
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
 )
+
+var (
+	templateTextExpansionFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_template_text_expansion_failures_total",
+		Help: "The total number of template text expansion failures.",
+	})
+	templateTextExpansionTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_template_text_expansions_total",
+		Help: "The total number of template text expansions.",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(templateTextExpansionFailures)
+	prometheus.MustRegister(templateTextExpansionTotal)
+}
 
 // A version of vector that's easier to use from templates.
 type sample struct {
@@ -274,7 +291,12 @@ func (te Expander) Expand() (result string, resultErr error) {
 				resultErr = fmt.Errorf("panic expanding template %v: %v", te.name, r)
 			}
 		}
+		if resultErr != nil {
+			templateTextExpansionFailures.Inc()
+		}
 	}()
+
+	templateTextExpansionTotal.Inc()
 
 	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
 	if err != nil {

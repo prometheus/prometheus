@@ -15,8 +15,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"net/url"
 	"os"
@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"gopkg.in/alecthomas/kingpin.v2"
-	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/api/prometheus/v1"
@@ -35,7 +34,6 @@ import (
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
@@ -60,11 +58,8 @@ func main() {
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 
-	updateCmd := app.Command("update", "Update the resources to newer formats.")
-	updateRulesCmd := updateCmd.Command("rules", "Update rules from the 1.x to 2.x format.")
-	ruleFilesUp := updateRulesCmd.Arg("rule-files", "The rule files to update.").Required().ExistingFiles()
-
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
+	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
 	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
 	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
@@ -101,7 +96,17 @@ func main() {
 		"The unit test file.",
 	).Required().ExistingFiles()
 
-	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
+	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	var p printer
+	switch *queryCmdFmt {
+	case "json":
+		p = &jsonPrinter{}
+	case "promql":
+		p = &promqlPrinter{}
+	}
+
+	switch parsedCmd {
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*configFiles...))
 
@@ -111,17 +116,14 @@ func main() {
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics())
 
-	case updateRulesCmd.FullCommand():
-		os.Exit(UpdateRules(*ruleFilesUp...))
-
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(*queryServer, *queryExpr))
+		os.Exit(QueryInstant(*queryServer, *queryExpr, p))
 
 	case queryRangeCmd.FullCommand():
-		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep))
+		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
 
 	case querySeriesCmd.FullCommand():
-		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd))
+		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd, p))
 
 	case debugPprofCmd.FullCommand():
 		os.Exit(debugPprof(*debugPprofServer))
@@ -133,7 +135,7 @@ func main() {
 		os.Exit(debugAll(*debugAllServer))
 
 	case queryLabelsCmd.FullCommand():
-		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName))
+		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, p))
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(*testRulesFiles...))
@@ -296,74 +298,6 @@ func checkRules(filename string) (int, []error) {
 	return numRules, nil
 }
 
-// UpdateRules updates the rule files.
-func UpdateRules(files ...string) int {
-	failed := false
-
-	for _, f := range files {
-		if err := updateRules(f); err != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:", err)
-			failed = true
-		}
-	}
-
-	if failed {
-		return 1
-	}
-	return 0
-}
-
-func updateRules(filename string) error {
-	fmt.Println("Updating", filename)
-
-	content, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return err
-	}
-
-	rules, err := promql.ParseStmts(string(content))
-	if err != nil {
-		return err
-	}
-
-	yamlRG := &rulefmt.RuleGroups{
-		Groups: []rulefmt.RuleGroup{{
-			Name: filename,
-		}},
-	}
-
-	yamlRules := make([]rulefmt.Rule, 0, len(rules))
-
-	for _, rule := range rules {
-		switch r := rule.(type) {
-		case *promql.AlertStmt:
-			yamlRules = append(yamlRules, rulefmt.Rule{
-				Alert:       r.Name,
-				Expr:        r.Expr.String(),
-				For:         model.Duration(r.Duration),
-				Labels:      r.Labels.Map(),
-				Annotations: r.Annotations.Map(),
-			})
-		case *promql.RecordStmt:
-			yamlRules = append(yamlRules, rulefmt.Rule{
-				Record: r.Name,
-				Expr:   r.Expr.String(),
-				Labels: r.Labels.Map(),
-			})
-		default:
-			panic("unknown statement type")
-		}
-	}
-
-	yamlRG.Groups[0].Rules = yamlRules
-	y, err := yaml.Marshal(yamlRG)
-	if err != nil {
-		return err
-	}
-
-	return ioutil.WriteFile(filename+".yml", y, 0666)
-}
-
 var checkMetricsUsage = strings.TrimSpace(`
 Pass Prometheus metrics over stdin to lint them for consistency and correctness.
 
@@ -395,7 +329,7 @@ func CheckMetrics() int {
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url string, query string) int {
+func QueryInstant(url, query string, p printer) int {
 	config := api.Config{
 		Address: url,
 	}
@@ -418,13 +352,13 @@ func QueryInstant(url string, query string) int {
 		return 1
 	}
 
-	fmt.Println(val.String())
+	p.printValue(val)
 
 	return 0
 }
 
 // QueryRange performs a range query against a Prometheus server.
-func QueryRange(url, query, start, end string, step time.Duration) int {
+func QueryRange(url, query, start, end string, step time.Duration, p printer) int {
 	config := api.Config{
 		Address: url,
 	}
@@ -479,12 +413,12 @@ func QueryRange(url, query, start, end string, step time.Duration) int {
 		return 1
 	}
 
-	fmt.Println(val.String())
+	p.printValue(val)
 	return 0
 }
 
 // QuerySeries queries for a series against a Prometheus server.
-func QuerySeries(url *url.URL, matchers []string, start string, end string) int {
+func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) int {
 	config := api.Config{
 		Address: url.String(),
 	}
@@ -533,14 +467,12 @@ func QuerySeries(url *url.URL, matchers []string, start string, end string) int 
 		return 1
 	}
 
-	for _, v := range val {
-		fmt.Println(v)
-	}
+	p.printSeries(val)
 	return 0
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, name string) int {
+func QueryLabels(url *url.URL, name string, p printer) int {
 	config := api.Config{
 		Address: url.String(),
 	}
@@ -563,9 +495,7 @@ func QueryLabels(url *url.URL, name string) int {
 		return 1
 	}
 
-	for _, v := range val {
-		fmt.Println(v)
-	}
+	p.printLabelValues(val)
 	return 0
 }
 
@@ -635,4 +565,38 @@ func debugAll(url string) int {
 		return 1
 	}
 	return w.Write()
+}
+
+type printer interface {
+	printValue(v model.Value)
+	printSeries(v []model.LabelSet)
+	printLabelValues(v model.LabelValues)
+}
+
+type promqlPrinter struct{}
+
+func (p *promqlPrinter) printValue(v model.Value) {
+	fmt.Println(v)
+}
+func (p *promqlPrinter) printSeries(val []model.LabelSet) {
+	for _, v := range val {
+		fmt.Println(v)
+	}
+}
+func (j *promqlPrinter) printLabelValues(val model.LabelValues) {
+	for _, v := range val {
+		fmt.Println(v)
+	}
+}
+
+type jsonPrinter struct{}
+
+func (j *jsonPrinter) printValue(v model.Value) {
+	json.NewEncoder(os.Stdout).Encode(v)
+}
+func (j *jsonPrinter) printSeries(v []model.LabelSet) {
+	json.NewEncoder(os.Stdout).Encode(v)
+}
+func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
+	json.NewEncoder(os.Stdout).Encode(v)
 }

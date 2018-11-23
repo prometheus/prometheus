@@ -69,6 +69,25 @@ import (
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
+// withStackTrace logs the stack trace in case the request panics. The function
+// will re-raise the error which will then be handled by the net/http package.
+// It is needed because the go-kit log package doesn't manage properly the
+// panics from net/http (see https://github.com/go-kit/kit/issues/233).
+func withStackTracer(h http.Handler, l log.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				const size = 64 << 10
+				buf := make([]byte, size)
+				buf = buf[:runtime.Stack(buf, false)]
+				level.Error(l).Log("msg", "panic while serving request", "client", r.RemoteAddr, "url", r.URL, "err", err, "stack", buf)
+				panic(err)
+			}
+		}()
+		h.ServeHTTP(w, r)
+	})
+}
+
 var (
 	requestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -167,6 +186,7 @@ type Options struct {
 	ConsoleLibrariesPath       string
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
+	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
 }
@@ -225,7 +245,12 @@ func New(logger log.Logger, o *Options) *Handler {
 		},
 		o.Flags,
 		h.testReady,
-		h.options.TSDB,
+		func() api_v1.TSDBAdmin {
+			if db := h.options.TSDB(); db != nil {
+				return db
+			}
+			return nil
+		},
 		h.options.EnableAdminAPI,
 		logger,
 		h.ruleManager,
@@ -454,7 +479,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
 	httpSrv := &http.Server{
-		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
+		Handler:     withStackTracer(nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName), h.logger),
 		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}
@@ -727,6 +752,7 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
+		"pageTitle":    func() string { return opts.PageTitle },
 		"buildVersion": func() string { return opts.Version.Revision },
 		"stripLabels": func(lset map[string]string, labels ...string) map[string]string {
 			for _, ln := range labels {

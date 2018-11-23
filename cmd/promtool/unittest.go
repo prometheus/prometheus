@@ -135,16 +135,11 @@ type testGroup struct {
 // test performs the unit tests.
 func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, groupOrderMap map[string]int, ruleFiles ...string) []error {
 	// Setup testing suite.
-	suite, err := promql.NewTest(nil, tg.seriesLoadingString())
+	suite, err := promql.NewLazyLoader(nil, tg.seriesLoadingString())
 	if err != nil {
 		return []error{err}
 	}
 	defer suite.Close()
-
-	err = suite.Run()
-	if err != nil {
-		return []error{err}
-	}
 
 	// Load the rule files.
 	opts := &rules.ManagerOptions{
@@ -191,8 +186,17 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	var errs []error
 	for ts := mint; ts.Before(maxt); ts = ts.Add(evalInterval) {
 		// Collects the alerts asked for unit testing.
-		for _, g := range groups {
-			g.Eval(suite.Context(), ts)
+		suite.WithSamplesTill(ts, func(err error) {
+			if err != nil {
+				errs = append(errs, err)
+				return
+			}
+			for _, g := range groups {
+				g.Eval(suite.Context(), ts)
+			}
+		})
+		if len(errs) > 0 {
+			return errs
 		}
 
 		for {

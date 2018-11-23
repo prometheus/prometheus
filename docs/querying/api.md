@@ -236,6 +236,49 @@ $ curl -g 'http://localhost:9090/api/v1/series?match[]=up&match[]=process_start_
 }
 ```
 
+### Getting label names
+
+The following endpoint returns a list of label names:
+
+```
+GET /api/v1/labels
+POST /api/v1/labels
+```
+
+The `data` section of the JSON response is a list of string label names.
+
+Here is an example.
+
+```json
+$ curl 'localhost:9090/api/v1/labels'
+{
+    "status": "success",
+    "data": [
+        "__name__",
+        "call",
+        "code",
+        "config",
+        "dialer_name",
+        "endpoint",
+        "event",
+        "goversion",
+        "handler",
+        "instance",
+        "interval",
+        "job",
+        "le",
+        "listener_name",
+        "name",
+        "quantile",
+        "reason",
+        "role",
+        "scrape_job",
+        "slice",
+        "version"
+    ]
+}
+```
+
 ### Querying label values
 
 The following endpoint returns a list of label values for a provided label name:
@@ -244,7 +287,7 @@ The following endpoint returns a list of label values for a provided label name:
 GET /api/v1/label/<label_name>/values
 ```
 
-The `data` section of the JSON response is a list of string label names.
+The `data` section of the JSON response is a list of string label values.
 
 This example queries for all label values for the `job` label:
 

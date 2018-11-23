@@ -16,10 +16,12 @@ package storage
 import (
 	"container/heap"
 	"context"
+	"sort"
 	"strings"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -278,6 +280,28 @@ func mergeTwoStringSlices(a, b []string) []string {
 	result = append(result, a[i:]...)
 	result = append(result, b[j:]...)
 	return result
+}
+
+// LabelNames returns all the unique label names present in the block in sorted order.
+func (q *mergeQuerier) LabelNames() ([]string, error) {
+	labelNamesMap := make(map[string]struct{})
+	for _, b := range q.queriers {
+		names, err := b.LabelNames()
+		if err != nil {
+			return nil, errors.Wrap(err, "LabelNames() from Querier")
+		}
+		for _, name := range names {
+			labelNamesMap[name] = struct{}{}
+		}
+	}
+
+	labelNames := make([]string, 0, len(labelNamesMap))
+	for name := range labelNamesMap {
+		labelNames = append(labelNames, name)
+	}
+	sort.Strings(labelNames)
+
+	return labelNames, nil
 }
 
 // Close releases the resources of the Querier.
