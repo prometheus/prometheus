@@ -110,7 +110,7 @@ func (m *Manager) reload() {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
 			if !ok {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
-				return
+				continue
 			}
 			sp = newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", setName))
 			m.scrapePools[setName] = sp
