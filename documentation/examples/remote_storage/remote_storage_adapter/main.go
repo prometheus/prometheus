@@ -15,13 +15,13 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -29,13 +29,17 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
+	"gopkg.in/alecthomas/kingpin.v2"
 
 	influx "github.com/influxdata/influxdb/client/v2"
 
 	"github.com/prometheus/common/promlog"
+	"github.com/prometheus/common/promlog/flag"
+
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/graphite"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/opentsdb"
@@ -55,7 +59,7 @@ type config struct {
 	remoteTimeout           time.Duration
 	listenAddr              string
 	telemetryPath           string
-	logLevel                string
+	promlogConfig           promlog.Config
 }
 
 var (
@@ -100,11 +104,7 @@ func main() {
 	cfg := parseFlags()
 	http.Handle(cfg.telemetryPath, promhttp.Handler())
 
-	logLevel := promlog.AllowedLevel{}
-	if err := logLevel.Set(cfg.logLevel); err != nil {
-		panic(fmt.Sprintf("Error setting log level: %v", err))
-	}
-	logger := promlog.New(logLevel)
+	logger := promlog.New(&cfg.promlogConfig)
 
 	writers, readers := buildClients(logger, cfg)
 	if err := serve(logger, cfg.listenAddr, writers, readers); err != nil {
@@ -114,42 +114,45 @@ func main() {
 }
 
 func parseFlags() *config {
+	a := kingpin.New(filepath.Base(os.Args[0]), "Remote storage adapter")
+	a.HelpFlag.Short('h')
+
 	cfg := &config{
 		influxdbPassword: os.Getenv("INFLUXDB_PW"),
+		promlogConfig:    promlog.Config{},
 	}
 
-	flag.StringVar(&cfg.graphiteAddress, "graphite-address", "",
-		"The host:port of the Graphite server to send samples to. None, if empty.",
-	)
-	flag.StringVar(&cfg.graphiteTransport, "graphite-transport", "tcp",
-		"Transport protocol to use to communicate with Graphite. 'tcp', if empty.",
-	)
-	flag.StringVar(&cfg.graphitePrefix, "graphite-prefix", "",
-		"The prefix to prepend to all metrics exported to Graphite. None, if empty.",
-	)
-	flag.StringVar(&cfg.opentsdbURL, "opentsdb-url", "",
-		"The URL of the remote OpenTSDB server to send samples to. None, if empty.",
-	)
-	flag.StringVar(&cfg.influxdbURL, "influxdb-url", "",
-		"The URL of the remote InfluxDB server to send samples to. None, if empty.",
-	)
-	flag.StringVar(&cfg.influxdbRetentionPolicy, "influxdb.retention-policy", "autogen",
-		"The InfluxDB retention policy to use.",
-	)
-	flag.StringVar(&cfg.influxdbUsername, "influxdb.username", "",
-		"The username to use when sending samples to InfluxDB. The corresponding password must be provided via the INFLUXDB_PW environment variable.",
-	)
-	flag.StringVar(&cfg.influxdbDatabase, "influxdb.database", "prometheus",
-		"The name of the database to use for storing samples in InfluxDB.",
-	)
-	flag.DurationVar(&cfg.remoteTimeout, "send-timeout", 30*time.Second,
-		"The timeout to use when sending samples to the remote storage.",
-	)
-	flag.StringVar(&cfg.listenAddr, "web.listen-address", ":9201", "Address to listen on for web endpoints.")
-	flag.StringVar(&cfg.telemetryPath, "web.telemetry-path", "/metrics", "Address to listen on for web endpoints.")
-	flag.StringVar(&cfg.logLevel, "log.level", "debug", "Only log messages with the given severity or above. One of: [debug, info, warn, error]")
+	a.Flag("graphite-address", "The host:port of the Graphite server to send samples to. None, if empty.").
+		Default("").StringVar(&cfg.graphiteAddress)
+	a.Flag("graphite-transport", "Transport protocol to use to communicate with Graphite. 'tcp', if empty.").
+		Default("tcp").StringVar(&cfg.graphiteTransport)
+	a.Flag("graphite-prefix", "The prefix to prepend to all metrics exported to Graphite. None, if empty.").
+		Default("").StringVar(&cfg.graphitePrefix)
+	a.Flag("opentsdb-url", "The URL of the remote OpenTSDB server to send samples to. None, if empty.").
+		Default("").StringVar(&cfg.opentsdbURL)
+	a.Flag("influxdb-url", "The URL of the remote InfluxDB server to send samples to. None, if empty.").
+		Default("").StringVar(&cfg.influxdbURL)
+	a.Flag("influxdb.retention-policy", "The InfluxDB retention policy to use.").
+		Default("autogen").StringVar(&cfg.influxdbRetentionPolicy)
+	a.Flag("influxdb.username", "The username to use when sending samples to InfluxDB. The corresponding password must be provided via the INFLUXDB_PW environment variable.").
+		Default("").StringVar(&cfg.influxdbUsername)
+	a.Flag("influxdb.database", "The name of the database to use for storing samples in InfluxDB.").
+		Default("prometheus").StringVar(&cfg.influxdbDatabase)
+	a.Flag("send-timeout", "The timeout to use when sending samples to the remote storage.").
+		Default("30s").DurationVar(&cfg.remoteTimeout)
+	a.Flag("web.listen-address", "Address to listen on for web endpoints.").
+		Default(":9201").StringVar(&cfg.listenAddr)
+	a.Flag("web.telemetry-path", "Address to listen on for web endpoints.").
+		Default("/metrics").StringVar(&cfg.telemetryPath)
 
-	flag.Parse()
+	flag.AddFlags(a, &cfg.promlogConfig)
+
+	_, err := a.Parse(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error parsing commandline arguments"))
+		a.Usage(os.Args[1:])
+		os.Exit(2)
+	}
 
 	return cfg
 }

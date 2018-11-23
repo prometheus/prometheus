@@ -272,7 +272,14 @@ func TestEndpoints(t *testing.T) {
 
 		al := promlog.AllowedLevel{}
 		al.Set("debug")
-		remote := remote.NewStorage(promlog.New(al), func() (int64, error) {
+		af := promlog.AllowedFormat{}
+		al.Set("logfmt")
+		promlogConfig := promlog.Config{
+			Level:  &al,
+			Format: &af,
+		}
+
+		remote := remote.NewStorage(promlog.New(&promlogConfig), func() (int64, error) {
 			return 0, nil
 		}, 1*time.Second)
 
