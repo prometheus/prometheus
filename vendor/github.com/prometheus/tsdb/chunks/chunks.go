@@ -345,6 +345,15 @@ func (s *Reader) Close() error {
 	return closeAll(s.cs...)
 }
 
+// Size returns the size of the chunks.
+func (s *Reader) Size() int64 {
+	var size int64
+	for _, f := range s.bs {
+		size += int64(f.Len())
+	}
+	return size
+}
+
 func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	var (
 		seq = int(ref >> 32)
