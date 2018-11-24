@@ -91,6 +91,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.SubscriptionID == "" {
 		return fmt.Errorf("Azure SD configuration requires a subscription_id")
 	}
+	if c.ClientID == "" {
+		return fmt.Errorf("Azure SD configuration requires a client_id")
+	}
+	if c.ClientSecret == "" {
+		return fmt.Errorf("Azure SD configuration requires a client_secret")
+	}
 	return nil
 }
 
