@@ -28,7 +28,15 @@ func TestRuleEval(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
 
-	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	opts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+
+	engine := promql.NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 

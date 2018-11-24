@@ -16,12 +16,15 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"reflect"
 	"sort"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
@@ -32,7 +35,7 @@ import (
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
 func TestTargetUpdatesOrder(t *testing.T) {
 
-	// The order by which the updates are send is detirmened by the interval passed to the mock discovery adapter
+	// The order by which the updates are send is determined by the interval passed to the mock discovery adapter
 	// Final targets array is ordered alphabetically by the name of the discoverer.
 	// For example discoverer "A" with targets "t2,t3" and discoverer "B" with targets "t1,t2" will result in "t2,t3,t1,t2" after the merge.
 	testCases := []struct {
@@ -62,7 +65,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 				"tp1": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     5,
+						interval:     5 * time.Millisecond,
 					},
 				},
 			},
@@ -76,19 +79,19 @@ func TestTargetUpdatesOrder(t *testing.T) {
 				"tp1": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     5,
+						interval:     5 * time.Millisecond,
 					},
 				},
 				"tp2": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     200,
+						interval:     200 * time.Millisecond,
 					},
 				},
 				"tp3": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     100,
+						interval:     100 * time.Millisecond,
 					},
 				},
 			},
@@ -153,7 +156,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "3"}},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 				},
 			},
@@ -211,7 +214,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 				},
 			},
@@ -270,7 +273,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 				},
 			},
@@ -316,7 +319,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -329,7 +332,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
-						interval: 500,
+						interval: 500 * time.Millisecond,
 					},
 				},
 				"tp2": {
@@ -344,7 +347,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "6"}},
 							},
 						},
-						interval: 100,
+						interval: 100 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -357,7 +360,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "8"}},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 				},
 			},
@@ -467,7 +470,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -480,7 +483,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
-						interval: 150,
+						interval: 150 * time.Millisecond,
 					},
 				},
 				"tp2": {
@@ -495,7 +498,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "6"}},
 							},
 						},
-						interval: 200,
+						interval: 200 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -508,7 +511,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "8"}},
 							},
 						},
-						interval: 100,
+						interval: 100 * time.Millisecond,
 					},
 				},
 			},
@@ -587,7 +590,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
-						interval: 30,
+						interval: 30 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -600,7 +603,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -613,7 +616,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
-						interval: 300,
+						interval: 300 * time.Millisecond,
 					},
 				},
 			},
@@ -652,81 +655,97 @@ func TestTargetUpdatesOrder(t *testing.T) {
 		},
 	}
 
-	for testIndex, testCase := range testCases {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		discoveryManager := NewManager(ctx, nil)
+	for i, tc := range testCases {
+		tc := tc
+		t.Run(tc.title, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-		var totalUpdatesCount int
+			discoveryManager := NewManager(ctx, log.NewNopLogger())
+			discoveryManager.updatert = 100 * time.Millisecond
 
-		provUpdates := make(chan []*targetgroup.Group)
-		for _, up := range testCase.updates {
-			go newMockDiscoveryProvider(up).Run(ctx, provUpdates)
-			if len(up) > 0 {
-				totalUpdatesCount = totalUpdatesCount + len(up)
+			var totalUpdatesCount int
+			provUpdates := make(chan []*targetgroup.Group)
+			for _, up := range tc.updates {
+				go newMockDiscoveryProvider(up...).Run(ctx, provUpdates)
+				if len(up) > 0 {
+					totalUpdatesCount = totalUpdatesCount + len(up)
+				}
 			}
-		}
 
-	Loop:
-		for x := 0; x < totalUpdatesCount; x++ {
-			select {
-			case <-time.After(10 * time.Second):
-				t.Errorf("%v. %q: no update arrived within the timeout limit", x, testCase.title)
-				break Loop
-			case tgs := <-provUpdates:
-				discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(testIndex), provider: testCase.title}, tgs)
-				for _, received := range discoveryManager.allGroups() {
-					// Need to sort by the Groups source as the received order is not guaranteed.
-					sort.Sort(byGroupSource(received))
-					if !reflect.DeepEqual(received, testCase.expectedTargets[x]) {
-						var receivedFormated string
-						for _, receivedTargets := range received {
-							receivedFormated = receivedFormated + receivedTargets.Source + ":" + fmt.Sprint(receivedTargets.Targets)
-						}
-						var expectedFormated string
-						for _, expectedTargets := range testCase.expectedTargets[x] {
-							expectedFormated = expectedFormated + expectedTargets.Source + ":" + fmt.Sprint(expectedTargets.Targets)
-						}
-
-						t.Errorf("%v. %v: \ntargets mismatch \nreceived: %v \nexpected: %v",
-							x, testCase.title,
-							receivedFormated,
-							expectedFormated)
+		Loop:
+			for x := 0; x < totalUpdatesCount; x++ {
+				select {
+				case <-ctx.Done():
+					t.Errorf("%d: no update arrived within the timeout limit", x)
+					break Loop
+				case tgs := <-provUpdates:
+					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
+					for _, got := range discoveryManager.allGroups() {
+						assertEqualGroups(t, got, tc.expectedTargets[x], func(got, expected string) string {
+							return fmt.Sprintf("%d: \ntargets mismatch \ngot: %v \nexpected: %v",
+								x,
+								got,
+								expected)
+						})
 					}
 				}
 			}
+		})
+	}
+}
+
+func assertEqualGroups(t *testing.T, got, expected []*targetgroup.Group, msg func(got, expected string) string) {
+	t.Helper()
+	format := func(groups []*targetgroup.Group) string {
+		var s string
+		for i, group := range groups {
+			if i > 0 {
+				s += ","
+			}
+			s += group.Source + ":" + fmt.Sprint(group.Targets)
 		}
+		return s
+	}
+
+	// Need to sort by the groups's source as the received order is not guaranteed.
+	sort.Sort(byGroupSource(got))
+	sort.Sort(byGroupSource(expected))
+
+	if !reflect.DeepEqual(got, expected) {
+		t.Errorf(msg(format(got), format(expected)))
+	}
+
+}
+
+func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey, label string, present bool) {
+	if _, ok := tSets[poolKey]; !ok {
+		t.Fatalf("'%s' should be present in Pool keys: %v", poolKey, tSets)
+		return
+	}
+
+	match := false
+	var mergedTargets string
+	for _, targetGroup := range tSets[poolKey] {
+
+		for _, l := range targetGroup.Targets {
+			mergedTargets = mergedTargets + " " + l.String()
+			if l.String() == label {
+				match = true
+			}
+		}
+
+	}
+	if match != present {
+		msg := ""
+		if !present {
+			msg = "not"
+		}
+		t.Fatalf("'%s' should %s be present in Targets labels: %v", label, msg, mergedTargets)
 	}
 }
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
-	verifyPresence := func(tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey, label string, present bool) {
-		if _, ok := tSets[poolKey]; !ok {
-			t.Fatalf("'%s' should be present in Pool keys: %v", poolKey, tSets)
-			return
-		}
-
-		match := false
-		var mergedTargets string
-		for _, targetGroup := range tSets[poolKey] {
-
-			for _, l := range targetGroup.Targets {
-				mergedTargets = mergedTargets + " " + l.String()
-				if l.String() == label {
-					match = true
-				}
-			}
-
-		}
-		if match != present {
-			msg := ""
-			if !present {
-				msg = "not"
-			}
-			t.Fatalf("'%s' should %s be present in Targets labels: %v", label, msg, mergedTargets)
-		}
-	}
-
 	cfg := &config.Config{}
 
 	sOne := `
@@ -741,7 +760,8 @@ scrape_configs:
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, nil)
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -751,8 +771,8 @@ scrape_configs:
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", true)
 
 	sTwo := `
 scrape_configs:
@@ -770,8 +790,61 @@ scrape_configs:
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", false)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", false)
+}
+
+func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
+	tmpFile, err := ioutil.TempFile("", "sd")
+	if err != nil {
+		t.Fatalf("error creating temporary file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.Write([]byte(`[{"targets": ["foo:9090"]}]`)); err != nil {
+		t.Fatalf("error writing temporary file: %v", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("error closing temporary file: %v", err)
+	}
+	tmpFile2 := fmt.Sprintf("%s.json", tmpFile.Name())
+	if err = os.Link(tmpFile.Name(), tmpFile2); err != nil {
+		t.Fatalf("error linking temporary file: %v", err)
+	}
+	defer os.Remove(tmpFile2)
+
+	cfg := &config.Config{}
+
+	sOne := `
+scrape_configs:
+ - job_name: 'prometheus'
+   file_sd_configs:
+   - files: ["%s"]
+ - job_name: 'prometheus2'
+   file_sd_configs:
+   - files: ["%s"]
+`
+	sOne = fmt.Sprintf(sOne, tmpFile2, tmpFile2)
+	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config sOne: %s", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, nil)
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := make(map[string]sd_config.ServiceDiscoveryConfig)
+	for _, v := range cfg.ScrapeConfigs {
+		c[v.JobName] = v.ServiceDiscoveryConfig
+	}
+	discoveryManager.ApplyConfig(c)
+
+	<-discoveryManager.SyncCh()
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "*file.SDConfig/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus2", provider: "*file.SDConfig/0"}, "{__address__=\"foo:9090\"}", true)
+	if len(discoveryManager.providers) != 1 {
+		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
+	}
 }
 
 func TestApplyConfigDoesNotModifyStaticProviderTargets(t *testing.T) {
@@ -795,7 +868,8 @@ scrape_configs:
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, nil)
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -813,6 +887,166 @@ scrape_configs:
 	}
 }
 
+func TestCoordinationWithReceiver(t *testing.T) {
+	updateDelay := 100 * time.Millisecond
+
+	type expect struct {
+		delay time.Duration
+		tgs   map[string][]*targetgroup.Group
+	}
+
+	testCases := []struct {
+		title     string
+		providers map[string]Discoverer
+		expected  []expect
+	}{
+		{
+			title: "Receiver should get all updates even when one provider closes its channel",
+			providers: map[string]Discoverer{
+				"once1": &onceProvider{
+					tgs: []*targetgroup.Group{
+						{
+							Source:  "tg1",
+							Targets: []model.LabelSet{{"__instance__": "1"}},
+						},
+					},
+				},
+				"mock1": newMockDiscoveryProvider(
+					update{
+						interval: 2 * updateDelay,
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg2",
+								Targets: []model.LabelSet{{"__instance__": "2"}},
+							},
+						},
+					},
+				),
+			},
+			expected: []expect{
+				{
+					tgs: map[string][]*targetgroup.Group{
+						"once1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+				},
+				{
+					tgs: map[string][]*targetgroup.Group{
+						"once1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+						"mock1": []*targetgroup.Group{
+							{
+								Source:  "tg2",
+								Targets: []model.LabelSet{{"__instance__": "2"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			title: "Receiver should get all updates even when the channel is blocked",
+			providers: map[string]Discoverer{
+				"mock1": newMockDiscoveryProvider(
+					update{
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+					update{
+						interval: 4 * updateDelay,
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg2",
+								Targets: []model.LabelSet{{"__instance__": "2"}},
+							},
+						},
+					},
+				),
+			},
+			expected: []expect{
+				{
+					delay: 2 * updateDelay,
+					tgs: map[string][]*targetgroup.Group{
+						"mock1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+				},
+				{
+					delay: 4 * updateDelay,
+					tgs: map[string][]*targetgroup.Group{
+						"mock1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+							{
+								Source:  "tg2",
+								Targets: []model.LabelSet{{"__instance__": "2"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.title, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			mgr := NewManager(ctx, nil)
+			mgr.updatert = updateDelay
+			go mgr.Run()
+
+			for name, p := range tc.providers {
+				mgr.StartCustomProvider(ctx, name, p)
+			}
+
+			for i, expected := range tc.expected {
+				time.Sleep(expected.delay)
+				select {
+				case <-ctx.Done():
+					t.Fatalf("step %d: no update received in the expected timeframe", i)
+				case tgs, ok := <-mgr.SyncCh():
+					if !ok {
+						t.Fatalf("step %d: discovery manager channel is closed", i)
+					}
+					if len(tgs) != len(expected.tgs) {
+						t.Fatalf("step %d: target groups mismatch, got: %d, expected: %d\ngot: %#v\nexpected: %#v",
+							i, len(tgs), len(expected.tgs), tgs, expected.tgs)
+					}
+					for k := range expected.tgs {
+						if _, ok := tgs[k]; !ok {
+							t.Fatalf("step %d: target group not found: %s\ngot: %#v", i, k, tgs)
+						}
+						assertEqualGroups(t, tgs[k], expected.tgs[k], func(got, expected string) string {
+							return fmt.Sprintf("step %d: targets mismatch \ngot: %q \nexpected: %q", i, got, expected)
+						})
+					}
+				}
+			}
+		})
+	}
+}
+
 type update struct {
 	targetGroups []targetgroup.Group
 	interval     time.Duration
@@ -820,33 +1054,37 @@ type update struct {
 
 type mockdiscoveryProvider struct {
 	updates []update
-	up      chan<- []*targetgroup.Group
 }
 
-func newMockDiscoveryProvider(updates []update) mockdiscoveryProvider {
-
+func newMockDiscoveryProvider(updates ...update) mockdiscoveryProvider {
 	tp := mockdiscoveryProvider{
 		updates: updates,
 	}
 	return tp
 }
 
-func (tp mockdiscoveryProvider) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
-	tp.up = up
-	tp.sendUpdates()
-}
-
-func (tp mockdiscoveryProvider) sendUpdates() {
-	for _, update := range tp.updates {
-
-		time.Sleep(update.interval * time.Millisecond)
-
-		tgs := make([]*targetgroup.Group, len(update.targetGroups))
-		for i := range update.targetGroups {
-			tgs[i] = &update.targetGroups[i]
+func (tp mockdiscoveryProvider) Run(ctx context.Context, upCh chan<- []*targetgroup.Group) {
+	for _, u := range tp.updates {
+		if u.interval > 0 {
+			t := time.NewTicker(u.interval)
+			defer t.Stop()
+		Loop:
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					break Loop
+				}
+			}
 		}
-		tp.up <- tgs
+		tgs := make([]*targetgroup.Group, len(u.targetGroups))
+		for i := range u.targetGroups {
+			tgs[i] = &u.targetGroups[i]
+		}
+		upCh <- tgs
 	}
+	<-ctx.Done()
 }
 
 // byGroupSource implements sort.Interface so we can sort by the Source field.
@@ -855,3 +1093,15 @@ type byGroupSource []*targetgroup.Group
 func (a byGroupSource) Len() int           { return len(a) }
 func (a byGroupSource) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byGroupSource) Less(i, j int) bool { return a[i].Source < a[j].Source }
+
+// onceProvider sends updates once (if any) and closes the update channel.
+type onceProvider struct {
+	tgs []*targetgroup.Group
+}
+
+func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
+	if len(o.tgs) > 0 {
+		ch <- o.tgs
+	}
+	close(ch)
+}

@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestParseFileSuccess(t *testing.T) {
@@ -76,6 +78,86 @@ func TestParseFileFailure(t *testing.T) {
 		if !strings.Contains(errs[0].Error(), c.errMsg) {
 			t.Errorf("Expected error for %s to contain %q but got: %s", c.filename, c.errMsg, errs)
 		}
+	}
+
+}
+
+func TestTemplateParsing(t *testing.T) {
+	tests := []struct {
+		ruleString string
+		shouldPass bool
+	}{
+		{
+			ruleString: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+`,
+			shouldPass: true,
+		},
+		{
+			// `$label` instead of `$labels`.
+			ruleString: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $label.instance }} down"
+`,
+			shouldPass: false,
+		},
+		{
+			// `$this_is_wrong`.
+			ruleString: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "{{$this_is_wrong}}"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+`,
+			shouldPass: false,
+		},
+		{
+			// `$labels.quantile * 100`.
+			ruleString: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+      description: "{{$labels.quantile * 100}}"
+`,
+			shouldPass: false,
+		},
+	}
+
+	for _, tst := range tests {
+		rgs, errs := Parse([]byte(tst.ruleString))
+		testutil.Assert(t, rgs != nil, "Rule parsing, rule=\n"+tst.ruleString)
+		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
+		testutil.Assert(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
 	}
 
 }

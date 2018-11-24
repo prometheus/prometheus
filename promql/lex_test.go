@@ -249,21 +249,6 @@ var tests = []struct {
 	},
 	// Test keywords.
 	{
-		input:    "alert",
-		expected: []item{{itemAlert, 0, "alert"}},
-	}, {
-		input:    "if",
-		expected: []item{{itemIf, 0, "if"}},
-	}, {
-		input:    "for",
-		expected: []item{{itemFor, 0, "for"}},
-	}, {
-		input:    "labels",
-		expected: []item{{itemLabels, 0, "labels"}},
-	}, {
-		input:    "annotations",
-		expected: []item{{itemAnnotations, 0, "annotations"}},
-	}, {
 		input:    "offset",
 		expected: []item{{itemOffset, 0, "offset"}},
 	}, {
@@ -406,9 +391,13 @@ var tests = []struct {
 		expected: []item{
 			{itemLeftBrace, 0, `{`},
 			{itemRightBrace, 1, `}`},
+			{itemSpace, 2, ` `},
 			{itemBlank, 3, `_`},
+			{itemSpace, 4, ` `},
 			{itemNumber, 5, `1`},
+			{itemSpace, 6, ` `},
 			{itemTimes, 7, `x`},
+			{itemSpace, 8, ` `},
 			{itemNumber, 9, `.3`},
 		},
 		seriesDesc: true,
@@ -417,9 +406,12 @@ var tests = []struct {
 		input: `metric +Inf Inf NaN`,
 		expected: []item{
 			{itemIdentifier, 0, `metric`},
+			{itemSpace, 6, ` `},
 			{itemADD, 7, `+`},
 			{itemNumber, 8, `Inf`},
+			{itemSpace, 11, ` `},
 			{itemNumber, 12, `Inf`},
+			{itemSpace, 15, ` `},
 			{itemNumber, 16, `NaN`},
 		},
 		seriesDesc: true,
@@ -428,6 +420,7 @@ var tests = []struct {
 		input: `metric 1+1x4`,
 		expected: []item{
 			{itemIdentifier, 0, `metric`},
+			{itemSpace, 6, ` `},
 			{itemNumber, 7, `1`},
 			{itemADD, 8, `+`},
 			{itemNumber, 9, `1`},

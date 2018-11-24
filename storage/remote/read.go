@@ -16,14 +16,30 @@ package remote
 import (
 	"context"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
+var remoteReadQueries = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "remote_read_queries",
+		Help:      "The number of in-flight remote read queries.",
+	},
+	[]string{"client"},
+)
+
+func init() {
+	prometheus.MustRegister(remoteReadQueries)
+}
+
 // QueryableClient returns a storage.Queryable which queries the given
 // Client to select series sets.
 func QueryableClient(c *Client) storage.Queryable {
+	remoteReadQueries.WithLabelValues(c.Name())
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return &querier{
 			ctx:    ctx,
@@ -49,6 +65,10 @@ func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (
 		return nil, err
 	}
 
+	remoteReadGauge := remoteReadQueries.WithLabelValues(q.client.Name())
+	remoteReadGauge.Inc()
+	defer remoteReadGauge.Dec()
+
 	res, err := q.client.Read(q.ctx, query)
 	if err != nil {
 		return nil, err
@@ -63,14 +83,20 @@ func (q *querier) LabelValues(name string) ([]string, error) {
 	return nil, nil
 }
 
+// LabelNames implements storage.Querier and is a noop.
+func (q *querier) LabelNames() ([]string, error) {
+	// TODO implement?
+	return nil, nil
+}
+
 // Close implements storage.Querier and is a noop.
 func (q *querier) Close() error {
 	return nil
 }
 
-// ExternablLabelsHandler returns a storage.Queryable which creates a
+// ExternalLabelsHandler returns a storage.Queryable which creates a
 // externalLabelsQuerier.
-func ExternablLabelsHandler(next storage.Queryable, externalLabels model.LabelSet) storage.Queryable {
+func ExternalLabelsHandler(next storage.Queryable, externalLabels model.LabelSet) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		q, err := next.Querier(ctx, mint, maxt)
 		if err != nil {

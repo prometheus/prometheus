@@ -11,12 +11,10 @@ import _ "google.golang.org/genproto/googleapis/api/annotations"
 
 import time "time"
 
-import (
-	context "golang.org/x/net/context"
-	grpc "google.golang.org/grpc"
-)
+import context "golang.org/x/net/context"
+import grpc "google.golang.org/grpc"
 
-import github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
+import types "github.com/gogo/protobuf/types"
 
 import io "io"
 
@@ -338,8 +336,8 @@ func (m *SeriesDeleteRequest) MarshalTo(dAtA []byte) (int, error) {
 	if m.MinTime != nil {
 		dAtA[i] = 0xa
 		i++
-		i = encodeVarintRpc(dAtA, i, uint64(github_com_gogo_protobuf_types.SizeOfStdTime(*m.MinTime)))
-		n1, err := github_com_gogo_protobuf_types.StdTimeMarshalTo(*m.MinTime, dAtA[i:])
+		i = encodeVarintRpc(dAtA, i, uint64(types.SizeOfStdTime(*m.MinTime)))
+		n1, err := types.StdTimeMarshalTo(*m.MinTime, dAtA[i:])
 		if err != nil {
 			return 0, err
 		}
@@ -348,8 +346,8 @@ func (m *SeriesDeleteRequest) MarshalTo(dAtA []byte) (int, error) {
 	if m.MaxTime != nil {
 		dAtA[i] = 0x12
 		i++
-		i = encodeVarintRpc(dAtA, i, uint64(github_com_gogo_protobuf_types.SizeOfStdTime(*m.MaxTime)))
-		n2, err := github_com_gogo_protobuf_types.StdTimeMarshalTo(*m.MaxTime, dAtA[i:])
+		i = encodeVarintRpc(dAtA, i, uint64(types.SizeOfStdTime(*m.MaxTime)))
+		n2, err := types.StdTimeMarshalTo(*m.MaxTime, dAtA[i:])
 		if err != nil {
 			return 0, err
 		}
@@ -388,24 +386,6 @@ func (m *SeriesDeleteResponse) MarshalTo(dAtA []byte) (int, error) {
 	return i, nil
 }
 
-func encodeFixed64Rpc(dAtA []byte, offset int, v uint64) int {
-	dAtA[offset] = uint8(v)
-	dAtA[offset+1] = uint8(v >> 8)
-	dAtA[offset+2] = uint8(v >> 16)
-	dAtA[offset+3] = uint8(v >> 24)
-	dAtA[offset+4] = uint8(v >> 32)
-	dAtA[offset+5] = uint8(v >> 40)
-	dAtA[offset+6] = uint8(v >> 48)
-	dAtA[offset+7] = uint8(v >> 56)
-	return offset + 8
-}
-func encodeFixed32Rpc(dAtA []byte, offset int, v uint32) int {
-	dAtA[offset] = uint8(v)
-	dAtA[offset+1] = uint8(v >> 8)
-	dAtA[offset+2] = uint8(v >> 16)
-	dAtA[offset+3] = uint8(v >> 24)
-	return offset + 4
-}
 func encodeVarintRpc(dAtA []byte, offset int, v uint64) int {
 	for v >= 1<<7 {
 		dAtA[offset] = uint8(v&0x7f | 0x80)
@@ -450,11 +430,11 @@ func (m *SeriesDeleteRequest) Size() (n int) {
 	var l int
 	_ = l
 	if m.MinTime != nil {
-		l = github_com_gogo_protobuf_types.SizeOfStdTime(*m.MinTime)
+		l = types.SizeOfStdTime(*m.MinTime)
 		n += 1 + l + sovRpc(uint64(l))
 	}
 	if m.MaxTime != nil {
-		l = github_com_gogo_protobuf_types.SizeOfStdTime(*m.MaxTime)
+		l = types.SizeOfStdTime(*m.MaxTime)
 		n += 1 + l + sovRpc(uint64(l))
 	}
 	if len(m.Matchers) > 0 {
@@ -792,7 +772,7 @@ func (m *SeriesDeleteRequest) Unmarshal(dAtA []byte) error {
 			if m.MinTime == nil {
 				m.MinTime = new(time.Time)
 			}
-			if err := github_com_gogo_protobuf_types.StdTimeUnmarshal(m.MinTime, dAtA[iNdEx:postIndex]); err != nil {
+			if err := types.StdTimeUnmarshal(m.MinTime, dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -825,7 +805,7 @@ func (m *SeriesDeleteRequest) Unmarshal(dAtA []byte) error {
 			if m.MaxTime == nil {
 				m.MaxTime = new(time.Time)
 			}
-			if err := github_com_gogo_protobuf_types.StdTimeUnmarshal(m.MaxTime, dAtA[iNdEx:postIndex]); err != nil {
+			if err := types.StdTimeUnmarshal(m.MaxTime, dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex

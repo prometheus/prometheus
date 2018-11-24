@@ -18,10 +18,10 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 func makeEndpoints() *v1.Endpoints {
@@ -197,6 +197,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_name":                     "testpod",
 						"__meta_kubernetes_pod_ip":                       "1.2.3.4",
 						"__meta_kubernetes_pod_ready":                    "unknown",
+						"__meta_kubernetes_pod_phase":                    "",
 						"__meta_kubernetes_pod_node_name":                "testnode",
 						"__meta_kubernetes_pod_host_ip":                  "2.3.4.5",
 						"__meta_kubernetes_pod_container_name":           "c1",
@@ -210,6 +211,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_name":                    "testpod",
 						"__meta_kubernetes_pod_ip":                      "1.2.3.4",
 						"__meta_kubernetes_pod_ready":                   "unknown",
+						"__meta_kubernetes_pod_phase":                   "",
 						"__meta_kubernetes_pod_node_name":               "testnode",
 						"__meta_kubernetes_pod_host_ip":                 "2.3.4.5",
 						"__meta_kubernetes_pod_container_name":          "c2",
@@ -585,6 +587,7 @@ func TestEndpointsDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_pod_name":                     "testpod",
 						"__meta_kubernetes_pod_ip":                       "4.3.2.1",
 						"__meta_kubernetes_pod_ready":                    "unknown",
+						"__meta_kubernetes_pod_phase":                    "",
 						"__meta_kubernetes_pod_node_name":                "testnode",
 						"__meta_kubernetes_pod_host_ip":                  "2.3.4.5",
 						"__meta_kubernetes_pod_container_name":           "c1",

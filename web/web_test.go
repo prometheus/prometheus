@@ -107,6 +107,12 @@ func TestReadyAndHealthy(t *testing.T) {
 		RoutePrefix:    "/",
 		EnableAdminAPI: true,
 		TSDB:           func() *libtsdb.DB { return db },
+		ExternalURL: &url.URL{
+			Scheme: "http",
+			Host:   "localhost:9090",
+			Path:   "/",
+		},
+		Version: &PrometheusVersion{},
 	}
 
 	opts.Flags = map[string]string{}
@@ -138,6 +144,11 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 
+	resp, err = http.Get("http://localhost:9090/graph")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
 	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
 
 	testutil.Ok(t, err)
@@ -162,6 +173,11 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
 
 	resp, err = http.Get("http://localhost:9090/version")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/graph")
 
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
@@ -271,6 +287,7 @@ func TestRoutePrefix(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
 }
+
 func TestDebugHandler(t *testing.T) {
 	for _, tc := range []struct {
 		prefix, url string

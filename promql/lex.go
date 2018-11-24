@@ -143,6 +143,7 @@ const (
 	itemDuration
 	itemBlank
 	itemTimes
+	itemSpace
 
 	operatorsStart
 	// Operators.
@@ -182,11 +183,6 @@ const (
 
 	keywordsStart
 	// Keywords.
-	itemAlert
-	itemIf
-	itemFor
-	itemLabels
-	itemAnnotations
 	itemOffset
 	itemBy
 	itemWithout
@@ -218,11 +214,6 @@ var key = map[string]ItemType{
 	"quantile":     itemQuantile,
 
 	// Keywords.
-	"alert":       itemAlert,
-	"if":          itemIf,
-	"for":         itemFor,
-	"labels":      itemLabels,
-	"annotations": itemAnnotations,
 	"offset":      itemOffset,
 	"by":          itemBy,
 	"without":     itemWithout,
@@ -247,6 +238,7 @@ var itemTypeStr = map[ItemType]string{
 	itemSemicolon:    ";",
 	itemBlank:        "_",
 	itemTimes:        "x",
+	itemSpace:        "<space>",
 
 	itemSUB:      "-",
 	itemADD:      "+",
@@ -442,6 +434,13 @@ func (l *lexer) run() {
 	close(l.items)
 }
 
+// Release resources used by lexer.
+func (l *lexer) close() {
+	for range l.items {
+		// Consume.
+	}
+}
+
 // lineComment is the character that starts a line comment.
 const lineComment = "#"
 
@@ -616,6 +615,7 @@ func lexValueSequence(l *lexer) stateFn {
 	case r == eof:
 		return lexStatements
 	case isSpace(r):
+		l.emit(itemSpace)
 		lexSpace(l)
 	case r == '+':
 		l.emit(itemADD)

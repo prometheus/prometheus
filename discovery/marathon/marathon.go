@@ -107,11 +107,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
 		return fmt.Errorf("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
 	}
-	if err := c.HTTPClientConfig.Validate(); err != nil {
-		return err
-	}
-
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 func init() {
@@ -278,31 +274,47 @@ func (d *Discovery) fetchTargetGroups() (map[string]*targetgroup.Group, error) {
 
 // Task describes one instance of a service running on Marathon.
 type Task struct {
-	ID    string   `json:"id"`
-	Host  string   `json:"host"`
-	Ports []uint32 `json:"ports"`
+	ID          string      `json:"id"`
+	Host        string      `json:"host"`
+	Ports       []uint32    `json:"ports"`
+	IPAddresses []IPAddress `json:"ipAddresses"`
 }
 
-// PortMappings describes in which port the process are binding inside the docker container.
-type PortMappings struct {
-	Labels map[string]string `json:"labels"`
+// IPAddress describes the address and protocol the container's network interface is bound to.
+type IPAddress struct {
+	Address string `json:"ipAddress"`
+	Proto   string `json:"protocol"`
+}
+
+// PortMapping describes in which port the process are binding inside the docker container.
+type PortMapping struct {
+	Labels        map[string]string `json:"labels"`
+	ContainerPort uint32            `json:"containerPort"`
+	ServicePort   uint32            `json:"servicePort"`
 }
 
 // DockerContainer describes a container which uses the docker runtime.
 type DockerContainer struct {
-	Image        string         `json:"image"`
-	PortMappings []PortMappings `json:"portMappings"`
+	Image        string        `json:"image"`
+	PortMappings []PortMapping `json:"portMappings"`
 }
 
 // Container describes the runtime an app in running in.
 type Container struct {
 	Docker       DockerContainer `json:"docker"`
-	PortMappings []PortMappings  `json:"portMappings"`
+	PortMappings []PortMapping   `json:"portMappings"`
 }
 
-// PortDefinitions describes which load balancer port you should access to access the service.
-type PortDefinitions struct {
+// PortDefinition describes which load balancer port you should access to access the service.
+type PortDefinition struct {
 	Labels map[string]string `json:"labels"`
+	Port   uint32            `json:"port"`
+}
+
+// Network describes the name and type of network the container is attached to.
+type Network struct {
+	Name string `json:"name"`
+	Mode string `json:"mode"`
 }
 
 // App describes a service running on Marathon.
@@ -312,7 +324,13 @@ type App struct {
 	RunningTasks    int               `json:"tasksRunning"`
 	Labels          map[string]string `json:"labels"`
 	Container       Container         `json:"container"`
-	PortDefinitions []PortDefinitions `json:"portDefinitions"`
+	PortDefinitions []PortDefinition  `json:"portDefinitions"`
+	Networks        []Network         `json:"networks"`
+}
+
+// isContainerNet checks if the app's first network is set to mode 'container'.
+func (app App) isContainerNet() bool {
+	return len(app.Networks) > 0 && app.Networks[0].Mode == "container"
 }
 
 // AppList is a list of Marathon apps.
@@ -403,46 +421,109 @@ func createTargetGroup(app *App) *targetgroup.Group {
 
 func targetsForApp(app *App) []model.LabelSet {
 	targets := make([]model.LabelSet, 0, len(app.Tasks))
-	for _, t := range app.Tasks {
-		if len(t.Ports) == 0 {
-			continue
+
+	var ports []uint32
+	var labels []map[string]string
+	var prefix string
+
+	if len(app.Container.PortMappings) != 0 {
+		// In Marathon 1.5.x the "container.docker.portMappings" object was moved
+		// to "container.portMappings".
+		ports, labels = extractPortMapping(app.Container.PortMappings, app.isContainerNet())
+		prefix = portMappingLabelPrefix
+
+	} else if len(app.Container.Docker.PortMappings) != 0 {
+		// Prior to Marathon 1.5 the port mappings could be found at the path
+		// "container.docker.portMappings".
+		ports, labels = extractPortMapping(app.Container.Docker.PortMappings, app.isContainerNet())
+		prefix = portMappingLabelPrefix
+
+	} else if len(app.PortDefinitions) != 0 {
+		// PortDefinitions deprecates the "ports" array and can be used to specify
+		// a list of ports with metadata in case a mapping is not required.
+		ports = make([]uint32, len(app.PortDefinitions))
+		labels = make([]map[string]string, len(app.PortDefinitions))
+
+		for i := 0; i < len(app.PortDefinitions); i++ {
+			labels[i] = app.PortDefinitions[i].Labels
+			ports[i] = app.PortDefinitions[i].Port
 		}
-		for i := 0; i < len(t.Ports); i++ {
-			targetAddress := targetForTask(&t, i)
+
+		prefix = portDefinitionLabelPrefix
+	}
+
+	// Gather info about the app's 'tasks'. Each instance (container) is considered a task
+	// and can be reachable at one or more host:port endpoints.
+	for _, t := range app.Tasks {
+
+		// There are no labels to gather if only Ports is defined. (eg. with host networking)
+		// Ports can only be gathered from the Task (not from the app) and are guaranteed
+		// to be the same across all tasks. If we haven't gathered any ports by now,
+		// use the task's ports as the port list.
+		if len(ports) == 0 && len(t.Ports) != 0 {
+			ports = t.Ports
+		}
+
+		// Iterate over the ports we gathered using one of the methods above.
+		for i, port := range ports {
+
+			// Each port represents a possible Prometheus target.
+			targetAddress := targetEndpoint(&t, port, app.isContainerNet())
 			target := model.LabelSet{
 				model.AddressLabel: model.LabelValue(targetAddress),
 				taskLabel:          model.LabelValue(t.ID),
 				portIndexLabel:     model.LabelValue(strconv.Itoa(i)),
 			}
-			if i < len(app.PortDefinitions) {
-				for ln, lv := range app.PortDefinitions[i].Labels {
-					ln = portDefinitionLabelPrefix + strutil.SanitizeLabelName(ln)
+
+			// Gather all port labels and set them on the current target, skip if the port has no Marathon labels.
+			// This will happen in the host networking case with only `ports` defined, where
+			// it is inefficient to allocate a list of possibly hundreds of empty label maps per host port.
+			if len(labels) > 0 {
+				for ln, lv := range labels[i] {
+					ln = prefix + strutil.SanitizeLabelName(ln)
 					target[model.LabelName(ln)] = model.LabelValue(lv)
 				}
 			}
-			// Prior to Marathon 1.5 the port mappings could be found at the path
-			// "container.docker.portMappings".  When support for Marathon 1.4
-			// is dropped then this section of code can be removed.
-			if i < len(app.Container.Docker.PortMappings) {
-				for ln, lv := range app.Container.Docker.PortMappings[i].Labels {
-					ln = portMappingLabelPrefix + strutil.SanitizeLabelName(ln)
-					target[model.LabelName(ln)] = model.LabelValue(lv)
-				}
-			}
-			// In Marathon 1.5.x the container.docker.portMappings object was moved
-			// to container.portMappings.
-			if i < len(app.Container.PortMappings) {
-				for ln, lv := range app.Container.PortMappings[i].Labels {
-					ln = portMappingLabelPrefix + strutil.SanitizeLabelName(ln)
-					target[model.LabelName(ln)] = model.LabelValue(lv)
-				}
-			}
+
 			targets = append(targets, target)
 		}
 	}
 	return targets
 }
 
-func targetForTask(task *Task, index int) string {
-	return net.JoinHostPort(task.Host, fmt.Sprintf("%d", task.Ports[index]))
+// Generate a target endpoint string in host:port format.
+func targetEndpoint(task *Task, port uint32, containerNet bool) string {
+
+	var host string
+
+	// Use the task's ipAddress field when it's in a container network
+	if containerNet && len(task.IPAddresses) > 0 {
+		host = task.IPAddresses[0].Address
+	} else {
+		host = task.Host
+	}
+
+	return net.JoinHostPort(host, fmt.Sprintf("%d", port))
+}
+
+// Get a list of ports and a list of labels from a PortMapping.
+func extractPortMapping(portMappings []PortMapping, containerNet bool) ([]uint32, []map[string]string) {
+
+	ports := make([]uint32, len(portMappings))
+	labels := make([]map[string]string, len(portMappings))
+
+	for i := 0; i < len(portMappings); i++ {
+
+		labels[i] = portMappings[i].Labels
+
+		if containerNet {
+			// If the app is in a container network, connect directly to the container port.
+			ports[i] = portMappings[i].ContainerPort
+		} else {
+			// Otherwise, connect to the randomly-generated service port.
+			ports[i] = portMappings[i].ServicePort
+		}
+	}
+
+	return ports, labels
 }

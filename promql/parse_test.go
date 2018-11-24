@@ -1341,10 +1341,6 @@ var testExpr = []struct {
 		input:  "e-+=/(0)",
 		fail:   true,
 		errMsg: `no valid expression found`,
-	}, {
-		input:  "-If",
-		fail:   true,
-		errMsg: `no valid expression found`,
 	},
 	// String quoting and escape sequence interpretation tests.
 	{
@@ -1445,241 +1441,6 @@ func TestNaNExpression(t *testing.T) {
 	}
 }
 
-var testStatement = []struct {
-	input    string
-	expected Statements
-	fail     bool
-}{
-	{
-		// Test a file-like input.
-		input: `
-			# A simple test recording rule.
-			dc:http_request:rate5m = sum(rate(http_request_count[5m])) by (dc)
-
-			# A simple test alerting rule.
-			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5m
-			  LABELS {
-			    service = "testservice"
-			    # ... more fields here ...
-			  }
-			  ANNOTATIONS {
-			    summary     = "Global request rate low",
-			    description = "The global request rate is low"
-			  }
-			  
-			foo = bar{label1="value1"}
-
-			ALERT BazAlert IF foo > 10
-			  ANNOTATIONS {
-			    description = "BazAlert",
-			    runbook     = "http://my.url",
-			    summary     = "Baz",
-			  }
-		`,
-		expected: Statements{
-			&RecordStmt{
-				Name: "dc:http_request:rate5m",
-				Expr: &AggregateExpr{
-					Op:       itemSum,
-					Grouping: []string{"dc"},
-					Expr: &Call{
-						Func: mustGetFunction("rate"),
-						Args: Expressions{
-							&MatrixSelector{
-								Name: "http_request_count",
-								LabelMatchers: []*labels.Matcher{
-									mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "http_request_count"),
-								},
-								Range: 5 * time.Minute,
-							},
-						},
-					},
-				},
-				Labels: nil,
-			},
-			&AlertStmt{
-				Name: "GlobalRequestRateLow",
-				Expr: &ParenExpr{&BinaryExpr{
-					Op: itemLSS,
-					LHS: &VectorSelector{
-						Name: "dc:http_request:rate5m",
-						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "dc:http_request:rate5m"),
-						},
-					},
-					RHS: &NumberLiteral{10000},
-				}},
-				Labels:   labels.FromStrings("service", "testservice"),
-				Duration: 5 * time.Minute,
-				Annotations: labels.FromStrings(
-					"summary", "Global request rate low",
-					"description", "The global request rate is low",
-				),
-			},
-			&RecordStmt{
-				Name: "foo",
-				Expr: &VectorSelector{
-					Name: "bar",
-					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, "label1", "value1"),
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
-					},
-				},
-			},
-			&AlertStmt{
-				Name: "BazAlert",
-				Expr: &BinaryExpr{
-					Op: itemGTR,
-					LHS: &VectorSelector{
-						Name: "foo",
-						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
-						},
-					},
-					RHS: &NumberLiteral{10},
-				},
-				Annotations: labels.FromStrings(
-					"summary", "Baz",
-					"description", "BazAlert",
-					"runbook", "http://my.url",
-				),
-			},
-		},
-	}, {
-		input: `foo{x="", a="z"} = bar{a="b", x=~"y"}`,
-		expected: Statements{
-			&RecordStmt{
-				Name: "foo",
-				Expr: &VectorSelector{
-					Name: "bar",
-					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, "a", "b"),
-						mustLabelMatcher(labels.MatchRegexp, "x", "y"),
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
-					},
-				},
-				Labels: labels.FromStrings("x", "", "a", "z"),
-			},
-		},
-	}, {
-		input: `ALERT SomeName IF some_metric > 1
-			LABELS {}
-			ANNOTATIONS {
-				summary = "Global request rate low",
-				description = "The global request rate is low",
-			}
-		`,
-		expected: Statements{
-			&AlertStmt{
-				Name: "SomeName",
-				Expr: &BinaryExpr{
-					Op: itemGTR,
-					LHS: &VectorSelector{
-						Name: "some_metric",
-						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
-						},
-					},
-					RHS: &NumberLiteral{1},
-				},
-				Labels: labels.Labels{},
-				Annotations: labels.FromStrings(
-					"summary", "Global request rate low",
-					"description", "The global request rate is low",
-				),
-			},
-		},
-	}, {
-		input: `
-			# A simple test alerting rule.
-			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5
-			  LABELS {
-			    service = "testservice"
-			    # ... more fields here ...
-			  }
-			  ANNOTATIONS {
-			    summary = "Global request rate low"
-			    description = "The global request rate is low"
-			  }
-	  	`,
-		fail: true,
-	}, {
-		input:    "",
-		expected: Statements{},
-	}, {
-		input: "foo = time()",
-		expected: Statements{
-			&RecordStmt{
-				Name:   "foo",
-				Expr:   &Call{Func: mustGetFunction("time")},
-				Labels: nil,
-			}},
-	}, {
-		input: "foo = 1",
-		expected: Statements{
-			&RecordStmt{
-				Name:   "foo",
-				Expr:   &NumberLiteral{1},
-				Labels: nil,
-			}},
-	}, {
-		input: "foo = bar[5m]",
-		fail:  true,
-	}, {
-		input: `foo = "test"`,
-		fail:  true,
-	}, {
-		input: `foo = `,
-		fail:  true,
-	}, {
-		input: `foo{a!="b"} = bar`,
-		fail:  true,
-	}, {
-		input: `foo{a=~"b"} = bar`,
-		fail:  true,
-	}, {
-		input: `foo{a!~"b"} = bar`,
-		fail:  true,
-	},
-	// Fuzzing regression tests.
-	{
-		input: `I=-/`,
-		fail:  true,
-	},
-	{
-		input: `I=3E8/-=`,
-		fail:  true,
-	},
-	{
-		input: `M=-=-0-0`,
-		fail:  true,
-	},
-}
-
-func TestParseStatements(t *testing.T) {
-	for _, test := range testStatement {
-		stmts, err := ParseStmts(test.input)
-
-		// Unexpected errors are always caused by a bug.
-		if err == errUnexpected {
-			t.Fatalf("unexpected error occurred")
-		}
-
-		if !test.fail && err != nil {
-			t.Errorf("error in input: \n\n%s\n", test.input)
-			t.Fatalf("could not parse: %s", err)
-		}
-		if test.fail && err != nil {
-			continue
-		}
-
-		if !reflect.DeepEqual(stmts, test.expected) {
-			t.Errorf("error in input: \n\n%s\n", test.input)
-			t.Fatalf("no match\n\nexpected:\n%s\ngot: \n%s\n", Tree(test.expected), Tree(stmts))
-		}
-	}
-}
-
 func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 	m, err := labels.NewMatcher(mt, name, val)
 	if err != nil {
@@ -1737,6 +1498,39 @@ var testSeries = []struct {
 	}, {
 		input: `my_metric{a="b"} 1 3 _ 5 _a4`,
 		fail:  true,
+	}, {
+		input:          `my_metric{a="b"} 1 -1`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedValues: newSeq(1, -1),
+	}, {
+		input:          `my_metric{a="b"} 1 +1`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedValues: newSeq(1, 1),
+	}, {
+		input:          `my_metric{a="b"} 1 -1 -3-10x4 7 9 +5`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedValues: newSeq(1, -1, -3, -13, -23, -33, -43, 7, 9, 5),
+	}, {
+		input:          `my_metric{a="b"} 1 +1 +4 -6 -2 8`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedValues: newSeq(1, 1, 4, -6, -2, 8),
+	}, {
+		// Trailing spaces should be correctly handles.
+		input:          `my_metric{a="b"} 1 2 3    `,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedValues: newSeq(1, 2, 3),
+	}, {
+		input: `my_metric{a="b"} -3-3 -3`,
+		fail:  true,
+	}, {
+		input: `my_metric{a="b"} -3 -3-3`,
+		fail:  true,
+	}, {
+		input: `my_metric{a="b"} -3 _-2`,
+		fail:  true,
+	}, {
+		input: `my_metric{a="b"} -3 3+3x4-4`,
+		fail:  true,
 	},
 }
 
@@ -1787,21 +1581,26 @@ func TestParseSeries(t *testing.T) {
 }
 
 func TestRecoverParserRuntime(t *testing.T) {
-	var p *parser
+	p := newParser("foo bar")
 	var err error
-	defer p.recover(&err)
 
+	defer func() {
+		if err != errUnexpected {
+			t.Fatalf("wrong error message: %q, expected %q", err, errUnexpected)
+		}
+
+		if _, ok := <-p.lex.items; ok {
+			t.Fatalf("lex.items was not closed")
+		}
+	}()
+	defer p.recover(&err)
 	// Cause a runtime panic.
 	var a []int
 	a[123] = 1
-
-	if err != errUnexpected {
-		t.Fatalf("wrong error message: %q, expected %q", err, errUnexpected)
-	}
 }
 
 func TestRecoverParserError(t *testing.T) {
-	var p *parser
+	p := newParser("foo bar")
 	var err error
 
 	e := fmt.Errorf("custom error")

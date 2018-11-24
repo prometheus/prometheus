@@ -367,3 +367,12 @@ eval instant at 5m metricA + ignoring() metricB
 
 eval instant at 5m metricA + metricB
   {baz="meh"} 7
+
+clear
+
+# Test duplicate labelset in promql output.
+load 5m
+  testmetric1{src="a",dst="b"} 0
+  testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m -{__name__=~'testmetric1|testmetric2'}

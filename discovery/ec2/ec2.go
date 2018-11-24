@@ -37,18 +37,21 @@ import (
 )
 
 const (
-	ec2Label              = model.MetaLabelPrefix + "ec2_"
-	ec2LabelAZ            = ec2Label + "availability_zone"
-	ec2LabelInstanceID    = ec2Label + "instance_id"
-	ec2LabelInstanceState = ec2Label + "instance_state"
-	ec2LabelInstanceType  = ec2Label + "instance_type"
-	ec2LabelPublicDNS     = ec2Label + "public_dns_name"
-	ec2LabelPublicIP      = ec2Label + "public_ip"
-	ec2LabelPrivateIP     = ec2Label + "private_ip"
-	ec2LabelSubnetID      = ec2Label + "subnet_id"
-	ec2LabelTag           = ec2Label + "tag_"
-	ec2LabelVPCID         = ec2Label + "vpc_id"
-	subnetSeparator       = ","
+	ec2Label                = model.MetaLabelPrefix + "ec2_"
+	ec2LabelAZ              = ec2Label + "availability_zone"
+	ec2LabelInstanceID      = ec2Label + "instance_id"
+	ec2LabelInstanceState   = ec2Label + "instance_state"
+	ec2LabelInstanceType    = ec2Label + "instance_type"
+	ec2LabelOwnerID         = ec2Label + "owner_id"
+	ec2LabelPlatform        = ec2Label + "platform"
+	ec2LabelPublicDNS       = ec2Label + "public_dns_name"
+	ec2LabelPublicIP        = ec2Label + "public_ip"
+	ec2LabelPrivateIP       = ec2Label + "private_ip"
+	ec2LabelPrimarySubnetID = ec2Label + "primary_subnet_id"
+	ec2LabelSubnetID        = ec2Label + "subnet_id"
+	ec2LabelTag             = ec2Label + "tag_"
+	ec2LabelVPCID           = ec2Label + "vpc_id"
+	subnetSeparator         = ","
 )
 
 var (
@@ -241,9 +244,18 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				labels := model.LabelSet{
 					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
 				}
+
+				if r.OwnerId != nil {
+					labels[ec2LabelOwnerID] = model.LabelValue(*r.OwnerId)
+				}
+
 				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
 				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
+
+				if inst.Platform != nil {
+					labels[ec2LabelPlatform] = model.LabelValue(*inst.Platform)
+				}
 
 				if inst.PublicIpAddress != nil {
 					labels[ec2LabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
@@ -256,14 +268,19 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 				if inst.VpcId != nil {
 					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)
+					labels[ec2LabelPrimarySubnetID] = model.LabelValue(*inst.SubnetId)
 
+					// Deduplicate VPC Subnet IDs maintaining the order of the network interfaces returned by EC2.
+					var subnets []string
 					subnetsMap := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
-						subnetsMap[*eni.SubnetId] = struct{}{}
-					}
-					subnets := []string{}
-					for k := range subnetsMap {
-						subnets = append(subnets, k)
+						if eni.SubnetId == nil {
+							continue
+						}
+						if _, ok := subnetsMap[*eni.SubnetId]; !ok {
+							subnetsMap[*eni.SubnetId] = struct{}{}
+							subnets = append(subnets, *eni.SubnetId)
+						}
 					}
 					labels[ec2LabelSubnetID] = model.LabelValue(
 						subnetSeparator +

@@ -23,12 +23,19 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestQueryConcurrency(t *testing.T) {
-	concurrentQueries := 10
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       100 * time.Second,
+	}
 
-	engine := NewEngine(nil, nil, concurrentQueries, 10*time.Second)
+	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -41,7 +48,7 @@ func TestQueryConcurrency(t *testing.T) {
 		return nil
 	}
 
-	for i := 0; i < concurrentQueries; i++ {
+	for i := 0; i < opts.MaxConcurrent; i++ {
 		q := engine.newTestQuery(f)
 		go q.Exec(ctx)
 		select {
@@ -73,13 +80,20 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	// Terminate remaining queries.
-	for i := 0; i < concurrentQueries; i++ {
+	for i := 0; i < opts.MaxConcurrent; i++ {
 		block <- struct{}{}
 	}
 }
 
 func TestQueryTimeout(t *testing.T) {
-	engine := NewEngine(nil, nil, 20, 5*time.Millisecond)
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 20,
+		MaxSamples:    10,
+		Timeout:       5 * time.Millisecond,
+	}
+	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -98,7 +112,14 @@ func TestQueryTimeout(t *testing.T) {
 }
 
 func TestQueryCancel(t *testing.T) {
-	engine := NewEngine(nil, nil, 10, 10*time.Second)
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -152,6 +173,7 @@ func (q *errQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.
 	return errSeriesSet{err: q.err}, q.err
 }
 func (*errQuerier) LabelValues(name string) ([]string, error) { return nil, nil }
+func (*errQuerier) LabelNames() ([]string, error)             { return nil, nil }
 func (*errQuerier) Close() error                              { return nil }
 
 // errSeriesSet implements storage.SeriesSet which always returns error.
@@ -164,8 +186,15 @@ func (errSeriesSet) At() storage.Series { return nil }
 func (e errSeriesSet) Err() error       { return e.err }
 
 func TestQueryError(t *testing.T) {
-	engine := NewEngine(nil, nil, 10, 10*time.Second)
-	errStorage := ErrStorage(fmt.Errorf("storage error"))
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := NewEngine(opts)
+	errStorage := ErrStorage{fmt.Errorf("storage error")}
 	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
 	})
@@ -198,7 +227,14 @@ func TestQueryError(t *testing.T) {
 }
 
 func TestEngineShutdown(t *testing.T) {
-	engine := NewEngine(nil, nil, 10, 10*time.Second)
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 
 	block := make(chan struct{})
@@ -267,11 +303,12 @@ load 10s
 	}
 
 	cases := []struct {
-		Query    string
-		Result   Value
-		Start    time.Time
-		End      time.Time
-		Interval time.Duration
+		Query       string
+		Result      Value
+		Start       time.Time
+		End         time.Time
+		Interval    time.Duration
+		ShouldError bool
 	}{
 		// Instant queries.
 		{
@@ -326,6 +363,10 @@ load 10s
 			End:      time.Unix(10, 0),
 			Interval: 5 * time.Second,
 		},
+		{
+			Query:       `count_values("wrong label!", metric)`,
+			ShouldError: true,
+		},
 	}
 
 	for _, c := range cases {
@@ -340,6 +381,10 @@ load 10s
 			t.Fatalf("unexpected error creating query: %q", err)
 		}
 		res := qry.Exec(test.Context())
+		if c.ShouldError {
+			testutil.NotOk(t, res.Err, "expected error for the query %q", c.Query)
+			continue
+		}
 		if res.Err != nil {
 			t.Fatalf("unexpected error running query: %q", res.Err)
 		}
@@ -348,6 +393,193 @@ load 10s
 		}
 	}
 
+}
+
+func TestMaxQuerySamples(t *testing.T) {
+	test, err := NewTest(t, `
+load 10s
+  metric 1 2
+`)
+
+	if err != nil {
+		t.Fatalf("unexpected error creating test: %q", err)
+	}
+	defer test.Close()
+
+	err = test.Run()
+	if err != nil {
+		t.Fatalf("unexpected error initializing test: %q", err)
+	}
+
+	cases := []struct {
+		Query      string
+		MaxSamples int
+		Result     Result
+		Start      time.Time
+		End        time.Time
+		Interval   time.Duration
+	}{
+		// Instant queries.
+		{
+			Query:      "1",
+			MaxSamples: 1,
+			Result: Result{
+				nil,
+				Scalar{V: 1, T: 1000}},
+			Start: time.Unix(1, 0),
+		},
+		{
+			Query:      "1",
+			MaxSamples: 0,
+			Result: Result{
+				ErrTooManySamples(env),
+				nil,
+			},
+			Start: time.Unix(1, 0),
+		},
+		{
+			Query:      "metric",
+			MaxSamples: 0,
+			Result: Result{
+				ErrTooManySamples(env),
+				nil,
+			},
+			Start: time.Unix(1, 0),
+		},
+		{
+			Query:      "metric",
+			MaxSamples: 1,
+			Result: Result{
+				nil,
+				Vector{
+					Sample{Point: Point{V: 1, T: 1000},
+						Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start: time.Unix(1, 0),
+		},
+		{
+			Query:      "metric[20s]",
+			MaxSamples: 2,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query:      "metric[20s]",
+			MaxSamples: 0,
+			Result: Result{
+				ErrTooManySamples(env),
+				nil,
+			},
+			Start: time.Unix(10, 0),
+		},
+		// Range queries.
+		{
+			Query:      "1",
+			MaxSamples: 3,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+					Metric: labels.FromStrings()},
+				},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(2, 0),
+			Interval: time.Second,
+		},
+		{
+			Query:      "1",
+			MaxSamples: 0,
+			Result: Result{
+				ErrTooManySamples(env),
+				nil,
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(2, 0),
+			Interval: time.Second,
+		},
+		{
+			Query:      "metric",
+			MaxSamples: 3,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(2, 0),
+			Interval: time.Second,
+		},
+		{
+			Query:      "metric",
+			MaxSamples: 2,
+			Result: Result{
+				ErrTooManySamples(env),
+				nil,
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(2, 0),
+			Interval: time.Second,
+		},
+		{
+			Query:      "metric",
+			MaxSamples: 3,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
+		},
+		{
+			Query:      "metric",
+			MaxSamples: 2,
+			Result: Result{
+				ErrTooManySamples(env),
+				nil,
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
+		},
+	}
+
+	engine := test.QueryEngine()
+	for _, c := range cases {
+		var err error
+		var qry Query
+
+		engine.maxSamplesPerQuery = c.MaxSamples
+
+		if c.Interval == 0 {
+			qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+		} else {
+			qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
+		}
+		if err != nil {
+			t.Fatalf("unexpected error creating query: %q", err)
+		}
+		res := qry.Exec(test.Context())
+		if res.Err != nil && res.Err != c.Result.Err {
+			t.Fatalf("unexpected error running query: %q, expected to get result: %q", res.Err, c.Result.Value)
+		}
+		if !reflect.DeepEqual(res.Value, c.Result.Value) {
+			t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
+		}
+	}
 }
 
 func TestRecoverEvaluatorRuntime(t *testing.T) {

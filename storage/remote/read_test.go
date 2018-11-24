@@ -122,12 +122,12 @@ func TestSeriesSetFilter(t *testing.T) {
 			toRemove: model.LabelSet{"foo": "bar"},
 			in: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
-					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b")), Samples: []*prompb.Sample{}},
+					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b")), Samples: []prompb.Sample{}},
 				},
 			},
 			expected: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
-					{Labels: labelsToLabelsProto(labels.FromStrings("a", "b")), Samples: []*prompb.Sample{}},
+					{Labels: labelsToLabelsProto(labels.FromStrings("a", "b")), Samples: []prompb.Sample{}},
 				},
 			},
 		},
@@ -135,7 +135,7 @@ func TestSeriesSetFilter(t *testing.T) {
 
 	for i, tc := range tests {
 		filtered := newSeriesSetFilter(FromQueryResult(tc.in), tc.toRemove)
-		have, err := ToQueryResult(filtered)
+		have, err := ToQueryResult(filtered, 1e6)
 		if err != nil {
 			t.Fatal(err)
 		}

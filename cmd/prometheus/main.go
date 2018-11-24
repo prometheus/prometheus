@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"gopkg.in/alecthomas/kingpin.v2"
 	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
 
@@ -86,21 +87,26 @@ func main() {
 		localStoragePath    string
 		notifier            notifier.Options
 		notifierTimeout     model.Duration
+		forGracePeriod      model.Duration
+		outageTolerance     model.Duration
+		resendDelay         model.Duration
 		web                 web.Options
 		tsdb                tsdb.Options
 		lookbackDelta       model.Duration
 		webTimeout          model.Duration
 		queryTimeout        model.Duration
 		queryConcurrency    int
+		queryMaxSamples     int
 		RemoteFlushDeadline model.Duration
 
 		prometheusURL string
 
-		logLevel promlog.AllowedLevel
+		promlogConfig promlog.Config
 	}{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
 		},
+		promlogConfig: promlog.Config{},
 	}
 
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server")
@@ -145,6 +151,9 @@ func main() {
 	a.Flag("web.console.libraries", "Path to the console library directory.").
 		Default("console_libraries").StringVar(&cfg.web.ConsoleLibrariesPath)
 
+	a.Flag("web.page-title", "Document title of Prometheus instance.").
+		Default("Prometheus Time Series Collection and Processing Server").StringVar(&cfg.web.PageTitle)
+
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 
@@ -164,6 +173,21 @@ func main() {
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
+	a.Flag("storage.remote.read-sample-limit", "Maximum overall number of samples to return via the remote read interface, in a single query. 0 means no limit.").
+		Default("5e7").IntVar(&cfg.web.RemoteReadSampleLimit)
+
+	a.Flag("storage.remote.read-concurrent-limit", "Maximum number of concurrent remote read calls. 0 means no limit.").
+		Default("10").IntVar(&cfg.web.RemoteReadConcurrencyLimit)
+
+	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring 'for' state of alert.").
+		Default("1h").SetValue(&cfg.outageTolerance)
+
+	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored 'for' state. This is maintained only for alerts with configured 'for' time greater than grace period.").
+		Default("10m").SetValue(&cfg.forGracePeriod)
+
+	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
+		Default("1m").SetValue(&cfg.resendDelay)
+
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
@@ -178,8 +202,10 @@ func main() {
 
 	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
 		Default("20").IntVar(&cfg.queryConcurrency)
+	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they would load more samples than this into memory, so this also limits the number of samples a query can return.").
+		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	promlogflag.AddFlags(a, &cfg.logLevel)
+	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
@@ -208,7 +234,7 @@ func main() {
 
 	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
 
-	logger := promlog.New(cfg.logLevel)
+	logger := promlog.New(&cfg.promlogConfig)
 
 	// XXX(fabxc): Kubernetes does background logging which we can only customize by modifying
 	// a global variable.
@@ -221,8 +247,9 @@ func main() {
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
-	level.Info(logger).Log("host_details", Uname())
-	level.Info(logger).Log("fd_limits", FdLimits())
+	level.Info(logger).Log("host_details", prom_runtime.Uname())
+	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
+	level.Info(logger).Log("vm_limits", prom_runtime.VmLimits())
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
@@ -237,28 +264,34 @@ func main() {
 		notifier = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
-		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"))
+		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
 
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
-		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"))
+		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
 
 		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 
-		queryEngine = promql.NewEngine(
-			log.With(logger, "component", "query engine"),
-			prometheus.DefaultRegisterer,
-			cfg.queryConcurrency,
-			time.Duration(cfg.queryTimeout),
-		)
+		opts = promql.EngineOpts{
+			Logger:        log.With(logger, "component", "query engine"),
+			Reg:           prometheus.DefaultRegisterer,
+			MaxConcurrent: cfg.queryConcurrency,
+			MaxSamples:    cfg.queryMaxSamples,
+			Timeout:       time.Duration(cfg.queryTimeout),
+		}
+		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:  fanoutStorage,
-			QueryFunc:   rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
-			Context:     ctxRule,
-			ExternalURL: cfg.web.ExternalURL,
-			Registerer:  prometheus.DefaultRegisterer,
-			Logger:      log.With(logger, "component", "rule manager"),
+			Appendable:      fanoutStorage,
+			TSDB:            localStorage,
+			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			NotifyFunc:      sendAlerts(notifier, cfg.web.ExternalURL.String()),
+			Context:         ctxRule,
+			ExternalURL:     cfg.web.ExternalURL,
+			Registerer:      prometheus.DefaultRegisterer,
+			Logger:          log.With(logger, "component", "rule manager"),
+			OutageTolerance: time.Duration(cfg.outageTolerance),
+			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
+			ResendDelay:     time.Duration(cfg.resendDelay),
 		})
 	)
 
@@ -366,7 +399,7 @@ func main() {
 	var g group.Group
 	{
 		// Termination handler.
-		term := make(chan os.Signal)
+		term := make(chan os.Signal, 1)
 		signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 		cancel := make(chan struct{})
 		g.Add(
@@ -445,7 +478,7 @@ func main() {
 
 		// Make sure that sighup handler is registered with a redirect to the channel before the potentially
 		// long and synchronous tsdb init.
-		hup := make(chan os.Signal)
+		hup := make(chan os.Signal, 1)
 		signal.Notify(hup, syscall.SIGHUP)
 		cancel := make(chan struct{})
 		g.Add(
@@ -669,16 +702,11 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 }
 
 // sendAlerts implements the rules.NotifyFunc for a Notifier.
-// It filters any non-firing alerts from the input.
 func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
-	return func(ctx context.Context, expr string, alerts ...*rules.Alert) error {
+	return func(ctx context.Context, expr string, alerts ...*rules.Alert) {
 		var res []*notifier.Alert
 
 		for _, alert := range alerts {
-			// Only send actually firing alerts.
-			if alert.State == rules.StatePending {
-				continue
-			}
 			a := &notifier.Alert{
 				StartsAt:     alert.FiredAt,
 				Labels:       alert.Labels,
@@ -687,6 +715,8 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 			}
 			if !alert.ResolvedAt.IsZero() {
 				a.EndsAt = alert.ResolvedAt
+			} else {
+				a.EndsAt = alert.ValidUntil
 			}
 			res = append(res, a)
 		}
@@ -694,6 +724,5 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 		if len(alerts) > 0 {
 			n.Send(res...)
 		}
-		return nil
 	}
 }

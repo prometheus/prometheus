@@ -32,7 +32,6 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -124,7 +123,7 @@ type scrapePool struct {
 	client *http.Client
 	// Targets and loops must always be synchronized to have the same
 	// set of hashes.
-	targets        map[uint64]*Target
+	activeTargets  map[uint64]*Target
 	droppedTargets []*Target
 	loops          map[uint64]loop
 	cancel         context.CancelFunc
@@ -152,13 +151,13 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
-		cancel:     cancel,
-		appendable: app,
-		config:     cfg,
-		client:     client,
-		targets:    map[uint64]*Target{},
-		loops:      map[uint64]loop{},
-		logger:     logger,
+		cancel:        cancel,
+		appendable:    app,
+		config:        cfg,
+		client:        client,
+		activeTargets: map[uint64]*Target{},
+		loops:         map[uint64]loop{},
+		logger:        logger,
 	}
 	sp.newLoop = func(t *Target, s scraper, limit int, honor bool, mrc []*config.RelabelConfig) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -186,6 +185,23 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 	return sp
 }
 
+func (sp *scrapePool) ActiveTargets() []*Target {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+
+	var tActive []*Target
+	for _, t := range sp.activeTargets {
+		tActive = append(tActive, t)
+	}
+	return tActive
+}
+
+func (sp *scrapePool) DroppedTargets() []*Target {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+	return sp.droppedTargets
+}
+
 // stop terminates all scrape loops and returns after they all terminated.
 func (sp *scrapePool) stop() {
 	sp.cancel()
@@ -203,7 +219,7 @@ func (sp *scrapePool) stop() {
 		}(l)
 
 		delete(sp.loops, fp)
-		delete(sp.targets, fp)
+		delete(sp.activeTargets, fp)
 	}
 	wg.Wait()
 }
@@ -236,7 +252,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 	for fp, oldLoop := range sp.loops {
 		var (
-			t       = sp.targets[fp]
+			t       = sp.activeTargets[fp]
 			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout}
 			newLoop = sp.newLoop(t, s, limit, honor, mrc)
 		)
@@ -260,7 +276,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 // Sync converts target groups into actual scrape targets and synchronizes
 // the currently running scraper with the resulting set and returns all scraped and dropped targets.
-func (sp *scrapePool) Sync(tgs []*targetgroup.Group) (tActive []*Target, tDropped []*Target) {
+func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	start := time.Now()
 
 	var all []*Target
@@ -287,15 +303,6 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) (tActive []*Target, tDroppe
 		time.Since(start).Seconds(),
 	)
 	targetScrapePoolSyncsCounter.WithLabelValues(sp.config.JobName).Inc()
-
-	sp.mtx.RLock()
-	for _, t := range sp.targets {
-		tActive = append(tActive, t)
-	}
-	tDropped = sp.droppedTargets
-	sp.mtx.RUnlock()
-
-	return tActive, tDropped
 }
 
 // sync takes a list of potentially duplicated targets, deduplicates them, starts
@@ -319,34 +326,36 @@ func (sp *scrapePool) sync(targets []*Target) {
 		hash := t.hash()
 		uniqueTargets[hash] = struct{}{}
 
-		if _, ok := sp.targets[hash]; !ok {
+		if _, ok := sp.activeTargets[hash]; !ok {
 			s := &targetScraper{Target: t, client: sp.client, timeout: timeout}
 			l := sp.newLoop(t, s, limit, honor, mrc)
 
-			sp.targets[hash] = t
+			sp.activeTargets[hash] = t
 			sp.loops[hash] = l
 
 			go l.run(interval, timeout, nil)
 		} else {
 			// Need to keep the most updated labels information
 			// for displaying it in the Service Discovery web page.
-			sp.targets[hash].SetDiscoveredLabels(t.DiscoveredLabels())
+			sp.activeTargets[hash].SetDiscoveredLabels(t.DiscoveredLabels())
 		}
 	}
 
 	var wg sync.WaitGroup
 
 	// Stop and remove old targets and scraper loops.
-	for hash := range sp.targets {
+	for hash := range sp.activeTargets {
 		if _, ok := uniqueTargets[hash]; !ok {
 			wg.Add(1)
 			go func(l loop) {
+
 				l.stop()
+
 				wg.Done()
 			}(sp.loops[hash])
 
 			delete(sp.loops, hash)
-			delete(sp.targets, hash)
+			delete(sp.activeTargets, hash)
 		}
 	}
 
@@ -424,7 +433,7 @@ func appender(app storage.Appender, limit int) storage.Appender {
 
 // A scraper retrieves samples and accepts a status report at the end.
 type scraper interface {
-	scrape(ctx context.Context, w io.Writer) error
+	scrape(ctx context.Context, w io.Writer) (string, error)
 	report(start time.Time, dur time.Duration, err error)
 	offset(interval time.Duration) time.Duration
 }
@@ -441,15 +450,15 @@ type targetScraper struct {
 	buf   *bufio.Reader
 }
 
-const acceptHeader = `text/plain;version=0.0.4;q=1,*/*;q=0.1`
+const acceptHeader = `application/openmetrics-text; version=0.0.1,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
 
 var userAgentHeader = fmt.Sprintf("Prometheus/%s", version.Version)
 
-func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
+func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error) {
 	if s.req == nil {
 		req, err := http.NewRequest("GET", s.URL().String(), nil)
 		if err != nil {
-			return err
+			return "", err
 		}
 		req.Header.Add("Accept", acceptHeader)
 		req.Header.Add("Accept-Encoding", "gzip")
@@ -459,35 +468,40 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 		s.req = req
 	}
 
-	resp, err := ctxhttp.Do(ctx, s.client, s.req)
+	resp, err := s.client.Do(s.req.WithContext(ctx))
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server returned HTTP status %s", resp.Status)
+		return "", fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	if resp.Header.Get("Content-Encoding") != "gzip" {
 		_, err = io.Copy(w, resp.Body)
-		return err
+		return "", err
 	}
 
 	if s.gzipr == nil {
 		s.buf = bufio.NewReader(resp.Body)
 		s.gzipr, err = gzip.NewReader(s.buf)
 		if err != nil {
-			return err
+			return "", err
 		}
 	} else {
 		s.buf.Reset(resp.Body)
-		s.gzipr.Reset(s.buf)
+		if err = s.gzipr.Reset(s.buf); err != nil {
+			return "", err
+		}
 	}
 
 	_, err = io.Copy(w, s.gzipr)
 	s.gzipr.Close()
-	return err
+	if err != nil {
+		return "", err
+	}
+	return resp.Header.Get("Content-Type"), nil
 }
 
 // A loop can run and be stopped again. It must not be reused after it was stopped.
@@ -550,6 +564,7 @@ type metaEntry struct {
 	lastIter uint64 // Last scrape iteration the entry was observed at.
 	typ      textparse.MetricType
 	help     string
+	unit     string
 }
 
 func newScrapeCache() *scrapeCache {
@@ -644,7 +659,7 @@ func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{typ: textparse.MetricTypeUntyped}
+		e = &metaEntry{typ: textparse.MetricTypeUnknown}
 		c.metadata[string(metric)] = e
 	}
 	e.typ = t
@@ -658,11 +673,27 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{typ: textparse.MetricTypeUntyped}
+		e = &metaEntry{typ: textparse.MetricTypeUnknown}
 		c.metadata[string(metric)] = e
 	}
 	if e.help != yoloString(help) {
 		e.help = string(help)
+	}
+	e.lastIter = c.iter
+
+	c.metaMtx.Unlock()
+}
+
+func (c *scrapeCache) setUnit(metric, unit []byte) {
+	c.metaMtx.Lock()
+
+	e, ok := c.metadata[yoloString(metric)]
+	if !ok {
+		e = &metaEntry{typ: textparse.MetricTypeUnknown}
+		c.metadata[string(metric)] = e
+	}
+	if e.unit != yoloString(unit) {
+		e.unit = string(unit)
 	}
 	e.lastIter = c.iter
 
@@ -681,6 +712,7 @@ func (c *scrapeCache) getMetadata(metric string) (MetricMetadata, bool) {
 		Metric: metric,
 		Type:   m.typ,
 		Help:   m.help,
+		Unit:   m.unit,
 	}, true
 }
 
@@ -695,6 +727,7 @@ func (c *scrapeCache) listMetadata() []MetricMetadata {
 			Metric: m,
 			Type:   e.typ,
 			Help:   e.help,
+			Unit:   e.unit,
 		})
 	}
 	return res
@@ -748,11 +781,8 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	buf := bytes.NewBuffer(make([]byte, 0, 16000))
-
 mainLoop:
 	for {
-		buf.Reset()
 		select {
 		case <-sl.ctx.Done():
 			close(sl.stopped)
@@ -777,7 +807,7 @@ mainLoop:
 		b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
 		buf := bytes.NewBuffer(b)
 
-		scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
+		contentType, scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
 		cancel()
 
 		if scrapeErr == nil {
@@ -797,12 +827,12 @@ mainLoop:
 
 		// A failed scrape is the same as an empty scrape,
 		// we still call sl.append to trigger stale markers.
-		total, added, appErr := sl.append(b, start)
+		total, added, appErr := sl.append(b, contentType, start)
 		if appErr != nil {
 			level.Warn(sl.l).Log("msg", "append failed", "err", appErr)
 			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
-			if _, _, err := sl.append([]byte{}, start); err != nil {
+			if _, _, err := sl.append([]byte{}, "", start); err != nil {
 				level.Warn(sl.l).Log("msg", "append failed", "err", err)
 			}
 		}
@@ -813,7 +843,9 @@ mainLoop:
 			scrapeErr = appErr
 		}
 
-		sl.report(start, time.Since(start), total, added, scrapeErr)
+		if err := sl.report(start, time.Since(start), total, added, scrapeErr); err != nil {
+			level.Warn(sl.l).Log("msg", "appending scrape report failed", "err", err)
+		}
 		last = start
 
 		select {
@@ -871,7 +903,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
-	if _, _, err := sl.append([]byte{}, staleTime); err != nil {
+	if _, _, err := sl.append([]byte{}, "", staleTime); err != nil {
 		level.Error(sl.l).Log("msg", "stale append failed", "err", err)
 	}
 	if err := sl.reportStale(staleTime); err != nil {
@@ -907,10 +939,10 @@ func (s samples) Less(i, j int) bool {
 	return s[i].t < s[j].t
 }
 
-func (sl *scrapeLoop) append(b []byte, ts time.Time) (total, added int, err error) {
+func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total, added int, err error) {
 	var (
 		app            = sl.appender()
-		p              = textparse.New(b)
+		p              = textparse.New(b, contentType)
 		defTime        = timestamp.FromTime(ts)
 		numOutOfOrder  = 0
 		numDuplicates  = 0
@@ -933,6 +965,9 @@ loop:
 			continue
 		case textparse.EntryHelp:
 			sl.cache.setHelp(p.Help())
+			continue
+		case textparse.EntryUnit:
+			sl.cache.setUnit(p.Unit())
 			continue
 		case textparse.EntryComment:
 			continue

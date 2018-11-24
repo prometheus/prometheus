@@ -19,8 +19,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 func makeMultiPortService() *v1.Service {
@@ -86,8 +86,8 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                             "testservice.default.svc:30900",
-						"__meta_kubernetes_service_port_name":     "testport",
+						"__address__":                         "testservice.default.svc:30900",
+						"__meta_kubernetes_service_port_name": "testport",
 					},
 				},
 				Labels: model.LabelSet{
@@ -135,13 +135,13 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                             "testservice.default.svc:30900",
-						"__meta_kubernetes_service_port_name":     "testport0",
+						"__address__":                         "testservice.default.svc:30900",
+						"__meta_kubernetes_service_port_name": "testport0",
 					},
 					{
 						"__meta_kubernetes_service_port_protocol": "UDP",
-						"__address__":                             "testservice.default.svc:30901",
-						"__meta_kubernetes_service_port_name":     "testport1",
+						"__address__":                         "testservice.default.svc:30901",
+						"__meta_kubernetes_service_port_name": "testport1",
 					},
 				},
 				Labels: model.LabelSet{
@@ -175,8 +175,8 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                             "testservice.ns1.svc:30900",
-						"__meta_kubernetes_service_port_name":     "testport",
+						"__address__":                         "testservice.ns1.svc:30900",
+						"__meta_kubernetes_service_port_name": "testport",
 					},
 				},
 				Labels: model.LabelSet{
@@ -189,8 +189,8 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                             "testservice.ns2.svc:30900",
-						"__meta_kubernetes_service_port_name":     "testport",
+						"__address__":                         "testservice.ns2.svc:30900",
+						"__meta_kubernetes_service_port_name": "testport",
 					},
 				},
 				Labels: model.LabelSet{

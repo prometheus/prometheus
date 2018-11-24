@@ -1,24 +1,33 @@
 ---
-version: 2
+version: 2.1
+
+executors:
+  # Whenever the Go version is updated here, .travis.yml and .promu.yml
+  # should also be updated.
+  golang:
+    docker:
+    - image: circleci/golang:1.11
 
 jobs:
   test:
-    # Whenever the Go version is updated here, .travis.yml should also be
-    # updated.
-    docker:
-    - image: circleci/golang:1.10
-    working_directory: /go/src/github.com/prometheus/prometheus
+    executor: golang
     resource_class: large
 
     steps:
     - checkout
     - run: make promu
-    - run: make check_license style unused staticcheck build
-    - run: rm -v prometheus
+    - run: make check_license style unused staticcheck build check_assets
+    - run: git diff --exit-code
+    - store_artifacts:
+        path: prometheus
+        destination: /build/prometheus
+    - store_artifacts:
+        path: promtool
+        destination: /build/promtool
+    - run: rm -v prometheus promtool
 
   build:
     machine: true
-    working_directory: /home/circleci/.go_workspace/src/github.com/prometheus/prometheus
 
     steps:
     - checkout
@@ -28,11 +37,12 @@ jobs:
         root: .
         paths:
         - .build
+    - store_artifacts:
+        path: .build
+        destination: /build
 
   docker_hub_master:
-    docker:
-    - image: circleci/golang:1.10
-    working_directory: /go/src/github.com/prometheus/prometheus
+    executor: golang
 
     steps:
     - checkout
@@ -50,9 +60,7 @@ jobs:
     - run: make docker-publish DOCKER_REPO=quay.io/prometheus
 
   docker_hub_release_tags:
-    docker:
-    - image: circleci/golang:1.10
-    working_directory: /go/src/github.com/prometheus/prometheus
+    executor: golang
 
     steps:
     - checkout

@@ -1,3 +1,16 @@
+// Copyright 2018 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -5,12 +18,10 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/fileutil"
 )
@@ -20,20 +31,18 @@ import (
 func repairBadIndexVersion(logger log.Logger, dir string) error {
 	// All blocks written by Prometheus 2.1 with a meta.json version of 2 are affected.
 	// We must actually set the index file version to 2 and revert the meta.json version back to 1.
-	subdirs, err := fileutil.ReadDir(dir)
+	dirs, err := blockDirs(dir)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "list block dirs in %q", dir)
 	}
-	for _, d := range subdirs {
-		// Skip non-block dirs.
-		if _, err := ulid.Parse(d); err != nil {
-			continue
-		}
-		d = path.Join(dir, d)
 
+	wrapErr := func(err error, d string) error {
+		return errors.Wrapf(err, "block dir: %q", d)
+	}
+	for _, d := range dirs {
 		meta, err := readBogusMetaFile(d)
 		if err != nil {
-			return err
+			return wrapErr(err, d)
 		}
 		if meta.Version == 1 {
 			level.Info(logger).Log(
@@ -53,35 +62,35 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 
 		repl, err := os.Create(filepath.Join(d, "index.repaired"))
 		if err != nil {
-			return err
+			return wrapErr(err, d)
 		}
 		broken, err := os.Open(filepath.Join(d, "index"))
 		if err != nil {
-			return err
+			return wrapErr(err, d)
 		}
 		if _, err := io.Copy(repl, broken); err != nil {
-			return err
+			return wrapErr(err, d)
 		}
 		// Set the 5th byte to 2 to indiciate the correct file format version.
 		if _, err := repl.WriteAt([]byte{2}, 4); err != nil {
-			return err
+			return wrapErr(err, d)
 		}
 		if err := fileutil.Fsync(repl); err != nil {
-			return err
+			return wrapErr(err, d)
 		}
 		if err := repl.Close(); err != nil {
-			return err
+			return wrapErr(err, d)
 		}
 		if err := broken.Close(); err != nil {
-			return err
+			return wrapErr(err, d)
 		}
 		if err := renameFile(repl.Name(), broken.Name()); err != nil {
-			return err
+			return wrapErr(err, d)
 		}
 		// Reset version of meta.json to 1.
 		meta.Version = 1
 		if err := writeMetaFile(d, meta); err != nil {
-			return err
+			return wrapErr(err, d)
 		}
 	}
 	return nil

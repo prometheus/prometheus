@@ -1,3 +1,7 @@
+go:
+    # Whenever the Go version is updated here, .travis.yml and
+    # .circle/config.yml should also be updated.
+    version: 1.11
 repository:
     path: github.com/prometheus/prometheus
 build:
@@ -6,7 +10,7 @@ build:
           path: ./cmd/prometheus
         - name: promtool
           path: ./cmd/promtool
-    flags: -a -tags netgo
+    flags: -mod=vendor -a -tags netgo
     ldflags: |
         -X {{repoPath}}/vendor/github.com/prometheus/common/version.Version={{.Version}}
         -X {{repoPath}}/vendor/github.com/prometheus/common/version.Revision={{.Revision}}
@@ -46,4 +50,5 @@ crossbuild:
         - netbsd/arm
         - linux/ppc64
         - linux/ppc64le
+        - linux/s390x
 

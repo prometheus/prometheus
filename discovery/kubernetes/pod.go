@@ -23,9 +23,8 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
+	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
@@ -143,6 +142,7 @@ const (
 	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
 	podContainerPortProtocolLabel = metaLabelPrefix + "pod_container_port_protocol"
 	podReadyLabel                 = metaLabelPrefix + "pod_ready"
+	podPhaseLabel                 = metaLabelPrefix + "pod_phase"
 	podLabelPrefix                = metaLabelPrefix + "pod_label_"
 	podAnnotationPrefix           = metaLabelPrefix + "pod_annotation_"
 	podNodeNameLabel              = metaLabelPrefix + "pod_node_name"
@@ -168,6 +168,7 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podNameLabel:     lv(pod.ObjectMeta.Name),
 		podIPLabel:       lv(pod.Status.PodIP),
 		podReadyLabel:    podReady(pod),
+		podPhaseLabel:    lv(string(pod.Status.Phase)),
 		podNodeNameLabel: lv(pod.Spec.NodeName),
 		podHostIPLabel:   lv(pod.Status.HostIP),
 		podUID:           lv(string(pod.ObjectMeta.UID)),
@@ -252,5 +253,5 @@ func podReady(pod *apiv1.Pod) model.LabelValue {
 			return lv(strings.ToLower(string(cond.Status)))
 		}
 	}
-	return lv(strings.ToLower(string(api.ConditionUnknown)))
+	return lv(strings.ToLower(string(apiv1.ConditionUnknown)))
 }

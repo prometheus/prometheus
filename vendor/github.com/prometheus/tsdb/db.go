@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
+	"github.com/prometheus/tsdb/wal"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -118,11 +119,13 @@ type DB struct {
 
 type dbMetrics struct {
 	loadedBlocks         prometheus.GaugeFunc
+	symbolTableSize      prometheus.GaugeFunc
 	reloads              prometheus.Counter
 	reloadsFailed        prometheus.Counter
 	compactionsTriggered prometheus.Counter
 	cutoffs              prometheus.Counter
 	cutoffsFailed        prometheus.Counter
+	startTime            prometheus.GaugeFunc
 	tombCleanTimer       prometheus.Histogram
 }
 
@@ -136,6 +139,19 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		db.mtx.RLock()
 		defer db.mtx.RUnlock()
 		return float64(len(db.blocks))
+	})
+	m.symbolTableSize = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_symbol_table_size_bytes",
+		Help: "Size of symbol table on disk (in bytes)",
+	}, func() float64 {
+		db.mtx.RLock()
+		blocks := db.blocks[:]
+		db.mtx.RUnlock()
+		symTblSize := uint64(0)
+		for _, b := range blocks {
+			symTblSize += b.GetSymbolTableSize()
+		}
+		return float64(symTblSize)
 	})
 	m.reloads = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_reloads_total",
@@ -157,6 +173,17 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_retention_cutoffs_failures_total",
 		Help: "Number of times the database failed to cut off block data from disk.",
 	})
+	m.startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_lowest_timestamp",
+		Help: "Lowest timestamp value stored in the database.",
+	}, func() float64 {
+		db.mtx.RLock()
+		defer db.mtx.RUnlock()
+		if len(db.blocks) == 0 {
+			return float64(db.head.minTime)
+		}
+		return float64(db.blocks[0].meta.MinTime)
+	})
 	m.tombCleanTimer = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name: "prometheus_tsdb_tombstone_cleanup_seconds",
 		Help: "The time taken to recompact blocks to remove tombstones.",
@@ -165,11 +192,13 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	if r != nil {
 		r.MustRegister(
 			m.loadedBlocks,
+			m.symbolTableSize,
 			m.reloads,
 			m.reloadsFailed,
 			m.cutoffs,
 			m.cutoffsFailed,
 			m.compactionsTriggered,
+			m.startTime,
 			m.tombCleanTimer,
 		)
 	}
@@ -190,6 +219,10 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	// Fixup bad format written by Prometheus 2.1.
 	if err := repairBadIndexVersion(l, dir); err != nil {
 		return nil, err
+	}
+	// Migrate old WAL if one exists.
+	if err := MigrateWAL(l, filepath.Join(dir, "wal")); err != nil {
+		return nil, errors.Wrap(err, "migrate WAL")
 	}
 
 	db = &DB{
@@ -221,18 +254,18 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
 
-	wal, err := OpenSegmentWAL(filepath.Join(dir, "wal"), l, opts.WALFlushInterval, r)
+	wlog, err := wal.New(l, r, filepath.Join(dir, "wal"))
 	if err != nil {
 		return nil, err
 	}
-	db.head, err = NewHead(r, l, wal, opts.BlockRanges[0])
+	db.head, err = NewHead(r, l, wlog, opts.BlockRanges[0])
 	if err != nil {
 		return nil, err
 	}
 	if err := db.reload(); err != nil {
 		return nil, err
 	}
-	if err := db.head.ReadWAL(); err != nil {
+	if err := db.head.Init(); err != nil {
 		return nil, errors.Wrap(err, "read WAL")
 	}
 
@@ -267,7 +300,7 @@ func (db *DB) run() {
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
-			_, err := db.compact()
+			err := db.compact()
 			if err != nil {
 				level.Error(db.logger).Log("msg", "compaction failed", "err", err)
 				backoff = exponential(backoff, 1*time.Second, 1*time.Minute)
@@ -333,12 +366,12 @@ func (a dbAppender) Commit() error {
 // this is sufficient to reliably delete old data.
 // Old blocks are only deleted on reload based on the new block's parent information.
 // See DB.reload documentation for further information.
-func (db *DB) compact() (changes bool, err error) {
+func (db *DB) compact() (err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
 	if !db.compactionsEnabled {
-		return false, nil
+		return nil
 	}
 
 	// Check whether we have pending head blocks that are ready to be persisted.
@@ -346,7 +379,7 @@ func (db *DB) compact() (changes bool, err error) {
 	for {
 		select {
 		case <-db.stopc:
-			return changes, nil
+			return nil
 		default:
 		}
 		// The head has a compactable range if 1.5 level 0 ranges are between the oldest
@@ -369,14 +402,13 @@ func (db *DB) compact() (changes bool, err error) {
 			maxt: maxt - 1,
 		}
 		if _, err = db.compactor.Write(db.dir, head, mint, maxt, nil); err != nil {
-			return changes, errors.Wrap(err, "persist head block")
+			return errors.Wrap(err, "persist head block")
 		}
-		changes = true
 
 		runtime.GC()
 
 		if err := db.reload(); err != nil {
-			return changes, errors.Wrap(err, "reload blocks")
+			return errors.Wrap(err, "reload blocks")
 		}
 		runtime.GC()
 	}
@@ -385,7 +417,7 @@ func (db *DB) compact() (changes bool, err error) {
 	for {
 		plan, err := db.compactor.Plan(db.dir)
 		if err != nil {
-			return changes, errors.Wrap(err, "plan compaction")
+			return errors.Wrap(err, "plan compaction")
 		}
 		if len(plan) == 0 {
 			break
@@ -393,23 +425,22 @@ func (db *DB) compact() (changes bool, err error) {
 
 		select {
 		case <-db.stopc:
-			return changes, nil
+			return nil
 		default:
 		}
 
-		if _, err := db.compactor.Compact(db.dir, plan...); err != nil {
-			return changes, errors.Wrapf(err, "compact %s", plan)
+		if _, err := db.compactor.Compact(db.dir, plan, db.blocks); err != nil {
+			return errors.Wrapf(err, "compact %s", plan)
 		}
-		changes = true
 		runtime.GC()
 
 		if err := db.reload(); err != nil {
-			return changes, errors.Wrap(err, "reload blocks")
+			return errors.Wrap(err, "reload blocks")
 		}
 		runtime.GC()
 	}
 
-	return changes, nil
+	return nil
 }
 
 func (db *DB) getBlock(id ulid.ULID) (*Block, bool) {
@@ -501,7 +532,6 @@ func (db *DB) reload() (err error) {
 	sort.Slice(blocks, func(i, j int) bool {
 		return blocks[i].Meta().MinTime < blocks[j].Meta().MinTime
 	})
-
 	if err := validateBlockSequence(blocks); err != nil {
 		return errors.Wrap(err, "invalid block sequence")
 	}
@@ -596,10 +626,6 @@ func OverlappingBlocks(bm []BlockMeta) Overlaps {
 	if len(bm) <= 1 {
 		return nil
 	}
-	sort.Slice(bm, func(i, j int) bool {
-		return bm[i].MinTime < bm[j].MinTime
-	})
-
 	var (
 		overlaps [][]BlockMeta
 
@@ -767,7 +793,11 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 		}
 	}
 	if maxt >= db.head.MinTime() {
-		blocks = append(blocks, db.head)
+		blocks = append(blocks, &rangeHead{
+			head: db.head,
+			mint: mint,
+			maxt: maxt,
+		})
 	}
 
 	sq := &querier{

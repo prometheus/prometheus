@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
@@ -441,6 +442,7 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
 				AzureSDConfigs: []*azure.SDConfig{
 					{
+						Environment:     "AzurePublicCloud",
 						SubscriptionID:  "11AAAA11-A11A-111A-A111-1111A1111A11",
 						TenantID:        "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
 						ClientID:        "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
@@ -537,12 +539,37 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-openstack",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				OpenstackSDConfigs: []*openstack.SDConfig{
+					{
+						Role:            "instance",
+						Region:          "RegionOne",
+						Port:            80,
+						RefreshInterval: model.Duration(60 * time.Second),
+						TLSConfig: config_util.TLSConfig{
+							CAFile:   "valid_ca_file",
+							CertFile: "valid_cert_file",
+							KeyFile:  "valid_key_file",
+						},
+					},
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
 			{
 				Scheme:  "https",
-				Timeout: 10 * time.Second,
+				Timeout: model.Duration(10 * time.Second),
 				ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
 					StaticConfigs: []*targetgroup.Group{
 						{
@@ -694,6 +721,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "marathon_authtoken_bearertoken.bad.yml",
 		errMsg:   "marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured",
+	}, {
+		filename: "openstack_role.bad.yml",
+		errMsg:   "unknown OpenStack SD role",
 	}, {
 		filename: "url_in_targetgroup.bad.yml",
 		errMsg:   "\"http://bad\" is not a valid hostname",

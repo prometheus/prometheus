@@ -115,12 +115,12 @@ type Discovery struct {
 }
 
 // NewNerveDiscovery returns a new Discovery for the given Nerve config.
-func NewNerveDiscovery(conf *NerveSDConfig, logger log.Logger) *Discovery {
+func NewNerveDiscovery(conf *NerveSDConfig, logger log.Logger) (*Discovery, error) {
 	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseNerveMember)
 }
 
 // NewServersetDiscovery returns a new Discovery for the given serverset config.
-func NewServersetDiscovery(conf *ServersetSDConfig, logger log.Logger) *Discovery {
+func NewServersetDiscovery(conf *ServersetSDConfig, logger log.Logger) (*Discovery, error) {
 	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseServersetMember)
 }
 
@@ -132,7 +132,7 @@ func NewDiscovery(
 	paths []string,
 	logger log.Logger,
 	pf func(data []byte, path string) (model.LabelSet, error),
-) *Discovery {
+) (*Discovery, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -143,7 +143,7 @@ func NewDiscovery(
 			c.SetLogger(treecache.NewZookeeperLogger(logger))
 		})
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	updates := make(chan treecache.ZookeeperTreeCacheEvent)
 	sd := &Discovery{
@@ -156,7 +156,7 @@ func NewDiscovery(
 	for _, path := range paths {
 		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(conn, path, updates, logger))
 	}
-	return sd
+	return sd, nil
 }
 
 // Run implements the Discoverer interface.

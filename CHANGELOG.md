@@ -1,3 +1,87 @@
+## 2.5.0 / 2018-11-06
+
+* [CHANGE] Group targets by scrape config instead of job name. #4806 #4526
+* [CHANGE] Marathon SD: Various changes to adapt to Marathon 1.5+. #4499
+* [CHANGE] Discovery: Split `prometheus_sd_discovered_targets` metric by scrape and notify (Alertmanager SD) as well as by section in the respective configuration. #4753
+* [FEATURE] Add OpenMetrics support for scraping (EXPERIMENTAL). #4700
+* [FEATURE] Add unit testing for rules. #4350
+* [FEATURE] Make maximum number of samples per query configurable via `--query.max-samples` flag. #4513
+* [FEATURE] Make maximum number of concurrent remote reads configurable via `--storage.remote.read-concurrent-limit` flag. #4656
+* [ENHANCEMENT] Support s390x platform for Linux. #4605
+* [ENHANCEMENT] API: Add `prometheus_api_remote_read_queries` metric tracking currently executed or waiting remote read API requests. #4699
+* [ENHANCEMENT] Remote Read: Add `prometheus_remote_storage_remote_read_queries` metric tracking currently in-flight remote read queries. #4677
+* [ENHANCEMENT] Remote Read: Reduced memory usage. #4655
+* [ENHANCEMENT] Discovery: Add `prometheus_sd_discovered_targets`, `prometheus_sd_received_updates_total`, `prometheus_sd_updates_delayed_total`, and `prometheus_sd_updates_total` metrics for discovery subsystem. #4667
+* [ENHANCEMENT] Discovery: Improve performance of previously slow updates of changes of targets. #4526
+* [ENHANCEMENT] Kubernetes SD: Add extended metrics. #4458
+* [ENHANCEMENT] OpenStack SD: Support discovering instances from all projects. #4682
+* [ENHANCEMENT] OpenStack SD: Discover all interfaces. #4649
+* [ENHANCEMENT] OpenStack SD: Support `tls_config` for the used HTTP client. #4654
+* [ENHANCEMENT] Triton SD: Add ability to filter triton_sd targets by pre-defined groups. #4701
+* [ENHANCEMENT] Web UI: Avoid browser spell-checking in expression field. #4728
+* [ENHANCEMENT] Web UI: Add scrape duration and last evaluation time in targets and rules pages. #4722
+* [ENHANCEMENT] Web UI: Improve rule view by wrapping lines. #4702
+* [ENHANCEMENT] Rules: Error out at load time for invalid templates, rather than at evaluation time. #4537
+* [ENHANCEMENT] TSDB: Add metrics for WAL operations. #4692
+* [BUGFIX] Change max/min over_time to handle NaNs properly. #4386
+* [BUGFIX] Check label name for `count_values` PromQL function. #4585
+* [BUGFIX] Ensure that vectors and matrices do not contain identical label-sets. #4589
+
+## 2.4.3 / 2018-10-04
+
+* [BUGFIX] Fix panic when using custom EC2 API for SD #4672
+* [BUGFIX] Fix panic when Zookeeper SD cannot connect to servers #4669
+* [BUGFIX] Make the skip_head an optional parameter for snapshot API #4674
+
+## 2.4.2 / 2018-09-21
+
+ The last release didn't have bugfix included due to a vendoring error.
+
+ * [BUGFIX] Handle WAL corruptions properly prometheus/tsdb#389
+ * [BUGFIX] Handle WAL migrations correctly on Windows prometheus/tsdb#392
+
+## 2.4.1 / 2018-09-19
+
+* [ENHANCEMENT] New TSDB metrics prometheus/tsdb#375 prometheus/tsdb#363
+* [BUGFIX] Render UI correctly for Windows #4616
+
+## 2.4.0 / 2018-09-11
+
+This release includes multiple bugfixes and features. Further, the WAL implementation has been re-written so the storage is not forward compatible. Prometheus 2.3 storage will work on 2.4 but not vice-versa.
+
+* [CHANGE] Reduce remote write default retries #4279
+* [CHANGE] Remove /heap endpoint #4460
+* [FEATURE] Persist alert 'for' state across restarts #4061
+* [FEATURE] Add API providing per target metric metadata #4183
+* [FEATURE] Add API providing recording and alerting rules #4318 #4501
+* [ENHANCEMENT] Brand new WAL implementation for TSDB. Forwards incompatible with previous WAL. 
+* [ENHANCEMENT] Show rule evaluation errors in UI #4457 
+* [ENHANCEMENT] Throttle resends of alerts to Alertmanager #4538
+* [ENHANCEMENT] Send EndsAt along with the alert to Alertmanager #4550
+* [ENHANCEMENT] Limit the samples returned by remote read endpoint #4532
+* [ENHANCEMENT] Limit the data read in through remote read #4239
+* [ENHANCEMENT] Coalesce identical SD configuations #3912
+* [ENHANCEMENT] `promtool`: Add new commands for debugging and querying #4247 #4308 #4346 #4454
+* [ENHANCEMENT] Update console examples for node_exporter v0.16.0 #4208
+* [ENHANCEMENT] Optimize PromQL aggregations #4248
+* [ENHANCEMENT] Remote read: Add Offset to hints #4226
+* [ENHANCEMENT] `consul_sd`: Add support for ServiceMeta field #4280
+* [ENHANCEMENT] `ec2_sd`: Maintain order of subnet_id label #4405
+* [ENHANCEMENT] `ec2_sd`: Add support for custom endpoint to support EC2 compliant APIs #4333
+* [ENHANCEMENT] `ec2_sd`: Add instance_owner label #4514
+* [ENHANCEMENT] `azure_sd`: Add support for VMSS discovery and multiple environments #4202 #4569
+* [ENHANCEMENT] `gce_sd`: Add instance_id label #4488
+* [ENHANCEMENT] Forbid rule-abiding robots from indexing #4266
+* [ENHANCEMENT] Log virtual memory limits on startup #4418
+* [BUGFIX] Wait for service discovery to stop before exiting #4508
+* [BUGFIX] Render SD configs properly #4338
+* [BUGFIX] Only add LookbackDelta to vector selectors #4399
+* [BUGFIX] `ec2_sd`: Handle panic-ing nil pointer #4469
+* [BUGFIX] `consul_sd`: Stop leaking connections #4443
+* [BUGFIX] Use templated labels also to identify alerts #4500
+* [BUGFIX] Reduce floating point errors in stddev and related functions #4533
+* [BUGFIX] Log errors while encoding responses #4359
+
 ## 2.3.2 / 2018-07-12
 
 * [BUGFIX] Fix various tsdb bugs #4369

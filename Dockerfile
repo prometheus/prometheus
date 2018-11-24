@@ -1,5 +1,5 @@
 FROM        quay.io/prometheus/busybox:latest
-LABEL maintainer "The Prometheus Authors <prometheus-developers@googlegroups.com>"
+LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com>"
 
 COPY prometheus                             /bin/prometheus
 COPY promtool                               /bin/promtool
@@ -15,8 +15,8 @@ USER       nobody
 EXPOSE     9090
 VOLUME     [ "/prometheus" ]
 WORKDIR    /prometheus
-ENTRYPOINT [ "/bin/prometheus" ]
-CMD        [ "--config.file=/etc/prometheus/prometheus.yml", \
+ENTRYPOINT [ "/bin/prometheus", \
              "--storage.tsdb.path=/prometheus", \
-             "--web.console.libraries=/usr/share/prometheus/console_libraries", \
-             "--web.console.templates=/usr/share/prometheus/consoles" ]
+             "--web.console.libraries=/etc/prometheus/console_libraries", \
+             "--web.console.templates=/etc/prometheus/consoles", \
+             "--config.file=/etc/prometheus/prometheus.yml" ]
