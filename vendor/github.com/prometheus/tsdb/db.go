@@ -465,6 +465,14 @@ func (db *DB) reload() (err error) {
 	if err != nil {
 		return err
 	}
+
+	// When there are some blocks we should truncate the head
+	// regardless of whether these are selected for deletion after that.
+	lastBlockMaxTime := int64(math.MinInt64)
+	if len(loadable) > 0 {
+		lastBlockMaxTime = loadable[len(loadable)-1].Meta().MaxTime
+	}
+
 	deletable := db.deletableBlocks(loadable)
 
 	for ulid, err := range corrupted {
@@ -485,7 +493,6 @@ func (db *DB) reload() (err error) {
 		}
 		bb = append(bb, block)
 		blocksSize += block.Size()
-
 	}
 	loadable = bb
 	db.metrics.blocksBytes.Set(float64(blocksSize))
@@ -515,13 +522,11 @@ func (db *DB) reload() (err error) {
 
 	// Garbage collect data in the head if the most recent persisted block
 	// covers data of its current time range.
-	if len(loadable) == 0 {
-		return nil
+	if lastBlockMaxTime != math.MinInt64 {
+		return errors.Wrap(db.head.Truncate(lastBlockMaxTime), "head truncate failed")
 	}
+	return nil
 
-	maxt := loadable[len(loadable)-1].Meta().MaxTime
-
-	return errors.Wrap(db.head.Truncate(maxt), "head truncate failed")
 }
 
 func (db *DB) openBlocks() (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
@@ -568,6 +573,12 @@ func (db *DB) deletableBlocks(blocks []*Block) map[ulid.ULID]*Block {
 	for _, block := range blocks {
 		for _, b := range block.Meta().Compaction.Parents {
 			deletable[b.ULID] = nil
+			level.Debug(db.logger).Log("msg", "block set for deletion",
+				"reason", "left over after compaction crash",
+				"uuid", b.ULID,
+				"mint", b.MinTime,
+				"maxt", b.MaxTime,
+			)
 		}
 	}
 
@@ -579,10 +590,24 @@ func (db *DB) deletableBlocks(blocks []*Block) map[ulid.ULID]*Block {
 
 	for ulid, block := range db.beyondTimeRetention(blocks) {
 		deletable[ulid] = block
+		level.Debug(db.logger).Log("msg", "block set for deletion",
+			"reason", "beyond time retention",
+			"uuid", block.Meta().ULID,
+			"mint", block.Meta().MinTime,
+			"maxt", block.Meta().MaxTime,
+		)
+
 	}
 
 	for ulid, block := range db.beyondSizeRetention(blocks) {
 		deletable[ulid] = block
+		level.Debug(db.logger).Log("msg", "block set for deletion",
+			"reason", "beyond size retention",
+			"uuid", block.Meta().ULID,
+			"mint", block.Meta().MinTime,
+			"maxt", block.Meta().MaxTime,
+			"size", block.Size(),
+		)
 	}
 
 	return deletable
