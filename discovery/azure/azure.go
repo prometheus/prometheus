@@ -26,13 +26,11 @@ import (
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/Azure/go-autorest/autorest/azure"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -47,6 +45,11 @@ const (
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
+
+	azureLabelPowerState = azureLabel + "machine_power_state"
+
+	authMethodOAuth           = "OAuth"
+	authMethodManagedIdentity = "ManagedIdentity"
 )
 
 var (
@@ -66,7 +69,7 @@ var (
 		Port:                 80,
 		RefreshInterval:      model.Duration(5 * time.Minute),
 		Environment:          azure.PublicCloud.Name,
-		AuthenticationMethod: "OAuth",
+		AuthenticationMethod: authMethodOAuth,
 	}
 )
 
@@ -110,8 +113,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if c.AuthenticationMethod != "OAuth" && c.AuthenticationMethod != "ManagedServiceIdentity" {
-		return fmt.Errorf("Unknown authentication_type %q. Supported types are 'OAuth' or 'ManagedServiceIdentity'", c.AuthenticationMethod)
+	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity {
+		return fmt.Errorf("Unknown authentication_type %q. Supported types are '%q' or '%q'", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
 	}
 
 	return nil
@@ -197,7 +200,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	var spt *adal.ServicePrincipalToken
 
 	switch cfg.AuthenticationMethod {
-	case "ManagedServiceIdentity":
+	case authMethodManagedIdentity:
 		msiEndpoint, err := adal.GetMSIVMEndpoint()
 		if err != nil {
 			return azureClient{}, err
@@ -207,7 +210,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		if err != nil {
 			return azureClient{}, err
 		}
-	case "OAuth":
+	case authMethodOAuth:
 		oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
 		if err != nil {
 			return azureClient{}, err
