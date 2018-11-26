@@ -289,9 +289,8 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 			// We check if the virtual machine has been deallocated/stopped.
 			// If so, we skip them in service discovery.
-			if strings.EqualFold(vm.PowerStateCode, "PowerState/deallocated") ||
-				strings.EqualFold(vm.PowerStateCode, "PowerState/stopped") {
-				level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", vm.Name)
+			if strings.EqualFold(vm.PowerStateCode, "PowerState/deallocated") {
+				level.Debug(d.logger).Log("msg", "Skipping virtual machine", "machine", vm.Name, "power_state", vm.PowerStateCode)
 				ch <- target{}
 				return
 			}
@@ -456,7 +455,7 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		ScaleSet:       "",
 		Tags:           tags,
 		NetworkProfile: *(vm.Properties.NetworkProfile),
-		PowerStateCode: *((*vm.Properties.InstanceView.Statuses)[1].Code),
+		PowerStateCode: getPowerStatusFromVMInstanceView(vm.Properties.InstanceView),
 	}
 }
 
@@ -477,7 +476,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		ScaleSet:       scaleSetName,
 		Tags:           tags,
 		NetworkProfile: *(vm.Properties.NetworkProfile),
-		PowerStateCode: *((*vm.Properties.InstanceView.Statuses)[1].Code),
+		PowerStateCode: getPowerStatusFromVMInstanceView(vm.Properties.InstanceView),
 	}
 }
 
@@ -509,4 +508,18 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (n
 	}
 
 	return result, nil
+}
+
+func getPowerStatusFromVMInstanceView(instanceView *compute.VirtualMachineInstanceView) string {
+	instanceViewStatuses := *instanceView.Statuses
+	var powerStatusCode string
+	if instanceViewStatuses != nil {
+		for _, ivs := range instanceViewStatuses {
+			code := *(ivs.Code)
+			if strings.Contains(code, "PowerState") {
+				powerStatusCode = code
+			}
+		}
+	}
+	return powerStatusCode
 }

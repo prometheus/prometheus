@@ -269,3 +269,43 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		t.Errorf("Expected %v got %v", expectedVM, actualVM)
 	}
 }
+
+func TestGetPowerStatusFromVM(t *testing.T) {
+	provisioningStatusCode := "ProvisioningState/succeeded"
+	provisionDisplayStatus := "Provisioning succeeded"
+	powerStatusCode := "PowerState/running"
+	powerDisplayStatus := "VM running"
+	properties := &compute.VirtualMachineScaleSetVMProperties{
+		StorageProfile: &compute.StorageProfile{
+			OsDisk: &compute.OSDisk{
+				OsType: "Linux",
+			},
+		},
+		InstanceView: &compute.VirtualMachineInstanceView{
+			Statuses: &[]compute.InstanceViewStatus{
+				{
+					Code:          &provisioningStatusCode,
+					Level:         "Info",
+					DisplayStatus: &provisionDisplayStatus,
+				},
+				{
+					Code:          &powerStatusCode,
+					Level:         "Info",
+					DisplayStatus: &powerDisplayStatus,
+				},
+			},
+		},
+	}
+
+	testVM := compute.VirtualMachineScaleSetVM{
+		Properties: properties,
+	}
+
+	actual := getPowerStatusFromVMInstanceView(testVM.Properties.InstanceView)
+
+	expected := "PowerState/running"
+
+	if actual != expected {
+		t.Errorf("expected powerStatus %s, but got %s instead", expected, actual)
+	}
+}
