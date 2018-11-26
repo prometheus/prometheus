@@ -480,7 +480,10 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 
 	if resp.Header.Get("Content-Encoding") != "gzip" {
 		_, err = io.Copy(w, resp.Body)
-		return "", err
+		if err != nil {
+			return "", err
+		}
+		return resp.Header.Get("Content-Type"), nil
 	}
 
 	if s.gzipr == nil {
