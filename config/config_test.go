@@ -769,7 +769,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "azure_authentication_method.bad.yml",
-		errMsg:   "Unknown authentication_type \"invalid\". Supported types are 'OAuth' or 'ManagedServiceIdentity'",
+		errMsg:   "Unknown authentication_type \"invalid\". Supported types are \"OAuth\" or \"ManagedIdentity\"",
 	},
 	{
 		filename: "empty_scrape_config.bad.yml",
