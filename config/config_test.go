@@ -757,15 +757,15 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "azure_client_secret_missing.bad.yml",
-		errMsg:   "Azure SD configuration requires a client_secret",
+		errMsg: "Azure SD configuration requires a client_secret",
 	},
 	{
 		filename: "azure_subscription_id_missing.bad.yml",
-		errMsg:   "Azure SD configuration requires a subscription_id",
+		errMsg: "Azure SD configuration requires a subscription_id",
 	},
 	{
 		filename: "azure_tenant_id_missing.bad.yml",
-		errMsg:   "Azure SD configuration requires a tenant_id",
+		errMsg: "Azure SD configuration requires a tenant_id",
 	},
 }
 
