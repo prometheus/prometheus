@@ -20,12 +20,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/arm/compute"
 )
 
-func TestAuthenticationMethodIsValid(t *testing.T) {
-	if DefaultSDConfig.AuthenticationMethod != "OAuth" && DefaultSDConfig.AuthenticationMethod != "ManagedServiceIdentity" {
-		t.Errorf("AuthenticationMethod %q is not supported. Expecting 'OAuth' or 'ManagedServiceIdentity'", DefaultSDConfig.AuthenticationMethod)
-	}
-}
-
 func TestMapFromVMWithEmptyTags(t *testing.T) {
 	id := "test"
 	name := "name"
