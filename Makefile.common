@@ -115,7 +115,7 @@ common-test:
 .PHONY: common-format
 common-format:
 	@echo ">> formatting code"
-	GO111MODULE=$(GO111MODULE) $(GO) fmt $(GOOPTS) $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) fmt $(pkgs)
 
 .PHONY: common-vet
 common-vet:
