@@ -160,10 +160,13 @@ func main() {
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
-	a.Flag("storage.tsdb.retention", "How long to retain samples in storage.").
+	a.Flag("storage.tsdb.retention", "How long to retain samples in storage. (This flag has been deprecated. Use storage.tsdb.retention.time as a replacement.)").
 		Default("15d").SetValue(&cfg.tsdb.Retention)
 
-	a.Flag("storage.tsdb.maxbytes", "Maximum number of bytes that can be stored for blocks.").
+	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage.").
+		Default("15d").SetValue(&cfg.tsdb.Retention)
+
+	a.Flag("storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks.").
 		Default("0").Int64Var(&cfg.tsdb.MaxBytes)
 
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
