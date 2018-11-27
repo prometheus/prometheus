@@ -91,8 +91,8 @@ var (
 		Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
 	})
 	lastEvaluation = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, "", "rule_group_last_evaluation"),
-		"The timestamp of the last rule group evaluation.",
+		prometheus.BuildFQName(namespace, "", "rule_group_last_evaluation_timestamp_seconds"),
+		"The timestamp of the last rule group evaluation in seconds.",
 		[]string{"rule_group"},
 		nil,
 	)
@@ -833,9 +833,9 @@ func (m *Manager) Describe(ch chan<- *prometheus.Desc) {
 func (m *Manager) Collect(ch chan<- prometheus.Metric) {
 	for _, g := range m.RuleGroups() {
 		lastEvaluationTime := g.GetEvaluationTimestamp()
-		lastEvaluationTimestamp := 0.0
+		lastEvaluationTimestamp := math.Inf(-1)
 		if !lastEvaluationTime.IsZero() {
-			lastEvaluationTimestamp = float64(timestamp.FromTime(lastEvaluationTime)) / 1e3
+			lastEvaluationTimestamp = float64(lastEvaluationTime.UnixNano()) / 1e9
 		}
 		key := groupKey(g.file, g.name)
 		ch <- prometheus.MustNewConstMetric(lastEvaluation,
