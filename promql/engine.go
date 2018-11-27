@@ -70,7 +70,7 @@ type (
 	ErrQueryTimeout string
 	// ErrQueryCanceled is returned if a query was canceled during processing.
 	ErrQueryCanceled string
-	// ErrTooManySamples is returned if a query would woud load more than the maximum allowed samples into memory.
+	// ErrTooManySamples is returned if a query would load more than the maximum allowed samples into memory.
 	ErrTooManySamples string
 	// ErrStorage is returned if an error was encountered in the storage layer
 	// during query handling.

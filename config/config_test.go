@@ -601,7 +601,7 @@ func TestLoadConfig(t *testing.T) {
 	testutil.Equals(t, expectedConf, c)
 }
 
-// YAML marshalling must not reveal authentication credentials.
+// YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
 	c, err := LoadFile("testdata/conf.good.yml")
 	testutil.Ok(t, err)

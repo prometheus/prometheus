@@ -34,7 +34,7 @@ func TestConfiguredService(t *testing.T) {
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
 	if err != nil {
-		t.Errorf("Unexpected error when initialising discovery %v", err)
+		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
 	if !consulDiscovery.shouldWatch("configuredServiceName", []string{""}) {
 		t.Errorf("Expected service %s to be watched", "configuredServiceName")
@@ -52,7 +52,7 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
 	if err != nil {
-		t.Errorf("Unexpected error when initialising discovery %v", err)
+		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
 	if consulDiscovery.shouldWatch("configuredServiceName", []string{""}) {
 		t.Errorf("Expected service %s to not be watched without tag", "configuredServiceName")
@@ -73,7 +73,7 @@ func TestNonConfiguredService(t *testing.T) {
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
 	if err != nil {
-		t.Errorf("Unexpected error when initialising discovery %v", err)
+		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
 	if !consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}) {
 		t.Errorf("Expected service %s to be watched", "nonConfiguredServiceName")
