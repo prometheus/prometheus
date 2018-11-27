@@ -88,7 +88,7 @@ func (a *Alert) String() string {
 	return s + "[active]"
 }
 
-// Resolved returns true iff the activity interval ended in the past.
+// Resolved returns true if the activity interval ended in the past.
 func (a *Alert) Resolved() bool {
 	return a.ResolvedAt(time.Now())
 }
