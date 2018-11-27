@@ -162,7 +162,7 @@ func (r *sampleRing) reset() {
 	r.f = 0
 }
 
-// Returns the current iterator. Invalidates previously retuned iterators.
+// Returns the current iterator. Invalidates previously returned iterators.
 func (r *sampleRing) iterator() SeriesIterator {
 	r.it.r = r
 	r.it.i = -1

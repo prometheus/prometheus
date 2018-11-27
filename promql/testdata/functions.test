@@ -498,7 +498,7 @@ eval instant at 0m year(vector(1230767999))
 eval instant at 0m year(vector(1230768000))
   {} 2009
 
-# 2016-02-29 23:59:59 Febuary 29th in leap year.
+# 2016-02-29 23:59:59 February 29th in leap year.
 eval instant at 0m month(vector(1456790399)) + day_of_month(vector(1456790399)) / 100
   {} 2.29
 
@@ -506,11 +506,11 @@ eval instant at 0m month(vector(1456790399)) + day_of_month(vector(1456790399)) 
 eval instant at 0m month(vector(1456790400)) + day_of_month(vector(1456790400)) / 100
   {} 3.01
 
-# Febuary 1st 2016 in leap year.
+# February 1st 2016 in leap year.
 eval instant at 0m days_in_month(vector(1454284800))
   {} 29
 
-# Febuary 1st 2017 not in leap year.
+# February 1st 2017 not in leap year.
 eval instant at 0m days_in_month(vector(1485907200))
   {} 28
 

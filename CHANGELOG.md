@@ -60,7 +60,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [ENHANCEMENT] Send EndsAt along with the alert to Alertmanager #4550
 * [ENHANCEMENT] Limit the samples returned by remote read endpoint #4532
 * [ENHANCEMENT] Limit the data read in through remote read #4239
-* [ENHANCEMENT] Coalesce identical SD configuations #3912
+* [ENHANCEMENT] Coalesce identical SD configurations #3912
 * [ENHANCEMENT] `promtool`: Add new commands for debugging and querying #4247 #4308 #4346 #4454
 * [ENHANCEMENT] Update console examples for node_exporter v0.16.0 #4208
 * [ENHANCEMENT] Optimize PromQL aggregations #4248
@@ -90,7 +90,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [BUGFIX] discovery/kubernetes/ingress: fix scheme discovery #4329
 * [BUGFIX] Fix race in zookeeper sd #4355
 * [BUGFIX] Better timeout handling in promql #4291 #4300
-* [BUGFIX] Propogate errors when selecting series from the tsdb #4136
+* [BUGFIX] Propagate errors when selecting series from the tsdb #4136
 
 ## 2.3.1 / 2018-06-19
 
@@ -133,7 +133,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 
 * [BUGFIX] Fix data loss in TSDB on compaction
 * [BUGFIX] Correctly stop timer in remote-write path
-* [BUGFIX] Fix deadlock triggerd by loading targets page
+* [BUGFIX] Fix deadlock triggered by loading targets page
 * [BUGFIX] Fix incorrect buffering of samples on range selection queries
 * [BUGFIX] Handle large index files on windows properly
 
