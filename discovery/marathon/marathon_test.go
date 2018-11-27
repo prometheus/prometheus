@@ -332,7 +332,7 @@ func Test500ErrorHttpResponseWithValidJSONBody(t *testing.T) {
 	}()
 	// Setup conf for the test case.
 	conf = SDConfig{Servers: []string{ts.URL}}
-	// Execute test case and validate behaviour.
+	// Execute test case and validate behavior.
 	if err := testUpdateServices(client, ch); err == nil {
 		t.Fatalf("Expected error for 5xx HTTP response from marathon server")
 	}

@@ -96,7 +96,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 
 * [BUGFIX] Avoid infinite loop on duplicate NaN values. #4275
 * [BUGFIX] Fix nil pointer deference when using various API endpoints #4282
-* [BUGFIX] config: set target group source index during unmarshalling #4245
+* [BUGFIX] config: set target group source index during unmarshaling #4245
 * [BUGFIX] discovery/file: fix logging #4178
 * [BUGFIX] kubernetes_sd: fix namespace filtering #4285
 * [BUGFIX] web: restore old path prefix behavior #4273
@@ -110,7 +110,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [FEATURE] Add security headers to HTTP server responses
 * [FEATURE] Pass query hints via remote read API
 * [FEATURE] Basic auth passwords can now be configured via file across all configuration
-* [ENHANCEMENT] Optimise PromQL and API serialization for memory usage and allocations
+* [ENHANCEMENT] Optimize PromQL and API serialization for memory usage and allocations
 * [ENHANCEMENT] Limit number of dropped targets in web UI
 * [ENHANCEMENT] Consul and EC2 service discovery allow using server-side filtering for performance improvement
 * [ENHANCEMENT] Add advanced filtering configuration to EC2 service discovery
@@ -526,7 +526,7 @@ This is a breaking change to the Kubernetes service discovery.
 * [ENHANCEMENT] Message on empty Alerts page.
 * [ENHANCEMENT] Various internal code refactorings and clean-ups.
 * [ENHANCEMENT] Various improvements in the build system.
-* [BUGFIX] Catch errors when unmarshalling delta/doubleDelta encoded chunks.
+* [BUGFIX] Catch errors when unmarshaling delta/doubleDelta encoded chunks.
 * [BUGFIX] Fix data race in lexer and lexer test.
 * [BUGFIX] Trim stray whitespace from bearer token file.
 * [BUGFIX] Avoid divide-by-zero panic on query_range?step=0.
@@ -1211,4 +1211,4 @@ All changes:
 * [BUGFIX] Built from Go 1.2.1, which has internal fixes to race conditions in garbage collection handling.
 * [ENHANCEMENT] Internal storage interface refactoring that allows building e.g. the `rule_checker` tool without LevelDB dynamic library dependencies.
 * [ENHANCEMENT] Cleanups around shutdown handling.
-* [PERFORMANCE] Preparations for better memory reuse during marshalling / unmarshalling.
+* [PERFORMANCE] Preparations for better memory reuse during marshaling / unmarshaling.
