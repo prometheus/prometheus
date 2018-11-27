@@ -1105,10 +1105,11 @@ func (ev *evaluator) eval(expr Expr) Value {
 		offsetMillis := durationToInt64Millis(e.Offset)
 		rangeMillis := durationToInt64Millis(e.Range)
 		newEv := &evaluator{
-			endTimestamp: ev.endTimestamp - offsetMillis,
-			ctx:          ev.ctx,
-			maxSamples:   ev.maxSamples,
-			logger:       ev.logger,
+			endTimestamp:   ev.endTimestamp - offsetMillis,
+			ctx:            ev.ctx,
+			currentSamples: ev.currentSamples,
+			maxSamples:     ev.maxSamples,
+			logger:         ev.logger,
 		}
 
 		if e.StepExists {
@@ -1123,7 +1124,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 		// TODO(codesome): Should this be the first aligned step on/before (ev.startTimestamp - offset - range)?
 		newEv.startTimestamp = -numAlignedSteps * newEv.interval
 
-		return newEv.eval(e.Expr)
+		res := newEv.eval(e.Expr)
+		ev.currentSamples = newEv.currentSamples
+		return res
 	}
 
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
