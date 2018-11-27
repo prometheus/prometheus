@@ -353,30 +353,18 @@ func fetchApps(client *http.Client, url string) (*AppList, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	if (resp.StatusCode < 200) || (resp.StatusCode >= 300) {
 		return nil, fmt.Errorf("Non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	var apps AppList
+	err = json.NewDecoder(resp.Body).Decode(&apps)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%q: %v", url, err)
 	}
-
-	apps, err := parseAppJSON(body)
-	if err != nil {
-		return nil, fmt.Errorf("%v in %s", err, url)
-	}
-	return apps, nil
-}
-
-func parseAppJSON(body []byte) (*AppList, error) {
-	apps := &AppList{}
-	err := json.Unmarshal(body, apps)
-	if err != nil {
-		return nil, err
-	}
-	return apps, nil
+	return &apps, nil
 }
 
 // RandomAppsURL randomly selects a server from an array and creates
