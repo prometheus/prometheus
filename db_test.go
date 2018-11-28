@@ -27,6 +27,8 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
@@ -1295,11 +1297,15 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Ok(t, w.Close())
 
-		db, err := Open(dir, nil, nil, nil)
+		r := prometheus.NewRegistry()
+
+		db, err := Open(dir, nil, r, nil)
 		testutil.Ok(t, err)
 
 		testutil.Equals(t, int64(6000), db.head.MinTime())
 		testutil.Equals(t, int64(15000), db.head.MaxTime())
+		// Check that old series has been GCed.
+		testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.series))
 	})
 }
 

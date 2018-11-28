@@ -271,11 +271,11 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	if err != nil {
 		return nil, err
 	}
-	if err := db.reload(); err != nil {
-		return nil, err
-	}
 	if err := db.head.Init(); err != nil {
 		return nil, errors.Wrap(err, "read WAL")
+	}
+	if err := db.reload(); err != nil {
+		return nil, err
 	}
 
 	go db.run()
