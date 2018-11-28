@@ -111,6 +111,7 @@ var (
 		// With a maximum of 1000 shards, assuming an average of 100ms remote write
 		// time and 100 samples per batch, we will be able to push 1M samples/s.
 		MaxShards:         1000,
+		MinShards:         1,
 		MaxSamplesPerSend: 100,
 
 		// By default, buffer 100 batches, which at 100ms per batch is 10s. At
@@ -647,6 +648,9 @@ type QueueConfig struct {
 
 	// Max number of shards, i.e. amount of concurrency.
 	MaxShards int `yaml:"max_shards,omitempty"`
+
+	// Min number of shards, i.e. amount of concurrency.
+	MinShards int `yaml:"min_shards,omitempty"`
 
 	// Maximum number of samples per send.
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
