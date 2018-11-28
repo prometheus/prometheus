@@ -150,7 +150,7 @@ func (e *Endpoints) process(ctx context.Context, ch chan<- []*targetgroup.Group)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		level.Error(e.logger).Log("msg", "spliting key failed", "key", key)
+		level.Error(e.logger).Log("msg", "splitting key failed", "key", key)
 		return true
 	}
 

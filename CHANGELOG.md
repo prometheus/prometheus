@@ -60,7 +60,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [ENHANCEMENT] Send EndsAt along with the alert to Alertmanager #4550
 * [ENHANCEMENT] Limit the samples returned by remote read endpoint #4532
 * [ENHANCEMENT] Limit the data read in through remote read #4239
-* [ENHANCEMENT] Coalesce identical SD configuations #3912
+* [ENHANCEMENT] Coalesce identical SD configurations #3912
 * [ENHANCEMENT] `promtool`: Add new commands for debugging and querying #4247 #4308 #4346 #4454
 * [ENHANCEMENT] Update console examples for node_exporter v0.16.0 #4208
 * [ENHANCEMENT] Optimize PromQL aggregations #4248
@@ -90,13 +90,13 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [BUGFIX] discovery/kubernetes/ingress: fix scheme discovery #4329
 * [BUGFIX] Fix race in zookeeper sd #4355
 * [BUGFIX] Better timeout handling in promql #4291 #4300
-* [BUGFIX] Propogate errors when selecting series from the tsdb #4136
+* [BUGFIX] Propagate errors when selecting series from the tsdb #4136
 
 ## 2.3.1 / 2018-06-19
 
 * [BUGFIX] Avoid infinite loop on duplicate NaN values. #4275
 * [BUGFIX] Fix nil pointer deference when using various API endpoints #4282
-* [BUGFIX] config: set target group source index during unmarshalling #4245
+* [BUGFIX] config: set target group source index during unmarshaling #4245
 * [BUGFIX] discovery/file: fix logging #4178
 * [BUGFIX] kubernetes_sd: fix namespace filtering #4285
 * [BUGFIX] web: restore old path prefix behavior #4273
@@ -110,7 +110,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [FEATURE] Add security headers to HTTP server responses
 * [FEATURE] Pass query hints via remote read API
 * [FEATURE] Basic auth passwords can now be configured via file across all configuration
-* [ENHANCEMENT] Optimise PromQL and API serialization for memory usage and allocations
+* [ENHANCEMENT] Optimize PromQL and API serialization for memory usage and allocations
 * [ENHANCEMENT] Limit number of dropped targets in web UI
 * [ENHANCEMENT] Consul and EC2 service discovery allow using server-side filtering for performance improvement
 * [ENHANCEMENT] Add advanced filtering configuration to EC2 service discovery
@@ -133,7 +133,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 
 * [BUGFIX] Fix data loss in TSDB on compaction
 * [BUGFIX] Correctly stop timer in remote-write path
-* [BUGFIX] Fix deadlock triggerd by loading targets page
+* [BUGFIX] Fix deadlock triggered by loading targets page
 * [BUGFIX] Fix incorrect buffering of samples on range selection queries
 * [BUGFIX] Handle large index files on windows properly
 
@@ -526,7 +526,7 @@ This is a breaking change to the Kubernetes service discovery.
 * [ENHANCEMENT] Message on empty Alerts page.
 * [ENHANCEMENT] Various internal code refactorings and clean-ups.
 * [ENHANCEMENT] Various improvements in the build system.
-* [BUGFIX] Catch errors when unmarshalling delta/doubleDelta encoded chunks.
+* [BUGFIX] Catch errors when unmarshaling delta/doubleDelta encoded chunks.
 * [BUGFIX] Fix data race in lexer and lexer test.
 * [BUGFIX] Trim stray whitespace from bearer token file.
 * [BUGFIX] Avoid divide-by-zero panic on query_range?step=0.
@@ -1211,4 +1211,4 @@ All changes:
 * [BUGFIX] Built from Go 1.2.1, which has internal fixes to race conditions in garbage collection handling.
 * [ENHANCEMENT] Internal storage interface refactoring that allows building e.g. the `rule_checker` tool without LevelDB dynamic library dependencies.
 * [ENHANCEMENT] Cleanups around shutdown handling.
-* [PERFORMANCE] Preparations for better memory reuse during marshalling / unmarshalling.
+* [PERFORMANCE] Preparations for better memory reuse during marshaling / unmarshaling.

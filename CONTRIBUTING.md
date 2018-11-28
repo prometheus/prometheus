@@ -40,7 +40,7 @@ go build ./cmd/prometheus/
 make test         # Make sure all the tests pass before you commit and push :)
 ```
 
-All our issues are regularly tagged so that you can also filter down the issues involving the components you want to work on. For our labelling policy refer [the wiki page](https://github.com/prometheus/prometheus/wiki/Label-Names-and-Descriptions).
+All our issues are regularly tagged so that you can also filter down the issues involving the components you want to work on. For our labeling policy refer [the wiki page](https://github.com/prometheus/prometheus/wiki/Label-Names-and-Descriptions).
 
 ## Pull Request Checklist
 

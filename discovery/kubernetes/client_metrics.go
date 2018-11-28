@@ -241,6 +241,6 @@ func (f *clientGoWorkqueueMetricsProvider) NewWorkDurationMetric(name string) wo
 	})
 }
 func (clientGoWorkqueueMetricsProvider) NewRetriesMetric(name string) workqueue.CounterMetric {
-	// Retries are not used so the metric is ommited.
+	// Retries are not used so the metric is omitted.
 	return noopMetric{}
 }

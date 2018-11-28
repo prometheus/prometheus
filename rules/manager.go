@@ -90,6 +90,12 @@ var (
 		Name:      "rule_group_iterations_total",
 		Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
 	})
+	lastEvaluation = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "", "rule_group_last_evaluation_timestamp_seconds"),
+		"The timestamp of the last rule group evaluation in seconds.",
+		[]string{"rule_group"},
+		nil,
+	)
 	lastDuration = prometheus.NewDesc(
 		prometheus.BuildFQName(namespace, "", "rule_group_last_duration_seconds"),
 		"The duration of the last rule group evaluation.",
@@ -818,6 +824,7 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 
 // Describe implements prometheus.Collector.
 func (m *Manager) Describe(ch chan<- *prometheus.Desc) {
+	ch <- lastEvaluation
 	ch <- lastDuration
 	ch <- groupInterval
 }
@@ -825,10 +832,20 @@ func (m *Manager) Describe(ch chan<- *prometheus.Desc) {
 // Collect implements prometheus.Collector.
 func (m *Manager) Collect(ch chan<- prometheus.Metric) {
 	for _, g := range m.RuleGroups() {
+		lastEvaluationTime := g.GetEvaluationTimestamp()
+		lastEvaluationTimestamp := math.Inf(-1)
+		if !lastEvaluationTime.IsZero() {
+			lastEvaluationTimestamp = float64(lastEvaluationTime.UnixNano()) / 1e9
+		}
+		key := groupKey(g.file, g.name)
+		ch <- prometheus.MustNewConstMetric(lastEvaluation,
+			prometheus.GaugeValue,
+			lastEvaluationTimestamp,
+			key)
 		ch <- prometheus.MustNewConstMetric(lastDuration,
 			prometheus.GaugeValue,
 			g.GetEvaluationDuration().Seconds(),
-			groupKey(g.file, g.name))
+			key)
 	}
 	for _, g := range m.RuleGroups() {
 		ch <- prometheus.MustNewConstMetric(groupInterval,
