@@ -15,7 +15,7 @@ what makes a good SD and covers some of the common implementation issues.
 
 The first question to be asked is does it make sense to add this particular
 SD? An SD mechanism should be reasonably well established, and at a minimum in
-use across multiple organisations. It should allow discovering of machines
+use across multiple organizations. It should allow discovering of machines
 and/or services running somewhere. When exactly an SD is popular enough to
 justify being added to Prometheus natively is an open question.
 
@@ -140,7 +140,7 @@ type Discoverer interface {
 }
 ```
 
-Prometheus will call the `Run()` method on a provider to initialise the discovery mechanism. The mechanism will then send *all* the `TargetGroup`s into the channel. 
+Prometheus will call the `Run()` method on a provider to initialize the discovery mechanism. The mechanism will then send *all* the `TargetGroup`s into the channel. 
 Now the mechanism will watch for changes. For each update it can send all `TargetGroup`s, or only changed and new `TargetGroup`s, down the channel. `Manager` will handle 
 both cases.
 

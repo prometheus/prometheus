@@ -337,6 +337,7 @@ func (p *parser) recover(errp *error) {
 			*errp = e.(error)
 		}
 	}
+	p.lex.close()
 }
 
 // expr parses any expression.

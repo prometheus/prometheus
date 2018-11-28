@@ -33,8 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	old_ctx "golang.org/x/net/context"
-	"golang.org/x/net/context/ctxhttp"
+	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -53,6 +52,8 @@ const (
 	subsystem         = "notifications"
 	alertmanagerLabel = "alertmanager"
 )
+
+var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // Alert is a generic representation of an alert in the Prometheus eco-system.
 type Alert struct {
@@ -124,7 +125,7 @@ type Options struct {
 	ExternalLabels model.LabelSet
 	RelabelConfigs []*config.RelabelConfig
 	// Used for sending HTTP requests to the Alertmanager.
-	Do func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error)
+	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
 	Registerer prometheus.Registerer
 }
@@ -206,12 +207,19 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 	return m
 }
 
+func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return client.Do(req.WithContext(ctx))
+}
+
 // NewManager is the manager constructor.
 func NewManager(o *Options, logger log.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	if o.Do == nil {
-		o.Do = ctxhttp.Do
+		o.Do = do
 	}
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -493,6 +501,7 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Content-Type", contentTypeJSON)
 	resp, err := n.opts.Do(ctx, c, req)
 	if err != nil {
@@ -587,7 +596,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 			continue
 		}
 
-		// This will initialise the Counters for the AM to 0.
+		// This will initialize the Counters for the AM to 0.
 		s.metrics.sent.WithLabelValues(us)
 		s.metrics.errors.WithLabelValues(us)
 

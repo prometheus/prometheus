@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	old_ctx "golang.org/x/net/context"
 	yaml "gopkg.in/yaml.v2"
 
 	config_util "github.com/prometheus/common/config"
@@ -212,7 +211,7 @@ func TestCustomDo(t *testing.T) {
 
 	var received bool
 	h := NewManager(&Options{
-		Do: func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+		Do: func(_ context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := ioutil.ReadAll(req.Body)
 

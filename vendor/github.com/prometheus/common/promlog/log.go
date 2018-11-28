@@ -53,11 +53,43 @@ func (l *AllowedLevel) Set(s string) error {
 	return nil
 }
 
-// New returns a new leveled oklog logger in the logfmt format. Each logged line will be annotated
+// AllowedFormat is a settable identifier for the output format that the logger can have.
+type AllowedFormat struct {
+	s string
+}
+
+func (f *AllowedFormat) String() string {
+	return f.s
+}
+
+// Set updates the value of the allowed format.
+func (f *AllowedFormat) Set(s string) error {
+	switch s {
+	case "logfmt", "json":
+		f.s = s
+	default:
+		return errors.Errorf("unrecognized log format %q", s)
+	}
+	return nil
+}
+
+// Config is a struct containing configurable settings for the logger
+type Config struct {
+	Level  *AllowedLevel
+	Format *AllowedFormat
+}
+
+// New returns a new leveled oklog logger. Each logged line will be annotated
 // with a timestamp. The output always goes to stderr.
-func New(al AllowedLevel) log.Logger {
-	l := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	l = level.NewFilter(l, al.o)
+func New(config *Config) log.Logger {
+	var l log.Logger
+	if config.Format.s == "logfmt" {
+		l = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	} else {
+		l = log.NewJSONLogger(log.NewSyncWriter(os.Stderr))
+	}
+
+	l = level.NewFilter(l, config.Level.o)
 	l = log.With(l, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 	return l
 }

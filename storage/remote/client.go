@@ -26,13 +26,15 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context/ctxhttp"
+	"github.com/prometheus/common/version"
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/prompb"
 )
 
 const maxErrMsgLen = 256
+
+var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
@@ -84,13 +86,14 @@ func (c *Client) Store(ctx context.Context, req *prompb.WriteRequest) error {
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Set("User-Agent", userAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 	httpReq = httpReq.WithContext(ctx)
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	httpResp, err := ctxhttp.Do(ctx, c.client, httpReq)
+	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
 	if err != nil {
 		// Errors from client.Do are from (for example) network errors, so are
 		// recoverable.
@@ -139,12 +142,13 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Add("Accept-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Set("User-Agent", userAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	httpResp, err := ctxhttp.Do(ctx, c.client, httpReq)
+	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("error sending request: %v", err)
 	}

@@ -287,6 +287,7 @@ func TestRoutePrefix(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
 }
+
 func TestDebugHandler(t *testing.T) {
 	for _, tc := range []struct {
 		prefix, url string

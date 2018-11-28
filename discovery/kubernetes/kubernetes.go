@@ -238,7 +238,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 	}
 
-	kcfg.UserAgent = "prometheus/discovery"
+	kcfg.UserAgent = "Prometheus/discovery"
 
 	c, err := kubernetes.NewForConfig(kcfg)
 	if err != nil {

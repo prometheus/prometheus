@@ -111,7 +111,7 @@ func (rule *RecordingRule) String() string {
 
 	byt, err := yaml.Marshal(r)
 	if err != nil {
-		return fmt.Sprintf("error marshalling recording rule: %q", err.Error())
+		return fmt.Sprintf("error marshaling recording rule: %q", err.Error())
 	}
 
 	return string(byt)
@@ -189,7 +189,7 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 
 	byt, err := yaml.Marshal(r)
 	if err != nil {
-		return template.HTML(fmt.Sprintf("error marshalling recording rule: %q", template.HTMLEscapeString(err.Error())))
+		return template.HTML(fmt.Sprintf("error marshaling recording rule: %q", template.HTMLEscapeString(err.Error())))
 	}
 
 	return template.HTML(byt)

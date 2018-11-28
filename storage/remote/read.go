@@ -83,6 +83,12 @@ func (q *querier) LabelValues(name string) ([]string, error) {
 	return nil, nil
 }
 
+// LabelNames implements storage.Querier and is a noop.
+func (q *querier) LabelNames() ([]string, error) {
+	// TODO implement?
+	return nil, nil
+}
+
 // Close implements storage.Querier and is a noop.
 func (q *querier) Close() error {
 	return nil

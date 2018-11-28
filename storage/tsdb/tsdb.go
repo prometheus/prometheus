@@ -124,6 +124,46 @@ type Options struct {
 	NoLockfile bool
 }
 
+var (
+	startTime   prometheus.GaugeFunc
+	headMaxTime prometheus.GaugeFunc
+	headMinTime prometheus.GaugeFunc
+)
+
+func registerMetrics(db *tsdb.DB, r prometheus.Registerer) {
+
+	startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_lowest_timestamp_seconds",
+		Help: "Lowest timestamp value stored in the database.",
+	}, func() float64 {
+		bb := db.Blocks()
+		if len(bb) == 0 {
+			return float64(db.Head().MinTime()) / 1000
+		}
+		return float64(db.Blocks()[0].Meta().MinTime) / 1000
+	})
+	headMinTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_min_time_seconds",
+		Help: "Minimum time bound of the head block.",
+	}, func() float64 {
+		return float64(db.Head().MinTime()) / 1000
+	})
+	headMaxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_max_time_seconds",
+		Help: "Maximum timestamp of the head block.",
+	}, func() float64 {
+		return float64(db.Head().MaxTime()) / 1000
+	})
+
+	if r != nil {
+		r.MustRegister(
+			startTime,
+			headMaxTime,
+			headMinTime,
+		)
+	}
+}
+
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
 func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
@@ -149,6 +189,8 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	if err != nil {
 		return nil, err
 	}
+	registerMetrics(db, r)
+
 	return db, nil
 }
 
@@ -202,6 +244,7 @@ func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storag
 }
 
 func (q querier) LabelValues(name string) ([]string, error) { return q.q.LabelValues(name) }
+func (q querier) LabelNames() ([]string, error)             { return q.q.LabelNames() }
 func (q querier) Close() error                              { return q.q.Close() }
 
 type seriesSet struct {

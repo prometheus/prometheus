@@ -1212,9 +1212,11 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	}
 	var buf bytes.Buffer
 
-	if _, err := ts.scrape(context.Background(), &buf); err != nil {
+	contentType, err := ts.scrape(context.Background(), &buf)
+	if err != nil {
 		t.Fatalf("Unexpected scrape error: %s", err)
 	}
+	require.Equal(t, "text/plain; version=0.0.4", contentType)
 	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 }
 
@@ -1252,8 +1254,11 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 	}()
 
 	go func() {
-		if _, err := ts.scrape(ctx, ioutil.Discard); err != context.Canceled {
-			errc <- fmt.Errorf("Expected context cancelation error but got: %s", err)
+		_, err := ts.scrape(ctx, ioutil.Discard)
+		if err == nil {
+			errc <- fmt.Errorf("Expected error but got nil")
+		} else if ctx.Err() != context.Canceled {
+			errc <- fmt.Errorf("Expected context cancelation error but got: %s", ctx.Err())
 		}
 		close(errc)
 	}()
