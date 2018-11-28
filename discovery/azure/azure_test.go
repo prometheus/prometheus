@@ -301,11 +301,20 @@ func TestGetPowerStatusFromVM(t *testing.T) {
 		Properties: properties,
 	}
 
-	actual := getPowerStatusFromVMInstanceView(testVM.Properties.InstanceView)
+	actual := getPowerStateFromVMInstanceView(testVM.Properties.InstanceView)
 
 	expected := "PowerState/running"
 
 	if actual != expected {
+		t.Errorf("expected powerStatus %s, but got %s instead", expected, actual)
+	}
+
+	// Noq we test a virtualMachine with an empty InstanceView struct.
+	testVM.Properties.InstanceView = &compute.VirtualMachineInstanceView{}
+
+	actual = getPowerStateFromVMInstanceView(testVM.Properties.InstanceView)
+
+	if actual != "" {
 		t.Errorf("expected powerStatus %s, but got %s instead", expected, actual)
 	}
 }

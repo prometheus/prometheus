@@ -47,6 +47,7 @@ const (
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
+	azureLabelPowerState           = azureLabel + "machine_power_state"
 )
 
 var (
@@ -287,7 +288,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				return
 			}
 
-			// We check if the virtual machine has been deallocated/stopped.
+			// We check if the virtual machine has been deallocated.
 			// If so, we skip them in service discovery.
 			if strings.EqualFold(vm.PowerStateCode, "PowerState/deallocated") {
 				level.Debug(d.logger).Log("msg", "Skipping virtual machine", "machine", vm.Name, "power_state", vm.PowerStateCode)
@@ -301,6 +302,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				azureLabelMachineOSType:        model.LabelValue(vm.OsType),
 				azureLabelMachineLocation:      model.LabelValue(vm.Location),
 				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroup),
+				azureLabelPowerState:           model.LabelValue(vm.PowerStateCode),
 			}
 
 			if vm.ScaleSet != "" {
@@ -455,7 +457,7 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		ScaleSet:       "",
 		Tags:           tags,
 		NetworkProfile: *(vm.Properties.NetworkProfile),
-		PowerStateCode: getPowerStatusFromVMInstanceView(vm.Properties.InstanceView),
+		PowerStateCode: getPowerStateFromVMInstanceView(vm.Properties.InstanceView),
 	}
 }
 
@@ -476,7 +478,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		ScaleSet:       scaleSetName,
 		Tags:           tags,
 		NetworkProfile: *(vm.Properties.NetworkProfile),
-		PowerStateCode: getPowerStatusFromVMInstanceView(vm.Properties.InstanceView),
+		PowerStateCode: getPowerStateFromVMInstanceView(vm.Properties.InstanceView),
 	}
 }
 
@@ -510,16 +512,15 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (n
 	return result, nil
 }
 
-func getPowerStatusFromVMInstanceView(instanceView *compute.VirtualMachineInstanceView) string {
-	instanceViewStatuses := *instanceView.Statuses
-	var powerStatusCode string
-	if instanceViewStatuses != nil {
-		for _, ivs := range instanceViewStatuses {
-			code := *(ivs.Code)
-			if strings.Contains(code, "PowerState") {
-				powerStatusCode = code
-			}
+func getPowerStateFromVMInstanceView(instanceView *compute.VirtualMachineInstanceView) (powerState string) {
+	if instanceView.Statuses == nil {
+		return
+	}
+	for _, ivs := range *instanceView.Statuses {
+		code := *(ivs.Code)
+		if strings.HasPrefix(code, "PowerState") {
+			powerState = code
 		}
 	}
-	return powerStatusCode
+	return
 }
