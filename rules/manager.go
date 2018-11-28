@@ -490,6 +490,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 		level.Error(g.logger).Log("msg", "Failed to get Querier", "err", err)
 		return
 	}
+	defer q.Close()
 
 	for _, rule := range g.Rules() {
 		alertRule, ok := rule.(*AlertingRule)
