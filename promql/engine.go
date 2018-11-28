@@ -1120,9 +1120,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 			globalEvaluationIntervalMtx.RUnlock()
 		}
 
-		numAlignedSteps := (offsetMillis+rangeMillis)/newEv.interval + 1
-		// TODO(codesome): Should this be the first aligned step on/before (ev.startTimestamp - offset - range)?
-		newEv.startTimestamp = -numAlignedSteps * newEv.interval
+		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
+		if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
+			newEv.startTimestamp += newEv.interval
+		}
 
 		res := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
