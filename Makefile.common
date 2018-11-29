@@ -177,7 +177,7 @@ promu: $(PROMU)
 $(PROMU):
 	curl -s -L $(PROMU_URL) | tar -xvz -C /tmp
 	mkdir -v -p $(FIRST_GOPATH)/bin
-	cp -v /tmp/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(PROMU)
+	cp -v /tmp/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(FIRST_GOPATH)/bin/promu
 
 .PHONY: proto
 proto:
