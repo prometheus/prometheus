@@ -83,7 +83,7 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 // ToWriteRequest converts an array of samples into a WriteRequest proto.
 func ToWriteRequest(samples []*model.Sample) *prompb.WriteRequest {
 	req := &prompb.WriteRequest{
-		Timeseries: make([]*prompb.TimeSeries, 0, len(samples)),
+		Timeseries: make([]prompb.TimeSeries, 0, len(samples)),
 	}
 
 	for _, s := range samples {
@@ -96,7 +96,7 @@ func ToWriteRequest(samples []*model.Sample) *prompb.WriteRequest {
 				},
 			},
 		}
-		req.Timeseries = append(req.Timeseries, &ts)
+		req.Timeseries = append(req.Timeseries, ts)
 	}
 
 	return req
@@ -365,10 +365,10 @@ func fromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 }
 
 // MetricToLabelProtos builds a []*prompb.Label from a model.Metric
-func MetricToLabelProtos(metric model.Metric) []*prompb.Label {
-	labels := make([]*prompb.Label, 0, len(metric))
+func MetricToLabelProtos(metric model.Metric) []prompb.Label {
+	labels := make([]prompb.Label, 0, len(metric))
 	for k, v := range metric {
-		labels = append(labels, &prompb.Label{
+		labels = append(labels, prompb.Label{
 			Name:  string(k),
 			Value: string(v),
 		})
@@ -388,7 +388,7 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	return metric
 }
 
-func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
+func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	result := make(labels.Labels, 0, len(labelPairs))
 	for _, l := range labelPairs {
 		result = append(result, labels.Label{
@@ -400,10 +400,10 @@ func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
 	return result
 }
 
-func labelsToLabelsProto(labels labels.Labels) []*prompb.Label {
-	result := make([]*prompb.Label, 0, len(labels))
+func labelsToLabelsProto(labels labels.Labels) []prompb.Label {
+	result := make([]prompb.Label, 0, len(labels))
 	for _, l := range labels {
-		result = append(result, &prompb.Label{
+		result = append(result, prompb.Label{
 			Name:  l.Name,
 			Value: l.Value,
 		})
