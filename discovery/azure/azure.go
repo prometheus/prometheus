@@ -80,6 +80,13 @@ type SDConfig struct {
 	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
 }
 
+func validateAuthParam(param, name string) error {
+	if len(param) == 0 {
+		return fmt.Errorf("Azure SD configuration requires a %s", name)
+	}
+	return nil
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultSDConfig
@@ -88,8 +95,17 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.SubscriptionID == "" {
-		return fmt.Errorf("Azure SD configuration requires a subscription_id")
+	if err = validateAuthParam(c.SubscriptionID, "subscription_id"); err != nil {
+		return err
+	}
+	if err = validateAuthParam(c.TenantID, "tenant_id"); err != nil {
+		return err
+	}
+	if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
+		return err
+	}
+	if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
+		return err
 	}
 	return nil
 }
