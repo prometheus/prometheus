@@ -27,8 +27,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/relabel"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // String constants for instrumentation.
@@ -525,11 +527,23 @@ func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 		sentBatchDuration.WithLabelValues(s.qm.queueName).Observe(time.Since(begin).Seconds())
 		if err == nil {
 			succeededSamplesTotal.WithLabelValues(s.qm.queueName).Add(float64(len(samples)))
+			// update remote call status
+			for _, sample := range samples {
+				if metricName, ok := sample.Metric[labels.MetricName]; ok {
+					storage.DescAsyncStatus(string(metricName))
+				}
+			}
 			return
 		}
 
 		level.Warn(s.qm.logger).Log("msg", "Error sending samples to remote storage", "count", len(samples), "err", err)
 		if _, ok := err.(recoverableError); !ok {
+			// update remote call status
+			for _, sample := range samples {
+				if metricName, ok := sample.Metric[labels.MetricName]; ok {
+					storage.DescAsyncStatus(string(metricName))
+				}
+			}
 			break
 		}
 		time.Sleep(time.Duration(backoff))

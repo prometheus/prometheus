@@ -474,6 +474,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			} else {
 				g.seriesInPreviousEval[i] = seriesReturned
 			}
+
+			// commit sync to wait remote storage call completed
+			storage.CommitAsyncStatus(rule.Name())
 		}(i, rule)
 	}
 }

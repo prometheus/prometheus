@@ -26,6 +26,8 @@ func (s *Storage) Appender() (storage.Appender, error) {
 
 // Add implements storage.Appender.
 func (s *Storage) Add(l labels.Labels, t int64, v float64) (uint64, error) {
+	storage.IncAsyncStatus(l.Get(labels.MetricName))
+
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 	for _, q := range s.queues {
