@@ -196,7 +196,7 @@ func TestWAL_FuzzWriteRead(t *testing.T) {
 	m, n, err := w.Segments()
 	testutil.Ok(t, err)
 
-	rc, err := NewSegmentsRangeReader(dir, m, n)
+	rc, err := NewSegmentsRangeReader(SegmentRange{Dir: dir, First: m, Last: n})
 	testutil.Ok(t, err)
 	defer rc.Close()
 

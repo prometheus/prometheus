@@ -37,25 +37,25 @@ func TestLastCheckpoint(t *testing.T) {
 	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.0000"), 0777))
 	s, k, err = LastCheckpoint(dir)
 	testutil.Ok(t, err)
-	testutil.Equals(t, "checkpoint.0000", s)
+	testutil.Equals(t, filepath.Join(dir, "checkpoint.0000"), s)
 	testutil.Equals(t, 0, k)
 
 	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.xyz"), 0777))
 	s, k, err = LastCheckpoint(dir)
 	testutil.Ok(t, err)
-	testutil.Equals(t, "checkpoint.0000", s)
+	testutil.Equals(t, filepath.Join(dir, "checkpoint.0000"), s)
 	testutil.Equals(t, 0, k)
 
 	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.1"), 0777))
 	s, k, err = LastCheckpoint(dir)
 	testutil.Ok(t, err)
-	testutil.Equals(t, "checkpoint.1", s)
+	testutil.Equals(t, filepath.Join(dir, "checkpoint.1"), s)
 	testutil.Equals(t, 1, k)
 
 	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.1000"), 0777))
 	s, k, err = LastCheckpoint(dir)
 	testutil.Ok(t, err)
-	testutil.Equals(t, "checkpoint.1000", s)
+	testutil.Equals(t, filepath.Join(dir, "checkpoint.1000"), s)
 	testutil.Equals(t, 1000, k)
 }
 

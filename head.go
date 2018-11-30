@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"math"
-	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -457,7 +456,7 @@ func (h *Head) Init() error {
 		return errors.Wrap(err, "find last checkpoint")
 	}
 	if err == nil {
-		sr, err := wal.NewSegmentsReader(filepath.Join(h.wal.Dir(), dir))
+		sr, err := wal.NewSegmentsReader(dir)
 		if err != nil {
 			return errors.Wrap(err, "open checkpoint")
 		}
@@ -472,7 +471,7 @@ func (h *Head) Init() error {
 	}
 
 	// Backfill segments from the last checkpoint onwards
-	sr, err := wal.NewSegmentsRangeReader(h.wal.Dir(), startFrom, -1)
+	sr, err := wal.NewSegmentsRangeReader(wal.SegmentRange{Dir: h.wal.Dir(), First: startFrom, Last: -1})
 	if err != nil {
 		return errors.Wrap(err, "open WAL segments")
 	}

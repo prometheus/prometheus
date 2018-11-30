@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -83,6 +82,7 @@ func (s *Segment) Dir() string {
 
 // CorruptionErr is an error that's returned when corruption is encountered.
 type CorruptionErr struct {
+	Dir     string
 	Segment int
 	Offset  int64
 	Err     error
@@ -92,7 +92,7 @@ func (e *CorruptionErr) Error() string {
 	if e.Segment < 0 {
 		return fmt.Sprintf("corruption after %d bytes: %s", e.Offset, e.Err)
 	}
-	return fmt.Sprintf("corruption in segment %d at %d: %s", e.Segment, e.Offset, e.Err)
+	return fmt.Sprintf("corruption in segment %s at %d: %s", SegmentName(e.Dir, e.Segment), e.Offset, e.Err)
 }
 
 // OpenWriteSegment opens segment k in dir. The returned segment is ready for new appends.
@@ -635,32 +635,41 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 	return refs, nil
 }
 
-// NewSegmentsReader returns a new reader over all segments in the directory.
-func NewSegmentsReader(dir string) (io.ReadCloser, error) {
-	return NewSegmentsRangeReader(dir, 0, math.MaxInt32)
+// SegmentRange groups segments by the directory and the first and last index it includes.
+type SegmentRange struct {
+	Dir         string
+	First, Last int
 }
 
-// NewSegmentsRangeReader returns a new reader over the given WAL segment range.
+// NewSegmentsReader returns a new reader over all segments in the directory.
+func NewSegmentsReader(dir string) (io.ReadCloser, error) {
+	return NewSegmentsRangeReader(SegmentRange{dir, -1, -1})
+}
+
+// NewSegmentsRangeReader returns a new reader over the given WAL segment ranges.
 // If first or last are -1, the range is open on the respective end.
-func NewSegmentsRangeReader(dir string, first, last int) (io.ReadCloser, error) {
-	refs, err := listSegments(dir)
-	if err != nil {
-		return nil, err
-	}
+func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 	var segs []*Segment
 
-	for _, r := range refs {
-		if first >= 0 && r.index < first {
-			continue
-		}
-		if last >= 0 && r.index > last {
-			break
-		}
-		s, err := OpenReadSegment(filepath.Join(dir, r.name))
+	for _, sgmRange := range sr {
+		refs, err := listSegments(sgmRange.Dir)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "list segment in dir:%v", sgmRange.Dir)
 		}
-		segs = append(segs, s)
+
+		for _, r := range refs {
+			if sgmRange.First >= 0 && r.index < sgmRange.First {
+				continue
+			}
+			if sgmRange.Last >= 0 && r.index > sgmRange.Last {
+				break
+			}
+			s, err := OpenReadSegment(filepath.Join(sgmRange.Dir, r.name))
+			if err != nil {
+				return nil, errors.Wrapf(err, "open segment:%v in dir:%v", r.name, sgmRange.Dir)
+			}
+			segs = append(segs, s)
+		}
 	}
 	return newSegmentBufReader(segs...), nil
 }
@@ -856,6 +865,7 @@ func (r *Reader) Err() error {
 	if b, ok := r.rdr.(*segmentBufReader); ok {
 		return &CorruptionErr{
 			Err:     r.err,
+			Dir:     b.segs[b.cur].Dir(),
 			Segment: b.segs[b.cur].Index(),
 			Offset:  int64(b.off),
 		}
