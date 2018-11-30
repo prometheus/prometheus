@@ -494,36 +494,36 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	return mat, nil
 }
 
-// cumulativeSubqueryOffset returns the sum of range of all subqueries in the path.
+// cumulativeSubqueryOffset returns the sum of range and offset of all subqueries in the path.
 func (ng *Engine) cumulativeSubqueryOffset(path []Node) time.Duration {
-	var subqMaxOffset time.Duration
+	var subqOffset time.Duration
 	for _, node := range path {
 		switch n := node.(type) {
 		case *SubqueryExpr:
-			subqMaxOffset += n.Range
+			subqOffset += n.Range + n.Offset
 		}
 	}
-	return subqMaxOffset
+	return subqOffset
 }
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
 	Inspect(s.Expr, func(node Node, path []Node) error {
-		subqMaxOffset := ng.cumulativeSubqueryOffset(path)
+		subqOffset := ng.cumulativeSubqueryOffset(path)
 		switch n := node.(type) {
 		case *VectorSelector:
-			if maxOffset < LookbackDelta+subqMaxOffset {
-				maxOffset = LookbackDelta + subqMaxOffset
+			if maxOffset < LookbackDelta+subqOffset {
+				maxOffset = LookbackDelta + subqOffset
 			}
-			if n.Offset+LookbackDelta+subqMaxOffset > maxOffset {
-				maxOffset = n.Offset + LookbackDelta + subqMaxOffset
+			if n.Offset+LookbackDelta+subqOffset > maxOffset {
+				maxOffset = n.Offset + LookbackDelta + subqOffset
 			}
 		case *MatrixSelector:
-			if maxOffset < n.Range+subqMaxOffset {
-				maxOffset = n.Range + subqMaxOffset
+			if maxOffset < n.Range+subqOffset {
+				maxOffset = n.Range + subqOffset
 			}
-			if n.Offset+n.Range+subqMaxOffset > maxOffset {
-				maxOffset = n.Offset + n.Range + subqMaxOffset
+			if n.Offset+n.Range+subqOffset > maxOffset {
+				maxOffset = n.Offset + n.Range + subqOffset
 			}
 		}
 		return nil
@@ -1123,8 +1123,16 @@ func (ev *evaluator) eval(expr Expr) Value {
 			globalEvaluationIntervalMtx.RUnlock()
 		}
 
+		// We want to align the start time of the subquery with it's step.
+		// Aligned steps are `0 1*step 2*step 3*step ...`
+		// We choose start time as the first aligned step just after (or equal to)
+		// 'S = (ev.startTimestamp - offset - range)'
+
+		// numSteps = S / step
+		// newEv.startTimestamp = step * numSteps
 		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
 		if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
+			// Aligned step is before S. Add another step to make it after S.
 			newEv.startTimestamp += newEv.interval
 		}
 

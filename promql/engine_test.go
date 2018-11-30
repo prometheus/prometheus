@@ -783,7 +783,7 @@ func TestSubquerySelector(t *testing.T) {
 				Result Result
 				Start  time.Time
 			}{
-				{
+				{ // Normal selector.
 					Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
 					Result: Result{
 						nil,
@@ -794,12 +794,23 @@ func TestSubquerySelector(t *testing.T) {
 					},
 					Start: time.Unix(10020, 0),
 				},
-				{
+				{ // Default step.
 					Query: `http_requests{group=~"pro.*",instance="0"}[5m:]`,
 					Result: Result{
 						nil,
 						Matrix{Series{
 							Points: []Point{{V: 9840, T: 9840000}, {V: 9900, T: 9900000}, {V: 9960, T: 9960000}, {V: 130, T: 10020000}, {V: 310, T: 10080000}},
+							Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production")},
+						},
+					},
+					Start: time.Unix(10100, 0),
+				},
+				{ // Checking if high offset (>LookbackDelta) is being taken care of.
+					Query: `http_requests{group=~"pro.*",instance="0"}[5m:] offset 20m`,
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 8640, T: 8640000}, {V: 8700, T: 8700000}, {V: 8760, T: 8760000}, {V: 8820, T: 8820000}, {V: 8880, T: 8880000}},
 							Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production")},
 						},
 					},
