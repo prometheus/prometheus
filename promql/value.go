@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // Value is a generic interface for values resulting from a query evaluation.
@@ -201,8 +202,9 @@ func (m Matrix) ContainsSameLabelset() bool {
 // Result holds the resulting value of an execution or an error
 // if any occurred.
 type Result struct {
-	Err   error
-	Value Value
+	Err      error
+	Value    Value
+	Warnings storage.Warnings
 }
 
 // Vector returns a Vector if the result value is one. An error is returned if

@@ -68,23 +68,23 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	queriers := make([]Querier, 0, 1+len(f.secondaries))
 
 	// Add primary querier
-	querier, err := f.primary.Querier(ctx, mint, maxt)
+	primaryQuerier, err := f.primary.Querier(ctx, mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	queriers = append(queriers, querier)
+	queriers = append(queriers, primaryQuerier)
 
 	// Add secondary queriers
 	for _, storage := range f.secondaries {
 		querier, err := storage.Querier(ctx, mint, maxt)
 		if err != nil {
-			NewMergeQuerier(queriers).Close()
+			NewMergeQuerier(primaryQuerier, queriers).Close()
 			return nil, err
 		}
 		queriers = append(queriers, querier)
 	}
 
-	return NewMergeQuerier(queriers), nil
+	return NewMergeQuerier(primaryQuerier, queriers), nil
 }
 
 func (f *fanout) Appender() (Appender, error) {
@@ -190,20 +190,27 @@ func (f *fanoutAppender) Rollback() (err error) {
 
 // mergeQuerier implements Querier.
 type mergeQuerier struct {
-	queriers []Querier
+	primaryQuerier Querier
+	queriers       []Querier
+
+	failedQueriers map[Querier]struct{}
+	setQuerierMap  map[SeriesSet]Querier
 }
 
 // NewMergeQuerier returns a new Querier that merges results of input queriers.
 // NB NewMergeQuerier will return NoopQuerier if no queriers are passed to it,
 // and will filter NoopQueriers from its arguments, in order to reduce overhead
 // when only one querier is passed.
-func NewMergeQuerier(queriers []Querier) Querier {
+func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 	filtered := make([]Querier, 0, len(queriers))
 	for _, querier := range queriers {
 		if querier != NoopQuerier() {
 			filtered = append(filtered, querier)
 		}
 	}
+
+	setQuerierMap := make(map[SeriesSet]Querier)
+	failedQueriers := make(map[Querier]struct{})
 
 	switch len(filtered) {
 	case 0:
@@ -212,22 +219,37 @@ func NewMergeQuerier(queriers []Querier) Querier {
 		return filtered[0]
 	default:
 		return &mergeQuerier{
-			queriers: filtered,
+			primaryQuerier: primaryQuerier,
+			queriers:       filtered,
+			failedQueriers: failedQueriers,
+			setQuerierMap:  setQuerierMap,
 		}
 	}
 }
 
 // Select returns a set of series that matches the given label matchers.
-func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, error) {
+func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, error, Warnings) {
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
+	var warnings Warnings
 	for _, querier := range q.queriers {
-		set, err := querier.Select(params, matchers...)
+		set, err, wrn := querier.Select(params, matchers...)
+		q.setQuerierMap[set] = querier
+		if wrn != nil {
+			warnings = append(warnings, wrn...)
+		}
 		if err != nil {
-			return nil, err
+			q.failedQueriers[querier] = struct{}{}
+			// If the error source isn't the primary querier, return the error as a warning and continue.
+			if querier != q.primaryQuerier {
+				warnings = append(warnings, err)
+				continue
+			} else {
+				return nil, err, nil
+			}
 		}
 		seriesSets = append(seriesSets, set)
 	}
-	return NewMergeSeriesSet(seriesSets), nil
+	return NewMergeSeriesSet(seriesSets, q), nil, warnings
 }
 
 // LabelValues returns all potential values for a label name.
@@ -241,6 +263,11 @@ func (q *mergeQuerier) LabelValues(name string) ([]string, error) {
 		results = append(results, values)
 	}
 	return mergeStringSlices(results), nil
+}
+
+func (q *mergeQuerier) IsFailedSet(set SeriesSet) bool {
+	_, isFailedQuerier := q.failedQueriers[q.setQuerierMap[set]]
+	return isFailedQuerier
 }
 
 func mergeStringSlices(ss [][]string) []string {
@@ -322,11 +349,13 @@ type mergeSeriesSet struct {
 	currentSets   []SeriesSet
 	heap          seriesSetHeap
 	sets          []SeriesSet
+
+	querier *mergeQuerier
 }
 
 // NewMergeSeriesSet returns a new series set that merges (deduplicates)
 // series returned by the input series sets when iterating.
-func NewMergeSeriesSet(sets []SeriesSet) SeriesSet {
+func NewMergeSeriesSet(sets []SeriesSet, querier *mergeQuerier) SeriesSet {
 	if len(sets) == 1 {
 		return sets[0]
 	}
@@ -335,34 +364,53 @@ func NewMergeSeriesSet(sets []SeriesSet) SeriesSet {
 	// series under the cursor.
 	var h seriesSetHeap
 	for _, set := range sets {
+		if set == nil {
+			continue
+		}
 		if set.Next() {
 			heap.Push(&h, set)
 		}
 	}
 	return &mergeSeriesSet{
-		heap: h,
-		sets: sets,
+		heap:    h,
+		sets:    sets,
+		querier: querier,
 	}
 }
 
 func (c *mergeSeriesSet) Next() bool {
-	// Firstly advance all the current series sets.  If any of them have run out
-	// we can drop them, otherwise they should be inserted back into the heap.
-	for _, set := range c.currentSets {
-		if set.Next() {
-			heap.Push(&c.heap, set)
+	// Run in a loop because the "next" series sets may not be valid anymore.
+	// If a remote querier fails, we discard all series sets from that querier.
+	// If, for the current label set, all the next series sets come from
+	// failed remote storage sources, we want to keep trying with the next label set.
+	for {
+		// Firstly advance all the current series sets.  If any of them have run out
+		// we can drop them, otherwise they should be inserted back into the heap.
+		for _, set := range c.currentSets {
+			if set.Next() {
+				heap.Push(&c.heap, set)
+			}
 		}
-	}
-	if len(c.heap) == 0 {
-		return false
-	}
+		if len(c.heap) == 0 {
+			return false
+		}
 
-	// Now, pop items of the heap that have equal label sets.
-	c.currentSets = nil
-	c.currentLabels = c.heap[0].At().Labels()
-	for len(c.heap) > 0 && labels.Equal(c.currentLabels, c.heap[0].At().Labels()) {
-		set := heap.Pop(&c.heap).(SeriesSet)
-		c.currentSets = append(c.currentSets, set)
+		// Now, pop items of the heap that have equal label sets.
+		c.currentSets = nil
+		c.currentLabels = c.heap[0].At().Labels()
+		for len(c.heap) > 0 && labels.Equal(c.currentLabels, c.heap[0].At().Labels()) {
+			set := heap.Pop(&c.heap).(SeriesSet)
+			if c.querier != nil && c.querier.IsFailedSet(set) {
+				continue
+			}
+			c.currentSets = append(c.currentSets, set)
+		}
+
+		// As long as the current set contains at least 1 set,
+		// then it should return true.
+		if len(c.currentSets) != 0 {
+			break
+		}
 	}
 	return true
 }

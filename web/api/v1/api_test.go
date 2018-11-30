@@ -349,9 +349,9 @@ func TestLabelNames(t *testing.T) {
 		ctx := context.Background()
 		req, err := request(method)
 		testutil.Ok(t, err)
-		resp, apiErr, _ := api.labelNames(req.WithContext(ctx))
-		assertAPIError(t, apiErr, "")
-		assertAPIResponse(t, resp, []string{"__name__", "baz", "foo", "foo1", "foo2", "xyz"})
+		res := api.labelNames(req.WithContext(ctx))
+		assertAPIError(t, res.err, "")
+		assertAPIResponse(t, res.data, []string{"__name__", "baz", "foo", "foo1", "foo2", "xyz"})
 	}
 }
 
@@ -379,7 +379,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			}
 			defer querier.Close()
 
-			set, err := querier.Select(selectParams, matchers...)
+			set, err, _ := querier.Select(selectParams, matchers...)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -857,9 +857,9 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resp, apiErr, _ := test.endpoint(req.WithContext(ctx))
-			assertAPIError(t, apiErr, test.errType)
-			assertAPIResponse(t, resp, test.response)
+			res := test.endpoint(req.WithContext(ctx))
+			assertAPIError(t, res.err, test.errType)
+			assertAPIResponse(t, res.data, test.response)
 		}
 	}
 }
@@ -1202,8 +1202,8 @@ func TestAdminEndpoints(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error when creating test request: %s", err)
 			}
-			_, apiErr, _ := endpoint(req)
-			assertAPIError(t, apiErr, tc.errType)
+			res := endpoint(req)
+			assertAPIError(t, res.err, tc.errType)
 		})
 	}
 }
@@ -1211,7 +1211,7 @@ func TestAdminEndpoints(t *testing.T) {
 func TestRespondSuccess(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		api := API{}
-		api.respond(w, "test")
+		api.respond(w, "test", nil)
 	}))
 	defer s.Close()
 
@@ -1502,7 +1502,7 @@ func TestRespond(t *testing.T) {
 	for _, c := range cases {
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			api := API{}
-			api.respond(w, c.response)
+			api.respond(w, c.response, nil)
 		}))
 		defer s.Close()
 
@@ -1543,6 +1543,6 @@ func BenchmarkRespond(b *testing.B) {
 	b.ResetTimer()
 	api := API{}
 	for n := 0; n < b.N; n++ {
-		api.respond(&testResponseWriter, response)
+		api.respond(&testResponseWriter, response, nil)
 	}
 }
