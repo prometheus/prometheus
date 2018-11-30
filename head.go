@@ -349,7 +349,11 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 		case RecordSeries:
 			series, err = dec.Series(rec, series)
 			if err != nil {
-				return errors.Wrap(err, "decode series")
+				return &wal.CorruptionErr{
+					Err:     errors.Wrap(err, "decode series"),
+					Segment: r.Segment(),
+					Offset:  r.Offset(),
+				}
 			}
 			for _, s := range series {
 				h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
@@ -362,7 +366,11 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 			samples, err = dec.Samples(rec, samples)
 			s := samples
 			if err != nil {
-				return errors.Wrap(err, "decode samples")
+				return &wal.CorruptionErr{
+					Err:     errors.Wrap(err, "decode samples"),
+					Segment: r.Segment(),
+					Offset:  r.Offset(),
+				}
 			}
 			// We split up the samples into chunks of 5000 samples or less.
 			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
@@ -395,7 +403,11 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 		case RecordTombstones:
 			tstones, err = dec.Tombstones(rec, tstones)
 			if err != nil {
-				return errors.Wrap(err, "decode tombstones")
+				return &wal.CorruptionErr{
+					Err:     errors.Wrap(err, "decode tombstones"),
+					Segment: r.Segment(),
+					Offset:  r.Offset(),
+				}
 			}
 			for _, s := range tstones {
 				for _, itv := range s.intervals {
@@ -406,7 +418,11 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 				}
 			}
 		default:
-			return errors.Errorf("invalid record type %v", dec.Type(rec))
+			return &wal.CorruptionErr{
+				Err:     errors.Errorf("invalid record type %v", dec.Type(rec)),
+				Segment: r.Segment(),
+				Offset:  r.Offset(),
+			}
 		}
 	}
 	if r.Err() != nil {
