@@ -263,10 +263,11 @@ The following meta labels are available on targets during relabeling:
 * `__meta_azure_machine_location`: the location the machine runs in
 * `__meta_azure_machine_name`: the machine name
 * `__meta_azure_machine_os_type`: the machine operating system
+* `__meta_azure_machine_power_state`: the current power state of the machine
 * `__meta_azure_machine_private_ip`: the machine's private IP
 * `__meta_azure_machine_resource_group`: the machine's resource group
-* `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
 * `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
+* `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
 
 See below for the configuration options for Azure discovery:
 
@@ -407,6 +408,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
+* `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
 * `__meta_ec2_public_dns_name`: the public DNS name of the instance, if available
 * `__meta_ec2_public_ip`: the public IP address of the instance, if available

@@ -111,8 +111,9 @@ type MatrixSelector struct {
 	Offset        time.Duration
 	LabelMatchers []*labels.Matcher
 
-	// The series are populated at query preparation time.
-	series []storage.Series
+	// The unexpanded seriesSet populated at query preparation time.
+	unexpandedSeriesSet storage.SeriesSet
+	series              []storage.Series
 }
 
 // SubqueryExpr represents a subquery.
@@ -153,8 +154,9 @@ type VectorSelector struct {
 	Offset        time.Duration
 	LabelMatchers []*labels.Matcher
 
-	// The series are populated at query preparation time.
-	series []storage.Series
+	// The unexpanded seriesSet populated at query preparation time.
+	unexpandedSeriesSet storage.SeriesSet
+	series              []storage.Series
 }
 
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }

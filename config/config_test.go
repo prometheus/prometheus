@@ -751,6 +751,22 @@ var expectedErrors = []struct {
 		filename: "section_key_dup.bad.yml",
 		errMsg:   "field scrape_configs already set in type config.plain",
 	},
+	{
+		filename: "azure_client_id_missing.bad.yml",
+		errMsg:   "Azure SD configuration requires a client_id",
+	},
+	{
+		filename: "azure_client_secret_missing.bad.yml",
+		errMsg:   "Azure SD configuration requires a client_secret",
+	},
+	{
+		filename: "azure_subscription_id_missing.bad.yml",
+		errMsg:   "Azure SD configuration requires a subscription_id",
+	},
+	{
+		filename: "azure_tenant_id_missing.bad.yml",
+		errMsg:   "Azure SD configuration requires a tenant_id",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {

@@ -37,6 +37,10 @@ var (
 		Name: "prometheus_web_federation_errors_total",
 		Help: "Total number of errors that occurred while sending federation responses.",
 	})
+	federationWarnings = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_web_federation_warnings_total",
+		Help: "Total number of warnings that occurred while sending federation responses.",
+	})
 )
 
 func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
@@ -83,7 +87,11 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s, err := q.Select(params, mset...)
+		s, err, wrns := q.Select(params, mset...)
+		if wrns != nil {
+			level.Debug(h.logger).Log("msg", "federation select returned warnings", "warnings", wrns)
+			federationErrors.Add(float64(len(wrns)))
+		}
 		if err != nil {
 			federationErrors.Inc()
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -92,7 +100,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets)
+	set := storage.NewMergeSeriesSet(sets, nil)
 	it := storage.NewBuffer(int64(promql.LookbackDelta / 1e6))
 	for set.Next() {
 		s := set.At()
