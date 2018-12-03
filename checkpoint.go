@@ -35,7 +35,7 @@ type CheckpointStats struct {
 	DroppedSamples    int
 	DroppedTombstones int
 	TotalSeries       int // Processed series including dropped ones.
-	TotalSamples      int // Processed samples inlcuding dropped ones.
+	TotalSamples      int // Processed samples including dropped ones.
 	TotalTombstones   int // Processed tombstones including dropped ones.
 }
 
