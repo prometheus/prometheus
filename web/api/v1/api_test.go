@@ -1318,6 +1318,10 @@ func TestParseTime(t *testing.T) {
 		}, {
 			input:  "2015-06-03T14:21:58.555+01:00",
 			result: ts,
+		}, {
+			// Test float rounding.
+			input:  "1543578564.705",
+			result: time.Unix(1543578564, 705*1e6),
 		},
 	}
 
