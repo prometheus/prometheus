@@ -23,8 +23,9 @@ var PATH_PREFIX = "{{ pathPrefix }}";
 <head>
 {{ template "prom_console_head" }}
 </head>
-<body>
+<body style="paddingTop:70px">
 {{ template "navbar" . }}
+
 {{ template "menu" . }}
 {{ end }}
 
