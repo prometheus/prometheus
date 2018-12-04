@@ -146,28 +146,38 @@ type isValue_Kind interface {
 type Value_NullValue struct {
 	NullValue NullValue `protobuf:"varint,1,opt,name=null_value,json=nullValue,proto3,enum=google.protobuf.NullValue,oneof"`
 }
+
 type Value_NumberValue struct {
 	NumberValue float64 `protobuf:"fixed64,2,opt,name=number_value,json=numberValue,proto3,oneof"`
 }
+
 type Value_StringValue struct {
 	StringValue string `protobuf:"bytes,3,opt,name=string_value,json=stringValue,proto3,oneof"`
 }
+
 type Value_BoolValue struct {
 	BoolValue bool `protobuf:"varint,4,opt,name=bool_value,json=boolValue,proto3,oneof"`
 }
+
 type Value_StructValue struct {
 	StructValue *Struct `protobuf:"bytes,5,opt,name=struct_value,json=structValue,proto3,oneof"`
 }
+
 type Value_ListValue struct {
 	ListValue *ListValue `protobuf:"bytes,6,opt,name=list_value,json=listValue,proto3,oneof"`
 }
 
-func (*Value_NullValue) isValue_Kind()   {}
+func (*Value_NullValue) isValue_Kind() {}
+
 func (*Value_NumberValue) isValue_Kind() {}
+
 func (*Value_StringValue) isValue_Kind() {}
-func (*Value_BoolValue) isValue_Kind()   {}
+
+func (*Value_BoolValue) isValue_Kind() {}
+
 func (*Value_StructValue) isValue_Kind() {}
-func (*Value_ListValue) isValue_Kind()   {}
+
+func (*Value_ListValue) isValue_Kind() {}
 
 func (m *Value) GetKind() isValue_Kind {
 	if m != nil {

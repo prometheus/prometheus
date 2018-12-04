@@ -147,7 +147,7 @@ func NewGaugeVec(opts GaugeOpts, labelNames []string) *GaugeVec {
 	return &GaugeVec{
 		metricVec: newMetricVec(desc, func(lvs ...string) Metric {
 			if len(lvs) != len(desc.variableLabels) {
-				panic(errInconsistentCardinality)
+				panic(makeInconsistentCardinalityError(desc.fqName, desc.variableLabels, lvs))
 			}
 			result := &gauge{desc: desc, labelPairs: makeLabelPairs(desc, lvs)}
 			result.init(result) // Init self-collection.

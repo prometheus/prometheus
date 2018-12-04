@@ -41,9 +41,9 @@ github.com/aws/aws-sdk-go/aws/credentials/endpointcreds
 github.com/aws/aws-sdk-go/private/protocol/rest
 github.com/aws/aws-sdk-go/private/protocol/query/queryutil
 github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil
-# github.com/beorn7/perks v0.0.0-20160229213445-3ac7bf7a47d1
+# github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973
 github.com/beorn7/perks/quantile
-# github.com/cespare/xxhash v0.0.0-20161118035902-4a94f899c20b
+# github.com/cespare/xxhash v1.1.0
 github.com/cespare/xxhash
 # github.com/cockroachdb/cmux v0.0.0-20170110192607-30d10be49292
 github.com/cockroachdb/cmux
@@ -51,7 +51,7 @@ github.com/cockroachdb/cmux
 github.com/cockroachdb/cockroach/pkg/util/protoutil
 github.com/cockroachdb/cockroach/pkg/util/httputil
 github.com/cockroachdb/cockroach/pkg/util/syncutil
-# github.com/davecgh/go-spew v0.0.0-20151105211317-5215b55f46b2
+# github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/dgrijalva/jwt-go v0.0.0-20161101193935-9ed569b5d1ac
 github.com/dgrijalva/jwt-go
@@ -59,21 +59,19 @@ github.com/dgrijalva/jwt-go
 github.com/ghodss/yaml
 # github.com/go-ini/ini v1.21.1
 github.com/go-ini/ini
-# github.com/go-kit/kit v0.0.0-20170517165212-6964666de57c
+# github.com/go-kit/kit v0.8.0
 github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
 # github.com/go-logfmt/logfmt v0.3.0
 github.com/go-logfmt/logfmt
-# github.com/go-stack/stack v1.5.4
-github.com/go-stack/stack
-# github.com/gogo/protobuf v0.0.0-20171123125729-971cbfd2e72b
+# github.com/gogo/protobuf v1.1.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/types
 github.com/gogo/protobuf/sortkeys
 github.com/gogo/protobuf/jsonpb
 # github.com/golang/glog v0.0.0-20141105023935-44145f04b68c => github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352
 github.com/golang/glog
-# github.com/golang/protobuf v0.0.0-20180622174009-9eb2c01ac278
+# github.com/golang/protobuf v1.2.0
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/jsonpb
 github.com/golang/protobuf/protoc-gen-go/descriptor
@@ -137,7 +135,7 @@ github.com/json-iterator/go
 github.com/julienschmidt/httprouter
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 github.com/kr/logfmt
-# github.com/matttproud/golang_protobuf_extensions v0.0.0-20150406173934-fc2b8d3a73c4
+# github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
 # github.com/miekg/dns v1.0.4
 github.com/miekg/dns
@@ -151,7 +149,7 @@ github.com/modern-go/reflect2
 github.com/mwitkow/go-conntrack
 # github.com/oklog/oklog v0.0.0-20170918173356-f857583a70c3
 github.com/oklog/oklog/pkg/group
-# github.com/oklog/ulid v0.0.0-20170117200651-66bb6560562f
+# github.com/oklog/ulid v1.3.1
 github.com/oklog/ulid
 # github.com/opentracing-contrib/go-stdlib v0.0.0-20170113013457-1de4cc2120e7
 github.com/opentracing-contrib/go-stdlib/nethttp
@@ -163,11 +161,11 @@ github.com/opentracing/opentracing-go/ext
 github.com/peterbourgon/diskv
 # github.com/petermattis/goid v0.0.0-20170504144140-0ded85884ba5
 github.com/petermattis/goid
-# github.com/pkg/errors v0.0.0-20161029093637-248dadf4e906
+# github.com/pkg/errors v0.8.0
 github.com/pkg/errors
-# github.com/pmezard/go-difflib v0.0.0-20151028094244-d8ed2627bdf0
+# github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/client_golang v0.0.0-20181001174001-0a8115f42e03
+# github.com/prometheus/client_golang v0.9.1
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
@@ -184,9 +182,12 @@ github.com/prometheus/common/config
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/route
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
-# github.com/prometheus/procfs v0.0.0-20160411190841-abf152e5f3e9
+# github.com/prometheus/procfs v0.0.0-20181005140218-185b4288413d
 github.com/prometheus/procfs
-# github.com/prometheus/tsdb v0.2.0
+github.com/prometheus/procfs/nfs
+github.com/prometheus/procfs/xfs
+github.com/prometheus/procfs/internal/util
+# github.com/prometheus/tsdb v0.3.0
 github.com/prometheus/tsdb
 github.com/prometheus/tsdb/labels
 github.com/prometheus/tsdb/chunkenc
@@ -204,7 +205,7 @@ github.com/shurcooL/httpfs/union
 github.com/shurcooL/httpfs/vfsutil
 # github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
 github.com/shurcooL/vfsgen
-# github.com/stretchr/testify v0.0.0-20160615092844-d77da356e56a
+# github.com/stretchr/testify v1.2.2
 github.com/stretchr/testify/require
 github.com/stretchr/testify/assert
 # golang.org/x/crypto v0.0.0-20180621125126-a49355c7e3f8
@@ -232,9 +233,9 @@ golang.org/x/oauth2/google
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
-# golang.org/x/sync v0.0.0-20180314180146-1d60e4601c6f
+# golang.org/x/sync v0.0.0-20181108010431-42b317875d0f
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.0.0-20180627142611-7138fd3d9dc8
+# golang.org/x/sys v0.0.0-20181107165924-66b7b1311ac8
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 # golang.org/x/text v0.0.0-20170810154203-b19bf474d317
@@ -281,7 +282,7 @@ google.golang.org/grpc/peer
 google.golang.org/grpc/stats
 google.golang.org/grpc/tap
 google.golang.org/grpc/transport
-# gopkg.in/alecthomas/kingpin.v2 v2.2.5
+# gopkg.in/alecthomas/kingpin.v2 v2.2.6
 gopkg.in/alecthomas/kingpin.v2
 # gopkg.in/fsnotify/fsnotify.v1 v1.3.0
 gopkg.in/fsnotify/fsnotify.v1
