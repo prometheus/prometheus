@@ -1,8 +1,7 @@
 language: go
 sudo: false
 go:
-  - 1.7.4
-  - tip
+  - 1.10.x
 install:
   - go get -v github.com/golang/lint/golint
   - go get golang.org/x/tools/cmd/cover
@@ -14,4 +13,4 @@ script:
   - $HOME/gopath/bin/golint .
   - go test -v -race ./...
   - go test -v -covermode=count -coverprofile=cov.out
-  - $HOME/gopath/bin/goveralls -coverprofile=cov.out -service=travis-ci -repotoken $COVERALLS_TOKEN
+  - $HOME/gopath/bin/goveralls -coverprofile=cov.out -service=travis-ci -repotoken "$COVERALLS_TOKEN" || true

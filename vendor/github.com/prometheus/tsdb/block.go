@@ -15,7 +15,6 @@
 package tsdb
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"io/ioutil"
 	"os"
@@ -278,23 +277,13 @@ func OpenBlock(dir string, pool chunkenc.Pool) (*Block, error) {
 		return nil, err
 	}
 
-	// Calculating symbol table size.
-	tmp := make([]byte, 8)
-	symTblSize := uint64(0)
-	for _, v := range ir.SymbolTable() {
-		// Size of varint length of the symbol.
-		symTblSize += uint64(binary.PutUvarint(tmp, uint64(len(v))))
-		// Size of the symbol.
-		symTblSize += uint64(len(v))
-	}
-
 	pb := &Block{
 		dir:             dir,
 		meta:            *meta,
 		chunkr:          cr,
 		indexr:          ir,
 		tombstones:      tr,
-		symbolTableSize: symTblSize,
+		symbolTableSize: ir.SymbolTableSize(),
 	}
 	return pb, nil
 }

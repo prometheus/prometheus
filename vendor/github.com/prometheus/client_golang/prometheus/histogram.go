@@ -165,7 +165,7 @@ func NewHistogram(opts HistogramOpts) Histogram {
 
 func newHistogram(desc *Desc, opts HistogramOpts, labelValues ...string) Histogram {
 	if len(desc.variableLabels) != len(labelValues) {
-		panic(errInconsistentCardinality)
+		panic(makeInconsistentCardinalityError(desc.fqName, desc.variableLabels, labelValues))
 	}
 
 	for _, n := range desc.variableLabels {
