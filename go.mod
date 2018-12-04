@@ -40,7 +40,7 @@ require (
 	github.com/go-sql-driver/mysql v1.4.0 // indirect
 	github.com/go-stack/stack v1.5.4 // indirect
 	github.com/gogo/protobuf v0.0.0-20171123125729-971cbfd2e72b
-	github.com/golang/glog v0.0.0-20141105023935-44145f04b68c // indirect
+	github.com/golang/glog v0.0.0-20141105023935-44145f04b68c
 	github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4 // indirect
 	github.com/golang/protobuf v0.0.0-20180622174009-9eb2c01ac278 // indirect
 	github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
@@ -149,3 +149,5 @@ require (
 	labix.org/v2/mgo v0.0.0-20140701140051-000000000287 // indirect
 	launchpad.net/gocheck v0.0.0-20140225173054-000000000087 // indirect
 )
+
+replace github.com/golang/glog => github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352

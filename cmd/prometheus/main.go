@@ -34,6 +34,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/golang/glog"
 	"github.com/oklog/oklog/pkg/group"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -41,7 +42,6 @@ import (
 	"github.com/prometheus/common/version"
 	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"gopkg.in/alecthomas/kingpin.v2"
-	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
 
 	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/common/promlog"
@@ -236,14 +236,9 @@ func main() {
 
 	logger := promlog.New(&cfg.promlogConfig)
 
-	// XXX(fabxc): Kubernetes does background logging which we can only customize by modifying
-	// a global variable.
-	// Ultimately, here is the best place to set it.
-	k8s_runtime.ErrorHandlers = []func(error){
-		func(err error) {
-			level.Error(log.With(logger, "component", "k8s_client_runtime")).Log("err", err)
-		},
-	}
+	// Above level 6, the k8s client would log bearer tokens in clear-text.
+	glog.ClampLevel(6)
+	glog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
