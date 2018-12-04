@@ -233,7 +233,7 @@ func main() {
 	}
 
 	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
-	promql.SetGlobalEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
+	promql.SetDefaultEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
 
 	logger := promlog.New(&cfg.promlogConfig)
 
@@ -660,7 +660,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	if failed {
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
-	promql.SetGlobalEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
+	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }

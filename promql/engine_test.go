@@ -953,7 +953,7 @@ func TestSubquerySelector(t *testing.T) {
 		},
 	}
 
-	GlobalEvaluationInterval = 1 * time.Minute
+	SetDefaultEvaluationInterval(1 * time.Minute)
 	for _, tst := range tests {
 		test, err := NewTest(t, tst.loadString)
 

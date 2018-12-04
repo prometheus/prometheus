@@ -118,11 +118,10 @@ type MatrixSelector struct {
 
 // SubqueryExpr represents a subquery.
 type SubqueryExpr struct {
-	Expr       Expr
-	Range      time.Duration
-	Offset     time.Duration
-	Step       time.Duration
-	StepExists bool
+	Expr   Expr
+	Range  time.Duration
+	Offset time.Duration
+	Step   time.Duration
 }
 
 // NumberLiteral represents a number.

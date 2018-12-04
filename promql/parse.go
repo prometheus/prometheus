@@ -546,12 +546,10 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 	}
 
 	// Subquery.
-	estepExists := false
 	var estep time.Duration
 
 	itm = p.expectOneOf(itemRightBracket, itemDuration, ctx)
 	if itm.typ == itemDuration {
-		estepExists = true
 		estepStr := itm.val
 		estep, err = parseDuration(estepStr)
 		if err != nil {
@@ -561,10 +559,9 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 	}
 
 	return &SubqueryExpr{
-		Expr:       expr,
-		Range:      erange,
-		Step:       estep,
-		StepExists: estepExists,
+		Expr:  expr,
+		Range: erange,
+		Step:  estep,
 	}
 }
 

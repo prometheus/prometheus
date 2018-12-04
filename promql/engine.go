@@ -56,16 +56,16 @@ var (
 	// series is considered stale.
 	LookbackDelta = 5 * time.Minute
 
-	// GlobalEvaluationInterval is the value of EvaluationInterval in the GlobalConfig.
-	GlobalEvaluationInterval    time.Duration
-	globalEvaluationIntervalMtx sync.RWMutex
+	// DefaultEvaluationInterval is the value of EvaluationInterval in the GlobalConfig.
+	DefaultEvaluationInterval    time.Duration
+	defaultEvaluationIntervalMtx sync.RWMutex
 )
 
-// SetGlobalEvaluationInterval sets GlobalEvaluationInterval.
-func SetGlobalEvaluationInterval(ev time.Duration) {
-	globalEvaluationIntervalMtx.Lock()
-	defer globalEvaluationIntervalMtx.Unlock()
-	GlobalEvaluationInterval = ev
+// SetDefaultEvaluationInterval sets DefaultEvaluationInterval.
+func SetDefaultEvaluationInterval(ev time.Duration) {
+	defaultEvaluationIntervalMtx.Lock()
+	defer defaultEvaluationIntervalMtx.Unlock()
+	DefaultEvaluationInterval = ev
 }
 
 type engineMetrics struct {
@@ -1141,15 +1141,14 @@ func (ev *evaluator) eval(expr Expr) Value {
 			logger:         ev.logger,
 		}
 
-		if e.StepExists {
-			newEv.interval = durationToInt64Millis(e.Step)
-		} else {
-			globalEvaluationIntervalMtx.RLock()
-			newEv.interval = durationToInt64Millis(GlobalEvaluationInterval)
-			globalEvaluationIntervalMtx.RUnlock()
+		newEv.interval = durationToInt64Millis(e.Step)
+		if newEv.interval == 0 {
+			defaultEvaluationIntervalMtx.RLock()
+			newEv.interval = durationToInt64Millis(DefaultEvaluationInterval)
+			defaultEvaluationIntervalMtx.RUnlock()
 		}
 
-		// We want to align the start time of the subquery with it's step.
+		// We want to align the start time of the subquery with its step.
 		// Aligned steps are `0 1*step 2*step 3*step ...`
 		// We choose start time as the first aligned step just after (or equal to)
 		// 'S = (ev.startTimestamp - offset - range)'
