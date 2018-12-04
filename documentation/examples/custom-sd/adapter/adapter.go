@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -32,6 +33,15 @@ import (
 type customSD struct {
 	Targets []string          `json:"targets"`
 	Labels  map[string]string `json:"labels"`
+}
+
+func fingerprint(group *targetgroup.Group) model.Fingerprint {
+	groupFingerprint := model.LabelSet{}.Fingerprint()
+	for _, targets := range group.Targets {
+		groupFingerprint ^= targets.Fingerprint()
+	}
+	groupFingerprint ^= group.Labels.Fingerprint()
+	return groupFingerprint
 }
 
 // Adapter runs an unknown service discovery implementation and converts its target groups
@@ -57,13 +67,7 @@ func mapToArray(m map[string]*customSD) []customSD {
 func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[string]*customSD {
 	groups := make(map[string]*customSD)
 	for k, sdTargetGroups := range allTargetGroups {
-		for i, group := range sdTargetGroups {
-
-			// There is no target, so no need to keep it.
-			if len(group.Targets) <= 0 {
-				continue
-			}
-
+		for _, group := range sdTargetGroups {
 			newTargets := make([]string, 0)
 			newLabels := make(map[string]string)
 
@@ -76,12 +80,16 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 			for name, value := range group.Labels {
 				newLabels[string(name)] = string(value)
 			}
-			// Make a unique key, including the current index, in case the sd_type (map key) and group.Source is not unique.
-			key := fmt.Sprintf("%s:%s:%d", k, group.Source, i)
-			groups[key] = &customSD{
+
+			sdGroup := customSD{
+
 				Targets: newTargets,
 				Labels:  newLabels,
 			}
+			// Make a unique key, including group's fingerprint, in case the sd_type (map key) and group.Source is not unique.
+			groupFingerprint := fingerprint(group)
+			key := fmt.Sprintf("%s:%s:%s", k, group.Source, groupFingerprint.String())
+			groups[key] = &sdGroup
 		}
 	}
 

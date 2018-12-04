@@ -490,6 +490,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 		level.Error(g.logger).Log("msg", "Failed to get Querier", "err", err)
 		return
 	}
+	defer q.Close()
 
 	for _, rule := range g.Rules() {
 		alertRule, ok := rule.(*AlertingRule)
@@ -517,7 +518,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 				matchers = append(matchers, mt)
 			}
 
-			sset, err := q.Select(nil, matchers...)
+			sset, err, _ := q.Select(nil, matchers...)
 			if err != nil {
 				level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
 					labels.AlertName, alertRule.Name(), "stage", "Select", "err", err)

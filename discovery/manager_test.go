@@ -719,6 +719,7 @@ func assertEqualGroups(t *testing.T, got, expected []*targetgroup.Group, msg fun
 }
 
 func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey, label string, present bool) {
+	t.Helper()
 	if _, ok := tSets[poolKey]; !ok {
 		t.Fatalf("'%s' should be present in Pool keys: %v", poolKey, tSets)
 		return
@@ -741,7 +742,7 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 		if !present {
 			msg = "not"
 		}
-		t.Fatalf("'%s' should %s be present in Targets labels: %v", label, msg, mergedTargets)
+		t.Fatalf("%q should %s be present in Targets labels: %q", label, msg, mergedTargets)
 	}
 }
 
@@ -781,7 +782,7 @@ scrape_configs:
    - targets: ["foo:9090"]
 `
 	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sOne: %s", err)
+		t.Fatalf("Unable to load YAML config sTwo: %s", err)
 	}
 	c = make(map[string]sd_config.ServiceDiscoveryConfig)
 	for _, v := range cfg.ScrapeConfigs {
@@ -792,6 +793,67 @@ scrape_configs:
 	<-discoveryManager.SyncCh()
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", false)
+}
+
+// TestTargetSetRecreatesEmptyStaticConfigs ensures that reloading a config file after
+// removing all targets from the static_configs sends an update with empty targetGroups.
+// This is required to signal the receiver that this target set has no current targets.
+func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
+	cfg := &config.Config{}
+
+	sOne := `
+scrape_configs:
+ - job_name: 'prometheus'
+   static_configs:
+   - targets: ["foo:9090"]
+`
+	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config sOne: %s", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := make(map[string]sd_config.ServiceDiscoveryConfig)
+	for _, v := range cfg.ScrapeConfigs {
+		c[v.JobName] = v.ServiceDiscoveryConfig
+	}
+	discoveryManager.ApplyConfig(c)
+
+	<-discoveryManager.SyncCh()
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
+
+	sTwo := `
+scrape_configs:
+ - job_name: 'prometheus'
+   static_configs:
+`
+	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config sTwo: %s", err)
+	}
+	c = make(map[string]sd_config.ServiceDiscoveryConfig)
+	for _, v := range cfg.ScrapeConfigs {
+		c[v.JobName] = v.ServiceDiscoveryConfig
+	}
+	discoveryManager.ApplyConfig(c)
+
+	<-discoveryManager.SyncCh()
+
+	pkey := poolKey{setName: "prometheus", provider: "string/0"}
+	targetGroups, ok := discoveryManager.targets[pkey]
+	if !ok {
+		t.Fatalf("'%v' should be present in target groups", pkey)
+	}
+	group, ok := targetGroups[""]
+	if !ok {
+		t.Fatalf("missing '' key in target groups %v", targetGroups)
+	}
+
+	if len(group.Targets) != 0 {
+		t.Fatalf("Invalid number of targets: expected 0, got %d", len(group.Targets))
+	}
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
