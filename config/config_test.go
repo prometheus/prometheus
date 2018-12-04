@@ -767,6 +767,42 @@ var expectedErrors = []struct {
 		filename: "azure_tenant_id_missing.bad.yml",
 		errMsg:   "Azure SD configuration requires a tenant_id",
 	},
+	{
+		filename: "empty_scrape_config.bad.yml",
+		errMsg:   "empty or null scrape config section",
+	},
+	{
+		filename: "empty_rw_config.bad.yml",
+		errMsg:   "empty or null remote write config section",
+	},
+	{
+		filename: "empty_rr_config.bad.yml",
+		errMsg:   "empty or null remote read config section",
+	},
+	{
+		filename: "empty_target_relabel_config.bad.yml",
+		errMsg:   "empty or null target relabeling rule",
+	},
+	{
+		filename: "empty_metric_relabel_config.bad.yml",
+		errMsg:   "empty or null metric relabeling rule",
+	},
+	{
+		filename: "empty_alert_relabel_config.bad.yml",
+		errMsg:   "empty or null alert relabeling rule",
+	},
+	{
+		filename: "empty_alertmanager_relabel_config.bad.yml",
+		errMsg:   "empty or null Alertmanager target relabeling rule",
+	},
+	{
+		filename: "empty_rw_relabel_config.bad.yml",
+		errMsg:   "empty or null relabeling rule in remote write config",
+	},
+	{
+		filename: "empty_static_config.bad.yml",
+		errMsg:   "empty or null section in static_configs",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {

@@ -233,6 +233,9 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
+		if scfg == nil {
+			return fmt.Errorf("empty or null scrape config section")
+		}
 		// First set the correct scrape interval, then check that the timeout
 		// (inferred or explicit) is not greater than that.
 		if scfg.ScrapeInterval == 0 {
@@ -253,6 +256,16 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}
 		jobNames[scfg.JobName] = struct{}{}
+	}
+	for _, rwcfg := range c.RemoteWriteConfigs {
+		if rwcfg == nil {
+			return fmt.Errorf("empty or null remote write config section")
+		}
+	}
+	for _, rrcfg := range c.RemoteReadConfigs {
+		if rrcfg == nil {
+			return fmt.Errorf("empty or null remote read config section")
+		}
 	}
 	return nil
 }
@@ -360,6 +373,13 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
+	// The UnmarshalYAML method of ServiceDiscoveryConfig is not being called because it's not a pointer.
+	// We cannot make it a pointer as the parser panics for inlined pointer structs.
+	// Thus we just do its validation here.
+	if err := c.ServiceDiscoveryConfig.Validate(); err != nil {
+		return err
+	}
+
 	// Check for users putting URLs in target groups.
 	if len(c.RelabelConfigs) == 0 {
 		for _, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
@@ -368,6 +388,17 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 					return err
 				}
 			}
+		}
+	}
+
+	for _, rlcfg := range c.RelabelConfigs {
+		if rlcfg == nil {
+			return fmt.Errorf("empty or null target relabeling rule in scrape config")
+		}
+	}
+	for _, rlcfg := range c.MetricRelabelConfigs {
+		if rlcfg == nil {
+			return fmt.Errorf("empty or null metric relabeling rule in scrape config")
 		}
 	}
 
@@ -392,7 +423,16 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	// by the default due to the YAML parser behavior for empty blocks.
 	*c = AlertingConfig{}
 	type plain AlertingConfig
-	return unmarshal((*plain)(c))
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	for _, rlcfg := range c.AlertRelabelConfigs {
+		if rlcfg == nil {
+			return fmt.Errorf("empty or null alert relabeling rule")
+		}
+	}
+	return nil
 }
 
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
@@ -429,6 +469,13 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		return err
 	}
 
+	// The UnmarshalYAML method of ServiceDiscoveryConfig is not being called because it's not a pointer.
+	// We cannot make it a pointer as the parser panics for inlined pointer structs.
+	// Thus we just do its validation here.
+	if err := c.ServiceDiscoveryConfig.Validate(); err != nil {
+		return err
+	}
+
 	// Check for users putting URLs in target groups.
 	if len(c.RelabelConfigs) == 0 {
 		for _, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
@@ -437,6 +484,12 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 					return err
 				}
 			}
+		}
+	}
+
+	for _, rlcfg := range c.RelabelConfigs {
+		if rlcfg == nil {
+			return fmt.Errorf("empty or null Alertmanager target relabeling rule")
 		}
 	}
 
@@ -631,6 +684,11 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 	if c.URL == nil {
 		return fmt.Errorf("url for remote_write is empty")
+	}
+	for _, rlcfg := range c.WriteRelabelConfigs {
+		if rlcfg == nil {
+			return fmt.Errorf("empty or null relabeling rule in remote write config")
+		}
 	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
