@@ -29,10 +29,10 @@ require (
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/elastic/gosigar v0.9.0 // indirect
 	github.com/elazarl/go-bindata-assetfs v1.0.0 // indirect
+	github.com/evanphx/json-patch v4.1.0+incompatible // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
 	github.com/fsnotify/fsnotify v1.4.7 // indirect
 	github.com/getsentry/raven-go v0.1.0 // indirect
-	github.com/ghodss/yaml v0.0.0-20150909031657-73d445a93680 // indirect
 	github.com/go-ini/ini v1.21.1 // indirect
 	github.com/go-kit/kit v0.0.0-20170517165212-6964666de57c
 	github.com/go-logfmt/logfmt v0.3.0 // indirect
@@ -40,7 +40,6 @@ require (
 	github.com/go-sql-driver/mysql v1.4.0 // indirect
 	github.com/go-stack/stack v1.5.4 // indirect
 	github.com/gogo/protobuf v0.0.0-20171123125729-971cbfd2e72b
-	github.com/golang/glog v0.0.0-20141105023935-44145f04b68c // indirect
 	github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4 // indirect
 	github.com/golang/protobuf v0.0.0-20180622174009-9eb2c01ac278 // indirect
 	github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
@@ -142,10 +141,12 @@ require (
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/vmihailenco/msgpack.v2 v2.9.1 // indirect
 	gopkg.in/yaml.v2 v2.2.0
-	k8s.io/api v0.0.0-20181126151915-b503174bad59
-	k8s.io/apimachinery v0.0.0-20181126123746-eddba98df674
-	k8s.io/client-go v9.0.0+incompatible
+	k8s.io/api v0.0.0-20181204000039-89a74a8d264d
+	k8s.io/apimachinery v0.0.0-20181127025237-2b1284ed4c93
+	k8s.io/client-go v2.0.0-alpha.0.0.20181121191925-a47917edff34+incompatible
+	k8s.io/klog v0.1.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20180629012420-d83b052f768a // indirect
 	labix.org/v2/mgo v0.0.0-20140701140051-000000000287 // indirect
 	launchpad.net/gocheck v0.0.0-20140225173054-000000000087 // indirect
+	sigs.k8s.io/yaml v1.1.0 // indirect
 )
