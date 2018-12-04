@@ -163,6 +163,13 @@ var (
 	)
 )
 
+// gaugeSetFunc is an adapter that allows the use of functions as gauge metric setters.
+type gaugeSetFunc func(float64)
+
+func (s gaugeSetFunc) Set(value float64) {
+	s(value)
+}
+
 // Definition of dummy metric used as a placeholder if we don't want to observe some data.
 type noopMetric struct{}
 
@@ -262,7 +269,11 @@ func (f *clientGoWorkqueueMetricsProvider) NewUnfinishedWorkSecondsMetric(name s
 	return clientGoWorkqueueUnfinishedWorkSecondsMetricVec.WithLabelValues(name)
 }
 func (f *clientGoWorkqueueMetricsProvider) NewLongestRunningProcessorMicrosecondsMetric(name string) workqueue.SettableGaugeMetric {
-	return clientGoWorkqueueLongestRunningProcessorMetricVec.WithLabelValues(name)
+	metric := clientGoWorkqueueLongestRunningProcessorMetricVec.WithLabelValues(name)
+	return gaugeSetFunc(func(v float64) {
+		metric.Set(v / 1e6)
+	})
+
 }
 func (clientGoWorkqueueMetricsProvider) NewRetriesMetric(name string) workqueue.CounterMetric {
 	// Retries are not used so the metric is omitted.

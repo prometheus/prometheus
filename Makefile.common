@@ -140,8 +140,9 @@ else
 ifdef GO111MODULE
 	@echo ">> running check for unused/missing packages in go.mod"
 	GO111MODULE=$(GO111MODULE) $(GO) mod tidy
+ifeq (,$(wildcard vendor))
 	@git diff --exit-code -- go.sum go.mod
-ifneq (,$(wildcard vendor))
+else
 	@echo ">> running check for unused packages in vendor/"
 	GO111MODULE=$(GO111MODULE) $(GO) mod vendor
 	@git diff --exit-code -- go.sum go.mod vendor/
