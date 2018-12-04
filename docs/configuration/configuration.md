@@ -1244,6 +1244,8 @@ queue_config:
   [ capacity: <int> | default = 10000 ]
   # Maximum number of shards, i.e. amount of concurrency.
   [ max_shards: <int> | default = 1000 ]
+  # Minimum number of shards, i.e. amount of concurrency.
+  [ min_shards: <int> | default = 1 ]
   # Maximum number of samples per send.
   [ max_samples_per_send: <int> | default = 100]
   # Maximum time a sample will wait in buffer.
