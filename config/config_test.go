@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/relabel"
+
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
@@ -71,13 +73,13 @@ var expectedConf = &Config{
 		{
 			URL:           mustParseURL("http://remote1/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
-			WriteRelabelConfigs: []*RelabelConfig{
+			WriteRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
 					Separator:    ";",
-					Regex:        MustNewRegexp("expensive.*"),
+					Regex:        relabel.MustNewRegexp("expensive.*"),
 					Replacement:  "$1",
-					Action:       RelabelDrop,
+					Action:       relabel.Drop,
 				},
 			},
 			QueueConfig: DefaultQueueConfig,
@@ -145,33 +147,33 @@ var expectedConf = &Config{
 				},
 			},
 
-			RelabelConfigs: []*RelabelConfig{
+			RelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"job", "__meta_dns_name"},
 					TargetLabel:  "job",
 					Separator:    ";",
-					Regex:        MustNewRegexp("(.*)some-[regex]"),
+					Regex:        relabel.MustNewRegexp("(.*)some-[regex]"),
 					Replacement:  "foo-${1}",
-					Action:       RelabelReplace,
+					Action:       relabel.Replace,
 				}, {
 					SourceLabels: model.LabelNames{"abc"},
 					TargetLabel:  "cde",
 					Separator:    ";",
-					Regex:        DefaultRelabelConfig.Regex,
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelReplace,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Replace,
 				}, {
 					TargetLabel: "abc",
 					Separator:   ";",
-					Regex:       DefaultRelabelConfig.Regex,
+					Regex:       relabel.DefaultRelabelConfig.Regex,
 					Replacement: "static",
-					Action:      RelabelReplace,
+					Action:      relabel.Replace,
 				}, {
 					TargetLabel: "abc",
 					Separator:   ";",
-					Regex:       MustNewRegexp(""),
+					Regex:       relabel.MustNewRegexp(""),
 					Replacement: "static",
-					Action:      RelabelReplace,
+					Action:      relabel.Replace,
 				},
 			},
 		},
@@ -212,56 +214,56 @@ var expectedConf = &Config{
 				},
 			},
 
-			RelabelConfigs: []*RelabelConfig{
+			RelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"job"},
-					Regex:        MustNewRegexp("(.*)some-[regex]"),
+					Regex:        relabel.MustNewRegexp("(.*)some-[regex]"),
 					Separator:    ";",
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelDrop,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Drop,
 				},
 				{
 					SourceLabels: model.LabelNames{"__address__"},
 					TargetLabel:  "__tmp_hash",
-					Regex:        DefaultRelabelConfig.Regex,
-					Replacement:  DefaultRelabelConfig.Replacement,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
 					Modulus:      8,
 					Separator:    ";",
-					Action:       RelabelHashMod,
+					Action:       relabel.HashMod,
 				},
 				{
 					SourceLabels: model.LabelNames{"__tmp_hash"},
-					Regex:        MustNewRegexp("1"),
+					Regex:        relabel.MustNewRegexp("1"),
 					Separator:    ";",
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelKeep,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Keep,
 				},
 				{
-					Regex:       MustNewRegexp("1"),
+					Regex:       relabel.MustNewRegexp("1"),
 					Separator:   ";",
-					Replacement: DefaultRelabelConfig.Replacement,
-					Action:      RelabelLabelMap,
+					Replacement: relabel.DefaultRelabelConfig.Replacement,
+					Action:      relabel.LabelMap,
 				},
 				{
-					Regex:       MustNewRegexp("d"),
+					Regex:       relabel.MustNewRegexp("d"),
 					Separator:   ";",
-					Replacement: DefaultRelabelConfig.Replacement,
-					Action:      RelabelLabelDrop,
+					Replacement: relabel.DefaultRelabelConfig.Replacement,
+					Action:      relabel.LabelDrop,
 				},
 				{
-					Regex:       MustNewRegexp("k"),
+					Regex:       relabel.MustNewRegexp("k"),
 					Separator:   ";",
-					Replacement: DefaultRelabelConfig.Replacement,
-					Action:      RelabelLabelKeep,
+					Replacement: relabel.DefaultRelabelConfig.Replacement,
+					Action:      relabel.LabelKeep,
 				},
 			},
-			MetricRelabelConfigs: []*RelabelConfig{
+			MetricRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
-					Regex:        MustNewRegexp("expensive_metric.*"),
+					Regex:        relabel.MustNewRegexp("expensive_metric.*"),
 					Separator:    ";",
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelDrop,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Drop,
 				},
 			},
 		},
@@ -296,14 +298,14 @@ var expectedConf = &Config{
 				},
 			},
 
-			RelabelConfigs: []*RelabelConfig{
+			RelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_consul_tags"},
-					Regex:        MustNewRegexp("label:([^=]+)=([^,]+)"),
+					Regex:        relabel.MustNewRegexp("label:([^=]+)=([^,]+)"),
 					Separator:    ",",
 					TargetLabel:  "${1}",
 					Replacement:  "${2}",
-					Action:       RelabelReplace,
+					Action:       relabel.Replace,
 				},
 			},
 		},
@@ -843,33 +845,6 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	exp := DefaultConfig
 	exp.original = "global:\n"
 	testutil.Equals(t, exp, *c)
-}
-
-func TestTargetLabelValidity(t *testing.T) {
-	tests := []struct {
-		str   string
-		valid bool
-	}{
-		{"-label", false},
-		{"label", true},
-		{"label${1}", true},
-		{"${1}label", true},
-		{"${1}", true},
-		{"${1}label", true},
-		{"${", false},
-		{"$", false},
-		{"${}", false},
-		{"foo${", false},
-		{"$1", true},
-		{"asd$2asd", true},
-		{"-foo${1}bar-", false},
-		{"_${1}_", true},
-		{"foo${bar}foo", true},
-	}
-	for _, test := range tests {
-		testutil.Assert(t, relabelTarget.Match([]byte(test.str)) == test.valid,
-			"Expected %q to be %v", test.str, test.valid)
-	}
 }
 
 func kubernetesSDHostURL() config_util.URL {
