@@ -2,13 +2,14 @@
 {{/* Load Prometheus console library JS/CSS. Should go in <head> */}}
 {{ define "prom_console_head" }}
 <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.css">
-<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css">
+<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-4.0.0/css/bootstrap.min.css">
 <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/prom_console.css">
+<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap4-glyphicons/css/bootstrap-glyphicons.min.css">
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.v3.js"></script>
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.layout.min.js"></script>
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.js"></script>
-<script src="{{ pathPrefix }}/static/vendor/js/jquery.min.js"></script>
-<script src="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"></script>
+<script src="{{ pathPrefix }}/static/vendor/js/jquery-3.3.1.min.js"></script>
+<script src="{{ pathPrefix }}/static/vendor/bootstrap-4.0.0/js/bootstrap.min.js"></script>
 
 <script>
 var PATH_PREFIX = "{{ pathPrefix }}";
@@ -50,7 +51,7 @@ renderTemplate is the name of the template to use to render the value.
 
 {{ define "prom_right_table_head" }}
 <div class="prom_console_rhs">
-<table class="table table-bordered table-hover table-condensed">
+<table class="table table-bordered table-hover table-sm">
 {{ end }}
 {{ define "prom_right_table_tail" }}
 </table>
