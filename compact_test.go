@@ -733,7 +733,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	case db.compactc <- struct{}{}:
 	default:
 	}
-	for x := 0; x < 10; x++ {
+	for x := 0; x < 20; x++ {
 		if len(db.Blocks()) > 0 {
 			break
 		}

@@ -59,7 +59,8 @@ type Head struct {
 	appendPool sync.Pool
 	bytesPool  sync.Pool
 
-	minTime, maxTime int64
+	minTime, maxTime int64 // Current min and max of the samples included in the head.
+	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastSeriesID     uint64
 
 	// All series addressable by their ID or hash.
@@ -300,13 +301,6 @@ func (h *Head) updateMinMaxTime(mint, maxt int64) {
 }
 
 func (h *Head) loadWAL(r *wal.Reader) error {
-	minValidTime := h.MinTime()
-	// If the min time is still uninitialized (no persisted blocks yet),
-	// we accept all sample timestamps from the WAL.
-	if minValidTime == math.MaxInt64 {
-		minValidTime = math.MinInt64
-	}
-
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs uint64
@@ -327,7 +321,7 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 		inputs[i] = make(chan []RefSample, 300)
 
 		go func(input <-chan []RefSample, output chan<- []RefSample) {
-			unknown := h.processWALSamples(minValidTime, input, output)
+			unknown := h.processWALSamples(h.minValidTime, input, output)
 			atomic.AddUint64(&unknownRefs, unknown)
 			wg.Done()
 		}(inputs[i], outputs[i])
@@ -410,7 +404,7 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 			}
 			for _, s := range tstones {
 				for _, itv := range s.intervals {
-					if itv.Maxt < minValidTime {
+					if itv.Maxt < h.minValidTime {
 						continue
 					}
 					h.tombstones.addInterval(s.ref, itv)
@@ -443,8 +437,12 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 }
 
 // Init loads data from the write ahead log and prepares the head for writes.
-func (h *Head) Init() error {
+// It should be called before using an appender so that
+// limits the ingested samples to the head min valid time.
+func (h *Head) Init(minValidTime int64) error {
+	h.minValidTime = minValidTime
 	defer h.postings.EnsureOrder()
+	defer h.gc() // After loading the wal remove the obsolete data from the head.
 
 	if h.wal == nil {
 		return nil
@@ -486,6 +484,7 @@ func (h *Head) Init() error {
 	if err := h.wal.Repair(err); err != nil {
 		return errors.Wrap(err, "repair corrupted WAL")
 	}
+
 	return nil
 }
 
@@ -502,6 +501,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return nil
 	}
 	atomic.StoreInt64(&h.minTime, mint)
+	h.minValidTime = mint
 
 	// Ensure that max time is at least as high as min time.
 	for h.MaxTime() < mint {
@@ -654,12 +654,21 @@ func (h *Head) Appender() Appender {
 
 func (h *Head) appender() *headAppender {
 	return &headAppender{
-		head:         h,
-		minValidTime: h.MaxTime() - h.chunkRange/2,
+		head: h,
+		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
+		// This ensures that no samples will be added within the compaction window to avoid races.
+		minValidTime: max(h.minValidTime, h.MaxTime()-h.chunkRange/2),
 		mint:         math.MaxInt64,
 		maxt:         math.MinInt64,
 		samples:      h.getAppendBuffer(),
 	}
+}
+
+func max(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (h *Head) getAppendBuffer() []RefSample {
@@ -1411,7 +1420,7 @@ func (s *memSeries) cut(mint int64) *memChunk {
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
-	_, s.nextAt = rangeForTimestamp(mint, s.chunkRange)
+	s.nextAt = rangeForTimestamp(mint, s.chunkRange)
 
 	app, err := c.chunk.Appender()
 	if err != nil {

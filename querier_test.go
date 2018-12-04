@@ -1292,7 +1292,7 @@ func BenchmarkPersistedQueries(b *testing.B) {
 				dir, err := ioutil.TempDir("", "bench_persisted")
 				testutil.Ok(b, err)
 				defer os.RemoveAll(dir)
-				block := createPopulatedBlock(b, dir, nSeries, nSamples)
+				block := createPopulatedBlock(b, dir, nSeries, 1, int64(nSamples))
 				defer block.Close()
 
 				q, err := NewBlockQuerier(block, block.Meta().MinTime, block.Meta().MaxTime)

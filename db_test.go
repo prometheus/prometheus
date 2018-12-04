@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1199,6 +1200,11 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	testutil.Assert(t, count == 2, "expected 2 blocks in querier, got %d", count)
 }
 
+// TestInitializeHeadTimestamp ensures that the h.minTime is set properly.
+// 	- no blocks no WAL: set to the time of the first  appended sample
+// 	- no blocks with WAL: set to the smallest sample from the WAL
+//	- with blocks no WAL: set to the last block maxT
+// 	- with blocks with WAL: same as above
 func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("clean", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
@@ -1440,4 +1446,103 @@ func TestCorrectNumTombstones(t *testing.T) {
 
 	testutil.Ok(t, db.Delete(9, 11, labels.NewEqualMatcher("foo", "bar")))
 	testutil.Equals(t, uint64(3), db.blocks[0].meta.Stats.NumTombstones)
+}
+
+// TestBlockRanges checks the following use cases:
+//  - No samples can be added with timestamps lower than the last block maxt.
+//  - The compactor doesn't create overlaping blocks
+// even when the last blocks is not within the default boundaries.
+//	- Lower bondary is based on the smallest sample in the head and
+// upper boundary is rounded to the configured block range.
+//
+// This ensures that a snapshot that includes the head and creates a block with a custom time range
+// will not overlap with the first block created by the next compaction.
+func TestBlockRanges(t *testing.T) {
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+
+	dir, err := ioutil.TempDir("", "test_storage")
+	if err != nil {
+		t.Fatalf("Opening test dir failed: %s", err)
+	}
+
+	rangeToTriggercompaction := DefaultOptions.BlockRanges[0]/2*3 + 1
+
+	// Test that the compactor doesn't create overlapping blocks
+	// when a non standard block already exists.
+	firstBlockMaxT := int64(3)
+	createPopulatedBlock(t, dir, 1, 0, firstBlockMaxT)
+	db, err := Open(dir, logger, nil, DefaultOptions)
+	if err != nil {
+		t.Fatalf("Opening test storage failed: %s", err)
+	}
+	defer func() {
+		os.RemoveAll(dir)
+	}()
+	app := db.Appender()
+	lbl := labels.Labels{{"a", "b"}}
+	_, err = app.Add(lbl, firstBlockMaxT-1, rand.Float64())
+	if err == nil {
+		t.Fatalf("appending a sample with a timestamp covered by a previous block shouldn't be possible")
+	}
+	_, err = app.Add(lbl, firstBlockMaxT+1, rand.Float64())
+	testutil.Ok(t, err)
+	_, err = app.Add(lbl, firstBlockMaxT+2, rand.Float64())
+	testutil.Ok(t, err)
+	secondBlockMaxt := firstBlockMaxT + rangeToTriggercompaction
+	_, err = app.Add(lbl, secondBlockMaxt, rand.Float64()) // Add samples to trigger a new compaction
+
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	for x := 1; x < 10; x++ {
+		if len(db.Blocks()) == 2 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	testutil.Equals(t, 2, len(db.Blocks()), "no new block created after the set timeout")
+
+	if db.Blocks()[0].Meta().MaxTime > db.Blocks()[1].Meta().MinTime {
+		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[0].Meta(), db.Blocks()[1].Meta())
+	}
+
+	// Test that wal records are skipped when an existing block covers the same time ranges
+	// and compaction doesn't create an overlapping block.
+	db.DisableCompactions()
+	_, err = app.Add(lbl, secondBlockMaxt+1, rand.Float64())
+	testutil.Ok(t, err)
+	_, err = app.Add(lbl, secondBlockMaxt+2, rand.Float64())
+	testutil.Ok(t, err)
+	_, err = app.Add(lbl, secondBlockMaxt+3, rand.Float64())
+	testutil.Ok(t, err)
+	_, err = app.Add(lbl, secondBlockMaxt+4, rand.Float64())
+	testutil.Ok(t, app.Commit())
+	testutil.Ok(t, db.Close())
+
+	thirdBlockMaxt := secondBlockMaxt + 2
+	createPopulatedBlock(t, dir, 1, secondBlockMaxt+1, thirdBlockMaxt)
+
+	db, err = Open(dir, logger, nil, DefaultOptions)
+	if err != nil {
+		t.Fatalf("Opening test storage failed: %s", err)
+	}
+	defer db.Close()
+	testutil.Equals(t, 3, len(db.Blocks()), "db doesn't include expected number of blocks")
+	testutil.Equals(t, db.Blocks()[2].Meta().MaxTime, thirdBlockMaxt, "unexpected maxt of the last block")
+
+	app = db.Appender()
+	_, err = app.Add(lbl, thirdBlockMaxt+rangeToTriggercompaction, rand.Float64()) // Trigger a compaction
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	for x := 1; x < 10; x++ {
+		if len(db.Blocks()) == 4 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	testutil.Equals(t, 4, len(db.Blocks()), "no new block created after the set timeout")
+
+	if db.Blocks()[2].Meta().MaxTime > db.Blocks()[3].Meta().MinTime {
+		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
+	}
 }
