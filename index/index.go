@@ -868,7 +868,7 @@ func (r *Reader) Symbols() (map[string]struct{}, error) {
 	return res, nil
 }
 
-// SymbolTable returns the symbol table that is used to resolve symbol references.
+// SymbolTableSize returns the symbol table that is used to resolve symbol references.
 func (r *Reader) SymbolTableSize() uint64 {
 	var size int
 	for _, s := range r.symbols {
