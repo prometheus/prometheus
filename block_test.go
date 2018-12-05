@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -105,7 +106,7 @@ func createPopulatedBlock(tb testing.TB, dir string, nSeries int, mint, maxt int
 		testutil.Ok(tb, err)
 	}
 
-	compactor, err := NewLeveledCompactor(nil, log.NewNopLogger(), []int64{1000000}, nil)
+	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil)
 	testutil.Ok(tb, err)
 
 	testutil.Ok(tb, os.MkdirAll(dir, 0777))

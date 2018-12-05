@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math/rand"
@@ -71,6 +72,7 @@ type LeveledCompactor struct {
 	logger    log.Logger
 	ranges    []int64
 	chunkPool chunkenc.Pool
+	ctx       context.Context
 }
 
 type compactorMetrics struct {
@@ -128,7 +130,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 // NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool) (*LeveledCompactor, error) {
+func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.Errorf("at least one range must be provided")
 	}
@@ -140,6 +142,7 @@ func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, ranges []int64, 
 		chunkPool: pool,
 		logger:    l,
 		metrics:   newCompactorMetrics(r),
+		ctx:       ctx,
 	}, nil
 }
 
@@ -441,8 +444,11 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
 	dir := filepath.Join(dest, meta.ULID.String())
 	tmp := dir + ".tmp"
-
+	var writers []io.Closer
 	defer func(t time.Time) {
+		for _, w := range writers {
+			w.Close()
+		}
 		if err != nil {
 			c.metrics.failed.Inc()
 			// TODO(gouthamve): Handle error how?
@@ -470,7 +476,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
 	}
-	defer chunkw.Close()
+	writers = append(writers, chunkw)
 	// Record written chunk sizes on level 1 compactions.
 	if meta.Compaction.Level == 1 {
 		chunkw = &instrumentedChunkWriter{
@@ -485,10 +491,23 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}
-	defer indexw.Close()
+	writers = append(writers, indexw)
 
 	if err := c.populateBlock(blocks, meta, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
+	}
+
+	// Remove tmp folder and return early when the compaction was canceled.
+	select {
+	case <-c.ctx.Done():
+		for _, w := range writers {
+			w.Close()
+		}
+		if err := os.RemoveAll(tmp); err != nil {
+			level.Error(c.logger).Log("msg", "removed tmp folder after canceled compaction", "err", err.Error())
+		}
+		return
+	default:
 	}
 
 	if err = writeMetaFile(tmp, meta); err != nil {
@@ -499,11 +518,10 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	// though these are covered under defer. This is because in Windows,
 	// you cannot delete these unless they are closed and the defer is to
 	// make sure they are closed if the function exits due to an error above.
-	if err = chunkw.Close(); err != nil {
-		return errors.Wrap(err, "close chunk writer")
-	}
-	if err = indexw.Close(); err != nil {
-		return errors.Wrap(err, "close index writer")
+	for _, w := range writers {
+		if err := w.Close(); err != nil {
+			return err
+		}
 	}
 
 	// Create an empty tombstones file.
@@ -554,6 +572,12 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	defer func() { closeAll(closers...) }()
 
 	for i, b := range blocks {
+		select {
+		case <-c.ctx.Done():
+			return nil
+		default:
+		}
+
 		indexr, err := b.Index()
 		if err != nil {
 			return errors.Wrapf(err, "open index reader for block %s", b)
@@ -610,6 +634,11 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	for set.Next() {
+		select {
+		case <-c.ctx.Done():
+			return nil
+		default:
+		}
 		lset, chks, dranges := set.At() // The chunks here are not fully deleted.
 
 		// Skip the series with all deleted chunks.

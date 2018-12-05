@@ -1,4 +1,6 @@
 ## master / unreleased
+ - [CHANGE]  `NewLeveledCompactor` takes a context so that a compaction is canceled when closing the db.
+
 
 ## 0.3.0
 

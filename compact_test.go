@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"io/ioutil"
 	"math"
 	"os"
@@ -151,7 +152,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 		},
 	}
 
-	c, err := NewLeveledCompactor(nil, nil, []int64{50}, nil)
+	c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{50}, nil)
 	testutil.Ok(t, err)
 
 	c.plan(metas)
@@ -159,7 +160,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 
 func TestLeveledCompactor_plan(t *testing.T) {
 	// This mimicks our default ExponentialBlockRanges with min block size equals to 20.
-	compactor, err := NewLeveledCompactor(nil, nil, []int64{
+	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
 		20,
 		60,
 		180,
@@ -322,7 +323,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 }
 
 func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
-	compactor, err := NewLeveledCompactor(nil, nil, []int64{
+	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
 		20,
 		60,
 		240,
@@ -372,7 +373,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 }
 
 func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
-	compactor, err := NewLeveledCompactor(nil, log.NewNopLogger(), []int64{
+	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{
 		20,
 		60,
 		240,
@@ -647,7 +648,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 				blocks = append(blocks, &mockBReader{ir: ir, cr: cr})
 			}
 
-			c, err := NewLeveledCompactor(nil, nil, []int64{0}, nil)
+			c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{0}, nil)
 			testutil.Ok(t, err)
 
 			meta := &BlockMeta{
