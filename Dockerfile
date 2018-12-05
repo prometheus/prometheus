@@ -1,8 +1,15 @@
-FROM        quay.io/prometheus/busybox:latest
+FROM        golang:latest as builder
+WORKDIR /build
+
+COPY . /build
+
+RUN make build
+
+from        quay.io/prometheus/busybox:latest
 LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com>"
 
-COPY prometheus                             /bin/prometheus
-COPY promtool                               /bin/promtool
+COPY --from=builder /build/prometheus       /bin/prometheus
+COPY --from=builder /build/promtool         /bin/promtool
 COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
 COPY console_libraries/                     /usr/share/prometheus/console_libraries/
 COPY consoles/                              /usr/share/prometheus/consoles/
