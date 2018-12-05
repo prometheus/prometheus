@@ -110,14 +110,6 @@ var (
 	)
 )
 
-func init() {
-	prometheus.MustRegister(iterationDuration)
-	prometheus.MustRegister(iterationsScheduled)
-	prometheus.MustRegister(iterationsMissed)
-	prometheus.MustRegister(evalFailures)
-	prometheus.MustRegister(evalDuration)
-}
-
 // QueryFunc processes PromQL queries.
 type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, error)
 
@@ -646,6 +638,11 @@ func NewManager(o *ManagerOptions) *Manager {
 		logger: o.Logger,
 	}
 	if o.Registerer != nil {
+		o.Registerer.MustRegister(iterationDuration)
+		o.Registerer.MustRegister(iterationsScheduled)
+		o.Registerer.MustRegister(iterationsMissed)
+		o.Registerer.MustRegister(evalFailures)
+		o.Registerer.MustRegister(evalDuration)
 		o.Registerer.MustRegister(m)
 	}
 	return m
