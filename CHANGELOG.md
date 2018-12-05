@@ -1,17 +1,16 @@
 ## 2.6.0-rc.0 / 2018-12-05
 
-* [CHANGE] Add `prometheus_tsdb_lowest_timestamp_seconds`, `prometheus_tsdb_head_min_time_seconds` and `prometheus_tsdb_head_max_time_seconds` metrics. #4888
 * [CHANGE] Include default flags to the container's entrypoint. #4796
-* [CHANGE] Set consistent User-Agent header in outgoing requests. #4891
-* [CHANGE] Azure SD: Error out at load time when authentication parameters are missing. #4907
 * [CHANGE] Promtool: Remove the `update` command. #3839
-* [CHANGE] Web UI: group targets by job then instance. #4898
 * [FEATURE] Add JSON log format via the `--log.format` flag. #4876
 * [FEATURE] API: Add /api/v1/labels endpoint to get all label names. #4835
 * [FEATURE] Web: Allow setting the page's title via the `--web.ui-title` flag. #4841
+* [ENHANCEMENT] Add `prometheus_tsdb_lowest_timestamp_seconds`, `prometheus_tsdb_head_min_time_seconds` and `prometheus_tsdb_head_max_time_seconds` metrics. #4888
 * [ENHANCEMENT] Add `rule_group_last_evaluation_timestamp_seconds` metric. #4852
 * [ENHANCEMENT] Add `prometheus_template_text_expansion_failures_total` and `prometheus_template_text_expansions_total` metrics. #4747
+* [ENHANCEMENT] Set consistent User-Agent header in outgoing requests. #4891
 * [ENHANCEMENT] Azure SD: Add the machine's power state to the discovery metadata. #4908
+* [ENHANCEMENT] Azure SD: Error out at load time when authentication parameters are missing. #4907
 * [ENHANCEMENT] EC2 SD: Add the machine's private DNS name to the discovery metadata. #4693
 * [ENHANCEMENT] EC2 SD: Add the operating system's platform to the discovery metadata. #4663
 * [ENHANCEMENT] Kubernetes SD: Add the pod's phase to the discovery metadata. #4824
@@ -24,8 +23,8 @@
 * [ENHANCEMENT] TSDB: memory improvements. #4953
 * [ENHANCEMENT] Web: Log stack traces on panic. #4221
 * [ENHANCEMENT] Web UI: Add copy to clipboard button for configuration. #4410
-* [ENHANCEMENT] Web UI: Display job label in targets page. #4806
 * [ENHANCEMENT] Web UI: Support console queries at specific times. #4764
+* [ENHANCEMENT] Web UI: group targets by job then instance. #4898 #4806
 * [BUGFIX] Deduplicate handler labels for HTTP metrics. #4732
 * [BUGFIX] Fix leaked queriers causing shutdowns to hang. #4922
 * [BUGFIX] Fix configuration loading panics on nil pointer slice elements. #4942
@@ -33,7 +32,6 @@
 * [BUGFIX] API: Better rounding for incoming query timestamps. #4941
 * [BUGFIX] Azure SD: Fix panic. #4867
 * [BUGFIX] Console templates: Fix hover when the metric has a null value. #4906
-* [BUGFIX] Custom SD adapter: Only update the JSON file when the targets change. #4567
 * [BUGFIX] Discovery: Remove all targets when the scrape configuration gets empty. #4819
 * [BUGFIX] Marathon SD: Fix leaked connections. #4915
 * [BUGFIX] Marathon SD: Use 'hostPort' member of portMapping to construct target endpoints. #4887
