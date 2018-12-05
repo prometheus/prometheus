@@ -20,7 +20,8 @@
 * [ENHANCEMENT] Remote Read: Return available data if remote read fails partially. #4832
 * [ENHANCEMENT] Remote Write: Improve queue performance. #4772
 * [ENHANCEMENT] Remote Write: Add min_shards parameter to set the minimum number of shards. #4924
-* [ENHANCEMENT] TSDB: memory improvements. #4953
+* [ENHANCEMENT] TSDB: Improve WAL reading. #4953
+* [ENHANCEMENT] TSDB: Memory improvements. #4953
 * [ENHANCEMENT] Web: Log stack traces on panic. #4221
 * [ENHANCEMENT] Web UI: Add copy to clipboard button for configuration. #4410
 * [ENHANCEMENT] Web UI: Support console queries at specific times. #4764
@@ -39,6 +40,8 @@
 * [BUGFIX] Scrape: Pass through content-type for non-compressed output. #4912
 * [BUGFIX] Scrape: Fix deadlock in the scrape's manager. #4894
 * [BUGFIX] Scrape: Scrape targets at fixed intervals even after Prometheus restarts. #4926
+* [BUGFIX] TSDB: Support restored snapshots including the head properly. #4953
+* [BUGFIX] TSDB: Repair WAL when the last record in a segment is torn. #4953
 * [BUGFIX] Web: Avoid proxy to connect to the local gRPC server. #4572
 
 ## 2.5.0 / 2018-11-06
