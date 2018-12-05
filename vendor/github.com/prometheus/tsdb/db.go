@@ -99,7 +99,6 @@ type DB struct {
 	logger    log.Logger
 	metrics   *dbMetrics
 	opts      *Options
-	chunkPool chunkenc.Pool
 	compactor Compactor
 
 	// Mutex for that must be held when modifying the general block layout.
@@ -242,7 +241,6 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		donec:       make(chan struct{}),
 		stopc:       make(chan struct{}),
 		autoCompact: true,
-		chunkPool:   chunkenc.NewPool(),
 	}
 	db.metrics = newDBMetrics(db, r)
 
@@ -258,7 +256,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		db.lockf = lockf
 	}
 
-	db.compactor, err = NewLeveledCompactor(r, l, opts.BlockRanges, db.chunkPool)
+	db.compactor, err = NewLeveledCompactor(r, l, opts.BlockRanges, chunkenc.NewPool())
 	if err != nil {
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
@@ -539,7 +537,7 @@ func (db *DB) reload() (err error) {
 		// See if we already have the block in memory or open it otherwise.
 		b, ok := db.getBlock(meta.ULID)
 		if !ok {
-			b, err = OpenBlock(dir, db.chunkPool)
+			b, err = OpenBlock(dir, nil)
 			if err != nil {
 				return errors.Wrapf(err, "open block %s", dir)
 			}

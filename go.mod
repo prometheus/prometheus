@@ -129,4 +129,7 @@ require (
 	launchpad.net/gocheck v0.0.0-20140225173054-000000000087 // indirect
 )
 
-replace github.com/golang/glog => github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352
+replace (
+	github.com/golang/glog => github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352
+	github.com/prometheus/tsdb => github.com/krasi-georgiev/tsdb v0.0.0-20181205124847-4787e842c678
+)

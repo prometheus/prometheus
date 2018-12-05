@@ -310,9 +310,6 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 
 // NewReader returns a new chunk reader against the given byte slices.
 func NewReader(bs []ByteSlice, pool chunkenc.Pool) (*Reader, error) {
-	if pool == nil {
-		pool = chunkenc.NewPool()
-	}
 	return newReader(bs, nil, pool)
 }
 
@@ -322,9 +319,6 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 	files, err := sequenceFiles(dir)
 	if err != nil {
 		return nil, err
-	}
-	if pool == nil {
-		pool = chunkenc.NewPool()
 	}
 
 	var bs []ByteSlice
@@ -368,7 +362,16 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	}
 	r = b.Range(off+n, off+n+int(l))
 
+	if s.pool == nil {
+		return chunkenc.FromData(chunkenc.Encoding(r[0]), r[1:1+l])
+	}
 	return s.pool.Get(chunkenc.Encoding(r[0]), r[1:1+l])
+}
+
+func (s *Reader) Put(chk chunkenc.Chunk) {
+	if s.pool != nil && chk != nil {
+		s.pool.Put(chk)
+	}
 }
 
 func nextSequenceFile(dir string) (string, int, error) {

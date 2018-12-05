@@ -973,6 +973,10 @@ func (h *headChunkReader) Close() error {
 	return nil
 }
 
+func (h *headChunkReader) Put(_ chunkenc.Chunk) {
+	// This is a noop.
+}
+
 // packChunkID packs a seriesID and a chunkID within it into a global 8 byte ID.
 // It panicks if the seriesID exceeds 5 bytes or the chunk ID 3 bytes.
 func packChunkID(seriesID, chunkID uint64) uint64 {
