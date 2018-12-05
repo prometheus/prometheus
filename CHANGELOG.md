@@ -40,6 +40,7 @@
 * [BUGFIX] PromQL: Fix a goroutine leak in the lexer/parser. #4858
 * [BUGFIX] Scrape: Pass through content-type for non-compressed output. #4912
 * [BUGFIX] Scrape: Fix deadlock in the scrape's manager. #4894
+* [BUGFIX] Scrape: Scrape targets at fixed intervals even after Prometheus restarts. #4926
 * [BUGFIX] Web: Avoid proxy to connect to the local gRPC server. #4572
 
 ## 2.5.0 / 2018-11-06
