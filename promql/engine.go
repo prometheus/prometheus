@@ -74,7 +74,7 @@ type (
 	ErrTooManySamples string
 	// ErrStorage is returned if an error was encountered in the storage layer
 	// during query handling.
-	ErrStorage struct{ error }
+	ErrStorage struct{ Err error }
 )
 
 func (e ErrQueryTimeout) Error() string {
@@ -87,7 +87,7 @@ func (e ErrTooManySamples) Error() string {
 	return fmt.Sprintf("query processing would load too many samples into memory in %s", string(e))
 }
 func (e ErrStorage) Error() string {
-	return e.error.Error()
+	return e.Err.Error()
 }
 
 // A Query is derived from an a raw query string and can be run against an engine

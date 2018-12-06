@@ -49,8 +49,8 @@ type bstream struct {
 	count  uint8  // how many bits are valid in current byte
 }
 
-func newBReader(b []byte) *bstream {
-	return &bstream{stream: b, count: 8}
+func newBReader(b []byte) bstream {
+	return bstream{stream: b, count: 8}
 }
 
 func newBWriter(size int) *bstream {

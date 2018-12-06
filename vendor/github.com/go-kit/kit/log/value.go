@@ -1,9 +1,10 @@
 package log
 
 import (
+	"runtime"
+	"strconv"
+	"strings"
 	"time"
-
-	"github.com/go-stack/stack"
 )
 
 // A Valuer generates a log value. When passed to With or WithPrefix in a
@@ -81,7 +82,14 @@ func (tf timeFormat) MarshalText() (text []byte, err error) {
 // Caller returns a Valuer that returns a file and line from a specified depth
 // in the callstack. Users will probably want to use DefaultCaller.
 func Caller(depth int) Valuer {
-	return func() interface{} { return stack.Caller(depth) }
+	return func() interface{} {
+		_, file, line, _ := runtime.Caller(depth)
+		idx := strings.LastIndexByte(file, '/')
+		// using idx+1 below handles both of following cases:
+		// idx == -1 because no "/" was found, or
+		// idx >= 0 and we want to start at the character after the found "/".
+		return file[idx+1:] + ":" + strconv.Itoa(line)
+	}
 }
 
 var (

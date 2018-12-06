@@ -16,7 +16,7 @@
 # !!! Open PRs only against the prometheus/prometheus/Makefile.common repository!
 
 # Example usage :
-# Create the main Makefile in the root project directory. 
+# Create the main Makefile in the root project directory.
 # include Makefile.common
 # customTarget:
 # 	@echo ">> Running customTarget"
@@ -28,10 +28,45 @@ unexport GOBIN
 GO           ?= go
 GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
+GOOPTS       ?=
+
+GO_VERSION        ?= $(shell $(GO) version)
+GO_VERSION_NUMBER ?= $(word 3, $(GO_VERSION))
+PRE_GO_111        ?= $(shell echo $(GO_VERSION_NUMBER) | grep -E 'go1\.(10|[0-9])\.')
+
+unexport GOVENDOR
+ifeq (, $(PRE_GO_111))
+	ifneq (,$(wildcard go.mod))
+		# Enforce Go modules support just in case the directory is inside GOPATH (and for Travis CI).
+		GO111MODULE := on
+
+		ifneq (,$(wildcard vendor))
+			# Always use the local vendor/ directory to satisfy the dependencies.
+			GOOPTS := $(GOOPTS) -mod=vendor
+		endif
+	endif
+else
+	ifneq (,$(wildcard go.mod))
+		ifneq (,$(wildcard vendor))
+$(warning This repository requires Go >= 1.11 because of Go modules)
+$(warning Some recipes may not work as expected as the current Go runtime is '$(GO_VERSION_NUMBER)')
+		endif
+	else
+		# This repository isn't using Go modules (yet).
+		GOVENDOR := $(FIRST_GOPATH)/bin/govendor
+	endif
+
+	unexport GO111MODULE
+endif
 PROMU        := $(FIRST_GOPATH)/bin/promu
 STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
-GOVENDOR     := $(FIRST_GOPATH)/bin/govendor
 pkgs          = ./...
+
+GO_VERSION        ?= $(shell $(GO) version)
+GO_BUILD_PLATFORM ?= $(subst /,-,$(lastword $(GO_VERSION)))
+
+PROMU_VERSION ?= 0.2.0
+PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
 
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
@@ -39,7 +74,7 @@ DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 DOCKER_REPO             ?= prom
 
 .PHONY: all
-all: style staticcheck unused build test
+all: precheck style staticcheck unused build test
 
 # This rule is used to forward a target like "build" to "common-build".  This
 # allows a new "build" target to be defined in a Makefile which includes this
@@ -70,37 +105,54 @@ common-check_license:
 .PHONY: common-test-short
 common-test-short:
 	@echo ">> running short tests"
-	$(GO) test -short $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) test -short $(GOOPTS) $(pkgs)
 
 .PHONY: common-test
 common-test:
 	@echo ">> running all tests"
-	$(GO) test -race $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) test -race $(GOOPTS) $(pkgs)
 
 .PHONY: common-format
 common-format:
 	@echo ">> formatting code"
-	$(GO) fmt $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) fmt $(GOOPTS) $(pkgs)
 
 .PHONY: common-vet
 common-vet:
 	@echo ">> vetting code"
-	$(GO) vet $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) vet $(GOOPTS) $(pkgs)
 
 .PHONY: common-staticcheck
 common-staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
+ifdef GO111MODULE
+	GO111MODULE=$(GO111MODULE) $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" -checks "SA*" $(pkgs)
+else
 	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
+endif
 
 .PHONY: common-unused
 common-unused: $(GOVENDOR)
+ifdef GOVENDOR
 	@echo ">> running check for unused packages"
 	@$(GOVENDOR) list +unused | grep . && exit 1 || echo 'No unused packages'
+else
+ifdef GO111MODULE
+	@echo ">> running check for unused/missing packages in go.mod"
+	GO111MODULE=$(GO111MODULE) $(GO) mod tidy
+	@git diff --exit-code -- go.sum go.mod
+ifneq (,$(wildcard vendor))
+	@echo ">> running check for unused packages in vendor/"
+	GO111MODULE=$(GO111MODULE) $(GO) mod vendor
+	@git diff --exit-code -- go.sum go.mod vendor/
+endif
+endif
+endif
 
 .PHONY: common-build
 common-build: promu
 	@echo ">> building binaries"
-	$(PROMU) build --prefix $(PREFIX)
+	GO111MODULE=$(GO111MODULE) $(PROMU) build --prefix $(PREFIX)
 
 .PHONY: common-tarball
 common-tarball: promu
@@ -120,13 +172,52 @@ common-docker-tag-latest:
 	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):latest"
 
 .PHONY: promu
-promu:
-	GOOS= GOARCH= $(GO) get -u github.com/prometheus/promu
+promu: $(PROMU)
+
+$(PROMU):
+	curl -s -L $(PROMU_URL) | tar -xvz -C /tmp
+	mkdir -v -p $(FIRST_GOPATH)/bin
+	cp -v /tmp/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(PROMU)
+
+.PHONY: proto
+proto:
+	@echo ">> generating code from proto files"
+	@./scripts/genproto.sh
 
 .PHONY: $(STATICCHECK)
 $(STATICCHECK):
-	GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck
+ifdef GO111MODULE
+# Get staticcheck from a temporary directory to avoid modifying the local go.{mod,sum}.
+# See https://github.com/golang/go/issues/27643.
+# For now, we are using the next branch of staticcheck because master isn't compatible yet with Go modules.
+	tmpModule=$$(mktemp -d 2>&1) && \
+	mkdir -p $${tmpModule}/staticcheck && \
+	cd "$${tmpModule}"/staticcheck && \
+	GO111MODULE=on $(GO) mod init example.com/staticcheck && \
+	GO111MODULE=on GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck@next && \
+	rm -rf $${tmpModule};
+else
+	GOOS= GOARCH= GO111MODULE=off $(GO) get -u honnef.co/go/tools/cmd/staticcheck
+endif
 
+ifdef GOVENDOR
 .PHONY: $(GOVENDOR)
 $(GOVENDOR):
 	GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
+endif
+
+.PHONY: precheck
+precheck::
+
+define PRECHECK_COMMAND_template =
+precheck:: $(1)_precheck
+
+
+PRECHECK_COMMAND_$(1) ?= $(1) $$(strip $$(PRECHECK_OPTIONS_$(1)))
+.PHONY: $(1)_precheck
+$(1)_precheck:
+	@if ! $$(PRECHECK_COMMAND_$(1)) 1>/dev/null 2>&1; then \
+		echo "Execution of '$$(PRECHECK_COMMAND_$(1))' command failed. Is $(1) installed?"; \
+		exit 1; \
+	fi
+endef
