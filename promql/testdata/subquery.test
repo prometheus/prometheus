@@ -1,0 +1,87 @@
+load 10s
+  metric 1 2
+
+# Evaluation before 0s gets no sample.
+eval instant at 10s sum_over_time(metric[50s:10s])
+  {} 3
+
+eval instant at 10s sum_over_time(metric[50s:5s])
+  {} 4
+
+# Every evaluation yeilds the last value, i.e. 2
+eval instant at 5m sum_over_time(metric[50s:10s])
+  {} 12
+
+# Series becomes stale at 5m10s (5m after last sample)
+# Hence subquery gets a single sample at 6m-50s=5m10s.
+eval instant at 6m sum_over_time(metric[50s:10s])
+  {} 2
+
+eval instant at 10s rate(metric[20s:10s])
+  {} 0.1
+
+eval instant at 20s rate(metric[20s:5s])
+  {} 0.05
+
+clear
+
+load 10s
+  http_requests{job="api-server", instance="1", group="production"} 0+20x1000 200+30x1000
+  http_requests{job="api-server", instance="0", group="production"} 0+10x1000 100+30x1000
+  http_requests{job="api-server", instance="0", group="canary"}  0+30x1000 300+80x1000
+  http_requests{job="api-server", instance="1", group="canary"}  0+40x2000
+
+eval instant at 8000s rate(http_requests{group=~"pro.*"}[1m:10s])
+  {job="api-server", instance="0", group="production"} 1
+  {job="api-server", instance="1", group="production"} 2
+
+eval instant at 20000s avg_over_time(rate(http_requests[1m])[1m:1s])
+  {job="api-server", instance="0", group="canary"}     8
+  {job="api-server", instance="1", group="canary"}     4
+  {job="api-server", instance="1", group="production"} 3
+  {job="api-server", instance="0", group="production"} 3
+
+clear
+
+load 10s
+  metric1 0+1x1000
+  metric2 0+2x1000
+  metric3 0+3x1000
+
+eval instant at 1000s sum_over_time(metric1[30s:10s])
+  {} 394
+
+# This is (394*2 - 100), because other than the last 100 at 1000s,
+# everything else is repeated with the 5s step.
+eval instant at 1000s sum_over_time(metric1[30s:5s])
+  {} 688
+
+# Offset is aligned with the step.
+eval instant at 1010s sum_over_time(metric1[30s:10s] offset 10s)
+  {} 394
+
+# Same result for different offsets due to step alignment.
+eval instant at 1010s sum_over_time(metric1[30s:10s] offset 9s)
+  {} 297
+
+eval instant at 1010s sum_over_time(metric1[30s:10s] offset 7s)
+  {} 297
+
+eval instant at 1010s sum_over_time(metric1[30s:10s] offset 5s)
+  {} 297
+
+eval instant at 1010s sum_over_time(metric1[30s:10s] offset 3s)
+  {} 297
+
+# Nested subqueries
+eval instant at 1000s rate(sum_over_time(metric1[30s:10s])[50s:10s])
+  {} 0.4
+
+eval instant at 1000s rate(sum_over_time(metric2[30s:10s])[50s:10s])
+  {} 0.8
+  
+eval instant at 1000s rate(sum_over_time(metric3[30s:10s])[50s:10s])
+  {} 1.2
+  
+eval instant at 1000s rate(sum_over_time((metric1+metric2+metric3)[30s:10s])[30s:10s])
+  {} 2.4

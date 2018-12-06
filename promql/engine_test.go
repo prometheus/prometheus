@@ -683,20 +683,6 @@ func TestSubquerySelector(t *testing.T) {
 					Start: time.Unix(10, 0),
 				},
 				{
-					Query: "rate(metric[20s:10s])",
-					Result: Result{
-						nil,
-						Vector{
-							Sample{
-								Point:  Point{V: 0.1, T: 10000},
-								Metric: labels.Labels{},
-							},
-						},
-						nil,
-					},
-					Start: time.Unix(10, 0),
-				},
-				{
 					Query: "metric[20s:5s]",
 					Result: Result{
 						nil,
@@ -780,20 +766,6 @@ func TestSubquerySelector(t *testing.T) {
 					},
 					Start: time.Unix(35, 0),
 				},
-				{
-					Query: "rate(metric[20s:5s])",
-					Result: Result{
-						nil,
-						Vector{
-							Sample{
-								Point:  Point{V: 0.0625, T: 10000},
-								Metric: labels.Labels{},
-							},
-						},
-						nil,
-					},
-					Start: time.Unix(10, 0),
-				},
 			},
 		},
 		{
@@ -842,24 +814,6 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 					},
 					Start: time.Unix(10100, 0),
-				},
-				{
-					Query: `rate(http_requests{group=~"pro.*"}[1m:10s])`,
-					Result: Result{
-						nil,
-						Vector{
-							Sample{
-								Point:  Point{V: 1, T: 8000000},
-								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
-							},
-							Sample{
-								Point:  Point{V: 2, T: 8000000},
-								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
-							},
-						},
-						nil,
-					},
-					Start: time.Unix(8000, 0),
 				},
 				{
 					Query: `rate(http_requests[1m])[15s:5s]`,
@@ -922,32 +876,6 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 					},
 					Start: time.Unix(120, 0),
-				},
-				{
-					Query: `avg_over_time(rate(http_requests[1m])[1m:1s])`,
-					Result: Result{
-						nil,
-						Vector{
-							Sample{
-								Point:  Point{V: 8, T: 20000000},
-								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
-							},
-							Sample{
-								Point:  Point{V: 4, T: 20000000},
-								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
-							},
-							Sample{
-								Point:  Point{V: 3, T: 20000000},
-								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
-							},
-							Sample{
-								Point:  Point{V: 3, T: 20000000},
-								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
-							},
-						},
-						nil,
-					},
-					Start: time.Unix(20000, 0),
 				},
 			},
 		},
