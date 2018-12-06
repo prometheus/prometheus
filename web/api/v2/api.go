@@ -67,9 +67,7 @@ func (api *API) RegisterGRPC(srv *grpc.Server) {
 }
 
 // HTTPHandler returns an HTTP handler for a REST API gateway to the given grpc address.
-func (api *API) HTTPHandler(grpcAddr string) (http.Handler, error) {
-	ctx := context.Background()
-
+func (api *API) HTTPHandler(ctx context.Context, grpcAddr string) (http.Handler, error) {
 	enc := new(protoutil.JSONPb)
 	mux := runtime.NewServeMux(runtime.WithMarshalerOption(enc.ContentType(), enc))
 

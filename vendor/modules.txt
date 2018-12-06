@@ -1,3 +1,5 @@
+# cloud.google.com/go v0.26.0
+cloud.google.com/go/compute/metadata
 # github.com/Azure/azure-sdk-for-go v0.0.0-20161028183111-bd73d950fa44
 github.com/Azure/azure-sdk-for-go/arm/compute
 github.com/Azure/azure-sdk-for-go/arm/network
@@ -57,6 +59,8 @@ github.com/davecgh/go-spew/spew
 github.com/dgrijalva/jwt-go
 # github.com/evanphx/json-patch v4.1.0+incompatible
 github.com/evanphx/json-patch
+# github.com/ghodss/yaml v1.0.0
+github.com/ghodss/yaml
 # github.com/go-ini/ini v1.21.1
 github.com/go-ini/ini
 # github.com/go-kit/kit v0.8.0
@@ -64,20 +68,51 @@ github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
 # github.com/go-logfmt/logfmt v0.4.0
 github.com/go-logfmt/logfmt
-# github.com/gogo/protobuf v1.1.1
+# github.com/gogo/protobuf v1.2.0
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/types
+github.com/gogo/protobuf/protoc-gen-gogofast
 github.com/gogo/protobuf/sortkeys
+github.com/gogo/protobuf/vanity
+github.com/gogo/protobuf/vanity/command
 github.com/gogo/protobuf/jsonpb
+github.com/gogo/protobuf/gogoproto
+github.com/gogo/protobuf/protoc-gen-gogo/descriptor
+github.com/gogo/protobuf/plugin/compare
+github.com/gogo/protobuf/plugin/defaultcheck
+github.com/gogo/protobuf/plugin/description
+github.com/gogo/protobuf/plugin/embedcheck
+github.com/gogo/protobuf/plugin/enumstringer
+github.com/gogo/protobuf/plugin/equal
+github.com/gogo/protobuf/plugin/face
+github.com/gogo/protobuf/plugin/gostring
+github.com/gogo/protobuf/plugin/marshalto
+github.com/gogo/protobuf/plugin/oneofcheck
+github.com/gogo/protobuf/plugin/populate
+github.com/gogo/protobuf/plugin/size
+github.com/gogo/protobuf/plugin/stringer
+github.com/gogo/protobuf/plugin/testgen
+github.com/gogo/protobuf/plugin/union
+github.com/gogo/protobuf/plugin/unmarshal
+github.com/gogo/protobuf/protoc-gen-gogo/generator
+github.com/gogo/protobuf/protoc-gen-gogo/grpc
+github.com/gogo/protobuf/protoc-gen-gogo/plugin
+github.com/gogo/protobuf/protoc-gen-gogo/generator/internal/remap
+# github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
+github.com/golang/glog
 # github.com/golang/protobuf v1.2.0
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/jsonpb
-github.com/golang/protobuf/protoc-gen-go/descriptor
-github.com/golang/protobuf/ptypes/struct
+github.com/golang/protobuf/protoc-gen-go/generator
 github.com/golang/protobuf/ptypes/any
-github.com/golang/protobuf/ptypes
 github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/timestamp
+github.com/golang/protobuf/ptypes/wrappers
+github.com/golang/protobuf/protoc-gen-go/descriptor
+github.com/golang/protobuf/ptypes
+github.com/golang/protobuf/protoc-gen-go/plugin
+github.com/golang/protobuf/ptypes/struct
+github.com/golang/protobuf/protoc-gen-go/generator/internal/remap
 # github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
 github.com/golang/snappy
 # github.com/google/btree v0.0.0-20180124185431-e89373fe6b4a
@@ -106,10 +141,19 @@ github.com/gophercloud/gophercloud/openstack/identity/v2/tenants
 # github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7
 github.com/gregjones/httpcache
 github.com/gregjones/httpcache/diskcache
-# github.com/grpc-ecosystem/grpc-gateway v0.0.0-20171126203511-e4b8a938efae
+# github.com/grpc-ecosystem/grpc-gateway v1.6.3
 github.com/grpc-ecosystem/grpc-gateway/runtime
 github.com/grpc-ecosystem/grpc-gateway/utilities
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger
 github.com/grpc-ecosystem/grpc-gateway/runtime/internal
+github.com/grpc-ecosystem/grpc-gateway/codegenerator
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/gengateway
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/genswagger
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/httprule
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/generator
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options
 # github.com/hashicorp/consul v0.0.0-20180615161029-bed22a81e9fd
 github.com/hashicorp/consul/api
 # github.com/hashicorp/go-cleanhttp v0.0.0-20160407174126-ad28ea4487f0
@@ -210,7 +254,7 @@ github.com/stretchr/testify/assert
 golang.org/x/crypto/ed25519
 golang.org/x/crypto/ed25519/internal/edwards25519
 golang.org/x/crypto/ssh/terminal
-# golang.org/x/net v0.0.0-20180320002117-6078986fec03
+# golang.org/x/net v0.0.0-20180826012351-8a410e7b638d
 golang.org/x/net/context
 golang.org/x/net/netutil
 golang.org/x/net/trace
@@ -223,9 +267,9 @@ golang.org/x/net/internal/timeseries
 golang.org/x/net/bpf
 golang.org/x/net/internal/iana
 golang.org/x/net/internal/socket
+golang.org/x/net/http/httpguts
 golang.org/x/net/idna
-golang.org/x/net/lex/httplex
-# golang.org/x/oauth2 v0.0.0-20160608215109-65a8d08c6292
+# golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
 golang.org/x/oauth2/google
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
@@ -236,19 +280,25 @@ golang.org/x/sync/errgroup
 # golang.org/x/sys v0.0.0-20181107165924-66b7b1311ac8
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/text v0.0.0-20170810154203-b19bf474d317
+# golang.org/x/text v0.3.0
 golang.org/x/text/secure/bidirule
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
 golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
 golang.org/x/time/rate
+# golang.org/x/tools v0.0.0-20181023010539-40a48ad93fbe
+golang.org/x/tools/cmd/goimports
+golang.org/x/tools/imports
+golang.org/x/tools/go/ast/astutil
+golang.org/x/tools/internal/gopathwalk
+golang.org/x/tools/internal/fastwalk
 # google.golang.org/api v0.0.0-20180506000402-20530fd5d65a
 google.golang.org/api/compute/v1
 google.golang.org/api/gensupport
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/internal/uritemplates
-# google.golang.org/appengine v0.0.0-20170522224838-a2f4131514e5
+# google.golang.org/appengine v1.1.0
 google.golang.org/appengine
 google.golang.org/appengine/urlfetch
 google.golang.org/appengine/internal
@@ -259,27 +309,42 @@ google.golang.org/appengine/internal/base
 google.golang.org/appengine/internal/datastore
 google.golang.org/appengine/internal/log
 google.golang.org/appengine/internal/remote_api
-# google.golang.org/cloud v0.0.0-20160622021550-0a83eba2cadb
-google.golang.org/cloud/compute/metadata
-google.golang.org/cloud/internal
-# google.golang.org/genproto v0.0.0-20170531203552-aa2eb687b4d3
+# google.golang.org/genproto v0.0.0-20180817151627-c66870c02cf8
 google.golang.org/genproto/googleapis/api/annotations
+google.golang.org/genproto/protobuf/field_mask
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v0.0.0-20170516193736-3419b4295567
+# google.golang.org/grpc v1.17.0
 google.golang.org/grpc
 google.golang.org/grpc/codes
 google.golang.org/grpc/grpclog
 google.golang.org/grpc/status
 google.golang.org/grpc/metadata
+google.golang.org/grpc/balancer
+google.golang.org/grpc/balancer/roundrobin
+google.golang.org/grpc/connectivity
 google.golang.org/grpc/credentials
-google.golang.org/grpc/grpclb/grpc_lb_v1
+google.golang.org/grpc/encoding
+google.golang.org/grpc/encoding/proto
 google.golang.org/grpc/internal
+google.golang.org/grpc/internal/backoff
+google.golang.org/grpc/internal/binarylog
+google.golang.org/grpc/internal/channelz
+google.golang.org/grpc/internal/envconfig
+google.golang.org/grpc/internal/grpcrand
+google.golang.org/grpc/internal/grpcsync
+google.golang.org/grpc/internal/transport
 google.golang.org/grpc/keepalive
 google.golang.org/grpc/naming
 google.golang.org/grpc/peer
+google.golang.org/grpc/resolver
+google.golang.org/grpc/resolver/dns
+google.golang.org/grpc/resolver/passthrough
 google.golang.org/grpc/stats
 google.golang.org/grpc/tap
-google.golang.org/grpc/transport
+google.golang.org/grpc/balancer/base
+google.golang.org/grpc/credentials/internal
+google.golang.org/grpc/binarylog/grpc_binarylog_v1
+google.golang.org/grpc/internal/syscall
 # gopkg.in/alecthomas/kingpin.v2 v2.2.6
 gopkg.in/alecthomas/kingpin.v2
 # gopkg.in/fsnotify/fsnotify.v1 v1.3.0

@@ -63,7 +63,7 @@ func IsDevAppServer() bool {
 // NewContext returns a context for an in-flight HTTP request.
 // This function is cheap.
 func NewContext(req *http.Request) context.Context {
-	return WithContext(context.Background(), req)
+	return internal.ReqContext(req)
 }
 
 // WithContext returns a copy of the parent context
