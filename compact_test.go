@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
@@ -741,4 +742,39 @@ func TestDisableAutoCompactions(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	testutil.Assert(t, len(db.Blocks()) > 0, "No block was persisted after the set timeout.")
+}
+
+// TestCancelCompactions ensures that when the db is closed
+// any running compaction is cancelled to unblock closing the db.
+func TestCancelCompactions(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(tmpdir)
+
+	// Create some blocks to fall within the compaction range.
+	createPopulatedBlock(t, tmpdir, 3000, 0, 1000)
+	createPopulatedBlock(t, tmpdir, 3000, 1000, 2000)
+	createPopulatedBlock(t, tmpdir, 1, 2000, 2001)
+
+	db, err := Open(tmpdir, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
+	testutil.Ok(t, err)
+
+	db.compactc <- struct{}{} // Trigger a compaction.
+	dbClosed := make(chan struct{})
+	for {
+		if prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) > 0 {
+			time.Sleep(5 * time.Millisecond)
+			go func() {
+				testutil.Ok(t, db.Close())
+				close(dbClosed)
+			}()
+			break
+		}
+	}
+
+	start := time.Now()
+	<-dbClosed
+	actT := time.Since(start)
+	expT := time.Duration(50000000)
+	testutil.Assert(t, actT < expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
 }

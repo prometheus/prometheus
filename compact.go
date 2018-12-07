@@ -76,12 +76,13 @@ type LeveledCompactor struct {
 }
 
 type compactorMetrics struct {
-	ran          prometheus.Counter
-	failed       prometheus.Counter
-	duration     prometheus.Histogram
-	chunkSize    prometheus.Histogram
-	chunkSamples prometheus.Histogram
-	chunkRange   prometheus.Histogram
+	ran              prometheus.Counter
+	populatingBlocks prometheus.Counter
+	failed           prometheus.Counter
+	duration         prometheus.Histogram
+	chunkSize        prometheus.Histogram
+	chunkSamples     prometheus.Histogram
+	chunkRange       prometheus.Histogram
 }
 
 func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
@@ -90,6 +91,10 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m.ran = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_total",
 		Help: "Total number of compactions that were executed for the partition.",
+	})
+	m.populatingBlocks = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_compaction_populating_block",
+		Help: "Set to 1 when a block is currently being written to the disk.",
 	})
 	m.failed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_failed_total",
@@ -119,6 +124,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	if r != nil {
 		r.MustRegister(
 			m.ran,
+			m.populatingBlocks,
 			m.failed,
 			m.duration,
 			m.chunkRange,
@@ -569,8 +575,12 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		allSymbols = make(map[string]struct{}, 1<<16)
 		closers    = []io.Closer{}
 	)
-	defer func() { closeAll(closers...) }()
+	defer func() {
+		closeAll(closers...)
+		c.metrics.populatingBlocks.Add(-1)
+	}()
 
+	c.metrics.populatingBlocks.Inc()
 	for i, b := range blocks {
 		select {
 		case <-c.ctx.Done():
