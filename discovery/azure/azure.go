@@ -529,7 +529,7 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (n
 }
 
 func getPowerStateFromVMInstanceView(instanceView *compute.VirtualMachineInstanceView) (powerState string) {
-	if instanceView.Statuses == nil {
+	if instanceView == nil || instanceView.Statuses == nil {
 		return
 	}
 	for _, ivs := range *instanceView.Statuses {
