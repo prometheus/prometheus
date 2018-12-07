@@ -37,7 +37,7 @@ require (
 	github.com/google/gofuzz v0.0.0-20150304233714-bbcb9da2d746 // indirect
 	github.com/google/pprof v0.0.0-20180605153948-8b03ce837f34
 	github.com/googleapis/gnostic v0.0.0-20180520015035-48a0ecefe2e4 // indirect
-	github.com/gophercloud/gophercloud v0.0.0-20170607034829-caf34a65f602
+	github.com/gophercloud/gophercloud v0.0.0-20181206160319-9d88c34913a9
 	github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 // indirect
 	github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v0.0.0-20171126203511-e4b8a938efae
