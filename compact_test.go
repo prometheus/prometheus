@@ -775,6 +775,6 @@ func TestCancelCompactions(t *testing.T) {
 	start := time.Now()
 	<-dbClosed
 	actT := time.Since(start)
-	expT := time.Duration(50000000)
+	expT := time.Duration(100000000)
 	testutil.Assert(t, actT < expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
 }
