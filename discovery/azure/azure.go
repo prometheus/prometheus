@@ -45,6 +45,7 @@ const (
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
+	azureLabelPowerState           = azureLabel + "machine_power_state"
 
 	azureLabelPowerState = azureLabel + "machine_power_state"
 
