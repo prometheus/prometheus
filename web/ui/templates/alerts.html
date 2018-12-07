@@ -15,7 +15,7 @@
     {{$alertStateToRowClass := .AlertStateToRowClass}}
     {{range .AlertingRules}}
       {{$activeAlerts := .ActiveAlerts}}
-      <tr class="{{index $alertStateToRowClass .State}} alert_header">
+      <tr class="alert alert-{{index $alertStateToRowClass .State}} alert_header">
         <td><i class="icon-chevron-down"></i> <b>{{.Name}}</b> ({{len $activeAlerts}} active)</td>
       </tr>
       <tr class="alert_details">
