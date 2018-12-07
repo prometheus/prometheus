@@ -1,5 +1,5 @@
 .navbar {
-  margin-bottom: 0;
+  margin-bottom: 20px;
 }
 
 div.prom_lhs_menu {
@@ -57,6 +57,7 @@ li.prom_lhs_menu_selected {
 .prom_console_content {
   overflow: visible;
   margin-bottom: 32px;  /* Space for time control. */
+  padding-top: 70px;   /* Space for navbar */
 }
 
 a.prom_query_drilldown {
