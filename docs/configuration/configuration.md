@@ -259,6 +259,8 @@ Azure SD configurations allow retrieving scrape targets from Azure VMs.
 
 The following meta labels are available on targets during relabeling:
 
+* `__meta_azure_subscription_id`: the subscription ID
+* `__meta_azure_tenant_id`: the tenant ID
 * `__meta_azure_machine_id`: the machine ID
 * `__meta_azure_machine_location`: the location the machine runs in
 * `__meta_azure_machine_name`: the machine name
