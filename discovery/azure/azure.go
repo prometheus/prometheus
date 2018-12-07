@@ -47,8 +47,6 @@ const (
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
 	azureLabelPowerState           = azureLabel + "machine_power_state"
 
-	azureLabelPowerState = azureLabel + "machine_power_state"
-
 	authMethodOAuth           = "OAuth"
 	authMethodManagedIdentity = "ManagedIdentity"
 )
@@ -101,17 +99,21 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+
 	if err = validateAuthParam(c.SubscriptionID, "subscription_id"); err != nil {
 		return err
 	}
-	if err = validateAuthParam(c.TenantID, "tenant_id"); err != nil {
-		return err
-	}
-	if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
-		return err
-	}
-	if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
-		return err
+
+	if c.AuthenticationMethod == authMethodOAuth {
+		if err = validateAuthParam(c.TenantID, "tenant_id"); err != nil {
+			return err
+		}
+		if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
+			return err
+		}
+		if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
+			return err
+		}
 	}
 
 	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity {
