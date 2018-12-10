@@ -8,6 +8,10 @@ div.prom_lhs_menu {
   background: #222;
   min-height: 100%;
   overflow: auto;
+  width: 8rem;
+  margin-left: -40px;
+  margin-top: 50px;
+  height: 100%;
 }
 .prom_lhs_menu ul {
   list-style: none;
@@ -17,6 +21,7 @@ div.prom_lhs_menu {
 .prom_lhs_menu li {
   padding-right: 1ex;
   padding-left: 1ex;
+  height: 2rem;
 }
 .prom_lhs_menu a,
 .prom_lhs_menu li {
