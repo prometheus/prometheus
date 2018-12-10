@@ -7,16 +7,13 @@ COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
 COPY console_libraries/                     /usr/share/prometheus/console_libraries/
 COPY consoles/                              /usr/share/prometheus/consoles/
 
-RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles/ /etc/prometheus/
-RUN mkdir -p /prometheus && \
-    chown -R nobody:nogroup etc/prometheus /prometheus
+RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles/ /etc/prometheus/ && \
+    mkdir -p /prometheus && \
+    chown -R nobody:nogroup etc/prometheus /prometheus && \
+    ln -s /prometheus /etc/prometheus/data
 
 USER       nobody
 EXPOSE     9090
 VOLUME     [ "/prometheus" ]
-WORKDIR    /prometheus
-ENTRYPOINT [ "/bin/prometheus", \
-             "--storage.tsdb.path=/prometheus", \
-             "--web.console.libraries=/etc/prometheus/console_libraries", \
-             "--web.console.templates=/etc/prometheus/consoles", \
-             "--config.file=/etc/prometheus/prometheus.yml" ]
+WORKDIR    /etc/prometheus
+ENTRYPOINT [ "/bin/prometheus" ]
