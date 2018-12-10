@@ -29,7 +29,7 @@
 {{/* LHS menu, should be passed . */}}
 {{ define "menu" }}
 <div class="prom_lhs_menu row">
-<nav class="col-md-2 md-block bg-dark sidebar">
+<nav class="col-md-2 md-block bg-dark sidebar prom_lhs_menu_nav">
 <div class="sidebar-sticky">
 <ul class="nav flex-column">
  
