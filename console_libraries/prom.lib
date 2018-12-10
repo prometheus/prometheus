@@ -23,7 +23,7 @@ var PATH_PREFIX = "{{ pathPrefix }}";
 <head>
 {{ template "prom_console_head" }}
 </head>
-<body style="paddingTop:70px">
+<body>
 {{ template "navbar" . }}
 
 {{ template "menu" . }}
@@ -78,7 +78,7 @@ renderTemplate is the name of the template to use to render the value.
 
 {{ define "prom_content_head" }}
 <div class="prom_console_content">
-  <div class="container">
+  <div class="container-fluid">
 {{ template "prom_graph_timecontrol" . }}
 {{ end }}
 {{ define "prom_content_tail" }}

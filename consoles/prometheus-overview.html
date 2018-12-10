@@ -60,6 +60,7 @@
 {{ template "prom_right_table_tail" }}
 
 {{ template "prom_content_head" . }}
+ <div class="prom_content_div">
   <h1>Prometheus Overview - {{ .Params.instance }}</h1>
 
   <h3>Ingested Samples</h3>
@@ -89,7 +90,7 @@
     yUnits: "/s",
   })
   </script>
-
+ </div>
 {{ template "prom_content_tail" . }}
 
 {{ template "tail" }}
