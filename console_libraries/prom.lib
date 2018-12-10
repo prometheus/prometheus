@@ -9,6 +9,10 @@
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.layout.min.js"></script>
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.js"></script>
 <script src="{{ pathPrefix }}/static/vendor/js/jquery-3.3.1.min.js"></script>
+<script
+src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js"
+integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q"
+crossorigin="anonymous"></script>
 <script src="{{ pathPrefix }}/static/vendor/bootstrap-4.1.3/js/bootstrap.min.js"></script>
 
 <script>
@@ -114,7 +118,7 @@ renderTemplate is the name of the template to use to render the value.
           <span class="icon-repeat"></span>
           (<span id="prom_graph_refresh_button_value">Off</span>)
         </button>
-        <button type="button" class="btn btn-light pull-left dropdown-toggle" data-toggle="dropdown" title="Set autorefresh." aria-expanded="false">
+        <button type="button" class="btn btn-light pull-left dropdown-toggle" data-toggle="dropdown" title="Set autorefresh."aria-haspopup="true" aria-expanded="false">
           <span class="caret"></span>&nbsp;
         </button>
         <ul class="dropdown-menu" id="prom_graph_refresh_intervals" role="menu">
