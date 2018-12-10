@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -34,7 +35,7 @@ type CheckpointStats struct {
 	DroppedSamples    int
 	DroppedTombstones int
 	TotalSeries       int // Processed series including dropped ones.
-	TotalSamples      int // Processed samples inlcuding dropped ones.
+	TotalSamples      int // Processed samples including dropped ones.
 	TotalTombstones   int // Processed tombstones including dropped ones.
 }
 
@@ -59,7 +60,7 @@ func LastCheckpoint(dir string) (string, int, error) {
 		if err != nil {
 			continue
 		}
-		return fi.Name(), idx, nil
+		return filepath.Join(dir, fi.Name()), idx, nil
 	}
 	return "", 0, ErrNotFound
 }
@@ -99,13 +100,11 @@ const checkpointPrefix = "checkpoint."
 // it with the original WAL.
 func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
+	var sgmReader io.ReadCloser
 
-	var sr io.Reader
-	// We close everything explicitly because Windows needs files to be
-	// closed before being deleted. But we also have defer so that we close
-	// files if there is an error somewhere.
-	var closers []io.Closer
 	{
+
+		var sgmRange []wal.SegmentRange
 		dir, idx, err := LastCheckpoint(w.Dir())
 		if err != nil && err != ErrNotFound {
 			return nil, errors.Wrap(err, "find last checkpoint")
@@ -118,27 +117,15 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 			// Ignore WAL files below the checkpoint. They shouldn't exist to begin with.
 			from = last
 
-			r, err := wal.NewSegmentsReader(filepath.Join(w.Dir(), dir))
-			if err != nil {
-				return nil, errors.Wrap(err, "open last checkpoint")
-			}
-			defer r.Close()
-			closers = append(closers, r)
-			sr = r
+			sgmRange = append(sgmRange, wal.SegmentRange{Dir: dir, Last: math.MaxInt32})
 		}
 
-		segsr, err := wal.NewSegmentsRangeReader(w.Dir(), from, to)
+		sgmRange = append(sgmRange, wal.SegmentRange{Dir: w.Dir(), First: from, Last: to})
+		sgmReader, err = wal.NewSegmentsRangeReader(sgmRange...)
 		if err != nil {
 			return nil, errors.Wrap(err, "create segment reader")
 		}
-		defer segsr.Close()
-		closers = append(closers, segsr)
-
-		if sr != nil {
-			sr = io.MultiReader(sr, segsr)
-		} else {
-			sr = segsr
-		}
+		defer sgmReader.Close()
 	}
 
 	cpdir := filepath.Join(w.Dir(), fmt.Sprintf("checkpoint.%06d", to))
@@ -152,7 +139,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 		return nil, errors.Wrap(err, "open checkpoint")
 	}
 
-	r := wal.NewReader(sr)
+	r := wal.NewReader(sgmReader)
 
 	var (
 		series  []RefSeries
@@ -262,8 +249,6 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
 		return nil, errors.Wrap(err, "rename checkpoint directory")
 	}
-	if err := closeAll(closers...); err != nil {
-		return stats, errors.Wrap(err, "close opened files")
-	}
+
 	return stats, nil
 }

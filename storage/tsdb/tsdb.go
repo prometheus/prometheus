@@ -230,7 +230,7 @@ type querier struct {
 	q tsdb.Querier
 }
 
-func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storage.SeriesSet, error) {
+func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storage.SeriesSet, error, storage.Warnings) {
 	ms := make([]tsdbLabels.Matcher, 0, len(oms))
 
 	for _, om := range oms {
@@ -238,9 +238,9 @@ func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storag
 	}
 	set, err := q.q.Select(ms...)
 	if err != nil {
-		return nil, err
+		return nil, err, nil
 	}
-	return seriesSet{set: set}, nil
+	return seriesSet{set: set}, nil, nil
 }
 
 func (q querier) LabelValues(name string) ([]string, error) { return q.q.LabelValues(name) }

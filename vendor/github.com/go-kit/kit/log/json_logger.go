@@ -44,9 +44,6 @@ func merge(dst map[string]interface{}, k, v interface{}) {
 	default:
 		key = fmt.Sprint(x)
 	}
-	if x, ok := v.(error); ok {
-		v = safeError(x)
-	}
 
 	// We want json.Marshaler and encoding.TextMarshaller to take priority over
 	// err.Error() and v.String(). But json.Marshall (called later) does that by

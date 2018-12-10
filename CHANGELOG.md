@@ -1,3 +1,49 @@
+## 2.6.0-rc.0 / 2018-12-05
+
+* [CHANGE] Include default flags to the container's entrypoint. #4796
+* [CHANGE] Promtool: Remove the `update` command. #3839
+* [FEATURE] Add JSON log format via the `--log.format` flag. #4876
+* [FEATURE] API: Add /api/v1/labels endpoint to get all label names. #4835
+* [FEATURE] Web: Allow setting the page's title via the `--web.ui-title` flag. #4841
+* [ENHANCEMENT] Add `prometheus_tsdb_lowest_timestamp_seconds`, `prometheus_tsdb_head_min_time_seconds` and `prometheus_tsdb_head_max_time_seconds` metrics. #4888
+* [ENHANCEMENT] Add `rule_group_last_evaluation_timestamp_seconds` metric. #4852
+* [ENHANCEMENT] Add `prometheus_template_text_expansion_failures_total` and `prometheus_template_text_expansions_total` metrics. #4747
+* [ENHANCEMENT] Set consistent User-Agent header in outgoing requests. #4891
+* [ENHANCEMENT] Azure SD: Add the machine's power state to the discovery metadata. #4908
+* [ENHANCEMENT] Azure SD: Error out at load time when authentication parameters are missing. #4907
+* [ENHANCEMENT] EC2 SD: Add the machine's private DNS name to the discovery metadata. #4693
+* [ENHANCEMENT] EC2 SD: Add the operating system's platform to the discovery metadata. #4663
+* [ENHANCEMENT] Kubernetes SD: Add the pod's phase to the discovery metadata. #4824
+* [ENHANCEMENT] Kubernetes SD: Log Kubernetes messages. #4931
+* [ENHANCEMENT] Promtool: Collect CPU and trace profiles. #4897
+* [ENHANCEMENT] Promtool: Support writing output as JSON. #4848
+* [ENHANCEMENT] Remote Read: Return available data if remote read fails partially. #4832
+* [ENHANCEMENT] Remote Write: Improve queue performance. #4772
+* [ENHANCEMENT] Remote Write: Add min_shards parameter to set the minimum number of shards. #4924
+* [ENHANCEMENT] TSDB: Improve WAL reading. #4953
+* [ENHANCEMENT] TSDB: Memory improvements. #4953
+* [ENHANCEMENT] Web: Log stack traces on panic. #4221
+* [ENHANCEMENT] Web UI: Add copy to clipboard button for configuration. #4410
+* [ENHANCEMENT] Web UI: Support console queries at specific times. #4764
+* [ENHANCEMENT] Web UI: group targets by job then instance. #4898 #4806
+* [BUGFIX] Deduplicate handler labels for HTTP metrics. #4732
+* [BUGFIX] Fix leaked queriers causing shutdowns to hang. #4922
+* [BUGFIX] Fix configuration loading panics on nil pointer slice elements. #4942
+* [BUGFIX] API: Correctly skip mismatching targets on /api/v1/targets/metadata. #4905
+* [BUGFIX] API: Better rounding for incoming query timestamps. #4941
+* [BUGFIX] Azure SD: Fix panic. #4867
+* [BUGFIX] Console templates: Fix hover when the metric has a null value. #4906
+* [BUGFIX] Discovery: Remove all targets when the scrape configuration gets empty. #4819
+* [BUGFIX] Marathon SD: Fix leaked connections. #4915
+* [BUGFIX] Marathon SD: Use 'hostPort' member of portMapping to construct target endpoints. #4887
+* [BUGFIX] PromQL: Fix a goroutine leak in the lexer/parser. #4858
+* [BUGFIX] Scrape: Pass through content-type for non-compressed output. #4912
+* [BUGFIX] Scrape: Fix deadlock in the scrape's manager. #4894
+* [BUGFIX] Scrape: Scrape targets at fixed intervals even after Prometheus restarts. #4926
+* [BUGFIX] TSDB: Support restored snapshots including the head properly. #4953
+* [BUGFIX] TSDB: Repair WAL when the last record in a segment is torn. #4953
+* [BUGFIX] Web: Avoid proxy to connect to the local gRPC server. #4572
+
 ## 2.5.0 / 2018-11-06
 
 * [CHANGE] Group targets by scrape config instead of job name. #4806 #4526
@@ -60,7 +106,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [ENHANCEMENT] Send EndsAt along with the alert to Alertmanager #4550
 * [ENHANCEMENT] Limit the samples returned by remote read endpoint #4532
 * [ENHANCEMENT] Limit the data read in through remote read #4239
-* [ENHANCEMENT] Coalesce identical SD configuations #3912
+* [ENHANCEMENT] Coalesce identical SD configurations #3912
 * [ENHANCEMENT] `promtool`: Add new commands for debugging and querying #4247 #4308 #4346 #4454
 * [ENHANCEMENT] Update console examples for node_exporter v0.16.0 #4208
 * [ENHANCEMENT] Optimize PromQL aggregations #4248
@@ -90,13 +136,13 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [BUGFIX] discovery/kubernetes/ingress: fix scheme discovery #4329
 * [BUGFIX] Fix race in zookeeper sd #4355
 * [BUGFIX] Better timeout handling in promql #4291 #4300
-* [BUGFIX] Propogate errors when selecting series from the tsdb #4136
+* [BUGFIX] Propagate errors when selecting series from the tsdb #4136
 
 ## 2.3.1 / 2018-06-19
 
 * [BUGFIX] Avoid infinite loop on duplicate NaN values. #4275
 * [BUGFIX] Fix nil pointer deference when using various API endpoints #4282
-* [BUGFIX] config: set target group source index during unmarshalling #4245
+* [BUGFIX] config: set target group source index during unmarshaling #4245
 * [BUGFIX] discovery/file: fix logging #4178
 * [BUGFIX] kubernetes_sd: fix namespace filtering #4285
 * [BUGFIX] web: restore old path prefix behavior #4273
@@ -110,7 +156,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [FEATURE] Add security headers to HTTP server responses
 * [FEATURE] Pass query hints via remote read API
 * [FEATURE] Basic auth passwords can now be configured via file across all configuration
-* [ENHANCEMENT] Optimise PromQL and API serialization for memory usage and allocations
+* [ENHANCEMENT] Optimize PromQL and API serialization for memory usage and allocations
 * [ENHANCEMENT] Limit number of dropped targets in web UI
 * [ENHANCEMENT] Consul and EC2 service discovery allow using server-side filtering for performance improvement
 * [ENHANCEMENT] Add advanced filtering configuration to EC2 service discovery
@@ -133,7 +179,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 
 * [BUGFIX] Fix data loss in TSDB on compaction
 * [BUGFIX] Correctly stop timer in remote-write path
-* [BUGFIX] Fix deadlock triggerd by loading targets page
+* [BUGFIX] Fix deadlock triggered by loading targets page
 * [BUGFIX] Fix incorrect buffering of samples on range selection queries
 * [BUGFIX] Handle large index files on windows properly
 
@@ -526,7 +572,7 @@ This is a breaking change to the Kubernetes service discovery.
 * [ENHANCEMENT] Message on empty Alerts page.
 * [ENHANCEMENT] Various internal code refactorings and clean-ups.
 * [ENHANCEMENT] Various improvements in the build system.
-* [BUGFIX] Catch errors when unmarshalling delta/doubleDelta encoded chunks.
+* [BUGFIX] Catch errors when unmarshaling delta/doubleDelta encoded chunks.
 * [BUGFIX] Fix data race in lexer and lexer test.
 * [BUGFIX] Trim stray whitespace from bearer token file.
 * [BUGFIX] Avoid divide-by-zero panic on query_range?step=0.
@@ -1211,4 +1257,4 @@ All changes:
 * [BUGFIX] Built from Go 1.2.1, which has internal fixes to race conditions in garbage collection handling.
 * [ENHANCEMENT] Internal storage interface refactoring that allows building e.g. the `rule_checker` tool without LevelDB dynamic library dependencies.
 * [ENHANCEMENT] Cleanups around shutdown handling.
-* [PERFORMANCE] Preparations for better memory reuse during marshalling / unmarshalling.
+* [PERFORMANCE] Preparations for better memory reuse during marshaling / unmarshaling.

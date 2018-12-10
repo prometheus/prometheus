@@ -115,7 +115,7 @@ common-test:
 .PHONY: common-format
 common-format:
 	@echo ">> formatting code"
-	GO111MODULE=$(GO111MODULE) $(GO) fmt $(GOOPTS) $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) fmt $(pkgs)
 
 .PHONY: common-vet
 common-vet:
@@ -140,8 +140,9 @@ else
 ifdef GO111MODULE
 	@echo ">> running check for unused/missing packages in go.mod"
 	GO111MODULE=$(GO111MODULE) $(GO) mod tidy
+ifeq (,$(wildcard vendor))
 	@git diff --exit-code -- go.sum go.mod
-ifneq (,$(wildcard vendor))
+else
 	@echo ">> running check for unused packages in vendor/"
 	GO111MODULE=$(GO111MODULE) $(GO) mod vendor
 	@git diff --exit-code -- go.sum go.mod vendor/
@@ -175,9 +176,11 @@ common-docker-tag-latest:
 promu: $(PROMU)
 
 $(PROMU):
-	curl -s -L $(PROMU_URL) | tar -xvz -C /tmp
-	mkdir -v -p $(FIRST_GOPATH)/bin
-	cp -v /tmp/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(PROMU)
+	$(eval PROMU_TMP := $(shell mktemp -d))
+	curl -s -L $(PROMU_URL) | tar -xvzf - -C $(PROMU_TMP)
+	mkdir -p $(FIRST_GOPATH)/bin
+	cp $(PROMU_TMP)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(FIRST_GOPATH)/bin/promu
+	rm -r $(PROMU_TMP)
 
 .PHONY: proto
 proto:

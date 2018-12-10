@@ -129,7 +129,7 @@ func (t *Target) offset(interval time.Duration) time.Duration {
 	now := time.Now().UnixNano()
 
 	var (
-		base   = now % int64(interval)
+		base   = int64(interval) - now%int64(interval)
 		offset = t.hash() % uint64(interval)
 		next   = base + int64(offset)
 	)

@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // Value is a generic interface for values resulting from a query evaluation.
@@ -141,7 +142,7 @@ func (vec Vector) String() string {
 }
 
 // ContainsSameLabelset checks if a vector has samples with the same labelset
-// Such a behaviour is semantically undefined
+// Such a behavior is semantically undefined
 // https://github.com/prometheus/prometheus/issues/4562
 func (vec Vector) ContainsSameLabelset() bool {
 	l := make(map[uint64]struct{}, len(vec))
@@ -184,7 +185,7 @@ func (m Matrix) Less(i, j int) bool { return labels.Compare(m[i].Metric, m[j].Me
 func (m Matrix) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
 // ContainsSameLabelset checks if a matrix has samples with the same labelset
-// Such a behaviour is semantically undefined
+// Such a behavior is semantically undefined
 // https://github.com/prometheus/prometheus/issues/4562
 func (m Matrix) ContainsSameLabelset() bool {
 	l := make(map[uint64]struct{}, len(m))
@@ -201,8 +202,9 @@ func (m Matrix) ContainsSameLabelset() bool {
 // Result holds the resulting value of an execution or an error
 // if any occurred.
 type Result struct {
-	Err   error
-	Value Value
+	Err      error
+	Value    Value
+	Warnings storage.Warnings
 }
 
 // Vector returns a Vector if the result value is one. An error is returned if

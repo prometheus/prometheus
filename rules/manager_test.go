@@ -538,7 +538,7 @@ func TestStaleness(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
 	testutil.Ok(t, err)
 
-	set, err := querier.Select(nil, matcher)
+	set, err, _ := querier.Select(nil, matcher)
 	testutil.Ok(t, err)
 
 	samples, err := readSeriesSet(set)
@@ -558,7 +558,7 @@ func TestStaleness(t *testing.T) {
 	testutil.Equals(t, want, samples)
 }
 
-// Convert a SeriesSet into a form useable with reflect.DeepEqual.
+// Convert a SeriesSet into a form usable with reflect.DeepEqual.
 func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 	result := map[string][]promql.Point{}
 

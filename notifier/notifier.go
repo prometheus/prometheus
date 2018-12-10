@@ -596,7 +596,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 			continue
 		}
 
-		// This will initialise the Counters for the AM to 0.
+		// This will initialize the Counters for the AM to 0.
 		s.metrics.sent.WithLabelValues(us)
 		s.metrics.errors.WithLabelValues(us)
 

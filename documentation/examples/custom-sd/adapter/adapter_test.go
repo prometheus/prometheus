@@ -41,7 +41,16 @@ func TestGenerateTargetGroups(t *testing.T) {
 					},
 				},
 			},
-			expectedCustomSD: map[string]*customSD{},
+			expectedCustomSD: map[string]*customSD{
+				"customSD:Consul:0000000000000000": {
+					Targets: []string{},
+					Labels:  map[string]string{},
+				},
+				"customSD:Kubernetes:0000000000000000": {
+					Targets: []string{},
+					Labels:  map[string]string{},
+				},
+			},
 		},
 		{
 			title: "targetGroup filled",
@@ -78,7 +87,7 @@ func TestGenerateTargetGroups(t *testing.T) {
 				},
 			},
 			expectedCustomSD: map[string]*customSD{
-				"customSD:Azure:0": {
+				"customSD:Azure:282a007a18fadbbb": {
 					Targets: []string{
 						"host1",
 						"host2",
@@ -87,7 +96,7 @@ func TestGenerateTargetGroups(t *testing.T) {
 						"__meta_test_label": "label_test_1",
 					},
 				},
-				"customSD:Openshift:1": {
+				"customSD:Openshift:281c007a18ea2ad0": {
 					Targets: []string{
 						"host3",
 						"host4",
@@ -125,13 +134,19 @@ func TestGenerateTargetGroups(t *testing.T) {
 				},
 			},
 			expectedCustomSD: map[string]*customSD{
-				"customSD:GCE:0": {
+				"customSD:GCE:282a007a18fadbbb": {
 					Targets: []string{
 						"host1",
 						"host2",
 					},
 					Labels: map[string]string{
 						"__meta_test_label": "label_test_1",
+					},
+				},
+				"customSD:Kubernetes:282e007a18fad483": {
+					Targets: []string{},
+					Labels: map[string]string{
+						"__meta_test_label": "label_test_2",
 					},
 				},
 			},

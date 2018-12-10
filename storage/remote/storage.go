@@ -140,7 +140,7 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 		}
 		queriers = append(queriers, q)
 	}
-	return storage.NewMergeQuerier(queriers), nil
+	return storage.NewMergeQuerier(nil, queriers), nil
 }
 
 // Close the background processing of the storage queues.

@@ -14,112 +14,56 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net/http"
-	"os"
 
-	"github.com/google/pprof/profile"
+	"github.com/pkg/errors"
 )
 
 type debugWriterConfig struct {
 	serverURL      string
 	tarballName    string
-	pathToFileName map[string]string
-	postProcess    func(b []byte) ([]byte, error)
+	endPointGroups []endpointsGroup
 }
 
-type debugWriter struct {
-	archiver
-	httpClient
-	requestToFile map[*http.Request]string
-	postProcess   func(b []byte) ([]byte, error)
-}
-
-func newDebugWriter(cfg debugWriterConfig) (*debugWriter, error) {
-	client, err := newPrometheusHTTPClient(cfg.serverURL)
-	if err != nil {
-		return nil, err
-	}
+func debugWrite(cfg debugWriterConfig) error {
 	archiver, err := newTarGzFileWriter(cfg.tarballName)
 	if err != nil {
-		return nil, err
+		return errors.Wrap(err, "error creating a new archiver")
 	}
-	reqs := make(map[*http.Request]string)
-	for path, filename := range cfg.pathToFileName {
-		req, err := http.NewRequest(http.MethodGet, client.urlJoin(path), nil)
-		if err != nil {
-			return nil, err
-		}
-		reqs[req] = filename
-	}
-	return &debugWriter{
-		archiver,
-		client,
-		reqs,
-		cfg.postProcess,
-	}, nil
-}
 
-func (w *debugWriter) Write() int {
-	for req, filename := range w.requestToFile {
-		_, body, err := w.do(req)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error executing HTTP request:", err)
-			return 1
-		}
+	for _, endPointGroup := range cfg.endPointGroups {
+		for url, filename := range endPointGroup.urlToFilename {
+			url := cfg.serverURL + url
+			fmt.Println("collecting:", url)
+			res, err := http.Get(url)
+			if err != nil {
+				return errors.Wrap(err, "error executing HTTP request")
+			}
+			body, err := ioutil.ReadAll(res.Body)
+			res.Body.Close()
+			if err != nil {
+				return errors.Wrap(err, "error reading the response body")
+			}
 
-		buf, err := w.postProcess(body)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error post-processing HTTP response body:", err)
-			return 1
+			if endPointGroup.postProcess != nil {
+				body, err = endPointGroup.postProcess(body)
+				if err != nil {
+					return errors.Wrap(err, "error post-processing HTTP response body")
+				}
+			}
+			if err := archiver.write(filename, body); err != nil {
+				return errors.Wrap(err, "error writing into the archive")
+			}
 		}
 
-		if err := w.archiver.write(filename, buf); err != nil {
-			fmt.Fprintln(os.Stderr, "error writing into archive:", err)
-			return 1
-		}
 	}
 
-	if err := w.close(); err != nil {
-		fmt.Fprintln(os.Stderr, "error closing archiver:", err)
-		return 1
+	if err := archiver.close(); err != nil {
+		return errors.Wrap(err, "error closing archive writer")
 	}
 
-	fmt.Printf("Compiling debug information complete, all files written in %q.\n", w.filename())
-	return 0
-}
-
-func validate(b []byte) (*profile.Profile, error) {
-	p, err := profile.Parse(bytes.NewReader(b))
-	if err != nil {
-		return nil, err
-	}
-	return p, nil
-}
-
-var pprofPostProcess = func(b []byte) ([]byte, error) {
-	p, err := validate(b)
-	if err != nil {
-		return nil, err
-	}
-	var buf bytes.Buffer
-	if err := p.WriteUncompressed(&buf); err != nil {
-		return nil, err
-	}
-	fmt.Println(p.String())
-	return buf.Bytes(), nil
-}
-
-var metricsPostProcess = func(b []byte) ([]byte, error) {
-	fmt.Println(string(b))
-	return b, nil
-}
-
-var allPostProcess = func(b []byte) ([]byte, error) {
-	_, err := validate(b)
-	if err != nil {
-		return metricsPostProcess(b)
-	}
-	return pprofPostProcess(b)
+	fmt.Printf("Compiling debug information complete, all files written in %q.\n", cfg.tarballName)
+	return nil
 }

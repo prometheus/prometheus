@@ -214,7 +214,7 @@ func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*targe
 //
 // There are three possible outcomes:
 //
-// 1. One of the permutations of the given name is recognised as
+// 1. One of the permutations of the given name is recognized as
 //    "valid" by the DNS, in which case we consider ourselves "done"
 //    and that answer is returned.  Note that, due to the way the DNS
 //    handles "name has resource records, but none of the specified type",
