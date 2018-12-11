@@ -1,3 +1,9 @@
+## 2.6.0-rc.1 / 2018-12-12
+
+* [CHANGE] Azure SD: Revert #4908. #4980
+* [ENHANCEMENT] Remove default flags from the container's entrypoint. #4976
+* [BUGFIX] TSDB: Fix unclosed file readers on Windows systems. #4997
+
 ## 2.6.0-rc.0 / 2018-12-05
 
 * [CHANGE] Include default flags to the container's entrypoint. #4796
