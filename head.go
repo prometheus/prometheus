@@ -572,7 +572,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
-// for a compltely fresh head with an empty WAL.
+// for a completely fresh head with an empty WAL.
 // Returns true if the initialization took an effect.
 func (h *Head) initTime(t int64) (initialized bool) {
 	if !atomic.CompareAndSwapInt64(&h.minTime, math.MaxInt64, t) {
