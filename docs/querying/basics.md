@@ -144,6 +144,12 @@ a `job` label set to `prometheus`:
 
     http_requests_total{job="prometheus"}[5m]
 
+Note that this syntax construction for range vector is only valid for instant vector 
+selectors, **not** instant vectors. This means that this example is invalid:
+
+    (2 * http_requests_total{job="prometheus"})[5m]  # Invalid syntax!
+
+
 ### Offset modifier
 
 The `offset` modifier allows changing the time offset for individual
