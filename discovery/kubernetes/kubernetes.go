@@ -93,7 +93,6 @@ type SDConfig struct {
 	BearerTokenFile    string                 `yaml:"bearer_token_file,omitempty"`
 	TLSConfig          config_util.TLSConfig  `yaml:"tls_config,omitempty"`
 	NamespaceDiscovery NamespaceDiscovery     `yaml:"namespaces,omitempty"`
-	ResyncInterval     time.Duration          `yaml:"resync_interval"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -117,15 +116,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		(c.BasicAuth != nil || c.BearerToken != "" || c.BearerTokenFile != "" ||
 			c.TLSConfig.CAFile != "" || c.TLSConfig.CertFile != "" || c.TLSConfig.KeyFile != "") {
 		return fmt.Errorf("to use custom authentication please provide the 'api_server' URL explicitly")
-	}
-
-	if c.ResyncInterval == 0 {
-		c.ResyncInterval = 10 * time.Minute
-	}
-
-	// set min resync interval to reduce stress for kubernets apiserver
-	if c.ResyncInterval.Minutes() < 1 {
-		c.ResyncInterval = 1 * time.Minute
 	}
 	return nil
 }
@@ -176,7 +166,6 @@ type Discovery struct {
 	sync.RWMutex
 	client             kubernetes.Interface
 	role               Role
-	resyncInterval     time.Duration
 	logger             log.Logger
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discoverer
@@ -255,23 +244,21 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return &Discovery{
 		client:             c,
 		logger:             l,
 		role:               conf.Role,
-		resyncInterval:     conf.ResyncInterval,
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discoverer, 0),
 	}, nil
 }
 
+const resyncPeriod = 10 * time.Minute
+
 // Run implements the discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	d.Lock()
 	namespaces := d.getNamespaces()
-
-	resyncPeriod := d.resyncInterval
 
 	switch d.role {
 	case RoleEndpoint:
