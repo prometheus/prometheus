@@ -280,11 +280,11 @@ See below for the configuration options for Azure discovery:
 [ authentication_method: <string> | default = OAuth]
 # The subscription ID. Always required.
 subscription_id: <string>
-# The tenant ID. Only required with authentication_method OAuth.
+# Optional tenant ID. Only required with authentication_method OAuth.
 tenant_id: <string>
-# The client ID. Only required with authentication_method OAuth.
+# Optional client ID. Only required with authentication_method OAuth.
 client_id: <string>
-# The client secret. Only required with authentication_method OAuth.
+# Optional client secret. Only required with authentication_method OAuth.
 client_secret: <secret>
 
 # Refresh interval to re-read the instance list.
