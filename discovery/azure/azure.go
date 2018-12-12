@@ -47,7 +47,6 @@ const (
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
-	azureLabelPowerState           = azureLabel + "machine_power_state"
 )
 
 var (
@@ -229,7 +228,6 @@ type virtualMachine struct {
 	ScaleSet       string
 	Tags           map[string]*string
 	NetworkProfile compute.NetworkProfile
-	PowerStateCode string
 }
 
 // Create a new azureResource object from an ID string.
@@ -304,21 +302,12 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				return
 			}
 
-			// We check if the virtual machine has been deallocated.
-			// If so, we skip them in service discovery.
-			if strings.EqualFold(vm.PowerStateCode, "PowerState/deallocated") {
-				level.Debug(d.logger).Log("msg", "Skipping virtual machine", "machine", vm.Name, "power_state", vm.PowerStateCode)
-				ch <- target{}
-				return
-			}
-
 			labels := model.LabelSet{
 				azureLabelMachineID:            model.LabelValue(vm.ID),
 				azureLabelMachineName:          model.LabelValue(vm.Name),
 				azureLabelMachineOSType:        model.LabelValue(vm.OsType),
 				azureLabelMachineLocation:      model.LabelValue(vm.Location),
 				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroup),
-				azureLabelPowerState:           model.LabelValue(vm.PowerStateCode),
 			}
 
 			if vm.ScaleSet != "" {
@@ -344,6 +333,16 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 				if networkInterface.Properties == nil {
 					continue
+				}
+
+				// Unfortunately Azure does not return information on whether a VM is deallocated.
+				// This information is available via another API call however the Go SDK does not
+				// yet support this. On deallocated machines, this value happens to be nil so it
+				// is a cheap and easy way to determine if a machine is allocated or not.
+				if networkInterface.Properties.Primary == nil {
+					level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", vm.Name)
+					ch <- target{}
+					return
 				}
 
 				if *networkInterface.Properties.Primary {
@@ -473,7 +472,6 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		ScaleSet:       "",
 		Tags:           tags,
 		NetworkProfile: *(vm.Properties.NetworkProfile),
-		PowerStateCode: getPowerStateFromVMInstanceView(vm.Properties.InstanceView),
 	}
 }
 
@@ -494,7 +492,6 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		ScaleSet:       scaleSetName,
 		Tags:           tags,
 		NetworkProfile: *(vm.Properties.NetworkProfile),
-		PowerStateCode: getPowerStateFromVMInstanceView(vm.Properties.InstanceView),
 	}
 }
 
@@ -526,17 +523,4 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (n
 	}
 
 	return result, nil
-}
-
-func getPowerStateFromVMInstanceView(instanceView *compute.VirtualMachineInstanceView) (powerState string) {
-	if instanceView.Statuses == nil {
-		return
-	}
-	for _, ivs := range *instanceView.Statuses {
-		code := *(ivs.Code)
-		if strings.HasPrefix(code, "PowerState") {
-			powerState = code
-		}
-	}
-	return
 }
