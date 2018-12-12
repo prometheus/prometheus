@@ -1493,7 +1493,7 @@ func TestBlockRanges(t *testing.T) {
 
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
-	for x := 1; x < 10; x++ {
+	for x := 0; x < 100; x++ {
 		if len(db.Blocks()) == 2 {
 			break
 		}
@@ -1533,7 +1533,7 @@ func TestBlockRanges(t *testing.T) {
 	_, err = app.Add(lbl, thirdBlockMaxt+rangeToTriggercompaction, rand.Float64()) // Trigger a compaction
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
-	for x := 1; x < 10; x++ {
+	for x := 0; x < 100; x++ {
 		if len(db.Blocks()) == 4 {
 			break
 		}
