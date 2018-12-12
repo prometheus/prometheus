@@ -160,6 +160,7 @@ input[name="end_input"], input[name="range_input"] {
 
 .prometheus_input_group .btn {
   font-size: 0.8em;
+  border-color: #ccc;
 }
 
 .prometheus_input_group .input {
