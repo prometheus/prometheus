@@ -125,7 +125,7 @@ type rulesRetrieverMock struct {
 	testing *testing.T
 }
 
-func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
+func (m rulesRetrieverMock) AlertingRules(ctx context.Context) []*rules.AlertingRule {
 	expr1, err := promql.ParseExpr(`absent(test_metric3) != 1`)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
@@ -159,9 +159,9 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 	return r
 }
 
-func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
+func (m rulesRetrieverMock) RuleGroups(ctx context.Context) []*rules.Group {
 	var ar rulesRetrieverMock
-	arules := ar.AlertingRules()
+	arules := ar.AlertingRules(context.Background())
 	storage := testutil.NewStorage(m.testing)
 	defer storage.Close()
 
@@ -232,16 +232,16 @@ func TestEndpoints(t *testing.T) {
 
 	var algr rulesRetrieverMock
 	algr.testing = t
-	algr.AlertingRules()
-	algr.RuleGroups()
+	algr.AlertingRules(context.Background())
+	algr.RuleGroups(context.Background())
 
 	t.Run("local", func(t *testing.T) {
 		var algr rulesRetrieverMock
 		algr.testing = t
 
-		algr.AlertingRules()
+		algr.AlertingRules(context.Background())
 
-		algr.RuleGroups()
+		algr.RuleGroups(context.Background())
 
 		api := &API{
 			Queryable:             suite.Storage(),
@@ -299,9 +299,9 @@ func TestEndpoints(t *testing.T) {
 		var algr rulesRetrieverMock
 		algr.testing = t
 
-		algr.AlertingRules()
+		algr.AlertingRules(context.Background())
 
-		algr.RuleGroups()
+		algr.RuleGroups(context.Background())
 
 		api := &API{
 			Queryable:             remote,

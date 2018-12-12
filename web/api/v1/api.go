@@ -110,8 +110,8 @@ type alertmanagerRetriever interface {
 }
 
 type rulesRetriever interface {
-	RuleGroups() []*rules.Group
-	AlertingRules() []*rules.AlertingRule
+	RuleGroups(context.Context) []*rules.Group
+	AlertingRules(context.Context) []*rules.AlertingRule
 }
 
 type response struct {
@@ -695,7 +695,7 @@ type Alert struct {
 }
 
 func (api *API) alerts(r *http.Request) apiFuncResult {
-	alertingRules := api.rulesRetriever.AlertingRules()
+	alertingRules := api.rulesRetriever.AlertingRules(context.Background())
 	alerts := []*Alert{}
 
 	for _, alertingRule := range alertingRules {
@@ -767,7 +767,7 @@ type recordingRule struct {
 }
 
 func (api *API) rules(r *http.Request) apiFuncResult {
-	ruleGroups := api.rulesRetriever.RuleGroups()
+	ruleGroups := api.rulesRetriever.RuleGroups(r.Context())
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
 	for i, grp := range ruleGroups {
 		apiRuleGroup := &RuleGroup{
