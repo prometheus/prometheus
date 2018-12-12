@@ -281,11 +281,11 @@ See below for the configuration options for Azure discovery:
 # The subscription ID. Always required.
 subscription_id: <string>
 # Optional tenant ID. Only required with authentication_method OAuth.
-tenant_id: <string>
+[ tenant_id: <string> ]
 # Optional client ID. Only required with authentication_method OAuth.
-client_id: <string>
+[ client_id: <string> ]
 # Optional client secret. Only required with authentication_method OAuth.
-client_secret: <secret>
+[ client_secret: <secret> ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 300s ]
