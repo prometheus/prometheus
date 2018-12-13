@@ -47,13 +47,13 @@ func fingerprint(group *targetgroup.Group) model.Fingerprint {
 // Adapter runs an unknown service discovery implementation and converts its target groups
 // to JSON and writes to a file for file_sd.
 type Adapter struct {
-	ctx     context.Context
-	disc    discovery.Discoverer
-	groups  map[string]*customSD
-	manager *discovery.Manager
-	output  string
-	name    string
-	logger  log.Logger
+	ctx      context.Context
+	provider discovery.Provider
+	groups   map[string]*customSD
+	manager  *discovery.Manager
+	output   string
+	name     string
+	logger   log.Logger
 }
 
 func mapToArray(m map[string]*customSD) []customSD {
@@ -153,19 +153,19 @@ func (a *Adapter) runCustomSD(ctx context.Context) {
 // Run starts a Discovery Manager and the custom service discovery implementation.
 func (a *Adapter) Run() {
 	go a.manager.Run()
-	a.manager.StartCustomProvider(a.ctx, a.name, a.disc)
+	a.manager.ApplyConfig([]discovery.Provider{a.provider})
 	go a.runCustomSD(a.ctx)
 }
 
 // NewAdapter creates a new instance of Adapter.
 func NewAdapter(ctx context.Context, file string, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
 	return &Adapter{
-		ctx:     ctx,
-		disc:    d,
-		groups:  make(map[string]*customSD),
-		manager: discovery.NewManager(ctx, logger),
-		output:  file,
-		name:    name,
-		logger:  logger,
+		ctx:      ctx,
+		provider: discovery.NewProvider(name, d),
+		groups:   make(map[string]*customSD),
+		manager:  discovery.NewManager(ctx, logger),
+		output:   file,
+		name:     name,
+		logger:   logger,
 	}
 }
