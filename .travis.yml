@@ -21,4 +21,4 @@ install:
 
 script:
   # `staticcheck` target is omitted due to linting errors
-  - if [[ "$TRAVIS_OS_NAME" == "windows" ]]; then make test; else make style unused test; fi
+  - if [[ "$TRAVIS_OS_NAME" == "windows" ]]; then make test; else make check_license style unused test; fi
