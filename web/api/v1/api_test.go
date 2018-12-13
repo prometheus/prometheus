@@ -125,7 +125,7 @@ type rulesRetrieverMock struct {
 	testing *testing.T
 }
 
-func (m rulesRetrieverMock) AlertingRules(ctx context.Context) []*rules.AlertingRule {
+func (m rulesRetrieverMock) AlertingRules(ctx context.Context) ([]*rules.AlertingRule, error) {
 	expr1, err := promql.ParseExpr(`absent(test_metric3) != 1`)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
@@ -156,12 +156,12 @@ func (m rulesRetrieverMock) AlertingRules(ctx context.Context) []*rules.Alerting
 	var r []*rules.AlertingRule
 	r = append(r, rule1)
 	r = append(r, rule2)
-	return r
+	return r, err
 }
 
-func (m rulesRetrieverMock) RuleGroups(ctx context.Context) []*rules.Group {
+func (m rulesRetrieverMock) RuleGroups(ctx context.Context) ([]*rules.Group, error) {
 	var ar rulesRetrieverMock
-	arules := ar.AlertingRules(context.Background())
+	arules, _ := ar.AlertingRules(context.Background())
 	storage := testutil.NewStorage(m.testing)
 	defer storage.Close()
 
@@ -195,7 +195,7 @@ func (m rulesRetrieverMock) RuleGroups(ctx context.Context) []*rules.Group {
 	r = append(r, recordingRule)
 
 	group := rules.NewGroup("grp", "/path/to/file", time.Second, r, false, opts)
-	return []*rules.Group{group}
+	return []*rules.Group{group}, nil
 }
 
 var samplePrometheusCfg = config.Config{

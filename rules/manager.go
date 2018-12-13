@@ -780,7 +780,7 @@ func groupKey(name, file string) string {
 }
 
 // RuleGroups returns the list of manager's rule groups.
-func (m *Manager) RuleGroups(ctx context.Context) []*Group {
+func (m *Manager) RuleGroups(ctx context.Context) ([]*Group, error) {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
@@ -793,7 +793,7 @@ func (m *Manager) RuleGroups(ctx context.Context) []*Group {
 		return rgs[i].file < rgs[j].file && rgs[i].name < rgs[j].name
 	})
 
-	return rgs
+	return rgs, nil
 }
 
 // Rules returns the list of the manager's rules.
@@ -810,7 +810,7 @@ func (m *Manager) Rules() []Rule {
 }
 
 // AlertingRules returns the list of the manager's alerting rules.
-func (m *Manager) AlertingRules(ctx context.Context) []*AlertingRule {
+func (m *Manager) AlertingRules(ctx context.Context) ([]*AlertingRule, error) {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
@@ -820,7 +820,7 @@ func (m *Manager) AlertingRules(ctx context.Context) []*AlertingRule {
 			alerts = append(alerts, alertingRule)
 		}
 	}
-	return alerts
+	return alerts, nil
 }
 
 // Describe implements prometheus.Collector.
@@ -832,7 +832,8 @@ func (m *Manager) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector.
 func (m *Manager) Collect(ch chan<- prometheus.Metric) {
-	for _, g := range m.RuleGroups(context.Background()) {
+	rulegroups, _ := m.RuleGroups(context.Background())
+	for _, g := range rulegroups {
 		lastEvaluationTime := g.GetEvaluationTimestamp()
 		lastEvaluationTimestamp := math.Inf(-1)
 		if !lastEvaluationTime.IsZero() {
@@ -848,7 +849,7 @@ func (m *Manager) Collect(ch chan<- prometheus.Metric) {
 			g.GetEvaluationDuration().Seconds(),
 			key)
 	}
-	for _, g := range m.RuleGroups(context.Background()) {
+	for _, g := range rulegroups {
 		ch <- prometheus.MustNewConstMetric(groupInterval,
 			prometheus.GaugeValue,
 			g.interval.Seconds(),

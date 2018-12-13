@@ -511,7 +511,12 @@ func (h *Handler) Run(ctx context.Context) error {
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
-	alerts := h.ruleManager.AlertingRules(context.Background())
+	alerts, err := h.ruleManager.AlertingRules(context.Background())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	alertsSorter := byAlertStateAndNameSorter{alerts: alerts}
 	sort.Sort(alertsSorter)
 
