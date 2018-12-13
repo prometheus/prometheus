@@ -15,12 +15,15 @@ package config
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
+	"time"
 
+	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery/file"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 func TestApplyConfigDoesNotModifyStaticProviderTargets(t *testing.T) {
@@ -43,13 +46,7 @@ static_configs:
 	pset := NewProviderSet("foo", nil)
 	pset.Add("cfg", processedConfig)
 
-	if len(pset.providers) != 1 {
-		t.Fatalf("Invalid number of providers: expected %d, got %d", 1, len(pset.providers))
-	}
-	if !reflect.DeepEqual(originalConfig, processedConfig) {
-		t.Fatalf("discovery manager modified static config \n  expected: %v\n  got: %v\n",
-			originalConfig, processedConfig)
-	}
+	require.Equal(t, originalConfig, processedConfig)
 }
 
 // TestTargetSetRecreatesEmptyStaticConfigs ensures that reloading a config file after
@@ -66,12 +63,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected *StaticDiscoverer")
 	}
-	if len(staticProvider.TargetGroups) != 1 {
-		t.Fatalf("Expected 1 group, got %d", len(staticProvider.TargetGroups))
-	}
-	if len(staticProvider.TargetGroups[0].Targets) != 0 {
-		t.Fatalf("Expected 0 targets, got %d", len(staticProvider.TargetGroups[0].Targets))
-	}
+	require.Equal(t, []*targetgroup.Group{&targetgroup.Group{}}, staticProvider.TargetGroups)
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
@@ -79,9 +71,15 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	cfgString := `
 - file_sd_configs:
   - files: ["/etc/foo.json"]
+    refresh_interval: 1m
   - files: ["/etc/bar.json"]
+    refresh_interval: 1m
 - file_sd_configs:
   - files: ["/etc/foo.json"]
+    refresh_interval: 1m
+- file_sd_configs:
+  - files: ["/etc/foo.json"]
+    refresh_interval: 2m
 `
 	if err := yaml.UnmarshalStrict([]byte(cfgString), &cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
@@ -93,16 +91,20 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	}
 
 	expected := []struct {
-		files []string
-		subs  []string
+		cfg  *file.SDConfig
+		subs []string
 	}{
 		{
-			files: []string{"/etc/foo.json"},
-			subs:  []string{"config/0", "config/1"},
+			cfg:  &file.SDConfig{Files: []string{"/etc/foo.json"}, RefreshInterval: model.Duration(time.Duration(time.Minute))},
+			subs: []string{"config/0", "config/1"},
 		},
 		{
-			files: []string{"/etc/bar.json"},
-			subs:  []string{"config/0"},
+			cfg:  &file.SDConfig{Files: []string{"/etc/bar.json"}, RefreshInterval: model.Duration(time.Duration(time.Minute))},
+			subs: []string{"config/0"},
+		},
+		{
+			cfg:  &file.SDConfig{Files: []string{"/etc/foo.json"}, RefreshInterval: model.Duration(time.Duration(2 * time.Minute))},
+			subs: []string{"config/2"},
 		},
 	}
 	if len(pset.providers) != len(expected) {
@@ -111,16 +113,7 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	for i, exp := range expected {
 		prov := pset.providers[i]
 
-		if !reflect.DeepEqual(exp.subs, prov.Subscribers()) {
-			t.Fatalf("Expected %v subscribers, got %v", exp.subs, prov.Subscribers())
-		}
-
-		fileCfg, ok := prov.config.(*file.SDConfig)
-		if !ok {
-			t.Fatalf("Expected *file.SDConfig configuration")
-		}
-		if !reflect.DeepEqual(exp.files, fileCfg.Files) {
-			t.Fatalf("Expected %v files, got %v", exp.files, fileCfg.Files)
-		}
+		require.Equal(t, exp.cfg, prov.config)
+		require.Equal(t, exp.subs, prov.subs)
 	}
 }
