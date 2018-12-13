@@ -1,5 +1,9 @@
 ## master / unreleased
 
+
+## 0.3.1
+- [BUGFIX] Fixed most windows test and some actual bugs for unclosed file readers.
+
 ## 0.3.0
 
  - [CHANGE] `LastCheckpoint()` used to return just the segment name and now it returns the full relative path.
