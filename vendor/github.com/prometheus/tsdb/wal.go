@@ -322,7 +322,7 @@ func (w *SegmentWAL) putBuffer(b *encbuf) {
 }
 
 // Truncate deletes the values prior to mint and the series which the keep function
-// does not indiciate to preserve.
+// does not indicate to preserve.
 func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 	// The last segment is always active.
 	if len(w.files) < 2 {
