@@ -473,14 +473,13 @@ func (h *Head) Init(minValidTime int64) error {
 	if err != nil {
 		return errors.Wrap(err, "open WAL segments")
 	}
-	defer sr.Close()
 
 	err = h.loadWAL(wal.NewReader(sr))
+	sr.Close() // Close the reader so that if there was an error the repair can remove the corrupted file under Windows.
 	if err == nil {
 		return nil
 	}
 	level.Warn(h.logger).Log("msg", "encountered WAL error, attempting repair", "err", err)
-
 	if err := h.wal.Repair(err); err != nil {
 		return errors.Wrap(err, "repair corrupted WAL")
 	}
