@@ -500,7 +500,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return nil
 	}
 	atomic.StoreInt64(&h.minTime, mint)
-	h.minValidTime = mint
+	atomic.StoreInt64(&h.minValidTime, mint)
 
 	// Ensure that max time is at least as high as min time.
 	for h.MaxTime() < mint {
@@ -656,7 +656,7 @@ func (h *Head) appender() *headAppender {
 		head: h,
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
 		// This ensures that no samples will be added within the compaction window to avoid races.
-		minValidTime: max(h.minValidTime, h.MaxTime()-h.chunkRange/2),
+		minValidTime: max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2),
 		mint:         math.MaxInt64,
 		maxt:         math.MinInt64,
 		samples:      h.getAppendBuffer(),
