@@ -87,6 +87,7 @@ const (
 "Node": "node1",
 "Address": "1.1.1.1",
 "Datacenter": "test-dc",
+"TaggedAddresses": {"lan":"192.168.10.10","wan":"10.0.10.10"},
 "NodeMeta": {"rack_name": "2304"},
 "ServiceID": "test",
 "ServiceName": "test",

@@ -300,6 +300,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
+* `__meta_consul_tagged_address_<key>`: each node tagged address key value of the target
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target

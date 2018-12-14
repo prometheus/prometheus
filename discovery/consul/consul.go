@@ -55,6 +55,8 @@ const (
 	servicePortLabel = model.MetaLabelPrefix + "consul_service_port"
 	// datacenterLabel is the name of the label containing the datacenter ID.
 	datacenterLabel = model.MetaLabelPrefix + "consul_dc"
+	// taggedAddressesLabel is the prefix for the labels mapping to a target's tagged addresses.
+	taggedAddressesLabel = model.MetaLabelPrefix + "consul_tagged_address_"
 	// serviceIDLabel is the name of the label containing the service ID.
 	serviceIDLabel = model.MetaLabelPrefix + "consul_service_id"
 
@@ -487,7 +489,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		var tags = srv.tagSeparator + strings.Join(node.ServiceTags, srv.tagSeparator) + srv.tagSeparator
 
 		// If the service address is not empty it should be used instead of the node address
-		// since the service may be registered remotely through a different node
+		// since the service may be registered remotely through a different node.
 		var addr string
 		if node.ServiceAddress != "" {
 			addr = net.JoinHostPort(node.ServiceAddress, fmt.Sprintf("%d", node.ServicePort))
@@ -505,16 +507,22 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 			serviceIDLabel:      model.LabelValue(node.ServiceID),
 		}
 
-		// Add all key/value pairs from the node's metadata as their own labels
+		// Add all key/value pairs from the node's metadata as their own labels.
 		for k, v := range node.NodeMeta {
 			name := strutil.SanitizeLabelName(k)
 			labels[metaDataLabel+model.LabelName(name)] = model.LabelValue(v)
 		}
 
-		// Add all key/value pairs from the service's metadata as their own labels
+		// Add all key/value pairs from the service's metadata as their own labels.
 		for k, v := range node.ServiceMeta {
 			name := strutil.SanitizeLabelName(k)
 			labels[serviceMetaDataLabel+model.LabelName(name)] = model.LabelValue(v)
+		}
+
+		// Add all key/value pairs from the service's tagged addresses as their own labels.
+		for k, v := range node.TaggedAddresses {
+			name := strutil.SanitizeLabelName(k)
+			labels[taggedAddressesLabel+model.LabelName(name)] = model.LabelValue(v)
 		}
 
 		tgroup.Targets = append(tgroup.Targets, labels)
