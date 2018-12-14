@@ -776,6 +776,10 @@ See below for the configuration options for Kubernetes discovery:
 # The Kubernetes role of entities that should be discovered.
 role: <role>
 
+# Optional The Resync interval from Kubernetes Api Servers
+# The min interval is 1m that avoid excessive load on the Kubernetes API servers
+[ resync_interval: <duration> | default = 10m ]
+
 # Optional authentication information used to authenticate to the API server.
 # Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
 # mutually exclusive.
