@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -56,16 +57,19 @@ var (
 	// series is considered stale.
 	LookbackDelta = 5 * time.Minute
 
-	// DefaultEvaluationInterval is the value of EvaluationInterval in the GlobalConfig.
-	DefaultEvaluationInterval    time.Duration
-	defaultEvaluationIntervalMtx sync.RWMutex
+	// DefaultEvaluationInterval is the default evaluation interval of
+	// a subquery in milliseconds.
+	DefaultEvaluationInterval int64
 )
 
 // SetDefaultEvaluationInterval sets DefaultEvaluationInterval.
 func SetDefaultEvaluationInterval(ev time.Duration) {
-	defaultEvaluationIntervalMtx.Lock()
-	defer defaultEvaluationIntervalMtx.Unlock()
-	DefaultEvaluationInterval = ev
+	atomic.StoreInt64(&DefaultEvaluationInterval, durationToInt64Millis(ev))
+}
+
+// GetDefaultEvaluationInterval returns the DefaultEvaluationInterval as time.Duration.
+func GetDefaultEvaluationInterval() int64 {
+	return atomic.LoadInt64(&DefaultEvaluationInterval)
 }
 
 type engineMetrics struct {
@@ -421,12 +425,13 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
 		evaluator := &evaluator{
-			startTimestamp: start,
-			endTimestamp:   start,
-			interval:       1,
-			ctx:            ctx,
-			maxSamples:     ng.maxSamplesPerQuery,
-			logger:         ng.logger,
+			startTimestamp:      start,
+			endTimestamp:        start,
+			interval:            1,
+			ctx:                 ctx,
+			maxSamples:          ng.maxSamplesPerQuery,
+			defaultEvalInterval: GetDefaultEvaluationInterval(),
+			logger:              ng.logger,
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -462,12 +467,13 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	// Range evaluation.
 	evaluator := &evaluator{
-		startTimestamp: timeMilliseconds(s.Start),
-		endTimestamp:   timeMilliseconds(s.End),
-		interval:       durationMilliseconds(s.Interval),
-		ctx:            ctx,
-		maxSamples:     ng.maxSamplesPerQuery,
-		logger:         ng.logger,
+		startTimestamp:      timeMilliseconds(s.Start),
+		endTimestamp:        timeMilliseconds(s.End),
+		interval:            durationMilliseconds(s.Interval),
+		ctx:                 ctx,
+		maxSamples:          ng.maxSamplesPerQuery,
+		defaultEvalInterval: GetDefaultEvaluationInterval(),
+		logger:              ng.logger,
 	}
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
@@ -654,9 +660,10 @@ type evaluator struct {
 	endTimestamp   int64 // End time in milliseconds.
 	interval       int64 // Interval in milliseconds.
 
-	maxSamples     int
-	currentSamples int
-	logger         log.Logger
+	maxSamples          int
+	currentSamples      int
+	defaultEvalInterval int64
+	logger              log.Logger
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -869,9 +876,9 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	return mat
 }
 
-// subqIntoMatrixSelector evaluates given SubqueryExpr and returns an equivalent
+// evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
-func (ev *evaluator) subqIntoMatrixSelector(subq *SubqueryExpr) *MatrixSelector {
+func (ev *evaluator) evalSubquery(subq *SubqueryExpr) *MatrixSelector {
 	val := ev.eval(subq).(Matrix)
 	ms := &MatrixSelector{
 		Range:  subq.Range,
@@ -935,7 +942,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				matrixArgIndex = i
 				matrixArg = true
 				// Replacing SubqueryExpr with MatrixSelector.
-				e.Args[i] = ev.subqIntoMatrixSelector(subq)
+				e.Args[i] = ev.evalSubquery(subq)
 				break
 			}
 		}
@@ -1134,30 +1141,23 @@ func (ev *evaluator) eval(expr Expr) Value {
 		offsetMillis := durationToInt64Millis(e.Offset)
 		rangeMillis := durationToInt64Millis(e.Range)
 		newEv := &evaluator{
-			endTimestamp:   ev.endTimestamp - offsetMillis,
-			ctx:            ev.ctx,
-			currentSamples: ev.currentSamples,
-			maxSamples:     ev.maxSamples,
-			logger:         ev.logger,
+			endTimestamp:        ev.endTimestamp - offsetMillis,
+			interval:            ev.defaultEvalInterval,
+			ctx:                 ev.ctx,
+			currentSamples:      ev.currentSamples,
+			maxSamples:          ev.maxSamples,
+			defaultEvalInterval: ev.defaultEvalInterval,
+			logger:              ev.logger,
 		}
 
-		newEv.interval = durationToInt64Millis(e.Step)
-		if newEv.interval == 0 {
-			defaultEvaluationIntervalMtx.RLock()
-			newEv.interval = durationToInt64Millis(DefaultEvaluationInterval)
-			defaultEvaluationIntervalMtx.RUnlock()
+		if e.Step != 0 {
+			newEv.interval = durationToInt64Millis(e.Step)
 		}
 
-		// We want to align the start time of the subquery with its step.
-		// Aligned steps are `0 1*step 2*step 3*step ...`
-		// We choose start time as the first aligned step just after (or equal to)
-		// 'S = (ev.startTimestamp - offset - range)'
-
-		// numSteps = S / step
-		// newEv.startTimestamp = step * numSteps
+		// Start with the first timestamp after (ev.startTimestamp - offset - range)
+		// that is aligned with the step (multiple of 'newEv.interval').
 		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
 		if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
-			// Aligned step is before S. Add another step to make it after S.
 			newEv.startTimestamp += newEv.interval
 		}
 

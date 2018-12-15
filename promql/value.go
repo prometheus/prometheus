@@ -290,7 +290,11 @@ func newStorageSeriesIterator(series Series) *storageSeriesIterator {
 }
 
 func (ssi *storageSeriesIterator) Seek(t int64) bool {
-	for i := ssi.curr; i < len(ssi.points); i++ {
+	i := ssi.curr
+	if i < 0 {
+		i = 0
+	}
+	for ; i < len(ssi.points); i++ {
 		if ssi.points[i].T >= t {
 			ssi.curr = i
 			return true
