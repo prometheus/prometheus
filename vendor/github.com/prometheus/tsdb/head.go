@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"math"
-	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -60,7 +59,8 @@ type Head struct {
 	appendPool sync.Pool
 	bytesPool  sync.Pool
 
-	minTime, maxTime int64
+	minTime, maxTime int64 // Current min and max of the samples included in the head.
+	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastSeriesID     uint64
 
 	// All series addressable by their ID or hash.
@@ -138,13 +138,13 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	})
 	m.maxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_max_time",
-		Help: "Maximum timestamp of the head block.",
+		Help: "Maximum timestamp of the head block. The unit is decided by the library consumer.",
 	}, func() float64 {
 		return float64(h.MaxTime())
 	})
 	m.minTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_min_time",
-		Help: "Minimum time bound of the head block.",
+		Help: "Minimum time bound of the head block. The unit is decided by the library consumer.",
 	}, func() float64 {
 		return float64(h.MinTime())
 	})
@@ -301,13 +301,6 @@ func (h *Head) updateMinMaxTime(mint, maxt int64) {
 }
 
 func (h *Head) loadWAL(r *wal.Reader) error {
-	minValidTime := h.MinTime()
-	// If the min time is still uninitialized (no persisted blocks yet),
-	// we accept all sample timestamps from the WAL.
-	if minValidTime == math.MaxInt64 {
-		minValidTime = math.MinInt64
-	}
-
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs uint64
@@ -328,7 +321,7 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 		inputs[i] = make(chan []RefSample, 300)
 
 		go func(input <-chan []RefSample, output chan<- []RefSample) {
-			unknown := h.processWALSamples(minValidTime, input, output)
+			unknown := h.processWALSamples(h.minValidTime, input, output)
 			atomic.AddUint64(&unknownRefs, unknown)
 			wg.Done()
 		}(inputs[i], outputs[i])
@@ -349,7 +342,11 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 		case RecordSeries:
 			series, err = dec.Series(rec, series)
 			if err != nil {
-				return errors.Wrap(err, "decode series")
+				return &wal.CorruptionErr{
+					Err:     errors.Wrap(err, "decode series"),
+					Segment: r.Segment(),
+					Offset:  r.Offset(),
+				}
 			}
 			for _, s := range series {
 				h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
@@ -362,7 +359,11 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 			samples, err = dec.Samples(rec, samples)
 			s := samples
 			if err != nil {
-				return errors.Wrap(err, "decode samples")
+				return &wal.CorruptionErr{
+					Err:     errors.Wrap(err, "decode samples"),
+					Segment: r.Segment(),
+					Offset:  r.Offset(),
+				}
 			}
 			// We split up the samples into chunks of 5000 samples or less.
 			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
@@ -395,18 +396,26 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 		case RecordTombstones:
 			tstones, err = dec.Tombstones(rec, tstones)
 			if err != nil {
-				return errors.Wrap(err, "decode tombstones")
+				return &wal.CorruptionErr{
+					Err:     errors.Wrap(err, "decode tombstones"),
+					Segment: r.Segment(),
+					Offset:  r.Offset(),
+				}
 			}
 			for _, s := range tstones {
 				for _, itv := range s.intervals {
-					if itv.Maxt < minValidTime {
+					if itv.Maxt < h.minValidTime {
 						continue
 					}
 					h.tombstones.addInterval(s.ref, itv)
 				}
 			}
 		default:
-			return errors.Errorf("invalid record type %v", dec.Type(rec))
+			return &wal.CorruptionErr{
+				Err:     errors.Errorf("invalid record type %v", dec.Type(rec)),
+				Segment: r.Segment(),
+				Offset:  r.Offset(),
+			}
 		}
 	}
 	if r.Err() != nil {
@@ -428,8 +437,12 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 }
 
 // Init loads data from the write ahead log and prepares the head for writes.
-func (h *Head) Init() error {
+// It should be called before using an appender so that
+// limits the ingested samples to the head min valid time.
+func (h *Head) Init(minValidTime int64) error {
+	h.minValidTime = minValidTime
 	defer h.postings.EnsureOrder()
+	defer h.gc() // After loading the wal remove the obsolete data from the head.
 
 	if h.wal == nil {
 		return nil
@@ -441,7 +454,7 @@ func (h *Head) Init() error {
 		return errors.Wrap(err, "find last checkpoint")
 	}
 	if err == nil {
-		sr, err := wal.NewSegmentsReader(filepath.Join(h.wal.Dir(), dir))
+		sr, err := wal.NewSegmentsReader(dir)
 		if err != nil {
 			return errors.Wrap(err, "open checkpoint")
 		}
@@ -456,21 +469,21 @@ func (h *Head) Init() error {
 	}
 
 	// Backfill segments from the last checkpoint onwards
-	sr, err := wal.NewSegmentsRangeReader(h.wal.Dir(), startFrom, -1)
+	sr, err := wal.NewSegmentsRangeReader(wal.SegmentRange{Dir: h.wal.Dir(), First: startFrom, Last: -1})
 	if err != nil {
 		return errors.Wrap(err, "open WAL segments")
 	}
-	defer sr.Close()
 
 	err = h.loadWAL(wal.NewReader(sr))
+	sr.Close() // Close the reader so that if there was an error the repair can remove the corrupted file under Windows.
 	if err == nil {
 		return nil
 	}
 	level.Warn(h.logger).Log("msg", "encountered WAL error, attempting repair", "err", err)
-
 	if err := h.wal.Repair(err); err != nil {
 		return errors.Wrap(err, "repair corrupted WAL")
 	}
+
 	return nil
 }
 
@@ -487,6 +500,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return nil
 	}
 	atomic.StoreInt64(&h.minTime, mint)
+	h.minValidTime = mint
 
 	// Ensure that max time is at least as high as min time.
 	for h.MaxTime() < mint {
@@ -557,7 +571,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
-// for a compltely fresh head with an empty WAL.
+// for a completely fresh head with an empty WAL.
 // Returns true if the initialization took an effect.
 func (h *Head) initTime(t int64) (initialized bool) {
 	if !atomic.CompareAndSwapInt64(&h.minTime, math.MaxInt64, t) {
@@ -639,12 +653,21 @@ func (h *Head) Appender() Appender {
 
 func (h *Head) appender() *headAppender {
 	return &headAppender{
-		head:         h,
-		minValidTime: h.MaxTime() - h.chunkRange/2,
+		head: h,
+		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
+		// This ensures that no samples will be added within the compaction window to avoid races.
+		minValidTime: max(h.minValidTime, h.MaxTime()-h.chunkRange/2),
 		mint:         math.MaxInt64,
 		maxt:         math.MinInt64,
 		samples:      h.getAppendBuffer(),
 	}
+}
+
+func max(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (h *Head) getAppendBuffer() []RefSample {
@@ -1396,7 +1419,7 @@ func (s *memSeries) cut(mint int64) *memChunk {
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
-	_, s.nextAt = rangeForTimestamp(mint, s.chunkRange)
+	s.nextAt = rangeForTimestamp(mint, s.chunkRange)
 
 	app, err := c.chunk.Appender()
 	if err != nil {

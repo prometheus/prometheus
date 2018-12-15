@@ -544,13 +544,15 @@ type Reader struct {
 
 	// Cached hashmaps of section offsets.
 	labels   map[string]uint64
-	postings map[labels.Label]uint64
+	postings map[string]map[string]uint64
 	// Cache of read symbols. Strings that are returned when reading from the
 	// block are always backed by true strings held in here rather than
 	// strings that are backed by byte slices from the mmap'd index file. This
 	// prevents memory faults when applications work with read symbols after
-	// the block has been unmapped.
-	symbols map[uint32]string
+	// the block has been unmapped. The older format has sparse indexes so a map
+	// must be used, but the new format is not so we can use a slice.
+	symbols     map[uint32]string
+	symbolSlice []string
 
 	dec *Decoder
 
@@ -606,7 +608,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		c:        c,
 		symbols:  map[uint32]string{},
 		labels:   map[string]uint64{},
-		postings: map[labels.Label]uint64{},
+		postings: map[string]map[string]uint64{},
 		crc32:    newCRC32(),
 	}
 
@@ -631,28 +633,42 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 	var err error
 
+	// Use the strings already allocated by symbols, rather than
+	// re-allocating them again below.
+	symbols := make(map[string]string, len(r.symbols)+len(r.symbolSlice))
+	for _, s := range r.symbols {
+		symbols[s] = s
+	}
+	for _, s := range r.symbolSlice {
+		symbols[s] = s
+	}
+
 	err = r.readOffsetTable(r.toc.labelIndicesTable, func(key []string, off uint64) error {
 		if len(key) != 1 {
 			return errors.Errorf("unexpected key length %d", len(key))
 		}
-		r.labels[key[0]] = off
+		r.labels[symbols[key[0]]] = off
 		return nil
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "read label index table")
 	}
+	r.postings[""] = map[string]uint64{}
 	err = r.readOffsetTable(r.toc.postingsTable, func(key []string, off uint64) error {
 		if len(key) != 2 {
 			return errors.Errorf("unexpected key length %d", len(key))
 		}
-		r.postings[labels.Label{Name: key[0], Value: key[1]}] = off
+		if _, ok := r.postings[key[0]]; !ok {
+			r.postings[symbols[key[0]]] = map[string]uint64{}
+		}
+		r.postings[key[0]][symbols[key[1]]] = off
 		return nil
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "read postings table")
 	}
 
-	r.dec = &Decoder{symbols: r.symbols}
+	r.dec = &Decoder{lookupSymbol: r.lookupSymbol}
 
 	return r, nil
 }
@@ -672,14 +688,16 @@ type Range struct {
 func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
 	m := map[labels.Label]Range{}
 
-	for l, start := range r.postings {
-		d := r.decbufAt(int(start))
-		if d.err() != nil {
-			return nil, d.err()
-		}
-		m[l] = Range{
-			Start: int64(start) + 4,
-			End:   int64(start) + 4 + int64(d.len()),
+	for k, e := range r.postings {
+		for v, start := range e {
+			d := r.decbufAt(int(start))
+			if d.err() != nil {
+				return nil, d.err()
+			}
+			m[labels.Label{Name: k, Value: v}] = Range{
+				Start: int64(start) + 4,
+				End:   int64(start) + 4 + int64(d.len()),
+			}
 		}
 	}
 	return m, nil
@@ -777,18 +795,17 @@ func (r *Reader) readSymbols(off int) error {
 		basePos = uint32(off) + 4
 		nextPos = basePos + uint32(origLen-d.len())
 	)
-
 	if r.version == 2 {
-		nextPos = 0
+		r.symbolSlice = make([]string, 0, cnt)
 	}
 
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
 		s := d.uvarintStr()
-		r.symbols[nextPos] = s
 
 		if r.version == 2 {
-			nextPos++
+			r.symbolSlice = append(r.symbolSlice, s)
 		} else {
+			r.symbols[nextPos] = s
 			nextPos = basePos + uint32(origLen-d.len())
 		}
 		cnt--
@@ -828,6 +845,9 @@ func (r *Reader) Close() error {
 }
 
 func (r *Reader) lookupSymbol(o uint32) (string, error) {
+	if int(o) < len(r.symbolSlice) {
+		return r.symbolSlice[o], nil
+	}
 	s, ok := r.symbols[o]
 	if !ok {
 		return "", errors.Errorf("unknown symbol offset %d", o)
@@ -842,12 +862,22 @@ func (r *Reader) Symbols() (map[string]struct{}, error) {
 	for _, s := range r.symbols {
 		res[s] = struct{}{}
 	}
+	for _, s := range r.symbolSlice {
+		res[s] = struct{}{}
+	}
 	return res, nil
 }
 
-// SymbolTable returns the symbol table that is used to resolve symbol references.
-func (r *Reader) SymbolTable() map[uint32]string {
-	return r.symbols
+// SymbolTableSize returns the symbol table that is used to resolve symbol references.
+func (r *Reader) SymbolTableSize() uint64 {
+	var size int
+	for _, s := range r.symbols {
+		size += len(s) + 8
+	}
+	for _, s := range r.symbolSlice {
+		size += len(s) + 8
+	}
+	return uint64(size)
 }
 
 // LabelValues returns value tuples that exist for the given label name tuples.
@@ -910,10 +940,11 @@ func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) err
 
 // Postings returns a postings list for the given label pair.
 func (r *Reader) Postings(name, value string) (Postings, error) {
-	off, ok := r.postings[labels.Label{
-		Name:  name,
-		Value: value,
-	}]
+	e, ok := r.postings[name]
+	if !ok {
+		return EmptyPostings(), nil
+	}
+	off, ok := e[value]
 	if !ok {
 		return EmptyPostings(), nil
 	}
@@ -1031,21 +1062,7 @@ func (t *serializedStringTuples) At(i int) ([]string, error) {
 // It currently does not contain decoding methods for all entry types but can be extended
 // by them if there's demand.
 type Decoder struct {
-	symbols map[uint32]string
-}
-
-func (dec *Decoder) lookupSymbol(o uint32) (string, error) {
-	s, ok := dec.symbols[o]
-	if !ok {
-		return "", errors.Errorf("unknown symbol offset %d", o)
-	}
-	return s, nil
-}
-
-// SetSymbolTable set the symbol table to be used for lookups when decoding series
-// and label indices
-func (dec *Decoder) SetSymbolTable(t map[uint32]string) {
-	dec.symbols = t
+	lookupSymbol func(uint32) (string, error)
 }
 
 // Postings returns a postings list for b and its number of elements.

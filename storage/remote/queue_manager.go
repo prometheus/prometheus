@@ -177,7 +177,7 @@ func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels m
 		queueName:      client.Name(),
 
 		logLimiter:  rate.NewLimiter(logRateLimit, logBurst),
-		numShards:   1,
+		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
 		quit:        make(chan struct{}),
 
@@ -326,8 +326,8 @@ func (t *QueueManager) calculateDesiredShards() {
 	numShards := int(math.Ceil(desiredShards))
 	if numShards > t.cfg.MaxShards {
 		numShards = t.cfg.MaxShards
-	} else if numShards < 1 {
-		numShards = 1
+	} else if numShards < t.cfg.MinShards {
+		numShards = t.cfg.MinShards
 	}
 	if numShards == t.numShards {
 		return
