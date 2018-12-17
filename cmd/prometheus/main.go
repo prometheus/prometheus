@@ -748,6 +748,12 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
 	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
+
+	// Register conf as current config.
+	config.CurrentConfigMutex.Lock()
+	config.CurrentConfig = conf
+	config.CurrentConfigMutex.Unlock()
+
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }

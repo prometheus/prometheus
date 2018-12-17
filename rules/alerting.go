@@ -28,6 +28,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -79,8 +80,9 @@ func (s AlertState) String() string {
 type Alert struct {
 	State AlertState
 
-	Labels      labels.Labels
-	Annotations labels.Labels
+	Labels         labels.Labels
+	ExternalLabels labels.Labels
+	Annotations    labels.Labels
 
 	// The value at the last evaluation of the alerting expression.
 	Value float64
@@ -300,15 +302,27 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	var vec promql.Vector
 	for _, smpl := range res {
 		// Provide the alert information to the template.
-		l := make(map[string]string, len(smpl.Metric))
+		l := make(map[string]string)
 		for _, lbl := range smpl.Metric {
 			l[lbl.Name] = lbl.Value
 		}
 
-		tmplData := template.AlertTemplateData(l, smpl.V)
+		// Add external labels.
+		el := make(map[string]string)
+		if config.CurrentConfig != nil {
+			config.CurrentConfigMutex.RLock()
+			for eln, elv := range (*config.CurrentConfig).GlobalConfig.ExternalLabels {
+				el[string(eln)] = string(elv)
+			}
+			config.CurrentConfigMutex.RUnlock()
+		}
+
+		tmplData := template.AlertTemplateData(l, el, smpl.V)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
-		defs := "{{$labels := .Labels}}{{$value := .Value}}"
+		defs := "{{$labels := .Labels}}"
+		defs += "{{$externalLabels := .ExternalLabels}}"
+		defs += "{{$value := .Value}}"
 
 		expand := func(text string) string {
 			tmpl := template.NewTemplateExpander(

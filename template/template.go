@@ -28,9 +28,10 @@ import (
 	text_template "text/template"
 
 	"github.com/pkg/errors"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -132,6 +133,19 @@ func NewTemplateExpander(
 			},
 			"label": func(label string, s *sample) string {
 				return s.Labels[label]
+			},
+			"externalLabel": func(label string) string {
+				if config.CurrentConfig == nil {
+					return ""
+				}
+				config.CurrentConfigMutex.RLock()
+				defer config.CurrentConfigMutex.RUnlock()
+				for eln, elv := range (*config.CurrentConfig).GlobalConfig.ExternalLabels {
+					if label == string(eln) {
+						return string(elv)
+					}
+				}
+				return ""
 			},
 			"value": func(s *sample) float64 {
 				return s.Value
@@ -261,13 +275,15 @@ func NewTemplateExpander(
 }
 
 // AlertTemplateData returns the interface to be used in expanding the template.
-func AlertTemplateData(labels map[string]string, value float64) interface{} {
+func AlertTemplateData(labels map[string]string, externalLabels map[string]string, value float64) interface{} {
 	return struct {
-		Labels map[string]string
-		Value  float64
+		Labels         map[string]string
+		ExternalLabels map[string]string
+		Value          float64
 	}{
-		Labels: labels,
-		Value:  value,
+		Labels:         labels,
+		ExternalLabels: externalLabels,
+		Value:          value,
 	}
 }
 

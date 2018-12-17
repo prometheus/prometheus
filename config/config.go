@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -68,6 +69,10 @@ func LoadFile(filename string) (*Config, error) {
 
 // The defaults applied before parsing the respective config sections.
 var (
+	// CurrentConfig is a pointer to the current configuration.
+	CurrentConfig      *Config
+	CurrentConfigMutex sync.RWMutex
+
 	// DefaultConfig is the default top-level configuration.
 	DefaultConfig = Config{
 		GlobalConfig: DefaultGlobalConfig,

@@ -541,19 +541,39 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 	for k, v := range rawParams {
 		params[k] = v[0]
 	}
+
+	// External labels
+	el := make(map[string]string)
+	if config.CurrentConfig != nil {
+		config.CurrentConfigMutex.RLock()
+		for eln, elv := range (*config.CurrentConfig).GlobalConfig.ExternalLabels {
+			el[string(eln)] = string(elv)
+		}
+		config.CurrentConfigMutex.RUnlock()
+	}
+
+	// Inject some convenience variables that are easier to remember for users
+	// who are not used to Go's templating system.
+	defs := "{{$rawParams := .RawParams }}"
+	defs += "{{$params := .Params}}"
+	defs += "{{$path := .Path}}"
+	defs += "{{$externalLabels := .ExternalLabels}}"
+
 	data := struct {
-		RawParams url.Values
-		Params    map[string]string
-		Path      string
+		RawParams      url.Values
+		Params         map[string]string
+		Path           string
+		ExternalLabels map[string]string
 	}{
-		RawParams: rawParams,
-		Params:    params,
-		Path:      strings.TrimLeft(name, "/"),
+		RawParams:      rawParams,
+		Params:         params,
+		Path:           strings.TrimLeft(name, "/"),
+		ExternalLabels: el,
 	}
 
 	tmpl := template.NewTemplateExpander(
 		h.context,
-		string(text),
+		defs+string(text),
 		"__console_"+name,
 		data,
 		h.now(),
