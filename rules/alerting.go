@@ -27,6 +27,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -303,9 +304,18 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	var vec promql.Vector
 	for _, smpl := range res {
 		// Provide the alert information to the template.
-		l := make(map[string]string, len(smpl.Metric))
+		l := make(map[string]string)
 		for _, lbl := range smpl.Metric {
 			l[lbl.Name] = lbl.Value
+		}
+
+		// Add external labels.
+		if config.CurrentConfig != nil && (*config.CurrentConfig).GlobalConfig.ExternalLabels != nil {
+			for ln, lv := range (*config.CurrentConfig).GlobalConfig.ExternalLabels {
+				if _, ok := l[string(ln)]; !ok {
+					l[string(ln)] = string(lv)
+				}
+			}
 		}
 
 		tmplData := template.AlertTemplateData(l, smpl.V)
