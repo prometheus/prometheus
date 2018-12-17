@@ -654,6 +654,10 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	if failed {
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
+
+	// Register conf as current config.
+	config.CurrentConfig = conf
+
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }
