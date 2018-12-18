@@ -1576,7 +1576,7 @@ var testExpr = []struct {
 	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",
 		fail:   true,
-		errMsg: "parse error at char 29: expected vector selector for subquery \"test[5d] offset 10s[10m:5s]\", got matrix instead",
+		errMsg: "parse error at char 29: subquery is only allowed on instant vector, got matrix in \"test[5d] offset 10s[10m:5s]\"",
 	}, {
 		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
 		fail:   true,
