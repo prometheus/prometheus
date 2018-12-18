@@ -304,6 +304,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
+* `__meta_consul_tagged_address_<key>`: each node tagged address key value of the target
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -697,9 +698,11 @@ service port.
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the service object.
-* `__meta_kubernetes_service_name`: The name of the service object.
-* `__meta_kubernetes_service_label_<labelname>`: The label of the service object.
 * `__meta_kubernetes_service_annotation_<annotationname>`: The annotation of the service object.
+* `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
+* `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
+* `__meta_kubernetes_service_label_<labelname>`: The label of the service object.
+* `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
 * `__meta_kubernetes_service_port_number`: Number of the service port for the target.
 * `__meta_kubernetes_service_port_protocol`: Protocol of the service port for the target.

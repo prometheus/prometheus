@@ -160,14 +160,14 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	// All this preparation is so that we can test alerts as we evaluate the rules.
 	// This avoids storing them in memory, as the number of evals might be high.
 
-	// All the `eval_time` for which we have unit tests.
-	var alertEvalTimes []time.Duration
+	// All the `eval_time` for which we have unit tests for alerts.
+	alertEvalTimesMap := map[time.Duration]struct{}{}
 	// Map of all the eval_time+alertname combination present in the unit tests.
 	alertsInTest := make(map[time.Duration]map[string]struct{})
 	// Map of all the unit tests for given eval_time.
 	alertTests := make(map[time.Duration][]alertTestCase)
 	for _, alert := range tg.AlertRuleTests {
-		alertEvalTimes = append(alertEvalTimes, alert.EvalTime)
+		alertEvalTimesMap[alert.EvalTime] = struct{}{}
 
 		if _, ok := alertsInTest[alert.EvalTime]; !ok {
 			alertsInTest[alert.EvalTime] = make(map[string]struct{})
@@ -175,6 +175,10 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		alertsInTest[alert.EvalTime][alert.Alertname] = struct{}{}
 
 		alertTests[alert.EvalTime] = append(alertTests[alert.EvalTime], alert)
+	}
+	alertEvalTimes := make([]time.Duration, 0, len(alertEvalTimesMap))
+	for k := range alertEvalTimesMap {
+		alertEvalTimes = append(alertEvalTimes, k)
 	}
 	sort.Slice(alertEvalTimes, func(i, j int) bool {
 		return alertEvalTimes[i] < alertEvalTimes[j]

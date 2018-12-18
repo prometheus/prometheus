@@ -44,6 +44,8 @@ func makeMultiPortService() *v1.Service {
 					Port:     int32(30901),
 				},
 			},
+			Type:      v1.ServiceTypeClusterIP,
+			ClusterIP: "10.0.0.1",
 		},
 	}
 }
@@ -62,12 +64,34 @@ func makeSuffixedService(suffix string) *v1.Service {
 					Port:     int32(30900),
 				},
 			},
+			Type:      v1.ServiceTypeClusterIP,
+			ClusterIP: "10.0.0.1",
 		},
 	}
 }
 
 func makeService() *v1.Service {
 	return makeSuffixedService("")
+}
+
+func makeExternalService() *v1.Service {
+	return &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testservice-external",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{
+				{
+					Name:     "testport",
+					Protocol: v1.ProtocolTCP,
+					Port:     int32(31900),
+				},
+			},
+			Type:         v1.ServiceTypeExternalName,
+			ExternalName: "FooExternalName",
+		},
+	}
 }
 
 func TestServiceDiscoveryAdd(t *testing.T) {
@@ -79,15 +103,19 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 			obj := makeService()
 			c.CoreV1().Services(obj.Namespace).Create(obj)
 			w.Services().Add(obj)
+			obj = makeExternalService()
+			c.CoreV1().Services(obj.Namespace).Create(obj)
+			w.Services().Add(obj)
 		},
-		expectedMaxItems: 1,
+		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
 			"svc/default/testservice": {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                         "testservice.default.svc:30900",
-						"__meta_kubernetes_service_port_name": "testport",
+						"__address__":                          "testservice.default.svc:30900",
+						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
+						"__meta_kubernetes_service_port_name":  "testport",
 					},
 				},
 				Labels: model.LabelSet{
@@ -95,6 +123,21 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 					"__meta_kubernetes_namespace":    "default",
 				},
 				Source: "svc/default/testservice",
+			},
+			"svc/default/testservice-external": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                             "testservice-external.default.svc:31900",
+						"__meta_kubernetes_service_port_name":     "testport",
+						"__meta_kubernetes_service_external_name": "FooExternalName",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice-external",
+					"__meta_kubernetes_namespace":    "default",
+				},
+				Source: "svc/default/testservice-external",
 			},
 		},
 	}.Run(t)
@@ -135,13 +178,15 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                         "testservice.default.svc:30900",
-						"__meta_kubernetes_service_port_name": "testport0",
+						"__address__":                          "testservice.default.svc:30900",
+						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
+						"__meta_kubernetes_service_port_name":  "testport0",
 					},
 					{
 						"__meta_kubernetes_service_port_protocol": "UDP",
-						"__address__":                         "testservice.default.svc:30901",
-						"__meta_kubernetes_service_port_name": "testport1",
+						"__address__":                          "testservice.default.svc:30901",
+						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
+						"__meta_kubernetes_service_port_name":  "testport1",
 					},
 				},
 				Labels: model.LabelSet{
@@ -175,8 +220,9 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                         "testservice.ns1.svc:30900",
-						"__meta_kubernetes_service_port_name": "testport",
+						"__address__":                          "testservice.ns1.svc:30900",
+						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
+						"__meta_kubernetes_service_port_name":  "testport",
 					},
 				},
 				Labels: model.LabelSet{
@@ -189,8 +235,9 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                         "testservice.ns2.svc:30900",
-						"__meta_kubernetes_service_port_name": "testport",
+						"__address__":                          "testservice.ns2.svc:30900",
+						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
+						"__meta_kubernetes_service_port_name":  "testport",
 					},
 				},
 				Labels: model.LabelSet{

@@ -473,14 +473,13 @@ func (h *Head) Init(minValidTime int64) error {
 	if err != nil {
 		return errors.Wrap(err, "open WAL segments")
 	}
-	defer sr.Close()
 
 	err = h.loadWAL(wal.NewReader(sr))
+	sr.Close() // Close the reader so that if there was an error the repair can remove the corrupted file under Windows.
 	if err == nil {
 		return nil
 	}
 	level.Warn(h.logger).Log("msg", "encountered WAL error, attempting repair", "err", err)
-
 	if err := h.wal.Repair(err); err != nil {
 		return errors.Wrap(err, "repair corrupted WAL")
 	}
@@ -572,7 +571,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
-// for a compltely fresh head with an empty WAL.
+// for a completely fresh head with an empty WAL.
 // Returns true if the initialization took an effect.
 func (h *Head) initTime(t int64) (initialized bool) {
 	if !atomic.CompareAndSwapInt64(&h.minTime, math.MaxInt64, t) {

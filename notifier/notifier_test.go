@@ -25,6 +25,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/relabel"
+
 	yaml "gopkg.in/yaml.v2"
 
 	config_util "github.com/prometheus/common/config"
@@ -236,12 +238,12 @@ func TestExternalLabels(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
 		ExternalLabels: model.LabelSet{"a": "b"},
-		RelabelConfigs: []*config.RelabelConfig{
+		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
 				TargetLabel:  "a",
 				Action:       "replace",
-				Regex:        config.MustNewRegexp("externalrelabelthis"),
+				Regex:        relabel.MustNewRegexp("externalrelabelthis"),
 				Replacement:  "c",
 			},
 		},
@@ -269,17 +271,17 @@ func TestExternalLabels(t *testing.T) {
 func TestHandlerRelabel(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
-		RelabelConfigs: []*config.RelabelConfig{
+		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
 				Action:       "drop",
-				Regex:        config.MustNewRegexp("drop"),
+				Regex:        relabel.MustNewRegexp("drop"),
 			},
 			{
 				SourceLabels: model.LabelNames{"alertname"},
 				TargetLabel:  "alertname",
 				Action:       "replace",
-				Regex:        config.MustNewRegexp("rename"),
+				Regex:        relabel.MustNewRegexp("rename"),
 				Replacement:  "renamed",
 			},
 		},

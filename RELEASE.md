@@ -1,12 +1,12 @@
 # Releases
 
-This page describes the release process and the currently planned schedule for upcoming releases as well as the respective release schepherds. Release shepards are chosen on a voluntary basis.
+This page describes the release process and the currently planned schedule for upcoming releases as well as the respective release shepherd. Release shepherd are chosen on a voluntary basis.
 
 ## Release schedule
 
 Release cadence of first pre-releases being cut is 6 weeks.
 
-| release series | date of first pre-release (year-month-day) | release shepard                             |
+| release series | date of first pre-release (year-month-day) | release shepherd                             |
 |----------------|--------------------------------------------|---------------------------------------------|
 | v2.4           | 2018-09-06                                 | Goutham Veeramachaneni (GitHub: @gouthamve) |
 | v2.5           | 2018-10-24                                 | Frederic Branczyk (GitHub: @brancz)         |
@@ -15,12 +15,12 @@ Release cadence of first pre-releases being cut is 6 weeks.
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
-## Release shepard responsibilities
+## Release shepherd responsibilities
 
-The release shepard is responsible for the entire release series of a minor release, meaning all pre- and patch releases of a minor release. The process starts with the initial pre-release.
+The release shepherd is responsible for the entire release series of a minor release, meaning all pre- and patch releases of a minor release. The process starts with the initial pre-release.
 
 * The first pre-release is scheduled according to the above schedule.
-* With the pre-release the release shepard is responsible for running and monitoring a benchmark run of the pre-release for 3 days, after which, if successful, the pre-release is promoted to a stable release.
+* With the pre-release the release shepherd is responsible for running and monitoring a benchmark run of the pre-release for 3 days, after which, if successful, the pre-release is promoted to a stable release.
 * Once a pre-release has been released, the `master` branch of the repository is frozen for any feature work, only critical bug fix work concerning the minor release is merged.
 * Pre-releases are done from `master`, after pre-releases are promoted to the stable release a `release-major.minor` branch is created.
 
@@ -36,7 +36,7 @@ We use [Semantic Versioning](http://semver.org/).
 
 We maintain a separate branch for each minor release, named `release-<major>.<minor>`, e.g. `release-1.1`, `release-2.0`.
 
-The usual flow is to merge new features and changes into the master branch and to merge bug fixes into the latest release branch. Bug fixes are then merged into master from the latest release branch. The master branch should always contain all commits from the latest release branch. Whether merging master back into a release branch makes more sense is left up to the shepard's judgement.
+The usual flow is to merge new features and changes into the master branch and to merge bug fixes into the latest release branch. Bug fixes are then merged into master from the latest release branch. The master branch should always contain all commits from the latest release branch. Whether merging master back into a release branch makes more sense is left up to the shepherd's judgement.
 
 If a bug fix got accidentally merged into master, cherry-pick commits have to be created in the latest release branch, which then have to be merged back into master. Try to avoid that situation.
 
