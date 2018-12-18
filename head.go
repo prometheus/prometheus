@@ -89,6 +89,7 @@ type headMetrics struct {
 	maxTime                 prometheus.GaugeFunc
 	samplesAppended         prometheus.Counter
 	walTruncateDuration     prometheus.Summary
+	walCorruptionsTotal     prometheus.Counter
 	headTruncateFail        prometheus.Counter
 	headTruncateTotal       prometheus.Counter
 	checkpointDeleteFail    prometheus.Counter
@@ -152,6 +153,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "prometheus_tsdb_wal_truncate_duration_seconds",
 		Help: "Duration of WAL truncation.",
 	})
+	m.walCorruptionsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_wal_corruptions_total",
+		Help: "Total number of WAL corruptions.",
+	})
 	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_samples_appended_total",
 		Help: "Total number of appended samples.",
@@ -195,6 +200,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.maxTime,
 			m.gcDuration,
 			m.walTruncateDuration,
+			m.walCorruptionsTotal,
 			m.samplesAppended,
 			m.headTruncateFail,
 			m.headTruncateTotal,
@@ -480,10 +486,10 @@ func (h *Head) Init(minValidTime int64) error {
 		return nil
 	}
 	level.Warn(h.logger).Log("msg", "encountered WAL error, attempting repair", "err", err)
+	h.metrics.walCorruptionsTotal.Inc()
 	if err := h.wal.Repair(err); err != nil {
 		return errors.Wrap(err, "repair corrupted WAL")
 	}
-
 	return nil
 }
 

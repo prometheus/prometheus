@@ -22,6 +22,7 @@ import (
 	"sort"
 	"testing"
 
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/index"
@@ -927,7 +928,9 @@ func TestWalRepair(t *testing.T) {
 
 			h, err := NewHead(nil, nil, w, 1)
 			testutil.Ok(t, err)
+			testutil.Equals(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 			testutil.Ok(t, h.Init(math.MinInt64))
+			testutil.Equals(t, 1.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 
 			sr, err := wal.NewSegmentsReader(dir)
 			testutil.Ok(t, err)
