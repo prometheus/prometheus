@@ -534,14 +534,15 @@ region: <string>
 [ project_name: <string> ]
 [ project_id: <string> ]
 
-# The application_credential_id or application_credential_name is required if
-# using an application credential to authenticate. Some providers allow you to
-# create an application credential to authenticate rather than a password.
+# The application_credential_id or application_credential_name fields are
+# required if using an application credential to authenticate. Some providers
+# allow you to create an application credential to authenticate rather than a
+# password.
 [ application_credential_name: <string> ]
 [ application_credential_id: <string> ]
 
-# The application_credential_secret is required if using an application credential
-# to authenticate.
+# The application_credential_secret field is required if using an application
+# credential to authenticate.
 [ application_credential_secret: <secret> ]
 
 # Whether the service discovery should list all instances for all projects.
