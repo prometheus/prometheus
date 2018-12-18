@@ -1045,7 +1045,7 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 	case *SubqueryExpr:
 		ty := p.checkType(n.Expr)
 		if ty != ValueTypeVector {
-			p.errorf("expected vector selector for subquery %q, got %s instead", n.String(), ty)
+			p.errorf("subquery is only allowed on instant vector, got %s in %q instead", ty, n.String())
 		}
 
 	case *NumberLiteral, *MatrixSelector, *StringLiteral, *VectorSelector:
