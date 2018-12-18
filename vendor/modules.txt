@@ -290,7 +290,7 @@ gopkg.in/fsnotify/fsnotify.v1
 gopkg.in/inf.v0
 # gopkg.in/yaml.v2 v2.2.0
 gopkg.in/yaml.v2
-# k8s.io/api v0.0.0-20181204000039-89a74a8d264d
+# k8s.io/api v0.0.0-20181213150558-05914d821849
 k8s.io/api/core/v1
 k8s.io/api/extensions/v1beta1
 k8s.io/api/apps/v1beta1
