@@ -76,13 +76,6 @@ const (
 	errorNotFound    errorType = "not_found"
 )
 
-var corsHeaders = map[string]string{
-	"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
-	"Access-Control-Allow-Methods":  "GET, OPTIONS",
-	"Access-Control-Allow-Origin":   "*",
-	"Access-Control-Expose-Headers": "Date",
-}
-
 var remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
 	Namespace: namespace,
 	Subsystem: subsystem,
@@ -130,9 +123,9 @@ type apiFuncResult struct {
 }
 
 // Enables cross-site script calls.
-func setCORS(w http.ResponseWriter) {
-	for h, v := range corsHeaders {
-		w.Header().Set(h, v)
+func setCORS(w http.ResponseWriter, h map[string]string) {
+	for k, v := range h {
+		w.Header().Set(k, v)
 	}
 }
 
@@ -165,6 +158,7 @@ type API struct {
 	logger                log.Logger
 	remoteReadSampleLimit int
 	remoteReadGate        *gate.Gate
+	headers               map[string]string
 }
 
 func init() {
@@ -187,6 +181,7 @@ func NewAPI(
 	rr rulesRetriever,
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
+	headers map[string]string,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -204,6 +199,7 @@ func NewAPI(
 		remoteReadSampleLimit: remoteReadSampleLimit,
 		remoteReadGate:        gate.New(remoteReadConcurrencyLimit),
 		logger:                logger,
+		headers:               headers,
 	}
 }
 
@@ -211,7 +207,7 @@ func NewAPI(
 func (api *API) Register(r *route.Router) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			setCORS(w)
+			setCORS(w, api.headers)
 			result := f(r)
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)
