@@ -123,7 +123,7 @@ type Manager struct {
 type Options struct {
 	QueueCapacity  int
 	ExternalLabels model.LabelSet
-	RelabelConfigs []*config.RelabelConfig
+	RelabelConfigs []*relabel.Config
 	// Used for sending HTTP requests to the Alertmanager.
 	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
