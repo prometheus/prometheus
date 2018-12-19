@@ -707,7 +707,9 @@ func TestWALSegmentSizeOption(t *testing.T) {
 		testutil.Ok(t, app.Commit())
 	}
 
-	files, err := ioutil.ReadDir(filepath.Join(db.Dir(), "wal"))
+	dbDir := db.Dir()
+	db.Close()
+	files, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
 	testutil.Assert(t, len(files) > 1, "current WALSegmentSize should result in more than a single WAL file.")
 	testutil.Ok(t, err)
 	for i, f := range files {
