@@ -29,6 +29,8 @@ GO           ?= go
 GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 GOOPTS       ?=
+GOHOSTOS     ?= $(shell $(GO) env GOHOSTOS)
+GOHOSTARCH   ?= $(shell $(GO) env GOHOSTARCH)
 
 GO_VERSION        ?= $(shell $(GO) version)
 GO_VERSION_NUMBER ?= $(word 3, $(GO_VERSION))
@@ -62,8 +64,6 @@ PROMU        := $(FIRST_GOPATH)/bin/promu
 STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
 pkgs          = ./...
 
-GOHOSTOS ?= $(shell $(GO) env GOHOSTOS)
-GOHOSTARCH ?= $(shell $(GO) env GOHOSTARCH)
 ifeq (arm, $(GOHOSTARCH))
 	GOHOSTARM ?= $(shell GOARM= $(GO) env GOARM)
 	GO_BUILD_PLATFORM ?= $(GOHOSTOS)-$(GOHOSTARCH)v$(GOHOSTARM)
@@ -78,6 +78,13 @@ PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 DOCKER_REPO             ?= prom
+
+ifeq ($(GOHOSTARCH),amd64)
+        ifeq ($(GOHOSTOS),$(filter $(GOHOSTOS),linux freebsd darwin windows))
+                # Only supported on amd64
+                test-flags := -race
+        endif
+endif
 
 .PHONY: all
 all: precheck style staticcheck unused build test
@@ -116,7 +123,7 @@ common-test-short:
 .PHONY: common-test
 common-test:
 	@echo ">> running all tests"
-	GO111MODULE=$(GO111MODULE) $(GO) test -race $(GOOPTS) $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GO) test $(test-flags) $(GOOPTS) $(pkgs)
 
 .PHONY: common-format
 common-format:
