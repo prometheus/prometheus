@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "doc.go",
+        "pattern.go",
+        "trie.go",
+    ],
+    importpath = "github.com/grpc-ecosystem/grpc-gateway/utilities",
+)
+
+go_test(
+    name = "go_default_xtest",
+    size = "small",
+    srcs = ["trie_test.go"],
+    deps = [":go_default_library"],
+)

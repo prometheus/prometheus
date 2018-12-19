@@ -21,8 +21,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/arm/compute"
-	"github.com/Azure/azure-sdk-for-go/arm/network"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-06-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2017-09-01/network"
+
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/Azure/go-autorest/autorest/azure"
@@ -331,35 +332,29 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 					return
 				}
 
-				if networkInterface.Properties == nil {
-					continue
-				}
-
 				// Unfortunately Azure does not return information on whether a VM is deallocated.
 				// This information is available via another API call however the Go SDK does not
 				// yet support this. On deallocated machines, this value happens to be nil so it
 				// is a cheap and easy way to determine if a machine is allocated or not.
-				if networkInterface.Properties.Primary == nil {
+				if networkInterface.Primary == nil {
 					level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", vm.Name)
 					ch <- target{}
 					return
 				}
 
-				if *networkInterface.Properties.Primary {
-					for _, ip := range *networkInterface.Properties.IPConfigurations {
-						if ip.Properties.PrivateIPAddress != nil {
-							labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.Properties.PrivateIPAddress)
-							address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, fmt.Sprintf("%d", d.port))
-							labels[model.AddressLabel] = model.LabelValue(address)
-							ch <- target{labelSet: labels, err: nil}
-							return
-						}
-						// If we made it here, we don't have a private IP which should be impossible.
-						// Return an empty target and error to ensure an all or nothing situation.
-						err = fmt.Errorf("unable to find a private IP for VM %s", vm.Name)
-						ch <- target{labelSet: nil, err: err}
+				for _, ip := range *networkInterface.IPConfigurations {
+					if ip.PrivateIPAddress != nil {
+						labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.PrivateIPAddress)
+						address := net.JoinHostPort(*ip.PrivateIPAddress, fmt.Sprintf("%d", d.port))
+						labels[model.AddressLabel] = model.LabelValue(address)
+						ch <- target{labelSet: labels, err: nil}
 						return
 					}
+					// If we made it here, we don't have a private IP which should be impossible.
+					// Return an empty target and error to ensure an all or nothing situation.
+					err = fmt.Errorf("unable to find a private IP for VM %s", vm.Name)
+					ch <- target{labelSet: nil, err: err}
+					return
 				}
 			}
 		}(i, vm)
@@ -380,23 +375,24 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 func (client *azureClient) getVMs() ([]virtualMachine, error) {
 	var vms []virtualMachine
-	result, err := client.vm.ListAll()
+	ctx := context.Background()
+	result, err := client.vm.ListAll(ctx)
 	if err != nil {
-		return vms, fmt.Errorf("could not list virtual machines: %s", err)
+		return nil, fmt.Errorf("could not list virtual machines: %s", err)
 	}
 
-	for _, vm := range *result.Value {
+	for _, vm := range result.Values() {
 		vms = append(vms, mapFromVM(vm))
 	}
 
 	// If we still have results, keep going until we have no more.
-	for result.NextLink != nil {
-		result, err = client.vm.ListAllNextResults(result)
+	for result.NotDone() {
+		err = result.NextWithContext(ctx)
 		if err != nil {
-			return vms, fmt.Errorf("could not list virtual machines: %s", err)
+			return nil, fmt.Errorf("could not list virtual machines: %s", err)
 		}
 
-		for _, vm := range *result.Value {
+		for _, vm := range result.Values() {
 			vms = append(vms, mapFromVM(vm))
 		}
 	}
@@ -406,18 +402,19 @@ func (client *azureClient) getVMs() ([]virtualMachine, error) {
 
 func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, error) {
 	var scaleSets []compute.VirtualMachineScaleSet
-	result, err := client.vmss.ListAll()
+	ctx := context.Background()
+	result, err := client.vmss.ListAll(ctx)
 	if err != nil {
-		return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
+		return nil, fmt.Errorf("could not list virtual machine scale sets: %s", err)
 	}
-	scaleSets = append(scaleSets, *result.Value...)
+	scaleSets = append(scaleSets, result.Values()...)
 
-	for result.NextLink != nil {
-		result, err = client.vmss.ListAllNextResults(result)
+	for result.NotDone() {
+		err = result.NextWithContext(ctx)
 		if err != nil {
-			return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
+			return nil, fmt.Errorf("could not list virtual machine scale sets: %s", err)
 		}
-		scaleSets = append(scaleSets, *result.Value...)
+		scaleSets = append(scaleSets, result.Values()...)
 	}
 
 	return scaleSets, nil
@@ -429,25 +426,27 @@ func (client *azureClient) getScaleSetVMs(scaleSet compute.VirtualMachineScaleSe
 	r, err := newAzureResourceFromID(*scaleSet.ID, nil)
 
 	if err != nil {
-		return vms, fmt.Errorf("could not parse scale set ID: %s", err)
+		return nil, fmt.Errorf("could not parse scale set ID: %s", err)
 	}
 
-	result, err := client.vmssvm.List(r.ResourceGroup, *(scaleSet.Name), "", "", "")
+	ctx := context.Background()
+
+	result, err := client.vmssvm.List(ctx, r.ResourceGroup, *(scaleSet.Name), "", "", "")
 	if err != nil {
-		return vms, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
+		return nil, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
 	}
 
-	for _, vm := range *result.Value {
+	for _, vm := range result.Values() {
 		vms = append(vms, mapFromVMScaleSetVM(vm, *scaleSet.Name))
 	}
 
-	for result.NextLink != nil {
-		result, err = client.vmssvm.ListNextResults(result)
+	for result.NotDone() {
+		err = result.NextWithContext(ctx)
 		if err != nil {
-			return vms, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
+			return nil, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
 		}
 
-		for _, vm := range *result.Value {
+		for _, vm := range result.Values() {
 			vms = append(vms, mapFromVMScaleSetVM(vm, *scaleSet.Name))
 		}
 	}
@@ -456,11 +455,11 @@ func (client *azureClient) getScaleSetVMs(scaleSet compute.VirtualMachineScaleSe
 }
 
 func mapFromVM(vm compute.VirtualMachine) virtualMachine {
-	osType := string(vm.Properties.StorageProfile.OsDisk.OsType)
+	osType := string(vm.StorageProfile.OsDisk.OsType)
 	tags := map[string]*string{}
 
 	if vm.Tags != nil {
-		tags = *(vm.Tags)
+		tags = vm.Tags
 	}
 
 	return virtualMachine{
@@ -471,16 +470,16 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		OsType:         osType,
 		ScaleSet:       "",
 		Tags:           tags,
-		NetworkProfile: *(vm.Properties.NetworkProfile),
+		NetworkProfile: *(vm.NetworkProfile),
 	}
 }
 
 func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName string) virtualMachine {
-	osType := string(vm.Properties.StorageProfile.OsDisk.OsType)
+	osType := string(vm.StorageProfile.OsDisk.OsType)
 	tags := map[string]*string{}
 
 	if vm.Tags != nil {
-		tags = *(vm.Tags)
+		tags = vm.Tags
 	}
 
 	return virtualMachine{
@@ -491,21 +490,17 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		OsType:         osType,
 		ScaleSet:       scaleSetName,
 		Tags:           tags,
-		NetworkProfile: *(vm.Properties.NetworkProfile),
+		NetworkProfile: *(vm.NetworkProfile),
 	}
 }
 
 func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (network.Interface, error) {
 	result := network.Interface{}
-	queryParameters := map[string]interface{}{
-		"api-version": client.nic.APIVersion,
-	}
 
 	preparer := autorest.CreatePreparer(
 		autorest.AsGet(),
 		autorest.WithBaseURL(client.nic.BaseURI),
-		autorest.WithPath(networkInterfaceID),
-		autorest.WithQueryParameters(queryParameters))
+		autorest.WithPath(networkInterfaceID))
 	req, err := preparer.Prepare(&http.Request{})
 	if err != nil {
 		return result, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")

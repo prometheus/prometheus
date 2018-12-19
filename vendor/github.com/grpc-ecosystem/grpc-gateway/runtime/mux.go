@@ -3,11 +3,10 @@ package runtime
 import (
 	"fmt"
 	"net/http"
-	"net/textproto"
 	"strings"
+	"context"
 
 	"github.com/golang/protobuf/proto"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -25,7 +24,7 @@ type ServeMux struct {
 	marshalers             marshalerRegistry
 	incomingHeaderMatcher  HeaderMatcherFunc
 	outgoingHeaderMatcher  HeaderMatcherFunc
-	metadataAnnotator      func(context.Context, *http.Request) metadata.MD
+	metadataAnnotators     []func(context.Context, *http.Request) metadata.MD
 	protoErrorHandler      ProtoErrorHandlerFunc
 }
 
@@ -51,7 +50,6 @@ type HeaderMatcherFunc func(string) (string, bool)
 // keys (as specified by the IANA) to gRPC context with grpcgateway- prefix. HTTP headers that start with
 // 'Grpc-Metadata-' are mapped to gRPC metadata after removing prefix 'Grpc-Metadata-'.
 func DefaultHeaderMatcher(key string) (string, bool) {
-	key = textproto.CanonicalMIMEHeaderKey(key)
 	if isPermanentHTTPHeader(key) {
 		return MetadataPrefix + key, true
 	} else if strings.HasPrefix(key, MetadataHeaderPrefix) {
@@ -87,7 +85,7 @@ func WithOutgoingHeaderMatcher(fn HeaderMatcherFunc) ServeMuxOption {
 // is reading token from cookie and adding it in gRPC context.
 func WithMetadata(annotator func(context.Context, *http.Request) metadata.MD) ServeMuxOption {
 	return func(serveMux *ServeMux) {
-		serveMux.metadataAnnotator = annotator
+		serveMux.metadataAnnotators = append(serveMux.metadataAnnotators, annotator)
 	}
 }
 

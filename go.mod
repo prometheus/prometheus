@@ -1,8 +1,9 @@
 module github.com/prometheus/prometheus
 
 require (
-	github.com/Azure/azure-sdk-for-go v0.0.0-20161028183111-bd73d950fa44
-	github.com/Azure/go-autorest v10.8.1+incompatible
+	contrib.go.opencensus.io/exporter/ocagent v0.4.1 // indirect
+	github.com/Azure/azure-sdk-for-go v23.2.0+incompatible
+	github.com/Azure/go-autorest v11.2.8+incompatible
 	github.com/StackExchange/wmi v0.0.0-20180725035823-b12b22c5341f // indirect
 	github.com/VividCortex/ewma v1.1.1 // indirect
 	github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da // indirect
@@ -24,13 +25,12 @@ require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
 	github.com/fsnotify/fsnotify v1.4.7 // indirect
 	github.com/getsentry/raven-go v0.1.0 // indirect
-	github.com/ghodss/yaml v0.0.0-20150909031657-73d445a93680 // indirect
 	github.com/go-ini/ini v1.21.1 // indirect
 	github.com/go-kit/kit v0.8.0
 	github.com/go-ole/go-ole v1.2.1 // indirect
 	github.com/go-sql-driver/mysql v1.4.0 // indirect
 	github.com/gogo/protobuf v1.1.1
-	github.com/golang/glog v0.0.0-20141105023935-44145f04b68c
+	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4 // indirect
 	github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
 	github.com/google/btree v0.0.0-20180124185431-e89373fe6b4a // indirect
@@ -40,7 +40,7 @@ require (
 	github.com/gophercloud/gophercloud v0.0.0-20170607034829-caf34a65f602
 	github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 // indirect
 	github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7 // indirect
-	github.com/grpc-ecosystem/grpc-gateway v0.0.0-20171126203511-e4b8a938efae
+	github.com/grpc-ecosystem/grpc-gateway v1.5.0
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
 	github.com/hashicorp/consul v0.0.0-20180615161029-bed22a81e9fd
 	github.com/hashicorp/go-cleanhttp v0.0.0-20160407174126-ad28ea4487f0 // indirect
@@ -104,23 +104,20 @@ require (
 	github.com/spf13/pflag v1.0.3 // indirect
 	github.com/stretchr/testify v1.2.2
 	golang.org/x/crypto v0.0.0-20180621125126-a49355c7e3f8 // indirect
-	golang.org/x/net v0.0.0-20180320002117-6078986fec03
-	golang.org/x/oauth2 v0.0.0-20160608215109-65a8d08c6292
-	golang.org/x/text v0.0.0-20170810154203-b19bf474d317 // indirect
+	golang.org/x/net v0.0.0-20180906233101-161cd47e91fd
+	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
 	golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
 	golang.org/x/tools v0.0.0-20181023010539-40a48ad93fbe // indirect
-	google.golang.org/api v0.0.0-20180506000402-20530fd5d65a
-	google.golang.org/appengine v0.0.0-20170522224838-a2f4131514e5 // indirect
-	google.golang.org/cloud v0.0.0-20160622021550-0a83eba2cadb // indirect
-	google.golang.org/genproto v0.0.0-20170531203552-aa2eb687b4d3
-	google.golang.org/grpc v0.0.0-20170516193736-3419b4295567
+	google.golang.org/api v0.0.0-20180910000450-7ca32eb868bf
+	google.golang.org/genproto v0.0.0-20180831171423-11092d34479b
+	google.golang.org/grpc v1.15.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/fsnotify/fsnotify.v1 v1.3.0
 	gopkg.in/inf.v0 v0.9.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/vmihailenco/msgpack.v2 v2.9.1 // indirect
-	gopkg.in/yaml.v2 v2.2.0
+	gopkg.in/yaml.v2 v2.2.1
 	k8s.io/api v0.0.0-20180628040859-072894a440bd
 	k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
 	k8s.io/client-go v8.0.0+incompatible
