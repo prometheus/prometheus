@@ -16,10 +16,9 @@ package model
 import (
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"strconv"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	opentracing "github.com/opentracing/opentracing-go"
@@ -33,21 +32,12 @@ const (
 )
 
 var (
-	seededIDGen = rand.New(rand.NewSource(time.Now().UnixNano()))
-	// The golang rand generators are *not* intrinsically thread-safe.
-	seededIDLock sync.Mutex
+	startID uint64
 )
 
-func randomID() uint64 {
-	seededIDLock.Lock()
-	defer seededIDLock.Unlock()
-
-	x := seededIDGen.Uint64()
-	for x == 0 {
-		x = seededIDGen.Uint64()
-	}
-
-	return x
+func newID() uint64 {
+	atomic.AddUint64(&startID, 1)
+	return atomic.LoadUint64(&startID)
 }
 
 type Collector interface {
@@ -79,14 +69,14 @@ func (t *Tracer) StartSpan(operationName string, ssos ...opentracing.StartSpanOp
 
 	var traceID, parentSpanID uint64
 	if len(opts.References) == 0 {
-		traceID = randomID()
+		traceID = newID()
 	} else {
 		parentContext := opts.References[0].ReferencedContext.(SpanContext)
 		traceID = parentContext.TraceId
 		parentSpanID = parentContext.SpanId
 	}
 
-	spanID := randomID()
+	spanID := newID()
 
 	return &activeSpan{
 		tracer: t,

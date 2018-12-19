@@ -34,16 +34,8 @@ func (t *Trace) GetMinMaxTimestamp() (time.Time, time.Time) {
 }
 
 func (t *Trace) Duration() time.Duration {
-	var start, end time.Time
-	for _, span := range t.Spans {
-		if start.IsZero() || span.Start.Before(start) {
-			start = span.Start
-		}
-		if end.IsZero() || span.End.After(end) {
-			end = span.End
-		}
-	}
-	return end.Sub(start)
+	minT, maxT := t.GetMinMaxTimestamp()
+	return maxT.Sub(minT)
 }
 
 func (s *Span) Duration() time.Duration {

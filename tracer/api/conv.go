@@ -20,8 +20,6 @@ import (
 	"strings"
 	"time"
 
-	// _ "unsafe" // For math.Float64frombits
-
 	otext "github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/prometheus/tracer/model"
 )
