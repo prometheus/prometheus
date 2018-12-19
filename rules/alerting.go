@@ -495,22 +495,22 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		alertNameLabel:        model.LabelValue(r.name),
 	}
 
-	labels := make(map[string]string, len(r.labels))
+	labelsMap := make(map[string]string, len(r.labels))
 	for _, l := range r.labels {
-		labels[l.Name] = html_template.HTMLEscapeString(l.Value)
+		labelsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
 
-	annotations := make(map[string]string, len(r.annotations))
+	annotationsMap := make(map[string]string, len(r.annotations))
 	for _, l := range r.annotations {
-		annotations[l.Name] = html_template.HTMLEscapeString(l.Value)
+		annotationsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
 
 	ar := rulefmt.Rule{
 		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
 		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
 		For:         model.Duration(r.holdDuration),
-		Labels:      labels,
-		Annotations: annotations,
+		Labels:      labelsMap,
+		Annotations: annotationsMap,
 	}
 
 	byt, err := yaml.Marshal(ar)
