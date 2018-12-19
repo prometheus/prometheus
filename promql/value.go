@@ -300,6 +300,7 @@ func (ssi *storageSeriesIterator) Seek(t int64) bool {
 			return true
 		}
 	}
+	ssi.curr = len(ssi.points) - 1
 	return false
 }
 
