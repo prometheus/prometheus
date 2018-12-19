@@ -28,7 +28,7 @@ import (
 // If a label set is dropped, nil is returned.
 // May return the input labelSet modified.
 // TODO(https://github.com/prometheus/prometheus/issues/3647): Get rid of this package in favor of pkg/relabel
-//  once usage of `model.LabelSet` is removed.
+// once usage of `model.LabelSet` is removed.
 func Process(labels model.LabelSet, cfgs ...*pkgrelabel.Config) model.LabelSet {
 	for _, cfg := range cfgs {
 		labels = relabel(labels, cfg)
