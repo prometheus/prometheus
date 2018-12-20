@@ -26,13 +26,11 @@ import (
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/Azure/go-autorest/autorest/azure"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -47,7 +45,9 @@ const (
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
-	azureLabelPowerState           = azureLabel + "machine_power_state"
+
+	authMethodOAuth           = "OAuth"
+	authMethodManagedIdentity = "ManagedIdentity"
 )
 
 var (
@@ -64,21 +64,23 @@ var (
 
 	// DefaultSDConfig is the default Azure SD configuration.
 	DefaultSDConfig = SDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(5 * time.Minute),
-		Environment:     azure.PublicCloud.Name,
+		Port:                 80,
+		RefreshInterval:      model.Duration(5 * time.Minute),
+		Environment:          azure.PublicCloud.Name,
+		AuthenticationMethod: authMethodOAuth,
 	}
 )
 
 // SDConfig is the configuration for Azure based service discovery.
 type SDConfig struct {
-	Environment     string             `yaml:"environment,omitempty"`
-	Port            int                `yaml:"port"`
-	SubscriptionID  string             `yaml:"subscription_id"`
-	TenantID        string             `yaml:"tenant_id,omitempty"`
-	ClientID        string             `yaml:"client_id,omitempty"`
-	ClientSecret    config_util.Secret `yaml:"client_secret,omitempty"`
-	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
+	Environment          string             `yaml:"environment,omitempty"`
+	Port                 int                `yaml:"port"`
+	SubscriptionID       string             `yaml:"subscription_id"`
+	TenantID             string             `yaml:"tenant_id,omitempty"`
+	ClientID             string             `yaml:"client_id,omitempty"`
+	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
+	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
+	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
 }
 
 func validateAuthParam(param, name string) error {
@@ -96,18 +98,27 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+
 	if err = validateAuthParam(c.SubscriptionID, "subscription_id"); err != nil {
 		return err
 	}
-	if err = validateAuthParam(c.TenantID, "tenant_id"); err != nil {
-		return err
+
+	if c.AuthenticationMethod == authMethodOAuth {
+		if err = validateAuthParam(c.TenantID, "tenant_id"); err != nil {
+			return err
+		}
+		if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
+			return err
+		}
+		if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
+			return err
+		}
 	}
-	if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
-		return err
+
+	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity {
+		return fmt.Errorf("Unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
 	}
-	if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
-		return err
-	}
+
 	return nil
 }
 
@@ -187,13 +198,30 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	resourceManagerEndpoint := env.ResourceManagerEndpoint
 
 	var c azureClient
-	oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
-	if err != nil {
-		return azureClient{}, err
-	}
-	spt, err := adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), resourceManagerEndpoint)
-	if err != nil {
-		return azureClient{}, err
+
+	var spt *adal.ServicePrincipalToken
+
+	switch cfg.AuthenticationMethod {
+	case authMethodManagedIdentity:
+		msiEndpoint, err := adal.GetMSIVMEndpoint()
+		if err != nil {
+			return azureClient{}, err
+		}
+
+		spt, err = adal.NewServicePrincipalTokenFromMSI(msiEndpoint, resourceManagerEndpoint)
+		if err != nil {
+			return azureClient{}, err
+		}
+	case authMethodOAuth:
+		oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
+		if err != nil {
+			return azureClient{}, err
+		}
+
+		spt, err = adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), resourceManagerEndpoint)
+		if err != nil {
+			return azureClient{}, err
+		}
 	}
 
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
@@ -229,7 +257,6 @@ type virtualMachine struct {
 	ScaleSet       string
 	Tags           map[string]*string
 	NetworkProfile compute.NetworkProfile
-	PowerStateCode string
 }
 
 // Create a new azureResource object from an ID string.
@@ -304,21 +331,12 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				return
 			}
 
-			// We check if the virtual machine has been deallocated.
-			// If so, we skip them in service discovery.
-			if strings.EqualFold(vm.PowerStateCode, "PowerState/deallocated") {
-				level.Debug(d.logger).Log("msg", "Skipping virtual machine", "machine", vm.Name, "power_state", vm.PowerStateCode)
-				ch <- target{}
-				return
-			}
-
 			labels := model.LabelSet{
 				azureLabelMachineID:            model.LabelValue(vm.ID),
 				azureLabelMachineName:          model.LabelValue(vm.Name),
 				azureLabelMachineOSType:        model.LabelValue(vm.OsType),
 				azureLabelMachineLocation:      model.LabelValue(vm.Location),
 				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroup),
-				azureLabelPowerState:           model.LabelValue(vm.PowerStateCode),
 			}
 
 			if vm.ScaleSet != "" {
@@ -344,6 +362,16 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 				if networkInterface.Properties == nil {
 					continue
+				}
+
+				// Unfortunately Azure does not return information on whether a VM is deallocated.
+				// This information is available via another API call however the Go SDK does not
+				// yet support this. On deallocated machines, this value happens to be nil so it
+				// is a cheap and easy way to determine if a machine is allocated or not.
+				if networkInterface.Properties.Primary == nil {
+					level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", vm.Name)
+					ch <- target{}
+					return
 				}
 
 				if *networkInterface.Properties.Primary {
@@ -473,7 +501,6 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		ScaleSet:       "",
 		Tags:           tags,
 		NetworkProfile: *(vm.Properties.NetworkProfile),
-		PowerStateCode: getPowerStateFromVMInstanceView(vm.Properties.InstanceView),
 	}
 }
 
@@ -494,7 +521,6 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		ScaleSet:       scaleSetName,
 		Tags:           tags,
 		NetworkProfile: *(vm.Properties.NetworkProfile),
-		PowerStateCode: getPowerStateFromVMInstanceView(vm.Properties.InstanceView),
 	}
 }
 
@@ -526,17 +552,4 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (n
 	}
 
 	return result, nil
-}
-
-func getPowerStateFromVMInstanceView(instanceView *compute.VirtualMachineInstanceView) (powerState string) {
-	if instanceView.Statuses == nil {
-		return
-	}
-	for _, ivs := range *instanceView.Statuses {
-		code := *(ivs.Code)
-		if strings.HasPrefix(code, "PowerState") {
-			powerState = code
-		}
-	}
-	return
 }

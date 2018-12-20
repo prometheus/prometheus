@@ -11,7 +11,6 @@ executors:
 jobs:
   test:
     executor: golang
-    resource_class: large
 
     steps:
     - checkout

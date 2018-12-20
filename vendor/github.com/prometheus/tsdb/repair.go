@@ -71,7 +71,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		if _, err := io.Copy(repl, broken); err != nil {
 			return wrapErr(err, d)
 		}
-		// Set the 5th byte to 2 to indiciate the correct file format version.
+		// Set the 5th byte to 2 to indicate the correct file format version.
 		if _, err := repl.WriteAt([]byte{2}, 4); err != nil {
 			return wrapErr(err, d)
 		}

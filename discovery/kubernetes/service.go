@@ -140,6 +140,8 @@ const (
 	serviceAnnotationPrefix  = metaLabelPrefix + "service_annotation_"
 	servicePortNameLabel     = metaLabelPrefix + "service_port_name"
 	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
+	serviceClusterIPLabel    = metaLabelPrefix + "service_cluster_ip"
+	serviceExternalNameLabel = metaLabelPrefix + "service_external_name"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
@@ -169,11 +171,19 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 	for _, port := range svc.Spec.Ports {
 		addr := net.JoinHostPort(svc.Name+"."+svc.Namespace+".svc", strconv.FormatInt(int64(port.Port), 10))
 
-		tg.Targets = append(tg.Targets, model.LabelSet{
+		labelSet := model.LabelSet{
 			model.AddressLabel:       lv(addr),
 			servicePortNameLabel:     lv(port.Name),
 			servicePortProtocolLabel: lv(string(port.Protocol)),
-		})
+		}
+
+		if svc.Spec.Type == apiv1.ServiceTypeExternalName {
+			labelSet[serviceExternalNameLabel] = lv(svc.Spec.ExternalName)
+		} else {
+			labelSet[serviceClusterIPLabel] = lv(svc.Spec.ClusterIP)
+		}
+
+		tg.Targets = append(tg.Targets, labelSet)
 	}
 
 	return tg

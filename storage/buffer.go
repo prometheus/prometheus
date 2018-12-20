@@ -59,11 +59,7 @@ func (b *BufferedSeriesIterator) Reset(it SeriesIterator) {
 
 // ReduceDelta lowers the buffered time delta, for the current SeriesIterator only.
 func (b *BufferedSeriesIterator) ReduceDelta(delta int64) bool {
-	if delta > b.buf.delta {
-		return false
-	}
-	b.buf.delta = delta
-	return true
+	return b.buf.reduceDelta(delta)
 }
 
 // PeekBack returns the nth previous element of the iterator. If there is none buffered,
@@ -222,13 +218,39 @@ func (r *sampleRing) add(t int64, v float64) {
 	r.l++
 
 	// Free head of the buffer of samples that just fell out of the range.
-	for r.buf[r.f].t < t-r.delta {
+	tmin := t - r.delta
+	for r.buf[r.f].t < tmin {
 		r.f++
 		if r.f >= l {
 			r.f -= l
 		}
 		r.l--
 	}
+}
+
+// reduceDelta lowers the buffered time delta, dropping any samples that are
+// out of the new delta range.
+func (r *sampleRing) reduceDelta(delta int64) bool {
+	if delta > r.delta {
+		return false
+	}
+	r.delta = delta
+
+	if r.l == 0 {
+		return true
+	}
+
+	// Free head of the buffer of samples that just fell out of the range.
+	l := len(r.buf)
+	tmin := r.buf[r.i].t - delta
+	for r.buf[r.f].t < tmin {
+		r.f++
+		if r.f >= l {
+			r.f -= l
+		}
+		r.l--
+	}
+	return true
 }
 
 // nthLast returns the nth most recent element added to the ring.
