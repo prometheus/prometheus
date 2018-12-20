@@ -21,10 +21,10 @@ require (
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/elastic/gosigar v0.9.0 // indirect
 	github.com/elazarl/go-bindata-assetfs v1.0.0 // indirect
+	github.com/evanphx/json-patch v4.1.0+incompatible // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
 	github.com/fsnotify/fsnotify v1.4.7 // indirect
 	github.com/getsentry/raven-go v0.1.0 // indirect
-	github.com/ghodss/yaml v0.0.0-20150909031657-73d445a93680 // indirect
 	github.com/go-ini/ini v1.21.1 // indirect
 	github.com/go-kit/kit v0.8.0
 	github.com/go-ole/go-ole v1.2.1 // indirect
@@ -121,12 +121,14 @@ require (
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/vmihailenco/msgpack.v2 v2.9.1 // indirect
 	gopkg.in/yaml.v2 v2.2.0
-	k8s.io/api v0.0.0-20180628040859-072894a440bd
-	k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
-	k8s.io/client-go v8.0.0+incompatible
-	k8s.io/kube-openapi v0.0.0-20180629012420-d83b052f768a // indirect
+	k8s.io/api v0.0.0-20181130031204-d04500c8c3dd
+	k8s.io/apimachinery v0.0.0-20181220065808-98853ca904e8
+	k8s.io/client-go v10.0.0+incompatible
+	k8s.io/klog v0.1.0 // indirect
+	k8s.io/kube-openapi v0.0.0-20181114233023-0317810137be // indirect
 	labix.org/v2/mgo v0.0.0-20140701140051-000000000287 // indirect
 	launchpad.net/gocheck v0.0.0-20140225173054-000000000087 // indirect
+	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
 replace github.com/golang/glog => github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352
