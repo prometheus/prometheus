@@ -171,17 +171,11 @@ The same works for range vectors. This returns the 5-minutes rate that
 
 ## Subquery
 
-Subquery allows you to run an instant query for a given range and resolution. Like how range vector selector is for vector selector, subquery is for an instant query. The result of a subquery is a matrix. 
+Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector. 
 
 Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
 
 * `<resolution>` is optional. Default is the global evaluation interval.
-
-Examples
-
-    1. `rate(http_requests_total[5m])[30m:1m]` - This returns 5-minute rate of `http_requests_total` metric for the past 30 minutes, at a resolution of 1 minute.
-
-    2. `rate(sum_over_time(http_requests_total[30s:10s])[50s:])` - This is an example of nested subquery and using default resolution for outer subquery.
 
 ## Operators
 
