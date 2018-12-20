@@ -16,7 +16,6 @@ package notifier
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -34,8 +33,6 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -53,7 +50,14 @@ const (
 	alertmanagerLabel = "alertmanager"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var (
+	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+
+	DefaultConfig = Config{
+		Scheme:  "http",
+		Timeout: model.Duration(10 * time.Second),
+	}
+)
 
 // Alert is a generic representation of an alert in the Prometheus eco-system.
 type Alert struct {
@@ -247,30 +251,38 @@ func NewManager(o *Options, logger log.Logger) *Manager {
 	return n
 }
 
-// ApplyConfig updates the status state as the new config requires.
-func (n *Manager) ApplyConfig(conf *config.Config) error {
+type Config struct {
+	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
+
+	// The URL scheme to use when talking to Alertmanagers.
+	Scheme string `yaml:"scheme,omitempty"`
+	// Path prefix to add in front of the push endpoint path.
+	PathPrefix string `yaml:"path_prefix,omitempty"`
+	// The timeout used when sending alerts.
+	Timeout model.Duration `yaml:"timeout,omitempty"`
+	// List of Alertmanager relabel configurations.
+	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
+}
+
+// ApplyConfig applies the config as the new config update comes.
+func (n *Manager) ApplyConfig(externalLabels model.LabelSet, alertRelabelConfigs []*relabel.Config, cfgs map[string]Config) error {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
-	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
+	n.opts.ExternalLabels = externalLabels
+	n.opts.RelabelConfigs = alertRelabelConfigs
 
 	amSets := make(map[string]*alertmanagerSet)
 
-	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
-		ams, err := newAlertmanagerSet(cfg, n.logger)
+	for hash, cfg := range cfgs {
+		ams, err := newAlertmanagerSet(&cfg, n.logger)
 		if err != nil {
 			return err
 		}
 
 		ams.metrics = n.metrics
 
-		// The config hash is used for the map lookup identifier.
-		b, err := json.Marshal(cfg)
-		if err != nil {
-			return err
-		}
-		amSets[fmt.Sprintf("%x", md5.Sum(b))] = ams
+		amSets[hash] = ams
 	}
 
 	n.alertmanagers = amSets
@@ -542,9 +554,8 @@ func (a alertmanagerLabels) url() *url.URL {
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
 // discovery definitions that have a common configuration on how alerts should be sent.
 type alertmanagerSet struct {
-	cfg    *config.AlertmanagerConfig
-	client *http.Client
-
+	client  *http.Client
+	cfg     *Config
 	metrics *alertMetrics
 
 	mtx        sync.RWMutex
@@ -553,7 +564,7 @@ type alertmanagerSet struct {
 	logger     log.Logger
 }
 
-func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
+func newAlertmanagerSet(cfg *Config, logger log.Logger) (*alertmanagerSet, error) {
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
 	if err != nil {
 		return nil, err
@@ -611,7 +622,7 @@ func postPath(pre string) string {
 
 // alertmanagersFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
-func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
+func alertmanagerFromGroup(tg *targetgroup.Group, cfg *Config) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager
 	var droppedAlertManagers []alertmanager
 
@@ -667,7 +678,7 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			lb.Set(model.AddressLabel, addr)
 		}
 
-		if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
+		if err := CheckTargetAddress(model.LabelValue(addr)); err != nil {
 			return nil, nil, err
 		}
 
@@ -682,4 +693,13 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 		res = append(res, alertmanagerLabels{lset})
 	}
 	return res, droppedAlertManagers, nil
+}
+
+// CheckTargetAddress checks if target address is valid.
+func CheckTargetAddress(address model.LabelValue) error {
+	// For now check for a URL, we may want to expand this later.
+	if strings.Contains(string(address), "/") {
+		return fmt.Errorf("%q is not a valid hostname", address)
+	}
+	return nil
 }

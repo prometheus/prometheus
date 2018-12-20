@@ -15,7 +15,6 @@ package notifier
 
 import (
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -25,15 +24,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/relabel"
-
-	yaml "gopkg.in/yaml.v2"
-
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -170,7 +165,7 @@ func TestHandlerSendAll(t *testing.T) {
 				urlf: func() string { return server1.URL },
 			},
 		},
-		cfg: &config.AlertmanagerConfig{
+		cfg: &Config{
 			Timeout: model.Duration(time.Second),
 		},
 		client: authClient,
@@ -182,7 +177,7 @@ func TestHandlerSendAll(t *testing.T) {
 				urlf: func() string { return server2.URL },
 			},
 		},
-		cfg: &config.AlertmanagerConfig{
+		cfg: &Config{
 			Timeout: model.Duration(time.Second),
 		},
 	}
@@ -207,7 +202,7 @@ func TestHandlerSendAll(t *testing.T) {
 	testutil.Assert(t, !h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 }
 
-func TestCustomDo(t *testing.T) {
+func TestSendOne(t *testing.T) {
 	const testURL = "http://testurl.com/"
 	const testBody = "testbody"
 
@@ -216,22 +211,47 @@ func TestCustomDo(t *testing.T) {
 		Do: func(_ context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := ioutil.ReadAll(req.Body)
-
 			testutil.Ok(t, err)
 
 			testutil.Equals(t, testBody, string(body))
-
 			testutil.Equals(t, testURL, req.URL.String())
 
 			return &http.Response{
-				Body: ioutil.NopCloser(nil),
+				StatusCode: http.StatusOK,
+				Body:       ioutil.NopCloser(nil),
 			}, nil
 		},
 	}, nil)
 
-	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
+	testutil.Ok(t, h.sendOne(context.Background(), nil, testURL, []byte(testBody)))
 
 	testutil.Assert(t, received, "Expected to receive an alert, but didn't")
+}
+
+func TestSendOne5xx(t *testing.T) {
+	const testURL = "http://testurl.com/"
+	const testBody = "testbody"
+
+	var called bool
+	h := NewManager(&Options{
+		Do: func(_ context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+			called = true
+			body, err := ioutil.ReadAll(req.Body)
+			testutil.Ok(t, err)
+
+			testutil.Equals(t, testBody, string(body))
+			testutil.Equals(t, testURL, req.URL.String())
+
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Body:       ioutil.NopCloser(nil),
+			}, nil
+		},
+	}, nil)
+
+	testutil.NotOk(t, h.sendOne(context.Background(), nil, testURL, []byte(testBody)), "Expected failed sendOne")
+
+	testutil.Assert(t, called, "Expected to have do called, but didn't")
 }
 
 func TestExternalLabels(t *testing.T) {
@@ -337,7 +357,7 @@ func TestHandlerQueueing(t *testing.T) {
 				urlf: func() string { return server.URL },
 			},
 		},
-		cfg: &config.AlertmanagerConfig{
+		cfg: &Config{
 			Timeout: model.Duration(time.Second),
 		},
 	}
@@ -409,7 +429,7 @@ func (a alertmanagerMock) url() *url.URL {
 
 func TestLabelSetNotReused(t *testing.T) {
 	tg := makeInputTargetGroup()
-	_, _, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
+	_, _, err := alertmanagerFromGroup(tg, &Config{})
 
 	testutil.Ok(t, err)
 
@@ -418,109 +438,103 @@ func TestLabelSetNotReused(t *testing.T) {
 }
 
 func TestReload(t *testing.T) {
-	var tests = []struct {
-		in  *targetgroup.Group
-		out string
+	for _, tt := range []struct {
+		in map[string][]*targetgroup.Group
+
+		result  []string
+		dropped []string
 	}{
+		{},
 		{
-			in: &targetgroup.Group{
-				Targets: []model.LabelSet{
+			in: map[string][]*targetgroup.Group{
+				"a": {
 					{
-						"__address__": "alertmanager:9093",
+						Targets: []model.LabelSet{
+							{
+								"__address__": "alertmanager:9093",
+							},
+						},
+					},
+					{
+						Targets: []model.LabelSet{
+							{
+								"__address__": "alertmanager2:9093",
+							},
+						},
 					},
 				},
 			},
-			out: "http://alertmanager:9093/api/v1/alerts",
+			result: []string{"http://alertmanager:9093/api/v1/alerts", "http://alertmanager2:9093/api/v1/alerts"},
 		},
-	}
-
-	n := NewManager(&Options{}, nil)
-
-	cfg := &config.Config{}
-	s := `
-alerting:
-  alertmanagers:
-  - static_configs:
-`
-	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config: %s", err)
-	}
-
-	if err := n.ApplyConfig(cfg); err != nil {
-		t.Fatalf("Error Applying the config:%v", err)
-	}
-
-	tgs := make(map[string][]*targetgroup.Group)
-	for _, tt := range tests {
-
-		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
-		if err != nil {
-			t.Fatalf("Error creating config hash:%v", err)
-		}
-		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
-			tt.in,
-		}
-		n.reload(tgs)
-		res := n.Alertmanagers()[0].String()
-
-		testutil.Equals(t, res, tt.out)
-	}
-
-}
-
-func TestDroppedAlertmanagers(t *testing.T) {
-	var tests = []struct {
-		in  *targetgroup.Group
-		out string
-	}{
 		{
-			in: &targetgroup.Group{
-				Targets: []model.LabelSet{
+			in: map[string][]*targetgroup.Group{
+				"a": {
 					{
-						"__address__": "alertmanager:9093",
+						Targets: []model.LabelSet{
+							{
+								"__address__": "alertmanager:9093",
+							},
+						},
+					},
+					{
+						Targets: []model.LabelSet{
+							{
+								"__address__": "alertmanager_to_drop:9093",
+							},
+						},
 					},
 				},
 			},
-			out: "http://alertmanager:9093/api/v1/alerts",
+			result:  []string{"http://alertmanager:9093/api/v1/alerts"},
+			dropped: []string{"http://alertmanager_to_drop:9093/api/v1/alerts"},
 		},
-	}
+		{
+			in: map[string][]*targetgroup.Group{
+				// Applied config does not have 'b' hash, so we don't expect any result by reloading 'b'.
+				"b": {
+					{
+						Targets: []model.LabelSet{
+							{
+								"__address__": "alertmanager:9093",
+							},
+						},
+					},
+				},
+			},
+		},
+	} {
+		n := NewManager(&Options{}, nil)
 
-	n := NewManager(&Options{}, nil)
-
-	cfg := &config.Config{}
-	s := `
-alerting:
-  alertmanagers:
-  - static_configs:
-    relabel_configs:
-      - source_labels: ['__address__']
-        regex: 'alertmanager:9093'
-        action: drop
-`
-	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config: %s", err)
-	}
-
-	if err := n.ApplyConfig(cfg); err != nil {
-		t.Fatalf("Error Applying the config:%v", err)
-	}
-
-	tgs := make(map[string][]*targetgroup.Group)
-	for _, tt := range tests {
-
-		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
-		if err != nil {
-			t.Fatalf("Error creating config hash:%v", err)
+		cfg := DefaultConfig
+		cfg.RelabelConfigs = []*relabel.Config{
+			{
+				SourceLabels: model.LabelNames{"__address__"},
+				Regex:        relabel.MustNewRegexp("alertmanager_to_drop:9093"),
+				Action:       relabel.Drop,
+			},
 		}
-		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
-			tt.in,
+		testutil.Ok(t, n.ApplyConfig(nil, nil, map[string]Config{"a": cfg}))
+
+		if ok := t.Run("", func(t *testing.T) {
+			n.reload(tt.in)
+
+			if len(tt.result) != len(n.Alertmanagers()) {
+				t.Fatalf("Expected result %v, got %v", tt.result, n.Alertmanagers())
+			}
+			for i := range n.Alertmanagers() {
+				testutil.Equals(t, tt.result[i], n.Alertmanagers()[i].String())
+			}
+
+			if len(tt.dropped) != len(n.DroppedAlertmanagers()) {
+				t.Fatalf("Expected dropped %v, got %v", tt.dropped, n.DroppedAlertmanagers())
+			}
+			for i := range n.DroppedAlertmanagers() {
+				testutil.Equals(t, tt.dropped[i], n.DroppedAlertmanagers()[i].String())
+			}
+		}); !ok {
+			return
 		}
-		n.reload(tgs)
-		res := n.DroppedAlertmanagers()[0].String()
-
-		testutil.Equals(t, res, tt.out)
 	}
-
 }
 
 func makeInputTargetGroup() *targetgroup.Group {

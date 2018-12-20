@@ -22,11 +22,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/relabel"
-
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
+	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"gopkg.in/yaml.v2"
 )
 
@@ -89,8 +89,7 @@ var (
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
 	DefaultAlertmanagerConfig = AlertmanagerConfig{
-		Scheme:  "http",
-		Timeout: model.Duration(10 * time.Second),
+		NotifierConfig: notifier.DefaultConfig,
 	}
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
@@ -189,7 +188,7 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 		sdPaths(&cfg.ServiceDiscoveryConfig)
 	}
 	for _, cfg := range cfg.AlertingConfig.AlertmanagerConfigs {
-		clientPaths(&cfg.HTTPClientConfig)
+		clientPaths(&cfg.NotifierConfig.HTTPClientConfig)
 		sdPaths(&cfg.ServiceDiscoveryConfig)
 	}
 }
@@ -435,17 +434,7 @@ type AlertmanagerConfig struct {
 	// values arbitrarily into the overflow maps of further-down types.
 
 	ServiceDiscoveryConfig sd_config.ServiceDiscoveryConfig `yaml:",inline"`
-	HTTPClientConfig       config_util.HTTPClientConfig     `yaml:",inline"`
-
-	// The URL scheme to use when talking to Alertmanagers.
-	Scheme string `yaml:"scheme,omitempty"`
-	// Path prefix to add in front of the push endpoint path.
-	PathPrefix string `yaml:"path_prefix,omitempty"`
-	// The timeout used when sending alerts.
-	Timeout model.Duration `yaml:"timeout,omitempty"`
-
-	// List of Alertmanager relabel configurations.
-	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
+	NotifierConfig         notifier.Config                  `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -456,13 +445,6 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		return err
 	}
 
-	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
-	// We cannot make it a pointer as the parser panics for inlined pointer structs.
-	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.Validate(); err != nil {
-		return err
-	}
-
 	// The UnmarshalYAML method of ServiceDiscoveryConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
@@ -470,8 +452,15 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		return err
 	}
 
+	// The UnmarshalYAML method of NotifierConfig.HTTPClientConfig is not being called because it's not a pointer.
+	// We cannot make it a pointer as the parser panics for inlined pointer structs.
+	// Thus we just do its validation here.
+	if err := c.NotifierConfig.HTTPClientConfig.Validate(); err != nil {
+		return err
+	}
+
 	// Check for users putting URLs in target groups.
-	if len(c.RelabelConfigs) == 0 {
+	if len(c.NotifierConfig.RelabelConfigs) == 0 {
 		for _, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
 			for _, t := range tg.Targets {
 				if err := CheckTargetAddress(t[model.AddressLabel]); err != nil {
@@ -481,7 +470,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		}
 	}
 
-	for _, rlcfg := range c.RelabelConfigs {
+	for _, rlcfg := range c.NotifierConfig.RelabelConfigs {
 		if rlcfg == nil {
 			return fmt.Errorf("empty or null Alertmanager target relabeling rule")
 		}

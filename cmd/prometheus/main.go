@@ -332,7 +332,18 @@ func main() {
 		webHandler.ApplyConfig,
 		// The Scrape and notifier managers need to reload before the Discovery manager as
 		// they need to read the most updated config when receiving the new targets list.
-		notifierManager.ApplyConfig,
+		func(cfg *config.Config) error {
+			c := make(map[string]notifier.Config)
+			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
+				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config hash as the identifier.
+				b, err := json.Marshal(v)
+				if err != nil {
+					return err
+				}
+				c[fmt.Sprintf("%x", md5.Sum(b))] = v.NotifierConfig
+			}
+			return notifierManager.ApplyConfig(cfg.GlobalConfig.ExternalLabels, cfg.AlertingConfig.AlertRelabelConfigs, c)
+		},
 		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
