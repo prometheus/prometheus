@@ -139,7 +139,7 @@ func (s *AdminDisabled) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTo
 	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
 }
 
-// DeleteSeries imeplements pb.AdminServer.
+// DeleteSeries implements pb.AdminServer.
 func (s *AdminDisabled) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
 	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
 }

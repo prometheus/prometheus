@@ -26,13 +26,11 @@ import (
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/Azure/go-autorest/autorest/azure"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -47,6 +45,9 @@ const (
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
+
+	authMethodOAuth           = "OAuth"
+	authMethodManagedIdentity = "ManagedIdentity"
 )
 
 var (
@@ -63,21 +64,23 @@ var (
 
 	// DefaultSDConfig is the default Azure SD configuration.
 	DefaultSDConfig = SDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(5 * time.Minute),
-		Environment:     azure.PublicCloud.Name,
+		Port:                 80,
+		RefreshInterval:      model.Duration(5 * time.Minute),
+		Environment:          azure.PublicCloud.Name,
+		AuthenticationMethod: authMethodOAuth,
 	}
 )
 
 // SDConfig is the configuration for Azure based service discovery.
 type SDConfig struct {
-	Environment     string             `yaml:"environment,omitempty"`
-	Port            int                `yaml:"port"`
-	SubscriptionID  string             `yaml:"subscription_id"`
-	TenantID        string             `yaml:"tenant_id,omitempty"`
-	ClientID        string             `yaml:"client_id,omitempty"`
-	ClientSecret    config_util.Secret `yaml:"client_secret,omitempty"`
-	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
+	Environment          string             `yaml:"environment,omitempty"`
+	Port                 int                `yaml:"port"`
+	SubscriptionID       string             `yaml:"subscription_id"`
+	TenantID             string             `yaml:"tenant_id,omitempty"`
+	ClientID             string             `yaml:"client_id,omitempty"`
+	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
+	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
+	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
 }
 
 func validateAuthParam(param, name string) error {
@@ -95,18 +98,27 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+
 	if err = validateAuthParam(c.SubscriptionID, "subscription_id"); err != nil {
 		return err
 	}
-	if err = validateAuthParam(c.TenantID, "tenant_id"); err != nil {
-		return err
+
+	if c.AuthenticationMethod == authMethodOAuth {
+		if err = validateAuthParam(c.TenantID, "tenant_id"); err != nil {
+			return err
+		}
+		if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
+			return err
+		}
+		if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
+			return err
+		}
 	}
-	if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
-		return err
+
+	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity {
+		return fmt.Errorf("Unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
 	}
-	if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
-		return err
-	}
+
 	return nil
 }
 
@@ -186,13 +198,30 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	resourceManagerEndpoint := env.ResourceManagerEndpoint
 
 	var c azureClient
-	oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
-	if err != nil {
-		return azureClient{}, err
-	}
-	spt, err := adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), resourceManagerEndpoint)
-	if err != nil {
-		return azureClient{}, err
+
+	var spt *adal.ServicePrincipalToken
+
+	switch cfg.AuthenticationMethod {
+	case authMethodManagedIdentity:
+		msiEndpoint, err := adal.GetMSIVMEndpoint()
+		if err != nil {
+			return azureClient{}, err
+		}
+
+		spt, err = adal.NewServicePrincipalTokenFromMSI(msiEndpoint, resourceManagerEndpoint)
+		if err != nil {
+			return azureClient{}, err
+		}
+	case authMethodOAuth:
+		oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
+		if err != nil {
+			return azureClient{}, err
+		}
+
+		spt, err = adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), resourceManagerEndpoint)
+		if err != nil {
+			return azureClient{}, err
+		}
 	}
 
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
