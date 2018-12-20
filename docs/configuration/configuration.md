@@ -274,14 +274,18 @@ See below for the configuration options for Azure discovery:
 # The information to access the Azure API.
 # The Azure environment.
 [ environment: <string> | default = AzurePublicCloud ]
-# The subscription ID.
+
+# The authentication method, either OAuth or ManagedIdentity.
+# See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
+[ authentication_method: <string> | default = OAuth]
+# The subscription ID. Always required.
 subscription_id: <string>
-# The tenant ID.
-tenant_id: <string>
-# The client ID.
-client_id: <string>
-# The client secret.
-client_secret: <secret>
+# Optional tenant ID. Only required with authentication_method OAuth.
+[ tenant_id: <string> ]
+# Optional client ID. Only required with authentication_method OAuth.
+[ client_id: <string> ]
+# Optional client secret. Only required with authentication_method OAuth.
+[ client_secret: <secret> ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 300s ]
