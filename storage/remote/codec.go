@@ -302,13 +302,13 @@ func (c *concreteSeriesIterator) Err() error {
 func validateLabelsAndMetricName(ls labels.Labels) error {
 	for _, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
-			return fmt.Errorf("Invalid metric name: %v", l.Value)
+			return fmt.Errorf("invalid metric name: %v", l.Value)
 		}
 		if !model.LabelName(l.Name).IsValid() {
-			return fmt.Errorf("Invalid label name: %v", l.Name)
+			return fmt.Errorf("invalid label name: %v", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
-			return fmt.Errorf("Invalid label value: %v", l.Value)
+			return fmt.Errorf("invalid label value: %v", l.Value)
 		}
 	}
 	return nil
