@@ -25,7 +25,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
 
@@ -140,7 +139,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		logger:       logger,
 	}
 	var err error
-	gd.client, err = google.DefaultClient(oauth2.NoContext, compute.ComputeReadonlyScope)
+	gd.client, err = google.DefaultClient(context.Background(), compute.ComputeReadonlyScope)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up communication with GCE service: %s", err)
 	}
