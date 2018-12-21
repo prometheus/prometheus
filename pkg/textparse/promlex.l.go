@@ -263,7 +263,7 @@ yystart21:
 		goto yyrule9
 	case c == '\t' || c == ' ':
 		goto yystate23
-	case c >= '\x01' && c <= '\b' || c >= '\v' && c <= '\x1f' || c >= '!' && c <= 'ÿ':
+	case c >= '\x01' && c <= '\b' || c >= '\v' && c <= '\x1f' || c >= '!':
 		goto yystate22
 	}
 
@@ -272,7 +272,7 @@ yystate22:
 	switch {
 	default:
 		goto yyrule9
-	case c >= '\x01' && c <= '\t' || c >= '\v' && c <= 'ÿ':
+	case c >= '\x01' && c <= '\t' || c >= '\v':
 		goto yystate22
 	}
 
@@ -283,7 +283,7 @@ yystate23:
 		goto yyrule3
 	case c == '\t' || c == ' ':
 		goto yystate23
-	case c >= '\x01' && c <= '\b' || c >= '\v' && c <= '\x1f' || c >= '!' && c <= 'ÿ':
+	case c >= '\x01' && c <= '\b' || c >= '\v' && c <= '\x1f' || c >= '!':
 		goto yystate22
 	}
 
@@ -349,7 +349,7 @@ yystate30:
 		goto yystate31
 	case c == '\\':
 		goto yystate32
-	case c >= '\x01' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ':
+	case c >= '\x01' && c <= '!' || c >= '#' && c <= '[' || c >= ']':
 		goto yystate30
 	}
 
@@ -362,7 +362,7 @@ yystate32:
 	switch {
 	default:
 		goto yyabort
-	case c >= '\x01' && c <= '\t' || c >= '\v' && c <= 'ÿ':
+	case c >= '\x01' && c <= '\t' || c >= '\v':
 		goto yystate30
 	}
 
@@ -377,7 +377,7 @@ yystart33:
 		goto yystate3
 	case c == '{':
 		goto yystate35
-	case c >= '\x01' && c <= '\b' || c >= '\v' && c <= '\x1f' || c >= '!' && c <= 'z' || c >= '|' && c <= 'ÿ':
+	case c >= '\x01' && c <= '\b' || c >= '\v' && c <= '\x1f' || c >= '!' && c <= 'z' || c >= '|':
 		goto yystate34
 	}
 
@@ -386,7 +386,7 @@ yystate34:
 	switch {
 	default:
 		goto yyrule17
-	case c >= '\x01' && c <= '\b' || c >= '\v' && c <= '\x1f' || c >= '!' && c <= 'z' || c >= '|' && c <= 'ÿ':
+	case c >= '\x01' && c <= '\b' || c >= '\v' && c <= '\x1f' || c >= '!' && c <= 'z' || c >= '|':
 		goto yystate34
 	}
 
