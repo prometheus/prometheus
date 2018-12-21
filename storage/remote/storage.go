@@ -62,7 +62,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 
 	// Update write queues
 
-	newQueues := []*QueueManager{}
+	var newQueues []*QueueManager
 	// TODO: we should only stop & recreate queues which have changes,
 	// as this can be quite disruptive.
 	for i, rwConf := range conf.RemoteWriteConfigs {
