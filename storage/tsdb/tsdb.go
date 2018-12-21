@@ -188,11 +188,12 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	}
 
 	walSegmentSize := int(opts.WALSegmentSize)
-	if walSegmentSize < 10*1024*1024 || walSegmentSize > 256*1024*1024 {
-		return nil, errors.Errorf("tsdb.Options.WALSegmentSize must be set between 10MB and 256MB")
+	if walSegmentSize != 0 {
+		if walSegmentSize < 10*1024*1024 || walSegmentSize > 256*1024*1024 {
+			return nil, errors.Errorf("tsdb.Options.WALSegmentSize must be set between 10MB and 256MB")
+		}
+		level.Info(l).Log("msg", fmt.Sprintf("tsdb.Options.WALSegmentSize set by flag value %s : %d bytes", opts.WALSegmentSize.String(), walSegmentSize))
 	}
-
-	level.Info(l).Log("msg", fmt.Sprintf("tsdb.Options.WALSegmentSize set by flag value %s : %d bytes", opts.WALSegmentSize.String(), walSegmentSize))
 
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALFlushInterval:  10 * time.Second,
