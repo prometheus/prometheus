@@ -165,7 +165,7 @@ func main() {
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
 	a.Flag("storage.tsdb.wal-segment-size",
-		"Maximum Size for tsdb Walk Ahead Log segment files").
+		"Size at which to split the tsdb WAL segment files(e.g. 100MB)").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
 
 	a.Flag("storage.tsdb.retention", "How long to retain samples in storage.").
