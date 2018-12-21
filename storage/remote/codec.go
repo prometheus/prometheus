@@ -153,7 +153,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 	for ss.Next() {
 		series := ss.At()
 		iter := series.Iterator()
-		samples := []prompb.Sample{}
+		var samples []prompb.Sample
 
 		for iter.Next() {
 			numSamples++
