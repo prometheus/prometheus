@@ -164,6 +164,10 @@ func main() {
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
+	a.Flag("storage.tsdb.wal-segment-size",
+		"Maximum Size for tsdb Walk Ahead Log segment files").
+		Hidden().IntVar(&cfg.tsdb.WALSegmentSize)
+
 	a.Flag("storage.tsdb.retention", "How long to retain samples in storage.").
 		Default("15d").SetValue(&cfg.tsdb.Retention)
 
