@@ -5,6 +5,7 @@ require (
 	github.com/Azure/go-autorest v10.8.1+incompatible
 	github.com/StackExchange/wmi v0.0.0-20180725035823-b12b22c5341f // indirect
 	github.com/VividCortex/ewma v1.1.1 // indirect
+	github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf
 	github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da // indirect
 	github.com/aws/aws-sdk-go v0.0.0-20180507225419-00862f899353
 	github.com/biogo/store v0.0.0-20160505134755-913427a1d5e8 // indirect

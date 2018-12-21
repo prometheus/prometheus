@@ -19,6 +19,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/alecthomas/units"
+
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -118,7 +120,7 @@ type Options struct {
 	MaxBlockDuration model.Duration
 
 	// The maximum size of each WAL segment files
-	WALSegmentSize int
+	WALSegmentSize units.Base2Bytes
 
 	// Duration for how long to retain data.
 	Retention model.Duration
@@ -185,7 +187,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALFlushInterval:  10 * time.Second,
-		WALSegmentSize:    opts.WALSegmentSize,
+		WALSegmentSize:    int(opts.WALSegmentSize),
 		RetentionDuration: uint64(time.Duration(opts.Retention).Seconds() * 1000),
 		BlockRanges:       rngs,
 		NoLockfile:        opts.NoLockfile,
