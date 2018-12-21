@@ -1028,7 +1028,8 @@ Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
 the target and vary between mechanisms.
 
-Labels starting with `__` will be removed from the label set after relabeling is completed.
+Labels starting with `__` will be removed from the label set after target
+relabeling is completed.
 
 If a relabeling step needs to store a label value only temporarily (as the
 input to a subsequent relabeling step), use the `__tmp` label name prefix. This
