@@ -44,9 +44,9 @@ This query returns 5-minute rate of `http_requests_total` metric for the past 30
 
     rate(http_requests_total[5m])[30m:1m]
 
-This is an example of nested subquery. The subquery for the rate uses default resolution. Note that using subqueries unnecessarily is unwise.
+This is an example of nested subquery. The subquery for the `deriv` function uses default resolution. Note that using subqueries unnecessarily is unwise.
 
-    max_over_time(rate(http_requests_total[30s:5s])[10m:])
+    max_over_time(deriv(rate(distance_covered_total[5s])[30s:5s])[10m:])
 
 ## Using functions, operators, etc.
 
