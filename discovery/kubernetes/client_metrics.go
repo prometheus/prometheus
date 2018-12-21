@@ -148,7 +148,7 @@ var (
 		prometheus.GaugeOpts{
 			Namespace: workqueueMetricsNamespace,
 			Name:      "longest_running_processor_seconds",
-			Help:      "The duration (in microseconds) of the longest running processor in the work queue.",
+			Help:      "Duration of the longest running processor in the work queue.",
 		},
 		[]string{"queue_name"},
 	)
