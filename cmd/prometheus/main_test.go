@@ -14,13 +14,16 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -109,6 +112,42 @@ Loop:
 		t.Errorf("prometheus didn't shutdown gracefully after sending the Interrupt signal")
 	} else if stoppedErr != nil && stoppedErr.Error() != "signal: interrupt" { // TODO - find a better way to detect when the process didn't exit as expected!
 		t.Errorf("prometheus exited with an unexpected error:%v", stoppedErr)
+	}
+}
+
+func TestWALSegmentSizeFlag(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	prom := exec.Command(promPath, "--config.file="+promConfig, "--storage.tsdb.path="+promData, "--storage.tsdb.wal-segment-size=42MB")
+	logReader, logWriter := io.Pipe()
+	prom.Stderr = logWriter
+	if err := prom.Start(); err != nil {
+		t.Errorf("execution error: %v", err)
+		return
+	}
+	defer prom.Process.Signal(os.Kill)
+
+	found := make(chan bool)
+	go func() {
+		buf := bufio.NewReader(logReader)
+		for {
+			logged, err := buf.ReadString('\n')
+			if err != nil {
+				t.Errorf("Unable to read prometheus logs: %v", err)
+			}
+			if strings.Contains(logged, "tsdb.Options.WALSegmentSize set by flag value 42MiB : 44040192 bytes") {
+				found <- true
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-found:
+		return
+	case <-time.After(5 * time.Second):
+		t.Error("Log about WALSegmentSizeFlag not found within 5 seconds")
 	}
 }
 
