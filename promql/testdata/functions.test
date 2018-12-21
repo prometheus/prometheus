@@ -498,7 +498,7 @@ eval instant at 0m year(vector(1230767999))
 eval instant at 0m year(vector(1230768000))
   {} 2009
 
-# 2016-02-29 23:59:59 Febuary 29th in leap year.
+# 2016-02-29 23:59:59 February 29th in leap year.
 eval instant at 0m month(vector(1456790399)) + day_of_month(vector(1456790399)) / 100
   {} 2.29
 
@@ -506,11 +506,11 @@ eval instant at 0m month(vector(1456790399)) + day_of_month(vector(1456790399)) 
 eval instant at 0m month(vector(1456790400)) + day_of_month(vector(1456790400)) / 100
   {} 3.01
 
-# Febuary 1st 2016 in leap year.
+# February 1st 2016 in leap year.
 eval instant at 0m days_in_month(vector(1454284800))
   {} 29
 
-# Febuary 1st 2017 not in leap year.
+# February 1st 2017 not in leap year.
 eval instant at 0m days_in_month(vector(1485907200))
   {} 28
 
@@ -522,3 +522,27 @@ load 5m
   testmetric2{src="a",dst="b"} 1
 
 eval_fail instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m])
+
+# Tests for *_over_time
+clear
+
+load 10s
+	data{type="numbers"} 2 0 3
+	data{type="some_nan"} 2 0 NaN
+	data{type="some_nan2"} 2 NaN 1
+	data{type="some_nan3"} NaN 0 1
+	data{type="only_nan"} NaN NaN NaN
+
+eval instant at 1m min_over_time(data[1m])
+	{type="numbers"} 0
+	{type="some_nan"} 0
+	{type="some_nan2"} 1
+	{type="some_nan3"} 0
+	{type="only_nan"} NaN
+
+eval instant at 1m max_over_time(data[1m])
+	{type="numbers"} 3
+	{type="some_nan"} 2
+	{type="some_nan2"} 2
+	{type="some_nan3"} 1
+	{type="only_nan"} NaN

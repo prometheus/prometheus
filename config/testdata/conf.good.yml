@@ -196,6 +196,7 @@ scrape_configs:
 - job_name: service-azure
   azure_sd_configs:
     - environment: AzurePublicCloud
+      authentication_method: OAuth
       subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11
       tenant_id: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
       client_id: 333333CC-3C33-3333-CCC3-33C3CCCCC33C
@@ -232,6 +233,17 @@ scrape_configs:
     tls_config:
       cert_file: testdata/valid_cert_file
       key_file: testdata/valid_key_file
+
+- job_name: service-openstack
+  openstack_sd_configs:
+  - role: instance
+    region: RegionOne
+    port: 80
+    refresh_interval: 1m
+    tls_config:
+      ca_file: valid_ca_file
+      cert_file: valid_cert_file
+      key_file:  valid_key_file
 
 alerting:
   alertmanagers:

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build darwin dragonfly freebsd linux netbsd openbsd solaris
+// +build aix darwin dragonfly freebsd linux netbsd openbsd solaris
 
 // Package unix contains an interface to the low-level operating system
 // primitives. OS details vary depending on the underlying system, and
@@ -24,14 +24,14 @@
 // holds a value of type syscall.Errno.
 package unix // import "golang.org/x/sys/unix"
 
+import "strings"
+
 // ByteSliceFromString returns a NUL-terminated slice of bytes
 // containing the text of s. If s contains a NUL byte at any
 // location, it returns (nil, EINVAL).
 func ByteSliceFromString(s string) ([]byte, error) {
-	for i := 0; i < len(s); i++ {
-		if s[i] == 0 {
-			return nil, EINVAL
-		}
+	if strings.IndexByte(s, 0) != -1 {
+		return nil, EINVAL
 	}
 	a := make([]byte, len(s)+1)
 	copy(a, s)

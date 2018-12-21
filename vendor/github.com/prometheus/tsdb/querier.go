@@ -33,9 +33,13 @@ type Querier interface {
 
 	// LabelValues returns all potential values for a label name.
 	LabelValues(string) ([]string, error)
+
 	// LabelValuesFor returns all potential values for a label name.
 	// under the constraint of another label.
 	LabelValuesFor(string, labels.Label) ([]string, error)
+
+	// LabelNames returns all the unique label names present in the block in sorted order.
+	LabelNames() ([]string, error)
 
 	// Close releases the resources of the Querier.
 	Close() error
@@ -58,6 +62,28 @@ type querier struct {
 
 func (q *querier) LabelValues(n string) ([]string, error) {
 	return q.lvals(q.blocks, n)
+}
+
+// LabelNames returns all the unique label names present querier blocks.
+func (q *querier) LabelNames() ([]string, error) {
+	labelNamesMap := make(map[string]struct{})
+	for _, b := range q.blocks {
+		names, err := b.LabelNames()
+		if err != nil {
+			return nil, errors.Wrap(err, "LabelNames() from Querier")
+		}
+		for _, name := range names {
+			labelNamesMap[name] = struct{}{}
+		}
+	}
+
+	labelNames := make([]string, 0, len(labelNamesMap))
+	for name := range labelNamesMap {
+		labelNames = append(labelNames, name)
+	}
+	sort.Strings(labelNames)
+
+	return labelNames, nil
 }
 
 func (q *querier) lvals(qs []Querier, n string) ([]string, error) {
@@ -187,6 +213,10 @@ func (q *blockQuerier) LabelValues(name string) ([]string, error) {
 	return res, nil
 }
 
+func (q *blockQuerier) LabelNames() ([]string, error) {
+	return q.index.LabelNames()
+}
+
 func (q *blockQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }
@@ -249,7 +279,7 @@ func tuplesByPrefix(m *labels.PrefixMatcher, ts StringTuples) ([]string, error) 
 }
 
 func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
-	// If the matcher selects an empty value, it selects all the series which dont
+	// If the matcher selects an empty value, it selects all the series which don't
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
 	if m.Matches("") {
@@ -478,7 +508,7 @@ type baseChunkSeries struct {
 // over them. It drops chunks based on tombstones in the given reader.
 func LookupChunkSeries(ir IndexReader, tr TombstoneReader, ms ...labels.Matcher) (ChunkSeriesSet, error) {
 	if tr == nil {
-		tr = NewMemTombstones()
+		tr = newMemTombstones()
 	}
 	p, err := PostingsForMatchers(ir, ms...)
 	if err != nil {
@@ -499,8 +529,8 @@ func (s *baseChunkSeries) Err() error { return s.err }
 
 func (s *baseChunkSeries) Next() bool {
 	var (
-		lset     labels.Labels
-		chkMetas []chunks.Meta
+		lset     = make(labels.Labels, len(s.lset))
+		chkMetas = make([]chunks.Meta, len(s.chks))
 		err      error
 	)
 
@@ -890,30 +920,6 @@ Outer:
 
 func (it *deletedIterator) Err() error {
 	return it.it.Err()
-}
-
-type mockSeriesSet struct {
-	next   func() bool
-	series func() Series
-	err    func() error
-}
-
-func (m *mockSeriesSet) Next() bool { return m.next() }
-func (m *mockSeriesSet) At() Series { return m.series() }
-func (m *mockSeriesSet) Err() error { return m.err() }
-
-func newListSeriesSet(list []Series) *mockSeriesSet {
-	i := -1
-	return &mockSeriesSet{
-		next: func() bool {
-			i++
-			return i < len(list)
-		},
-		series: func() Series {
-			return list[i]
-		},
-		err: func() error { return nil },
-	}
 }
 
 type errSeriesSet struct {

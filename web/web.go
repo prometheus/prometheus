@@ -55,7 +55,6 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -68,6 +67,25 @@ import (
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
+
+// withStackTrace logs the stack trace in case the request panics. The function
+// will re-raise the error which will then be handled by the net/http package.
+// It is needed because the go-kit log package doesn't manage properly the
+// panics from net/http (see https://github.com/go-kit/kit/issues/233).
+func withStackTracer(h http.Handler, l log.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				const size = 64 << 10
+				buf := make([]byte, size)
+				buf = buf[:runtime.Stack(buf, false)]
+				level.Error(l).Log("msg", "panic while serving request", "client", r.RemoteAddr, "url", r.URL, "err", err, "stack", buf)
+				panic(err)
+			}
+		}()
+		h.ServeHTTP(w, r)
+	})
+}
 
 var (
 	requestDuration = prometheus.NewHistogramVec(
@@ -156,18 +174,26 @@ type Options struct {
 	Version       *PrometheusVersion
 	Flags         map[string]string
 
-	ListenAddress        string
-	ReadTimeout          time.Duration
-	MaxConnections       int
-	ExternalURL          *url.URL
-	RoutePrefix          string
-	UseLocalAssets       bool
-	UserAssetsPath       string
-	ConsoleTemplatesPath string
-	ConsoleLibrariesPath string
-	EnableLifecycle      bool
-	EnableAdminAPI       bool
-	RemoteReadLimit      int
+	ListenAddress              string
+	ReadTimeout                time.Duration
+	MaxConnections             int
+	ExternalURL                *url.URL
+	RoutePrefix                string
+	UseLocalAssets             bool
+	UserAssetsPath             string
+	ConsoleTemplatesPath       string
+	ConsoleLibrariesPath       string
+	EnableLifecycle            bool
+	EnableAdminAPI             bool
+	PageTitle                  string
+	RemoteReadSampleLimit      int
+	RemoteReadConcurrencyLimit int
+}
+
+func instrumentHandlerWithPrefix(prefix string) func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+		return instrumentHandler(prefix+handlerName, handler)
+	}
 }
 
 func instrumentHandler(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
@@ -224,11 +250,17 @@ func New(logger log.Logger, o *Options) *Handler {
 		},
 		o.Flags,
 		h.testReady,
-		h.options.TSDB,
+		func() api_v1.TSDBAdmin {
+			if db := h.options.TSDB(); db != nil {
+				return db
+			}
+			return nil
+		},
 		h.options.EnableAdminAPI,
 		logger,
 		h.ruleManager,
-		h.options.RemoteReadLimit,
+		h.options.RemoteReadSampleLimit,
+		h.options.RemoteReadConcurrencyLimit,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -432,7 +464,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.Handle("/", h.router)
 
-	av1 := route.New().WithInstrumentation(instrumentHandler)
+	av1 := route.New().WithInstrumentation(instrumentHandlerWithPrefix("/api/v1"))
 	h.apiV1.Register(av1)
 	apiPath := "/api"
 	if h.options.RoutePrefix != "/" {
@@ -452,7 +484,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
 	httpSrv := &http.Server{
-		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
+		Handler:     withStackTracer(nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName), h.logger),
 		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}
@@ -503,6 +535,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	defer file.Close()
 	text, err := ioutil.ReadAll(file)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -672,16 +705,11 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
-	// Bucket targets by job label
-	tps := map[string][]*scrape.Target{}
-	for _, t := range h.scrapeManager.TargetsActive() {
-		job := t.Labels().Get(model.JobLabel)
-		tps[job] = append(tps[job], t)
-	}
-
+	tps := h.scrapeManager.TargetsActive()
 	for _, targets := range tps {
 		sort.Slice(targets, func(i, j int) bool {
-			return targets[i].Labels().Get(labels.InstanceName) < targets[j].Labels().Get(labels.InstanceName)
+			return targets[i].Labels().Get(model.JobLabel) < targets[j].Labels().Get(model.JobLabel) ||
+				targets[i].Labels().Get(model.InstanceLabel) < targets[j].Labels().Get(model.InstanceLabel)
 		})
 	}
 
@@ -731,6 +759,7 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
+		"pageTitle":    func() string { return opts.PageTitle },
 		"buildVersion": func() string { return opts.Version.Revision },
 		"stripLabels": func(lset map[string]string, labels ...string) map[string]string {
 			for _, ln := range labels {

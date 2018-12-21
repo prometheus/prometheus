@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -32,6 +33,15 @@ import (
 type customSD struct {
 	Targets []string          `json:"targets"`
 	Labels  map[string]string `json:"labels"`
+}
+
+func fingerprint(group *targetgroup.Group) model.Fingerprint {
+	groupFingerprint := model.LabelSet{}.Fingerprint()
+	for _, targets := range group.Targets {
+		groupFingerprint ^= targets.Fingerprint()
+	}
+	groupFingerprint ^= group.Labels.Fingerprint()
+	return groupFingerprint
 }
 
 // Adapter runs an unknown service discovery implementation and converts its target groups
@@ -54,12 +64,10 @@ func mapToArray(m map[string]*customSD) []customSD {
 	return arr
 }
 
-// Parses incoming target groups updates. If the update contains changes to the target groups
-// Adapter already knows about, or new target groups, we Marshal to JSON and write to file.
-func (a *Adapter) generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) {
-	tempGroups := make(map[string]*customSD)
+func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[string]*customSD {
+	groups := make(map[string]*customSD)
 	for k, sdTargetGroups := range allTargetGroups {
-		for i, group := range sdTargetGroups {
+		for _, group := range sdTargetGroups {
 			newTargets := make([]string, 0)
 			newLabels := make(map[string]string)
 
@@ -72,14 +80,27 @@ func (a *Adapter) generateTargetGroups(allTargetGroups map[string][]*targetgroup
 			for name, value := range group.Labels {
 				newLabels[string(name)] = string(value)
 			}
-			// Make a unique key, including the current index, in case the sd_type (map key) and group.Source is not unique.
-			key := fmt.Sprintf("%s:%s:%d", k, group.Source, i)
-			tempGroups[key] = &customSD{
+
+			sdGroup := customSD{
+
 				Targets: newTargets,
 				Labels:  newLabels,
 			}
+			// Make a unique key, including group's fingerprint, in case the sd_type (map key) and group.Source is not unique.
+			groupFingerprint := fingerprint(group)
+			key := fmt.Sprintf("%s:%s:%s", k, group.Source, groupFingerprint.String())
+			groups[key] = &sdGroup
 		}
 	}
+
+	return groups
+}
+
+// Parses incoming target groups updates. If the update contains changes to the target groups
+// Adapter already knows about, or new target groups, we Marshal to JSON and write to file.
+func (a *Adapter) refreshTargetGroups(allTargetGroups map[string][]*targetgroup.Group) {
+	tempGroups := generateTargetGroups(allTargetGroups)
+
 	if !reflect.DeepEqual(a.groups, tempGroups) {
 		a.groups = tempGroups
 		err := a.writeOutput()
@@ -87,7 +108,6 @@ func (a *Adapter) generateTargetGroups(allTargetGroups map[string][]*targetgroup
 			level.Error(log.With(a.logger, "component", "sd-adapter")).Log("err", err)
 		}
 	}
-
 }
 
 // Writes JSON formatted targets to output file.
@@ -125,7 +145,7 @@ func (a *Adapter) runCustomSD(ctx context.Context) {
 			if !ok {
 				return
 			}
-			a.generateTargetGroups(allTargetGroups)
+			a.refreshTargetGroups(allTargetGroups)
 		}
 	}
 }

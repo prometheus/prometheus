@@ -51,7 +51,7 @@ The following binary comparison operators exist in Prometheus:
 * `<=` (less-or-equal)
 
 Comparison operators are defined between scalar/scalar, vector/scalar,
-and vector/vector value pairs. By default they filter. Their behaviour can be
+and vector/vector value pairs. By default they filter. Their behavior can be
 modified by providing `bool` after the operator, which will return `0` or `1`
 for the value rather than filtering.
 

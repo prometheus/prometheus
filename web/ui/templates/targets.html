@@ -32,6 +32,7 @@
             <th>State</th>
             <th>Labels</th>
             <th>Last Scrape</th>
+            <th>Scrape Duration</th>
             <th>Error</th>
           </tr>
         </thead>
@@ -53,8 +54,7 @@
             </td>
             <td class="labels">
               <span class="cursor-pointer" data-toggle="tooltip" title="" data-html=true data-original-title="<b>Before relabeling:</b>{{range $k, $v := .DiscoveredLabels.Map}}<br>{{$ev := $v | html}}{{$k}}=&quot;{{$ev}}&quot;{{end}}">
-                {{$labels := stripLabels .Labels.Map "job"}}
-                {{range $label, $value := $labels}}
+                {{range $label, $value := .Labels.Map }}
                   <span class="label label-primary">{{$label}}="{{$value}}"</span>
                 {{else}}
                   <span class="label label-default">none</span>
@@ -63,6 +63,9 @@
             </td>
             <td class="last-scrape">
               {{if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}
+            </td>
+            <td class="scrape-duration">
+              {{humanizeDuration .LastScrapeDuration.Seconds}}
             </td>
             <td class="errors">
               {{if .LastError}}

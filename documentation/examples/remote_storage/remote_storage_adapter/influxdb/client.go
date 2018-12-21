@@ -248,8 +248,8 @@ func tagsToLabelPairs(name string, tags map[string]string) []*prompb.Label {
 	return pairs
 }
 
-func valuesToSamples(values [][]interface{}) ([]*prompb.Sample, error) {
-	samples := make([]*prompb.Sample, 0, len(values))
+func valuesToSamples(values [][]interface{}) ([]prompb.Sample, error) {
+	samples := make([]prompb.Sample, 0, len(values))
 	for _, v := range values {
 		if len(v) != 2 {
 			return nil, fmt.Errorf("bad sample tuple length, expected [<timestamp>, <value>], got %v", v)
@@ -275,7 +275,7 @@ func valuesToSamples(values [][]interface{}) ([]*prompb.Sample, error) {
 			return nil, fmt.Errorf("unable to convert sample value to float64: %v", err)
 		}
 
-		samples = append(samples, &prompb.Sample{
+		samples = append(samples, prompb.Sample{
 			Timestamp: timestamp,
 			Value:     value,
 		})
@@ -285,8 +285,8 @@ func valuesToSamples(values [][]interface{}) ([]*prompb.Sample, error) {
 
 // mergeSamples merges two lists of sample pairs and removes duplicate
 // timestamps. It assumes that both lists are sorted by timestamp.
-func mergeSamples(a, b []*prompb.Sample) []*prompb.Sample {
-	result := make([]*prompb.Sample, 0, len(a)+len(b))
+func mergeSamples(a, b []prompb.Sample) []prompb.Sample {
+	result := make([]prompb.Sample, 0, len(a)+len(b))
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
 		if a[i].Timestamp < b[j].Timestamp {

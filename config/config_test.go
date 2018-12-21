@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/relabel"
+
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
@@ -30,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
@@ -70,13 +73,13 @@ var expectedConf = &Config{
 		{
 			URL:           mustParseURL("http://remote1/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
-			WriteRelabelConfigs: []*RelabelConfig{
+			WriteRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
 					Separator:    ";",
-					Regex:        MustNewRegexp("expensive.*"),
+					Regex:        relabel.MustNewRegexp("expensive.*"),
 					Replacement:  "$1",
-					Action:       RelabelDrop,
+					Action:       relabel.Drop,
 				},
 			},
 			QueueConfig: DefaultQueueConfig,
@@ -144,33 +147,33 @@ var expectedConf = &Config{
 				},
 			},
 
-			RelabelConfigs: []*RelabelConfig{
+			RelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"job", "__meta_dns_name"},
 					TargetLabel:  "job",
 					Separator:    ";",
-					Regex:        MustNewRegexp("(.*)some-[regex]"),
+					Regex:        relabel.MustNewRegexp("(.*)some-[regex]"),
 					Replacement:  "foo-${1}",
-					Action:       RelabelReplace,
+					Action:       relabel.Replace,
 				}, {
 					SourceLabels: model.LabelNames{"abc"},
 					TargetLabel:  "cde",
 					Separator:    ";",
-					Regex:        DefaultRelabelConfig.Regex,
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelReplace,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Replace,
 				}, {
 					TargetLabel: "abc",
 					Separator:   ";",
-					Regex:       DefaultRelabelConfig.Regex,
+					Regex:       relabel.DefaultRelabelConfig.Regex,
 					Replacement: "static",
-					Action:      RelabelReplace,
+					Action:      relabel.Replace,
 				}, {
 					TargetLabel: "abc",
 					Separator:   ";",
-					Regex:       MustNewRegexp(""),
+					Regex:       relabel.MustNewRegexp(""),
 					Replacement: "static",
-					Action:      RelabelReplace,
+					Action:      relabel.Replace,
 				},
 			},
 		},
@@ -211,56 +214,56 @@ var expectedConf = &Config{
 				},
 			},
 
-			RelabelConfigs: []*RelabelConfig{
+			RelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"job"},
-					Regex:        MustNewRegexp("(.*)some-[regex]"),
+					Regex:        relabel.MustNewRegexp("(.*)some-[regex]"),
 					Separator:    ";",
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelDrop,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Drop,
 				},
 				{
 					SourceLabels: model.LabelNames{"__address__"},
 					TargetLabel:  "__tmp_hash",
-					Regex:        DefaultRelabelConfig.Regex,
-					Replacement:  DefaultRelabelConfig.Replacement,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
 					Modulus:      8,
 					Separator:    ";",
-					Action:       RelabelHashMod,
+					Action:       relabel.HashMod,
 				},
 				{
 					SourceLabels: model.LabelNames{"__tmp_hash"},
-					Regex:        MustNewRegexp("1"),
+					Regex:        relabel.MustNewRegexp("1"),
 					Separator:    ";",
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelKeep,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Keep,
 				},
 				{
-					Regex:       MustNewRegexp("1"),
+					Regex:       relabel.MustNewRegexp("1"),
 					Separator:   ";",
-					Replacement: DefaultRelabelConfig.Replacement,
-					Action:      RelabelLabelMap,
+					Replacement: relabel.DefaultRelabelConfig.Replacement,
+					Action:      relabel.LabelMap,
 				},
 				{
-					Regex:       MustNewRegexp("d"),
+					Regex:       relabel.MustNewRegexp("d"),
 					Separator:   ";",
-					Replacement: DefaultRelabelConfig.Replacement,
-					Action:      RelabelLabelDrop,
+					Replacement: relabel.DefaultRelabelConfig.Replacement,
+					Action:      relabel.LabelDrop,
 				},
 				{
-					Regex:       MustNewRegexp("k"),
+					Regex:       relabel.MustNewRegexp("k"),
 					Separator:   ";",
-					Replacement: DefaultRelabelConfig.Replacement,
-					Action:      RelabelLabelKeep,
+					Replacement: relabel.DefaultRelabelConfig.Replacement,
+					Action:      relabel.LabelKeep,
 				},
 			},
-			MetricRelabelConfigs: []*RelabelConfig{
+			MetricRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
-					Regex:        MustNewRegexp("expensive_metric.*"),
+					Regex:        relabel.MustNewRegexp("expensive_metric.*"),
 					Separator:    ";",
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelDrop,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Drop,
 				},
 			},
 		},
@@ -295,14 +298,14 @@ var expectedConf = &Config{
 				},
 			},
 
-			RelabelConfigs: []*RelabelConfig{
+			RelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_consul_tags"},
-					Regex:        MustNewRegexp("label:([^=]+)=([^,]+)"),
+					Regex:        relabel.MustNewRegexp("label:([^=]+)=([^,]+)"),
 					Separator:    ",",
 					TargetLabel:  "${1}",
 					Replacement:  "${2}",
-					Action:       RelabelReplace,
+					Action:       relabel.Replace,
 				},
 			},
 		},
@@ -441,13 +444,14 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
 				AzureSDConfigs: []*azure.SDConfig{
 					{
-						Environment:     "AzurePublicCloud",
-						SubscriptionID:  "11AAAA11-A11A-111A-A111-1111A1111A11",
-						TenantID:        "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
-						ClientID:        "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
-						ClientSecret:    "mysecret",
-						RefreshInterval: model.Duration(5 * time.Minute),
-						Port:            9100,
+						Environment:          "AzurePublicCloud",
+						SubscriptionID:       "11AAAA11-A11A-111A-A111-1111A1111A11",
+						TenantID:             "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
+						ClientID:             "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
+						ClientSecret:         "mysecret",
+						AuthenticationMethod: "OAuth",
+						RefreshInterval:      model.Duration(5 * time.Minute),
+						Port:                 9100,
 					},
 				},
 			},
@@ -538,6 +542,31 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-openstack",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				OpenstackSDConfigs: []*openstack.SDConfig{
+					{
+						Role:            "instance",
+						Region:          "RegionOne",
+						Port:            80,
+						RefreshInterval: model.Duration(60 * time.Second),
+						TLSConfig: config_util.TLSConfig{
+							CAFile:   "valid_ca_file",
+							CertFile: "valid_cert_file",
+							KeyFile:  "valid_key_file",
+						},
+					},
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -575,7 +604,7 @@ func TestLoadConfig(t *testing.T) {
 	testutil.Equals(t, expectedConf, c)
 }
 
-// YAML marshalling must not reveal authentication credentials.
+// YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
 	c, err := LoadFile("testdata/conf.good.yml")
 	testutil.Ok(t, err)
@@ -725,6 +754,62 @@ var expectedErrors = []struct {
 		filename: "section_key_dup.bad.yml",
 		errMsg:   "field scrape_configs already set in type config.plain",
 	},
+	{
+		filename: "azure_client_id_missing.bad.yml",
+		errMsg:   "Azure SD configuration requires a client_id",
+	},
+	{
+		filename: "azure_client_secret_missing.bad.yml",
+		errMsg:   "Azure SD configuration requires a client_secret",
+	},
+	{
+		filename: "azure_subscription_id_missing.bad.yml",
+		errMsg:   "Azure SD configuration requires a subscription_id",
+	},
+	{
+		filename: "azure_tenant_id_missing.bad.yml",
+		errMsg:   "Azure SD configuration requires a tenant_id",
+	},
+	{
+		filename: "azure_authentication_method.bad.yml",
+		errMsg:   "Unknown authentication_type \"invalid\". Supported types are \"OAuth\" or \"ManagedIdentity\"",
+	},
+	{
+		filename: "empty_scrape_config.bad.yml",
+		errMsg:   "empty or null scrape config section",
+	},
+	{
+		filename: "empty_rw_config.bad.yml",
+		errMsg:   "empty or null remote write config section",
+	},
+	{
+		filename: "empty_rr_config.bad.yml",
+		errMsg:   "empty or null remote read config section",
+	},
+	{
+		filename: "empty_target_relabel_config.bad.yml",
+		errMsg:   "empty or null target relabeling rule",
+	},
+	{
+		filename: "empty_metric_relabel_config.bad.yml",
+		errMsg:   "empty or null metric relabeling rule",
+	},
+	{
+		filename: "empty_alert_relabel_config.bad.yml",
+		errMsg:   "empty or null alert relabeling rule",
+	},
+	{
+		filename: "empty_alertmanager_relabel_config.bad.yml",
+		errMsg:   "empty or null Alertmanager target relabeling rule",
+	},
+	{
+		filename: "empty_rw_relabel_config.bad.yml",
+		errMsg:   "empty or null relabeling rule in remote write config",
+	},
+	{
+		filename: "empty_static_config.bad.yml",
+		errMsg:   "empty or null section in static_configs",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -765,33 +850,6 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	exp := DefaultConfig
 	exp.original = "global:\n"
 	testutil.Equals(t, exp, *c)
-}
-
-func TestTargetLabelValidity(t *testing.T) {
-	tests := []struct {
-		str   string
-		valid bool
-	}{
-		{"-label", false},
-		{"label", true},
-		{"label${1}", true},
-		{"${1}label", true},
-		{"${1}", true},
-		{"${1}label", true},
-		{"${", false},
-		{"$", false},
-		{"${}", false},
-		{"foo${", false},
-		{"$1", true},
-		{"asd$2asd", true},
-		{"-foo${1}bar-", false},
-		{"_${1}_", true},
-		{"foo${bar}foo", true},
-	}
-	for _, test := range tests {
-		testutil.Assert(t, relabelTarget.Match([]byte(test.str)) == test.valid,
-			"Expected %q to be %v", test.str, test.valid)
-	}
 }
 
 func kubernetesSDHostURL() config_util.URL {

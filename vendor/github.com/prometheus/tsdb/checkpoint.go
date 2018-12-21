@@ -18,13 +18,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/wal"
@@ -36,11 +35,11 @@ type CheckpointStats struct {
 	DroppedSamples    int
 	DroppedTombstones int
 	TotalSeries       int // Processed series including dropped ones.
-	TotalSamples      int // Processed samples inlcuding dropped ones.
+	TotalSamples      int // Processed samples including dropped ones.
 	TotalTombstones   int // Processed tombstones including dropped ones.
 }
 
-// LastCheckpoint returns the directory name of the most recent checkpoint.
+// LastCheckpoint returns the directory name and index of the most recent checkpoint.
 // If dir does not contain any checkpoints, ErrNotFound is returned.
 func LastCheckpoint(dir string) (string, int, error) {
 	files, err := ioutil.ReadDir(dir)
@@ -57,18 +56,17 @@ func LastCheckpoint(dir string) (string, int, error) {
 		if !fi.IsDir() {
 			return "", 0, errors.Errorf("checkpoint %s is not a directory", fi.Name())
 		}
-		k, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
+		idx, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
 		if err != nil {
 			continue
 		}
-		return fi.Name(), k, nil
+		return filepath.Join(dir, fi.Name()), idx, nil
 	}
 	return "", 0, ErrNotFound
 }
 
-// DeleteCheckpoints deletes all checkpoints in dir that have an index
-// below n.
-func DeleteCheckpoints(dir string, n int) error {
+// DeleteCheckpoints deletes all checkpoints in a directory below a given index.
+func DeleteCheckpoints(dir string, maxIndex int) error {
 	var errs MultiError
 
 	files, err := ioutil.ReadDir(dir)
@@ -79,8 +77,8 @@ func DeleteCheckpoints(dir string, n int) error {
 		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
 			continue
 		}
-		k, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
-		if err != nil || k >= n {
+		index, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
+		if err != nil || index >= maxIndex {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
@@ -92,7 +90,7 @@ func DeleteCheckpoints(dir string, n int) error {
 
 const checkpointPrefix = "checkpoint."
 
-// Checkpoint creates a compacted checkpoint of segments in range [m, n] in the given WAL.
+// Checkpoint creates a compacted checkpoint of segments in range [first, last] in the given WAL.
 // It includes the most recent checkpoint if it exists.
 // All series not satisfying keep and samples below mint are dropped.
 //
@@ -100,55 +98,37 @@ const checkpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-//
-// Non-critical errors are logged and not returned.
-func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
-	if logger == nil {
-		logger = log.NewNopLogger()
-	}
+func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
+	var sgmReader io.ReadCloser
 
-	var sr io.Reader
-	// We close everything explicitly because Windows needs files to be
-	// closed before being deleted. But we also have defer so that we close
-	// files if there is an error somewhere.
-	var closers []io.Closer
 	{
-		lastFn, k, err := LastCheckpoint(w.Dir())
+
+		var sgmRange []wal.SegmentRange
+		dir, idx, err := LastCheckpoint(w.Dir())
 		if err != nil && err != ErrNotFound {
 			return nil, errors.Wrap(err, "find last checkpoint")
 		}
+		last := idx + 1
 		if err == nil {
-			if m > k+1 {
-				return nil, errors.New("unexpected gap to last checkpoint")
+			if from > last {
+				return nil, fmt.Errorf("unexpected gap to last checkpoint. expected:%v, requested:%v", last, from)
 			}
 			// Ignore WAL files below the checkpoint. They shouldn't exist to begin with.
-			m = k + 1
+			from = last
 
-			last, err := wal.NewSegmentsReader(filepath.Join(w.Dir(), lastFn))
-			if err != nil {
-				return nil, errors.Wrap(err, "open last checkpoint")
-			}
-			defer last.Close()
-			closers = append(closers, last)
-			sr = last
+			sgmRange = append(sgmRange, wal.SegmentRange{Dir: dir, Last: math.MaxInt32})
 		}
 
-		segsr, err := wal.NewSegmentsRangeReader(w.Dir(), m, n)
+		sgmRange = append(sgmRange, wal.SegmentRange{Dir: w.Dir(), First: from, Last: to})
+		sgmReader, err = wal.NewSegmentsRangeReader(sgmRange...)
 		if err != nil {
 			return nil, errors.Wrap(err, "create segment reader")
 		}
-		defer segsr.Close()
-		closers = append(closers, segsr)
-
-		if sr != nil {
-			sr = io.MultiReader(sr, segsr)
-		} else {
-			sr = segsr
-		}
+		defer sgmReader.Close()
 	}
 
-	cpdir := filepath.Join(w.Dir(), fmt.Sprintf("checkpoint.%06d", n))
+	cpdir := filepath.Join(w.Dir(), fmt.Sprintf("checkpoint.%06d", to))
 	cpdirtmp := cpdir + ".tmp"
 
 	if err := os.MkdirAll(cpdirtmp, 0777); err != nil {
@@ -159,7 +139,7 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 		return nil, errors.Wrap(err, "open checkpoint")
 	}
 
-	r := wal.NewReader(sr)
+	r := wal.NewReader(sgmReader)
 
 	var (
 		series  []RefSeries
@@ -269,20 +249,6 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
 		return nil, errors.Wrap(err, "rename checkpoint directory")
 	}
-	if err := closeAll(closers...); err != nil {
-		return stats, errors.Wrap(err, "close opened files")
-	}
-	if err := w.Truncate(n + 1); err != nil {
-		// If truncating fails, we'll just try again at the next checkpoint.
-		// Leftover segments will just be ignored in the future if there's a checkpoint
-		// that supersedes them.
-		level.Error(logger).Log("msg", "truncating segments failed", "err", err)
-	}
-	if err := DeleteCheckpoints(w.Dir(), n); err != nil {
-		// Leftover old checkpoints do not cause problems down the line beyond
-		// occupying disk space.
-		// They will just be ignored since a higher checkpoint exists.
-		level.Error(logger).Log("msg", "delete old checkpoints", "err", err)
-	}
+
 	return stats, nil
 }

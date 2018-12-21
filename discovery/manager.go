@@ -41,16 +41,45 @@ import (
 )
 
 var (
-	failedConfigs = prometheus.NewCounter(
+	failedConfigs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_configs_failed_total",
 			Help: "Total number of service discovery configurations that failed to load.",
 		},
+		[]string{"name"},
+	)
+	discoveredTargets = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_sd_discovered_targets",
+			Help: "Current number of discovered targets.",
+		},
+		[]string{"name", "config"},
+	)
+	receivedUpdates = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_received_updates_total",
+			Help: "Total number of update events received from the SD providers.",
+		},
+		[]string{"name"},
+	)
+	delayedUpdates = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_updates_delayed_total",
+			Help: "Total number of update events that couldn't be sent immediately.",
+		},
+		[]string{"name"},
+	)
+	sentUpdates = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_updates_total",
+			Help: "Total number of update events sent to the SD consumers.",
+		},
+		[]string{"name"},
 	)
 )
 
 func init() {
-	prometheus.MustRegister(failedConfigs)
+	prometheus.MustRegister(failedConfigs, discoveredTargets, receivedUpdates, delayedUpdates, sentUpdates)
 }
 
 // Discoverer provides information about target groups. It maintains a set
@@ -62,7 +91,7 @@ func init() {
 //
 // Discoverers should initially send a full set of all discoverable TargetGroups.
 type Discoverer interface {
-	// Run hands a channel to the discovery provider(consul,dns etc) through which it can send
+	// Run hands a channel to the discovery provider (Consul, DNS etc) through which it can send
 	// updated target groups.
 	// Must returns if the context gets canceled. It should not close the update
 	// channel on returning.
@@ -82,17 +111,32 @@ type provider struct {
 	config interface{}
 }
 
-// NewManager is the Discovery Manager constructor
-func NewManager(ctx context.Context, logger log.Logger) *Manager {
+// NewManager is the Discovery Manager constructor.
+func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager)) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	return &Manager{
+	mgr := &Manager{
 		logger:         logger,
 		syncCh:         make(chan map[string][]*targetgroup.Group),
 		targets:        make(map[poolKey]map[string]*targetgroup.Group),
 		discoverCancel: []context.CancelFunc{},
 		ctx:            ctx,
+		updatert:       5 * time.Second,
+		triggerSend:    make(chan struct{}, 1),
+	}
+	for _, option := range options {
+		option(mgr)
+	}
+	return mgr
+}
+
+// Name sets the name of the manager.
+func Name(n string) func(*Manager) {
+	return func(m *Manager) {
+		m.mtx.Lock()
+		defer m.mtx.Unlock()
+		m.name = n
 	}
 }
 
@@ -100,6 +144,7 @@ func NewManager(ctx context.Context, logger log.Logger) *Manager {
 // Targets are grouped by the target set name.
 type Manager struct {
 	logger         log.Logger
+	name           string
 	mtx            sync.RWMutex
 	ctx            context.Context
 	discoverCancel []context.CancelFunc
@@ -109,12 +154,20 @@ type Manager struct {
 	targets map[poolKey]map[string]*targetgroup.Group
 	// providers keeps track of SD providers.
 	providers []*provider
-	// The sync channels sends the updates in map[targetSetName] where targetSetName is the job value from the scrape config.
+	// The sync channel sends the updates as a map where the key is the job value from the scrape config.
 	syncCh chan map[string][]*targetgroup.Group
+
+	// How long to wait before sending updates to the channel. The variable
+	// should only be modified in unit tests.
+	updatert time.Duration
+
+	// The triggerSend channel signals to the manager that new updates have been received from providers.
+	triggerSend chan struct{}
 }
 
 // Run starts the background processing
 func (m *Manager) Run() error {
+	go m.sender()
 	for range m.ctx.Done() {
 		m.cancelDiscoverers()
 		return m.ctx.Err()
@@ -122,7 +175,7 @@ func (m *Manager) Run() error {
 	return nil
 }
 
-// SyncCh returns a read only channel used by all Discoverers to send target updates.
+// SyncCh returns a read only channel used by all the clients to receive target updates.
 func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 	return m.syncCh
 }
@@ -132,9 +185,15 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	for pk := range m.targets {
+		if _, ok := cfg[pk.setName]; !ok {
+			discoveredTargets.DeleteLabelValues(m.name, pk.setName)
+		}
+	}
 	m.cancelDiscoverers()
 	for name, scfg := range cfg {
 		m.registerProviders(scfg, name)
+		discoveredTargets.WithLabelValues(m.name, name).Set(0)
 	}
 	for _, prov := range m.providers {
 		m.startProvider(m.ctx, prov)
@@ -166,44 +225,48 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 }
 
 func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targetgroup.Group) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	triggerUpdate := make(chan struct{}, 1)
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case tgs, ok := <-updates:
+			receivedUpdates.WithLabelValues(m.name).Inc()
 			if !ok {
-				level.Debug(m.logger).Log("msg", "discoverer channel closed, sending the last update", "provider", p.name)
-				select {
-				case m.syncCh <- m.allGroups(): // Waiting until the receiver can accept the last update.
-					level.Debug(m.logger).Log("msg", "discoverer exited", "provider", p.name)
-					return
-				case <-ctx.Done():
-					return
-				}
-
+				level.Debug(m.logger).Log("msg", "discoverer channel closed", "provider", p.name)
+				return
 			}
+
 			for _, s := range p.subs {
 				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)
 			}
 
 			select {
-			case triggerUpdate <- struct{}{}:
+			case m.triggerSend <- struct{}{}:
 			default:
 			}
+		}
+	}
+}
+
+func (m *Manager) sender() {
+	ticker := time.NewTicker(m.updatert)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
 		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
 			select {
-			case <-triggerUpdate:
+			case <-m.triggerSend:
+				sentUpdates.WithLabelValues(m.name).Inc()
 				select {
 				case m.syncCh <- m.allGroups():
 				default:
-					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full so will retry the next cycle", "provider", p.name)
+					delayedUpdates.WithLabelValues(m.name).Inc()
+					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full so will retry the next cycle")
 					select {
-					case triggerUpdate <- struct{}{}:
+					case m.triggerSend <- struct{}{}:
 					default:
 					}
 				}
@@ -242,21 +305,26 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 
 	tSets := map[string][]*targetgroup.Group{}
 	for pkey, tsets := range m.targets {
+		var n int
 		for _, tg := range tsets {
 			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
 			// to signal that it needs to stop all scrape loops for this target set.
 			tSets[pkey.setName] = append(tSets[pkey.setName], tg)
+			n += len(tg.Targets)
 		}
+		discoveredTargets.WithLabelValues(m.name, pkey.setName).Set(float64(n))
 	}
 	return tSets
 }
 
 func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
+	var added bool
 	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
 		t := reflect.TypeOf(cfg).String()
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
 				p.subs = append(p.subs, setName)
+				added = true
 				return
 			}
 		}
@@ -264,7 +332,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 		d, err := newDiscoverer()
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
-			failedConfigs.Inc()
+			failedConfigs.WithLabelValues(m.name).Inc()
 			return
 		}
 
@@ -275,6 +343,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 			subs:   []string{setName},
 		}
 		m.providers = append(m.providers, &provider)
+		added = true
 	}
 
 	for _, c := range cfg.DNSSDConfigs {
@@ -304,12 +373,12 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	}
 	for _, c := range cfg.ServersetSDConfigs {
 		add(c, func() (Discoverer, error) {
-			return zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper")), nil
+			return zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper"))
 		})
 	}
 	for _, c := range cfg.NerveSDConfigs {
 		add(c, func() (Discoverer, error) {
-			return zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve")), nil
+			return zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve"))
 		})
 	}
 	for _, c := range cfg.EC2SDConfigs {
@@ -339,7 +408,17 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	}
 	if len(cfg.StaticConfigs) > 0 {
 		add(setName, func() (Discoverer, error) {
-			return &StaticProvider{cfg.StaticConfigs}, nil
+			return &StaticProvider{TargetGroups: cfg.StaticConfigs}, nil
+		})
+	}
+	if !added {
+		// Add an empty target group to force the refresh of the corresponding
+		// scrape pool and to notify the receiver that this target set has no
+		// current targets.
+		// It can happen because the combined set of SD configurations is empty
+		// or because we fail to instantiate all the SD configurations.
+		add(setName, func() (Discoverer, error) {
+			return &StaticProvider{TargetGroups: []*targetgroup.Group{&targetgroup.Group{}}}, nil
 		})
 	}
 }

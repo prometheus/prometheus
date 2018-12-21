@@ -42,7 +42,7 @@ func TestExternalLabelsQuerierSelect(t *testing.T) {
 		externalLabels: model.LabelSet{"region": "europe"},
 	}
 	want := newSeriesSetFilter(mockSeriesSet{}, q.externalLabels)
-	have, err := q.Select(nil, matchers...)
+	have, err, _ := q.Select(nil, matchers...)
 	if err != nil {
 		t.Error(err)
 	}
@@ -122,12 +122,12 @@ func TestSeriesSetFilter(t *testing.T) {
 			toRemove: model.LabelSet{"foo": "bar"},
 			in: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
-					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b")), Samples: []*prompb.Sample{}},
+					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b")), Samples: []prompb.Sample{}},
 				},
 			},
 			expected: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
-					{Labels: labelsToLabelsProto(labels.FromStrings("a", "b")), Samples: []*prompb.Sample{}},
+					{Labels: labelsToLabelsProto(labels.FromStrings("a", "b")), Samples: []prompb.Sample{}},
 				},
 			},
 		},
@@ -157,8 +157,8 @@ type mockSeriesSet struct {
 	storage.SeriesSet
 }
 
-func (mockQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, error) {
-	return mockSeriesSet{}, nil
+func (mockQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, error, storage.Warnings) {
+	return mockSeriesSet{}, nil, nil
 }
 
 func TestPreferLocalStorageFilter(t *testing.T) {
@@ -313,7 +313,7 @@ func TestRequiredLabelsQuerierSelect(t *testing.T) {
 			requiredMatchers: test.requiredMatchers,
 		}
 
-		have, err := q.Select(nil, test.matchers...)
+		have, err, _ := q.Select(nil, test.matchers...)
 		if err != nil {
 			t.Error(err)
 		}

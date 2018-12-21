@@ -16,6 +16,9 @@ package prometheus
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -23,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/common/expfmt"
 
 	dto "github.com/prometheus/client_model/go"
 
@@ -107,9 +111,6 @@ type Registerer interface {
 	// Collector, and for providing a Collector that will not cause
 	// inconsistent metrics on collection. (This would lead to scrape
 	// errors.)
-	//
-	// It is in general not safe to register the same Collector multiple
-	// times concurrently.
 	Register(Collector) error
 	// MustRegister works like Register but registers any number of
 	// Collectors and panics upon the first registration that causes an
@@ -273,7 +274,12 @@ func (r *Registry) Register(c Collector) error {
 		close(descChan)
 	}()
 	r.mtx.Lock()
-	defer r.mtx.Unlock()
+	defer func() {
+		// Drain channel in case of premature return to not leak a goroutine.
+		for range descChan {
+		}
+		r.mtx.Unlock()
+	}()
 	// Conduct various tests...
 	for desc := range descChan {
 
@@ -531,6 +537,38 @@ func (r *Registry) Gather() ([]*dto.MetricFamily, error) {
 	return internal.NormalizeMetricFamilies(metricFamiliesByName), errs.MaybeUnwrap()
 }
 
+// WriteToTextfile calls Gather on the provided Gatherer, encodes the result in the
+// Prometheus text format, and writes it to a temporary file. Upon success, the
+// temporary file is renamed to the provided filename.
+//
+// This is intended for use with the textfile collector of the node exporter.
+// Note that the node exporter expects the filename to be suffixed with ".prom".
+func WriteToTextfile(filename string, g Gatherer) error {
+	tmp, err := ioutil.TempFile(filepath.Dir(filename), filepath.Base(filename))
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+
+	mfs, err := g.Gather()
+	if err != nil {
+		return err
+	}
+	for _, mf := range mfs {
+		if _, err := expfmt.MetricFamilyToText(tmp, mf); err != nil {
+			return err
+		}
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Chmod(tmp.Name(), 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filename)
+}
+
 // processMetric is an internal helper method only used by the Gather method.
 func processMetric(
 	metric Metric,
@@ -785,6 +823,8 @@ func checkMetricConsistency(
 	dtoMetric *dto.Metric,
 	metricHashes map[uint64]struct{},
 ) error {
+	name := metricFamily.GetName()
+
 	// Type consistency with metric family.
 	if metricFamily.GetType() == dto.MetricType_GAUGE && dtoMetric.Gauge == nil ||
 		metricFamily.GetType() == dto.MetricType_COUNTER && dtoMetric.Counter == nil ||
@@ -793,33 +833,42 @@ func checkMetricConsistency(
 		metricFamily.GetType() == dto.MetricType_UNTYPED && dtoMetric.Untyped == nil {
 		return fmt.Errorf(
 			"collected metric %q { %s} is not a %s",
-			metricFamily.GetName(), dtoMetric, metricFamily.GetType(),
+			name, dtoMetric, metricFamily.GetType(),
 		)
 	}
 
+	previousLabelName := ""
 	for _, labelPair := range dtoMetric.GetLabel() {
-		if !checkLabelName(labelPair.GetName()) {
+		labelName := labelPair.GetName()
+		if labelName == previousLabelName {
 			return fmt.Errorf(
-				"collected metric %q { %s} has a label with an invalid name: %s",
-				metricFamily.GetName(), dtoMetric, labelPair.GetName(),
+				"collected metric %q { %s} has two or more labels with the same name: %s",
+				name, dtoMetric, labelName,
 			)
 		}
-		if dtoMetric.Summary != nil && labelPair.GetName() == quantileLabel {
+		if !checkLabelName(labelName) {
+			return fmt.Errorf(
+				"collected metric %q { %s} has a label with an invalid name: %s",
+				name, dtoMetric, labelName,
+			)
+		}
+		if dtoMetric.Summary != nil && labelName == quantileLabel {
 			return fmt.Errorf(
 				"collected metric %q { %s} must not have an explicit %q label",
-				metricFamily.GetName(), dtoMetric, quantileLabel,
+				name, dtoMetric, quantileLabel,
 			)
 		}
 		if !utf8.ValidString(labelPair.GetValue()) {
 			return fmt.Errorf(
 				"collected metric %q { %s} has a label named %q whose value is not utf8: %#v",
-				metricFamily.GetName(), dtoMetric, labelPair.GetName(), labelPair.GetValue())
+				name, dtoMetric, labelName, labelPair.GetValue())
 		}
+		previousLabelName = labelName
 	}
 
 	// Is the metric unique (i.e. no other metric with the same name and the same labels)?
 	h := hashNew()
-	h = hashAdd(h, metricFamily.GetName())
+	h = hashAdd(h, name)
 	h = hashAddByte(h, separatorByte)
 	// Make sure label pairs are sorted. We depend on it for the consistency
 	// check.
@@ -833,7 +882,7 @@ func checkMetricConsistency(
 	if _, exists := metricHashes[h]; exists {
 		return fmt.Errorf(
 			"collected metric %q { %s} was collected before with the same name and label values",
-			metricFamily.GetName(), dtoMetric,
+			name, dtoMetric,
 		)
 	}
 	metricHashes[h] = struct{}{}

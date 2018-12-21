@@ -32,7 +32,8 @@ import (
 )
 
 const (
-	apiPath = "/rpc_http"
+	apiPath             = "/rpc_http"
+	defaultTicketSuffix = "/default.20150612t184001.0"
 )
 
 var (
@@ -60,6 +61,9 @@ var (
 			Dial:  limitDial,
 		},
 	}
+
+	defaultTicketOnce sync.Once
+	defaultTicket     string
 )
 
 func apiURL() *url.URL {
@@ -223,6 +227,8 @@ type context struct {
 
 var contextKey = "holds a *context"
 
+// fromContext returns the App Engine context or nil if ctx is not
+// derived from an App Engine context.
 func fromContext(ctx netcontext.Context) *context {
 	c, _ := ctx.Value(&contextKey).(*context)
 	return c
@@ -266,6 +272,24 @@ func WithContext(parent netcontext.Context, req *http.Request) netcontext.Contex
 	return withContext(parent, c)
 }
 
+// DefaultTicket returns a ticket used for background context or dev_appserver.
+func DefaultTicket() string {
+	defaultTicketOnce.Do(func() {
+		if IsDevAppServer() {
+			defaultTicket = "testapp" + defaultTicketSuffix
+			return
+		}
+		appID := partitionlessAppID()
+		escAppID := strings.Replace(strings.Replace(appID, ":", "_", -1), ".", "_", -1)
+		majVersion := VersionID(nil)
+		if i := strings.Index(majVersion, "."); i > 0 {
+			majVersion = majVersion[:i]
+		}
+		defaultTicket = fmt.Sprintf("%s/%s.%s.%s", escAppID, ModuleName(nil), majVersion, InstanceID())
+	})
+	return defaultTicket
+}
+
 func BackgroundContext() netcontext.Context {
 	ctxs.Lock()
 	defer ctxs.Unlock()
@@ -275,13 +299,7 @@ func BackgroundContext() netcontext.Context {
 	}
 
 	// Compute background security ticket.
-	appID := partitionlessAppID()
-	escAppID := strings.Replace(strings.Replace(appID, ":", "_", -1), ".", "_", -1)
-	majVersion := VersionID(nil)
-	if i := strings.Index(majVersion, "."); i > 0 {
-		majVersion = majVersion[:i]
-	}
-	ticket := fmt.Sprintf("%s/%s.%s.%s", escAppID, ModuleName(nil), majVersion, InstanceID())
+	ticket := DefaultTicket()
 
 	ctxs.bg = &context{
 		req: &http.Request{
@@ -452,7 +470,7 @@ func Call(ctx netcontext.Context, service, method string, in, out proto.Message)
 	c := fromContext(ctx)
 	if c == nil {
 		// Give a good error message rather than a panic lower down.
-		return errors.New("not an App Engine context")
+		return errNotAppEngineContext
 	}
 
 	// Apply transaction modifications if we're in a transaction.
@@ -475,6 +493,16 @@ func Call(ctx netcontext.Context, service, method string, in, out proto.Message)
 	}
 
 	ticket := c.req.Header.Get(ticketHeader)
+	// Use a test ticket under test environment.
+	if ticket == "" {
+		if appid := ctx.Value(&appIDOverrideKey); appid != nil {
+			ticket = appid.(string) + defaultTicketSuffix
+		}
+	}
+	// Fall back to use background ticket when the request ticket is not available in Flex or dev_appserver.
+	if ticket == "" {
+		ticket = DefaultTicket()
+	}
 	req := &remotepb.Request{
 		ServiceName: &service,
 		Method:      &method,
@@ -550,6 +578,9 @@ var logLevelName = map[int64]string{
 }
 
 func logf(c *context, level int64, format string, args ...interface{}) {
+	if c == nil {
+		panic("not an App Engine context")
+	}
 	s := fmt.Sprintf(format, args...)
 	s = strings.TrimRight(s, "\n") // Remove any trailing newline characters.
 	c.addLogLine(&logpb.UserAppLogLine{

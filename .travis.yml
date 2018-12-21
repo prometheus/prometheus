@@ -2,12 +2,13 @@ sudo: false
 
 language: go
 
-# Whenever the Go version is updated here, .circleci/config.yml should also be
-# updated.
+# Whenever the Go version is updated here, .circleci/config.yml and .promu.yml
+# should also be updated.
 go:
-- 1.10.x
+- 1.11.x
 
 go_import_path: github.com/prometheus/prometheus
 
 script:
-- make check_license style unused test staticcheck
+- make check_license style unused test staticcheck check_assets
+- git diff --exit-code

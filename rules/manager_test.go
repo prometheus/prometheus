@@ -494,7 +494,14 @@ func TestForStateRestore(t *testing.T) {
 func TestStaleness(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	engineOpts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := promql.NewEngine(engineOpts)
 	opts := &ManagerOptions{
 		QueryFunc:  EngineQueryFunc(engine, storage),
 		Appendable: storage,
@@ -531,7 +538,7 @@ func TestStaleness(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
 	testutil.Ok(t, err)
 
-	set, err := querier.Select(nil, matcher)
+	set, err, _ := querier.Select(nil, matcher)
 	testutil.Ok(t, err)
 
 	samples, err := readSeriesSet(set)
@@ -551,7 +558,7 @@ func TestStaleness(t *testing.T) {
 	testutil.Equals(t, want, samples)
 }
 
-// Convert a SeriesSet into a form useable with reflect.DeepEqual.
+// Convert a SeriesSet into a form usable with reflect.DeepEqual.
 func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 	result := map[string][]promql.Point{}
 
@@ -623,7 +630,14 @@ func TestUpdate(t *testing.T) {
 	}
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	opts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		TSDB:       storage,
@@ -655,7 +669,14 @@ func TestUpdate(t *testing.T) {
 func TestNotify(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	engineOpts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := promql.NewEngine(engineOpts)
 	var lastNotified []*Alert
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
 		lastNotified = alerts

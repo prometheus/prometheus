@@ -402,6 +402,9 @@ func (a *Application) setDefaults(context *ParseContext) error {
 	flagElements := map[string]*ParseElement{}
 	for _, element := range context.Elements {
 		if flag, ok := element.Clause.(*FlagClause); ok {
+			if flag.name == "help" {
+				return nil
+			}
 			flagElements[flag.name] = element
 		}
 	}

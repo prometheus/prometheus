@@ -30,16 +30,16 @@ import (
 const defaultFlushDeadline = 1 * time.Minute
 
 type TestStorageClient struct {
-	receivedSamples map[string][]*prompb.Sample
-	expectedSamples map[string][]*prompb.Sample
+	receivedSamples map[string][]prompb.Sample
+	expectedSamples map[string][]prompb.Sample
 	wg              sync.WaitGroup
 	mtx             sync.Mutex
 }
 
 func NewTestStorageClient() *TestStorageClient {
 	return &TestStorageClient{
-		receivedSamples: map[string][]*prompb.Sample{},
-		expectedSamples: map[string][]*prompb.Sample{},
+		receivedSamples: map[string][]prompb.Sample{},
+		expectedSamples: map[string][]prompb.Sample{},
 	}
 }
 
@@ -47,12 +47,12 @@ func (c *TestStorageClient) expectSamples(ss model.Samples) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedSamples = map[string][]*prompb.Sample{}
-	c.receivedSamples = map[string][]*prompb.Sample{}
+	c.expectedSamples = map[string][]prompb.Sample{}
+	c.receivedSamples = map[string][]prompb.Sample{}
 
 	for _, s := range ss {
 		ts := labelProtosToLabels(MetricToLabelProtos(s.Metric)).String()
-		c.expectedSamples[ts] = append(c.expectedSamples[ts], &prompb.Sample{
+		c.expectedSamples[ts] = append(c.expectedSamples[ts], prompb.Sample{
 			Timestamp: int64(s.Timestamp),
 			Value:     float64(s.Value),
 		})

@@ -38,8 +38,11 @@ type RecordingRule struct {
 	mtx sync.Mutex
 	// The health of the recording rule.
 	health RuleHealth
+	// Timestamp of last evaluation of the recording rule.
+	evaluationTimestamp time.Time
 	// The last error seen by the recording rule.
-	lastError          error
+	lastError error
+	// Duration of how long it took to evaluate the recording rule.
 	evaluationDuration time.Duration
 }
 
@@ -108,7 +111,7 @@ func (rule *RecordingRule) String() string {
 
 	byt, err := yaml.Marshal(r)
 	if err != nil {
-		return fmt.Sprintf("error marshalling recording rule: %q", err.Error())
+		return fmt.Sprintf("error marshaling recording rule: %q", err.Error())
 	}
 
 	return string(byt)
@@ -156,6 +159,20 @@ func (rule *RecordingRule) GetEvaluationDuration() time.Duration {
 	return rule.evaluationDuration
 }
 
+// SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule was last evaluated.
+func (rule *RecordingRule) SetEvaluationTimestamp(ts time.Time) {
+	rule.mtx.Lock()
+	defer rule.mtx.Unlock()
+	rule.evaluationTimestamp = ts
+}
+
+// GetEvaluationTimestamp returns the time the evaluation took place.
+func (rule *RecordingRule) GetEvaluationTimestamp() time.Time {
+	rule.mtx.Lock()
+	defer rule.mtx.Unlock()
+	return rule.evaluationTimestamp
+}
+
 // HTMLSnippet returns an HTML snippet representing this rule.
 func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	ruleExpr := rule.vector.String()
@@ -172,7 +189,7 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 
 	byt, err := yaml.Marshal(r)
 	if err != nil {
-		return template.HTML(fmt.Sprintf("error marshalling recording rule: %q", template.HTMLEscapeString(err.Error())))
+		return template.HTML(fmt.Sprintf("error marshaling recording rule: %q", template.HTMLEscapeString(err.Error())))
 	}
 
 	return template.HTML(byt)

@@ -25,7 +25,7 @@ message Sample {
 
 message TimeSeries {
   repeated Label labels   = 1;
-  repeated Sample samples = 2;
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
 }
 
 message Label {

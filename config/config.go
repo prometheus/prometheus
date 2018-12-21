@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/relabel"
+
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
@@ -29,8 +31,7 @@ import (
 )
 
 var (
-	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
-	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
+	patRulePath = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 )
 
 // Load parses the YAML input s into a Config.
@@ -92,14 +93,6 @@ var (
 		Timeout: model.Duration(10 * time.Second),
 	}
 
-	// DefaultRelabelConfig is the default Relabel configuration.
-	DefaultRelabelConfig = RelabelConfig{
-		Action:      RelabelReplace,
-		Separator:   ";",
-		Regex:       MustNewRegexp("(.*)"),
-		Replacement: "$1",
-	}
-
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout: model.Duration(30 * time.Second),
@@ -111,6 +104,7 @@ var (
 		// With a maximum of 1000 shards, assuming an average of 100ms remote write
 		// time and 100 samples per batch, we will be able to push 1M samples/s.
 		MaxShards:         1000,
+		MinShards:         1,
 		MaxSamplesPerSend: 100,
 
 		// By default, buffer 100 batches, which at 100ms per batch is 10s. At
@@ -233,6 +227,9 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
+		if scfg == nil {
+			return fmt.Errorf("empty or null scrape config section")
+		}
 		// First set the correct scrape interval, then check that the timeout
 		// (inferred or explicit) is not greater than that.
 		if scfg.ScrapeInterval == 0 {
@@ -253,6 +250,16 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}
 		jobNames[scfg.JobName] = struct{}{}
+	}
+	for _, rwcfg := range c.RemoteWriteConfigs {
+		if rwcfg == nil {
+			return fmt.Errorf("empty or null remote write config section")
+		}
+	}
+	for _, rrcfg := range c.RemoteReadConfigs {
+		if rrcfg == nil {
+			return fmt.Errorf("empty or null remote read config section")
+		}
 	}
 	return nil
 }
@@ -336,9 +343,9 @@ type ScrapeConfig struct {
 	HTTPClientConfig       config_util.HTTPClientConfig     `yaml:",inline"`
 
 	// List of target relabel configurations.
-	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
+	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.
-	MetricRelabelConfigs []*RelabelConfig `yaml:"metric_relabel_configs,omitempty"`
+	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -360,6 +367,13 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
+	// The UnmarshalYAML method of ServiceDiscoveryConfig is not being called because it's not a pointer.
+	// We cannot make it a pointer as the parser panics for inlined pointer structs.
+	// Thus we just do its validation here.
+	if err := c.ServiceDiscoveryConfig.Validate(); err != nil {
+		return err
+	}
+
 	// Check for users putting URLs in target groups.
 	if len(c.RelabelConfigs) == 0 {
 		for _, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
@@ -368,6 +382,17 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 					return err
 				}
 			}
+		}
+	}
+
+	for _, rlcfg := range c.RelabelConfigs {
+		if rlcfg == nil {
+			return fmt.Errorf("empty or null target relabeling rule in scrape config")
+		}
+	}
+	for _, rlcfg := range c.MetricRelabelConfigs {
+		if rlcfg == nil {
+			return fmt.Errorf("empty or null metric relabeling rule in scrape config")
 		}
 	}
 
@@ -382,7 +407,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // AlertingConfig configures alerting and alertmanager related configs.
 type AlertingConfig struct {
-	AlertRelabelConfigs []*RelabelConfig      `yaml:"alert_relabel_configs,omitempty"`
+	AlertRelabelConfigs []*relabel.Config     `yaml:"alert_relabel_configs,omitempty"`
 	AlertmanagerConfigs []*AlertmanagerConfig `yaml:"alertmanagers,omitempty"`
 }
 
@@ -392,7 +417,16 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	// by the default due to the YAML parser behavior for empty blocks.
 	*c = AlertingConfig{}
 	type plain AlertingConfig
-	return unmarshal((*plain)(c))
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	for _, rlcfg := range c.AlertRelabelConfigs {
+		if rlcfg == nil {
+			return fmt.Errorf("empty or null alert relabeling rule")
+		}
+	}
+	return nil
 }
 
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
@@ -411,7 +445,7 @@ type AlertmanagerConfig struct {
 	Timeout model.Duration `yaml:"timeout,omitempty"`
 
 	// List of Alertmanager relabel configurations.
-	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
+	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -429,6 +463,13 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		return err
 	}
 
+	// The UnmarshalYAML method of ServiceDiscoveryConfig is not being called because it's not a pointer.
+	// We cannot make it a pointer as the parser panics for inlined pointer structs.
+	// Thus we just do its validation here.
+	if err := c.ServiceDiscoveryConfig.Validate(); err != nil {
+		return err
+	}
+
 	// Check for users putting URLs in target groups.
 	if len(c.RelabelConfigs) == 0 {
 		for _, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
@@ -437,6 +478,12 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 					return err
 				}
 			}
+		}
+	}
+
+	for _, rlcfg := range c.RelabelConfigs {
+		if rlcfg == nil {
+			return fmt.Errorf("empty or null Alertmanager target relabeling rule")
 		}
 	}
 
@@ -470,151 +517,11 @@ type FileSDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 }
 
-// RelabelAction is the action to be performed on relabeling.
-type RelabelAction string
-
-const (
-	// RelabelReplace performs a regex replacement.
-	RelabelReplace RelabelAction = "replace"
-	// RelabelKeep drops targets for which the input does not match the regex.
-	RelabelKeep RelabelAction = "keep"
-	// RelabelDrop drops targets for which the input does match the regex.
-	RelabelDrop RelabelAction = "drop"
-	// RelabelHashMod sets a label to the modulus of a hash of labels.
-	RelabelHashMod RelabelAction = "hashmod"
-	// RelabelLabelMap copies labels to other labelnames based on a regex.
-	RelabelLabelMap RelabelAction = "labelmap"
-	// RelabelLabelDrop drops any label matching the regex.
-	RelabelLabelDrop RelabelAction = "labeldrop"
-	// RelabelLabelKeep drops any label not matching the regex.
-	RelabelLabelKeep RelabelAction = "labelkeep"
-)
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var s string
-	if err := unmarshal(&s); err != nil {
-		return err
-	}
-	switch act := RelabelAction(strings.ToLower(s)); act {
-	case RelabelReplace, RelabelKeep, RelabelDrop, RelabelHashMod, RelabelLabelMap, RelabelLabelDrop, RelabelLabelKeep:
-		*a = act
-		return nil
-	}
-	return fmt.Errorf("unknown relabel action %q", s)
-}
-
-// RelabelConfig is the configuration for relabeling of target label sets.
-type RelabelConfig struct {
-	// A list of labels from which values are taken and concatenated
-	// with the configured separator in order.
-	SourceLabels model.LabelNames `yaml:"source_labels,flow,omitempty"`
-	// Separator is the string between concatenated values from the source labels.
-	Separator string `yaml:"separator,omitempty"`
-	// Regex against which the concatenation is matched.
-	Regex Regexp `yaml:"regex,omitempty"`
-	// Modulus to take of the hash of concatenated values from the source labels.
-	Modulus uint64 `yaml:"modulus,omitempty"`
-	// TargetLabel is the label to which the resulting string is written in a replacement.
-	// Regexp interpolation is allowed for the replace action.
-	TargetLabel string `yaml:"target_label,omitempty"`
-	// Replacement is the regex replacement pattern to be used.
-	Replacement string `yaml:"replacement,omitempty"`
-	// Action is the action to be performed for the relabeling.
-	Action RelabelAction `yaml:"action,omitempty"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultRelabelConfig
-	type plain RelabelConfig
-	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-	if c.Regex.Regexp == nil {
-		c.Regex = MustNewRegexp("")
-	}
-	if c.Modulus == 0 && c.Action == RelabelHashMod {
-		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
-	}
-	if (c.Action == RelabelReplace || c.Action == RelabelHashMod) && c.TargetLabel == "" {
-		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
-	}
-	if c.Action == RelabelReplace && !relabelTarget.MatchString(c.TargetLabel) {
-		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
-	}
-	if c.Action == RelabelLabelMap && !relabelTarget.MatchString(c.Replacement) {
-		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
-	}
-	if c.Action == RelabelHashMod && !model.LabelName(c.TargetLabel).IsValid() {
-		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
-	}
-
-	if c.Action == RelabelLabelDrop || c.Action == RelabelLabelKeep {
-		if c.SourceLabels != nil ||
-			c.TargetLabel != DefaultRelabelConfig.TargetLabel ||
-			c.Modulus != DefaultRelabelConfig.Modulus ||
-			c.Separator != DefaultRelabelConfig.Separator ||
-			c.Replacement != DefaultRelabelConfig.Replacement {
-			return fmt.Errorf("%s action requires only 'regex', and no other fields", c.Action)
-		}
-	}
-
-	return nil
-}
-
-// Regexp encapsulates a regexp.Regexp and makes it YAML marshallable.
-type Regexp struct {
-	*regexp.Regexp
-	original string
-}
-
-// NewRegexp creates a new anchored Regexp and returns an error if the
-// passed-in regular expression does not compile.
-func NewRegexp(s string) (Regexp, error) {
-	regex, err := regexp.Compile("^(?:" + s + ")$")
-	return Regexp{
-		Regexp:   regex,
-		original: s,
-	}, err
-}
-
-// MustNewRegexp works like NewRegexp, but panics if the regular expression does not compile.
-func MustNewRegexp(s string) Regexp {
-	re, err := NewRegexp(s)
-	if err != nil {
-		panic(err)
-	}
-	return re
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var s string
-	if err := unmarshal(&s); err != nil {
-		return err
-	}
-	r, err := NewRegexp(s)
-	if err != nil {
-		return err
-	}
-	*re = r
-	return nil
-}
-
-// MarshalYAML implements the yaml.Marshaler interface.
-func (re Regexp) MarshalYAML() (interface{}, error) {
-	if re.original != "" {
-		return re.original, nil
-	}
-	return nil, nil
-}
-
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
-	URL                 *config_util.URL `yaml:"url"`
-	RemoteTimeout       model.Duration   `yaml:"remote_timeout,omitempty"`
-	WriteRelabelConfigs []*RelabelConfig `yaml:"write_relabel_configs,omitempty"`
+	URL                 *config_util.URL  `yaml:"url"`
+	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
+	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -632,6 +539,11 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	if c.URL == nil {
 		return fmt.Errorf("url for remote_write is empty")
 	}
+	for _, rlcfg := range c.WriteRelabelConfigs {
+		if rlcfg == nil {
+			return fmt.Errorf("empty or null relabeling rule in remote write config")
+		}
+	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
@@ -647,6 +559,9 @@ type QueueConfig struct {
 
 	// Max number of shards, i.e. amount of concurrency.
 	MaxShards int `yaml:"max_shards,omitempty"`
+
+	// Min number of shards, i.e. amount of concurrency.
+	MinShards int `yaml:"min_shards,omitempty"`
 
 	// Maximum number of samples per send.
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`

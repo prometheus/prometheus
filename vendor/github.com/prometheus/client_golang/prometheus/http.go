@@ -15,9 +15,7 @@ package prometheus
 
 import (
 	"bufio"
-	"bytes"
 	"compress/gzip"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -41,19 +39,10 @@ const (
 	acceptEncodingHeader  = "Accept-Encoding"
 )
 
-var bufPool sync.Pool
-
-func getBuf() *bytes.Buffer {
-	buf := bufPool.Get()
-	if buf == nil {
-		return &bytes.Buffer{}
-	}
-	return buf.(*bytes.Buffer)
-}
-
-func giveBuf(buf *bytes.Buffer) {
-	buf.Reset()
-	bufPool.Put(buf)
+var gzipPool = sync.Pool{
+	New: func() interface{} {
+		return gzip.NewWriter(nil)
+	},
 }
 
 // Handler returns an HTTP handler for the DefaultGatherer. It is
@@ -71,56 +60,38 @@ func Handler() http.Handler {
 // Deprecated: Use promhttp.HandlerFor(DefaultGatherer, promhttp.HandlerOpts{})
 // instead. See there for further documentation.
 func UninstrumentedHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	return http.HandlerFunc(func(rsp http.ResponseWriter, req *http.Request) {
 		mfs, err := DefaultGatherer.Gather()
 		if err != nil {
-			http.Error(w, "An error has occurred during metrics collection:\n\n"+err.Error(), http.StatusInternalServerError)
+			httpError(rsp, err)
 			return
 		}
 
 		contentType := expfmt.Negotiate(req.Header)
-		buf := getBuf()
-		defer giveBuf(buf)
-		writer, encoding := decorateWriter(req, buf)
-		enc := expfmt.NewEncoder(writer, contentType)
-		var lastErr error
+		header := rsp.Header()
+		header.Set(contentTypeHeader, string(contentType))
+
+		w := io.Writer(rsp)
+		if gzipAccepted(req.Header) {
+			header.Set(contentEncodingHeader, "gzip")
+			gz := gzipPool.Get().(*gzip.Writer)
+			defer gzipPool.Put(gz)
+
+			gz.Reset(w)
+			defer gz.Close()
+
+			w = gz
+		}
+
+		enc := expfmt.NewEncoder(w, contentType)
+
 		for _, mf := range mfs {
 			if err := enc.Encode(mf); err != nil {
-				lastErr = err
-				http.Error(w, "An error has occurred during metrics encoding:\n\n"+err.Error(), http.StatusInternalServerError)
+				httpError(rsp, err)
 				return
 			}
 		}
-		if closer, ok := writer.(io.Closer); ok {
-			closer.Close()
-		}
-		if lastErr != nil && buf.Len() == 0 {
-			http.Error(w, "No metrics encoded, last error:\n\n"+lastErr.Error(), http.StatusInternalServerError)
-			return
-		}
-		header := w.Header()
-		header.Set(contentTypeHeader, string(contentType))
-		header.Set(contentLengthHeader, fmt.Sprint(buf.Len()))
-		if encoding != "" {
-			header.Set(contentEncodingHeader, encoding)
-		}
-		w.Write(buf.Bytes())
 	})
-}
-
-// decorateWriter wraps a writer to handle gzip compression if requested.  It
-// returns the decorated writer and the appropriate "Content-Encoding" header
-// (which is empty if no compression is enabled).
-func decorateWriter(request *http.Request, writer io.Writer) (io.Writer, string) {
-	header := request.Header.Get(acceptEncodingHeader)
-	parts := strings.Split(header, ",")
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "gzip" || strings.HasPrefix(part, "gzip;") {
-			return gzip.NewWriter(writer), "gzip"
-		}
-	}
-	return writer, ""
 }
 
 var instLabels = []string{"method", "code"}
@@ -502,4 +473,32 @@ func sanitizeCode(s int) string {
 	default:
 		return strconv.Itoa(s)
 	}
+}
+
+// gzipAccepted returns whether the client will accept gzip-encoded content.
+func gzipAccepted(header http.Header) bool {
+	a := header.Get(acceptEncodingHeader)
+	parts := strings.Split(a, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "gzip" || strings.HasPrefix(part, "gzip;") {
+			return true
+		}
+	}
+	return false
+}
+
+// httpError removes any content-encoding header and then calls http.Error with
+// the provided error and http.StatusInternalServerErrer. Error contents is
+// supposed to be uncompressed plain text. However, same as with a plain
+// http.Error, any header settings will be void if the header has already been
+// sent. The error message will still be written to the writer, but it will
+// probably be of limited use.
+func httpError(rsp http.ResponseWriter, err error) {
+	rsp.Header().Del(contentEncodingHeader)
+	http.Error(
+		rsp,
+		"An error has occurred while serving metrics:\n\n"+err.Error(),
+		http.StatusInternalServerError,
+	)
 }

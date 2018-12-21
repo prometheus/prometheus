@@ -29,7 +29,7 @@ const tombstoneFilename = "tombstones"
 
 const (
 	// MagicTombstone is 4 bytes at the head of a tombstone file.
-	MagicTombstone = 0x130BA30
+	MagicTombstone = 0x0130BA30
 
 	tombstoneFormatV1 = 1
 )
@@ -41,6 +41,9 @@ type TombstoneReader interface {
 
 	// Iter calls the given function for each encountered interval.
 	Iter(func(uint64, Intervals) error) error
+
+	// Total returns the total count of tombstones.
+	Total() uint64
 
 	// Close any underlying resources
 	Close() error
@@ -110,10 +113,10 @@ type Stone struct {
 	intervals Intervals
 }
 
-func readTombstones(dir string) (*memTombstones, error) {
+func readTombstones(dir string) (TombstoneReader, error) {
 	b, err := ioutil.ReadFile(filepath.Join(dir, tombstoneFilename))
 	if os.IsNotExist(err) {
-		return NewMemTombstones(), nil
+		return newMemTombstones(), nil
 	} else if err != nil {
 		return nil, err
 	}
@@ -143,7 +146,7 @@ func readTombstones(dir string) (*memTombstones, error) {
 		return nil, errors.New("checksum did not match")
 	}
 
-	stonesMap := NewMemTombstones()
+	stonesMap := newMemTombstones()
 
 	for d.len() > 0 {
 		k := d.uvarint64()
@@ -164,7 +167,9 @@ type memTombstones struct {
 	mtx         sync.RWMutex
 }
 
-func NewMemTombstones() *memTombstones {
+// newMemTombstones creates new in memory TombstoneReader
+// that allows adding new intervals.
+func newMemTombstones() *memTombstones {
 	return &memTombstones{intvlGroups: make(map[uint64]Intervals)}
 }
 
@@ -185,6 +190,17 @@ func (t *memTombstones) Iter(f func(uint64, Intervals) error) error {
 	return nil
 }
 
+func (t *memTombstones) Total() uint64 {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	total := uint64(0)
+	for _, ivs := range t.intvlGroups {
+		total += uint64(len(ivs))
+	}
+	return total
+}
+
 // addInterval to an existing memTombstones
 func (t *memTombstones) addInterval(ref uint64, itvs ...Interval) {
 	t.mtx.Lock()
@@ -194,7 +210,7 @@ func (t *memTombstones) addInterval(ref uint64, itvs ...Interval) {
 	}
 }
 
-func (memTombstones) Close() error {
+func (*memTombstones) Close() error {
 	return nil
 }
 

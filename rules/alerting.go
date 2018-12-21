@@ -118,13 +118,15 @@ type AlertingRule struct {
 	labels labels.Labels
 	// Non-identifying key/value pairs.
 	annotations labels.Labels
-	// Time in seconds taken to evaluate rule.
-	evaluationDuration time.Duration
 	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
 	// only after the restoration.
 	restored bool
 	// Protects the below.
 	mtx sync.Mutex
+	// Time in seconds taken to evaluate rule.
+	evaluationDuration time.Duration
+	// Timestamp of last evaluation of rule.
+	evaluationTimestamp time.Time
 	// The health of the alerting rule.
 	health RuleHealth
 	// The last error seen by the alerting rule.
@@ -256,6 +258,20 @@ func (r *AlertingRule) GetEvaluationDuration() time.Duration {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	return r.evaluationDuration
+}
+
+// SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule was last evaluated.
+func (r *AlertingRule) SetEvaluationTimestamp(ts time.Time) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	r.evaluationTimestamp = ts
+}
+
+// GetEvaluationTimestamp returns the time the evaluation took place.
+func (r *AlertingRule) GetEvaluationTimestamp() time.Time {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	return r.evaluationTimestamp
 }
 
 // SetRestored updates the restoration state of the alerting rule.
@@ -469,7 +485,7 @@ func (r *AlertingRule) String() string {
 
 	byt, err := yaml.Marshal(ar)
 	if err != nil {
-		return fmt.Sprintf("error marshalling alerting rule: %s", err.Error())
+		return fmt.Sprintf("error marshaling alerting rule: %s", err.Error())
 	}
 
 	return string(byt)
@@ -484,27 +500,27 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		alertNameLabel:        model.LabelValue(r.name),
 	}
 
-	labels := make(map[string]string, len(r.labels))
+	labelsMap := make(map[string]string, len(r.labels))
 	for _, l := range r.labels {
-		labels[l.Name] = html_template.HTMLEscapeString(l.Value)
+		labelsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
 
-	annotations := make(map[string]string, len(r.annotations))
+	annotationsMap := make(map[string]string, len(r.annotations))
 	for _, l := range r.annotations {
-		annotations[l.Name] = html_template.HTMLEscapeString(l.Value)
+		annotationsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
 
 	ar := rulefmt.Rule{
 		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
 		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
 		For:         model.Duration(r.holdDuration),
-		Labels:      labels,
-		Annotations: annotations,
+		Labels:      labelsMap,
+		Annotations: annotationsMap,
 	}
 
 	byt, err := yaml.Marshal(ar)
 	if err != nil {
-		return html_template.HTML(fmt.Sprintf("error marshalling alerting rule: %q", html_template.HTMLEscapeString(err.Error())))
+		return html_template.HTML(fmt.Sprintf("error marshaling alerting rule: %q", html_template.HTMLEscapeString(err.Error())))
 	}
 	return html_template.HTML(byt)
 }

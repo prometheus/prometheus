@@ -222,7 +222,7 @@ Args:
   <ip>        IP address to ping.
   [<count>]   Number of packets to send
 $ ping 1.2.3.4 5
-Would ping: 1.2.3.4 with timeout 5s and count 0
+Would ping: 1.2.3.4 with timeout 5s and count 5
 ```
 
 From the following source:
@@ -461,7 +461,7 @@ Here are some examples of flags with various permutations:
 
     --name=NAME           // Flag(...).String()
     --name="Harry"        // Flag(...).Default("Harry").String()
-    --name=FULL-NAME      // flag(...).PlaceHolder("FULL-NAME").Default("Harry").String()
+    --name=FULL-NAME      // Flag(...).PlaceHolder("FULL-NAME").Default("Harry").String()
 
 ### Consuming all remaining arguments
 

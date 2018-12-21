@@ -38,6 +38,8 @@ const (
 
 	indexFormatV1 = 1
 	indexFormatV2 = 2
+
+	labelNameSeperator = "\xff"
 )
 
 type indexWriterSeries struct {
@@ -394,7 +396,7 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 	w.buf2.putBE32int(valt.Len())
 
 	// here we have an index for the symbol file if v2, otherwise it's an offset
-	for _, v := range valt.s {
+	for _, v := range valt.entries {
 		index, ok := w.symbols[v]
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", v)
@@ -542,13 +544,15 @@ type Reader struct {
 
 	// Cached hashmaps of section offsets.
 	labels   map[string]uint64
-	postings map[labels.Label]uint64
+	postings map[string]map[string]uint64
 	// Cache of read symbols. Strings that are returned when reading from the
 	// block are always backed by true strings held in here rather than
 	// strings that are backed by byte slices from the mmap'd index file. This
 	// prevents memory faults when applications work with read symbols after
-	// the block has been unmapped.
-	symbols map[uint32]string
+	// the block has been unmapped. The older format has sparse indexes so a map
+	// must be used, but the new format is not so we can use a slice.
+	symbols     map[uint32]string
+	symbolSlice []string
 
 	dec *Decoder
 
@@ -604,7 +608,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		c:        c,
 		symbols:  map[uint32]string{},
 		labels:   map[string]uint64{},
-		postings: map[labels.Label]uint64{},
+		postings: map[string]map[string]uint64{},
 		crc32:    newCRC32(),
 	}
 
@@ -629,28 +633,42 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 	var err error
 
+	// Use the strings already allocated by symbols, rather than
+	// re-allocating them again below.
+	symbols := make(map[string]string, len(r.symbols)+len(r.symbolSlice))
+	for _, s := range r.symbols {
+		symbols[s] = s
+	}
+	for _, s := range r.symbolSlice {
+		symbols[s] = s
+	}
+
 	err = r.readOffsetTable(r.toc.labelIndicesTable, func(key []string, off uint64) error {
 		if len(key) != 1 {
 			return errors.Errorf("unexpected key length %d", len(key))
 		}
-		r.labels[key[0]] = off
+		r.labels[symbols[key[0]]] = off
 		return nil
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "read label index table")
 	}
+	r.postings[""] = map[string]uint64{}
 	err = r.readOffsetTable(r.toc.postingsTable, func(key []string, off uint64) error {
 		if len(key) != 2 {
 			return errors.Errorf("unexpected key length %d", len(key))
 		}
-		r.postings[labels.Label{Name: key[0], Value: key[1]}] = off
+		if _, ok := r.postings[key[0]]; !ok {
+			r.postings[symbols[key[0]]] = map[string]uint64{}
+		}
+		r.postings[key[0]][symbols[key[1]]] = off
 		return nil
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "read postings table")
 	}
 
-	r.dec = &Decoder{symbols: r.symbols}
+	r.dec = &Decoder{lookupSymbol: r.lookupSymbol}
 
 	return r, nil
 }
@@ -670,14 +688,16 @@ type Range struct {
 func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
 	m := map[labels.Label]Range{}
 
-	for l, start := range r.postings {
-		d := r.decbufAt(int(start))
-		if d.err() != nil {
-			return nil, d.err()
-		}
-		m[l] = Range{
-			Start: int64(start) + 4,
-			End:   int64(start) + 4 + int64(d.len()),
+	for k, e := range r.postings {
+		for v, start := range e {
+			d := r.decbufAt(int(start))
+			if d.err() != nil {
+				return nil, d.err()
+			}
+			m[labels.Label{Name: k, Value: v}] = Range{
+				Start: int64(start) + 4,
+				End:   int64(start) + 4 + int64(d.len()),
+			}
 		}
 	}
 	return m, nil
@@ -775,18 +795,17 @@ func (r *Reader) readSymbols(off int) error {
 		basePos = uint32(off) + 4
 		nextPos = basePos + uint32(origLen-d.len())
 	)
-
 	if r.version == 2 {
-		nextPos = 0
+		r.symbolSlice = make([]string, 0, cnt)
 	}
 
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
 		s := d.uvarintStr()
-		r.symbols[nextPos] = s
 
 		if r.version == 2 {
-			nextPos++
+			r.symbolSlice = append(r.symbolSlice, s)
 		} else {
+			r.symbols[nextPos] = s
 			nextPos = basePos + uint32(origLen-d.len())
 		}
 		cnt--
@@ -826,6 +845,9 @@ func (r *Reader) Close() error {
 }
 
 func (r *Reader) lookupSymbol(o uint32) (string, error) {
+	if int(o) < len(r.symbolSlice) {
+		return r.symbolSlice[o], nil
+	}
 	s, ok := r.symbols[o]
 	if !ok {
 		return "", errors.Errorf("unknown symbol offset %d", o)
@@ -840,19 +862,28 @@ func (r *Reader) Symbols() (map[string]struct{}, error) {
 	for _, s := range r.symbols {
 		res[s] = struct{}{}
 	}
+	for _, s := range r.symbolSlice {
+		res[s] = struct{}{}
+	}
 	return res, nil
 }
 
-// SymbolTable returns the symbol table that is used to resolve symbol references.
-func (r *Reader) SymbolTable() map[uint32]string {
-	return r.symbols
+// SymbolTableSize returns the symbol table that is used to resolve symbol references.
+func (r *Reader) SymbolTableSize() uint64 {
+	var size int
+	for _, s := range r.symbols {
+		size += len(s) + 8
+	}
+	for _, s := range r.symbolSlice {
+		size += len(s) + 8
+	}
+	return uint64(size)
 }
 
 // LabelValues returns value tuples that exist for the given label name tuples.
 func (r *Reader) LabelValues(names ...string) (StringTuples, error) {
-	const sep = "\xff"
 
-	key := strings.Join(names, sep)
+	key := strings.Join(names, labelNameSeperator)
 	off, ok := r.labels[key]
 	if !ok {
 		// XXX(fabxc): hot fix. Should return a partial data error and handle cases
@@ -870,9 +901,9 @@ func (r *Reader) LabelValues(names ...string) (StringTuples, error) {
 		return nil, errors.Wrap(d.err(), "read label value index")
 	}
 	st := &serializedStringTuples{
-		l:      nc,
-		b:      d.get(),
-		lookup: r.lookupSymbol,
+		idsCount: nc,
+		idsBytes: d.get(),
+		lookup:   r.lookupSymbol,
 	}
 	return st, nil
 }
@@ -882,14 +913,12 @@ type emptyStringTuples struct{}
 func (emptyStringTuples) At(i int) ([]string, error) { return nil, nil }
 func (emptyStringTuples) Len() int                   { return 0 }
 
-// LabelIndices returns a for which labels or label tuples value indices exist.
+// LabelIndices returns a slice of label names for which labels or label tuples value indices exist.
+// NOTE: This is deprecated. Use `LabelNames()` instead.
 func (r *Reader) LabelIndices() ([][]string, error) {
-	const sep = "\xff"
-
 	res := [][]string{}
-
 	for s := range r.labels {
-		res = append(res, strings.Split(s, sep))
+		res = append(res, strings.Split(s, labelNameSeperator))
 	}
 	return res, nil
 }
@@ -911,10 +940,11 @@ func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) err
 
 // Postings returns a postings list for the given label pair.
 func (r *Reader) Postings(name, value string) (Postings, error) {
-	off, ok := r.postings[labels.Label{
-		Name:  name,
-		Value: value,
-	}]
+	e, ok := r.postings[name]
+	if !ok {
+		return EmptyPostings(), nil
+	}
+	off, ok := e[value]
 	if !ok {
 		return EmptyPostings(), nil
 	}
@@ -935,34 +965,58 @@ func (r *Reader) SortedPostings(p Postings) Postings {
 	return p
 }
 
-type stringTuples struct {
-	l int      // tuple length
-	s []string // flattened tuple entries
+// LabelNames returns all the unique label names present in the index.
+func (r *Reader) LabelNames() ([]string, error) {
+	labelNamesMap := make(map[string]struct{}, len(r.labels))
+	for key := range r.labels {
+		// 'key' contains the label names concatenated with the
+		// delimiter 'labelNameSeperator'.
+		names := strings.Split(key, labelNameSeperator)
+		for _, name := range names {
+			if name == allPostingsKey.Name {
+				// This is not from any metric.
+				// It is basically an empty label name.
+				continue
+			}
+			labelNamesMap[name] = struct{}{}
+		}
+	}
+	labelNames := make([]string, 0, len(labelNamesMap))
+	for name := range labelNamesMap {
+		labelNames = append(labelNames, name)
+	}
+	sort.Strings(labelNames)
+	return labelNames, nil
 }
 
-func NewStringTuples(s []string, l int) (*stringTuples, error) {
-	if len(s)%l != 0 {
+type stringTuples struct {
+	length  int      // tuple length
+	entries []string // flattened tuple entries
+}
+
+func NewStringTuples(entries []string, length int) (*stringTuples, error) {
+	if len(entries)%length != 0 {
 		return nil, errors.Wrap(errInvalidSize, "string tuple list")
 	}
-	return &stringTuples{s: s, l: l}, nil
+	return &stringTuples{entries: entries, length: length}, nil
 }
 
-func (t *stringTuples) Len() int                   { return len(t.s) / t.l }
-func (t *stringTuples) At(i int) ([]string, error) { return t.s[i : i+t.l], nil }
+func (t *stringTuples) Len() int                   { return len(t.entries) / t.length }
+func (t *stringTuples) At(i int) ([]string, error) { return t.entries[i : i+t.length], nil }
 
 func (t *stringTuples) Swap(i, j int) {
-	c := make([]string, t.l)
-	copy(c, t.s[i:i+t.l])
+	c := make([]string, t.length)
+	copy(c, t.entries[i:i+t.length])
 
-	for k := 0; k < t.l; k++ {
-		t.s[i+k] = t.s[j+k]
-		t.s[j+k] = c[k]
+	for k := 0; k < t.length; k++ {
+		t.entries[i+k] = t.entries[j+k]
+		t.entries[j+k] = c[k]
 	}
 }
 
 func (t *stringTuples) Less(i, j int) bool {
-	for k := 0; k < t.l; k++ {
-		d := strings.Compare(t.s[i+k], t.s[j+k])
+	for k := 0; k < t.length; k++ {
+		d := strings.Compare(t.entries[i+k], t.entries[j+k])
 
 		if d < 0 {
 			return true
@@ -975,23 +1029,23 @@ func (t *stringTuples) Less(i, j int) bool {
 }
 
 type serializedStringTuples struct {
-	l      int
-	b      []byte
-	lookup func(uint32) (string, error)
+	idsCount int
+	idsBytes []byte // bytes containing the ids pointing to the string in the lookup table.
+	lookup   func(uint32) (string, error)
 }
 
 func (t *serializedStringTuples) Len() int {
-	return len(t.b) / (4 * t.l)
+	return len(t.idsBytes) / (4 * t.idsCount)
 }
 
 func (t *serializedStringTuples) At(i int) ([]string, error) {
-	if len(t.b) < (i+t.l)*4 {
+	if len(t.idsBytes) < (i+t.idsCount)*4 {
 		return nil, errInvalidSize
 	}
-	res := make([]string, 0, t.l)
+	res := make([]string, 0, t.idsCount)
 
-	for k := 0; k < t.l; k++ {
-		offset := binary.BigEndian.Uint32(t.b[(i+k)*4:])
+	for k := 0; k < t.idsCount; k++ {
+		offset := binary.BigEndian.Uint32(t.idsBytes[(i+k)*4:])
 
 		s, err := t.lookup(offset)
 		if err != nil {
@@ -1008,21 +1062,7 @@ func (t *serializedStringTuples) At(i int) ([]string, error) {
 // It currently does not contain decoding methods for all entry types but can be extended
 // by them if there's demand.
 type Decoder struct {
-	symbols map[uint32]string
-}
-
-func (dec *Decoder) lookupSymbol(o uint32) (string, error) {
-	s, ok := dec.symbols[o]
-	if !ok {
-		return "", errors.Errorf("unknown symbol offset %d", o)
-	}
-	return s, nil
-}
-
-// SetSymbolTable set the symbol table to be used for lookups when decoding series
-// and label indices
-func (dec *Decoder) SetSymbolTable(t map[uint32]string) {
-	dec.symbols = t
+	lookupSymbol func(uint32) (string, error)
 }
 
 // Postings returns a postings list for b and its number of elements.

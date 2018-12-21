@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	pkgrelabel "github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/relabel"
 )
@@ -144,12 +145,12 @@ type QueueManager struct {
 	flushDeadline  time.Duration
 	cfg            config.QueueConfig
 	externalLabels model.LabelSet
-	relabelConfigs []*config.RelabelConfig
+	relabelConfigs []*pkgrelabel.Config
 	client         StorageClient
 	queueName      string
 	logLimiter     *rate.Limiter
 
-	shardsMtx   sync.Mutex
+	shardsMtx   sync.RWMutex
 	shards      *shards
 	numShards   int
 	reshardChan chan int
@@ -161,7 +162,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient, flushDeadline time.Duration) *QueueManager {
+func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*pkgrelabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	} else {
@@ -177,7 +178,7 @@ func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels m
 		queueName:      client.Name(),
 
 		logLimiter:  rate.NewLimiter(logRateLimit, logBurst),
-		numShards:   1,
+		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
 		quit:        make(chan struct{}),
 
@@ -189,7 +190,7 @@ func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels m
 	numShards.WithLabelValues(t.queueName).Set(float64(t.numShards))
 	shardCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.Capacity))
 
-	// Initialise counter labels to zero.
+	// Initialize counter labels to zero.
 	sentBatchDuration.WithLabelValues(t.queueName)
 	succeededSamplesTotal.WithLabelValues(t.queueName)
 	failedSamplesTotal.WithLabelValues(t.queueName)
@@ -218,9 +219,9 @@ func (t *QueueManager) Append(s *model.Sample) error {
 		return nil
 	}
 
-	t.shardsMtx.Lock()
+	t.shardsMtx.RLock()
 	enqueued := t.shards.enqueue(&snew)
-	t.shardsMtx.Unlock()
+	t.shardsMtx.RUnlock()
 
 	if enqueued {
 		queueLength.WithLabelValues(t.queueName).Inc()
@@ -326,8 +327,8 @@ func (t *QueueManager) calculateDesiredShards() {
 	numShards := int(math.Ceil(desiredShards))
 	if numShards > t.cfg.MaxShards {
 		numShards = t.cfg.MaxShards
-	} else if numShards < 1 {
-		numShards = 1
+	} else if numShards < t.cfg.MinShards {
+		numShards = t.cfg.MinShards
 	}
 	if numShards == t.numShards {
 		return

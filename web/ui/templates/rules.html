@@ -10,6 +10,7 @@
         <thead>
           <tr>
             <td colspan="3"><h2><a href="#{{reReplaceAll "([^a-zA-Z0-9])" "$1" .Name}}" name="{{reReplaceAll "([^a-zA-Z0-9])" "$1" .Name}}">{{.Name}}</h2></td>
+            <td><h2>{{if .GetEvaluationTimestamp.IsZero}}Never{{else}}{{since .GetEvaluationTimestamp}} ago{{end}}</h2></td>
             <td><h2>{{humanizeDuration .GetEvaluationDuration.Seconds}}</h2></td>
           </tr>
         </thead>
@@ -18,6 +19,7 @@
             <td style="font-weight:bold">Rule</td>
             <td style="font-weight:bold">State</td>
             <td style="font-weight:bold">Error</td>
+            <td style="font-weight:bold">Last Evaluation</td>
             <td style="font-weight:bold">Evaluation Time</td>
           </tr>
           {{range .Rules}}
@@ -32,6 +34,9 @@
               {{if .LastError}}
               <span class="alert alert-danger state_indicator">{{.LastError}}</span>
               {{end}}
+            </td>
+            <td>
+              {{if .GetEvaluationTimestamp.IsZero}}Never{{else}}{{since .GetEvaluationTimestamp}} ago{{end}}
             </td>
             <td>{{humanizeDuration .GetEvaluationDuration.Seconds}}</td>
           </tr>

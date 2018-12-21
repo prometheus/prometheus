@@ -322,7 +322,7 @@ func (w *SegmentWAL) putBuffer(b *encbuf) {
 }
 
 // Truncate deletes the values prior to mint and the series which the keep function
-// does not indiciate to preserve.
+// does not indicate to preserve.
 func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 	// The last segment is always active.
 	if len(w.files) < 2 {
@@ -749,15 +749,6 @@ func (w *SegmentWAL) Close() error {
 
 	return errors.Wrapf(w.dirFile.Close(), "closing WAL dir %s", w.dirFile.Name())
 }
-
-const (
-	minSectorSize = 512
-
-	// walPageBytes is the alignment for flushing records to the backing Writer.
-	// It should be a multiple of the minimum sector size so that WAL can safely
-	// distinguish between torn writes and ordinary data corruption.
-	walPageBytes = 16 * minSectorSize
-)
 
 func (w *SegmentWAL) write(t WALEntryType, flag uint8, buf []byte) error {
 	// Cut to the next segment if the entry exceeds the file size unless it would also
