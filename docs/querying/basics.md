@@ -170,6 +170,14 @@ The same works for range vectors. This returns the 5-minutes rate that
 
     rate(http_requests_total[5m] offset 1w)
 
+## Subquery
+
+Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector. 
+
+Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
+
+* `<resolution>` is optional. Default is the global evaluation interval.
+
 ## Operators
 
 Prometheus supports many binary and aggregation operators. These are described
