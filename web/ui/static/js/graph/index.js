@@ -405,6 +405,7 @@ Prometheus.Graph.prototype.getOrSetEndDate = function() {
 Prometheus.Graph.prototype.setEndDate = function(date) {
   var self = this;
   self.endDate.data('DateTimePicker').date(date);
+  self.moment.data('DateTimePicker').date(date);
 };
 
 Prometheus.Graph.prototype.increaseEnd = function() {
@@ -441,6 +442,7 @@ Prometheus.Graph.prototype.getOrSetMoment = function() {
 Prometheus.Graph.prototype.setMoment = function(date) {
   var self = this;
   self.moment.data('DateTimePicker').date(date);
+  self.endDate.data('DateTimePicker').date(date);
 };
 
 Prometheus.Graph.prototype.increaseMoment = function() {
