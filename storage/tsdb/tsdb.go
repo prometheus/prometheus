@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 	"unsafe"
@@ -23,7 +22,6 @@ import (
 	"github.com/alecthomas/units"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -190,9 +188,8 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	walSegmentSize := int(opts.WALSegmentSize)
 	if walSegmentSize != 0 {
 		if walSegmentSize < 10*1024*1024 || walSegmentSize > 256*1024*1024 {
-			return nil, errors.Errorf("tsdb.Options.WALSegmentSize must be set between 10MB and 256MB")
+			return nil, errors.New("tsdb.Options.WALSegmentSize must be set between 10MB and 256MB")
 		}
-		level.Info(l).Log("msg", fmt.Sprintf("tsdb.Options.WALSegmentSize set by flag value %s : %d bytes", opts.WALSegmentSize.String(), walSegmentSize))
 	}
 
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
