@@ -104,7 +104,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: pod, service, endpoints, node)")
+		return fmt.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
 	}
 	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
 		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
@@ -137,7 +137,7 @@ func init() {
 	prometheus.MustRegister(eventCount)
 
 	// Initialize metric vectors.
-	for _, role := range []string{"endpoints", "node", "pod", "service"} {
+	for _, role := range []string{"endpoints", "node", "pod", "service", "ingress"} {
 		for _, evt := range []string{"add", "delete", "update"} {
 			eventCount.WithLabelValues(role, evt)
 		}
