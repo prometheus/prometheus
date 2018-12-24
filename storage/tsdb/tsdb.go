@@ -121,7 +121,7 @@ type Options struct {
 	// The maximum timestamp range of compacted blocks.
 	MaxBlockDuration model.Duration
 
-	// The maximum size of each WAL segment files
+	// The maximum size of each WAL segment file.
 	WALSegmentSize units.Base2Bytes
 
 	// Duration for how long to retain data.
