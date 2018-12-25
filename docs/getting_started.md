@@ -222,8 +222,7 @@ groups:
     expr: avg(rate(rpc_durations_seconds_count[5m])) by (job, service)
 ```
 
-To make Prometheus pick up this new rule, add a `rule_files` statement to the
-`global` configuration section in your `prometheus.yml`. The config should now
+To make Prometheus pick up this new rule, add a `rule_files` statement in your `prometheus.yml`. The config should now
 look like this:
 
 ```yaml
