@@ -123,9 +123,31 @@ type apiFuncResult struct {
 }
 
 // Enables cross-site script calls.
-func setCORS(w http.ResponseWriter, h map[string]string) {
-	for k, v := range h {
+func setCORS(w http.ResponseWriter, o []string, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return
+	}
+
+	headers := map[string]string{
+		"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
+		"Access-Control-Allow-Methods":  "GET, POST, OPTIONS, DELETE",
+		"Access-Control-Expose-Headers": "Date",
+	}
+
+	for k, v := range headers {
 		w.Header().Set(k, v)
+	}
+
+	if len(o) == 0 {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+
+	for _, allowedOrigin := range o {
+		if origin == allowedOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			break
+		}
 	}
 }
 
@@ -158,7 +180,7 @@ type API struct {
 	logger                log.Logger
 	remoteReadSampleLimit int
 	remoteReadGate        *gate.Gate
-	headers               map[string]string
+	CORSOrigins           []string
 }
 
 func init() {
@@ -181,7 +203,7 @@ func NewAPI(
 	rr rulesRetriever,
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
-	headers map[string]string,
+	CORSOrigins []string,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -199,7 +221,7 @@ func NewAPI(
 		remoteReadSampleLimit: remoteReadSampleLimit,
 		remoteReadGate:        gate.New(remoteReadConcurrencyLimit),
 		logger:                logger,
-		headers:               headers,
+		CORSOrigins:           CORSOrigins,
 	}
 }
 
@@ -207,7 +229,7 @@ func NewAPI(
 func (api *API) Register(r *route.Router) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			setCORS(w, api.headers)
+			setCORS(w, api.CORSOrigins, r)
 			result := f(r)
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)

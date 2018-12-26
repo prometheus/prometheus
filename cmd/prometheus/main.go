@@ -206,7 +206,7 @@ func main() {
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
 	a.Flag("web.cors.origin", "CORS origin to use").
-		Default("*").StringVar(&cfg.web.CORSOrigin)
+		PlaceHolder("<URL>").StringsVar(&cfg.web.CORSOrigins)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 

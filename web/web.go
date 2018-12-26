@@ -138,7 +138,6 @@ type Handler struct {
 	externalLabels model.LabelSet
 	mtx            sync.RWMutex
 	now            func() model.Time
-	headers        map[string]string
 
 	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
@@ -176,7 +175,7 @@ type Options struct {
 	Flags         map[string]string
 
 	ListenAddress              string
-	CORSOrigin                 string
+	CORSOrigins                []string
 	ReadTimeout                time.Duration
 	MaxConnections             int
 	ExternalURL                *url.URL
@@ -244,13 +243,6 @@ func New(logger log.Logger, o *Options) *Handler {
 		ready: 0,
 	}
 
-	h.headers = map[string]string{
-		"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
-		"Access-Control-Allow-Methods":  "GET, OPTIONS",
-		"Access-Control-Allow-Origin":   o.CORSOrigin,
-		"Access-Control-Expose-Headers": "Date",
-	}
-
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
 		func() config.Config {
 			h.mtx.RLock()
@@ -270,7 +262,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.ruleManager,
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
-		h.headers,
+		h.options.CORSOrigins,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -353,9 +345,31 @@ func New(logger log.Logger, o *Options) *Handler {
 }
 
 // Enables cross-site script calls.
-func setCORS(w http.ResponseWriter, h map[string]string) {
-	for k, v := range h {
+func setCORS(w http.ResponseWriter, o []string, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return
+	}
+
+	headers := map[string]string{
+		"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
+		"Access-Control-Allow-Methods":  "GET, POST, OPTIONS, DELETE",
+		"Access-Control-Expose-Headers": "Date",
+	}
+
+	for k, v := range headers {
 		w.Header().Set(k, v)
+	}
+
+	if len(o) == 0 {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+
+	for _, allowedOrigin := range o {
+		if origin == allowedOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			break
+		}
 	}
 }
 
@@ -479,7 +493,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			setCORS(w, h.headers)
+			setCORS(w, h.options.CORSOrigins, r)
 			hhFunc(w, r)
 		}),
 	))
