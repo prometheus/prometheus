@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:generate go get github.com/cznic/golex
+//go:generate go get -u modernc.org/golex
 //go:generate golex -o=promlex.l.go promlex.l
 
 package textparse

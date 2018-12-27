@@ -351,6 +351,17 @@ func (p *parser) expr() Expr {
 		// If the next token is not an operator the expression is done.
 		op := p.peek().typ
 		if !op.isOperator() {
+			// Check for subquery.
+			if op == itemLeftBracket {
+				expr = p.subqueryOrRangeSelector(expr, false)
+				if s, ok := expr.(*SubqueryExpr); ok {
+					// Parse optional offset.
+					if p.peek().typ == itemOffset {
+						offset := p.offset()
+						s.Offset = offset
+					}
+				}
+			}
 			return expr
 		}
 		p.next() // Consume operator.
@@ -471,11 +482,7 @@ func (p *parser) unaryExpr() Expr {
 
 	// Expression might be followed by a range selector.
 	if p.peek().typ == itemLeftBracket {
-		vs, ok := e.(*VectorSelector)
-		if !ok {
-			p.errorf("range specification must be preceded by a metric selector, but follows a %T instead", e)
-		}
-		e = p.rangeSelector(vs)
+		e = p.subqueryOrRangeSelector(e, true)
 	}
 
 	// Parse optional offset.
@@ -487,6 +494,8 @@ func (p *parser) unaryExpr() Expr {
 			s.Offset = offset
 		case *MatrixSelector:
 			s.Offset = offset
+		case *SubqueryExpr:
+			s.Offset = offset
 		default:
 			p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
 		}
@@ -495,13 +504,17 @@ func (p *parser) unaryExpr() Expr {
 	return e
 }
 
-// rangeSelector parses a Matrix (a.k.a. range) selector based on a given
-// Vector selector.
+// subqueryOrRangeSelector parses a Subquery based on given Expr (or)
+// a Matrix (a.k.a. range) selector based on a given Vector selector.
 //
-//		<Vector_selector> '[' <duration> ']'
+//		<Vector_selector> '[' <duration> ']' | <Vector_selector> '[' <duration> ':' [<duration>] ']'
 //
-func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
-	const ctx = "range selector"
+func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
+	ctx := "subquery selector"
+	if checkRange {
+		ctx = "range/subquery selector"
+	}
+
 	p.next()
 
 	var erange time.Duration
@@ -513,14 +526,43 @@ func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
 		p.error(err)
 	}
 
-	p.expect(itemRightBracket, ctx)
-
-	e := &MatrixSelector{
-		Name:          vs.Name,
-		LabelMatchers: vs.LabelMatchers,
-		Range:         erange,
+	var itm item
+	if checkRange {
+		itm = p.expectOneOf(itemRightBracket, itemColon, ctx)
+		if itm.typ == itemRightBracket {
+			// Range selector.
+			vs, ok := expr.(*VectorSelector)
+			if !ok {
+				p.errorf("range specification must be preceded by a metric selector, but follows a %T instead", expr)
+			}
+			return &MatrixSelector{
+				Name:          vs.Name,
+				LabelMatchers: vs.LabelMatchers,
+				Range:         erange,
+			}
+		}
+	} else {
+		itm = p.expect(itemColon, ctx)
 	}
-	return e
+
+	// Subquery.
+	var estep time.Duration
+
+	itm = p.expectOneOf(itemRightBracket, itemDuration, ctx)
+	if itm.typ == itemDuration {
+		estepStr := itm.val
+		estep, err = parseDuration(estepStr)
+		if err != nil {
+			p.error(err)
+		}
+		p.expect(itemRightBracket, ctx)
+	}
+
+	return &SubqueryExpr{
+		Expr:  expr,
+		Range: erange,
+		Step:  estep,
+	}
 }
 
 // number parses a number.
@@ -998,6 +1040,12 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		}
 		if t := p.checkType(n.Expr); t != ValueTypeScalar && t != ValueTypeVector {
 			p.errorf("unary expression only allowed on expressions of type scalar or instant vector, got %q", documentedType(t))
+		}
+
+	case *SubqueryExpr:
+		ty := p.checkType(n.Expr)
+		if ty != ValueTypeVector {
+			p.errorf("subquery is only allowed on instant vector, got %s in %q instead", ty, n.String())
 		}
 
 	case *NumberLiteral, *MatrixSelector, *StringLiteral, *VectorSelector:

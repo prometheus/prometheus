@@ -116,6 +116,14 @@ type MatrixSelector struct {
 	series              []storage.Series
 }
 
+// SubqueryExpr represents a subquery.
+type SubqueryExpr struct {
+	Expr   Expr
+	Range  time.Duration
+	Offset time.Duration
+	Step   time.Duration
+}
+
 // NumberLiteral represents a number.
 type NumberLiteral struct {
 	Val float64
@@ -153,6 +161,7 @@ type VectorSelector struct {
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
 func (e *Call) Type() ValueType           { return e.Func.ReturnType }
 func (e *MatrixSelector) Type() ValueType { return ValueTypeMatrix }
+func (e *SubqueryExpr) Type() ValueType   { return ValueTypeMatrix }
 func (e *NumberLiteral) Type() ValueType  { return ValueTypeScalar }
 func (e *ParenExpr) Type() ValueType      { return e.Expr.Type() }
 func (e *StringLiteral) Type() ValueType  { return ValueTypeString }
@@ -169,6 +178,7 @@ func (*AggregateExpr) expr()  {}
 func (*BinaryExpr) expr()     {}
 func (*Call) expr()           {}
 func (*MatrixSelector) expr() {}
+func (*SubqueryExpr) expr()   {}
 func (*NumberLiteral) expr()  {}
 func (*ParenExpr) expr()      {}
 func (*StringLiteral) expr()  {}
@@ -264,6 +274,11 @@ func Walk(v Visitor, node Node, path []Node) error {
 
 	case *Call:
 		if err := Walk(v, n.Args, path); err != nil {
+			return err
+		}
+
+	case *SubqueryExpr:
+		if err := Walk(v, n.Expr, path); err != nil {
 			return err
 		}
 

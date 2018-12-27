@@ -515,7 +515,7 @@ func (t *Test) clear() {
 		Logger:        nil,
 		Reg:           nil,
 		MaxConcurrent: 20,
-		MaxSamples:    1000,
+		MaxSamples:    10000,
 		Timeout:       100 * time.Second,
 	}
 
