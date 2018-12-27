@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Callback func that return the oldest timestamp stored in a storage.
+// startTimeCallback is a callback func that return the oldest timestamp stored in a storage.
 type startTimeCallback func() (int64, error)
 
 // Storage represents all the remote read and write endpoints.  It implements
