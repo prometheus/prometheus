@@ -1,5 +1,6 @@
 ## master / unreleased
  - [CHANGE] New `WALSegmentSize` option to override the `DefaultOptions.WALSegmentSize`. Added to allow using smaller wal files. For example using tmpfs on a RPI to minimise the SD card wear out from the constant WAL writes. As part of this change the `DefaultOptions.WALSegmentSize` constant was also exposed.
+ - [REMOVED] `PrefixMatcher` is considered unused so was removed.
  - [CLEANUP] `Options.WALFlushInterval` is removed as it wasn't used anywhere.
 
 ## 0.3.1
