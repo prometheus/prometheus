@@ -33,6 +33,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb"
+	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -48,6 +49,10 @@ func main() {
 		listCmd              = cli.Command("ls", "list db blocks")
 		listCmdHumanReadable = listCmd.Flag("human-readable", "print human readable values").Short('h').Bool()
 		listPath             = listCmd.Arg("db path", "database path (default is "+filepath.Join("benchout", "storage")+")").Default(filepath.Join("benchout", "storage")).String()
+		analyzeCmd           = cli.Command("analyze", "analyze churn, label pair cardinality.")
+		analyzePath          = analyzeCmd.Arg("db path", "database path (default is "+filepath.Join("benchout", "storage")+")").Default(filepath.Join("benchout", "storage")).String()
+		analyzeBlockId       = analyzeCmd.Arg("block id", "block to analyze (default is the last block)").String()
+		analyzeLimit         = analyzeCmd.Flag("limit", "how many items to show in each list").Default("20").Int()
 	)
 
 	switch kingpin.MustParse(cli.Parse(os.Args[1:])) {
@@ -64,6 +69,27 @@ func main() {
 			exitWithError(err)
 		}
 		printBlocks(db.Blocks(), listCmdHumanReadable)
+	case analyzeCmd.FullCommand():
+		db, err := tsdb.Open(*analyzePath, nil, nil, nil)
+		if err != nil {
+			exitWithError(err)
+		}
+		blocks := db.Blocks()
+		var block *tsdb.Block
+		if *analyzeBlockId != "" {
+			for _, b := range blocks {
+				if b.Meta().ULID.String() == *analyzeBlockId {
+					block = b
+					break
+				}
+			}
+		} else if len(blocks) > 0 {
+			block = blocks[len(blocks)-1]
+		}
+		if block == nil {
+			exitWithError(fmt.Errorf("Block not found"))
+		}
+		analyzeBlock(block, *analyzeLimit)
 	}
 	flag.CommandLine.Set("log.level", "debug")
 }
@@ -382,4 +408,131 @@ func getFormatedTime(timestamp int64, humanReadable *bool) string {
 		return time.Unix(timestamp/1000, 0).String()
 	}
 	return strconv.FormatInt(timestamp, 10)
+}
+
+func analyzeBlock(b *tsdb.Block, limit int) {
+	fmt.Printf("Block path: %s\n", b.Dir())
+	meta := b.Meta()
+	// Presume 1ms resolution that Prometheus uses.
+	fmt.Printf("Duration: %s\n", (time.Duration(meta.MaxTime-meta.MinTime) * 1e6).String())
+	fmt.Printf("Series: %d\n", meta.Stats.NumSeries)
+	ir, err := b.Index()
+	if err != nil {
+		exitWithError(err)
+	}
+	defer ir.Close()
+
+	allLabelNames, err := ir.LabelNames()
+	if err != nil {
+		exitWithError(err)
+	}
+	fmt.Printf("Label names: %d\n", len(allLabelNames))
+
+	type postingInfo struct {
+		key    string
+		metric uint64
+	}
+	postingInfos := []postingInfo{}
+
+	printInfo := func(postingInfos []postingInfo) {
+		sort.Slice(postingInfos, func(i, j int) bool { return postingInfos[i].metric > postingInfos[j].metric })
+
+		for i, pc := range postingInfos {
+			fmt.Printf("%d %s\n", pc.metric, pc.key)
+			if i >= limit {
+				break
+			}
+		}
+	}
+
+	labelsUncovered := map[string]uint64{}
+	labelpairsUncovered := map[string]uint64{}
+	labelpairsCount := map[string]uint64{}
+	entries := 0
+	p, err := ir.Postings("", "") // The special all key.
+	if err != nil {
+		exitWithError(err)
+	}
+	lbls := labels.Labels{}
+	chks := []chunks.Meta{}
+	for p.Next() {
+		err = ir.Series(p.At(), &lbls, &chks)
+		// Amount of the block time range not covered by this series.
+		uncovered := uint64(meta.MaxTime-meta.MinTime) - uint64(chks[len(chks)-1].MaxTime-chks[0].MinTime)
+		for _, lbl := range lbls {
+			key := lbl.Name + "=" + lbl.Value
+			labelsUncovered[lbl.Name] += uncovered
+			labelpairsUncovered[key] += uncovered
+			labelpairsCount[key] += 1
+			entries += 1
+		}
+	}
+	if p.Err() != nil {
+		exitWithError(p.Err())
+	}
+	fmt.Printf("Postings (unique label pairs): %d\n", len(labelpairsUncovered))
+	fmt.Printf("Postings entries (total label pairs): %d\n", entries)
+
+	postingInfos = postingInfos[:0]
+	for k, m := range labelpairsUncovered {
+		postingInfos = append(postingInfos, postingInfo{k, uint64(float64(m) / float64(meta.MaxTime-meta.MinTime))})
+	}
+
+	fmt.Printf("\nLabel pairs most involved in churning:\n")
+	printInfo(postingInfos)
+
+	postingInfos = postingInfos[:0]
+	for k, m := range labelsUncovered {
+		postingInfos = append(postingInfos, postingInfo{k, uint64(float64(m) / float64(meta.MaxTime-meta.MinTime))})
+	}
+
+	fmt.Printf("\nLabel names most involved in churning:\n")
+	printInfo(postingInfos)
+
+	postingInfos = postingInfos[:0]
+	for k, m := range labelpairsCount {
+		postingInfos = append(postingInfos, postingInfo{k, m})
+	}
+
+	fmt.Printf("\nMost common label pairs:\n")
+	printInfo(postingInfos)
+
+	postingInfos = postingInfos[:0]
+	for _, n := range allLabelNames {
+		lv, err := ir.LabelValues(n)
+		if err != nil {
+			exitWithError(err)
+		}
+		postingInfos = append(postingInfos, postingInfo{n, uint64(lv.Len())})
+	}
+	fmt.Printf("\nHighest cardinality labels:\n")
+	printInfo(postingInfos)
+
+	postingInfos = postingInfos[:0]
+	lv, err := ir.LabelValues("__name__")
+	if err != nil {
+		exitWithError(err)
+	}
+	for i := 0; i < lv.Len(); i++ {
+		names, err := lv.At(i)
+		if err != nil {
+			exitWithError(err)
+		}
+		for _, n := range names {
+			postings, err := ir.Postings("__name__", n)
+			if err != nil {
+				exitWithError(err)
+			}
+			count := 0
+			for postings.Next() {
+				count++
+			}
+			if postings.Err() != nil {
+				exitWithError(postings.Err())
+			}
+			postingInfos = append(postingInfos, postingInfo{n, uint64(count)})
+		}
+	}
+	fmt.Printf("\nHighest cardinality metric names:\n")
+	printInfo(postingInfos)
 }

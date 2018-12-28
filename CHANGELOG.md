@@ -11,3 +11,4 @@
  - [CHANGE] `Head.Init()` is changed to `Head.Init(minValidTime int64)`  
  - [CHANGE] `SymbolTable()` renamed to `SymbolTableSize()` to make the name consistent with the  `Block{ symbolTableSize uint64 }` field.
  - [CHANGE] `wal.Reader{}` now exposes `Segment()` for the current segment being read  and `Offset()` for the current offset.
+  -[FEATURE] tsdbutil analyze subcomand to find churn, high cardinality, etc.
