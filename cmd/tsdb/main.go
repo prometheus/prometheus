@@ -130,7 +130,6 @@ func (b *writeBenchmark) run() {
 	l = log.With(l, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 
 	st, err := tsdb.Open(dir, l, nil, &tsdb.Options{
-		WALFlushInterval:  200 * time.Millisecond,
 		RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
 		BlockRanges:       tsdb.ExponentialBlockRanges(2*60*60*1000, 5, 3),
 	})
