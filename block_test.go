@@ -78,8 +78,8 @@ func createEmptyBlock(t *testing.T, dir string, meta *BlockMeta) *Block {
 }
 
 // createPopulatedBlock creates a block with nSeries series, filled with
-// samples of the given mint,maxt time range.
-func createPopulatedBlock(tb testing.TB, dir string, nSeries int, mint, maxt int64) *Block {
+// samples of the given mint,maxt time range and returns its dir.
+func createPopulatedBlock(tb testing.TB, dir string, nSeries int, mint, maxt int64) string {
 	head, err := NewHead(nil, nil, nil, 2*60*60*1000)
 	testutil.Ok(tb, err)
 	defer head.Close()
@@ -113,7 +113,5 @@ func createPopulatedBlock(tb testing.TB, dir string, nSeries int, mint, maxt int
 	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime(), nil)
 	testutil.Ok(tb, err)
 
-	blk, err := OpenBlock(filepath.Join(dir, ulid.String()), nil)
-	testutil.Ok(tb, err)
-	return blk
+	return filepath.Join(dir, ulid.String())
 }
