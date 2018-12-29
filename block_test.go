@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
 )
@@ -46,60 +45,40 @@ func TestSetCompactionFailed(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(tmpdir)
 
-	b := createEmptyBlock(t, tmpdir, &BlockMeta{Version: 2})
-
+	blockDir := createBlock(t, tmpdir, 0, 0, 0)
+	b, err := OpenBlock(blockDir, nil)
+	testutil.Ok(t, err)
 	testutil.Equals(t, false, b.meta.Compaction.Failed)
 	testutil.Ok(t, b.setCompactionFailed())
 	testutil.Equals(t, true, b.meta.Compaction.Failed)
 	testutil.Ok(t, b.Close())
 
-	b, err = OpenBlock(tmpdir, nil)
+	b, err = OpenBlock(blockDir, nil)
 	testutil.Ok(t, err)
 	testutil.Equals(t, true, b.meta.Compaction.Failed)
+	testutil.Ok(t, b.Close())
 }
 
-// createEmpty block creates a block with the given meta but without any data.
-func createEmptyBlock(t *testing.T, dir string, meta *BlockMeta) *Block {
-	testutil.Ok(t, os.MkdirAll(dir, 0777))
-
-	testutil.Ok(t, writeMetaFile(dir, meta))
-
-	ir, err := index.NewWriter(filepath.Join(dir, indexFilename))
-	testutil.Ok(t, err)
-	testutil.Ok(t, ir.Close())
-
-	testutil.Ok(t, os.MkdirAll(chunkDir(dir), 0777))
-
-	testutil.Ok(t, writeTombstoneFile(dir, newMemTombstones()))
-
-	b, err := OpenBlock(dir, nil)
-	testutil.Ok(t, err)
-	return b
-}
-
-// createPopulatedBlock creates a block with nSeries series, filled with
+// createBlock creates a block with nSeries series, filled with
 // samples of the given mint,maxt time range and returns its dir.
-func createPopulatedBlock(tb testing.TB, dir string, nSeries int, mint, maxt int64) string {
+func createBlock(tb testing.TB, dir string, nSeries int, mint, maxt int64) string {
 	head, err := NewHead(nil, nil, nil, 2*60*60*1000)
 	testutil.Ok(tb, err)
 	defer head.Close()
 
 	lbls, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), nSeries)
 	testutil.Ok(tb, err)
-	refs := make([]uint64, nSeries)
+	var ref uint64
 
 	for ts := mint; ts <= maxt; ts++ {
 		app := head.Appender()
-		for i, lbl := range lbls {
-			if refs[i] != 0 {
-				err := app.AddFast(refs[i], ts, rand.Float64())
-				if err == nil {
-					continue
-				}
+		for _, lbl := range lbls {
+			err := app.AddFast(ref, ts, rand.Float64())
+			if err == nil {
+				continue
 			}
-			ref, err := app.Add(lbl, int64(ts), rand.Float64())
+			ref, err = app.Add(lbl, int64(ts), rand.Float64())
 			testutil.Ok(tb, err)
-			refs[i] = ref
 		}
 		err := app.Commit()
 		testutil.Ok(tb, err)

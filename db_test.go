@@ -81,22 +81,24 @@ func TestDB_reloadOrder(t *testing.T) {
 	defer close()
 	defer db.Close()
 
-	metas := []*BlockMeta{
-		{ULID: ulid.MustNew(100, nil), MinTime: 90, MaxTime: 100},
-		{ULID: ulid.MustNew(200, nil), MinTime: 70, MaxTime: 80},
-		{ULID: ulid.MustNew(300, nil), MinTime: 100, MaxTime: 110},
+	metas := []BlockMeta{
+		{MinTime: 90, MaxTime: 100},
+		{MinTime: 70, MaxTime: 80},
+		{MinTime: 100, MaxTime: 110},
 	}
 	for _, m := range metas {
-		bdir := filepath.Join(db.Dir(), m.ULID.String())
-		createEmptyBlock(t, bdir, m)
+		createBlock(t, db.Dir(), 1, m.MinTime, m.MaxTime)
 	}
 
 	testutil.Ok(t, db.reload())
 	blocks := db.Blocks()
 	testutil.Equals(t, 3, len(blocks))
-	testutil.Equals(t, *metas[1], blocks[0].Meta())
-	testutil.Equals(t, *metas[0], blocks[1].Meta())
-	testutil.Equals(t, *metas[2], blocks[2].Meta())
+	testutil.Equals(t, metas[1].MinTime, blocks[0].Meta().MinTime)
+	testutil.Equals(t, metas[1].MaxTime, blocks[0].Meta().MaxTime)
+	testutil.Equals(t, metas[0].MinTime, blocks[1].Meta().MinTime)
+	testutil.Equals(t, metas[0].MaxTime, blocks[1].Meta().MaxTime)
+	testutil.Equals(t, metas[2].MinTime, blocks[2].Meta().MinTime)
+	testutil.Equals(t, metas[2].MaxTime, blocks[2].Meta().MaxTime)
 }
 
 func TestDataAvailableOnlyAfterCommit(t *testing.T) {
@@ -822,6 +824,7 @@ func TestTombstoneClean(t *testing.T) {
 func TestTombstoneCleanFail(t *testing.T) {
 
 	db, close := openTestDB(t, nil)
+	defer db.Close()
 	defer close()
 
 	var expectedBlockDirs []string
@@ -830,15 +833,9 @@ func TestTombstoneCleanFail(t *testing.T) {
 	// totalBlocks should be >=2 so we have enough blocks to trigger compaction failure.
 	totalBlocks := 2
 	for i := 0; i < totalBlocks; i++ {
-		entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-		uid := ulid.MustNew(ulid.Now(), entropy)
-		meta := &BlockMeta{
-			Version: 2,
-			ULID:    uid,
-		}
-		blockDir := filepath.Join(db.Dir(), uid.String())
-		block := createEmptyBlock(t, blockDir, meta)
-
+		blockDir := createBlock(t, db.Dir(), 0, 0, 0)
+		block, err := OpenBlock(blockDir, nil)
+		testutil.Ok(t, err)
 		// Add some some fake tombstones to trigger the compaction.
 		tomb := newMemTombstones()
 		tomb.addInterval(0, Interval{0, 1})
@@ -880,14 +877,8 @@ func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int6
 		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
-	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	uid := ulid.MustNew(ulid.Now(), entropy)
-	meta := &BlockMeta{
-		Version: 2,
-		ULID:    uid,
-	}
-
-	block := createEmptyBlock(c.t, filepath.Join(dest, meta.ULID.String()), meta)
+	block, err := OpenBlock(createBlock(c.t, dest, 0, 0, 0), nil)
+	testutil.Ok(c.t, err)
 	testutil.Ok(c.t, block.Close()) // Close block as we won't be using anywhere.
 	c.blocks = append(c.blocks, block)
 
@@ -1286,12 +1277,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		testutil.Ok(t, err)
 		defer os.RemoveAll(dir)
 
-		id := ulid.MustNew(2000, nil)
-		createEmptyBlock(t, path.Join(dir, id.String()), &BlockMeta{
-			ULID:    id,
-			MinTime: 1000,
-			MaxTime: 2000,
-		})
+		createBlock(t, dir, 1, 1000, 2000)
 
 		db, err := Open(dir, nil, nil, nil)
 		testutil.Ok(t, err)
@@ -1304,12 +1290,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		testutil.Ok(t, err)
 		defer os.RemoveAll(dir)
 
-		id := ulid.MustNew(2000, nil)
-		createEmptyBlock(t, path.Join(dir, id.String()), &BlockMeta{
-			ULID:    id,
-			MinTime: 1000,
-			MaxTime: 6000,
-		})
+		createBlock(t, dir, 1, 1000, 6000)
 
 		testutil.Ok(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"))
@@ -1496,7 +1477,7 @@ func TestBlockRanges(t *testing.T) {
 	// Test that the compactor doesn't create overlapping blocks
 	// when a non standard block already exists.
 	firstBlockMaxT := int64(3)
-	createPopulatedBlock(t, dir, 1, 0, firstBlockMaxT)
+	createBlock(t, dir, 1, 0, firstBlockMaxT)
 	db, err := Open(dir, logger, nil, DefaultOptions)
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
@@ -1545,7 +1526,7 @@ func TestBlockRanges(t *testing.T) {
 	testutil.Ok(t, db.Close())
 
 	thirdBlockMaxt := secondBlockMaxt + 2
-	createPopulatedBlock(t, dir, 1, secondBlockMaxt+1, thirdBlockMaxt)
+	createBlock(t, dir, 1, secondBlockMaxt+1, thirdBlockMaxt)
 
 	db, err = Open(dir, logger, nil, DefaultOptions)
 	if err != nil {
