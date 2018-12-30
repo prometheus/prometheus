@@ -14,6 +14,5 @@ RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles
 
 USER       nobody
 EXPOSE     9090
-VOLUME     [ "/prometheus" ]
 WORKDIR    /etc/prometheus
 ENTRYPOINT [ "/bin/prometheus" ]
