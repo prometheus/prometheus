@@ -311,6 +311,12 @@ Outer:
 			})
 		}
 
+		sort.Slice(expSamples, func(i, j int) bool {
+			return labels.Compare(expSamples[i].Labels, expSamples[j].Labels) <= 0
+		})
+		sort.Slice(gotSamples, func(i, j int) bool {
+			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
+		})
 		if !reflect.DeepEqual(expSamples, gotSamples) {
 			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, \n        exp:%#v, \n        got:%#v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
