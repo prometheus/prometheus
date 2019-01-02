@@ -888,16 +888,19 @@ func (r *walReader) Read(
 				if seriesf != nil {
 					seriesf(v)
 				}
+				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				seriesPool.Put(v[:0])
 			case []RefSample:
 				if samplesf != nil {
 					samplesf(v)
 				}
+				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				samplePool.Put(v[:0])
 			case []Stone:
 				if deletesf != nil {
 					deletesf(v)
 				}
+				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				deletePool.Put(v[:0])
 			default:
 				level.Error(r.logger).Log("msg", "unexpected data type")

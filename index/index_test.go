@@ -339,6 +339,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		testutil.Ok(t, err)
 
 		expp, err := mi.Postings(p.Name, p.Value)
+		testutil.Ok(t, err)
 
 		var lset, explset labels.Labels
 		var chks, expchks []chunks.Meta
@@ -352,6 +353,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 			testutil.Ok(t, err)
 
 			err = mi.Series(expp.At(), &explset, &expchks)
+			testutil.Ok(t, err)
 			testutil.Equals(t, explset, lset)
 			testutil.Equals(t, expchks, chks)
 		}

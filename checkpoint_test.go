@@ -31,11 +31,11 @@ func TestLastCheckpoint(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	s, k, err := LastCheckpoint(dir)
+	_, _, err = LastCheckpoint(dir)
 	testutil.Equals(t, ErrNotFound, err)
 
 	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.0000"), 0777))
-	s, k, err = LastCheckpoint(dir)
+	s, k, err := LastCheckpoint(dir)
 	testutil.Ok(t, err)
 	testutil.Equals(t, filepath.Join(dir, "checkpoint.0000"), s)
 	testutil.Equals(t, 0, k)

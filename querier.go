@@ -581,11 +581,9 @@ func (s *populatedChunkSeries) Next() bool {
 				// This means that the chunk has be garbage collected. Remove it from the list.
 				if s.err == ErrNotFound {
 					s.err = nil
-
 					// Delete in-place.
-					chks = append(chks[:j], chks[j+1:]...)
+					s.chks = append(chks[:j], chks[j+1:]...)
 				}
-
 				return false
 			}
 		}
