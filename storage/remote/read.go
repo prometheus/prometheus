@@ -59,10 +59,10 @@ type querier struct {
 
 // Select implements storage.Querier and uses the given matchers to read series
 // sets from the Client.
-func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, error, storage.Warnings) {
+func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	query, err := ToQuery(q.mint, q.maxt, matchers, p)
 	if err != nil {
-		return nil, err, nil
+		return nil, nil, err
 	}
 
 	remoteReadGauge := remoteReadQueries.WithLabelValues(q.client.Name())
@@ -71,7 +71,7 @@ func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (
 
 	res, err := q.client.Read(q.ctx, query)
 	if err != nil {
-		return nil, err, nil
+		return nil, nil, err
 	}
 
 	return FromQueryResult(res), nil, nil
@@ -117,13 +117,13 @@ type externalLabelsQuerier struct {
 // Select adds equality matchers for all external labels to the list of matchers
 // before calling the wrapped storage.Queryable. The added external labels are
 // removed from the returned series sets.
-func (q externalLabelsQuerier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, error, storage.Warnings) {
+func (q externalLabelsQuerier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	m, added := q.addExternalLabels(matchers)
-	s, err, warnings := q.Querier.Select(p, m...)
+	s, warnings, err := q.Querier.Select(p, m...)
 	if err != nil {
-		return nil, err, warnings
+		return nil, warnings, err
 	}
-	return newSeriesSetFilter(s, added), nil, warnings
+	return newSeriesSetFilter(s, added), warnings, nil
 }
 
 // PreferLocalStorageFilter returns a QueryableFunc which creates a NoopQuerier
@@ -170,7 +170,7 @@ type requiredMatchersQuerier struct {
 
 // Select returns a NoopSeriesSet if the given matchers don't match the label
 // set of the requiredMatchersQuerier. Otherwise it'll call the wrapped querier.
-func (q requiredMatchersQuerier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, error, storage.Warnings) {
+func (q requiredMatchersQuerier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	ms := q.requiredMatchers
 	for _, m := range matchers {
 		for i, r := range ms {
