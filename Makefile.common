@@ -139,7 +139,7 @@ common-vet:
 common-staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
 ifdef GO111MODULE
-	GO111MODULE=$(GO111MODULE) $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" -checks "SA*" $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 else
 	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 endif
@@ -205,12 +205,11 @@ $(STATICCHECK):
 ifdef GO111MODULE
 # Get staticcheck from a temporary directory to avoid modifying the local go.{mod,sum}.
 # See https://github.com/golang/go/issues/27643.
-# For now, we are using the next branch of staticcheck because master isn't compatible yet with Go modules.
 	tmpModule=$$(mktemp -d 2>&1) && \
 	mkdir -p $${tmpModule}/staticcheck && \
 	cd "$${tmpModule}"/staticcheck && \
 	GO111MODULE=on $(GO) mod init example.com/staticcheck && \
-	GO111MODULE=on GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck@next && \
+	GO111MODULE=on GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck && \
 	rm -rf $${tmpModule};
 else
 	GOOS= GOARCH= GO111MODULE=off $(GO) get -u honnef.co/go/tools/cmd/staticcheck

@@ -923,7 +923,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	db := api.db()
 	if db == nil {
@@ -980,7 +980,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 
 func (api *API) snapshot(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	var (
 		skipHead bool
@@ -1019,7 +1019,7 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 
 func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	db := api.db()
 	if db == nil {

@@ -927,6 +927,7 @@ type sample struct {
 	v      float64
 }
 
+//lint:ignore U1000 staticcheck falsely reports that samples is unused.
 type samples []sample
 
 func (s samples) Len() int      { return len(s) }

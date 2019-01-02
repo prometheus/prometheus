@@ -123,7 +123,7 @@ func convertToService(o interface{}) (*apiv1.Service, error) {
 	if ok {
 		return service, nil
 	}
-	return nil, fmt.Errorf("Received unexpected object: %v", o)
+	return nil, fmt.Errorf("received unexpected object: %v", o)
 }
 
 func serviceSource(s *apiv1.Service) string {

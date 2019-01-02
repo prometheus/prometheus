@@ -90,7 +90,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		s, wrns, err := q.Select(params, mset...)
 		if wrns != nil {
 			level.Debug(h.logger).Log("msg", "federation select returned warnings", "warnings", wrns)
-			federationErrors.Add(float64(len(wrns)))
+			federationWarnings.Add(float64(len(wrns)))
 		}
 		if err != nil {
 			federationErrors.Inc()

@@ -326,6 +326,7 @@ var errUnexpected = fmt.Errorf("unexpected error")
 func (p *parser) recover(errp *error) {
 	e := recover()
 	if e != nil {
+		//lint:ignore S1020 relax staticcheck verification.
 		if _, ok := e.(runtime.Error); ok {
 			// Print the stack trace but do not inhibit the running application.
 			buf := make([]byte, 64<<10)
