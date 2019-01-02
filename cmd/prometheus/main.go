@@ -233,6 +233,7 @@ func main() {
 	}
 
 	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	promql.SetDefaultEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
 
 	logger := promlog.New(&cfg.promlogConfig)
 
@@ -256,7 +257,7 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifier = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
+		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
@@ -279,7 +280,7 @@ func main() {
 			Appendable:      fanoutStorage,
 			TSDB:            localStorage,
 			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:      sendAlerts(notifier, cfg.web.ExternalURL.String()),
+			NotifyFunc:      sendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:         ctxRule,
 			ExternalURL:     cfg.web.ExternalURL,
 			Registerer:      prometheus.DefaultRegisterer,
@@ -296,7 +297,7 @@ func main() {
 	cfg.web.QueryEngine = queryEngine
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
-	cfg.web.Notifier = notifier
+	cfg.web.Notifier = notifierManager
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,
@@ -332,7 +333,7 @@ func main() {
 		webHandler.ApplyConfig,
 		// The Scrape and notifier managers need to reload before the Discovery manager as
 		// they need to read the most updated config when receiving the new targets list.
-		notifier.ApplyConfig,
+		notifierManager.ApplyConfig,
 		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -611,12 +612,12 @@ func main() {
 				// so we wait until the config is fully loaded.
 				<-reloadReady.C
 
-				notifier.Run(discoveryManagerNotify.SyncCh())
+				notifierManager.Run(discoveryManagerNotify.SyncCh())
 				level.Info(logger).Log("msg", "Notifier manager stopped")
 				return nil
 			},
 			func(err error) {
-				notifier.Stop()
+				notifierManager.Stop()
 			},
 		)
 	}
@@ -658,6 +659,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	// Register conf as current config.
 	config.CurrentConfig = conf
 
+	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }
@@ -700,8 +702,12 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	return eu, nil
 }
 
+type sender interface {
+	Send(alerts ...*notifier.Alert)
+}
+
 // sendAlerts implements the rules.NotifyFunc for a Notifier.
-func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
+func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*rules.Alert) {
 		var res []*notifier.Alert
 
@@ -721,7 +727,7 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 		}
 
 		if len(alerts) > 0 {
-			n.Send(res...)
+			s.Send(res...)
 		}
 	}
 }

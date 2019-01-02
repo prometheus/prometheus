@@ -379,7 +379,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			}
 			defer querier.Close()
 
-			set, err, _ := querier.Select(selectParams, matchers...)
+			set, _, err := querier.Select(selectParams, matchers...)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

@@ -228,8 +228,8 @@ golang.org/x/net/internal/socket
 golang.org/x/net/idna
 golang.org/x/net/lex/httplex
 # golang.org/x/oauth2 v0.0.0-20160608215109-65a8d08c6292
-golang.org/x/oauth2
 golang.org/x/oauth2/google
+golang.org/x/oauth2
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
@@ -251,12 +251,12 @@ google.golang.org/api/gensupport
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/internal/uritemplates
 # google.golang.org/appengine v0.0.0-20170522224838-a2f4131514e5
-google.golang.org/appengine/urlfetch
 google.golang.org/appengine
+google.golang.org/appengine/urlfetch
 google.golang.org/appengine/internal
-google.golang.org/appengine/internal/urlfetch
 google.golang.org/appengine/internal/app_identity
 google.golang.org/appengine/internal/modules
+google.golang.org/appengine/internal/urlfetch
 google.golang.org/appengine/internal/base
 google.golang.org/appengine/internal/datastore
 google.golang.org/appengine/internal/log

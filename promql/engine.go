@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -50,6 +51,26 @@ const (
 	// The smallest SampleValue that can be converted to an int64 without underflow.
 	minInt64 = -9223372036854775808
 )
+
+var (
+	// LookbackDelta determines the time since the last sample after which a time
+	// series is considered stale.
+	LookbackDelta = 5 * time.Minute
+
+	// DefaultEvaluationInterval is the default evaluation interval of
+	// a subquery in milliseconds.
+	DefaultEvaluationInterval int64
+)
+
+// SetDefaultEvaluationInterval sets DefaultEvaluationInterval.
+func SetDefaultEvaluationInterval(ev time.Duration) {
+	atomic.StoreInt64(&DefaultEvaluationInterval, durationToInt64Millis(ev))
+}
+
+// GetDefaultEvaluationInterval returns the DefaultEvaluationInterval as time.Duration.
+func GetDefaultEvaluationInterval() int64 {
+	return atomic.LoadInt64(&DefaultEvaluationInterval)
+}
 
 type engineMetrics struct {
 	currentQueries       prometheus.Gauge
@@ -404,12 +425,13 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
 		evaluator := &evaluator{
-			startTimestamp: start,
-			endTimestamp:   start,
-			interval:       1,
-			ctx:            ctx,
-			maxSamples:     ng.maxSamplesPerQuery,
-			logger:         ng.logger,
+			startTimestamp:      start,
+			endTimestamp:        start,
+			interval:            1,
+			ctx:                 ctx,
+			maxSamples:          ng.maxSamplesPerQuery,
+			defaultEvalInterval: GetDefaultEvaluationInterval(),
+			logger:              ng.logger,
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -445,12 +467,13 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	// Range evaluation.
 	evaluator := &evaluator{
-		startTimestamp: timeMilliseconds(s.Start),
-		endTimestamp:   timeMilliseconds(s.End),
-		interval:       durationMilliseconds(s.Interval),
-		ctx:            ctx,
-		maxSamples:     ng.maxSamplesPerQuery,
-		logger:         ng.logger,
+		startTimestamp:      timeMilliseconds(s.Start),
+		endTimestamp:        timeMilliseconds(s.End),
+		interval:            durationMilliseconds(s.Interval),
+		ctx:                 ctx,
+		maxSamples:          ng.maxSamplesPerQuery,
+		defaultEvalInterval: GetDefaultEvaluationInterval(),
+		logger:              ng.logger,
 	}
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
@@ -477,23 +500,36 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	return mat, nil, warnings
 }
 
+// cumulativeSubqueryOffset returns the sum of range and offset of all subqueries in the path.
+func (ng *Engine) cumulativeSubqueryOffset(path []Node) time.Duration {
+	var subqOffset time.Duration
+	for _, node := range path {
+		switch n := node.(type) {
+		case *SubqueryExpr:
+			subqOffset += n.Range + n.Offset
+		}
+	}
+	return subqOffset
+}
+
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error, storage.Warnings) {
 	var maxOffset time.Duration
-	Inspect(s.Expr, func(node Node, _ []Node) error {
+	Inspect(s.Expr, func(node Node, path []Node) error {
+		subqOffset := ng.cumulativeSubqueryOffset(path)
 		switch n := node.(type) {
 		case *VectorSelector:
-			if maxOffset < LookbackDelta {
-				maxOffset = LookbackDelta
+			if maxOffset < LookbackDelta+subqOffset {
+				maxOffset = LookbackDelta + subqOffset
 			}
-			if n.Offset+LookbackDelta > maxOffset {
-				maxOffset = n.Offset + LookbackDelta
+			if n.Offset+LookbackDelta+subqOffset > maxOffset {
+				maxOffset = n.Offset + LookbackDelta + subqOffset
 			}
 		case *MatrixSelector:
-			if maxOffset < n.Range {
-				maxOffset = n.Range
+			if maxOffset < n.Range+subqOffset {
+				maxOffset = n.Range + subqOffset
 			}
-			if n.Offset+n.Range > maxOffset {
-				maxOffset = n.Offset + n.Range
+			if n.Offset+n.Range+subqOffset > maxOffset {
+				maxOffset = n.Offset + n.Range + subqOffset
 			}
 		}
 		return nil
@@ -514,7 +550,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		params := &storage.SelectParams{
 			Start: timestamp.FromTime(s.Start),
 			End:   timestamp.FromTime(s.End),
-			Step:  int64(s.Interval / time.Millisecond),
+			Step:  durationToInt64Millis(s.Interval),
 		}
 
 		switch n := node.(type) {
@@ -527,7 +563,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				params.End = params.End - offsetMilliseconds
 			}
 
-			set, err, wrn = querier.Select(params, n.LabelMatchers...)
+			set, wrn, err = querier.Select(params, n.LabelMatchers...)
 			warnings = append(warnings, wrn...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
@@ -546,7 +582,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				params.End = params.End - offsetMilliseconds
 			}
 
-			set, err, wrn = querier.Select(params, n.LabelMatchers...)
+			set, wrn, err = querier.Select(params, n.LabelMatchers...)
 			warnings = append(warnings, wrn...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
@@ -624,9 +660,10 @@ type evaluator struct {
 	endTimestamp   int64 // End time in milliseconds.
 	interval       int64 // Interval in milliseconds.
 
-	maxSamples     int
-	currentSamples int
-	logger         log.Logger
+	maxSamples          int
+	currentSamples      int
+	defaultEvalInterval int64
+	logger              log.Logger
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -839,6 +876,21 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	return mat
 }
 
+// evalSubquery evaluates given SubqueryExpr and returns an equivalent
+// evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
+func (ev *evaluator) evalSubquery(subq *SubqueryExpr) *MatrixSelector {
+	val := ev.eval(subq).(Matrix)
+	ms := &MatrixSelector{
+		Range:  subq.Range,
+		Offset: subq.Offset,
+		series: make([]storage.Series, 0, len(val)),
+	}
+	for _, s := range val {
+		ms.series = append(ms.series, NewStorageSeries(s))
+	}
+	return ms
+}
+
 // eval evaluates the given expression as the given AST expression node requires.
 func (ev *evaluator) eval(expr Expr) Value {
 	// This is the top-level evaluation method.
@@ -880,10 +932,17 @@ func (ev *evaluator) eval(expr Expr) Value {
 		var matrixArgIndex int
 		var matrixArg bool
 		for i, a := range e.Args {
-			_, ok := a.(*MatrixSelector)
-			if ok {
+			if _, ok := a.(*MatrixSelector); ok {
 				matrixArgIndex = i
 				matrixArg = true
+				break
+			}
+			// SubqueryExpr can be used in place of MatrixSelector.
+			if subq, ok := a.(*SubqueryExpr); ok {
+				matrixArgIndex = i
+				matrixArg = true
+				// Replacing SubqueryExpr with MatrixSelector.
+				e.Args[i] = ev.evalSubquery(subq)
 				break
 			}
 		}
@@ -1077,9 +1136,41 @@ func (ev *evaluator) eval(expr Expr) Value {
 			panic(fmt.Errorf("cannot do range evaluation of matrix selector"))
 		}
 		return ev.matrixSelector(e)
+
+	case *SubqueryExpr:
+		offsetMillis := durationToInt64Millis(e.Offset)
+		rangeMillis := durationToInt64Millis(e.Range)
+		newEv := &evaluator{
+			endTimestamp:        ev.endTimestamp - offsetMillis,
+			interval:            ev.defaultEvalInterval,
+			ctx:                 ev.ctx,
+			currentSamples:      ev.currentSamples,
+			maxSamples:          ev.maxSamples,
+			defaultEvalInterval: ev.defaultEvalInterval,
+			logger:              ev.logger,
+		}
+
+		if e.Step != 0 {
+			newEv.interval = durationToInt64Millis(e.Step)
+		}
+
+		// Start with the first timestamp after (ev.startTimestamp - offset - range)
+		// that is aligned with the step (multiple of 'newEv.interval').
+		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
+		if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
+			newEv.startTimestamp += newEv.interval
+		}
+
+		res := newEv.eval(e.Expr)
+		ev.currentSamples = newEv.currentSamples
+		return res
 	}
 
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
+}
+
+func durationToInt64Millis(d time.Duration) int64 {
+	return int64(d / time.Millisecond)
 }
 
 // vectorSelector evaluates a *VectorSelector expression.
@@ -1824,10 +1915,6 @@ func shouldDropMetricName(op ItemType) bool {
 		return false
 	}
 }
-
-// LookbackDelta determines the time since the last sample after which a time
-// series is considered stale.
-var LookbackDelta = 5 * time.Minute
 
 // documentedType returns the internal type to the equivalent
 // user facing terminology as defined in the documentation.

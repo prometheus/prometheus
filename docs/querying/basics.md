@@ -6,10 +6,11 @@ sort_rank: 1
 
 # Querying Prometheus
 
-Prometheus provides a functional expression language that lets the user select
-and aggregate time series data in real time. The result of an expression can
-either be shown as a graph, viewed as tabular data in Prometheus's expression
-browser, or consumed by external systems via the [HTTP API](api.md).
+Prometheus provides a functional query language called PromQL (Prometheus Query
+Language) that lets the user select and aggregate time series data in real
+time. The result of an expression can either be shown as a graph, viewed as
+tabular data in Prometheus's expression browser, or consumed by external
+systems via the [HTTP API](api.md).
 
 ## Examples
 
@@ -168,6 +169,14 @@ The same works for range vectors. This returns the 5-minutes rate that
 `http_requests_total` had a week ago:
 
     rate(http_requests_total[5m] offset 1w)
+
+## Subquery
+
+Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector. 
+
+Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
+
+* `<resolution>` is optional. Default is the global evaluation interval.
 
 ## Operators
 

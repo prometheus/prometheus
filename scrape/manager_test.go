@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/relabel"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -27,14 +29,6 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 )
-
-func mustNewRegexp(s string) config.Regexp {
-	re, err := config.NewRegexp(s)
-	if err != nil {
-		panic(err)
-	}
-	return re
-}
 
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
@@ -144,10 +138,10 @@ func TestPopulateLabels(t *testing.T) {
 				Scheme:      "https",
 				MetricsPath: "/metrics",
 				JobName:     "job",
-				RelabelConfigs: []*config.RelabelConfig{
+				RelabelConfigs: []*relabel.Config{
 					{
-						Action:       config.RelabelReplace,
-						Regex:        mustNewRegexp("(.*)"),
+						Action:       relabel.Replace,
+						Regex:        relabel.MustNewRegexp("(.*)"),
 						SourceLabels: model.LabelNames{"custom"},
 						Replacement:  "${1}",
 						TargetLabel:  string(model.AddressLabel),
@@ -176,10 +170,10 @@ func TestPopulateLabels(t *testing.T) {
 				Scheme:      "https",
 				MetricsPath: "/metrics",
 				JobName:     "job",
-				RelabelConfigs: []*config.RelabelConfig{
+				RelabelConfigs: []*relabel.Config{
 					{
-						Action:       config.RelabelReplace,
-						Regex:        mustNewRegexp("(.*)"),
+						Action:       relabel.Replace,
+						Regex:        relabel.MustNewRegexp("(.*)"),
 						SourceLabels: model.LabelNames{"custom"},
 						Replacement:  "${1}",
 						TargetLabel:  string(model.AddressLabel),
@@ -249,7 +243,7 @@ scrape_configs:
 	scrapeManager.ApplyConfig(cfg)
 
 	// As reload never happens, new loop should never be called.
-	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*config.RelabelConfig) loop {
+	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*relabel.Config) loop {
 		t.Fatal("reload happened")
 		return nil
 	}

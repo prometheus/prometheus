@@ -942,10 +942,6 @@ var testExpr = []struct {
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
 		errMsg: "metric name must not be set twice: \"foo\" or \"bar\"",
-		// }, {
-		// 	input:  `:foo`,
-		// 	fail:   true,
-		// 	errMsg: "bla",
 	},
 	// Test matrix selector.
 	{
@@ -1051,11 +1047,11 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric OFFSET 1m[5m]`,
 		fail:   true,
-		errMsg: "could not parse remaining input \"[5m]\"...",
+		errMsg: "parse error at char 25: unexpected \"]\" in subquery selector, expected \":\"",
 	}, {
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
-		errMsg: "could not parse remaining input \"[5m]\"...",
+		errMsg: "parse error at char 15: unexpected \"]\" in subquery selector, expected \":\"",
 	},
 	// Test aggregation.
 	{
@@ -1389,6 +1385,202 @@ var testExpr = []struct {
 		input:  `"\x."`,
 		fail:   true,
 		errMsg: "illegal character U+002E '.' in escape sequence",
+	},
+	// Subquery.
+	{
+		input: `foo{bar="baz"}[10m:6s]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				},
+			},
+			Range: 10 * time.Minute,
+			Step:  6 * time.Second,
+		},
+	}, {
+		input: `foo[10m:]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				},
+			},
+			Range: 10 * time.Minute,
+		},
+	}, {
+		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`,
+		expected: &Call{
+			Func: mustGetFunction("min_over_time"),
+			Args: Expressions{
+				&SubqueryExpr{
+					Expr: &Call{
+						Func: mustGetFunction("rate"),
+						Args: Expressions{
+							&MatrixSelector{
+								Name:  "foo",
+								Range: 2 * time.Second,
+								LabelMatchers: []*labels.Matcher{
+									mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+									mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+								},
+							},
+						},
+					},
+					Range: 5 * time.Minute,
+					Step:  5 * time.Second,
+				},
+			},
+		},
+	}, {
+		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
+		expected: &SubqueryExpr{
+			Expr: &Call{
+				Func: mustGetFunction("min_over_time"),
+				Args: Expressions{
+					&SubqueryExpr{
+						Expr: &Call{
+							Func: mustGetFunction("rate"),
+							Args: Expressions{
+								&MatrixSelector{
+									Name:  "foo",
+									Range: 2 * time.Second,
+									LabelMatchers: []*labels.Matcher{
+										mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+										mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+									},
+								},
+							},
+						},
+						Range: 5 * time.Minute,
+					},
+				},
+			},
+			Range: 4 * time.Minute,
+			Step:  3 * time.Second,
+		},
+	}, {
+		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 4m)[4m:3s]`,
+		expected: &SubqueryExpr{
+			Expr: &Call{
+				Func: mustGetFunction("min_over_time"),
+				Args: Expressions{
+					&SubqueryExpr{
+						Expr: &Call{
+							Func: mustGetFunction("rate"),
+							Args: Expressions{
+								&MatrixSelector{
+									Name:  "foo",
+									Range: 2 * time.Second,
+									LabelMatchers: []*labels.Matcher{
+										mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+										mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+									},
+								},
+							},
+						},
+						Range:  5 * time.Minute,
+						Offset: 4 * time.Minute,
+					},
+				},
+			},
+			Range: 4 * time.Minute,
+			Step:  3 * time.Second,
+		},
+	}, {
+		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
+		expected: &SubqueryExpr{
+			Expr: &AggregateExpr{
+				Op:      itemSum,
+				Without: true,
+				Expr: &VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					},
+				},
+				Grouping: []string{"and", "by", "avg", "count", "alert", "annotations"},
+			},
+			Range: 30 * time.Minute,
+			Step:  10 * time.Second,
+		},
+	}, {
+		input: `some_metric OFFSET 1m [10m:5s]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+				},
+				Offset: 1 * time.Minute,
+			},
+			Range: 10 * time.Minute,
+			Step:  5 * time.Second,
+		},
+	}, {
+		input: `(foo + bar{nm="val"})[5m:]`,
+		expected: &SubqueryExpr{
+			Expr: &ParenExpr{
+				Expr: &BinaryExpr{
+					Op: itemADD,
+					VectorMatching: &VectorMatching{
+						Card: CardOneToOne,
+					},
+					LHS: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+						},
+					},
+					RHS: &VectorSelector{
+						Name: "bar",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+						},
+					},
+				},
+			},
+			Range: 5 * time.Minute,
+		},
+	}, {
+		input: `(foo + bar{nm="val"})[5m:] offset 10m`,
+		expected: &SubqueryExpr{
+			Expr: &ParenExpr{
+				Expr: &BinaryExpr{
+					Op: itemADD,
+					VectorMatching: &VectorMatching{
+						Card: CardOneToOne,
+					},
+					LHS: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+						},
+					},
+					RHS: &VectorSelector{
+						Name: "bar",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+						},
+					},
+				},
+			},
+			Range:  5 * time.Minute,
+			Offset: 10 * time.Minute,
+		},
+	}, {
+		input:  "test[5d] OFFSET 10s [10m:5s]",
+		fail:   true,
+		errMsg: "parse error at char 29: subquery is only allowed on instant vector, got matrix in \"test[5d] offset 10s[10m:5s]\"",
+	}, {
+		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
+		fail:   true,
+		errMsg: "parse error at char 27: could not parse remaining input \"[10m:5s]\"...",
 	},
 }
 
