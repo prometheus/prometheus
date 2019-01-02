@@ -20,7 +20,6 @@ import (
 	"unsafe"
 
 	"github.com/alecthomas/units"
-
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
