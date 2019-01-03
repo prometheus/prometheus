@@ -61,6 +61,59 @@ func TestQueryRange(t *testing.T) {
 	}
 }
 
+func TestQueryLabels(t *testing.T) {
+	s, getURL := mockServer(200, `{"status": "success", "data": []}`)
+	defer s.Close()
+
+	p := &promqlPrinter{}
+	u, _ := url.Parse(s.URL)
+	exitCode := QueryLabels(u, "job", p)
+	expectedPath := "/api/v1/label/job/values"
+	if getURL().Path != expectedPath {
+		t.Errorf("unexpected URL path %s (wanted %s)", getURL().Path, expectedPath)
+	}
+	if exitCode > 0 {
+		t.Error()
+	}
+}
+
+func TestQueryInstant(t *testing.T) {
+	s, getURL := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
+	defer s.Close()
+
+	p := &promqlPrinter{}
+	exitCode := QueryInstant(s.URL, "up", p)
+	expectedPath := "/api/v1/query"
+	if getURL().Path != expectedPath {
+		t.Errorf("unexpected URL path %s (wanted %s)", getURL().Path, expectedPath)
+	}
+	actual := getURL().Query().Get("query")
+	if actual != "up" {
+		t.Errorf("unexpected value %s for query", actual)
+	}
+	if exitCode > 0 {
+		t.Error()
+	}
+}
+
+func TestQuerySeries(t *testing.T) {
+	s, getURL := mockServer(200, `{"status": "success", "data": []}`)
+	p := &promqlPrinter{}
+	u, _ := url.Parse(s.URL)
+	exitCode := QuerySeries(u, []string{"up"}, "0", "300", p)
+	expectedPath := "/api/v1/series"
+	if getURL().Path != expectedPath {
+		t.Errorf("unexpected URL path %s (wanted %s)", getURL().Path, expectedPath)
+	}
+	if exitCode > 0 {
+		t.Error()
+	}
+	actual := getURL().Query().Get("match[]")
+	if actual != "up" {
+		t.Errorf("unexpected value %s for query", actual)
+	}
+}
+
 func mockServer(code int, body string) (*httptest.Server, func() *url.URL) {
 	var u *url.URL
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
