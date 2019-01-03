@@ -62,15 +62,13 @@ github.com/go-ini/ini
 # github.com/go-kit/kit v0.8.0
 github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
-# github.com/go-logfmt/logfmt v0.3.0
+# github.com/go-logfmt/logfmt v0.4.0
 github.com/go-logfmt/logfmt
 # github.com/gogo/protobuf v1.1.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/types
 github.com/gogo/protobuf/sortkeys
 github.com/gogo/protobuf/jsonpb
-# github.com/golang/glog v0.0.0-20141105023935-44145f04b68c => github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352
-github.com/golang/glog
 # github.com/golang/protobuf v1.2.0
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/jsonpb
@@ -457,7 +455,7 @@ k8s.io/client-go/kubernetes/typed/settings/v1alpha1/fake
 k8s.io/client-go/kubernetes/typed/storage/v1/fake
 k8s.io/client-go/kubernetes/typed/storage/v1alpha1/fake
 k8s.io/client-go/kubernetes/typed/storage/v1beta1/fake
-# k8s.io/klog v0.1.0
+# k8s.io/klog v0.1.0 => github.com/simonpasquier/klog-gokit v0.1.0
 k8s.io/klog
 # k8s.io/kube-openapi v0.0.0-20180629012420-d83b052f768a
 k8s.io/kube-openapi/pkg/util/proto

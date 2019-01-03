@@ -31,7 +31,6 @@ require (
 	github.com/go-ole/go-ole v1.2.1 // indirect
 	github.com/go-sql-driver/mysql v1.4.0 // indirect
 	github.com/gogo/protobuf v1.1.1
-	github.com/golang/glog v0.0.0-20141105023935-44145f04b68c
 	github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4 // indirect
 	github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
 	github.com/google/btree v0.0.0-20180124185431-e89373fe6b4a // indirect
@@ -125,11 +124,11 @@ require (
 	k8s.io/api v0.0.0-20181213150558-05914d821849
 	k8s.io/apimachinery v0.0.0-20181127025237-2b1284ed4c93
 	k8s.io/client-go v2.0.0-alpha.0.0.20181121191925-a47917edff34+incompatible
-	k8s.io/klog v0.1.0 // indirect
+	k8s.io/klog v0.1.0
 	k8s.io/kube-openapi v0.0.0-20180629012420-d83b052f768a // indirect
 	labix.org/v2/mgo v0.0.0-20140701140051-000000000287 // indirect
 	launchpad.net/gocheck v0.0.0-20140225173054-000000000087 // indirect
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
-replace github.com/golang/glog => github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352
+replace k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
