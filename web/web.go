@@ -344,35 +344,6 @@ func New(logger log.Logger, o *Options) *Handler {
 	return h
 }
 
-// Enables cross-site script calls.
-func setCORS(w http.ResponseWriter, o []string, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return
-	}
-
-	headers := map[string]string{
-		"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
-		"Access-Control-Allow-Methods":  "GET, POST, OPTIONS, DELETE",
-		"Access-Control-Expose-Headers": "Date",
-	}
-
-	for k, v := range headers {
-		w.Header().Set(k, v)
-	}
-
-	if len(o) == 0 {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-	}
-
-	for _, allowedOrigin := range o {
-		if origin == allowedOrigin {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			break
-		}
-	}
-}
-
 func serveDebug(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	subpath := route.Param(ctx, "subpath")
@@ -493,7 +464,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			setCORS(w, h.options.CORSOrigins, r)
+			httputil.SetCORS(w, h.options.CORSOrigins, r)
 			hhFunc(w, r)
 		}),
 	))

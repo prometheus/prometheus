@@ -122,35 +122,6 @@ type apiFuncResult struct {
 	finalizer func()
 }
 
-// Enables cross-site script calls.
-func setCORS(w http.ResponseWriter, o []string, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return
-	}
-
-	headers := map[string]string{
-		"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
-		"Access-Control-Allow-Methods":  "GET, POST, OPTIONS, DELETE",
-		"Access-Control-Expose-Headers": "Date",
-	}
-
-	for k, v := range headers {
-		w.Header().Set(k, v)
-	}
-
-	if len(o) == 0 {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-	}
-
-	for _, allowedOrigin := range o {
-		if origin == allowedOrigin {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			break
-		}
-	}
-}
-
 type apiFunc func(r *http.Request) apiFuncResult
 
 // TSDBAdmin defines the tsdb interfaces used by the v1 API for admin operations.
@@ -229,7 +200,7 @@ func NewAPI(
 func (api *API) Register(r *route.Router) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			setCORS(w, api.CORSOrigins, r)
+			httputil.SetCORS(w, api.CORSOrigins, r)
 			result := f(r)
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)
