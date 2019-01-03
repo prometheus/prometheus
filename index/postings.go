@@ -366,80 +366,25 @@ func Merge(its ...Postings) Postings {
 	if len(its) == 1 {
 		return its[0]
 	}
-	l := len(its) / 2
-	return newMergedPostings(Merge(its[:l]...), Merge(its[l:]...))
-}
-
-type mergedPostings struct {
-	a, b        Postings
-	initialized bool
-	aok, bok    bool
-	cur         uint64
-}
-
-func newMergedPostings(a, b Postings) *mergedPostings {
-	return &mergedPostings{a: a, b: b}
-}
-
-func (it *mergedPostings) At() uint64 {
-	return it.cur
-}
-
-func (it *mergedPostings) Next() bool {
-	if !it.initialized {
-		it.aok = it.a.Next()
-		it.bok = it.b.Next()
-		it.initialized = true
+	// All the uses of this function immediately expand it, so
+	// collect everything in a map. This is more efficient
+	// when there's 100ks of postings, compared to
+	// having a tree of merge objects.
+	pm := make(map[uint64]struct{}, len(its))
+	for _, it := range its {
+		for it.Next() {
+			pm[it.At()] = struct{}{}
+		}
+		if it.Err() != nil {
+			return ErrPostings(it.Err())
+		}
 	}
-
-	if !it.aok && !it.bok {
-		return false
+	pl := make([]uint64, 0, len(pm))
+	for p := range pm {
+		pl = append(pl, p)
 	}
-
-	if !it.aok {
-		it.cur = it.b.At()
-		it.bok = it.b.Next()
-		return true
-	}
-	if !it.bok {
-		it.cur = it.a.At()
-		it.aok = it.a.Next()
-		return true
-	}
-
-	acur, bcur := it.a.At(), it.b.At()
-
-	if acur < bcur {
-		it.cur = acur
-		it.aok = it.a.Next()
-	} else if acur > bcur {
-		it.cur = bcur
-		it.bok = it.b.Next()
-	} else {
-		it.cur = acur
-		it.aok = it.a.Next()
-		it.bok = it.b.Next()
-	}
-	return true
-}
-
-func (it *mergedPostings) Seek(id uint64) bool {
-	if it.cur >= id {
-		return true
-	}
-
-	it.aok = it.a.Seek(id)
-	it.bok = it.b.Seek(id)
-	it.initialized = true
-
-	return it.Next()
-}
-
-func (it *mergedPostings) Err() error {
-	if it.a.Err() != nil {
-		return it.a.Err()
-	}
-	return it.b.Err()
+	sort.Slice(pl, func(i, j int) bool { return pl[i] < pl[j] })
+	return newListPostings(pl)
 }
 
 // Without returns a new postings list that contains all elements from the full list that
