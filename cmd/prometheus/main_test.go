@@ -247,3 +247,36 @@ func TestSendAlerts(t *testing.T) {
 		})
 	}
 }
+
+func TestWALSegmentSizeBounds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	for size, expectedExitStatus := range map[string]int{"9MB": 1, "257MB": 1, "10": 2, "1GB": 1, "12MB": 0} {
+		prom := exec.Command(promPath, "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig)
+		err := prom.Start()
+		testutil.Ok(t, err)
+
+		if expectedExitStatus == 0 {
+			done := make(chan error, 1)
+			go func() { done <- prom.Wait() }()
+			select {
+			case err := <-done:
+				t.Errorf("prometheus should be still running: %v", err)
+			case <-time.After(5 * time.Second):
+				prom.Process.Signal(os.Interrupt)
+			}
+			continue
+		}
+
+		err = prom.Wait()
+		testutil.NotOk(t, err, "")
+		if exitError, ok := err.(*exec.ExitError); ok {
+			status := exitError.Sys().(syscall.WaitStatus)
+			testutil.Equals(t, expectedExitStatus, status.ExitStatus())
+		} else {
+			t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
+		}
+	}
+}

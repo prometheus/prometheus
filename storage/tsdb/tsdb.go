@@ -19,6 +19,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -117,6 +118,9 @@ type Options struct {
 	// The maximum timestamp range of compacted blocks.
 	MaxBlockDuration model.Duration
 
+	// The maximum size of each WAL segment file.
+	WALSegmentSize units.Base2Bytes
+
 	// Duration for how long to retain data.
 	Retention model.Duration
 
@@ -182,6 +186,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALFlushInterval:  10 * time.Second,
+		WALSegmentSize:    int(opts.WALSegmentSize),
 		RetentionDuration: uint64(time.Duration(opts.Retention).Seconds() * 1000),
 		BlockRanges:       rngs,
 		NoLockfile:        opts.NoLockfile,
@@ -230,7 +235,7 @@ type querier struct {
 	q tsdb.Querier
 }
 
-func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storage.SeriesSet, error, storage.Warnings) {
+func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	ms := make([]tsdbLabels.Matcher, 0, len(oms))
 
 	for _, om := range oms {
@@ -238,7 +243,7 @@ func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storag
 	}
 	set, err := q.q.Select(ms...)
 	if err != nil {
-		return nil, err, nil
+		return nil, nil, err
 	}
 	return seriesSet{set: set}, nil, nil
 }

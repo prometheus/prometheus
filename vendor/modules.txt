@@ -187,7 +187,7 @@ github.com/prometheus/procfs
 github.com/prometheus/procfs/nfs
 github.com/prometheus/procfs/xfs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/tsdb v0.3.1
+# github.com/prometheus/tsdb v0.3.2-0.20181219094047-6d489a1004dc
 github.com/prometheus/tsdb
 github.com/prometheus/tsdb/labels
 github.com/prometheus/tsdb/chunkenc
