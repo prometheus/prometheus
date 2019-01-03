@@ -38,6 +38,11 @@ func TestCORSHandler(t *testing.T) {
 
 	// OPTIONS WITH LEGIT ORIGIN
 	req, err := http.NewRequest("OPTIONS", server.URL+"/any_path", nil)
+
+	if err != nil {
+		t.Error("could not create request")
+	}
+
 	req.Header.Set("Origin", dummyOrigin)
 	resp, err := client.Do(req)
 
@@ -53,6 +58,11 @@ func TestCORSHandler(t *testing.T) {
 
 	// OPTIONS WITH BAD ORIGIN
 	req, err = http.NewRequest("OPTIONS", server.URL+"/any_path", nil)
+
+	if err != nil {
+		t.Error("could not create request")
+	}
+
 	req.Header.Set("Origin", "https://not-foo.com")
 	resp, err = client.Do(req)
 
