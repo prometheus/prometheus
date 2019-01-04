@@ -120,7 +120,6 @@ func TestAddingNewIntervals(t *testing.T) {
 
 		testutil.Equals(t, c.exp, c.exist.add(c.new))
 	}
-	return
 }
 
 // TestMemTombstonesConcurrency to make sure they are safe to access from different goroutines.

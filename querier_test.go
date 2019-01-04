@@ -56,18 +56,6 @@ func newMockSeriesSet(list []Series) *mockSeriesSet {
 	}
 }
 
-type mockSeriesIterator struct {
-	seek func(int64) bool
-	at   func() (int64, float64)
-	next func() bool
-	err  func() error
-}
-
-func (m *mockSeriesIterator) Seek(t int64) bool    { return m.seek(t) }
-func (m *mockSeriesIterator) At() (int64, float64) { return m.at() }
-func (m *mockSeriesIterator) Next() bool           { return m.next() }
-func (m *mockSeriesIterator) Err() error           { return m.err() }
-
 type mockSeries struct {
 	labels   func() labels.Labels
 	iterator func() SeriesIterator
@@ -451,8 +439,6 @@ Outer:
 			testutil.Equals(t, smplExp, smplRes)
 		}
 	}
-
-	return
 }
 
 func TestBlockQuerierDelete(t *testing.T) {
@@ -615,8 +601,6 @@ Outer:
 			testutil.Equals(t, smplExp, smplRes)
 		}
 	}
-
-	return
 }
 
 func TestBaseChunkSeries(t *testing.T) {
@@ -713,8 +697,6 @@ func TestBaseChunkSeries(t *testing.T) {
 		testutil.Equals(t, len(tc.expIdxs), i)
 		testutil.Ok(t, bcs.Err())
 	}
-
-	return
 }
 
 // TODO: Remove after simpleSeries is merged
@@ -1038,8 +1020,6 @@ func TestSeriesIterator(t *testing.T) {
 			}
 		})
 	})
-
-	return
 }
 
 // Regression for: https://github.com/prometheus/tsdb/pull/97
@@ -1140,7 +1120,6 @@ func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 		maxt: 15,
 	}
 	testutil.Assert(t, p.Next() == false, "")
-	return
 }
 
 type mockChunkSeriesSet struct {

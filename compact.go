@@ -66,7 +66,6 @@ type Compactor interface {
 
 // LeveledCompactor implements the Compactor interface.
 type LeveledCompactor struct {
-	dir       string
 	metrics   *compactorMetrics
 	logger    log.Logger
 	ranges    []int64

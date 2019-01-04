@@ -36,7 +36,6 @@ const (
 	// MagicIndex 4 bytes at the head of an index file.
 	MagicIndex = 0xBAAAD700
 
-	indexFormatV1 = 1
 	indexFormatV2 = 2
 
 	labelNameSeperator = "\xff"
@@ -346,8 +345,6 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 	}
 	sort.Strings(symbols)
 
-	const headerSize = 4
-
 	w.buf1.reset()
 	w.buf2.reset()
 
@@ -563,7 +560,6 @@ type Reader struct {
 
 var (
 	errInvalidSize     = fmt.Errorf("invalid size")
-	errInvalidFlag     = fmt.Errorf("invalid flag")
 	errInvalidChecksum = fmt.Errorf("invalid checksum")
 )
 

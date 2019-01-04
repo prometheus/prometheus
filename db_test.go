@@ -514,8 +514,6 @@ func TestDB_e2e(t *testing.T) {
 		numDatapoints = 1000
 		numRanges     = 1000
 		timeInterval  = int64(3)
-		maxTime       = int64(2 * 1000)
-		minTime       = int64(200)
 	)
 	// Create 8 series with 1000 data-points of different ranges and run queries.
 	lbls := [][]labels.Label{
@@ -666,8 +664,6 @@ func TestDB_e2e(t *testing.T) {
 			q.Close()
 		}
 	}
-
-	return
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {

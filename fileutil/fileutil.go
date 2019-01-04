@@ -77,9 +77,8 @@ func copyFile(src, dest string) error {
 // returns relative paths to all files and empty directories.
 func readDirs(src string) ([]string, error) {
 	var files []string
-	var err error
 
-	err = filepath.Walk(src, func(path string, f os.FileInfo, err error) error {
+	err := filepath.Walk(src, func(path string, f os.FileInfo, err error) error {
 		relativePath := strings.TrimPrefix(path, src)
 		if len(relativePath) > 0 {
 			files = append(files, relativePath)
