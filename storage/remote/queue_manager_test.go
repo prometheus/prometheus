@@ -323,7 +323,7 @@ func TestShutdown(t *testing.T) {
 
 	start := time.Now()
 	m.Stop()
-	duration := time.Now().Sub(start)
+	duration := time.Since(start)
 	if duration > deadline+(deadline/10) {
 		t.Errorf("Took too long to shutdown: %s > %s", duration, deadline)
 	}

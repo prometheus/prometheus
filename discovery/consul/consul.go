@@ -131,7 +131,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if strings.TrimSpace(c.Server) == "" {
-		return fmt.Errorf("Consul SD configuration requires a server address")
+		return fmt.Errorf("consul SD configuration requires a server address")
 	}
 	return nil
 }
@@ -267,7 +267,7 @@ func (d *Discovery) getDatacenter() error {
 
 	dc, ok := info["Config"]["Datacenter"].(string)
 	if !ok {
-		err := fmt.Errorf("Invalid value '%v' for Config.Datacenter", info["Config"]["Datacenter"])
+		err := fmt.Errorf("invalid value '%v' for Config.Datacenter", info["Config"]["Datacenter"])
 		level.Error(d.logger).Log("msg", "Error retrieving datacenter name", "err", err)
 		return err
 	}

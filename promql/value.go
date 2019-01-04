@@ -311,10 +311,7 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 
 func (ssi *storageSeriesIterator) Next() bool {
 	ssi.curr++
-	if ssi.curr >= len(ssi.points) {
-		return false
-	}
-	return true
+	return ssi.curr < len(ssi.points)
 }
 
 func (ssi *storageSeriesIterator) Err() error {

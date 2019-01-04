@@ -155,7 +155,7 @@ func (node *MatrixSelector) String() string {
 func (node *SubqueryExpr) String() string {
 	step := ""
 	if node.Step != 0 {
-		step = fmt.Sprintf("%s", model.Duration(node.Step))
+		step = model.Duration(node.Step).String()
 	}
 	return fmt.Sprintf("%s[%s:%s]", node.Expr.String(), model.Duration(node.Range), step)
 }

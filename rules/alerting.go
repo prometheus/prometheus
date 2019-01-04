@@ -206,10 +206,6 @@ func (r *AlertingRule) Annotations() labels.Labels {
 	return r.annotations
 }
 
-func (r *AlertingRule) equal(o *AlertingRule) bool {
-	return r.name == o.name && labels.Equal(r.labels, o.labels)
-}
-
 func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 

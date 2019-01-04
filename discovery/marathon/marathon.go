@@ -356,7 +356,7 @@ func fetchApps(client *http.Client, url string) (*AppList, error) {
 	defer resp.Body.Close()
 
 	if (resp.StatusCode < 200) || (resp.StatusCode >= 300) {
-		return nil, fmt.Errorf("Non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
+		return nil, fmt.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
 	}
 
 	var apps AppList

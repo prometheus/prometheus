@@ -118,7 +118,7 @@ func convertToIngress(o interface{}) (*v1beta1.Ingress, error) {
 		return ingress, nil
 	}
 
-	return nil, fmt.Errorf("Received unexpected object: %v", o)
+	return nil, fmt.Errorf("received unexpected object: %v", o)
 }
 
 func ingressSource(s *v1beta1.Ingress) string {

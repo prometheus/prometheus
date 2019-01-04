@@ -85,7 +85,7 @@ type SDConfig struct {
 
 func validateAuthParam(param, name string) error {
 	if len(param) == 0 {
-		return fmt.Errorf("Azure SD configuration requires a %s", name)
+		return fmt.Errorf("azure SD configuration requires a %s", name)
 	}
 	return nil
 }
@@ -116,7 +116,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity {
-		return fmt.Errorf("Unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
+		return fmt.Errorf("unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
 	}
 
 	return nil

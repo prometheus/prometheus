@@ -73,6 +73,8 @@ endif
 
 PROMU_VERSION ?= 0.2.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
+STATICCHECK_VERSION ?= 2019.1
+STATICCHECK_URL     := https://github.com/dominikh/go-tools/releases/download/$(STATICCHECK_VERSION)/staticcheck_$(GOHOSTOS)_$(GOHOSTARCH)
 
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
@@ -138,8 +140,12 @@ common-vet:
 .PHONY: common-staticcheck
 common-staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
+	chmod +x $(STATICCHECK)
 ifdef GO111MODULE
-	GO111MODULE=$(GO111MODULE) $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" -checks "SA*" $(pkgs)
+# 'go list' needs to be executed before staticcheck to prepopulate the modules cache.
+# Otherwise staticcheck might fail randomly for some reason not yet explained.
+	GO111MODULE=$(GO111MODULE) $(GO) list -e -compiled -test=true -export=false -deps=true -find=false -tags= -- ./... > /dev/null
+	GO111MODULE=$(GO111MODULE) $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 else
 	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 endif
@@ -200,21 +206,9 @@ proto:
 	@echo ">> generating code from proto files"
 	@./scripts/genproto.sh
 
-.PHONY: $(STATICCHECK)
 $(STATICCHECK):
-ifdef GO111MODULE
-# Get staticcheck from a temporary directory to avoid modifying the local go.{mod,sum}.
-# See https://github.com/golang/go/issues/27643.
-# For now, we are using the next branch of staticcheck because master isn't compatible yet with Go modules.
-	tmpModule=$$(mktemp -d 2>&1) && \
-	mkdir -p $${tmpModule}/staticcheck && \
-	cd "$${tmpModule}"/staticcheck && \
-	GO111MODULE=on $(GO) mod init example.com/staticcheck && \
-	GO111MODULE=on GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck@next && \
-	rm -rf $${tmpModule};
-else
-	GOOS= GOARCH= GO111MODULE=off $(GO) get -u honnef.co/go/tools/cmd/staticcheck
-endif
+	mkdir -p $(FIRST_GOPATH)/bin
+	curl -s -L $(STATICCHECK_URL) > $(STATICCHECK)
 
 ifdef GOVENDOR
 .PHONY: $(GOVENDOR)

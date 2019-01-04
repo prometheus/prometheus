@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
 
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	pb "github.com/prometheus/prometheus/prompb"
 )
@@ -113,16 +112,6 @@ var (
 	minTime = time.Unix(math.MinInt64/1000+62135596801, 0)
 	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999)
 )
-
-func labelsToProto(lset labels.Labels) pb.Labels {
-	r := pb.Labels{
-		Labels: make([]pb.Label, 0, len(lset)),
-	}
-	for _, l := range lset {
-		r.Labels = append(r.Labels, pb.Label{Name: l.Name, Value: l.Value})
-	}
-	return r
-}
 
 // AdminDisabled implements the administration interface that informs
 // that the API endpoints are disabled.
