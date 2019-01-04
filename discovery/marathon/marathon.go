@@ -82,6 +82,7 @@ var (
 type SDConfig struct {
 	Servers          []string                     `yaml:"servers,omitempty"`
 	RefreshInterval  model.Duration               `yaml:"refresh_interval,omitempty"`
+	External         bool                         `yaml:"external,omitempty"`
 	AuthToken        config_util.Secret           `yaml:"auth_token,omitempty"`
 	AuthTokenFile    string                       `yaml:"auth_token_file,omitempty"`
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
@@ -125,6 +126,7 @@ type Discovery struct {
 	lastRefresh     map[string]*targetgroup.Group
 	appsClient      AppListClient
 	logger          log.Logger
+	external        bool
 }
 
 // NewDiscovery returns a new Marathon Discovery.
@@ -153,6 +155,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		refreshInterval: time.Duration(conf.RefreshInterval),
 		appsClient:      fetchApps,
 		logger:          logger,
+		external:        conf.External,
 	}, nil
 }
 
@@ -268,7 +271,7 @@ func (d *Discovery) fetchTargetGroups() (map[string]*targetgroup.Group, error) {
 		return nil, err
 	}
 
-	groups := AppsToTargetGroups(apps)
+	groups := AppsToTargetGroups(apps, d.external)
 	return groups, nil
 }
 
@@ -387,18 +390,18 @@ func RandomAppsURL(servers []string) string {
 }
 
 // AppsToTargetGroups takes an array of Marathon apps and converts them into target groups.
-func AppsToTargetGroups(apps *AppList) map[string]*targetgroup.Group {
+func AppsToTargetGroups(apps *AppList, external bool) map[string]*targetgroup.Group {
 	tgroups := map[string]*targetgroup.Group{}
 	for _, a := range apps.Apps {
-		group := createTargetGroup(&a)
+		group := createTargetGroup(&a, external)
 		tgroups[group.Source] = group
 	}
 	return tgroups
 }
 
-func createTargetGroup(app *App) *targetgroup.Group {
+func createTargetGroup(app *App, external bool) *targetgroup.Group {
 	var (
-		targets = targetsForApp(app)
+		targets = targetsForApp(app, external)
 		appName = model.LabelValue(app.ID)
 		image   = model.LabelValue(app.Container.Docker.Image)
 	)
@@ -419,7 +422,7 @@ func createTargetGroup(app *App) *targetgroup.Group {
 	return tg
 }
 
-func targetsForApp(app *App) []model.LabelSet {
+func targetsForApp(app *App, external bool) []model.LabelSet {
 	targets := make([]model.LabelSet, 0, len(app.Tasks))
 
 	var ports []uint32
@@ -468,7 +471,7 @@ func targetsForApp(app *App) []model.LabelSet {
 		for i, port := range ports {
 
 			// Each port represents a possible Prometheus target.
-			targetAddress := targetEndpoint(&t, port, app.isContainerNet())
+			targetAddress := targetEndpoint(&t, port, app.isContainerNet(), external)
 			target := model.LabelSet{
 				model.AddressLabel: model.LabelValue(targetAddress),
 				taskLabel:          model.LabelValue(t.ID),
@@ -492,12 +495,14 @@ func targetsForApp(app *App) []model.LabelSet {
 }
 
 // Generate a target endpoint string in host:port format.
-func targetEndpoint(task *Task, port uint32, containerNet bool) string {
+func targetEndpoint(task *Task, port uint32, containerNet bool, external bool) string {
 
 	var host string
 
 	// Use the task's ipAddress field when it's in a container network
-	if containerNet && len(task.IPAddresses) > 0 {
+	if external == true {
+		host = task.Host
+	} else if containerNet && len(task.IPAddresses) > 0 {
 		host = task.IPAddresses[0].Address
 	} else {
 		host = task.Host
