@@ -34,7 +34,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/golang/glog"
 	"github.com/oklog/oklog/pkg/group"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -42,6 +41,7 @@ import (
 	"github.com/prometheus/common/version"
 	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"k8s.io/klog"
 
 	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/common/promlog"
@@ -242,8 +242,8 @@ func main() {
 	logger := promlog.New(&cfg.promlogConfig)
 
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
-	glog.ClampLevel(6)
-	glog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
+	klog.ClampLevel(6)
+	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())

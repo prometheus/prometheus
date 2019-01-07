@@ -136,6 +136,22 @@ var (
 		},
 		[]string{"queue_name"},
 	)
+	clientGoWorkqueueUnfinishedWorkSecondsMetricVec = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: workqueueMetricsNamespace,
+			Name:      "unfinished_work_seconds",
+			Help:      "How long an item has remained unfinished in the work queue.",
+		},
+		[]string{"queue_name"},
+	)
+	clientGoWorkqueueLongestRunningProcessorMetricVec = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: workqueueMetricsNamespace,
+			Name:      "longest_running_processor_seconds",
+			Help:      "Duration of the longest running processor in the work queue.",
+		},
+		[]string{"queue_name"},
+	)
 	clientGoWorkqueueWorkDurationMetricVec = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Namespace:  workqueueMetricsNamespace,
@@ -146,6 +162,13 @@ var (
 		[]string{"queue_name"},
 	)
 )
+
+// gaugeSetFunc is an adapter that allows the use of functions as gauge metric setters.
+type gaugeSetFunc func(float64)
+
+func (s gaugeSetFunc) Set(value float64) {
+	s(value)
+}
 
 // Definition of dummy metric used as a placeholder if we don't want to observe some data.
 type noopMetric struct{}
@@ -218,6 +241,8 @@ func (f *clientGoWorkqueueMetricsProvider) Register(registerer prometheus.Regist
 	registerer.MustRegister(clientGoWorkqueueAddsMetricVec)
 	registerer.MustRegister(clientGoWorkqueueLatencyMetricVec)
 	registerer.MustRegister(clientGoWorkqueueWorkDurationMetricVec)
+	registerer.MustRegister(clientGoWorkqueueUnfinishedWorkSecondsMetricVec)
+	registerer.MustRegister(clientGoWorkqueueLongestRunningProcessorMetricVec)
 }
 
 func (f *clientGoWorkqueueMetricsProvider) NewDepthMetric(name string) workqueue.GaugeMetric {
@@ -239,6 +264,16 @@ func (f *clientGoWorkqueueMetricsProvider) NewWorkDurationMetric(name string) wo
 	return prometheus.ObserverFunc(func(v float64) {
 		metric.Observe(v / 1e6)
 	})
+}
+func (f *clientGoWorkqueueMetricsProvider) NewUnfinishedWorkSecondsMetric(name string) workqueue.SettableGaugeMetric {
+	return clientGoWorkqueueUnfinishedWorkSecondsMetricVec.WithLabelValues(name)
+}
+func (f *clientGoWorkqueueMetricsProvider) NewLongestRunningProcessorMicrosecondsMetric(name string) workqueue.SettableGaugeMetric {
+	metric := clientGoWorkqueueLongestRunningProcessorMetricVec.WithLabelValues(name)
+	return gaugeSetFunc(func(v float64) {
+		metric.Set(v / 1e6)
+	})
+
 }
 func (clientGoWorkqueueMetricsProvider) NewRetriesMetric(name string) workqueue.CounterMetric {
 	// Retries are not used so the metric is omitted.
