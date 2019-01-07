@@ -39,8 +39,6 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//lint:file-ignore U1000 Ignore all unused code.
-
 package chunkenc
 
 import "io"
@@ -53,16 +51,6 @@ type bstream struct {
 
 func newBReader(b []byte) bstream {
 	return bstream{stream: b, count: 8}
-}
-
-func newBWriter(size int) *bstream {
-	return &bstream{stream: make([]byte, 0, size), count: 0}
-}
-
-func (b *bstream) clone() *bstream {
-	d := make([]byte, len(b.stream))
-	copy(d, b.stream)
-	return &bstream{stream: d, count: b.count}
 }
 
 func (b *bstream) bytes() []byte {
