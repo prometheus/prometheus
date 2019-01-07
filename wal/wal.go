@@ -164,6 +164,7 @@ type WAL struct {
 	page        *page    // active page
 	stopc       chan chan struct{}
 	actorc      chan func()
+	closed      bool // To allow calling Close() more than once without blocking.
 
 	fsyncDuration   prometheus.Summary
 	pageFlushes     prometheus.Counter
@@ -584,6 +585,10 @@ func (w *WAL) Close() (err error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
+	if w.closed {
+		return nil
+	}
+
 	// Flush the last page and zero out all its remaining size.
 	// We must not flush an empty page as it would falsely signal
 	// the segment is done if we start writing to it again after opening.
@@ -603,7 +608,7 @@ func (w *WAL) Close() (err error) {
 	if err := w.segment.Close(); err != nil {
 		level.Error(w.logger).Log("msg", "close previous segment", "err", err)
 	}
-
+	w.closed = true
 	return nil
 }
 
