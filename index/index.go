@@ -36,6 +36,7 @@ const (
 	// MagicIndex 4 bytes at the head of an index file.
 	MagicIndex = 0xBAAAD700
 
+	indexFormatV1 = 1
 	indexFormatV2 = 2
 
 	labelNameSeperator = "\xff"
@@ -617,7 +618,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 	r.version = int(r.b.Range(4, 5)[0])
 
-	if r.version != 1 && r.version != 2 {
+	if r.version != indexFormatV1 && r.version != indexFormatV2 {
 		return nil, errors.Errorf("unknown index file version %d", r.version)
 	}
 
@@ -791,14 +792,14 @@ func (r *Reader) readSymbols(off int) error {
 		basePos = uint32(off) + 4
 		nextPos = basePos + uint32(origLen-d.len())
 	)
-	if r.version == 2 {
+	if r.version == indexFormatV2 {
 		r.symbolSlice = make([]string, 0, cnt)
 	}
 
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
 		s := d.uvarintStr()
 
-		if r.version == 2 {
+		if r.version == indexFormatV2 {
 			r.symbolSlice = append(r.symbolSlice, s)
 		} else {
 			r.symbols[nextPos] = s
@@ -924,7 +925,7 @@ func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) err
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
-	if r.version == 2 {
+	if r.version == indexFormatV2 {
 		offset = id * 16
 	}
 	d := r.decbufUvarintAt(int(offset))
