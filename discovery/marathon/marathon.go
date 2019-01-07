@@ -49,7 +49,7 @@ const (
 	portIndexLabel model.LabelName = metaLabelPrefix + "port_index"
 	// taskLabel contains the mesos task name of the app instance.
 	taskLabel model.LabelName = metaLabelPrefix + "task"
-	// hostLabel contains the mesos task host address of the app instance
+	// hostLabel contains the mesos task host address of the app instance.
 	hostLabel model.LabelName = metaLabelPrefix + "host"
 
 	// portMappingLabelPrefix is the prefix for the application portMappings labels.
