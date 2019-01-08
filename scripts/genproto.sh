@@ -21,6 +21,10 @@ for pkg in ${INSTALL_PKGS}; do
     GO111MODULE=on go install -mod=vendor "$pkg"
 done
 
+for pkg in github.com/gogo/protobuf github.com/grpc-ecosystem/grpc-gateway; do
+    GO111MODULE=on go get "$pkg"
+done
+
 PROM_ROOT="${PWD}"
 PROM_PATH="${PROM_ROOT}/prompb"
 GOGOPROTO_ROOT="$(GO111MODULE=on go list -f '{{ .Dir }}' -m github.com/gogo/protobuf)"
@@ -36,7 +40,7 @@ for dir in ${DIRS}; do
             -I="${GOGOPROTO_PATH}" \
             -I="${PROM_PATH}" \
             -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
-            *.proto
+            ./*.proto
 
 		protoc -I. \
 			-I="${GOGOPROTO_PATH}" \
@@ -51,6 +55,6 @@ for dir in ${DIRS}; do
 		sed -i.bak -E 's/import _ \"google\/protobuf\"//g' -- *.pb.go
 		sed -i.bak -E 's/golang\/protobuf/gogo\/protobuf/g' -- *.go
 		rm -f -- *.bak
-		goimports -w -- *.pb.go
+		goimports -w ./*.pb.go
 	popd
 done
