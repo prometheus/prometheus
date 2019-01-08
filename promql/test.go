@@ -606,9 +606,9 @@ func (ll *LazyLoader) parse(input string) error {
 			}
 			ll.loadCmd = cmd
 			return nil
-		} else {
-			return raise(i, "invalid command %q", l)
 		}
+
+		return raise(i, "invalid command %q", l)
 	}
 	return errors.New("no \"load\" command found")
 }

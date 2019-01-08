@@ -614,7 +614,7 @@ func extractFuncFromPath(p []Node) string {
 	return extractFuncFromPath(p[:len(p)-1])
 }
 
-func checkForSeriesSetExpansion(expr Expr, ctx context.Context) error {
+func checkForSeriesSetExpansion(ctx context.Context, expr Expr) error {
 	switch e := expr.(type) {
 	case *MatrixSelector:
 		if e.series == nil {
@@ -966,7 +966,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 
 		sel := e.Args[matrixArgIndex].(*MatrixSelector)
-		if err := checkForSeriesSetExpansion(sel, ev.ctx); err != nil {
+		if err := checkForSeriesSetExpansion(ev.ctx, sel); err != nil {
 			ev.error(err)
 		}
 		mat := make(Matrix, 0, len(sel.series)) // Output matrix.
@@ -1100,7 +1100,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		})
 
 	case *VectorSelector:
-		if err := checkForSeriesSetExpansion(e, ev.ctx); err != nil {
+		if err := checkForSeriesSetExpansion(ev.ctx, e); err != nil {
 			ev.error(err)
 		}
 		mat := make(Matrix, 0, len(e.series))
@@ -1175,7 +1175,7 @@ func durationToInt64Millis(d time.Duration) int64 {
 
 // vectorSelector evaluates a *VectorSelector expression.
 func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
-	if err := checkForSeriesSetExpansion(node, ev.ctx); err != nil {
+	if err := checkForSeriesSetExpansion(ev.ctx, node); err != nil {
 		ev.error(err)
 	}
 
@@ -1249,7 +1249,7 @@ func putPointSlice(p []Point) {
 
 // matrixSelector evaluates a *MatrixSelector expression.
 func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
-	if err := checkForSeriesSetExpansion(node, ev.ctx); err != nil {
+	if err := checkForSeriesSetExpansion(ev.ctx, node); err != nil {
 		ev.error(err)
 	}
 
