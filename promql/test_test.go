@@ -14,10 +14,11 @@
 package promql
 
 import (
-	"github.com/prometheus/prometheus/pkg/labels"
 	"math"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/pkg/labels"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -132,7 +133,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					}
 
 					// Get the series for the matcher.
-					ss, err, _ := querier.Select(nil, matchers...)
+					ss, _, err := querier.Select(nil, matchers...)
 					testutil.Ok(t, err)
 					testutil.Assert(t, ss.Next(), "")
 					storageSeries := ss.At()
