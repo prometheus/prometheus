@@ -654,6 +654,9 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 			if _, err := app.Add(m, s.T, s.V); err != nil {
 				return err
 			}
+			if i == len(smpls)-1 {
+				ll.loadCmd.defs[h] = nil
+			}
 		}
 	}
 	return app.Commit()
