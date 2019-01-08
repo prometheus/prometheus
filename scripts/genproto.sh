@@ -16,13 +16,11 @@ if ! [[ $(protoc --version) =~ "3.5.1" ]]; then
 fi
 
 echo "installing plugins"
+GO111MODULE=on go mod download
+
 INSTALL_PKGS="golang.org/x/tools/cmd/goimports github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
 for pkg in ${INSTALL_PKGS}; do
     GO111MODULE=on go install -mod=vendor "$pkg"
-done
-
-for pkg in github.com/gogo/protobuf github.com/grpc-ecosystem/grpc-gateway; do
-    GO111MODULE=on go get "$pkg"
 done
 
 PROM_ROOT="${PWD}"
