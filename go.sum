@@ -87,8 +87,8 @@ github.com/google/pprof v0.0.0-20180605153948-8b03ce837f34 h1:mGdRet4qWdrDnNidFr
 github.com/google/pprof v0.0.0-20180605153948-8b03ce837f34/go.mod h1:zfwlbNMJ+OItoe0UupaVj+oy1omPYYDuagoSzA8v9mc=
 github.com/googleapis/gnostic v0.0.0-20180520015035-48a0ecefe2e4 h1:yxHFSapGMUoyn+3v6LiJJxoJhvbDqIq8me0gAWehnSU=
 github.com/googleapis/gnostic v0.0.0-20180520015035-48a0ecefe2e4/go.mod h1:sJBsCZ4ayReDTBIg8b9dl28c5xFWyhBTVRp3pOg5EKY=
-github.com/gophercloud/gophercloud v0.0.0-20170607034829-caf34a65f602 h1:Acc1d6mIuURCyYN6nkm1d7+Gycfq1+jUWdnBbTyGb6E=
-github.com/gophercloud/gophercloud v0.0.0-20170607034829-caf34a65f602/go.mod h1:3WdhXV3rUYy9p6AUW8d94kr+HS62Y4VL9mBnFxsD8q4=
+github.com/gophercloud/gophercloud v0.0.0-20181206160319-9d88c34913a9 h1:7TRGugCPfA2Mll6QT7cbhD1GXZwk7+1PUz8tYrOWXgQ=
+github.com/gophercloud/gophercloud v0.0.0-20181206160319-9d88c34913a9/go.mod h1:3WdhXV3rUYy9p6AUW8d94kr+HS62Y4VL9mBnFxsD8q4=
 github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 h1:EGx4pi6eqNxGaHF6qqu48+N2wcFQ5qg5FXgOdqsJ5d8=
 github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1/go.mod h1:wJfORRmW1u3UXTncJ5qlYoELFm8eSnnEO6hX4iZ3EWY=
 github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7 h1:pdN6V1QBWetyv/0+wjACpqVH+eVULgEjkurDLq3goeM=

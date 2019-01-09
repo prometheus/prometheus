@@ -540,6 +540,17 @@ region: <string>
 [ project_name: <string> ]
 [ project_id: <string> ]
 
+# The application_credential_id or application_credential_name fields are
+# required if using an application credential to authenticate. Some providers
+# allow you to create an application credential to authenticate rather than a
+# password.
+[ application_credential_name: <string> ]
+[ application_credential_id: <string> ]
+
+# The application_credential_secret field is required if using an application
+# credential to authenticate.
+[ application_credential_secret: <secret> ]
+
 # Whether the service discovery should list all instances for all projects.
 # It is only relevant for the 'instance' role and usually requires admin permissions.
 [ all_tenants: <boolean> | default: false ]
@@ -978,7 +989,7 @@ endpoint: <string>
 
 # A list of groups for which targets are retrieved. If omitted, all containers
 # available to the requesting account are scraped.
-groups: 
+groups:
   [ - <string> ... ]
 
 # The port to use for discovery and metric scraping.

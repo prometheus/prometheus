@@ -90,7 +90,7 @@ github.com/google/pprof/profile
 github.com/googleapis/gnostic/OpenAPIv2
 github.com/googleapis/gnostic/compiler
 github.com/googleapis/gnostic/extensions
-# github.com/gophercloud/gophercloud v0.0.0-20170607034829-caf34a65f602
+# github.com/gophercloud/gophercloud v0.0.0-20181206160319-9d88c34913a9
 github.com/gophercloud/gophercloud
 github.com/gophercloud/gophercloud/openstack
 github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips
