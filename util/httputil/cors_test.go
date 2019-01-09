@@ -36,7 +36,7 @@ func TestCORSHandler(t *testing.T) {
 
 	dummyOrigin := "https://foo.com"
 
-	// OPTIONS WITH LEGIT ORIGIN
+	// OPTIONS with legit origin
 	req, err := http.NewRequest("OPTIONS", server.URL+"/any_path", nil)
 
 	if err != nil {
@@ -56,7 +56,7 @@ func TestCORSHandler(t *testing.T) {
 		t.Fatalf("%q does not match %q", dummyOrigin, AccessControlAllowOrigin)
 	}
 
-	// OPTIONS WITH BAD ORIGIN
+	// OPTIONS with bad origin
 	req, err = http.NewRequest("OPTIONS", server.URL+"/any_path", nil)
 
 	if err != nil {
