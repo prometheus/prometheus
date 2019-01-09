@@ -359,7 +359,7 @@ func main() {
 			return discoveryManagerNotify.ApplyConfig(c)
 		},
 		func(cfg *config.Config) error {
-			// Get all rule files matching the configuration oaths.
+			// Get all rule files matching the configuration paths.
 			var files []string
 			for _, pat := range cfg.RuleFiles {
 				fs, err := filepath.Glob(pat)
