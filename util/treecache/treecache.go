@@ -63,12 +63,11 @@ func (zl ZookeeperLogger) Printf(s string, i ...interface{}) {
 // A ZookeeperTreeCache keeps data from all children of a Zookeeper path
 // locally cached and updated according to received events.
 type ZookeeperTreeCache struct {
-	conn     *zk.Conn
-	prefix   string
-	events   chan ZookeeperTreeCacheEvent
-	zkEvents chan zk.Event
-	stop     chan struct{}
-	head     *zookeeperTreeCacheNode
+	conn   *zk.Conn
+	prefix string
+	events chan ZookeeperTreeCacheEvent
+	stop   chan struct{}
+	head   *zookeeperTreeCacheNode
 
 	logger log.Logger
 }

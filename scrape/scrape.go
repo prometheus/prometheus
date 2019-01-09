@@ -129,7 +129,7 @@ type scrapePool struct {
 	cancel         context.CancelFunc
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
-	newLoop func(*Target, scraper, int, bool, []*config.RelabelConfig) loop
+	newLoop func(*Target, scraper, int, bool, []*relabel.Config) loop
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -159,7 +159,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 		loops:         map[uint64]loop{},
 		logger:        logger,
 	}
-	sp.newLoop = func(t *Target, s scraper, limit int, honor bool, mrc []*config.RelabelConfig) loop {
+	sp.newLoop = func(t *Target, s scraper, limit int, honor bool, mrc []*relabel.Config) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
 		cache := newScrapeCache()
 		t.setMetadataStore(cache)
@@ -366,7 +366,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 	wg.Wait()
 }
 
-func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*config.RelabelConfig) labels.Labels {
+func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
 	lb := labels.NewBuilder(lset)
 
 	if honor {
@@ -927,6 +927,7 @@ type sample struct {
 	v      float64
 }
 
+//lint:ignore U1000 staticcheck falsely reports that samples is unused.
 type samples []sample
 
 func (s samples) Len() int      { return len(s) }

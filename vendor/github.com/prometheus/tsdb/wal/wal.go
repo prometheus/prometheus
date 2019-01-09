@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	defaultSegmentSize = 128 * 1024 * 1024 // 128 MB
+	DefaultSegmentSize = 128 * 1024 * 1024 // 128 MB
 	pageSize           = 32 * 1024         // 32KB
 	recordHeaderSize   = 7
 )
@@ -174,7 +174,7 @@ type WAL struct {
 
 // New returns a new WAL over the given directory.
 func New(logger log.Logger, reg prometheus.Registerer, dir string) (*WAL, error) {
-	return NewSize(logger, reg, dir, defaultSegmentSize)
+	return NewSize(logger, reg, dir, DefaultSegmentSize)
 }
 
 // NewSize returns a new WAL over the given directory.
@@ -298,9 +298,6 @@ func (w *WAL) Repair(origErr error) error {
 	level.Warn(w.logger).Log("msg", "deleting all segments behind corruption", "segment", cerr.Segment)
 
 	for _, s := range segs {
-		if s.index <= cerr.Segment {
-			continue
-		}
 		if w.segment.i == s.index {
 			// The active segment needs to be removed,
 			// close it first (Windows!). Can be closed safely
@@ -309,6 +306,9 @@ func (w *WAL) Repair(origErr error) error {
 			if err := w.segment.Close(); err != nil {
 				return errors.Wrap(err, "close active segment")
 			}
+		}
+		if s.index <= cerr.Segment {
+			continue
 		}
 		if err := os.Remove(filepath.Join(w.dir, s.name)); err != nil {
 			return errors.Wrapf(err, "delete segment:%v", s.index)

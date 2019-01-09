@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	pkgrelabel "github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/relabel"
 )
@@ -144,7 +145,7 @@ type QueueManager struct {
 	flushDeadline  time.Duration
 	cfg            config.QueueConfig
 	externalLabels model.LabelSet
-	relabelConfigs []*config.RelabelConfig
+	relabelConfigs []*pkgrelabel.Config
 	client         StorageClient
 	queueName      string
 	logLimiter     *rate.Limiter
@@ -161,7 +162,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient, flushDeadline time.Duration) *QueueManager {
+func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*pkgrelabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	} else {
@@ -400,10 +401,6 @@ func (t *QueueManager) newShards(numShards int) *shards {
 	return s
 }
 
-func (s *shards) len() int {
-	return len(s.queues)
-}
-
 func (s *shards) start() {
 	for i := 0; i < len(s.queues); i++ {
 		go s.runShard(i)
@@ -425,7 +422,6 @@ func (s *shards) stop(deadline time.Duration) {
 	// Force an unclean shutdown.
 	s.cancel()
 	<-s.done
-	return
 }
 
 func (s *shards) enqueue(sample *model.Sample) bool {

@@ -124,20 +124,18 @@ type Handler struct {
 
 	apiV1 *api_v1.API
 
-	router       *route.Router
-	quitCh       chan struct{}
-	reloadCh     chan chan error
-	options      *Options
-	config       *config.Config
-	configString string
-	versionInfo  *PrometheusVersion
-	birth        time.Time
-	cwd          string
-	flagsMap     map[string]string
+	router      *route.Router
+	quitCh      chan struct{}
+	reloadCh    chan chan error
+	options     *Options
+	config      *config.Config
+	versionInfo *PrometheusVersion
+	birth       time.Time
+	cwd         string
+	flagsMap    map[string]string
 
-	externalLabels model.LabelSet
-	mtx            sync.RWMutex
-	now            func() model.Time
+	mtx sync.RWMutex
+	now func() model.Time
 
 	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }

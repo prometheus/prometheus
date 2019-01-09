@@ -488,7 +488,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	var sets []storage.SeriesSet
 	var warnings storage.Warnings
 	for _, mset := range matcherSets {
-		s, err, wrn := q.Select(nil, mset...) //TODO
+		s, wrn, err := q.Select(nil, mset...) //TODO
 		warnings = append(warnings, wrn...)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
@@ -883,7 +883,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		set, err, _ := querier.Select(selectParams, filteredMatchers...)
+		set, _, err := querier.Select(selectParams, filteredMatchers...)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -923,7 +923,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	db := api.db()
 	if db == nil {
@@ -980,7 +980,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 
 func (api *API) snapshot(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	var (
 		skipHead bool
@@ -1019,7 +1019,7 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 
 func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	db := api.db()
 	if db == nil {

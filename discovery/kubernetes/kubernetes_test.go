@@ -156,7 +156,7 @@ Loop:
 		case <-time.After(timeout):
 			// Because we use queue, an object that is created then
 			// deleted or updated may be processed only once.
-			// So possibliy we may skip events, timed out here.
+			// So possibly we may skip events, timed out here.
 			t.Logf("timed out, got %d (max: %d) items, some events are skipped", len(allTgs), max)
 			break Loop
 		}

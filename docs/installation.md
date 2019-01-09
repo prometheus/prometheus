@@ -20,7 +20,7 @@ the respective repository.
 
 All Prometheus services are available as Docker images on
 [Quay.io](https://quay.io/repository/prometheus/prometheus) or
-[Docker Hub[(https://hub.docker.com/u/prom/).
+[Docker Hub](https://hub.docker.com/u/prom/).
 
 Running Prometheus on Docker is as simple as `docker run -p 9090:9090
 prom/prometheus`. This starts Prometheus with a sample

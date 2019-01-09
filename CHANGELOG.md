@@ -1,6 +1,5 @@
-## 2.6.0-rc.0 / 2018-12-05
+## 2.6.0 / 2018-12-17
 
-* [CHANGE] Include default flags to the container's entrypoint. #4796
 * [CHANGE] Promtool: Remove the `update` command. #3839
 * [FEATURE] Add JSON log format via the `--log.format` flag. #4876
 * [FEATURE] API: Add /api/v1/labels endpoint to get all label names. #4835
@@ -8,8 +7,8 @@
 * [ENHANCEMENT] Add `prometheus_tsdb_lowest_timestamp_seconds`, `prometheus_tsdb_head_min_time_seconds` and `prometheus_tsdb_head_max_time_seconds` metrics. #4888
 * [ENHANCEMENT] Add `rule_group_last_evaluation_timestamp_seconds` metric. #4852
 * [ENHANCEMENT] Add `prometheus_template_text_expansion_failures_total` and `prometheus_template_text_expansions_total` metrics. #4747
+* [ENHANCEMENT] Remove default flags from the container's entrypoint. #4976
 * [ENHANCEMENT] Set consistent User-Agent header in outgoing requests. #4891
-* [ENHANCEMENT] Azure SD: Add the machine's power state to the discovery metadata. #4908
 * [ENHANCEMENT] Azure SD: Error out at load time when authentication parameters are missing. #4907
 * [ENHANCEMENT] EC2 SD: Add the machine's private DNS name to the discovery metadata. #4693
 * [ENHANCEMENT] EC2 SD: Add the operating system's platform to the discovery metadata. #4663
@@ -42,6 +41,7 @@
 * [BUGFIX] Scrape: Scrape targets at fixed intervals even after Prometheus restarts. #4926
 * [BUGFIX] TSDB: Support restored snapshots including the head properly. #4953
 * [BUGFIX] TSDB: Repair WAL when the last record in a segment is torn. #4953
+* [BUGFIX] TSDB: Fix unclosed file readers on Windows systems. #4997
 * [BUGFIX] Web: Avoid proxy to connect to the local gRPC server. #4572
 
 ## 2.5.0 / 2018-11-06

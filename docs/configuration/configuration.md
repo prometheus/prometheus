@@ -267,6 +267,8 @@ The following meta labels are available on targets during relabeling:
 * `__meta_azure_machine_resource_group`: the machine's resource group
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
 * `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
+* `__meta_azure_subscription_id`: the subscription ID
+* `__meta_azure_tenant_id`: the tenant ID
 
 See below for the configuration options for Azure discovery:
 
@@ -274,14 +276,18 @@ See below for the configuration options for Azure discovery:
 # The information to access the Azure API.
 # The Azure environment.
 [ environment: <string> | default = AzurePublicCloud ]
-# The subscription ID.
+
+# The authentication method, either OAuth or ManagedIdentity.
+# See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
+[ authentication_method: <string> | default = OAuth]
+# The subscription ID. Always required.
 subscription_id: <string>
-# The tenant ID.
-tenant_id: <string>
-# The client ID.
-client_id: <string>
-# The client secret.
-client_secret: <secret>
+# Optional tenant ID. Only required with authentication_method OAuth.
+[ tenant_id: <string> ]
+# Optional client ID. Only required with authentication_method OAuth.
+[ client_id: <string> ]
+# Optional client secret. Only required with authentication_method OAuth.
+[ client_secret: <secret> ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 300s ]
@@ -300,6 +306,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
+* `__meta_consul_tagged_address_<key>`: each node tagged address key value of the target
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -533,6 +540,17 @@ region: <string>
 [ project_name: <string> ]
 [ project_id: <string> ]
 
+# The application_credential_id or application_credential_name fields are
+# required if using an application credential to authenticate. Some providers
+# allow you to create an application credential to authenticate rather than a
+# password.
+[ application_credential_name: <string> ]
+[ application_credential_id: <string> ]
+
+# The application_credential_secret field is required if using an application
+# credential to authenticate.
+[ application_credential_secret: <secret> ]
+
 # Whether the service discovery should list all instances for all projects.
 # It is only relevant for the 'instance' role and usually requires admin permissions.
 [ all_tenants: <boolean> | default: false ]
@@ -693,9 +711,11 @@ service port.
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the service object.
-* `__meta_kubernetes_service_name`: The name of the service object.
-* `__meta_kubernetes_service_label_<labelname>`: The label of the service object.
 * `__meta_kubernetes_service_annotation_<annotationname>`: The annotation of the service object.
+* `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
+* `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
+* `__meta_kubernetes_service_label_<labelname>`: The label of the service object.
+* `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
 * `__meta_kubernetes_service_port_number`: Number of the service port for the target.
 * `__meta_kubernetes_service_port_protocol`: Protocol of the service port for the target.
@@ -969,7 +989,7 @@ endpoint: <string>
 
 # A list of groups for which targets are retrieved. If omitted, all containers
 # available to the requesting account are scraped.
-groups: 
+groups:
   [ - <string> ... ]
 
 # The port to use for discovery and metric scraping.
@@ -1021,7 +1041,8 @@ Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
 the target and vary between mechanisms.
 
-Labels starting with `__` will be removed from the label set after relabeling is completed.
+Labels starting with `__` will be removed from the label set after target
+relabeling is completed.
 
 If a relabeling step needs to store a label value only temporarily (as the
 input to a subsequent relabeling step), use the `__tmp` label name prefix. This
