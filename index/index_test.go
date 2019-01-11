@@ -380,13 +380,28 @@ func TestPersistence_index_e2e(t *testing.T) {
 		}
 	}
 
+	gotSymbols, err := ir.Symbols()
+	testutil.Ok(t, err)
+
+	testutil.Equals(t, len(mi.symbols), len(gotSymbols))
+	for s := range mi.symbols {
+		_, ok := gotSymbols[s]
+		testutil.Assert(t, ok, "")
+	}
+
 	testutil.Ok(t, ir.Close())
+}
+
+func TestDecbufUvariantWithInvalidBuffer(t *testing.T) {
+	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
+
+	db := newDecbufUvarintAt(b, 0)
+	testutil.NotOk(t, db.err())
 }
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
-	r := &Reader{b: b}
 
-	db := r.decbufUvarintAt(0)
-	testutil.NotOk(t, db.err())
+	_, err := NewReader(b)
+	testutil.NotOk(t, err)
 }
