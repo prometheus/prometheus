@@ -552,7 +552,7 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (n
 
 	result, err = client.nic.GetResponder(resp)
 	if err != nil {
-		err = autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
+		return result, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
 	}
 
 	return result, nil
