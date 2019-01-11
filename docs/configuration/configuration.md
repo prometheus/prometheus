@@ -781,6 +781,7 @@ Available meta labels:
 * `__meta_kubernetes_ingress_scheme`: Protocol scheme of ingress, `https` if TLS
   config is set. Defaults to `http`.
 * `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.
+* `__meta_kubernetes_ingress_host`: A domain name of network host which from ingress.spec.rules.
 
 See below for the configuration options for Kubernetes discovery:
 
