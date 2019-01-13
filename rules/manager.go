@@ -71,6 +71,7 @@ type Metrics struct {
 	iterationsScheduled prometheus.Counter
 	groupLastEvalTime   *prometheus.GaugeVec
 	groupLastDuration   *prometheus.GaugeVec
+	groupRules          *prometheus.GaugeVec
 }
 
 // NewGroupMetrics makes a new Metrics and registers them with then provided registerer,
@@ -127,6 +128,14 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"rule_group"},
 		),
+		groupRules: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_rules",
+				Help:      "The number of rules.",
+			},
+			[]string{"rule_group"},
+		),
 	}
 
 	if reg != nil {
@@ -139,6 +148,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.iterationsScheduled,
 			m.groupLastEvalTime,
 			m.groupLastDuration,
+			m.groupRules,
 		)
 	}
 
@@ -235,6 +245,7 @@ func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRes
 
 	metrics.groupLastEvalTime.WithLabelValues(groupKey(file, name))
 	metrics.groupLastDuration.WithLabelValues(groupKey(file, name))
+	metrics.groupRules.WithLabelValues(groupKey(file, name)).Set(float64(len(rules)))
 
 	return &Group{
 		name:                 name,
