@@ -166,7 +166,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			tc.Stop()
 		}
 		// Drain event channel in case the treecache leaks goroutines otherwise.
-		for range d.updates {
+	L:
+		for {
+			select {
+			case <-d.updates:
+			default:
+				break L
+			}
 		}
 		d.conn.Close()
 	}()
