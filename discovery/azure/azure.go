@@ -362,6 +362,10 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 					}
 				}
 			}
+
+			// If we get here we haven't sent anything to the channel.
+			// We need to send it something to release it.
+			ch <- target{}
 		}(i, vm)
 	}
 
