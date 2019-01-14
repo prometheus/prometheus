@@ -205,6 +205,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	for _, c := range chks {
 		maxLen += binary.MaxVarintLen32 + 1 // The number of bytes in the chunk and its encoding.
 		maxLen += int64(len(c.Chunk.Bytes()))
+		maxLen += 4 // The 4 bytes of crc32
 	}
 	newsz := w.n + maxLen
 
