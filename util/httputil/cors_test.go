@@ -15,12 +15,14 @@ package httputil
 
 import (
 	"net/http"
+	"regexp"
 	"testing"
 )
 
 func getCORSHandlerFunc() http.Handler {
 	hf := func(w http.ResponseWriter, r *http.Request) {
-		SetCORS(w, []string{"https://foo.com"}, r)
+		reg := regexp.MustCompile(`^https://foo\.com$`)
+		SetCORS(w, reg, r)
 		w.WriteHeader(http.StatusOK)
 	}
 	return http.HandlerFunc(hf)

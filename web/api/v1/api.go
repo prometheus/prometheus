@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"time"
@@ -151,7 +152,7 @@ type API struct {
 	logger                log.Logger
 	remoteReadSampleLimit int
 	remoteReadGate        *gate.Gate
-	CORSOrigins           []string
+	CORSOrigin            *regexp.Regexp
 }
 
 func init() {
@@ -174,7 +175,7 @@ func NewAPI(
 	rr rulesRetriever,
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
-	CORSOrigins []string,
+	CORSOrigin *regexp.Regexp,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -192,7 +193,7 @@ func NewAPI(
 		remoteReadSampleLimit: remoteReadSampleLimit,
 		remoteReadGate:        gate.New(remoteReadConcurrencyLimit),
 		logger:                logger,
-		CORSOrigins:           CORSOrigins,
+		CORSOrigin:            CORSOrigin,
 	}
 }
 
@@ -200,7 +201,7 @@ func NewAPI(
 func (api *API) Register(r *route.Router) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			httputil.SetCORS(w, api.CORSOrigins, r)
+			httputil.SetCORS(w, api.CORSOrigin, r)
 			result := f(r)
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)

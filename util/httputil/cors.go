@@ -15,6 +15,7 @@ package httputil
 
 import (
 	"net/http"
+	"regexp"
 )
 
 var corsHeaders = map[string]string{
@@ -25,7 +26,7 @@ var corsHeaders = map[string]string{
 }
 
 // Enables cross-site script calls.
-func SetCORS(w http.ResponseWriter, o []string, r *http.Request) {
+func SetCORS(w http.ResponseWriter, o *regexp.Regexp, r *http.Request) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return
@@ -35,15 +36,12 @@ func SetCORS(w http.ResponseWriter, o []string, r *http.Request) {
 		w.Header().Set(k, v)
 	}
 
-	if len(o) == 0 {
+	if o.String() == ".*" {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		return
 	}
 
-	for _, allowedOrigin := range o {
-		if origin == allowedOrigin {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			break
-		}
+	if o.MatchString(origin) {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
 	}
 }

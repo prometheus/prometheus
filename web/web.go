@@ -28,6 +28,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -175,7 +176,7 @@ type Options struct {
 	Flags         map[string]string
 
 	ListenAddress              string
-	CORSOrigins                []string
+	CORSOrigin                 *regexp.Regexp
 	ReadTimeout                time.Duration
 	MaxConnections             int
 	ExternalURL                *url.URL
@@ -262,7 +263,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.ruleManager,
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
-		h.options.CORSOrigins,
+		h.options.CORSOrigin,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -464,7 +465,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			httputil.SetCORS(w, h.options.CORSOrigins, r)
+			httputil.SetCORS(w, h.options.CORSOrigin, r)
 			hhFunc(w, r)
 		}),
 	))
