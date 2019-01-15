@@ -13,16 +13,15 @@ Prometheus's local time series database stores time series data in a custom form
 
 ### On-disk layout
 
-Ingested samples are grouped into blocks of two hours. Each two-hour block consists of a directory containing one or more chunk files that contain all time series samples for that window of time, as well as a metadata file and index file (which indexes metric names and labels to time series in the chunk files). The block for currently incoming samples is kept in memory and not fully persisted yet. It is secured against crashes by a write-ahead-log (WAL) that can be replayed when the Prometheus server restarts after a crash. When series are deleted via the API, deletion records are stored in separate tombstone files (instead of deleting the data immediately from the chunk files).
+Ingested samples are grouped into blocks of two hours. Each two-hour block consists of a directory containing one or more chunk files that contain all time series samples for that window of time, as well as a metadata file and index file (which indexes metric names and labels to time series in the chunk files).  When series are deleted via the API, deletion records are stored in separate tombstone files (instead of deleting the data immediately from the chunk files).
+
+The block for currently incoming samples is kept in memory and not fully persisted yet. It is secured against crashes by a write-ahead-log (WAL) that can be replayed when the Prometheus server restarts after a crash. Write-ahead log files are stored in the `wal` directory in 128MB segments. These files contain raw data that has not been compacted yet, so they are significantly larger than regular block files. Prometheus will keep a minimum of 3 write-ahead log files, however high-traffic servers may see more than three WAL files since it needs to keep at least two hours worth of raw data.
 
 The directory structure of a Prometheus server's data directory will look something like this:
 
 ```
 ./data/01BKGV7JBM69T2G1BGBGM6KB12
 ./data/01BKGV7JBM69T2G1BGBGM6KB12/meta.json
-./data/01BKGV7JBM69T2G1BGBGM6KB12/wal
-./data/01BKGV7JBM69T2G1BGBGM6KB12/wal/000002
-./data/01BKGV7JBM69T2G1BGBGM6KB12/wal/000001
 ./data/01BKGTZQ1SYQJTR4PB43C8PD98
 ./data/01BKGTZQ1SYQJTR4PB43C8PD98/meta.json
 ./data/01BKGTZQ1SYQJTR4PB43C8PD98/index
@@ -31,14 +30,15 @@ The directory structure of a Prometheus server's data directory will look someth
 ./data/01BKGTZQ1SYQJTR4PB43C8PD98/tombstones
 ./data/01BKGTZQ1HHWHV8FBJXW1Y3W0K
 ./data/01BKGTZQ1HHWHV8FBJXW1Y3W0K/meta.json
-./data/01BKGTZQ1HHWHV8FBJXW1Y3W0K/wal
-./data/01BKGTZQ1HHWHV8FBJXW1Y3W0K/wal/000001
 ./data/01BKGV7JC0RY8A6MACW02A2PJD
 ./data/01BKGV7JC0RY8A6MACW02A2PJD/meta.json
 ./data/01BKGV7JC0RY8A6MACW02A2PJD/index
 ./data/01BKGV7JC0RY8A6MACW02A2PJD/chunks
 ./data/01BKGV7JC0RY8A6MACW02A2PJD/chunks/000001
 ./data/01BKGV7JC0RY8A6MACW02A2PJD/tombstones
+./data/wal/00000000
+./data/wal/00000001
+./data/wal/00000002
 ```
 
 The initial two-hour blocks are eventually compacted into longer blocks in the background.
