@@ -6,8 +6,8 @@
 
 ## 2.6.0 / 2018-12-17
 
-* [CHANGE] Promtool: Remove the `update` command. #3839
 * [CHANGE] Remove default flags from the container's entrypoint, run Prometheus from `/etc/prometheus` and symlink the storage directory to `/etc/prometheus/data`. #4976
+* [CHANGE] Promtool: Remove the `update` command. #3839
 * [FEATURE] Add JSON log format via the `--log.format` flag. #4876
 * [FEATURE] API: Add /api/v1/labels endpoint to get all label names. #4835
 * [FEATURE] Web: Allow setting the page's title via the `--web.ui-title` flag. #4841
