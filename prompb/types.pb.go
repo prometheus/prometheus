@@ -7,7 +7,7 @@ import proto "github.com/gogo/protobuf/proto"
 import fmt "fmt"
 import math "math"
 
-import binary "encoding/binary"
+import encoding_binary "encoding/binary"
 
 import io "io"
 
@@ -15,6 +15,12 @@ import io "io"
 var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
+
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the proto package it is being compiled against.
+// A compilation error at this line likely means your copy of the
+// proto package needs to be updated.
+const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 
 type LabelMatcher_Type int32
 
@@ -41,17 +47,50 @@ var LabelMatcher_Type_value = map[string]int32{
 func (x LabelMatcher_Type) String() string {
 	return proto.EnumName(LabelMatcher_Type_name, int32(x))
 }
-func (LabelMatcher_Type) EnumDescriptor() ([]byte, []int) { return fileDescriptorTypes, []int{4, 0} }
-
-type Sample struct {
-	Value     float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
-	Timestamp int64   `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+func (LabelMatcher_Type) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_types_065bd8df07daeaf9, []int{4, 0}
 }
 
-func (m *Sample) Reset()                    { *m = Sample{} }
-func (m *Sample) String() string            { return proto.CompactTextString(m) }
-func (*Sample) ProtoMessage()               {}
-func (*Sample) Descriptor() ([]byte, []int) { return fileDescriptorTypes, []int{0} }
+type Sample struct {
+	Value                float64  `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
+	Timestamp            int64    `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *Sample) Reset()         { *m = Sample{} }
+func (m *Sample) String() string { return proto.CompactTextString(m) }
+func (*Sample) ProtoMessage()    {}
+func (*Sample) Descriptor() ([]byte, []int) {
+	return fileDescriptor_types_065bd8df07daeaf9, []int{0}
+}
+func (m *Sample) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Sample) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Sample.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *Sample) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Sample.Merge(dst, src)
+}
+func (m *Sample) XXX_Size() int {
+	return m.Size()
+}
+func (m *Sample) XXX_DiscardUnknown() {
+	xxx_messageInfo_Sample.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Sample proto.InternalMessageInfo
 
 func (m *Sample) GetValue() float64 {
 	if m != nil {
@@ -68,14 +107,45 @@ func (m *Sample) GetTimestamp() int64 {
 }
 
 type TimeSeries struct {
-	Labels  []*Label `protobuf:"bytes,1,rep,name=labels" json:"labels,omitempty"`
-	Samples []Sample `protobuf:"bytes,2,rep,name=samples" json:"samples"`
+	Labels               []*Label `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
+	Samples              []Sample `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *TimeSeries) Reset()                    { *m = TimeSeries{} }
-func (m *TimeSeries) String() string            { return proto.CompactTextString(m) }
-func (*TimeSeries) ProtoMessage()               {}
-func (*TimeSeries) Descriptor() ([]byte, []int) { return fileDescriptorTypes, []int{1} }
+func (m *TimeSeries) Reset()         { *m = TimeSeries{} }
+func (m *TimeSeries) String() string { return proto.CompactTextString(m) }
+func (*TimeSeries) ProtoMessage()    {}
+func (*TimeSeries) Descriptor() ([]byte, []int) {
+	return fileDescriptor_types_065bd8df07daeaf9, []int{1}
+}
+func (m *TimeSeries) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *TimeSeries) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_TimeSeries.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *TimeSeries) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TimeSeries.Merge(dst, src)
+}
+func (m *TimeSeries) XXX_Size() int {
+	return m.Size()
+}
+func (m *TimeSeries) XXX_DiscardUnknown() {
+	xxx_messageInfo_TimeSeries.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TimeSeries proto.InternalMessageInfo
 
 func (m *TimeSeries) GetLabels() []*Label {
 	if m != nil {
@@ -92,14 +162,45 @@ func (m *TimeSeries) GetSamples() []Sample {
 }
 
 type Label struct {
-	Name  string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Name                 string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Value                string   `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *Label) Reset()                    { *m = Label{} }
-func (m *Label) String() string            { return proto.CompactTextString(m) }
-func (*Label) ProtoMessage()               {}
-func (*Label) Descriptor() ([]byte, []int) { return fileDescriptorTypes, []int{2} }
+func (m *Label) Reset()         { *m = Label{} }
+func (m *Label) String() string { return proto.CompactTextString(m) }
+func (*Label) ProtoMessage()    {}
+func (*Label) Descriptor() ([]byte, []int) {
+	return fileDescriptor_types_065bd8df07daeaf9, []int{2}
+}
+func (m *Label) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Label) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Label.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *Label) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Label.Merge(dst, src)
+}
+func (m *Label) XXX_Size() int {
+	return m.Size()
+}
+func (m *Label) XXX_DiscardUnknown() {
+	xxx_messageInfo_Label.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Label proto.InternalMessageInfo
 
 func (m *Label) GetName() string {
 	if m != nil {
@@ -116,13 +217,44 @@ func (m *Label) GetValue() string {
 }
 
 type Labels struct {
-	Labels []Label `protobuf:"bytes,1,rep,name=labels" json:"labels"`
+	Labels               []Label  `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *Labels) Reset()                    { *m = Labels{} }
-func (m *Labels) String() string            { return proto.CompactTextString(m) }
-func (*Labels) ProtoMessage()               {}
-func (*Labels) Descriptor() ([]byte, []int) { return fileDescriptorTypes, []int{3} }
+func (m *Labels) Reset()         { *m = Labels{} }
+func (m *Labels) String() string { return proto.CompactTextString(m) }
+func (*Labels) ProtoMessage()    {}
+func (*Labels) Descriptor() ([]byte, []int) {
+	return fileDescriptor_types_065bd8df07daeaf9, []int{3}
+}
+func (m *Labels) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Labels) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Labels.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *Labels) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Labels.Merge(dst, src)
+}
+func (m *Labels) XXX_Size() int {
+	return m.Size()
+}
+func (m *Labels) XXX_DiscardUnknown() {
+	xxx_messageInfo_Labels.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Labels proto.InternalMessageInfo
 
 func (m *Labels) GetLabels() []Label {
 	if m != nil {
@@ -133,15 +265,46 @@ func (m *Labels) GetLabels() []Label {
 
 // Matcher specifies a rule, which can match or set of labels or not.
 type LabelMatcher struct {
-	Type  LabelMatcher_Type `protobuf:"varint,1,opt,name=type,proto3,enum=prometheus.LabelMatcher_Type" json:"type,omitempty"`
-	Name  string            `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Value string            `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	Type                 LabelMatcher_Type `protobuf:"varint,1,opt,name=type,proto3,enum=prometheus.LabelMatcher_Type" json:"type,omitempty"`
+	Name                 string            `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Value                string            `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}          `json:"-"`
+	XXX_unrecognized     []byte            `json:"-"`
+	XXX_sizecache        int32             `json:"-"`
 }
 
-func (m *LabelMatcher) Reset()                    { *m = LabelMatcher{} }
-func (m *LabelMatcher) String() string            { return proto.CompactTextString(m) }
-func (*LabelMatcher) ProtoMessage()               {}
-func (*LabelMatcher) Descriptor() ([]byte, []int) { return fileDescriptorTypes, []int{4} }
+func (m *LabelMatcher) Reset()         { *m = LabelMatcher{} }
+func (m *LabelMatcher) String() string { return proto.CompactTextString(m) }
+func (*LabelMatcher) ProtoMessage()    {}
+func (*LabelMatcher) Descriptor() ([]byte, []int) {
+	return fileDescriptor_types_065bd8df07daeaf9, []int{4}
+}
+func (m *LabelMatcher) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *LabelMatcher) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_LabelMatcher.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *LabelMatcher) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LabelMatcher.Merge(dst, src)
+}
+func (m *LabelMatcher) XXX_Size() int {
+	return m.Size()
+}
+func (m *LabelMatcher) XXX_DiscardUnknown() {
+	xxx_messageInfo_LabelMatcher.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_LabelMatcher proto.InternalMessageInfo
 
 func (m *LabelMatcher) GetType() LabelMatcher_Type {
 	if m != nil {
@@ -165,16 +328,47 @@ func (m *LabelMatcher) GetValue() string {
 }
 
 type ReadHints struct {
-	StepMs  int64  `protobuf:"varint,1,opt,name=step_ms,json=stepMs,proto3" json:"step_ms,omitempty"`
-	Func    string `protobuf:"bytes,2,opt,name=func,proto3" json:"func,omitempty"`
-	StartMs int64  `protobuf:"varint,3,opt,name=start_ms,json=startMs,proto3" json:"start_ms,omitempty"`
-	EndMs   int64  `protobuf:"varint,4,opt,name=end_ms,json=endMs,proto3" json:"end_ms,omitempty"`
+	StepMs               int64    `protobuf:"varint,1,opt,name=step_ms,json=stepMs,proto3" json:"step_ms,omitempty"`
+	Func                 string   `protobuf:"bytes,2,opt,name=func,proto3" json:"func,omitempty"`
+	StartMs              int64    `protobuf:"varint,3,opt,name=start_ms,json=startMs,proto3" json:"start_ms,omitempty"`
+	EndMs                int64    `protobuf:"varint,4,opt,name=end_ms,json=endMs,proto3" json:"end_ms,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *ReadHints) Reset()                    { *m = ReadHints{} }
-func (m *ReadHints) String() string            { return proto.CompactTextString(m) }
-func (*ReadHints) ProtoMessage()               {}
-func (*ReadHints) Descriptor() ([]byte, []int) { return fileDescriptorTypes, []int{5} }
+func (m *ReadHints) Reset()         { *m = ReadHints{} }
+func (m *ReadHints) String() string { return proto.CompactTextString(m) }
+func (*ReadHints) ProtoMessage()    {}
+func (*ReadHints) Descriptor() ([]byte, []int) {
+	return fileDescriptor_types_065bd8df07daeaf9, []int{5}
+}
+func (m *ReadHints) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ReadHints) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ReadHints.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *ReadHints) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ReadHints.Merge(dst, src)
+}
+func (m *ReadHints) XXX_Size() int {
+	return m.Size()
+}
+func (m *ReadHints) XXX_DiscardUnknown() {
+	xxx_messageInfo_ReadHints.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ReadHints proto.InternalMessageInfo
 
 func (m *ReadHints) GetStepMs() int64 {
 	if m != nil {
@@ -231,13 +425,16 @@ func (m *Sample) MarshalTo(dAtA []byte) (int, error) {
 	if m.Value != 0 {
 		dAtA[i] = 0x9
 		i++
-		binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Value))))
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Value))))
 		i += 8
 	}
 	if m.Timestamp != 0 {
 		dAtA[i] = 0x10
 		i++
 		i = encodeVarintTypes(dAtA, i, uint64(m.Timestamp))
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
@@ -281,6 +478,9 @@ func (m *TimeSeries) MarshalTo(dAtA []byte) (int, error) {
 			i += n
 		}
 	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	return i, nil
 }
 
@@ -311,6 +511,9 @@ func (m *Label) MarshalTo(dAtA []byte) (int, error) {
 		i = encodeVarintTypes(dAtA, i, uint64(len(m.Value)))
 		i += copy(dAtA[i:], m.Value)
 	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	return i, nil
 }
 
@@ -340,6 +543,9 @@ func (m *Labels) MarshalTo(dAtA []byte) (int, error) {
 			}
 			i += n
 		}
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
@@ -375,6 +581,9 @@ func (m *LabelMatcher) MarshalTo(dAtA []byte) (int, error) {
 		i++
 		i = encodeVarintTypes(dAtA, i, uint64(len(m.Value)))
 		i += copy(dAtA[i:], m.Value)
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
@@ -415,6 +624,9 @@ func (m *ReadHints) MarshalTo(dAtA []byte) (int, error) {
 		i++
 		i = encodeVarintTypes(dAtA, i, uint64(m.EndMs))
 	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	return i, nil
 }
 
@@ -428,6 +640,9 @@ func encodeVarintTypes(dAtA []byte, offset int, v uint64) int {
 	return offset + 1
 }
 func (m *Sample) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.Value != 0 {
@@ -436,10 +651,16 @@ func (m *Sample) Size() (n int) {
 	if m.Timestamp != 0 {
 		n += 1 + sovTypes(uint64(m.Timestamp))
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
 func (m *TimeSeries) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if len(m.Labels) > 0 {
@@ -454,10 +675,16 @@ func (m *TimeSeries) Size() (n int) {
 			n += 1 + l + sovTypes(uint64(l))
 		}
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
 func (m *Label) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	l = len(m.Name)
@@ -468,10 +695,16 @@ func (m *Label) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovTypes(uint64(l))
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
 func (m *Labels) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if len(m.Labels) > 0 {
@@ -480,10 +713,16 @@ func (m *Labels) Size() (n int) {
 			n += 1 + l + sovTypes(uint64(l))
 		}
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
 func (m *LabelMatcher) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.Type != 0 {
@@ -497,10 +736,16 @@ func (m *LabelMatcher) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovTypes(uint64(l))
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
 func (m *ReadHints) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.StepMs != 0 {
@@ -515,6 +760,9 @@ func (m *ReadHints) Size() (n int) {
 	}
 	if m.EndMs != 0 {
 		n += 1 + sovTypes(uint64(m.EndMs))
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
 	}
 	return n
 }
@@ -569,7 +817,7 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 			if (iNdEx + 8) > l {
 				return io.ErrUnexpectedEOF
 			}
-			v = uint64(binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
 			iNdEx += 8
 			m.Value = float64(math.Float64frombits(v))
 		case 2:
@@ -603,6 +851,7 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -715,6 +964,7 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -823,6 +1073,7 @@ func (m *Label) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -904,6 +1155,7 @@ func (m *Labels) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -1031,6 +1283,7 @@ func (m *LabelMatcher) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -1167,6 +1420,7 @@ func (m *ReadHints) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -1281,9 +1535,9 @@ var (
 	ErrIntOverflowTypes   = fmt.Errorf("proto: integer overflow")
 )
 
-func init() { proto.RegisterFile("types.proto", fileDescriptorTypes) }
+func init() { proto.RegisterFile("types.proto", fileDescriptor_types_065bd8df07daeaf9) }
 
-var fileDescriptorTypes = []byte{
+var fileDescriptor_types_065bd8df07daeaf9 = []byte{
 	// 383 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x84, 0x92, 0xcf, 0xca, 0xd3, 0x40,
 	0x14, 0xc5, 0xbf, 0x49, 0xd2, 0x89, 0xbd, 0x9f, 0x48, 0x1c, 0x2a, 0x46, 0xd1, 0x5a, 0xb2, 0x8a,

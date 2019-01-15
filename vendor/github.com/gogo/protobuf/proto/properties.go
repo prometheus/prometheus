@@ -144,7 +144,7 @@ type Properties struct {
 	Repeated bool
 	Packed   bool   // relevant for repeated primitives only
 	Enum     string // set for enum types only
-	proto3   bool   // whether this is known to be a proto3 field; set for []byte only
+	proto3   bool   // whether this is known to be a proto3 field
 	oneof    bool   // whether this is a oneof field
 
 	Default     string // default value
@@ -153,14 +153,15 @@ type Properties struct {
 	CastType    string
 	StdTime     bool
 	StdDuration bool
+	WktPointer  bool
 
 	stype reflect.Type      // set for struct types only
 	ctype reflect.Type      // set for custom types only
 	sprop *StructProperties // set for struct types only
 
-	mtype    reflect.Type // set for map types only
-	mkeyprop *Properties  // set for map types only
-	mvalprop *Properties  // set for map types only
+	mtype      reflect.Type // set for map types only
+	MapKeyProp *Properties  // set for map types only
+	MapValProp *Properties  // set for map types only
 }
 
 // String formats the properties in the protobuf struct field tag style.
@@ -274,6 +275,8 @@ outer:
 			p.StdTime = true
 		case f == "stdduration":
 			p.StdDuration = true
+		case f == "wktptr":
+			p.WktPointer = true
 		}
 	}
 }
@@ -293,6 +296,10 @@ func (p *Properties) setFieldProps(typ reflect.Type, f *reflect.StructField, loc
 		return
 	}
 	if p.StdDuration && !isMap {
+		p.setTag(lockGetProp)
+		return
+	}
+	if p.WktPointer && !isMap {
 		p.setTag(lockGetProp)
 		return
 	}
@@ -317,9 +324,9 @@ func (p *Properties) setFieldProps(typ reflect.Type, f *reflect.StructField, loc
 	case reflect.Map:
 
 		p.mtype = t1
-		p.mkeyprop = &Properties{}
-		p.mkeyprop.init(reflect.PtrTo(p.mtype.Key()), "Key", f.Tag.Get("protobuf_key"), nil, lockGetProp)
-		p.mvalprop = &Properties{}
+		p.MapKeyProp = &Properties{}
+		p.MapKeyProp.init(reflect.PtrTo(p.mtype.Key()), "Key", f.Tag.Get("protobuf_key"), nil, lockGetProp)
+		p.MapValProp = &Properties{}
 		vtype := p.mtype.Elem()
 		if vtype.Kind() != reflect.Ptr && vtype.Kind() != reflect.Slice {
 			// The value type is not a message (*T) or bytes ([]byte),
@@ -327,10 +334,11 @@ func (p *Properties) setFieldProps(typ reflect.Type, f *reflect.StructField, loc
 			vtype = reflect.PtrTo(vtype)
 		}
 
-		p.mvalprop.CustomType = p.CustomType
-		p.mvalprop.StdDuration = p.StdDuration
-		p.mvalprop.StdTime = p.StdTime
-		p.mvalprop.init(vtype, "Value", f.Tag.Get("protobuf_val"), nil, lockGetProp)
+		p.MapValProp.CustomType = p.CustomType
+		p.MapValProp.StdDuration = p.StdDuration
+		p.MapValProp.StdTime = p.StdTime
+		p.MapValProp.WktPointer = p.WktPointer
+		p.MapValProp.init(vtype, "Value", f.Tag.Get("protobuf_val"), nil, lockGetProp)
 	}
 	p.setTag(lockGetProp)
 }

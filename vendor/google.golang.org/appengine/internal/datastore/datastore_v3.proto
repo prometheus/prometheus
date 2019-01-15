@@ -529,6 +529,16 @@ message BeginTransactionRequest {
 
   required string app = 1;
   optional bool allow_multiple_eg = 2 [default = false];
+  optional string database_id = 4;
+
+  enum TransactionMode {
+    UNKNOWN = 0;
+    READ_ONLY = 1;
+    READ_WRITE = 2;
+  }
+  optional TransactionMode mode = 5 [default = UNKNOWN];
+
+  optional Transaction previous_transaction = 7;
 }
 
 message CommitResponse {
