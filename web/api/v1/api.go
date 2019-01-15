@@ -899,9 +899,9 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Add external labels back in, in sorted order.
-		sortedExternalLabels := make([]*prompb.Label, 0, len(externalLabels))
+		sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
 		for name, value := range externalLabels {
-			sortedExternalLabels = append(sortedExternalLabels, &prompb.Label{
+			sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
 				Name:  string(name),
 				Value: string(value),
 			})
@@ -1060,8 +1060,8 @@ func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 
 // mergeLabels merges two sets of sorted proto labels, preferring those in
 // primary to those in secondary when there is an overlap.
-func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
-	result := make([]*prompb.Label, 0, len(primary)+len(secondary))
+func mergeLabels(primary, secondary []prompb.Label) []prompb.Label {
+	result := make([]prompb.Label, 0, len(primary)+len(secondary))
 	i, j := 0, 0
 	for i < len(primary) && j < len(secondary) {
 		if primary[i].Name < secondary[j].Name {
