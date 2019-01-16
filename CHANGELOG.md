@@ -1,5 +1,12 @@
+## 2.6.1 / 2019-01-15
+
+* [BUGFIX] Azure SD: Fix discovery getting stuck sometimes. #5088
+* [BUGFIX] Marathon SD: Use `Tasks.Ports` when `RequirePorts` is `false`. #5026
+* [BUGFIX] Promtool: Fix "out-of-order sample" errors when testing rules. #5069
+
 ## 2.6.0 / 2018-12-17
 
+* [CHANGE] Remove default flags from the container's entrypoint, run Prometheus from `/etc/prometheus` and symlink the storage directory to `/etc/prometheus/data`. #4976
 * [CHANGE] Promtool: Remove the `update` command. #3839
 * [FEATURE] Add JSON log format via the `--log.format` flag. #4876
 * [FEATURE] API: Add /api/v1/labels endpoint to get all label names. #4835
@@ -7,7 +14,6 @@
 * [ENHANCEMENT] Add `prometheus_tsdb_lowest_timestamp_seconds`, `prometheus_tsdb_head_min_time_seconds` and `prometheus_tsdb_head_max_time_seconds` metrics. #4888
 * [ENHANCEMENT] Add `rule_group_last_evaluation_timestamp_seconds` metric. #4852
 * [ENHANCEMENT] Add `prometheus_template_text_expansion_failures_total` and `prometheus_template_text_expansions_total` metrics. #4747
-* [ENHANCEMENT] Remove default flags from the container's entrypoint. #4976
 * [ENHANCEMENT] Set consistent User-Agent header in outgoing requests. #4891
 * [ENHANCEMENT] Azure SD: Error out at load time when authentication parameters are missing. #4907
 * [ENHANCEMENT] EC2 SD: Add the machine's private DNS name to the discovery metadata. #4693
