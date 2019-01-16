@@ -163,6 +163,10 @@ func TestComputeExternalURL(t *testing.T) {
 
 // Let's provide an invalid configuration file and verify the exit status indicates the error.
 func TestFailedStartupExitCode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
 	fakeInputFile := "fake-input-file"
 	expectedExitStatus := 1
 
