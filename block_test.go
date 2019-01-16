@@ -46,14 +46,14 @@ func TestSetCompactionFailed(t *testing.T) {
 	defer os.RemoveAll(tmpdir)
 
 	blockDir := createBlock(t, tmpdir, 0, 0, 0)
-	b, err := OpenBlock(blockDir, nil)
+	b, err := OpenBlock(nil, blockDir, nil)
 	testutil.Ok(t, err)
 	testutil.Equals(t, false, b.meta.Compaction.Failed)
 	testutil.Ok(t, b.setCompactionFailed())
 	testutil.Equals(t, true, b.meta.Compaction.Failed)
 	testutil.Ok(t, b.Close())
 
-	b, err = OpenBlock(blockDir, nil)
+	b, err = OpenBlock(nil, blockDir, nil)
 	testutil.Ok(t, err)
 	testutil.Equals(t, true, b.meta.Compaction.Failed)
 	testutil.Ok(t, b.Close())

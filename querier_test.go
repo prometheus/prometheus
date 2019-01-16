@@ -1227,12 +1227,12 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 
 func BenchmarkPersistedQueries(b *testing.B) {
 	for _, nSeries := range []int{10, 100} {
-		for _, nSamples := range []int{1000, 10000, 100000} {
+		for _, nSamples := range []int64{1000, 10000, 100000} {
 			b.Run(fmt.Sprintf("series=%d,samplesPerSeries=%d", nSeries, nSamples), func(b *testing.B) {
 				dir, err := ioutil.TempDir("", "bench_persisted")
 				testutil.Ok(b, err)
 				defer os.RemoveAll(dir)
-				block, err := OpenBlock(createBlock(b, dir, nSeries, 1, int64(nSamples)), nil)
+				block, err := OpenBlock(nil, createBlock(b, dir, nSeries, 1, int64(nSamples)), nil)
 				testutil.Ok(b, err)
 				defer block.Close()
 
