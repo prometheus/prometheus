@@ -902,9 +902,14 @@ func assertAPIResponse(t *testing.T, got interface{}, exp interface{}) {
 }
 
 func TestReadEndpoint(t *testing.T) {
+	/*
+	 test_metric1 is the case where an internal label should not be overwritten by an external label.
+	 test_metric2 is the case where an interal label exactly matches an external label.
+	*/
 	suite, err := promql.NewTest(t, `
 		load 1m
 			test_metric1{foo="bar",baz="qux"} 1
+			test_metric2{foo="bar",b="c"} 1
 	`)
 	if err != nil {
 		t.Fatal(err)
@@ -933,74 +938,192 @@ func TestReadEndpoint(t *testing.T) {
 		remoteReadGate:        gate.New(1),
 	}
 
-	// Encode the request.
-	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
-	if err != nil {
-		t.Fatal(err)
-	}
-	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
-	data, err := proto.Marshal(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	compressed := snappy.Encode(nil, data)
-	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
-	recorder := httptest.NewRecorder()
-	api.remoteRead(recorder, request)
-
-	if recorder.Code/100 != 2 {
-		t.Fatal(recorder.Code)
-	}
-
-	// Decode the response.
-	compressed, err = ioutil.ReadAll(recorder.Result().Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	uncompressed, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var resp prompb.ReadResponse
-	err = proto.Unmarshal(uncompressed, &resp)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(resp.Results) != 1 {
-		t.Fatalf("Expected 1 result, got %d", len(resp.Results))
-	}
-
-	result := resp.Results[0]
-	expected := &prompb.QueryResult{
-		Timeseries: []*prompb.TimeSeries{
-			{
-				Labels: []prompb.Label{
-					{Name: "__name__", Value: "test_metric1"},
-					{Name: "b", Value: "c"},
-					{Name: "baz", Value: "qux"},
-					{Name: "d", Value: "e"},
-					{Name: "foo", Value: "bar"},
+	testCases := []struct {
+		matchers       []*labels.Matcher
+		expectedResult []*prompb.QueryResult
+	}{
+		// Test MatchEqual.
+		{
+			matchers: []*labels.Matcher{
+				mustNewMatcher(t, labels.MatchEqual, "__name__", "test_metric1"),
+				mustNewMatcher(t, labels.MatchEqual, "d", "e"),
+			},
+			expectedResult: []*prompb.QueryResult{
+				&prompb.QueryResult{
+					Timeseries: []*prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{
+								{Name: "__name__", Value: "test_metric1"},
+								{Name: "b", Value: "c"},
+								{Name: "baz", Value: "qux"},
+								{Name: "d", Value: "e"},
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+						},
+					},
 				},
-				Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+			},
+		},
+		// Test MatchNotEqual.
+		{
+			matchers: []*labels.Matcher{
+				mustNewMatcher(t, labels.MatchEqual, "__name__", "test_metric1"),
+				mustNewMatcher(t, labels.MatchNotEqual, "baz", "a"),
+			},
+			expectedResult: []*prompb.QueryResult{
+				&prompb.QueryResult{
+					Timeseries: []*prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{
+								{Name: "__name__", Value: "test_metric1"},
+								{Name: "b", Value: "c"},
+								{Name: "baz", Value: "qux"},
+								{Name: "d", Value: "e"},
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+						},
+					},
+				},
+			},
+		},
+		// Test Regexp.
+		{
+			matchers: []*labels.Matcher{
+				mustNewMatcher(t, labels.MatchRegexp, "baz", ".+"),
+			},
+			expectedResult: []*prompb.QueryResult{
+				&prompb.QueryResult{
+					Timeseries: []*prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{
+								{Name: "__name__", Value: "test_metric1"},
+								{Name: "b", Value: "c"},
+								{Name: "baz", Value: "qux"},
+								{Name: "d", Value: "e"},
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+						},
+						{
+							Labels: []prompb.Label{
+								{Name: "__name__", Value: "test_metric2"},
+								{Name: "b", Value: "c"},
+								{Name: "baz", Value: "a"},
+								{Name: "d", Value: "e"},
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+						},
+					},
+				},
+			},
+		},
+		// Test NotRegexp.
+		{
+			matchers: []*labels.Matcher{
+				mustNewMatcher(t, labels.MatchNotRegexp, "baz", "qu.*"),
+			},
+			expectedResult: []*prompb.QueryResult{
+				&prompb.QueryResult{
+					Timeseries: []*prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{
+								{Name: "__name__", Value: "test_metric2"},
+								{Name: "b", Value: "c"},
+								{Name: "baz", Value: "a"},
+								{Name: "d", Value: "e"},
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+						},
+					},
+				},
+			},
+		},
+		// Test match local and external.
+		{
+			matchers: []*labels.Matcher{
+				mustNewMatcher(t, labels.MatchEqual, "__name__", "test_metric2"),
+				mustNewMatcher(t, labels.MatchEqual, "b", "c"),
+			},
+			expectedResult: []*prompb.QueryResult{
+				&prompb.QueryResult{
+					Timeseries: []*prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{
+								{Name: "__name__", Value: "test_metric2"},
+								{Name: "b", Value: "c"},
+								{Name: "baz", Value: "a"},
+								{Name: "d", Value: "e"},
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+						},
+					},
+				},
+			},
+		},
+		// Test No Results.
+		{
+			matchers: []*labels.Matcher{
+				mustNewMatcher(t, labels.MatchEqual, "__name__", "test_metric1"),
+				mustNewMatcher(t, labels.MatchNotEqual, "d", "e"),
+			},
+			expectedResult: []*prompb.QueryResult{
+				&prompb.QueryResult{},
 			},
 		},
 	}
-	if !reflect.DeepEqual(result, expected) {
-		t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
+
+	for i, tc := range testCases {
+		t.Log("test case:", i)
+		// Encode the request.
+		query, err := remote.ToQuery(0, 1, tc.matchers, &storage.SelectParams{Step: 0, Func: "avg"})
+		if err != nil {
+			testutil.Ok(t, err)
+		}
+		req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
+		data, err := proto.Marshal(req)
+		if err != nil {
+			testutil.Ok(t, err)
+		}
+		compressed := snappy.Encode(nil, data)
+		request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+		if err != nil {
+			testutil.Ok(t, err)
+		}
+		recorder := httptest.NewRecorder()
+		api.remoteRead(recorder, request)
+
+		testutil.Equals(t, 2, recorder.Code/100)
+
+		// Decode the response.
+		compressed, err = ioutil.ReadAll(recorder.Result().Body)
+		if err != nil {
+			testutil.Ok(t, err)
+		}
+		uncompressed, err := snappy.Decode(nil, compressed)
+		if err != nil {
+			testutil.Ok(t, err)
+		}
+
+		var resp prompb.ReadResponse
+		err = proto.Unmarshal(uncompressed, &resp)
+		if err != nil {
+			testutil.Ok(t, err)
+		}
+		testutil.Equals(t, tc.expectedResult, resp.Results)
 	}
+}
+
+func mustNewMatcher(t *testing.T, mType labels.MatchType, name, value string) *labels.Matcher {
+	m, err := labels.NewMatcher(mType, name, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
 
 type fakeDB struct {

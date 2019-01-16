@@ -850,6 +850,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	resp := prompb.ReadResponse{
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
+	externalLabels := api.config().GlobalConfig.ExternalLabels.Clone()
 	for i, query := range req.Queries {
 		from, through, matchers, selectParams, err := remote.FromQuery(query)
 		if err != nil {
@@ -864,30 +865,23 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		}
 		defer querier.Close()
 
-		// Change equality matchers which match external labels
-		// to a matcher that looks for an empty label,
-		// as that label should not be present in the storage.
-		externalLabels := api.config().GlobalConfig.ExternalLabels.Clone()
-		filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
-		for _, m := range matchers {
-			value := externalLabels[model.LabelName(m.Name)]
-			if m.Type == labels.MatchEqual && value == model.LabelValue(m.Value) {
-				matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				filteredMatchers = append(filteredMatchers, matcher)
-			} else {
-				filteredMatchers = append(filteredMatchers, m)
-			}
-		}
-
-		set, _, err := querier.Select(selectParams, filteredMatchers...)
+		matcherLists, err := externalLabelMatcherLists(externalLabels, matchers)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		sets := make([]storage.SeriesSet, 0, len(matcherLists))
+		for _, matcherList := range matcherLists {
+			set, _, err := querier.Select(selectParams, matcherList...)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			sets = append(sets, set)
+		}
+
+		set := storage.NewMergeSeriesSet(sets, nil)
 		resp.Results[i], err = remote.ToQueryResult(set, api.remoteReadSampleLimit)
 		if err != nil {
 			if httpErr, ok := err.(remote.HTTPError); ok {
@@ -919,6 +913,68 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+// externalLabelMatcherLists generates a list of matchers sets to run queries for. These are generated according to:
+// If the current matcher does not use an external label just use the matcher in local storage.
+// If there is a match on an external label, then the the internal label must match the matcher OR be empty.
+//   - Since this is an OR the queries split, generating twice as many queries.
+// If there is not a match on an external label, then the internal label must match the matcher AND not be empty.
+func externalLabelMatcherLists(externalLabels model.LabelSet, matchers []*labels.Matcher) ([][]*labels.Matcher, error) {
+	// start with a single query with no matchers in it
+	baseMatchers := make([]*labels.Matcher, 0, len(matchers))
+	queries := [][]*labels.Matcher{baseMatchers}
+
+	for _, matcher := range matchers {
+		value, ok := externalLabels[model.LabelName(matcher.Name)]
+		// If there is no external label for this label, add this matcher to all queries.
+		if !ok {
+			appendMatcherToQueries(queries, matcher)
+			continue
+		}
+
+		if matcher.Matches(string(value)) {
+			// Matches external label, do an OR.
+			emptyMatcher, err := labels.NewMatcher(labels.MatchEqual, matcher.Name, "")
+			if err != nil {
+				return nil, err
+			}
+			queries = appendEitherMatcherToQueries(queries, matcher, emptyMatcher)
+		} else {
+			// Does not match external label, do an AND.
+			appendMatcherToQueries(queries, matcher)
+			// We only need to add the != "" matcher if the base matcher matches "".
+			if matcher.Matches("") {
+				m, err := labels.NewMatcher(labels.MatchNotEqual, matcher.Name, "")
+				if err != nil {
+					return nil, err
+				}
+				appendMatcherToQueries(queries, m)
+			}
+		}
+	}
+	return queries, nil
+}
+
+func appendMatcherToQueries(queries [][]*labels.Matcher, matcher *labels.Matcher) {
+	for i := range queries {
+		queries[i] = append(queries[i], matcher)
+	}
+}
+
+// appendMatcherToQueries creates a new list of matcher sets in order to execute an OR.
+func appendEitherMatcherToQueries(queries [][]*labels.Matcher, m1, m2 *labels.Matcher) [][]*labels.Matcher {
+	newQueries := make([][]*labels.Matcher, 0, len(queries)*2)
+	for _, query1 := range queries {
+		query2 := make([]*labels.Matcher, len(query1), cap(query1))
+		copy(query2, query1)
+
+		query1 = append(query1, m1)
+		query2 = append(query2, m2)
+
+		newQueries = append(newQueries, query1, query2)
+	}
+	return newQueries
 }
 
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {
