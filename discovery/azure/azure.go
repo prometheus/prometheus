@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/arm/compute"
@@ -324,9 +325,12 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		err      error
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(len(machines))
 	ch := make(chan target, len(machines))
 	for i, vm := range machines {
 		go func(i int, vm virtualMachine) {
+			defer wg.Done()
 			r, err := newAzureResourceFromID(vm.ID, d.logger)
 			if err != nil {
 				ch <- target{labelSet: nil, err: err}
@@ -374,7 +378,6 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				// is a cheap and easy way to determine if a machine is allocated or not.
 				if networkInterface.Properties.Primary == nil {
 					level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", vm.Name)
-					ch <- target{}
 					return
 				}
 
@@ -395,15 +398,13 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 					}
 				}
 			}
-
-			// If we get here we haven't sent anything to the channel.
-			// We need to send it something to release it.
-			ch <- target{}
 		}(i, vm)
 	}
 
-	for range machines {
-		tgt := <-ch
+	wg.Wait()
+	close(ch)
+
+	for tgt := range ch {
 		if tgt.err != nil {
 			return nil, fmt.Errorf("unable to complete Azure service discovery: %s", err)
 		}
