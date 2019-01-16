@@ -6,6 +6,7 @@
     - `OpenBlock` signature changed to take a logger.
  - [REMOVED] `PrefixMatcher` is considered unused so was removed.
  - [CLEANUP] `Options.WALFlushInterval` is removed as it wasn't used anywhere.
+ - [FEATURE] Add new `LiveReader` to WAL pacakge. Added to allow live tailing of a WAL segment, used by Prometheus Remote Write after refactor. The main difference between the new reader and the existing `Reader` is that for `LiveReader` a call to `Next()` that returns false does not mean that there will never be more data to read.
 
 ## 0.3.1
  - [BUGFIX] Fixed most windows test and some actual bugs for unclosed file readers.
