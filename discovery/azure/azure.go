@@ -164,7 +164,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		default:
 		}
 
-		tg, err := d.refresh()
+		tg, err := d.refresh(ctx)
 		if err != nil {
 			level.Error(d.logger).Log("msg", "Unable to refresh during Azure discovery", "err", err)
 		} else {
@@ -281,7 +281,7 @@ func newAzureResourceFromID(id string, logger log.Logger) (azureResource, error)
 	}, nil
 }
 
-func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
+func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err error) {
 	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
 
 	t0 := time.Now()
@@ -297,7 +297,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		return tg, fmt.Errorf("could not create Azure client: %s", err)
 	}
 
-	machines, err := client.getVMs()
+	machines, err := client.getVMs(ctx)
 	if err != nil {
 		return tg, fmt.Errorf("could not get virtual machines: %s", err)
 	}
@@ -305,13 +305,13 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	level.Debug(d.logger).Log("msg", "Found virtual machines during Azure discovery.", "count", len(machines))
 
 	// Load the vms managed by scale sets.
-	scaleSets, err := client.getScaleSets()
+	scaleSets, err := client.getScaleSets(ctx)
 	if err != nil {
 		return tg, fmt.Errorf("could not get virtual machine scale sets: %s", err)
 	}
 
 	for _, scaleSet := range scaleSets {
-		scaleSetVms, err := client.getScaleSetVMs(scaleSet)
+		scaleSetVms, err := client.getScaleSetVMs(ctx, scaleSet)
 		if err != nil {
 			return tg, fmt.Errorf("could not get virtual machine scale set vms: %s", err)
 		}
@@ -410,9 +410,8 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	return tg, nil
 }
 
-func (client *azureClient) getVMs() ([]virtualMachine, error) {
+func (client *azureClient) getVMs(ctx context.Context) ([]virtualMachine, error) {
 	var vms []virtualMachine
-	ctx := context.Background()
 	result, err := client.vm.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not list virtual machines: %s", err)
@@ -437,9 +436,8 @@ func (client *azureClient) getVMs() ([]virtualMachine, error) {
 	return vms, nil
 }
 
-func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, error) {
+func (client *azureClient) getScaleSets(ctx context.Context) ([]compute.VirtualMachineScaleSet, error) {
 	var scaleSets []compute.VirtualMachineScaleSet
-	ctx := context.Background()
 	result, err := client.vmss.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not list virtual machine scale sets: %s", err)
@@ -457,7 +455,7 @@ func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, err
 	return scaleSets, nil
 }
 
-func (client *azureClient) getScaleSetVMs(scaleSet compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
+func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
 	var vms []virtualMachine
 	//TODO do we really need to fetch the resourcegroup this way?
 	r, err := newAzureResourceFromID(*scaleSet.ID, nil)
@@ -465,8 +463,6 @@ func (client *azureClient) getScaleSetVMs(scaleSet compute.VirtualMachineScaleSe
 	if err != nil {
 		return nil, fmt.Errorf("could not parse scale set ID: %s", err)
 	}
-
-	ctx := context.Background()
 
 	result, err := client.vmssvm.List(ctx, r.ResourceGroup, *(scaleSet.Name), "", "", "")
 	if err != nil {
