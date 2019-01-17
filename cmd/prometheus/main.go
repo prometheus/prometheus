@@ -208,7 +208,7 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they would load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("web.cors.origin", `Regex for CORS origin. It is anchored in both ends by prometheus. Eg. 'https?://(domain1|domain2)\.com'`).
+	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Eg. 'https?://(domain1|domain2)\.com'`).
 		Default(".*").StringVar(&cfg.corsRegexString)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
