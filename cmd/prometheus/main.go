@@ -226,9 +226,9 @@ func main() {
 		os.Exit(2)
 	}
 
-	cfg.web.CORSOrigin, err = compileRegexString(cfg.corsRegexString)
+	cfg.web.CORSOrigin, err = compileCORSRegexString(cfg.corsRegexString)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "could not compile regex string %q", cfg.corsRegexString))
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "could not compile CORS regex string %q", cfg.corsRegexString))
 		os.Exit(2)
 	}
 
@@ -675,8 +675,8 @@ func startsOrEndsWithQuote(s string) bool {
 		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
 }
 
-// compileRegexString compiles given string and adds anchors
-func compileRegexString(s string) (*regexp.Regexp, error) {
+// compileCORSRegexString compiles given string and adds anchors
+func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 	r, err := relabel.NewRegexp(s)
 	if err != nil {
 		return nil, err
