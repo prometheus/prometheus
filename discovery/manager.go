@@ -418,7 +418,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 		// It can happen because the combined set of SD configurations is empty
 		// or because we fail to instantiate all the SD configurations.
 		add(setName, func() (Discoverer, error) {
-			return &StaticProvider{TargetGroups: []*targetgroup.Group{&targetgroup.Group{}}}, nil
+			return &StaticProvider{TargetGroups: []*targetgroup.Group{{}}}, nil
 		})
 	}
 }

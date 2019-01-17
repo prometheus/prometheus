@@ -41,10 +41,10 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					metric1 1+1x10
 			`,
 			testCases: []testCase{
-				testCase{
+				{
 					ts: time.Unix(40, 0),
 					series: []Series{
-						Series{
+						{
 							Metric: labels.FromStrings("__name__", "metric1"),
 							Points: []Point{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
@@ -52,10 +52,10 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						},
 					},
 				},
-				testCase{
+				{
 					ts: time.Unix(10, 0),
 					series: []Series{
-						Series{
+						{
 							Metric: labels.FromStrings("__name__", "metric1"),
 							Points: []Point{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
@@ -63,10 +63,10 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						},
 					},
 				},
-				testCase{
+				{
 					ts: time.Unix(60, 0),
 					series: []Series{
-						Series{
+						{
 							Metric: labels.FromStrings("__name__", "metric1"),
 							Points: []Point{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7},
@@ -83,16 +83,16 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					metric2 1+1x100
 			`,
 			testCases: []testCase{
-				testCase{ // Adds all samples of metric1.
+				{ // Adds all samples of metric1.
 					ts: time.Unix(70, 0),
 					series: []Series{
-						Series{
+						{
 							Metric: labels.FromStrings("__name__", "metric1"),
 							Points: []Point{
 								{0, 1}, {10000, 1}, {20000, 1}, {30000, 1}, {40000, 1}, {50000, 1},
 							},
 						},
-						Series{
+						{
 							Metric: labels.FromStrings("__name__", "metric2"),
 							Points: []Point{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7}, {70000, 8},
@@ -100,7 +100,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						},
 					},
 				},
-				testCase{ // This tests fix for https://github.com/prometheus/prometheus/issues/5064.
+				{ // This tests fix for https://github.com/prometheus/prometheus/issues/5064.
 					ts:             time.Unix(300, 0),
 					checkOnlyError: true,
 				},

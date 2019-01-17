@@ -195,7 +195,7 @@ func TestSendAlerts(t *testing.T) {
 	}{
 		{
 			in: []*rules.Alert{
-				&rules.Alert{
+				{
 					Labels:      []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations: []labels.Label{{Name: "a2", Value: "v2"}},
 					ActiveAt:    time.Unix(1, 0),
@@ -204,7 +204,7 @@ func TestSendAlerts(t *testing.T) {
 				},
 			},
 			exp: []*notifier.Alert{
-				&notifier.Alert{
+				{
 					Labels:       []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations:  []labels.Label{{Name: "a2", Value: "v2"}},
 					StartsAt:     time.Unix(2, 0),
@@ -215,7 +215,7 @@ func TestSendAlerts(t *testing.T) {
 		},
 		{
 			in: []*rules.Alert{
-				&rules.Alert{
+				{
 					Labels:      []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations: []labels.Label{{Name: "a2", Value: "v2"}},
 					ActiveAt:    time.Unix(1, 0),
@@ -224,7 +224,7 @@ func TestSendAlerts(t *testing.T) {
 				},
 			},
 			exp: []*notifier.Alert{
-				&notifier.Alert{
+				{
 					Labels:       []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations:  []labels.Label{{Name: "a2", Value: "v2"}},
 					StartsAt:     time.Unix(2, 0),

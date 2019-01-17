@@ -66,7 +66,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 	)
 
 	results := []promql.Vector{
-		promql.Vector{
+		{
 			{
 				Metric: labels.FromStrings(
 					"__name__", "ALERTS",
@@ -79,7 +79,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 				Point: promql.Point{V: 1},
 			},
 		},
-		promql.Vector{
+		{
 			{
 				Metric: labels.FromStrings(
 					"__name__", "ALERTS",
@@ -92,7 +92,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 				Point: promql.Point{V: 1},
 			},
 		},
-		promql.Vector{
+		{
 			{
 				Metric: labels.FromStrings(
 					"__name__", "ALERTS",
@@ -105,7 +105,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 				Point: promql.Point{V: 1},
 			},
 		},
-		promql.Vector{
+		{
 			{
 				Metric: labels.FromStrings(
 					"__name__", "ALERTS",
