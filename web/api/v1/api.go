@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"time"
@@ -76,13 +77,6 @@ const (
 	errorNotFound    errorType = "not_found"
 )
 
-var corsHeaders = map[string]string{
-	"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
-	"Access-Control-Allow-Methods":  "GET, OPTIONS",
-	"Access-Control-Allow-Origin":   "*",
-	"Access-Control-Expose-Headers": "Date",
-}
-
 var remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
 	Namespace: namespace,
 	Subsystem: subsystem,
@@ -129,13 +123,6 @@ type apiFuncResult struct {
 	finalizer func()
 }
 
-// Enables cross-site script calls.
-func setCORS(w http.ResponseWriter) {
-	for h, v := range corsHeaders {
-		w.Header().Set(h, v)
-	}
-}
-
 type apiFunc func(r *http.Request) apiFuncResult
 
 // TSDBAdmin defines the tsdb interfaces used by the v1 API for admin operations.
@@ -165,6 +152,7 @@ type API struct {
 	logger                log.Logger
 	remoteReadSampleLimit int
 	remoteReadGate        *gate.Gate
+	CORSOrigin            *regexp.Regexp
 }
 
 func init() {
@@ -187,6 +175,7 @@ func NewAPI(
 	rr rulesRetriever,
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
+	CORSOrigin *regexp.Regexp,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -204,6 +193,7 @@ func NewAPI(
 		remoteReadSampleLimit: remoteReadSampleLimit,
 		remoteReadGate:        gate.New(remoteReadConcurrencyLimit),
 		logger:                logger,
+		CORSOrigin:            CORSOrigin,
 	}
 }
 
@@ -211,7 +201,7 @@ func NewAPI(
 func (api *API) Register(r *route.Router) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			setCORS(w)
+			httputil.SetCORS(w, api.CORSOrigin, r)
 			result := f(r)
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)

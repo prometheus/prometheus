@@ -28,6 +28,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -173,6 +174,7 @@ type Options struct {
 	Flags         map[string]string
 
 	ListenAddress              string
+	CORSOrigin                 *regexp.Regexp
 	ReadTimeout                time.Duration
 	MaxConnections             int
 	ExternalURL                *url.URL
@@ -259,6 +261,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.ruleManager,
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
+		h.options.CORSOrigin,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -338,20 +341,6 @@ func New(logger log.Logger, o *Options) *Handler {
 	}))
 
 	return h
-}
-
-var corsHeaders = map[string]string{
-	"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
-	"Access-Control-Allow-Methods":  "GET, OPTIONS",
-	"Access-Control-Allow-Origin":   "*",
-	"Access-Control-Expose-Headers": "Date",
-}
-
-// Enables cross-site script calls.
-func setCORS(w http.ResponseWriter) {
-	for h, v := range corsHeaders {
-		w.Header().Set(h, v)
-	}
 }
 
 func serveDebug(w http.ResponseWriter, req *http.Request) {
@@ -474,7 +463,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			setCORS(w)
+			httputil.SetCORS(w, h.options.CORSOrigin, r)
 			hhFunc(w, r)
 		}),
 	))

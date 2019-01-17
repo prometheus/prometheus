@@ -1416,12 +1416,6 @@ func TestOptionsMethod(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("Expected status %d, got %d", http.StatusNoContent, resp.StatusCode)
 	}
-
-	for h, v := range corsHeaders {
-		if resp.Header.Get(h) != v {
-			t.Fatalf("Expected %q for header %q, got %q", v, h, resp.Header.Get(h))
-		}
-	}
 }
 
 func TestRespond(t *testing.T) {
