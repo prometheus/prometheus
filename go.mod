@@ -6,6 +6,7 @@ require (
 	github.com/Azure/go-autorest v11.2.8+incompatible
 	github.com/StackExchange/wmi v0.0.0-20180725035823-b12b22c5341f // indirect
 	github.com/VividCortex/ewma v1.1.1 // indirect
+	github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf
 	github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da // indirect
 	github.com/aws/aws-sdk-go v0.0.0-20180507225419-00862f899353
 	github.com/biogo/store v0.0.0-20160505134755-913427a1d5e8 // indirect
@@ -22,6 +23,7 @@ require (
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/elastic/gosigar v0.9.0 // indirect
 	github.com/elazarl/go-bindata-assetfs v1.0.0 // indirect
+	github.com/evanphx/json-patch v4.1.0+incompatible // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
 	github.com/fsnotify/fsnotify v1.4.7 // indirect
 	github.com/getsentry/raven-go v0.1.0 // indirect
@@ -29,18 +31,17 @@ require (
 	github.com/go-kit/kit v0.8.0
 	github.com/go-ole/go-ole v1.2.1 // indirect
 	github.com/go-sql-driver/mysql v1.4.0 // indirect
-	github.com/gogo/protobuf v1.1.1
-	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
+	github.com/gogo/protobuf v1.2.0
 	github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4 // indirect
 	github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
 	github.com/google/btree v0.0.0-20180124185431-e89373fe6b4a // indirect
 	github.com/google/gofuzz v0.0.0-20150304233714-bbcb9da2d746 // indirect
 	github.com/google/pprof v0.0.0-20180605153948-8b03ce837f34
 	github.com/googleapis/gnostic v0.0.0-20180520015035-48a0ecefe2e4 // indirect
-	github.com/gophercloud/gophercloud v0.0.0-20170607034829-caf34a65f602
+	github.com/gophercloud/gophercloud v0.0.0-20181206160319-9d88c34913a9
 	github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 // indirect
 	github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7 // indirect
-	github.com/grpc-ecosystem/grpc-gateway v1.5.0
+	github.com/grpc-ecosystem/grpc-gateway v1.6.3
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
 	github.com/hashicorp/consul v0.0.0-20180615161029-bed22a81e9fd
 	github.com/hashicorp/go-cleanhttp v0.0.0-20160407174126-ad28ea4487f0 // indirect
@@ -88,7 +89,7 @@ require (
 	github.com/prometheus/client_golang v0.9.1
 	github.com/prometheus/client_model v0.0.0-20180712105110-5c3871d89910
 	github.com/prometheus/common v0.0.0-20181119215939-b36ad289a3ea
-	github.com/prometheus/tsdb v0.3.1
+	github.com/prometheus/tsdb v0.3.2-0.20181219094047-6d489a1004dc
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a // indirect
 	github.com/rlmcpherson/s3gof3r v0.5.0 // indirect
 	github.com/rubyist/circuitbreaker v2.2.1+incompatible // indirect
@@ -107,10 +108,10 @@ require (
 	golang.org/x/net v0.0.0-20180906233101-161cd47e91fd
 	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
 	golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
-	golang.org/x/tools v0.0.0-20181023010539-40a48ad93fbe // indirect
+	golang.org/x/tools v0.0.0-20181023010539-40a48ad93fbe
 	google.golang.org/api v0.0.0-20180910000450-7ca32eb868bf
 	google.golang.org/genproto v0.0.0-20180831171423-11092d34479b
-	google.golang.org/grpc v1.15.0
+	google.golang.org/grpc v1.17.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/fsnotify/fsnotify.v1 v1.3.0
@@ -118,12 +119,14 @@ require (
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/vmihailenco/msgpack.v2 v2.9.1 // indirect
 	gopkg.in/yaml.v2 v2.2.1
-	k8s.io/api v0.0.0-20180628040859-072894a440bd
-	k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
-	k8s.io/client-go v8.0.0+incompatible
+	k8s.io/api v0.0.0-20181213150558-05914d821849
+	k8s.io/apimachinery v0.0.0-20181127025237-2b1284ed4c93
+	k8s.io/client-go v2.0.0-alpha.0.0.20181121191925-a47917edff34+incompatible
+	k8s.io/klog v0.1.0
 	k8s.io/kube-openapi v0.0.0-20180629012420-d83b052f768a // indirect
 	labix.org/v2/mgo v0.0.0-20140701140051-000000000287 // indirect
 	launchpad.net/gocheck v0.0.0-20140225173054-000000000087 // indirect
+	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
-replace github.com/golang/glog => github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352
+replace k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0

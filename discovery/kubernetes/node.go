@@ -127,7 +127,7 @@ func convertToNode(o interface{}) (*apiv1.Node, error) {
 		return node, nil
 	}
 
-	return nil, fmt.Errorf("Received unexpected object: %v", o)
+	return nil, fmt.Errorf("received unexpected object: %v", o)
 }
 
 func nodeSource(n *apiv1.Node) string {

@@ -19,11 +19,11 @@
 package grpc
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"time"
 
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/internal"
@@ -55,10 +55,11 @@ type dialOptions struct {
 	balancerBuilder balancer.Builder
 	// This is to support grpclb.
 	resolverBuilder      resolver.Builder
-	waitForHandshake     bool
+	reqHandshake         envconfig.RequireHandshakeSetting
 	channelzParentID     int64
 	disableServiceConfig bool
 	disableRetry         bool
+	disableHealthCheck   bool
 }
 
 // DialOption configures how we set up the connection.
@@ -91,10 +92,15 @@ func newFuncDialOption(f func(*dialOptions)) *funcDialOption {
 }
 
 // WithWaitForHandshake blocks until the initial settings frame is received from
-// the server before assigning RPCs to the connection. Experimental API.
+// the server before assigning RPCs to the connection.
+//
+// Deprecated: this will become the default behavior in the 1.17 release, and
+// will be removed after the 1.18 release.  To override the default behavior in
+// the 1.17 release, either use this dial option or set the environment
+// variable GRPC_GO_READY_BEFORE_HANDSHAKE=on.
 func WithWaitForHandshake() DialOption {
 	return newFuncDialOption(func(o *dialOptions) {
-		o.waitForHandshake = true
+		o.reqHandshake = envconfig.RequireHandshakeOn
 	})
 }
 
@@ -286,7 +292,8 @@ func WithInsecure() DialOption {
 }
 
 // WithTransportCredentials returns a DialOption which configures a connection
-// level security credentials (e.g., TLS/SSL).
+// level security credentials (e.g., TLS/SSL). This should not be used together
+// with WithCredentialsBundle.
 func WithTransportCredentials(creds credentials.TransportCredentials) DialOption {
 	return newFuncDialOption(func(o *dialOptions) {
 		o.copts.TransportCredentials = creds
@@ -298,6 +305,17 @@ func WithTransportCredentials(creds credentials.TransportCredentials) DialOption
 func WithPerRPCCredentials(creds credentials.PerRPCCredentials) DialOption {
 	return newFuncDialOption(func(o *dialOptions) {
 		o.copts.PerRPCCredentials = append(o.copts.PerRPCCredentials, creds)
+	})
+}
+
+// WithCredentialsBundle returns a DialOption to set a credentials bundle for
+// the ClientConn.WithCreds. This should not be used together with
+// WithTransportCredentials.
+//
+// This API is experimental.
+func WithCredentialsBundle(b credentials.Bundle) DialOption {
+	return newFuncDialOption(func(o *dialOptions) {
+		o.copts.CredsBundle = b
 	})
 }
 
@@ -442,9 +460,18 @@ func WithMaxHeaderListSize(s uint32) DialOption {
 	})
 }
 
+// WithDisableHealthCheck disables the LB channel health checking for all SubConns of this ClientConn.
+//
+// This API is EXPERIMENTAL.
+func WithDisableHealthCheck() DialOption {
+	return newFuncDialOption(func(o *dialOptions) {
+		o.disableHealthCheck = true
+	})
+}
 func defaultDialOptions() dialOptions {
 	return dialOptions{
 		disableRetry: !envconfig.Retry,
+		reqHandshake: envconfig.RequireHandshake,
 		copts: transport.ConnectOptions{
 			WriteBufferSize: defaultWriteBufSize,
 			ReadBufferSize:  defaultReadBufSize,

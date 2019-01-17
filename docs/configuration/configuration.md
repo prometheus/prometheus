@@ -267,6 +267,8 @@ The following meta labels are available on targets during relabeling:
 * `__meta_azure_machine_resource_group`: the machine's resource group
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
 * `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
+* `__meta_azure_subscription_id`: the subscription ID
+* `__meta_azure_tenant_id`: the tenant ID
 
 See below for the configuration options for Azure discovery:
 
@@ -537,6 +539,17 @@ region: <string>
 # how these fields influence authentication.
 [ project_name: <string> ]
 [ project_id: <string> ]
+
+# The application_credential_id or application_credential_name fields are
+# required if using an application credential to authenticate. Some providers
+# allow you to create an application credential to authenticate rather than a
+# password.
+[ application_credential_name: <string> ]
+[ application_credential_id: <string> ]
+
+# The application_credential_secret field is required if using an application
+# credential to authenticate.
+[ application_credential_secret: <secret> ]
 
 # Whether the service discovery should list all instances for all projects.
 # It is only relevant for the 'instance' role and usually requires admin permissions.
@@ -976,7 +989,7 @@ endpoint: <string>
 
 # A list of groups for which targets are retrieved. If omitted, all containers
 # available to the requesting account are scraped.
-groups: 
+groups:
   [ - <string> ... ]
 
 # The port to use for discovery and metric scraping.

@@ -7,14 +7,15 @@ go_library(
     srcs = [
         "doc.go",
         "pattern.go",
+        "readerfactory.go",
         "trie.go",
     ],
     importpath = "github.com/grpc-ecosystem/grpc-gateway/utilities",
 )
 
 go_test(
-    name = "go_default_xtest",
+    name = "go_default_test",
     size = "small",
     srcs = ["trie_test.go"],
-    deps = [":go_default_library"],
+    embed = [":go_default_library"],
 )

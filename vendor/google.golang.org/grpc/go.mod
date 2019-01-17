@@ -4,11 +4,10 @@ require (
 	cloud.google.com/go v0.26.0 // indirect
 	github.com/client9/misspell v0.3.4
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
-	github.com/golang/lint v0.0.0-20180702182130-06c8688daad7
 	github.com/golang/mock v1.1.1
 	github.com/golang/protobuf v1.2.0
 	github.com/kisielk/gotool v1.0.0 // indirect
-	golang.org/x/lint v0.0.0-20180702182130-06c8688daad7 // indirect
+	golang.org/x/lint v0.0.0-20181026193005-c67002cb31c3
 	golang.org/x/net v0.0.0-20180826012351-8a410e7b638d
 	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
 	golang.org/x/sync v0.0.0-20180314180146-1d60e4601c6f // indirect

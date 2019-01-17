@@ -61,7 +61,8 @@ var (
 	)
 )
 
-type metrics struct {
+// Metrics for rule evaluation.
+type Metrics struct {
 	evalDuration        prometheus.Summary
 	evalFailures        prometheus.Counter
 	evalTotal           prometheus.Counter
@@ -70,10 +71,13 @@ type metrics struct {
 	iterationsScheduled prometheus.Counter
 	groupLastEvalTime   *prometheus.GaugeVec
 	groupLastDuration   *prometheus.GaugeVec
+	groupRules          *prometheus.GaugeVec
 }
 
-func newGroupMetrics(reg prometheus.Registerer) *metrics {
-	m := &metrics{
+// NewGroupMetrics makes a new Metrics and registers them with then provided registerer,
+// if not nil.
+func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
+	m := &Metrics{
 		evalDuration: prometheus.NewSummary(
 			prometheus.SummaryOpts{
 				Namespace: namespace,
@@ -124,6 +128,14 @@ func newGroupMetrics(reg prometheus.Registerer) *metrics {
 			},
 			[]string{"rule_group"},
 		),
+		groupRules: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_rules",
+				Help:      "The number of rules.",
+			},
+			[]string{"rule_group"},
+		),
 	}
 
 	if reg != nil {
@@ -136,6 +148,7 @@ func newGroupMetrics(reg prometheus.Registerer) *metrics {
 			m.iterationsScheduled,
 			m.groupLastEvalTime,
 			m.groupLastDuration,
+			m.groupRules,
 		)
 	}
 
@@ -220,18 +233,19 @@ type Group struct {
 
 	logger log.Logger
 
-	metrics *metrics
+	metrics *Metrics
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
 func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRestore bool, opts *ManagerOptions) *Group {
-	metrics := opts.metrics
+	metrics := opts.Metrics
 	if metrics == nil {
-		metrics = newGroupMetrics(opts.Registerer)
+		metrics = NewGroupMetrics(opts.Registerer)
 	}
 
 	metrics.groupLastEvalTime.WithLabelValues(groupKey(file, name))
 	metrics.groupLastDuration.WithLabelValues(groupKey(file, name))
+	metrics.groupRules.WithLabelValues(groupKey(file, name)).Set(float64(len(rules)))
 
 	return &Group{
 		name:                 name,
@@ -684,14 +698,14 @@ type ManagerOptions struct {
 	ForGracePeriod  time.Duration
 	ResendDelay     time.Duration
 
-	metrics *metrics
+	Metrics *Metrics
 }
 
 // NewManager returns an implementation of Manager, ready to be started
 // by calling the Run method.
 func NewManager(o *ManagerOptions) *Manager {
-	if o.metrics == nil {
-		o.metrics = newGroupMetrics(o.Registerer)
+	if o.Metrics == nil {
+		o.Metrics = NewGroupMetrics(o.Registerer)
 	}
 
 	m := &Manager{
@@ -705,7 +719,7 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.Registerer.MustRegister(m)
 	}
 
-	o.metrics.iterationsMissed.Inc()
+	o.Metrics.iterationsMissed.Inc()
 	return m
 }
 

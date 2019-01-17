@@ -13,7 +13,6 @@ go_proto_library(
     name = "internal_go_proto",
     importpath = "github.com/grpc-ecosystem/grpc-gateway/runtime/internal",
     proto = ":internal_proto",
-    deps = ["@com_github_golang_protobuf//ptypes/any:go_default_library"],
 )
 
 go_library(

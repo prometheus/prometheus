@@ -69,7 +69,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 	testutil.Equals(t, 4, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
-		model.LabelSet{
+		{
 			"__address__":                      model.LabelValue("10.0.0.32:0"),
 			"__meta_openstack_instance_flavor": model.LabelValue("1"),
 			"__meta_openstack_instance_id":     model.LabelValue("ef079b0c-e610-4dfb-b1aa-b49f07ac48e5"),
@@ -79,7 +79,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.2"),
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
 		},
-		model.LabelSet{
+		{
 			"__address__":                      model.LabelValue("10.0.0.31:0"),
 			"__meta_openstack_instance_flavor": model.LabelValue("1"),
 			"__meta_openstack_instance_id":     model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682ba"),
@@ -88,7 +88,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.31"),
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
 		},
-		model.LabelSet{
+		{
 			"__address__":                      model.LabelValue("10.0.0.33:0"),
 			"__meta_openstack_instance_flavor": model.LabelValue("4"),
 			"__meta_openstack_instance_id":     model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682bb"),
@@ -98,7 +98,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
 			"__meta_openstack_tag_env":         model.LabelValue("prod"),
 		},
-		model.LabelSet{
+		{
 			"__address__":                      model.LabelValue("10.0.0.34:0"),
 			"__meta_openstack_instance_flavor": model.LabelValue("4"),
 			"__meta_openstack_instance_id":     model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682bb"),

@@ -175,7 +175,7 @@ func (q *query) Exec(ctx context.Context) *Result {
 		span.SetTag(queryTag, q.stmt.String())
 	}
 
-	res, err, warnings := q.ng.exec(ctx, q)
+	res, warnings, err := q.ng.exec(ctx, q)
 	return &Result{Err: err, Value: res, Warnings: warnings}
 }
 
@@ -353,7 +353,7 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 //
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
-func (ng *Engine) exec(ctx context.Context, q *query) (Value, error, storage.Warnings) {
+func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, error) {
 	ng.metrics.currentQueries.Inc()
 	defer ng.metrics.currentQueries.Dec()
 
@@ -366,7 +366,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error, storage.War
 	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
 
 	if err := ng.gate.Start(ctx); err != nil {
-		return nil, contextErr(err, "query queue"), nil
+		return nil, nil, contextErr(err, "query queue")
 	}
 	defer ng.gate.Done()
 
@@ -382,14 +382,14 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error, storage.War
 
 	// The base context might already be canceled on the first iteration (e.g. during shutdown).
 	if err := contextDone(ctx, env); err != nil {
-		return nil, err, nil
+		return nil, nil, err
 	}
 
 	switch s := q.Statement().(type) {
 	case *EvalStmt:
 		return ng.execEvalStmt(ctx, q, s)
 	case testStmt:
-		return nil, s(ctx), nil
+		return nil, nil, s(ctx)
 	}
 
 	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
@@ -404,9 +404,9 @@ func durationMilliseconds(d time.Duration) int64 {
 }
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
-func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (Value, error, storage.Warnings) {
+func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (Value, storage.Warnings, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
-	querier, err, warnings := ng.populateSeries(ctxPrepare, query.queryable, s)
+	querier, warnings, err := ng.populateSeries(ctxPrepare, query.queryable, s)
 	prepareSpanTimer.Finish()
 
 	// XXX(fabxc): the querier returned by populateSeries might be instantiated
@@ -417,7 +417,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 
 	if err != nil {
-		return nil, err, warnings
+		return nil, warnings, err
 	}
 
 	evalSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
@@ -435,7 +435,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
-			return nil, err, warnings
+			return nil, warnings, err
 		}
 
 		evalSpanTimer.Finish()
@@ -454,11 +454,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 				// timestamp as that is when we ran the evaluation.
 				vector[i] = Sample{Metric: s.Metric, Point: Point{V: s.Points[0].V, T: start}}
 			}
-			return vector, nil, warnings
+			return vector, warnings, nil
 		case ValueTypeScalar:
-			return Scalar{V: mat[0].Points[0].V, T: start}, nil, warnings
+			return Scalar{V: mat[0].Points[0].V, T: start}, warnings, nil
 		case ValueTypeMatrix:
-			return mat, nil, warnings
+			return mat, warnings, nil
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
 		}
@@ -477,7 +477,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
-		return nil, err, warnings
+		return nil, warnings, err
 	}
 	evalSpanTimer.Finish()
 
@@ -488,7 +488,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	query.matrix = mat
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
-		return nil, err, warnings
+		return nil, warnings, err
 	}
 
 	// TODO(fabxc): order ensured by storage?
@@ -497,7 +497,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	sort.Sort(mat)
 	sortSpanTimer.Finish()
 
-	return mat, nil, warnings
+	return mat, warnings, nil
 }
 
 // cumulativeSubqueryOffset returns the sum of range and offset of all subqueries in the path.
@@ -512,7 +512,7 @@ func (ng *Engine) cumulativeSubqueryOffset(path []Node) time.Duration {
 	return subqOffset
 }
 
-func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error, storage.Warnings) {
+func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, storage.Warnings, error) {
 	var maxOffset time.Duration
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		subqOffset := ng.cumulativeSubqueryOffset(path)
@@ -539,7 +539,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 	querier, err := q.Querier(ctx, timestamp.FromTime(mint), timestamp.FromTime(s.End))
 	if err != nil {
-		return nil, err, nil
+		return nil, nil, err
 	}
 
 	var warnings storage.Warnings
@@ -592,7 +592,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		}
 		return nil
 	})
-	return querier, err, warnings
+	return querier, warnings, err
 }
 
 // extractFuncFromPath walks up the path and searches for the first instance of
@@ -614,7 +614,7 @@ func extractFuncFromPath(p []Node) string {
 	return extractFuncFromPath(p[:len(p)-1])
 }
 
-func checkForSeriesSetExpansion(expr Expr, ctx context.Context) error {
+func checkForSeriesSetExpansion(ctx context.Context, expr Expr) error {
 	switch e := expr.(type) {
 	case *MatrixSelector:
 		if e.series == nil {
@@ -966,7 +966,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 
 		sel := e.Args[matrixArgIndex].(*MatrixSelector)
-		if err := checkForSeriesSetExpansion(sel, ev.ctx); err != nil {
+		if err := checkForSeriesSetExpansion(ev.ctx, sel); err != nil {
 			ev.error(err)
 		}
 		mat := make(Matrix, 0, len(sel.series)) // Output matrix.
@@ -1100,7 +1100,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		})
 
 	case *VectorSelector:
-		if err := checkForSeriesSetExpansion(e, ev.ctx); err != nil {
+		if err := checkForSeriesSetExpansion(ev.ctx, e); err != nil {
 			ev.error(err)
 		}
 		mat := make(Matrix, 0, len(e.series))
@@ -1175,7 +1175,7 @@ func durationToInt64Millis(d time.Duration) int64 {
 
 // vectorSelector evaluates a *VectorSelector expression.
 func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
-	if err := checkForSeriesSetExpansion(node, ev.ctx); err != nil {
+	if err := checkForSeriesSetExpansion(ev.ctx, node); err != nil {
 		ev.error(err)
 	}
 
@@ -1243,12 +1243,13 @@ func getPointSlice(sz int) []Point {
 }
 
 func putPointSlice(p []Point) {
+	//lint:ignore SA6002 relax staticcheck verification.
 	pointPool.Put(p[:0])
 }
 
 // matrixSelector evaluates a *MatrixSelector expression.
 func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
-	if err := checkForSeriesSetExpansion(node, ev.ctx); err != nil {
+	if err := checkForSeriesSetExpansion(ev.ctx, node); err != nil {
 		ev.error(err)
 	}
 
@@ -1663,21 +1664,6 @@ func vectorElemBinop(op ItemType, lhs, rhs float64) (float64, bool) {
 		return lhs, lhs <= rhs
 	}
 	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
-}
-
-// intersection returns the metric of common label/value pairs of two input metrics.
-func intersection(ls1, ls2 labels.Labels) labels.Labels {
-	res := make(labels.Labels, 0, 5)
-
-	for _, l1 := range ls1 {
-		for _, l2 := range ls2 {
-			if l1.Name == l2.Name && l1.Value == l2.Value {
-				res = append(res, l1)
-				continue
-			}
-		}
-	}
-	return res
 }
 
 type groupedAggregation struct {

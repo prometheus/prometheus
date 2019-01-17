@@ -11,10 +11,12 @@ import _ "google.golang.org/genproto/googleapis/api/annotations"
 
 import time "time"
 
-import context "golang.org/x/net/context"
-import grpc "google.golang.org/grpc"
+import (
+	context "golang.org/x/net/context"
+	grpc "google.golang.org/grpc"
+)
 
-import types "github.com/gogo/protobuf/types"
+import github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
 
 import io "io"
 
@@ -24,58 +26,250 @@ var _ = fmt.Errorf
 var _ = math.Inf
 var _ = time.Kitchen
 
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the proto package it is being compiled against.
+// A compilation error at this line likely means your copy of the
+// proto package needs to be updated.
+const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
+
 type TSDBSnapshotRequest struct {
-	SkipHead bool `protobuf:"varint,1,opt,name=skip_head,json=skipHead,proto3" json:"skip_head,omitempty"`
+	SkipHead             bool     `protobuf:"varint,1,opt,name=skip_head,json=skipHead,proto3" json:"skip_head,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *TSDBSnapshotRequest) Reset()                    { *m = TSDBSnapshotRequest{} }
-func (m *TSDBSnapshotRequest) String() string            { return proto.CompactTextString(m) }
-func (*TSDBSnapshotRequest) ProtoMessage()               {}
-func (*TSDBSnapshotRequest) Descriptor() ([]byte, []int) { return fileDescriptorRpc, []int{0} }
+func (m *TSDBSnapshotRequest) Reset()         { *m = TSDBSnapshotRequest{} }
+func (m *TSDBSnapshotRequest) String() string { return proto.CompactTextString(m) }
+func (*TSDBSnapshotRequest) ProtoMessage()    {}
+func (*TSDBSnapshotRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_rpc_e0d54cfadc26b2e1, []int{0}
+}
+func (m *TSDBSnapshotRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *TSDBSnapshotRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_TSDBSnapshotRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *TSDBSnapshotRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TSDBSnapshotRequest.Merge(dst, src)
+}
+func (m *TSDBSnapshotRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *TSDBSnapshotRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_TSDBSnapshotRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TSDBSnapshotRequest proto.InternalMessageInfo
 
 type TSDBSnapshotResponse struct {
-	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name                 string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *TSDBSnapshotResponse) Reset()                    { *m = TSDBSnapshotResponse{} }
-func (m *TSDBSnapshotResponse) String() string            { return proto.CompactTextString(m) }
-func (*TSDBSnapshotResponse) ProtoMessage()               {}
-func (*TSDBSnapshotResponse) Descriptor() ([]byte, []int) { return fileDescriptorRpc, []int{1} }
+func (m *TSDBSnapshotResponse) Reset()         { *m = TSDBSnapshotResponse{} }
+func (m *TSDBSnapshotResponse) String() string { return proto.CompactTextString(m) }
+func (*TSDBSnapshotResponse) ProtoMessage()    {}
+func (*TSDBSnapshotResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_rpc_e0d54cfadc26b2e1, []int{1}
+}
+func (m *TSDBSnapshotResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *TSDBSnapshotResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_TSDBSnapshotResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *TSDBSnapshotResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TSDBSnapshotResponse.Merge(dst, src)
+}
+func (m *TSDBSnapshotResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *TSDBSnapshotResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_TSDBSnapshotResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TSDBSnapshotResponse proto.InternalMessageInfo
 
 type TSDBCleanTombstonesRequest struct {
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *TSDBCleanTombstonesRequest) Reset()                    { *m = TSDBCleanTombstonesRequest{} }
-func (m *TSDBCleanTombstonesRequest) String() string            { return proto.CompactTextString(m) }
-func (*TSDBCleanTombstonesRequest) ProtoMessage()               {}
-func (*TSDBCleanTombstonesRequest) Descriptor() ([]byte, []int) { return fileDescriptorRpc, []int{2} }
+func (m *TSDBCleanTombstonesRequest) Reset()         { *m = TSDBCleanTombstonesRequest{} }
+func (m *TSDBCleanTombstonesRequest) String() string { return proto.CompactTextString(m) }
+func (*TSDBCleanTombstonesRequest) ProtoMessage()    {}
+func (*TSDBCleanTombstonesRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_rpc_e0d54cfadc26b2e1, []int{2}
+}
+func (m *TSDBCleanTombstonesRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *TSDBCleanTombstonesRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_TSDBCleanTombstonesRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *TSDBCleanTombstonesRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TSDBCleanTombstonesRequest.Merge(dst, src)
+}
+func (m *TSDBCleanTombstonesRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *TSDBCleanTombstonesRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_TSDBCleanTombstonesRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TSDBCleanTombstonesRequest proto.InternalMessageInfo
 
 type TSDBCleanTombstonesResponse struct {
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *TSDBCleanTombstonesResponse) Reset()                    { *m = TSDBCleanTombstonesResponse{} }
-func (m *TSDBCleanTombstonesResponse) String() string            { return proto.CompactTextString(m) }
-func (*TSDBCleanTombstonesResponse) ProtoMessage()               {}
-func (*TSDBCleanTombstonesResponse) Descriptor() ([]byte, []int) { return fileDescriptorRpc, []int{3} }
+func (m *TSDBCleanTombstonesResponse) Reset()         { *m = TSDBCleanTombstonesResponse{} }
+func (m *TSDBCleanTombstonesResponse) String() string { return proto.CompactTextString(m) }
+func (*TSDBCleanTombstonesResponse) ProtoMessage()    {}
+func (*TSDBCleanTombstonesResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_rpc_e0d54cfadc26b2e1, []int{3}
+}
+func (m *TSDBCleanTombstonesResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *TSDBCleanTombstonesResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_TSDBCleanTombstonesResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *TSDBCleanTombstonesResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TSDBCleanTombstonesResponse.Merge(dst, src)
+}
+func (m *TSDBCleanTombstonesResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *TSDBCleanTombstonesResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_TSDBCleanTombstonesResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TSDBCleanTombstonesResponse proto.InternalMessageInfo
 
 type SeriesDeleteRequest struct {
-	MinTime  *time.Time     `protobuf:"bytes,1,opt,name=min_time,json=minTime,stdtime" json:"min_time,omitempty"`
-	MaxTime  *time.Time     `protobuf:"bytes,2,opt,name=max_time,json=maxTime,stdtime" json:"max_time,omitempty"`
-	Matchers []LabelMatcher `protobuf:"bytes,3,rep,name=matchers" json:"matchers"`
+	MinTime              *time.Time     `protobuf:"bytes,1,opt,name=min_time,json=minTime,proto3,stdtime" json:"min_time,omitempty"`
+	MaxTime              *time.Time     `protobuf:"bytes,2,opt,name=max_time,json=maxTime,proto3,stdtime" json:"max_time,omitempty"`
+	Matchers             []LabelMatcher `protobuf:"bytes,3,rep,name=matchers,proto3" json:"matchers"`
+	XXX_NoUnkeyedLiteral struct{}       `json:"-"`
+	XXX_unrecognized     []byte         `json:"-"`
+	XXX_sizecache        int32          `json:"-"`
 }
 
-func (m *SeriesDeleteRequest) Reset()                    { *m = SeriesDeleteRequest{} }
-func (m *SeriesDeleteRequest) String() string            { return proto.CompactTextString(m) }
-func (*SeriesDeleteRequest) ProtoMessage()               {}
-func (*SeriesDeleteRequest) Descriptor() ([]byte, []int) { return fileDescriptorRpc, []int{4} }
+func (m *SeriesDeleteRequest) Reset()         { *m = SeriesDeleteRequest{} }
+func (m *SeriesDeleteRequest) String() string { return proto.CompactTextString(m) }
+func (*SeriesDeleteRequest) ProtoMessage()    {}
+func (*SeriesDeleteRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_rpc_e0d54cfadc26b2e1, []int{4}
+}
+func (m *SeriesDeleteRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SeriesDeleteRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SeriesDeleteRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *SeriesDeleteRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SeriesDeleteRequest.Merge(dst, src)
+}
+func (m *SeriesDeleteRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *SeriesDeleteRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_SeriesDeleteRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SeriesDeleteRequest proto.InternalMessageInfo
 
 type SeriesDeleteResponse struct {
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *SeriesDeleteResponse) Reset()                    { *m = SeriesDeleteResponse{} }
-func (m *SeriesDeleteResponse) String() string            { return proto.CompactTextString(m) }
-func (*SeriesDeleteResponse) ProtoMessage()               {}
-func (*SeriesDeleteResponse) Descriptor() ([]byte, []int) { return fileDescriptorRpc, []int{5} }
+func (m *SeriesDeleteResponse) Reset()         { *m = SeriesDeleteResponse{} }
+func (m *SeriesDeleteResponse) String() string { return proto.CompactTextString(m) }
+func (*SeriesDeleteResponse) ProtoMessage()    {}
+func (*SeriesDeleteResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_rpc_e0d54cfadc26b2e1, []int{5}
+}
+func (m *SeriesDeleteResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SeriesDeleteResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SeriesDeleteResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (dst *SeriesDeleteResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SeriesDeleteResponse.Merge(dst, src)
+}
+func (m *SeriesDeleteResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *SeriesDeleteResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_SeriesDeleteResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SeriesDeleteResponse proto.InternalMessageInfo
 
 func init() {
 	proto.RegisterType((*TSDBSnapshotRequest)(nil), "prometheus.TSDBSnapshotRequest")
@@ -94,8 +288,9 @@ var _ grpc.ClientConn
 // is compatible with the grpc package it is being compiled against.
 const _ = grpc.SupportPackageIsVersion4
 
-// Client API for Admin service
-
+// AdminClient is the client API for Admin service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type AdminClient interface {
 	// Snapshot creates a snapshot of all current data into 'snapshots/<datetime>-<rand>' under the TSDB's data directory.
 	TSDBSnapshot(ctx context.Context, in *TSDBSnapshotRequest, opts ...grpc.CallOption) (*TSDBSnapshotResponse, error)
@@ -115,7 +310,7 @@ func NewAdminClient(cc *grpc.ClientConn) AdminClient {
 
 func (c *adminClient) TSDBSnapshot(ctx context.Context, in *TSDBSnapshotRequest, opts ...grpc.CallOption) (*TSDBSnapshotResponse, error) {
 	out := new(TSDBSnapshotResponse)
-	err := grpc.Invoke(ctx, "/prometheus.Admin/TSDBSnapshot", in, out, c.cc, opts...)
+	err := c.cc.Invoke(ctx, "/prometheus.Admin/TSDBSnapshot", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +319,7 @@ func (c *adminClient) TSDBSnapshot(ctx context.Context, in *TSDBSnapshotRequest,
 
 func (c *adminClient) TSDBCleanTombstones(ctx context.Context, in *TSDBCleanTombstonesRequest, opts ...grpc.CallOption) (*TSDBCleanTombstonesResponse, error) {
 	out := new(TSDBCleanTombstonesResponse)
-	err := grpc.Invoke(ctx, "/prometheus.Admin/TSDBCleanTombstones", in, out, c.cc, opts...)
+	err := c.cc.Invoke(ctx, "/prometheus.Admin/TSDBCleanTombstones", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -133,15 +328,14 @@ func (c *adminClient) TSDBCleanTombstones(ctx context.Context, in *TSDBCleanTomb
 
 func (c *adminClient) DeleteSeries(ctx context.Context, in *SeriesDeleteRequest, opts ...grpc.CallOption) (*SeriesDeleteResponse, error) {
 	out := new(SeriesDeleteResponse)
-	err := grpc.Invoke(ctx, "/prometheus.Admin/DeleteSeries", in, out, c.cc, opts...)
+	err := c.cc.Invoke(ctx, "/prometheus.Admin/DeleteSeries", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// Server API for Admin service
-
+// AdminServer is the server API for Admin service.
 type AdminServer interface {
 	// Snapshot creates a snapshot of all current data into 'snapshots/<datetime>-<rand>' under the TSDB's data directory.
 	TSDBSnapshot(context.Context, *TSDBSnapshotRequest) (*TSDBSnapshotResponse, error)
@@ -255,6 +449,9 @@ func (m *TSDBSnapshotRequest) MarshalTo(dAtA []byte) (int, error) {
 		}
 		i++
 	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	return i, nil
 }
 
@@ -279,6 +476,9 @@ func (m *TSDBSnapshotResponse) MarshalTo(dAtA []byte) (int, error) {
 		i = encodeVarintRpc(dAtA, i, uint64(len(m.Name)))
 		i += copy(dAtA[i:], m.Name)
 	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	return i, nil
 }
 
@@ -297,6 +497,9 @@ func (m *TSDBCleanTombstonesRequest) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	return i, nil
 }
 
@@ -315,6 +518,9 @@ func (m *TSDBCleanTombstonesResponse) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	return i, nil
 }
 
@@ -336,8 +542,8 @@ func (m *SeriesDeleteRequest) MarshalTo(dAtA []byte) (int, error) {
 	if m.MinTime != nil {
 		dAtA[i] = 0xa
 		i++
-		i = encodeVarintRpc(dAtA, i, uint64(types.SizeOfStdTime(*m.MinTime)))
-		n1, err := types.StdTimeMarshalTo(*m.MinTime, dAtA[i:])
+		i = encodeVarintRpc(dAtA, i, uint64(github_com_gogo_protobuf_types.SizeOfStdTime(*m.MinTime)))
+		n1, err := github_com_gogo_protobuf_types.StdTimeMarshalTo(*m.MinTime, dAtA[i:])
 		if err != nil {
 			return 0, err
 		}
@@ -346,8 +552,8 @@ func (m *SeriesDeleteRequest) MarshalTo(dAtA []byte) (int, error) {
 	if m.MaxTime != nil {
 		dAtA[i] = 0x12
 		i++
-		i = encodeVarintRpc(dAtA, i, uint64(types.SizeOfStdTime(*m.MaxTime)))
-		n2, err := types.StdTimeMarshalTo(*m.MaxTime, dAtA[i:])
+		i = encodeVarintRpc(dAtA, i, uint64(github_com_gogo_protobuf_types.SizeOfStdTime(*m.MaxTime)))
+		n2, err := github_com_gogo_protobuf_types.StdTimeMarshalTo(*m.MaxTime, dAtA[i:])
 		if err != nil {
 			return 0, err
 		}
@@ -364,6 +570,9 @@ func (m *SeriesDeleteRequest) MarshalTo(dAtA []byte) (int, error) {
 			}
 			i += n
 		}
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
@@ -383,6 +592,9 @@ func (m *SeriesDeleteResponse) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	return i, nil
 }
 
@@ -396,45 +608,72 @@ func encodeVarintRpc(dAtA []byte, offset int, v uint64) int {
 	return offset + 1
 }
 func (m *TSDBSnapshotRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.SkipHead {
 		n += 2
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
 func (m *TSDBSnapshotResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	l = len(m.Name)
 	if l > 0 {
 		n += 1 + l + sovRpc(uint64(l))
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
 func (m *TSDBCleanTombstonesRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
 func (m *TSDBCleanTombstonesResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
 func (m *SeriesDeleteRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.MinTime != nil {
-		l = types.SizeOfStdTime(*m.MinTime)
+		l = github_com_gogo_protobuf_types.SizeOfStdTime(*m.MinTime)
 		n += 1 + l + sovRpc(uint64(l))
 	}
 	if m.MaxTime != nil {
-		l = types.SizeOfStdTime(*m.MaxTime)
+		l = github_com_gogo_protobuf_types.SizeOfStdTime(*m.MaxTime)
 		n += 1 + l + sovRpc(uint64(l))
 	}
 	if len(m.Matchers) > 0 {
@@ -443,12 +682,21 @@ func (m *SeriesDeleteRequest) Size() (n int) {
 			n += 1 + l + sovRpc(uint64(l))
 		}
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
 func (m *SeriesDeleteResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
@@ -526,6 +774,7 @@ func (m *TSDBSnapshotRequest) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -605,6 +854,7 @@ func (m *TSDBSnapshotResponse) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -655,6 +905,7 @@ func (m *TSDBCleanTombstonesRequest) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -705,6 +956,7 @@ func (m *TSDBCleanTombstonesResponse) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -772,7 +1024,7 @@ func (m *SeriesDeleteRequest) Unmarshal(dAtA []byte) error {
 			if m.MinTime == nil {
 				m.MinTime = new(time.Time)
 			}
-			if err := types.StdTimeUnmarshal(m.MinTime, dAtA[iNdEx:postIndex]); err != nil {
+			if err := github_com_gogo_protobuf_types.StdTimeUnmarshal(m.MinTime, dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -805,7 +1057,7 @@ func (m *SeriesDeleteRequest) Unmarshal(dAtA []byte) error {
 			if m.MaxTime == nil {
 				m.MaxTime = new(time.Time)
 			}
-			if err := types.StdTimeUnmarshal(m.MaxTime, dAtA[iNdEx:postIndex]); err != nil {
+			if err := github_com_gogo_protobuf_types.StdTimeUnmarshal(m.MaxTime, dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -852,6 +1104,7 @@ func (m *SeriesDeleteRequest) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -902,6 +1155,7 @@ func (m *SeriesDeleteResponse) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -1016,9 +1270,9 @@ var (
 	ErrIntOverflowRpc   = fmt.Errorf("proto: integer overflow")
 )
 
-func init() { proto.RegisterFile("rpc.proto", fileDescriptorRpc) }
+func init() { proto.RegisterFile("rpc.proto", fileDescriptor_rpc_e0d54cfadc26b2e1) }
 
-var fileDescriptorRpc = []byte{
+var fileDescriptor_rpc_e0d54cfadc26b2e1 = []byte{
 	// 471 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x52, 0x3d, 0x8f, 0xd3, 0x40,
 	0x10, 0xbd, 0xbd, 0x84, 0x23, 0xd9, 0x5c, 0xe5, 0x8b, 0x20, 0xf8, 0x42, 0x1c, 0x5c, 0x70, 0xa7,

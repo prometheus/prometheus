@@ -45,6 +45,7 @@ import (
 // millisecond precision timestamps.
 var DefaultOptions = &Options{
 	WALFlushInterval:  5 * time.Second,
+	WALSegmentSize:    wal.DefaultSegmentSize,
 	RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
 	BlockRanges:       ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
 	NoLockfile:        false,
@@ -54,6 +55,9 @@ var DefaultOptions = &Options{
 type Options struct {
 	// The interval at which the write ahead log is flushed to disk.
 	WALFlushInterval time.Duration
+
+	// Segments (wal files) max size
+	WALSegmentSize int
 
 	// Duration of persisted data to keep.
 	RetentionDuration uint64
@@ -263,7 +267,11 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
 
-	wlog, err := wal.New(l, r, filepath.Join(dir, "wal"))
+	segmentSize := wal.DefaultSegmentSize
+	if opts.WALSegmentSize > 0 {
+		segmentSize = opts.WALSegmentSize
+	}
+	wlog, err := wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize)
 	if err != nil {
 		return nil, err
 	}

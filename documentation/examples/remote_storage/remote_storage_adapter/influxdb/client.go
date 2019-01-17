@@ -224,8 +224,8 @@ func concatLabels(labels map[string]string) string {
 	return strings.Join(pairs, separator)
 }
 
-func tagsToLabelPairs(name string, tags map[string]string) []*prompb.Label {
-	pairs := make([]*prompb.Label, 0, len(tags))
+func tagsToLabelPairs(name string, tags map[string]string) []prompb.Label {
+	pairs := make([]prompb.Label, 0, len(tags))
 	for k, v := range tags {
 		if v == "" {
 			// If we select metrics with different sets of labels names,
@@ -236,12 +236,12 @@ func tagsToLabelPairs(name string, tags map[string]string) []*prompb.Label {
 			// to make the result correct.
 			continue
 		}
-		pairs = append(pairs, &prompb.Label{
+		pairs = append(pairs, prompb.Label{
 			Name:  k,
 			Value: v,
 		})
 	}
-	pairs = append(pairs, &prompb.Label{
+	pairs = append(pairs, prompb.Label{
 		Name:  model.MetricNameLabel,
 		Value: name,
 	})

@@ -38,6 +38,8 @@ import (
 
 const (
 	azureLabel                     = model.MetaLabelPrefix + "azure_"
+	azureLabelSubscriptionID       = azureLabel + "subscription_id"
+	azureLabelTenantID             = azureLabel + "tenant_id"
 	azureLabelMachineID            = azureLabel + "machine_id"
 	azureLabelMachineResourceGroup = azureLabel + "machine_resource_group"
 	azureLabelMachineName          = azureLabel + "machine_name"
@@ -86,7 +88,7 @@ type SDConfig struct {
 
 func validateAuthParam(param, name string) error {
 	if len(param) == 0 {
-		return fmt.Errorf("Azure SD configuration requires a %s", name)
+		return fmt.Errorf("azure SD configuration requires a %s", name)
 	}
 	return nil
 }
@@ -117,7 +119,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity {
-		return fmt.Errorf("Unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
+		return fmt.Errorf("unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
 	}
 
 	return nil
@@ -333,6 +335,8 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 			}
 
 			labels := model.LabelSet{
+				azureLabelSubscriptionID:       model.LabelValue(d.cfg.SubscriptionID),
+				azureLabelTenantID:             model.LabelValue(d.cfg.TenantID),
 				azureLabelMachineID:            model.LabelValue(vm.ID),
 				azureLabelMachineName:          model.LabelValue(vm.Name),
 				azureLabelMachineOSType:        model.LabelValue(vm.OsType),
@@ -386,6 +390,10 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 					return
 				}
 			}
+
+			// If we get here we haven't sent anything to the channel.
+			// We need to send it something to release it.
+			ch <- target{}
 		}(i, vm)
 	}
 

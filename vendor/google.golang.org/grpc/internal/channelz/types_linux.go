@@ -1,4 +1,4 @@
-// +build !appengine,go1.7
+// +build !appengine
 
 /*
  *

@@ -144,16 +144,7 @@ func MustPattern(p Pattern, err error) Pattern {
 // If otherwise, the function returns an error.
 func (p Pattern) Match(components []string, verb string) (map[string]string, error) {
 	if p.verb != verb {
-		if p.verb != "" {
-			return nil, ErrNotMatch
-		}
-		if len(components) == 0 {
-			components = []string{":" + verb}
-		} else {
-			components = append([]string{}, components...)
-			components[len(components)-1] += ":" + verb
-		}
-		verb = ""
+		return nil, ErrNotMatch
 	}
 
 	var pos int

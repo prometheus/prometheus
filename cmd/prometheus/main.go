@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -34,7 +35,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/golang/glog"
 	"github.com/oklog/oklog/pkg/group"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/common/version"
 	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"k8s.io/klog"
 
 	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/common/promlog"
@@ -50,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -99,7 +101,8 @@ func main() {
 		queryMaxSamples     int
 		RemoteFlushDeadline model.Duration
 
-		prometheusURL string
+		prometheusURL   string
+		corsRegexString string
 
 		promlogConfig promlog.Config
 	}{
@@ -164,6 +167,10 @@ func main() {
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
+	a.Flag("storage.tsdb.wal-segment-size",
+		"Size at which to split the tsdb WAL segment files (e.g. 100MB)").
+		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
+
 	a.Flag("storage.tsdb.retention", "How long to retain samples in storage.").
 		Default("15d").SetValue(&cfg.tsdb.Retention)
 
@@ -205,6 +212,9 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they would load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Eg. 'https?://(domain1|domain2)\.com'`).
+		Default(".*").StringVar(&cfg.corsRegexString)
+
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	_, err := a.Parse(os.Args[1:])
@@ -217,6 +227,12 @@ func main() {
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "parse external URL %q", cfg.prometheusURL))
+		os.Exit(2)
+	}
+
+	cfg.web.CORSOrigin, err = compileCORSRegexString(cfg.corsRegexString)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "could not compile CORS regex string %q", cfg.corsRegexString))
 		os.Exit(2)
 	}
 
@@ -238,8 +254,8 @@ func main() {
 	logger := promlog.New(&cfg.promlogConfig)
 
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
-	glog.ClampLevel(6)
-	glog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
+	klog.ClampLevel(6)
+	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
@@ -355,7 +371,7 @@ func main() {
 			return discoveryManagerNotify.ApplyConfig(c)
 		},
 		func(cfg *config.Config) error {
-			// Get all rule files matching the configuration oaths.
+			// Get all rule files matching the configuration paths.
 			var files []string
 			for _, pat := range cfg.RuleFiles {
 				fs, err := filepath.Glob(pat)
@@ -560,6 +576,11 @@ func main() {
 		g.Add(
 			func() error {
 				level.Info(logger).Log("msg", "Starting TSDB ...")
+				if cfg.tsdb.WALSegmentSize != 0 {
+					if cfg.tsdb.WALSegmentSize < 10*1024*1024 || cfg.tsdb.WALSegmentSize > 256*1024*1024 {
+						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
+					}
+				}
 				db, err := tsdb.Open(
 					cfg.localStoragePath,
 					log.With(logger, "component", "tsdb"),
@@ -663,6 +684,15 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 func startsOrEndsWithQuote(s string) bool {
 	return strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") ||
 		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
+}
+
+// compileCORSRegexString compiles given string and adds anchors
+func compileCORSRegexString(s string) (*regexp.Regexp, error) {
+	r, err := relabel.NewRegexp(s)
+	if err != nil {
+		return nil, err
+	}
+	return r.Regexp, nil
 }
 
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset

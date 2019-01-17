@@ -9,6 +9,7 @@ import (
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/ptypes/duration"
 	"github.com/golang/protobuf/ptypes/timestamp"
+	"github.com/golang/protobuf/ptypes/wrappers"
 )
 
 // String just returns the given string.
@@ -251,4 +252,61 @@ func EnumSlice(val, sep string, enumValMap map[string]int32) ([]int32, error) {
 		values[i] = value
 	}
 	return values, nil
+}
+
+/*
+	Support fot google.protobuf.wrappers on top of primitive types
+*/
+
+// StringValue well-known type support as wrapper around string type
+func StringValue(val string) (*wrappers.StringValue, error) {
+	return &wrappers.StringValue{Value: val}, nil
+}
+
+// FloatValue well-known type support as wrapper around float32 type
+func FloatValue(val string) (*wrappers.FloatValue, error) {
+	parsedVal, err := Float32(val)
+	return &wrappers.FloatValue{Value: parsedVal}, err
+}
+
+// DoubleValue well-known type support as wrapper around float64 type
+func DoubleValue(val string) (*wrappers.DoubleValue, error) {
+	parsedVal, err := Float64(val)
+	return &wrappers.DoubleValue{Value: parsedVal}, err
+}
+
+// BoolValue well-known type support as wrapper around bool type
+func BoolValue(val string) (*wrappers.BoolValue, error) {
+	parsedVal, err := Bool(val)
+	return &wrappers.BoolValue{Value: parsedVal}, err
+}
+
+// Int32Value well-known type support as wrapper around int32 type
+func Int32Value(val string) (*wrappers.Int32Value, error) {
+	parsedVal, err := Int32(val)
+	return &wrappers.Int32Value{Value: parsedVal}, err
+}
+
+// UInt32Value well-known type support as wrapper around uint32 type
+func UInt32Value(val string) (*wrappers.UInt32Value, error) {
+	parsedVal, err := Uint32(val)
+	return &wrappers.UInt32Value{Value: parsedVal}, err
+}
+
+// Int64Value well-known type support as wrapper around int64 type
+func Int64Value(val string) (*wrappers.Int64Value, error) {
+	parsedVal, err := Int64(val)
+	return &wrappers.Int64Value{Value: parsedVal}, err
+}
+
+// UInt64Value well-known type support as wrapper around uint64 type
+func UInt64Value(val string) (*wrappers.UInt64Value, error) {
+	parsedVal, err := Uint64(val)
+	return &wrappers.UInt64Value{Value: parsedVal}, err
+}
+
+// BytesValue well-known type support as wrapper around bytes[] type
+func BytesValue(val string) (*wrappers.BytesValue, error) {
+	parsedVal, err := Bytes(val)
+	return &wrappers.BytesValue{Value: parsedVal}, err
 }

@@ -12,15 +12,15 @@ func List(client *gophercloud.ServiceClient) pagination.Pager {
 	})
 }
 
-// CreateOptsBuilder describes struct types that can be accepted by the Create call. Notable, the
-// CreateOpts struct in this package does.
+// CreateOptsBuilder allows extensions to add additional parameters to the
+// Create request.
 type CreateOptsBuilder interface {
 	ToFloatingIPCreateMap() (map[string]interface{}, error)
 }
 
-// CreateOpts specifies a Floating IP allocation request
+// CreateOpts specifies a Floating IP allocation request.
 type CreateOpts struct {
-	// Pool is the pool of floating IPs to allocate one from
+	// Pool is the pool of Floating IPs to allocate one from.
 	Pool string `json:"pool" required:"true"`
 }
 
@@ -29,7 +29,7 @@ func (opts CreateOpts) ToFloatingIPCreateMap() (map[string]interface{}, error) {
 	return gophercloud.BuildRequestBody(opts, "")
 }
 
-// Create requests the creation of a new floating IP
+// Create requests the creation of a new Floating IP.
 func Create(client *gophercloud.ServiceClient, opts CreateOptsBuilder) (r CreateResult) {
 	b, err := opts.ToFloatingIPCreateMap()
 	if err != nil {
@@ -42,29 +42,30 @@ func Create(client *gophercloud.ServiceClient, opts CreateOptsBuilder) (r Create
 	return
 }
 
-// Get returns data about a previously created FloatingIP.
+// Get returns data about a previously created Floating IP.
 func Get(client *gophercloud.ServiceClient, id string) (r GetResult) {
 	_, r.Err = client.Get(getURL(client, id), &r.Body, nil)
 	return
 }
 
-// Delete requests the deletion of a previous allocated FloatingIP.
+// Delete requests the deletion of a previous allocated Floating IP.
 func Delete(client *gophercloud.ServiceClient, id string) (r DeleteResult) {
 	_, r.Err = client.Delete(deleteURL(client, id), nil)
 	return
 }
 
-// AssociateOptsBuilder is the interface types must satfisfy to be used as
-// Associate options
+// AssociateOptsBuilder allows extensions to add additional parameters to the
+// Associate request.
 type AssociateOptsBuilder interface {
 	ToFloatingIPAssociateMap() (map[string]interface{}, error)
 }
 
-// AssociateOpts specifies the required information to associate a floating IP with an instance
+// AssociateOpts specifies the required information to associate a Floating IP with an instance
 type AssociateOpts struct {
-	// FloatingIP is the floating IP to associate with an instance
+	// FloatingIP is the Floating IP to associate with an instance.
 	FloatingIP string `json:"address" required:"true"`
-	// FixedIP is an optional fixed IP address of the server
+
+	// FixedIP is an optional fixed IP address of the server.
 	FixedIP string `json:"fixed_address,omitempty"`
 }
 
@@ -73,7 +74,7 @@ func (opts AssociateOpts) ToFloatingIPAssociateMap() (map[string]interface{}, er
 	return gophercloud.BuildRequestBody(opts, "addFloatingIp")
 }
 
-// AssociateInstance pairs an allocated floating IP with an instance.
+// AssociateInstance pairs an allocated Floating IP with a server.
 func AssociateInstance(client *gophercloud.ServiceClient, serverID string, opts AssociateOptsBuilder) (r AssociateResult) {
 	b, err := opts.ToFloatingIPAssociateMap()
 	if err != nil {
@@ -84,23 +85,24 @@ func AssociateInstance(client *gophercloud.ServiceClient, serverID string, opts 
 	return
 }
 
-// DisassociateOptsBuilder is the interface types must satfisfy to be used as
-// Disassociate options
+// DisassociateOptsBuilder allows extensions to add additional parameters to
+// the Disassociate request.
 type DisassociateOptsBuilder interface {
 	ToFloatingIPDisassociateMap() (map[string]interface{}, error)
 }
 
-// DisassociateOpts specifies the required information to disassociate a floating IP with an instance
+// DisassociateOpts specifies the required information to disassociate a
+// Floating IP with a server.
 type DisassociateOpts struct {
 	FloatingIP string `json:"address" required:"true"`
 }
 
-// ToFloatingIPDisassociateMap constructs a request body from AssociateOpts.
+// ToFloatingIPDisassociateMap constructs a request body from DisassociateOpts.
 func (opts DisassociateOpts) ToFloatingIPDisassociateMap() (map[string]interface{}, error) {
 	return gophercloud.BuildRequestBody(opts, "removeFloatingIp")
 }
 
-// DisassociateInstance decouples an allocated floating IP from an instance
+// DisassociateInstance decouples an allocated Floating IP from an instance
 func DisassociateInstance(client *gophercloud.ServiceClient, serverID string, opts DisassociateOptsBuilder) (r DisassociateResult) {
 	b, err := opts.ToFloatingIPDisassociateMap()
 	if err != nil {

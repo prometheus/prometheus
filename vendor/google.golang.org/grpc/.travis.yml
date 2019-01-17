@@ -14,8 +14,6 @@ matrix:
   - go: 1.9.x
   - go: 1.9.x
     env: GAE=1
-  - go: 1.8.x
-  - go: 1.6.x
 
 go_import_path: google.golang.org/grpc
 
@@ -26,7 +24,8 @@ before_install:
   - if [[ "${TRAVIS_EVENT_TYPE}" != "cron" ]]; then VET_SKIP_PROTO=1; fi
 
 install:
-  - if [[ "${GO111MODULE}" = "on" ]]; then go mod download; else make testdeps; fi
+  - try3() { eval "$*" || eval "$*" || eval "$*"; }
+  - try3 'if [[ "${GO111MODULE}" = "on" ]]; then go mod download; else make testdeps; fi'
   - if [[ "${GAE}" = 1 ]]; then source ./install_gae.sh; make testappenginedeps; fi
   - if [[ "${VET}" = 1 ]]; then ./vet.sh -install; fi
 

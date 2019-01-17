@@ -69,6 +69,8 @@ github.com/cockroachdb/cockroach/pkg/util/syncutil
 github.com/davecgh/go-spew/spew
 # github.com/dgrijalva/jwt-go v0.0.0-20161101193935-9ed569b5d1ac
 github.com/dgrijalva/jwt-go
+# github.com/evanphx/json-patch v4.1.0+incompatible
+github.com/evanphx/json-patch
 # github.com/ghodss/yaml v1.0.0
 github.com/ghodss/yaml
 # github.com/go-ini/ini v1.21.1
@@ -76,25 +78,53 @@ github.com/go-ini/ini
 # github.com/go-kit/kit v0.8.0
 github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
-# github.com/go-logfmt/logfmt v0.3.0
+# github.com/go-logfmt/logfmt v0.4.0
 github.com/go-logfmt/logfmt
-# github.com/gogo/protobuf v1.1.1
+# github.com/gogo/protobuf v1.2.0
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/types
+github.com/gogo/protobuf/protoc-gen-gogofast
 github.com/gogo/protobuf/sortkeys
+github.com/gogo/protobuf/vanity
+github.com/gogo/protobuf/vanity/command
 github.com/gogo/protobuf/jsonpb
-# github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b => github.com/kubermatic/glog-gokit v0.0.0-20181129151237-8ab7e4c2d352
+github.com/gogo/protobuf/gogoproto
+github.com/gogo/protobuf/protoc-gen-gogo/descriptor
+github.com/gogo/protobuf/plugin/compare
+github.com/gogo/protobuf/plugin/defaultcheck
+github.com/gogo/protobuf/plugin/description
+github.com/gogo/protobuf/plugin/embedcheck
+github.com/gogo/protobuf/plugin/enumstringer
+github.com/gogo/protobuf/plugin/equal
+github.com/gogo/protobuf/plugin/face
+github.com/gogo/protobuf/plugin/gostring
+github.com/gogo/protobuf/plugin/marshalto
+github.com/gogo/protobuf/plugin/oneofcheck
+github.com/gogo/protobuf/plugin/populate
+github.com/gogo/protobuf/plugin/size
+github.com/gogo/protobuf/plugin/stringer
+github.com/gogo/protobuf/plugin/testgen
+github.com/gogo/protobuf/plugin/union
+github.com/gogo/protobuf/plugin/unmarshal
+github.com/gogo/protobuf/protoc-gen-gogo/generator
+github.com/gogo/protobuf/protoc-gen-gogo/grpc
+github.com/gogo/protobuf/protoc-gen-gogo/plugin
+github.com/gogo/protobuf/protoc-gen-gogo/generator/internal/remap
+# github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 github.com/golang/glog
 # github.com/golang/protobuf v1.2.0
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/jsonpb
+github.com/golang/protobuf/protoc-gen-go/generator
 github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/timestamp
+github.com/golang/protobuf/ptypes/wrappers
 github.com/golang/protobuf/protoc-gen-go/descriptor
 github.com/golang/protobuf/ptypes
+github.com/golang/protobuf/protoc-gen-go/plugin
 github.com/golang/protobuf/ptypes/struct
-github.com/golang/protobuf/ptypes/wrappers
+github.com/golang/protobuf/protoc-gen-go/generator/internal/remap
 # github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
 github.com/golang/snappy
 # github.com/google/btree v0.0.0-20180124185431-e89373fe6b4a
@@ -107,7 +137,7 @@ github.com/google/pprof/profile
 github.com/googleapis/gnostic/OpenAPIv2
 github.com/googleapis/gnostic/compiler
 github.com/googleapis/gnostic/extensions
-# github.com/gophercloud/gophercloud v0.0.0-20170607034829-caf34a65f602
+# github.com/gophercloud/gophercloud v0.0.0-20181206160319-9d88c34913a9
 github.com/gophercloud/gophercloud
 github.com/gophercloud/gophercloud/openstack
 github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips
@@ -123,10 +153,19 @@ github.com/gophercloud/gophercloud/openstack/identity/v2/tenants
 # github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7
 github.com/gregjones/httpcache
 github.com/gregjones/httpcache/diskcache
-# github.com/grpc-ecosystem/grpc-gateway v1.5.0
+# github.com/grpc-ecosystem/grpc-gateway v1.6.3
 github.com/grpc-ecosystem/grpc-gateway/runtime
 github.com/grpc-ecosystem/grpc-gateway/utilities
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger
 github.com/grpc-ecosystem/grpc-gateway/runtime/internal
+github.com/grpc-ecosystem/grpc-gateway/codegenerator
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/gengateway
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/genswagger
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/httprule
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/generator
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options
 # github.com/hashicorp/consul v0.0.0-20180615161029-bed22a81e9fd
 github.com/hashicorp/consul/api
 # github.com/hashicorp/go-cleanhttp v0.0.0-20160407174126-ad28ea4487f0
@@ -202,7 +241,7 @@ github.com/prometheus/procfs
 github.com/prometheus/procfs/nfs
 github.com/prometheus/procfs/xfs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/tsdb v0.3.1
+# github.com/prometheus/tsdb v0.3.2-0.20181219094047-6d489a1004dc
 github.com/prometheus/tsdb
 github.com/prometheus/tsdb/labels
 github.com/prometheus/tsdb/chunkenc
@@ -278,6 +317,12 @@ golang.org/x/text/unicode/norm
 golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
 golang.org/x/time/rate
+# golang.org/x/tools v0.0.0-20181023010539-40a48ad93fbe
+golang.org/x/tools/cmd/goimports
+golang.org/x/tools/imports
+golang.org/x/tools/go/ast/astutil
+golang.org/x/tools/internal/gopathwalk
+golang.org/x/tools/internal/fastwalk
 # google.golang.org/api v0.0.0-20180910000450-7ca32eb868bf
 google.golang.org/api/compute/v1
 google.golang.org/api/gensupport
@@ -297,8 +342,9 @@ google.golang.org/appengine/internal/log
 google.golang.org/appengine/internal/remote_api
 # google.golang.org/genproto v0.0.0-20180831171423-11092d34479b
 google.golang.org/genproto/googleapis/api/annotations
+google.golang.org/genproto/protobuf/field_mask
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.15.0
+# google.golang.org/grpc v1.17.0
 google.golang.org/grpc
 google.golang.org/grpc/codes
 google.golang.org/grpc/grpclog
@@ -312,9 +358,11 @@ google.golang.org/grpc/encoding
 google.golang.org/grpc/encoding/proto
 google.golang.org/grpc/internal
 google.golang.org/grpc/internal/backoff
+google.golang.org/grpc/internal/binarylog
 google.golang.org/grpc/internal/channelz
 google.golang.org/grpc/internal/envconfig
 google.golang.org/grpc/internal/grpcrand
+google.golang.org/grpc/internal/grpcsync
 google.golang.org/grpc/internal/transport
 google.golang.org/grpc/keepalive
 google.golang.org/grpc/naming
@@ -325,6 +373,9 @@ google.golang.org/grpc/resolver/passthrough
 google.golang.org/grpc/stats
 google.golang.org/grpc/tap
 google.golang.org/grpc/balancer/base
+google.golang.org/grpc/credentials/internal
+google.golang.org/grpc/binarylog/grpc_binarylog_v1
+google.golang.org/grpc/internal/syscall
 # gopkg.in/alecthomas/kingpin.v2 v2.2.6
 gopkg.in/alecthomas/kingpin.v2
 # gopkg.in/fsnotify/fsnotify.v1 v1.3.0
@@ -333,24 +384,27 @@ gopkg.in/fsnotify/fsnotify.v1
 gopkg.in/inf.v0
 # gopkg.in/yaml.v2 v2.2.1
 gopkg.in/yaml.v2
-# k8s.io/api v0.0.0-20180628040859-072894a440bd
+# k8s.io/api v0.0.0-20181213150558-05914d821849
 k8s.io/api/core/v1
 k8s.io/api/extensions/v1beta1
 k8s.io/api/apps/v1beta1
 k8s.io/api/admissionregistration/v1alpha1
 k8s.io/api/admissionregistration/v1beta1
 k8s.io/api/apps/v1
+k8s.io/api/autoscaling/v1
 k8s.io/api/apps/v1beta2
+k8s.io/api/auditregistration/v1alpha1
 k8s.io/api/authentication/v1
 k8s.io/api/authentication/v1beta1
 k8s.io/api/authorization/v1
 k8s.io/api/authorization/v1beta1
-k8s.io/api/autoscaling/v1
 k8s.io/api/autoscaling/v2beta1
+k8s.io/api/autoscaling/v2beta2
 k8s.io/api/batch/v1
 k8s.io/api/batch/v1beta1
 k8s.io/api/batch/v2alpha1
 k8s.io/api/certificates/v1beta1
+k8s.io/api/coordination/v1beta1
 k8s.io/api/policy/v1beta1
 k8s.io/api/events/v1beta1
 k8s.io/api/networking/v1
@@ -363,7 +417,7 @@ k8s.io/api/settings/v1alpha1
 k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
-# k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
+# k8s.io/apimachinery v0.0.0-20181127025237-2b1284ed4c93
 k8s.io/apimachinery/pkg/apis/meta/v1
 k8s.io/apimachinery/pkg/runtime
 k8s.io/apimachinery/pkg/watch
@@ -375,19 +429,20 @@ k8s.io/apimachinery/pkg/conversion
 k8s.io/apimachinery/pkg/fields
 k8s.io/apimachinery/pkg/labels
 k8s.io/apimachinery/pkg/selection
+k8s.io/apimachinery/pkg/util/runtime
 k8s.io/apimachinery/pkg/conversion/queryparams
 k8s.io/apimachinery/pkg/util/errors
 k8s.io/apimachinery/pkg/util/json
-k8s.io/apimachinery/pkg/util/runtime
+k8s.io/apimachinery/pkg/util/naming
 k8s.io/apimachinery/pkg/util/sets
 k8s.io/apimachinery/pkg/util/net
-k8s.io/apimachinery/pkg/util/wait
 k8s.io/apimachinery/pkg/api/errors
 k8s.io/apimachinery/pkg/runtime/serializer/streaming
 k8s.io/apimachinery/pkg/api/meta
 k8s.io/apimachinery/pkg/util/cache
 k8s.io/apimachinery/pkg/util/clock
 k8s.io/apimachinery/pkg/util/diff
+k8s.io/apimachinery/pkg/util/wait
 k8s.io/apimachinery/third_party/forked/golang/reflect
 k8s.io/apimachinery/pkg/util/validation
 k8s.io/apimachinery/pkg/runtime/serializer
@@ -405,7 +460,7 @@ k8s.io/apimachinery/pkg/util/mergepatch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/pkg/util/framer
 k8s.io/apimachinery/pkg/util/yaml
-# k8s.io/client-go v8.0.0+incompatible
+# k8s.io/client-go v2.0.0-alpha.0.0.20181121191925-a47917edff34+incompatible
 k8s.io/client-go/kubernetes
 k8s.io/client-go/rest
 k8s.io/client-go/tools/cache
@@ -417,16 +472,19 @@ k8s.io/client-go/kubernetes/typed/admissionregistration/v1beta1
 k8s.io/client-go/kubernetes/typed/apps/v1
 k8s.io/client-go/kubernetes/typed/apps/v1beta1
 k8s.io/client-go/kubernetes/typed/apps/v1beta2
+k8s.io/client-go/kubernetes/typed/auditregistration/v1alpha1
 k8s.io/client-go/kubernetes/typed/authentication/v1
 k8s.io/client-go/kubernetes/typed/authentication/v1beta1
 k8s.io/client-go/kubernetes/typed/authorization/v1
 k8s.io/client-go/kubernetes/typed/authorization/v1beta1
 k8s.io/client-go/kubernetes/typed/autoscaling/v1
 k8s.io/client-go/kubernetes/typed/autoscaling/v2beta1
+k8s.io/client-go/kubernetes/typed/autoscaling/v2beta2
 k8s.io/client-go/kubernetes/typed/batch/v1
 k8s.io/client-go/kubernetes/typed/batch/v1beta1
 k8s.io/client-go/kubernetes/typed/batch/v2alpha1
 k8s.io/client-go/kubernetes/typed/certificates/v1beta1
+k8s.io/client-go/kubernetes/typed/coordination/v1beta1
 k8s.io/client-go/kubernetes/typed/core/v1
 k8s.io/client-go/kubernetes/typed/events/v1beta1
 k8s.io/client-go/kubernetes/typed/extensions/v1beta1
@@ -466,16 +524,19 @@ k8s.io/client-go/kubernetes/typed/admissionregistration/v1beta1/fake
 k8s.io/client-go/kubernetes/typed/apps/v1/fake
 k8s.io/client-go/kubernetes/typed/apps/v1beta1/fake
 k8s.io/client-go/kubernetes/typed/apps/v1beta2/fake
+k8s.io/client-go/kubernetes/typed/auditregistration/v1alpha1/fake
 k8s.io/client-go/kubernetes/typed/authentication/v1/fake
 k8s.io/client-go/kubernetes/typed/authentication/v1beta1/fake
 k8s.io/client-go/kubernetes/typed/authorization/v1/fake
 k8s.io/client-go/kubernetes/typed/authorization/v1beta1/fake
 k8s.io/client-go/kubernetes/typed/autoscaling/v1/fake
 k8s.io/client-go/kubernetes/typed/autoscaling/v2beta1/fake
+k8s.io/client-go/kubernetes/typed/autoscaling/v2beta2/fake
 k8s.io/client-go/kubernetes/typed/batch/v1/fake
 k8s.io/client-go/kubernetes/typed/batch/v1beta1/fake
 k8s.io/client-go/kubernetes/typed/batch/v2alpha1/fake
 k8s.io/client-go/kubernetes/typed/certificates/v1beta1/fake
+k8s.io/client-go/kubernetes/typed/coordination/v1beta1/fake
 k8s.io/client-go/kubernetes/typed/core/v1/fake
 k8s.io/client-go/kubernetes/typed/events/v1beta1/fake
 k8s.io/client-go/kubernetes/typed/extensions/v1beta1/fake
@@ -490,5 +551,9 @@ k8s.io/client-go/kubernetes/typed/settings/v1alpha1/fake
 k8s.io/client-go/kubernetes/typed/storage/v1/fake
 k8s.io/client-go/kubernetes/typed/storage/v1alpha1/fake
 k8s.io/client-go/kubernetes/typed/storage/v1beta1/fake
+# k8s.io/klog v0.1.0 => github.com/simonpasquier/klog-gokit v0.1.0
+k8s.io/klog
 # k8s.io/kube-openapi v0.0.0-20180629012420-d83b052f768a
 k8s.io/kube-openapi/pkg/util/proto
+# sigs.k8s.io/yaml v1.1.0
+sigs.k8s.io/yaml

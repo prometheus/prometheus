@@ -401,10 +401,6 @@ func (t *QueueManager) newShards(numShards int) *shards {
 	return s
 }
 
-func (s *shards) len() int {
-	return len(s.queues)
-}
-
 func (s *shards) start() {
 	for i := 0; i < len(s.queues); i++ {
 		go s.runShard(i)
@@ -426,7 +422,6 @@ func (s *shards) stop(deadline time.Duration) {
 	// Force an unclean shutdown.
 	s.cancel()
 	<-s.done
-	return
 }
 
 func (s *shards) enqueue(sample *model.Sample) bool {
