@@ -3,8 +3,8 @@ cloud.google.com/go/compute/metadata
 # contrib.go.opencensus.io/exporter/ocagent v0.4.1
 contrib.go.opencensus.io/exporter/ocagent
 # github.com/Azure/azure-sdk-for-go v23.2.0+incompatible
-github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-06-01/compute
-github.com/Azure/azure-sdk-for-go/services/network/mgmt/2017-09-01/network
+github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute
+github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-10-01/network
 github.com/Azure/azure-sdk-for-go/version
 # github.com/Azure/go-autorest v11.2.8+incompatible
 github.com/Azure/go-autorest/autorest
