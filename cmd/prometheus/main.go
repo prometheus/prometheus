@@ -208,7 +208,7 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they would load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("web.cors.origin", "Regex for CORS origin").
+	a.Flag("web.cors.origin", `Regex for CORS origin. It is anchored in both ends by prometheus. Eg. 'https?://(domain1|domain2)\.com'`).
 		Default(".*").StringVar(&cfg.corsRegexString)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -226,7 +226,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	cfg.web.CORSOrigin, err = compileCORSRegexString(cfg.corsRegexString)
+	cfg.web.CORSOrigin, err = compileRegexString(cfg.corsRegexString)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "could not compile regex string %q", cfg.corsRegexString))
 		os.Exit(2)
@@ -675,8 +675,8 @@ func startsOrEndsWithQuote(s string) bool {
 		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
 }
 
-// compileCORSRegexString compiles corsRegexString and adds anchors
-func compileCORSRegexString(s string) (*regexp.Regexp, error) {
+// compileRegexString compiles given string and adds anchors
+func compileRegexString(s string) (*regexp.Regexp, error) {
 	r, err := relabel.NewRegexp(s)
 	if err != nil {
 		return nil, err
