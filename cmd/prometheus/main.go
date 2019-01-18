@@ -19,6 +19,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
@@ -266,8 +267,23 @@ func main() {
 
 	cfg.tsdb.RetentionDuration = chooseRetention(oldFlagRetentionDuration, newFlagRetentionDuration)
 
+	// Check for overflows. This limits our max retention to ~292.5y.
+	if cfg.tsdb.RetentionDuration < 0 {
+		cfg.tsdb.RetentionDuration = math.MaxInt64
+	}
+
 	if cfg.tsdb.MaxBlockDuration == 0 {
 		cfg.tsdb.MaxBlockDuration = cfg.tsdb.RetentionDuration / 10
+
+		// Prevent blocks from getting too big.
+		monthLong, err := model.ParseDuration("31d")
+		if err != nil {
+			panic(err)
+		}
+
+		if cfg.tsdb.MaxBlockDuration > monthLong {
+			cfg.tsdb.MaxBlockDuration = monthLong
+		}
 	}
 
 	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
