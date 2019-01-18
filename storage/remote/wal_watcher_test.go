@@ -18,6 +18,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 type writeToMock struct {
 	samplesAppended      int
 	seriesLabels         map[uint64][]prompb.Label
+	seriesLock           sync.Mutex
 	seriesSegmentIndexes map[uint64]int
 }
 
@@ -51,8 +53,8 @@ func (wtm *writeToMock) StoreSeries(series []tsdb.RefSeries, index int) {
 
 		temp[s.Ref] = labelsetToLabelsProto(ls)
 	}
-	// wtm.seriesMtx.Lock()
-	// defer t.seriesMtx.Unlock()
+	wtm.seriesLock.Lock()
+	defer wtm.seriesLock.Unlock()
 	for ref, labels := range temp {
 		wtm.seriesLabels[ref] = labels
 		wtm.seriesSegmentIndexes[ref] = index
@@ -62,12 +64,20 @@ func (wtm *writeToMock) StoreSeries(series []tsdb.RefSeries, index int) {
 func (wtm *writeToMock) SeriesReset(index int) {
 	// Check for series that are in segments older than the checkpoint
 	// that were not also present in the checkpoint.
+	wtm.seriesLock.Lock()
+	defer wtm.seriesLock.Unlock()
 	for k, v := range wtm.seriesSegmentIndexes {
 		if v < index {
 			delete(wtm.seriesLabels, k)
 			delete(wtm.seriesSegmentIndexes, k)
 		}
 	}
+}
+
+func (wtm *writeToMock) checkNumLabels() int {
+	wtm.seriesLock.Lock()
+	defer wtm.seriesLock.Unlock()
+	return len(wtm.seriesLabels)
 }
 
 func newWriteToMock() *writeToMock {
@@ -77,12 +87,6 @@ func newWriteToMock() *writeToMock {
 	}
 }
 
-// we need a way to check the value of the wal watcher records read metrics, the samples and series records
-// with these we could write some example segments and checkpoints and then write tests for readSegment/watch
-// to see if we get back the write number of series records/samples records/etc., and that we read a whole checkpoint
-// on startup and when a new one is created
-//
-// we could do the same thing for readToEnd, readCheckpoint, readSeriesRecords, etc.
 func Test_readToEnd_noCheckpoint(t *testing.T) {
 	pageSize := 32 * 1024
 	const seriesCount = 10
@@ -98,7 +102,6 @@ func Test_readToEnd_noCheckpoint(t *testing.T) {
 	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize)
 	testutil.Ok(t, err)
 
-	// var input [][]byte
 	var recs [][]byte
 
 	enc := tsdb.RecordEncoder{}
@@ -131,15 +134,28 @@ func Test_readToEnd_noCheckpoint(t *testing.T) {
 	}
 	testutil.Ok(t, w.Log(recs...))
 
-	first, last, err := w.Segments()
+	_, _, err = w.Segments()
 	testutil.Ok(t, err)
 
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
-	_, _, err = watcher.readToEnd(wdir, first, last)
-	testutil.Ok(t, err)
-	testutil.Equals(t, seriesCount, len(wt.seriesLabels))
+	go watcher.Start()
+	i := 0
+	ticker := time.NewTicker(100 * time.Millisecond)
+	for range ticker.C {
+		if wt.checkNumLabels() >= seriesCount*10*2 {
+			break
+		}
+		i++
+		if i >= 10 {
+			break
+		}
+
+	}
+	watcher.Stop()
+	ticker.Stop()
+	testutil.Equals(t, seriesCount, wt.checkNumLabels())
 }
 
 func Test_readToEnd_withCheckpoint(t *testing.T) {
@@ -161,7 +177,7 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize)
 	testutil.Ok(t, err)
 
-	// write to the initial segment then checkpoint
+	// Write to the initial segment then checkpoint.
 	for i := 0; i < seriesCount*10; i++ {
 		ref := i + 100
 		series := enc.Series([]tsdb.RefSeries{
@@ -187,7 +203,7 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 	tsdb.Checkpoint(w, 30, 31, func(x uint64) bool { return true }, 0)
 	w.Truncate(32)
 
-	// write more records after checkpointing
+	// Write more records after checkpointing.
 	for i := 0; i < seriesCount*10; i++ {
 		series := enc.Series([]tsdb.RefSeries{
 			tsdb.RefSeries{
@@ -209,15 +225,27 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 		}
 	}
 
-	first, last, err := w.Segments()
+	_, _, err = w.Segments()
 	testutil.Ok(t, err)
-
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
-	_, _, err = watcher.readToEnd(wdir, first, last)
-	testutil.Ok(t, err)
-	testutil.Equals(t, seriesCount*10*2, len(wt.seriesLabels))
+	go watcher.Start()
+	i := 0
+	ticker := time.NewTicker(100 * time.Millisecond)
+	for range ticker.C {
+		if wt.checkNumLabels() >= seriesCount*10*2 {
+			break
+		}
+		i++
+		if i >= 20 {
+			break
+		}
+
+	}
+	watcher.Stop()
+	ticker.Stop()
+	testutil.Equals(t, seriesCount*10*2, wt.checkNumLabels())
 }
 
 func Test_readCheckpoint(t *testing.T) {
@@ -239,7 +267,7 @@ func Test_readCheckpoint(t *testing.T) {
 	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize)
 	testutil.Ok(t, err)
 
-	// write to the initial segment then checkpoint
+	// Write to the initial segment then checkpoint.
 	for i := 0; i < seriesCount*10; i++ {
 		ref := i + 100
 		series := enc.Series([]tsdb.RefSeries{
@@ -265,15 +293,29 @@ func Test_readCheckpoint(t *testing.T) {
 	tsdb.Checkpoint(w, 30, 31, func(x uint64) bool { return true }, 0)
 	w.Truncate(32)
 
-	first, last, err := w.Segments()
+	// Start read after checkpoint, no more data written.
+	_, _, err = w.Segments()
 	testutil.Ok(t, err)
 
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
-	_, _, err = watcher.readToEnd(wdir, first, last)
-	testutil.Ok(t, err)
-	testutil.Equals(t, seriesCount*10, len(wt.seriesLabels))
+	go watcher.Start()
+	i := 0
+	ticker := time.NewTicker(100 * time.Millisecond)
+	for range ticker.C {
+		if wt.checkNumLabels() >= seriesCount*10*2 {
+			break
+		}
+		i++
+		if i >= 8 {
+			break
+		}
+
+	}
+	watcher.Stop()
+	ticker.Stop()
+	testutil.Equals(t, seriesCount*10, wt.checkNumLabels())
 }
 
 func Test_checkpoint_seriesReset(t *testing.T) {
@@ -291,10 +333,9 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 
 	enc := tsdb.RecordEncoder{}
 	w, err := wal.NewSize(nil, nil, wdir, pageSize)
-	// w.
 	testutil.Ok(t, err)
 
-	// write to the initial segment then checkpoint
+	// Write to the initial segment, then checkpoint later.
 	for i := 0; i < seriesCount*10; i++ {
 		ref := i + 100
 		series := enc.Series([]tsdb.RefSeries{
@@ -318,15 +359,29 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 		}
 	}
 
-	first, last, err := w.Segments()
+	_, _, err = w.Segments()
 	testutil.Ok(t, err)
 
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
-	_, _, err = watcher.readToEnd(wdir, first, last)
-	testutil.Ok(t, err)
-	testutil.Equals(t, seriesCount*10, len(wt.seriesLabels))
+	go watcher.Start()
+	i := 0
+	ticker := time.NewTicker(100 * time.Millisecond)
+	for range ticker.C {
+		if wt.checkNumLabels() >= seriesCount*10*2 {
+			break
+		}
+
+		i++
+		if i >= 50 {
+			break
+		}
+
+	}
+	watcher.Stop()
+	ticker.Stop()
+	testutil.Equals(t, seriesCount*10, wt.checkNumLabels())
 
 	// If you modify the checkpoint and truncate segment #'s run the test to see how
 	// many series records you end up with and change the last Equals check accordingly
@@ -347,8 +402,8 @@ func Test_decodeRecord(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	wt := newWriteToMock()
-	st := timestamp.FromTime(time.Now())
-	watcher := NewWALWatcher(nil, "", wt, dir, st)
+	// st := timestamp.FromTime(time.Now().Add(-10 * time.Second))
+	watcher := NewWALWatcher(nil, "", wt, dir, 0)
 
 	// decode a series record
 	enc := tsdb.RecordEncoder{}
@@ -364,4 +419,29 @@ func Test_decodeRecord(t *testing.T) {
 	testutil.Ok(t, err)
 
 	testutil.Equals(t, 2, wt.samplesAppended)
+}
+
+func Test_decodeRecord_afterStart(t *testing.T) {
+	dir, err := ioutil.TempDir("", "decodeRecord")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	wt := newWriteToMock()
+	// st := timestamp.FromTime(time.Now().Add(-10 * time.Second))
+	watcher := NewWALWatcher(nil, "", wt, dir, 1)
+
+	// decode a series record
+	enc := tsdb.RecordEncoder{}
+	buf := enc.Series([]tsdb.RefSeries{tsdb.RefSeries{Ref: 1234, Labels: labels.Labels{}}}, nil)
+	watcher.decodeRecord(buf)
+	testutil.Ok(t, err)
+
+	testutil.Equals(t, 1, len(wt.seriesLabels))
+
+	// decode a samples record
+	buf = enc.Samples([]tsdb.RefSample{tsdb.RefSample{Ref: 100, T: 1, V: 1.0}, tsdb.RefSample{Ref: 100, T: 2, V: 2.0}}, nil)
+	watcher.decodeRecord(buf)
+	testutil.Ok(t, err)
+
+	testutil.Equals(t, 1, wt.samplesAppended)
 }
