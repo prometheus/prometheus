@@ -530,7 +530,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		return errors.Wrap(err, "write compaction")
 	}
 
-	// Remove tmp folder and return early when the compaction was canceled.
+	// Compaction was canceled so remove tmp folders and return early.
 	select {
 	case <-c.ctx.Done():
 		for _, w := range writers {
@@ -616,12 +616,16 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}()
 
 	c.metrics.populatingBlocks.Inc()
+
+	fmt.Println(blocks)
 	for i, b := range blocks {
 		select {
 		case <-c.ctx.Done():
 			return nil
 		default:
 		}
+
+		fmt.Println("next block")
 
 		indexr, err := b.Index()
 		if err != nil {
@@ -684,6 +688,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			return nil
 		default:
 		}
+
+		// fmt.Println("next set")
 		lset, chks, dranges := set.At() // The chunks here are not fully deleted.
 
 		// Skip the series with all deleted chunks.

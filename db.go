@@ -278,6 +278,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	ctx, cnl := context.WithCancel(context.Background())
 	db.compactor, err = NewLeveledCompactor(ctx, r, l, opts.BlockRanges, db.chunkPool)
 	if err != nil {
+		cnl()
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
 	db.compactCnl = cnl
@@ -459,7 +460,6 @@ func (db *DB) compact() (err error) {
 			return nil
 		default:
 		}
-
 		if _, err := db.compactor.Compact(db.dir, plan, db.blocks); err != nil {
 			return errors.Wrapf(err, "compact %s", plan)
 		}
@@ -819,7 +819,9 @@ func (db *DB) Head() *Head {
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
-	db.compactCnl()
+	// fmt.Println("closing")
+	// db.compactCnl()
+	// fmt.Println("closed")
 	<-db.donec
 
 	db.mtx.Lock()

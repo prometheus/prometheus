@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -71,15 +72,20 @@ func createBlock(tb testing.TB, dir string, nSeries int, mint, maxt int64) strin
 	testutil.Ok(tb, err)
 	var ref uint64
 
+	fmt.Println(len(lbls))
+
 	for ts := mint; ts <= maxt; ts++ {
 		app := head.Appender()
-		for _, lbl := range lbls {
-			err := app.AddFast(ref, ts, rand.Float64())
-			if err == nil {
-				continue
+		for i, lbl := range lbls {
+			if i > 0 && lbl.String() == lbls[i-1].String() {
+				err := app.AddFast(ref, ts, rand.Float64())
+				if err == nil {
+					continue
+				}
 			}
 			ref, err = app.Add(lbl, int64(ts), rand.Float64())
 			testutil.Ok(tb, err)
+
 		}
 		err := app.Commit()
 		testutil.Ok(tb, err)

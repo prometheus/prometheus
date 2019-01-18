@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -752,9 +753,9 @@ func TestCancelCompactions(t *testing.T) {
 	defer os.RemoveAll(tmpdir)
 
 	// Create some blocks to fall within the compaction range.
-	createPopulatedBlock(t, tmpdir, 3000, 0, 1000)
-	createPopulatedBlock(t, tmpdir, 3000, 1000, 2000)
-	createPopulatedBlock(t, tmpdir, 1, 2000, 2001)
+	createBlock(t, tmpdir, 1000, 0, 1000)
+	createBlock(t, tmpdir, 1000, 1000, 2000)
+	createBlock(t, tmpdir, 1, 2000, 2001) // The most recent block is ignored so can be e small one.
 
 	db, err := Open(tmpdir, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
 	testutil.Ok(t, err)
@@ -763,7 +764,8 @@ func TestCancelCompactions(t *testing.T) {
 	dbClosed := make(chan struct{})
 	for {
 		if prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) > 0 {
-			time.Sleep(5 * time.Millisecond)
+			fmt.Println("populating started.")
+			time.Sleep(2 * time.Millisecond)
 			go func() {
 				testutil.Ok(t, db.Close())
 				close(dbClosed)
