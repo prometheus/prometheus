@@ -108,9 +108,6 @@ type adapter struct {
 
 // Options of the DB storage.
 type Options struct {
-	// The interval at which the write ahead log is flushed to disc.
-	WALFlushInterval time.Duration
-
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
 	MinBlockDuration model.Duration
@@ -128,7 +125,7 @@ type Options struct {
 	RetentionDuration model.Duration
 
 	// Maximum number of bytes to be retained.
-	MaxBytes int64
+	MaxBytes units.Base2Bytes
 
 	// Disable creation and consideration of lockfile.
 	NoLockfile bool
@@ -196,7 +193,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALSegmentSize:    int(opts.WALSegmentSize),
 		RetentionDuration: uint64(time.Duration(retention).Seconds() * 1000),
-		MaxBytes:          opts.MaxBytes,
+		MaxBytes:          int64(opts.MaxBytes),
 		BlockRanges:       rngs,
 		NoLockfile:        opts.NoLockfile,
 	})

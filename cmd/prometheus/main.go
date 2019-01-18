@@ -177,8 +177,8 @@ func main() {
 	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage.").
 		Default("15d").SetValue(&cfg.tsdb.RetentionDuration)
 
-	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. This flag is experimental and can be changed in future releases.").
-		Default("0").Int64Var(&cfg.tsdb.MaxBytes)
+	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. Units supported: KB, MB, GB, TB, PB. This flag is experimental and can be changed in future releases.").
+		Default("0").BytesVar(&cfg.tsdb.MaxBytes)
 
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
