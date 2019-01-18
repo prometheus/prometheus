@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
+	"github.com/prometheus/prometheus/discovery/eureka"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
@@ -384,6 +385,11 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	for _, c := range cfg.EC2SDConfigs {
 		add(c, func() (Discoverer, error) {
 			return ec2.NewDiscovery(c, log.With(m.logger, "discovery", "ec2")), nil
+		})
+	}
+	for _, c := range cfg.EurekaSDConfigs {
+		add(c, func() (Discoverer, error) {
+			return eureka.NewDiscovery(c, log.With(m.logger, "discovery", "eureka")), nil
 		})
 	}
 	for _, c := range cfg.OpenstackSDConfigs {
