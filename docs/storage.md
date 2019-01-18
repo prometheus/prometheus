@@ -52,7 +52,9 @@ For further details on file format, see [TSDB format](https://github.com/prometh
 Prometheus has several flags that allow configuring the local storage. The most important ones are:
 
 * `--storage.tsdb.path`: This determines where Prometheus writes its database. Defaults to `data/`.
-* `--storage.tsdb.retention`: This determines when to remove old data. Defaults to `15d`.
+* `--storage.tsdb.retention.time`: This determines when to remove old data. Defaults to `15d`. Overrides `storage.tsdb.retention` if this flag is set to anything other than default.
+* `--storage.tsdb.retention.size`: [EXPERIMENTAL] This determines the maximum number of bytes that storage blocks can use (note that this does not include the WAL size, which can be substantial). The oldest data will be removed first. Defaults to `0` or disabled. This flag is experimental and can be changed in future releases. Units supported: KB, MB, GB, PB. Ex: "512MB"
+* `--storage.tsdb.retention`: This flag has been deprecated in favour of `storage.tsdb.retention.time`.
 
 On average, Prometheus uses only around 1-2 bytes per sample. Thus, to plan the capacity of a Prometheus server, you can use the rough formula:
 
@@ -63,6 +65,8 @@ needed_disk_space = retention_time_seconds * ingested_samples_per_second * bytes
 To tune the rate of ingested samples per second, you can either reduce the number of time series you scrape (fewer targets or fewer series per target), or you can increase the scrape interval. However, reducing the number of series is likely more effective, due to compression of samples within a series.
 
 If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. However, you can also try removing individual block directories to resolve the problem. This means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
+
+If both time and size retention policies are specified, whichever policy triggers first will be used at that instant.
 
 ## Remote storage integrations
 

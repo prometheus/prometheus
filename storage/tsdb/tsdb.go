@@ -119,7 +119,10 @@ type Options struct {
 	WALSegmentSize units.Base2Bytes
 
 	// Duration for how long to retain data.
-	Retention model.Duration
+	RetentionDuration model.Duration
+
+	// Maximum number of bytes to be retained.
+	MaxBytes units.Base2Bytes
 
 	// Disable creation and consideration of lockfile.
 	NoLockfile bool
@@ -183,7 +186,8 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALSegmentSize:    int(opts.WALSegmentSize),
-		RetentionDuration: uint64(time.Duration(opts.Retention).Seconds() * 1000),
+		RetentionDuration: uint64(time.Duration(opts.RetentionDuration).Seconds() * 1000),
+		MaxBytes:          int64(opts.MaxBytes),
 		BlockRanges:       rngs,
 		NoLockfile:        opts.NoLockfile,
 	})
