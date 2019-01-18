@@ -41,10 +41,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
-	"gopkg.in/alecthomas/kingpin.v2"
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
-	"github.com/mwitkow/go-conntrack"
+	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
@@ -172,7 +172,10 @@ func main() {
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
 
 	a.Flag("storage.tsdb.retention", "How long to retain samples in storage.").
-		Default("15d").SetValue(&cfg.tsdb.Retention)
+		Default("15d").SetValue(&cfg.tsdb.RetentionDuration)
+
+	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. This flag is experimental and can be changed in future releases.").
+		Default("0").Int64Var(&cfg.tsdb.MaxBytes)
 
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
@@ -245,7 +248,7 @@ func main() {
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
 	if cfg.tsdb.MaxBlockDuration == 0 {
-		cfg.tsdb.MaxBlockDuration = cfg.tsdb.Retention / 10
+		cfg.tsdb.MaxBlockDuration = cfg.tsdb.RetentionDuration / 10
 	}
 
 	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
