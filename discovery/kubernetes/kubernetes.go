@@ -312,11 +312,22 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return p.Watch(options)
 				},
 			}
+			n := d.client.CoreV1().Nodes()
+			nlw := &cache.ListWatch{
+				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					return n.List(options)
+				},
+				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					return n.Watch(options)
+				},
+			}
 			pod := NewPod(
 				log.With(d.logger, "role", "pod"),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, pod)
+			go pod.nodeInf.Run(ctx.Done())
 			go pod.podInf.Run(ctx.Done())
 		}
 	case RoleService:
