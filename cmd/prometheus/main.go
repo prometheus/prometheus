@@ -41,10 +41,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
-	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
@@ -71,10 +71,19 @@ var (
 		Name: "prometheus_config_last_reload_success_timestamp_seconds",
 		Help: "Timestamp of the last successful configuration reload.",
 	})
+
+	defaultRetentionString   = "15d"
+	defaultRetentionDuration model.Duration
 )
 
 func init() {
 	prometheus.MustRegister(version.NewCollector("prometheus"))
+
+	var err error
+	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func main() {
@@ -82,6 +91,11 @@ func main() {
 		runtime.SetBlockProfileRate(20)
 		runtime.SetMutexProfileFraction(20)
 	}
+
+	var (
+		oldFlagRetentionDuration model.Duration
+		newFlagRetentionDuration model.Duration
+	)
 
 	cfg := struct {
 		configFile string
@@ -172,10 +186,10 @@ func main() {
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
 
 	a.Flag("storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead").
-		Default("15d").SetValue(&cfg.tsdb.Retention)
+		Default(defaultRetentionString).SetValue(&oldFlagRetentionDuration)
 
-	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage.").
-		Default("15d").SetValue(&cfg.tsdb.RetentionDuration)
+	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage. Overrides \"storage.tsdb.retention\" if this flag is set to anything other than default.").
+		Default(defaultRetentionString).SetValue(&newFlagRetentionDuration)
 
 	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. Units supported: KB, MB, GB, TB, PB. This flag is experimental and can be changed in future releases.").
 		Default("0").BytesVar(&cfg.tsdb.MaxBytes)
@@ -250,6 +264,8 @@ func main() {
 	// RoutePrefix must always be at least '/'.
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
+	cfg.tsdb.RetentionDuration = chooseRetention(oldFlagRetentionDuration, newFlagRetentionDuration)
+
 	if cfg.tsdb.MaxBlockDuration == 0 {
 		cfg.tsdb.MaxBlockDuration = cfg.tsdb.RetentionDuration / 10
 	}
@@ -259,11 +275,7 @@ func main() {
 
 	logger := promlog.New(&cfg.promlogConfig)
 
-	defaultDuration, err := model.ParseDuration("15d")
-	if err != nil {
-		panic(err)
-	}
-	if cfg.tsdb.Retention != defaultDuration {
+	if oldFlagRetentionDuration != defaultRetentionDuration {
 		level.Warn(logger).Log("deprecation_notice", `"storage.tsdb.retention" flag is deprecated use "storage.tsdb.retention.time" instead.`)
 	}
 
@@ -770,4 +782,20 @@ func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 			s.Send(res...)
 		}
 	}
+}
+
+// chooseRetention is some roundabout code to support both RetentionDuration and Retention (for different flags).
+// If Retention is 15d, then it means that the default value is set and the value of RetentionDuration is used.
+func chooseRetention(oldFlagDuration, newFlagDuration model.Duration) model.Duration {
+	retention := oldFlagDuration
+	if retention == defaultRetentionDuration {
+		retention = newFlagDuration
+	}
+
+	// Further newFlag takes precedence if it's set to anything other than default.
+	if newFlagDuration != defaultRetentionDuration {
+		retention = newFlagDuration
+	}
+
+	return retention
 }

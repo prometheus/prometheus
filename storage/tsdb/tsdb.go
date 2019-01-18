@@ -118,9 +118,6 @@ type Options struct {
 	// The maximum size of each WAL segment file.
 	WALSegmentSize units.Base2Bytes
 
-	// Deprecated, use RetentionDuration.
-	Retention model.Duration
-
 	// Duration for how long to retain data.
 	RetentionDuration model.Duration
 
@@ -173,9 +170,6 @@ func registerMetrics(db *tsdb.DB, r prometheus.Registerer) {
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
 func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
-
-	retention := ChooseRetention(opts.Retention, opts.RetentionDuration)
-
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
 		opts.MaxBlockDuration = opts.MinBlockDuration
 	}
@@ -192,7 +186,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALSegmentSize:    int(opts.WALSegmentSize),
-		RetentionDuration: uint64(time.Duration(retention).Seconds() * 1000),
+		RetentionDuration: uint64(time.Duration(opts.RetentionDuration).Seconds() * 1000),
 		MaxBytes:          int64(opts.MaxBytes),
 		BlockRanges:       rngs,
 		NoLockfile:        opts.NoLockfile,
@@ -203,27 +197,6 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	registerMetrics(db, r)
 
 	return db, nil
-}
-
-// ChooseRetention is some roundabout code to support both RetentionDuration and Retention (for different flags).
-// If Retention is 15d, then it means that the default value is set and the value of RetentionDuration is used.
-func ChooseRetention(oldFlagDuration, newFlagDuration model.Duration) model.Duration {
-	defaultDuration, err := model.ParseDuration("15d")
-	if err != nil {
-		panic(err)
-	}
-
-	retention := oldFlagDuration
-	if retention == defaultDuration {
-		retention = newFlagDuration
-	}
-
-	// Further if both the flags are set, then RetentionDuration takes precedence.
-	if newFlagDuration != defaultDuration {
-		retention = newFlagDuration
-	}
-
-	return retention
 }
 
 // StartTime implements the Storage interface.

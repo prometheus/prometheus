@@ -52,7 +52,7 @@ For further details on file format, see [TSDB format](https://github.com/prometh
 Prometheus has several flags that allow configuring the local storage. The most important ones are:
 
 * `--storage.tsdb.path`: This determines where Prometheus writes its database. Defaults to `data/`.
-* `--storage.tsdb.retention.time`: This determines when to remove old data. Defaults to `15d`.
+* `--storage.tsdb.retention.time`: This determines when to remove old data. Defaults to `15d`. Overrides `storage.tsdb.retention` if this flag is set to anything other than default.
 * `--storage.tsdb.retention.size`: [EXPERIMENTAL] This determines the maximum number of bytes that storage blocks can use (note that this does not include the WAL size, which can be substantial). The oldest data will be removed first. Defaults to `0` or disabled. This flag is experimental and can be changed in future releases. Units supported: KB, MB, GB, PB. Ex: "512MB"
 * `--storage.tsdb.retention`: This flag has been deprecated in favour of `storage.tsdb.retention.time`.
 
