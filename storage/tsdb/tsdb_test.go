@@ -61,3 +61,34 @@ func TestMetrics(t *testing.T) {
 	testutil.Equals(t, 0.003, metrics.Gauge.GetValue())
 
 }
+
+func TestChooseRetention(t *testing.T) {
+	defaultRetention, err := model.ParseDuration("15d")
+	testutil.Ok(t, err)
+
+	retention1, err := model.ParseDuration("20d")
+	testutil.Ok(t, err)
+	retention2, err := model.ParseDuration("30d")
+	testutil.Ok(t, err)
+
+	cases := []struct {
+		oldFlagRetention model.Duration
+		newFlagRetention model.Duration
+
+		chosen model.Duration
+	}{
+		// Case 1: both are default (unset flags).
+		{defaultRetention, defaultRetention, defaultRetention},
+		// Case 2: old flag is set and new flag is unset.
+		{retention1, defaultRetention, retention1},
+		// Case 3: old flag is unset and new flag is set.
+		{defaultRetention, retention2, retention2},
+		// Case 4: both flags are set.
+		{retention1, retention2, retention2},
+	}
+
+	for _, tc := range cases {
+		retention := tsdb.ChooseRetention(tc.oldFlagRetention, tc.newFlagRetention)
+		testutil.Equals(t, tc.chosen, retention)
+	}
+}

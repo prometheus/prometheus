@@ -171,7 +171,10 @@ func main() {
 		"Size at which to split the tsdb WAL segment files (e.g. 100MB)").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
 
-	a.Flag("storage.tsdb.retention", "How long to retain samples in storage.").
+	a.Flag("storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead").
+		Default("15d").SetValue(&cfg.tsdb.Retention)
+
+	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage.").
 		Default("15d").SetValue(&cfg.tsdb.RetentionDuration)
 
 	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. This flag is experimental and can be changed in future releases.").
@@ -255,6 +258,14 @@ func main() {
 	promql.SetDefaultEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
 
 	logger := promlog.New(&cfg.promlogConfig)
+
+	defaultDuration, err := model.ParseDuration("15d")
+	if err != nil {
+		panic(err)
+	}
+	if cfg.tsdb.Retention != defaultDuration {
+		level.Warn(logger).Log("deprecation_notice", `"storage.tsdb.retention" flag is deprecated use "storage.tsdb.retention.time" instead.`)
+	}
 
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
 	klog.ClampLevel(6)
