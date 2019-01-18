@@ -375,47 +375,6 @@ func TestBlockQuerier(t *testing.T) {
 					},
 				},
 			},
-			{
-				lset: map[string]string{
-					"p": "abcd",
-					"x": "xyz",
-				},
-				chunks: [][]sample{
-					{
-						{1, 2}, {2, 3}, {3, 4},
-					},
-					{
-						{5, 2}, {6, 3}, {7, 4},
-					},
-				},
-			},
-			{
-				lset: map[string]string{
-					"a": "ab",
-					"p": "abce",
-				},
-				chunks: [][]sample{
-					{
-						{1, 1}, {2, 2}, {3, 3},
-					},
-					{
-						{5, 3}, {6, 6},
-					},
-				},
-			},
-			{
-				lset: map[string]string{
-					"p": "xyz",
-				},
-				chunks: [][]sample{
-					{
-						{1, 1}, {2, 2}, {3, 3},
-					},
-					{
-						{4, 4}, {5, 5}, {6, 6},
-					},
-				},
-			},
 		},
 
 		queries: []query{
@@ -452,25 +411,6 @@ func TestBlockQuerier(t *testing.T) {
 						"b": "b",
 					},
 						[]Sample{sample{2, 2}, sample{3, 3}, sample{5, 3}, sample{6, 6}},
-					),
-				}),
-			},
-			{
-				mint: 2,
-				maxt: 6,
-				ms:   []labels.Matcher{labels.NewPrefixMatcher("p", "abc")},
-				exp: newMockSeriesSet([]Series{
-					newSeries(map[string]string{
-						"a": "ab",
-						"p": "abce",
-					},
-						[]Sample{sample{2, 2}, sample{3, 3}, sample{5, 3}, sample{6, 6}},
-					),
-					newSeries(map[string]string{
-						"p": "abcd",
-						"x": "xyz",
-					},
-						[]Sample{sample{2, 3}, sample{3, 4}, sample{5, 2}, sample{6, 3}},
 					),
 				}),
 			},
@@ -1287,12 +1227,13 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 
 func BenchmarkPersistedQueries(b *testing.B) {
 	for _, nSeries := range []int{10, 100} {
-		for _, nSamples := range []int{1000, 10000, 100000} {
+		for _, nSamples := range []int64{1000, 10000, 100000} {
 			b.Run(fmt.Sprintf("series=%d,samplesPerSeries=%d", nSeries, nSamples), func(b *testing.B) {
 				dir, err := ioutil.TempDir("", "bench_persisted")
 				testutil.Ok(b, err)
 				defer os.RemoveAll(dir)
-				block := createPopulatedBlock(b, dir, nSeries, 1, int64(nSamples))
+				block, err := OpenBlock(nil, createBlock(b, dir, nSeries, 1, int64(nSamples)), nil)
+				testutil.Ok(b, err)
 				defer block.Close()
 
 				q, err := NewBlockQuerier(block, block.Meta().MinTime, block.Meta().MaxTime)

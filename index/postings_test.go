@@ -233,7 +233,7 @@ func TestMergedPostings(t *testing.T) {
 		a := newListPostings(c.a)
 		b := newListPostings(c.b)
 
-		res, err := ExpandPostings(newMergedPostings(a, b))
+		res, err := ExpandPostings(Merge(a, b))
 		testutil.Ok(t, err)
 		testutil.Equals(t, c.res, res)
 	}
@@ -286,7 +286,7 @@ func TestMergedPostingsSeek(t *testing.T) {
 		a := newListPostings(c.a)
 		b := newListPostings(c.b)
 
-		p := newMergedPostings(a, b)
+		p := Merge(a, b)
 
 		testutil.Equals(t, c.success, p.Seek(c.seek))
 
@@ -546,7 +546,7 @@ func TestIntersectWithMerge(t *testing.T) {
 	// https://github.com/prometheus/prometheus/issues/2616
 	a := newListPostings([]uint64{21, 22, 23, 24, 25, 30})
 
-	b := newMergedPostings(
+	b := Merge(
 		newListPostings([]uint64{10, 20, 30}),
 		newListPostings([]uint64{15, 26, 30}),
 	)

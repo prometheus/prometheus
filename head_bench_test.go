@@ -57,7 +57,7 @@ func BenchmarkHeadPostingForMatchers(b *testing.B) {
 	defer h.Close()
 
 	// TODO: vary number of series
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 1000000; i++ {
 		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)))
 	}
 

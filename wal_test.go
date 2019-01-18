@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build !windows
+
 package tsdb
 
 import (
@@ -288,7 +290,7 @@ func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 
 	testutil.Ok(t, wal.Close())
 
-	wal, err = OpenSegmentWAL(dir, log.NewLogfmtLogger(os.Stderr), 0, nil)
+	_, err = OpenSegmentWAL(dir, log.NewLogfmtLogger(os.Stderr), 0, nil)
 	testutil.Ok(t, err)
 
 	fns, err := fileutil.ReadDir(dir)

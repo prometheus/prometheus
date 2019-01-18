@@ -339,6 +339,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		testutil.Ok(t, err)
 
 		expp, err := mi.Postings(p.Name, p.Value)
+		testutil.Ok(t, err)
 
 		var lset, explset labels.Labels
 		var chks, expchks []chunks.Meta
@@ -352,6 +353,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 			testutil.Ok(t, err)
 
 			err = mi.Series(expp.At(), &explset, &expchks)
+			testutil.Ok(t, err)
 			testutil.Equals(t, explset, lset)
 			testutil.Equals(t, expchks, chks)
 		}
@@ -378,13 +380,28 @@ func TestPersistence_index_e2e(t *testing.T) {
 		}
 	}
 
+	gotSymbols, err := ir.Symbols()
+	testutil.Ok(t, err)
+
+	testutil.Equals(t, len(mi.symbols), len(gotSymbols))
+	for s := range mi.symbols {
+		_, ok := gotSymbols[s]
+		testutil.Assert(t, ok, "")
+	}
+
 	testutil.Ok(t, ir.Close())
+}
+
+func TestDecbufUvariantWithInvalidBuffer(t *testing.T) {
+	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
+
+	db := newDecbufUvarintAt(b, 0)
+	testutil.NotOk(t, db.err())
 }
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
-	r := &Reader{b: b}
 
-	db := r.decbufUvarintAt(0)
-	testutil.NotOk(t, db.err())
+	_, err := NewReader(b)
+	testutil.NotOk(t, err)
 }

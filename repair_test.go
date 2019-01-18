@@ -65,7 +65,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 	// Check the current db.
 	// In its current state, lookups should fail with the fixed code.
-	meta, err := readMetaFile(dbDir)
+	_, err := readMetaFile(dbDir)
 	testutil.NotOk(t, err)
 
 	// Touch chunks dir in block.
@@ -116,7 +116,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 		{{"a", "2"}, {"b", "1"}},
 	}, res)
 
-	meta, err = readMetaFile(tmpDbDir)
+	meta, err := readMetaFile(tmpDbDir)
 	testutil.Ok(t, err)
 	testutil.Assert(t, meta.Version == 1, "unexpected meta version %d", meta.Version)
 }

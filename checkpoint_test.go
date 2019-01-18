@@ -15,11 +15,14 @@
 package tsdb
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
@@ -31,11 +34,11 @@ func TestLastCheckpoint(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	s, k, err := LastCheckpoint(dir)
+	_, _, err = LastCheckpoint(dir)
 	testutil.Equals(t, ErrNotFound, err)
 
 	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.0000"), 0777))
-	s, k, err = LastCheckpoint(dir)
+	s, k, err := LastCheckpoint(dir)
 	testutil.Ok(t, err)
 	testutil.Equals(t, filepath.Join(dir, "checkpoint.0000"), s)
 	testutil.Equals(t, 0, k)
@@ -179,4 +182,31 @@ func TestCheckpoint(t *testing.T) {
 		{Ref: 2, Labels: labels.FromStrings("a", "b", "c", "2")},
 		{Ref: 4, Labels: labels.FromStrings("a", "b", "c", "4")},
 	}, series)
+}
+
+func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
+	// Create a new wal with an invalid records.
+	dir, err := ioutil.TempDir("", "test_checkpoint")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+	w, err := wal.NewSize(nil, nil, dir, 64*1024)
+	testutil.Ok(t, err)
+	testutil.Ok(t, w.Log([]byte{99}))
+	w.Close()
+
+	// Run the checkpoint and since the wal contains an invalid records this should return an error.
+	_, err = Checkpoint(w, 0, 1, nil, 0)
+	testutil.NotOk(t, err)
+
+	// Walk the wal dir to make sure there are no tmp folder left behind after the error.
+	err = filepath.Walk(w.Dir(), func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return errors.Wrapf(err, "access err %q: %v\n", path, err)
+		}
+		if info.IsDir() && strings.HasSuffix(info.Name(), ".tmp") {
+			return fmt.Errorf("wal dir contains temporary folder:%s", info.Name())
+		}
+		return nil
+	})
+	testutil.Ok(t, err)
 }
