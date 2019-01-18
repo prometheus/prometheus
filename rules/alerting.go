@@ -502,8 +502,8 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 	}
 
 	ar := rulefmt.Rule{
-		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
-		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
+		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.DefaultLinkForExpression(alertMetric.String()), r.name),
+		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.DefaultLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
 		For:         model.Duration(r.holdDuration),
 		Labels:      labelsMap,
 		Annotations: annotationsMap,

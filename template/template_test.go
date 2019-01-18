@@ -235,6 +235,11 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "/graph?g0.expr=up&g0.tab=1",
 		},
 		{
+			// defaultLink.
+			text:   "{{ defaultLink \"up\" }}",
+			output: "/graph?g0.expr=up",
+		},
+		{
 			// tmpl.
 			text:   "{{ define \"a\" }}x{{ end }}{{ $name := \"a\"}}{{ tmpl $name . }}",
 			output: "x",

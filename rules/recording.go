@@ -182,8 +182,8 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	}
 
 	r := rulefmt.Rule{
-		Record: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(rule.name), rule.name),
-		Expr:   fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr)),
+		Record: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.DefaultLinkForExpression(rule.name), rule.name),
+		Expr:   fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.DefaultLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr)),
 		Labels: labels,
 	}
 

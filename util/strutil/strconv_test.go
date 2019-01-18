@@ -18,9 +18,10 @@ import (
 )
 
 type linkTest struct {
-	expression        string
-	expectedGraphLink string
-	expectedTableLink string
+	expression          string
+	expectedGraphLink   string
+	expectedTableLink   string
+	expectedDefaultLink string
 }
 
 var linkTests = []linkTest{
@@ -28,11 +29,13 @@ var linkTests = []linkTest{
 		"sum(incoming_http_requests_total) by (system)",
 		"/graph?g0.expr=sum%28incoming_http_requests_total%29+by+%28system%29&g0.tab=0",
 		"/graph?g0.expr=sum%28incoming_http_requests_total%29+by+%28system%29&g0.tab=1",
+		"/graph?g0.expr=sum%28incoming_http_requests_total%29+by+%28system%29",
 	},
 	{
 		"sum(incoming_http_requests_total{system=\"trackmetadata\"})",
 		"/graph?g0.expr=sum%28incoming_http_requests_total%7Bsystem%3D%22trackmetadata%22%7D%29&g0.tab=0",
 		"/graph?g0.expr=sum%28incoming_http_requests_total%7Bsystem%3D%22trackmetadata%22%7D%29&g0.tab=1",
+		"/graph?g0.expr=sum%28incoming_http_requests_total%7Bsystem%3D%22trackmetadata%22%7D%29",
 	},
 }
 
@@ -44,6 +47,10 @@ func TestLink(t *testing.T) {
 
 		if tableLink := TableLinkForExpression(tt.expression); tableLink != tt.expectedTableLink {
 			t.Errorf("TableLinkForExpression failed for expression (%#q), want %q got %q", tt.expression, tt.expectedTableLink, tableLink)
+		}
+
+		if tableLink := DefaultLinkForExpression(tt.expression); tableLink != tt.expectedTableLink {
+			t.Errorf("DefaultLinkForExpression failed for expression (%#q), want %q got %q", tt.expression, tt.expectedTableLink, tableLink)
 		}
 	}
 }

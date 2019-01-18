@@ -37,6 +37,13 @@ func GraphLinkForExpression(expr string) string {
 	return fmt.Sprintf("/graph?g0.expr=%s&g0.tab=0", escapedExpression)
 }
 
+// DefaultLinkForExpression creates an escaped relative link to the default
+// view of the provided expression.
+func DefaultLinkForExpression(expr string) string {
+	escapedExpression := url.QueryEscape(expr)
+	return fmt.Sprintf("/graph?g0.expr=%s", escapedExpression)
+}
+
 // SanitizeLabelName replaces anything that doesn't match
 // client_label.LabelNameRE with an underscore.
 func SanitizeLabelName(name string) string {

@@ -153,12 +153,13 @@ func NewTemplateExpander(
 			"safeHtml": func(text string) html_template.HTML {
 				return html_template.HTML(text)
 			},
-			"match":     regexp.MatchString,
-			"title":     strings.Title,
-			"toUpper":   strings.ToUpper,
-			"toLower":   strings.ToLower,
-			"graphLink": strutil.GraphLinkForExpression,
-			"tableLink": strutil.TableLinkForExpression,
+			"match":       regexp.MatchString,
+			"title":       strings.Title,
+			"toUpper":     strings.ToUpper,
+			"toLower":     strings.ToLower,
+			"graphLink":   strutil.GraphLinkForExpression,
+			"tableLink":   strutil.TableLinkForExpression,
+			"defaultLink": strutil.DefaultLinkForExpression,
 			"sortByLabel": func(label string, v queryResult) queryResult {
 				sorter := queryResultByLabelSorter{v[:], label}
 				sort.Stable(sorter)
