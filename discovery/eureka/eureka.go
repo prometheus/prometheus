@@ -15,11 +15,11 @@ package eureka
 
 import (
 	"context"
+	"bytes"
 	"fmt"
 	"time"
 	"net"
 	"net/http"
-	"bytes"
 	"encoding/json"
 
 	"github.com/go-kit/kit/log"
@@ -195,8 +195,6 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		return nil, fmt.Errorf("could not parse JSON response from eureka (%s)", err)
 	}
 
-	bytes, _ := json.Marshal(er)
-	
 	tg = &targetgroup.Group{
 		Source: d.eureka,
 	}
