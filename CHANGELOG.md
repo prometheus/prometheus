@@ -1,4 +1,6 @@
 ## master / unreleased
+
+## 0.4.0
  - [CHANGE] New `WALSegmentSize` option to override the `DefaultOptions.WALSegmentSize`. Added to allow using smaller wal files. For example using tmpfs on a RPI to minimise the SD card wear out from the constant WAL writes. As part of this change the `DefaultOptions.WALSegmentSize` constant was also exposed.
  - [CHANGE] Empty blocks are not written during compaction [#374](https://github.com/prometheus/tsdb/pull/374)
  - [FEATURE]  Size base retention through `Options.MaxBytes`.  As part of this change:
