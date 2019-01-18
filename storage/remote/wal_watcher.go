@@ -15,6 +15,8 @@ package remote
 
 import (
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path"
 	"strconv"
@@ -162,17 +164,18 @@ func NewWALWatcher(logger log.Logger, name string, writer writeTo, walDir string
 		writer:    writer,
 		walDir:    path.Join(walDir, "wal"),
 		startTime: startTime,
+		name:      name,
 		quit:      make(chan struct{}),
 	}
 
-	w.samplesReadMetric = watcherSamplesRecordsRead.WithLabelValues(name)
-	w.seriesReadMetric = watcherSeriesRecordsRead.WithLabelValues(name)
-	w.tombstonesReadMetric = watcherTombstoneRecordsRead.WithLabelValues(name)
-	w.unknownReadMetric = watcherUnknownTypeRecordsRead.WithLabelValues(name)
-	w.invalidReadMetric = watcherInvalidRecordsRead.WithLabelValues(name)
-	w.recordDecodeFailsMetric = watcherRecordDecodeFails.WithLabelValues(name)
-	w.samplesSentPreTailing = watcherSamplesSentPreTailing.WithLabelValues(name)
-	w.currentSegmentMetric = watcherCurrentSegment.WithLabelValues(name)
+	w.samplesReadMetric = watcherSamplesRecordsRead.WithLabelValues(w.name)
+	w.seriesReadMetric = watcherSeriesRecordsRead.WithLabelValues(w.name)
+	w.tombstonesReadMetric = watcherTombstoneRecordsRead.WithLabelValues(w.name)
+	w.unknownReadMetric = watcherUnknownTypeRecordsRead.WithLabelValues(w.name)
+	w.invalidReadMetric = watcherInvalidRecordsRead.WithLabelValues(w.name)
+	w.recordDecodeFailsMetric = watcherRecordDecodeFails.WithLabelValues(w.name)
+	w.samplesSentPreTailing = watcherSamplesSentPreTailing.WithLabelValues(w.name)
+	w.currentSegmentMetric = watcherCurrentSegment.WithLabelValues(w.name)
 
 	return w
 }
@@ -214,23 +217,46 @@ func (w *WALWatcher) runWatcher() {
 		return
 	}
 
-	// Read series records in the current WAL and latest checkpoint, get the segment pointer back.
-	// TODO: callum, handle maintaining the WAL pointer somehow across apply configs?
-	segment, reader, err := w.readToEnd(w.walDir, first, last)
+	// Backfill from the checkpoint first if it exists.
+	dir, _, err := tsdb.LastCheckpoint(w.walDir)
+	if err != nil && err != tsdb.ErrNotFound {
+		level.Error(w.logger).Log("msg", "error looking for existing checkpoint, some samples may be dropped", "err", errors.Wrap(err, "find last checkpoint"))
+	}
+
+	level.Debug(w.logger).Log("msg", "reading checkpoint", "dir", dir)
+	if err == nil {
+		w.lastCheckpoint = dir
+		err = w.readCheckpoint(dir)
+		if err != nil {
+			level.Error(w.logger).Log("msg", "error reading existing checkpoint, some samples may be dropped", "err", err)
+		}
+	}
+
+	w.currentSegment = first
+	w.currentSegmentMetric.Set(float64(w.currentSegment))
+	segment, err := wal.OpenReadSegment(wal.SegmentName(w.walDir, w.currentSegment))
+	// TODO: callum, is this error really fatal?
 	if err != nil {
 		level.Error(w.logger).Log("err", err)
 		return
 	}
-
-	w.currentSegment = last
-	w.currentSegmentMetric.Set(float64(w.currentSegment))
+	reader := wal.NewLiveReader(segment)
+	tail := false
 
 	for {
-		level.Info(w.logger).Log("msg", "watching segment", "segment", w.currentSegment)
+		// If we've replayed the existing WAL, start tailing.
+		if w.currentSegment == last {
+			tail = true
+		}
+		if tail {
+			level.Info(w.logger).Log("msg", "watching segment", "segment", w.currentSegment)
+		} else {
+			level.Info(w.logger).Log("msg", "replaying segment", "segment", w.currentSegment)
+		}
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
-		err := w.watch(nw, reader)
+		err := w.watch(nw, reader, tail)
 		segment.Close()
 		if err != nil {
 			level.Error(w.logger).Log("msg", "runWatcher is ending", "err", err)
@@ -241,126 +267,19 @@ func (w *WALWatcher) runWatcher() {
 		w.currentSegmentMetric.Set(float64(w.currentSegment))
 
 		segment, err = wal.OpenReadSegment(wal.SegmentName(w.walDir, w.currentSegment))
-		reader = wal.NewLiveReader(segment)
 		// TODO: callum, is this error really fatal?
 		if err != nil {
 			level.Error(w.logger).Log("err", err)
 			return
 		}
+		reader = wal.NewLiveReader(segment)
 	}
 }
 
-// When starting the WAL watcher, there is potentially an existing WAL. In that case, we
-// should read to the end of the newest existing segment before reading new records that
-// are written to it, storing data from series records along the way.
-// Unfortunately this function is duplicates some of TSDB Head.Init().
-func (w *WALWatcher) readToEnd(walDir string, firstSegment, lastSegment int) (*wal.Segment, *wal.LiveReader, error) {
-	// Backfill from the checkpoint first if it exists.
-	defer level.Debug(w.logger).Log("msg", "done reading existing WAL")
-	dir, startFrom, err := tsdb.LastCheckpoint(walDir)
-	if err != nil && err != tsdb.ErrNotFound {
-		return nil, nil, errors.Wrap(err, "find last checkpoint")
-	}
-
-	level.Debug(w.logger).Log("msg", "reading checkpoint", "dir", dir)
-	if err == nil {
-		w.lastCheckpoint = dir
-		err = w.readCheckpoint(dir)
-		if err != nil {
-			return nil, nil, err
-		}
-		startFrom++
-	}
-
-	// Backfill segments from the last checkpoint onwards if at least 2 segments exist.
-	if lastSegment > 0 {
-		for i := firstSegment; i < lastSegment; i++ {
-			seg, err := wal.OpenReadSegment(wal.SegmentName(walDir, i))
-			if err != nil {
-				return nil, nil, err
-			}
-			sz, _ := getSegmentSize(walDir, i)
-			w.readSeriesRecords(wal.NewLiveReader(seg), i, sz)
-		}
-	}
-
-	// We want to start the WAL Watcher from the end of the last segment on start,
-	// so we make sure to return the wal.Segment pointer
-	segment, err := wal.OpenReadSegment(wal.SegmentName(w.walDir, lastSegment))
-	if err != nil {
-		return nil, nil, err
-	}
-
-	r := wal.NewLiveReader(segment)
-	sz, _ := getSegmentSize(walDir, lastSegment)
-	w.readSeriesRecords(r, lastSegment, sz)
-	return segment, r, nil
-}
-
-// TODO: fix the exit logic for this function
-// The stop param is used to stop at the end of the existing WAL on startup,
-// since scraped samples may be written to the latest segment before we finish reading it.
-func (w *WALWatcher) readSeriesRecords(r *wal.LiveReader, index int, stop int64) {
-	var (
-		dec     tsdb.RecordDecoder
-		series  []tsdb.RefSeries
-		samples []tsdb.RefSample
-		ret     bool
-	)
-
-	for r.Next() && !isClosed(w.quit) {
-		series = series[:0]
-		rec := r.Record()
-		// If the timestamp is > start then we should Append this sample and exit readSeriesRecords,
-		// because this is the first sample written to the WAL after the WAL watcher was started.
-		typ := dec.Type(rec)
-		if typ == tsdb.RecordSamples {
-			samples, err := dec.Samples(rec, samples[:0])
-			if err != nil {
-				continue
-			}
-			for _, s := range samples {
-				if s.T > w.startTime {
-					w.writer.Append(samples)
-					ret = true
-					w.samplesSentPreTailing.Inc()
-				}
-			}
-			if ret {
-				level.Info(w.logger).Log("msg", "found a sample with a timestamp after the WAL watcher start")
-				level.Info(w.logger).Log("msg", "read all series records in segment/checkpoint", "index", index)
-				return
-			}
-		}
-		if typ != tsdb.RecordSeries {
-			continue
-		}
-
-		series, err := dec.Series(rec, nil)
-		if err != nil {
-			level.Error(log.With(w.logger)).Log("err", err)
-			break
-		}
-
-		w.writer.StoreSeries(series, index)
-	}
-
-	// Since we only call readSeriesRecords on fully written WAL segments or checkpoints,
-	// Error() will only return an error if something actually went wrong when reading
-	// a record, either it was invalid or it was only partially written to the WAL.
-	if err := r.Err(); err != nil {
-		level.Error(w.logger).Log("err", err)
-		return
-	}
-
-	// Ensure we read all of the bytes in the segment or checkpoint.
-	if r.TotalRead() >= stop {
-		level.Info(w.logger).Log("msg", "read all series records in segment/checkpoint", "index", index)
-		return
-	}
-}
-
-func (w *WALWatcher) watch(wl *wal.WAL, reader *wal.LiveReader) error {
+// Use tail true to indicate thatreader is currently on a segment that is
+// actively being written to. If false, assume it's a full segment and we're
+// replaying it on start to cache the series records.
+func (w *WALWatcher) watch(wl *wal.WAL, reader *wal.LiveReader, tail bool) error {
 
 	readTicker := time.NewTicker(readPeriod)
 	defer readTicker.Stop()
@@ -370,6 +289,19 @@ func (w *WALWatcher) watch(wl *wal.WAL, reader *wal.LiveReader) error {
 
 	segmentTicker := time.NewTicker(segmentCheckPeriod)
 	defer segmentTicker.Stop()
+	// If we're replaying the segment we need to know the size of the file to know
+	// when to return from watch and move on to the next segment.
+	size := int64(math.MaxInt64)
+	if !tail {
+		segmentTicker.Stop()
+		checkpointTicker.Stop()
+		var err error
+		size, err = getSegmentSize(w.walDir, w.currentSegment)
+		if err != nil {
+			level.Error(w.logger).Log("msg", "error getting segment size", "segment", w.currentSegment)
+			return errors.Wrap(err, "get segment size")
+		}
+	}
 
 	for {
 		select {
@@ -411,14 +343,16 @@ func (w *WALWatcher) watch(wl *wal.WAL, reader *wal.LiveReader) error {
 			if err != nil {
 				level.Error(w.logger).Log("err", err)
 			}
+			// Clear series with a checkpoint or segment index # lower than the checkpoint we just read.
+			w.writer.SeriesReset(d)
 
 		case <-segmentTicker.C:
-			// check if new segments exist
 			_, last, err := wl.Segments()
 			if err != nil {
 				return errors.Wrap(err, "segments")
 			}
 
+			// Check if new segments exists.
 			if last <= w.currentSegment {
 				continue
 			}
@@ -433,9 +367,13 @@ func (w *WALWatcher) watch(wl *wal.WAL, reader *wal.LiveReader) error {
 			return nil
 
 		case <-readTicker.C:
-			if err := w.readSegment(reader); err != nil {
+			if err := w.readSegment(reader); err != nil && err != io.EOF {
 				level.Error(w.logger).Log("err", err)
 				return err
+			}
+			if reader.TotalRead() >= size && !tail {
+				level.Info(w.logger).Log("msg", "done replaying segment", "segment", w.currentSegment, "size", size, "read", reader.TotalRead())
+				return nil
 			}
 		}
 	}
@@ -475,9 +413,19 @@ func (w *WALWatcher) decodeRecord(rec []byte) error {
 			w.recordDecodeFailsMetric.Inc()
 			return err
 		}
-		w.samplesReadMetric.Add(float64(len(samples)))
-		// Blocks  until the sample is sent to all remote write endpoints or closed (because enqueue blocks).
-		w.writer.Append(samples)
+		var send []tsdb.RefSample
+		for _, s := range samples {
+			if s.T > w.startTime {
+				send = append(send, s)
+			}
+		}
+		if len(send) > 0 {
+			// We don't want to count samples read prior to the starting timestamp
+			// so that we can compare samples in vs samples read and succeeded samples.
+			w.samplesReadMetric.Add(float64(len(samples)))
+			// Blocks  until the sample is sent to all remote write endpoints or closed (because enqueue blocks).
+			w.writer.Append(send)
+		}
 
 	case tsdb.RecordTombstones:
 		w.tombstonesReadMetric.Add(float64(len(samples)))
@@ -495,21 +443,12 @@ func (w *WALWatcher) decodeRecord(rec []byte) error {
 
 // Read all the series records from a Checkpoint directory.
 func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
+	level.Info(w.logger).Log("msg", "reading checkpoint", "dir", checkpointDir)
 	sr, err := wal.NewSegmentsReader(checkpointDir)
 	if err != nil {
 		return errors.Wrap(err, "open checkpoint")
 	}
 	defer sr.Close()
-
-	split := strings.Split(checkpointDir, ".")
-	if len(split) != 2 {
-		return errors.Errorf("checkpoint dir name is not in the right format: %s", checkpointDir)
-	}
-
-	i, err := strconv.Atoi(split[1])
-	if err != nil {
-		i = w.currentSegment - 1
-	}
 
 	size, err := getCheckpointSize(checkpointDir)
 	if err != nil {
@@ -517,9 +456,13 @@ func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 		return errors.Wrap(err, "get checkpoint size")
 	}
 
-	w.readSeriesRecords(wal.NewLiveReader(sr), i, size)
+	// w.readSeriesRecords(wal.NewLiveReader(sr), i, size)
+	r := wal.NewLiveReader(sr)
+	w.readSegment(r)
+	if r.TotalRead() != size {
+		level.Warn(w.logger).Log("msg", "may not have read all data from checkpoint")
+	}
 	level.Debug(w.logger).Log("msg", "read series references from checkpoint", "checkpoint", checkpointDir)
-	w.writer.SeriesReset(i)
 	return nil
 }
 

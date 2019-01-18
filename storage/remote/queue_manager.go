@@ -268,6 +268,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, high
 	sentBatchDuration.WithLabelValues(t.queueName)
 	succeededSamplesTotal.WithLabelValues(t.queueName)
 	failedSamplesTotal.WithLabelValues(t.queueName)
+	droppedSamplesTotal.WithLabelValues(t.queueName)
 	retriedSamplesTotal.WithLabelValues(t.queueName)
 	// Reset pending samples metric to 0.
 	t.pendingSamplesMetric.Set(0)
