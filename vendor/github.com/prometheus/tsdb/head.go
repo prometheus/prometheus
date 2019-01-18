@@ -685,6 +685,7 @@ func (h *Head) getAppendBuffer() []RefSample {
 }
 
 func (h *Head) putAppendBuffer(b []RefSample) {
+	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.appendPool.Put(b[:0])
 }
 
@@ -697,6 +698,7 @@ func (h *Head) getBytesBuffer() []byte {
 }
 
 func (h *Head) putBytesBuffer(b []byte) {
+	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.bytesPool.Put(b[:0])
 }
 
@@ -1094,25 +1096,30 @@ func (h *headIndexReader) Postings(name, value string) (index.Postings, error) {
 }
 
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
-	ep := make([]uint64, 0, 128)
+	series := make([]*memSeries, 0, 128)
 
+	// Fetch all the series only once.
 	for p.Next() {
-		ep = append(ep, p.At())
+		s := h.head.series.getByID(p.At())
+		if s == nil {
+			level.Debug(h.head.logger).Log("msg", "looked up series not found")
+		} else {
+			series = append(series, s)
+		}
 	}
 	if err := p.Err(); err != nil {
 		return index.ErrPostings(errors.Wrap(err, "expand postings"))
 	}
 
-	sort.Slice(ep, func(i, j int) bool {
-		a := h.head.series.getByID(ep[i])
-		b := h.head.series.getByID(ep[j])
-
-		if a == nil || b == nil {
-			level.Debug(h.head.logger).Log("msg", "looked up series not found")
-			return false
-		}
-		return labels.Compare(a.lset, b.lset) < 0
+	sort.Slice(series, func(i, j int) bool {
+		return labels.Compare(series[i].lset, series[j].lset) < 0
 	})
+
+	// Convert back to list.
+	ep := make([]uint64, 0, len(series))
+	for _, p := range series {
+		ep = append(ep, p.ref)
+	}
 	return index.NewListPostings(ep)
 }
 

@@ -247,37 +247,6 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 	return ix.SortedPostings(index.Intersect(its...)), nil
 }
 
-// tuplesByPrefix uses binary search to find prefix matches within ts.
-func tuplesByPrefix(m *labels.PrefixMatcher, ts StringTuples) ([]string, error) {
-	var outErr error
-	tslen := ts.Len()
-	i := sort.Search(tslen, func(i int) bool {
-		vs, err := ts.At(i)
-		if err != nil {
-			outErr = fmt.Errorf("Failed to read tuple %d/%d: %v", i, tslen, err)
-			return true
-		}
-		val := vs[0]
-		l := len(m.Prefix())
-		if l > len(vs) {
-			l = len(val)
-		}
-		return val[:l] >= m.Prefix()
-	})
-	if outErr != nil {
-		return nil, outErr
-	}
-	var matches []string
-	for ; i < tslen; i++ {
-		vs, err := ts.At(i)
-		if err != nil || !m.Matches(vs[0]) {
-			return matches, err
-		}
-		matches = append(matches, vs[0])
-	}
-	return matches, nil
-}
-
 func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
 	// If the matcher selects an empty value, it selects all the series which don't
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
@@ -301,21 +270,13 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 	}
 
 	var res []string
-	if pm, ok := m.(*labels.PrefixMatcher); ok {
-		res, err = tuplesByPrefix(pm, tpls)
+	for i := 0; i < tpls.Len(); i++ {
+		vals, err := tpls.At(i)
 		if err != nil {
 			return nil, err
 		}
-
-	} else {
-		for i := 0; i < tpls.Len(); i++ {
-			vals, err := tpls.At(i)
-			if err != nil {
-				return nil, err
-			}
-			if m.Matches(vals[0]) {
-				res = append(res, vals[0])
-			}
+		if m.Matches(vals[0]) {
+			res = append(res, vals[0])
 		}
 	}
 
@@ -620,11 +581,9 @@ func (s *populatedChunkSeries) Next() bool {
 				// This means that the chunk has be garbage collected. Remove it from the list.
 				if s.err == ErrNotFound {
 					s.err = nil
-
 					// Delete in-place.
-					chks = append(chks[:j], chks[j+1:]...)
+					s.chks = append(chks[:j], chks[j+1:]...)
 				}
-
 				return false
 			}
 		}

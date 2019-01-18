@@ -15,7 +15,6 @@ package labels
 
 import (
 	"regexp"
-	"strings"
 )
 
 // Selector holds constraints for matching against a label set.
@@ -99,22 +98,3 @@ func (m *notMatcher) Matches(v string) bool { return !m.Matcher.Matches(v) }
 func Not(m Matcher) Matcher {
 	return &notMatcher{m}
 }
-
-// PrefixMatcher implements Matcher for labels which values matches prefix.
-type PrefixMatcher struct {
-	name, prefix string
-}
-
-// NewPrefixMatcher returns new Matcher for label name matching prefix.
-func NewPrefixMatcher(name, prefix string) Matcher {
-	return &PrefixMatcher{name: name, prefix: prefix}
-}
-
-// Name implements Matcher interface.
-func (m *PrefixMatcher) Name() string { return m.name }
-
-// Prefix returns matching prefix.
-func (m *PrefixMatcher) Prefix() string { return m.prefix }
-
-// Matches implements Matcher interface.
-func (m *PrefixMatcher) Matches(v string) bool { return strings.HasPrefix(v, m.prefix) }
