@@ -70,10 +70,6 @@ func (wtm *writeToMock) SeriesReset(index int) {
 	}
 }
 
-func (wtm *writeToMock) Name() string {
-	return ""
-}
-
 func newWriteToMock() *writeToMock {
 	return &writeToMock{
 		seriesLabels:         make(map[uint64][]prompb.Label),
@@ -140,7 +136,7 @@ func Test_readToEnd_noCheckpoint(t *testing.T) {
 
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
-	watcher := NewWALWatcher(nil, wt, dir, st)
+	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	_, _, err = watcher.readToEnd(wdir, first, last)
 	testutil.Ok(t, err)
 	testutil.Equals(t, seriesCount, len(wt.seriesLabels))
@@ -218,7 +214,7 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
-	watcher := NewWALWatcher(nil, wt, dir, st)
+	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	_, _, err = watcher.readToEnd(wdir, first, last)
 	testutil.Ok(t, err)
 	testutil.Equals(t, seriesCount*10*2, len(wt.seriesLabels))
@@ -274,7 +270,7 @@ func Test_readCheckpoint(t *testing.T) {
 
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
-	watcher := NewWALWatcher(nil, wt, dir, st)
+	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	_, _, err = watcher.readToEnd(wdir, first, last)
 	testutil.Ok(t, err)
 	testutil.Equals(t, seriesCount*10, len(wt.seriesLabels))
@@ -327,7 +323,7 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
-	watcher := NewWALWatcher(nil, wt, dir, st)
+	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	_, _, err = watcher.readToEnd(wdir, first, last)
 	testutil.Ok(t, err)
 	testutil.Equals(t, seriesCount*10, len(wt.seriesLabels))
@@ -352,7 +348,7 @@ func Test_decodeRecord(t *testing.T) {
 
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
-	watcher := NewWALWatcher(nil, wt, dir, st)
+	watcher := NewWALWatcher(nil, "", wt, dir, st)
 
 	// decode a series record
 	enc := tsdb.RecordEncoder{}
