@@ -215,9 +215,8 @@ type QueueManager struct {
 	shards      *shards
 	numShards   int
 	reshardChan chan int
-
-	quit chan struct{}
-	wg   sync.WaitGroup
+	quit        chan struct{}
+	wg          sync.WaitGroup
 
 	samplesIn, samplesOut, samplesOutDuration *ewmaRate
 	integralAccumulator                       float64
@@ -259,7 +258,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, high
 	t.highestSentTimestampMetric = queueHighestSentTimestamp.WithLabelValues(t.queueName)
 	t.pendingSamplesMetric = queuePendingSamples.WithLabelValues(t.queueName)
 	t.enqueueRetriesMetric = enqueueRetriesTotal.WithLabelValues(t.queueName)
-	t.watcher = NewWALWatcher(logger, t, walDir, startTime)
+	t.watcher = NewWALWatcher(logger, client.Name(), t, walDir, startTime)
 	t.shards = t.newShards()
 
 	numShards.WithLabelValues(t.queueName).Set(float64(t.numShards))
@@ -310,11 +309,10 @@ func (t *QueueManager) Append(s []tsdb.RefSample) bool {
 	}
 	t.seriesMtx.Unlock()
 
-	backoff := t.cfg.MinBackoff
 outer:
 	for _, sample := range tempSamples {
-		// This will result in spin/busy waiting if the queues are being resharded
-		// or shutting down.  TODO backoff.
+		// This will only loop if the queues are being resharded.
+		backoff := t.cfg.MinBackoff
 		for {
 			select {
 			case <-t.quit:
@@ -325,6 +323,7 @@ outer:
 			if t.shards.enqueue(sample.ref, sample.ts) {
 				continue outer
 			}
+
 			t.enqueueRetriesMetric.Inc()
 			time.Sleep(time.Duration(backoff))
 			backoff = backoff * 2
@@ -359,18 +358,6 @@ func (t *QueueManager) Stop() {
 	t.wg.Wait()
 }
 
-func (t *QueueManager) Name() string {
-	return t.queueName
-}
-
-// Find out which series are dropped after relabelling and make sure we have a metric label for them.
-func (t *QueueManager) diffKeys(ref uint64, original, relabelled model.LabelSet) {
-	numDropped := len(original) - len(relabelled)
-	if numDropped == 0 {
-		return
-	}
-}
-
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
 func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 	temp := make(map[uint64][]prompb.Label, len(series))
@@ -381,8 +368,6 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 		}
 		t.processExternalLabels(ls)
 		rl := relabel.Process(ls, t.relabelConfigs...)
-
-		t.diffKeys(s.Ref, ls, rl)
 		if len(rl) == 0 {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue

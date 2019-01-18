@@ -243,12 +243,12 @@ github.com/prometheus/procfs/xfs
 github.com/prometheus/procfs/internal/util
 # github.com/prometheus/tsdb v0.4.0
 github.com/prometheus/tsdb
+github.com/prometheus/tsdb/fileutil
+github.com/prometheus/tsdb/wal
 github.com/prometheus/tsdb/labels
 github.com/prometheus/tsdb/chunkenc
 github.com/prometheus/tsdb/chunks
-github.com/prometheus/tsdb/fileutil
 github.com/prometheus/tsdb/index
-github.com/prometheus/tsdb/wal
 # github.com/samuel/go-zookeeper v0.0.0-20161028232340-1d7be4effb13
 github.com/samuel/go-zookeeper/zk
 # github.com/sasha-s/go-deadlock v0.0.0-20161201235124-341000892f3d

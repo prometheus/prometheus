@@ -42,6 +42,7 @@ type Storage struct {
 	queues                 []*QueueManager
 	samplesIn              *ewmaRate
 	samplesInMetric        prometheus.Counter
+	highestTimestampMtx    sync.Mutex
 	highestTimestamp       int64
 	highestTimestampMetric prometheus.Gauge
 
