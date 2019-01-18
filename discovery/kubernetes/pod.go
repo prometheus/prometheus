@@ -170,6 +170,20 @@ func GetControllerOf(controllee metav1.Object) *metav1.OwnerReference {
 	return nil
 }
 
+func (p *Pod) resolveNode(name string) *apiv1.Node {
+	n := &apiv1.Node{}
+	n.Name = name
+
+	obj, exists, err := p.nodeInf.GetStore().Get(n)
+	if err != nil {
+		level.Error(p.logger).Log("msg", "resolving node ref failed", "name", name, "err", err)
+	}
+	if err != nil || !exists {
+		return nil
+	}
+	return obj.(*apiv1.Node)
+}
+
 func podLabels(pod *apiv1.Pod) model.LabelSet {
 	ls := model.LabelSet{
 		podNameLabel:     lv(pod.ObjectMeta.Name),
@@ -214,6 +228,11 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	}
 
 	tg.Labels = podLabels(pod)
+
+	node := p.resolveNode(pod.Spec.NodeName)
+	if node != nil {
+		tg.Labels = tg.Labels.Merge(nodeLabels(node))
+	}
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 
 	for _, c := range pod.Spec.Containers {
