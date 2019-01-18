@@ -34,10 +34,10 @@ import (
 
 // Pod discovers new pod targets.
 type Pod struct {
-	informer cache.SharedInformer
-	store    cache.Store
-	logger   log.Logger
-	queue    *workqueue.Type
+	podInf cache.SharedInformer
+	store  cache.Store
+	logger log.Logger
+	queue  *workqueue.Type
 }
 
 // NewPod creates a new pod discovery.
@@ -46,12 +46,12 @@ func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
 		l = log.NewNopLogger()
 	}
 	p := &Pod{
-		informer: pods,
-		store:    pods.GetStore(),
-		logger:   l,
-		queue:    workqueue.NewNamed("pod"),
+		podInf: pods,
+		store:  pods.GetStore(),
+		logger: l,
+		queue:  workqueue.NewNamed("pod"),
 	}
-	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			eventCount.WithLabelValues("pod", "add").Inc()
 			p.enqueue(o)
@@ -81,8 +81,8 @@ func (p *Pod) enqueue(obj interface{}) {
 func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer p.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), p.informer.HasSynced) {
-		level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
+	if !cache.WaitForCacheSync(ctx.Done(), p.podInf.HasSynced) {
+		level.Error(p.logger).Log("msg", "pod role pod informer unable to sync cache")
 		return
 	}
 

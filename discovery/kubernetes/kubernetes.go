@@ -317,7 +317,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, pod)
-			go pod.informer.Run(ctx.Done())
+			go pod.podInf.Run(ctx.Done())
 		}
 	case RoleService:
 		for _, namespace := range namespaces {

@@ -228,7 +228,7 @@ func (i *Ingress) hasSynced() bool {
 }
 
 func (p *Pod) hasSynced() bool {
-	return p.informer.HasSynced()
+	return p.podInf.HasSynced()
 }
 
 func (s *Service) hasSynced() bool {
