@@ -45,7 +45,7 @@ func TestSetCompactionFailed(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(tmpdir)
 
-	blockDir := createBlock(t, tmpdir, 0, 0, 0)
+	blockDir := createBlock(t, tmpdir, 1, 0, 0)
 	b, err := OpenBlock(nil, blockDir, nil)
 	testutil.Ok(t, err)
 	testutil.Equals(t, false, b.meta.Compaction.Failed)
@@ -91,6 +91,5 @@ func createBlock(tb testing.TB, dir string, nSeries int, mint, maxt int64) strin
 
 	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime(), nil)
 	testutil.Ok(tb, err)
-
 	return filepath.Join(dir, ulid.String())
 }

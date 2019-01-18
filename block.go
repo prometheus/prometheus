@@ -191,6 +191,9 @@ type BlockMetaCompaction struct {
 	Level int `json:"level"`
 	// ULIDs of all source head blocks that went into the block.
 	Sources []ulid.ULID `json:"sources,omitempty"`
+	// Indicates that during compaction it resulted in a block without any samples
+	// so it should be deleted on the next reload.
+	Deletable bool `json:"deletable,omitempty"`
 	// Short descriptions of the direct blocks that were used to create
 	// this block.
 	Parents []BlockDesc `json:"parents,omitempty"`

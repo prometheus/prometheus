@@ -417,7 +417,8 @@ func (db *DB) compact() (err error) {
 			// from the block interval here.
 			maxt: maxt - 1,
 		}
-		if _, err = db.compactor.Write(db.dir, head, mint, maxt, nil); err != nil {
+		uid, err := db.compactor.Write(db.dir, head, mint, maxt, nil)
+		if err != nil {
 			return errors.Wrap(err, "persist head block")
 		}
 
@@ -425,6 +426,14 @@ func (db *DB) compact() (err error) {
 
 		if err := db.reload(); err != nil {
 			return errors.Wrap(err, "reload blocks")
+		}
+		if (uid == ulid.ULID{}) {
+			// Compaction resulted in an empty block.
+			// Head truncating during db.reload() depends on the persisted blocks and
+			// in this case no new block will be persisted so manually truncate the head.
+			if err = db.head.Truncate(maxt); err != nil {
+				return errors.Wrap(err, "head truncate failed (in compact)")
+			}
 		}
 		runtime.GC()
 	}
@@ -587,6 +596,12 @@ func (db *DB) deletableBlocks(blocks []*Block) map[ulid.ULID]*Block {
 	sort.Slice(blocks, func(i, j int) bool {
 		return blocks[i].Meta().MaxTime > blocks[j].Meta().MaxTime
 	})
+
+	for _, block := range blocks {
+		if block.Meta().Compaction.Deletable {
+			deletable[block.Meta().ULID] = block
+		}
+	}
 
 	for ulid, block := range db.beyondTimeRetention(blocks) {
 		deletable[ulid] = block

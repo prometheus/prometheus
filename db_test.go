@@ -836,7 +836,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 	// totalBlocks should be >=2 so we have enough blocks to trigger compaction failure.
 	totalBlocks := 2
 	for i := 0; i < totalBlocks; i++ {
-		blockDir := createBlock(t, db.Dir(), 0, 0, 0)
+		blockDir := createBlock(t, db.Dir(), 1, 0, 0)
 		block, err := OpenBlock(nil, blockDir, nil)
 		testutil.Ok(t, err)
 		// Add some some fake tombstones to trigger the compaction.
@@ -880,7 +880,7 @@ func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int6
 		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
-	block, err := OpenBlock(nil, createBlock(c.t, dest, 0, 0, 0), nil)
+	block, err := OpenBlock(nil, createBlock(c.t, dest, 1, 0, 0), nil)
 	testutil.Ok(c.t, err)
 	testutil.Ok(c.t, block.Close()) // Close block as we won't be using anywhere.
 	c.blocks = append(c.blocks, block)
@@ -1364,6 +1364,109 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 	})
 }
 
+func TestNoEmptyBlocks(t *testing.T) {
+	db, close := openTestDB(t, &Options{
+		BlockRanges: []int64{100},
+	})
+	defer close()
+	defer db.Close()
+	db.DisableCompactions()
+
+	rangeToTriggercompaction := db.opts.BlockRanges[0]/2*3 - 1
+	defaultLabel := labels.FromStrings("foo", "bar")
+	defaultMatcher := labels.NewMustRegexpMatcher("", ".*")
+
+	t.Run("Test no blocks after compact with empty head.", func(t *testing.T) {
+		testutil.Ok(t, db.compact())
+		actBlocks, err := blockDirs(db.Dir())
+		testutil.Ok(t, err)
+		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
+		testutil.Equals(t, 0, len(actBlocks))
+		testutil.Equals(t, 0, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "no compaction should be triggered here")
+	})
+
+	t.Run("Test no blocks after deleting all samples from head.", func(t *testing.T) {
+		app := db.Appender()
+		_, err := app.Add(defaultLabel, 1, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, 2, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, 3+rangeToTriggercompaction, 0)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		testutil.Ok(t, db.compact())
+		testutil.Equals(t, 1, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+
+		actBlocks, err := blockDirs(db.Dir())
+		testutil.Ok(t, err)
+		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
+		testutil.Equals(t, 0, len(actBlocks))
+
+		app = db.Appender()
+		_, err = app.Add(defaultLabel, 1, 0)
+		testutil.Assert(t, err == ErrOutOfBounds, "the head should be truncated so no samples in the past should be allowed")
+
+		// Adding new blocks.
+		currentTime := db.Head().MaxTime()
+		_, err = app.Add(defaultLabel, currentTime, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, currentTime+1, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, currentTime+rangeToTriggercompaction, 0)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+
+		testutil.Ok(t, db.compact())
+		testutil.Equals(t, 2, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		actBlocks, err = blockDirs(db.Dir())
+		testutil.Ok(t, err)
+		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
+		testutil.Assert(t, len(actBlocks) == 1, "No blocks created when compacting with >0 samples")
+	})
+
+	t.Run(`When no new block is created from head, and there are some blocks on disk 
+	compaction should not run into infinite loop (was seen during development).`, func(t *testing.T) {
+		oldBlocks := db.Blocks()
+		app := db.Appender()
+		currentTime := db.Head().MaxTime()
+		_, err := app.Add(defaultLabel, currentTime, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, currentTime+1, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, currentTime+rangeToTriggercompaction, 0)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+		testutil.Ok(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		testutil.Ok(t, db.compact())
+		testutil.Equals(t, 3, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		testutil.Equals(t, oldBlocks, db.Blocks())
+	})
+
+	t.Run("Test no blocks remaining after deleting all samples from disk.", func(t *testing.T) {
+		currentTime := db.Head().MaxTime()
+		blocks := []*BlockMeta{
+			{MinTime: currentTime, MaxTime: currentTime + db.opts.BlockRanges[0]},
+			{MinTime: currentTime + 100, MaxTime: currentTime + 100 + db.opts.BlockRanges[0]},
+		}
+		for _, m := range blocks {
+			createBlock(t, db.Dir(), 2, m.MinTime, m.MaxTime)
+		}
+
+		oldBlocks := db.Blocks()
+		testutil.Ok(t, db.reload())                                      // Reload the db to register the new blocks.
+		testutil.Equals(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
+		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		testutil.Ok(t, db.compact())
+		testutil.Equals(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here once for each block that have tombstones")
+
+		actBlocks, err := blockDirs(db.Dir())
+		testutil.Ok(t, err)
+		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
+		testutil.Equals(t, 1, len(actBlocks), "All samples are deleted. Only the most recent block should remain after compaction.")
+	})
+}
+
 func TestDB_LabelNames(t *testing.T) {
 	tests := []struct {
 		// Add 'sampleLabels1' -> Test Head -> Compact -> Test Disk ->
@@ -1468,12 +1571,13 @@ func TestCorrectNumTombstones(t *testing.T) {
 	defer db.Close()
 
 	blockRange := DefaultOptions.BlockRanges[0]
-	label := labels.FromStrings("foo", "bar")
+	defaultLabel := labels.FromStrings("foo", "bar")
+	defaultMatcher := labels.NewEqualMatcher(defaultLabel[0].Name, defaultLabel[0].Value)
 
 	app := db.Appender()
 	for i := int64(0); i < 3; i++ {
 		for j := int64(0); j < 15; j++ {
-			_, err := app.Add(label, i*blockRange+j, 0)
+			_, err := app.Add(defaultLabel, i*blockRange+j, 0)
 			testutil.Ok(t, err)
 		}
 	}
@@ -1483,17 +1587,17 @@ func TestCorrectNumTombstones(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, len(db.blocks))
 
-	testutil.Ok(t, db.Delete(0, 1, labels.NewEqualMatcher("foo", "bar")))
+	testutil.Ok(t, db.Delete(0, 1, defaultMatcher))
 	testutil.Equals(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
 
 	// {0, 1} and {2, 3} are merged to form 1 tombstone.
-	testutil.Ok(t, db.Delete(2, 3, labels.NewEqualMatcher("foo", "bar")))
+	testutil.Ok(t, db.Delete(2, 3, defaultMatcher))
 	testutil.Equals(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
 
-	testutil.Ok(t, db.Delete(5, 6, labels.NewEqualMatcher("foo", "bar")))
+	testutil.Ok(t, db.Delete(5, 6, defaultMatcher))
 	testutil.Equals(t, uint64(2), db.blocks[0].meta.Stats.NumTombstones)
 
-	testutil.Ok(t, db.Delete(9, 11, labels.NewEqualMatcher("foo", "bar")))
+	testutil.Ok(t, db.Delete(9, 11, defaultMatcher))
 	testutil.Equals(t, uint64(3), db.blocks[0].meta.Stats.NumTombstones)
 }
 
