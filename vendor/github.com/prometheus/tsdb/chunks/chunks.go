@@ -205,6 +205,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	for _, c := range chks {
 		maxLen += binary.MaxVarintLen32 + 1 // The number of bytes in the chunk and its encoding.
 		maxLen += int64(len(c.Chunk.Bytes()))
+		maxLen += 4 // The 4 bytes of crc32
 	}
 	newsz := w.n + maxLen
 
@@ -284,17 +285,15 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // Reader implements a SeriesReader for a serialized byte stream
 // of series data.
 type Reader struct {
-	// The underlying bytes holding the encoded series data.
-	bs []ByteSlice
-
-	// Closers for resources behind the byte slices.
-	cs []io.Closer
-
+	bs   []ByteSlice // The underlying bytes holding the encoded series data.
+	cs   []io.Closer // Closers for resources behind the byte slices.
+	size int64       // The total size of bytes in the reader.
 	pool chunkenc.Pool
 }
 
 func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
 	cr := Reader{pool: pool, bs: bs, cs: cs}
+	var totalSize int64
 
 	for i, b := range cr.bs {
 		if b.Len() < 4 {
@@ -304,7 +303,9 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 		if m := binary.BigEndian.Uint32(b.Range(0, 4)); m != MagicChunks {
 			return nil, errors.Errorf("invalid magic number %x", m)
 		}
+		totalSize += int64(b.Len())
 	}
+	cr.size = totalSize
 	return &cr, nil
 }
 
@@ -327,9 +328,10 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 		pool = chunkenc.NewPool()
 	}
 
-	var bs []ByteSlice
-	var cs []io.Closer
-
+	var (
+		bs []ByteSlice
+		cs []io.Closer
+	)
 	for _, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
@@ -343,6 +345,11 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 
 func (s *Reader) Close() error {
 	return closeAll(s.cs...)
+}
+
+// Size returns the size of the chunks.
+func (s *Reader) Size() int64 {
+	return s.size
 }
 
 func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {

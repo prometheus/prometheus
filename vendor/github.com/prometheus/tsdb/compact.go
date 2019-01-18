@@ -55,12 +55,17 @@ type Compactor interface {
 	Plan(dir string) ([]string, error)
 
 	// Write persists a Block into a directory.
+	// No Block is written when resulting Block has 0 samples, and returns empty ulid.ULID{}.
 	Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
 	// Can optionally pass a list of already open blocks,
 	// to avoid having to reopen them.
+	// When resulting Block has 0 samples
+	//  * No block is written.
+	//  * The source dirs are marked Deletable.
+	//  * Returns empty ulid.ULID{}.
 	Compact(dest string, dirs []string, open []*Block) (ulid.ULID, error)
 }
 
@@ -186,13 +191,12 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 		return res, nil
 	}
 
-	// Compact any blocks that have >5% tombstones.
+	// Compact any blocks with big enough time range that have >5% tombstones.
 	for i := len(dms) - 1; i >= 0; i-- {
 		meta := dms[i].meta
 		if meta.MaxTime-meta.MinTime < c.ranges[len(c.ranges)/2] {
 			break
 		}
-
 		if float64(meta.Stats.NumTombstones)/float64(meta.Stats.NumSeries+1) > 0.05 {
 			return []string{dms[i].dir}, nil
 		}
@@ -347,7 +351,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 
 		if b == nil {
 			var err error
-			b, err = OpenBlock(d, c.chunkPool)
+			b, err = OpenBlock(c.logger, d, c.chunkPool)
 			if err != nil {
 				return uid, err
 			}
@@ -366,15 +370,34 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 	meta := compactBlockMetas(uid, metas...)
 	err = c.write(dest, meta, blocks...)
 	if err == nil {
-		level.Info(c.logger).Log(
-			"msg", "compact blocks",
-			"count", len(blocks),
-			"mint", meta.MinTime,
-			"maxt", meta.MaxTime,
-			"ulid", meta.ULID,
-			"sources", fmt.Sprintf("%v", uids),
-			"duration", time.Since(start),
-		)
+		if meta.Stats.NumSamples == 0 {
+			for _, b := range bs {
+				b.meta.Compaction.Deletable = true
+				if err = writeMetaFile(b.dir, &b.meta); err != nil {
+					level.Error(c.logger).Log(
+						"msg", "Failed to write 'Deletable' to meta file after compaction",
+						"ulid", b.meta.ULID,
+					)
+				}
+			}
+			uid = ulid.ULID{}
+			level.Info(c.logger).Log(
+				"msg", "compact blocks resulted in empty block",
+				"count", len(blocks),
+				"sources", fmt.Sprintf("%v", uids),
+				"duration", time.Since(start),
+			)
+		} else {
+			level.Info(c.logger).Log(
+				"msg", "compact blocks",
+				"count", len(blocks),
+				"mint", meta.MinTime,
+				"maxt", meta.MaxTime,
+				"ulid", meta.ULID,
+				"sources", fmt.Sprintf("%v", uids),
+				"duration", time.Since(start),
+			)
+		}
 		return uid, nil
 	}
 
@@ -411,6 +434,10 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	err := c.write(dest, meta, b)
 	if err != nil {
 		return uid, err
+	}
+
+	if meta.Stats.NumSamples == 0 {
+		return ulid.ULID{}, nil
 	}
 
 	level.Info(c.logger).Log("msg", "write block", "mint", meta.MinTime, "maxt", meta.MaxTime, "ulid", meta.ULID)
@@ -490,11 +517,6 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	if err := c.populateBlock(blocks, meta, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
 	}
-
-	if err = writeMetaFile(tmp, meta); err != nil {
-		return errors.Wrap(err, "write merged meta")
-	}
-
 	// We are explicitly closing them here to check for error even
 	// though these are covered under defer. This is because in Windows,
 	// you cannot delete these unless they are closed and the defer is to
@@ -504,6 +526,18 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 	if err = indexw.Close(); err != nil {
 		return errors.Wrap(err, "close index writer")
+	}
+
+	// Populated block is empty, so cleanup and exit.
+	if meta.Stats.NumSamples == 0 {
+		if err := os.RemoveAll(tmp); err != nil {
+			return errors.Wrap(err, "remove tmp folder after empty block failed")
+		}
+		return nil
+	}
+
+	if err = writeMetaFile(tmp, meta); err != nil {
+		return errors.Wrap(err, "write merged meta")
 	}
 
 	// Create an empty tombstones file.
