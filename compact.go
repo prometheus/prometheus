@@ -617,15 +617,12 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	c.metrics.populatingBlocks.Inc()
 
-	fmt.Println(blocks)
 	for i, b := range blocks {
 		select {
 		case <-c.ctx.Done():
 			return nil
 		default:
 		}
-
-		fmt.Println("next block")
 
 		indexr, err := b.Index()
 		if err != nil {
@@ -689,7 +686,6 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		default:
 		}
 
-		// fmt.Println("next set")
 		lset, chks, dranges := set.At() // The chunks here are not fully deleted.
 
 		// Skip the series with all deleted chunks.

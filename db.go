@@ -819,9 +819,7 @@ func (db *DB) Head() *Head {
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
-	// fmt.Println("closing")
-	// db.compactCnl()
-	// fmt.Println("closed")
+	db.compactCnl()
 	<-db.donec
 
 	db.mtx.Lock()
