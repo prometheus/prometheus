@@ -534,11 +534,15 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 
 func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (network.Interface, error) {
 	result := network.Interface{}
+	queryParameters := map[string]interface{}{
+		"api-version": "2018-10-01",
+	}
 
 	preparer := autorest.CreatePreparer(
 		autorest.AsGet(),
 		autorest.WithBaseURL(client.nic.BaseURI),
-		autorest.WithPath(networkInterfaceID))
+		autorest.WithPath(networkInterfaceID),
+		autorest.WithQueryParameters(queryParameters))
 	req, err := preparer.Prepare(&http.Request{})
 	if err != nil {
 		return result, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
