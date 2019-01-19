@@ -23,7 +23,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
 	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-10-01/network"
-
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/Azure/go-autorest/autorest/azure"
@@ -365,6 +364,10 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 					return
 				}
 
+				if networkInterface.InterfacePropertiesFormat == nil {
+					continue
+				}
+
 				// Unfortunately Azure does not return information on whether a VM is deallocated.
 				// This information is available via another API call however the Go SDK does not
 				// yet support this. On deallocated machines, this value happens to be nil so it
@@ -375,19 +378,21 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 					return
 				}
 
-				for _, ip := range *networkInterface.IPConfigurations {
-					if ip.PrivateIPAddress != nil {
-						labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.PrivateIPAddress)
-						address := net.JoinHostPort(*ip.PrivateIPAddress, fmt.Sprintf("%d", d.port))
-						labels[model.AddressLabel] = model.LabelValue(address)
-						ch <- target{labelSet: labels, err: nil}
+				if *networkInterface.Primary {
+					for _, ip := range *networkInterface.IPConfigurations {
+						if ip.PrivateIPAddress != nil {
+							labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.PrivateIPAddress)
+							address := net.JoinHostPort(*ip.PrivateIPAddress, fmt.Sprintf("%d", d.port))
+							labels[model.AddressLabel] = model.LabelValue(address)
+							ch <- target{labelSet: labels, err: nil}
+							return
+						}
+						// If we made it here, we don't have a private IP which should be impossible.
+						// Return an empty target and error to ensure an all or nothing situation.
+						err = fmt.Errorf("unable to find a private IP for VM %s", vm.Name)
+						ch <- target{labelSet: nil, err: err}
 						return
 					}
-					// If we made it here, we don't have a private IP which should be impossible.
-					// Return an empty target and error to ensure an all or nothing situation.
-					err = fmt.Errorf("unable to find a private IP for VM %s", vm.Name)
-					ch <- target{labelSet: nil, err: err}
-					return
 				}
 			}
 
