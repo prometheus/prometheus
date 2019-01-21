@@ -1,3 +1,10 @@
+## 2.7.0-rc.1 / 2019-01-21
+
+We're rolling back the Dockerfile changes introduced in 2.6.0. If you made changes to your docker deployment in 2.6.0, you will need to roll them back.
+
+* [CHANGE] Rollback Dockerfile to version at 2.5.0. Rollback of the breaking change introduced in 2.6.0. #5122
+* [BUGFIX] Make sure the right header is sent when default CORS is set. #5117
+
 ## 2.7.0-rc.0 / 2019-01-18
 
 This release adds experimental support for disk size based retention. To accomodate that we are deprecating the flag `storage.tsdb.retention` in favour of `storage.tsdb.retention.time`. We print a warning if the flag is in use, but it will function without breaking until Prometheus 3.0.
