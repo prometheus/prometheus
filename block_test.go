@@ -68,17 +68,20 @@ func createBlock(tb testing.TB, dir string, nSeries int, mint, maxt int64) strin
 
 	lbls, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), nSeries)
 	testutil.Ok(tb, err)
-	var ref uint64
+	refs := make([]uint64, nSeries)
 
 	for ts := mint; ts <= maxt; ts++ {
 		app := head.Appender()
-		for _, lbl := range lbls {
-			err := app.AddFast(ref, ts, rand.Float64())
-			if err == nil {
-				continue
+		for i, lbl := range lbls {
+			if refs[i] != 0 {
+				err := app.AddFast(refs[i], ts, rand.Float64())
+				if err == nil {
+					continue
+				}
 			}
-			ref, err = app.Add(lbl, int64(ts), rand.Float64())
+			ref, err := app.Add(lbl, int64(ts), rand.Float64())
 			testutil.Ok(tb, err)
+			refs[i] = ref
 		}
 		err := app.Commit()
 		testutil.Ok(tb, err)
