@@ -49,8 +49,8 @@ func TestLink(t *testing.T) {
 			t.Errorf("TableLinkForExpression failed for expression (%#q), want %q got %q", tt.expression, tt.expectedTableLink, tableLink)
 		}
 
-		if tableLink := DefaultLinkForExpression(tt.expression); tableLink != tt.expectedTableLink {
-			t.Errorf("DefaultLinkForExpression failed for expression (%#q), want %q got %q", tt.expression, tt.expectedTableLink, tableLink)
+		if defaultLink := DefaultLinkForExpression(tt.expression); defaultLink != tt.expectedDefaultLink {
+			t.Errorf("DefaultLinkForExpression failed for expression (%#q), want %q got %q", tt.expression, tt.expectedDefaultLink, defaultLink)
 		}
 	}
 }
