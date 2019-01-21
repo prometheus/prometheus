@@ -36,7 +36,7 @@ func SetCORS(w http.ResponseWriter, o *regexp.Regexp, r *http.Request) {
 		w.Header().Set(k, v)
 	}
 
-	if o.String() == ".*" {
+	if o.String() == "^(?:.*)$" {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		return
 	}
