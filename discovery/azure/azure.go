@@ -293,12 +293,12 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 	tg = &targetgroup.Group{}
 	client, err := createAzureClient(*d.cfg)
 	if err != nil {
-		return tg, fmt.Errorf("could not create Azure client: %s", err)
+		return nil, fmt.Errorf("could not create Azure client: %s", err)
 	}
 
 	machines, err := client.getVMs(ctx)
 	if err != nil {
-		return tg, fmt.Errorf("could not get virtual machines: %s", err)
+		return nil, fmt.Errorf("could not get virtual machines: %s", err)
 	}
 
 	level.Debug(d.logger).Log("msg", "Found virtual machines during Azure discovery.", "count", len(machines))
@@ -306,13 +306,13 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 	// Load the vms managed by scale sets.
 	scaleSets, err := client.getScaleSets(ctx)
 	if err != nil {
-		return tg, fmt.Errorf("could not get virtual machine scale sets: %s", err)
+		return nil, fmt.Errorf("could not get virtual machine scale sets: %s", err)
 	}
 
 	for _, scaleSet := range scaleSets {
 		scaleSetVms, err := client.getScaleSetVMs(ctx, scaleSet)
 		if err != nil {
-			return tg, fmt.Errorf("could not get virtual machine scale set vms: %s", err)
+			return nil, fmt.Errorf("could not get virtual machine scale set vms: %s", err)
 		}
 		machines = append(machines, scaleSetVms...)
 	}
@@ -532,7 +532,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	}
 }
 
-func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (network.Interface, error) {
+func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (*network.Interface, error) {
 	result := network.Interface{}
 	queryParameters := map[string]interface{}{
 		"api-version": "2018-10-01",
@@ -545,13 +545,13 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (n
 		autorest.WithQueryParameters(queryParameters))
 	req, err := preparer.Prepare(&http.Request{})
 	if err != nil {
-		return result, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
+		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
 	}
 
 	resp, err := client.nic.GetSender(req)
 	if err != nil {
 		result.Response = autorest.Response{Response: resp}
-		return result, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure sending request")
+		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure sending request")
 	}
 
 	result, err = client.nic.GetResponder(resp)
@@ -559,5 +559,5 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (n
 		err = autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
 	}
 
-	return result, nil
+	return &result, nil
 }
