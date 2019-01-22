@@ -46,7 +46,7 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 
 	testutil.Ok(t, writeTombstoneFile(tmpdir, stones))
 
-	restr, err := readTombstones(tmpdir)
+	restr, _, err := readTombstones(tmpdir)
 	testutil.Ok(t, err)
 
 	// Compare the two readers.

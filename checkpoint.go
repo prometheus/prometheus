@@ -128,7 +128,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 		defer sgmReader.Close()
 	}
 
-	cpdir := filepath.Join(w.Dir(), fmt.Sprintf("checkpoint.%06d", to))
+	cpdir := filepath.Join(w.Dir(), fmt.Sprintf(checkpointPrefix+"%06d", to))
 	cpdirtmp := cpdir + ".tmp"
 
 	if err := os.MkdirAll(cpdirtmp, 0777); err != nil {
@@ -138,6 +138,12 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 	if err != nil {
 		return nil, errors.Wrap(err, "open checkpoint")
 	}
+
+	// Ensures that an early return caused by an error doesn't leave any tmp files.
+	defer func() {
+		cp.Close()
+		os.RemoveAll(cpdirtmp)
+	}()
 
 	r := wal.NewReader(sgmReader)
 

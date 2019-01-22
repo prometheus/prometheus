@@ -17,14 +17,106 @@ package wal
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"path"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/prometheus/tsdb/testutil"
 )
+
+type record struct {
+	t recType
+	b []byte
+}
+
+var data = make([]byte, 100000)
+var testReaderCases = []struct {
+	t    []record
+	exp  [][]byte
+	fail bool
+}{
+	// Sequence of valid records.
+	{
+		t: []record{
+			{recFull, data[0:200]},
+			{recFirst, data[200:300]},
+			{recLast, data[300:400]},
+			{recFirst, data[400:800]},
+			{recMiddle, data[800:900]},
+			{recPageTerm, make([]byte, pageSize-900-recordHeaderSize*5-1)}, // exactly lines up with page boundary.
+			{recLast, data[900:900]},
+			{recFirst, data[900:1000]},
+			{recMiddle, data[1000:1200]},
+			{recMiddle, data[1200:30000]},
+			{recMiddle, data[30000:30001]},
+			{recMiddle, data[30001:30001]},
+			{recLast, data[30001:32000]},
+		},
+		exp: [][]byte{
+			data[0:200],
+			data[200:400],
+			data[400:900],
+			data[900:32000],
+		},
+	},
+	// Exactly at the limit of one page minus the header size
+	{
+		t: []record{
+			{recFull, data[0 : pageSize-recordHeaderSize]},
+		},
+		exp: [][]byte{
+			data[:pageSize-recordHeaderSize],
+		},
+	},
+	// More than a full page, this exceeds our buffer and can never happen
+	// when written by the WAL.
+	{
+		t: []record{
+			{recFull, data[0 : pageSize+1]},
+		},
+		fail: true,
+	},
+	// Invalid orders of record types.
+	{
+		t:    []record{{recMiddle, data[:200]}},
+		fail: true,
+	},
+	{
+		t:    []record{{recLast, data[:200]}},
+		fail: true,
+	},
+	{
+		t: []record{
+			{recFirst, data[:200]},
+			{recFull, data[200:400]},
+		},
+		fail: true,
+	},
+	{
+		t: []record{
+			{recFirst, data[:100]},
+			{recMiddle, data[100:200]},
+			{recFull, data[200:400]},
+		},
+		fail: true,
+	},
+	// Non-zero data after page termination.
+	{
+		t: []record{
+			{recFull, data[:100]},
+			{recPageTerm, append(make([]byte, 1000), 1)},
+		},
+		exp:  [][]byte{data[:100]},
+		fail: true,
+	},
+}
 
 func encodedRecord(t recType, b []byte) []byte {
 	if t == recPageTerm {
@@ -39,95 +131,7 @@ func encodedRecord(t recType, b []byte) []byte {
 
 // TestReader feeds the reader a stream of encoded records with different types.
 func TestReader(t *testing.T) {
-	data := make([]byte, 100000)
-	_, err := rand.Read(data)
-	testutil.Ok(t, err)
-
-	type record struct {
-		t recType
-		b []byte
-	}
-	cases := []struct {
-		t    []record
-		exp  [][]byte
-		fail bool
-	}{
-		// Sequence of valid records.
-		{
-			t: []record{
-				{recFull, data[0:200]},
-				{recFirst, data[200:300]},
-				{recLast, data[300:400]},
-				{recFirst, data[400:800]},
-				{recMiddle, data[800:900]},
-				{recPageTerm, make([]byte, pageSize-900-recordHeaderSize*5-1)}, // exactly lines up with page boundary.
-				{recLast, data[900:900]},
-				{recFirst, data[900:1000]},
-				{recMiddle, data[1000:1200]},
-				{recMiddle, data[1200:30000]},
-				{recMiddle, data[30000:30001]},
-				{recMiddle, data[30001:30001]},
-				{recLast, data[30001:32000]},
-			},
-			exp: [][]byte{
-				data[0:200],
-				data[200:400],
-				data[400:900],
-				data[900:32000],
-			},
-		},
-		// Exactly at the limit of one page minus the header size
-		{
-			t: []record{
-				{recFull, data[0 : pageSize-recordHeaderSize]},
-			},
-			exp: [][]byte{
-				data[:pageSize-recordHeaderSize],
-			},
-		},
-		// More than a full page, this exceeds our buffer and can never happen
-		// when written by the WAL.
-		{
-			t: []record{
-				{recFull, data[0 : pageSize+1]},
-			},
-			fail: true,
-		},
-		// Invalid orders of record types.
-		{
-			t:    []record{{recMiddle, data[:200]}},
-			fail: true,
-		},
-		{
-			t:    []record{{recLast, data[:200]}},
-			fail: true,
-		},
-		{
-			t: []record{
-				{recFirst, data[:200]},
-				{recFull, data[200:400]},
-			},
-			fail: true,
-		},
-		{
-			t: []record{
-				{recFirst, data[:100]},
-				{recMiddle, data[100:200]},
-				{recFull, data[200:400]},
-			},
-			fail: true,
-		},
-		// Non-zero data after page termination.
-		{
-			t: []record{
-				{recFull, data[:100]},
-				{recPageTerm, append(make([]byte, 1000), 1)},
-			},
-			exp:  [][]byte{data[:100]},
-			fail: true,
-		},
-	}
-	for i, c := range cases {
+	for i, c := range testReaderCases {
 		t.Logf("test %d", i)
 
 		var buf []byte
@@ -154,6 +158,191 @@ func TestReader(t *testing.T) {
 	}
 }
 
+func TestReader_Live(t *testing.T) {
+	for i, c := range testReaderCases {
+		t.Logf("test %d", i)
+		dir, err := ioutil.TempDir("", fmt.Sprintf("live_reader_%d", i))
+		t.Logf("created dir %s", dir)
+		testutil.Ok(t, err)
+		defer os.RemoveAll(dir)
+
+		// we're never going to have more than a single segment file per test case right now
+		f, err := os.Create(path.Join(dir, "00000000"))
+		testutil.Ok(t, err)
+
+		// live reader doesn't work on readers created from bytes buffers,
+		// since we need to be able to write more data to the thing we're
+		// reading from after the reader has been created
+		wg := sync.WaitGroup{}
+		// make sure the reader doesn't start until at least one record is written
+		wg.Add(1)
+		go func() {
+			for i, rec := range c.t {
+				rec := encodedRecord(rec.t, rec.b)
+				n, err := f.Write(rec)
+				testutil.Ok(t, err)
+				testutil.Assert(t, n > 0, "no bytes were written to wal")
+				if i == 0 {
+					wg.Done()
+				}
+			}
+		}()
+		sr, err := OpenReadSegment(SegmentName(dir, 0))
+		testutil.Ok(t, err)
+		lr := NewLiveReader(sr)
+		j := 0
+		wg.Wait()
+	caseLoop:
+		for {
+			for ; lr.Next(); j++ {
+				rec := lr.Record()
+				t.Log("j: ", j)
+				testutil.Equals(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
+				if j == len(c.exp)-1 {
+					break caseLoop
+				}
+
+			}
+
+			// Because reads and writes are happening concurrently, unless we get an error we should
+			// attempt to read records again.
+			if j == 0 && lr.Err() == nil {
+				continue
+			}
+
+			if !c.fail && lr.Err() != nil {
+				t.Fatalf("unexpected error: %s", lr.Err())
+			}
+			if c.fail && lr.Err() == nil {
+				t.Fatalf("expected error but got none:\n\tinput: %+v", c.t)
+			}
+			if lr.Err() != nil {
+				t.Log("err: ", lr.Err())
+				break
+			}
+		}
+	}
+}
+
+func TestWAL_FuzzWriteRead_Live(t *testing.T) {
+	const count = 5000
+	var input [][]byte
+	lock := sync.RWMutex{}
+	var recs [][]byte
+	var index int
+
+	// Get size of segment.
+	getSegmentSize := func(dir string, index int) (int64, error) {
+		i := int64(-1)
+		fi, err := os.Stat(SegmentName(dir, index))
+		if err == nil {
+			i = fi.Size()
+		}
+		return i, err
+	}
+
+	readSegment := func(r *LiveReader) {
+		for r.Next() {
+			rec := r.Record()
+			lock.RLock()
+			l := len(input)
+			lock.RUnlock()
+			if index >= l {
+				t.Fatalf("read too many records")
+			}
+			lock.RLock()
+			if !bytes.Equal(input[index], rec) {
+				t.Fatalf("record %d (len %d) does not match (expected len %d)",
+					index, len(rec), len(input[index]))
+			}
+			lock.RUnlock()
+			index++
+		}
+		if r.Err() != io.EOF {
+			testutil.Ok(t, r.Err())
+		}
+	}
+
+	dir, err := ioutil.TempDir("", "wal_fuzz_live")
+	t.Log("created dir: ", dir)
+	testutil.Ok(t, err)
+	defer func() {
+		os.RemoveAll(dir)
+	}()
+
+	w, err := NewSize(nil, nil, dir, 128*pageSize)
+	testutil.Ok(t, err)
+
+	go func() {
+		for i := 0; i < count; i++ {
+			var sz int64
+			switch i % 5 {
+			case 0, 1:
+				sz = 50
+			case 2, 3:
+				sz = pageSize
+			default:
+				sz = pageSize * 8
+			}
+
+			rec := make([]byte, rand.Int63n(sz))
+			_, err := rand.Read(rec)
+			testutil.Ok(t, err)
+			lock.Lock()
+			input = append(input, rec)
+			lock.Unlock()
+			recs = append(recs, rec)
+
+			// Randomly batch up records.
+			if rand.Intn(4) < 3 {
+				testutil.Ok(t, w.Log(recs...))
+				recs = recs[:0]
+			}
+		}
+		testutil.Ok(t, w.Log(recs...))
+	}()
+
+	m, _, err := w.Segments()
+	testutil.Ok(t, err)
+
+	seg, err := OpenReadSegment(SegmentName(dir, m))
+	testutil.Ok(t, err)
+
+	r := NewLiveReader(seg)
+	segmentTicker := time.NewTicker(100 * time.Millisecond)
+	readTicker := time.NewTicker(10 * time.Millisecond)
+	for {
+		select {
+		case <-segmentTicker.C:
+			// check if new segments exist
+			_, last, err := w.Segments()
+			testutil.Ok(t, err)
+			if last > seg.i {
+				for {
+					readSegment(r)
+					if r.Err() != io.EOF {
+						testutil.Ok(t, r.Err())
+					}
+					size, err := getSegmentSize(dir, seg.i)
+					testutil.Ok(t, err)
+					// make sure we've read all of the current segment before rotating
+					if r.TotalRead() == size {
+						break
+					}
+				}
+				seg, err = OpenReadSegment(SegmentName(dir, seg.i+1))
+				testutil.Ok(t, err)
+				r = NewLiveReader(seg)
+			}
+		case <-readTicker.C:
+			readSegment(r)
+		}
+		if index == count {
+			break
+		}
+	}
+	testutil.Ok(t, r.Err())
+}
 func TestWAL_FuzzWriteRead(t *testing.T) {
 	const count = 25000
 

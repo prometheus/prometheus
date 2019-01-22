@@ -45,15 +45,15 @@ func TestSetCompactionFailed(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(tmpdir)
 
-	blockDir := createBlock(t, tmpdir, 0, 0, 0)
-	b, err := OpenBlock(blockDir, nil)
+	blockDir := createBlock(t, tmpdir, 1, 0, 0)
+	b, err := OpenBlock(nil, blockDir, nil)
 	testutil.Ok(t, err)
 	testutil.Equals(t, false, b.meta.Compaction.Failed)
 	testutil.Ok(t, b.setCompactionFailed())
 	testutil.Equals(t, true, b.meta.Compaction.Failed)
 	testutil.Ok(t, b.Close())
 
-	b, err = OpenBlock(blockDir, nil)
+	b, err = OpenBlock(nil, blockDir, nil)
 	testutil.Ok(t, err)
 	testutil.Equals(t, true, b.meta.Compaction.Failed)
 	testutil.Ok(t, b.Close())
@@ -68,17 +68,20 @@ func createBlock(tb testing.TB, dir string, nSeries int, mint, maxt int64) strin
 
 	lbls, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), nSeries)
 	testutil.Ok(tb, err)
-	var ref uint64
+	refs := make([]uint64, nSeries)
 
 	for ts := mint; ts <= maxt; ts++ {
 		app := head.Appender()
-		for _, lbl := range lbls {
-			err := app.AddFast(ref, ts, rand.Float64())
-			if err == nil {
-				continue
+		for i, lbl := range lbls {
+			if refs[i] != 0 {
+				err := app.AddFast(refs[i], ts, rand.Float64())
+				if err == nil {
+					continue
+				}
 			}
-			ref, err = app.Add(lbl, int64(ts), rand.Float64())
+			ref, err := app.Add(lbl, int64(ts), rand.Float64())
 			testutil.Ok(tb, err)
+			refs[i] = ref
 		}
 		err := app.Commit()
 		testutil.Ok(tb, err)
@@ -91,6 +94,5 @@ func createBlock(tb testing.TB, dir string, nSeries int, mint, maxt int64) strin
 
 	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime(), nil)
 	testutil.Ok(tb, err)
-
 	return filepath.Join(dir, ulid.String())
 }
