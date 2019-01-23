@@ -182,12 +182,10 @@ func (q *query) Exec(ctx context.Context) *Result {
 
 // contextDone returns an error if the context was canceled or timed out.
 func contextDone(ctx context.Context, env string) error {
-	select {
-	case <-ctx.Done():
-		return contextErr(ctx.Err(), env)
-	default:
-		return nil
+	if err := ctx.Err(); err != nil {
+		return contextErr(err, env)
 	}
+	return nil
 }
 
 func contextErr(err error, env string) error {
