@@ -49,7 +49,7 @@ func TestAlertingRule(t *testing.T) {
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
 		expr,
-		time.Minute,
+		time.Minute, 0, 0,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
 		nil, true, nil,
 	)
@@ -190,7 +190,7 @@ func TestForStateAddSamples(t *testing.T) {
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
 		expr,
-		time.Minute,
+		time.Minute, 0, 0,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
 		nil, true, nil,
 	)
@@ -364,7 +364,7 @@ func TestForStateRestore(t *testing.T) {
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
 		expr,
-		alertForDuration,
+		alertForDuration, 0, 0,
 		labels.FromStrings("severity", "critical"),
 		nil, true, nil,
 	)
@@ -424,7 +424,7 @@ func TestForStateRestore(t *testing.T) {
 		newRule := NewAlertingRule(
 			"HTTPRequestRateLow",
 			expr,
-			alertForDuration,
+			alertForDuration, 0, 0,
 			labels.FromStrings("severity", "critical"),
 			nil, false, nil,
 		)
@@ -581,7 +581,7 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, nil, nil, true, nil),
+			NewAlertingRule("alert", nil, 0, 0, 0, nil, nil, true, nil),
 			NewRecordingRule("rule1", nil, nil),
 			NewRecordingRule("rule2", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
@@ -602,7 +602,7 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
-			NewAlertingRule("alert", nil, 0, nil, nil, true, nil),
+			NewAlertingRule("alert", nil, 0, 0, 0, nil, nil, true, nil),
 			NewRecordingRule("rule1", nil, nil),
 			NewRecordingRule("rule4", nil, nil),
 		},
@@ -693,7 +693,7 @@ func TestNotify(t *testing.T) {
 
 	expr, err := promql.ParseExpr("a > 1")
 	testutil.Ok(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, true, log.NewNopLogger())
 	group := NewGroup("alert", "", time.Second, []Rule{rule}, true, opts)
 
 	app, _ := storage.Appender()
@@ -723,4 +723,71 @@ func TestNotify(t *testing.T) {
 	// Resolution alert sent right away
 	group.Eval(ctx, time.Unix(6, 0))
 	testutil.Equals(t, 1, len(lastNotified))
+}
+
+func TestDebounce(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 5m
+			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
+	`)
+	testutil.Ok(t, err)
+	defer suite.Close()
+
+	err = suite.Run()
+	testutil.Ok(t, err)
+
+	expr, err := promql.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	testutil.Ok(t, err)
+
+	rule := NewAlertingRule(
+		"HTTPRequestRateLow",
+		expr,
+		time.Minute, 2, 3,
+		labels.FromStrings("severity", "{{\"c\"}}ritical"),
+		nil, true, nil,
+	)
+
+	baseTime := time.Unix(0, 0)
+
+	var tests = []struct {
+		time time.Duration
+	}{
+		{
+			time: 0,
+		}, {
+			time: 5 * time.Minute,
+		}, {
+			time: 10 * time.Minute,
+		},
+		{
+			time: 15 * time.Minute,
+		},
+		{
+			time: 20 * time.Minute,
+		},
+		{
+			time: 25 * time.Minute,
+		},
+		{
+			time: 30 * time.Minute,
+		},
+	}
+
+	for i, test := range tests {
+		t.Logf("case %d", i)
+
+		evalTime := baseTime.Add(test.time)
+
+		_, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		testutil.Ok(t, err)
+
+		active := rule.ActiveAlerts()
+		if i == 0 || i == 5 {
+			testutil.Equals(t, active[0].State, StatePending)
+		} else if i == 4 {
+			testutil.Equals(t, 0, len(active))
+		} else {
+			testutil.Equals(t, active[0].State, StateFiring)
+		}
+	}
 }

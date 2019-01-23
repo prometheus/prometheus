@@ -22,7 +22,7 @@ import (
 
 	html_template "html/template"
 
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -134,22 +134,29 @@ type AlertingRule struct {
 	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
 	active map[uint64]*Alert
+	// Debounce configurations
+	debounceThreshold int
+	debounceLength    int
+	debounce          map[uint64][]int
 
 	logger log.Logger
 }
 
 // NewAlertingRule constructs a new AlertingRule.
-func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, restored bool, logger log.Logger) *AlertingRule {
+func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, debounceThreshold, debounceLength int, lbls, anns labels.Labels, restored bool, logger log.Logger) *AlertingRule {
 	return &AlertingRule{
-		name:         name,
-		vector:       vec,
-		holdDuration: hold,
-		labels:       lbls,
-		annotations:  anns,
-		health:       HealthUnknown,
-		active:       map[uint64]*Alert{},
-		logger:       logger,
-		restored:     restored,
+		name:              name,
+		vector:            vec,
+		holdDuration:      hold,
+		debounceThreshold: debounceThreshold,
+		debounceLength:    debounceLength,
+		labels:            lbls,
+		annotations:       anns,
+		health:            HealthUnknown,
+		active:            map[uint64]*Alert{},
+		logger:            logger,
+		restored:          restored,
+		debounce:          map[uint64][]int{},
 	}
 }
 
@@ -362,7 +369,23 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, a := range r.active {
-		if _, ok := resultFPs[fp]; !ok {
+		_, ok := resultFPs[fp]
+
+		debounce := r.getDebounce(fp)
+		var debounced = true
+		if debounce != nil {
+			// set debounce value to 1 if it is in active alert list
+			if ok {
+				debounce = append(debounce, 1)
+			} else {
+				debounce = append(debounce, 0)
+			}
+			debounce = r.setDebounce(fp, debounce)
+			debounced = r.debounced(fp)
+		}
+
+		// only resolve if the alert is not in active and debounced is true
+		if !ok && debounced {
 			// If the alert was previously firing, keep it around for a given
 			// retention time so it is reported as resolved to the AlertManager.
 			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
@@ -375,14 +398,29 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			continue
 		}
 
-		if a.State == StatePending && ts.Sub(a.ActiveAt) >= r.holdDuration {
-			a.State = StateFiring
-			a.FiredAt = ts
-		}
+		// set alert to firing if debounced=false and current alert state is pending
+		if debounce != nil {
+			if a.State == StatePending && !debounced {
+				a.State = StateFiring
+				a.FiredAt = ts
+			}
+		} else {
+			if a.State == StatePending && ts.Sub(a.ActiveAt) >= r.holdDuration {
+				a.State = StateFiring
+				a.FiredAt = ts
+			}
 
-		if r.restored {
-			vec = append(vec, r.sample(a, ts))
-			vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.Unix())))
+			if r.restored {
+				vec = append(vec, r.sample(a, ts))
+				vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.Unix())))
+			}
+		}
+	}
+	// set debounce value to 0 if it is not in active alert list
+	for fp, d := range r.debounce {
+		if _, ok := r.active[fp]; !ok {
+			d = append(d, 0)
+			r.setDebounce(fp, d)
 		}
 	}
 
@@ -391,6 +429,40 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	r.health = HealthGood
 	r.lastError = err
 	return vec, nil
+}
+
+func (r *AlertingRule) getDebounce(fp uint64) []int {
+	debounce, ok := r.debounce[fp]
+	if ok {
+		return debounce
+	} else if r.debounceThreshold > 0 && r.debounceLength > 0 && r.debounceLength >= r.debounceThreshold {
+		return make([]int, r.debounceLength)
+	}
+	return nil
+}
+
+func (r *AlertingRule) setDebounce(fp uint64, debounce []int) []int {
+	if len(debounce) > r.debounceLength {
+		debounce = debounce[len(debounce)-r.debounceLength:]
+	}
+	r.debounce[fp] = debounce
+	return debounce
+}
+
+func (r *AlertingRule) debounced(fp uint64) bool {
+	debounce := r.getDebounce(fp)
+	if debounce != nil {
+		var activeCount int
+		for _, d := range debounce {
+			if d == 1 {
+				activeCount++
+			}
+		}
+		if activeCount >= r.debounceThreshold {
+			return false
+		}
+	}
+	return true
 }
 
 // State returns the maximum state of alert instances for this rule.
@@ -466,10 +538,14 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 }
 
 func (r *AlertingRule) String() string {
+	holdDuration := ""
+	if r.holdDuration > 0 {
+		holdDuration = r.holdDuration.String()
+	}
 	ar := rulefmt.Rule{
 		Alert:       r.name,
 		Expr:        r.vector.String(),
-		For:         model.Duration(r.holdDuration),
+		For:         holdDuration,
 		Labels:      r.labels.Map(),
 		Annotations: r.annotations.Map(),
 	}
@@ -501,10 +577,14 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		annotationsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
 
+	holdDuration := ""
+	if r.holdDuration > 0 {
+		holdDuration = r.holdDuration.String()
+	}
 	ar := rulefmt.Rule{
 		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
 		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
-		For:         model.Duration(r.holdDuration),
+		For:         holdDuration,
 		Labels:      labelsMap,
 		Annotations: annotationsMap,
 	}

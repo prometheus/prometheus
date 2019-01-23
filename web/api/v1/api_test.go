@@ -138,7 +138,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 	rule1 := rules.NewAlertingRule(
 		"test_metric3",
 		expr1,
-		time.Second,
+		time.Second, 0, 0,
 		labels.Labels{},
 		labels.Labels{},
 		true,
@@ -147,7 +147,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 	rule2 := rules.NewAlertingRule(
 		"test_metric4",
 		expr2,
-		time.Second,
+		time.Second, 0, 0,
 		labels.Labels{},
 		labels.Labels{},
 		true,

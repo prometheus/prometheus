@@ -26,7 +26,7 @@ import (
 func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	expr, err := promql.ParseExpr(`foo{html="<b>BOLD<b>"}`)
 	testutil.Ok(t, err)
-	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), false, nil)
+	rule := NewAlertingRule("testrule", expr, 0, 0, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), false, nil)
 
 	const want = `alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=1">testrule</a>
 expr: <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=1">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
@@ -57,7 +57,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
 		expr,
-		time.Minute,
+		time.Minute, 0, 0,
 		// Basing alerting rule labels off of a value that can change is a very bad idea.
 		// If an alert is going back and forth between two label values it will never fire.
 		// Instead, you should write two alerts with constant labels.

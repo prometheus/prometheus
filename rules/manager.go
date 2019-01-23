@@ -20,6 +20,8 @@ import (
 	"math"
 	"net/url"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -821,10 +823,22 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 				}
 
 				if r.Alert != "" {
+					var debounceThreshold, debounceLength int64
+					duration, err := time.ParseDuration(r.For)
+					if err != nil {
+						duration = 0
+						debounce := strings.Split(r.For, "/")
+						if len(debounce) == 2 {
+							debounceThreshold, _ = strconv.ParseInt(debounce[0], 10, 64)
+							debounceLength, _ = strconv.ParseInt(debounce[1], 10, 64)
+						}
+					}
 					rules = append(rules, NewAlertingRule(
 						r.Alert,
 						expr,
-						time.Duration(r.For),
+						duration,
+						int(debounceThreshold),
+						int(debounceLength),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
 						m.restored,
