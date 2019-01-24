@@ -1,3 +1,7 @@
+## 2.7.0-rc.2 / 2019-01-24
+
+This release is compiled with the go1.11.5 security release.
+
 ## 2.7.0-rc.1 / 2019-01-21
 
 We're rolling back the Dockerfile changes introduced in 2.6.0. If you made changes to your docker deployment in 2.6.0, you will need to roll them back.
