@@ -753,8 +753,8 @@ func TestCancelCompactions(t *testing.T) {
 		testutil.Ok(t, err)
 
 		// Create some blocks to fall within the compaction range.
-		createBlock(t, tmpdir, 4000, 0, 1000)
-		createBlock(t, tmpdir, 4000, 1000, 2000)
+		createBlock(t, tmpdir, 10000, 0, 1000)
+		createBlock(t, tmpdir, 10000, 1000, 2000)
 		createBlock(t, tmpdir, 1, 2000, 2001) // The most recent block is ignored so can be e small one.
 		db, err := Open(tmpdir, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
 		testutil.Ok(t, err)
