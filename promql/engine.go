@@ -28,7 +28,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -959,9 +959,14 @@ func (ev *evaluator) eval(expr Expr) Value {
 		otherInArgs := make([]Vector, len(e.Args))
 		for i, e := range e.Args {
 			if i != matrixArgIndex {
-				otherArgs[i] = ev.eval(e).(Matrix)
-				otherInArgs[i] = Vector{Sample{}}
-				inArgs[i] = otherInArgs[i]
+				// Handle string arguments
+				if a, ok := e.(*StringLiteral); ok {
+					inArgs[i] = a
+				} else {
+					otherArgs[i] = ev.eval(e).(Matrix)
+					otherInArgs[i] = Vector{Sample{}}
+					inArgs[i] = otherInArgs[i]
+				}
 			}
 		}
 
