@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -747,34 +748,70 @@ func TestDisableAutoCompactions(t *testing.T) {
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test")
-	testutil.Ok(t, err)
-	defer os.RemoveAll(tmpdir)
+	createTestDb := func() (*DB, func()) {
+		tmpdir, err := ioutil.TempDir("", "testCancelCompaction")
+		testutil.Ok(t, err)
 
-	// Create some blocks to fall within the compaction range.
-	createBlock(t, tmpdir, 3000, 0, 1000)
-	createBlock(t, tmpdir, 3000, 1000, 2000)
-	createBlock(t, tmpdir, 1, 2000, 2001) // The most recent block is ignored so can be e small one.
+		// Create some blocks to fall within the compaction range.
+		createBlock(t, tmpdir, 4000, 0, 1000)
+		createBlock(t, tmpdir, 4000, 1000, 2000)
+		createBlock(t, tmpdir, 1, 2000, 2001) // The most recent block is ignored so can be e small one.
+		db, err := Open(tmpdir, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
+		testutil.Ok(t, err)
+		testutil.Equals(t, 3, len(db.Blocks()), "initial block count mismatch")
+		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
 
-	db, err := Open(tmpdir, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
-	testutil.Ok(t, err)
-
-	db.compactc <- struct{}{} // Trigger a compaction.
-	dbClosed := make(chan struct{})
-	for {
-		if prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) > 0 {
-			time.Sleep(3 * time.Millisecond)
-			go func() {
-				testutil.Ok(t, db.Close())
-				close(dbClosed)
-			}()
-			break
+		return db, func() {
+			os.RemoveAll(tmpdir)
 		}
 	}
+	// First lets mesure the compaction time without interupting it.
+	var timeCompactionUninterrupted time.Duration
+	{
+		db, delete := createTestDb()
+		defer delete()
+		db.compactc <- struct{}{} // Trigger a compaction.
+		var start time.Time
+		for {
+			if prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) > 0 {
+				start = time.Now()
+				break
+			}
+			time.Sleep(3 * time.Millisecond)
+		}
 
-	start := time.Now()
-	<-dbClosed
-	actT := time.Since(start)
-	expT := time.Duration(100000000)
-	testutil.Assert(t, actT < expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
+		for {
+			if prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran) == 1 {
+				timeCompactionUninterrupted = time.Since(start)
+				break
+			}
+			time.Sleep(3 * time.Millisecond)
+		}
+	}
+	// Closing the db in the middle of compaction should take half the time.
+	{
+		db, delete := createTestDb()
+		defer delete()
+
+		db.compactc <- struct{}{} // Trigger a compaction.
+		dbClosed := make(chan struct{})
+		for {
+			if prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) > 0 {
+				time.Sleep(3 * time.Millisecond)
+				go func() {
+					testutil.Ok(t, db.Close())
+					close(dbClosed)
+				}()
+				break
+			}
+		}
+
+		start := time.Now()
+		<-dbClosed
+		actT := time.Since(start)
+		fmt.Println(timeCompactionUninterrupted)
+		fmt.Println(actT)
+		expT := time.Duration(timeCompactionUninterrupted / 2)
+		testutil.Assert(t, actT < expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
+	}
 }
