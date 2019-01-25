@@ -165,8 +165,8 @@ input[name="end_input"], input[name="range_input"] {
 
 .prometheus_input_group .input {
   width: 100px;
-  height: 29px;
-  padding: 6px 12px;
+  
+  padding: 5px 12px 6px 12px;
   font-size: 14px;
   line-height: 1.42857143;
   color: #555;
