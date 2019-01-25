@@ -43,16 +43,16 @@
                             name="dec_range"
                             title="Shrink the time range.">
                             <i class="glyphicon glyphicon-minus"></i>
-                          </button>
-                          <input
+                          </button><!--
+                        --><input
                             class="pull-left input"
                             id="range_input{{id}}"
                             title="Time range of graph"
                             type="text"
                             name="range_input"
                             size="3"
-                            value="{{range_input}}">
-                          <button
+                            value="{{range_input}}"><!--
+                        --><button
                               class="btn btn-light pull-left"
                               type="button"
                               name="inc_range"
@@ -70,9 +70,9 @@
                               name="dec_end"
                               title="Rewind the end time.">
                             <i class="glyphicon glyphicon-backward"></i>
-                          </button>
+                          </button><!--
 
-                          <input
+                       --><input
                               class="pull-left date_input input"
                               id="end{{id}}"
                               title="End time of graph (UTC)"
@@ -81,9 +81,9 @@
                               type="text"
                               name="end_input"
                               size="16"
-                              value="{{end}}">
+                              value="{{end}}"><!--
 
-                          <button
+                        --><button
                               class="btn btn-light pull-left"
                               type="button"
                               name="inc_end"
