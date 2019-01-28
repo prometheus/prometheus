@@ -373,7 +373,7 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
-	r = b.Range(off+n, off+n+int(l))
+	r = b.Range(off+n, off+n+1+int(l))
 
 	return s.pool.Get(chunkenc.Encoding(r[0]), r[1:1+l])
 }
