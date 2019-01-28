@@ -1,18 +1,8 @@
-## 2.7.0-rc.2 / 2019-01-24
+## 2.7.0 / 2019-01-28
 
-This release is compiled with the go1.11.5 security release.
-
-## 2.7.0-rc.1 / 2019-01-21
-
-We're rolling back the Dockerfile changes introduced in 2.6.0. If you made changes to your docker deployment in 2.6.0, you will need to roll them back.
+We're rolling back the Dockerfile changes introduced in 2.6.0. If you made changes to your docker deployment in 2.6.0, you will need to roll them back. This release also adds experimental support for disk size based retention. To accomodate that we are deprecating the flag `storage.tsdb.retention` in favour of `storage.tsdb.retention.time`. We print a warning if the flag is in use, but it will function without breaking until Prometheus 3.0.
 
 * [CHANGE] Rollback Dockerfile to version at 2.5.0. Rollback of the breaking change introduced in 2.6.0. #5122
-* [BUGFIX] Make sure the right header is sent when default CORS is set. #5117
-
-## 2.7.0-rc.0 / 2019-01-18
-
-This release adds experimental support for disk size based retention. To accomodate that we are deprecating the flag `storage.tsdb.retention` in favour of `storage.tsdb.retention.time`. We print a warning if the flag is in use, but it will function without breaking until Prometheus 3.0.
-
 * [FEATURE] Add subqueries to PromQL. #4831
 * [FEATURE] [EXPERIMENTAL] Add support for disk size based retention. Note that we don't consider the WAL size which could be significant and the time based retention policy also applies. #5109 prometheus/tsdb#343
 * [FEATURE] Add CORS origin flag. #5011
