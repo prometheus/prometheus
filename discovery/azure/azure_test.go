@@ -17,7 +17,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/arm/compute"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
 )
 
 func TestMapFromVMWithEmptyTags(t *testing.T) {
@@ -36,12 +36,12 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 	}
 
 	testVM := compute.VirtualMachine{
-		ID:         &id,
-		Name:       &name,
-		Type:       &vmType,
-		Location:   &location,
-		Tags:       nil,
-		Properties: properties,
+		ID:                       &id,
+		Name:                     &name,
+		Type:                     &vmType,
+		Location:                 &location,
+		Tags:                     nil,
+		VirtualMachineProperties: properties,
 	}
 
 	expectedVM := virtualMachine{
@@ -80,12 +80,12 @@ func TestMapFromVMWithTags(t *testing.T) {
 	}
 
 	testVM := compute.VirtualMachine{
-		ID:         &id,
-		Name:       &name,
-		Type:       &vmType,
-		Location:   &location,
-		Tags:       &tags,
-		Properties: properties,
+		ID:                       &id,
+		Name:                     &name,
+		Type:                     &vmType,
+		Location:                 &location,
+		Tags:                     tags,
+		VirtualMachineProperties: properties,
 	}
 
 	expectedVM := virtualMachine{
@@ -121,12 +121,12 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	}
 
 	testVM := compute.VirtualMachineScaleSetVM{
-		ID:         &id,
-		Name:       &name,
-		Type:       &vmType,
-		Location:   &location,
-		Tags:       nil,
-		Properties: properties,
+		ID:                                 &id,
+		Name:                               &name,
+		Type:                               &vmType,
+		Location:                           &location,
+		Tags:                               nil,
+		VirtualMachineScaleSetVMProperties: properties,
 	}
 
 	scaleSet := "testSet"
@@ -167,12 +167,12 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 	}
 
 	testVM := compute.VirtualMachineScaleSetVM{
-		ID:         &id,
-		Name:       &name,
-		Type:       &vmType,
-		Location:   &location,
-		Tags:       &tags,
-		Properties: properties,
+		ID:                                 &id,
+		Name:                               &name,
+		Type:                               &vmType,
+		Location:                           &location,
+		Tags:                               tags,
+		VirtualMachineScaleSetVMProperties: properties,
 	}
 
 	scaleSet := "testSet"

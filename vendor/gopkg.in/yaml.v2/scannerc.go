@@ -2641,10 +2641,10 @@ func yaml_parser_scan_plain_scalar(parser *yaml_parser_t, token *yaml_token_t) b
 		for is_blank(parser.buffer, parser.buffer_pos) || is_break(parser.buffer, parser.buffer_pos) {
 			if is_blank(parser.buffer, parser.buffer_pos) {
 
-				// Check for tab character that abuse indentation.
+				// Check for tab characters that abuse indentation.
 				if leading_blanks && parser.mark.column < indent && is_tab(parser.buffer, parser.buffer_pos) {
 					yaml_parser_set_scanner_error(parser, "while scanning a plain scalar",
-						start_mark, "found a tab character that violate indentation")
+						start_mark, "found a tab character that violates indentation")
 					return false
 				}
 
