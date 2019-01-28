@@ -222,6 +222,7 @@ func (sp *scrapePool) stop() {
 		delete(sp.activeTargets, fp)
 	}
 	wg.Wait()
+	sp.client.Transport.(*http.Transport).CloseIdleConnections()
 }
 
 // reload the scrape pool with the given scrape configuration. The target state is preserved
@@ -232,6 +233,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
+
+	oldClient := sp.client
 
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
 	if err != nil {
@@ -261,6 +264,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 		go func(oldLoop, newLoop loop) {
 			oldLoop.stop()
 			wg.Done()
+			oldClient.Transport.(*http.Transport).CloseIdleConnections()
 
 			go newLoop.run(interval, timeout, nil)
 		}(oldLoop, newLoop)
