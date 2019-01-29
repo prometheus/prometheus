@@ -30,7 +30,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	// at a broken revision.
 	//
 	// func main() {
-	// 	w, err := index.NewWriter("index")
+	// 	w, err := index.NewWriter(indexFilename)
 	// 	if err != nil {
 	// 		panic(err)
 	// 	}
@@ -72,7 +72,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	os.MkdirAll(filepath.Join(dbDir, "chunks"), 0777)
 	defer os.RemoveAll(filepath.Join(dbDir, "chunks"))
 
-	r, err := index.NewFileReader(filepath.Join(dbDir, "index"))
+	r, err := index.NewFileReader(filepath.Join(dbDir, indexFilename))
 	testutil.Ok(t, err)
 	p, err := r.Postings("b", "1")
 	testutil.Ok(t, err)
@@ -95,7 +95,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	testutil.Ok(t, err)
 	db.Close()
 
-	r, err = index.NewFileReader(filepath.Join(tmpDbDir, "index"))
+	r, err = index.NewFileReader(filepath.Join(tmpDbDir, indexFilename))
 	testutil.Ok(t, err)
 	p, err = r.Postings("b", "1")
 	testutil.Ok(t, err)
