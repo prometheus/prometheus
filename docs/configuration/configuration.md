@@ -820,6 +820,10 @@ tls_config:
 namespaces:
   names:
     [ - <string> ]
+
+# With `role: pod`, pods will be annotated with all labels from the node where
+# the pod runs.
+[ pod_node_labels: <true|false> ]
 ```
 
 Where `<role>` must be `endpoints`, `service`, `pod`, `node`, or

@@ -93,6 +93,7 @@ type SDConfig struct {
 	BearerTokenFile    string                 `yaml:"bearer_token_file,omitempty"`
 	TLSConfig          config_util.TLSConfig  `yaml:"tls_config,omitempty"`
 	NamespaceDiscovery NamespaceDiscovery     `yaml:"namespaces,omitempty"`
+	PodNodeLabels      bool                   `yaml:"pod_node_labels,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -116,6 +117,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		(c.BasicAuth != nil || c.BearerToken != "" || c.BearerTokenFile != "" ||
 			c.TLSConfig.CAFile != "" || c.TLSConfig.CertFile != "" || c.TLSConfig.KeyFile != "") {
 		return fmt.Errorf("to use custom authentication please provide the 'api_server' URL explicitly")
+	}
+	if c.Role != "pod" && c.PodNodeLabels {
+		return fmt.Errorf("pod_node_labels can only be used with role=pod")
 	}
 	return nil
 }
@@ -169,6 +173,7 @@ type Discovery struct {
 	logger             log.Logger
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discoverer
+	podNodeLabels      bool
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -250,6 +255,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		role:               conf.Role,
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discoverer, 0),
+		podNodeLabels:      conf.PodNodeLabels,
 	}, nil
 }
 
@@ -312,22 +318,28 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return p.Watch(options)
 				},
 			}
-			n := d.client.CoreV1().Nodes()
-			nlw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return n.List(options)
-				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return n.Watch(options)
-				},
+
+			var nodeInf cache.SharedInformer
+			if d.podNodeLabels {
+				n := d.client.CoreV1().Nodes()
+				nlw := &cache.ListWatch{
+					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+						return n.List(options)
+					},
+					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+						return n.Watch(options)
+					},
+				}
+				nodeInf = cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod)
+				go nodeInf.Run(ctx.Done())
 			}
+
 			pod := NewPod(
 				log.With(d.logger, "role", "pod"),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
-				cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod),
+				nodeInf,
 			)
 			d.discoverers = append(d.discoverers, pod)
-			go pod.nodeInf.Run(ctx.Done())
 			go pod.podInf.Run(ctx.Done())
 		}
 	case RoleService:

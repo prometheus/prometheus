@@ -248,6 +248,8 @@ scrape_configs:
   kubernetes_sd_configs:
   - role: pod
 
+  pod_node_labels: true
+
   relabel_configs:
   # Example relabel to scrape only pods that have
   # "example.io/should_be_scraped = true" annotation.
@@ -279,3 +281,6 @@ scrape_configs:
   - source_labels: [__meta_kubernetes_pod_name]
     action: replace
     target_label: kubernetes_pod_name
+  - source_labels: [__meta_kubernetes_node_label_failure_domain_beta_kubernetes_io_region]
+    action: replace
+    target_label: region

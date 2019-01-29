@@ -88,7 +88,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		return
 	}
 
-	if !cache.WaitForCacheSync(ctx.Done(), p.nodeInf.HasSynced) {
+	if p.nodeInf != nil && !cache.WaitForCacheSync(ctx.Done(), p.nodeInf.HasSynced) {
 		level.Error(p.logger).Log("msg", "pod role node informer unable to sync cache")
 		return
 	}
@@ -171,6 +171,10 @@ func GetControllerOf(controllee metav1.Object) *metav1.OwnerReference {
 }
 
 func (p *Pod) resolveNode(name string) *apiv1.Node {
+	if p.nodeInf == nil {
+		return nil
+	}
+
 	n := &apiv1.Node{}
 	n.Name = name
 
