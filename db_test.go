@@ -1604,9 +1604,9 @@ func TestCorrectNumTombstones(t *testing.T) {
 
 // TestBlockRanges checks the following use cases:
 //  - No samples can be added with timestamps lower than the last block maxt.
-//  - The compactor doesn't create overlaping blocks
+//  - The compactor doesn't create overlapping blocks
 // even when the last blocks is not within the default boundaries.
-//	- Lower bondary is based on the smallest sample in the head and
+//	- Lower boundary is based on the smallest sample in the head and
 // upper boundary is rounded to the configured block range.
 //
 // This ensures that a snapshot that includes the head and creates a block with a custom time range
