@@ -425,6 +425,9 @@ func (db *DB) compact() (err error) {
 		runtime.GC()
 
 		if err := db.reload(); err != nil {
+			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
+				return errors.Wrapf(err, "delete persisted head block after unsuccessful db reload:%s", uid)
+			}
 			return errors.Wrap(err, "reload blocks")
 		}
 		if (uid == ulid.ULID{}) {
@@ -454,12 +457,16 @@ func (db *DB) compact() (err error) {
 		default:
 		}
 
-		if _, err := db.compactor.Compact(db.dir, plan, db.blocks); err != nil {
+		uid, err := db.compactor.Compact(db.dir, plan, db.blocks)
+		if err != nil {
 			return errors.Wrapf(err, "compact %s", plan)
 		}
 		runtime.GC()
 
 		if err := db.reload(); err != nil {
+			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
+				return errors.Wrapf(err, "delete compacted block after unsuccessful db reload:%s", uid)
+			}
 			return errors.Wrap(err, "reload blocks")
 		}
 		runtime.GC()
@@ -505,7 +512,7 @@ func (db *DB) reload() (err error) {
 		}
 	}
 	if len(corrupted) > 0 {
-		return errors.Wrap(err, "unexpected corrupted block")
+		return fmt.Errorf("unexpected corrupted block:%v", corrupted)
 	}
 
 	// All deletable blocks should not be loaded.
