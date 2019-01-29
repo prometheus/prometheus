@@ -1373,7 +1373,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 	defer db.Close()
 	db.DisableCompactions()
 
-	rangeToTriggercompaction := db.opts.BlockRanges[0]/2*3 - 1
+	rangeToTriggerCompaction := db.opts.BlockRanges[0]/2*3 - 1
 	defaultLabel := labels.FromStrings("foo", "bar")
 	defaultMatcher := labels.NewMustRegexpMatcher("", ".*")
 
@@ -1392,7 +1392,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		_, err = app.Add(defaultLabel, 2, 0)
 		testutil.Ok(t, err)
-		_, err = app.Add(defaultLabel, 3+rangeToTriggercompaction, 0)
+		_, err = app.Add(defaultLabel, 3+rangeToTriggerCompaction, 0)
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
@@ -1414,7 +1414,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		_, err = app.Add(defaultLabel, currentTime+1, 0)
 		testutil.Ok(t, err)
-		_, err = app.Add(defaultLabel, currentTime+rangeToTriggercompaction, 0)
+		_, err = app.Add(defaultLabel, currentTime+rangeToTriggerCompaction, 0)
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 
@@ -1435,7 +1435,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		_, err = app.Add(defaultLabel, currentTime+1, 0)
 		testutil.Ok(t, err)
-		_, err = app.Add(defaultLabel, currentTime+rangeToTriggercompaction, 0)
+		_, err = app.Add(defaultLabel, currentTime+rangeToTriggerCompaction, 0)
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 		testutil.Ok(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
