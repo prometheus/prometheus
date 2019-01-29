@@ -1,9 +1,10 @@
+package api
+
 // The /v1/operator/area endpoints are available only in Consul Enterprise and
 // interact with its network area subsystem. Network areas are used to link
 // together Consul servers in different Consul datacenters. With network areas,
 // Consul datacenters can be linked together in ways other than a fully-connected
 // mesh, as is required for Consul's WAN.
-package api
 
 import (
 	"net"

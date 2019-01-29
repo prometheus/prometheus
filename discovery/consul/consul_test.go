@@ -46,8 +46,8 @@ func TestConfiguredService(t *testing.T) {
 
 func TestConfiguredServiceWithTag(t *testing.T) {
 	conf := &SDConfig{
-		Services:   []string{"configuredServiceName"},
-		ServiceTag: "http",
+		Services:    []string{"configuredServiceName"},
+		ServiceTags: []string{"http"},
 	}
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
@@ -59,6 +59,30 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 	}
 	if !consulDiscovery.shouldWatch("configuredServiceName", []string{"http"}) {
 		t.Errorf("Expected service %s to be watched with tag %s", "configuredServiceName", "http")
+	}
+	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}) {
+		t.Errorf("Expected service %s to not be watched without tag", "nonConfiguredServiceName")
+	}
+	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{"http"}) {
+		t.Errorf("Expected service %s to not be watched with tag %s", "nonConfiguredServiceName", "http")
+	}
+}
+
+func TestConfiguredServiceWithTags(t *testing.T) {
+	conf := &SDConfig{
+		Services:    []string{"configuredServiceName"},
+		ServiceTags: []string{"http", "v1"},
+	}
+	consulDiscovery, err := NewDiscovery(conf, nil)
+
+	if err != nil {
+		t.Errorf("Unexpected error when initializing discovery %v", err)
+	}
+	if consulDiscovery.shouldWatch("configuredServiceName", []string{""}) {
+		t.Errorf("Expected service %s to not be watched without tag", "configuredServiceName")
+	}
+	if !consulDiscovery.shouldWatch("configuredServiceName", []string{"http", "v1"}) {
+		t.Errorf("Expected service %s to be watched with tags %s and %s", "configuredServiceName", "http", "v1")
 	}
 	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}) {
 		t.Errorf("Expected service %s to not be watched without tag", "nonConfiguredServiceName")
@@ -195,7 +219,7 @@ func TestAllOptions(t *testing.T) {
 
 	config.Services = []string{"test"}
 	config.NodeMeta = map[string]string{"rack_name": "2304"}
-	config.ServiceTag = "tag1"
+	config.ServiceTags = []string{"tag1"}
 	config.AllowStale = true
 	config.Token = "fake-token"
 

@@ -4,6 +4,7 @@ require (
 	contrib.go.opencensus.io/exporter/ocagent v0.4.1 // indirect
 	github.com/Azure/azure-sdk-for-go v23.2.0+incompatible
 	github.com/Azure/go-autorest v11.2.8+incompatible
+	github.com/DataDog/datadog-go v0.0.0-20180822151419-281ae9f2d895 // indirect
 	github.com/StackExchange/wmi v0.0.0-20180725035823-b12b22c5341f // indirect
 	github.com/VividCortex/ewma v1.1.1 // indirect
 	github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf
@@ -13,6 +14,8 @@ require (
 	github.com/cenk/backoff v2.0.0+incompatible // indirect
 	github.com/certifi/gocertifi v0.0.0-20180905225744-ee1a9a0726d2 // indirect
 	github.com/cespare/xxhash v1.1.0
+	github.com/circonus-labs/circonus-gometrics v2.2.6+incompatible // indirect
+	github.com/circonus-labs/circonusllhist v0.1.3 // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/cockroachdb/cmux v0.0.0-20170110192607-30d10be49292
 	github.com/cockroachdb/cockroach v0.0.0-20170608034007-84bc9597164f
@@ -43,11 +46,11 @@ require (
 	github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.6.3
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
-	github.com/hashicorp/consul v0.0.0-20180615161029-bed22a81e9fd
-	github.com/hashicorp/go-cleanhttp v0.0.0-20160407174126-ad28ea4487f0 // indirect
+	github.com/hashicorp/consul v1.4.2
 	github.com/hashicorp/go-immutable-radix v1.0.0 // indirect
 	github.com/hashicorp/go-msgpack v0.0.0-20150518234257-fa3f63826f7c // indirect
 	github.com/hashicorp/go-multierror v1.0.0 // indirect
+	github.com/hashicorp/go-retryablehttp v0.5.2 // indirect
 	github.com/hashicorp/go-rootcerts v0.0.0-20160503143440-6bb64b370b90 // indirect
 	github.com/hashicorp/go-sockaddr v0.0.0-20180320115054-6d291a969b86 // indirect
 	github.com/hashicorp/memberlist v0.1.0 // indirect
@@ -69,6 +72,7 @@ require (
 	github.com/miekg/dns v1.1.4
 	github.com/mitchellh/go-homedir v0.0.0-20180523094522-3864e76763d9 // indirect
 	github.com/mitchellh/go-testing-interface v1.0.0 // indirect
+	github.com/mitchellh/mapstructure v1.1.2 // indirect
 	github.com/mitchellh/reflectwalk v1.0.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742 // indirect
@@ -104,6 +108,7 @@ require (
 	github.com/smartystreets/goconvey v0.0.0-20180222194500-ef6db91d284a // indirect
 	github.com/spf13/pflag v1.0.3 // indirect
 	github.com/stretchr/testify v1.2.2
+	github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926 // indirect
 	golang.org/x/crypto v0.0.0-20180621125126-a49355c7e3f8 // indirect
 	golang.org/x/net v0.0.0-20180906233101-161cd47e91fd
 	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
