@@ -426,7 +426,7 @@ func (db *DB) compact() (err error) {
 
 		if err := db.reload(); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
-				return errors.Wrapf(err, "delete persisted head block after unsuccessful db reload:%s", uid)
+				return errors.Wrapf(err, "delete persisted head block after failed db reload:%s", uid)
 			}
 			return errors.Wrap(err, "reload blocks")
 		}
@@ -465,7 +465,7 @@ func (db *DB) compact() (err error) {
 
 		if err := db.reload(); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
-				return errors.Wrapf(err, "delete compacted block after unsuccessful db reload:%s", uid)
+				return errors.Wrapf(err, "delete compacted block after failed db reload:%s", uid)
 			}
 			return errors.Wrap(err, "reload blocks")
 		}

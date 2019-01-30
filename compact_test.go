@@ -765,21 +765,21 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			testutil.Ok(t, err)
 			testutil.Ok(t, app.Commit())
 
-			return 1
+			return 0
 		},
 		"Test Block Compaction": func(db *DB) int {
-			expBlocks := []*BlockMeta{
+			blocks := []*BlockMeta{
 				{MinTime: 0, MaxTime: 100},
 				{MinTime: 100, MaxTime: 150},
 				{MinTime: 150, MaxTime: 200},
 			}
-			for _, m := range expBlocks {
+			for _, m := range blocks {
 				createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
 			}
 			testutil.Ok(t, db.reload())
-			testutil.Equals(t, len(expBlocks), len(db.Blocks()), "unexpected block count after a reload")
+			testutil.Equals(t, len(blocks), len(db.Blocks()), "unexpected block count after a reload")
 
-			return len(expBlocks) + 1
+			return len(blocks)
 		},
 	}
 
@@ -801,15 +801,14 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			lastBlockIndex := path.Join(blockPath, indexFilename)
 			actBlocks, err := blockDirs(db.Dir())
 			testutil.Ok(t, err)
-			testutil.Equals(t, expBlocks, len(actBlocks))
-			testutil.Ok(t, os.RemoveAll(lastBlockIndex)) // Corrupt the block by removing the index file.
+			testutil.Equals(t, expBlocks, len(actBlocks)-1) // -1 to exclude the corrupted block.
+			testutil.Ok(t, os.RemoveAll(lastBlockIndex))    // Corrupt the block by removing the index file.
 
 			testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "initial 'failed db reload' count metrics mismatch")
 			testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial `compactions` count metric mismatch")
 
 			// Do the compaction and check the metrics.
-			// Since the most recent block is not included in the compaction,
-			// the compaction should succeed, but the reload should fail and
+			// Compaction should succeed, but the reload should fail and
 			// the new block created from the compaction should be deleted.
 			db.EnableCompactions()
 			testutil.NotOk(t, db.compact())
@@ -817,7 +816,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "`compaction` count metric mismatch")
 			actBlocks, err = blockDirs(db.Dir())
 			testutil.Ok(t, err)
-			testutil.Equals(t, expBlocks, len(actBlocks))
+			testutil.Equals(t, expBlocks, len(actBlocks)-1, "block count should be the same as before the compaction") // -1 to exclude the corrupted block.
 		})
 	}
 }
