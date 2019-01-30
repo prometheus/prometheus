@@ -310,11 +310,7 @@ Prometheus.Graph.prototype.initTypeahead = function(self) {
         return i === 0 ? a.localeCompare(b) : i;
       });
       return items;
-    },
-
-    highlighter: function (item) {
-      return $("<div>" + self.fuzzyResult.map[item].string + "</div>");
-    },
+    }
   });
   // This needs to happen after attaching the typeahead plugin, as it
   // otherwise breaks the typeahead functionality.
