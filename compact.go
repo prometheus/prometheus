@@ -424,6 +424,8 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 }
 
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
+	start := time.Now()
+
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
@@ -450,7 +452,13 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		return ulid.ULID{}, nil
 	}
 
-	level.Info(c.logger).Log("msg", "write block", "mint", meta.MinTime, "maxt", meta.MaxTime, "ulid", meta.ULID)
+	level.Info(c.logger).Log(
+		"msg", "write block",
+		"mint", meta.MinTime,
+		"maxt", meta.MaxTime,
+		"ulid", meta.ULID,
+		"duration", time.Since(start),
+	)
 	return uid, nil
 }
 
