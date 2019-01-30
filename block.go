@@ -269,7 +269,7 @@ type Block struct {
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
-func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (*Block, error) {
+func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -282,15 +282,31 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (*Block, error
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			cr.Close()
+		}
+	}()
 	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename))
 	if err != nil {
 		return nil, err
 	}
 
+	defer func() {
+		if err != nil {
+			ir.Close()
+		}
+	}()
+
 	tr, tsr, err := readTombstones(dir)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			tr.Close()
+		}
+	}()
 
 	// TODO refactor to set this at block creation time as
 	// that would be the logical place for a block size to be calculated.
@@ -301,7 +317,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (*Block, error
 		level.Warn(logger).Log("msg", "couldn't write the meta file for the block size", "block", dir, "err", err)
 	}
 
-	pb := &Block{
+	pb = &Block{
 		dir:             dir,
 		meta:            *meta,
 		chunkr:          cr,

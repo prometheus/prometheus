@@ -512,6 +512,12 @@ func (db *DB) reload() (err error) {
 		}
 	}
 	if len(corrupted) > 0 {
+		// Close all new blocks to release the lock for windows.
+		for _, block := range loadable {
+			if _, loaded := db.getBlock(block.Meta().ULID); !loaded {
+				block.Close()
+			}
+		}
 		return fmt.Errorf("unexpected corrupted block:%v", corrupted)
 	}
 
