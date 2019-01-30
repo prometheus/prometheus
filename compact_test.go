@@ -693,9 +693,11 @@ func TestCompaction_populateBlock(t *testing.T) {
 // This is needed for unit tests that rely on
 // checking state before and after a compaction.
 func TestDisableAutoCompactions(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	blockRange := DefaultOptions.BlockRanges[0]
 	label := labels.FromStrings("foo", "bar")
@@ -783,11 +785,13 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 	for title, bootStrap := range tests {
 		t.Run(title, func(t *testing.T) {
-			db, close := openTestDB(t, &Options{
+			db, delete := openTestDB(t, &Options{
 				BlockRanges: []int64{1, 100},
 			})
-			defer close()
-			defer db.Close()
+			defer func() {
+				testutil.Ok(t, db.Close())
+				delete()
+			}()
 			db.DisableCompactions()
 
 			expBlocks := bootStrap(db)
