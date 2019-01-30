@@ -369,7 +369,7 @@ func (g *Group) GetEvaluationDuration() time.Duration {
 
 // setEvaluationDuration sets the time in seconds the last evaluation took.
 func (g *Group) setEvaluationDuration(dur time.Duration) {
-	g.metrics.groupLastDuration.WithLabelValues(groupKey(g.file, g.name)).Set(float64(dur))
+	g.metrics.groupLastDuration.WithLabelValues(groupKey(g.file, g.name)).Set(dur.Seconds())
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
