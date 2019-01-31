@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/web/web_types"
 )
 
 const (
@@ -153,6 +154,7 @@ type API struct {
 	remoteReadSampleLimit int
 	remoteReadGate        *gate.Gate
 	CORSOrigin            *regexp.Regexp
+	GetRuntimeInfo        func() (web_types.RuntimeInfo, error)
 }
 
 func init() {
@@ -176,6 +178,7 @@ func NewAPI(
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
 	CORSOrigin *regexp.Regexp,
+	GetRuntimeInfo func() (web_types.RuntimeInfo, error),
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -194,6 +197,7 @@ func NewAPI(
 		remoteReadGate:        gate.New(remoteReadConcurrencyLimit),
 		logger:                logger,
 		CORSOrigin:            CORSOrigin,
+		GetRuntimeInfo:        GetRuntimeInfo,
 	}
 }
 
@@ -239,6 +243,7 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/flags", wrap(api.serveFlags))
+	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 
 	r.Get("/alerts", wrap(api.alerts))
@@ -834,6 +839,14 @@ func (api *API) serveConfig(r *http.Request) apiFuncResult {
 
 func (api *API) serveFlags(r *http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
+}
+
+func (api *API) serveRuntimeInfo(r *http.Request) apiFuncResult {
+	runtimeInfo, err := api.GetRuntimeInfo()
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	return apiFuncResult{runtimeInfo, nil, nil, nil}
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {

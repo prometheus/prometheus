@@ -60,6 +60,7 @@ import (
 	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
+	"github.com/prometheus/prometheus/web/web_types"
 )
 
 var (
@@ -377,7 +378,7 @@ func main() {
 	cfg.web.Notifier = notifierManager
 	cfg.web.TSDBCfg = cfg.tsdb
 
-	cfg.web.Version = &web.PrometheusVersion{
+	cfg.web.Version = &web_types.PrometheusVersion{
 		Version:   version.Version,
 		Revision:  version.Revision,
 		Branch:    version.Branch,

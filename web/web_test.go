@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/web/web_types"
 	libtsdb "github.com/prometheus/tsdb"
 )
 
@@ -116,7 +117,7 @@ func TestReadyAndHealthy(t *testing.T) {
 			Host:   "localhost:9090",
 			Path:   "/",
 		},
-		Version: &PrometheusVersion{},
+		Version: &web_types.PrometheusVersion{},
 	}
 
 	opts.Flags = map[string]string{}

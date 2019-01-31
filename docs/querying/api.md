@@ -683,6 +683,52 @@ $ curl http://localhost:9090/api/v1/status/flags
 
 *New in v2.2*
 
+###  Runtime Information
+
+The following endpoint returns runtime information of the Prometheus server.
+
+*Note that the exact values returned may change over time*
+
+```
+GET api/v1/status/runtimeinfo
+```
+
+```json
+$ curl http://localhost:9090/api/v1/status/runtimeinfo
+{
+  "status": "success",
+  "data": {
+    "alertmanagers": [
+      {
+        "scheme": "http",
+        "host": "localhost:9093",
+        "path": "/api/v1/alerts"
+      }
+    ],
+    "startTime": "2019-02-03T16:39:29.446031696+05:30",
+    "chunks": 356,
+    "corruptionCount": 0,
+    "goGC": "",
+    "goMaxProcs": 4,
+    "goroutines": 29,
+    "lastConfigTime": "2019-02-03T16:39:31+05:30",
+    "reloadConfigSuccess": true,
+    "timeSeries": 356,
+    "version": {
+      "branch": "master",
+      "buildDate": "20190203-11:08:16",
+      "buildUser": "user@this",
+      "goVersion": "go1.11.4",
+      "revision": "3f93820f8c47e88faa77b7aad6672c4e6e29f4dc",
+      "version": "2.7.0"
+    },
+    "cwd": "/home/vn-ki/Projects/git/prometheus/"
+  }
+}
+```
+
+*New in 2.8*
+
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
 

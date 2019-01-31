@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/web/web_types"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
@@ -213,6 +214,29 @@ var sampleFlagMap = map[string]string{
 	"flag2": "value2",
 }
 
+var u, _ = url.Parse("https://prometheus.org")
+var sampleRuntimeInfo = web_types.RuntimeInfo{
+	Birth: time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC),
+	CWD:   "/home/user/prometheus",
+	Version: &web_types.PrometheusVersion{
+		Version:   "2.7.0",
+		Revision:  "e2a33e",
+		Branch:    "master",
+		BuildUser: "user",
+		BuildDate: "20190203-11:08:16",
+		GoVersion: "1.12",
+	},
+	Alertmanagers:       []web_types.Alertmanager{web_types.Alertmanager{u.Scheme, u.Host, u.Path}},
+	GoroutineCount:      12,
+	GOMAXPROCS:          1,
+	GOGC:                "",
+	CorruptionCount:     13,
+	ChunkCount:          10,
+	TimeSeriesCount:     10,
+	LastConfigTime:      time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC),
+	ReloadConfigSuccess: false,
+}
+
 func TestEndpoints(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
@@ -254,6 +278,7 @@ func TestEndpoints(t *testing.T) {
 			config:                func() config.Config { return samplePrometheusCfg },
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr,
+			GetRuntimeInfo:        func() (web_types.RuntimeInfo, error) { return sampleRuntimeInfo, nil },
 		}
 
 		testEndpoints(t, api, true)
@@ -319,6 +344,7 @@ func TestEndpoints(t *testing.T) {
 			config:                func() config.Config { return samplePrometheusCfg },
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr,
+			GetRuntimeInfo:        func() (web_types.RuntimeInfo, error) { return sampleRuntimeInfo, nil },
 		}
 
 		testEndpoints(t, api, false)
@@ -745,6 +771,10 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 		{
 			endpoint: api.serveFlags,
 			response: sampleFlagMap,
+		},
+		{
+			endpoint: api.serveRuntimeInfo,
+			response: sampleRuntimeInfo,
 		},
 		{
 			endpoint: api.alerts,

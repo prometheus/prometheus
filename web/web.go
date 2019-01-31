@@ -66,6 +66,7 @@ import (
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
+	"github.com/prometheus/prometheus/web/web_types"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
@@ -131,7 +132,7 @@ type Handler struct {
 	reloadCh    chan chan error
 	options     *Options
 	config      *config.Config
-	versionInfo *PrometheusVersion
+	versionInfo *web_types.PrometheusVersion
 	birth       time.Time
 	cwd         string
 	flagsMap    map[string]string
@@ -152,16 +153,6 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
-// PrometheusVersion contains build information about Prometheus.
-type PrometheusVersion struct {
-	Version   string `json:"version"`
-	Revision  string `json:"revision"`
-	Branch    string `json:"branch"`
-	BuildUser string `json:"buildUser"`
-	BuildDate string `json:"buildDate"`
-	GoVersion string `json:"goVersion"`
-}
-
 // Options for the web Handler.
 type Options struct {
 	Context       context.Context
@@ -172,7 +163,7 @@ type Options struct {
 	ScrapeManager *scrape.Manager
 	RuleManager   *rules.Manager
 	Notifier      *notifier.Manager
-	Version       *PrometheusVersion
+	Version       *web_types.PrometheusVersion
 	Flags         map[string]string
 
 	ListenAddress              string
@@ -261,6 +252,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
 		h.options.CORSOrigin,
+		h.getRuntimeInfo,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -578,26 +570,23 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
-	status := struct {
-		Birth               time.Time
-		CWD                 string
-		Version             *PrometheusVersion
-		Alertmanagers       []*url.URL
-		GoroutineCount      int
-		GOMAXPROCS          int
-		GOGC                string
-		GODEBUG             string
-		CorruptionCount     int64
-		ChunkCount          int64
-		TimeSeriesCount     int64
-		LastConfigTime      time.Time
-		ReloadConfigSuccess bool
-		StorageRetention    string
-	}{
+	status, err := h.getRuntimeInfo()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error gathering runtime status: %s", err), http.StatusInternalServerError)
+	}
+	h.executeTemplate(w, "status.html", status)
+}
+
+func (h *Handler) getRuntimeInfo() (web_types.RuntimeInfo, error) {
+	var alertmanagers []web_types.Alertmanager
+	for _, mgr_url := range h.notifier.Alertmanagers() {
+		alertmanagers = append(alertmanagers, web_types.Alertmanager{mgr_url.Scheme, mgr_url.Host, mgr_url.Path})
+	}
+	status := web_types.RuntimeInfo{
 		Birth:          h.birth,
 		CWD:            h.cwd,
 		Version:        h.versionInfo,
-		Alertmanagers:  h.notifier.Alertmanagers(),
+		Alertmanagers:  alertmanagers,
 		GoroutineCount: runtime.NumGoroutine(),
 		GOMAXPROCS:     runtime.GOMAXPROCS(0),
 		GOGC:           os.Getenv("GOGC"),
@@ -616,8 +605,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 
 	metrics, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error gathering runtime status: %s", err), http.StatusInternalServerError)
-		return
+		return web_types.RuntimeInfo{}, err
 	}
 	for _, mF := range metrics {
 		switch *mF.Name {
@@ -633,7 +621,8 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
 		}
 	}
-	h.executeTemplate(w, "status.html", status)
+
+	return status, nil
 }
 
 func toFloat64(f *io_prometheus_client.MetricFamily) float64 {
