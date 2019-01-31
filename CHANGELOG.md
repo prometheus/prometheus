@@ -1,3 +1,11 @@
+## 2.7.1 / 2019-01-31
+
+This release has a fix for a Stored DOM XSS vulnerability that can be triggered when using the query history functionality. Thanks to Dor Tumarkin from Checkmarx for reporting it.
+
+* [BUGFIX/SECURITY] Fix a Stored DOM XSS vulnerability with query history. #5163
+* [BUGFIX] `prometheus_rule_group_last_duration_seconds` now reports seconds instead of nanoseconds. #5153
+* [BUGFIX] Make sure the targets are consistently sorted in the targets page. #5161
+
 ## 2.7.0 / 2019-01-28
 
 We're rolling back the Dockerfile changes introduced in 2.6.0. If you made changes to your docker deployment in 2.6.0, you will need to roll them back. This release also adds experimental support for disk size based retention. To accomodate that we are deprecating the flag `storage.tsdb.retention` in favour of `storage.tsdb.retention.time`. We print a warning if the flag is in use, but it will function without breaking until Prometheus 3.0.
