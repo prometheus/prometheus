@@ -656,8 +656,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			discoveryManager := NewManager(ctx, log.NewNopLogger())
-			discoveryManager.updatert = 100 * time.Millisecond
+			discoveryManager := NewManager(ctx, log.NewNopLogger(), WaitDuration(100*time.Millisecond))
 
 			var totalUpdatesCount int
 			provUpdates := make(chan []*targetgroup.Group)
@@ -737,8 +736,7 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
-	discoveryManager.updatert = 200 * time.Millisecond
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), WaitDuration(200*time.Millisecond))
 	go discoveryManager.Run()
 
 	discoveryManager.ApplyConfig([]Provider{NewProvider("prometheus", provider)})
@@ -886,8 +884,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			mgr := NewManager(ctx, nil)
-			mgr.updatert = updateDelay
+			mgr := NewManager(ctx, nil, WaitDuration(updateDelay))
 			go mgr.Run()
 
 			for name, p := range tc.providers {
