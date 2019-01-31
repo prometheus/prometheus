@@ -695,8 +695,12 @@ func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
 	tps := h.scrapeManager.TargetsActive()
 	for _, targets := range tps {
 		sort.Slice(targets, func(i, j int) bool {
-			return targets[i].Labels().Get(model.JobLabel) < targets[j].Labels().Get(model.JobLabel) ||
-				targets[i].Labels().Get(model.InstanceLabel) < targets[j].Labels().Get(model.InstanceLabel)
+			iJobLabel := targets[i].Labels().Get(model.JobLabel)
+			jJobLabel := targets[j].Labels().Get(model.JobLabel)
+			if iJobLabel == jJobLabel {
+				return targets[i].Labels().Get(model.InstanceLabel) < targets[j].Labels().Get(model.InstanceLabel)
+			}
+			return iJobLabel < jJobLabel
 		})
 	}
 
