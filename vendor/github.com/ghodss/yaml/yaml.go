@@ -15,12 +15,12 @@ import (
 func Marshal(o interface{}) ([]byte, error) {
 	j, err := json.Marshal(o)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling into JSON: ", err)
+		return nil, fmt.Errorf("error marshaling into JSON: %v", err)
 	}
 
 	y, err := JSONToYAML(j)
 	if err != nil {
-		return nil, fmt.Errorf("error converting JSON to YAML: ", err)
+		return nil, fmt.Errorf("error converting JSON to YAML: %v", err)
 	}
 
 	return y, nil
@@ -48,7 +48,7 @@ func JSONToYAML(j []byte) ([]byte, error) {
 	var jsonObj interface{}
 	// We are using yaml.Unmarshal here (instead of json.Unmarshal) because the
 	// Go JSON library doesn't try to pick the right number type (int, float,
-	// etc.) when unmarshling to interface{}, it just picks float64
+	// etc.) when unmarshalling to interface{}, it just picks float64
 	// universally. go-yaml does go through the effort of picking the right
 	// number type, so we can preserve number type throughout this process.
 	err := yaml.Unmarshal(j, &jsonObj)

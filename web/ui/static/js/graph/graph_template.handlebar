@@ -20,6 +20,7 @@
             <div class="row">
               <div class="col-lg-12">
                 <div class="error alert alert-danger"></div>
+                <div class="warning alert alert-warning"></div>
               </div>
             </div>
 

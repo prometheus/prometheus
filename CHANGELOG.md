@@ -1,6 +1,41 @@
-## 2.6.0-rc.0 / 2018-12-05
+## 2.7.1 / 2019-01-31
 
-* [CHANGE] Include default flags to the container's entrypoint. #4796
+This release has a fix for a Stored DOM XSS vulnerability that can be triggered when using the query history functionality. Thanks to Dor Tumarkin from Checkmarx for reporting it.
+
+* [BUGFIX/SECURITY] Fix a Stored DOM XSS vulnerability with query history. #5163
+* [BUGFIX] `prometheus_rule_group_last_duration_seconds` now reports seconds instead of nanoseconds. #5153
+* [BUGFIX] Make sure the targets are consistently sorted in the targets page. #5161
+
+## 2.7.0 / 2019-01-28
+
+We're rolling back the Dockerfile changes introduced in 2.6.0. If you made changes to your docker deployment in 2.6.0, you will need to roll them back. This release also adds experimental support for disk size based retention. To accomodate that we are deprecating the flag `storage.tsdb.retention` in favour of `storage.tsdb.retention.time`. We print a warning if the flag is in use, but it will function without breaking until Prometheus 3.0.
+
+* [CHANGE] Rollback Dockerfile to version at 2.5.0. Rollback of the breaking change introduced in 2.6.0. #5122
+* [FEATURE] Add subqueries to PromQL. #4831
+* [FEATURE] [EXPERIMENTAL] Add support for disk size based retention. Note that we don't consider the WAL size which could be significant and the time based retention policy also applies. #5109 prometheus/tsdb#343
+* [FEATURE] Add CORS origin flag. #5011
+* [ENHANCEMENT] Consul SD: Add tagged address to the discovery metadata. #5001
+* [ENHANCEMENT] Kubernetes SD: Add service external IP and external name to the discovery metadata. #4940
+* [ENHANCEMENT] Azure SD: Add support for Managed Identity authentication. #4590
+* [ENHANCEMENT] Azure SD: Add tenant and subscription IDs to the discovery metadata. #4969
+* [ENHANCEMENT] OpenStack SD: Add support for application credentials based authentication. #4968
+* [ENHANCEMENT] Add metric for number of rule groups loaded. #5090
+* [BUGFIX] Avoid duplicate tests for alert unit tests. #4964
+* [BUGFIX] Don't depend on given order when comparing samples in alert unit testing. #5049
+* [BUGFIX] Make sure the retention period doesn't overflow. #5112
+* [BUGFIX] Make sure the blocks don't get very large. #5112
+* [BUGFIX] Don't generate blocks with no samples. prometheus/tsdb#374
+* [BUGFIX] Reintroduce metric for WAL corruptions. prometheus/tsdb#473
+
+## 2.6.1 / 2019-01-15
+
+* [BUGFIX] Azure SD: Fix discovery getting stuck sometimes. #5088
+* [BUGFIX] Marathon SD: Use `Tasks.Ports` when `RequirePorts` is `false`. #5026
+* [BUGFIX] Promtool: Fix "out-of-order sample" errors when testing rules. #5069
+
+## 2.6.0 / 2018-12-17
+
+* [CHANGE] Remove default flags from the container's entrypoint, run Prometheus from `/etc/prometheus` and symlink the storage directory to `/etc/prometheus/data`. #4976
 * [CHANGE] Promtool: Remove the `update` command. #3839
 * [FEATURE] Add JSON log format via the `--log.format` flag. #4876
 * [FEATURE] API: Add /api/v1/labels endpoint to get all label names. #4835
@@ -9,7 +44,6 @@
 * [ENHANCEMENT] Add `rule_group_last_evaluation_timestamp_seconds` metric. #4852
 * [ENHANCEMENT] Add `prometheus_template_text_expansion_failures_total` and `prometheus_template_text_expansions_total` metrics. #4747
 * [ENHANCEMENT] Set consistent User-Agent header in outgoing requests. #4891
-* [ENHANCEMENT] Azure SD: Add the machine's power state to the discovery metadata. #4908
 * [ENHANCEMENT] Azure SD: Error out at load time when authentication parameters are missing. #4907
 * [ENHANCEMENT] EC2 SD: Add the machine's private DNS name to the discovery metadata. #4693
 * [ENHANCEMENT] EC2 SD: Add the operating system's platform to the discovery metadata. #4663
@@ -42,6 +76,7 @@
 * [BUGFIX] Scrape: Scrape targets at fixed intervals even after Prometheus restarts. #4926
 * [BUGFIX] TSDB: Support restored snapshots including the head properly. #4953
 * [BUGFIX] TSDB: Repair WAL when the last record in a segment is torn. #4953
+* [BUGFIX] TSDB: Fix unclosed file readers on Windows systems. #4997
 * [BUGFIX] Web: Avoid proxy to connect to the local gRPC server. #4572
 
 ## 2.5.0 / 2018-11-06

@@ -4,15 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/pagination"
 )
 
+// Topology represents a CPU Topology.
 type Topology struct {
 	Sockets int `json:"sockets"`
 	Cores   int `json:"cores"`
 	Threads int `json:"threads"`
 }
 
+// CPUInfo represents CPU information of the hypervisor.
 type CPUInfo struct {
 	Vendor   string   `json:"vendor"`
 	Arch     string   `json:"arch"`
@@ -21,59 +24,82 @@ type CPUInfo struct {
 	Topology Topology `json:"topology"`
 }
 
+// Service represents a Compute service running on the hypervisor.
 type Service struct {
 	Host           string `json:"host"`
 	ID             int    `json:"id"`
 	DisabledReason string `json:"disabled_reason"`
 }
 
+// Hypervisor represents a hypervisor in the OpenStack cloud.
 type Hypervisor struct {
-	// A structure that contains cpu information like arch, model, vendor, features and topology
+	// A structure that contains cpu information like arch, model, vendor,
+	// features and topology.
 	CPUInfo CPUInfo `json:"-"`
-	// The current_workload is the number of tasks the hypervisor is responsible for.
-	// This will be equal or greater than the number of active VMs on the system
-	// (it can be greater when VMs are being deleted and the hypervisor is still cleaning up).
+
+	// The current_workload is the number of tasks the hypervisor is responsible
+	// for. This will be equal or greater than the number of active VMs on the
+	// system (it can be greater when VMs are being deleted and the hypervisor is
+	// still cleaning up).
 	CurrentWorkload int `json:"current_workload"`
-	// Status of the hypervisor, either "enabled" or "disabled"
+
+	// Status of the hypervisor, either "enabled" or "disabled".
 	Status string `json:"status"`
-	// State of the hypervisor, either "up" or "down"
+
+	// State of the hypervisor, either "up" or "down".
 	State string `json:"state"`
-	// Actual free disk on this hypervisor in GB
+
+	// DiskAvailableLeast is the actual free disk on this hypervisor,
+	// measured in GB.
 	DiskAvailableLeast int `json:"disk_available_least"`
-	// The hypervisor's IP address
+
+	// HostIP is the hypervisor's IP address.
 	HostIP string `json:"host_ip"`
-	// The free disk remaining on this hypervisor in GB
+
+	// FreeDiskGB is the free disk remaining on the hypervisor, measured in GB.
 	FreeDiskGB int `json:"-"`
-	// The free RAM in this hypervisor in MB
+
+	// FreeRAMMB is the free RAM in the hypervisor, measured in MB.
 	FreeRamMB int `json:"free_ram_mb"`
-	// The hypervisor host name
+
+	// HypervisorHostname is the hostname of the hypervisor.
 	HypervisorHostname string `json:"hypervisor_hostname"`
-	// The hypervisor type
+
+	// HypervisorType is the type of hypervisor.
 	HypervisorType string `json:"hypervisor_type"`
-	// The hypervisor version
+
+	// HypervisorVersion is the version of the hypervisor.
 	HypervisorVersion int `json:"-"`
-	// Unique ID of the hypervisor
+
+	// ID is the unique ID of the hypervisor.
 	ID int `json:"id"`
-	// The disk in this hypervisor in GB
+
+	// LocalGB is the disk space in the hypervisor, measured in GB.
 	LocalGB int `json:"-"`
-	// The disk used in this hypervisor in GB
+
+	// LocalGBUsed is the used disk space of the  hypervisor, measured in GB.
 	LocalGBUsed int `json:"local_gb_used"`
-	// The memory of this hypervisor in MB
+
+	// MemoryMB is the total memory of the hypervisor, measured in MB.
 	MemoryMB int `json:"memory_mb"`
-	// The memory used in this hypervisor in MB
+
+	// MemoryMBUsed is the used memory of the hypervisor, measured in MB.
 	MemoryMBUsed int `json:"memory_mb_used"`
-	// The number of running vms on this hypervisor
+
+	// RunningVMs is the The number of running vms on the hypervisor.
 	RunningVMs int `json:"running_vms"`
-	// The hypervisor service object
+
+	// Service is the service this hypervisor represents.
 	Service Service `json:"service"`
-	// The number of vcpu in this hypervisor
+
+	// VCPUs is the total number of vcpus on the hypervisor.
 	VCPUs int `json:"vcpus"`
-	// The number of vcpu used in this hypervisor
+
+	// VCPUsUsed is the number of used vcpus on the hypervisor.
 	VCPUsUsed int `json:"vcpus_used"`
 }
 
 func (r *Hypervisor) UnmarshalJSON(b []byte) error {
-
 	type tmp Hypervisor
 	var s struct {
 		tmp
@@ -90,9 +116,9 @@ func (r *Hypervisor) UnmarshalJSON(b []byte) error {
 
 	*r = Hypervisor(s.tmp)
 
-	// Newer versions pass the CPU into around as the correct types, this just needs
-	// converting and copying into place. Older versions pass CPU info around as a string
-	// and can simply be unmarshalled by the json parser
+	// Newer versions return the CPU info as the correct type.
+	// Older versions return the CPU info as a string and need to be
+	// unmarshalled by the json parser.
 	var tmpb []byte
 
 	switch t := s.CPUInfo.(type) {
@@ -112,7 +138,8 @@ func (r *Hypervisor) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	// These fields may be passed in in scientific notation
+	// These fields may be returned as a scientific notation, so they need
+	// converted to int.
 	switch t := s.HypervisorVersion.(type) {
 	case int:
 		r.HypervisorVersion = t
@@ -143,19 +170,121 @@ func (r *Hypervisor) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// HypervisorPage represents a single page of all Hypervisors from a List
+// request.
 type HypervisorPage struct {
 	pagination.SinglePageBase
 }
 
+// IsEmpty determines whether or not a HypervisorPage is empty.
 func (page HypervisorPage) IsEmpty() (bool, error) {
 	va, err := ExtractHypervisors(page)
 	return len(va) == 0, err
 }
 
+// ExtractHypervisors interprets a page of results as a slice of Hypervisors.
 func ExtractHypervisors(p pagination.Page) ([]Hypervisor, error) {
 	var h struct {
 		Hypervisors []Hypervisor `json:"hypervisors"`
 	}
 	err := (p.(HypervisorPage)).ExtractInto(&h)
 	return h.Hypervisors, err
+}
+
+type HypervisorResult struct {
+	gophercloud.Result
+}
+
+// Extract interprets any HypervisorResult as a Hypervisor, if possible.
+func (r HypervisorResult) Extract() (*Hypervisor, error) {
+	var s struct {
+		Hypervisor Hypervisor `json:"hypervisor"`
+	}
+	err := r.ExtractInto(&s)
+	return &s.Hypervisor, err
+}
+
+// Statistics represents a summary statistics for all enabled
+// hypervisors over all compute nodes in the OpenStack cloud.
+type Statistics struct {
+	// The number of hypervisors.
+	Count int `json:"count"`
+
+	// The current_workload is the number of tasks the hypervisor is responsible for
+	CurrentWorkload int `json:"current_workload"`
+
+	// The actual free disk on this hypervisor(in GB).
+	DiskAvailableLeast int `json:"disk_available_least"`
+
+	// The free disk remaining on this hypervisor(in GB).
+	FreeDiskGB int `json:"free_disk_gb"`
+
+	// The free RAM in this hypervisor(in MB).
+	FreeRamMB int `json:"free_ram_mb"`
+
+	// The disk in this hypervisor(in GB).
+	LocalGB int `json:"local_gb"`
+
+	// The disk used in this hypervisor(in GB).
+	LocalGBUsed int `json:"local_gb_used"`
+
+	// The memory of this hypervisor(in MB).
+	MemoryMB int `json:"memory_mb"`
+
+	// The memory used in this hypervisor(in MB).
+	MemoryMBUsed int `json:"memory_mb_used"`
+
+	// The total number of running vms on all hypervisors.
+	RunningVMs int `json:"running_vms"`
+
+	// The number of vcpu in this hypervisor.
+	VCPUs int `json:"vcpus"`
+
+	// The number of vcpu used in this hypervisor.
+	VCPUsUsed int `json:"vcpus_used"`
+}
+
+type StatisticsResult struct {
+	gophercloud.Result
+}
+
+// Extract interprets any StatisticsResult as a Statistics, if possible.
+func (r StatisticsResult) Extract() (*Statistics, error) {
+	var s struct {
+		Stats Statistics `json:"hypervisor_statistics"`
+	}
+	err := r.ExtractInto(&s)
+	return &s.Stats, err
+}
+
+// Uptime represents uptime and additional info for a specific hypervisor.
+type Uptime struct {
+	// The hypervisor host name provided by the Nova virt driver.
+	// For the Ironic driver, it is the Ironic node uuid.
+	HypervisorHostname string `json:"hypervisor_hostname"`
+
+	// The id of the hypervisor.
+	ID int `json:"id"`
+
+	// The state of the hypervisor. One of up or down.
+	State string `json:"state"`
+
+	// The status of the hypervisor. One of enabled or disabled.
+	Status string `json:"status"`
+
+	// The total uptime of the hypervisor and information about average load.
+	Uptime string `json:"uptime"`
+}
+
+type UptimeResult struct {
+	gophercloud.Result
+}
+
+// Extract interprets any UptimeResult as a Uptime, if possible.
+func (r UptimeResult) Extract() (*Uptime, error) {
+	var s struct {
+		Uptime Uptime `json:"hypervisor"`
+	}
+	err := r.ExtractInto(&s)
+	return &s.Uptime, err
 }

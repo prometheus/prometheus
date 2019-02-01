@@ -29,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/relabel"
+
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -68,10 +70,10 @@ func TestDroppedTargetsList(t *testing.T) {
 		cfg = &config.ScrapeConfig{
 			JobName:        "dropMe",
 			ScrapeInterval: model.Duration(1),
-			RelabelConfigs: []*config.RelabelConfig{
+			RelabelConfigs: []*relabel.Config{
 				{
-					Action:       config.RelabelDrop,
-					Regex:        mustNewRegexp("dropMe"),
+					Action:       relabel.Drop,
+					Regex:        relabel.MustNewRegexp("dropMe"),
 					SourceLabels: model.LabelNames{"job"},
 				},
 			},
@@ -79,7 +81,7 @@ func TestDroppedTargetsList(t *testing.T) {
 		tgs = []*targetgroup.Group{
 			{
 				Targets: []model.LabelSet{
-					model.LabelSet{model.AddressLabel: "127.0.0.1:9090"},
+					{model.AddressLabel: "127.0.0.1:9090"},
 				},
 			},
 		}
@@ -219,7 +221,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*config.RelabelConfig) loop {
+	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*relabel.Config) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -350,16 +352,16 @@ func TestScrapePoolRaces(t *testing.T) {
 	}
 	sp := newScrapePool(newConfig(), &nopAppendable{}, nil)
 	tgts := []*targetgroup.Group{
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
-				model.LabelSet{model.AddressLabel: "127.0.0.1:9090"},
-				model.LabelSet{model.AddressLabel: "127.0.0.2:9090"},
-				model.LabelSet{model.AddressLabel: "127.0.0.3:9090"},
-				model.LabelSet{model.AddressLabel: "127.0.0.4:9090"},
-				model.LabelSet{model.AddressLabel: "127.0.0.5:9090"},
-				model.LabelSet{model.AddressLabel: "127.0.0.6:9090"},
-				model.LabelSet{model.AddressLabel: "127.0.0.7:9090"},
-				model.LabelSet{model.AddressLabel: "127.0.0.8:9090"},
+				{model.AddressLabel: "127.0.0.1:9090"},
+				{model.AddressLabel: "127.0.0.2:9090"},
+				{model.AddressLabel: "127.0.0.3:9090"},
+				{model.AddressLabel: "127.0.0.4:9090"},
+				{model.AddressLabel: "127.0.0.5:9090"},
+				{model.AddressLabel: "127.0.0.6:9090"},
+				{model.AddressLabel: "127.0.0.7:9090"},
+				{model.AddressLabel: "127.0.0.8:9090"},
 			},
 		},
 	}

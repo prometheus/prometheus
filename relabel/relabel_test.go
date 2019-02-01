@@ -18,14 +18,14 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
+	pkgrelabel "github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRelabel(t *testing.T) {
 	tests := []struct {
 		input   model.LabelSet
-		relabel []*config.RelabelConfig
+		relabel []*pkgrelabel.Config
 		output  model.LabelSet
 	}{
 		{
@@ -34,14 +34,14 @@ func TestRelabel(t *testing.T) {
 				"b": "bar",
 				"c": "baz",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("f(.*)"),
+					Regex:        pkgrelabel.MustNewRegexp("f(.*)"),
 					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "ch${1}-ch${1}",
-					Action:       config.RelabelReplace,
+					Action:       pkgrelabel.Replace,
 				},
 			},
 			output: model.LabelSet{
@@ -57,22 +57,22 @@ func TestRelabel(t *testing.T) {
 				"b": "bar",
 				"c": "baz",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a", "b"},
-					Regex:        config.MustNewRegexp("f(.*);(.*)r"),
+					Regex:        pkgrelabel.MustNewRegexp("f(.*);(.*)r"),
 					TargetLabel:  "a",
 					Separator:    ";",
 					Replacement:  "b${1}${2}m", // boobam
-					Action:       config.RelabelReplace,
+					Action:       pkgrelabel.Replace,
 				},
 				{
 					SourceLabels: model.LabelNames{"c", "a"},
-					Regex:        config.MustNewRegexp("(b).*b(.*)ba(.*)"),
+					Regex:        pkgrelabel.MustNewRegexp("(b).*b(.*)ba(.*)"),
 					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "$1$2$2$3",
-					Action:       config.RelabelReplace,
+					Action:       pkgrelabel.Replace,
 				},
 			},
 			output: model.LabelSet{
@@ -86,18 +86,18 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"a": "foo",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp(".*o.*"),
-					Action:       config.RelabelDrop,
+					Regex:        pkgrelabel.MustNewRegexp(".*o.*"),
+					Action:       pkgrelabel.Drop,
 				}, {
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("f(.*)"),
+					Regex:        pkgrelabel.MustNewRegexp("f(.*)"),
 					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "ch$1-ch$1",
-					Action:       config.RelabelReplace,
+					Action:       pkgrelabel.Replace,
 				},
 			},
 			output: nil,
@@ -107,11 +107,11 @@ func TestRelabel(t *testing.T) {
 				"a": "foo",
 				"b": "bar",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp(".*o.*"),
-					Action:       config.RelabelDrop,
+					Regex:        pkgrelabel.MustNewRegexp(".*o.*"),
+					Action:       pkgrelabel.Drop,
 				},
 			},
 			output: nil,
@@ -120,14 +120,14 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"a": "abc",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp(".*(b).*"),
+					Regex:        pkgrelabel.MustNewRegexp(".*(b).*"),
 					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "$1",
-					Action:       config.RelabelReplace,
+					Action:       pkgrelabel.Replace,
 				},
 			},
 			output: model.LabelSet{
@@ -139,11 +139,11 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"a": "foo",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("no-match"),
-					Action:       config.RelabelDrop,
+					Regex:        pkgrelabel.MustNewRegexp("no-match"),
+					Action:       pkgrelabel.Drop,
 				},
 			},
 			output: model.LabelSet{
@@ -154,11 +154,11 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"a": "foo",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("f|o"),
-					Action:       config.RelabelDrop,
+					Regex:        pkgrelabel.MustNewRegexp("f|o"),
+					Action:       pkgrelabel.Drop,
 				},
 			},
 			output: model.LabelSet{
@@ -169,11 +169,11 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"a": "foo",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("no-match"),
-					Action:       config.RelabelKeep,
+					Regex:        pkgrelabel.MustNewRegexp("no-match"),
+					Action:       pkgrelabel.Keep,
 				},
 			},
 			output: nil,
@@ -182,11 +182,11 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"a": "foo",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("f.*"),
-					Action:       config.RelabelKeep,
+					Regex:        pkgrelabel.MustNewRegexp("f.*"),
+					Action:       pkgrelabel.Keep,
 				},
 			},
 			output: model.LabelSet{
@@ -198,13 +198,13 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"a": "boo",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("f"),
+					Regex:        pkgrelabel.MustNewRegexp("f"),
 					TargetLabel:  "b",
 					Replacement:  "bar",
-					Action:       config.RelabelReplace,
+					Action:       pkgrelabel.Replace,
 				},
 			},
 			output: model.LabelSet{
@@ -217,12 +217,12 @@ func TestRelabel(t *testing.T) {
 				"b": "bar",
 				"c": "baz",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"c"},
 					TargetLabel:  "d",
 					Separator:    ";",
-					Action:       config.RelabelHashMod,
+					Action:       pkgrelabel.HashMod,
 					Modulus:      1000,
 				},
 			},
@@ -239,11 +239,11 @@ func TestRelabel(t *testing.T) {
 				"b1": "bar",
 				"b2": "baz",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
-					Regex:       config.MustNewRegexp("(b.*)"),
+					Regex:       pkgrelabel.MustNewRegexp("(b.*)"),
 					Replacement: "bar_${1}",
-					Action:      config.RelabelLabelMap,
+					Action:      pkgrelabel.LabelMap,
 				},
 			},
 			output: model.LabelSet{
@@ -261,11 +261,11 @@ func TestRelabel(t *testing.T) {
 				"__meta_my_baz": "bbb",
 				"__meta_other":  "ccc",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
-					Regex:       config.MustNewRegexp("__meta_(my.*)"),
+					Regex:       pkgrelabel.MustNewRegexp("__meta_(my.*)"),
 					Replacement: "${1}",
-					Action:      config.RelabelLabelMap,
+					Action:      pkgrelabel.LabelMap,
 				},
 			},
 			output: model.LabelSet{
@@ -281,11 +281,11 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"a": "some-name-value",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
-					Action:       config.RelabelReplace,
+					Regex:        pkgrelabel.MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       pkgrelabel.Replace,
 					Replacement:  "${2}",
 					TargetLabel:  "${1}",
 				},
@@ -299,11 +299,11 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"a": "some-name-value",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
-					Action:       config.RelabelReplace,
+					Regex:        pkgrelabel.MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       pkgrelabel.Replace,
 					Replacement:  "${3}",
 					TargetLabel:  "${1}",
 				},
@@ -316,25 +316,25 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"a": "some-name-value",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
-					Action:       config.RelabelReplace,
+					Regex:        pkgrelabel.MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       pkgrelabel.Replace,
 					Replacement:  "${1}",
 					TargetLabel:  "${3}",
 				},
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
-					Action:       config.RelabelReplace,
+					Regex:        pkgrelabel.MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       pkgrelabel.Replace,
 					Replacement:  "${1}",
 					TargetLabel:  "0${3}",
 				},
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
-					Action:       config.RelabelReplace,
+					Regex:        pkgrelabel.MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       pkgrelabel.Replace,
 					Replacement:  "${1}",
 					TargetLabel:  "-${3}",
 				},
@@ -347,25 +347,25 @@ func TestRelabel(t *testing.T) {
 			input: model.LabelSet{
 				"__meta_sd_tags": "path:/secret,job:some-job,label:foo=bar",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
-					Regex:        config.MustNewRegexp("(?:.+,|^)path:(/[^,]+).*"),
-					Action:       config.RelabelReplace,
+					Regex:        pkgrelabel.MustNewRegexp("(?:.+,|^)path:(/[^,]+).*"),
+					Action:       pkgrelabel.Replace,
 					Replacement:  "${1}",
 					TargetLabel:  "__metrics_path__",
 				},
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
-					Regex:        config.MustNewRegexp("(?:.+,|^)job:([^,]+).*"),
-					Action:       config.RelabelReplace,
+					Regex:        pkgrelabel.MustNewRegexp("(?:.+,|^)job:([^,]+).*"),
+					Action:       pkgrelabel.Replace,
 					Replacement:  "${1}",
 					TargetLabel:  "job",
 				},
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
-					Regex:        config.MustNewRegexp("(?:.+,|^)label:([^=]+)=([^,]+).*"),
-					Action:       config.RelabelReplace,
+					Regex:        pkgrelabel.MustNewRegexp("(?:.+,|^)label:([^=]+)=([^,]+).*"),
+					Action:       pkgrelabel.Replace,
 					Replacement:  "${2}",
 					TargetLabel:  "${1}",
 				},
@@ -383,10 +383,10 @@ func TestRelabel(t *testing.T) {
 				"b1": "bar",
 				"b2": "baz",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
-					Regex:  config.MustNewRegexp("(b.*)"),
-					Action: config.RelabelLabelKeep,
+					Regex:  pkgrelabel.MustNewRegexp("(b.*)"),
+					Action: pkgrelabel.LabelKeep,
 				},
 			},
 			output: model.LabelSet{
@@ -400,10 +400,10 @@ func TestRelabel(t *testing.T) {
 				"b1": "bar",
 				"b2": "baz",
 			},
-			relabel: []*config.RelabelConfig{
+			relabel: []*pkgrelabel.Config{
 				{
-					Regex:  config.MustNewRegexp("(b.*)"),
-					Action: config.RelabelLabelDrop,
+					Regex:  pkgrelabel.MustNewRegexp("(b.*)"),
+					Action: pkgrelabel.LabelDrop,
 				},
 			},
 			output: model.LabelSet{

@@ -19,6 +19,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
@@ -26,6 +27,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -34,7 +36,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/golang/glog"
 	"github.com/oklog/oklog/pkg/group"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -42,6 +43,7 @@ import (
 	"github.com/prometheus/common/version"
 	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"k8s.io/klog"
 
 	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/common/promlog"
@@ -50,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -69,10 +72,19 @@ var (
 		Name: "prometheus_config_last_reload_success_timestamp_seconds",
 		Help: "Timestamp of the last successful configuration reload.",
 	})
+
+	defaultRetentionString   = "15d"
+	defaultRetentionDuration model.Duration
 )
 
 func init() {
 	prometheus.MustRegister(version.NewCollector("prometheus"))
+
+	var err error
+	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func main() {
@@ -80,6 +92,11 @@ func main() {
 		runtime.SetBlockProfileRate(20)
 		runtime.SetMutexProfileFraction(20)
 	}
+
+	var (
+		oldFlagRetentionDuration model.Duration
+		newFlagRetentionDuration model.Duration
+	)
 
 	cfg := struct {
 		configFile string
@@ -99,7 +116,8 @@ func main() {
 		queryMaxSamples     int
 		RemoteFlushDeadline model.Duration
 
-		prometheusURL string
+		prometheusURL   string
+		corsRegexString string
 
 		promlogConfig promlog.Config
 	}{
@@ -164,8 +182,18 @@ func main() {
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
-	a.Flag("storage.tsdb.retention", "How long to retain samples in storage.").
-		Default("15d").SetValue(&cfg.tsdb.Retention)
+	a.Flag("storage.tsdb.wal-segment-size",
+		"Size at which to split the tsdb WAL segment files (e.g. 100MB)").
+		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
+
+	a.Flag("storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead").
+		Default(defaultRetentionString).SetValue(&oldFlagRetentionDuration)
+
+	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage. Overrides \"storage.tsdb.retention\" if this flag is set to anything other than default.").
+		Default(defaultRetentionString).SetValue(&newFlagRetentionDuration)
+
+	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. Units supported: KB, MB, GB, TB, PB. This flag is experimental and can be changed in future releases.").
+		Default("0").BytesVar(&cfg.tsdb.MaxBytes)
 
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
@@ -205,6 +233,9 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they would load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Eg. 'https?://(domain1|domain2)\.com'`).
+		Default(".*").StringVar(&cfg.corsRegexString)
+
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	_, err := a.Parse(os.Args[1:])
@@ -220,6 +251,12 @@ func main() {
 		os.Exit(2)
 	}
 
+	cfg.web.CORSOrigin, err = compileCORSRegexString(cfg.corsRegexString)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "could not compile CORS regex string %q", cfg.corsRegexString))
+		os.Exit(2)
+	}
+
 	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
 	// Default -web.route-prefix to path of -web.external-url.
 	if cfg.web.RoutePrefix == "" {
@@ -228,17 +265,39 @@ func main() {
 	// RoutePrefix must always be at least '/'.
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
+	cfg.tsdb.RetentionDuration = chooseRetention(oldFlagRetentionDuration, newFlagRetentionDuration)
+
+	// Check for overflows. This limits our max retention to ~292.5y.
+	if cfg.tsdb.RetentionDuration < 0 {
+		cfg.tsdb.RetentionDuration = math.MaxInt64
+	}
+
 	if cfg.tsdb.MaxBlockDuration == 0 {
-		cfg.tsdb.MaxBlockDuration = cfg.tsdb.Retention / 10
+		cfg.tsdb.MaxBlockDuration = cfg.tsdb.RetentionDuration / 10
+
+		// Prevent blocks from getting too big.
+		monthLong, err := model.ParseDuration("31d")
+		if err != nil {
+			panic(err)
+		}
+
+		if cfg.tsdb.MaxBlockDuration > monthLong {
+			cfg.tsdb.MaxBlockDuration = monthLong
+		}
 	}
 
 	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	promql.SetDefaultEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
 
 	logger := promlog.New(&cfg.promlogConfig)
 
+	if oldFlagRetentionDuration != defaultRetentionDuration {
+		level.Warn(logger).Log("deprecation_notice", `"storage.tsdb.retention" flag is deprecated use "storage.tsdb.retention.time" instead.`)
+	}
+
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
-	glog.ClampLevel(6)
-	glog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
+	klog.ClampLevel(6)
+	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
@@ -256,7 +315,7 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifier = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
+		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
@@ -279,7 +338,7 @@ func main() {
 			Appendable:      fanoutStorage,
 			TSDB:            localStorage,
 			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:      sendAlerts(notifier, cfg.web.ExternalURL.String()),
+			NotifyFunc:      sendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:         ctxRule,
 			ExternalURL:     cfg.web.ExternalURL,
 			Registerer:      prometheus.DefaultRegisterer,
@@ -296,7 +355,7 @@ func main() {
 	cfg.web.QueryEngine = queryEngine
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
-	cfg.web.Notifier = notifier
+	cfg.web.Notifier = notifierManager
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,
@@ -332,7 +391,6 @@ func main() {
 		webHandler.ApplyConfig,
 		// The Scrape and notifier managers need to reload before the Discovery manager as
 		// they need to read the most updated config when receiving the new targets list.
-		notifier.ApplyConfig,
 		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -341,6 +399,7 @@ func main() {
 			}
 			return discoveryManagerScrape.ApplyConfig(c)
 		},
+		notifierManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
 			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
@@ -354,7 +413,7 @@ func main() {
 			return discoveryManagerNotify.ApplyConfig(c)
 		},
 		func(cfg *config.Config) error {
-			// Get all rule files matching the configuration oaths.
+			// Get all rule files matching the configuration paths.
 			var files []string
 			for _, pat := range cfg.RuleFiles {
 				fs, err := filepath.Glob(pat)
@@ -559,6 +618,11 @@ func main() {
 		g.Add(
 			func() error {
 				level.Info(logger).Log("msg", "Starting TSDB ...")
+				if cfg.tsdb.WALSegmentSize != 0 {
+					if cfg.tsdb.WALSegmentSize < 10*1024*1024 || cfg.tsdb.WALSegmentSize > 256*1024*1024 {
+						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
+					}
+				}
 				db, err := tsdb.Open(
 					cfg.localStoragePath,
 					log.With(logger, "component", "tsdb"),
@@ -611,12 +675,12 @@ func main() {
 				// so we wait until the config is fully loaded.
 				<-reloadReady.C
 
-				notifier.Run(discoveryManagerNotify.SyncCh())
+				notifierManager.Run(discoveryManagerNotify.SyncCh())
 				level.Info(logger).Log("msg", "Notifier manager stopped")
 				return nil
 			},
 			func(err error) {
-				notifier.Stop()
+				notifierManager.Stop()
 			},
 		)
 	}
@@ -654,6 +718,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	if failed {
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
+	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }
@@ -661,6 +726,15 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 func startsOrEndsWithQuote(s string) bool {
 	return strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") ||
 		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
+}
+
+// compileCORSRegexString compiles given string and adds anchors
+func compileCORSRegexString(s string) (*regexp.Regexp, error) {
+	r, err := relabel.NewRegexp(s)
+	if err != nil {
+		return nil, err
+	}
+	return r.Regexp, nil
 }
 
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset
@@ -696,8 +770,12 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	return eu, nil
 }
 
+type sender interface {
+	Send(alerts ...*notifier.Alert)
+}
+
 // sendAlerts implements the rules.NotifyFunc for a Notifier.
-func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
+func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*rules.Alert) {
 		var res []*notifier.Alert
 
@@ -717,7 +795,23 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 		}
 
 		if len(alerts) > 0 {
-			n.Send(res...)
+			s.Send(res...)
 		}
 	}
+}
+
+// chooseRetention is some roundabout code to support both RetentionDuration and Retention (for different flags).
+// If Retention is 15d, then it means that the default value is set and the value of RetentionDuration is used.
+func chooseRetention(oldFlagDuration, newFlagDuration model.Duration) model.Duration {
+	retention := oldFlagDuration
+	if retention == defaultRetentionDuration {
+		retention = newFlagDuration
+	}
+
+	// Further newFlag takes precedence if it's set to anything other than default.
+	if newFlagDuration != defaultRetentionDuration {
+		retention = newFlagDuration
+	}
+
+	return retention
 }

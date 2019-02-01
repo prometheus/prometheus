@@ -24,11 +24,6 @@ import (
 
 const defaultTimeout = 2 * time.Minute
 
-type httpClient interface {
-	do(req *http.Request) (*http.Response, []byte, error)
-	urlJoin(path string) string
-}
-
 type prometheusHTTPClient struct {
 	requestTimeout time.Duration
 	httpClient     api.Client

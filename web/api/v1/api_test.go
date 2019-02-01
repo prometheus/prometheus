@@ -379,7 +379,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			}
 			defer querier.Close()
 
-			set, err, _ := querier.Select(selectParams, matchers...)
+			set, _, err := querier.Select(selectParams, matchers...)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -987,7 +987,7 @@ func TestReadEndpoint(t *testing.T) {
 	expected := &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
 			{
-				Labels: []*prompb.Label{
+				Labels: []prompb.Label{
 					{Name: "__name__", Value: "test_metric1"},
 					{Name: "b", Value: "c"},
 					{Name: "baz", Value: "qux"},
@@ -1053,7 +1053,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    snapshotAPI,
-			values:      map[string][]string{"skip_head": []string{"true"}},
+			values:      map[string][]string{"skip_head": {"true"}},
 
 			errType: errorNone,
 		},
@@ -1061,7 +1061,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    snapshotAPI,
-			values:      map[string][]string{"skip_head": []string{"xxx"}},
+			values:      map[string][]string{"skip_head": {"xxx"}},
 
 			errType: errorBadData,
 		},
@@ -1127,7 +1127,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"123"}},
+			values:      map[string][]string{"match[]": {"123"}},
 
 			errType: errorBadData,
 		},
@@ -1135,7 +1135,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}, "start": []string{"xxx"}},
+			values:      map[string][]string{"match[]": {"up"}, "start": {"xxx"}},
 
 			errType: errorBadData,
 		},
@@ -1143,7 +1143,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}, "end": []string{"xxx"}},
+			values:      map[string][]string{"match[]": {"up"}, "end": {"xxx"}},
 
 			errType: errorBadData,
 		},
@@ -1151,7 +1151,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}},
+			values:      map[string][]string{"match[]": {"up"}},
 
 			errType: errorNone,
 		},
@@ -1159,7 +1159,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up{job!=\"foo\"}", "{job=~\"bar.+\"}", "up{instance!~\"fred.+\"}"}},
+			values:      map[string][]string{"match[]": {"up{job!=\"foo\"}", "{job=~\"bar.+\"}", "up{instance!~\"fred.+\"}"}},
 
 			errType: errorNone,
 		},
@@ -1167,7 +1167,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdbWithError,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}},
+			values:      map[string][]string{"match[]": {"up"}},
 
 			errType: errorInternal,
 		},
@@ -1415,12 +1415,6 @@ func TestOptionsMethod(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("Expected status %d, got %d", http.StatusNoContent, resp.StatusCode)
-	}
-
-	for h, v := range corsHeaders {
-		if resp.Header.Get(h) != v {
-			t.Fatalf("Expected %q for header %q, got %q", v, h, resp.Header.Get(h))
-		}
 	}
 }
 

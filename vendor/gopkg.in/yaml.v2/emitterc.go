@@ -843,7 +843,7 @@ func yaml_emitter_select_scalar_style(emitter *yaml_emitter_t, event *yaml_event
 	return true
 }
 
-// Write an achor.
+// Write an anchor.
 func yaml_emitter_process_anchor(emitter *yaml_emitter_t) bool {
 	if emitter.anchor_data.anchor == nil {
 		return true

@@ -265,7 +265,6 @@ package proto
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"reflect"
@@ -274,7 +273,66 @@ import (
 	"sync"
 )
 
-var errInvalidUTF8 = errors.New("proto: invalid UTF-8 string")
+// RequiredNotSetError is an error type returned by either Marshal or Unmarshal.
+// Marshal reports this when a required field is not initialized.
+// Unmarshal reports this when a required field is missing from the wire data.
+type RequiredNotSetError struct{ field string }
+
+func (e *RequiredNotSetError) Error() string {
+	if e.field == "" {
+		return fmt.Sprintf("proto: required field not set")
+	}
+	return fmt.Sprintf("proto: required field %q not set", e.field)
+}
+func (e *RequiredNotSetError) RequiredNotSet() bool {
+	return true
+}
+
+type invalidUTF8Error struct{ field string }
+
+func (e *invalidUTF8Error) Error() string {
+	if e.field == "" {
+		return "proto: invalid UTF-8 detected"
+	}
+	return fmt.Sprintf("proto: field %q contains invalid UTF-8", e.field)
+}
+func (e *invalidUTF8Error) InvalidUTF8() bool {
+	return true
+}
+
+// errInvalidUTF8 is a sentinel error to identify fields with invalid UTF-8.
+// This error should not be exposed to the external API as such errors should
+// be recreated with the field information.
+var errInvalidUTF8 = &invalidUTF8Error{}
+
+// isNonFatal reports whether the error is either a RequiredNotSet error
+// or a InvalidUTF8 error.
+func isNonFatal(err error) bool {
+	if re, ok := err.(interface{ RequiredNotSet() bool }); ok && re.RequiredNotSet() {
+		return true
+	}
+	if re, ok := err.(interface{ InvalidUTF8() bool }); ok && re.InvalidUTF8() {
+		return true
+	}
+	return false
+}
+
+type nonFatal struct{ E error }
+
+// Merge merges err into nf and reports whether it was successful.
+// Otherwise it returns false for any fatal non-nil errors.
+func (nf *nonFatal) Merge(err error) (ok bool) {
+	if err == nil {
+		return true // not an error
+	}
+	if !isNonFatal(err) {
+		return false // fatal error
+	}
+	if nf.E == nil {
+		nf.E = err // store first instance of non-fatal error
+	}
+	return true
+}
 
 // Message is implemented by generated protocol buffer messages.
 type Message interface {
@@ -570,9 +628,11 @@ func SetDefaults(pb Message) {
 	setDefaults(reflect.ValueOf(pb), true, false)
 }
 
-// v is a pointer to a struct.
+// v is a struct.
 func setDefaults(v reflect.Value, recur, zeros bool) {
-	v = v.Elem()
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
 
 	defaultMu.RLock()
 	dm, ok := defaults[v.Type()]
@@ -674,8 +734,11 @@ func setDefaults(v reflect.Value, recur, zeros bool) {
 
 	for _, ni := range dm.nested {
 		f := v.Field(ni)
-		// f is *T or []*T or map[T]*T
+		// f is *T or T or []*T or []T
 		switch f.Kind() {
+		case reflect.Struct:
+			setDefaults(f, recur, zeros)
+
 		case reflect.Ptr:
 			if f.IsNil() {
 				continue
@@ -685,7 +748,7 @@ func setDefaults(v reflect.Value, recur, zeros bool) {
 		case reflect.Slice:
 			for i := 0; i < f.Len(); i++ {
 				e := f.Index(i)
-				if e.IsNil() {
+				if e.Kind() == reflect.Ptr && e.IsNil() {
 					continue
 				}
 				setDefaults(e, recur, zeros)
@@ -757,6 +820,9 @@ func buildDefaultMessage(t reflect.Type) (dm defaultMessage) {
 func fieldDefault(ft reflect.Type, prop *Properties) (sf *scalarField, nestedMessage bool, err error) {
 	var canHaveDefault bool
 	switch ft.Kind() {
+	case reflect.Struct:
+		nestedMessage = true // non-nullable
+
 	case reflect.Ptr:
 		if ft.Elem().Kind() == reflect.Struct {
 			nestedMessage = true
@@ -766,7 +832,7 @@ func fieldDefault(ft reflect.Type, prop *Properties) (sf *scalarField, nestedMes
 
 	case reflect.Slice:
 		switch ft.Elem().Kind() {
-		case reflect.Ptr:
+		case reflect.Ptr, reflect.Struct:
 			nestedMessage = true // repeated message
 		case reflect.Uint8:
 			canHaveDefault = true // bytes field

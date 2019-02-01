@@ -18,7 +18,6 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -26,7 +25,7 @@ import (
 func TestRelabel(t *testing.T) {
 	tests := []struct {
 		input   labels.Labels
-		relabel []*config.RelabelConfig
+		relabel []*Config
 		output  labels.Labels
 	}{
 		{
@@ -35,14 +34,14 @@ func TestRelabel(t *testing.T) {
 				"b": "bar",
 				"c": "baz",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("f(.*)"),
+					Regex:        MustNewRegexp("f(.*)"),
 					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "ch${1}-ch${1}",
-					Action:       config.RelabelReplace,
+					Action:       Replace,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -58,22 +57,22 @@ func TestRelabel(t *testing.T) {
 				"b": "bar",
 				"c": "baz",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a", "b"},
-					Regex:        config.MustNewRegexp("f(.*);(.*)r"),
+					Regex:        MustNewRegexp("f(.*);(.*)r"),
 					TargetLabel:  "a",
 					Separator:    ";",
 					Replacement:  "b${1}${2}m", // boobam
-					Action:       config.RelabelReplace,
+					Action:       Replace,
 				},
 				{
 					SourceLabels: model.LabelNames{"c", "a"},
-					Regex:        config.MustNewRegexp("(b).*b(.*)ba(.*)"),
+					Regex:        MustNewRegexp("(b).*b(.*)ba(.*)"),
 					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "$1$2$2$3",
-					Action:       config.RelabelReplace,
+					Action:       Replace,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -87,18 +86,18 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"a": "foo",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp(".*o.*"),
-					Action:       config.RelabelDrop,
+					Regex:        MustNewRegexp(".*o.*"),
+					Action:       Drop,
 				}, {
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("f(.*)"),
+					Regex:        MustNewRegexp("f(.*)"),
 					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "ch$1-ch$1",
-					Action:       config.RelabelReplace,
+					Action:       Replace,
 				},
 			},
 			output: nil,
@@ -108,11 +107,11 @@ func TestRelabel(t *testing.T) {
 				"a": "foo",
 				"b": "bar",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp(".*o.*"),
-					Action:       config.RelabelDrop,
+					Regex:        MustNewRegexp(".*o.*"),
+					Action:       Drop,
 				},
 			},
 			output: nil,
@@ -121,14 +120,14 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"a": "abc",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp(".*(b).*"),
+					Regex:        MustNewRegexp(".*(b).*"),
 					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "$1",
-					Action:       config.RelabelReplace,
+					Action:       Replace,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -140,11 +139,11 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"a": "foo",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("no-match"),
-					Action:       config.RelabelDrop,
+					Regex:        MustNewRegexp("no-match"),
+					Action:       Drop,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -155,11 +154,11 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"a": "foo",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("f|o"),
-					Action:       config.RelabelDrop,
+					Regex:        MustNewRegexp("f|o"),
+					Action:       Drop,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -170,11 +169,11 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"a": "foo",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("no-match"),
-					Action:       config.RelabelKeep,
+					Regex:        MustNewRegexp("no-match"),
+					Action:       Keep,
 				},
 			},
 			output: nil,
@@ -183,11 +182,11 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"a": "foo",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("f.*"),
-					Action:       config.RelabelKeep,
+					Regex:        MustNewRegexp("f.*"),
+					Action:       Keep,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -199,13 +198,13 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"a": "boo",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("f"),
+					Regex:        MustNewRegexp("f"),
 					TargetLabel:  "b",
 					Replacement:  "bar",
-					Action:       config.RelabelReplace,
+					Action:       Replace,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -218,12 +217,12 @@ func TestRelabel(t *testing.T) {
 				"b": "bar",
 				"c": "baz",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"c"},
 					TargetLabel:  "d",
 					Separator:    ";",
-					Action:       config.RelabelHashMod,
+					Action:       HashMod,
 					Modulus:      1000,
 				},
 			},
@@ -240,11 +239,11 @@ func TestRelabel(t *testing.T) {
 				"b1": "bar",
 				"b2": "baz",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
-					Regex:       config.MustNewRegexp("(b.*)"),
+					Regex:       MustNewRegexp("(b.*)"),
 					Replacement: "bar_${1}",
-					Action:      config.RelabelLabelMap,
+					Action:      LabelMap,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -262,11 +261,11 @@ func TestRelabel(t *testing.T) {
 				"__meta_my_baz": "bbb",
 				"__meta_other":  "ccc",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
-					Regex:       config.MustNewRegexp("__meta_(my.*)"),
+					Regex:       MustNewRegexp("__meta_(my.*)"),
 					Replacement: "${1}",
-					Action:      config.RelabelLabelMap,
+					Action:      LabelMap,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -282,11 +281,11 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"a": "some-name-value",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
-					Action:       config.RelabelReplace,
+					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       Replace,
 					Replacement:  "${2}",
 					TargetLabel:  "${1}",
 				},
@@ -300,11 +299,11 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"a": "some-name-value",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
-					Action:       config.RelabelReplace,
+					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       Replace,
 					Replacement:  "${3}",
 					TargetLabel:  "${1}",
 				},
@@ -317,25 +316,25 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"a": "some-name-value",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
-					Action:       config.RelabelReplace,
+					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       Replace,
 					Replacement:  "${1}",
 					TargetLabel:  "${3}",
 				},
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
-					Action:       config.RelabelReplace,
+					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       Replace,
 					Replacement:  "${1}",
 					TargetLabel:  "0${3}",
 				},
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
-					Action:       config.RelabelReplace,
+					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       Replace,
 					Replacement:  "${1}",
 					TargetLabel:  "-${3}",
 				},
@@ -348,25 +347,25 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{
 				"__meta_sd_tags": "path:/secret,job:some-job,label:foo=bar",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
-					Regex:        config.MustNewRegexp("(?:.+,|^)path:(/[^,]+).*"),
-					Action:       config.RelabelReplace,
+					Regex:        MustNewRegexp("(?:.+,|^)path:(/[^,]+).*"),
+					Action:       Replace,
 					Replacement:  "${1}",
 					TargetLabel:  "__metrics_path__",
 				},
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
-					Regex:        config.MustNewRegexp("(?:.+,|^)job:([^,]+).*"),
-					Action:       config.RelabelReplace,
+					Regex:        MustNewRegexp("(?:.+,|^)job:([^,]+).*"),
+					Action:       Replace,
 					Replacement:  "${1}",
 					TargetLabel:  "job",
 				},
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
-					Regex:        config.MustNewRegexp("(?:.+,|^)label:([^=]+)=([^,]+).*"),
-					Action:       config.RelabelReplace,
+					Regex:        MustNewRegexp("(?:.+,|^)label:([^=]+)=([^,]+).*"),
+					Action:       Replace,
 					Replacement:  "${2}",
 					TargetLabel:  "${1}",
 				},
@@ -384,10 +383,10 @@ func TestRelabel(t *testing.T) {
 				"b1": "bar",
 				"b2": "baz",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
-					Regex:  config.MustNewRegexp("(b.*)"),
-					Action: config.RelabelLabelKeep,
+					Regex:  MustNewRegexp("(b.*)"),
+					Action: LabelKeep,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -401,10 +400,10 @@ func TestRelabel(t *testing.T) {
 				"b1": "bar",
 				"b2": "baz",
 			}),
-			relabel: []*config.RelabelConfig{
+			relabel: []*Config{
 				{
-					Regex:  config.MustNewRegexp("(b.*)"),
-					Action: config.RelabelLabelDrop,
+					Regex:  MustNewRegexp("(b.*)"),
+					Action: LabelDrop,
 				},
 			},
 			output: labels.FromMap(map[string]string{
@@ -416,5 +415,32 @@ func TestRelabel(t *testing.T) {
 	for _, test := range tests {
 		res := Process(test.input, test.relabel...)
 		testutil.Equals(t, test.output, res)
+	}
+}
+
+func TestTargetLabelValidity(t *testing.T) {
+	tests := []struct {
+		str   string
+		valid bool
+	}{
+		{"-label", false},
+		{"label", true},
+		{"label${1}", true},
+		{"${1}label", true},
+		{"${1}", true},
+		{"${1}label", true},
+		{"${", false},
+		{"$", false},
+		{"${}", false},
+		{"foo${", false},
+		{"$1", true},
+		{"asd$2asd", true},
+		{"-foo${1}bar-", false},
+		{"_${1}_", true},
+		{"foo${bar}foo", true},
+	}
+	for _, test := range tests {
+		testutil.Assert(t, relabelTarget.Match([]byte(test.str)) == test.valid,
+			"Expected %q to be %v", test.str, test.valid)
 	}
 }

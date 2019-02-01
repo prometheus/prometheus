@@ -636,17 +636,17 @@ func (p *textParser) readStruct(sv reflect.Value, terminator string) error {
 					if err := p.consumeToken(":"); err != nil {
 						return err
 					}
-					if err := p.readAny(key, props.mkeyprop); err != nil {
+					if err := p.readAny(key, props.MapKeyProp); err != nil {
 						return err
 					}
 					if err := p.consumeOptionalSeparator(); err != nil {
 						return err
 					}
 				case "value":
-					if err := p.checkForColon(props.mvalprop, dst.Type().Elem()); err != nil {
+					if err := p.checkForColon(props.MapValProp, dst.Type().Elem()); err != nil {
 						return err
 					}
-					if err := p.readAny(val, props.mvalprop); err != nil {
+					if err := p.readAny(val, props.MapValProp); err != nil {
 						return err
 					}
 					if err := p.consumeOptionalSeparator(); err != nil {
@@ -923,6 +923,16 @@ func (p *textParser) readAny(v reflect.Value, props *Properties) error {
 			fv.SetFloat(f)
 			return nil
 		}
+	case reflect.Int8:
+		if x, err := strconv.ParseInt(tok.value, 0, 8); err == nil {
+			fv.SetInt(x)
+			return nil
+		}
+	case reflect.Int16:
+		if x, err := strconv.ParseInt(tok.value, 0, 16); err == nil {
+			fv.SetInt(x)
+			return nil
+		}
 	case reflect.Int32:
 		if x, err := strconv.ParseInt(tok.value, 0, 32); err == nil {
 			fv.SetInt(x)
@@ -970,6 +980,16 @@ func (p *textParser) readAny(v reflect.Value, props *Properties) error {
 		}
 		// TODO: Handle nested messages which implement encoding.TextUnmarshaler.
 		return p.readStruct(fv, terminator)
+	case reflect.Uint8:
+		if x, err := strconv.ParseUint(tok.value, 0, 8); err == nil {
+			fv.SetUint(x)
+			return nil
+		}
+	case reflect.Uint16:
+		if x, err := strconv.ParseUint(tok.value, 0, 16); err == nil {
+			fv.SetUint(x)
+			return nil
+		}
 	case reflect.Uint32:
 		if x, err := strconv.ParseUint(tok.value, 0, 32); err == nil {
 			fv.SetUint(uint64(x))
