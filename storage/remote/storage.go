@@ -144,6 +144,10 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if !rrConf.ReadRecent {
 			q = PreferLocalStorageFilter(q, s.localStartTimeCallback)
 		}
+		//If enabled is false, get a NoopQuerier which return nil for labelNames and labelValues
+		if !rrConf.Enabled {
+			q = DisabledFilter(q)
+		}
 		s.queryables = append(s.queryables, q)
 	}
 

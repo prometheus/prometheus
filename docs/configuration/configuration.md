@@ -1301,6 +1301,10 @@ required_matchers:
 # the local storage should have complete data for.
 [ read_recent: <boolean> | default = false ]
 
+# Whether apply labelValues and labelNames for remote read endpoints. 
+# If false, just apply these functions for local storage.
+[ enabled: <boolean> | default = false ]
+
 # Sets the `Authorization` header on every remote read request with the
 # configured username and password.
 # password and password_file are mutually exclusive.

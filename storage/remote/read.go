@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"sort"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -77,16 +78,39 @@ func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (
 	return FromQueryResult(res), nil, nil
 }
 
-// LabelValues implements storage.Querier and is a noop.
-func (q *querier) LabelValues(name string) ([]string, error) {
-	// TODO implement?
-	return nil, nil
+// LabelValues implements storage.Querier. Read the series sets from the Client
+// and return all the values of the given label name.
+func (q *querier) LabelValues(name string) ([]string, storage.Warnings, error) {
+	// By matcher __name__ != "" gets all the series.
+	mat, _ := labels.NewMatcher(labels.MatchNotEqual, labels.MetricName, "")
+	ss, warnings, err := q.Select(nil, mat)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var values []string
+	if values, err = getLabelValues(name, ss); err != nil {
+		return nil, warnings, err
+	}
+
+	return values, warnings, nil
 }
 
-// LabelNames implements storage.Querier and is a noop.
-func (q *querier) LabelNames() ([]string, error) {
-	// TODO implement?
-	return nil, nil
+// LabelNames implements storage.Querier. Read the series sets from the Client
+// and return label names.
+func (q *querier) LabelNames() ([]string, storage.Warnings, error) {
+	// By matcher __name__ != "" gets all the series.
+	mat, _ := labels.NewMatcher(labels.MatchNotEqual, labels.MetricName, "")
+	ss, warnings, err := q.Select(nil, mat)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var names []string
+	if names, err = getLabelNames(ss); err != nil {
+		return nil, warnings, err
+	}
+	return names, warnings, nil
 }
 
 // Close implements storage.Querier and is a noop.
@@ -189,6 +213,55 @@ func (q requiredMatchersQuerier) Select(p *storage.SelectParams, matchers ...*la
 	return q.Querier.Select(p, matchers...)
 }
 
+// LabelValues implements storage.Querier. Read the series sets from the Client
+// and return all the values of the given label name.
+func (q *requiredMatchersQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+	ss, warnings, err := q.Querier.LabelValues(name)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return ss, warnings, nil
+}
+
+// LabelNames implements storage.Querier.Read the series sets from the Client
+// and return label names.
+func (q *requiredMatchersQuerier) LabelNames() ([]string, storage.Warnings, error) {
+	ss, warnings, err := q.Querier.LabelNames()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return ss, warnings, nil
+}
+
+// This querier return nil for LabelValues() and LabelNames().
+type disabledQuerier struct {
+	storage.Querier
+}
+
+// DisabledFilter returns a storage.Queryable which creates a
+// disabledQuerier. disabledQuerier can select but return nil for labelValues and labelNames
+func DisabledFilter(next storage.Queryable) storage.Queryable {
+	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		q, err := next.Querier(ctx, mint, maxt)
+		if err != nil {
+			return nil, err
+		}
+		return &disabledQuerier{q}, nil
+	})
+}
+
+// LabelValues implements storage.Querier. disabledQuerier disables this functionality so just return nil.
+func (q disabledQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+	return []string{}, nil, nil
+}
+
+// LabelNames implements storage.Querier. disabledQuerier disables this functionality so just return nil.
+func (q disabledQuerier) LabelNames() ([]string, storage.Warnings, error) {
+	return []string{}, nil, nil
+}
+
 // addExternalLabels adds matchers for each external label. External labels
 // that already have a corresponding user-supplied matcher are skipped, as we
 // assume that the user explicitly wants to select a different value for them.
@@ -249,13 +322,63 @@ type seriesFilter struct {
 }
 
 func (sf seriesFilter) Labels() labels.Labels {
-	labels := sf.Series.Labels()
-	for i := 0; i < len(labels); {
-		if _, ok := sf.toFilter[model.LabelName(labels[i].Name)]; ok {
-			labels = labels[:i+copy(labels[i:], labels[i+1:])]
+	lbs := sf.Series.Labels()
+	for i := 0; i < len(lbs); {
+		if _, ok := sf.toFilter[model.LabelName(lbs[i].Name)]; ok {
+			lbs = lbs[:i+copy(lbs[i:], lbs[i+1:])]
 			continue
 		}
 		i++
 	}
-	return labels
+	return lbs
+}
+
+//Iterate the series sets and get the values of the given label name.
+func getLabelValues(name string, ss storage.SeriesSet) ([]string, error) {
+	var labelVal string
+	labelValuesMap := make(map[string]struct{})
+	for ss.Next() {
+		labelVal = ss.At().Labels().Get(name)
+		labelValuesMap[labelVal] = struct{}{}
+	}
+	if err := ss.Err(); err != nil {
+		return nil, err
+	}
+	if _, ok := labelValuesMap[""]; ok {
+		delete(labelValuesMap, "")
+	}
+
+	if len(labelValuesMap) == 0 {
+		return []string{}, nil
+	}
+	labelValues := make([]string, 0, len(labelValuesMap))
+	for name := range labelValuesMap {
+		labelValues = append(labelValues, name)
+	}
+	sort.Strings(labelValues)
+
+	return labelValues, nil
+}
+
+//Iterate the series sets and get all the label names.
+func getLabelNames(ss storage.SeriesSet) ([]string, error) {
+	labelNamesMap := make(map[string]struct{})
+	for ss.Next() {
+		for _, label := range ss.At().Labels() {
+			labelNamesMap[label.Name] = struct{}{}
+		}
+	}
+	if err := ss.Err(); err != nil {
+		return nil, err
+	}
+	if len(labelNamesMap) == 0 {
+		return []string{}, nil
+	}
+	labelNames := make([]string, 0, len(labelNamesMap))
+	for name := range labelNamesMap {
+		labelNames = append(labelNames, name)
+	}
+	sort.Strings(labelNames)
+
+	return labelNames, nil
 }

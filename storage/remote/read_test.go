@@ -111,6 +111,36 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 	}
 }
 
+func TestExternalLabelsQuerierLabelValues(t *testing.T) {
+	q := &externalLabelsQuerier{
+		Querier:        mockQuerier{},
+		externalLabels: model.LabelSet{"region": "europe"},
+	}
+	want := []string{"foo", "bar"}
+	values, _, err := q.LabelValues("test")
+	if err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(want, values) {
+		t.Fatalf("unexpected label values; want %v, got %v", want, values)
+	}
+}
+
+func TestExternalLabelsQuerierLabelNames(t *testing.T) {
+	q := &externalLabelsQuerier{
+		Querier:        mockQuerier{},
+		externalLabels: model.LabelSet{"region": "europe"},
+	}
+	want := []string{"foo", "bar"}
+	names, _, err := q.LabelNames()
+	if err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(want, names) {
+		t.Fatalf("unexpected label names; want %v, got %v", want, names)
+	}
+}
+
 func TestSeriesSetFilter(t *testing.T) {
 	tests := []struct {
 		in       *prompb.QueryResult
@@ -159,6 +189,14 @@ type mockSeriesSet struct {
 
 func (mockQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	return mockSeriesSet{}, nil, nil
+}
+
+func (mockQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+	return []string{"foo", "bar"}, nil, nil
+}
+
+func (mockQuerier) LabelNames() ([]string, storage.Warnings, error) {
+	return []string{"foo", "bar"}, nil, nil
 }
 
 func TestPreferLocalStorageFilter(t *testing.T) {
@@ -322,6 +360,128 @@ func TestRequiredLabelsQuerierSelect(t *testing.T) {
 		}
 		if want, have := test.requiredMatchers, q.requiredMatchers; !reflect.DeepEqual(want, have) {
 			t.Errorf("%d. requiredMatchersQuerier.Select() has modified the matchers", i)
+		}
+	}
+}
+
+func TestDisabledQuerier(t *testing.T) {
+	matchers := []*labels.Matcher{
+		mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
+	}
+	q := &disabledQuerier{mockQuerier{}}
+	ss, _, err := q.Select(nil, matchers...)
+	if err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(ss, mockSeriesSet{}) {
+		t.Errorf("expected get %+v, got %+v", mockSeriesSet{}, ss)
+	}
+
+	values, _, err := q.LabelValues("test")
+	if err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(values, []string{}) {
+		t.Errorf("expected get label values %+v, got %+v", []string{}, values)
+	}
+	names, _, err := q.LabelNames()
+	if err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(names, []string{}) {
+		t.Errorf("expected get label names %+v, got %+v", []string{}, names)
+	}
+}
+
+func TestGetLabelValues(t *testing.T) {
+
+	tests := []struct {
+		seriesSet []storage.Series
+		name      string
+		want      []string
+	}{
+		{
+			[]storage.Series{
+				&concreteSeries{
+					labels:  labels.FromStrings("foo", "bar"),
+					samples: []prompb.Sample{{Value: 1, Timestamp: 2}},
+				},
+				&concreteSeries{
+					labels:  labels.FromStrings("foo", "baz"),
+					samples: []prompb.Sample{{Value: 3, Timestamp: 4}},
+				},
+			},
+			"foo",
+			[]string{"bar", "baz"},
+		},
+		{
+			[]storage.Series{
+				&concreteSeries{
+					labels:  labels.FromStrings("test1", "test"),
+					samples: []prompb.Sample{{Value: 1, Timestamp: 2}},
+				},
+			},
+			"test1",
+			[]string{"test"},
+		},
+		{
+			[]storage.Series{},
+			"test",
+			[]string{},
+		},
+	}
+	for i, test := range tests {
+		c := &concreteSeriesSet{series: test.seriesSet}
+		got, err := getLabelValues(test.name, c)
+		if err != nil {
+			t.Errorf("Error getting label values for label %s", test.name)
+		}
+		if !reflect.DeepEqual(got, test.want) {
+			t.Errorf("%d. expected label values %+v, got %+v", i, test.want, got)
+		}
+	}
+}
+
+func TestGetLabelNames(t *testing.T) {
+	tests := []struct {
+		seriesSet []storage.Series
+		want      []string
+	}{
+		{
+			[]storage.Series{
+				&concreteSeries{
+					labels:  labels.FromStrings("foo", "bar"),
+					samples: []prompb.Sample{{Value: 1, Timestamp: 2}},
+				},
+				&concreteSeries{
+					labels:  labels.FromStrings("fiz", "baz"),
+					samples: []prompb.Sample{{Value: 1, Timestamp: 2}},
+				},
+			},
+			[]string{"fiz", "foo"},
+		},
+		{
+			[]storage.Series{
+				&concreteSeries{
+					labels:  labels.FromStrings("test1", "test"),
+					samples: []prompb.Sample{{Value: 1, Timestamp: 2}},
+				},
+			},
+			[]string{"test1"},
+		},
+		{
+			[]storage.Series{},
+			[]string{},
+		},
+	}
+	for i, test := range tests {
+		c := &concreteSeriesSet{series: test.seriesSet}
+		got, err := getLabelNames(c)
+		if err != nil {
+			t.Errorf("Error getting label names")
+		}
+		if !reflect.DeepEqual(got, test.want) {
+			t.Errorf("%d. expected label names %+v, got %+v", i, test.want, got)
 		}
 	}
 }
