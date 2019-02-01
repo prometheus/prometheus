@@ -591,9 +591,13 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
-	matchers, err := promql.ParseMetricSelector(r.FormValue("match_target"))
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	matchers := []*labels.Matcher{}
+	if s := r.FormValue("match_target"); s != "" {
+		var err error
+		matchers, err = promql.ParseMetricSelector(r.FormValue("match_target"))
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
 	}
 
 	metric := r.FormValue("metric")
