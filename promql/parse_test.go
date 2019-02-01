@@ -903,7 +903,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo{a>="b"}`,
 		fail:  true,
-		// TODO(fabxc): willingly lexing wrong tokens allows for more precrise error
+		// TODO(fabxc): willingly lexing wrong tokens allows for more precise error
 		// messages from the parser - consider if this is an option.
 		errMsg: "unexpected character inside braces: '>'",
 	}, {
