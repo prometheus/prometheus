@@ -1,7 +1,8 @@
 import React, { Component } from 'react';
 import { Alert, Button, Col, Container, InputGroup, InputGroupAddon, Input, Nav, NavItem, NavLink, Row, TabContent, TabPane, Table } from 'reactstrap';
-import ReactEcharts from 'echarts-for-react';
-import './App.css'
+import ReactFlot from 'react-flot';
+import '../node_modules/react-flot/flot/jquery.flot.time.min';
+import './App.css';
 
 class App extends Component {
   render() {
@@ -64,8 +65,9 @@ class Panel extends Component {
     this.state = {
       expr: '',
       type: 'table', // TODO enum?
-      range: '1h',
+      range: 3600,
       endTime: null,
+      step: null,
       data: null,
       loading: false,
       error: null,
@@ -83,7 +85,7 @@ class Panel extends Component {
 
     this.setState({loading: true});
 
-    let url = new URL('http://demo.robustperception.io:9090/');//window.location.href);
+    let url = new URL('http://localhost:9090/');//window.location.href);
     let params = {
       'query': this.state.expr,
     };
@@ -91,8 +93,8 @@ class Panel extends Component {
       case 'graph':
         url.pathname = '/api/v1/query_range'
         Object.assign(params, {
-          start: '1549118381',
-          end: '1549119381',
+          start: '1549134688',
+          end: '1549135688',
           step: 10,
         })
         // TODO path prefix here and elsewhere.
@@ -100,7 +102,7 @@ class Panel extends Component {
       case 'table':
         url.pathname = '/api/v1/query'
         Object.assign(params, {
-          time: '1549119381',
+          time: '1549134688',
         })
         break;
       default:
@@ -175,7 +177,13 @@ class Panel extends Component {
               </NavItem>
             </Nav>
             <TabContent activeTab={this.state.type}>
+              // TODO: Only render this pane when it's selected.
               <TabPane tabId="graph">
+                <GraphControls
+                  range={this.state.range}
+                  endTime={this.state.endTime}
+                  step={this.state.step}
+                />
                 <Graph data={this.state.data} />
               </TabPane>
               <TabPane tabId="table">
@@ -271,78 +279,47 @@ function DataTable(props) {
   );
 }
 
+class GraphControls extends Component {
+  // TODO
+}
+
+var graphID = 0;
+function getGraphID() {
+  // TODO: This is ugly.
+  return graphID++;
+}
+
 class Graph extends Component {
   componentDidMount() {
     this.chart = null;
   }
 
-  getOption() {
-    const data = this.transformData(this.props.data);
-    console.log(data);
-
+  getOptions() {
     return {
-      legend: {
-        show: true,
-        orient: 'vertical',
+      grid: {
+        hoverable: true,
+        clickable: true,
       },
-      addDataAnimation: false,
-      xAxis : [
-        {
-            type : 'category',
-            boundaryGap : false,
-            //data : ['周一','周二','周三','周四','周五','周六','周日']
-        }
-      ],
-      yAxis : [
-          {
-              type : 'value'
-          }
-      ],
-      series: data//[
-        // {
-        //   'name': "up{}",
-        //   'type': "line",
-        //   'data': [
-        //     [1,1], [2,4], [3,3], [4, -2],
-        //   ],
-        // },
-        // {
-        //   'connectNulls': false,
-        //   'name': "foo{}",
-        //   'type': "line",
-        //   'data': [
-        //     [1,5], [2,5], [3, NaN], [4, -3], [5, 6], [6, 1]
-        //   ],
-        // },
-        // {
-        //   'name': "bar{}",
-        //   'type': "line",
-        //   'data': [
-        //     [1,1], [2,3], [3,8], [4, -1],
-        //   ],
-        // },
-        // {
-        //   'name': "down{}",
-        //   'type': "line",
-        //   'data': [
-        //     [1,2], [2,0], [3,0], [4, 2]
-        //   ],
-        // }
-      //],
+      legend: {
+        container: this.legend,
+      },
+      xaxis: {
+        mode: "time",
+        //timeformat: "%Y/%m/%d",
+      },
     };
   }
 
-  transformData(data) {
-    if (data.resultType !== 'matrix') {
+  getData() {
+    if (this.props.data.resultType !== 'matrix') {
       // TODO self.showError("Result is not of matrix type! Please enter a correct expression.");
       return [];
     }
 
-    return data.result.map(ts => {
+    return this.props.data.result.map(ts => {
       return {
-        name: metricToSeriesName(ts.metric),
-        data: ts.values.map(v => [v[0], this.parseValue(v[1])]),
-        type: 'line',
+        label: metricToSeriesName(ts.metric),
+        data: ts.values.map(v => [v[0] * 1000, this.parseValue(v[1])]),
       };
     })
   }
@@ -363,7 +340,8 @@ class Graph extends Component {
     }
     return (
       <div>
-        <ReactEcharts option={this.getOption()} ref={(ref) => { this.echarts = ref }} />
+        <ReactFlot id={getGraphID()} data={this.getData()} options={this.getOptions()} width="1900px" height="500px" />
+        <div ref={ref => { this.legend = ref; }}></div>
       </div>
     );
   }

@@ -4,11 +4,11 @@
   "private": true,
   "dependencies": {
     "bootstrap": "^4.2.1",
-    "echarts": "^4.2.0-rc.2",
-    "echarts-for-react": "^2.0.15-beta.0",
     "jquery": "^3.3.1",
+    "jsdom": "^13.2.0",
     "react": "^16.7.0",
     "react-dom": "^16.7.0",
+    "react-flot": "^1.3.0",
     "react-scripts": "2.1.3",
     "reactstrap": "^7.1.0"
   },
