@@ -101,7 +101,7 @@ func extractTimeRange(min, max *time.Time) (mint, maxt time.Time, err error) {
 		maxt = *max
 	}
 	if mint.After(maxt) {
-		return mint, maxt, errors.Errorf("min time must be before max time")
+		return mint, maxt, errors.Errorf("min time must be before or equal to max time")
 	}
 	return mint, maxt, nil
 }
