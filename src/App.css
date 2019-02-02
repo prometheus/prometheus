@@ -1,0 +1,30 @@
+body {
+    padding-top: 10px; /* TODO remove */
+}
+
+.expression-input {
+    margin-bottom: 10px;
+}
+
+.alert.alert-danger {
+    margin-bottom: 10px;
+}
+
+.nav-tabs .nav-link {
+    cursor: pointer;
+}
+
+.tab-content {
+    border-left: 1px solid #dee2e6;
+    border-right: 1px solid #dee2e6;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.data-table.table {
+    white-space: pre;
+    margin: 2px 0 2px 0;
+}
+
+.data-table > tbody > tr > td {
+    padding: 6px 16px 6px 16px;
+}
