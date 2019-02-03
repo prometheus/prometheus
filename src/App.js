@@ -1,5 +1,20 @@
 import React, { Component } from 'react';
-import { Alert, Button, Col, Container, InputGroup, InputGroupAddon, Input, Nav, NavItem, NavLink, Row, TabContent, TabPane, Table } from 'reactstrap';
+import {
+  Alert,
+  Button,
+  Col,
+  Container,
+  InputGroup,
+  InputGroupAddon,
+  Input,
+  Nav,
+  NavItem,
+  NavLink,
+  Row,
+  TabContent,
+  TabPane,
+  Table
+} from 'reactstrap';
 import ReactFlot from 'react-flot';
 import '../node_modules/react-flot/flot/jquery.flot.time.min';
 import './App.css';
@@ -19,6 +34,7 @@ class PanelList extends Component {
     super(props);
     this.state = {
       panels: [],
+      metrics: [],
     };
     this.key = 0;
 
@@ -28,6 +44,24 @@ class PanelList extends Component {
 
   componentDidMount() {
     this.addPanel();
+
+    fetch("http://demo.robustperception.io:9090/api/v1/label/__name__/values")
+    .then(resp => {
+      if (resp.ok) {
+        return resp.json();
+      } else {
+        console.log(resp);
+        throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
+      }
+    })
+    .then(json =>
+      this.setState({
+        metrics: json.data,
+      })
+    )
+    .catch(error => {
+      this.setState({error})
+    });
   }
 
   getKey() {
@@ -37,7 +71,7 @@ class PanelList extends Component {
   addPanel() {
     const panels = this.state.panels.slice();
     const key = this.getKey();
-    panels.push(<Panel key={key} removePanel={() => this.removePanel(key)}/>);
+    panels.push({key: key});
     this.setState({panels: panels});
   }
 
@@ -51,7 +85,9 @@ class PanelList extends Component {
   render() {
     return (
       <>
-        {this.state.panels}
+        {this.state.panels.map(p =>
+          <Panel key={p.key} removePanel={() => this.removePanel(p.key)} metrics={this.state.metrics}/>
+        )}
         <Button color="primary" onClick={this.addPanel}>Add Panel</Button>
       </>
     );
@@ -63,7 +99,7 @@ class Panel extends Component {
     super(props);
 
     this.state = {
-      expr: '',
+      expr: 'rate(node_cpu_seconds_total[1m])',
       type: 'table', // TODO enum?
       range: 3600,
       endTime: null,
@@ -78,6 +114,16 @@ class Panel extends Component {
     this.handleExpressionChange = this.handleExpressionChange.bind(this);
   }
 
+  componentDidUpdate(prevProps, prevState) {
+    if (prevState.type !== this.state.type) {
+      this.execute();
+    }
+  }
+
+  componentDidMount() {
+    this.execute();
+  }
+
   execute() {
     if (this.state.expr === "") {
       return;
@@ -85,7 +131,7 @@ class Panel extends Component {
 
     this.setState({loading: true});
 
-    let url = new URL('http://localhost:9090/');//window.location.href);
+    let url = new URL('http://demo.robustperception.io:9090/');//window.location.href);
     let params = {
       'query': this.state.expr,
     };
@@ -119,7 +165,7 @@ class Panel extends Component {
         throw new Error('Unexpected response status: ' + resp.statusText);
       }
     })
-    .then(json => 
+    .then(json =>
       this.setState({
         error: null,
         data: json.data,
@@ -144,6 +190,9 @@ class Panel extends Component {
         <Row>
           <Col>
             <ExpressionInput value={this.state.expr} onChange={this.handleExpressionChange} execute={this.execute}/>
+            {/*<Input type="select" name="selectMetric">
+              {this.props.metrics.map(m => <option key={m}>{m}</option>)}
+            </Input>*/}
           </Col>
         </Row>
         <Row>
@@ -177,17 +226,22 @@ class Panel extends Component {
               </NavItem>
             </Nav>
             <TabContent activeTab={this.state.type}>
-              // TODO: Only render this pane when it's selected.
               <TabPane tabId="graph">
-                <GraphControls
-                  range={this.state.range}
-                  endTime={this.state.endTime}
-                  step={this.state.step}
-                />
-                <Graph data={this.state.data} />
+                {this.state.type === 'graph' &&
+                  <>
+                    <GraphControls
+                      range={this.state.range}
+                      endTime={this.state.endTime}
+                      step={this.state}
+                    />
+                    <Graph data={this.state.data} />
+                  </>
+                }
               </TabPane>
               <TabPane tabId="table">
-                <DataTable data={this.state.data} />
+                {this.state.type === 'table' &&
+                  <DataTable data={this.state.data} />
+                }
               </TabPane>
             </TabContent>
           </Col>
@@ -267,7 +321,7 @@ function DataTable(props) {
         break;
       default:
         // TODO
-    }  
+    }
   }
 
   return (
@@ -281,6 +335,9 @@ function DataTable(props) {
 
 class GraphControls extends Component {
   // TODO
+  render() {
+    return null;
+  }
 }
 
 var graphID = 0;
@@ -340,7 +397,13 @@ class Graph extends Component {
     }
     return (
       <div>
-        <ReactFlot id={getGraphID()} data={this.getData()} options={this.getOptions()} width="1900px" height="500px" />
+        <ReactFlot
+          id={getGraphID().toString()}
+          data={this.getData()}
+          options={this.getOptions()}
+          width="1900px"
+          height="500px"
+        />
         <div ref={ref => { this.legend = ref; }}></div>
       </div>
     );
