@@ -165,7 +165,7 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, logger log.Logger) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -209,6 +209,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 				return appender(app, limit)
 			},
 			cache,
+			jitterSeed,
 		)
 	}
 
@@ -467,7 +468,7 @@ func appender(app storage.Appender, limit int) storage.Appender {
 type scraper interface {
 	scrape(ctx context.Context, w io.Writer) (string, error)
 	report(start time.Time, dur time.Duration, err error)
-	offset(interval time.Duration) time.Duration
+	offset(interval time.Duration, jitterSeed uint64) time.Duration
 }
 
 // targetScraper implements the scraper interface for a target.
@@ -558,6 +559,7 @@ type scrapeLoop struct {
 	cache          *scrapeCache
 	lastScrapeSize int
 	buffers        *pool.Pool
+	jitterSeed     uint64
 
 	appender            func() storage.Appender
 	sampleMutator       labelsMutator
@@ -776,6 +778,7 @@ func newScrapeLoop(ctx context.Context,
 	reportSampleMutator labelsMutator,
 	appender func() storage.Appender,
 	cache *scrapeCache,
+	jitterSeed uint64,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -794,6 +797,7 @@ func newScrapeLoop(ctx context.Context,
 		sampleMutator:       sampleMutator,
 		reportSampleMutator: reportSampleMutator,
 		stopped:             make(chan struct{}),
+		jitterSeed:          jitterSeed,
 		l:                   l,
 		ctx:                 ctx,
 	}
@@ -804,7 +808,7 @@ func newScrapeLoop(ctx context.Context,
 
 func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 	select {
-	case <-time.After(sl.scraper.offset(interval)):
+	case <-time.After(sl.scraper.offset(interval, sl.jitterSeed)):
 		// Continue after a scraping offset.
 	case <-sl.scrapeCtx.Done():
 		close(sl.stopped)

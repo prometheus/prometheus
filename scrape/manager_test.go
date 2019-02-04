@@ -368,3 +368,44 @@ func TestManagerTargetsUpdates(t *testing.T) {
 		t.Error("No scrape loops reload was triggered after targets update.")
 	}
 }
+
+func TestSetJitter(t *testing.T) {
+	getConfig := func(prometheus string) *config.Config {
+		cfgText := `
+global:
+ external_labels:
+   prometheus: '` + prometheus + `'
+`
+
+		cfg := &config.Config{}
+		if err := yaml.UnmarshalStrict([]byte(cfgText), cfg); err != nil {
+			t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
+		}
+
+		return cfg
+	}
+
+	scrapeManager := NewManager(nil, nil)
+
+	// Load the first config.
+	cfg1 := getConfig("ha1")
+	if err := scrapeManager.setJitterSeed(cfg1.GlobalConfig.ExternalLabels); err != nil {
+		t.Error(err)
+	}
+	jitter1 := scrapeManager.jitterSeed
+
+	if jitter1 == 0 {
+		t.Error("Jitter has to be a hash of uint64")
+	}
+
+	// Load the first config.
+	cfg2 := getConfig("ha2")
+	if err := scrapeManager.setJitterSeed(cfg2.GlobalConfig.ExternalLabels); err != nil {
+		t.Error(err)
+	}
+	jitter2 := scrapeManager.jitterSeed
+
+	if jitter1 == jitter2 {
+		t.Error("Jitter should not be the same on different set of external labels")
+	}
+}
