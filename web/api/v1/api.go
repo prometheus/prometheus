@@ -594,7 +594,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	matchers := []*labels.Matcher{}
 	if s := r.FormValue("match_target"); s != "" {
 		var err error
-		matchers, err = promql.ParseMetricSelector(r.FormValue("match_target"))
+		matchers, err = promql.ParseMetricSelector(s)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
