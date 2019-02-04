@@ -753,9 +753,9 @@ func TestCancelCompactions(t *testing.T) {
 	defer os.RemoveAll(tmpdir)
 
 	// Create some blocks to fall within the compaction range.
-	createBlock(t, tmpdir, 7000, 0, 1000)
-	createBlock(t, tmpdir, 7000, 1000, 2000)
-	createBlock(t, tmpdir, 1, 2000, 2001) // The most recent block is ignored so can be e small one.
+	createBlock(t, tmpdir, genSeries(10, 10000, 0, 1000))
+	createBlock(t, tmpdir, genSeries(10, 10000, 1000, 2000))
+	createBlock(t, tmpdir, genSeries(1, 1, 2000, 2001)) // The most recent block is ignored so can be e small one.
 
 	// Copy the db so we have an exact copy to compare compaction times.
 	tmpdirCopy := tmpdir + "Copy"
