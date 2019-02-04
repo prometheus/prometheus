@@ -80,7 +80,6 @@ func createBlock(tb testing.TB, dir string, series []Series) string {
 			}
 			ref, err = app.Add(s.Labels(), t, v)
 			testutil.Ok(tb, err)
-			refs[i] = ref
 		}
 		testutil.Ok(tb, it.Err())
 	}
