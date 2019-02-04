@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -60,6 +61,32 @@ var (
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
 		[]string{"interval"},
+	)
+	targetScrapePools = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrape_pools_total",
+			Help: "Total number of scrape pool creation atttempts.",
+		},
+	)
+	targetScrapePoolsFailed = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrape_pools_failed_total",
+			Help: "Total number of scrape pool creations that failed.",
+		},
+	)
+	targetScrapePoolReloads = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrape_pool_reloads_total",
+			Help: "Total number of reloads on a scrape pool.",
+		},
+		[]string{"scrape_job"},
+	)
+	targetScrapePoolReloadsFailed = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrape_pool_reloads_failed_total",
+			Help: "Total number of failed reloads on a scrape pool.",
+		},
+		[]string{"scrape_job"},
 	)
 	targetSyncIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -105,6 +132,10 @@ var (
 func init() {
 	prometheus.MustRegister(targetIntervalLength)
 	prometheus.MustRegister(targetReloadIntervalLength)
+	prometheus.MustRegister(targetScrapePools)
+	prometheus.MustRegister(targetScrapePoolsFailed)
+	prometheus.MustRegister(targetScrapePoolReloads)
+	prometheus.MustRegister(targetScrapePoolReloadsFailed)
 	prometheus.MustRegister(targetSyncIntervalLength)
 	prometheus.MustRegister(targetScrapePoolSyncsCounter)
 	prometheus.MustRegister(targetScrapeSampleLimit)
@@ -136,15 +167,18 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) *scrapePool {
+func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) (*scrapePool, error) {
+	targetScrapePools.Inc()
+	targetScrapePoolReloads.WithLabelValues(cfg.JobName)
+	targetScrapePoolReloadsFailed.WithLabelValues(cfg.JobName)
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
 	if err != nil {
-		// Any errors that could occur here should be caught during config validation.
-		level.Error(logger).Log("msg", "Error creating HTTP client", "err", err)
+		targetScrapePoolsFailed.Inc()
+		return nil, errors.Wrap(err, "error creating HTTP client")
 	}
 
 	buffers := pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
@@ -182,7 +216,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 		)
 	}
 
-	return sp
+	return sp, nil
 }
 
 func (sp *scrapePool) ActiveTargets() []*Target {
@@ -227,7 +261,8 @@ func (sp *scrapePool) stop() {
 // reload the scrape pool with the given scrape configuration. The target state is preserved
 // but all scrape loops are restarted with the new scrape configuration.
 // This method returns after all scrape loops that were stopped have stopped scraping.
-func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
+func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
+	targetScrapePoolReloads.WithLabelValues(cfg.JobName).Inc()
 	start := time.Now()
 
 	sp.mtx.Lock()
@@ -235,8 +270,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
 	if err != nil {
-		// Any errors that could occur here should be caught during config validation.
-		level.Error(sp.logger).Log("msg", "Error creating HTTP client", "err", err)
+		targetScrapePoolReloadsFailed.WithLabelValues(cfg.JobName).Inc()
+		return errors.Wrap(err, "error creating HTTP client")
 	}
 	sp.config = cfg
 	sp.client = client
@@ -272,6 +307,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
 		time.Since(start).Seconds(),
 	)
+	return nil
 }
 
 // Sync converts target groups into actual scrape targets and synchronizes

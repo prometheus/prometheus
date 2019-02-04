@@ -29,16 +29,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/relabel"
-
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-
-	dto "github.com/prometheus/client_model/go"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -48,9 +46,9 @@ import (
 
 func TestNewScrapePool(t *testing.T) {
 	var (
-		app = &nopAppendable{}
-		cfg = &config.ScrapeConfig{}
-		sp  = newScrapePool(cfg, app, nil)
+		app   = &nopAppendable{}
+		cfg   = &config.ScrapeConfig{}
+		sp, _ = newScrapePool(cfg, app, nil)
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -85,7 +83,7 @@ func TestDroppedTargetsList(t *testing.T) {
 				},
 			},
 		}
-		sp                     = newScrapePool(cfg, app, nil)
+		sp, _                  = newScrapePool(cfg, app, nil)
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __metrics_path__=\"\", __scheme__=\"\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
@@ -307,7 +305,7 @@ func TestScrapePoolReload(t *testing.T) {
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
-	sp := newScrapePool(cfg, app, nil)
+	sp, _ := newScrapePool(cfg, app, nil)
 
 	loop := sp.newLoop(&Target{}, nil, 0, false, nil)
 	appl, ok := loop.(*scrapeLoop)
@@ -350,7 +348,7 @@ func TestScrapePoolRaces(t *testing.T) {
 	newConfig := func() *config.ScrapeConfig {
 		return &config.ScrapeConfig{ScrapeInterval: interval, ScrapeTimeout: timeout}
 	}
-	sp := newScrapePool(newConfig(), &nopAppendable{}, nil)
+	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, nil)
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{
