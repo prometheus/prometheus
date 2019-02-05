@@ -108,13 +108,13 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		metadata := ec2metadata.New(sess)
 		region, err := metadata.Region()
 		if err != nil {
-			return fmt.Errorf("EC2 SD configuration requires a region")
+			return fmt.Errorf("eC2 SD configuration requires a region")
 		}
 		c.Region = region
 	}
 	for _, f := range c.Filters {
 		if len(f.Values) == 0 {
-			return fmt.Errorf("EC2 SD configuration filter values cannot be empty")
+			return fmt.Errorf("eC2 SD configuration filter values cannot be empty")
 		}
 	}
 	return nil

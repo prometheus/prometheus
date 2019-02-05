@@ -96,10 +96,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Project == "" {
-		return fmt.Errorf("GCE SD configuration requires a project")
+		return fmt.Errorf("gCE SD configuration requires a project")
 	}
 	if c.Zone == "" {
-		return fmt.Errorf("GCE SD configuration requires a zone")
+		return fmt.Errorf("gCE SD configuration requires a zone")
 	}
 	return nil
 }

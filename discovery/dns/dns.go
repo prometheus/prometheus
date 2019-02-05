@@ -76,7 +76,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.Names) == 0 {
-		return fmt.Errorf("DNS-SD config must contain at least one SRV record name")
+		return fmt.Errorf("dNS-SD config must contain at least one SRV record name")
 	}
 	switch strings.ToUpper(c.Type) {
 	case "SRV":
@@ -329,7 +329,7 @@ func askServerForName(name string, queryType uint16, client *dns.Client, servAdd
 		return nil, err
 	}
 	if msg.Id != response.Id {
-		return nil, fmt.Errorf("DNS ID mismatch, request: %d, response: %d", msg.Id, response.Id)
+		return nil, fmt.Errorf("dNS ID mismatch, request: %d, response: %d", msg.Id, response.Id)
 	}
 	return response, nil
 }
