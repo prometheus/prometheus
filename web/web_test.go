@@ -16,6 +16,7 @@ package web
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/scrape"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -102,7 +103,7 @@ func TestReadyAndHealthy(t *testing.T) {
 		Context:        nil,
 		Storage:        &tsdb.ReadyStorage{},
 		QueryEngine:    nil,
-		ScrapeManager:  nil,
+		ScrapeManager:  &scrape.Manager{},
 		RuleManager:    &rules.Manager{},
 		Notifier:       nil,
 		RoutePrefix:    "/",
@@ -180,6 +181,11 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 
+	resp, err = http.Get("http://localhost:9090/service-discovery")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
 	// Set to ready.
 	webHandler.Ready()
 
@@ -224,6 +230,11 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
 
 	resp, err = http.Get("http://localhost:9090/rules")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/service-discovery")
 
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
