@@ -129,7 +129,7 @@ type DB struct {
 	autoCompact    bool
 
 	// Cancel a running compaction when a shutdown is initiated.
-	compactCnl func()
+	compactCancel context.CancelFunc
 }
 
 type dbMetrics struct {
@@ -275,13 +275,13 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		db.lockf = lockf
 	}
 
-	ctx, cnl := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	db.compactor, err = NewLeveledCompactor(ctx, r, l, opts.BlockRanges, db.chunkPool)
 	if err != nil {
-		cnl()
+		cancel()
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
-	db.compactCnl = cnl
+	db.compactCancel = cancel
 
 	segmentSize := wal.DefaultSegmentSize
 	if opts.WALSegmentSize > 0 {
@@ -819,7 +819,7 @@ func (db *DB) Head() *Head {
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
-	db.compactCnl()
+	db.compactCancel()
 	<-db.donec
 
 	db.mtx.Lock()
