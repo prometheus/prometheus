@@ -487,9 +487,10 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	dir := filepath.Join(dest, meta.ULID.String())
 	tmp := dir + ".tmp"
 	var writers []io.Closer
-	var merr MultiError
 	defer func(t time.Time) {
+		var merr MultiError
 		merr.Add(err)
+		err = merr.Err()
 		for _, w := range writers {
 			merr.Add(w.Close())
 		}
@@ -498,7 +499,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		if err := os.RemoveAll(tmp); err != nil {
 			level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
 		}
-		if merr.Err() != nil {
+		if err != nil {
 			c.metrics.failed.Inc()
 		}
 		c.metrics.ran.Inc()
@@ -552,6 +553,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	// though these are covered under defer. This is because in Windows,
 	// you cannot delete these unless they are closed and the defer is to
 	// make sure they are closed if the function exits due to an error above.
+	var merr MultiError
 	for _, w := range writers {
 		merr.Add(w.Close())
 	}
