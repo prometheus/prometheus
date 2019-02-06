@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
 	libtsdb "github.com/prometheus/tsdb"
@@ -102,7 +103,7 @@ func TestReadyAndHealthy(t *testing.T) {
 		Storage:        &tsdb.ReadyStorage{},
 		QueryEngine:    nil,
 		ScrapeManager:  nil,
-		RuleManager:    nil,
+		RuleManager:    &rules.Manager{},
 		Notifier:       nil,
 		RoutePrefix:    "/",
 		EnableAdminAPI: true,
@@ -159,6 +160,16 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 
+	resp, err = http.Get("http://localhost:9090/graph")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/alerts")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
 	// Set to ready.
 	webHandler.Ready()
 
@@ -188,6 +199,11 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
 
 	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/alerts")
 
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
