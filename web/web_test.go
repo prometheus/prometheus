@@ -175,6 +175,11 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 
+	resp, err = http.Get("http://localhost:9090/rules")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
 	// Set to ready.
 	webHandler.Ready()
 
@@ -214,6 +219,11 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
 
 	resp, err = http.Get("http://localhost:9090/flags")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/rules")
 
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
