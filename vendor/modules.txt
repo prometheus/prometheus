@@ -191,7 +191,7 @@ github.com/julienschmidt/httprouter
 github.com/kr/logfmt
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/miekg/dns v1.0.4
+# github.com/miekg/dns v1.1.4
 github.com/miekg/dns
 # github.com/mitchellh/go-homedir v0.0.0-20180523094522-3864e76763d9
 github.com/mitchellh/go-homedir

@@ -66,7 +66,7 @@ require (
 	github.com/lib/pq v1.0.0 // indirect
 	github.com/lightstep/lightstep-tracer-go v0.15.6 // indirect
 	github.com/mattn/go-runewidth v0.0.3 // indirect
-	github.com/miekg/dns v1.0.4
+	github.com/miekg/dns v1.1.4
 	github.com/mitchellh/go-homedir v0.0.0-20180523094522-3864e76763d9 // indirect
 	github.com/mitchellh/go-testing-interface v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.0 // indirect
