@@ -493,12 +493,13 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		for _, w := range writers {
 			merr.Add(w.Close())
 		}
+
+		// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
+		if err := os.RemoveAll(tmp); err != nil {
+			level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
+		}
 		if merr.Err() != nil {
 			c.metrics.failed.Inc()
-			// TODO(gouthamve): Handle error how?
-			if err := os.RemoveAll(tmp); err != nil {
-				level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
-			}
 		}
 		c.metrics.ran.Inc()
 		c.metrics.duration.Observe(time.Since(t).Seconds())
@@ -559,11 +560,8 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		return merr.Err()
 	}
 
-	// Populated block is empty, so cleanup and exit.
+	// Populated block is empty, so exit early.
 	if meta.Stats.NumSamples == 0 {
-		if err := os.RemoveAll(tmp); err != nil {
-			return errors.Wrap(err, "remove tmp folder after empty block failed")
-		}
 		return nil
 	}
 
