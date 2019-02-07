@@ -205,6 +205,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	for _, c := range chks {
 		maxLen += binary.MaxVarintLen32 + 1 // The number of bytes in the chunk and its encoding.
 		maxLen += int64(len(c.Chunk.Bytes()))
+		maxLen += 4 // The 4 bytes of crc32
 	}
 	newsz := w.n + maxLen
 
@@ -284,17 +285,15 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // Reader implements a SeriesReader for a serialized byte stream
 // of series data.
 type Reader struct {
-	// The underlying bytes holding the encoded series data.
-	bs []ByteSlice
-
-	// Closers for resources behind the byte slices.
-	cs []io.Closer
-
+	bs   []ByteSlice // The underlying bytes holding the encoded series data.
+	cs   []io.Closer // Closers for resources behind the byte slices.
+	size int64       // The total size of bytes in the reader.
 	pool chunkenc.Pool
 }
 
 func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
 	cr := Reader{pool: pool, bs: bs, cs: cs}
+	var totalSize int64
 
 	for i, b := range cr.bs {
 		if b.Len() < 4 {
@@ -304,7 +303,9 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 		if m := binary.BigEndian.Uint32(b.Range(0, 4)); m != MagicChunks {
 			return nil, errors.Errorf("invalid magic number %x", m)
 		}
+		totalSize += int64(b.Len())
 	}
+	cr.size = totalSize
 	return &cr, nil
 }
 
@@ -327,9 +328,10 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 		pool = chunkenc.NewPool()
 	}
 
-	var bs []ByteSlice
-	var cs []io.Closer
-
+	var (
+		bs []ByteSlice
+		cs []io.Closer
+	)
 	for _, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
@@ -345,30 +347,36 @@ func (s *Reader) Close() error {
 	return closeAll(s.cs...)
 }
 
+// Size returns the size of the chunks.
+func (s *Reader) Size() int64 {
+	return s.size
+}
+
+// Chunk returns a chunk from a given reference.
 func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	var (
-		seq = int(ref >> 32)
-		off = int((ref << 32) >> 32)
+		sgmSeq    = int(ref >> 32)
+		sgmOffset = int((ref << 32) >> 32)
 	)
-	if seq >= len(s.bs) {
-		return nil, errors.Errorf("reference sequence %d out of range", seq)
+	if sgmSeq >= len(s.bs) {
+		return nil, errors.Errorf("reference sequence %d out of range", sgmSeq)
 	}
-	b := s.bs[seq]
+	chkS := s.bs[sgmSeq]
 
-	if off >= b.Len() {
-		return nil, errors.Errorf("offset %d beyond data size %d", off, b.Len())
+	if sgmOffset >= chkS.Len() {
+		return nil, errors.Errorf("offset %d beyond data size %d", sgmOffset, chkS.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
-	r := b.Range(off, off+binary.MaxVarintLen32)
+	chk := chkS.Range(sgmOffset, sgmOffset+binary.MaxVarintLen32)
 
-	l, n := binary.Uvarint(r)
+	chkLen, n := binary.Uvarint(chk)
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
-	r = b.Range(off+n, off+n+int(l))
+	chk = chkS.Range(sgmOffset+n, sgmOffset+n+1+int(chkLen))
 
-	return s.pool.Get(chunkenc.Encoding(r[0]), r[1:1+l])
+	return s.pool.Get(chunkenc.Encoding(chk[0]), chk[1:1+chkLen])
 }
 
 func nextSequenceFile(dir string) (string, int, error) {

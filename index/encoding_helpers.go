@@ -18,6 +18,8 @@ import (
 	"hash"
 	"hash/crc32"
 	"unsafe"
+
+	"github.com/pkg/errors"
 )
 
 // enbuf is a helper type to populate a byte slice with various types.
@@ -84,6 +86,60 @@ func (e *encbuf) putHash(h hash.Hash) {
 type decbuf struct {
 	b []byte
 	e error
+}
+
+// newDecbufAt returns a new decoding buffer. It expects the first 4 bytes
+// after offset to hold the big endian encoded content length, followed by the contents and the expected
+// checksum.
+func newDecbufAt(bs ByteSlice, off int) decbuf {
+	if bs.Len() < off+4 {
+		return decbuf{e: errInvalidSize}
+	}
+	b := bs.Range(off, off+4)
+	l := int(binary.BigEndian.Uint32(b))
+
+	if bs.Len() < off+4+l+4 {
+		return decbuf{e: errInvalidSize}
+	}
+
+	// Load bytes holding the contents plus a CRC32 checksum.
+	b = bs.Range(off+4, off+4+l+4)
+	dec := decbuf{b: b[:len(b)-4]}
+
+	if exp := binary.BigEndian.Uint32(b[len(b)-4:]); dec.crc32() != exp {
+		return decbuf{e: errInvalidChecksum}
+	}
+	return dec
+}
+
+// decbufUvarintAt returns a new decoding buffer. It expects the first bytes
+// after offset to hold the uvarint-encoded buffers length, followed by the contents and the expected
+// checksum.
+func newDecbufUvarintAt(bs ByteSlice, off int) decbuf {
+	// We never have to access this method at the far end of the byte slice. Thus just checking
+	// against the MaxVarintLen32 is sufficient.
+	if bs.Len() < off+binary.MaxVarintLen32 {
+		return decbuf{e: errInvalidSize}
+	}
+	b := bs.Range(off, off+binary.MaxVarintLen32)
+
+	l, n := binary.Uvarint(b)
+	if n <= 0 || n > binary.MaxVarintLen32 {
+		return decbuf{e: errors.Errorf("invalid uvarint %d", n)}
+	}
+
+	if bs.Len() < off+n+int(l)+4 {
+		return decbuf{e: errInvalidSize}
+	}
+
+	// Load bytes holding the contents plus a CRC32 checksum.
+	b = bs.Range(off+n, off+n+int(l)+4)
+	dec := decbuf{b: b[:len(b)-4]}
+
+	if dec.crc32() != binary.BigEndian.Uint32(b[len(b)-4:]) {
+		return decbuf{e: errInvalidChecksum}
+	}
+	return dec
 }
 
 func (d *decbuf) uvarint() int      { return int(d.uvarint64()) }

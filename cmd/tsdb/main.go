@@ -138,7 +138,7 @@ func (b *writeBenchmark) run() {
 	}
 	b.storage = st
 
-	var metrics []labels.Labels
+	var labels []labels.Labels
 
 	measureTime("readData", func() {
 		f, err := os.Open(b.samplesFile)
@@ -147,7 +147,7 @@ func (b *writeBenchmark) run() {
 		}
 		defer f.Close()
 
-		metrics, err = readPrometheusLabels(f, b.numMetrics)
+		labels, err = readPrometheusLabels(f, b.numMetrics)
 		if err != nil {
 			exitWithError(err)
 		}
@@ -157,7 +157,7 @@ func (b *writeBenchmark) run() {
 
 	dur := measureTime("ingestScrapes", func() {
 		b.startProfiling()
-		total, err = b.ingestScrapes(metrics, 3000)
+		total, err = b.ingestScrapes(labels, 3000)
 		if err != nil {
 			exitWithError(err)
 		}
@@ -213,7 +213,7 @@ func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (u
 	return total, nil
 }
 
-func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount int, baset int64) (uint64, error) {
+func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount int, baset int64) (uint64, error) {
 	ts := baset
 
 	type sample struct {
@@ -222,9 +222,9 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount
 		ref    *uint64
 	}
 
-	scrape := make([]*sample, 0, len(metrics))
+	scrape := make([]*sample, 0, len(lbls))
 
-	for _, m := range metrics {
+	for _, m := range lbls {
 		scrape = append(scrape, &sample{
 			labels: m,
 			value:  123456789,

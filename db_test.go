@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
+	"github.com/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/tsdb/wal"
 )
 
@@ -87,11 +88,14 @@ func TestDB_reloadOrder(t *testing.T) {
 		{MinTime: 100, MaxTime: 110},
 	}
 	for _, m := range metas {
-		createBlock(t, db.Dir(), 1, m.MinTime, m.MaxTime)
+		createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
 	}
 
 	testutil.Ok(t, db.reload())
 	blocks := db.Blocks()
+	for _, b := range blocks {
+		b.meta.Stats.NumBytes = 0
+	}
 	testutil.Equals(t, 3, len(blocks))
 	testutil.Equals(t, metas[1].MinTime, blocks[0].Meta().MinTime)
 	testutil.Equals(t, metas[1].MaxTime, blocks[0].Meta().MaxTime)
@@ -264,7 +268,7 @@ Outer:
 		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
 		testutil.Ok(t, err)
 
-		expSamples := make([]Sample, 0, len(c.remaint))
+		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
 			expSamples = append(expSamples, sample{ts, smpls[ts]})
 		}
@@ -502,7 +506,7 @@ Outer:
 		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
 		testutil.Ok(t, err)
 
-		expSamples := make([]Sample, 0, len(c.remaint))
+		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
 			expSamples = append(expSamples, sample{ts, smpls[ts]})
 		}
@@ -807,7 +811,7 @@ func TestTombstoneClean(t *testing.T) {
 		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
 		testutil.Ok(t, err)
 
-		expSamples := make([]Sample, 0, len(c.remaint))
+		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
 			expSamples = append(expSamples, sample{ts, smpls[ts]})
 		}
@@ -861,8 +865,8 @@ func TestTombstoneCleanFail(t *testing.T) {
 	// totalBlocks should be >=2 so we have enough blocks to trigger compaction failure.
 	totalBlocks := 2
 	for i := 0; i < totalBlocks; i++ {
-		blockDir := createBlock(t, db.Dir(), 0, 0, 0)
-		block, err := OpenBlock(blockDir, nil)
+		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, 0, 0))
+		block, err := OpenBlock(nil, blockDir, nil)
 		testutil.Ok(t, err)
 		// Add some some fake tombstones to trigger the compaction.
 		tomb := newMemTombstones()
@@ -905,7 +909,7 @@ func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int6
 		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
-	block, err := OpenBlock(createBlock(c.t, dest, 0, 0, 0), nil)
+	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 0)), nil)
 	testutil.Ok(c.t, err)
 	testutil.Ok(c.t, block.Close()) // Close block as we won't be using anywhere.
 	c.blocks = append(c.blocks, block)
@@ -929,59 +933,98 @@ func (*mockCompactorFailing) Compact(dest string, dirs []string, open []*Block) 
 
 }
 
-func TestDB_Retention(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-
-	lbls := labels.Labels{labels.Label{Name: "labelname", Value: "labelvalue"}}
-
-	app := db.Appender()
-	_, err := app.Add(lbls, 0, 1)
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
-
-	// create snapshot to make it create a block.
-	// TODO(gouthamve): Add a method to compact headblock.
-	snap, err := ioutil.TempDir("", "snap")
-	testutil.Ok(t, err)
-
-	defer os.RemoveAll(snap)
-	testutil.Ok(t, db.Snapshot(snap, true))
-	testutil.Ok(t, db.Close())
-
-	// reopen DB from snapshot
-	db, err = Open(snap, nil, nil, nil)
-	testutil.Ok(t, err)
-
-	testutil.Equals(t, 1, len(db.blocks))
-
-	app = db.Appender()
-	_, err = app.Add(lbls, 100, 1)
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
-
-	// Snapshot again to create another block.
-	snap, err = ioutil.TempDir("", "snap")
-	testutil.Ok(t, err)
-	defer os.RemoveAll(snap)
-
-	testutil.Ok(t, db.Snapshot(snap, true))
-	testutil.Ok(t, db.Close())
-
-	// reopen DB from snapshot
-	db, err = Open(snap, nil, nil, &Options{
-		RetentionDuration: 10,
-		BlockRanges:       []int64{50},
+func TestTimeRetention(t *testing.T) {
+	db, close := openTestDB(t, &Options{
+		BlockRanges: []int64{1000},
 	})
-	testutil.Ok(t, err)
+	defer close()
 	defer db.Close()
 
-	testutil.Equals(t, 2, len(db.blocks))
+	blocks := []*BlockMeta{
+		{MinTime: 500, MaxTime: 900}, // Oldest block
+		{MinTime: 1000, MaxTime: 1500},
+		{MinTime: 1500, MaxTime: 2000}, // Newest Block
+	}
 
-	// Reload blocks, which should drop blocks beyond the retention boundary.
+	for _, m := range blocks {
+		createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
+	}
+
+	testutil.Ok(t, db.reload())                       // Reload the db to register the new blocks.
+	testutil.Equals(t, len(blocks), len(db.Blocks())) // Ensure all blocks are registered.
+
+	db.opts.RetentionDuration = uint64(blocks[2].MaxTime - blocks[1].MinTime)
 	testutil.Ok(t, db.reload())
-	testutil.Equals(t, 1, len(db.blocks))
-	testutil.Equals(t, int64(100), db.blocks[0].meta.MaxTime) // To verify its the right block.
+
+	expBlocks := blocks[1:]
+	actBlocks := db.Blocks()
+
+	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "metric retention count mismatch")
+	testutil.Equals(t, len(expBlocks), len(actBlocks))
+	testutil.Equals(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime)
+	testutil.Equals(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime)
+}
+
+func TestSizeRetention(t *testing.T) {
+	db, close := openTestDB(t, &Options{
+		BlockRanges: []int64{100},
+	})
+	defer close()
+	defer db.Close()
+
+	blocks := []*BlockMeta{
+		{MinTime: 100, MaxTime: 200}, // Oldest block
+		{MinTime: 200, MaxTime: 300},
+		{MinTime: 300, MaxTime: 400},
+		{MinTime: 400, MaxTime: 500},
+		{MinTime: 500, MaxTime: 600}, // Newest Block
+	}
+
+	for _, m := range blocks {
+		createBlock(t, db.Dir(), genSeries(100, 10, m.MinTime, m.MaxTime))
+	}
+
+	// Test that registered size matches the actual disk size.
+	testutil.Ok(t, db.reload())                                       // Reload the db to register the new db size.
+	testutil.Equals(t, len(blocks), len(db.Blocks()))                 // Ensure all blocks are registered.
+	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
+	actSize := dbDiskSize(db.Dir())
+	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
+
+	// Decrease the max bytes limit so that a delete is triggered.
+	// Check total size, total count and check that the oldest block was deleted.
+	firstBlockSize := db.Blocks()[0].Size()
+	sizeLimit := actSize - firstBlockSize
+	db.opts.MaxBytes = sizeLimit // Set the new db size limit one block smaller that the actual size.
+	testutil.Ok(t, db.reload())  // Reload the db to register the new db size.
+
+	expBlocks := blocks[1:]
+	actBlocks := db.Blocks()
+	expSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
+	actRetentCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
+	actSize = dbDiskSize(db.Dir())
+
+	testutil.Equals(t, 1, actRetentCount, "metric retention count mismatch")
+	testutil.Equals(t, actSize, expSize, "metric db size doesn't match actual disk size")
+	testutil.Assert(t, expSize <= sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
+	testutil.Equals(t, len(blocks)-1, len(actBlocks), "new block count should be decreased from:%v to:%v", len(blocks), len(blocks)-1)
+	testutil.Equals(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime, "maxT mismatch of the first block")
+	testutil.Equals(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime, "maxT mismatch of the last block")
+
+}
+
+func dbDiskSize(dir string) int64 {
+	var statSize int64
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		// Include only index,tombstone and chunks.
+		if filepath.Dir(path) == chunkDir(filepath.Dir(filepath.Dir(path))) ||
+			info.Name() == indexFilename ||
+			info.Name() == tombstoneFilename {
+			statSize += info.Size()
+		}
+		return nil
+	})
+	return statSize
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
@@ -1305,7 +1348,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		testutil.Ok(t, err)
 		defer os.RemoveAll(dir)
 
-		createBlock(t, dir, 1, 1000, 2000)
+		createBlock(t, dir, genSeries(1, 1, 1000, 2000))
 
 		db, err := Open(dir, nil, nil, nil)
 		testutil.Ok(t, err)
@@ -1318,7 +1361,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		testutil.Ok(t, err)
 		defer os.RemoveAll(dir)
 
-		createBlock(t, dir, 1, 1000, 6000)
+		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
 
 		testutil.Ok(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"))
@@ -1347,6 +1390,109 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		testutil.Equals(t, int64(15000), db.head.MaxTime())
 		// Check that old series has been GCed.
 		testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.series))
+	})
+}
+
+func TestNoEmptyBlocks(t *testing.T) {
+	db, close := openTestDB(t, &Options{
+		BlockRanges: []int64{100},
+	})
+	defer close()
+	defer db.Close()
+	db.DisableCompactions()
+
+	rangeToTriggercompaction := db.opts.BlockRanges[0]/2*3 - 1
+	defaultLabel := labels.FromStrings("foo", "bar")
+	defaultMatcher := labels.NewMustRegexpMatcher("", ".*")
+
+	t.Run("Test no blocks after compact with empty head.", func(t *testing.T) {
+		testutil.Ok(t, db.compact())
+		actBlocks, err := blockDirs(db.Dir())
+		testutil.Ok(t, err)
+		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
+		testutil.Equals(t, 0, len(actBlocks))
+		testutil.Equals(t, 0, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "no compaction should be triggered here")
+	})
+
+	t.Run("Test no blocks after deleting all samples from head.", func(t *testing.T) {
+		app := db.Appender()
+		_, err := app.Add(defaultLabel, 1, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, 2, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, 3+rangeToTriggercompaction, 0)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		testutil.Ok(t, db.compact())
+		testutil.Equals(t, 1, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+
+		actBlocks, err := blockDirs(db.Dir())
+		testutil.Ok(t, err)
+		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
+		testutil.Equals(t, 0, len(actBlocks))
+
+		app = db.Appender()
+		_, err = app.Add(defaultLabel, 1, 0)
+		testutil.Assert(t, err == ErrOutOfBounds, "the head should be truncated so no samples in the past should be allowed")
+
+		// Adding new blocks.
+		currentTime := db.Head().MaxTime()
+		_, err = app.Add(defaultLabel, currentTime, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, currentTime+1, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, currentTime+rangeToTriggercompaction, 0)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+
+		testutil.Ok(t, db.compact())
+		testutil.Equals(t, 2, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		actBlocks, err = blockDirs(db.Dir())
+		testutil.Ok(t, err)
+		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
+		testutil.Assert(t, len(actBlocks) == 1, "No blocks created when compacting with >0 samples")
+	})
+
+	t.Run(`When no new block is created from head, and there are some blocks on disk 
+	compaction should not run into infinite loop (was seen during development).`, func(t *testing.T) {
+		oldBlocks := db.Blocks()
+		app := db.Appender()
+		currentTime := db.Head().MaxTime()
+		_, err := app.Add(defaultLabel, currentTime, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, currentTime+1, 0)
+		testutil.Ok(t, err)
+		_, err = app.Add(defaultLabel, currentTime+rangeToTriggercompaction, 0)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+		testutil.Ok(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		testutil.Ok(t, db.compact())
+		testutil.Equals(t, 3, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		testutil.Equals(t, oldBlocks, db.Blocks())
+	})
+
+	t.Run("Test no blocks remaining after deleting all samples from disk.", func(t *testing.T) {
+		currentTime := db.Head().MaxTime()
+		blocks := []*BlockMeta{
+			{MinTime: currentTime, MaxTime: currentTime + db.opts.BlockRanges[0]},
+			{MinTime: currentTime + 100, MaxTime: currentTime + 100 + db.opts.BlockRanges[0]},
+		}
+		for _, m := range blocks {
+			createBlock(t, db.Dir(), genSeries(2, 2, m.MinTime, m.MaxTime))
+		}
+
+		oldBlocks := db.Blocks()
+		testutil.Ok(t, db.reload())                                      // Reload the db to register the new blocks.
+		testutil.Equals(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
+		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		testutil.Ok(t, db.compact())
+		testutil.Equals(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here once for each block that have tombstones")
+
+		actBlocks, err := blockDirs(db.Dir())
+		testutil.Ok(t, err)
+		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
+		testutil.Equals(t, 1, len(actBlocks), "All samples are deleted. Only the most recent block should remain after compaction.")
 	})
 }
 
@@ -1454,12 +1600,13 @@ func TestCorrectNumTombstones(t *testing.T) {
 	defer db.Close()
 
 	blockRange := DefaultOptions.BlockRanges[0]
-	label := labels.FromStrings("foo", "bar")
+	defaultLabel := labels.FromStrings("foo", "bar")
+	defaultMatcher := labels.NewEqualMatcher(defaultLabel[0].Name, defaultLabel[0].Value)
 
 	app := db.Appender()
 	for i := int64(0); i < 3; i++ {
 		for j := int64(0); j < 15; j++ {
-			_, err := app.Add(label, i*blockRange+j, 0)
+			_, err := app.Add(defaultLabel, i*blockRange+j, 0)
 			testutil.Ok(t, err)
 		}
 	}
@@ -1469,25 +1616,25 @@ func TestCorrectNumTombstones(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, len(db.blocks))
 
-	testutil.Ok(t, db.Delete(0, 1, labels.NewEqualMatcher("foo", "bar")))
+	testutil.Ok(t, db.Delete(0, 1, defaultMatcher))
 	testutil.Equals(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
 
 	// {0, 1} and {2, 3} are merged to form 1 tombstone.
-	testutil.Ok(t, db.Delete(2, 3, labels.NewEqualMatcher("foo", "bar")))
+	testutil.Ok(t, db.Delete(2, 3, defaultMatcher))
 	testutil.Equals(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
 
-	testutil.Ok(t, db.Delete(5, 6, labels.NewEqualMatcher("foo", "bar")))
+	testutil.Ok(t, db.Delete(5, 6, defaultMatcher))
 	testutil.Equals(t, uint64(2), db.blocks[0].meta.Stats.NumTombstones)
 
-	testutil.Ok(t, db.Delete(9, 11, labels.NewEqualMatcher("foo", "bar")))
+	testutil.Ok(t, db.Delete(9, 11, defaultMatcher))
 	testutil.Equals(t, uint64(3), db.blocks[0].meta.Stats.NumTombstones)
 }
 
 // TestBlockRanges checks the following use cases:
 //  - No samples can be added with timestamps lower than the last block maxt.
-//  - The compactor doesn't create overlaping blocks
+//  - The compactor doesn't create overlapping blocks
 // even when the last blocks is not within the default boundaries.
-//	- Lower bondary is based on the smallest sample in the head and
+//	- Lower boundary is based on the smallest sample in the head and
 // upper boundary is rounded to the configured block range.
 //
 // This ensures that a snapshot that includes the head and creates a block with a custom time range
@@ -1505,7 +1652,7 @@ func TestBlockRanges(t *testing.T) {
 	// Test that the compactor doesn't create overlapping blocks
 	// when a non standard block already exists.
 	firstBlockMaxT := int64(3)
-	createBlock(t, dir, 1, 0, firstBlockMaxT)
+	createBlock(t, dir, genSeries(1, 1, 0, firstBlockMaxT))
 	db, err := Open(dir, logger, nil, DefaultOptions)
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
@@ -1555,7 +1702,7 @@ func TestBlockRanges(t *testing.T) {
 	testutil.Ok(t, db.Close())
 
 	thirdBlockMaxt := secondBlockMaxt + 2
-	createBlock(t, dir, 1, secondBlockMaxt+1, thirdBlockMaxt)
+	createBlock(t, dir, genSeries(1, 1, secondBlockMaxt+1, thirdBlockMaxt))
 
 	db, err = Open(dir, logger, nil, DefaultOptions)
 	if err != nil {

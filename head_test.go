@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
+	"github.com/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/tsdb/wal"
 )
 
@@ -296,7 +297,6 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 }
 
 func TestHeadDeleteSimple(t *testing.T) {
-
 	buildSmpls := func(s []int64) []sample {
 		ss := make([]sample, 0, len(s))
 		for _, t := range s {
@@ -397,8 +397,8 @@ Outer:
 
 		// Compare the query results for both heads - before and after the reload.
 		expSeriesSet := newMockSeriesSet([]Series{
-			newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []Sample {
-				ss := make([]Sample, 0, len(c.smplsExp))
+			newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
+				ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
 				for _, s := range c.smplsExp {
 					ss = append(ss, s)
 				}
@@ -538,9 +538,9 @@ func TestDelete_e2e(t *testing.T) {
 			{"job", "prom-k8s"},
 		},
 	}
-	seriesMap := map[string][]Sample{}
+	seriesMap := map[string][]tsdbutil.Sample{}
 	for _, l := range lbls {
-		seriesMap[labels.New(l...).String()] = []Sample{}
+		seriesMap[labels.New(l...).String()] = []tsdbutil.Sample{}
 	}
 	dir, _ := ioutil.TempDir("", "test")
 	defer os.RemoveAll(dir)
@@ -550,7 +550,7 @@ func TestDelete_e2e(t *testing.T) {
 	app := hb.Appender()
 	for _, l := range lbls {
 		ls := labels.New(l...)
-		series := []Sample{}
+		series := []tsdbutil.Sample{}
 		ts := rand.Int63n(300)
 		for i := 0; i < numDatapoints; i++ {
 			v := rand.Float64()
@@ -668,8 +668,8 @@ func boundedSamples(full []sample, mint, maxt int64) []sample {
 	return full
 }
 
-func deletedSamples(full []Sample, dranges Intervals) []Sample {
-	ds := make([]Sample, 0, len(full))
+func deletedSamples(full []tsdbutil.Sample, dranges Intervals) []tsdbutil.Sample {
+	ds := make([]tsdbutil.Sample, 0, len(full))
 Outer:
 	for _, s := range full {
 		for _, r := range dranges {
