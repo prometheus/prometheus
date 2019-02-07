@@ -15,16 +15,16 @@
     {{$alertStateToRowClass := .AlertStateToRowClass}}
     {{range .AlertingRules}}
       {{$activeAlerts := .ActiveAlerts}}
-      <tr class="{{index $alertStateToRowClass .State}} alert_header">
+      <tr class="alert alert-{{index $alertStateToRowClass .State}} alert_header">
         <td><i class="icon-chevron-down"></i> <b>{{.Name}}</b> ({{len $activeAlerts}} active)</td>
       </tr>
       <tr class="alert_details">
         <td>
           <div>
-            <pre><code>{{.HTMLSnippet pathPrefix}}</code></pre>
+            <pre style="display:block; padding:9.5px; font-size:13px; color:#333; word-break:break-all; background-color:#f5f5f5; border:1px solid #ccc; border-radius:4px;" ><code>{{.HTMLSnippet pathPrefix}}</code></pre>
           </div>
           {{if $activeAlerts}}
-          <table class="table table-bordered table-hover table-condensed alert_elements_table">
+          <table class="table table-bordered table-hover table-sm alert_elements_table">
             <tr class="">
               <th>Labels</th>
               <th>State</th>
@@ -35,7 +35,7 @@
             <tr>
               <td>
                 {{range $label, $value := .Labels.Map}}
-                  <span class="label label-primary">{{$label}}="{{$value}}"</span>
+                  <span class="badge badge-primary">{{$label}}="{{$value}}"</span>
                 {{end}}
               </td>
               <td><span class="alert alert-{{ .State | alertStateToClass }} state_indicator text-uppercase">{{.State}}</span></td>

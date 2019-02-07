@@ -20,6 +20,7 @@ div.query-history button {
   border: none;
   outline: none;
   padding: 0;
+  color: inherit;
 }
 
 div.query-history.is-checked {
@@ -159,12 +160,13 @@ input[name="end_input"], input[name="range_input"] {
 
 .prometheus_input_group .btn {
   font-size: 0.8em;
+  border-color: #ccc;
 }
 
 .prometheus_input_group .input {
   width: 100px;
-  height: 29px;
-  padding: 6px 12px;
+  
+  padding: 5px 12px 6px 12px;
   font-size: 14px;
   line-height: 1.42857143;
   color: #555;
@@ -197,7 +199,7 @@ input[name="end_input"], input[name="range_input"] {
   border-radius: 0;
 }
 
-ul.typeahead.dropdown-menu {
-  max-height: 400px;
-  overflow: auto;
+li.active, .dropdown-item:focus, .dropdown-item:hover {
+  /* color: #fff; */
+  background-color: steelblue;
 }
