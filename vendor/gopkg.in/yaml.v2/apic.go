@@ -468,7 +468,7 @@ func yaml_event_delete(event *yaml_event_t) {
 //    } context
 //    tag_directive *yaml_tag_directive_t
 //
-//    context.error = YAML_NO_ERROR // Eliminate a compliler warning.
+//    context.error = YAML_NO_ERROR // Eliminate a compiler warning.
 //
 //    assert(document) // Non-NULL document object is expected.
 //

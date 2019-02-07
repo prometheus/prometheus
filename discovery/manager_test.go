@@ -988,7 +988,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 			expected: []expect{
 				{
 					tgs: map[string][]*targetgroup.Group{
-						"once1": []*targetgroup.Group{
+						"once1": {
 							{
 								Source:  "tg1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
@@ -998,13 +998,13 @@ func TestCoordinationWithReceiver(t *testing.T) {
 				},
 				{
 					tgs: map[string][]*targetgroup.Group{
-						"once1": []*targetgroup.Group{
+						"once1": {
 							{
 								Source:  "tg1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 						},
-						"mock1": []*targetgroup.Group{
+						"mock1": {
 							{
 								Source:  "tg2",
 								Targets: []model.LabelSet{{"__instance__": "2"}},
@@ -1041,7 +1041,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 				{
 					delay: 2 * updateDelay,
 					tgs: map[string][]*targetgroup.Group{
-						"mock1": []*targetgroup.Group{
+						"mock1": {
 							{
 								Source:  "tg1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
@@ -1052,7 +1052,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 				{
 					delay: 4 * updateDelay,
 					tgs: map[string][]*targetgroup.Group{
-						"mock1": []*targetgroup.Group{
+						"mock1": {
 							{
 								Source:  "tg1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},

@@ -178,7 +178,7 @@ func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*targe
 	}
 
 	for _, record := range response.Answer {
-		target := model.LabelValue("")
+		var target model.LabelValue
 		switch addr := record.(type) {
 		case *dns.SRV:
 			// Remove the final dot from rooted DNS names to make them look more usual.

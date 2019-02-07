@@ -71,6 +71,7 @@ type Metrics struct {
 	iterationsScheduled prometheus.Counter
 	groupLastEvalTime   *prometheus.GaugeVec
 	groupLastDuration   *prometheus.GaugeVec
+	groupRules          *prometheus.GaugeVec
 }
 
 // NewGroupMetrics makes a new Metrics and registers them with then provided registerer,
@@ -127,6 +128,14 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"rule_group"},
 		),
+		groupRules: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_rules",
+				Help:      "The number of rules.",
+			},
+			[]string{"rule_group"},
+		),
 	}
 
 	if reg != nil {
@@ -139,6 +148,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.iterationsScheduled,
 			m.groupLastEvalTime,
 			m.groupLastDuration,
+			m.groupRules,
 		)
 	}
 
@@ -235,6 +245,7 @@ func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRes
 
 	metrics.groupLastEvalTime.WithLabelValues(groupKey(file, name))
 	metrics.groupLastDuration.WithLabelValues(groupKey(file, name))
+	metrics.groupRules.WithLabelValues(groupKey(file, name)).Set(float64(len(rules)))
 
 	return &Group{
 		name:                 name,
@@ -358,7 +369,7 @@ func (g *Group) GetEvaluationDuration() time.Duration {
 
 // setEvaluationDuration sets the time in seconds the last evaluation took.
 func (g *Group) setEvaluationDuration(dur time.Duration) {
-	g.metrics.groupLastDuration.WithLabelValues(groupKey(g.file, g.name)).Set(float64(dur))
+	g.metrics.groupLastDuration.WithLabelValues(groupKey(g.file, g.name)).Set(dur.Seconds())
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
@@ -374,7 +385,7 @@ func (g *Group) GetEvaluationTimestamp() time.Time {
 
 // setEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule group was last evaluated.
 func (g *Group) setEvaluationTimestamp(ts time.Time) {
-	g.metrics.groupLastEvalTime.WithLabelValues(groupKey(g.file, g.name)).Set(float64(ts.Second()))
+	g.metrics.groupLastEvalTime.WithLabelValues(groupKey(g.file, g.name)).Set(float64(ts.UnixNano()) / 1e9)
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()

@@ -41,7 +41,7 @@ type DoubleValue struct {
 func (m *DoubleValue) Reset()      { *m = DoubleValue{} }
 func (*DoubleValue) ProtoMessage() {}
 func (*DoubleValue) Descriptor() ([]byte, []int) {
-	return fileDescriptor_wrappers_b0966e4a6118a07f, []int{0}
+	return fileDescriptor_wrappers_c5239a825c7dfb53, []int{0}
 }
 func (*DoubleValue) XXX_WellKnownType() string { return "DoubleValue" }
 func (m *DoubleValue) XXX_Unmarshal(b []byte) error {
@@ -96,7 +96,7 @@ type FloatValue struct {
 func (m *FloatValue) Reset()      { *m = FloatValue{} }
 func (*FloatValue) ProtoMessage() {}
 func (*FloatValue) Descriptor() ([]byte, []int) {
-	return fileDescriptor_wrappers_b0966e4a6118a07f, []int{1}
+	return fileDescriptor_wrappers_c5239a825c7dfb53, []int{1}
 }
 func (*FloatValue) XXX_WellKnownType() string { return "FloatValue" }
 func (m *FloatValue) XXX_Unmarshal(b []byte) error {
@@ -151,7 +151,7 @@ type Int64Value struct {
 func (m *Int64Value) Reset()      { *m = Int64Value{} }
 func (*Int64Value) ProtoMessage() {}
 func (*Int64Value) Descriptor() ([]byte, []int) {
-	return fileDescriptor_wrappers_b0966e4a6118a07f, []int{2}
+	return fileDescriptor_wrappers_c5239a825c7dfb53, []int{2}
 }
 func (*Int64Value) XXX_WellKnownType() string { return "Int64Value" }
 func (m *Int64Value) XXX_Unmarshal(b []byte) error {
@@ -206,7 +206,7 @@ type UInt64Value struct {
 func (m *UInt64Value) Reset()      { *m = UInt64Value{} }
 func (*UInt64Value) ProtoMessage() {}
 func (*UInt64Value) Descriptor() ([]byte, []int) {
-	return fileDescriptor_wrappers_b0966e4a6118a07f, []int{3}
+	return fileDescriptor_wrappers_c5239a825c7dfb53, []int{3}
 }
 func (*UInt64Value) XXX_WellKnownType() string { return "UInt64Value" }
 func (m *UInt64Value) XXX_Unmarshal(b []byte) error {
@@ -261,7 +261,7 @@ type Int32Value struct {
 func (m *Int32Value) Reset()      { *m = Int32Value{} }
 func (*Int32Value) ProtoMessage() {}
 func (*Int32Value) Descriptor() ([]byte, []int) {
-	return fileDescriptor_wrappers_b0966e4a6118a07f, []int{4}
+	return fileDescriptor_wrappers_c5239a825c7dfb53, []int{4}
 }
 func (*Int32Value) XXX_WellKnownType() string { return "Int32Value" }
 func (m *Int32Value) XXX_Unmarshal(b []byte) error {
@@ -316,7 +316,7 @@ type UInt32Value struct {
 func (m *UInt32Value) Reset()      { *m = UInt32Value{} }
 func (*UInt32Value) ProtoMessage() {}
 func (*UInt32Value) Descriptor() ([]byte, []int) {
-	return fileDescriptor_wrappers_b0966e4a6118a07f, []int{5}
+	return fileDescriptor_wrappers_c5239a825c7dfb53, []int{5}
 }
 func (*UInt32Value) XXX_WellKnownType() string { return "UInt32Value" }
 func (m *UInt32Value) XXX_Unmarshal(b []byte) error {
@@ -371,7 +371,7 @@ type BoolValue struct {
 func (m *BoolValue) Reset()      { *m = BoolValue{} }
 func (*BoolValue) ProtoMessage() {}
 func (*BoolValue) Descriptor() ([]byte, []int) {
-	return fileDescriptor_wrappers_b0966e4a6118a07f, []int{6}
+	return fileDescriptor_wrappers_c5239a825c7dfb53, []int{6}
 }
 func (*BoolValue) XXX_WellKnownType() string { return "BoolValue" }
 func (m *BoolValue) XXX_Unmarshal(b []byte) error {
@@ -426,7 +426,7 @@ type StringValue struct {
 func (m *StringValue) Reset()      { *m = StringValue{} }
 func (*StringValue) ProtoMessage() {}
 func (*StringValue) Descriptor() ([]byte, []int) {
-	return fileDescriptor_wrappers_b0966e4a6118a07f, []int{7}
+	return fileDescriptor_wrappers_c5239a825c7dfb53, []int{7}
 }
 func (*StringValue) XXX_WellKnownType() string { return "StringValue" }
 func (m *StringValue) XXX_Unmarshal(b []byte) error {
@@ -481,7 +481,7 @@ type BytesValue struct {
 func (m *BytesValue) Reset()      { *m = BytesValue{} }
 func (*BytesValue) ProtoMessage() {}
 func (*BytesValue) Descriptor() ([]byte, []int) {
-	return fileDescriptor_wrappers_b0966e4a6118a07f, []int{8}
+	return fileDescriptor_wrappers_c5239a825c7dfb53, []int{8}
 }
 func (*BytesValue) XXX_WellKnownType() string { return "BytesValue" }
 func (m *BytesValue) XXX_Unmarshal(b []byte) error {
@@ -1643,6 +1643,9 @@ func encodeVarintPopulateWrappers(dAtA []byte, v uint64) []byte {
 	return dAtA
 }
 func (m *DoubleValue) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.Value != 0 {
@@ -1655,6 +1658,9 @@ func (m *DoubleValue) Size() (n int) {
 }
 
 func (m *FloatValue) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.Value != 0 {
@@ -1667,6 +1673,9 @@ func (m *FloatValue) Size() (n int) {
 }
 
 func (m *Int64Value) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.Value != 0 {
@@ -1679,6 +1688,9 @@ func (m *Int64Value) Size() (n int) {
 }
 
 func (m *UInt64Value) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.Value != 0 {
@@ -1691,6 +1703,9 @@ func (m *UInt64Value) Size() (n int) {
 }
 
 func (m *Int32Value) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.Value != 0 {
@@ -1703,6 +1718,9 @@ func (m *Int32Value) Size() (n int) {
 }
 
 func (m *UInt32Value) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.Value != 0 {
@@ -1715,6 +1733,9 @@ func (m *UInt32Value) Size() (n int) {
 }
 
 func (m *BoolValue) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	if m.Value {
@@ -1727,6 +1748,9 @@ func (m *BoolValue) Size() (n int) {
 }
 
 func (m *StringValue) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	l = len(m.Value)
@@ -1740,6 +1764,9 @@ func (m *StringValue) Size() (n int) {
 }
 
 func (m *BytesValue) Size() (n int) {
+	if m == nil {
+		return 0
+	}
 	var l int
 	_ = l
 	l = len(m.Value)
@@ -2615,11 +2642,11 @@ var (
 )
 
 func init() {
-	proto.RegisterFile("google/protobuf/wrappers.proto", fileDescriptor_wrappers_b0966e4a6118a07f)
+	proto.RegisterFile("google/protobuf/wrappers.proto", fileDescriptor_wrappers_c5239a825c7dfb53)
 }
 
-var fileDescriptor_wrappers_b0966e4a6118a07f = []byte{
-	// 289 bytes of a gzipped FileDescriptorProto
+var fileDescriptor_wrappers_c5239a825c7dfb53 = []byte{
+	// 285 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x92, 0x4b, 0xcf, 0xcf, 0x4f,
 	0xcf, 0x49, 0xd5, 0x2f, 0x28, 0xca, 0x2f, 0xc9, 0x4f, 0x2a, 0x4d, 0xd3, 0x2f, 0x2f, 0x4a, 0x2c,
 	0x28, 0x48, 0x2d, 0x2a, 0xd6, 0x03, 0x8b, 0x08, 0xf1, 0x43, 0xe4, 0xf5, 0x60, 0xf2, 0x4a, 0xca,
@@ -2629,14 +2656,13 @@ var fileDescriptor_wrappers_b0966e4a6118a07f = []byte{
 	0x2c, 0x6a, 0x98, 0x61, 0x6a, 0x94, 0xb9, 0xb8, 0x43, 0x71, 0x29, 0x62, 0x41, 0x35, 0xc8, 0xd8,
 	0x08, 0x8b, 0x1a, 0x56, 0x34, 0x83, 0xb0, 0x2a, 0xe2, 0x85, 0x29, 0x52, 0xe4, 0xe2, 0x74, 0xca,
 	0xcf, 0xcf, 0xc1, 0xa2, 0x84, 0x03, 0xc9, 0x9c, 0xe0, 0x92, 0xa2, 0xcc, 0xbc, 0x74, 0x2c, 0x8a,
-	0x38, 0x91, 0x1c, 0xe4, 0x54, 0x59, 0x92, 0x5a, 0x8c, 0x45, 0x0d, 0x0f, 0x54, 0x8d, 0x53, 0x37,
-	0xe3, 0x85, 0x87, 0x72, 0x0c, 0x37, 0x1e, 0xca, 0x31, 0x7c, 0x78, 0x28, 0xc7, 0xf8, 0xe3, 0xa1,
-	0x1c, 0x63, 0xc3, 0x23, 0x39, 0xc6, 0x15, 0x8f, 0xe4, 0x18, 0x4f, 0x3c, 0x92, 0x63, 0xbc, 0xf0,
-	0x48, 0x8e, 0xf1, 0xc1, 0x23, 0x39, 0xc6, 0x17, 0x8f, 0xe4, 0x18, 0x3e, 0x80, 0xc4, 0x1f, 0xcb,
-	0x31, 0x9e, 0x78, 0x2c, 0xc7, 0xc8, 0x25, 0x9c, 0x9c, 0x9f, 0xab, 0x87, 0x16, 0x25, 0x4e, 0xbc,
-	0xe1, 0xd0, 0x38, 0x0b, 0x00, 0x89, 0x04, 0x30, 0x46, 0xb1, 0x96, 0x54, 0x16, 0xa4, 0x16, 0xff,
-	0x60, 0x64, 0x5c, 0xc4, 0xc4, 0xec, 0x1e, 0xe0, 0xb4, 0x8a, 0x49, 0xce, 0x1d, 0xa2, 0x25, 0x00,
-	0xaa, 0x45, 0x2f, 0x3c, 0x35, 0x27, 0xc7, 0x3b, 0x2f, 0xbf, 0x3c, 0x2f, 0x04, 0xa4, 0x32, 0x89,
-	0x0d, 0x6c, 0x96, 0x31, 0x20, 0x00, 0x00, 0xff, 0xff, 0xff, 0xc7, 0xfe, 0x37, 0x0e, 0x02, 0x00,
-	0x00,
+	0x38, 0x91, 0x1c, 0xe4, 0x54, 0x59, 0x92, 0x5a, 0x8c, 0x45, 0x0d, 0x0f, 0x54, 0x8d, 0x53, 0x3b,
+	0xe3, 0x8d, 0x87, 0x72, 0x0c, 0x1f, 0x1e, 0xca, 0x31, 0xfe, 0x78, 0x28, 0xc7, 0xd8, 0xf0, 0x48,
+	0x8e, 0x71, 0xc5, 0x23, 0x39, 0xc6, 0x13, 0x8f, 0xe4, 0x18, 0x2f, 0x3c, 0x92, 0x63, 0x7c, 0xf0,
+	0x48, 0x8e, 0xf1, 0xc5, 0x23, 0x39, 0x86, 0x0f, 0x20, 0xf1, 0xc7, 0x72, 0x8c, 0x27, 0x1e, 0xcb,
+	0x31, 0x72, 0x09, 0x27, 0xe7, 0xe7, 0xea, 0xa1, 0x45, 0x87, 0x13, 0x6f, 0x38, 0x34, 0xbe, 0x02,
+	0x40, 0x22, 0x01, 0x8c, 0x51, 0xac, 0x25, 0x95, 0x05, 0xa9, 0xc5, 0x3f, 0x18, 0x19, 0x17, 0x31,
+	0x31, 0xbb, 0x07, 0x38, 0xad, 0x62, 0x92, 0x73, 0x87, 0x68, 0x09, 0x80, 0x6a, 0xd1, 0x0b, 0x4f,
+	0xcd, 0xc9, 0xf1, 0xce, 0xcb, 0x2f, 0xcf, 0x0b, 0x01, 0xa9, 0x4c, 0x62, 0x03, 0x9b, 0x65, 0x0c,
+	0x08, 0x00, 0x00, 0xff, 0xff, 0x31, 0x55, 0x64, 0x90, 0x0a, 0x02, 0x00, 0x00,
 }

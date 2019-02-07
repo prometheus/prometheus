@@ -94,27 +94,6 @@ type WAL interface {
 	Close() error
 }
 
-// NopWAL is a WAL that does nothing.
-func NopWAL() WAL {
-	return nopWAL{}
-}
-
-type nopWAL struct{}
-
-func (nopWAL) Read(
-	seriesf func([]RefSeries),
-	samplesf func([]RefSample),
-	deletesf func([]Stone),
-) error {
-	return nil
-}
-func (w nopWAL) Reader() WALReader                     { return w }
-func (nopWAL) LogSeries([]RefSeries) error             { return nil }
-func (nopWAL) LogSamples([]RefSample) error            { return nil }
-func (nopWAL) LogDeletes([]Stone) error                { return nil }
-func (nopWAL) Truncate(int64, func(uint64) bool) error { return nil }
-func (nopWAL) Close() error                            { return nil }
-
 // WALReader reads entries from a WAL.
 type WALReader interface {
 	Read(
@@ -909,16 +888,19 @@ func (r *walReader) Read(
 				if seriesf != nil {
 					seriesf(v)
 				}
+				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				seriesPool.Put(v[:0])
 			case []RefSample:
 				if samplesf != nil {
 					samplesf(v)
 				}
+				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				samplePool.Put(v[:0])
 			case []Stone:
 				if deletesf != nil {
 					deletesf(v)
 				}
+				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				deletePool.Put(v[:0])
 			default:
 				level.Error(r.logger).Log("msg", "unexpected data type")

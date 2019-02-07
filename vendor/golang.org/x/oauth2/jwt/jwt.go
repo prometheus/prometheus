@@ -46,6 +46,10 @@ type Config struct {
 	//
 	PrivateKey []byte
 
+	// PrivateKeyID contains an optional hint indicating which key is being
+	// used.
+	PrivateKeyID string
+
 	// Subject is the optional user to impersonate.
 	Subject string
 
@@ -101,7 +105,9 @@ func (js jwtSource) Token() (*oauth2.Token, error) {
 	if t := js.conf.Expires; t > 0 {
 		claimSet.Exp = time.Now().Add(t).Unix()
 	}
-	payload, err := jws.Encode(defaultHeader, claimSet, pk)
+	h := *defaultHeader
+	h.KeyID = js.conf.PrivateKeyID
+	payload, err := jws.Encode(&h, claimSet, pk)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +124,10 @@ func (js jwtSource) Token() (*oauth2.Token, error) {
 		return nil, fmt.Errorf("oauth2: cannot fetch token: %v", err)
 	}
 	if c := resp.StatusCode; c < 200 || c > 299 {
-		return nil, fmt.Errorf("oauth2: cannot fetch token: %v\nResponse: %s", resp.Status, body)
+		return nil, &oauth2.RetrieveError{
+			Response: resp,
+			Body:     body,
+		}
 	}
 	// tokenRes is the JSON response body.
 	var tokenRes struct {
