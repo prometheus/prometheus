@@ -81,6 +81,25 @@ func (ls *Labels) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// MatchLabels returns a subset of Labels that matches/does not match with the provided label names based on the 'on' boolean.
+// If on is set to true, it returns the subset of labels that match with the provided label names and its inverse when 'on' is set to false.
+func (ls Labels) MatchLabels(on bool, names ...string) Labels {
+	matchedLabels := Labels{}
+
+	nameSet := map[string]struct{}{}
+	for _, n := range names {
+		nameSet[n] = struct{}{}
+	}
+
+	for _, v := range ls {
+		if _, ok := nameSet[v.Name]; on == ok {
+			matchedLabels = append(matchedLabels, v)
+		}
+	}
+
+	return matchedLabels
+}
+
 // Hash returns a hash value for the label set.
 func (ls Labels) Hash() uint64 {
 	b := make([]byte, 0, 1024)
