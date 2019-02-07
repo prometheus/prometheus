@@ -199,8 +199,7 @@ input[name="end_input"], input[name="range_input"] {
   border-radius: 0;
 }
 
-li.active, li:hover {
-  color: #fff;
-  text-decoration: none;
-  background-color: #007bff;
+li.active, .dropdown-item:focus, .dropdown-item:hover {
+  /* color: #fff; */
+  background-color: steelblue;
 }
