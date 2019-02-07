@@ -36,7 +36,8 @@ GO_VERSION        ?= $(shell $(GO) version)
 GO_VERSION_NUMBER ?= $(word 3, $(GO_VERSION))
 PRE_GO_111        ?= $(shell echo $(GO_VERSION_NUMBER) | grep -E 'go1\.(10|[0-9])\.')
 
-unexport GOVENDOR
+GOVENDOR :=
+GO111MODULE :=
 ifeq (, $(PRE_GO_111))
 	ifneq (,$(wildcard go.mod))
 		# Enforce Go modules support just in case the directory is inside GOPATH (and for Travis CI).
@@ -57,8 +58,6 @@ $(warning Some recipes may not work as expected as the current Go runtime is '$(
 		# This repository isn't using Go modules (yet).
 		GOVENDOR := $(FIRST_GOPATH)/bin/govendor
 	endif
-
-	unexport GO111MODULE
 endif
 PROMU        := $(FIRST_GOPATH)/bin/promu
 STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
