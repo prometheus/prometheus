@@ -101,7 +101,7 @@ func extractTimeRange(min, max *time.Time) (mint, maxt time.Time, err error) {
 		maxt = *max
 	}
 	if mint.After(maxt) {
-		return mint, maxt, errors.Errorf("min time must be before max time")
+		return mint, maxt, errors.Errorf("min time must be before or equal to max time")
 	}
 	return mint, maxt, nil
 }
@@ -111,6 +111,11 @@ var (
 	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999)
 )
 
+var (
+	errAdminDisabled = status.Error(codes.Unavailable, "Admin APIs are disabled")
+	errTSDBNotReady  = status.Error(codes.Unavailable, "TSDB not ready")
+)
+
 // AdminDisabled implements the administration interface that informs
 // that the API endpoints are disabled.
 type AdminDisabled struct {
@@ -118,17 +123,17 @@ type AdminDisabled struct {
 
 // TSDBSnapshot implements pb.AdminServer.
 func (s *AdminDisabled) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
-	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
+	return nil, errAdminDisabled
 }
 
 // TSDBCleanTombstones implements pb.AdminServer.
 func (s *AdminDisabled) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
-	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
+	return nil, errAdminDisabled
 }
 
 // DeleteSeries implements pb.AdminServer.
 func (s *AdminDisabled) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
-	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
+	return nil, errAdminDisabled
 }
 
 // Admin provides an administration interface to Prometheus.
@@ -147,7 +152,7 @@ func NewAdmin(db func() *tsdb.DB) *Admin {
 func (s *Admin) TSDBSnapshot(_ old_ctx.Context, req *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
 	db := s.db()
 	if db == nil {
-		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
+		return nil, errTSDBNotReady
 	}
 	var (
 		snapdir = filepath.Join(db.Dir(), "snapshots")
@@ -169,7 +174,7 @@ func (s *Admin) TSDBSnapshot(_ old_ctx.Context, req *pb.TSDBSnapshotRequest) (*p
 func (s *Admin) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
 	db := s.db()
 	if db == nil {
-		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
+		return nil, errTSDBNotReady
 	}
 
 	if err := db.CleanTombstones(); err != nil {
@@ -215,7 +220,7 @@ func (s *Admin) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.
 	}
 	db := s.db()
 	if db == nil {
-		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
+		return nil, errTSDBNotReady
 	}
 	if err := db.Delete(timestamp.FromTime(mint), timestamp.FromTime(maxt), matchers...); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())

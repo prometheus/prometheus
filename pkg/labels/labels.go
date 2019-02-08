@@ -240,7 +240,7 @@ func Compare(a, b Labels) int {
 	return len(a) - len(b)
 }
 
-// Builder allows modifiying Labels.
+// Builder allows modifying Labels.
 type Builder struct {
 	base Labels
 	del  []string
