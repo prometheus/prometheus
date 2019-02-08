@@ -305,9 +305,8 @@ func Intersect(its ...Postings) Postings {
 }
 
 type intersectPostings struct {
-	a, b     Postings
-	aok, bok bool
-	cur      uint64
+	a, b Postings
+	cur  uint64
 }
 
 func newIntersectPostings(a, b Postings) *intersectPostings {

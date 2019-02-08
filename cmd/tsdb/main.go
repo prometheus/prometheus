@@ -87,7 +87,7 @@ func main() {
 			block = blocks[len(blocks)-1]
 		}
 		if block == nil {
-			exitWithError(fmt.Errorf("Block not found"))
+			exitWithError(fmt.Errorf("block not found"))
 		}
 		analyzeBlock(block, *analyzeLimit)
 	}
@@ -338,12 +338,6 @@ func measureTime(stage string, f func()) time.Duration {
 	f()
 	fmt.Printf(">> completed stage=%s duration=%s\n", stage, time.Since(start))
 	return time.Since(start)
-}
-
-func mapToLabels(m map[string]interface{}, l *labels.Labels) {
-	for k, v := range m {
-		*l = append(*l, labels.Label{Name: k, Value: v.(string)})
-	}
 }
 
 func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {

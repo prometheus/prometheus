@@ -64,9 +64,7 @@ func (cm *Meta) OverlapsClosedInterval(mint, maxt int64) bool {
 }
 
 var (
-	errInvalidSize     = fmt.Errorf("invalid size")
-	errInvalidFlag     = fmt.Errorf("invalid flag")
-	errInvalidChecksum = fmt.Errorf("invalid checksum")
+	errInvalidSize = fmt.Errorf("invalid size")
 )
 
 var castagnoliTable *crc32.Table

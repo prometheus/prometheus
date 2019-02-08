@@ -223,33 +223,50 @@ func TestDBAppenderAddRef(t *testing.T) {
 func TestDeleteSimple(t *testing.T) {
 	numSamples := int64(10)
 
-	db, delete := openTestDB(t, nil)
-	defer func() {
-		testutil.Ok(t, db.Close())
-		delete()
-	}()
-
-	app := db.Appender()
-
-	smpls := make([]float64, numSamples)
-	for i := int64(0); i < numSamples; i++ {
-		smpls[i] = rand.Float64()
-		app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
-	}
-
-	testutil.Ok(t, app.Commit())
 	cases := []struct {
 		intervals Intervals
 		remaint   []int64
 	}{
 		{
+			intervals: Intervals{{0, 3}},
+			remaint:   []int64{4, 5, 6, 7, 8, 9},
+		},
+		{
+			intervals: Intervals{{1, 3}},
+			remaint:   []int64{0, 4, 5, 6, 7, 8, 9},
+		},
+		{
 			intervals: Intervals{{1, 3}, {4, 7}},
 			remaint:   []int64{0, 8, 9},
+		},
+		{
+			intervals: Intervals{{1, 3}, {4, 700}},
+			remaint:   []int64{0},
+		},
+		{ // This case is to ensure that labels and symbols are deleted.
+			intervals: Intervals{{0, 9}},
+			remaint:   []int64{},
 		},
 	}
 
 Outer:
 	for _, c := range cases {
+		db, delete := openTestDB(t, nil)
+		defer func() {
+			testutil.Ok(t, db.Close())
+			delete()
+		}()
+
+		app := db.Appender()
+
+		smpls := make([]float64, numSamples)
+		for i := int64(0); i < numSamples; i++ {
+			smpls[i] = rand.Float64()
+			app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
+		}
+
+		testutil.Ok(t, app.Commit())
+
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
 		for _, r := range c.intervals {
@@ -272,9 +289,20 @@ Outer:
 			newSeries(map[string]string{"a": "b"}, expSamples),
 		})
 
+		lns, err := q.LabelNames()
+		testutil.Ok(t, err)
+		lvs, err := q.LabelValues("a")
+		testutil.Ok(t, err)
 		if len(expSamples) == 0 {
+			testutil.Equals(t, 0, len(lns))
+			testutil.Equals(t, 0, len(lvs))
 			testutil.Assert(t, res.Next() == false, "")
 			continue
+		} else {
+			testutil.Equals(t, 1, len(lns))
+			testutil.Equals(t, 1, len(lvs))
+			testutil.Equals(t, "a", lns[0])
+			testutil.Equals(t, "b", lvs[0])
 		}
 
 		for {
@@ -537,8 +565,6 @@ func TestDB_e2e(t *testing.T) {
 		numDatapoints = 1000
 		numRanges     = 1000
 		timeInterval  = int64(3)
-		maxTime       = int64(2 * 1000)
-		minTime       = int64(200)
 	)
 	// Create 8 series with 1000 data-points of different ranges and run queries.
 	lbls := [][]labels.Label{
@@ -691,8 +717,6 @@ func TestDB_e2e(t *testing.T) {
 			q.Close()
 		}
 	}
-
-	return
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {
