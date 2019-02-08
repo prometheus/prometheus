@@ -16,6 +16,7 @@ package tsdb
 
 import (
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -273,6 +274,14 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+	var closers []io.Closer
+	defer func() {
+		if err != nil {
+			for _, c := range closers {
+				c.Close()
+			}
+		}
+	}()
 	meta, err := readMetaFile(dir)
 	if err != nil {
 		return nil, err
@@ -282,31 +291,19 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if err != nil {
-			cr.Close()
-		}
-	}()
+	closers = append(closers, cr)
+
 	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename))
 	if err != nil {
 		return nil, err
 	}
-
-	defer func() {
-		if err != nil {
-			ir.Close()
-		}
-	}()
+	closers = append(closers, ir)
 
 	tr, tsr, err := readTombstones(dir)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if err != nil {
-			tr.Close()
-		}
-	}()
+	closers = append(closers, tr)
 
 	// TODO refactor to set this at block creation time as
 	// that would be the logical place for a block size to be calculated.
