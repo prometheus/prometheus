@@ -794,13 +794,13 @@ func TestCancelCompactions(t *testing.T) {
 		dbClosed := make(chan struct{})
 		for {
 			if prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) > 0 {
-				time.Sleep(3 * time.Millisecond)
 				go func() {
 					testutil.Ok(t, db.Close())
 					close(dbClosed)
 				}()
 				break
 			}
+			time.Sleep(3 * time.Millisecond)
 		}
 
 		start := time.Now()
