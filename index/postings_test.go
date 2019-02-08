@@ -61,18 +61,6 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 	}
 }
 
-type mockPostings struct {
-	next  func() bool
-	seek  func(uint64) bool
-	value func() uint64
-	err   func() error
-}
-
-func (m *mockPostings) Next() bool         { return m.next() }
-func (m *mockPostings) Seek(v uint64) bool { return m.seek(v) }
-func (m *mockPostings) Value() uint64      { return m.value() }
-func (m *mockPostings) Err() error         { return m.err() }
-
 func TestIntersect(t *testing.T) {
 	var cases = []struct {
 		a, b []uint64
@@ -300,8 +288,6 @@ func TestMergedPostingsSeek(t *testing.T) {
 			testutil.Equals(t, c.res, lst)
 		}
 	}
-
-	return
 }
 
 func TestRemovedPostings(t *testing.T) {
@@ -463,8 +449,6 @@ func TestRemovedPostingsSeek(t *testing.T) {
 			testutil.Equals(t, c.res, lst)
 		}
 	}
-
-	return
 }
 
 func TestBigEndian(t *testing.T) {

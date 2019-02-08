@@ -32,7 +32,7 @@ func TestChunk(t *testing.T) {
 	for enc, nc := range map[Encoding]func() Chunk{
 		EncXOR: func() Chunk { return NewXORChunk() },
 	} {
-		t.Run(fmt.Sprintf("%s", enc), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%v", enc), func(t *testing.T) {
 			for range make([]struct{}, 1) {
 				c := nc()
 				if err := testChunk(c); err != nil {

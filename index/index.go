@@ -752,7 +752,7 @@ func ReadSymbols(bs ByteSlice, version int, off int) ([]string, map[uint32]strin
 		symbolSlice []string
 		symbols     = map[uint32]string{}
 	)
-	if version == 2 {
+	if version == FormatV2 {
 		symbolSlice = make([]string, 0, cnt)
 	}
 

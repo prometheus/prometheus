@@ -585,7 +585,6 @@ func TestDelete_e2e(t *testing.T) {
 			}
 		}
 	}
-	return
 }
 
 func boundedSamples(full []sample, mint, maxt int64) []sample {

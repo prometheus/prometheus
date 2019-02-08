@@ -1628,11 +1628,6 @@ func (ss stringset) set(s string) {
 	ss[s] = struct{}{}
 }
 
-func (ss stringset) has(s string) bool {
-	_, ok := ss[s]
-	return ok
-}
-
 func (ss stringset) String() string {
 	return strings.Join(ss.slice(), ",")
 }
