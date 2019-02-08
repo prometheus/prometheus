@@ -792,16 +792,14 @@ func TestCancelCompactions(t *testing.T) {
 		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
 		dbClosed := make(chan struct{})
-		for {
-			if prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) > 0 {
-				go func() {
-					testutil.Ok(t, db.Close())
-					close(dbClosed)
-				}()
-				break
-			}
+
+		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
 			time.Sleep(3 * time.Millisecond)
 		}
+		go func() {
+			testutil.Ok(t, db.Close())
+			close(dbClosed)
+		}()
 
 		start := time.Now()
 		<-dbClosed
