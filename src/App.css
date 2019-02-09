@@ -28,3 +28,60 @@ body {
 .data-table > tbody > tr > td {
     padding: 6px 16px 6px 16px;
 }
+
+.autosuggest-dropdown {
+    position: absolute;
+    border: 1px solid #ced4da;
+    border-radius: .25rem;
+    background-color: #fff;
+    color: #495057;
+    font-size: 1rem;
+    z-index: 1000;
+    min-width: 10rem;
+    top: 100%;
+    float: left;
+    padding: .5rem 1px .5rem 1px;
+    margin: .125rem 0 0 0;
+    top: 40px;
+    list-style: none;
+}
+
+.autosuggest-dropdown li {
+    width: 100%;
+    padding: .25rem 1.5rem;
+    clear: both;
+    white-space: nowrap;
+    background-color: transparent;
+    border: 0;
+    display: block;
+}
+
+.graph-legend {
+    margin: 15px 0 15px 25px;
+}
+
+.graph .flot-overlay {
+    cursor: crosshair;
+}
+
+.graph-tooltip {
+    background: rgba(0,0,0,.8);
+    color: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    white-space: nowrap;
+    padding: 8px;
+    border-radius: 3px;
+}
+
+.graph-tooltip .labels {
+    font-size: 11px;
+    line-height: 11px;
+  }
+
+.graph-tooltip .detail-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin: 0 5px 0 0;
+}

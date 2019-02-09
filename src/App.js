@@ -17,7 +17,10 @@ import {
 } from 'reactstrap';
 import ReactFlot from 'react-flot';
 import '../node_modules/react-flot/flot/jquery.flot.time.min';
+import '../node_modules/react-flot/flot/jquery.flot.crosshair.min';
+import '../node_modules/react-flot/flot/jquery.flot.tooltip.min';
 import './App.css';
+import Downshift from 'downshift';
 
 class App extends Component {
   render() {
@@ -55,9 +58,7 @@ class PanelList extends Component {
       }
     })
     .then(json =>
-      this.setState({
-        metrics: json.data,
-      })
+      this.setState({ metrics: json.data })
     )
     .catch(error => {
       this.setState({error})
@@ -100,7 +101,7 @@ class Panel extends Component {
 
     this.state = {
       expr: 'rate(node_cpu_seconds_total[1m])',
-      type: 'table', // TODO enum?
+      type: 'graph', // TODO enum?
       range: 3600,
       endTime: null,
       step: null,
@@ -161,7 +162,6 @@ class Panel extends Component {
       if (resp.ok) {
         return resp.json();
       } else {
-        console.log(resp);
         throw new Error('Unexpected response status: ' + resp.statusText);
       }
     })
@@ -180,8 +180,9 @@ class Panel extends Component {
     });
   }
 
-  handleExpressionChange(event) {
-    this.setState({expr: event.target.value});
+  handleExpressionChange(expr) {
+    //this.setState({expr: event.target.value});
+    this.setState({expr: expr});
   }
 
   render() {
@@ -189,7 +190,12 @@ class Panel extends Component {
       <>
         <Row>
           <Col>
-            <ExpressionInput value={this.state.expr} onChange={this.handleExpressionChange} execute={this.execute}/>
+            <ExpressionInput
+              value={this.state.expr}
+              onChange={this.handleExpressionChange}
+              execute={this.execute}
+              metrics={this.props.metrics}
+            />
             {/*<Input type="select" name="selectMetric">
               {this.props.metrics.map(m => <option key={m}>{m}</option>)}
             </Input>*/}
@@ -275,21 +281,97 @@ class ExpressionInput extends Component {
     return this.props.value.split(/\r\n|\r|\n/).length;
   }
 
+  stateReducer = (state, changes) => {
+    switch (changes.type) {
+      case Downshift.stateChangeTypes.keyDownEnter:
+      case Downshift.stateChangeTypes.clickItem:
+      case Downshift.stateChangeTypes.changeInput:
+        return {
+          ...changes,
+          selectedItem: changes.inputValue,
+        };
+      default:
+        return changes;
+    }
+  }
+
   render() {
     return (
-      <InputGroup className="expression-input">
-        <Input
-          autoFocus
-          type="textarea"
-          rows={this.numRows()}
-          value={this.props.value}
-          onChange={this.props.onChange}
-          onKeyPress={this.handleKeyPress}
-          placeholder="Expression (press Shift+Enter for newlines)" />
-        <InputGroupAddon addonType="append">
-          <Button color="primary" onClick={this.props.execute}>Execute</Button>
-        </InputGroupAddon>
-      </InputGroup>
+        <Downshift
+          inputValue={this.props.value}
+          onInputValueChange={this.props.onChange}
+          selectedItem={this.props.value}
+        >
+          {downshift => (
+            <div>
+              <InputGroup className="expression-input">
+
+                <Input
+                  autoFocus
+                  type="textarea"
+                  rows={this.numRows()}
+                  onKeyPress={this.handleKeyPress}
+                  placeholder="Expression (press Shift+Enter for newlines)"
+                  //onChange={selection => alert(`You selected ${selection}`)}
+                  {...downshift.getInputProps({
+                    onKeyDown: event => {
+                      switch (event.key) {
+                        case 'Home':
+                        case 'End':
+                          // We want to be able to jump to the beginning/end of the input field.
+                          // By default, Downshift otherwise jumps to the first/last suggestion item instead.
+                          event.nativeEvent.preventDownshiftDefault = true;
+                          break;
+                        case 'Enter':
+                          downshift.closeMenu();
+                          break;
+                        default:
+                      }
+                    }
+                  })}
+                />
+                <InputGroupAddon addonType="append">
+                  <Button color="primary" onClick={this.props.execute}>Execute</Button>
+                </InputGroupAddon>
+              </InputGroup>
+              {downshift.isOpen &&
+                <ul className="autosuggest-dropdown" {...downshift.getMenuProps()}>
+                  {
+                    this.props.metrics
+                      .filter(item => !downshift.inputValue || item.includes(downshift.inputValue))
+                      .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+                      .map((item, index) => (
+                        <li
+                          {...downshift.getItemProps({
+                            key: item,
+                            index,
+                            item,
+                            style: {
+                              backgroundColor:
+                                downshift.highlightedIndex === index ? 'lightgray' : 'white',
+                              fontWeight: downshift.selectedItem === item ? 'bold' : 'normal',
+                            },
+                          })}
+                        >
+                          {item}
+                        </li>
+                      ))
+                  }
+                </ul>
+              }
+            </div>
+          )}
+        </Downshift>
+
+        //  <Input
+        //   autoFocus
+        //   type="textarea"
+        //   rows={this.numRows()}
+        //   value={this.props.value}
+        //   onChange={this.props.onChange}
+        //   onKeyPress={this.handleKeyPress}
+        //   placeholder="Expression (press Shift+Enter for newlines)" />
+
     );
   }
 }
@@ -347,23 +429,74 @@ function getGraphID() {
 }
 
 class Graph extends Component {
-  componentDidMount() {
-    this.chart = null;
+  escapeHTML(string) {
+    var entityMap = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': '&quot;',
+      "'": '&#39;',
+      "/": '&#x2F;'
+    };
+
+    return String(string).replace(/[&<>"'/]/g, function (s) {
+      return entityMap[s];
+    });
   }
+
+  renderLabels(labels) {
+    let labelStrings = [];
+    for (let label in labels) {
+      if (label !== '__name__') {
+        labelStrings.push('<strong>' + label + '</strong>: ' + this.escapeHTML(labels[label]));
+      }
+    }
+    return labels = '<div class="labels">' + labelStrings.join('<br>') + '</div>';
+  };
 
   getOptions() {
     return {
       grid: {
         hoverable: true,
         clickable: true,
+        autoHighlight: true,
+        mouseActiveRadius: 100,
       },
       legend: {
         container: this.legend,
+        labelFormatter: (s) => {return '&nbsp;&nbsp;' + s}
       },
       xaxis: {
-        mode: "time",
-        //timeformat: "%Y/%m/%d",
+        mode: 'time',
+        showTicks: true,
+        showMinorTicks: true,
+        // min: (new Date()).getTime(),
+        // max: (new Date(2000, 1, 1)).getTime(),
       },
+      crosshair: {
+        mode: 'xy',
+        color: '#bbb',
+      },
+      tooltip: {
+        show: true,
+        cssClass: 'graph-tooltip',
+        content: (label, xval, yval, flotItem) => {
+          const series = flotItem.series;
+          var date = '<span class="date">' + new Date(xval).toUTCString() + '</span>';
+          var swatch = '<span class="detail-swatch" style="background-color: ' + series.color + '"></span>';
+          var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + yval + '</strong>';
+          return date + '<br>' + content + '<br>' + this.renderLabels(series.labels);
+        },
+        defaultTheme: false,
+        lines: true,
+      },
+      series: {
+        lines: {
+          lineWidth: 2,
+          steps: false,
+        },
+        shadowSize: 0,
+      }
     };
   }
 
@@ -376,6 +509,7 @@ class Graph extends Component {
     return this.props.data.result.map(ts => {
       return {
         label: metricToSeriesName(ts.metric),
+        labels: ts.metric,
         data: ts.values.map(v => [v[0] * 1000, this.parseValue(v[1])]),
       };
     })
@@ -396,15 +530,15 @@ class Graph extends Component {
       return null;
     }
     return (
-      <div>
+      <div className="graph">
         <ReactFlot
           id={getGraphID().toString()}
           data={this.getData()}
           options={this.getOptions()}
-          width="1900px"
           height="500px"
+          width="100%"
         />
-        <div ref={ref => { this.legend = ref; }}></div>
+        <div className="graph-legend" ref={ref => { this.legend = ref; }}>df</div>
       </div>
     );
   }
@@ -415,10 +549,10 @@ function metricToSeriesName(labels) {
   var labelStrings = [];
    for (var label in labels) {
      if (label !== "__name__") {
-       labelStrings.push(label + "=\"" + labels[label] + "\"");
+       labelStrings.push('<b>' + label + "</b>=\"" + labels[label] + "\"");
      }
    }
-  tsName += labelStrings.join(",") + "}";
+  tsName += labelStrings.join(", ") + "}";
   return tsName;
 };
 
