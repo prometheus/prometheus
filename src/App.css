@@ -6,6 +6,10 @@ body {
     margin-bottom: 10px;
 }
 
+button.execute-btn {
+    width: 84px;
+}
+
 .alert.alert-danger {
     margin-bottom: 10px;
 }
@@ -54,6 +58,22 @@ body {
     background-color: transparent;
     border: 0;
     display: block;
+}
+
+.graph-controls {
+    padding: 15px 0 5px 25px;
+}
+
+.graph-controls .range-input input {
+    width: 70px;
+}
+
+.graph-controls input.resolution-input {
+    width: 90px;
+}
+
+.graph-controls .endtime-input, .graph-controls .resolution-input, .graph-controls .stacked-input {
+    margin-left: 20px;
 }
 
 .graph-legend {

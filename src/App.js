@@ -2,10 +2,13 @@ import React, { Component } from 'react';
 import {
   Alert,
   Button,
+  ButtonGroup,
   Col,
   Container,
+  Form,
   InputGroup,
   InputGroupAddon,
+  InputGroupText,
   Input,
   Nav,
   NavItem,
@@ -21,6 +24,13 @@ import '../node_modules/react-flot/flot/jquery.flot.crosshair.min';
 import '../node_modules/react-flot/flot/jquery.flot.tooltip.min';
 import './App.css';
 import Downshift from 'downshift';
+import moment from 'moment'
+
+import { library } from '@fortawesome/fontawesome-svg-core'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons'
+
+library.add(faSearch, faSpinner)
 
 class App extends Component {
   render() {
@@ -53,7 +63,6 @@ class PanelList extends Component {
       if (resp.ok) {
         return resp.json();
       } else {
-        console.log(resp);
         throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
       }
     })
@@ -104,7 +113,8 @@ class Panel extends Component {
       type: 'graph', // TODO enum?
       range: 3600,
       endTime: null,
-      step: null,
+      resolution: null,
+      stacked: false,
       data: null,
       loading: false,
       error: null,
@@ -126,30 +136,35 @@ class Panel extends Component {
   }
 
   execute() {
+    // TODO: Abort existing queries.
     if (this.state.expr === "") {
       return;
     }
 
     this.setState({loading: true});
 
+    let endTime = this.getEndTime() / 1000;
+    let resolution = this.state.resolution || Math.max(Math.floor(this.state.range / 250), 1);
+
     let url = new URL('http://demo.robustperception.io:9090/');//window.location.href);
     let params = {
       'query': this.state.expr,
     };
+
     switch (this.state.type) {
       case 'graph':
         url.pathname = '/api/v1/query_range'
         Object.assign(params, {
-          start: '1549134688',
-          end: '1549135688',
-          step: 10,
+          start: endTime - this.state.range,
+          end: endTime,
+          step: resolution,
         })
         // TODO path prefix here and elsewhere.
         break;
       case 'table':
         url.pathname = '/api/v1/query'
         Object.assign(params, {
-          time: '1549134688',
+          time: endTime,
         })
         break;
       default:
@@ -185,6 +200,121 @@ class Panel extends Component {
     this.setState({expr: expr});
   }
 
+  timeFactors = {
+    "y": 60 * 60 * 24 * 365,
+    "w": 60 * 60 * 24 * 7,
+    "d": 60 * 60 * 24,
+    "h": 60 * 60,
+    "m": 60,
+    "s": 1
+  };
+
+  rangeSteps = [
+    "1s", "10s", "1m", "5m", "15m", "30m", "1h", "2h", "6h", "12h", "1d", "2d",
+    "1w", "2w", "4w", "8w", "1y", "2y"
+  ];
+
+  parseDuration(rangeText) {
+    var rangeRE = new RegExp("^([0-9]+)([ywdhms]+)$");
+    var matches = rangeText.match(rangeRE);
+    if (!matches) { return; }
+    if (matches.length !== 3) {
+      return 60;
+    }
+    var value = parseInt(matches[1]);
+    var unit = matches[2];
+    return value * this.timeFactors[unit];
+  }
+
+  increaseRange = (event) => {
+    event.preventDefault();
+    for (let range of this.rangeSteps) {
+      let rangeSeconds = this.parseDuration(range);
+      if (this.state.range < rangeSeconds) {
+        this.setState({range: rangeSeconds}, this.execute)
+        return;
+      }
+    }
+  }
+
+  decreaseRange = (event) => {
+    event.preventDefault();
+    for (let range of this.rangeSteps.slice().reverse()) {
+      let rangeSeconds = this.parseDuration(range);
+      if (this.state.range > rangeSeconds) {
+        this.setState({range: rangeSeconds}, this.execute)
+        return;
+      }
+    }
+  }
+
+  changeRange = (event) => {
+
+  }
+
+  increaseEndTime = () => {
+
+  }
+
+  decreaseEndTime = () => {
+
+  }
+
+  getEndTime = () => {
+    if (this.state.endTime === null) {
+      return moment();
+    }
+    return this.state.endTime();
+  }
+
+  changeEndTime = () => {
+
+  }
+
+  changeResolution = () => {
+
+  }
+
+  // getEndDate = () => {
+  //   var self = this;
+  //   if (!self.endDate || !self.endDate.val()) {
+  //     return moment();
+  //   }
+  //   return self.endDate.data('DateTimePicker').date();
+  // };
+
+  // getOrSetEndDate = () => {
+  //   var self = this;
+  //   var date = self.getEndDate();
+  //   self.setEndDate(date);
+  //   return date;
+  // };
+
+  // setEndDate = (date) => {
+  //   var self = this;
+  //   self.endDate.data('DateTimePicker').date(date);
+  // };
+
+  // increaseEnd = () => {
+  //   var self = this;
+  //   var newDate = moment(self.getOrSetEndDate());
+  //   newDate.add(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
+  //   self.setEndDate(newDate);
+  //   self.submitQuery();
+  // };
+
+  // decreaseEnd = () => {
+  //   var self = this;
+  //   var newDate = moment(self.getOrSetEndDate());
+  //   newDate.subtract(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
+  //   self.setEndDate(newDate);
+  //   self.submitQuery();
+  // };
+
+  changeStacking = (stacked) => {
+    this.setState({stacked: stacked});
+  }
+
   render() {
     return (
       <>
@@ -194,6 +324,7 @@ class Panel extends Component {
               value={this.state.expr}
               onChange={this.handleExpressionChange}
               execute={this.execute}
+              loading={this.state.loading}
               metrics={this.props.metrics}
             />
             {/*<Input type="select" name="selectMetric">
@@ -203,7 +334,7 @@ class Panel extends Component {
         </Row>
         <Row>
           <Col>
-            {this.state.loading && "Loading..."}
+            {/* {this.state.loading && "Loading..."} */}
           </Col>
         </Row>
         <Row>
@@ -238,7 +369,17 @@ class Panel extends Component {
                     <GraphControls
                       range={this.state.range}
                       endTime={this.state.endTime}
-                      step={this.state}
+                      resolution={this.state.resolution}
+                      stacked={this.state.stacked}
+
+                      decreaseRange={this.decreaseRange}
+                      increaseRange={this.increaseRange}
+                      changeRange={this.changeRange}
+                      decreaseEndTime={this.decreaseEndTime}
+                      increaseEndTime={this.increaseEndTime}
+                      changeEndTime={this.changeEndTime}
+                      changeResolution={this.changeResolution}
+                      changeStacking={this.changeStacking}
                     />
                     <Graph data={this.state.data} />
                   </>
@@ -305,6 +446,11 @@ class ExpressionInput extends Component {
           {downshift => (
             <div>
               <InputGroup className="expression-input">
+                <InputGroupAddon addonType="prepend">
+                  <InputGroupText>
+                  {this.props.loading ? <FontAwesomeIcon icon="spinner" spin/> : <FontAwesomeIcon icon="search"/>}
+                  </InputGroupText>
+                </InputGroupAddon>
 
                 <Input
                   autoFocus
@@ -331,7 +477,7 @@ class ExpressionInput extends Component {
                   })}
                 />
                 <InputGroupAddon addonType="append">
-                  <Button color="primary" onClick={this.props.execute}>Execute</Button>
+                  <Button className="execute-btn" color="primary" onClick={this.props.execute}>Execute</Button>
                 </InputGroupAddon>
               </InputGroup>
               {downshift.isOpen &&
@@ -362,16 +508,6 @@ class ExpressionInput extends Component {
             </div>
           )}
         </Downshift>
-
-        //  <Input
-        //   autoFocus
-        //   type="textarea"
-        //   rows={this.numRows()}
-        //   value={this.props.value}
-        //   onChange={this.props.onChange}
-        //   onKeyPress={this.handleKeyPress}
-        //   placeholder="Expression (press Shift+Enter for newlines)" />
-
     );
   }
 }
@@ -416,9 +552,41 @@ function DataTable(props) {
 }
 
 class GraphControls extends Component {
-  // TODO
   render() {
-    return null;
+    return (
+      <Form inline className="graph-controls">
+        <InputGroup className="range-input">
+          <InputGroupAddon addonType="prepend">
+            <Button onClick={this.props.decreaseRange}>-</Button>
+          </InputGroupAddon>
+
+          <Input value={this.props.range} onChange={this.props.changeRange}/>
+
+          <InputGroupAddon addonType="append">
+            <Button onClick={this.props.increaseRange}>+</Button>
+          </InputGroupAddon>
+        </InputGroup>
+
+        <InputGroup className="endtime-input">
+          <InputGroupAddon addonType="prepend">
+            <Button onClick={this.props.decreaseEndTime}>&lt;&lt;</Button>
+          </InputGroupAddon>
+
+          <Input value={this.props.endTime ? this.props.endTime : ''} onChange={this.props.changeEndTime} />
+
+          <InputGroupAddon addonType="append">
+            <Button onClick={this.props.increaseEndTime}>&gt;&gt;</Button>
+          </InputGroupAddon>
+        </InputGroup>
+
+        <Input className="resolution-input" value={this.props.resolution ? this.props.resolution : ''} onChange={this.props.changeResolution} placeholder="Res. (s)"/>
+
+        <ButtonGroup className="stacked-input">
+          <Button onClick={() => this.props.changeStacking(false)} active={this.props.stacked}>stacked</Button>
+          <Button onClick={() => this.props.changeStacking(true)} active={!this.props.stacked}>unstacked</Button>
+        </ButtonGroup>
+      </Form>
+    );
   }
 }
 
@@ -538,7 +706,7 @@ class Graph extends Component {
           height="500px"
           width="100%"
         />
-        <div className="graph-legend" ref={ref => { this.legend = ref; }}>df</div>
+        <div className="graph-legend" ref={ref => { this.legend = ref; }}></div>
       </div>
     );
   }
