@@ -880,7 +880,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
 
-	// Check that the Counter has been incremented a simgle time for the scrape,
+	// Check that the Counter has been incremented a single time for the scrape,
 	// not multiple times for each sample.
 	metric := dto.Metric{}
 	err = targetScrapeSampleLimit.Write(&metric)
