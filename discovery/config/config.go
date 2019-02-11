@@ -178,6 +178,7 @@ func (p *ProviderSet) Providers() []discovery.Provider {
 func (p *ProviderSet) Add(name string, cfg ServiceDiscoveryConfig) {
 	var added bool
 	add := func(name string, cfg interface{}, f func() (discovery.Discoverer, error)) {
+		// register() logs the error itself.
 		if p.register(name, cfg, f) != nil {
 			return
 		}
@@ -245,7 +246,6 @@ func (p *ProviderSet) Add(name string, cfg ServiceDiscoveryConfig) {
 	}
 	if len(cfg.StaticConfigs) > 0 {
 		add(name, name, func() (discovery.Discoverer, error) {
-
 			return &StaticDiscoverer{cfg.StaticConfigs}, nil
 		})
 	}
@@ -272,7 +272,7 @@ func (p *ProviderSet) register(subscriber string, cfg interface{}, newDiscoverer
 
 	d, err := newDiscoverer()
 	if err != nil {
-		level.Error(p.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
+		level.Error(p.logger).Log("msg", "cannot create service discovery", "err", err, "type", t)
 		failedConfigs.WithLabelValues(p.name).Inc()
 		return err
 	}

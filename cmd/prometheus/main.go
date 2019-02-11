@@ -346,11 +346,11 @@ func main() {
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		discoveryScrapeLogger   = log.With(logger, "component", "discovery manager scrape")
-		discoveryManagerScrape  = discovery.NewManager(ctxScrape, discoveryScrapeLogger, discovery.Name("scrape"))
+		discoveryScrapeManager  = discovery.NewManager(ctxScrape, discoveryScrapeLogger, discovery.Name("scrape"))
 
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
 		discoveryNotifyLogger   = log.With(logger, "component", "discovery manager scrape")
-		discoveryManagerNotify  = discovery.NewManager(ctxNotify, discoveryNotifyLogger, discovery.Name("notify"))
+		discoveryNotifyManager  = discovery.NewManager(ctxNotify, discoveryNotifyLogger, discovery.Name("notify"))
 
 		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 
@@ -427,7 +427,7 @@ func main() {
 			for _, v := range cfg.ScrapeConfigs {
 				pset.Add(v.JobName, v.ServiceDiscoveryConfig)
 			}
-			return discoveryManagerScrape.ApplyConfig(pset.Providers())
+			return discoveryScrapeManager.ApplyConfig(pset.Providers())
 		},
 		notifierManager.ApplyConfig,
 		func(cfg *config.Config) error {
@@ -440,7 +440,7 @@ func main() {
 				}
 				pset.Add(fmt.Sprintf("%x", md5.Sum(b)), v.ServiceDiscoveryConfig)
 			}
-			return discoveryManagerNotify.ApplyConfig(pset.Providers())
+			return discoveryNotifyManager.ApplyConfig(pset.Providers())
 		},
 		func(cfg *config.Config) error {
 			// Get all rule files matching the configuration paths.
@@ -515,7 +515,7 @@ func main() {
 		// Scrape discovery manager.
 		g.Add(
 			func() error {
-				err := discoveryManagerScrape.Run()
+				err := discoveryScrapeManager.Run()
 				level.Info(logger).Log("msg", "Scrape discovery manager stopped")
 				return err
 			},
@@ -529,7 +529,7 @@ func main() {
 		// Notify discovery manager.
 		g.Add(
 			func() error {
-				err := discoveryManagerNotify.Run()
+				err := discoveryNotifyManager.Run()
 				level.Info(logger).Log("msg", "Notify discovery manager stopped")
 				return err
 			},
@@ -549,7 +549,7 @@ func main() {
 				// we wait until the config is fully loaded.
 				<-reloadReady.C
 
-				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
+				err := scrapeManager.Run(discoveryScrapeManager.SyncCh())
 				level.Info(logger).Log("msg", "Scrape manager stopped")
 				return err
 			},
@@ -720,7 +720,7 @@ func main() {
 				// so we wait until the config is fully loaded.
 				<-reloadReady.C
 
-				notifierManager.Run(discoveryManagerNotify.SyncCh())
+				notifierManager.Run(discoveryNotifyManager.SyncCh())
 				level.Info(logger).Log("msg", "Notifier manager stopped")
 				return nil
 			},
