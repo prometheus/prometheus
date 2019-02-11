@@ -14,8 +14,10 @@
 package scrape
 
 import (
+	"encoding"
 	"fmt"
 	"hash/fnv"
+	"net"
 	"os"
 	"reflect"
 	"sync"
@@ -57,7 +59,7 @@ type Manager struct {
 	append    Appendable
 	graceShut chan struct{}
 
-	jitterSeed    uint64     // Global jitterSeed seed is using to spread scrape workload across HA setup.
+	jitterSeed    uint64     // Global jitterSeed seed is used to spread scrape workload across HA setup.
 	mtxScrape     sync.Mutex // Guards the fields below.
 	scrapeConfigs map[string]*config.ScrapeConfig
 	scrapePools   map[string]*scrapePool
@@ -135,14 +137,14 @@ func (m *Manager) reload() {
 	wg.Wait()
 }
 
-// setJitterSeed calculates global jitterSeed per server relying on extra label set.
+// setJitterSeed calculates a global jitterSeed per server relying on extra label set.
 func (m *Manager) setJitterSeed(labels model.LabelSet) error {
 	h := fnv.New64a()
-	hostname, err := os.Hostname()
+	hostname, err := getFqdn()
 	if err != nil {
 		return err
 	}
-	if _, err := h.Write([]byte(hostname + labels.String())); err != nil {
+	if _, err := fmt.Fprintf(h, "%s%s", hostname, labels.String()); err != nil {
 		return err
 	}
 	m.jitterSeed = h.Sum64()
@@ -237,4 +239,46 @@ func (m *Manager) TargetsDropped() map[string][]*Target {
 		targets[tset] = sp.DroppedTargets()
 	}
 	return targets
+}
+
+// getFqdn returns a fqdn if it's possible, otherwise falls back a hostname.
+func getFqdn() (string, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", err
+	}
+
+	ips, err := net.LookupIP(hostname)
+	if err != nil {
+		return hostname, err
+	}
+
+	lookup := func(ipStr encoding.TextMarshaler) (string, error) {
+		ip, err := ipStr.MarshalText()
+		if err != nil {
+			return "", err
+		}
+		hosts, err := net.LookupAddr(string(ip))
+		if err != nil || len(hosts) == 0 {
+			return "", err
+		}
+		return hosts[0], nil
+	}
+
+	for _, addr := range ips {
+		if ip := addr.To4(); ip != nil {
+			if fqdn, err := lookup(ip); err == nil {
+				return fqdn, nil
+			}
+
+		}
+
+		if ip := addr.To16(); ip != nil {
+			if fqdn, err := lookup(ip); err == nil {
+				return fqdn, nil
+			}
+
+		}
+	}
+	return hostname, nil
 }
