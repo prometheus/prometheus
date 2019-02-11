@@ -342,7 +342,7 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 }
 
 func (s *Reader) Close() error {
-	return closeAll(s.cs...)
+	return closeAll(s.cs)
 }
 
 // Size returns the size of the chunks.
@@ -410,7 +410,7 @@ func sequenceFiles(dir string) ([]string, error) {
 	return res, nil
 }
 
-func closeAll(cs ...io.Closer) (err error) {
+func closeAll(cs []io.Closer) (err error) {
 	for _, c := range cs {
 		if e := c.Close(); e != nil {
 			err = e

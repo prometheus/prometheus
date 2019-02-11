@@ -277,9 +277,10 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	var closers []io.Closer
 	defer func() {
 		if err != nil {
-			for _, c := range closers {
-				c.Close()
-			}
+			var merr MultiError
+			merr.Add(err)
+			merr.Add(closeAll(closers))
+			err = merr.Err()
 		}
 	}()
 	meta, err := readMetaFile(dir)
