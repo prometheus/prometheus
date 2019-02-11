@@ -746,7 +746,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	testutil.Assert(t, len(db.Blocks()) > 0, "No block was persisted after the set timeout.")
 }
 
-// TestDeleteCompactionBlockAfterFailedReload ensures that a failed reload imidiately after a compaction
+// TestDeleteCompactionBlockAfterFailedReload ensures that a failed reload immediately after a compaction
 // deletes the resulting block to avoid creatings blocks with the same time range.
 func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
@@ -796,7 +796,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 			expBlocks := bootStrap(db)
 
-			// Create a block that will trigger the reloard to fail.
+			// Create a block that will trigger the reload to fail.
 			blockPath := createBlock(t, db.Dir(), genSeries(1, 1, 200, 300))
 			lastBlockIndex := path.Join(blockPath, indexFilename)
 			actBlocks, err := blockDirs(db.Dir())
@@ -810,7 +810,6 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			// Do the compaction and check the metrics.
 			// Compaction should succeed, but the reload should fail and
 			// the new block created from the compaction should be deleted.
-			db.EnableCompactions()
 			testutil.NotOk(t, db.compact())
 			testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "'failed db reload' count metrics mismatch")
 			testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "`compaction` count metric mismatch")

@@ -452,7 +452,7 @@ func TestDB_Snapshot(t *testing.T) {
 
 	querier, err := db.Querier(mint, mint+1000)
 	testutil.Ok(t, err)
-	defer func() { querier.Close() }()
+	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// sum values
 	seriesSet, err := querier.Select(labels.NewEqualMatcher("foo", "bar"))
