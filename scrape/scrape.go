@@ -74,19 +74,17 @@ var (
 			Help: "Total number of scrape pool creations that failed.",
 		},
 	)
-	targetScrapePoolReloads = prometheus.NewCounterVec(
+	targetScrapePoolReloads = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pool_reloads_total",
-			Help: "Total number of reloads on a scrape pool.",
+			Help: "Total number of scrape loop reloads.",
 		},
-		[]string{"scrape_job"},
 	)
-	targetScrapePoolReloadsFailed = prometheus.NewCounterVec(
+	targetScrapePoolReloadsFailed = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pool_reloads_failed_total",
-			Help: "Total number of failed reloads on a scrape pool.",
+			Help: "Total number of failed scrape loop reloads.",
 		},
-		[]string{"scrape_job"},
 	)
 	targetSyncIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -169,8 +167,6 @@ type labelsMutator func(labels.Labels) labels.Labels
 
 func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) (*scrapePool, error) {
 	targetScrapePools.Inc()
-	targetScrapePoolReloads.WithLabelValues(cfg.JobName)
-	targetScrapePoolReloadsFailed.WithLabelValues(cfg.JobName)
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -262,7 +258,7 @@ func (sp *scrapePool) stop() {
 // but all scrape loops are restarted with the new scrape configuration.
 // This method returns after all scrape loops that were stopped have stopped scraping.
 func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
-	targetScrapePoolReloads.WithLabelValues(cfg.JobName).Inc()
+	targetScrapePoolReloads.Inc()
 	start := time.Now()
 
 	sp.mtx.Lock()
@@ -270,7 +266,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
 	if err != nil {
-		targetScrapePoolReloadsFailed.WithLabelValues(cfg.JobName).Inc()
+		targetScrapePoolReloadsFailed.Inc()
 		return errors.Wrap(err, "error creating HTTP client")
 	}
 	sp.config = cfg
