@@ -105,8 +105,7 @@ func (m *Manager) reload() {
 	m.mtxScrape.Lock()
 	var wg sync.WaitGroup
 	for setName, groups := range m.targetSets {
-		_, ok := m.scrapePools[setName]
-		if !ok {
+		if _, ok := m.scrapePools[setName]; !ok {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
 			if !ok {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
