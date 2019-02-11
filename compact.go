@@ -490,10 +490,8 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	defer func(t time.Time) {
 		var merr MultiError
 		merr.Add(err)
+		merr.Add(closeAll(closers))
 		err = merr.Err()
-		for _, w := range closers {
-			merr.Add(w.Close())
-		}
 
 		// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
 		if err := os.RemoveAll(tmp); err != nil {
@@ -606,7 +604,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 
 // populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
-func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) error {
+func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block from no readers")
 	}
@@ -617,7 +615,10 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		closers    = []io.Closer{}
 	)
 	defer func() {
-		closeAll(closers...)
+		var merr MultiError
+		merr.Add(err)
+		merr.Add(closeAll(closers))
+		err = merr.Err()
 		c.metrics.populatingBlocks.Set(0)
 	}()
 

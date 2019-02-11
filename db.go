@@ -1091,7 +1091,7 @@ func (es MultiError) Err() error {
 	return es
 }
 
-func closeAll(cs ...io.Closer) error {
+func closeAll(cs []io.Closer) error {
 	var merr MultiError
 
 	for _, c := range cs {
