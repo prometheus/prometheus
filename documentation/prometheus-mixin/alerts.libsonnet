@@ -157,6 +157,22 @@
             },
           },
           {
+            alert: 'PrometheusRemoteWriteBehind',
+            expr: |||
+              prometheus_remote_storage_highest_timestamp_in{%(prometheusSelector)s}
+                - on(job, instance) group_right
+              prometheus_remote_storage_queue_highest_sent_timestamp{%(prometheusSelector)s}
+                > 60
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              message: 'Prometheus remote write is {{ printf "%.1f" $value }}s behind.',
+            },
+          },
+          {
             alert: 'PrometheusRuleFailures',
             'for': '15m',
             expr: |||
