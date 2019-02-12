@@ -21,8 +21,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/time/rate"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/protobuf/proto"
@@ -50,10 +48,6 @@ const (
 
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
-
-	// Limit to 1 log event every 10s
-	logRateLimit = 0.1
-	logBurst     = 10
 )
 
 var (
@@ -194,7 +188,6 @@ type QueueManager struct {
 	relabelConfigs             []*pkgrelabel.Config
 	client                     StorageClient
 	queueName                  string
-	logLimiter                 *rate.Limiter
 	watcher                    *WALWatcher
 	lastSendTimestampMetric    prometheus.Gauge
 	highestSentTimestampMetric prometheus.Gauge
@@ -244,7 +237,6 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, high
 		seriesSegmentIndexes: make(map[uint64]int),
 		droppedSeries:        make(map[uint64]struct{}),
 
-		logLimiter:  rate.NewLimiter(logRateLimit, logBurst),
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
 		quit:        make(chan struct{}),
@@ -290,7 +282,7 @@ func (t *QueueManager) Append(s []tsdb.RefSample) bool {
 		// If we have no labels for the series, due to relabelling or otherwise, don't send the sample.
 		if _, ok := t.seriesLabels[sample.Ref]; !ok {
 			droppedSamplesTotal.WithLabelValues(t.queueName).Inc()
-			if _, ok := t.droppedSeries[sample.Ref]; !ok && t.logLimiter.Allow() {
+			if _, ok := t.droppedSeries[sample.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "dropped sample for series that was not explicitly dropped via relabelling", "ref", sample.Ref)
 			}
 			continue
@@ -700,7 +692,7 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries) {
 	begin := time.Now()
 	err := s.sendSamplesWithBackoff(ctx, samples)
-	if err != nil && s.qm.logLimiter.Allow() {
+	if err != nil {
 		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", len(samples), "err", err)
 		failedSamplesTotal.WithLabelValues(s.qm.queueName).Add(float64(len(samples)))
 	}
@@ -743,10 +735,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return err
 		}
 		retriedSamplesTotal.WithLabelValues(s.qm.queueName).Add(float64(len(samples)))
-
-		if s.qm.logLimiter.Allow() {
-			level.Error(s.qm.logger).Log("err", err)
-		}
+		level.Error(s.qm.logger).Log("err", err)
 
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2

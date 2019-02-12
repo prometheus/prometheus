@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -59,7 +60,7 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 	}
 	shardUpdateDuration := 10 * time.Second
 	s := &Storage{
-		logger:                 l,
+		logger:                 logging.RateLimit(logging.Dedupe(l, 1*time.Minute), 1),
 		localStartTimeCallback: stCallback,
 		flushDeadline:          flushDeadline,
 		walDir:                 walDir,
