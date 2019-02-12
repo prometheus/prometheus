@@ -6,6 +6,11 @@ body {
     margin-bottom: 10px;
 }
 
+.expression-input textarea {
+    /* font-family: 'Courier New', Courier, monospace; */
+    resize: none;
+}
+
 button.execute-btn {
     width: 84px;
 }
@@ -25,12 +30,13 @@ button.execute-btn {
 }
 
 .data-table.table {
-    white-space: pre;
-    margin: 2px 0 2px 0;
+   margin: -1px 0 2px 0;
 }
 
 .data-table > tbody > tr > td {
-    padding: 6px 16px 6px 16px;
+    padding: 5px 0 5px 8px;
+    font-size: 0.8em;
+    overflow: hidden;
 }
 
 .autosuggest-dropdown {
@@ -43,10 +49,10 @@ button.execute-btn {
     z-index: 1000;
     min-width: 10rem;
     top: 100%;
+    left: 56px;
     float: left;
     padding: .5rem 1px .5rem 1px;
-    margin: .125rem 0 0 0;
-    top: 40px;
+    margin: -5px;
     list-style: none;
 }
 
@@ -61,11 +67,11 @@ button.execute-btn {
 }
 
 .graph-controls {
-    padding: 15px 0 5px 25px;
+    padding: 15px 0 10px 10px;
 }
 
 .graph-controls .range-input input {
-    width: 70px;
+    width: 50px;
 }
 
 .graph-controls input.resolution-input {
@@ -76,8 +82,16 @@ button.execute-btn {
     margin-left: 20px;
 }
 
+.tabpane-alert {
+    margin: 10px;
+}
+
 .graph-legend {
     margin: 15px 0 15px 25px;
+}
+
+.graph {
+    margin: 0 5px 0 5px;
 }
 
 .graph .flot-overlay {
@@ -104,4 +118,8 @@ button.execute-btn {
     width: 10px;
     height: 10px;
     margin: 0 5px 0 0;
+}
+
+.add-panel-btn {
+    margin-bottom: 20px;
 }
