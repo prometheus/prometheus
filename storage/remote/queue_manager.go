@@ -126,7 +126,7 @@ var (
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queue_highest_sent_timestamp",
-			Help:      "Timestamp from a WAL sample, the highest timestamp successfully sent by this queue.",
+			Help:      "Timestamp from a WAL sample, the highest timestamp successfully sent by this queue, in seconds since epoch.",
 		},
 		[]string{queue},
 	)
@@ -524,7 +524,7 @@ func (t *QueueManager) setHighestSentTimestamp(highest int64) {
 	defer t.timestampLock.Unlock()
 	if highest > t.highestSentTimestamp {
 		t.highestSentTimestamp = highest
-		t.highestSentTimestampMetric.Set(float64(t.highestSentTimestamp))
+		t.highestSentTimestampMetric.Set(float64(t.highestSentTimestamp) / 1000.)
 	}
 }
 
