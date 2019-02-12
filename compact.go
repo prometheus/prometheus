@@ -72,7 +72,6 @@ type Compactor interface {
 
 // LeveledCompactor implements the Compactor interface.
 type LeveledCompactor struct {
-	dir       string
 	metrics   *compactorMetrics
 	logger    log.Logger
 	ranges    []int64
@@ -621,7 +620,6 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		err = merr.Err()
 		c.metrics.populatingBlocks.Set(0)
 	}()
-
 	c.metrics.populatingBlocks.Set(1)
 
 	for i, b := range blocks {

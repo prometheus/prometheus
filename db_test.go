@@ -46,7 +46,9 @@ func openTestDB(t testing.TB, opts *Options) (db *DB, close func()) {
 	testutil.Ok(t, err)
 
 	// Do not close the test database by default as it will deadlock on test failures.
-	return db, func() { os.RemoveAll(tmpdir) }
+	return db, func() {
+		testutil.Ok(t, os.RemoveAll(tmpdir))
+	}
 }
 
 // query runs a matcher query against the querier and fully expands its data.
@@ -78,9 +80,11 @@ func query(t testing.TB, q Querier, matchers ...labels.Matcher) map[string][]sam
 // Ensure that blocks are held in memory in their time order
 // and not in ULID order as they are read from the directory.
 func TestDB_reloadOrder(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	metas := []BlockMeta{
 		{MinTime: 90, MaxTime: 100},
@@ -106,9 +110,11 @@ func TestDB_reloadOrder(t *testing.T) {
 }
 
 func TestDataAvailableOnlyAfterCommit(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	app := db.Appender()
 
@@ -135,9 +141,11 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 }
 
 func TestDataNotAvailableAfterRollback(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	app := db.Appender()
 	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
@@ -156,9 +164,11 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 }
 
 func TestDBAppenderAddRef(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	app1 := db.Appender()
 
@@ -213,31 +223,50 @@ func TestDBAppenderAddRef(t *testing.T) {
 func TestDeleteSimple(t *testing.T) {
 	numSamples := int64(10)
 
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
-
-	app := db.Appender()
-
-	smpls := make([]float64, numSamples)
-	for i := int64(0); i < numSamples; i++ {
-		smpls[i] = rand.Float64()
-		app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
-	}
-
-	testutil.Ok(t, app.Commit())
 	cases := []struct {
 		intervals Intervals
 		remaint   []int64
 	}{
 		{
+			intervals: Intervals{{0, 3}},
+			remaint:   []int64{4, 5, 6, 7, 8, 9},
+		},
+		{
+			intervals: Intervals{{1, 3}},
+			remaint:   []int64{0, 4, 5, 6, 7, 8, 9},
+		},
+		{
 			intervals: Intervals{{1, 3}, {4, 7}},
 			remaint:   []int64{0, 8, 9},
+		},
+		{
+			intervals: Intervals{{1, 3}, {4, 700}},
+			remaint:   []int64{0},
+		},
+		{ // This case is to ensure that labels and symbols are deleted.
+			intervals: Intervals{{0, 9}},
+			remaint:   []int64{},
 		},
 	}
 
 Outer:
 	for _, c := range cases {
+		db, delete := openTestDB(t, nil)
+		defer func() {
+			testutil.Ok(t, db.Close())
+			delete()
+		}()
+
+		app := db.Appender()
+
+		smpls := make([]float64, numSamples)
+		for i := int64(0); i < numSamples; i++ {
+			smpls[i] = rand.Float64()
+			app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
+		}
+
+		testutil.Ok(t, app.Commit())
+
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
 		for _, r := range c.intervals {
@@ -260,9 +289,20 @@ Outer:
 			newSeries(map[string]string{"a": "b"}, expSamples),
 		})
 
+		lns, err := q.LabelNames()
+		testutil.Ok(t, err)
+		lvs, err := q.LabelValues("a")
+		testutil.Ok(t, err)
 		if len(expSamples) == 0 {
+			testutil.Equals(t, 0, len(lns))
+			testutil.Equals(t, 0, len(lvs))
 			testutil.Assert(t, res.Next() == false, "")
 			continue
+		} else {
+			testutil.Equals(t, 1, len(lns))
+			testutil.Equals(t, 1, len(lvs))
+			testutil.Equals(t, "a", lns[0])
+			testutil.Equals(t, "b", lvs[0])
 		}
 
 		for {
@@ -287,9 +327,11 @@ Outer:
 }
 
 func TestAmendDatapointCausesError(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	app := db.Appender()
 	_, err := app.Add(labels.Labels{}, 0, 0)
@@ -303,9 +345,11 @@ func TestAmendDatapointCausesError(t *testing.T) {
 }
 
 func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	app := db.Appender()
 	_, err := app.Add(labels.Labels{}, 0, math.NaN())
@@ -318,10 +362,11 @@ func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 }
 
 func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
-
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 	app := db.Appender()
 	_, err := app.Add(labels.Labels{}, 0, math.Float64frombits(0x7ff0000000000001))
 	testutil.Ok(t, err)
@@ -333,9 +378,11 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 }
 
 func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	// Append AmendedValue.
 	app := db.Appender()
@@ -377,8 +424,8 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 }
 
 func TestDB_Snapshot(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
+	db, delete := openTestDB(t, nil)
+	defer delete()
 
 	// append data
 	app := db.Appender()
@@ -401,11 +448,11 @@ func TestDB_Snapshot(t *testing.T) {
 	// reopen DB from snapshot
 	db, err = Open(snap, nil, nil, nil)
 	testutil.Ok(t, err)
-	defer db.Close()
+	defer func() { testutil.Ok(t, db.Close()) }()
 
 	querier, err := db.Querier(mint, mint+1000)
 	testutil.Ok(t, err)
-	defer querier.Close()
+	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// sum values
 	seriesSet, err := querier.Select(labels.NewEqualMatcher("foo", "bar"))
@@ -427,8 +474,8 @@ func TestDB_Snapshot(t *testing.T) {
 func TestDB_SnapshotWithDelete(t *testing.T) {
 	numSamples := int64(10)
 
-	db, close := openTestDB(t, nil)
-	defer close()
+	db, delete := openTestDB(t, nil)
+	defer delete()
 
 	app := db.Appender()
 
@@ -468,12 +515,12 @@ Outer:
 		// reopen DB from snapshot
 		db, err = Open(snap, nil, nil, nil)
 		testutil.Ok(t, err)
-		defer db.Close()
+		defer func() { testutil.Ok(t, db.Close()) }()
 
 		// Compare the result.
 		q, err := db.Querier(0, numSamples)
 		testutil.Ok(t, err)
-		defer q.Close()
+		defer func() { testutil.Ok(t, q.Close()) }()
 
 		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
 		testutil.Ok(t, err)
@@ -518,8 +565,6 @@ func TestDB_e2e(t *testing.T) {
 		numDatapoints = 1000
 		numRanges     = 1000
 		timeInterval  = int64(3)
-		maxTime       = int64(2 * 1000)
-		minTime       = int64(200)
 	)
 	// Create 8 series with 1000 data-points of different ranges and run queries.
 	lbls := [][]labels.Label{
@@ -570,9 +615,11 @@ func TestDB_e2e(t *testing.T) {
 		seriesMap[labels.New(l...).String()] = []sample{}
 	}
 
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	app := db.Appender()
 
@@ -670,13 +717,11 @@ func TestDB_e2e(t *testing.T) {
 			q.Close()
 		}
 	}
-
-	return
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
+	db, delete := openTestDB(t, nil)
+	defer delete()
 
 	dirDb := db.Dir()
 
@@ -691,7 +736,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 
 	db, err = Open(dirDb, nil, nil, nil)
 	testutil.Ok(t, err)
-	defer db.Close()
+	defer func() { testutil.Ok(t, db.Close()) }()
 
 	q, err := db.Querier(0, 1)
 	testutil.Ok(t, err)
@@ -704,8 +749,8 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 func TestWALSegmentSizeOption(t *testing.T) {
 	options := *DefaultOptions
 	options.WALSegmentSize = 2 * 32 * 1024
-	db, close := openTestDB(t, &options)
-	defer close()
+	db, delete := openTestDB(t, &options)
+	defer delete()
 	app := db.Appender()
 	for i := int64(0); i < 155; i++ {
 		_, err := app.Add(labels.Labels{labels.Label{Name: "wal", Value: "size"}}, i, rand.Float64())
@@ -730,8 +775,8 @@ func TestWALSegmentSizeOption(t *testing.T) {
 func TestTombstoneClean(t *testing.T) {
 	numSamples := int64(10)
 
-	db, close := openTestDB(t, nil)
-	defer close()
+	db, delete := openTestDB(t, nil)
+	defer delete()
 
 	app := db.Appender()
 
@@ -827,9 +872,11 @@ func TestTombstoneClean(t *testing.T) {
 // if TombstoneClean leaves any blocks behind these will overlap.
 func TestTombstoneCleanFail(t *testing.T) {
 
-	db, close := openTestDB(t, nil)
-	defer db.Close()
-	defer close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	var expectedBlockDirs []string
 
@@ -906,11 +953,13 @@ func (*mockCompactorFailing) Compact(dest string, dirs []string, open []*Block) 
 }
 
 func TestTimeRetention(t *testing.T) {
-	db, close := openTestDB(t, &Options{
+	db, delete := openTestDB(t, &Options{
 		BlockRanges: []int64{1000},
 	})
-	defer close()
-	defer db.Close()
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	blocks := []*BlockMeta{
 		{MinTime: 500, MaxTime: 900}, // Oldest block
@@ -938,11 +987,13 @@ func TestTimeRetention(t *testing.T) {
 }
 
 func TestSizeRetention(t *testing.T) {
-	db, close := openTestDB(t, &Options{
+	db, delete := openTestDB(t, &Options{
 		BlockRanges: []int64{100},
 	})
-	defer close()
-	defer db.Close()
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	blocks := []*BlockMeta{
 		{MinTime: 100, MaxTime: 200}, // Oldest block
@@ -1000,8 +1051,11 @@ func dbDiskSize(dir string) int64 {
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	labelpairs := []labels.Labels{
 		labels.FromStrings("a", "abcd", "b", "abcde"),
@@ -1059,7 +1113,7 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 
 	q, err := db.Querier(0, 10)
 	testutil.Ok(t, err)
-	defer q.Close()
+	defer func() { testutil.Ok(t, q.Close()) }()
 
 	for _, c := range cases {
 		ss, err := q.Select(c.selector...)
@@ -1175,9 +1229,11 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 
 // Regression test for https://github.com/prometheus/tsdb/issues/347
 func TestChunkAtBlockBoundary(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	app := db.Appender()
 
@@ -1229,9 +1285,11 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 }
 
 func TestQuerierWithBoundaryChunks(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	app := db.Appender()
 
@@ -1366,14 +1424,16 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 }
 
 func TestNoEmptyBlocks(t *testing.T) {
-	db, close := openTestDB(t, &Options{
+	db, delete := openTestDB(t, &Options{
 		BlockRanges: []int64{100},
 	})
-	defer close()
-	defer db.Close()
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 	db.DisableCompactions()
 
-	rangeToTriggercompaction := db.opts.BlockRanges[0]/2*3 - 1
+	rangeToTriggerCompaction := db.opts.BlockRanges[0]/2*3 - 1
 	defaultLabel := labels.FromStrings("foo", "bar")
 	defaultMatcher := labels.NewMustRegexpMatcher("", ".*")
 
@@ -1392,7 +1452,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		_, err = app.Add(defaultLabel, 2, 0)
 		testutil.Ok(t, err)
-		_, err = app.Add(defaultLabel, 3+rangeToTriggercompaction, 0)
+		_, err = app.Add(defaultLabel, 3+rangeToTriggerCompaction, 0)
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
@@ -1414,7 +1474,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		_, err = app.Add(defaultLabel, currentTime+1, 0)
 		testutil.Ok(t, err)
-		_, err = app.Add(defaultLabel, currentTime+rangeToTriggercompaction, 0)
+		_, err = app.Add(defaultLabel, currentTime+rangeToTriggerCompaction, 0)
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 
@@ -1435,7 +1495,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		_, err = app.Add(defaultLabel, currentTime+1, 0)
 		testutil.Ok(t, err)
-		_, err = app.Add(defaultLabel, currentTime+rangeToTriggercompaction, 0)
+		_, err = app.Add(defaultLabel, currentTime+rangeToTriggerCompaction, 0)
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 		testutil.Ok(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
@@ -1524,9 +1584,11 @@ func TestDB_LabelNames(t *testing.T) {
 		testutil.Ok(t, err)
 	}
 	for _, tst := range tests {
-		db, close := openTestDB(t, nil)
-		defer close()
-		defer db.Close()
+		db, delete := openTestDB(t, nil)
+		defer func() {
+			testutil.Ok(t, db.Close())
+			delete()
+		}()
 
 		appendSamples(db, 0, 4, tst.sampleLabels1)
 
@@ -1567,9 +1629,11 @@ func TestDB_LabelNames(t *testing.T) {
 }
 
 func TestCorrectNumTombstones(t *testing.T) {
-	db, close := openTestDB(t, nil)
-	defer close()
-	defer db.Close()
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
 
 	blockRange := DefaultOptions.BlockRanges[0]
 	defaultLabel := labels.FromStrings("foo", "bar")
