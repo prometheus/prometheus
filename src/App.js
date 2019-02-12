@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React, { Component, PureComponent } from 'react';
 import {
   Alert,
   Button,
@@ -28,7 +28,9 @@ import '../node_modules/react-flot/flot/jquery.flot.stack.min';
 import './App.css';
 
 import Downshift from 'downshift';
-import moment from 'moment';
+import moment from 'moment-timezone';
+
+import fuzzy from 'fuzzy';
 
 import 'tempusdominus-core';
 import 'tempusdominus-bootstrap-4';
@@ -100,7 +102,7 @@ class PanelList extends Component {
   componentDidMount() {
     this.addPanel();
 
-    fetch("http://demo.robustperception.io:9090/api/v1/label/__name__/values")
+    fetch("http://demo.robustperception.io:9090/api/v1/label/__name__/values", {cache: "no-store"})
     .then(resp => {
       if (resp.ok) {
         return resp.json();
@@ -112,7 +114,7 @@ class PanelList extends Component {
     .catch(error => this.setState({fetchMetricsError: error.message}));
 
     const browserTime = new Date().getTime() / 1000;
-    fetch("http://demo.robustperception.io:9090/api/v1/query?query=time()")
+    fetch("http://demo.robustperception.io:9090/api/v1/query?query=time()", {cache: "no-store"})
     .then(resp => {
       if (resp.ok) {
         return resp.json();
@@ -179,11 +181,10 @@ class Panel extends Component {
       expr: 'rate(node_cpu_seconds_total[1m])',
       type: 'graph', // TODO enum?
       range: 3600,
-      endTime: null,
+      endTime: null, // This is in milliseconds.
       resolution: null,
       stacked: false,
       data: null,
-      loading: false,
       error: null,
       stats: null,
     };
@@ -196,6 +197,12 @@ class Panel extends Component {
       return prevState[v] !== this.state[v];
     })
     if (needsRefresh) {
+      if (prevState.type !== this.state.type) {
+        // If the other options change, we still want to show the old data until the new
+        // query completes, but this is not a good idea when we actually change between
+        // table and graph view, since not all queries work well in both.
+        this.setState({data: null});
+      }
       this.executeQuery();
     }
   }
@@ -205,12 +212,18 @@ class Panel extends Component {
   }
 
   executeQuery = ()=> {
-    // TODO: Abort existing queries.
-    if (this.state.expr === "") {
-      return;
+    if (this.abortInFlightFetch) {
+      this.abortInFlightFetch();
+      this.abortInFlightFetch = null;
     }
 
+    const abortController = new AbortController();
+    this.abortInFlightFetch = () => abortController.abort();
     this.setState({loading: true});
+
+    if (this.state.expr === '') {
+      return;
+    }
 
     let endTime = this.getEndTime() / 1000;
     let startTime = endTime - this.state.range;
@@ -238,11 +251,11 @@ class Panel extends Component {
         })
         break;
       default:
-        // TODO
+        throw new Error('Invalid panel type "' + this.state.type + '"');
     }
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
 
-    fetch(url)
+    fetch(url, {cache: 'no-store', signal: abortController.signal})
     .then(resp => resp.json())
     .then(json => {
       if (json.status !== 'success') {
@@ -258,9 +271,14 @@ class Panel extends Component {
           resolution: resolution,
         },
         loading: false,
-      })
+      });
+      this.abortInFlightFetch = null;
     })
     .catch(error => {
+      if (error.name === 'AbortError') {
+        // Aborts are expected, don't show an error for them.
+        return
+      }
       this.setState({
         error: 'Error executing query: ' + error.message,
         loading: false,
@@ -289,7 +307,11 @@ class Panel extends Component {
   }
 
   handleChangeResolution = (resolution) => {
-    this.setState({resolution: resolution});
+    // TODO: Where should we validate domain model constraints? In the parent's
+    // change handler like here, or in the calling component?
+    if (resolution > 0) {
+      this.setState({resolution: resolution});
+    }
   }
 
   // getEndDate = () => {
@@ -344,14 +366,6 @@ class Panel extends Component {
               loading={this.state.loading}
               metrics={this.props.metrics}
             />
-            {/*<Input type="select" name="selectMetric">
-              {this.props.metrics.map(m => <option key={m}>{m}</option>)}
-            </Input>*/}
-          </Col>
-        </Row>
-        <Row>
-          <Col>
-            {/* {this.state.loading && "Loading..."} */}
           </Col>
         </Row>
         <Row>
@@ -426,38 +440,52 @@ class ExpressionInput extends Component {
 
   stateReducer = (state, changes) => {
     return changes;
-    // TODO: Remove this whole function if I don't notice any odd behavior without it.
-    // I don't remember why I had to add this and currently things seem fine without it.
-    switch (changes.type) {
-      case Downshift.stateChangeTypes.keyDownEnter:
-      case Downshift.stateChangeTypes.clickItem:
-      case Downshift.stateChangeTypes.changeInput:
-        return {
-          ...changes,
-          selectedItem: changes.inputValue,
-        };
-      default:
-        return changes;
-    }
+    // // TODO: Remove this whole function if I don't notice any odd behavior without it.
+    // // I don't remember why I had to add this and currently things seem fine without it.
+    // switch (changes.type) {
+    //   case Downshift.stateChangeTypes.keyDownEnter:
+    //   case Downshift.stateChangeTypes.clickItem:
+    //   case Downshift.stateChangeTypes.changeInput:
+    //     return {
+    //       ...changes,
+    //       selectedItem: changes.inputValue,
+    //     };
+    //   default:
+    //     return changes;
+    // }
   }
 
   renderAutosuggest = (downshift) => {
-    let matches = this.props.metrics.filter(item => !downshift.inputValue || item.includes(downshift.inputValue));
-    if (matches.length === 0 || !downshift.isOpen) {
+    if (this.prevNoMatchValue && downshift.inputValue.includes(this.prevNoMatchValue)) {
+      // TODO: Is this still correct with fuzzy?
       return null;
+    }
+
+    let matches = fuzzy.filter(downshift.inputValue.replace(/ /g, ''), this.props.metrics, {
+      pre: "<strong>",
+      post: "</strong>",
+    });
+
+    if (matches.length === 0) {
+      this.prevNoMatchValue = downshift.inputValue;
+      return null;
+    }
+
+    if (!downshift.isOpen) {
+      return null; // TODO CHECK NEED FOR THIS
     }
 
     return (
       <ul className="autosuggest-dropdown" {...downshift.getMenuProps()}>
         {
           matches
-            .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+            .slice(0, 200) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
             .map((item, index) => (
               <li
                 {...downshift.getItemProps({
-                  key: item,
+                  key: item.original,
                   index,
-                  item,
+                  item: item.original,
                   style: {
                     backgroundColor:
                       downshift.highlightedIndex === index ? 'lightgray' : 'white',
@@ -465,7 +493,9 @@ class ExpressionInput extends Component {
                   },
                 })}
               >
-                {item}
+                {/* TODO: Find better way than setting inner HTML dangerously. We just want the <strong> to not be escaped.
+                    This will be a problem when we save history and the user enters HTML into a query. q*/}
+                <span dangerouslySetInnerHTML={{__html: item.string}}></span>
               </li>
             ))
         }
@@ -536,61 +566,80 @@ class ExpressionInput extends Component {
 }
 
 function TabPaneAlert(props) {
-  const { color, message } = props;
-
   return (
     <>
       {/* Without the following <div> hack, giving the <Alert> any top margin
-          will make the entire tab pane look detached. */}
+          makes the entire tab pane look detached by that margin. */}
       <div style={{height: '1px'}}></div>
-      <Alert className="tabpane-alert" color={color}>{props.children}</Alert>
+      <Alert className="tabpane-alert" color={props.color}>{props.children}</Alert>
     </>
   );
 }
 
-function DataTable(props) {
-  const data = props.data;
+class DataTable extends PureComponent {
+  limitSeries(series) {
+    const maxSeries = 10000;
 
-  if (data === null) {
-    return <TabPaneAlert color="light">No data queried yet</TabPaneAlert>;
-  }
-
-  if (data.result === null || data.result.length === 0) {
-    return <TabPaneAlert color="secondary">Empty query result</TabPaneAlert>;
-  }
-
-  let rows = [];
-  if (props.data) {
-    switch(data.resultType) {
-      case 'vector':
-        rows = props.data.result.map((s, index) => {
-          return <tr key={index}><td>{metricToSeriesName(s.metric)}</td><td>{s.value[1]}</td></tr>
-        });
-        break;
-      case 'matrix':
-        rows = props.data.result.map((s, index) => {
-          const valueText = s.values.map((v) => {
-            return [1] + ' @' + v[0];
-          }).join('\n');
-          return <tr style={{'white-space': 'pre'}} key={index}><td>{metricToSeriesName(s.metric)}</td><td>{valueText}</td></tr>
-        });
-        break;
-      case 'scalar':
-        rows.push(<tr><td>scalar</td><td>{data.result[1]}</td></tr>);
-      case 'string':
-        rows.push(<tr><td>scalar</td><td>{data.result[1]}</td></tr>);
-      default:
-        return <TabPaneAlert color="danger">Unsupported result value type '{data.resultType}'</TabPaneAlert>;
+    if (series.length > maxSeries) {
+      return series.slice(0, maxSeries);
     }
+    return series;
   }
 
-  return (
-    <Table hover size="sm" className="data-table">
-      <tbody>
-        {rows}
-      </tbody>
-    </Table>
-  );
+  render() {
+    const data = this.props.data;
+
+    if (data === null) {
+      return <TabPaneAlert color="light">No data queried yet</TabPaneAlert>;
+    }
+
+    if (data.result === null || data.result.length === 0) {
+      return <TabPaneAlert color="secondary">Empty query result</TabPaneAlert>;
+    }
+
+    let rows = [];
+    let limitedSeries = this.limitSeries(data.result);
+    if (data) {
+      switch(data.resultType) {
+        case 'vector':
+          rows = limitedSeries.map((s, index) => {
+            return <tr key={index}><td>{metricToSeriesName(s.metric)}</td><td>{s.value[1]}</td></tr>
+          });
+          break;
+        case 'matrix':
+          rows = limitedSeries.map((s, index) => {
+            const valueText = s.values.map((v) => {
+              return [1] + ' @' + v[0];
+            }).join('\n');
+            return <tr style={{whiteSpace: 'pre'}} key={index}><td>{metricToSeriesName(s.metric)}</td><td>{valueText}</td></tr>
+          });
+          break;
+        case 'scalar':
+          rows.push(<tr><td>scalar</td><td>{data.result[1]}</td></tr>);
+          break;
+        case 'string':
+          rows.push(<tr><td>scalar</td><td>{data.result[1]}</td></tr>);
+          break;
+        default:
+          return <TabPaneAlert color="danger">Unsupported result value type '{data.resultType}'</TabPaneAlert>;
+      }
+    }
+
+    return (
+      <>
+        {data.result.length !== limitedSeries.length &&
+          <TabPaneAlert color="danger">
+            <strong>Warning:</strong> Fetched {data.result.length} metrics, only displaying first {limitedSeries.length}.
+          </TabPaneAlert>
+        }
+        <Table hover size="sm" className="data-table">
+          <tbody>
+            {rows}
+          </tbody>
+        </Table>
+      </>
+    );
+  }
 }
 class GraphControls extends Component {
   constructor(props) {
@@ -602,6 +651,7 @@ class GraphControls extends Component {
 
     this.rangeRef = React.createRef();
     this.endTimeRef = React.createRef();
+    this.resolutionRef = React.createRef();
   }
 
   rangeUnits = {
@@ -638,7 +688,7 @@ class GraphControls extends Component {
     return range + 's';
   }
 
-  onRangeInputChanged = (rangeText) => {
+  onChangeRangeInput = (rangeText) => {
     const range = this.parseRange(rangeText);
     if (range === null) {
       this.changeRangeInput(this.formatRange(this.props.range));
@@ -689,7 +739,6 @@ class GraphControls extends Component {
     this.$endTime.datetimepicker('date', endTime);
   }
 
-  // TODO: Handle manual textual changes to datetime input.
   componentDidMount() {
     this.$endTime = window.$(this.endTimeRef.current);
 
@@ -707,10 +756,15 @@ class GraphControls extends Component {
       format: 'YYYY-MM-DD HH:mm:ss',
       locale: 'en',
       timeZone: 'UTC',
+      defaultDate: this.props.endTime,
     });
 
     this.$endTime.on('change.datetimepicker', e => {
-      this.props.onChangeEndTime(e.date);
+      if (e.date) {
+        this.props.onChangeEndTime(e.date);
+      } else {
+        this.$endTime.datetimepicker('date', e.target.value);
+      }
     });
   }
 
@@ -723,7 +777,11 @@ class GraphControls extends Component {
           </InputGroupAddon>
 
           {/* <Input value={this.state.rangeInput} onChange={(e) => this.changeRangeInput(e.target.value)}/> */}
-          <Input defaultValue={this.formatRange(this.props.range)} innerRef={this.rangeRef} onBlur={() => this.onRangeInputChanged(this.rangeRef.current.value)}/>
+          <Input
+            defaultValue={this.formatRange(this.props.range)}
+            innerRef={this.rangeRef}
+            onBlur={() => this.onChangeRangeInput(this.rangeRef.current.value)}
+          />
 
           <InputGroupAddon addonType="append">
             <Button title="Increase range" onClick={this.increaseRange}><FontAwesomeIcon icon="plus" fixedWidth/></Button>
@@ -752,7 +810,14 @@ class GraphControls extends Component {
         </InputGroup>
 
         {/* TODO: validate resolution and only update when valid */}
-        <Input className="resolution-input" value={this.props.resolution ? this.props.resolution : ''} onChange={(e) => this.props.onChangeResolution(e.target.value)} placeholder="Res. (s)" bsSize="sm"/>
+        <Input
+          placeholder="Res. (s)"
+          className="resolution-input"
+          defaultValue={this.props.resolution !== null ? this.props.resolution : ''}
+          innerRef={this.resolutionRef}
+          onBlur={() => this.props.onChangeResolution(parseInt(this.resolutionRef.current.value))}
+          bsSize="sm"
+        />
 
         <ButtonGroup className="stacked-input" size="sm">
           <Button title="Show unstacked line graph" onClick={() => this.props.onChangeStacking(false)} active={!this.props.stacked}><FontAwesomeIcon icon="chart-line" fixedWidth/></Button>
@@ -769,12 +834,13 @@ function getGraphID() {
   return graphID++;
 }
 
-class Graph extends Component {
+class Graph extends PureComponent {
   constructor(props) {
     super(props);
     this.state = {
       legendRef: null,
     };
+    this.id = getGraphID();
   }
 
   escapeHTML(string) {
@@ -866,7 +932,6 @@ class Graph extends Component {
   }
 
   getOptions() {
-    console.log(this.props);
     return {
       // colors: [
       //   '#7EB26D', // 0: pale green
@@ -976,11 +1041,6 @@ class Graph extends Component {
   }
 
   getData() {
-    if (this.props.data.resultType !== 'matrix') {
-      // TODO self.showError("Result is not of matrix type! Please enter a correct expression.");
-      return [];
-    }
-
     return this.props.data.result.map(ts => {
       // Insert nulls for all missing steps.
       let data = [];
@@ -1031,7 +1091,7 @@ class Graph extends Component {
       <div className="graph">
         {this.state.legendRef &&
           <ReactFlot
-            id={getGraphID().toString()}
+            id={this.id.toString()}
             data={this.getData()}
             options={this.getOptions()}
             height="500px"

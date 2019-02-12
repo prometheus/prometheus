@@ -70,8 +70,16 @@ button.execute-btn {
     padding: 15px 0 10px 10px;
 }
 
+.graph-controls input {
+    text-align: center;
+}
+
 .graph-controls .range-input input {
     width: 50px;
+}
+
+.graph-controls .endtime-input input {
+    width: 160px;
 }
 
 .graph-controls input.resolution-input {
