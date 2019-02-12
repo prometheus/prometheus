@@ -210,6 +210,10 @@ class Panel extends Component {
   }
 
   executeQuery = ()=> {
+    if (this.state.expr === '') {
+      return;
+    }
+
     if (this.abortInFlightFetch) {
       this.abortInFlightFetch();
       this.abortInFlightFetch = null;
@@ -218,10 +222,6 @@ class Panel extends Component {
     const abortController = new AbortController();
     this.abortInFlightFetch = () => abortController.abort();
     this.setState({loading: true});
-
-    if (this.state.expr === '') {
-      return;
-    }
 
     let endTime = this.getEndTime() / 1000;
     let startTime = endTime - this.state.range;
