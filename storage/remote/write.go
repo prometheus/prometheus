@@ -55,7 +55,7 @@ func (t *timestampTracker) Commit() error {
 	defer t.storage.highestTimestampMtx.Unlock()
 	if t.highestTimestamp > t.storage.highestTimestamp {
 		t.storage.highestTimestamp = t.highestTimestamp
-		t.storage.highestTimestampMetric.Set(float64(t.highestTimestamp))
+		t.storage.highestTimestampMetric.Set(float64(t.highestTimestamp) / 1000.)
 	}
 	return nil
 }
