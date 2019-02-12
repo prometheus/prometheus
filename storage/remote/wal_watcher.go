@@ -21,6 +21,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -232,7 +233,9 @@ func (w *WALWatcher) runWatcher() {
 		}
 	}
 
-	w.currentSegment = first
+	w.replayWal(first, last)
+
+	w.currentSegment = last
 	w.currentSegmentMetric.Set(float64(w.currentSegment))
 	segment, err := wal.OpenReadSegment(wal.SegmentName(w.walDir, w.currentSegment))
 	// TODO: callum, is this error really fatal?
@@ -276,7 +279,32 @@ func (w *WALWatcher) runWatcher() {
 	}
 }
 
-// Use tail true to indicate that the reader is currently on a segment that is
+// replay WAL segments from first to last, excluding last
+func (w *WALWatcher) replayWal(first, last int) {
+	wg := sync.WaitGroup{}
+	for i := first; i < last; i++ {
+		wg.Add(1)
+		// We ignore errors from replaying each segment because there
+		// could be a corruption or compaction that results in one or more
+		// segments being unreadable or non-existent.
+		go func(i int) {
+			level.Info(w.logger).Log("msg", "replaying segment", "segment", w.currentSegment)
+			segment, err := wal.OpenReadSegment(wal.SegmentName(w.walDir, i))
+			if err != nil {
+				return
+			}
+			defer segment.Close()
+			reader := wal.NewLiveReader(segment)
+
+			w.readSegment(reader)
+			wg.Done()
+		}(i)
+	}
+	wg.Wait()
+	level.Info(w.logger).Log("msg", "replayed all existing WAL segments")
+}
+
+// Use tail true to indicate thatreader is currently on a segment that is
 // actively being written to. If false, assume it's a full segment and we're
 // replaying it on start to cache the series records.
 func (w *WALWatcher) watch(wl *wal.WAL, reader *wal.LiveReader, tail bool) error {

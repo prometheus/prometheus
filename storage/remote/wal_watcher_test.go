@@ -415,3 +415,20 @@ func Test_decodeRecord_afterStart(t *testing.T) {
 
 	testutil.Equals(t, 1, wt.samplesAppended)
 }
+
+func Benchmark_ReplayWAL(b *testing.B) {
+	segmentSize := 64 * 1024 * 1024
+
+	w, err := wal.NewSize(nil, nil, "testdata/wal", segmentSize)
+	testutil.Ok(b, err)
+
+	first, last, err := w.Segments()
+	testutil.Ok(b, err)
+	wt := newWriteToMock()
+	st := timestamp.FromTime(time.Now())
+
+	for i := 0; i < b.N; i++ {
+		watcher := NewWALWatcher(nil, "", wt, "testdata", st)
+		watcher.replayWal(first, last)
+	}
+}
