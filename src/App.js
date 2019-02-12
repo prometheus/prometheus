@@ -563,17 +563,6 @@ class ExpressionInput extends Component {
   }
 }
 
-function TabPaneAlert(props) {
-  return (
-    <>
-      {/* Without the following <div> hack, giving the <Alert> any top margin
-          makes the entire tab pane look detached by that margin. */}
-      <div style={{height: '1px'}}></div>
-      <Alert className="tabpane-alert" color={props.color}>{props.children}</Alert>
-    </>
-  );
-}
-
 class DataTable extends PureComponent {
   limitSeries(series) {
     const maxSeries = 10000;
@@ -588,11 +577,11 @@ class DataTable extends PureComponent {
     const data = this.props.data;
 
     if (data === null) {
-      return <TabPaneAlert color="light">No data queried yet</TabPaneAlert>;
+      return <Alert color="light">No data queried yet</Alert>;
     }
 
     if (data.result === null || data.result.length === 0) {
-      return <TabPaneAlert color="secondary">Empty query result</TabPaneAlert>;
+      return <Alert color="secondary">Empty query result</Alert>;
     }
 
     let rows = [];
@@ -619,16 +608,16 @@ class DataTable extends PureComponent {
           rows.push(<tr><td>scalar</td><td>{data.result[1]}</td></tr>);
           break;
         default:
-          return <TabPaneAlert color="danger">Unsupported result value type '{data.resultType}'</TabPaneAlert>;
+          return <Alert color="danger">Unsupported result value type '{data.resultType}'</Alert>;
       }
     }
 
     return (
       <>
         {data.result.length !== limitedSeries.length &&
-          <TabPaneAlert color="danger">
+          <Alert color="danger">
             <strong>Warning:</strong> Fetched {data.result.length} metrics, only displaying first {limitedSeries.length}.
-          </TabPaneAlert>
+          </Alert>
         }
         <Table hover size="sm" className="data-table">
           <tbody>

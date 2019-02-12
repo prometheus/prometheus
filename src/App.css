@@ -27,6 +27,11 @@ button.execute-btn {
     border-left: 1px solid #dee2e6;
     border-right: 1px solid #dee2e6;
     border-bottom: 1px solid #dee2e6;
+    padding: 10px;
+}
+
+.tab-content .alert {
+    margin-bottom: 0;
 }
 
 .data-table.table {
@@ -67,7 +72,7 @@ button.execute-btn {
 }
 
 .graph-controls {
-    padding: 15px 0 10px 10px;
+    margin-bottom: 10px;
 }
 
 .graph-controls input {
@@ -97,10 +102,6 @@ button.execute-btn {
     border-top: 1px solid #ced4da;
     border-bottom: 1px solid #ced4da;
     color: #495057;
-}
-
-.tabpane-alert {
-    margin: 10px;
 }
 
 .graph-legend {
