@@ -151,7 +151,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	fn := filepath.Join(dir, "index")
+	fn := filepath.Join(dir, indexFilename)
 
 	// An empty index must still result in a readable file.
 	iw, err := NewWriter(fn)
@@ -177,7 +177,7 @@ func TestIndexRW_Postings(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	fn := filepath.Join(dir, "index")
+	fn := filepath.Join(dir, indexFilename)
 
 	iw, err := NewWriter(fn)
 	testutil.Ok(t, err)
@@ -271,7 +271,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		})
 	}
 
-	iw, err := NewWriter(filepath.Join(dir, "index"))
+	iw, err := NewWriter(filepath.Join(dir, indexFilename))
 	testutil.Ok(t, err)
 
 	testutil.Ok(t, iw.AddSymbols(symbols))
@@ -331,7 +331,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	err = iw.Close()
 	testutil.Ok(t, err)
 
-	ir, err := NewFileReader(filepath.Join(dir, "index"))
+	ir, err := NewFileReader(filepath.Join(dir, indexFilename))
 	testutil.Ok(t, err)
 
 	for p := range mi.postings {

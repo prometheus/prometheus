@@ -45,6 +45,8 @@ const (
 	FormatV2 = 2
 
 	labelNameSeperator = "\xff"
+
+	indexFilename = "index"
 )
 
 type indexWriterSeries struct {
