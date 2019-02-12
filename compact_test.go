@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"io/ioutil"
 	"math"
 	"os"
@@ -27,6 +28,7 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
 )
@@ -153,7 +155,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 		},
 	}
 
-	c, err := NewLeveledCompactor(nil, nil, []int64{50}, nil)
+	c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{50}, nil)
 	testutil.Ok(t, err)
 
 	c.plan(metas)
@@ -161,7 +163,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 
 func TestLeveledCompactor_plan(t *testing.T) {
 	// This mimicks our default ExponentialBlockRanges with min block size equals to 20.
-	compactor, err := NewLeveledCompactor(nil, nil, []int64{
+	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
 		20,
 		60,
 		180,
@@ -324,7 +326,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 }
 
 func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
-	compactor, err := NewLeveledCompactor(nil, nil, []int64{
+	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
 		20,
 		60,
 		240,
@@ -374,7 +376,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 }
 
 func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
-	compactor, err := NewLeveledCompactor(nil, log.NewNopLogger(), []int64{
+	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{
 		20,
 		60,
 		240,
@@ -649,7 +651,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 				blocks = append(blocks, &mockBReader{ir: ir, cr: cr})
 			}
 
-			c, err := NewLeveledCompactor(nil, nil, []int64{0}, nil)
+			c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{0}, nil)
 			testutil.Ok(t, err)
 
 			meta := &BlockMeta{
@@ -744,6 +746,70 @@ func TestDisableAutoCompactions(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	testutil.Assert(t, len(db.Blocks()) > 0, "No block was persisted after the set timeout.")
+}
+
+// TestCancelCompactions ensures that when the db is closed
+// any running compaction is cancelled to unblock closing the db.
+func TestCancelCompactions(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "testCancelCompaction")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(tmpdir)
+
+	// Create some blocks to fall within the compaction range.
+	createBlock(t, tmpdir, genSeries(10, 10000, 0, 1000))
+	createBlock(t, tmpdir, genSeries(10, 10000, 1000, 2000))
+	createBlock(t, tmpdir, genSeries(1, 1, 2000, 2001)) // The most recent block is ignored so can be e small one.
+
+	// Copy the db so we have an exact copy to compare compaction times.
+	tmpdirCopy := tmpdir + "Copy"
+	err = fileutil.CopyDirs(tmpdir, tmpdirCopy)
+	testutil.Ok(t, err)
+	defer os.RemoveAll(tmpdirCopy)
+
+	// Measure the compaction time without interupting it.
+	var timeCompactionUninterrupted time.Duration
+	{
+		db, err := Open(tmpdir, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
+		testutil.Ok(t, err)
+		testutil.Equals(t, 3, len(db.Blocks()), "initial block count mismatch")
+		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
+		db.compactc <- struct{}{} // Trigger a compaction.
+		var start time.Time
+		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
+			time.Sleep(3 * time.Millisecond)
+		}
+		start = time.Now()
+
+		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran) != 1 {
+			time.Sleep(3 * time.Millisecond)
+		}
+		timeCompactionUninterrupted = time.Since(start)
+
+		testutil.Ok(t, db.Close())
+	}
+	// Measure the compaction time when closing the db in the middle of compaction.
+	{
+		db, err := Open(tmpdirCopy, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
+		testutil.Ok(t, err)
+		testutil.Equals(t, 3, len(db.Blocks()), "initial block count mismatch")
+		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
+		db.compactc <- struct{}{} // Trigger a compaction.
+		dbClosed := make(chan struct{})
+
+		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
+			time.Sleep(3 * time.Millisecond)
+		}
+		go func() {
+			testutil.Ok(t, db.Close())
+			close(dbClosed)
+		}()
+
+		start := time.Now()
+		<-dbClosed
+		actT := time.Since(start)
+		expT := time.Duration(timeCompactionUninterrupted / 2) // Closing the db in the middle of compaction should less than half the time.
+		testutil.Assert(t, actT < expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
+	}
 }
 
 // TestDeleteCompactionBlockAfterFailedReload ensures that a failed reload immediately after a compaction

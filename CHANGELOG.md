@@ -1,5 +1,6 @@
 ## master / unreleased
-
+ - [CHANGE]  `NewLeveledCompactor` takes a context so that a compaction is canceled when closing the db.
+ - [ENHANCEMENT] When closing the db any running compaction will be cancelled so it doesn't block.
  - [CHANGE] `prometheus_tsdb_storage_blocks_bytes_total` is now `prometheus_tsdb_storage_blocks_bytes`
 
 ## 0.4.0

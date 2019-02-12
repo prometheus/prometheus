@@ -16,6 +16,7 @@ package tsdb
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -126,6 +127,9 @@ type DB struct {
 	// changing the autoCompact var.
 	autoCompactMtx sync.Mutex
 	autoCompact    bool
+
+	// Cancel a running compaction when a shutdown is initiated.
+	compactCancel context.CancelFunc
 }
 
 type dbMetrics struct {
@@ -271,10 +275,13 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		db.lockf = lockf
 	}
 
-	db.compactor, err = NewLeveledCompactor(r, l, opts.BlockRanges, db.chunkPool)
+	ctx, cancel := context.WithCancel(context.Background())
+	db.compactor, err = NewLeveledCompactor(ctx, r, l, opts.BlockRanges, db.chunkPool)
 	if err != nil {
+		cancel()
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
+	db.compactCancel = cancel
 
 	segmentSize := wal.DefaultSegmentSize
 	if opts.WALSegmentSize > 0 {
@@ -826,6 +833,7 @@ func (db *DB) Head() *Head {
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
+	db.compactCancel()
 	<-db.donec
 
 	db.mtx.Lock()

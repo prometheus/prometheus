@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math/rand"
@@ -75,15 +76,17 @@ type LeveledCompactor struct {
 	logger    log.Logger
 	ranges    []int64
 	chunkPool chunkenc.Pool
+	ctx       context.Context
 }
 
 type compactorMetrics struct {
-	ran          prometheus.Counter
-	failed       prometheus.Counter
-	duration     prometheus.Histogram
-	chunkSize    prometheus.Histogram
-	chunkSamples prometheus.Histogram
-	chunkRange   prometheus.Histogram
+	ran              prometheus.Counter
+	populatingBlocks prometheus.Gauge
+	failed           prometheus.Counter
+	duration         prometheus.Histogram
+	chunkSize        prometheus.Histogram
+	chunkSamples     prometheus.Histogram
+	chunkRange       prometheus.Histogram
 }
 
 func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
@@ -92,6 +95,10 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m.ran = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_total",
 		Help: "Total number of compactions that were executed for the partition.",
+	})
+	m.populatingBlocks = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_compaction_populating_block",
+		Help: "Set to 1 when a block is currently being written to the disk.",
 	})
 	m.failed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_failed_total",
@@ -121,6 +128,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	if r != nil {
 		r.MustRegister(
 			m.ran,
+			m.populatingBlocks,
 			m.failed,
 			m.duration,
 			m.chunkRange,
@@ -132,7 +140,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 // NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool) (*LeveledCompactor, error) {
+func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.Errorf("at least one range must be provided")
 	}
@@ -144,6 +152,7 @@ func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, ranges []int64, 
 		chunkPool: pool,
 		logger:    l,
 		metrics:   newCompactorMetrics(r),
+		ctx:       ctx,
 	}, nil
 }
 
@@ -402,10 +411,11 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 
 	var merr MultiError
 	merr.Add(err)
-
-	for _, b := range bs {
-		if err := b.setCompactionFailed(); err != nil {
-			merr.Add(errors.Wrapf(err, "setting compaction failed for block: %s", b.Dir()))
+	if err != context.Canceled {
+		for _, b := range bs {
+			if err := b.setCompactionFailed(); err != nil {
+				merr.Add(errors.Wrapf(err, "setting compaction failed for block: %s", b.Dir()))
+			}
 		}
 	}
 
@@ -475,14 +485,19 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
 	dir := filepath.Join(dest, meta.ULID.String())
 	tmp := dir + ".tmp"
-
+	var closers []io.Closer
 	defer func(t time.Time) {
+		var merr MultiError
+		merr.Add(err)
+		merr.Add(closeAll(closers))
+		err = merr.Err()
+
+		// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
+		if err := os.RemoveAll(tmp); err != nil {
+			level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
+		}
 		if err != nil {
 			c.metrics.failed.Inc()
-			// TODO(gouthamve): Handle error how?
-			if err := os.RemoveAll(tmp); err != nil {
-				level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
-			}
 		}
 		c.metrics.ran.Inc()
 		c.metrics.duration.Observe(time.Since(t).Seconds())
@@ -504,7 +519,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
 	}
-	defer chunkw.Close()
+	closers = append(closers, chunkw)
 	// Record written chunk sizes on level 1 compactions.
 	if meta.Compaction.Level == 1 {
 		chunkw = &instrumentedChunkWriter{
@@ -519,27 +534,33 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}
-	defer indexw.Close()
+	closers = append(closers, indexw)
 
 	if err := c.populateBlock(blocks, meta, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
 	}
+
+	select {
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	default:
+	}
+
 	// We are explicitly closing them here to check for error even
 	// though these are covered under defer. This is because in Windows,
 	// you cannot delete these unless they are closed and the defer is to
 	// make sure they are closed if the function exits due to an error above.
-	if err = chunkw.Close(); err != nil {
-		return errors.Wrap(err, "close chunk writer")
+	var merr MultiError
+	for _, w := range closers {
+		merr.Add(w.Close())
 	}
-	if err = indexw.Close(); err != nil {
-		return errors.Wrap(err, "close index writer")
+	closers = closers[:0] // Avoid closing the writers twice in the defer.
+	if merr.Err() != nil {
+		return merr.Err()
 	}
 
-	// Populated block is empty, so cleanup and exit.
+	// Populated block is empty, so exit early.
 	if meta.Stats.NumSamples == 0 {
-		if err := os.RemoveAll(tmp); err != nil {
-			return errors.Wrap(err, "remove tmp folder after empty block failed")
-		}
 		return nil
 	}
 
@@ -597,9 +618,17 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		merr.Add(err)
 		merr.Add(closeAll(closers))
 		err = merr.Err()
+		c.metrics.populatingBlocks.Set(0)
 	}()
+	c.metrics.populatingBlocks.Set(1)
 
 	for i, b := range blocks {
+		select {
+		case <-c.ctx.Done():
+			return c.ctx.Err()
+		default:
+		}
+
 		indexr, err := b.Index()
 		if err != nil {
 			return errors.Wrapf(err, "open index reader for block %s", b)
@@ -656,6 +685,12 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	for set.Next() {
+		select {
+		case <-c.ctx.Done():
+			return c.ctx.Err()
+		default:
+		}
+
 		lset, chks, dranges := set.At() // The chunks here are not fully deleted.
 
 		// Skip the series with all deleted chunks.
