@@ -80,6 +80,7 @@ button.execute-btn {
 
 .graph-controls .endtime-input input {
     width: 160px;
+    border-right: none;
 }
 
 .graph-controls input.resolution-input {
@@ -88,6 +89,14 @@ button.execute-btn {
 
 .graph-controls .endtime-input, .graph-controls .resolution-input, .graph-controls .stacked-input {
     margin-left: 20px;
+}
+
+.graph-controls .clear-endtime-btn {
+    background: #fff;
+    border-left: none;
+    border-top: 1px solid #ced4da;
+    border-bottom: 1px solid #ced4da;
+    color: #495057;
 }
 
 .tabpane-alert {
