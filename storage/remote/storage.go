@@ -60,7 +60,7 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 	}
 	shardUpdateDuration := 10 * time.Second
 	s := &Storage{
-		logger:                 logging.RateLimit(logging.Dedupe(l, 1*time.Minute), 1),
+		logger:                 logging.Dedupe(l, 1*time.Minute),
 		localStartTimeCallback: stCallback,
 		flushDeadline:          flushDeadline,
 		walDir:                 walDir,
