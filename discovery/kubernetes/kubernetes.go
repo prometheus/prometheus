@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"sync"
 	"time"
 
@@ -233,8 +234,13 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		kcfg.BearerToken = token
 
 		if conf.BasicAuth != nil {
-			kcfg.Username = conf.BasicAuth.Username
-			kcfg.Password = string(conf.BasicAuth.Password)
+			kcfg.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
+				return config_util.NewBasicAuthRoundTripper(
+					conf.BasicAuth.Username,
+					conf.BasicAuth.Password,
+					conf.BasicAuth.PasswordFile,
+					rt)
+			}
 		}
 	}
 
