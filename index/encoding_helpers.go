@@ -191,7 +191,7 @@ func (d *decbuf) be64() uint64 {
 	if d.e != nil {
 		return 0
 	}
-	if len(d.b) < 4 {
+	if len(d.b) < 8 {
 		d.e = errInvalidSize
 		return 0
 	}
