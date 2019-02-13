@@ -416,6 +416,65 @@ func Test_decodeRecord_afterStart(t *testing.T) {
 	testutil.Equals(t, 1, wt.samplesAppended)
 }
 
+func TestReplayWAL(t *testing.T) {
+	segmentSize := 128 * 1024
+	const seriesCount = 100
+	const samplesCount = 2500
+
+	dir, err := ioutil.TempDir("", "readToEnd_noCheckpoint")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+	wdir := path.Join(dir, "wal")
+	err = os.Mkdir(wdir, 0777)
+	testutil.Ok(t, err)
+
+	w, err := wal.NewSize(nil, nil, wdir, segmentSize)
+	testutil.Ok(t, err)
+
+	var recs [][]byte
+
+	enc := tsdb.RecordEncoder{}
+
+	for i := 0; i < seriesCount; i++ {
+		series := enc.Series([]tsdb.RefSeries{
+			tsdb.RefSeries{
+				Ref:    uint64(i),
+				Labels: labels.Labels{labels.Label{"__name__", fmt.Sprintf("metric_%d", i)}},
+			},
+		}, nil)
+		recs = append(recs, series)
+		for j := 0; j < samplesCount; j++ {
+			sample := enc.Samples([]tsdb.RefSample{
+				tsdb.RefSample{
+					Ref: uint64(j),
+					T:   int64(i),
+					V:   float64(i),
+				},
+			}, nil)
+
+			recs = append(recs, sample)
+
+			// Randomly batch up records.
+			if rand.Intn(4) < 3 {
+				testutil.Ok(t, w.Log(recs...))
+				recs = recs[:0]
+			}
+		}
+	}
+	testutil.Ok(t, w.Log(recs...))
+
+	first, last, err := w.Segments()
+	fmt.Println("first: ", first)
+	fmt.Println("last: ", last)
+	testutil.Ok(t, err)
+
+	wt := newWriteToMock()
+	st := timestamp.FromTime(time.Now())
+	watcher := NewWALWatcher(nil, "", wt, dir, st)
+	watcher.replayWal(first, last)
+	testutil.Equals(t, seriesCount, wt.checkNumLabels())
+}
+
 func Benchmark_ReplayWAL(b *testing.B) {
 	segmentSize := 64 * 1024 * 1024
 
