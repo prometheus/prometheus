@@ -1,6 +1,9 @@
-import React, { Component } from 'react';
+import React, { Component, ReactNode } from 'react';
+
 import { Container } from 'reactstrap';
+
 import PanelList from './PanelList';
+
 import './App.css';
 
 class App extends Component {

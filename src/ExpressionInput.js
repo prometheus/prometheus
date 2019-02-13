@@ -47,7 +47,7 @@ class ExpressionInput extends Component {
       return null;
     }
 
-    let matches = fuzzy.filter(downshift.inputValue.replace(/ /g, ''), this.props.metrics, {
+    let matches = fuzzy.filter(downshift.inputValue.replace(/ /g, ''), this.props.metricNames, {
       pre: "<strong>",
       post: "</strong>",
     });

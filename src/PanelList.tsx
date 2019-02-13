@@ -4,19 +4,29 @@ import { Alert, Button, Col, Row } from 'reactstrap';
 
 import Panel from './Panel';
 
-class PanelList extends Component {
-  constructor(props) {
+interface PanelListState {
+  panels: {
+    key: string,
+  }[],
+  metricNames: string[],
+  fetchMetricsError: string | null,
+  timeDriftError: string | null,
+}
+
+class PanelList extends Component<any, PanelListState> {
+  key: number;
+
+  constructor(props: []) {
     super(props);
+
     this.state = {
       panels: [],
-      metrics: [],
+      metricNames: [],
       fetchMetricsError: null,
       timeDriftError: null,
     };
-    this.key = 0;
 
-    this.addPanel = this.addPanel.bind(this);
-    this.removePanel = this.removePanel.bind(this);
+    this.key = 0;
   }
 
   componentDidMount() {
@@ -30,8 +40,8 @@ class PanelList extends Component {
         throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
       }
     })
-    .then(json => this.setState({ metrics: json.data }))
-    .catch(error => this.setState({fetchMetricsError: error.message}));
+    .then(json => this.setState({ metricNames: json.data }))
+    .catch(error => this.setState({ fetchMetricsError: error.message }));
 
     const browserTime = new Date().getTime() / 1000;
     fetch("http://demo.robustperception.io:9090/api/v1/query?query=time()", {cache: "no-store"})
@@ -50,21 +60,21 @@ class PanelList extends Component {
         throw new Error('Detected ' + delta + ' seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.');
       }
     })
-    .catch(error => this.setState({timeDriftError: error.message}));
+    .catch(error => this.setState({ timeDriftError: error.message }));
   }
 
-  getKey() {
+  getKey(): string {
     return (this.key++).toString();
   }
 
-  addPanel() {
+  addPanel = (): void => {
     const panels = this.state.panels.slice();
     const key = this.getKey();
     panels.push({key: key});
     this.setState({panels: panels});
   }
 
-  removePanel(key) {
+  removePanel = (key: string): void => {
     const panels = this.state.panels.filter(panel => {
       return panel.key !== key;
     });
@@ -85,7 +95,7 @@ class PanelList extends Component {
           </Col>
         </Row>
         {this.state.panels.map(p =>
-          <Panel key={p.key} removePanel={() => this.removePanel(p.key)} metrics={this.state.metrics}/>
+          <Panel key={p.key} removePanel={() => this.removePanel(p.key)} metricNames={this.state.metricNames}/>
         )}
         <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>Add Panel</Button>
       </>

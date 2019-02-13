@@ -211,7 +211,7 @@ class Panel extends Component {
               onChange={this.handleExpressionChange}
               executeQuery={this.executeQuery}
               loading={this.state.loading}
-              metrics={this.props.metrics}
+              metricNames={this.props.metricNames}
             />
           </Col>
         </Row>
