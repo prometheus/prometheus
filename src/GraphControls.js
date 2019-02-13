@@ -8,52 +8,31 @@ import {
   Input,
 } from 'reactstrap';
 
-import moment from 'moment-timezone';
-
 import 'tempusdominus-core';
 import 'tempusdominus-bootstrap-4';
 import '../node_modules/tempusdominus-bootstrap-4/build/css/tempusdominus-bootstrap-4.min.css';
 
-import { dom, library } from '@fortawesome/fontawesome-svg-core';
+import { library } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faChevronLeft,
-  faChevronRight,
   faPlus,
   faMinus,
   faChartArea,
   faChartLine,
-  faClock,
-  faCalendarCheck,
-  faArrowUp,
-  faArrowDown,
-  faTimes,
 } from '@fortawesome/free-solid-svg-icons';
 
+import TimeInput from './TimeInput.js';
+
 library.add(
-  faChevronLeft,
-  faChevronRight,
   faPlus,
   faMinus,
   faChartArea,
   faChartLine,
-  faClock,
-  faCalendarCheck,
-  faArrowUp,
-  faArrowDown,
-  faTimes,
 );
-
-// Sadly needed to also replace <i> within the date picker, since it's not a React component.
-dom.watch();
 
 class GraphControls extends Component {
   constructor(props) {
     super(props);
-
-    this.state = {
-      startDate: Date.now(),
-    };
 
     this.rangeRef = React.createRef();
     this.endTimeRef = React.createRef();
@@ -67,12 +46,12 @@ class GraphControls extends Component {
     'h': 60 * 60,
     'm': 60,
     's': 1
-  };
+  }
 
   rangeSteps = [
     '1s', '10s', '1m', '5m', '15m', '30m', '1h', '2h', '6h', '12h', '1d', '2d',
     '1w', '2w', '4w', '8w', '1y', '2y'
-  ];
+  ]
 
   parseRange(rangeText) {
     var rangeRE = new RegExp('^([0-9]+)([ywdhms]+)$');
@@ -107,7 +86,7 @@ class GraphControls extends Component {
     this.rangeRef.current.value = rangeText;
   }
 
-  increaseRange = (event) => {
+  increaseRange = () => {
     for (let range of this.rangeSteps) {
       let rangeSeconds = this.parseRange(range);
       if (this.props.range < rangeSeconds) {
@@ -118,7 +97,7 @@ class GraphControls extends Component {
     }
   }
 
-  decreaseRange = (event) => {
+  decreaseRange = () => {
     for (let range of this.rangeSteps.slice().reverse()) {
       let rangeSeconds = this.parseRange(range);
       if (this.props.range > rangeSeconds) {
@@ -129,60 +108,6 @@ class GraphControls extends Component {
     }
   }
 
-  getBaseEndTime = () => {
-    return this.props.endTime || moment();
-  }
-
-  increaseEndTime = (event) => {
-    const endTime = moment(this.getBaseEndTime() + this.props.range*1000/2);
-    this.props.onChangeEndTime(endTime);
-    this.$endTime.datetimepicker('date', endTime);
-  }
-
-  decreaseEndTime = (event) => {
-    const endTime = moment(this.getBaseEndTime() - this.props.range*1000/2);
-    this.props.onChangeEndTime(endTime);
-    this.$endTime.datetimepicker('date', endTime);
-  }
-
-  clearEndTime = (event) => {
-    this.props.onChangeEndTime(null);
-    this.$endTime.datetimepicker('date', null);
-  }
-
-  componentDidMount() {
-    this.$endTime = window.$(this.endTimeRef.current);
-
-    this.$endTime.datetimepicker({
-      icons: {
-        today: 'fas fa-calendar-check',
-      },
-      buttons: {
-        //showClear: true,
-        showClose: true,
-        showToday: true,
-      },
-      sideBySide: true,
-      format: 'YYYY-MM-DD HH:mm:ss',
-      locale: 'en',
-      timeZone: 'UTC',
-      defaultDate: this.props.endTime,
-    });
-
-    this.$endTime.on('change.datetimepicker', e => {
-      console.log("CHANGE", e)
-      if (e.date) {
-        this.props.onChangeEndTime(e.date);
-      } else {
-        this.$endTime.datetimepicker('date', e.target.value);
-      }
-    });
-  }
-
-  componentWillUnmount() {
-    this.$endTime.datetimepicker('destroy');
-  }
-
   render() {
     return (
       <Form inline className="graph-controls" onSubmit={e => e.preventDefault()}>
@@ -191,7 +116,6 @@ class GraphControls extends Component {
             <Button title="Decrease range" onClick={this.decreaseRange}><FontAwesomeIcon icon="minus" fixedWidth/></Button>
           </InputGroupAddon>
 
-          {/* <Input value={this.state.rangeInput} onChange={(e) => this.changeRangeInput(e.target.value)}/> */}
           <Input
             defaultValue={this.formatRange(this.props.range)}
             innerRef={this.rangeRef}
@@ -203,33 +127,7 @@ class GraphControls extends Component {
           </InputGroupAddon>
         </InputGroup>
 
-        <InputGroup className="endtime-input" size="sm">
-          <InputGroupAddon addonType="prepend">
-            <Button title="Decrease end time" onClick={this.decreaseEndTime}><FontAwesomeIcon icon="chevron-left" fixedWidth/></Button>
-          </InputGroupAddon>
-
-          <Input
-            placeholder="End time"
-            // value={this.props.endTime ? this.props.endTime : ''}
-            innerRef={this.endTimeRef}
-            // onChange={this.props.onChangeEndTime}
-            onFocus={() => this.$endTime.datetimepicker('show')}
-            onBlur={() => this.$endTime.datetimepicker('hide')}
-            onKeyDown={(e) => ['Escape', 'Enter'].includes(e.key) && this.$endTime.datetimepicker('hide')}
-          />
-
-          {/* CAUTION: While the datetimepicker also has an option to show a 'clear' button,
-              that functionality is broken, so we create an external solution instead. */}
-          {this.props.endTime &&
-            <InputGroupAddon addonType="append">
-              <Button className="clear-endtime-btn" title="Clear end time" onClick={this.clearEndTime}><FontAwesomeIcon icon="times" fixedWidth/></Button>
-            </InputGroupAddon>
-          }
-
-          <InputGroupAddon addonType="append">
-            <Button title="Increase end time" onClick={this.increaseEndTime}><FontAwesomeIcon icon="chevron-right" fixedWidth/></Button>
-          </InputGroupAddon>
-        </InputGroup>
+        <TimeInput endTime={this.props.endTime} range={this.props.range} onChangeEndTime={this.props.onChangeEndTime} />
 
         <Input
           placeholder="Res. (s)"

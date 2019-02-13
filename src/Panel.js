@@ -18,6 +18,7 @@ import ExpressionInput from './ExpressionInput';
 import GraphControls from './GraphControls';
 import Graph from './Graph';
 import DataTable from './DataTable';
+import TimeInput from './TimeInput';
 
 class Panel extends Component {
   constructor(props) {
@@ -260,7 +261,12 @@ class Panel extends Component {
               </TabPane>
               <TabPane tabId="table">
                 {this.state.type === 'table' &&
-                  <DataTable data={this.state.data} />
+                  <>
+                    <div class="table-controls">
+                      <TimeInput endTime={this.state.endTime} range={this.state.range} onChangeEndTime={this.handleChangeEndTime} />
+                    </div>
+                    <DataTable data={this.state.data} />
+                  </>
                 }
               </TabPane>
             </TabContent>
