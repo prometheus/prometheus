@@ -1,7 +1,7 @@
-function metricToSeriesName(labels, formatHTML) {
-  var tsName = (labels.__name__ || '') + "{";
-  var labelStrings = [];
-  for (var label in labels) {
+function metricToSeriesName(labels: {[key: string]: string}, formatHTML: boolean): string {
+  let tsName = (labels.__name__ || '') + '{';
+  let labelStrings: string[] = [];
+  for (let label in labels) {
     if (label !== '__name__') {
       labelStrings.push((formatHTML ? '<b>' : '') + label + (formatHTML ? '</b>' : '') + '="' + labels[label] + '"');
     }

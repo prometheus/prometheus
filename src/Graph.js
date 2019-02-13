@@ -8,7 +8,7 @@ import '../node_modules/react-flot/flot/jquery.flot.crosshair.min';
 import '../node_modules/react-flot/flot/jquery.flot.tooltip.min';
 import '../node_modules/react-flot/flot/jquery.flot.stack.min';
 
-import metricToSeriesName from './MetricFomat.js';
+import metricToSeriesName from './MetricFomat';
 
 var graphID = 0;
 function getGraphID() {
@@ -229,9 +229,10 @@ class Graph extends PureComponent {
       let pos = 0;
       const params = this.props.queryParams;
       for (let t = params.startTime; t <= params.endTime; t += params.resolution) {
+        const [ x, y ] = ts.values[pos];
         // Allow for floating point inaccuracy.
-        if (ts.values.length > pos && ts.values[pos][0] < t + params.resolution / 100) {
-          data.push([ts.values[pos][0] * 1000, this.parseValue(ts.values[pos][1])]);
+        if (ts.values.length > pos && x < t + params.resolution / 100) {
+          data.push([x * 1000, this.parseValue(y)]);
           pos++;
         } else {
           data.push([t * 1000, null]);
