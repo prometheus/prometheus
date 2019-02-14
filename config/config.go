@@ -161,10 +161,7 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 	}
 	sdPaths := func(cfg *sd_config.ServiceDiscoveryConfig) {
 		for _, kcfg := range cfg.KubernetesSDConfigs {
-			kcfg.BearerTokenFile = join(kcfg.BearerTokenFile)
-			kcfg.TLSConfig.CAFile = join(kcfg.TLSConfig.CAFile)
-			kcfg.TLSConfig.CertFile = join(kcfg.TLSConfig.CertFile)
-			kcfg.TLSConfig.KeyFile = join(kcfg.TLSConfig.KeyFile)
+			clientPaths(&kcfg.HTTPClientConfig)
 		}
 		for _, mcfg := range cfg.MarathonSDConfigs {
 			mcfg.AuthTokenFile = join(mcfg.AuthTokenFile)

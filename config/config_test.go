@@ -341,9 +341,11 @@ var expectedConf = &Config{
 					{
 						APIServer: kubernetesSDHostURL(),
 						Role:      kubernetes.RoleEndpoint,
-						BasicAuth: &config_util.BasicAuth{
-							Username: "myusername",
-							Password: "mysecret",
+						HTTPClientConfig: config_util.HTTPClientConfig{
+							BasicAuth: &config_util.BasicAuth{
+								Username: "myusername",
+								Password: "mysecret",
+							},
 						},
 						NamespaceDiscovery: kubernetes.NamespaceDiscovery{},
 					},
@@ -700,6 +702,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
+	}, {
+		filename: "kubernetes_http_config_without_api_server.bad.yml",
+		errMsg:   "to use custom HTTP client configuration please provide the 'api_server' URL explicitly",
 	}, {
 		filename: "kubernetes_bearertoken.bad.yml",
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
