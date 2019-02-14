@@ -372,20 +372,17 @@ func Test_decodeRecord(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	wt := newWriteToMock()
-	// st := timestamp.FromTime(time.Now().Add(-10 * time.Second))
 	watcher := NewWALWatcher(nil, "", wt, dir, 0)
 
-	// decode a series record
 	enc := tsdb.RecordEncoder{}
 	buf := enc.Series([]tsdb.RefSeries{tsdb.RefSeries{Ref: 1234, Labels: labels.Labels{}}}, nil)
-	watcher.decodeRecord(buf)
+	watcher.decodeRecord(buf, 0)
 	testutil.Ok(t, err)
 
 	testutil.Equals(t, 1, wt.checkNumLabels())
 
-	// decode a samples record
 	buf = enc.Samples([]tsdb.RefSample{tsdb.RefSample{Ref: 100, T: 1, V: 1.0}, tsdb.RefSample{Ref: 100, T: 2, V: 2.0}}, nil)
-	watcher.decodeRecord(buf)
+	watcher.decodeRecord(buf, 0)
 	testutil.Ok(t, err)
 
 	testutil.Equals(t, 2, wt.samplesAppended)
@@ -397,20 +394,17 @@ func Test_decodeRecord_afterStart(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	wt := newWriteToMock()
-	// st := timestamp.FromTime(time.Now().Add(-10 * time.Second))
 	watcher := NewWALWatcher(nil, "", wt, dir, 1)
 
-	// decode a series record
 	enc := tsdb.RecordEncoder{}
 	buf := enc.Series([]tsdb.RefSeries{tsdb.RefSeries{Ref: 1234, Labels: labels.Labels{}}}, nil)
-	watcher.decodeRecord(buf)
+	watcher.decodeRecord(buf, 0)
 	testutil.Ok(t, err)
 
 	testutil.Equals(t, 1, wt.checkNumLabels())
 
-	// decode a samples record
 	buf = enc.Samples([]tsdb.RefSample{tsdb.RefSample{Ref: 100, T: 1, V: 1.0}, tsdb.RefSample{Ref: 100, T: 2, V: 2.0}}, nil)
-	watcher.decodeRecord(buf)
+	watcher.decodeRecord(buf, 0)
 	testutil.Ok(t, err)
 
 	testutil.Equals(t, 1, wt.samplesAppended)
