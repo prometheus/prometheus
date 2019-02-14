@@ -79,8 +79,9 @@ func (s AlertState) String() string {
 type Alert struct {
 	State AlertState
 
-	Labels      labels.Labels
-	Annotations labels.Labels
+	Labels         labels.Labels
+	ExternalLabels labels.Labels
+	Annotations    labels.Labels
 
 	// The value at the last evaluation of the alerting expression.
 	Value float64
@@ -310,18 +311,17 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 
 		// Add external labels.
+		el := make(map[string]string)
 		if config.CurrentConfig != nil && (*config.CurrentConfig).GlobalConfig.ExternalLabels != nil {
-			for ln, lv := range (*config.CurrentConfig).GlobalConfig.ExternalLabels {
-				if _, ok := l[string(ln)]; !ok {
-					l[string(ln)] = string(lv)
-				}
+			for eln, elv := range (*config.CurrentConfig).GlobalConfig.ExternalLabels {
+				el[string(eln)] = string(elv)
 			}
 		}
 
-		tmplData := template.AlertTemplateData(l, smpl.V)
+		tmplData := template.AlertTemplateData(l, el, smpl.V)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
-		defs := "{{$labels := .Labels}}{{$value := .Value}}"
+		defs := "{{$labels := .Labels}}{{$externalLables := .ExternalLabels}}{{$value := .Value}}"
 
 		expand := func(text string) string {
 			tmpl := template.NewTemplateExpander(
