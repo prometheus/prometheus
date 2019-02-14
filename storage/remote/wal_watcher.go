@@ -147,7 +147,7 @@ func (w *WALWatcher) loop() {
 	defer close(w.done)
 
 	// We may encourter failures processing the WAL; we should wait and retry.
-	for {
+	for !isClosed(w.quit) {
 		if err := w.run(); err != nil {
 			level.Error(w.logger).Log("msg", "error tailing WAL", "err", err)
 		}
@@ -205,6 +205,7 @@ func (w *WALWatcher) run() error {
 	}
 }
 
+// findSegmentForIndex finds the first segment greater than or equal to index.
 func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
 	files, err := fileutil.ReadDir(w.walDir)
 	if err != nil {
@@ -305,13 +306,16 @@ func (w *WALWatcher) watch(wl *wal.WAL, segmentNum int, tail bool) error {
 			return nil
 
 		case <-readTicker.C:
-			if err := w.readSegment(reader, segmentNum); err != nil && err != io.EOF {
-				level.Error(w.logger).Log("err", err)
-				return err
-			}
-			if reader.TotalRead() >= size && !tail {
+			err := w.readSegment(reader, segmentNum)
+
+			// If we're reading to completion, stop when we hit an EOF.
+			if err == io.EOF && !tail {
 				level.Info(w.logger).Log("msg", "done replaying segment", "segment", segmentNum, "size", size, "read", reader.TotalRead())
 				return nil
+			}
+
+			if err != nil && err != io.EOF {
+				return err
 			}
 		}
 	}
