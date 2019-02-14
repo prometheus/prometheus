@@ -175,7 +175,7 @@ class Panel extends Component<PanelProps, PanelState> {
     return this.state.endTime;
   }
 
-  handleChangeEndTime = (endTime: number) => {
+  handleChangeEndTime = (endTime: number | null) => {
     this.setState({endTime: endTime});
   }
 

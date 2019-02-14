@@ -1,3 +1,4 @@
+import $ from 'jquery';
 import React, { Component } from 'react';
 import { Button, InputGroup, InputGroupAddon, Input } from 'reactstrap';
 
@@ -30,36 +31,40 @@ library.add(
 // Sadly needed to also replace <i> within the date picker, since it's not a React component.
 dom.watch();
 
-class TimeInput extends Component {
-  constructor(props) {
-    super(props);
+interface TimeInputProps {
+  endTime: number | null;
+  range: number;
 
-    this.endTimeRef = React.createRef();
+  onChangeEndTime: (endTime: number | null) => void;
+}
+
+class TimeInput extends Component<TimeInputProps> {
+  private endTimeRef = React.createRef<HTMLInputElement>();
+  private $endTime: any | null = null;
+
+  getBaseEndTime = (): number => {
+    return this.props.endTime || moment().valueOf();
   }
 
-  getBaseEndTime = () => {
-    return this.props.endTime || moment();
-  }
-
-  increaseEndTime = (event) => {
-    const endTime = moment(this.getBaseEndTime() + this.props.range*1000/2);
+  increaseEndTime = (): void => {
+    const endTime = this.getBaseEndTime() + this.props.range*1000/2;
     this.props.onChangeEndTime(endTime);
-    this.$endTime.datetimepicker('date', endTime);
+    this.$endTime.datetimepicker('date', moment(endTime));
   }
 
-  decreaseEndTime = (event) => {
-    const endTime = moment(this.getBaseEndTime() - this.props.range*1000/2);
+  decreaseEndTime = (): void => {
+    const endTime = this.getBaseEndTime() - this.props.range*1000/2;
     this.props.onChangeEndTime(endTime);
-    this.$endTime.datetimepicker('date', endTime);
+    this.$endTime.datetimepicker('date', moment(endTime));
   }
 
-  clearEndTime = (event) => {
+  clearEndTime = (): void => {
     this.props.onChangeEndTime(null);
     this.$endTime.datetimepicker('date', null);
   }
 
   componentDidMount() {
-    this.$endTime = window.$(this.endTimeRef.current);
+    this.$endTime = $(this.endTimeRef.current!);
 
     this.$endTime.datetimepicker({
       icons: {
@@ -77,8 +82,7 @@ class TimeInput extends Component {
       defaultDate: this.props.endTime,
     });
 
-    this.$endTime.on('change.datetimepicker', e => {
-      console.log("CHANGE", e)
+    this.$endTime.on('change.datetimepicker', (e: any) => {
       if (e.date) {
         this.props.onChangeEndTime(e.date);
       } else {

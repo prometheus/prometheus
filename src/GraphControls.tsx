@@ -37,7 +37,7 @@ interface GraphControlsProps {
   stacked: boolean;
 
   onChangeRange: (range: number) => void;
-  onChangeEndTime: (endTime: number) => void;
+  onChangeEndTime: (endTime: number | null) => void;
   onChangeResolution: (resolution: number) => void;
   onChangeStacking: (stacked: boolean) => void;
 }
