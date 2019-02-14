@@ -14,9 +14,9 @@ interface PanelListState {
 }
 
 class PanelList extends Component<any, PanelListState> {
-  key: number;
+  private key: number;
 
-  constructor(props: []) {
+  constructor(props: any) {
     super(props);
 
     this.state = {

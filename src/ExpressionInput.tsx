@@ -1,3 +1,4 @@
+import $ from 'jquery';
 import React, { Component } from 'react';
 import {
   Button,
@@ -7,7 +8,7 @@ import {
   Input,
 } from 'reactstrap';
 
-import Downshift from 'downshift';
+import Downshift, { ChildrenFunction, ControllerStateAndHelpers, DownshiftInterface } from 'downshift';
 import fuzzy from 'fuzzy';
 
 import { library } from '@fortawesome/fontawesome-svg-core';
@@ -16,32 +17,26 @@ import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
 
 library.add(faSearch, faSpinner);
 
-class ExpressionInput extends Component {
-  handleKeyPress = (event) => {
+interface ExpressionInputProps {
+  value: string;
+  metricNames: string[];
+  onChange: (expr: string) => void;
+  executeQuery: () => void;
+  loading: boolean;
+}
+
+class ExpressionInput extends Component<ExpressionInputProps> {
+  prevNoMatchValue: string | null = null;
+  exprInputRef: HTMLInputElement | null = null;
+
+  handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       this.props.executeQuery();
       event.preventDefault();
     }
   }
 
-  stateReducer = (state, changes) => {
-    return changes;
-    // // TODO: Remove this whole function if I don't notice any odd behavior without it.
-    // // I don't remember why I had to add this and currently things seem fine without it.
-    // switch (changes.type) {
-    //   case Downshift.stateChangeTypes.keyDownEnter:
-    //   case Downshift.stateChangeTypes.clickItem:
-    //   case Downshift.stateChangeTypes.changeInput:
-    //     return {
-    //       ...changes,
-    //       selectedItem: changes.inputValue,
-    //     };
-    //   default:
-    //     return changes;
-    // }
-  }
-
-  renderAutosuggest = (downshift) => {
+  renderAutosuggest = (downshift: any) => {
     if (this.prevNoMatchValue && downshift.inputValue.includes(this.prevNoMatchValue)) {
       // TODO: Is this still correct with fuzzy?
       return null;
@@ -90,7 +85,7 @@ class ExpressionInput extends Component {
   }
 
   componentDidMount() {
-    const $exprInput = window.$(this.exprInputRef);
+    const $exprInput = $(this.exprInputRef as any)
     $exprInput.on('input', () => {
       const el = $exprInput.get(0);
       const offset = el.offsetHeight - el.clientHeight;
@@ -105,7 +100,7 @@ class ExpressionInput extends Component {
           onInputValueChange={this.props.onChange}
           selectedItem={this.props.value}
         >
-          {downshift => (
+          {(downshift) => (
             <div>
               <InputGroup className="expression-input">
                 <InputGroupAddon addonType="prepend">
@@ -117,19 +112,18 @@ class ExpressionInput extends Component {
                 <Input
                   autoFocus
                   type="textarea"
-                  rows={1}
+                  rows="1"
                   onKeyPress={this.handleKeyPress}
                   placeholder="Expression (press Shift+Enter for newlines)"
                   innerRef={ref => this.exprInputRef = ref}
-                  //onChange={selection => alert(`You selected ${selection}`)}
                   {...downshift.getInputProps({
-                    onKeyDown: event => {
+                    onKeyDown: (event: React.KeyboardEvent): void => {
                       switch (event.key) {
                         case 'Home':
                         case 'End':
                           // We want to be able to jump to the beginning/end of the input field.
                           // By default, Downshift otherwise jumps to the first/last suggestion item instead.
-                          event.nativeEvent.preventDownshiftDefault = true;
+                          (event.nativeEvent as any).preventDownshiftDefault = true;
                           break;
                         case 'Enter':
                           downshift.closeMenu();
@@ -137,7 +131,7 @@ class ExpressionInput extends Component {
                         default:
                       }
                     }
-                  })}
+                  } as any)}
                 />
                 <InputGroupAddon addonType="append">
                   <Button className="execute-btn" color="primary" onClick={this.props.executeQuery}>Execute</Button>

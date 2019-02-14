@@ -21,7 +21,7 @@ import {
   faChartLine,
 } from '@fortawesome/free-solid-svg-icons';
 
-import TimeInput from './TimeInput.js';
+import TimeInput from './TimeInput';
 
 library.add(
   faPlus,
@@ -30,16 +30,23 @@ library.add(
   faChartLine,
 );
 
-class GraphControls extends Component {
-  constructor(props) {
-    super(props);
+interface GraphControlsProps {
+  range: number;
+  endTime: number | null;
+  resolution: number | null;
+  stacked: boolean;
 
-    this.rangeRef = React.createRef();
-    this.endTimeRef = React.createRef();
-    this.resolutionRef = React.createRef();
-  }
+  onChangeRange: (range: number | null) => void;
+  onChangeEndTime: (endTime: number | null) => void;
+  onChangeResolution: (resolution: number | null) => void;
+  onChangeStacking: (stacked: boolean) => void;
+}
 
-  rangeUnits = {
+class GraphControls extends Component<GraphControlsProps> {
+  private rangeRef = React.createRef<HTMLInputElement>();
+  private resolutionRef = React.createRef<HTMLInputElement>();
+
+  rangeUnits: {[unit: string]: number} = {
     'y': 60 * 60 * 24 * 365,
     'w': 60 * 60 * 24 * 7,
     'd': 60 * 60 * 24,
@@ -49,22 +56,38 @@ class GraphControls extends Component {
   }
 
   rangeSteps = [
-    '1s', '10s', '1m', '5m', '15m', '30m', '1h', '2h', '6h', '12h', '1d', '2d',
-    '1w', '2w', '4w', '8w', '1y', '2y'
+    1,
+    10,
+    60,
+    5*60,
+    15*60,
+    30*60,
+    60*60,
+    2*60*60,
+    6*60*60,
+    12*60*60,
+    24*60*60,
+    48*60*60,
+    7*24*60*60,
+    14*24*60*60,
+    28*24*60*60,
+    56*24*60*60,
+    365*24*60*60,
+    730*24*60*60,
   ]
 
-  parseRange(rangeText) {
-    var rangeRE = new RegExp('^([0-9]+)([ywdhms]+)$');
-    var matches = rangeText.match(rangeRE);
+  parseRange(rangeText: string): number | null {
+    const rangeRE = new RegExp('^([0-9]+)([ywdhms]+)$');
+    const matches = rangeText.match(rangeRE);
     if (!matches || matches.length !== 3) {
       return null;
     }
-    var value = parseInt(matches[1]);
-    var unit = matches[2];
+    const value = parseInt(matches[1]);
+    const unit = matches[2];
     return value * this.rangeUnits[unit];
   }
 
-  formatRange(range) {
+  formatRange(range: number): string {
     for (let unit of Object.keys(this.rangeUnits)) {
       if (range % this.rangeUnits[unit] === 0) {
         return (range / this.rangeUnits[unit]) + unit;
@@ -73,36 +96,34 @@ class GraphControls extends Component {
     return range + 's';
   }
 
-  onChangeRangeInput = (rangeText) => {
+  onChangeRangeInput = (rangeText: string): void => {
     const range = this.parseRange(rangeText);
     if (range === null) {
-      this.changeRangeInput(this.formatRange(this.props.range));
+      this.changeRangeInput(this.props.range);
     } else {
       this.props.onChangeRange(this.parseRange(rangeText));
     }
   }
 
-  changeRangeInput = (rangeText) => {
-    this.rangeRef.current.value = rangeText;
+  changeRangeInput = (range: number): void => {
+    this.rangeRef.current!.value = this.formatRange(range);
   }
 
-  increaseRange = () => {
+  increaseRange = (): void => {
     for (let range of this.rangeSteps) {
-      let rangeSeconds = this.parseRange(range);
-      if (this.props.range < rangeSeconds) {
+      if (this.props.range < range) {
         this.changeRangeInput(range);
-        this.props.onChangeRange(rangeSeconds);
+        this.props.onChangeRange(range);
         return;
       }
     }
   }
 
-  decreaseRange = () => {
+  decreaseRange = (): void => {
     for (let range of this.rangeSteps.slice().reverse()) {
-      let rangeSeconds = this.parseRange(range);
-      if (this.props.range > rangeSeconds) {
+      if (this.props.range > range) {
         this.changeRangeInput(range);
-        this.props.onChangeRange(rangeSeconds);
+        this.props.onChangeRange(range);
         return;
       }
     }
@@ -119,7 +140,7 @@ class GraphControls extends Component {
           <Input
             defaultValue={this.formatRange(this.props.range)}
             innerRef={this.rangeRef}
-            onBlur={() => this.onChangeRangeInput(this.rangeRef.current.value)}
+            onBlur={() => this.onChangeRangeInput(this.rangeRef.current!.value)}
           />
 
           <InputGroupAddon addonType="append">
@@ -132,9 +153,9 @@ class GraphControls extends Component {
         <Input
           placeholder="Res. (s)"
           className="resolution-input"
-          defaultValue={this.props.resolution !== null ? this.props.resolution : ''}
+          defaultValue={this.props.resolution !== null ? this.props.resolution.toString() : ''}
           innerRef={this.resolutionRef}
-          onBlur={() => this.props.onChangeResolution(parseInt(this.resolutionRef.current.value))}
+          onBlur={() => this.props.onChangeResolution(parseInt(this.resolutionRef.current!.value))}
           bsSize="sm"
         />
 

@@ -35,8 +35,6 @@ class Panel extends Component {
       error: null,
       stats: null,
     };
-
-    this.handleExpressionChange = this.handleExpressionChange.bind(this);
   }
 
   componentDidUpdate(prevProps, prevState) {
@@ -133,8 +131,7 @@ class Panel extends Component {
     });
   }
 
-  handleExpressionChange(expr) {
-    //this.setState({expr: event.target.value});
+  handleExpressionChange = (expr) => {
     this.setState({expr: expr});
   }
 

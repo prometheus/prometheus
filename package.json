@@ -7,6 +7,7 @@
     "@fortawesome/free-solid-svg-icons": "^5.7.1",
     "@fortawesome/react-fontawesome": "^0.1.4",
     "@types/jest": "^24.0.4",
+    "@types/jquery": "^3.3.29",
     "@types/node": "^11.9.3",
     "@types/react": "^16.8.2",
     "@types/react-dom": "^16.8.0",
