@@ -36,9 +36,9 @@ interface GraphControlsProps {
   resolution: number | null;
   stacked: boolean;
 
-  onChangeRange: (range: number | null) => void;
-  onChangeEndTime: (endTime: number | null) => void;
-  onChangeResolution: (resolution: number | null) => void;
+  onChangeRange: (range: number) => void;
+  onChangeEndTime: (endTime: number) => void;
+  onChangeResolution: (resolution: number) => void;
   onChangeStacking: (stacked: boolean) => void;
 }
 
@@ -101,7 +101,7 @@ class GraphControls extends Component<GraphControlsProps> {
     if (range === null) {
       this.changeRangeInput(this.props.range);
     } else {
-      this.props.onChangeRange(this.parseRange(rangeText));
+      this.props.onChangeRange(range);
     }
   }
 

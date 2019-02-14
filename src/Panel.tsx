@@ -20,28 +20,57 @@ import Graph from './Graph';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 
-class Panel extends Component {
-  constructor(props) {
+interface PanelProps {
+  metricNames: string[];
+  removePanel: () => void;
+  // TODO Put initial panel values here.
+}
+
+interface PanelState {
+  expr: string;
+  type: 'graph' | 'table';
+  range: number;
+  endTime: number | null;
+  resolution: number | null;
+  stacked: boolean;
+  data: any; // TODO: Define data.
+  lastQueryParams: {
+    startTime: number,
+    endTime: number,
+    resolution: number,
+  } | null,
+  loading: boolean;
+  error: string | null;
+  stats: null; // TODO: Stats.
+}
+
+class Panel extends Component<PanelProps, PanelState> {
+  private abortInFlightFetch: (() => void) | null = null;
+
+  constructor(props: PanelProps) {
     super(props);
 
     this.state = {
       expr: 'rate(node_cpu_seconds_total[1m])',
-      type: 'graph', // TODO enum?
+      type: 'graph',
       range: 3600,
       endTime: null, // This is in milliseconds.
       resolution: null,
       stacked: false,
       data: null,
+      lastQueryParams: null,
+      loading: false,
       error: null,
       stats: null,
     };
   }
 
-  componentDidUpdate(prevProps, prevState) {
-    const needsRefresh = ['type', 'range', 'endTime', 'resolution'].some(v => {
-      return prevState[v] !== this.state[v];
-    })
-    if (needsRefresh) {
+  componentDidUpdate(prevProps: PanelProps, prevState: PanelState) {
+    if (prevState.type !== this.state.type ||
+        prevState.range !== this.state.range ||
+        prevState.endTime !== this.state.endTime ||
+        prevState.resolution !== this.state.resolution) {
+
       if (prevState.type !== this.state.type) {
         // If the other options change, we still want to show the old data until the new
         // query completes, but this is not a good idea when we actually change between
@@ -56,7 +85,7 @@ class Panel extends Component {
     this.executeQuery();
   }
 
-  executeQuery = ()=> {
+  executeQuery = (): void => {
     if (this.state.expr === '') {
       return;
     }
@@ -70,12 +99,12 @@ class Panel extends Component {
     this.abortInFlightFetch = () => abortController.abort();
     this.setState({loading: true});
 
-    let endTime = this.getEndTime() / 1000;
-    let startTime = endTime - this.state.range;
-    let resolution = this.state.resolution || Math.max(Math.floor(this.state.range / 250), 1);
+    const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn'T valueof only work when it's a moment?
+    const startTime = endTime - this.state.range;
+    const resolution = this.state.resolution || Math.max(Math.floor(this.state.range / 250), 1);
 
-    let url = new URL('http://demo.robustperception.io:9090/');//window.location.href);
-    let params = {
+    const url = new URL('http://demo.robustperception.io:9090/');//window.location.href);
+    const params: {[key: string]: string} = {
       'query': this.state.expr,
     };
 
@@ -100,7 +129,7 @@ class Panel extends Component {
     }
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
 
-    fetch(url, {cache: 'no-store', signal: abortController.signal})
+    fetch(url.toString(), {cache: 'no-store', signal: abortController.signal})
     .then(resp => resp.json())
     .then(json => {
       if (json.status !== 'success') {
@@ -131,26 +160,26 @@ class Panel extends Component {
     });
   }
 
-  handleExpressionChange = (expr) => {
+  handleExpressionChange = (expr: string): void => {
     this.setState({expr: expr});
   }
 
-  handleChangeRange = (range) => {
+  handleChangeRange = (range: number): void => {
     this.setState({range: range});
   }
 
-  getEndTime = () => {
+  getEndTime = (): number | moment.Moment => {
     if (this.state.endTime === null) {
       return moment();
     }
     return this.state.endTime;
   }
 
-  handleChangeEndTime = (endTime) => {
+  handleChangeEndTime = (endTime: number) => {
     this.setState({endTime: endTime});
   }
 
-  handleChangeResolution = (resolution) => {
+  handleChangeResolution = (resolution: number) => {
     // TODO: Where should we validate domain model constraints? In the parent's
     // change handler like here, or in the calling component?
     if (resolution > 0) {
@@ -194,7 +223,7 @@ class Panel extends Component {
   //   self.submitQuery();
   // };
 
-  handleChangeStacking = (stacked) => {
+  handleChangeStacking = (stacked: boolean) => {
     this.setState({stacked: stacked});
   }
 
@@ -259,7 +288,7 @@ class Panel extends Component {
               <TabPane tabId="table">
                 {this.state.type === 'table' &&
                   <>
-                    <div class="table-controls">
+                    <div className="table-controls">
                       <TimeInput endTime={this.state.endTime} range={this.state.range} onChangeEndTime={this.handleChangeEndTime} />
                     </div>
                     <DataTable data={this.state.data} />

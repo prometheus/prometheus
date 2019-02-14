@@ -45,6 +45,7 @@
     "not op_mini all"
   ],
   "devDependencies": {
+    "@types/moment-timezone": "^0.5.10",
     "@types/reactstrap": "^7.1.3"
   }
 }
