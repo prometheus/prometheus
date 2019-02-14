@@ -321,7 +321,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		tmplData := template.AlertTemplateData(l, el, smpl.V)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
-		defs := "{{$labels := .Labels}}{{$externalLables := .ExternalLabels}}{{$value := .Value}}"
+		defs := "{{$labels := .Labels}}{{$externalLabels := .ExternalLabels}}{{$value := .Value}}"
 
 		expand := func(text string) string {
 			tmpl := template.NewTemplateExpander(
