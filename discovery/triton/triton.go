@@ -215,7 +215,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	dr := DiscoveryResponse{}
 	err = json.Unmarshal(data, &dr)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred unmarshaling the disovery response json. %s", err)
+		return tg, fmt.Errorf("an error occurred unmarshaling the discovery response json. %s", err)
 	}
 
 	for _, container := range dr.Containers {

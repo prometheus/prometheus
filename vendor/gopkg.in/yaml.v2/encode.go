@@ -333,7 +333,13 @@ func (e *encoder) timev(tag string, in reflect.Value) {
 }
 
 func (e *encoder) floatv(tag string, in reflect.Value) {
-	s := strconv.FormatFloat(in.Float(), 'g', -1, 64)
+	// Issue #352: When formatting, use the precision of the underlying value
+	precision := 64
+	if in.Kind() == reflect.Float32 {
+		precision = 32
+	}
+
+	s := strconv.FormatFloat(in.Float(), 'g', -1, precision)
 	switch s {
 	case "+Inf":
 		s = ".inf"

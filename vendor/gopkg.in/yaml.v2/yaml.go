@@ -157,8 +157,8 @@ func unmarshal(in []byte, out interface{}, strict bool) (err error) {
 // of the generated document will reflect the structure of the value itself.
 // Maps and pointers (to struct, string, int, etc) are accepted as the in value.
 //
-// Struct fields are only unmarshalled if they are exported (have an upper case
-// first letter), and are unmarshalled using the field name lowercased as the
+// Struct fields are only marshalled if they are exported (have an upper case
+// first letter), and are marshalled using the field name lowercased as the
 // default key. Custom keys may be defined via the "yaml" name in the field
 // tag: the content preceding the first comma is used as the key, and the
 // following comma-separated options are used to tweak the marshalling process.

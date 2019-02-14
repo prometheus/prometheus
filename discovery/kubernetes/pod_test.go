@@ -19,7 +19,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -146,14 +146,13 @@ func expectedPodTargetGroups(ns string) map[string]*targetgroup.Group {
 }
 
 func TestPodDiscoveryBeforeRun(t *testing.T) {
-	n, c, w := makeDiscovery(RolePod, NamespaceDiscovery{})
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
 		discovery: n,
 		beforeRun: func() {
 			obj := makeMultiPortPods()
 			c.CoreV1().Pods(obj.Namespace).Create(obj)
-			w.Pods().Add(obj)
 		},
 		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
@@ -199,14 +198,13 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 }
 
 func TestPodDiscoveryAdd(t *testing.T) {
-	n, c, w := makeDiscovery(RolePod, NamespaceDiscovery{})
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			obj := makePods()
 			c.CoreV1().Pods(obj.Namespace).Create(obj)
-			w.Pods().Add(obj)
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedPodTargetGroups("default"),
@@ -215,14 +213,13 @@ func TestPodDiscoveryAdd(t *testing.T) {
 
 func TestPodDiscoveryDelete(t *testing.T) {
 	obj := makePods()
-	n, c, w := makeDiscovery(RolePod, NamespaceDiscovery{}, obj)
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{}, obj)
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			obj := makePods()
 			c.CoreV1().Pods(obj.Namespace).Delete(obj.Name, &metav1.DeleteOptions{})
-			w.Pods().Delete(obj)
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -260,14 +257,13 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 			HostIP: "2.3.4.5",
 		},
 	}
-	n, c, w := makeDiscovery(RolePod, NamespaceDiscovery{}, obj)
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{}, obj)
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			obj := makePods()
-			c.CoreV1().Pods(obj.Namespace).Create(obj)
-			w.Pods().Modify(obj)
+			c.CoreV1().Pods(obj.Namespace).Update(obj)
 		},
 		expectedMaxItems: 2,
 		expectedRes:      expectedPodTargetGroups("default"),
@@ -275,7 +271,7 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 }
 
 func TestPodDiscoveryUpdateEmptyPodIP(t *testing.T) {
-	n, c, w := makeDiscovery(RolePod, NamespaceDiscovery{})
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 	initialPod := makePods()
 
 	updatedPod := makePods()
@@ -285,11 +281,9 @@ func TestPodDiscoveryUpdateEmptyPodIP(t *testing.T) {
 		discovery: n,
 		beforeRun: func() {
 			c.CoreV1().Pods(initialPod.Namespace).Create(initialPod)
-			w.Pods().Add(initialPod)
 		},
 		afterStart: func() {
-			c.CoreV1().Pods(updatedPod.Namespace).Create(updatedPod)
-			w.Pods().Modify(updatedPod)
+			c.CoreV1().Pods(updatedPod.Namespace).Update(updatedPod)
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -301,7 +295,7 @@ func TestPodDiscoveryUpdateEmptyPodIP(t *testing.T) {
 }
 
 func TestPodDiscoveryNamespaces(t *testing.T) {
-	n, c, w := makeDiscovery(RolePod, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
 
 	expected := expectedPodTargetGroups("ns1")
 	for k, v := range expectedPodTargetGroups("ns2") {
@@ -314,7 +308,6 @@ func TestPodDiscoveryNamespaces(t *testing.T) {
 				pod := makePods()
 				pod.Namespace = ns
 				c.CoreV1().Pods(pod.Namespace).Create(pod)
-				w.Pods().Add(pod)
 			}
 		},
 		expectedMaxItems: 2,

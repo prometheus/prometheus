@@ -420,7 +420,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		return nil, warnings, err
 	}
 
-	evalSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
+	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
 	// Instant evaluation. This is executed as a range evaluation with one step.
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
@@ -428,7 +428,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			startTimestamp:      start,
 			endTimestamp:        start,
 			interval:            1,
-			ctx:                 ctx,
+			ctx:                 ctxInnerEval,
 			maxSamples:          ng.maxSamplesPerQuery,
 			defaultEvalInterval: GetDefaultEvaluationInterval(),
 			logger:              ng.logger,
@@ -470,7 +470,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		startTimestamp:      timeMilliseconds(s.Start),
 		endTimestamp:        timeMilliseconds(s.End),
 		interval:            durationMilliseconds(s.Interval),
-		ctx:                 ctx,
+		ctx:                 ctxInnerEval,
 		maxSamples:          ng.maxSamplesPerQuery,
 		defaultEvalInterval: GetDefaultEvaluationInterval(),
 		logger:              ng.logger,
@@ -1434,9 +1434,16 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 		sig := sigf(rs.Metric)
 		// The rhs is guaranteed to be the 'one' side. Having multiple samples
 		// with the same signature means that the matching is many-to-many.
-		if _, found := rightSigs[sig]; found {
+		if duplSample, found := rightSigs[sig]; found {
+			// oneSide represents which side of the vector represents the 'one' in the many-to-one relationship.
+			oneSide := "right"
+			if matching.Card == CardOneToMany {
+				oneSide = "left"
+			}
+			matchedLabels := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
 			// Many-to-many matching not allowed.
-			ev.errorf("many-to-many matching not allowed: matching labels must be unique on one side")
+			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
+				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
 		}
 		rightSigs[sig] = rs
 	}
