@@ -296,7 +296,7 @@ func (w *WAL) Repair(origErr error) error {
 	if err != nil {
 		return errors.Wrap(err, "list segments")
 	}
-	level.Warn(w.logger).Log("msg", "deleting all segments behind corruption", "segment", cerr.Segment)
+	level.Warn(w.logger).Log("msg", "deleting all segments newer than corrupted segment", "segment", cerr.Segment)
 
 	for _, s := range segs {
 		if w.segment.i == s.index {
