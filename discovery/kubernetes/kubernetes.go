@@ -16,8 +16,6 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"sync"
 	"time"
 
@@ -92,6 +90,7 @@ type SDConfig struct {
 	BasicAuth          *config_util.BasicAuth `yaml:"basic_auth,omitempty"`
 	BearerToken        config_util.Secret     `yaml:"bearer_token,omitempty"`
 	BearerTokenFile    string                 `yaml:"bearer_token_file,omitempty"`
+	ProxyURL           config_util.URL        `yaml:"proxy_url,omitempty"`
 	TLSConfig          config_util.TLSConfig  `yaml:"tls_config,omitempty"`
 	NamespaceDiscovery NamespaceDiscovery     `yaml:"namespaces,omitempty"`
 }
@@ -207,40 +206,29 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		if conf.TLSConfig.CertFile != "" || conf.TLSConfig.KeyFile != "" {
 			level.Warn(l).Log("msg", "Configured TLS client certificate is ignored when using pod service account")
 		}
-		if conf.BearerToken != "" {
+		if conf.BearerToken != "" || conf.BearerTokenFile != "" {
 			level.Warn(l).Log("msg", "Configured auth token is ignored when using pod service account")
 		}
 		if conf.BasicAuth != nil {
 			level.Warn(l).Log("msg", "Configured basic authentication credentials are ignored when using pod service account")
 		}
+		if conf.ProxyURL.URL != nil {
+			level.Warn(l).Log("msg", "Configured proxy URL ignored when using pod service account")
+		}
 	} else {
+		rt, err := config_util.NewRoundTripperFromConfig(config_util.HTTPClientConfig{
+			BasicAuth:       conf.BasicAuth,
+			BearerToken:     conf.BearerToken,
+			BearerTokenFile: conf.BearerTokenFile,
+			ProxyURL:        conf.ProxyURL,
+			TLSConfig:       conf.TLSConfig,
+		}, "kubernetes_sd")
+		if err != nil {
+			return nil, err
+		}
 		kcfg = &rest.Config{
-			Host: conf.APIServer.String(),
-			TLSClientConfig: rest.TLSClientConfig{
-				CAFile:   conf.TLSConfig.CAFile,
-				CertFile: conf.TLSConfig.CertFile,
-				KeyFile:  conf.TLSConfig.KeyFile,
-				Insecure: conf.TLSConfig.InsecureSkipVerify,
-			},
-		}
-		token := string(conf.BearerToken)
-		if conf.BearerTokenFile != "" {
-			bf, err := ioutil.ReadFile(conf.BearerTokenFile)
-			if err != nil {
-				return nil, err
-			}
-			token = string(bf)
-		}
-		kcfg.BearerToken = token
-
-		if conf.BasicAuth != nil {
-			kcfg.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
-				return config_util.NewBasicAuthRoundTripper(
-					conf.BasicAuth.Username,
-					conf.BasicAuth.Password,
-					conf.BasicAuth.PasswordFile,
-					rt)
-			}
+			Host:      conf.APIServer.String(),
+			Transport: rt,
 		}
 	}
 

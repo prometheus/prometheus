@@ -812,6 +812,9 @@ basic_auth:
 # Optional bearer token file authentication information.
 [ bearer_token_file: <filename> ]
 
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
