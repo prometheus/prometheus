@@ -489,7 +489,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	it := exps.Iterator()
 	ressmpls, err := expandSeriesIterator(it)
 	testutil.Ok(t, err)
-	testutil.Equals(t, []sample{{11, 1}}, ressmpls)
+	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, ressmpls)
 }
 func TestDelete_e2e(t *testing.T) {
 	numDatapoints := 1000
@@ -650,16 +650,16 @@ func TestDelete_e2e(t *testing.T) {
 	}
 }
 
-func boundedSamples(full []sample, mint, maxt int64) []sample {
+func boundedSamples(full []tsdbutil.Sample, mint, maxt int64) []tsdbutil.Sample {
 	for len(full) > 0 {
-		if full[0].t >= mint {
+		if full[0].T() >= mint {
 			break
 		}
 		full = full[1:]
 	}
 	for i, s := range full {
 		// labels.Labelinate on the first sample larger than maxt.
-		if s.t > maxt {
+		if s.T() > maxt {
 			return full[:i]
 		}
 	}

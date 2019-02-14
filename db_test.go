@@ -52,16 +52,19 @@ func openTestDB(t testing.TB, opts *Options) (db *DB, close func()) {
 }
 
 // query runs a matcher query against the querier and fully expands its data.
-func query(t testing.TB, q Querier, matchers ...labels.Matcher) map[string][]sample {
+func query(t testing.TB, q Querier, matchers ...labels.Matcher) map[string][]tsdbutil.Sample {
 	ss, err := q.Select(matchers...)
+	defer func() {
+		testutil.Ok(t, q.Close())
+	}()
 	testutil.Ok(t, err)
 
-	result := map[string][]sample{}
+	result := map[string][]tsdbutil.Sample{}
 
 	for ss.Next() {
 		series := ss.At()
 
-		samples := []sample{}
+		samples := []tsdbutil.Sample{}
 		it := series.Iterator()
 		for it.Next() {
 			t, v := it.At()
@@ -124,9 +127,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	querier, err := db.Querier(0, 1)
 	testutil.Ok(t, err)
 	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
-
-	testutil.Equals(t, map[string][]sample{}, seriesSet)
-	testutil.Ok(t, querier.Close())
+	testutil.Equals(t, map[string][]tsdbutil.Sample{}, seriesSet)
 
 	err = app.Commit()
 	testutil.Ok(t, err)
@@ -137,7 +138,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 
 	seriesSet = query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
-	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: {{t: 0, v: 0}}}, seriesSet)
+	testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 0, v: 0}}}, seriesSet)
 }
 
 func TestDataNotAvailableAfterRollback(t *testing.T) {
@@ -160,7 +161,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 
 	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
-	testutil.Equals(t, map[string][]sample{}, seriesSet)
+	testutil.Equals(t, map[string][]tsdbutil.Sample{}, seriesSet)
 }
 
 func TestDBAppenderAddRef(t *testing.T) {
@@ -207,17 +208,15 @@ func TestDBAppenderAddRef(t *testing.T) {
 
 	res := query(t, q, labels.NewEqualMatcher("a", "b"))
 
-	testutil.Equals(t, map[string][]sample{
+	testutil.Equals(t, map[string][]tsdbutil.Sample{
 		labels.FromStrings("a", "b").String(): {
-			{t: 123, v: 0},
-			{t: 124, v: 1},
-			{t: 125, v: 0},
-			{t: 133, v: 1},
-			{t: 143, v: 2},
+			sample{t: 123, v: 0},
+			sample{t: 124, v: 1},
+			sample{t: 125, v: 0},
+			sample{t: 133, v: 1},
+			sample{t: 143, v: 2},
 		},
 	}, res)
-
-	testutil.Ok(t, q.Close())
 }
 
 func TestDeleteSimple(t *testing.T) {
@@ -398,11 +397,9 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 
 	ssMap := query(t, q, labels.NewEqualMatcher("a", "b"))
 
-	testutil.Equals(t, map[string][]sample{
-		labels.New(labels.Label{"a", "b"}).String(): {{0, 1}},
+	testutil.Equals(t, map[string][]tsdbutil.Sample{
+		labels.New(labels.Label{"a", "b"}).String(): {sample{0, 1}},
 	}, ssMap)
-
-	testutil.Ok(t, q.Close())
 
 	// Append Out of Order Value.
 	app = db.Appender()
@@ -417,10 +414,9 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 
 	ssMap = query(t, q, labels.NewEqualMatcher("a", "b"))
 
-	testutil.Equals(t, map[string][]sample{
-		labels.New(labels.Label{"a", "b"}).String(): {{0, 1}, {10, 3}},
+	testutil.Equals(t, map[string][]tsdbutil.Sample{
+		labels.New(labels.Label{"a", "b"}).String(): {sample{0, 1}, sample{10, 3}},
 	}, ssMap)
-	testutil.Ok(t, q.Close())
 }
 
 func TestDB_Snapshot(t *testing.T) {
@@ -610,9 +606,9 @@ func TestDB_e2e(t *testing.T) {
 		},
 	}
 
-	seriesMap := map[string][]sample{}
+	seriesMap := map[string][]tsdbutil.Sample{}
 	for _, l := range lbls {
-		seriesMap[labels.New(l...).String()] = []sample{}
+		seriesMap[labels.New(l...).String()] = []tsdbutil.Sample{}
 	}
 
 	db, delete := openTestDB(t, nil)
@@ -625,7 +621,7 @@ func TestDB_e2e(t *testing.T) {
 
 	for _, l := range lbls {
 		lset := labels.New(l...)
-		series := []sample{}
+		series := []tsdbutil.Sample{}
 
 		ts := rand.Int63n(300)
 		for i := 0; i < numDatapoints; i++ {
@@ -682,7 +678,7 @@ func TestDB_e2e(t *testing.T) {
 			mint := rand.Int63n(300)
 			maxt := mint + rand.Int63n(timeInterval*int64(numDatapoints))
 
-			expected := map[string][]sample{}
+			expected := map[string][]tsdbutil.Sample{}
 
 			// Build the mockSeriesSet.
 			for _, m := range matched {
@@ -698,7 +694,7 @@ func TestDB_e2e(t *testing.T) {
 			ss, err := q.Select(qry.ms...)
 			testutil.Ok(t, err)
 
-			result := map[string][]sample{}
+			result := map[string][]tsdbutil.Sample{}
 
 			for ss.Next() {
 				x := ss.At()
@@ -1664,6 +1660,310 @@ func TestCorrectNumTombstones(t *testing.T) {
 
 	testutil.Ok(t, db.Delete(9, 11, defaultMatcher))
 	testutil.Equals(t, uint64(3), db.blocks[0].meta.Stats.NumTombstones)
+}
+
+func TestVerticalCompaction(t *testing.T) {
+	cases := []struct {
+		blockSeries [][]Series
+		expSeries   map[string][]tsdbutil.Sample
+	}{
+		// Case 0
+		// |--------------|
+		//        |----------------|
+		{
+			blockSeries: [][]Series{
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
+						sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 99},
+						sample{12, 99}, sample{13, 99}, sample{14, 99},
+					}),
+				},
+			},
+			expSeries: map[string][]tsdbutil.Sample{`{a="b"}`: {
+				sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{3, 99},
+				sample{4, 0}, sample{5, 99}, sample{6, 99}, sample{7, 99},
+				sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 99},
+				sample{12, 99}, sample{13, 99}, sample{14, 99},
+			}},
+		},
+		// Case 1
+		// |-------------------------------|
+		//        |----------------|
+		{
+			blockSeries: [][]Series{
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
+						sample{11, 0}, sample{13, 0}, sample{17, 0},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
+						sample{8, 99}, sample{9, 99}, sample{10, 99},
+					}),
+				},
+			},
+			expSeries: map[string][]tsdbutil.Sample{`{a="b"}`: {
+				sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{3, 99},
+				sample{4, 0}, sample{5, 99}, sample{6, 99}, sample{7, 99},
+				sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 0},
+				sample{13, 0}, sample{17, 0},
+			}},
+		},
+		// Case 2
+		// |-------------------------------|
+		//        |------------|
+		//                           |--------------------|
+		{
+			blockSeries: [][]Series{
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
+						sample{11, 0}, sample{13, 0}, sample{17, 0},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
+						sample{8, 99}, sample{9, 99},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{14, 59}, sample{15, 59}, sample{17, 59}, sample{20, 59},
+						sample{21, 59}, sample{22, 59},
+					}),
+				},
+			},
+			expSeries: map[string][]tsdbutil.Sample{`{a="b"}`: {
+				sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{3, 99},
+				sample{4, 0}, sample{5, 99}, sample{6, 99}, sample{7, 99},
+				sample{8, 99}, sample{9, 99}, sample{11, 0}, sample{13, 0},
+				sample{14, 59}, sample{15, 59}, sample{17, 59}, sample{20, 59},
+				sample{21, 59}, sample{22, 59},
+			}},
+		},
+		// Case 3
+		// |-------------------|
+		//                           |--------------------|
+		//               |----------------|
+		{
+			blockSeries: [][]Series{
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+						sample{5, 0}, sample{8, 0}, sample{9, 0},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{14, 59}, sample{15, 59}, sample{17, 59}, sample{20, 59},
+						sample{21, 59}, sample{22, 59},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{5, 99}, sample{6, 99}, sample{7, 99}, sample{8, 99},
+						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
+						sample{16, 99}, sample{17, 99},
+					}),
+				},
+			},
+			expSeries: map[string][]tsdbutil.Sample{`{a="b"}`: {
+				sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+				sample{5, 99}, sample{6, 99}, sample{7, 99}, sample{8, 99},
+				sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{14, 59},
+				sample{15, 59}, sample{16, 99}, sample{17, 59}, sample{20, 59},
+				sample{21, 59}, sample{22, 59},
+			}},
+		},
+		// Case 4
+		// |-------------------------------------|
+		//            |------------|
+		//      |-------------------------|
+		{
+			blockSeries: [][]Series{
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+						sample{5, 0}, sample{8, 0}, sample{9, 0}, sample{10, 0},
+						sample{13, 0}, sample{15, 0}, sample{16, 0}, sample{17, 0},
+						sample{20, 0}, sample{22, 0},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{7, 59}, sample{8, 59}, sample{9, 59}, sample{10, 59},
+						sample{11, 59},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{8, 99},
+						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
+						sample{16, 99}, sample{17, 99},
+					}),
+				},
+			},
+			expSeries: map[string][]tsdbutil.Sample{`{a="b"}`: {
+				sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{3, 99},
+				sample{4, 0}, sample{5, 99}, sample{6, 99}, sample{7, 59},
+				sample{8, 59}, sample{9, 59}, sample{10, 59}, sample{11, 59},
+				sample{13, 99}, sample{15, 99}, sample{16, 99}, sample{17, 99},
+				sample{20, 0}, sample{22, 0},
+			}},
+		},
+		// Case 5: series are merged properly when there are multiple series.
+		// |-------------------------------------|
+		//            |------------|
+		//      |-------------------------|
+		{
+			blockSeries: [][]Series{
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+						sample{5, 0}, sample{8, 0}, sample{9, 0}, sample{10, 0},
+						sample{13, 0}, sample{15, 0}, sample{16, 0}, sample{17, 0},
+						sample{20, 0}, sample{22, 0},
+					}),
+					newSeries(map[string]string{"b": "c"}, []tsdbutil.Sample{
+						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+						sample{5, 0}, sample{8, 0}, sample{9, 0}, sample{10, 0},
+						sample{13, 0}, sample{15, 0}, sample{16, 0}, sample{17, 0},
+						sample{20, 0}, sample{22, 0},
+					}),
+					newSeries(map[string]string{"c": "d"}, []tsdbutil.Sample{
+						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+						sample{5, 0}, sample{8, 0}, sample{9, 0}, sample{10, 0},
+						sample{13, 0}, sample{15, 0}, sample{16, 0}, sample{17, 0},
+						sample{20, 0}, sample{22, 0},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"__name__": "a"}, []tsdbutil.Sample{
+						sample{7, 59}, sample{8, 59}, sample{9, 59}, sample{10, 59},
+						sample{11, 59},
+					}),
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{7, 59}, sample{8, 59}, sample{9, 59}, sample{10, 59},
+						sample{11, 59},
+					}),
+					newSeries(map[string]string{"aa": "bb"}, []tsdbutil.Sample{
+						sample{7, 59}, sample{8, 59}, sample{9, 59}, sample{10, 59},
+						sample{11, 59},
+					}),
+					newSeries(map[string]string{"c": "d"}, []tsdbutil.Sample{
+						sample{7, 59}, sample{8, 59}, sample{9, 59}, sample{10, 59},
+						sample{11, 59},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{8, 99},
+						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
+						sample{16, 99}, sample{17, 99},
+					}),
+					newSeries(map[string]string{"aa": "bb"}, []tsdbutil.Sample{
+						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{8, 99},
+						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
+						sample{16, 99}, sample{17, 99},
+					}),
+					newSeries(map[string]string{"c": "d"}, []tsdbutil.Sample{
+						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{8, 99},
+						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
+						sample{16, 99}, sample{17, 99},
+					}),
+				},
+			},
+			expSeries: map[string][]tsdbutil.Sample{
+				`{__name__="a"}`: {
+					sample{7, 59}, sample{8, 59}, sample{9, 59}, sample{10, 59},
+					sample{11, 59},
+				},
+				`{a="b"}`: {
+					sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{3, 99},
+					sample{4, 0}, sample{5, 99}, sample{6, 99}, sample{7, 59},
+					sample{8, 59}, sample{9, 59}, sample{10, 59}, sample{11, 59},
+					sample{13, 99}, sample{15, 99}, sample{16, 99}, sample{17, 99},
+					sample{20, 0}, sample{22, 0},
+				},
+				`{aa="bb"}`: {
+					sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 59},
+					sample{8, 59}, sample{9, 59}, sample{10, 59}, sample{11, 59},
+					sample{13, 99}, sample{15, 99}, sample{16, 99}, sample{17, 99},
+				},
+				`{b="c"}`: {
+					sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+					sample{5, 0}, sample{8, 0}, sample{9, 0}, sample{10, 0},
+					sample{13, 0}, sample{15, 0}, sample{16, 0}, sample{17, 0},
+					sample{20, 0}, sample{22, 0},
+				},
+				`{c="d"}`: {
+					sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{3, 99},
+					sample{4, 0}, sample{5, 99}, sample{6, 99}, sample{7, 59},
+					sample{8, 59}, sample{9, 59}, sample{10, 59}, sample{11, 59},
+					sample{13, 99}, sample{15, 99}, sample{16, 99}, sample{17, 99},
+					sample{20, 0}, sample{22, 0},
+				},
+			},
+		},
+	}
+
+	defaultMatcher := labels.NewMustRegexpMatcher("__name__", ".*")
+	for _, c := range cases {
+		if ok := t.Run("", func(t *testing.T) {
+
+			tmpdir, err := ioutil.TempDir("", "data")
+			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(tmpdir))
+			}()
+
+			for _, series := range c.blockSeries {
+				createBlock(t, tmpdir, series)
+			}
+			db, err := Open(tmpdir, nil, nil, nil)
+			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, db.Close())
+			}()
+			db.DisableCompactions()
+			testutil.Assert(t, len(db.blocks) == len(c.blockSeries), "Wrong number of blocks [before compact].")
+
+			// Vertical Query Merging test.
+			querier, err := db.Querier(0, 100)
+			testutil.Ok(t, err)
+			actSeries := query(t, querier, defaultMatcher)
+			testutil.Equals(t, c.expSeries, actSeries)
+
+			// Vertical compaction.
+			lc := db.compactor.(*LeveledCompactor)
+			testutil.Equals(t, 0, int(prom_testutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count should be still 0 here")
+			err = db.compact()
+			testutil.Ok(t, err)
+			testutil.Equals(t, 1, len(db.Blocks()), "Wrong number of blocks [after compact]")
+
+			testutil.Equals(t, 1, int(prom_testutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count mismatch")
+
+			// Query test after merging the overlapping blocks.
+			querier, err = db.Querier(0, 100)
+			testutil.Ok(t, err)
+			actSeries = query(t, querier, defaultMatcher)
+			testutil.Equals(t, c.expSeries, actSeries)
+		}); !ok {
+			return
+		}
+	}
 }
 
 // TestBlockRanges checks the following use cases:

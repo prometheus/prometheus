@@ -546,17 +546,22 @@ func (db *DB) reload() (err error) {
 	db.metrics.blocksBytes.Set(float64(blocksSize))
 
 	sort.Slice(loadable, func(i, j int) bool {
-		return loadable[i].Meta().MaxTime < loadable[j].Meta().MaxTime
+		return loadable[i].Meta().MinTime < loadable[j].Meta().MinTime
 	})
-	if err := validateBlockSequence(loadable); err != nil {
-		return errors.Wrap(err, "invalid block sequence")
-	}
 
 	// Swap new blocks first for subsequently created readers to be seen.
 	db.mtx.Lock()
 	oldBlocks := db.blocks
 	db.blocks = loadable
 	db.mtx.Unlock()
+
+	blockMetas := make([]BlockMeta, 0, len(loadable))
+	for _, b := range loadable {
+		blockMetas = append(blockMetas, b.Meta())
+	}
+	if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
+		level.Warn(db.logger).Log("msg", "overlapping blocks found during reload", "detail", overlaps.String())
+	}
 
 	for _, b := range oldBlocks {
 		if _, ok := deletable[b.Meta().ULID]; ok {
@@ -691,25 +696,6 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 			return errors.Wrapf(err, "delete obsolete block %s", ulid)
 		}
 	}
-	return nil
-}
-
-// validateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
-func validateBlockSequence(bs []*Block) error {
-	if len(bs) <= 1 {
-		return nil
-	}
-
-	var metas []BlockMeta
-	for _, b := range bs {
-		metas = append(metas, b.meta)
-	}
-
-	overlaps := OverlappingBlocks(metas)
-	if len(overlaps) > 0 {
-		return errors.Errorf("block time ranges overlap: %s", overlaps)
-	}
-
 	return nil
 }
 
@@ -909,6 +895,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 // A goroutine must not handle more than one open Querier.
 func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 	var blocks []BlockReader
+	var blockMetas []BlockMeta
 
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
@@ -916,6 +903,7 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 	for _, b := range db.blocks {
 		if b.OverlapsClosedInterval(mint, maxt) {
 			blocks = append(blocks, b)
+			blockMetas = append(blockMetas, b.Meta())
 		}
 	}
 	if maxt >= db.head.MinTime() {
@@ -926,22 +914,31 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 		})
 	}
 
-	sq := &querier{
-		blocks: make([]Querier, 0, len(blocks)),
-	}
+	blockQueriers := make([]Querier, 0, len(blocks))
 	for _, b := range blocks {
 		q, err := NewBlockQuerier(b, mint, maxt)
 		if err == nil {
-			sq.blocks = append(sq.blocks, q)
+			blockQueriers = append(blockQueriers, q)
 			continue
 		}
 		// If we fail, all previously opened queriers must be closed.
-		for _, q := range sq.blocks {
+		for _, q := range blockQueriers {
 			q.Close()
 		}
 		return nil, errors.Wrapf(err, "open querier for block %s", b)
 	}
-	return sq, nil
+
+	if len(OverlappingBlocks(blockMetas)) > 0 {
+		return &verticalQuerier{
+			querier: querier{
+				blocks: blockQueriers,
+			},
+		}, nil
+	}
+
+	return &querier{
+		blocks: blockQueriers,
+	}, nil
 }
 
 func rangeForTimestamp(t int64, width int64) (maxt int64) {

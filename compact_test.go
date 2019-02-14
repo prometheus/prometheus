@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -311,13 +312,46 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"7", "8"},
 		},
+		// For overlapping blocks.
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 19, 40, nil),
+				metaRange("3", 40, 60, nil),
+			},
+			expected: []string{"1", "2"},
+		},
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 20, 40, nil),
+				metaRange("3", 30, 50, nil),
+			},
+			expected: []string{"2", "3"},
+		},
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 10, 40, nil),
+				metaRange("3", 30, 50, nil),
+			},
+			expected: []string{"1", "2", "3"},
+		},
+		{
+			metas: []dirMeta{
+				metaRange("5", 0, 360, nil),
+				metaRange("6", 340, 560, nil),
+				metaRange("7", 360, 420, nil),
+				metaRange("8", 420, 540, nil),
+			},
+			expected: []string{"5", "6", "7", "8"},
+		},
 	}
 
 	for _, c := range cases {
 		if !t.Run("", func(t *testing.T) {
 			res, err := compactor.plan(c.metas)
 			testutil.Ok(t, err)
-
 			testutil.Equals(t, c.expected, res)
 		}) {
 			return
@@ -410,6 +444,8 @@ type erringBReader struct{}
 func (erringBReader) Index() (IndexReader, error)          { return nil, errors.New("index") }
 func (erringBReader) Chunks() (ChunkReader, error)         { return nil, errors.New("chunks") }
 func (erringBReader) Tombstones() (TombstoneReader, error) { return nil, errors.New("tombstones") }
+func (erringBReader) MinTime() int64                       { return 0 }
+func (erringBReader) MaxTime() int64                       { return 0 }
 
 type nopChunkWriter struct{}
 
@@ -422,9 +458,8 @@ func TestCompaction_populateBlock(t *testing.T) {
 		inputSeriesSamples [][]seriesSamples
 		compactMinTime     int64
 		compactMaxTime     int64 // When not defined the test runner sets a default of math.MaxInt64.
-
-		expSeriesSamples []seriesSamples
-		expErr           error
+		expSeriesSamples   []seriesSamples
+		expErr             error
 	}{
 		{
 			title:              "Populate block from empty input should return error.",
@@ -503,16 +538,6 @@ func TestCompaction_populateBlock(t *testing.T) {
 				{
 					{
 						lset:   map[string]string{"a": "b"},
-						chunks: [][]sample{{{t: 21}, {t: 30}}},
-					},
-					{
-						lset:   map[string]string{"a": "c"},
-						chunks: [][]sample{{{t: 40}, {t: 45}}},
-					},
-				},
-				{
-					{
-						lset:   map[string]string{"a": "b"},
 						chunks: [][]sample{{{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}},
 					},
 					{
@@ -520,20 +545,30 @@ func TestCompaction_populateBlock(t *testing.T) {
 						chunks: [][]sample{{{t: 1}, {t: 9}}, {{t: 10}, {t: 19}}},
 					},
 				},
+				{
+					{
+						lset:   map[string]string{"a": "b"},
+						chunks: [][]sample{{{t: 21}, {t: 30}}},
+					},
+					{
+						lset:   map[string]string{"a": "c"},
+						chunks: [][]sample{{{t: 40}, {t: 45}}},
+					},
+				},
 			},
 			expSeriesSamples: []seriesSamples{
 				{
 					lset:   map[string]string{"a": "b"},
-					chunks: [][]sample{{{t: 21}, {t: 30}}, {{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}},
+					chunks: [][]sample{{{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}, {{t: 21}, {t: 30}}},
 				},
 				{
 					lset:   map[string]string{"a": "c"},
-					chunks: [][]sample{{{t: 40}, {t: 45}}, {{t: 1}, {t: 9}}, {{t: 10}, {t: 19}}},
+					chunks: [][]sample{{{t: 1}, {t: 9}}, {{t: 10}, {t: 19}}, {{t: 40}, {t: 45}}},
 				},
 			},
 		},
 		{
-			title: "Populate from two blocks showing that order or series is sorted.",
+			title: "Populate from two blocks showing that order of series is sorted.",
 			inputSeriesSamples: [][]seriesSamples{
 				{
 					{
@@ -647,8 +682,8 @@ func TestCompaction_populateBlock(t *testing.T) {
 		if ok := t.Run(tc.title, func(t *testing.T) {
 			blocks := make([]BlockReader, 0, len(tc.inputSeriesSamples))
 			for _, b := range tc.inputSeriesSamples {
-				ir, cr := createIdxChkReaders(b)
-				blocks = append(blocks, &mockBReader{ir: ir, cr: cr})
+				ir, cr, mint, maxt := createIdxChkReaders(b)
+				blocks = append(blocks, &mockBReader{ir: ir, cr: cr, mint: mint, maxt: maxt})
 			}
 
 			c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{0}, nil)
@@ -687,6 +722,78 @@ func TestCompaction_populateBlock(t *testing.T) {
 		}); !ok {
 			return
 		}
+	}
+}
+
+func BenchmarkCompaction(b *testing.B) {
+	cases := []struct {
+		ranges         [][2]int64
+		compactionType string
+	}{
+		{
+			ranges:         [][2]int64{{0, 100}, {200, 300}, {400, 500}, {600, 700}},
+			compactionType: "normal",
+		},
+		{
+			ranges:         [][2]int64{{0, 1000}, {2000, 3000}, {4000, 5000}, {6000, 7000}},
+			compactionType: "normal",
+		},
+		{
+			ranges:         [][2]int64{{0, 10000}, {20000, 30000}, {40000, 50000}, {60000, 70000}},
+			compactionType: "normal",
+		},
+		{
+			ranges:         [][2]int64{{0, 100000}, {200000, 300000}, {400000, 500000}, {600000, 700000}},
+			compactionType: "normal",
+		},
+		// 40% overlaps.
+		{
+			ranges:         [][2]int64{{0, 100}, {60, 160}, {120, 220}, {180, 280}},
+			compactionType: "vertical",
+		},
+		{
+			ranges:         [][2]int64{{0, 1000}, {600, 1600}, {1200, 2200}, {1800, 2800}},
+			compactionType: "vertical",
+		},
+		{
+			ranges:         [][2]int64{{0, 10000}, {6000, 16000}, {12000, 22000}, {18000, 28000}},
+			compactionType: "vertical",
+		},
+		{
+			ranges:         [][2]int64{{0, 100000}, {60000, 160000}, {120000, 220000}, {180000, 280000}},
+			compactionType: "vertical",
+		},
+	}
+
+	nSeries := 10000
+	for _, c := range cases {
+		nBlocks := len(c.ranges)
+		b.Run(fmt.Sprintf("type=%s,blocks=%d,series=%d,samplesPerSeriesPerBlock=%d", c.compactionType, nBlocks, nSeries, c.ranges[0][1]-c.ranges[0][0]+1), func(b *testing.B) {
+			dir, err := ioutil.TempDir("", "bench_compaction")
+			testutil.Ok(b, err)
+			defer func() {
+				testutil.Ok(b, os.RemoveAll(dir))
+			}()
+			blockDirs := make([]string, 0, len(c.ranges))
+			var blocks []*Block
+			for _, r := range c.ranges {
+				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil)
+				testutil.Ok(b, err)
+				blocks = append(blocks, block)
+				defer func() {
+					testutil.Ok(b, block.Close())
+				}()
+				blockDirs = append(blockDirs, block.Dir())
+			}
+
+			c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil)
+			testutil.Ok(b, err)
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			_, err = c.Compact(dir, blockDirs, blocks)
+			testutil.Ok(b, err)
+		})
 	}
 }
 

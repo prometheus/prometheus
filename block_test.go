@@ -101,8 +101,8 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []Series {
 	if totalSeries == 0 || labelCount == 0 {
 		return nil
 	}
-	series := make([]Series, totalSeries)
 
+	series := make([]Series, totalSeries)
 	for i := 0; i < totalSeries; i++ {
 		lbls := make(map[string]string, labelCount)
 		for len(lbls) < labelCount {
@@ -114,7 +114,26 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []Series {
 		}
 		series[i] = newSeries(lbls, samples)
 	}
+	return series
+}
 
+// populateSeries generates series from given labels, mint and maxt.
+func populateSeries(lbls []map[string]string, mint, maxt int64) []Series {
+	if len(lbls) == 0 {
+		return nil
+	}
+
+	series := make([]Series, 0, len(lbls))
+	for _, lbl := range lbls {
+		if len(lbl) == 0 {
+			continue
+		}
+		samples := make([]tsdbutil.Sample, 0, maxt-mint+1)
+		for t := mint; t <= maxt; t++ {
+			samples = append(samples, sample{t: t, v: rand.Float64()})
+		}
+		series = append(series, newSeries(lbl, samples))
+	}
 	return series
 }
 

@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -80,13 +81,14 @@ type LeveledCompactor struct {
 }
 
 type compactorMetrics struct {
-	ran              prometheus.Counter
-	populatingBlocks prometheus.Gauge
-	failed           prometheus.Counter
-	duration         prometheus.Histogram
-	chunkSize        prometheus.Histogram
-	chunkSamples     prometheus.Histogram
-	chunkRange       prometheus.Histogram
+	ran               prometheus.Counter
+	populatingBlocks  prometheus.Gauge
+	failed            prometheus.Counter
+	overlappingBlocks prometheus.Counter
+	duration          prometheus.Histogram
+	chunkSize         prometheus.Histogram
+	chunkSamples      prometheus.Histogram
+	chunkRange        prometheus.Histogram
 }
 
 func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
@@ -103,6 +105,10 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m.failed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_failed_total",
 		Help: "Total number of compactions that failed for the partition.",
+	})
+	m.overlappingBlocks = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_vertical_compactions_total",
+		Help: "Total number of compactions done on overlapping blocks.",
 	})
 	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_duration_seconds",
@@ -130,6 +136,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 			m.ran,
 			m.populatingBlocks,
 			m.failed,
+			m.overlappingBlocks,
 			m.duration,
 			m.chunkRange,
 			m.chunkSamples,
@@ -146,6 +153,9 @@ func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Log
 	}
 	if pool == nil {
 		pool = chunkenc.NewPool()
+	}
+	if l == nil {
+		l = log.NewNopLogger()
 	}
 	return &LeveledCompactor{
 		ranges:    ranges,
@@ -187,11 +197,15 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 		return dms[i].meta.MinTime < dms[j].meta.MinTime
 	})
 
+	res := c.selectOverlappingDirs(dms)
+	if len(res) > 0 {
+		return res, nil
+	}
+	// No overlapping blocks, do compaction the usual way.
 	// We do not include a recently created block with max(minTime), so the block which was just created from WAL.
 	// This gives users a window of a full block size to piece-wise backup new data without having to care about data overlap.
 	dms = dms[:len(dms)-1]
 
-	var res []string
 	for _, dm := range c.selectDirs(dms) {
 		res = append(res, dm.dir)
 	}
@@ -252,6 +266,28 @@ func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
 	return nil
 }
 
+// selectOverlappingDirs returns all dirs with overlaping time ranges.
+// It expects sorted input by mint.
+func (c *LeveledCompactor) selectOverlappingDirs(ds []dirMeta) []string {
+	if len(ds) < 2 {
+		return nil
+	}
+	var overlappingDirs []string
+	globalMaxt := ds[0].meta.MaxTime
+	for i, d := range ds[1:] {
+		if d.meta.MinTime < globalMaxt {
+			if len(overlappingDirs) == 0 { // When it is the first overlap, need to add the last one as well.
+				overlappingDirs = append(overlappingDirs, ds[i].dir)
+			}
+			overlappingDirs = append(overlappingDirs, d.dir)
+		}
+		if d.meta.MaxTime > globalMaxt {
+			globalMaxt = d.meta.MaxTime
+		}
+	}
+	return overlappingDirs
+}
+
 // splitByRange splits the directories by the time range. The range sequence starts at 0.
 //
 // For example, if we have blocks [0-10, 10-20, 50-60, 90-100] and the split range tr is 30
@@ -299,12 +335,17 @@ func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	res := &BlockMeta{
 		ULID:    uid,
 		MinTime: blocks[0].MinTime,
-		MaxTime: blocks[len(blocks)-1].MaxTime,
 	}
 
 	sources := map[ulid.ULID]struct{}{}
+	// For overlapping blocks, the Maxt can be
+	// in any block so we track it globally.
+	maxt := int64(math.MinInt64)
 
 	for _, b := range blocks {
+		if b.MaxTime > maxt {
+			maxt = b.MaxTime
+		}
 		if b.Compaction.Level > res.Compaction.Level {
 			res.Compaction.Level = b.Compaction.Level
 		}
@@ -326,6 +367,7 @@ func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 		return res.Compaction.Sources[i].Compare(res.Compaction.Sources[j]) < 0
 	})
 
+	res.MaxTime = maxt
 	return res
 }
 
@@ -603,15 +645,17 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 
 // populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
+// It expects sorted blocks input by mint.
 func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block from no readers")
 	}
 
 	var (
-		set        ChunkSeriesSet
-		allSymbols = make(map[string]struct{}, 1<<16)
-		closers    = []io.Closer{}
+		set         ChunkSeriesSet
+		allSymbols  = make(map[string]struct{}, 1<<16)
+		closers     = []io.Closer{}
+		overlapping bool
 	)
 	defer func() {
 		var merr MultiError
@@ -622,11 +666,23 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}()
 	c.metrics.populatingBlocks.Set(1)
 
+	globalMaxt := blocks[0].MaxTime()
 	for i, b := range blocks {
 		select {
 		case <-c.ctx.Done():
 			return c.ctx.Err()
 		default:
+		}
+
+		if !overlapping {
+			if i > 0 && b.MinTime() < globalMaxt {
+				c.metrics.overlappingBlocks.Inc()
+				overlapping = true
+				level.Warn(c.logger).Log("msg", "found overlapping blocks during compaction", "ulid", meta.ULID)
+			}
+			if b.MaxTime() > globalMaxt {
+				globalMaxt = b.MaxTime()
+			}
 		}
 
 		indexr, err := b.Index()
@@ -692,6 +748,12 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 
 		lset, chks, dranges := set.At() // The chunks here are not fully deleted.
+		if overlapping {
+			// If blocks are overlapping, it is possible to have unsorted chunks.
+			sort.Slice(chks, func(i, j int) bool {
+				return chks[i].MinTime < chks[j].MinTime
+			})
+		}
 
 		// Skip the series with all deleted chunks.
 		if len(chks) == 0 {
@@ -725,21 +787,28 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 		}
 
-		if err := chunkw.WriteChunks(chks...); err != nil {
+		mergedChks := chks
+		if overlapping {
+			mergedChks, err = chunks.MergeOverlappingChunks(chks)
+			if err != nil {
+				return errors.Wrap(err, "merge overlapping chunks")
+			}
+		}
+		if err := chunkw.WriteChunks(mergedChks...); err != nil {
 			return errors.Wrap(err, "write chunks")
 		}
 
-		if err := indexw.AddSeries(i, lset, chks...); err != nil {
+		if err := indexw.AddSeries(i, lset, mergedChks...); err != nil {
 			return errors.Wrap(err, "add series")
 		}
 
-		meta.Stats.NumChunks += uint64(len(chks))
+		meta.Stats.NumChunks += uint64(len(mergedChks))
 		meta.Stats.NumSeries++
-		for _, chk := range chks {
+		for _, chk := range mergedChks {
 			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
 		}
 
-		for _, chk := range chks {
+		for _, chk := range mergedChks {
 			if err := c.chunkPool.Put(chk.Chunk); err != nil {
 				return errors.Wrap(err, "put chunk")
 			}

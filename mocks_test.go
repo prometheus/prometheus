@@ -64,10 +64,14 @@ func (mockIndexWriter) WritePostings(name, value string, it index.Postings) erro
 func (mockIndexWriter) Close() error                                              { return nil }
 
 type mockBReader struct {
-	ir IndexReader
-	cr ChunkReader
+	ir   IndexReader
+	cr   ChunkReader
+	mint int64
+	maxt int64
 }
 
 func (r *mockBReader) Index() (IndexReader, error)          { return r.ir, nil }
 func (r *mockBReader) Chunks() (ChunkReader, error)         { return r.cr, nil }
 func (r *mockBReader) Tombstones() (TombstoneReader, error) { return newMemTombstones(), nil }
+func (r *mockBReader) MinTime() int64                       { return r.mint }
+func (r *mockBReader) MaxTime() int64                       { return r.maxt }
