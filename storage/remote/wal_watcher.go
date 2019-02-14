@@ -224,7 +224,7 @@ func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
 		refs = append(refs, k)
 		last = k
 	}
-	sort.Sort(sort.IntSlice(refs))
+	sort.Ints(refs)
 
 	for _, r := range refs {
 		if r >= index {
