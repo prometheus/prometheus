@@ -143,13 +143,13 @@ func Test_readToEnd_noCheckpoint(t *testing.T) {
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	go watcher.Start()
-	defer watcher.Stop()
 
 	expected := seriesCount
 	retry(t, defaultRetry, 10, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
 	testutil.Equals(t, expected, wt.checkNumLabels())
+	watcher.Stop()
 }
 
 func Test_readToEnd_withCheckpoint(t *testing.T) {
@@ -226,13 +226,13 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	go watcher.Start()
-	defer watcher.Stop()
 
 	expected := seriesCount * 10 * 2
 	retry(t, defaultRetry, 20, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
 	testutil.Equals(t, expected, wt.checkNumLabels())
+	watcher.Stop()
 }
 
 func Test_readCheckpoint(t *testing.T) {
@@ -288,13 +288,13 @@ func Test_readCheckpoint(t *testing.T) {
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	go watcher.Start()
-	defer watcher.Stop()
 
 	expected := seriesCount * 10
 	retry(t, defaultRetry, 10, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
 	testutil.Equals(t, expected, wt.checkNumLabels())
+	watcher.Stop()
 }
 
 func Test_checkpoint_seriesReset(t *testing.T) {
@@ -345,13 +345,13 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	go watcher.Start()
-	defer watcher.Stop()
 
 	expected := seriesCount * 10
 	retry(t, defaultRetry, 50, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
 	testutil.Equals(t, seriesCount*10, wt.checkNumLabels())
+	watcher.Stop()
 
 	// If you modify the checkpoint and truncate segment #'s run the test to see how
 	// many series records you end up with and change the last Equals check accordingly
