@@ -34,11 +34,11 @@ interface PanelState {
   resolution: number | null;
   stacked: boolean;
   data: any; // TODO: Define data.
-  lastQueryParams: {
+  lastQueryParams: { // TODO: Share these with Graph.tsx in a file.
     startTime: number,
     endTime: number,
     resolution: number,
-  } | null,
+  } | null;
   loading: boolean;
   error: string | null;
   stats: null; // TODO: Stats.

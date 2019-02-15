@@ -27,7 +27,7 @@ interface ExpressionInputProps {
 
 class ExpressionInput extends Component<ExpressionInputProps> {
   prevNoMatchValue: string | null = null;
-  exprInputRef: HTMLInputElement | null = null;
+  private exprInputRef = React.createRef<HTMLInputElement>();
 
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -85,7 +85,7 @@ class ExpressionInput extends Component<ExpressionInputProps> {
   }
 
   componentDidMount() {
-    const $exprInput = $(this.exprInputRef as any)
+    const $exprInput = $(this.exprInputRef.current!);
     $exprInput.on('input', () => {
       const el = $exprInput.get(0);
       const offset = el.offsetHeight - el.clientHeight;
@@ -115,7 +115,7 @@ class ExpressionInput extends Component<ExpressionInputProps> {
                   rows="1"
                   onKeyPress={this.handleKeyPress}
                   placeholder="Expression (press Shift+Enter for newlines)"
-                  innerRef={ref => this.exprInputRef = ref}
+                  innerRef={this.exprInputRef}
                   {...downshift.getInputProps({
                     onKeyDown: (event: React.KeyboardEvent): void => {
                       switch (event.key) {
