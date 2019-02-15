@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/prometheus/tsdb"
 	"github.com/prometheus/tsdb/labels"
@@ -141,8 +140,7 @@ func Test_readToEnd_noCheckpoint(t *testing.T) {
 	testutil.Ok(t, err)
 
 	wt := newWriteToMock()
-	st := timestamp.FromTime(time.Now())
-	watcher := NewWALWatcher(nil, "", wt, dir, st)
+	watcher := NewWALWatcher(nil, "", wt, dir)
 	go watcher.Start()
 
 	expected := seriesCount
@@ -223,8 +221,7 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 	_, _, err = w.Segments()
 	testutil.Ok(t, err)
 	wt := newWriteToMock()
-	st := timestamp.FromTime(time.Now())
-	watcher := NewWALWatcher(nil, "", wt, dir, st)
+	watcher := NewWALWatcher(nil, "", wt, dir)
 	go watcher.Start()
 
 	expected := seriesCount * 10 * 2
@@ -285,8 +282,7 @@ func Test_readCheckpoint(t *testing.T) {
 	testutil.Ok(t, err)
 
 	wt := newWriteToMock()
-	st := timestamp.FromTime(time.Now())
-	watcher := NewWALWatcher(nil, "", wt, dir, st)
+	watcher := NewWALWatcher(nil, "", wt, dir)
 	go watcher.Start()
 
 	expected := seriesCount * 10
@@ -342,8 +338,7 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 	testutil.Ok(t, err)
 
 	wt := newWriteToMock()
-	st := timestamp.FromTime(time.Now())
-	watcher := NewWALWatcher(nil, "", wt, dir, st)
+	watcher := NewWALWatcher(nil, "", wt, dir)
 	go watcher.Start()
 
 	expected := seriesCount * 10
@@ -372,7 +367,7 @@ func Test_decodeRecord(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	wt := newWriteToMock()
-	watcher := NewWALWatcher(nil, "", wt, dir, 0)
+	watcher := NewWALWatcher(nil, "", wt, dir)
 
 	enc := tsdb.RecordEncoder{}
 	buf := enc.Series([]tsdb.RefSeries{tsdb.RefSeries{Ref: 1234, Labels: labels.Labels{}}}, nil)
@@ -394,7 +389,7 @@ func Test_decodeRecord_afterStart(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	wt := newWriteToMock()
-	watcher := NewWALWatcher(nil, "", wt, dir, 1)
+	watcher := NewWALWatcher(nil, "", wt, dir)
 
 	enc := tsdb.RecordEncoder{}
 	buf := enc.Series([]tsdb.RefSeries{tsdb.RefSeries{Ref: 1234, Labels: labels.Labels{}}}, nil)
