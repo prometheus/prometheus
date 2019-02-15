@@ -1,5 +1,6 @@
 import $ from 'jquery';
 import React, { PureComponent } from 'react';
+import ReactResizeDetector from 'react-resize-detector';
 
 import { Alert } from 'reactstrap';
 
@@ -7,10 +8,10 @@ require('flot');
 require('flot/source/jquery.flot.crosshair');
 require('flot/source/jquery.flot.legend');
 require('flot/source/jquery.flot.time');
-require('flot/source/jquery.flot.hover');
-require('flot/source/jquery.flot.resize');
+require('flot/source/jquery.canvaswrapper');
 require('jquery.flot.tooltip');
 
+import Legend from './Legend';
 import metricToSeriesName from './MetricFomat';
 
 var graphID = 0;
@@ -32,7 +33,6 @@ interface GraphProps {
 class Graph extends PureComponent<GraphProps> {
   private id: number = getGraphID();
   private chartRef = React.createRef<HTMLDivElement>();
-  private legendRef = React.createRef<HTMLDivElement>();
 
   escapeHTML(str: string) {
     var entityMap: {[key: string]: string} = {
@@ -112,9 +112,7 @@ class Graph extends PureComponent<GraphProps> {
         mouseActiveRadius: 100,
       },
       legend: {
-        //show: true,
-        labelFormatter: (s: string) => {return '&nbsp;&nbsp;' + s},
-        container: this.legendRef.current!,
+        show: false,
       },
       xaxis: {
         mode: 'time',
@@ -201,12 +199,11 @@ class Graph extends PureComponent<GraphProps> {
   }
 
   plot() {
-    this.destroyPlot();
-    if (this.chartRef.current === null || this.legendRef.current === null) {
+    if (this.chartRef.current === null) {
       return;
     }
+    this.destroyPlot();
     $.plot($(this.chartRef.current!), this.getData(), this.getOptions());
-    //window.addEventListener('resize', () => this.plot());
   }
 
   destroyPlot() {
@@ -231,8 +228,9 @@ class Graph extends PureComponent<GraphProps> {
 
     return (
       <div className="graph">
+        <ReactResizeDetector handleWidth onResize={() => this.plot()} />
         <div className="graph-chart" ref={this.chartRef} />
-        <div className="graph-legend" ref={this.legendRef} />
+        <Legend series={this.getData()}/>
       </div>
     );
   }

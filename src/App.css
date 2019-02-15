@@ -2,6 +2,10 @@ body {
     padding-top: 10px; /* TODO remove */
 }
 
+.panel {
+    margin-bottom: 20px;
+}
+
 .expression-input {
     margin-bottom: 10px;
 }
@@ -113,6 +117,13 @@ div.endtime-input {
 
 .graph-legend {
     margin: 15px 0 15px 25px;
+    font-size: 0.8em;
+}
+
+.graph-legend .legend-swatch {
+    width: 10px;
+    height: 10px;
+    background-color: red;
 }
 
 .graph {
@@ -122,6 +133,10 @@ div.endtime-input {
 .graph-chart {
     height: 500px;
     width: 100%;
+    /* This is picked up by Flot's axis label font renderer,
+      which ignores "color" and uses "fill" instead. */
+    fill: #495057;
+    font-size: 0.8em;
 }
 
 .graph-chart .flot-overlay {
@@ -151,5 +166,6 @@ div.endtime-input {
 }
 
 .add-panel-btn {
+    margin-top: -20px;
     margin-bottom: 20px;
 }

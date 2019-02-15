@@ -187,49 +187,13 @@ class Panel extends Component<PanelProps, PanelState> {
     }
   }
 
-  // getEndDate = () => {
-  //   var self = this;
-  //   if (!self.endDate || !self.endDate.val()) {
-  //     return moment();
-  //   }
-  //   return self.endDate.data('DateTimePicker').date();
-  // };
-
-  // getOrSetEndDate = () => {
-  //   var self = this;
-  //   var date = self.getEndDate();
-  //   self.setEndDate(date);
-  //   return date;
-  // };
-
-  // setEndDate = (date) => {
-  //   var self = this;
-  //   self.endDate.data('DateTimePicker').date(date);
-  // };
-
-  // increaseEnd = () => {
-  //   var self = this;
-  //   var newDate = moment(self.getOrSetEndDate());
-  //   newDate.add(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
-  //   self.setEndDate(newDate);
-  //   self.submitQuery();
-  // };
-
-  // decreaseEnd = () => {
-  //   var self = this;
-  //   var newDate = moment(self.getOrSetEndDate());
-  //   newDate.subtract(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
-  //   self.setEndDate(newDate);
-  //   self.submitQuery();
-  // };
-
   handleChangeStacking = (stacked: boolean) => {
     this.setState({stacked: stacked});
   }
 
   render() {
     return (
-      <>
+      <div className="panel">
         <Row>
           <Col>
             <ExpressionInput
@@ -300,10 +264,10 @@ class Panel extends Component<PanelProps, PanelState> {
         </Row>
         <Row>
           <Col>
-            <Button className="float-right" color="link" onClick={this.props.removePanel}>Remove Panel</Button>
+            <Button className="float-right" color="link" onClick={this.props.removePanel} size="sm">Remove Panel</Button>
           </Col>
         </Row>
-      </>
+      </div>
     );
   }
 }
