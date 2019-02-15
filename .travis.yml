@@ -1,5 +1,3 @@
-sudo: false
-
 language: go
 
 # Whenever the Go version is updated here, .circleci/config.yml and .promu.yml
@@ -10,6 +8,7 @@ go:
 go_import_path: github.com/prometheus/prometheus
 
 script:
+- df -h
 - go test -race -v ./storage/remote/...
 - make check_license style unused test staticcheck check_assets
 - git diff --exit-code
