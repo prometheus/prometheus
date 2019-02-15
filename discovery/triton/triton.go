@@ -159,7 +159,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer ticker.Stop()
 
 	// Get an initial set right away.
-	tg, err := d.refresh()
+	tg, err := d.refresh(ctx)
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
 	} else {
@@ -169,7 +169,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for {
 		select {
 		case <-ticker.C:
-			tg, err := d.refresh()
+			tg, err := d.refresh(ctx)
 			if err != nil {
 				level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
 			} else {
@@ -181,7 +181,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 }
 
-func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
+func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err error) {
 	t0 := time.Now()
 	defer func() {
 		refreshDuration.Observe(time.Since(t0).Seconds())
@@ -200,22 +200,27 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		Source: endpoint,
 	}
 
-	resp, err := d.client.Get(endpoint)
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred when requesting targets from the discovery endpoint. %s", err)
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("an error occurred when requesting targets from the discovery endpoint: %s", err)
 	}
 
 	defer resp.Body.Close()
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred when reading the response body. %s", err)
+		return nil, fmt.Errorf("an error occurred when reading the response body: %s", err)
 	}
 
 	dr := DiscoveryResponse{}
 	err = json.Unmarshal(data, &dr)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred unmarshaling the discovery response json. %s", err)
+		return nil, fmt.Errorf("an error occurred unmarshaling the discovery response json: %s", err)
 	}
 
 	for _, container := range dr.Containers {
