@@ -222,7 +222,6 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 
 	_, _, err = w.Segments()
 	testutil.Ok(t, err)
-
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
