@@ -154,7 +154,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 // Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
-	tg, err := d.refresh()
+	tg, err := d.refresh(ctx)
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 	} else {
@@ -170,7 +170,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for {
 		select {
 		case <-ticker.C:
-			tg, err := d.refresh()
+			tg, err := d.refresh(ctx)
 			if err != nil {
 				level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 				continue
@@ -185,7 +185,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 }
 
-func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
+func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err error) {
 	t0 := time.Now()
 	defer func() {
 		gceSDRefreshDuration.Observe(time.Since(t0).Seconds())
@@ -202,7 +202,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	if len(d.filter) > 0 {
 		ilc = ilc.Filter(d.filter)
 	}
-	err = ilc.Pages(context.TODO(), func(l *compute.InstanceList) error {
+	err = ilc.Pages(ctx, func(l *compute.InstanceList) error {
 		for _, inst := range l.Items {
 			if len(inst.NetworkInterfaces) == 0 {
 				continue
