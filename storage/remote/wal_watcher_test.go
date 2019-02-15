@@ -32,7 +32,6 @@ import (
 )
 
 var defaultRetry = 100 * time.Millisecond
-var baseTmpDir = os.Getenv("BASE_TMP_DIR")
 
 // retry executes f() n times at each interval until it returns true.
 func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
@@ -110,7 +109,7 @@ func Test_readToEnd_noCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	dir, err := ioutil.TempDir(baseTmpDir, "readToEnd_noCheckpoint")
+	dir, err := ioutil.TempDir("", "readToEnd_noCheckpoint")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 	wdir := path.Join(dir, "wal")
@@ -173,7 +172,7 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	dir, err := ioutil.TempDir(baseTmpDir, "readToEnd_withCheckpoint")
+	dir, err := ioutil.TempDir("", "readToEnd_withCheckpoint")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
@@ -256,7 +255,7 @@ func Test_readCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	dir, err := ioutil.TempDir(baseTmpDir, "readCheckpoint")
+	dir, err := ioutil.TempDir("", "readCheckpoint")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
@@ -318,7 +317,7 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	dir, err := ioutil.TempDir(baseTmpDir, "seriesReset")
+	dir, err := ioutil.TempDir("", "seriesReset")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
@@ -383,7 +382,7 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 }
 
 func Test_decodeRecord(t *testing.T) {
-	dir, err := ioutil.TempDir(baseTmpDir, "decodeRecord")
+	dir, err := ioutil.TempDir("", "decodeRecord")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
@@ -408,7 +407,7 @@ func Test_decodeRecord(t *testing.T) {
 }
 
 func Test_decodeRecord_afterStart(t *testing.T) {
-	dir, err := ioutil.TempDir(baseTmpDir, "decodeRecord")
+	dir, err := ioutil.TempDir("", "decodeRecord")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
