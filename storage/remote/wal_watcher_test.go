@@ -29,7 +29,8 @@ import (
 	"github.com/prometheus/tsdb/wal"
 )
 
-var defaultRetry = 100 * time.Millisecond
+var defaultRetryInterval = 100 * time.Millisecond
+var defaultRetries = 100
 
 // retry executes f() n times at each interval until it returns true.
 func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
@@ -145,7 +146,7 @@ func Test_readToEnd_noCheckpoint(t *testing.T) {
 	go watcher.Start()
 
 	expected := seriesCount
-	retry(t, defaultRetry, 10, func() bool {
+	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
 	testutil.Equals(t, expected, wt.checkNumLabels())
@@ -228,7 +229,7 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 	go watcher.Start()
 
 	expected := seriesCount * 10 * 2
-	retry(t, defaultRetry, 20, func() bool {
+	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
 	testutil.Equals(t, expected, wt.checkNumLabels())
@@ -290,7 +291,7 @@ func Test_readCheckpoint(t *testing.T) {
 	go watcher.Start()
 
 	expected := seriesCount * 10
-	retry(t, defaultRetry, 10, func() bool {
+	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
 	testutil.Equals(t, expected, wt.checkNumLabels())
@@ -347,7 +348,7 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 	go watcher.Start()
 
 	expected := seriesCount * 10
-	retry(t, defaultRetry, 50, func() bool {
+	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
 	testutil.Equals(t, seriesCount*10, wt.checkNumLabels())
