@@ -149,8 +149,8 @@ func Test_readToEnd_noCheckpoint(t *testing.T) {
 	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
-	testutil.Equals(t, expected, wt.checkNumLabels())
 	watcher.Stop()
+	testutil.Equals(t, expected, wt.checkNumLabels())
 }
 
 func Test_readToEnd_withCheckpoint(t *testing.T) {
@@ -232,8 +232,8 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
-	testutil.Equals(t, expected, wt.checkNumLabels())
 	watcher.Stop()
+	testutil.Equals(t, expected, wt.checkNumLabels())
 }
 
 func Test_readCheckpoint(t *testing.T) {
@@ -294,8 +294,8 @@ func Test_readCheckpoint(t *testing.T) {
 	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
-	testutil.Equals(t, expected, wt.checkNumLabels())
 	watcher.Stop()
+	testutil.Equals(t, expected, wt.checkNumLabels())
 }
 
 func Test_checkpoint_seriesReset(t *testing.T) {
@@ -351,8 +351,8 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
-	testutil.Equals(t, seriesCount*10, wt.checkNumLabels())
 	watcher.Stop()
+	testutil.Equals(t, seriesCount*10, wt.checkNumLabels())
 
 	// If you modify the checkpoint and truncate segment #'s run the test to see how
 	// many series records you end up with and change the last Equals check accordingly
