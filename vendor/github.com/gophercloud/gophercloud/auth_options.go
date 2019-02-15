@@ -185,7 +185,6 @@ func (opts *AuthOptions) ToTokenV3CreateMap(scope map[string]interface{}) (map[s
 	// Populate the request structure based on the provided arguments. Create and return an error
 	// if insufficient or incompatible information is present.
 	var req request
-	var userRequest userReq
 
 	if opts.Password == "" {
 		if opts.TokenID != "" {
@@ -229,25 +228,44 @@ func (opts *AuthOptions) ToTokenV3CreateMap(scope map[string]interface{}) (map[s
 			if opts.ApplicationCredentialSecret == "" {
 				return nil, ErrAppCredMissingSecret{}
 			}
-			// make sure that only one of DomainName or DomainID were provided
-			if opts.DomainID == "" && opts.DomainName == "" {
-				return nil, ErrDomainIDOrDomainName{}
+
+			var userRequest *userReq
+
+			if opts.UserID != "" {
+				// UserID could be used without the domain information
+				userRequest = &userReq{
+					ID: &opts.UserID,
+				}
 			}
-			req.Auth.Identity.Methods = []string{"application_credential"}
-			if opts.DomainID != "" {
-				userRequest = userReq{
+
+			if userRequest == nil && opts.Username == "" {
+				// Make sure that Username or UserID are provided
+				return nil, ErrUsernameOrUserID{}
+			}
+
+			if userRequest == nil && opts.DomainID != "" {
+				userRequest = &userReq{
 					Name:   &opts.Username,
 					Domain: &domainReq{ID: &opts.DomainID},
 				}
-			} else if opts.DomainName != "" {
-				userRequest = userReq{
+			}
+
+			if userRequest == nil && opts.DomainName != "" {
+				userRequest = &userReq{
 					Name:   &opts.Username,
 					Domain: &domainReq{Name: &opts.DomainName},
 				}
 			}
+
+			// Make sure that DomainID or DomainName are provided among Username
+			if userRequest == nil {
+				return nil, ErrDomainIDOrDomainName{}
+			}
+
+			req.Auth.Identity.Methods = []string{"application_credential"}
 			req.Auth.Identity.ApplicationCredential = &applicationCredentialReq{
 				Name:   &opts.ApplicationCredentialName,
-				User:   &userRequest,
+				User:   userRequest,
 				Secret: &opts.ApplicationCredentialSecret,
 			}
 		} else {
