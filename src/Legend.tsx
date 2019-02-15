@@ -8,19 +8,24 @@ interface LegendProps {
 
 class Legend extends PureComponent<LegendProps> {
   renderLegendItem(s: any) {
+    const seriesName = metricToSeriesName(s.labels, false);
     return (
-      <div key={s.label} className="legend-item">
-        <span className="legend-swatch">.</span>
-        <span className="legend-label">{s.label}</span>
-      </div>
+      <tr key={seriesName} className="legend-item">
+        <td>
+          <div className="legend-swatch" style={{backgroundColor: s.color}}></div>
+        </td>
+        <td>{seriesName}</td>
+      </tr>
     );
   }
 
   render() {
     return (
-      <div className="graph-legend">
-        {this.props.series.map((s: any) => {return this.renderLegendItem(s)})}
-      </div>
+      <table className="graph-legend">
+        <tbody>
+          {this.props.series.map((s: any) => {return this.renderLegendItem(s)})}
+        </tbody>
+      </table>
     );
   }
 }

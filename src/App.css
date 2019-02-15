@@ -121,9 +121,11 @@ div.endtime-input {
 }
 
 .graph-legend .legend-swatch {
-    width: 10px;
-    height: 10px;
-    background-color: red;
+    padding: 5px;
+    height: 5px;
+    outline-offset: 1px;
+    outline: 1.5px solid #ccc;
+    margin: 2px 8px 2px 0;
 }
 
 .graph {

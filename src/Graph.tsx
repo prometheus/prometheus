@@ -12,7 +12,6 @@ require('flot/source/jquery.canvaswrapper');
 require('jquery.flot.tooltip');
 
 import Legend from './Legend';
-import metricToSeriesName from './MetricFomat';
 
 var graphID = 0;
 function getGraphID() {
@@ -152,8 +151,42 @@ class Graph extends PureComponent<GraphProps> {
     };
   }
 
+  getColors() {
+    let colors = [];
+    const colorPool = ["#edc240", "#afd8f8", "#cb4b4b", "#4da74d", "#9440ed"];
+    const colorPoolSize = colorPool.length;
+    let variation = 0;
+    const neededColors = this.props.data.result.length;
+
+    for (let i = 0; i < neededColors; i++) {
+      const c = ($ as any).color.parse(colorPool[i % colorPoolSize] || "#666");
+
+      // Each time we exhaust the colors in the pool we adjust
+      // a scaling factor used to produce more variations on
+      // those colors. The factor alternates negative/positive
+      // to produce lighter/darker colors.
+
+      // Reset the variation after every few cycles, or else
+      // it will end up producing only white or black colors.
+
+      if (i % colorPoolSize === 0 && i) {
+        if (variation >= 0) {
+          if (variation < 0.5) {
+            variation = -variation - 0.2;
+          } else variation = 0;
+        } else variation = -variation;
+      }
+
+      colors[i] = c.scale('rgb', 1 + variation);
+    }
+
+    return colors;
+  }
+
   getData() {
-    return this.props.data.result.map((ts: any /* TODO: Type this*/) => {
+    const colors = this.getColors();
+
+    return this.props.data.result.map((ts: any /* TODO: Type this*/, index: number) => {
       // Insert nulls for all missing steps.
       let data = [];
       let pos = 0;
@@ -169,9 +202,9 @@ class Graph extends PureComponent<GraphProps> {
       }
 
       return {
-        label: ts.metric !== null ? metricToSeriesName(ts.metric, true) : 'scalar',
         labels: ts.metric !== null ? ts.metric : {},
         data: data,
+        color: colors[index],
       };
     })
   }
