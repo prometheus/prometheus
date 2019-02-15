@@ -14,7 +14,6 @@ jobs:
 
     steps:
     - checkout
-    - run: go test -race -v ./storage/remote/...
     - run: make promu
     - run: make check_license style unused staticcheck build check_assets
     - run:

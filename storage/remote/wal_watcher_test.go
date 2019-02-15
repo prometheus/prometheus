@@ -22,9 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/prometheus/tsdb"
 	"github.com/prometheus/tsdb/labels"
@@ -50,7 +48,6 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 
 type writeToMock struct {
 	samplesAppended      int
-	seriesLabels         map[uint64][]prompb.Label
 	seriesLock           sync.Mutex
 	seriesSegmentIndexes map[uint64]int
 }
@@ -61,20 +58,10 @@ func (wtm *writeToMock) Append(s []tsdb.RefSample) bool {
 }
 
 func (wtm *writeToMock) StoreSeries(series []tsdb.RefSeries, index int) {
-	temp := make(map[uint64][]prompb.Label, len(series))
-	for _, s := range series {
-		ls := make(model.LabelSet, len(s.Labels))
-		for _, label := range s.Labels {
-			ls[model.LabelName(label.Name)] = model.LabelValue(label.Value)
-		}
-
-		temp[s.Ref] = labelsetToLabelsProto(ls)
-	}
 	wtm.seriesLock.Lock()
 	defer wtm.seriesLock.Unlock()
-	for ref, labels := range temp {
-		wtm.seriesLabels[ref] = labels
-		wtm.seriesSegmentIndexes[ref] = index
+	for _, s := range series {
+		wtm.seriesSegmentIndexes[s.Ref] = index
 	}
 }
 
@@ -85,7 +72,6 @@ func (wtm *writeToMock) SeriesReset(index int) {
 	defer wtm.seriesLock.Unlock()
 	for k, v := range wtm.seriesSegmentIndexes {
 		if v < index {
-			delete(wtm.seriesLabels, k)
 			delete(wtm.seriesSegmentIndexes, k)
 		}
 	}
@@ -94,12 +80,11 @@ func (wtm *writeToMock) SeriesReset(index int) {
 func (wtm *writeToMock) checkNumLabels() int {
 	wtm.seriesLock.Lock()
 	defer wtm.seriesLock.Unlock()
-	return len(wtm.seriesLabels)
+	return len(wtm.seriesSegmentIndexes)
 }
 
 func newWriteToMock() *writeToMock {
 	return &writeToMock{
-		seriesLabels:         make(map[uint64][]prompb.Label),
 		seriesSegmentIndexes: make(map[uint64]int),
 	}
 }
@@ -396,7 +381,7 @@ func Test_decodeRecord(t *testing.T) {
 	watcher.decodeRecord(buf)
 	testutil.Ok(t, err)
 
-	testutil.Equals(t, 1, len(wt.seriesLabels))
+	testutil.Equals(t, 1, wt.checkNumLabels())
 
 	// decode a samples record
 	buf = enc.Samples([]tsdb.RefSample{tsdb.RefSample{Ref: 100, T: 1, V: 1.0}, tsdb.RefSample{Ref: 100, T: 2, V: 2.0}}, nil)
@@ -421,7 +406,7 @@ func Test_decodeRecord_afterStart(t *testing.T) {
 	watcher.decodeRecord(buf)
 	testutil.Ok(t, err)
 
-	testutil.Equals(t, 1, len(wt.seriesLabels))
+	testutil.Equals(t, 1, wt.checkNumLabels())
 
 	// decode a samples record
 	buf = enc.Samples([]tsdb.RefSample{tsdb.RefSample{Ref: 100, T: 1, V: 1.0}, tsdb.RefSample{Ref: 100, T: 2, V: 2.0}}, nil)
