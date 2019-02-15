@@ -8,6 +8,7 @@ require('flot/source/jquery.flot.crosshair');
 require('flot/source/jquery.flot.legend');
 require('flot/source/jquery.flot.time');
 require('flot/source/jquery.flot.hover');
+require('flot/source/jquery.flot.resize');
 require('jquery.flot.tooltip');
 
 import metricToSeriesName from './MetricFomat';
@@ -111,13 +112,15 @@ class Graph extends PureComponent<GraphProps> {
         mouseActiveRadius: 100,
       },
       legend: {
-        container: $(this.legendRef.current as any),
-        labelFormatter: (s: string) => {return '&nbsp;&nbsp;' + s}
+        //show: true,
+        labelFormatter: (s: string) => {return '&nbsp;&nbsp;' + s},
+        container: this.legendRef.current!,
       },
       xaxis: {
         mode: 'time',
         showTicks: true,
         showMinorTicks: true,
+        timeBase: 'milliseconds',
       },
       yaxis: {
         tickFormatter: this.formatValue,
@@ -157,7 +160,6 @@ class Graph extends PureComponent<GraphProps> {
       let data = [];
       let pos = 0;
       const params = this.props.queryParams!;
-      console.log(this.props.queryParams);
       for (let t = params.startTime; t <= params.endTime; t += params.resolution) {
         // Allow for floating point inaccuracy.
         if (ts.values.length > pos && ts.values[pos][0] < t + params.resolution / 100) {
@@ -194,11 +196,24 @@ class Graph extends PureComponent<GraphProps> {
     this.plot();
   }
 
+  componentWillUnmount() {
+    this.destroyPlot();
+  }
+
   plot() {
+    this.destroyPlot();
     if (this.chartRef.current === null || this.legendRef.current === null) {
       return;
     }
     $.plot($(this.chartRef.current!), this.getData(), this.getOptions());
+    //window.addEventListener('resize', () => this.plot());
+  }
+
+  destroyPlot() {
+    const chart = $(this.chartRef.current!).data('plot');
+    if (chart !== undefined) {
+      chart.destroy();
+    }
   }
 
   render() {
