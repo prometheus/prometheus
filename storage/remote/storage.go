@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
-	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -98,9 +97,6 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
-		// Convert to int64 for comparison with timestamps from samples
-		// we will eventually read from the WAL on startup.
-		startTime := timestamp.FromTime(time.Now())
 		newQueues = append(newQueues, NewQueueManager(
 			s.logger,
 			s.walDir,
@@ -111,7 +107,6 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			rwConf.WriteRelabelConfigs,
 			c,
 			s.flushDeadline,
-			startTime,
 		))
 	}
 

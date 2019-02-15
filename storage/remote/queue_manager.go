@@ -216,7 +216,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, highestTimestampIn *int64, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*pkgrelabel.Config, client StorageClient, flushDeadline time.Duration, startTime int64) *QueueManager {
+func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, highestTimestampIn *int64, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*pkgrelabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	} else {
@@ -250,7 +250,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, high
 	t.highestSentTimestampMetric = queueHighestSentTimestamp.WithLabelValues(t.queueName)
 	t.pendingSamplesMetric = queuePendingSamples.WithLabelValues(t.queueName)
 	t.enqueueRetriesMetric = enqueueRetriesTotal.WithLabelValues(t.queueName)
-	t.watcher = NewWALWatcher(logger, client.Name(), t, walDir, startTime)
+	t.watcher = NewWALWatcher(logger, client.Name(), t, walDir)
 	t.shards = t.newShards()
 
 	numShards.WithLabelValues(t.queueName).Set(float64(t.numShards))
