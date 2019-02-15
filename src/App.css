@@ -119,7 +119,12 @@ div.endtime-input {
     margin: 0 5px 0 5px;
 }
 
-.graph .flot-overlay {
+.graph-chart {
+    height: 500px;
+    width: 100%;
+}
+
+.graph-chart .flot-overlay {
     cursor: crosshair;
 }
 

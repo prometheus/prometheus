@@ -1,12 +1,14 @@
+import $ from 'jquery';
 import React, { PureComponent } from 'react';
 
 import { Alert } from 'reactstrap';
 
-import ReactFlot from 'react-flot';
-import '../node_modules/react-flot/flot/jquery.flot.time.min';
-import '../node_modules/react-flot/flot/jquery.flot.crosshair.min';
-import '../node_modules/react-flot/flot/jquery.flot.tooltip.min';
-import '../node_modules/react-flot/flot/jquery.flot.stack.min';
+require('flot');
+require('flot/source/jquery.flot.crosshair');
+require('flot/source/jquery.flot.legend');
+require('flot/source/jquery.flot.time');
+require('flot/source/jquery.flot.hover');
+require('jquery.flot.tooltip');
 
 import metricToSeriesName from './MetricFomat';
 
@@ -16,17 +18,23 @@ function getGraphID() {
   return graphID++;
 }
 
-class Graph extends PureComponent {
-  constructor(props) {
-    super(props);
-    this.state = {
-      legendRef: null,
-    };
-    this.id = getGraphID();
-  }
+interface GraphProps {
+  data: any; // TODO: Type this.
+  stacked: boolean;
+  queryParams: {
+    startTime: number,
+    endTime: number,
+    resolution: number,
+  } | null;
+}
 
-  escapeHTML(string) {
-    var entityMap = {
+class Graph extends PureComponent<GraphProps> {
+  private id: number = getGraphID();
+  private chartRef = React.createRef<HTMLDivElement>();
+  private legendRef = React.createRef<HTMLDivElement>();
+
+  escapeHTML(str: string) {
+    var entityMap: {[key: string]: string} = {
       '&': '&amp;',
       '<': '&lt;',
       '>': '&gt;',
@@ -35,42 +43,22 @@ class Graph extends PureComponent {
       '/': '&#x2F;'
     };
 
-    return String(string).replace(/[&<>"'/]/g, function (s) {
+    return String(str).replace(/[&<>"'/]/g, function (s) {
       return entityMap[s];
     });
   }
 
-  renderLabels(labels) {
-    let labelStrings = [];
+  renderLabels(labels: {[key: string]: string}) {
+    let labelStrings: string[] = [];
     for (let label in labels) {
       if (label !== '__name__') {
         labelStrings.push('<strong>' + label + '</strong>: ' + this.escapeHTML(labels[label]));
       }
     }
-    return labels = '<div class="labels">' + labelStrings.join('<br>') + '</div>';
+    return '<div class="labels">' + labelStrings.join('<br>') + '</div>';
   };
 
-  // axisUnits = [
-  //   {unit: 'Y', factor: 1e24},
-  //   {unit: 'Z', factor: 1e21},
-  //   {unit: 'E', factor: 1e18},
-  //   {unit: 'P', factor: 1e15},
-  //   {unit: 'T', factor: 1e12},
-  //   {unit: 'G', factor:  1e9},
-  //   {unit: 'M', factor:  1e6},
-  //   {unit: 'K', factor:  1e3},
-  //   {unit: null,factor:    1},
-  //   {unit: 'm', factor:  1e-3},
-  //   {unit: 'µ', factor:  1e-6},
-  //   {unit: 'n', factor:  1e-9},
-  //   {unit: 'p', factor: 1e-12},
-  //   {unit: 'f', factor: 1e-15},
-  //   {unit: 'a', factor: 1e-18},
-  //   {unit: 'z', factor: 1e-21},
-  //   {unit: 'y', factor: 1e-24},
-  // ]
-
-  formatValue = (y) => {
+  formatValue = (y: number): string => {
     var abs_y = Math.abs(y);
     if (abs_y >= 1e24) {
       return (y / 1e24).toFixed(2) + "Y";
@@ -111,68 +99,11 @@ class Graph extends PureComponent {
     } else if (abs_y <= 1) {
       return y.toFixed(2)
     }
+    throw Error("couldn't format a value, this is a bug");
   }
 
-  getOptions() {
+  getOptions(): any {
     return {
-      // colors: [
-      //   '#7EB26D', // 0: pale green
-      //   '#EAB839', // 1: mustard
-      //   '#6ED0E0', // 2: light blue
-      //   '#EF843C', // 3: orange
-      //   '#E24D42', // 4: red
-      //   '#1F78C1', // 5: ocean
-      //   '#BA43A9', // 6: purple
-      //   '#705DA0', // 7: violet
-      //   '#508642', // 8: dark green
-      //   '#CCA300', // 9: dark sand
-      //   '#447EBC',
-      //   '#C15C17',
-      //   '#890F02',
-      //   '#0A437C',
-      //   '#6D1F62',
-      //   '#584477',
-      //   '#B7DBAB',
-      //   '#F4D598',
-      //   '#70DBED',
-      //   '#F9BA8F',
-      //   '#F29191',
-      //   '#82B5D8',
-      //   '#E5A8E2',
-      //   '#AEA2E0',
-      //   '#629E51',
-      //   '#E5AC0E',
-      //   '#64B0C8',
-      //   '#E0752D',
-      //   '#BF1B00',
-      //   '#0A50A1',
-      //   '#962D82',
-      //   '#614D93',
-      //   '#9AC48A',
-      //   '#F2C96D',
-      //   '#65C5DB',
-      //   '#F9934E',
-      //   '#EA6460',
-      //   '#5195CE',
-      //   '#D683CE',
-      //   '#806EB7',
-      //   '#3F6833',
-      //   '#967302',
-      //   '#2F575E',
-      //   '#99440A',
-      //   '#58140C',
-      //   '#052B51',
-      //   '#511749',
-      //   '#3F2B5B',
-      //   '#E0F9D7',
-      //   '#FCEACA',
-      //   '#CFFAFF',
-      //   '#F9E2D2',
-      //   '#FCE2DE',
-      //   '#BADFF4',
-      //   '#F9D9F9',
-      //   '#DEDAF7',
-      // ],
       grid: {
         hoverable: true,
         clickable: true,
@@ -180,15 +111,13 @@ class Graph extends PureComponent {
         mouseActiveRadius: 100,
       },
       legend: {
-        container: this.state.legendRef,
-        labelFormatter: (s) => {return '&nbsp;&nbsp;' + s}
+        container: $(this.legendRef.current as any),
+        labelFormatter: (s: string) => {return '&nbsp;&nbsp;' + s}
       },
       xaxis: {
         mode: 'time',
         showTicks: true,
         showMinorTicks: true,
-        // min: (new Date()).getTime(),
-        // max: (new Date(2000, 1, 1)).getTime(),
       },
       yaxis: {
         tickFormatter: this.formatValue,
@@ -200,8 +129,8 @@ class Graph extends PureComponent {
       tooltip: {
         show: true,
         cssClass: 'graph-tooltip',
-        content: (label, xval, yval, flotItem) => {
-          const series = flotItem.series;
+        content: (label: string, xval: number, yval: number, flotItem: any) => {
+          const series = flotItem.series; // TODO: type this.
           var date = '<span class="date">' + new Date(xval).toUTCString() + '</span>';
           var swatch = '<span class="detail-swatch" style="background-color: ' + series.color + '"></span>';
           var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + yval + '</strong>';
@@ -223,11 +152,12 @@ class Graph extends PureComponent {
   }
 
   getData() {
-    return this.props.data.result.map(ts => {
+    return this.props.data.result.map((ts: any /* TODO: Type this*/) => {
       // Insert nulls for all missing steps.
       let data = [];
       let pos = 0;
-      const params = this.props.queryParams;
+      const params = this.props.queryParams!;
+      console.log(this.props.queryParams);
       for (let t = params.startTime; t <= params.endTime; t += params.resolution) {
         // Allow for floating point inaccuracy.
         if (ts.values.length > pos && ts.values[pos][0] < t + params.resolution / 100) {
@@ -246,15 +176,30 @@ class Graph extends PureComponent {
     })
   }
 
-  parseValue(value) {
+  parseValue(value: string) {
     var val = parseFloat(value);
     if (isNaN(val)) {
-      // "+Inf", "-Inf", "+Inf" will be parsed into NaN by parseFloat(). The
+      // "+Inf", "-Inf", "+Inf" will be parsed into NaN by parseFloat(). They
       // can't be graphed, so show them as gaps (null).
       return null;
     }
     return val;
   };
+
+  componentDidMount() {
+    this.plot();
+  }
+
+  componentDidUpdate() {
+    this.plot();
+  }
+
+  plot() {
+    if (this.chartRef.current === null || this.legendRef.current === null) {
+      return;
+    }
+    $.plot($(this.chartRef.current!), this.getData(), this.getOptions());
+  }
 
   render() {
     if (this.props.data === null) {
@@ -271,18 +216,8 @@ class Graph extends PureComponent {
 
     return (
       <div className="graph">
-        {this.state.legendRef &&
-          <ReactFlot
-            id={this.id.toString()}
-            data={this.getData()}
-            options={this.getOptions()}
-            height="500px"
-            width="100%"
-          />
-        }
-
-        {/* Really nasty hack below with setState to trigger a second render after the legend div starts to exist. */}
-        <div className="graph-legend" ref={ref => {!this.state.legendRef && this.setState({legendRef: ref})}}></div>
+        <div className="graph-chart" ref={this.chartRef} />
+        <div className="graph-legend" ref={this.legendRef} />
       </div>
     );
   }
