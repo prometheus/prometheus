@@ -276,7 +276,7 @@ func (w *WALWatcher) runWatcher() {
 	}
 }
 
-// Use tail true to indicate thatreader is currently on a segment that is
+// Use tail true to indicate that the reader is currently on a segment that is
 // actively being written to. If false, assume it's a full segment and we're
 // replaying it on start to cache the series records.
 func (w *WALWatcher) watch(wl *wal.WAL, reader *wal.LiveReader, tail bool) error {

@@ -31,6 +31,23 @@ import (
 	"github.com/prometheus/tsdb/wal"
 )
 
+var defaultRetry = 100 * time.Millisecond
+
+// retry executes f() n times at each interval until it returns true.
+func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
+	t.Helper()
+	ticker := time.NewTicker(interval)
+	for i := 0; i <= n; i++ {
+		if f() {
+			return
+		}
+		t.Logf("retry %d/%d", i, n)
+		<-ticker.C
+	}
+	ticker.Stop()
+	t.Logf("function returned false")
+}
+
 type writeToMock struct {
 	samplesAppended      int
 	seriesLabels         map[uint64][]prompb.Label
@@ -141,21 +158,13 @@ func Test_readToEnd_noCheckpoint(t *testing.T) {
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	go watcher.Start()
-	i := 0
-	ticker := time.NewTicker(100 * time.Millisecond)
-	for range ticker.C {
-		if wt.checkNumLabels() >= seriesCount*10*2 {
-			break
-		}
-		i++
-		if i >= 10 {
-			break
-		}
+	defer watcher.Stop()
 
-	}
-	watcher.Stop()
-	ticker.Stop()
-	testutil.Equals(t, seriesCount, wt.checkNumLabels())
+	expected := seriesCount
+	retry(t, defaultRetry, 10, func() bool {
+		return wt.checkNumLabels() >= expected
+	})
+	testutil.Equals(t, expected, wt.checkNumLabels())
 }
 
 func Test_readToEnd_withCheckpoint(t *testing.T) {
@@ -227,25 +236,18 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 
 	_, _, err = w.Segments()
 	testutil.Ok(t, err)
+
 	wt := newWriteToMock()
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	go watcher.Start()
-	i := 0
-	ticker := time.NewTicker(100 * time.Millisecond)
-	for range ticker.C {
-		if wt.checkNumLabels() >= seriesCount*10*2 {
-			break
-		}
-		i++
-		if i >= 20 {
-			break
-		}
+	defer watcher.Stop()
 
-	}
-	watcher.Stop()
-	ticker.Stop()
-	testutil.Equals(t, seriesCount*10*2, wt.checkNumLabels())
+	expected := seriesCount * 10 * 2
+	retry(t, defaultRetry, 20, func() bool {
+		return wt.checkNumLabels() >= expected
+	})
+	testutil.Equals(t, expected, wt.checkNumLabels())
 }
 
 func Test_readCheckpoint(t *testing.T) {
@@ -301,21 +303,13 @@ func Test_readCheckpoint(t *testing.T) {
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	go watcher.Start()
-	i := 0
-	ticker := time.NewTicker(100 * time.Millisecond)
-	for range ticker.C {
-		if wt.checkNumLabels() >= seriesCount*10*2 {
-			break
-		}
-		i++
-		if i >= 8 {
-			break
-		}
+	defer watcher.Stop()
 
-	}
-	watcher.Stop()
-	ticker.Stop()
-	testutil.Equals(t, seriesCount*10, wt.checkNumLabels())
+	expected := seriesCount * 10
+	retry(t, defaultRetry, 10, func() bool {
+		return wt.checkNumLabels() >= expected
+	})
+	testutil.Equals(t, expected, wt.checkNumLabels())
 }
 
 func Test_checkpoint_seriesReset(t *testing.T) {
@@ -366,21 +360,12 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 	st := timestamp.FromTime(time.Now())
 	watcher := NewWALWatcher(nil, "", wt, dir, st)
 	go watcher.Start()
-	i := 0
-	ticker := time.NewTicker(100 * time.Millisecond)
-	for range ticker.C {
-		if wt.checkNumLabels() >= seriesCount*10*2 {
-			break
-		}
+	defer watcher.Stop()
 
-		i++
-		if i >= 50 {
-			break
-		}
-
-	}
-	watcher.Stop()
-	ticker.Stop()
+	expected := seriesCount * 10
+	retry(t, defaultRetry, 50, func() bool {
+		return wt.checkNumLabels() >= expected
+	})
 	testutil.Equals(t, seriesCount*10, wt.checkNumLabels())
 
 	// If you modify the checkpoint and truncate segment #'s run the test to see how
