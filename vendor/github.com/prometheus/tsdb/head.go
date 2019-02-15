@@ -89,6 +89,7 @@ type headMetrics struct {
 	maxTime                 prometheus.GaugeFunc
 	samplesAppended         prometheus.Counter
 	walTruncateDuration     prometheus.Summary
+	walCorruptionsTotal     prometheus.Counter
 	headTruncateFail        prometheus.Counter
 	headTruncateTotal       prometheus.Counter
 	checkpointDeleteFail    prometheus.Counter
@@ -152,6 +153,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "prometheus_tsdb_wal_truncate_duration_seconds",
 		Help: "Duration of WAL truncation.",
 	})
+	m.walCorruptionsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_wal_corruptions_total",
+		Help: "Total number of WAL corruptions.",
+	})
 	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_samples_appended_total",
 		Help: "Total number of appended samples.",
@@ -195,6 +200,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.maxTime,
 			m.gcDuration,
 			m.walTruncateDuration,
+			m.walCorruptionsTotal,
 			m.samplesAppended,
 			m.headTruncateFail,
 			m.headTruncateTotal,
@@ -480,10 +486,10 @@ func (h *Head) Init(minValidTime int64) error {
 		return nil
 	}
 	level.Warn(h.logger).Log("msg", "encountered WAL error, attempting repair", "err", err)
+	h.metrics.walCorruptionsTotal.Inc()
 	if err := h.wal.Repair(err); err != nil {
 		return errors.Wrap(err, "repair corrupted WAL")
 	}
-
 	return nil
 }
 
@@ -500,7 +506,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return nil
 	}
 	atomic.StoreInt64(&h.minTime, mint)
-	h.minValidTime = mint
+	atomic.StoreInt64(&h.minValidTime, mint)
 
 	// Ensure that max time is at least as high as min time.
 	for h.MaxTime() < mint {
@@ -656,7 +662,7 @@ func (h *Head) appender() *headAppender {
 		head: h,
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
 		// This ensures that no samples will be added within the compaction window to avoid races.
-		minValidTime: max(h.minValidTime, h.MaxTime()-h.chunkRange/2),
+		minValidTime: max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2),
 		mint:         math.MaxInt64,
 		maxt:         math.MinInt64,
 		samples:      h.getAppendBuffer(),
@@ -679,6 +685,7 @@ func (h *Head) getAppendBuffer() []RefSample {
 }
 
 func (h *Head) putAppendBuffer(b []RefSample) {
+	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.appendPool.Put(b[:0])
 }
 
@@ -691,6 +698,7 @@ func (h *Head) getBytesBuffer() []byte {
 }
 
 func (h *Head) putBytesBuffer(b []byte) {
+	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.bytesPool.Put(b[:0])
 }
 
@@ -1088,25 +1096,30 @@ func (h *headIndexReader) Postings(name, value string) (index.Postings, error) {
 }
 
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
-	ep := make([]uint64, 0, 128)
+	series := make([]*memSeries, 0, 128)
 
+	// Fetch all the series only once.
 	for p.Next() {
-		ep = append(ep, p.At())
+		s := h.head.series.getByID(p.At())
+		if s == nil {
+			level.Debug(h.head.logger).Log("msg", "looked up series not found")
+		} else {
+			series = append(series, s)
+		}
 	}
 	if err := p.Err(); err != nil {
 		return index.ErrPostings(errors.Wrap(err, "expand postings"))
 	}
 
-	sort.Slice(ep, func(i, j int) bool {
-		a := h.head.series.getByID(ep[i])
-		b := h.head.series.getByID(ep[j])
-
-		if a == nil || b == nil {
-			level.Debug(h.head.logger).Log("msg", "looked up series not found")
-			return false
-		}
-		return labels.Compare(a.lset, b.lset) < 0
+	sort.Slice(series, func(i, j int) bool {
+		return labels.Compare(series[i].lset, series[j].lset) < 0
 	})
+
+	// Convert back to list.
+	ep := make([]uint64, 0, len(series))
+	for _, p := range series {
+		ep = append(ep, p.ref)
+	}
 	return index.NewListPostings(ep)
 }
 

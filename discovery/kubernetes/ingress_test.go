@@ -129,14 +129,13 @@ func expectedTargetGroups(ns string, tls TLSMode) map[string]*targetgroup.Group 
 }
 
 func TestIngressDiscoveryAdd(t *testing.T) {
-	n, c, w := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
+	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress(TLSNo)
 			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
-			w.Ingresses().Add(obj)
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSNo),
@@ -144,14 +143,13 @@ func TestIngressDiscoveryAdd(t *testing.T) {
 }
 
 func TestIngressDiscoveryAddTLS(t *testing.T) {
-	n, c, w := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
+	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress(TLSYes)
 			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
-			w.Ingresses().Add(obj)
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSYes),
@@ -159,14 +157,13 @@ func TestIngressDiscoveryAddTLS(t *testing.T) {
 }
 
 func TestIngressDiscoveryAddMixed(t *testing.T) {
-	n, c, w := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
+	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress(TLSMixed)
 			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
-			w.Ingresses().Add(obj)
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSMixed),
@@ -174,7 +171,7 @@ func TestIngressDiscoveryAddMixed(t *testing.T) {
 }
 
 func TestIngressDiscoveryNamespaces(t *testing.T) {
-	n, c, w := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
+	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
 
 	expected := expectedTargetGroups("ns1", TLSNo)
 	for k, v := range expectedTargetGroups("ns2", TLSNo) {
@@ -187,7 +184,6 @@ func TestIngressDiscoveryNamespaces(t *testing.T) {
 				obj := makeIngress(TLSNo)
 				obj.Namespace = ns
 				c.ExtensionsV1beta1().Ingresses(obj.Namespace).Create(obj)
-				w.Ingresses().Add(obj)
 			}
 		},
 		expectedMaxItems: 2,

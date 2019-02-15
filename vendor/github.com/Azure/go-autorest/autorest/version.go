@@ -14,7 +14,28 @@ package autorest
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
+import (
+	"fmt"
+	"runtime"
+)
+
+const number = "v11.2.8"
+
+var (
+	userAgent = fmt.Sprintf("Go/%s (%s-%s) go-autorest/%s",
+		runtime.Version(),
+		runtime.GOARCH,
+		runtime.GOOS,
+		number,
+	)
+)
+
+// UserAgent returns a string containing the Go version, system architecture and OS, and the go-autorest version.
+func UserAgent() string {
+	return userAgent
+}
+
 // Version returns the semantic version (see http://semver.org).
 func Version() string {
-	return "v10.8.1"
+	return number
 }

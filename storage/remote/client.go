@@ -70,15 +70,10 @@ type recoverableError struct {
 	error
 }
 
-// Store sends a batch of samples to the HTTP endpoint.
-func (c *Client) Store(ctx context.Context, req *prompb.WriteRequest) error {
-	data, err := proto.Marshal(req)
-	if err != nil {
-		return err
-	}
-
-	compressed := snappy.Encode(nil, data)
-	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(compressed))
+// Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
+// and encoded bytes from codec.go.
+func (c *Client) Store(ctx context.Context, req []byte) error {
+	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(req))
 	if err != nil {
 		// Errors from NewRequest are from unparseable URLs, so are not
 		// recoverable.

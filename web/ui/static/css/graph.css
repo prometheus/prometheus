@@ -138,7 +138,7 @@ input[name="end_input"], input[name="range_input"] {
   margin-right: -1px;
 }
 
-.error {
+.error, .warning {
   padding: 5px;
   margin: 2px;
 }
@@ -195,4 +195,9 @@ input[name="end_input"], input[name="range_input"] {
 .graph_container .rickshaw_legend {
   background-color: #222222;
   border-radius: 0;
+}
+
+ul.typeahead.dropdown-menu {
+  max-height: 400px;
+  overflow: auto;
 }

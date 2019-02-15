@@ -17,9 +17,10 @@ package prometheus;
 option go_package = "prompb";
 
 import "types.proto";
+import "gogoproto/gogo.proto";
 
 message WriteRequest {
-  repeated prometheus.TimeSeries timeseries = 1;
+  repeated prometheus.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];
 }
 
 message ReadRequest {

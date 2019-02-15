@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/rules"
@@ -163,6 +164,10 @@ func TestComputeExternalURL(t *testing.T) {
 
 // Let's provide an invalid configuration file and verify the exit status indicates the error.
 func TestFailedStartupExitCode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
 	fakeInputFile := "fake-input-file"
 	expectedExitStatus := 1
 
@@ -191,7 +196,7 @@ func TestSendAlerts(t *testing.T) {
 	}{
 		{
 			in: []*rules.Alert{
-				&rules.Alert{
+				{
 					Labels:      []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations: []labels.Label{{Name: "a2", Value: "v2"}},
 					ActiveAt:    time.Unix(1, 0),
@@ -200,7 +205,7 @@ func TestSendAlerts(t *testing.T) {
 				},
 			},
 			exp: []*notifier.Alert{
-				&notifier.Alert{
+				{
 					Labels:       []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations:  []labels.Label{{Name: "a2", Value: "v2"}},
 					StartsAt:     time.Unix(2, 0),
@@ -211,7 +216,7 @@ func TestSendAlerts(t *testing.T) {
 		},
 		{
 			in: []*rules.Alert{
-				&rules.Alert{
+				{
 					Labels:      []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations: []labels.Label{{Name: "a2", Value: "v2"}},
 					ActiveAt:    time.Unix(1, 0),
@@ -220,7 +225,7 @@ func TestSendAlerts(t *testing.T) {
 				},
 			},
 			exp: []*notifier.Alert{
-				&notifier.Alert{
+				{
 					Labels:       []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations:  []labels.Label{{Name: "a2", Value: "v2"}},
 					StartsAt:     time.Unix(2, 0),
@@ -245,5 +250,66 @@ func TestSendAlerts(t *testing.T) {
 			})
 			sendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
 		})
+	}
+}
+
+func TestWALSegmentSizeBounds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	for size, expectedExitStatus := range map[string]int{"9MB": 1, "257MB": 1, "10": 2, "1GB": 1, "12MB": 0} {
+		prom := exec.Command(promPath, "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig)
+		err := prom.Start()
+		testutil.Ok(t, err)
+
+		if expectedExitStatus == 0 {
+			done := make(chan error, 1)
+			go func() { done <- prom.Wait() }()
+			select {
+			case err := <-done:
+				t.Errorf("prometheus should be still running: %v", err)
+			case <-time.After(5 * time.Second):
+				prom.Process.Signal(os.Interrupt)
+			}
+			continue
+		}
+
+		err = prom.Wait()
+		testutil.NotOk(t, err, "")
+		if exitError, ok := err.(*exec.ExitError); ok {
+			status := exitError.Sys().(syscall.WaitStatus)
+			testutil.Equals(t, expectedExitStatus, status.ExitStatus())
+		} else {
+			t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
+		}
+	}
+}
+
+func TestChooseRetention(t *testing.T) {
+	retention1, err := model.ParseDuration("20d")
+	testutil.Ok(t, err)
+	retention2, err := model.ParseDuration("30d")
+	testutil.Ok(t, err)
+
+	cases := []struct {
+		oldFlagRetention model.Duration
+		newFlagRetention model.Duration
+
+		chosen model.Duration
+	}{
+		// Both are default (unset flags).
+		{defaultRetentionDuration, defaultRetentionDuration, defaultRetentionDuration},
+		// Old flag is set and new flag is unset.
+		{retention1, defaultRetentionDuration, retention1},
+		// Old flag is unset and new flag is set.
+		{defaultRetentionDuration, retention2, retention2},
+		// Both flags are set.
+		{retention1, retention2, retention2},
+	}
+
+	for _, tc := range cases {
+		retention := chooseRetention(tc.oldFlagRetention, tc.newFlagRetention)
+		testutil.Equals(t, tc.chosen, retention)
 	}
 }

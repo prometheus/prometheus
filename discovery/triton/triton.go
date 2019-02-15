@@ -41,7 +41,6 @@ const (
 	tritonLabelMachineBrand = tritonLabel + "machine_brand"
 	tritonLabelMachineImage = tritonLabel + "machine_image"
 	tritonLabelServerID     = tritonLabel + "server_id"
-	namespace               = "prometheus"
 )
 
 var (
@@ -84,16 +83,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Account == "" {
-		return fmt.Errorf("Triton SD configuration requires an account")
+		return fmt.Errorf("triton SD configuration requires an account")
 	}
 	if c.DNSSuffix == "" {
-		return fmt.Errorf("Triton SD configuration requires a dns_suffix")
+		return fmt.Errorf("triton SD configuration requires a dns_suffix")
 	}
 	if c.Endpoint == "" {
-		return fmt.Errorf("Triton SD configuration requires an endpoint")
+		return fmt.Errorf("triton SD configuration requires an endpoint")
 	}
 	if c.RefreshInterval <= 0 {
-		return fmt.Errorf("Triton SD configuration requires RefreshInterval to be a positive integer")
+		return fmt.Errorf("triton SD configuration requires RefreshInterval to be a positive integer")
 	}
 	return nil
 }
@@ -216,7 +215,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	dr := DiscoveryResponse{}
 	err = json.Unmarshal(data, &dr)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred unmarshaling the disovery response json. %s", err)
+		return tg, fmt.Errorf("an error occurred unmarshaling the discovery response json. %s", err)
 	}
 
 	for _, container := range dr.Containers {

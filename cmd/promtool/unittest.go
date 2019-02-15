@@ -84,7 +84,7 @@ func ruleUnitTest(filename string) []error {
 	groupOrderMap := make(map[string]int)
 	for i, gn := range unitTestInp.GroupEvalOrder {
 		if _, ok := groupOrderMap[gn]; ok {
-			return []error{fmt.Errorf("Group name repeated in evaluation order: %s", gn)}
+			return []error{fmt.Errorf("group name repeated in evaluation order: %s", gn)}
 		}
 		groupOrderMap[gn] = i
 	}

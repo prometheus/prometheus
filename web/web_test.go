@@ -25,6 +25,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
 	libtsdb "github.com/prometheus/tsdb"
@@ -101,8 +105,8 @@ func TestReadyAndHealthy(t *testing.T) {
 		Context:        nil,
 		Storage:        &tsdb.ReadyStorage{},
 		QueryEngine:    nil,
-		ScrapeManager:  nil,
-		RuleManager:    nil,
+		ScrapeManager:  &scrape.Manager{},
+		RuleManager:    &rules.Manager{},
 		Notifier:       nil,
 		RoutePrefix:    "/",
 		EnableAdminAPI: true,
@@ -118,6 +122,10 @@ func TestReadyAndHealthy(t *testing.T) {
 	opts.Flags = map[string]string{}
 
 	webHandler := New(nil, opts)
+
+	webHandler.config = &config.Config{}
+	webHandler.notifier = &notifier.Manager{}
+
 	go func() {
 		err := webHandler.Run(context.Background())
 		if err != nil {
@@ -159,6 +167,46 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 
+	resp, err = http.Get("http://localhost:9090/graph")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/alerts")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/flags")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/rules")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/service-discovery")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/targets")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/config")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/status")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+
 	// Set to ready.
 	webHandler.Ready()
 
@@ -188,6 +236,41 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
 
 	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/alerts")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/flags")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/rules")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/service-discovery")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/targets")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/config")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/status")
 
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)

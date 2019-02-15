@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -104,18 +105,18 @@ func (m *Manager) reload() {
 	m.mtxScrape.Lock()
 	var wg sync.WaitGroup
 	for setName, groups := range m.targetSets {
-		var sp *scrapePool
-		existing, ok := m.scrapePools[setName]
-		if !ok {
+		if _, ok := m.scrapePools[setName]; !ok {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
 			if !ok {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp = newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", setName))
+			sp, err := newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", setName))
+			if err != nil {
+				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
+				continue
+			}
 			m.scrapePools[setName] = sp
-		} else {
-			sp = existing
 		}
 
 		wg.Add(1)
@@ -123,7 +124,7 @@ func (m *Manager) reload() {
 		go func(sp *scrapePool, groups []*targetgroup.Group) {
 			sp.Sync(groups)
 			wg.Done()
-		}(sp, groups)
+		}(m.scrapePools[setName], groups)
 
 	}
 	m.mtxScrape.Unlock()
@@ -158,16 +159,24 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 	m.scrapeConfigs = c
 
-	// Cleanup and reload pool if config has changed.
+	// Cleanup and reload pool if the configuration has changed.
+	var failed bool
 	for name, sp := range m.scrapePools {
 		if cfg, ok := m.scrapeConfigs[name]; !ok {
 			sp.stop()
 			delete(m.scrapePools, name)
 		} else if !reflect.DeepEqual(sp.config, cfg) {
-			sp.reload(cfg)
+			err := sp.reload(cfg)
+			if err != nil {
+				level.Error(m.logger).Log("msg", "error reloading scrape pool", "err", err, "scrape_pool", name)
+				failed = true
+			}
 		}
 	}
 
+	if failed {
+		return fmt.Errorf("failed to apply the new configuration")
+	}
 	return nil
 }
 

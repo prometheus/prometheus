@@ -22,12 +22,6 @@ import (
 
 const filePerm = 0644
 
-type archiver interface {
-	write(filename string, b []byte) error
-	close() error
-	filename() string
-}
-
 type tarGzFileWriter struct {
 	tarWriter *tar.Writer
 	gzWriter  *gzip.Writer
@@ -71,8 +65,4 @@ func (w *tarGzFileWriter) write(filename string, b []byte) error {
 		return err
 	}
 	return nil
-}
-
-func (w *tarGzFileWriter) filename() string {
-	return w.file.Name()
 }

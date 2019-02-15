@@ -80,28 +80,6 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 	return err
 }
 
-// ToWriteRequest converts an array of samples into a WriteRequest proto.
-func ToWriteRequest(samples []*model.Sample) *prompb.WriteRequest {
-	req := &prompb.WriteRequest{
-		Timeseries: make([]*prompb.TimeSeries, 0, len(samples)),
-	}
-
-	for _, s := range samples {
-		ts := prompb.TimeSeries{
-			Labels: MetricToLabelProtos(s.Metric),
-			Samples: []prompb.Sample{
-				{
-					Value:     float64(s.Value),
-					Timestamp: int64(s.Timestamp),
-				},
-			},
-		}
-		req.Timeseries = append(req.Timeseries, &ts)
-	}
-
-	return req
-}
-
 // ToQuery builds a Query proto.
 func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams) (*prompb.Query, error) {
 	ms, err := toLabelMatchers(matchers)
@@ -302,13 +280,13 @@ func (c *concreteSeriesIterator) Err() error {
 func validateLabelsAndMetricName(ls labels.Labels) error {
 	for _, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
-			return fmt.Errorf("Invalid metric name: %v", l.Value)
+			return fmt.Errorf("invalid metric name: %v", l.Value)
 		}
 		if !model.LabelName(l.Name).IsValid() {
-			return fmt.Errorf("Invalid label name: %v", l.Name)
+			return fmt.Errorf("invalid label name: %v", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
-			return fmt.Errorf("Invalid label value: %v", l.Value)
+			return fmt.Errorf("invalid label value: %v", l.Value)
 		}
 	}
 	return nil
@@ -364,21 +342,6 @@ func fromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 	return result, nil
 }
 
-// MetricToLabelProtos builds a []*prompb.Label from a model.Metric
-func MetricToLabelProtos(metric model.Metric) []*prompb.Label {
-	labels := make([]*prompb.Label, 0, len(metric))
-	for k, v := range metric {
-		labels = append(labels, &prompb.Label{
-			Name:  string(k),
-			Value: string(v),
-		})
-	}
-	sort.Slice(labels, func(i int, j int) bool {
-		return labels[i].Name < labels[j].Name
-	})
-	return labels
-}
-
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))
@@ -388,7 +351,7 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	return metric
 }
 
-func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
+func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	result := make(labels.Labels, 0, len(labelPairs))
 	for _, l := range labelPairs {
 		result = append(result, labels.Label{
@@ -400,21 +363,33 @@ func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
 	return result
 }
 
-func labelsToLabelsProto(labels labels.Labels) []*prompb.Label {
-	result := make([]*prompb.Label, 0, len(labels))
+func labelsetToLabelsProto(ls model.LabelSet) []prompb.Label {
+	result := make([]prompb.Label, 0, len(ls))
+	keys := make([]string, 0, len(ls))
+
+	for k := range ls {
+		keys = append(keys, string(k))
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		ln := model.LabelName(k)
+		result = append(result, prompb.Label{
+			Name:  k,
+			Value: string(ls[ln]),
+		})
+	}
+
+	return result
+}
+
+func labelsToLabelsProto(labels labels.Labels) []prompb.Label {
+	result := make([]prompb.Label, 0, len(labels))
 	for _, l := range labels {
-		result = append(result, &prompb.Label{
+		result = append(result, prompb.Label{
 			Name:  l.Name,
 			Value: l.Value,
 		})
 	}
 	return result
-}
-
-func labelsToMetric(ls labels.Labels) model.Metric {
-	metric := make(model.Metric, len(ls))
-	for _, l := range ls {
-		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-	}
-	return metric
 }

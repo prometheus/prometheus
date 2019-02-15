@@ -31,6 +31,15 @@ load 5m
 	request_duration_seconds_bucket{job="job2", instance="ins2", le="0.2"}	0+7x10
 	request_duration_seconds_bucket{job="job2", instance="ins2", le="+Inf"}	0+9x10
 
+# Different le representations in one histogram.
+load 5m
+	mixed_bucket{job="job1", instance="ins1", le="0.1"}	0+1x10
+	mixed_bucket{job="job1", instance="ins1", le="0.2"}	0+1x10
+	mixed_bucket{job="job1", instance="ins1", le="2e-1"}	0+1x10
+	mixed_bucket{job="job1", instance="ins1", le="2.0e-1"}	0+1x10
+	mixed_bucket{job="job1", instance="ins1", le="+Inf"}	0+4x10
+	mixed_bucket{job="job1", instance="ins2", le="+inf"}	0+0x10
+	mixed_bucket{job="job1", instance="ins2", le="+Inf"}	0+0x10
 
 # Quantile too low.
 eval instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
@@ -157,3 +166,16 @@ load 5m
 # Nonmonotonic buckets
 eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
     {} 0.989875
+
+# Buckets with different representations of the same upper bound.
+eval instant at 50m histogram_quantile(0.5, rate(mixed_bucket[5m]))
+	{instance="ins1", job="job1"} 0.15
+	{instance="ins2", job="job1"} NaN
+
+eval instant at 50m histogram_quantile(0.75, rate(mixed_bucket[5m]))
+	{instance="ins1", job="job1"} 0.2
+	{instance="ins2", job="job1"} NaN
+
+eval instant at 50m histogram_quantile(1, rate(mixed_bucket[5m]))
+	{instance="ins1", job="job1"} 0.2
+	{instance="ins2", job="job1"} NaN

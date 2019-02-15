@@ -118,7 +118,7 @@ func TestCompressionHandler_Gzip(t *testing.T) {
 		t.Error("unexpected error while reading from response body")
 	}
 
-	actual := string(buf.Bytes())
+	actual := buf.String()
 	expected := "Hello World!"
 	if expected != actual {
 		t.Errorf("expected response with content %s, but got %s", expected, actual)
@@ -168,7 +168,7 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 		t.Error("unexpected error while reading from response body")
 	}
 
-	actual := string(buf.Bytes())
+	actual := buf.String()
 	expected := "Hello World!"
 	if expected != actual {
 		t.Errorf("expected response with content %s, but got %s", expected, actual)

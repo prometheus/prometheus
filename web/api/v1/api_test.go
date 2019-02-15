@@ -33,6 +33,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
@@ -279,9 +280,14 @@ func TestEndpoints(t *testing.T) {
 			Format: &af,
 		}
 
-		remote := remote.NewStorage(promlog.New(&promlogConfig), func() (int64, error) {
+		dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
+		testutil.Ok(t, err)
+		defer os.RemoveAll(dbDir)
+
+		testutil.Ok(t, err)
+		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
-		}, 1*time.Second)
+		}, dbDir, 1*time.Second)
 
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{
@@ -987,7 +993,7 @@ func TestReadEndpoint(t *testing.T) {
 	expected := &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
 			{
-				Labels: []*prompb.Label{
+				Labels: []prompb.Label{
 					{Name: "__name__", Value: "test_metric1"},
 					{Name: "b", Value: "c"},
 					{Name: "baz", Value: "qux"},
@@ -1053,7 +1059,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    snapshotAPI,
-			values:      map[string][]string{"skip_head": []string{"true"}},
+			values:      map[string][]string{"skip_head": {"true"}},
 
 			errType: errorNone,
 		},
@@ -1061,7 +1067,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    snapshotAPI,
-			values:      map[string][]string{"skip_head": []string{"xxx"}},
+			values:      map[string][]string{"skip_head": {"xxx"}},
 
 			errType: errorBadData,
 		},
@@ -1127,7 +1133,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"123"}},
+			values:      map[string][]string{"match[]": {"123"}},
 
 			errType: errorBadData,
 		},
@@ -1135,7 +1141,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}, "start": []string{"xxx"}},
+			values:      map[string][]string{"match[]": {"up"}, "start": {"xxx"}},
 
 			errType: errorBadData,
 		},
@@ -1143,7 +1149,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}, "end": []string{"xxx"}},
+			values:      map[string][]string{"match[]": {"up"}, "end": {"xxx"}},
 
 			errType: errorBadData,
 		},
@@ -1151,7 +1157,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}},
+			values:      map[string][]string{"match[]": {"up"}},
 
 			errType: errorNone,
 		},
@@ -1159,7 +1165,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up{job!=\"foo\"}", "{job=~\"bar.+\"}", "up{instance!~\"fred.+\"}"}},
+			values:      map[string][]string{"match[]": {"up{job!=\"foo\"}", "{job=~\"bar.+\"}", "up{instance!~\"fred.+\"}"}},
 
 			errType: errorNone,
 		},
@@ -1167,7 +1173,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdbWithError,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}},
+			values:      map[string][]string{"match[]": {"up"}},
 
 			errType: errorInternal,
 		},
@@ -1415,12 +1421,6 @@ func TestOptionsMethod(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("Expected status %d, got %d", http.StatusNoContent, resp.StatusCode)
-	}
-
-	for h, v := range corsHeaders {
-		if resp.Header.Get(h) != v {
-			t.Fatalf("Expected %q for header %q, got %q", v, h, resp.Header.Get(h))
-		}
 	}
 }
 
