@@ -85,6 +85,10 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+
+	// Define fixed length millisecond timestamp format.
+	log.DefaultTimestamp = log.TimestampFormat(time.Now, "2006-01-02T15:04:05.000Z07:00")
+	log.DefaultTimestampUTC = log.TimestampFormat(func() time.Time { return time.Now().UTC() }, "2006-01-02T15:04:05.000Z07:00")
 }
 
 func main() {
