@@ -76,7 +76,7 @@ class TimeInput extends Component<TimeInputProps> {
         showToday: true,
       },
       sideBySide: true,
-      format: 'YYYY-MM-DD HH:mm:ss',
+      format: 'YYYY-MM-DD HH:MM',
       locale: 'en',
       timeZone: 'UTC',
       defaultDate: this.props.endTime,

@@ -11,7 +11,7 @@ body {
 }
 
 .expression-input textarea {
-    /* font-family: 'Courier New', Courier, monospace; */
+    font-family: Menlo,Monaco,Consolas,'Courier New',monospace;
     resize: none;
 }
 
@@ -92,7 +92,7 @@ button.execute-btn {
 }
 
 div.endtime-input {
-    width: 270px !important;
+    width: 240px !important;
 }
 
 .table-controls input {
@@ -126,6 +126,14 @@ div.endtime-input {
     outline-offset: 1px;
     outline: 1.5px solid #ccc;
     margin: 2px 8px 2px 0;
+}
+
+.legend-metric-name {
+    margin-right: 1px;
+}
+
+.legend-label-name {
+    font-weight: bold;
 }
 
 .graph {
@@ -168,6 +176,5 @@ div.endtime-input {
 }
 
 .add-panel-btn {
-    margin-top: -20px;
     margin-bottom: 20px;
 }

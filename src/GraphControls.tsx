@@ -18,6 +18,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 
 import TimeInput from './TimeInput';
+import { parseRange, formatRange } from './utils/timeFormat';
 
 library.add(
   faPlus,
@@ -42,15 +43,6 @@ class GraphControls extends Component<GraphControlsProps> {
   private rangeRef = React.createRef<HTMLInputElement>();
   private resolutionRef = React.createRef<HTMLInputElement>();
 
-  rangeUnits: {[unit: string]: number} = {
-    'y': 60 * 60 * 24 * 365,
-    'w': 60 * 60 * 24 * 7,
-    'd': 60 * 60 * 24,
-    'h': 60 * 60,
-    'm': 60,
-    's': 1
-  }
-
   rangeSteps = [
     1,
     10,
@@ -72,28 +64,8 @@ class GraphControls extends Component<GraphControlsProps> {
     730*24*60*60,
   ]
 
-  parseRange(rangeText: string): number | null {
-    const rangeRE = new RegExp('^([0-9]+)([ywdhms]+)$');
-    const matches = rangeText.match(rangeRE);
-    if (!matches || matches.length !== 3) {
-      return null;
-    }
-    const value = parseInt(matches[1]);
-    const unit = matches[2];
-    return value * this.rangeUnits[unit];
-  }
-
-  formatRange(range: number): string {
-    for (let unit of Object.keys(this.rangeUnits)) {
-      if (range % this.rangeUnits[unit] === 0) {
-        return (range / this.rangeUnits[unit]) + unit;
-      }
-    }
-    return range + 's';
-  }
-
   onChangeRangeInput = (rangeText: string): void => {
-    const range = this.parseRange(rangeText);
+    const range = parseRange(rangeText);
     if (range === null) {
       this.changeRangeInput(this.props.range);
     } else {
@@ -102,7 +74,7 @@ class GraphControls extends Component<GraphControlsProps> {
   }
 
   changeRangeInput = (range: number): void => {
-    this.rangeRef.current!.value = this.formatRange(range);
+    this.rangeRef.current!.value = formatRange(range);
   }
 
   increaseRange = (): void => {
@@ -134,7 +106,7 @@ class GraphControls extends Component<GraphControlsProps> {
           </InputGroupAddon>
 
           <Input
-            defaultValue={this.formatRange(this.props.range)}
+            defaultValue={formatRange(this.props.range)}
             innerRef={this.rangeRef}
             onBlur={() => this.onChangeRangeInput(this.rangeRef.current!.value)}
           />

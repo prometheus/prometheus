@@ -2,8 +2,7 @@ import React, { PureComponent, ReactNode } from 'react';
 
 import { Alert, Table } from 'reactstrap';
 
-import metricToSeriesName from './MetricFomat';
-import { ReactComponent } from '*.svg';
+import SeriesName from './SeriesName';
 
 export interface QueryResult {
   data: null | {
@@ -48,6 +47,7 @@ class DataTable extends PureComponent<QueryResult> {
   }
 
   render() {
+    console.log("RENDER!");
     const data = this.props.data;
 
     if (data === null) {
@@ -64,7 +64,7 @@ class DataTable extends PureComponent<QueryResult> {
       case 'vector':
         rows = (this.limitSeries(data.result) as InstantSample[])
           .map((s: InstantSample, index: number): ReactNode => {
-            return <tr key={index}><td>{metricToSeriesName(s.metric, false)}</td><td>{s.value[1]}</td></tr>
+            return <tr key={index}><td><SeriesName labels={s.metric} format={false}/></td><td>{s.value[1]}</td></tr>;
           });
         limited = rows.length != data.result.length;
         break;
@@ -74,7 +74,7 @@ class DataTable extends PureComponent<QueryResult> {
             const valueText = s.values.map((v) => {
               return [1] + ' @' + v[0];
             }).join('\n');
-            return <tr style={{whiteSpace: 'pre'}} key={index}><td>{metricToSeriesName(s.metric, false)}</td><td>{valueText}</td></tr>
+            return <tr style={{whiteSpace: 'pre'}} key={index}><td><SeriesName labels={s.metric} format={false}/></td><td>{valueText}</td></tr>;
           });
         limited = rows.length != data.result.length;
         break;

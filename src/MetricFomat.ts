@@ -1,4 +1,4 @@
-function metricToSeriesName(labels: {[key: string]: string}, formatHTML: boolean): string {
+function metricToSeriesName(labels: {[key: string]: string}): string {
   if (labels === null) {
     return 'scalar';
   }
@@ -6,7 +6,7 @@ function metricToSeriesName(labels: {[key: string]: string}, formatHTML: boolean
   let labelStrings: string[] = [];
   for (let label in labels) {
     if (label !== '__name__') {
-      labelStrings.push((formatHTML ? '<b>' : '') + label + (formatHTML ? '</b>' : '') + '="' + labels[label] + '"');
+      labelStrings.push(label + '="' + labels[label] + '"');
     }
   }
   tsName += labelStrings.join(', ') + '}';

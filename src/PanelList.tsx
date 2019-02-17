@@ -2,15 +2,17 @@ import React, { Component } from 'react';
 
 import { Alert, Button, Col, Row } from 'reactstrap';
 
-import Panel from './Panel';
+import Panel, { PanelOptions, PanelType, PanelDefaultOptions } from './Panel';
+import { getPanelOptionsFromQueryString } from './utils/urlParams';
 
 interface PanelListState {
   panels: {
-    key: string,
+    key: string;
+    initialOptions?: PanelOptions;
   }[],
-  metricNames: string[],
-  fetchMetricsError: string | null,
-  timeDriftError: string | null,
+  metricNames: string[];
+  fetchMetricsError: string | null;
+  timeDriftError: string | null;
 }
 
 class PanelList extends Component<any, PanelListState> {
@@ -19,8 +21,20 @@ class PanelList extends Component<any, PanelListState> {
   constructor(props: any) {
     super(props);
 
+    const urlPanels = getPanelOptionsFromQueryString(window.location.search).map((opts: PanelOptions) => {
+      return {
+        key: this.getKey(),
+        initialOptions: opts,
+      };
+    });
+
     this.state = {
-      panels: [],
+      panels: urlPanels.length !== 0 ? urlPanels : [
+        {
+          key: this.getKey(),
+          initialOptions: PanelDefaultOptions,
+        },
+      ],
       metricNames: [],
       fetchMetricsError: null,
       timeDriftError: null,
@@ -30,8 +44,6 @@ class PanelList extends Component<any, PanelListState> {
   }
 
   componentDidMount() {
-    this.addPanel();
-
     fetch("http://demo.robustperception.io:9090/api/v1/label/__name__/values", {cache: "no-store"})
     .then(resp => {
       if (resp.ok) {
@@ -95,7 +107,12 @@ class PanelList extends Component<any, PanelListState> {
           </Col>
         </Row>
         {this.state.panels.map(p =>
-          <Panel key={p.key} removePanel={() => this.removePanel(p.key)} metricNames={this.state.metricNames}/>
+          <Panel
+            key={p.key}
+            initialOptions={p.initialOptions}
+            removePanel={() => this.removePanel(p.key)}
+            metricNames={this.state.metricNames}
+          />
         )}
         <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>Add Panel</Button>
       </>

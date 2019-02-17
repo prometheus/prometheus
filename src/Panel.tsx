@@ -22,18 +22,14 @@ import TimeInput from './TimeInput';
 
 interface PanelProps {
   metricNames: string[];
+  initialOptions?: PanelOptions | undefined;
   removePanel: () => void;
   // TODO Put initial panel values here.
 }
 
 interface PanelState {
-  expr: string;
-  type: 'graph' | 'table';
-  range: number;
-  endTime: number | null;
-  resolution: number | null;
-  stacked: boolean;
-  data: any; // TODO: Define data.
+  options: PanelOptions;
+  data: any; // TODO: Type data.
   lastQueryParams: { // TODO: Share these with Graph.tsx in a file.
     startTime: number,
     endTime: number,
@@ -44,6 +40,29 @@ interface PanelState {
   stats: null; // TODO: Stats.
 }
 
+export interface PanelOptions {
+  expr: string;
+  type: PanelType;
+  range: number; // Range in seconds.
+  endTime: number | null; // Timestamp in milliseconds.
+  resolution: number | null; // Resolution in seconds.
+  stacked: boolean;
+}
+
+export enum PanelType {
+  Graph = 'graph',
+  Table = 'table',
+}
+
+export const PanelDefaultOptions: PanelOptions = {
+  type: PanelType.Table,
+  expr: 'rate(node_cpu_seconds_total[5m])',
+  range: 3600,
+  endTime: null,
+  resolution: null,
+  stacked: false,
+}
+
 class Panel extends Component<PanelProps, PanelState> {
   private abortInFlightFetch: (() => void) | null = null;
 
@@ -51,12 +70,14 @@ class Panel extends Component<PanelProps, PanelState> {
     super(props);
 
     this.state = {
-      expr: 'rate(node_cpu_seconds_total[1m])',
-      type: 'graph',
-      range: 3600,
-      endTime: null, // This is in milliseconds.
-      resolution: null,
-      stacked: false,
+      options: this.props.initialOptions ? this.props.initialOptions : {
+        expr: '',
+        type: PanelType.Table,
+        range: 3600,
+        endTime: null, // This is in milliseconds.
+        resolution: null,
+        stacked: false,
+      },
       data: null,
       lastQueryParams: null,
       loading: false,
@@ -66,12 +87,14 @@ class Panel extends Component<PanelProps, PanelState> {
   }
 
   componentDidUpdate(prevProps: PanelProps, prevState: PanelState) {
-    if (prevState.type !== this.state.type ||
-        prevState.range !== this.state.range ||
-        prevState.endTime !== this.state.endTime ||
-        prevState.resolution !== this.state.resolution) {
+    const prevOpts = prevState.options;
+    const opts = this.state.options;
+    if (prevOpts.type !== opts.type ||
+        prevOpts.range !== opts.range ||
+        prevOpts.endTime !== opts.endTime ||
+        prevOpts.resolution !== opts.resolution) {
 
-      if (prevState.type !== this.state.type) {
+      if (prevOpts.type !== opts.type) {
         // If the other options change, we still want to show the old data until the new
         // query completes, but this is not a good idea when we actually change between
         // table and graph view, since not all queries work well in both.
@@ -86,7 +109,7 @@ class Panel extends Component<PanelProps, PanelState> {
   }
 
   executeQuery = (): void => {
-    if (this.state.expr === '') {
+    if (this.state.options.expr === '') {
       return;
     }
 
@@ -100,15 +123,15 @@ class Panel extends Component<PanelProps, PanelState> {
     this.setState({loading: true});
 
     const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn'T valueof only work when it's a moment?
-    const startTime = endTime - this.state.range;
-    const resolution = this.state.resolution || Math.max(Math.floor(this.state.range / 250), 1);
+    const startTime = endTime - this.state.options.range;
+    const resolution = this.state.options.resolution || Math.max(Math.floor(this.state.options.range / 250), 1);
 
     const url = new URL('http://demo.robustperception.io:9090/');//window.location.href);
     const params: {[key: string]: string} = {
-      'query': this.state.expr,
+      'query': this.state.options.expr,
     };
 
-    switch (this.state.type) {
+    switch (this.state.options.type) {
       case 'graph':
         url.pathname = '/api/v1/query_range'
         Object.assign(params, {
@@ -125,7 +148,7 @@ class Panel extends Component<PanelProps, PanelState> {
         })
         break;
       default:
-        throw new Error('Invalid panel type "' + this.state.type + '"');
+        throw new Error('Invalid panel type "' + this.state.options.type + '"');
     }
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
 
@@ -160,35 +183,40 @@ class Panel extends Component<PanelProps, PanelState> {
     });
   }
 
+  setOptions(opts: object): void {
+    const newOpts = Object.assign({}, this.state.options);
+    this.setState({options: Object.assign(newOpts, opts)});
+  }
+
   handleExpressionChange = (expr: string): void => {
-    this.setState({expr: expr});
+    this.setOptions({expr: expr});
   }
 
   handleChangeRange = (range: number): void => {
-    this.setState({range: range});
+    this.setOptions({range: range});
   }
 
   getEndTime = (): number | moment.Moment => {
-    if (this.state.endTime === null) {
+    if (this.state.options.endTime === null) {
       return moment();
     }
-    return this.state.endTime;
+    return this.state.options.endTime;
   }
 
   handleChangeEndTime = (endTime: number | null) => {
-    this.setState({endTime: endTime});
+    this.setOptions({endTime: endTime});
   }
 
   handleChangeResolution = (resolution: number) => {
     // TODO: Where should we validate domain model constraints? In the parent's
     // change handler like here, or in the calling component?
     if (resolution > 0) {
-      this.setState({resolution: resolution});
+      this.setOptions({resolution: resolution});
     }
   }
 
   handleChangeStacking = (stacked: boolean) => {
-    this.setState({stacked: stacked});
+    this.setOptions({stacked: stacked});
   }
 
   render() {
@@ -197,7 +225,7 @@ class Panel extends Component<PanelProps, PanelState> {
         <Row>
           <Col>
             <ExpressionInput
-              value={this.state.expr}
+              value={this.state.options.expr}
               onChange={this.handleExpressionChange}
               executeQuery={this.executeQuery}
               loading={this.state.loading}
@@ -215,45 +243,45 @@ class Panel extends Component<PanelProps, PanelState> {
             <Nav tabs>
               <NavItem>
                 <NavLink
-                  className={this.state.type === 'graph' ? 'active' : ''}
-                  onClick={() => { this.setState({type: 'graph'}); }}
+                  className={this.state.options.type === 'graph' ? 'active' : ''}
+                  onClick={() => { this.setOptions({type: 'graph'}); }}
                 >
                   Graph
                 </NavLink>
               </NavItem>
               <NavItem>
                 <NavLink
-                  className={this.state.type === 'table' ? 'active' : ''}
-                  onClick={() => { this.setState({type: 'table'}); }}
+                  className={this.state.options.type === 'table' ? 'active' : ''}
+                  onClick={() => { this.setOptions({type: 'table'}); }}
                 >
                   Table
                 </NavLink>
               </NavItem>
             </Nav>
-            <TabContent activeTab={this.state.type}>
+            <TabContent activeTab={this.state.options.type}>
               <TabPane tabId="graph">
-                {this.state.type === 'graph' &&
+                {this.state.options.type === 'graph' &&
                   <>
                     <GraphControls
-                      range={this.state.range}
-                      endTime={this.state.endTime}
-                      resolution={this.state.resolution}
-                      stacked={this.state.stacked}
+                      range={this.state.options.range}
+                      endTime={this.state.options.endTime}
+                      resolution={this.state.options.resolution}
+                      stacked={this.state.options.stacked}
 
                       onChangeRange={this.handleChangeRange}
                       onChangeEndTime={this.handleChangeEndTime}
                       onChangeResolution={this.handleChangeResolution}
                       onChangeStacking={this.handleChangeStacking}
                     />
-                    <Graph data={this.state.data} stacked={this.state.stacked} queryParams={this.state.lastQueryParams} />
+                    <Graph data={this.state.data} stacked={this.state.options.stacked} queryParams={this.state.lastQueryParams} />
                   </>
                 }
               </TabPane>
               <TabPane tabId="table">
-                {this.state.type === 'table' &&
+                {this.state.options.type === 'table' &&
                   <>
                     <div className="table-controls">
-                      <TimeInput endTime={this.state.endTime} range={this.state.range} onChangeEndTime={this.handleChangeEndTime} />
+                      <TimeInput endTime={this.state.options.endTime} range={this.state.options.range} onChangeEndTime={this.handleChangeEndTime} />
                     </div>
                     <DataTable data={this.state.data} />
                   </>

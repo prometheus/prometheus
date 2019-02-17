@@ -58,7 +58,10 @@ class Graph extends PureComponent<GraphProps> {
     return '<div class="labels">' + labelStrings.join('<br>') + '</div>';
   };
 
-  formatValue = (y: number): string => {
+  formatValue = (y: number | null): string => {
+    if (y === null) {
+      return 'null';
+    }
     var abs_y = Math.abs(y);
     if (abs_y >= 1e24) {
       return (y / 1e24).toFixed(2) + "Y";
@@ -151,6 +154,7 @@ class Graph extends PureComponent<GraphProps> {
     };
   }
 
+  // This was adapted from Flot's color generation code.
   getColors() {
     let colors = [];
     const colorPool = ["#edc240", "#afd8f8", "#cb4b4b", "#4da74d", "#9440ed"];
@@ -191,13 +195,17 @@ class Graph extends PureComponent<GraphProps> {
       let data = [];
       let pos = 0;
       const params = this.props.queryParams!;
+
       for (let t = params.startTime; t <= params.endTime; t += params.resolution) {
         // Allow for floating point inaccuracy.
         if (ts.values.length > pos && ts.values[pos][0] < t + params.resolution / 100) {
           data.push([ts.values[pos][0] * 1000, this.parseValue(ts.values[pos][1])]);
           pos++;
         } else {
-          data.push([t * 1000, null]);
+          // TODO: Flot has problems displaying intermittent "null" values when stacked,
+          // resort to 0 now. In Grafana this works for some reason, figure out how they
+          // do it.
+          data.push([t * 1000, this.props.stacked ? 0 : null]);
         }
       }
 
@@ -205,6 +213,7 @@ class Graph extends PureComponent<GraphProps> {
         labels: ts.metric !== null ? ts.metric : {},
         data: data,
         color: colors[index],
+        index: index,
       };
     })
   }
@@ -214,7 +223,11 @@ class Graph extends PureComponent<GraphProps> {
     if (isNaN(val)) {
       // "+Inf", "-Inf", "+Inf" will be parsed into NaN by parseFloat(). They
       // can't be graphed, so show them as gaps (null).
-      return null;
+
+      // TODO: Flot has problems displaying intermittent "null" values when stacked,
+      // resort to 0 now. In Grafana this works for some reason, figure out how they
+      // do it.
+      return this.props.stacked ? 0 : null;
     }
     return val;
   };

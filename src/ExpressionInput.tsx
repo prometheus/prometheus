@@ -37,8 +37,15 @@ class ExpressionInput extends Component<ExpressionInputProps> {
   }
 
   renderAutosuggest = (downshift: any) => {
+    if (!downshift.isOpen) {
+      return null;
+    }
+
     if (this.prevNoMatchValue && downshift.inputValue.includes(this.prevNoMatchValue)) {
       // TODO: Is this still correct with fuzzy?
+      if (downshift.isOpen) {
+        downshift.closeMenu();
+      }
       return null;
     }
 
@@ -50,10 +57,6 @@ class ExpressionInput extends Component<ExpressionInputProps> {
     if (matches.length === 0) {
       this.prevNoMatchValue = downshift.inputValue;
       return null;
-    }
-
-    if (!downshift.isOpen) {
-      return null; // TODO CHECK NEED FOR THIS
     }
 
     return (
@@ -125,8 +128,19 @@ class ExpressionInput extends Component<ExpressionInputProps> {
                           // By default, Downshift otherwise jumps to the first/last suggestion item instead.
                           (event.nativeEvent as any).preventDownshiftDefault = true;
                           break;
+                        case 'ArrowUp':
+                        case 'ArrowDown':
+                          if (!downshift.isOpen) {
+                            (event.nativeEvent as any).preventDownshiftDefault = true;
+                          }
+                          break;
                         case 'Enter':
                           downshift.closeMenu();
+                          break;
+                        case 'Escape':
+                          if (!downshift.isOpen) {
+                            this.exprInputRef.current!.blur();
+                          }
                           break;
                         default:
                       }

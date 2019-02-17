@@ -1,6 +1,6 @@
 import React, { PureComponent } from 'react';
 
-import metricToSeriesName from './MetricFomat';
+import SeriesName from './SeriesName';
 
 interface LegendProps {
   series: any; // TODO: Type this.
@@ -8,13 +8,14 @@ interface LegendProps {
 
 class Legend extends PureComponent<LegendProps> {
   renderLegendItem(s: any) {
-    const seriesName = metricToSeriesName(s.labels, false);
     return (
-      <tr key={seriesName} className="legend-item">
+      <tr key={s.index} className="legend-item">
         <td>
           <div className="legend-swatch" style={{backgroundColor: s.color}}></div>
         </td>
-        <td>{seriesName}</td>
+        <td>
+          <SeriesName labels={s.labels} format={true} />
+        </td>
       </tr>
     );
   }
