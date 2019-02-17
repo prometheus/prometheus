@@ -200,6 +200,5 @@ input[name="end_input"], input[name="range_input"] {
 }
 
 li.active, .dropdown-item:focus, .dropdown-item:hover {
-  /* color: #fff; */
   background-color: steelblue;
 }
