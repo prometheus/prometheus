@@ -201,12 +201,8 @@ class Panel extends Component<PanelProps, PanelState> {
     this.setOptions({endTime: endTime});
   }
 
-  handleChangeResolution = (resolution: number) => {
-    // TODO: Where should we validate domain model constraints? In the parent's
-    // change handler like here, or in the calling component?
-    if (resolution > 0) {
-      this.setOptions({resolution: resolution});
-    }
+  handleChangeResolution = (resolution: number | null) => {
+    this.setOptions({resolution: resolution});
   }
 
   handleChangeStacking = (stacked: boolean) => {

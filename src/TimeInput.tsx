@@ -50,18 +50,15 @@ class TimeInput extends Component<TimeInputProps> {
   increaseTime = (): void => {
     const time = this.getBaseTime() + this.props.range*1000/2;
     this.props.onChangeTime(time);
-    this.$time.datetimepicker('date', moment(time));
   }
 
   decreaseTime = (): void => {
     const time = this.getBaseTime() - this.props.range*1000/2;
     this.props.onChangeTime(time);
-    this.$time.datetimepicker('date', moment(time));
   }
 
   clearTime = (): void => {
     this.props.onChangeTime(null);
-    this.$time.datetimepicker('date', null);
   }
 
   componentDidMount() {
@@ -85,15 +82,18 @@ class TimeInput extends Component<TimeInputProps> {
 
     this.$time.on('change.datetimepicker', (e: any) => {
       if (e.date) {
-        this.props.onChangeTime(e.date);
-      } else {
-        this.$time.datetimepicker('date', e.target.value);
+        this.props.onChangeTime(e.date.valueOf());
       }
     });
   }
 
   componentWillUnmount() {
     this.$time.datetimepicker('destroy');
+  }
+
+  componentDidUpdate() {
+    console.log(this.props);
+    this.$time.datetimepicker('date', this.props.time ? moment(this.props.time) : null);
   }
 
   render() {

@@ -1,7 +1,7 @@
 import { parseRange, parseTime, formatRange, formatTime } from './timeFormat';
 import { PanelOptions, PanelType, PanelDefaultOptions } from '../Panel';
 
-export function decodePanelOptionsFromQueryString(query: string): PanelOptions[] {
+export function decodePanelOptionsFromQueryString(query: string): {key: string, options: PanelOptions}[] {
   if (query === '') {
     return [];
   }
@@ -21,12 +21,12 @@ interface IncompletePanelOptions {
   stacked?: boolean;
 }
 
-function parseParams(params: string[]): PanelOptions[] {
+function parseParams(params: string[]): {key: string, options: PanelOptions}[] {
   const sortedParams = params.filter((p) => {
     return paramFormat.test(p);
   }).sort();
 
-  let panelOpts: PanelOptions[] = [];
+  let panelOpts: {key: string, options: PanelOptions}[] = [];
 
   let key = 0;
   let options: IncompletePanelOptions = {};
@@ -35,8 +35,8 @@ function parseParams(params: string[]): PanelOptions[] {
 
     if (!p.startsWith(prefix)) {
       panelOpts.push({
-        ...PanelDefaultOptions,
-        ...options,
+        key: key.toString(),
+        options: {...PanelDefaultOptions, ...options},
       });
       options = {};
       key++;
@@ -45,8 +45,8 @@ function parseParams(params: string[]): PanelOptions[] {
     addParam(options, p.substring(prefix.length));
   }
   panelOpts.push({
-    ...PanelDefaultOptions,
-    ...options,
+    key: key.toString(),
+    options: {...PanelDefaultOptions, ...options},
   });
 
   return panelOpts;
@@ -85,7 +85,7 @@ function addParam(opts: IncompletePanelOptions, param: string): void {
       break;
 
     case 'step_input':
-      const res = parseInt(val)
+      const res = parseInt(val);
       if (res > 0) {
         opts.resolution = res;
       }

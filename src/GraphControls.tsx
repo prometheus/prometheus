@@ -35,7 +35,7 @@ interface GraphControlsProps {
 
   onChangeRange: (range: number) => void;
   onChangeEndTime: (endTime: number | null) => void;
-  onChangeResolution: (resolution: number) => void;
+  onChangeResolution: (resolution: number | null) => void;
   onChangeStacking: (stacked: boolean) => void;
 }
 
@@ -97,6 +97,15 @@ class GraphControls extends Component<GraphControlsProps> {
     }
   }
 
+  componentDidUpdate(prevProps: GraphControlsProps) {
+    if (prevProps.range !== this.props.range) {
+      this.changeRangeInput(this.props.range);
+    }
+    if (prevProps.resolution !== this.props.resolution) {
+      this.resolutionRef.current!.value = this.props.resolution !== null ? this.props.resolution.toString() : '';
+    }
+  }
+
   render() {
     return (
       <Form inline className="graph-controls" onSubmit={e => e.preventDefault()}>
@@ -128,7 +137,10 @@ class GraphControls extends Component<GraphControlsProps> {
           className="resolution-input"
           defaultValue={this.props.resolution !== null ? this.props.resolution.toString() : ''}
           innerRef={this.resolutionRef}
-          onBlur={() => this.props.onChangeResolution(parseInt(this.resolutionRef.current!.value))}
+          onBlur={() => {
+            const res = parseInt(this.resolutionRef.current!.value);
+            this.props.onChangeResolution(res ? res : null);
+          }}
           bsSize="sm"
         />
 

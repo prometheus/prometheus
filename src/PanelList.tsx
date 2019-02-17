@@ -21,12 +21,7 @@ class PanelList extends Component<any, PanelListState> {
   constructor(props: any) {
     super(props);
 
-    const urlPanels = decodePanelOptionsFromQueryString(window.location.search).map((opts: PanelOptions) => {
-      return {
-        key: this.getKey(),
-        options: opts,
-      };
-    });
+    const urlPanels = decodePanelOptionsFromQueryString(window.location.search);
 
     this.state = {
       panels: urlPanels.length !== 0 ? urlPanels : [
@@ -71,6 +66,14 @@ class PanelList extends Component<any, PanelListState> {
       }
     })
     .catch(error => this.setState({ timeDriftError: error.message }));
+
+    window.onpopstate = () => {
+      console.log("POPSTATE");
+      const panels = decodePanelOptionsFromQueryString(window.location.search);
+      if (panels.length !== 0) {
+        this.setState({panels: panels});
+      }
+    }
   }
 
   getKey(): string {
@@ -87,12 +90,14 @@ class PanelList extends Component<any, PanelListState> {
       }
       return p;
     });
+    console.log("UPDATE OP", key, opts);
     this.setState({panels: newPanels}, this.updateURL)
   }
 
   updateURL(): void {
+    console.log("UPDATE");
     const query = encodePanelOptionsToQueryString(this.state.panels);
-    history.pushState({}, '', 'graph' + query);
+    history.pushState({}, '', query);
   }
 
   addPanel = (): void => {
