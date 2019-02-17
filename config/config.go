@@ -107,9 +107,10 @@ var (
 		MinShards:         1,
 		MaxSamplesPerSend: 100,
 
-		// By default, buffer 100 batches, which at 100ms per batch is 10s. At
-		// 1000 shards, this will buffer 10M samples total.
-		Capacity:          100 * 100,
+		// Each shard will have a max of 10 samples pending in it's channel, plus the pending
+		// samples that have been enqueued. Theoretically we should only ever have about 110 samples
+		// per shard pending. At 1000 shards that's 110k.
+		Capacity:          10,
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
 		// Max number of times to retry a batch on recoverable errors.

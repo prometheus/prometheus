@@ -62,6 +62,12 @@ Prometheus.Graph.prototype.initialize = function() {
   var graphWrapper = self.el.find("#graph_wrapper" + self.id);
   self.queryForm = graphWrapper.find(".query_form");
 
+  // Auto-resize the text area on input or mouseclick
+  var resizeTextarea = function(el) {
+    var offset = el.offsetHeight - el.clientHeight;
+    $(el).css('height', 'auto').css('height', el.scrollHeight + offset);
+  };
+
   self.expr = graphWrapper.find("textarea[name=expr]");
   self.expr.keypress(function(e) {
     const enter = 13;
@@ -69,14 +75,13 @@ Prometheus.Graph.prototype.initialize = function() {
       self.queryForm.submit();
       e.preventDefault();
     }
-
-    // Auto-resize the text area on input.
-    var offset = this.offsetHeight - this.clientHeight;
-    var resizeTextarea = function(el) {
-        $(el).css('height', 'auto').css('height', el.scrollHeight + offset);
-    };
     $(this).on('keyup input', function() { resizeTextarea(this); });
   });
+
+  self.expr.click(function(e) {
+    resizeTextarea(this);
+  });
+
   self.expr.change(self.handleChange);
 
   self.rangeInput = self.queryForm.find("input[name=range_input]");

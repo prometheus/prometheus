@@ -14,44 +14,53 @@
 package remote
 
 import (
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
 // Appender implements scrape.Appendable.
 func (s *Storage) Appender() (storage.Appender, error) {
-	return s, nil
+	return &timestampTracker{
+		storage: s,
+	}, nil
+}
+
+type timestampTracker struct {
+	storage          *Storage
+	samples          int64
+	highestTimestamp int64
 }
 
 // Add implements storage.Appender.
-func (s *Storage) Add(l labels.Labels, t int64, v float64) (uint64, error) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-	for _, q := range s.queues {
-		if err := q.Append(&model.Sample{
-			Metric:    labelsToMetric(l),
-			Timestamp: model.Time(t),
-			Value:     model.SampleValue(v),
-		}); err != nil {
-			panic(err) // QueueManager.Append() should always return nil as per doc string.
-		}
+func (t *timestampTracker) Add(_ labels.Labels, ts int64, v float64) (uint64, error) {
+	t.samples++
+	if ts > t.highestTimestamp {
+		t.highestTimestamp = ts
 	}
 	return 0, nil
 }
 
 // AddFast implements storage.Appender.
-func (s *Storage) AddFast(l labels.Labels, _ uint64, t int64, v float64) error {
-	_, err := s.Add(l, t, v)
+func (t *timestampTracker) AddFast(l labels.Labels, _ uint64, ts int64, v float64) error {
+	_, err := t.Add(l, ts, v)
 	return err
 }
 
 // Commit implements storage.Appender.
-func (*Storage) Commit() error {
+func (t *timestampTracker) Commit() error {
+	t.storage.samplesIn.incr(t.samples)
+	t.storage.samplesInMetric.Add(float64(t.samples))
+
+	t.storage.highestTimestampMtx.Lock()
+	defer t.storage.highestTimestampMtx.Unlock()
+	if t.highestTimestamp > t.storage.highestTimestamp {
+		t.storage.highestTimestamp = t.highestTimestamp
+		t.storage.highestTimestampMetric.Set(float64(t.highestTimestamp))
+	}
 	return nil
 }
 
 // Rollback implements storage.Appender.
-func (*Storage) Rollback() error {
+func (*timestampTracker) Rollback() error {
 	return nil
 }

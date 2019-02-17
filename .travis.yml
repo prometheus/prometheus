@@ -1,5 +1,3 @@
-sudo: false
-
 language: go
 
 # Whenever the Go version is updated here, .circleci/config.yml and .promu.yml

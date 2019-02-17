@@ -1434,9 +1434,16 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 		sig := sigf(rs.Metric)
 		// The rhs is guaranteed to be the 'one' side. Having multiple samples
 		// with the same signature means that the matching is many-to-many.
-		if _, found := rightSigs[sig]; found {
+		if duplSample, found := rightSigs[sig]; found {
+			// oneSide represents which side of the vector represents the 'one' in the many-to-one relationship.
+			oneSide := "right"
+			if matching.Card == CardOneToMany {
+				oneSide = "left"
+			}
+			matchedLabels := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
 			// Many-to-many matching not allowed.
-			ev.errorf("many-to-many matching not allowed: matching labels must be unique on one side")
+			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
+				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
 		}
 		rightSigs[sig] = rs
 	}
