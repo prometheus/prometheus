@@ -20,8 +20,7 @@ library.add(faSearch, faSpinner);
 interface ExpressionInputProps {
   value: string;
   metricNames: string[];
-  onChange: (expr: string) => void;
-  executeQuery: () => void;
+  executeQuery: (expr: string) => void;
   loading: boolean;
 }
 
@@ -31,7 +30,7 @@ class ExpressionInput extends Component<ExpressionInputProps> {
 
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
-      this.props.executeQuery();
+      this.props.executeQuery(this.exprInputRef.current!.value);
       event.preventDefault();
     }
   }
@@ -42,10 +41,6 @@ class ExpressionInput extends Component<ExpressionInputProps> {
     }
 
     if (this.prevNoMatchValue && downshift.inputValue.includes(this.prevNoMatchValue)) {
-      // TODO: Is this still correct with fuzzy?
-      if (downshift.isOpen) {
-        downshift.closeMenu();
-      }
       return null;
     }
 
@@ -99,8 +94,8 @@ class ExpressionInput extends Component<ExpressionInputProps> {
   render() {
     return (
         <Downshift
-          inputValue={this.props.value}
-          onInputValueChange={this.props.onChange}
+          //inputValue={this.props.value}
+          //onInputValueChange={this.props.onChange}
           selectedItem={this.props.value}
         >
           {(downshift) => (
@@ -148,7 +143,7 @@ class ExpressionInput extends Component<ExpressionInputProps> {
                   } as any)}
                 />
                 <InputGroupAddon addonType="append">
-                  <Button className="execute-btn" color="primary" onClick={this.props.executeQuery}>Execute</Button>
+                  <Button className="execute-btn" color="primary" onClick={() => this.props.executeQuery(this.exprInputRef.current!.value)}>Execute</Button>
                 </InputGroupAddon>
               </InputGroup>
               {this.renderAutosuggest(downshift)}

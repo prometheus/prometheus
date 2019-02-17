@@ -3,12 +3,12 @@ import React, { Component } from 'react';
 import { Alert, Button, Col, Row } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelType, PanelDefaultOptions } from './Panel';
-import { getPanelOptionsFromQueryString } from './utils/urlParams';
+import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from './utils/urlParams';
 
 interface PanelListState {
   panels: {
     key: string;
-    initialOptions?: PanelOptions;
+    options: PanelOptions;
   }[],
   metricNames: string[];
   fetchMetricsError: string | null;
@@ -16,15 +16,15 @@ interface PanelListState {
 }
 
 class PanelList extends Component<any, PanelListState> {
-  private key: number;
+  private key: number = 0;
 
   constructor(props: any) {
     super(props);
 
-    const urlPanels = getPanelOptionsFromQueryString(window.location.search).map((opts: PanelOptions) => {
+    const urlPanels = decodePanelOptionsFromQueryString(window.location.search).map((opts: PanelOptions) => {
       return {
         key: this.getKey(),
-        initialOptions: opts,
+        options: opts,
       };
     });
 
@@ -32,15 +32,13 @@ class PanelList extends Component<any, PanelListState> {
       panels: urlPanels.length !== 0 ? urlPanels : [
         {
           key: this.getKey(),
-          initialOptions: PanelDefaultOptions,
+          options: PanelDefaultOptions,
         },
       ],
       metricNames: [],
       fetchMetricsError: null,
       timeDriftError: null,
     };
-
-    this.key = 0;
   }
 
   componentDidMount() {
@@ -79,18 +77,38 @@ class PanelList extends Component<any, PanelListState> {
     return (this.key++).toString();
   }
 
+  handleOptionsChanged(key: string, opts: PanelOptions): void {
+    const newPanels = this.state.panels.map(p => {
+      if (key === p.key) {
+        return {
+          key: key,
+          options: opts,
+        }
+      }
+      return p;
+    });
+    this.setState({panels: newPanels}, this.updateURL)
+  }
+
+  updateURL(): void {
+    const query = encodePanelOptionsToQueryString(this.state.panels);
+    history.pushState({}, '', 'graph' + query);
+  }
+
   addPanel = (): void => {
     const panels = this.state.panels.slice();
-    const key = this.getKey();
-    panels.push({key: key});
-    this.setState({panels: panels});
+    panels.push({
+      key: this.getKey(),
+      options: PanelDefaultOptions,
+    });
+    this.setState({panels: panels}, this.updateURL);
   }
 
   removePanel = (key: string): void => {
     const panels = this.state.panels.filter(panel => {
       return panel.key !== key;
     });
-    this.setState({panels: panels});
+    this.setState({panels: panels}, this.updateURL);
   }
 
   render() {
@@ -109,7 +127,8 @@ class PanelList extends Component<any, PanelListState> {
         {this.state.panels.map(p =>
           <Panel
             key={p.key}
-            initialOptions={p.initialOptions}
+            options={p.options}
+            onOptionsChanged={(opts: PanelOptions) => this.handleOptionsChanged(p.key, opts)}
             removePanel={() => this.removePanel(p.key)}
             metricNames={this.state.metricNames}
           />

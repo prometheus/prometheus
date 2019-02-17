@@ -21,14 +21,13 @@ import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 
 interface PanelProps {
+  options: PanelOptions;
+  onOptionsChanged: (opts: PanelOptions) => void;
   metricNames: string[];
-  initialOptions?: PanelOptions | undefined;
   removePanel: () => void;
-  // TODO Put initial panel values here.
 }
 
 interface PanelState {
-  options: PanelOptions;
   data: any; // TODO: Type data.
   lastQueryParams: { // TODO: Share these with Graph.tsx in a file.
     startTime: number,
@@ -56,7 +55,7 @@ export enum PanelType {
 
 export const PanelDefaultOptions: PanelOptions = {
   type: PanelType.Table,
-  expr: 'rate(node_cpu_seconds_total[5m])',
+  expr: '',
   range: 3600,
   endTime: null,
   resolution: null,
@@ -70,14 +69,6 @@ class Panel extends Component<PanelProps, PanelState> {
     super(props);
 
     this.state = {
-      options: this.props.initialOptions ? this.props.initialOptions : {
-        expr: '',
-        type: PanelType.Table,
-        range: 3600,
-        endTime: null, // This is in milliseconds.
-        resolution: null,
-        stacked: false,
-      },
       data: null,
       lastQueryParams: null,
       loading: false,
@@ -87,8 +78,8 @@ class Panel extends Component<PanelProps, PanelState> {
   }
 
   componentDidUpdate(prevProps: PanelProps, prevState: PanelState) {
-    const prevOpts = prevState.options;
-    const opts = this.state.options;
+    const prevOpts = prevProps.options;
+    const opts = this.props.options;
     if (prevOpts.type !== opts.type ||
         prevOpts.range !== opts.range ||
         prevOpts.endTime !== opts.endTime ||
@@ -100,16 +91,19 @@ class Panel extends Component<PanelProps, PanelState> {
         // table and graph view, since not all queries work well in both.
         this.setState({data: null});
       }
-      this.executeQuery();
+      this.executeQuery(opts.expr);
     }
   }
 
   componentDidMount() {
-    this.executeQuery();
+    this.executeQuery(this.props.options.expr);
   }
 
-  executeQuery = (): void => {
-    if (this.state.options.expr === '') {
+  executeQuery = (expr: string): void => {
+    if (this.props.options.expr !== expr) {
+      this.setOptions({expr: expr});
+    }
+    if (expr === '') {
       return;
     }
 
@@ -123,15 +117,15 @@ class Panel extends Component<PanelProps, PanelState> {
     this.setState({loading: true});
 
     const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn'T valueof only work when it's a moment?
-    const startTime = endTime - this.state.options.range;
-    const resolution = this.state.options.resolution || Math.max(Math.floor(this.state.options.range / 250), 1);
+    const startTime = endTime - this.props.options.range;
+    const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250), 1);
 
     const url = new URL('http://demo.robustperception.io:9090/');//window.location.href);
     const params: {[key: string]: string} = {
-      'query': this.state.options.expr,
+      'query': expr,
     };
 
-    switch (this.state.options.type) {
+    switch (this.props.options.type) {
       case 'graph':
         url.pathname = '/api/v1/query_range'
         Object.assign(params, {
@@ -148,7 +142,7 @@ class Panel extends Component<PanelProps, PanelState> {
         })
         break;
       default:
-        throw new Error('Invalid panel type "' + this.state.options.type + '"');
+        throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
 
@@ -184,8 +178,8 @@ class Panel extends Component<PanelProps, PanelState> {
   }
 
   setOptions(opts: object): void {
-    const newOpts = Object.assign({}, this.state.options);
-    this.setState({options: Object.assign(newOpts, opts)});
+    const newOpts = {...this.props.options, ...opts};
+    this.props.onOptionsChanged(newOpts);
   }
 
   handleExpressionChange = (expr: string): void => {
@@ -197,10 +191,10 @@ class Panel extends Component<PanelProps, PanelState> {
   }
 
   getEndTime = (): number | moment.Moment => {
-    if (this.state.options.endTime === null) {
+    if (this.props.options.endTime === null) {
       return moment();
     }
-    return this.state.options.endTime;
+    return this.props.options.endTime;
   }
 
   handleChangeEndTime = (endTime: number | null) => {
@@ -225,8 +219,7 @@ class Panel extends Component<PanelProps, PanelState> {
         <Row>
           <Col>
             <ExpressionInput
-              value={this.state.options.expr}
-              onChange={this.handleExpressionChange}
+              value={this.props.options.expr}
               executeQuery={this.executeQuery}
               loading={this.state.loading}
               metricNames={this.props.metricNames}
@@ -243,7 +236,7 @@ class Panel extends Component<PanelProps, PanelState> {
             <Nav tabs>
               <NavItem>
                 <NavLink
-                  className={this.state.options.type === 'graph' ? 'active' : ''}
+                  className={this.props.options.type === 'graph' ? 'active' : ''}
                   onClick={() => { this.setOptions({type: 'graph'}); }}
                 >
                   Graph
@@ -251,37 +244,37 @@ class Panel extends Component<PanelProps, PanelState> {
               </NavItem>
               <NavItem>
                 <NavLink
-                  className={this.state.options.type === 'table' ? 'active' : ''}
+                  className={this.props.options.type === 'table' ? 'active' : ''}
                   onClick={() => { this.setOptions({type: 'table'}); }}
                 >
                   Table
                 </NavLink>
               </NavItem>
             </Nav>
-            <TabContent activeTab={this.state.options.type}>
+            <TabContent activeTab={this.props.options.type}>
               <TabPane tabId="graph">
-                {this.state.options.type === 'graph' &&
+                {this.props.options.type === 'graph' &&
                   <>
                     <GraphControls
-                      range={this.state.options.range}
-                      endTime={this.state.options.endTime}
-                      resolution={this.state.options.resolution}
-                      stacked={this.state.options.stacked}
+                      range={this.props.options.range}
+                      endTime={this.props.options.endTime}
+                      resolution={this.props.options.resolution}
+                      stacked={this.props.options.stacked}
 
                       onChangeRange={this.handleChangeRange}
                       onChangeEndTime={this.handleChangeEndTime}
                       onChangeResolution={this.handleChangeResolution}
                       onChangeStacking={this.handleChangeStacking}
                     />
-                    <Graph data={this.state.data} stacked={this.state.options.stacked} queryParams={this.state.lastQueryParams} />
+                    <Graph data={this.state.data} stacked={this.props.options.stacked} queryParams={this.state.lastQueryParams} />
                   </>
                 }
               </TabPane>
               <TabPane tabId="table">
-                {this.state.options.type === 'table' &&
+                {this.props.options.type === 'table' &&
                   <>
                     <div className="table-controls">
-                      <TimeInput endTime={this.state.options.endTime} range={this.state.options.range} onChangeEndTime={this.handleChangeEndTime} />
+                      <TimeInput endTime={this.props.options.endTime} range={this.props.options.range} onChangeEndTime={this.handleChangeEndTime} />
                     </div>
                     <DataTable data={this.state.data} />
                   </>

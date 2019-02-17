@@ -1,7 +1,7 @@
-import { parseRange, parseTime } from './timeFormat';
+import { parseRange, parseTime, formatRange, formatTime } from './timeFormat';
 import { PanelOptions, PanelType, PanelDefaultOptions } from '../Panel';
 
-export function getPanelOptionsFromQueryString(query: string): PanelOptions[] {
+export function decodePanelOptionsFromQueryString(query: string): PanelOptions[] {
   if (query === '') {
     return [];
   }
@@ -55,11 +55,9 @@ function parseParams(params: string[]): PanelOptions[] {
 function addParam(opts: IncompletePanelOptions, param: string): void {
   let [ opt, val ] = param.split('=');
   val = decodeURIComponent(val.replace(/\+/g, ' '));
-  console.log(val);
 
   switch(opt) {
     case 'expr':
-    console.log(val);
       opts.expr = val;
       break;
 
@@ -97,4 +95,31 @@ function addParam(opts: IncompletePanelOptions, param: string): void {
       opts.endTime = parseTime(val);
       break;
   }
+}
+
+export function encodePanelOptionsToQueryString(panels: {key: string, options: PanelOptions}[]): string {
+  const queryParams: string[] = [];
+
+  panels.forEach(p => {
+    const prefix = 'g' + p.key + '.';
+    const o = p.options;
+    const panelParams: {[key: string]: string | undefined} = {
+      'expr': o.expr,
+      'tab': o.type === PanelType.Graph ? '0' : '1',
+      'stacked': o.stacked ? '1' : '0',
+      'range_input': formatRange(o.range),
+      'end_input': o.endTime !== null ? formatTime(o.endTime) : undefined,
+      'moment_input': o.endTime !== null ? formatTime(o.endTime) : undefined,
+      'step_input': o.resolution !== null ? o.resolution.toString() : undefined,
+    };
+
+    for (let o in panelParams) {
+      const pp = panelParams[o];
+      if (pp !== undefined) {
+        queryParams.push(prefix + o + '=' + encodeURIComponent(pp));
+      }
+    }
+  })
+
+  return '?' + queryParams.join('&');
 }

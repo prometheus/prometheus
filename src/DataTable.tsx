@@ -47,7 +47,6 @@ class DataTable extends PureComponent<QueryResult> {
   }
 
   render() {
-    console.log("RENDER!");
     const data = this.props.data;
 
     if (data === null) {
