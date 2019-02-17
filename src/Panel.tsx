@@ -236,22 +236,32 @@ class Panel extends Component<PanelProps, PanelState> {
             <Nav tabs>
               <NavItem>
                 <NavLink
-                  className={this.props.options.type === 'graph' ? 'active' : ''}
-                  onClick={() => { this.setOptions({type: 'graph'}); }}
-                >
-                  Graph
-                </NavLink>
-              </NavItem>
-              <NavItem>
-                <NavLink
                   className={this.props.options.type === 'table' ? 'active' : ''}
                   onClick={() => { this.setOptions({type: 'table'}); }}
                 >
                   Table
                 </NavLink>
               </NavItem>
+              <NavItem>
+                <NavLink
+                  className={this.props.options.type === 'graph' ? 'active' : ''}
+                  onClick={() => { this.setOptions({type: 'graph'}); }}
+                >
+                  Graph
+                </NavLink>
+              </NavItem>
             </Nav>
             <TabContent activeTab={this.props.options.type}>
+              <TabPane tabId="table">
+                {this.props.options.type === 'table' &&
+                  <>
+                    <div className="table-controls">
+                      <TimeInput endTime={this.props.options.endTime} range={this.props.options.range} onChangeEndTime={this.handleChangeEndTime} />
+                    </div>
+                    <DataTable data={this.state.data} />
+                  </>
+                }
+              </TabPane>
               <TabPane tabId="graph">
                 {this.props.options.type === 'graph' &&
                   <>
@@ -267,16 +277,6 @@ class Panel extends Component<PanelProps, PanelState> {
                       onChangeStacking={this.handleChangeStacking}
                     />
                     <Graph data={this.state.data} stacked={this.props.options.stacked} queryParams={this.state.lastQueryParams} />
-                  </>
-                }
-              </TabPane>
-              <TabPane tabId="table">
-                {this.props.options.type === 'table' &&
-                  <>
-                    <div className="table-controls">
-                      <TimeInput endTime={this.props.options.endTime} range={this.props.options.range} onChangeEndTime={this.handleChangeEndTime} />
-                    </div>
-                    <DataTable data={this.state.data} />
                   </>
                 }
               </TabPane>

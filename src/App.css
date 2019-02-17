@@ -11,7 +11,7 @@ body {
 }
 
 .expression-input textarea {
-    font-family: Menlo,Monaco,Consolas,'Courier New',monospace;
+    /* font-family: Menlo,Monaco,Consolas,'Courier New',monospace; */
     resize: none;
 }
 
