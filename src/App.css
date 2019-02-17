@@ -87,11 +87,11 @@ button.execute-btn {
     width: 50px;
 }
 
-.graph-controls .endtime-input input {
+.graph-controls .time-input input {
     border-right: none;
 }
 
-div.endtime-input {
+div.time-input {
     width: 240px !important;
 }
 
@@ -103,11 +103,11 @@ div.endtime-input {
     width: 90px;
 }
 
-.graph-controls .endtime-input, .graph-controls .resolution-input, .graph-controls .stacked-input {
+.graph-controls .time-input, .graph-controls .resolution-input, .graph-controls .stacked-input {
     margin-left: 20px;
 }
 
-.graph-controls .clear-endtime-btn {
+.graph-controls .clear-time-btn {
     background: #fff;
     border-left: none;
     border-top: 1px solid #ced4da;

@@ -32,41 +32,42 @@ library.add(
 dom.watch();
 
 interface TimeInputProps {
-  endTime: number | null;
-  range: number;
+  time: number | null; // Timestamp in milliseconds.
+  range: number; // Range in seconds.
+  placeholder: string;
 
-  onChangeEndTime: (endTime: number | null) => void;
+  onChangeTime: (time: number | null) => void;
 }
 
 class TimeInput extends Component<TimeInputProps> {
-  private endTimeRef = React.createRef<HTMLInputElement>();
-  private $endTime: any | null = null;
+  private timeInputRef = React.createRef<HTMLInputElement>();
+  private $time: any | null = null;
 
-  getBaseEndTime = (): number => {
-    return this.props.endTime || moment().valueOf();
+  getBaseTime = (): number => {
+    return this.props.time || moment().valueOf();
   }
 
-  increaseEndTime = (): void => {
-    const endTime = this.getBaseEndTime() + this.props.range*1000/2;
-    this.props.onChangeEndTime(endTime);
-    this.$endTime.datetimepicker('date', moment(endTime));
+  increaseTime = (): void => {
+    const time = this.getBaseTime() + this.props.range*1000/2;
+    this.props.onChangeTime(time);
+    this.$time.datetimepicker('date', moment(time));
   }
 
-  decreaseEndTime = (): void => {
-    const endTime = this.getBaseEndTime() - this.props.range*1000/2;
-    this.props.onChangeEndTime(endTime);
-    this.$endTime.datetimepicker('date', moment(endTime));
+  decreaseTime = (): void => {
+    const time = this.getBaseTime() - this.props.range*1000/2;
+    this.props.onChangeTime(time);
+    this.$time.datetimepicker('date', moment(time));
   }
 
-  clearEndTime = (): void => {
-    this.props.onChangeEndTime(null);
-    this.$endTime.datetimepicker('date', null);
+  clearTime = (): void => {
+    this.props.onChangeTime(null);
+    this.$time.datetimepicker('date', null);
   }
 
   componentDidMount() {
-    this.$endTime = $(this.endTimeRef.current!);
+    this.$time = $(this.timeInputRef.current!);
 
-    this.$endTime.datetimepicker({
+    this.$time.datetimepicker({
       icons: {
         today: 'fas fa-calendar-check',
       },
@@ -79,49 +80,47 @@ class TimeInput extends Component<TimeInputProps> {
       format: 'YYYY-MM-DD HH:mm',
       locale: 'en',
       timeZone: 'UTC',
-      defaultDate: this.props.endTime,
+      defaultDate: this.props.time,
     });
 
-    this.$endTime.on('change.datetimepicker', (e: any) => {
+    this.$time.on('change.datetimepicker', (e: any) => {
       if (e.date) {
-        this.props.onChangeEndTime(e.date);
+        this.props.onChangeTime(e.date);
       } else {
-        this.$endTime.datetimepicker('date', e.target.value);
+        this.$time.datetimepicker('date', e.target.value);
       }
     });
   }
 
   componentWillUnmount() {
-    this.$endTime.datetimepicker('destroy');
+    this.$time.datetimepicker('destroy');
   }
 
   render() {
     return (
-      <InputGroup className="endtime-input" size="sm">
+      <InputGroup className="time-input" size="sm">
         <InputGroupAddon addonType="prepend">
-          <Button title="Decrease end time" onClick={this.decreaseEndTime}><FontAwesomeIcon icon="chevron-left" fixedWidth/></Button>
+          <Button title="Decrease time" onClick={this.decreaseTime}><FontAwesomeIcon icon="chevron-left" fixedWidth/></Button>
         </InputGroupAddon>
 
         <Input
-          placeholder="End time"
-          // value={this.props.endTime ? this.props.endTime : ''}
-          innerRef={this.endTimeRef}
-          // onChange={this.props.onChangeEndTime}
-          onFocus={() => this.$endTime.datetimepicker('show')}
-          onBlur={() => this.$endTime.datetimepicker('hide')}
-          onKeyDown={(e) => ['Escape', 'Enter'].includes(e.key) && this.$endTime.datetimepicker('hide')}
+          placeholder={this.props.placeholder}
+          innerRef={this.timeInputRef}
+          onFocus={() => this.$time.datetimepicker('show')}
+          onBlur={() => this.$time.datetimepicker('hide')}
+          onKeyDown={(e) => ['Escape', 'Enter'].includes(e.key) && this.$time.datetimepicker('hide')}
         />
 
         {/* CAUTION: While the datetimepicker also has an option to show a 'clear' button,
             that functionality is broken, so we create an external solution instead. */}
-        {this.props.endTime &&
+        {this.props.time &&
           <InputGroupAddon addonType="append">
-            <Button className="clear-endtime-btn" title="Clear end time" onClick={this.clearEndTime}><FontAwesomeIcon icon="times" fixedWidth/></Button>
+            <Button className="clear-time-btn" title="Clear time" onClick={this.clearTime}><FontAwesomeIcon icon="times" fixedWidth/></Button>
           </InputGroupAddon>
         }
 
         <InputGroupAddon addonType="append">
-          <Button title="Increase end time" onClick={this.increaseEndTime}><FontAwesomeIcon icon="chevron-right" fixedWidth/></Button>
+          <Button title="Increase time" onClick={this.increaseTime}><FontAwesomeIcon icon="chevron-right" fixedWidth/></Button>
         </InputGroupAddon>
       </InputGroup>
     );

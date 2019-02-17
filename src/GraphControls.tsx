@@ -116,7 +116,12 @@ class GraphControls extends Component<GraphControlsProps> {
           </InputGroupAddon>
         </InputGroup>
 
-        <TimeInput endTime={this.props.endTime} range={this.props.range} onChangeEndTime={this.props.onChangeEndTime} />
+        <TimeInput
+          time={this.props.endTime}
+          range={this.props.range}
+          placeholder="End time"
+          onChangeTime={this.props.onChangeEndTime}
+        />
 
         <Input
           placeholder="Res. (s)"

@@ -256,7 +256,12 @@ class Panel extends Component<PanelProps, PanelState> {
                 {this.props.options.type === 'table' &&
                   <>
                     <div className="table-controls">
-                      <TimeInput endTime={this.props.options.endTime} range={this.props.options.range} onChangeEndTime={this.handleChangeEndTime} />
+                      <TimeInput
+                        time={this.props.options.endTime}
+                        range={this.props.options.range}
+                        placeholder="Evaluation time"
+                        onChangeTime={this.handleChangeEndTime}
+                      />
                     </div>
                     <DataTable data={this.state.data} />
                   </>
