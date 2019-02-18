@@ -266,6 +266,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		var err error
 		ts, err = parseTime(t)
 		if err != nil {
+			err = fmt.Errorf("invalid parameter 'time': %s", err)
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 	} else {
@@ -277,6 +278,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		var cancel context.CancelFunc
 		timeout, err := parseDuration(to)
 		if err != nil {
+			err = fmt.Errorf("invalid parameter 'timeout': %s", err)
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 
@@ -286,6 +288,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 
 	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
 	if err != nil {
+		err = fmt.Errorf("invalid parameter 'query': %s", err)
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
@@ -310,10 +313,12 @@ func (api *API) query(r *http.Request) apiFuncResult {
 func (api *API) queryRange(r *http.Request) apiFuncResult {
 	start, err := parseTime(r.FormValue("start"))
 	if err != nil {
+		err = fmt.Errorf("invalid parameter 'start': %s", err)
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 	end, err := parseTime(r.FormValue("end"))
 	if err != nil {
+		err = fmt.Errorf("invalid parameter 'end': %s", err)
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 	if end.Before(start) {
@@ -323,6 +328,7 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 
 	step, err := parseDuration(r.FormValue("step"))
 	if err != nil {
+		err = fmt.Errorf("invalid parameter 'step': %s", err)
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
@@ -343,6 +349,7 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 		var cancel context.CancelFunc
 		timeout, err := parseDuration(to)
 		if err != nil {
+			err = fmt.Errorf("invalid parameter 'timeout': %s", err)
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 
