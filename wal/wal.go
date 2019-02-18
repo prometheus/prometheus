@@ -681,20 +681,20 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 
 // segmentBufReader is a buffered reader that reads in multiples of pages.
 // The main purpose is that we are able to track segment and offset for
-// corruption reporting.
+// corruption reporting.  We have to be careful not to increment curr too
+// early, as it is used by Reader.Err() to tell Repair which segment is corrupt.
+// As such we pad the end of non-page align segments with zeros.
 type segmentBufReader struct {
 	buf  *bufio.Reader
 	segs []*Segment
-	cur  int
-	off  int
-	more bool
+	cur  int // Index into segs.
+	off  int // Offset of read data into current segment.
 }
 
 func newSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	return &segmentBufReader{
-		buf:  bufio.NewReaderSize(nil, 16*pageSize),
+		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,
-		cur:  -1,
 	}
 }
 
@@ -707,25 +707,39 @@ func (r *segmentBufReader) Close() (err error) {
 	return err
 }
 
+// Read implements io.Reader.
 func (r *segmentBufReader) Read(b []byte) (n int, err error) {
-	if !r.more {
-		if r.cur+1 >= len(r.segs) {
-			return 0, io.EOF
-		}
-		r.cur++
-		r.off = 0
-		r.more = true
-		r.buf.Reset(r.segs[r.cur])
-	}
 	n, err = r.buf.Read(b)
 	r.off += n
-	if err != io.EOF {
+
+	// If we succeeded, or hit a non-EOF, we can stop.
+	if err == nil || err != io.EOF {
 		return n, err
 	}
-	// Just return what we read so far, but don't signal EOF.
-	// Only unset more so we don't invalidate the current segment and
-	// offset before the next read.
-	r.more = false
+
+	// We hit EOF; fake out zero padding at the end of short segments, so we
+	// don't increment curr too early and report the wrong segment as corrupt.
+	if r.off%pageSize != 0 {
+		i := 0
+		for ; n+i < len(b) && (r.off+i)%pageSize != 0; i++ {
+			b[n+i] = 0
+		}
+
+		// Return early, even if we didn't fill b.
+		r.off += i
+		return n + i, nil
+	}
+
+	// There is no more deta left in the curr segment and there are no more
+	// segments left.  Return EOF.
+	if r.cur+1 >= len(r.segs) {
+		return n, io.EOF
+	}
+
+	// Move to next segment.
+	r.cur++
+	r.off = 0
+	r.buf.Reset(r.segs[r.cur])
 	return n, nil
 }
 
