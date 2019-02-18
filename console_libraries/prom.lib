@@ -17,8 +17,9 @@ var PATH_PREFIX = "{{ pathPrefix }}";
 {{ end }}
 
 {{/* Top of all pages. */}}
-{{ define "head" }}
-<html>
+{{ define "head" -}}
+<!doctype html>
+<html lang="en">
 <head>
 {{ template "prom_console_head" }}
 </head>

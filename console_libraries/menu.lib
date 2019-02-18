@@ -19,8 +19,8 @@
       <ul class="nav navbar-nav">
         <li><a href="{{ pathPrefix }}/alerts">Alerts</a></li>
         <li><a href="https://www.pagerduty.com/">PagerDuty</a></li>
-      </div>
-    </ul>
+      </ul>
+    </div>
   </div>
 </nav>
 {{ end }}
