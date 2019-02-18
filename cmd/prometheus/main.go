@@ -720,7 +720,9 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	}
 
 	// Register conf as current config.
+	config.CurrentConfigMutex.Lock()
 	config.CurrentConfig = conf
+	config.CurrentConfigMutex.Unlock()
 
 	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)

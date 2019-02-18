@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -67,7 +68,8 @@ func LoadFile(filename string) (*Config, error) {
 // The defaults applied before parsing the respective config sections.
 var (
 	// CurrentConfig is a pointer to the current configuration.
-	CurrentConfig *Config
+	CurrentConfig      *Config
+	CurrentConfigMutex sync.RWMutex
 
 	// DefaultConfig is the default top-level configuration.
 	DefaultConfig = Config{
