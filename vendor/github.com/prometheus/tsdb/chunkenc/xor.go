@@ -51,13 +51,13 @@ import (
 
 // XORChunk holds XOR encoded sample data.
 type XORChunk struct {
-	b *bstream
+	b bstream
 }
 
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
 func NewXORChunk() *XORChunk {
 	b := make([]byte, 2, 128)
-	return &XORChunk{b: &bstream{stream: b, count: 0}}
+	return &XORChunk{b: bstream{stream: b, count: 0}}
 }
 
 // Encoding returns the encoding type.
@@ -89,7 +89,7 @@ func (c *XORChunk) Appender() (Appender, error) {
 	}
 
 	a := &xorAppender{
-		b:        c.b,
+		b:        &c.b,
 		t:        it.t,
 		v:        it.val,
 		tDelta:   it.tDelta,

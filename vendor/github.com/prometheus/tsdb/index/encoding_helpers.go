@@ -33,12 +33,9 @@ func (e *encbuf) get() []byte { return e.b }
 func (e *encbuf) len() int    { return len(e.b) }
 
 func (e *encbuf) putString(s string) { e.b = append(e.b, s...) }
-func (e *encbuf) putBytes(b []byte)  { e.b = append(e.b, b...) }
 func (e *encbuf) putByte(c byte)     { e.b = append(e.b, c) }
 
 func (e *encbuf) putBE32int(x int)      { e.putBE32(uint32(x)) }
-func (e *encbuf) putBE64int(x int)      { e.putBE64(uint64(x)) }
-func (e *encbuf) putBE64int64(x int64)  { e.putBE64(uint64(x)) }
 func (e *encbuf) putUvarint32(x uint32) { e.putUvarint64(uint64(x)) }
 func (e *encbuf) putUvarint(x int)      { e.putUvarint64(uint64(x)) }
 
@@ -142,10 +139,8 @@ func newDecbufUvarintAt(bs ByteSlice, off int) decbuf {
 	return dec
 }
 
-func (d *decbuf) uvarint() int      { return int(d.uvarint64()) }
-func (d *decbuf) uvarint32() uint32 { return uint32(d.uvarint64()) }
-func (d *decbuf) be32int() int      { return int(d.be32()) }
-func (d *decbuf) be64int64() int64  { return int64(d.be64()) }
+func (d *decbuf) uvarint() int { return int(d.uvarint64()) }
+func (d *decbuf) be32int() int { return int(d.be32()) }
 
 // crc32 returns a CRC32 checksum over the remaining bytes.
 func (d *decbuf) crc32() uint32 {
@@ -196,7 +191,7 @@ func (d *decbuf) be64() uint64 {
 	if d.e != nil {
 		return 0
 	}
-	if len(d.b) < 4 {
+	if len(d.b) < 8 {
 		d.e = errInvalidSize
 		return 0
 	}
@@ -216,31 +211,6 @@ func (d *decbuf) be32() uint32 {
 	x := binary.BigEndian.Uint32(d.b)
 	d.b = d.b[4:]
 	return x
-}
-
-func (d *decbuf) byte() byte {
-	if d.e != nil {
-		return 0
-	}
-	if len(d.b) < 1 {
-		d.e = errInvalidSize
-		return 0
-	}
-	x := d.b[0]
-	d.b = d.b[1:]
-	return x
-}
-
-func (d *decbuf) decbuf(l int) decbuf {
-	if d.e != nil {
-		return decbuf{e: d.e}
-	}
-	if l > len(d.b) {
-		return decbuf{e: errInvalidSize}
-	}
-	r := decbuf{b: d.b[:l]}
-	d.b = d.b[l:]
-	return r
 }
 
 func (d *decbuf) err() error  { return d.e }

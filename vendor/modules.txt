@@ -225,6 +225,7 @@ github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
 github.com/prometheus/client_golang/prometheus/promhttp
 github.com/prometheus/client_golang/prometheus/internal
+github.com/prometheus/client_golang/prometheus/promauto
 # github.com/prometheus/client_model v0.0.0-20180712105110-5c3871d89910
 github.com/prometheus/client_model/go
 # github.com/prometheus/common v0.0.0-20181119215939-b36ad289a3ea
@@ -241,7 +242,7 @@ github.com/prometheus/procfs
 github.com/prometheus/procfs/nfs
 github.com/prometheus/procfs/xfs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/tsdb v0.4.0
+# github.com/prometheus/tsdb v0.4.1-0.20190219143357-77d5a7d47a52
 github.com/prometheus/tsdb
 github.com/prometheus/tsdb/fileutil
 github.com/prometheus/tsdb/wal

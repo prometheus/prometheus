@@ -16,6 +16,7 @@ package tsdb
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -126,6 +127,9 @@ type DB struct {
 	// changing the autoCompact var.
 	autoCompactMtx sync.Mutex
 	autoCompact    bool
+
+	// Cancel a running compaction when a shutdown is initiated.
+	compactCancel context.CancelFunc
 }
 
 type dbMetrics struct {
@@ -202,7 +206,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Help: "The time taken to recompact blocks to remove tombstones.",
 	})
 	m.blocksBytes = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_storage_blocks_bytes_total",
+		Name: "prometheus_tsdb_storage_blocks_bytes",
 		Help: "The number of bytes that are currently used for local storage by all blocks.",
 	})
 	m.sizeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
@@ -271,10 +275,13 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		db.lockf = lockf
 	}
 
-	db.compactor, err = NewLeveledCompactor(r, l, opts.BlockRanges, db.chunkPool)
+	ctx, cancel := context.WithCancel(context.Background())
+	db.compactor, err = NewLeveledCompactor(ctx, r, l, opts.BlockRanges, db.chunkPool)
 	if err != nil {
+		cancel()
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
+	db.compactCancel = cancel
 
 	segmentSize := wal.DefaultSegmentSize
 	if opts.WALSegmentSize > 0 {
@@ -425,6 +432,9 @@ func (db *DB) compact() (err error) {
 		runtime.GC()
 
 		if err := db.reload(); err != nil {
+			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
+				return errors.Wrapf(err, "delete persisted head block after failed db reload:%s", uid)
+			}
 			return errors.Wrap(err, "reload blocks")
 		}
 		if (uid == ulid.ULID{}) {
@@ -454,12 +464,16 @@ func (db *DB) compact() (err error) {
 		default:
 		}
 
-		if _, err := db.compactor.Compact(db.dir, plan, db.blocks); err != nil {
+		uid, err := db.compactor.Compact(db.dir, plan, db.blocks)
+		if err != nil {
 			return errors.Wrapf(err, "compact %s", plan)
 		}
 		runtime.GC()
 
 		if err := db.reload(); err != nil {
+			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
+				return errors.Wrapf(err, "delete compacted block after failed db reload:%s", uid)
+			}
 			return errors.Wrap(err, "reload blocks")
 		}
 		runtime.GC()
@@ -505,7 +519,13 @@ func (db *DB) reload() (err error) {
 		}
 	}
 	if len(corrupted) > 0 {
-		return errors.Wrap(err, "unexpected corrupted block")
+		// Close all new blocks to release the lock for windows.
+		for _, block := range loadable {
+			if _, loaded := db.getBlock(block.Meta().ULID); !loaded {
+				block.Close()
+			}
+		}
+		return fmt.Errorf("unexpected corrupted block:%v", corrupted)
 	}
 
 	// All deletable blocks should not be loaded.
@@ -526,17 +546,22 @@ func (db *DB) reload() (err error) {
 	db.metrics.blocksBytes.Set(float64(blocksSize))
 
 	sort.Slice(loadable, func(i, j int) bool {
-		return loadable[i].Meta().MaxTime < loadable[j].Meta().MaxTime
+		return loadable[i].Meta().MinTime < loadable[j].Meta().MinTime
 	})
-	if err := validateBlockSequence(loadable); err != nil {
-		return errors.Wrap(err, "invalid block sequence")
-	}
 
 	// Swap new blocks first for subsequently created readers to be seen.
 	db.mtx.Lock()
 	oldBlocks := db.blocks
 	db.blocks = loadable
 	db.mtx.Unlock()
+
+	blockMetas := make([]BlockMeta, 0, len(loadable))
+	for _, b := range loadable {
+		blockMetas = append(blockMetas, b.Meta())
+	}
+	if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
+		level.Warn(db.logger).Log("msg", "overlapping blocks found during reload", "detail", overlaps.String())
+	}
 
 	for _, b := range oldBlocks {
 		if _, ok := deletable[b.Meta().ULID]; ok {
@@ -674,25 +699,6 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 	return nil
 }
 
-// validateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
-func validateBlockSequence(bs []*Block) error {
-	if len(bs) <= 1 {
-		return nil
-	}
-
-	var metas []BlockMeta
-	for _, b := range bs {
-		metas = append(metas, b.meta)
-	}
-
-	overlaps := OverlappingBlocks(metas)
-	if len(overlaps) > 0 {
-		return errors.Errorf("block time ranges overlap: %s", overlaps)
-	}
-
-	return nil
-}
-
 // TimeRange specifies minTime and maxTime range.
 type TimeRange struct {
 	Min, Max int64
@@ -813,6 +819,7 @@ func (db *DB) Head() *Head {
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
+	db.compactCancel()
 	<-db.donec
 
 	db.mtx.Lock()
@@ -888,6 +895,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 // A goroutine must not handle more than one open Querier.
 func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 	var blocks []BlockReader
+	var blockMetas []BlockMeta
 
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
@@ -895,6 +903,7 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 	for _, b := range db.blocks {
 		if b.OverlapsClosedInterval(mint, maxt) {
 			blocks = append(blocks, b)
+			blockMetas = append(blockMetas, b.Meta())
 		}
 	}
 	if maxt >= db.head.MinTime() {
@@ -905,22 +914,31 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 		})
 	}
 
-	sq := &querier{
-		blocks: make([]Querier, 0, len(blocks)),
-	}
+	blockQueriers := make([]Querier, 0, len(blocks))
 	for _, b := range blocks {
 		q, err := NewBlockQuerier(b, mint, maxt)
 		if err == nil {
-			sq.blocks = append(sq.blocks, q)
+			blockQueriers = append(blockQueriers, q)
 			continue
 		}
 		// If we fail, all previously opened queriers must be closed.
-		for _, q := range sq.blocks {
+		for _, q := range blockQueriers {
 			q.Close()
 		}
 		return nil, errors.Wrapf(err, "open querier for block %s", b)
 	}
-	return sq, nil
+
+	if len(OverlappingBlocks(blockMetas)) > 0 {
+		return &verticalQuerier{
+			querier: querier{
+				blocks: blockQueriers,
+			},
+		}, nil
+	}
+
+	return &querier{
+		blocks: blockQueriers,
+	}, nil
 }
 
 func rangeForTimestamp(t int64, width int64) (maxt int64) {
@@ -1084,7 +1102,7 @@ func (es MultiError) Err() error {
 	return es
 }
 
-func closeAll(cs ...io.Closer) error {
+func closeAll(cs []io.Closer) error {
 	var merr MultiError
 
 	for _, c := range cs {

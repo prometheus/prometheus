@@ -53,16 +53,6 @@ func newBReader(b []byte) bstream {
 	return bstream{stream: b, count: 8}
 }
 
-func newBWriter(size int) *bstream {
-	return &bstream{stream: make([]byte, 0, size), count: 0}
-}
-
-func (b *bstream) clone() *bstream {
-	d := make([]byte, len(b.stream))
-	copy(d, b.stream)
-	return &bstream{stream: d, count: b.count}
-}
-
 func (b *bstream) bytes() []byte {
 	return b.stream
 }
