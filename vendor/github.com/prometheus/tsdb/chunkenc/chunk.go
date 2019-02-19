@@ -52,7 +52,7 @@ type Chunk interface {
 func FromData(e Encoding, d []byte) (Chunk, error) {
 	switch e {
 	case EncXOR:
-		return &XORChunk{b: &bstream{count: 0, stream: d}}, nil
+		return &XORChunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, fmt.Errorf("unknown chunk encoding: %d", e)
 }
@@ -94,7 +94,7 @@ func NewPool() Pool {
 	return &pool{
 		xor: sync.Pool{
 			New: func() interface{} {
-				return &XORChunk{b: &bstream{}}
+				return &XORChunk{b: bstream{}}
 			},
 		},
 	}

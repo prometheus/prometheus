@@ -90,7 +90,7 @@ require (
 	github.com/prometheus/client_golang v0.9.1
 	github.com/prometheus/client_model v0.0.0-20180712105110-5c3871d89910
 	github.com/prometheus/common v0.0.0-20181119215939-b36ad289a3ea
-	github.com/prometheus/tsdb v0.4.0
+	github.com/prometheus/tsdb v0.4.1-0.20190219143357-77d5a7d47a52
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a // indirect
 	github.com/rlmcpherson/s3gof3r v0.5.0 // indirect
 	github.com/rubyist/circuitbreaker v2.2.1+incompatible // indirect
