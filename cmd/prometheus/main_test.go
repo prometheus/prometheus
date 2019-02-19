@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/rules"
@@ -283,33 +282,5 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 		} else {
 			t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
 		}
-	}
-}
-
-func TestChooseRetention(t *testing.T) {
-	retention1, err := model.ParseDuration("20d")
-	testutil.Ok(t, err)
-	retention2, err := model.ParseDuration("30d")
-	testutil.Ok(t, err)
-
-	cases := []struct {
-		oldFlagRetention model.Duration
-		newFlagRetention model.Duration
-
-		chosen model.Duration
-	}{
-		// Both are default (unset flags).
-		{defaultRetentionDuration, defaultRetentionDuration, defaultRetentionDuration},
-		// Old flag is set and new flag is unset.
-		{retention1, defaultRetentionDuration, retention1},
-		// Old flag is unset and new flag is set.
-		{defaultRetentionDuration, retention2, retention2},
-		// Both flags are set.
-		{retention1, retention2, retention2},
-	}
-
-	for _, tc := range cases {
-		retention := chooseRetention(tc.oldFlagRetention, tc.newFlagRetention)
-		testutil.Equals(t, tc.chosen, retention)
 	}
 }
