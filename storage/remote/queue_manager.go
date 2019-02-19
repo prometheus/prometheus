@@ -656,6 +656,7 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 				if len(pendingSamples) > 0 {
 					level.Debug(s.qm.logger).Log("msg", "Flushing samples to remote storage...", "count", len(pendingSamples))
 					s.sendSamples(ctx, pendingSamples)
+					s.qm.pendingSamplesMetric.Sub(float64(len(pendingSamples)))
 					level.Debug(s.qm.logger).Log("msg", "Done flushing.")
 				}
 				return
