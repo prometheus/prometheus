@@ -137,7 +137,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
-	deadline := 5 * time.Second
+	deadline := 1 * time.Second
 	c := NewTestBlockedStorageClient()
 
 	var temp int64
@@ -155,7 +155,7 @@ func TestShutdown(t *testing.T) {
 	go func() {
 		m.Append(samples)
 	}()
-	time.Sleep(1 * time.Second)
+	time.Sleep(100 * time.Millisecond)
 
 	// Test to ensure that Stop doesn't block.
 	start := time.Now()

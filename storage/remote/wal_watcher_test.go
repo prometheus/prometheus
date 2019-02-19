@@ -373,13 +373,11 @@ func Test_decodeRecord(t *testing.T) {
 	buf := enc.Series([]tsdb.RefSeries{tsdb.RefSeries{Ref: 1234, Labels: labels.Labels{}}}, nil)
 	watcher.decodeRecord(buf, 0)
 	testutil.Ok(t, err)
-
 	testutil.Equals(t, 1, wt.checkNumLabels())
 
 	buf = enc.Samples([]tsdb.RefSample{tsdb.RefSample{Ref: 100, T: 1, V: 1.0}, tsdb.RefSample{Ref: 100, T: 2, V: 2.0}}, nil)
 	watcher.decodeRecord(buf, 0)
 	testutil.Ok(t, err)
-
 	testutil.Equals(t, 2, wt.samplesAppended)
 }
 
@@ -395,12 +393,10 @@ func Test_decodeRecord_afterStart(t *testing.T) {
 	buf := enc.Series([]tsdb.RefSeries{tsdb.RefSeries{Ref: 1234, Labels: labels.Labels{}}}, nil)
 	watcher.decodeRecord(buf, 0)
 	testutil.Ok(t, err)
-
 	testutil.Equals(t, 1, wt.checkNumLabels())
 
 	buf = enc.Samples([]tsdb.RefSample{tsdb.RefSample{Ref: 100, T: 1, V: 1.0}, tsdb.RefSample{Ref: 100, T: 2, V: 2.0}}, nil)
 	watcher.decodeRecord(buf, 0)
 	testutil.Ok(t, err)
-
-	testutil.Equals(t, 1, wt.samplesAppended)
+	testutil.Equals(t, 2, wt.samplesAppended)
 }
