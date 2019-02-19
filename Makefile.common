@@ -93,7 +93,7 @@ endif
 %: common-% ;
 
 .PHONY: common-all
-common-all: precheck style check_license staticcheck unused test
+common-all: precheck style check_license staticcheck unused test build
 
 .PHONY: common-style
 common-style:
