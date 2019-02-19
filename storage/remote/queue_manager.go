@@ -157,6 +157,15 @@ var (
 		},
 		[]string{queue},
 	)
+	storeSeriesRejections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "store_series_rejections_total",
+			Help:      "The number of times we've tried to store a series labels for a ref id, but had already stored it from a higher segment index.",
+		},
+		[]string{queue},
+	)
 )
 
 func init() {
@@ -379,6 +388,14 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for ref, labels := range temp {
+		// We replay the WAL by reading each segment existing in it's own goroutine, so we want
+		// to make sure we don't overwrite newer series records for a ref id with info. from
+		// an older segment.
+		if index < t.seriesSegmentIndexes[ref] {
+			// Logging here would be too verbose while replaying the WAL, but we should track
+			// this via a metric to see if it occurs any time other than during WAL replay.
+			return
+		}
 		t.seriesLabels[ref] = labels
 		t.seriesSegmentIndexes[ref] = index
 	}
