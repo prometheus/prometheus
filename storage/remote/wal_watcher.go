@@ -95,10 +95,11 @@ type writeTo interface {
 
 // WALWatcher watches the TSDB WAL for a given WriteTo.
 type WALWatcher struct {
-	name   string
-	writer writeTo
-	logger log.Logger
-	walDir string
+	name           string
+	writer         writeTo
+	logger         log.Logger
+	walDir         string
+	lastCheckpoint string
 
 	startTime int64
 
@@ -183,6 +184,7 @@ func (w *WALWatcher) run() error {
 			return errors.Wrap(err, "readCheckpoint")
 		}
 	}
+	w.lastCheckpoint = lastCheckpoint
 
 	currentSegment, err := w.findSegmentForIndex(nextIndex)
 	if err != nil {
@@ -342,9 +344,10 @@ func (w *WALWatcher) garbageCollectSeries(segmentNum int) error {
 		return errors.Wrap(err, "tsdb.LastCheckpoint")
 	}
 
-	if dir == "" {
+	if dir == "" || dir == w.lastCheckpoint {
 		return nil
 	}
+	w.lastCheckpoint = dir
 
 	index, err := checkpointNum(dir)
 	if err != nil {
