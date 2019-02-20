@@ -132,14 +132,18 @@ func NewWALWatcher(logger log.Logger, name string, writer writeTo, walDir string
 		recordDecodeFailsMetric: watcherRecordDecodeFails.WithLabelValues(name),
 		samplesSentPreTailing:   watcherSamplesSentPreTailing.WithLabelValues(name),
 		currentSegmentMetric:    watcherCurrentSegment.WithLabelValues(name),
+
+		maxSegment: -1,
 	}
 }
 
+// Start the WALWatcher.
 func (w *WALWatcher) Start() {
 	level.Info(w.logger).Log("msg", "starting WAL watcher", "queue", w.name)
 	go w.loop()
 }
 
+// Stop the WALWatcher.
 func (w *WALWatcher) Stop() {
 	close(w.quit)
 	<-w.done
@@ -170,13 +174,13 @@ func (w *WALWatcher) run() error {
 		return errors.Wrap(err, "wal.New")
 	}
 
-	_, last, err := nw.Segments()
+	_, lastSegment, err := nw.Segments()
 	if err != nil {
 		return errors.Wrap(err, "wal.Segments")
 	}
 
 	// Backfill from the checkpoint first if it exists.
-	lastCheckpoint, nextIndex, err := tsdb.LastCheckpoint(w.walDir)
+	lastCheckpoint, checkpointIndex, err := tsdb.LastCheckpoint(w.walDir)
 	if err != nil && err != tsdb.ErrNotFound {
 		return errors.Wrap(err, "tsdb.LastCheckpoint")
 	}
@@ -188,21 +192,22 @@ func (w *WALWatcher) run() error {
 	}
 	w.lastCheckpoint = lastCheckpoint
 
-	currentSegment, err := w.findSegmentForIndex(nextIndex)
+	currentSegment, err := w.findSegmentForIndex(checkpointIndex)
 	if err != nil {
 		return err
 	}
 
-	level.Info(w.logger).Log("msg", "tailing WAL", "lastCheckpoint", lastCheckpoint, "startFrom", nextIndex, "currentSegment", currentSegment, "last", last)
+	level.Debug(w.logger).Log("msg", "tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
 		w.currentSegmentMetric.Set(float64(currentSegment))
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
-		if err := w.watch(nw, currentSegment, currentSegment >= last); err != nil {
+		if err := w.watch(nw, currentSegment, currentSegment >= lastSegment); err != nil {
 			return err
 		}
 
+		// For testing: stop when you hit a specific segment.
 		if currentSegment == w.maxSegment {
 			return nil
 		}
@@ -244,7 +249,7 @@ func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
 	return -1, errors.New("failed to find segment for index")
 }
 
-// Use tail true to indicate thatreader is currently on a segment that is
+// Use tail true to indicate that the reader is currently on a segment that is
 // actively being written to. If false, assume it's a full segment and we're
 // replaying it on start to cache the series records.
 func (w *WALWatcher) watch(wl *wal.WAL, segmentNum int, tail bool) error {
@@ -365,7 +370,6 @@ func (w *WALWatcher) garbageCollectSeries(segmentNum int) error {
 
 	level.Debug(w.logger).Log("msg", "new checkpoint detected", "new", dir, "currentSegment", segmentNum)
 
-	// This potentially takes a long time, should we run it in another go routine?
 	if err = w.readCheckpoint(dir); err != nil {
 		return errors.Wrap(err, "readCheckpoint")
 	}

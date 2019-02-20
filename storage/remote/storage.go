@@ -70,7 +70,7 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 			Help: "Samples in to remote storage, compare to samples out for queue managers.",
 		}),
 		highestTimestampMetric: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_remote_storage_highest_timestamp_in",
+			Name: "prometheus_remote_storage_highest_timestamp_in_seconds",
 			Help: "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
 		}),
 	}
