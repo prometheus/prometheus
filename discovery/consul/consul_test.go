@@ -90,6 +90,26 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{"http"}) {
 		t.Errorf("Expected service %s to not be watched with tag %s", "nonConfiguredServiceName", "http")
 	}
+	// Service has all configured tags for watch plus additional foo tag.
+	if !consulDiscovery.shouldWatch("configuredServiceName", []string{"http", "v1", "foo"}) {
+		t.Errorf("Expected service %s to be watched with tags %+v", "configuredServiceName", conf.ServiceTags)
+	}
+
+	conf.ServiceTags = append(conf.ServiceTags, "foo")
+	consulDiscovery, err = NewDiscovery(conf, nil)
+	if err != nil {
+		t.Errorf("Unexpected error when initializing discovery %v", err)
+	}
+
+	// Service doesn't have all configured tags for watch, is missing foo tag.
+	if consulDiscovery.shouldWatch("configuredServiceName", []string{"http", "v1"}) {
+		t.Errorf("Expected service %s to not be watched with tag %+v", "configuredServiceName", conf.ServiceTags)
+	}
+
+	// Service with duplicate tags and same amount of tags as we're watching should not be watched.
+	if consulDiscovery.shouldWatch("configuredServiceName", []string{"http", "v1", "v1"}) {
+		t.Errorf("Expected service %s to not be watched with tag %+v", "configuredServiceName", conf.ServiceTags)
+	}
 }
 
 func TestNonConfiguredService(t *testing.T) {
