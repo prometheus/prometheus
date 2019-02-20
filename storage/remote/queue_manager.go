@@ -110,7 +110,7 @@ var (
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "queue_last_send_timestamp",
+			Name:      "queue_last_send_timestamp_seconds",
 			Help:      "Timestamp of the last successful send by this queue.",
 		},
 		[]string{queue},
@@ -119,7 +119,7 @@ var (
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "queue_highest_sent_timestamp",
+			Name:      "queue_highest_sent_timestamp_seconds",
 			Help:      "Timestamp from a WAL sample, the highest timestamp successfully sent by this queue, in seconds since epoch.",
 		},
 		[]string{queue},
@@ -211,8 +211,8 @@ type QueueManager struct {
 	quit        chan struct{}
 	wg          sync.WaitGroup
 
-	samplesIn, samplesOut, samplesOutDuration *ewmaRate
-	integralAccumulator                       float64
+	samplesIn, samplesDropped, samplesOut, samplesOutDuration *ewmaRate
+	integralAccumulator                                       float64
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -242,6 +242,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, high
 		quit:        make(chan struct{}),
 
 		samplesIn:          samplesIn,
+		samplesDropped:     newEWMARate(ewmaWeight, shardUpdateDuration),
 		samplesOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 	}
@@ -282,6 +283,7 @@ func (t *QueueManager) Append(s []tsdb.RefSample) bool {
 		// If we have no labels for the series, due to relabelling or otherwise, don't send the sample.
 		if _, ok := t.seriesLabels[sample.Ref]; !ok {
 			droppedSamplesTotal.WithLabelValues(t.queueName).Inc()
+			t.samplesDropped.incr(1)
 			if _, ok := t.droppedSeries[sample.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "dropped sample for series that was not explicitly dropped via relabelling", "ref", sample.Ref)
 			}
@@ -425,6 +427,7 @@ func (t *QueueManager) updateShardsLoop() {
 func (t *QueueManager) calculateDesiredShards() {
 	t.samplesIn.tick()
 	t.samplesOut.tick()
+	t.samplesDropped.tick()
 	t.samplesOutDuration.tick()
 
 	// We use the number of incoming samples as a prediction of how much work we
@@ -434,7 +437,8 @@ func (t *QueueManager) calculateDesiredShards() {
 	var (
 		samplesIn          = t.samplesIn.rate()
 		samplesOut         = t.samplesOut.rate()
-		samplesPending     = samplesIn - samplesOut
+		samplesDropped     = t.samplesDropped.rate()
+		samplesPending     = samplesIn - samplesDropped - samplesOut
 		samplesOutDuration = t.samplesOutDuration.rate()
 	)
 
@@ -447,11 +451,12 @@ func (t *QueueManager) calculateDesiredShards() {
 
 	var (
 		timePerSample = samplesOutDuration / samplesOut
-		desiredShards = (timePerSample * (samplesIn + samplesPending + t.integralAccumulator)) / float64(time.Second)
+		desiredShards = (timePerSample * (samplesIn - samplesDropped + samplesPending + t.integralAccumulator)) / float64(time.Second)
 	)
-	level.Debug(t.logger).Log("msg", "QueueManager.calculateDesiredShards",
-		"samplesIn", samplesIn, "samplesOut", samplesOut,
-		"samplesPending", samplesPending, "desiredShards", desiredShards)
+	level.Debug(t.logger).Log("msg", "QueueManager.caclulateDesiredShards",
+		"samplesIn", samplesIn, "samplesDropped", samplesDropped,
+		"samplesOut", samplesOut, "samplesPending", samplesPending,
+		"desiredShards", desiredShards)
 
 	// Changes in the number of shards must be greater than shardToleranceFraction.
 	var (

@@ -20,6 +20,8 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -387,7 +389,18 @@ func BenchmarkStartup(b *testing.B) {
 		return
 	}
 
-	fmt.Println(dir)
+	// Find the second largest segment; we will replay up to this.
+	// (Second largest as WALWatcher will start tailing the largest).
+	dirents, err := ioutil.ReadDir(dir)
+	testutil.Ok(b, err)
+
+	var segments []int
+	for _, dirent := range dirents {
+		if i, err := strconv.Atoi(dirent.Name()); err != nil {
+			segments = append(segments, i)
+		}
+	}
+	sort.Ints(segments)
 
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
 	logger = log.With(logger, "caller", log.DefaultCaller)
@@ -399,7 +412,8 @@ func BenchmarkStartup(b *testing.B) {
 			newEWMARate(ewmaWeight, shardUpdateDuration),
 			&temp, config.DefaultQueueConfig, nil, nil, c, 1*time.Minute)
 		m.watcher.startTime = math.MaxInt64
-		m.watcher.maxSegment = 6158 // n-1
-		m.watcher.run()
+		m.watcher.maxSegment = segments[len(segments)-2]
+		err := m.watcher.run()
+		testutil.Ok(b, err)
 	}
 }

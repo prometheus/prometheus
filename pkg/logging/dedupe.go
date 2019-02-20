@@ -24,6 +24,7 @@ import (
 const (
 	garbageCollectEvery = 10 * time.Second
 	expireEntriesAfter  = 1 * time.Minute
+	maxEntries          = 1024
 )
 
 type logfmtEncoder struct {
@@ -102,7 +103,9 @@ func (d *Deduper) Log(keyvals ...interface{}) error {
 	}
 
 	d.mtx.Lock()
-	d.seen[line] = time.Now()
+	if len(d.seen) < maxEntries {
+		d.seen[line] = time.Now()
+	}
 	d.mtx.Unlock()
 
 	return d.next.Log(keyvals...)
