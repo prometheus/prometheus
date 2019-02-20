@@ -35,7 +35,7 @@ These instructions are currently valid for the Prometheus server, i.e. the [prom
 
 ### Branch management and versioning strategy
 
-We use [Semantic Versioning](http://semver.org/).
+We use [Semantic Versioning](https://semver.org/).
 
 We maintain a separate branch for each minor release, named `release-<major>.<minor>`, e.g. `release-1.1`, `release-2.0`.
 
@@ -97,7 +97,7 @@ Once the binaries have been uploaded, announce the release on `prometheus-users@
 
 The following changes to the above procedures apply:
 
-* In line with [Semantic Versioning](http://semver.org/), append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
+* In line with [Semantic Versioning](https://semver.org/), append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
 * Tick the _This is a pre-release_ box when drafting the release in the Github UI.
 * Still update `CHANGELOG.md`, but when you cut the final release later, merge all the changes from the pre-releases into the one final update.
 
