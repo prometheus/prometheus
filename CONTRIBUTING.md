@@ -17,7 +17,7 @@ Prometheus uses GitHub to manage reviews of pull requests.
   Comments](https://code.google.com/p/go-wiki/wiki/CodeReviewComments)
   and the _Formatting and style_ section of Peter Bourgon's [Go: Best
   Practices for Production
-  Environments](http://peter.bourgon.org/go-in-production/#formatting-and-style).
+  Environments](https://peter.bourgon.org/go-in-production/#formatting-and-style).
 
 * Be sure to sign off on the [DCO](https://github.com/probot/dco#how-it-works)
 
