@@ -12,12 +12,28 @@ function toggleJobTable(button, shouldExpand){
 }
 
 function showAll(_, container) {
-  $(container).show();
+  const isHealthy = $(container).find("h2").attr("class").indexOf("danger") < 0;
+  if (isHealthy) {
+    $(container).show();
+  } else {
+    $(container).find("trbody, tr, :hidden").each(function(){
+      $(this).show();
+    })
+  }
 }
 
 function showUnhealthy(_, container) {
   const isHealthy = $(container).find("h2").attr("class").indexOf("danger") < 0;
-  if (isHealthy) { $(container).hide(); }
+  if (isHealthy) {
+    $(container).hide();
+  } else {
+    $(container).find("tbody").find("tr").each(function(){
+      const endpointIsHealthy = $(this).children("td").eq(1).find("span").attr("class").indexOf("danger") < 0;
+      if (endpointIsHealthy) {
+        $(this).hide();
+      }
+    })
+  }
 }
 
 function init() {
