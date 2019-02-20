@@ -14,6 +14,8 @@
 package scrape
 
 import (
+	"sync"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -35,6 +37,7 @@ func (a nopAppender) Rollback() error                                     { retu
 // It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {
 	next   storage.Appender
+	mtx    sync.Mutex
 	result []sample
 }
 
@@ -46,25 +49,36 @@ func (a *collectResultAppender) AddFast(m labels.Labels, ref uint64, t int64, v 
 	if err != nil {
 		return err
 	}
+	a.mtx.Lock()
 	a.result = append(a.result, sample{
 		metric: m,
 		t:      t,
 		v:      v,
 	})
+	a.mtx.Unlock()
 	return err
 }
 
 func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64, error) {
+	a.mtx.Lock()
 	a.result = append(a.result, sample{
 		metric: m,
 		t:      t,
 		v:      v,
 	})
+	a.mtx.Unlock()
 	if a.next == nil {
 		return 0, nil
 	}
 	return a.next.Add(m, t, v)
 }
 
-func (a *collectResultAppender) Commit() error   { return nil }
-func (a *collectResultAppender) Rollback() error { return nil }
+func (a *collectResultAppender) samples() []sample {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+	return a.result
+}
+
+func (a *collectResultAppender) Commit() error                       { return nil }
+func (a *collectResultAppender) Rollback() error                     { return nil }
+func (a *collectResultAppender) Appender() (storage.Appender, error) { return a, nil }

@@ -26,9 +26,9 @@ import (
 	"testing"
 	"time"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -72,8 +72,6 @@ func TestTargetOffset(t *testing.T) {
 		bucket := offset / bucketSize
 		buckets[bucket]++
 	}
-
-	t.Log(buckets)
 
 	// Calculate whether the number of targets per bucket
 	// does not differ more than a given tolerance.

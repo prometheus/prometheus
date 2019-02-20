@@ -71,6 +71,11 @@ var (
 		Name: "prometheus_config_last_reload_success_timestamp_seconds",
 		Help: "Timestamp of the last successful configuration reload.",
 	})
+	configDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "prometheus_config_reload_duration_seconds",
+		Help:    "Histogram of configuration reload durations.",
+		Buckets: []float64{.1, 1, 5, 10},
+	})
 
 	defaultRetentionString   = "15d"
 	defaultRetentionDuration model.Duration
@@ -447,8 +452,7 @@ func main() {
 		},
 	}
 
-	prometheus.MustRegister(configSuccess)
-	prometheus.MustRegister(configSuccessTime)
+	prometheus.MustRegister(configSuccess, configSuccessTime, configDuration)
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
@@ -721,9 +725,11 @@ func main() {
 }
 
 func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config) error) (err error) {
+	now := time.Now()
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
 
 	defer func() {
+		configDuration.Observe(time.Since(now).Seconds())
 		if err == nil {
 			configSuccess.Set(1)
 			configSuccessTime.SetToCurrentTime()

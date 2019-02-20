@@ -252,7 +252,8 @@ func (sp *scrapePool) DroppedTargets() []*Target {
 	return sp.droppedTargets
 }
 
-// stop terminates all scrape loops and returns after they all terminated.
+// stop terminates all scrape loops without writing stale markers and returns
+// after they all terminated.
 func (sp *scrapePool) stop() {
 	sp.cancel()
 	var wg sync.WaitGroup
@@ -604,10 +605,15 @@ type scrapeLoop struct {
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
-	ctx       context.Context
-	scrapeCtx context.Context
-	cancel    func()
-	stopped   chan struct{}
+	// ctx is the parent context.
+	// When canceled, the run() loop needs to stop without writing any stale marker.
+	ctx context.Context
+	// runCtx is the context used by the run() loop.
+	runCtx context.Context
+	// runCancel is called to stop the run() loop and write the stale markers.
+	runCancel context.CancelFunc
+	// stopped is closed when the run() loop has ended.
+	stopped chan struct{}
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -863,7 +869,7 @@ func newScrapeLoop(ctx context.Context,
 		ctx:                 ctx,
 		honorTimestamps:     honorTimestamps,
 	}
-	sl.scrapeCtx, sl.cancel = context.WithCancel(ctx)
+	sl.runCtx, sl.runCancel = context.WithCancel(ctx)
 
 	return sl
 }
@@ -872,7 +878,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 	select {
 	case <-time.After(sl.scraper.offset(interval, sl.jitterSeed)):
 		// Continue after a scraping offset.
-	case <-sl.scrapeCtx.Done():
+	case <-sl.runCtx.Done():
 		close(sl.stopped)
 		return
 	}
@@ -885,17 +891,14 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 mainLoop:
 	for {
 		select {
-		case <-sl.ctx.Done():
-			close(sl.stopped)
-			return
-		case <-sl.scrapeCtx.Done():
+		case <-sl.runCtx.Done():
 			break mainLoop
 		default:
 		}
 
 		var (
-			start             = time.Now()
-			scrapeCtx, cancel = context.WithTimeout(sl.ctx, timeout)
+			start       = time.Now()
+			ctx, cancel = context.WithTimeout(sl.runCtx, timeout)
 		)
 
 		// Only record after the first scrape.
@@ -908,7 +911,7 @@ mainLoop:
 		b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
 		buf := bytes.NewBuffer(b)
 
-		contentType, scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
+		contentType, scrapeErr := sl.scraper.scrape(ctx, buf)
 		cancel()
 
 		if scrapeErr == nil {
@@ -924,6 +927,12 @@ mainLoop:
 			if errc != nil {
 				errc <- scrapeErr
 			}
+		}
+
+		select {
+		case <-sl.runCtx.Done():
+			break mainLoop
+		default:
 		}
 
 		// A failed scrape is the same as an empty scrape,
@@ -950,18 +959,19 @@ mainLoop:
 		last = start
 
 		select {
-		case <-sl.ctx.Done():
-			close(sl.stopped)
-			return
-		case <-sl.scrapeCtx.Done():
+		case <-sl.runCtx.Done():
 			break mainLoop
 		case <-ticker.C:
 		}
 	}
 
 	close(sl.stopped)
-
-	sl.endOfRunStaleness(last, ticker, interval)
+	select {
+	case <-sl.ctx.Done():
+		// The parent context has been cancelled, don't write stale markers.
+	default:
+		sl.endOfRunStaleness(last, ticker, interval)
+	}
 }
 
 func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, interval time.Duration) {
@@ -1015,7 +1025,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 // Stop the scraping. May still write data and stale markers after it has
 // returned. Cancel the context to stop all writes.
 func (sl *scrapeLoop) stop() {
-	sl.cancel()
+	sl.runCancel()
 	<-sl.stopped
 }
 
