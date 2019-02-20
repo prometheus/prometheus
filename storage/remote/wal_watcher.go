@@ -110,6 +110,9 @@ type WALWatcher struct {
 
 	quit chan struct{}
 	done chan struct{}
+
+	// For testing, stop when we hit this segment.
+	maxSegment int
 }
 
 // NewWALWatcher creates a new WAL watcher for a given WriteTo.
@@ -198,6 +201,10 @@ func (w *WALWatcher) run() error {
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
 		if err := w.watch(nw, currentSegment, currentSegment >= last); err != nil {
 			return err
+		}
+
+		if currentSegment == w.maxSegment {
+			return nil
 		}
 
 		currentSegment++
@@ -295,7 +302,7 @@ func (w *WALWatcher) watch(wl *wal.WAL, segmentNum int, tail bool) error {
 				continue
 			}
 
-			err = w.readSegment(reader, segmentNum)
+			err = w.readSegment(reader, segmentNum, tail)
 
 			// Ignore errors reading to end of segment whilst replaying the WAL.
 			if !tail {
@@ -315,7 +322,7 @@ func (w *WALWatcher) watch(wl *wal.WAL, segmentNum int, tail bool) error {
 			return nil
 
 		case <-readTicker.C:
-			err = w.readSegment(reader, segmentNum)
+			err = w.readSegment(reader, segmentNum, tail)
 
 			// Ignore all errors reading to end of segment whilst replaying the WAL.
 			if !tail {
@@ -368,10 +375,56 @@ func (w *WALWatcher) garbageCollectSeries(segmentNum int) error {
 	return nil
 }
 
-func (w *WALWatcher) readSegment(r *wal.LiveReader, segmentNum int) error {
+func (w *WALWatcher) readSegment(r *wal.LiveReader, segmentNum int, tail bool) error {
+	var (
+		dec     tsdb.RecordDecoder
+		series  []tsdb.RefSeries
+		samples []tsdb.RefSample
+	)
+
 	for r.Next() && !isClosed(w.quit) {
-		if err := w.decodeRecord(r.Record(), segmentNum); err != nil {
-			return err
+		rec := r.Record()
+		w.recordsReadMetric.WithLabelValues(recordType(dec.Type(rec))).Inc()
+
+		switch dec.Type(rec) {
+		case tsdb.RecordSeries:
+			series, err := dec.Series(rec, series[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			w.writer.StoreSeries(series, segmentNum)
+
+		case tsdb.RecordSamples:
+			// If we're not tailing a segment we can ignore any samples records we see.
+			// This speeds up replay of the WAL by > 10x.
+			if !tail {
+				break
+			}
+			samples, err := dec.Samples(rec, samples[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			var send []tsdb.RefSample
+			for _, s := range samples {
+				if s.T > w.startTime {
+					send = append(send, s)
+				}
+			}
+			if len(send) > 0 {
+				// Blocks  until the sample is sent to all remote write endpoints or closed (because enqueue blocks).
+				w.writer.Append(send)
+			}
+
+		case tsdb.RecordTombstones:
+			// noop
+		case tsdb.RecordInvalid:
+			return errors.New("invalid record")
+
+		default:
+			w.recordDecodeFailsMetric.Inc()
+			return errors.New("unknown TSDB record type")
 		}
 	}
 	return r.Err()
@@ -389,55 +442,6 @@ func recordType(rt tsdb.RecordType) string {
 		return "tombstones"
 	default:
 		return "unkown"
-	}
-}
-
-func (w *WALWatcher) decodeRecord(rec []byte, segmentNum int) error {
-	var (
-		dec     tsdb.RecordDecoder
-		series  []tsdb.RefSeries
-		samples []tsdb.RefSample
-	)
-
-	w.recordsReadMetric.WithLabelValues(recordType(dec.Type(rec))).Inc()
-
-	switch dec.Type(rec) {
-	case tsdb.RecordSeries:
-		series, err := dec.Series(rec, series[:0])
-		if err != nil {
-			w.recordDecodeFailsMetric.Inc()
-			return err
-		}
-		w.writer.StoreSeries(series, segmentNum)
-		return nil
-
-	case tsdb.RecordSamples:
-		samples, err := dec.Samples(rec, samples[:0])
-		if err != nil {
-			w.recordDecodeFailsMetric.Inc()
-			return err
-		}
-		var send []tsdb.RefSample
-		for _, s := range samples {
-			if s.T > w.startTime {
-				send = append(send, s)
-			}
-		}
-		if len(send) > 0 {
-			// Blocks  until the sample is sent to all remote write endpoints or closed (because enqueue blocks).
-			w.writer.Append(send)
-		}
-		return nil
-
-	case tsdb.RecordTombstones:
-		return nil
-
-	case tsdb.RecordInvalid:
-		return errors.New("invalid record")
-
-	default:
-		w.recordDecodeFailsMetric.Inc()
-		return errors.New("unknown TSDB record type")
 	}
 }
 
@@ -461,7 +465,7 @@ func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 	}
 
 	r := wal.NewLiveReader(w.logger, sr)
-	if err := w.readSegment(r, index); err != io.EOF {
+	if err := w.readSegment(r, index, false); err != io.EOF {
 		return errors.Wrap(err, "readSegment")
 	}
 

@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"reflect"
 	"sync"
@@ -24,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/stretchr/testify/require"
@@ -377,4 +379,27 @@ func (c *TestBlockingStorageClient) NumCalls() uint64 {
 
 func (c *TestBlockingStorageClient) Name() string {
 	return "testblockingstorageclient"
+}
+
+func BenchmarkStartup(b *testing.B) {
+	dir := os.Getenv("WALDIR")
+	if dir == "" {
+		return
+	}
+
+	fmt.Println(dir)
+
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+	logger = log.With(logger, "caller", log.DefaultCaller)
+
+	for n := 0; n < b.N; n++ {
+		var temp int64
+		c := NewTestBlockedStorageClient()
+		m := NewQueueManager(logger, dir,
+			newEWMARate(ewmaWeight, shardUpdateDuration),
+			&temp, config.DefaultQueueConfig, nil, nil, c, 1*time.Minute)
+		m.watcher.startTime = math.MaxInt64
+		m.watcher.maxSegment = 6158 // n-1
+		m.watcher.run()
+	}
 }
