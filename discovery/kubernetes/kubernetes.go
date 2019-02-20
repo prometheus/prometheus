@@ -16,7 +16,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"reflect"
 	"sync"
 	"time"
 
@@ -25,8 +25,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-
 	apiv1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,6 +33,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 const (
@@ -86,13 +86,10 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // SDConfig is the configuration for Kubernetes service discovery.
 type SDConfig struct {
-	APIServer          config_util.URL        `yaml:"api_server,omitempty"`
-	Role               Role                   `yaml:"role"`
-	BasicAuth          *config_util.BasicAuth `yaml:"basic_auth,omitempty"`
-	BearerToken        config_util.Secret     `yaml:"bearer_token,omitempty"`
-	BearerTokenFile    string                 `yaml:"bearer_token_file,omitempty"`
-	TLSConfig          config_util.TLSConfig  `yaml:"tls_config,omitempty"`
-	NamespaceDiscovery NamespaceDiscovery     `yaml:"namespaces,omitempty"`
+	APIServer          config_util.URL              `yaml:"api_server,omitempty"`
+	Role               Role                         `yaml:"role"`
+	HTTPClientConfig   config_util.HTTPClientConfig `yaml:",inline"`
+	NamespaceDiscovery NamespaceDiscovery           `yaml:"namespaces,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -106,16 +103,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Role == "" {
 		return fmt.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
 	}
-	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
-		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	err = c.HTTPClientConfig.Validate()
+	if err != nil {
+		return err
 	}
-	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
-		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
-	}
-	if c.APIServer.URL == nil &&
-		(c.BasicAuth != nil || c.BearerToken != "" || c.BearerTokenFile != "" ||
-			c.TLSConfig.CAFile != "" || c.TLSConfig.CertFile != "" || c.TLSConfig.KeyFile != "") {
-		return fmt.Errorf("to use custom authentication please provide the 'api_server' URL explicitly")
+	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, &config_util.HTTPClientConfig{}) {
+		return fmt.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
 	return nil
 }
@@ -195,46 +188,15 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Because the handling of configuration parameters changes
-		// we should inform the user when their currently configured values
-		// will be ignored due to precedence of InClusterConfig
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
-
-		if conf.TLSConfig.CAFile != "" {
-			level.Warn(l).Log("msg", "Configured TLS CA file is ignored when using pod service account")
-		}
-		if conf.TLSConfig.CertFile != "" || conf.TLSConfig.KeyFile != "" {
-			level.Warn(l).Log("msg", "Configured TLS client certificate is ignored when using pod service account")
-		}
-		if conf.BearerToken != "" {
-			level.Warn(l).Log("msg", "Configured auth token is ignored when using pod service account")
-		}
-		if conf.BasicAuth != nil {
-			level.Warn(l).Log("msg", "Configured basic authentication credentials are ignored when using pod service account")
-		}
 	} else {
+		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd")
+		if err != nil {
+			return nil, err
+		}
 		kcfg = &rest.Config{
-			Host: conf.APIServer.String(),
-			TLSClientConfig: rest.TLSClientConfig{
-				CAFile:   conf.TLSConfig.CAFile,
-				CertFile: conf.TLSConfig.CertFile,
-				KeyFile:  conf.TLSConfig.KeyFile,
-				Insecure: conf.TLSConfig.InsecureSkipVerify,
-			},
-		}
-		token := string(conf.BearerToken)
-		if conf.BearerTokenFile != "" {
-			bf, err := ioutil.ReadFile(conf.BearerTokenFile)
-			if err != nil {
-				return nil, err
-			}
-			token = string(bf)
-		}
-		kcfg.BearerToken = token
-
-		if conf.BasicAuth != nil {
-			kcfg.Username = conf.BasicAuth.Username
-			kcfg.Password = string(conf.BasicAuth.Password)
+			Host:      conf.APIServer.String(),
+			Transport: rt,
 		}
 	}
 

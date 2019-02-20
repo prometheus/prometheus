@@ -221,7 +221,7 @@ func checkConfig(filename string) ([]string, error) {
 		}
 
 		for _, kd := range scfg.ServiceDiscoveryConfig.KubernetesSDConfigs {
-			if err := checkTLSConfig(kd.TLSConfig); err != nil {
+			if err := checkTLSConfig(kd.HTTPClientConfig.TLSConfig); err != nil {
 				return nil, err
 			}
 		}
