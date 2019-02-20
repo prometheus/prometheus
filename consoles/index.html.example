@@ -8,7 +8,7 @@
 <p>These are example consoles for Prometheus.</p>
 
 <p>These consoles expect exporters to have the following job labels:</p>
-<table class="table table-condensed table-striped table-bordered" style="width: 0%">
+<table class="table table-sm table-striped table-bordered" style="width: 0%">
 <tr>
   <th>Exporter</th>
   <th>Job label</th>
