@@ -935,7 +935,7 @@ func (p *parser) expectType(node Node, want ValueType, context string) {
 // check the types of the children of each node and raise an error
 // if they do not form a valid node.
 //
-// Some of these checks are redundant as the the parsing stage does not allow
+// Some of these checks are redundant as the parsing stage does not allow
 // them, but the costs are small and might reveal errors when making changes.
 func (p *parser) checkType(node Node) (typ ValueType) {
 	// For expressions the type is determined by their Type function.

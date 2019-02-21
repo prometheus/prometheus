@@ -74,7 +74,7 @@ func TestTargetOffset(t *testing.T) {
 
 	t.Log(buckets)
 
-	// Calculate whether the the number of targets per bucket
+	// Calculate whether the number of targets per bucket
 	// does not differ more than a given tolerance.
 	avg := len(offsets) / len(buckets)
 	tolerance := 0.15

@@ -59,7 +59,7 @@ label with the host:port of the target (preferably an IP address to avoid DNS
 lookups). No other labelnames should be exposed.
 
 It is very common for initial pull requests for new SDs to include hardcoded
-assumptions that make sense for the the author's setup. SD should be generic,
+assumptions that make sense for the author's setup. SD should be generic,
 any customisation should be handled via relabelling. There should be basically
 no business logic, filtering, or transformations of the data from the SD beyond
 that which is needed to fit it into the metadata data model. 
