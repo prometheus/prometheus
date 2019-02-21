@@ -296,8 +296,7 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 
 		compressed = snappy.Encode(nil, data)
 		if _, err := w.Write(compressed); err != nil {
-			level.Warn(logger).Log("msg", "Resonse write error", "storage", reader.Name(), "err", err)
-			return
+			level.Warn(logger).Log("msg", "Error writing response", "storage", reader.Name(), "err", err)
 		}
 	})
 
