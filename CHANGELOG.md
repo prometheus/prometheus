@@ -1199,7 +1199,7 @@ All changes:
   from embedding into the binary. Those files are only used for debugging,
   and then you can use -web.use-local-assets. By including fewer files, the
   RAM usage during compilation is much more manageable.
-* [ENHANCEMENT] Help link points to http://prometheus.github.io now.
+* [ENHANCEMENT] Help link points to https://prometheus.github.io now.
 * [FEATURE] Consoles for haproxy and cloudwatch.
 * [BUGFIX] Several fixes to graphs in consoles.
 * [CLEANUP] Removed a file size check that did not check anything.
