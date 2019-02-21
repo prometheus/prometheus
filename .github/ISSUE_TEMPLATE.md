@@ -26,7 +26,9 @@
 
 * System information:
 
-	insert output of `uname -srm` here
+	insert output of `uname -srm` here  
+
+	insert output of `cat /etc/os-release` here
 
 * Prometheus version:
 
