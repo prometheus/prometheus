@@ -54,7 +54,7 @@ var (
 )
 
 // CatalogService is copied from https://github.com/hashicorp/consul/blob/master/api/catalog.go
-// this struct respresents the response from a /service/<service-name> request.
+// this struct represents the response from a /service/<service-name> request.
 // Consul License: https://github.com/hashicorp/consul/blob/master/LICENSE
 type CatalogService struct {
 	ID                       string
@@ -169,7 +169,7 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 
 		var tgs []*targetgroup.Group
-		// Note that we treat errors when querying specific consul services as fatal for for this
+		// Note that we treat errors when querying specific consul services as fatal for this
 		// iteration of the time.Tick loop. It's better to have some stale targets than an incomplete
 		// list of targets simply because there may have been a timeout. If the service is actually
 		// gone as far as consul is concerned, that will be picked up during the next iteration of
