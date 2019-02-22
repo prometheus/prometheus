@@ -31,14 +31,44 @@ groups:
       summary: High request latency
 ```
 
-The optional `for` clause causes Prometheus to wait for a certain duration
-between first encountering a new expression output vector element and counting an alert as firing for this element. In this case, Prometheus will check that the alert continues to be active during each evaluation for 10 minutes before firing the alert. Elements that are active, but not firing yet, are in the pending state.
-
 The `labels` clause allows specifying a set of additional labels to be attached
 to the alert. Any existing conflicting labels will be overwritten. The label
 values can be templated.
 
 The `annotations` clause specifies a set of informational labels that can be used to store longer additional information such as alert descriptions or runbook links. The annotation values can be templated.
+
+The optional `for` clause causes Prometheus to wait for a certain duration
+between first encountering a new expression output vector element and counting an alert as firing for this element. In this case, Prometheus will check that the alert continues to be active during each evaluation for 10 minutes before firing the alert. Elements that are active, but not firing yet, are in the pending state.
+
+#### Range duration vs `for`
+
+As a rule of thumb, if an alert is firing too often, it's better to change the
+the range duration rather than adding a `for` clause. For instance
+you might change `rate(errors[5m]) / rate(requests[5m]) > 0.01` to `rate(errors[10m]) / rate(requests[10m]) > 0.01`. This
+is because an alert with a longer range duration can still respond quickly in
+the event of large changes. For instance, if the error rate jumps immediately to
+100%, the latter alert would fire immediately.
+
+For contrast, if you keep the `[5m]` range duration but add `for: 10m`, the
+alert cannot fire until ten minutes have passed, even if the error rate jumps to
+100%. Also, a `for` clause may suppress alerts when errors periodically spike
+and then return to normal before the `for` period is over.
+
+The `for` clause is useful, on the other hand, to prevent alerting on startup
+spikes when new metrics become available. If you alert on:
+
+```
+sum by (instance) (rate(errors[10m]) / rate(requests[10m])) > 0.01
+```
+
+You might find that bringing up a new instance often results in an alert firing,
+because the available range (the denominator for the `rate` calculation) is
+quite small. So a few errors, for instance due to cache warmup effects, have an
+outsized impact on the alert. Adding a `for: 2m` clause would reduce that
+effect.
+
+In general, the `for` clause should be smaller than the range duration when
+present.
 
 #### Templating
 
