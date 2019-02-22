@@ -24,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/encoding"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
 )
@@ -395,8 +396,8 @@ func TestPersistence_index_e2e(t *testing.T) {
 func TestDecbufUvariantWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
-	db := newDecbufUvarintAt(b, 0)
-	testutil.NotOk(t, db.err())
+	db := encoding.NewDecbufUvarintAt(b, 0, castagnoliTable)
+	testutil.NotOk(t, db.Err())
 }
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
