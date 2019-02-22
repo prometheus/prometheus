@@ -214,7 +214,7 @@ func mergeResult(labelsToSeries map[string]*prompb.TimeSeries, results []influx.
 }
 
 func concatLabels(labels map[string]string) string {
-	// 0xff cannot cannot occur in valid UTF-8 sequences, so use it
+	// 0xff cannot occur in valid UTF-8 sequences, so use it
 	// as a separator here.
 	separator := "\xff"
 	pairs := make([]string, 0, len(labels))

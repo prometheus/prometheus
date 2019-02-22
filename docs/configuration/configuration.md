@@ -998,7 +998,7 @@ groups:
 # The port to use for discovery and metric scraping.
 [ port: <int> | default = 9163 ]
 
-# The interval which should should be used for refreshing target containers.
+# The interval which should be used for refreshing target containers.
 [ refresh_interval: <duration> | default = 60s ]
 
 # The Triton discovery API version.
