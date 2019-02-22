@@ -24,7 +24,7 @@ This will also reload any configured rule files.
 
 To specify which configuration file to load, use the `--config.file` flag.
 
-The file is written in [YAML format](http://en.wikipedia.org/wiki/YAML),
+The file is written in [YAML format](https://en.wikipedia.org/wiki/YAML),
 defined by the scheme described below.
 Brackets indicate that a parameter is optional. For non-list parameters the
 value is set to the specified default.
@@ -678,7 +678,7 @@ service account and place the credential file in one of the expected locations.
 ### `<kubernetes_sd_config>`
 
 Kubernetes SD configurations allow retrieving scrape targets from
-[Kubernetes'](http://kubernetes.io/) REST API and always staying synchronized with
+[Kubernetes'](https://kubernetes.io/) REST API and always staying synchronized with
 the cluster state.
 
 One of the following `role` types can be configured to discover targets:
