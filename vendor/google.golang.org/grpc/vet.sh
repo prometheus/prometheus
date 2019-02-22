@@ -13,25 +13,18 @@ die() {
   exit 1
 }
 
-# Check to make sure it's safe to modify the user's git repo.
-if git status --porcelain | read; then
-  die "Uncommitted or untracked files found; commit changes first"
-fi
-
-if [[ -d "${GOPATH}/src" ]]; then
-  die "\${GOPATH}/src (${GOPATH}/src) exists; this script will delete it."
-fi
-
-# Undo any edits made by this script.
-cleanup() {
-  rm -rf "${GOPATH}/src"
-  git reset --hard HEAD
-}
-trap cleanup EXIT
-
 fail_on_output() {
   tee /dev/stderr | (! read)
 }
+
+# Check to make sure it's safe to modify the user's git repo.
+git status --porcelain | fail_on_output
+
+# Undo any edits made by this script.
+cleanup() {
+  git reset --hard HEAD
+}
+trap cleanup EXIT
 
 PATH="${GOPATH}/bin:${GOROOT}/bin:${PATH}"
 
@@ -76,6 +69,10 @@ fi
 # - Ensure all source files contain a copyright message.
 git ls-files "*.go" | xargs grep -L "\(Copyright [0-9]\{4,\} gRPC authors\)\|DO NOT EDIT" 2>&1 | fail_on_output
 
+# - Make sure all tests in grpc and grpc/test use leakcheck via Teardown.
+(! grep 'func Test[^(]' *_test.go)
+(! grep 'func Test[^(]' test/*.go)
+
 # - Do not import math/rand for real library code.  Use internal/grpcrand for
 #   thread safety.
 git ls-files "*.go" | xargs grep -l '"math/rand"' 2>&1 | (! grep -v '^examples\|^stress\|grpcrand')
@@ -108,29 +105,19 @@ if go help mod >& /dev/null; then
 fi
 
 # - Collection of static analysis checks
-### HACK HACK HACK: Remove once staticcheck works with modules.
-# Make a symlink in ${GOPATH}/src to its ${GOPATH}/pkg/mod equivalent for every package we use.
-for x in $(find "${GOPATH}/pkg/mod" -name '*@*' | grep -v \/mod\/cache\/); do
-  pkg="$(echo ${x#"${GOPATH}/pkg/mod/"} | cut -f1 -d@)";
-  # If multiple versions exist, just use the existing one.
-  if [[ -L "${GOPATH}/src/${pkg}" ]]; then continue; fi
-  mkdir -p "$(dirname "${GOPATH}/src/${pkg}")";
-  ln -s $x "${GOPATH}/src/${pkg}";
-done
-### END HACK HACK HACK
-
 # TODO(menghanl): fix errors in transport_test.
-staticcheck -ignore '
-balancer.go:SA1019
-balancer_test.go:SA1019
-clientconn_test.go:SA1019
-balancer/roundrobin/roundrobin_test.go:SA1019
-benchmark/benchmain/main.go:SA1019
-internal/transport/handler_server.go:SA1019
-internal/transport/handler_server_test.go:SA1019
-internal/transport/transport_test.go:SA2002
-stats/stats_test.go:SA1019
-test/channelz_test.go:SA1019
-test/end2end_test.go:SA1019
+staticcheck -go 1.9 -checks 'inherit,-ST1015' -ignore '
+google.golang.org/grpc/balancer.go:SA1019
+google.golang.org/grpc/balancer_test.go:SA1019
+google.golang.org/grpc/clientconn_test.go:SA1019
+google.golang.org/grpc/balancer/roundrobin/roundrobin_test.go:SA1019
+google.golang.org/grpc/benchmark/benchmain/main.go:SA1019
+google.golang.org/grpc/benchmark/worker/benchmark_client.go:SA1019
+google.golang.org/grpc/internal/transport/handler_server.go:SA1019
+google.golang.org/grpc/internal/transport/handler_server_test.go:SA1019
+google.golang.org/grpc/stats/stats_test.go:SA1019
+google.golang.org/grpc/test/channelz_test.go:SA1019
+google.golang.org/grpc/test/end2end_test.go:SA1019
+google.golang.org/grpc/test/healthcheck_test.go:SA1019
 ' ./...
 misspell -error .

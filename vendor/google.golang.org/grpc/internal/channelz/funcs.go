@@ -40,7 +40,7 @@ var (
 	db    dbWrapper
 	idGen idGenerator
 	// EntryPerPage defines the number of channelz entries to be shown on a web page.
-	EntryPerPage  = 50
+	EntryPerPage  = int64(50)
 	curState      int32
 	maxTraceEntry = defaultMaxTraceEntry
 )
@@ -113,20 +113,20 @@ func NewChannelzStorage() {
 // boolean indicating whether there's more top channels to be queried for.
 //
 // The arg id specifies that only top channel with id at or above it will be included
-// in the result. The returned slice is up to a length of EntryPerPage, and is
-// sorted in ascending id order.
-func GetTopChannels(id int64) ([]*ChannelMetric, bool) {
-	return db.get().GetTopChannels(id)
+// in the result. The returned slice is up to a length of the arg maxResults or
+// EntryPerPage if maxResults is zero, and is sorted in ascending id order.
+func GetTopChannels(id int64, maxResults int64) ([]*ChannelMetric, bool) {
+	return db.get().GetTopChannels(id, maxResults)
 }
 
 // GetServers returns a slice of server's ServerMetric, along with a
 // boolean indicating whether there's more servers to be queried for.
 //
 // The arg id specifies that only server with id at or above it will be included
-// in the result. The returned slice is up to a length of EntryPerPage, and is
-// sorted in ascending id order.
-func GetServers(id int64) ([]*ServerMetric, bool) {
-	return db.get().GetServers(id)
+// in the result. The returned slice is up to a length of the arg maxResults or
+// EntryPerPage if maxResults is zero, and is sorted in ascending id order.
+func GetServers(id int64, maxResults int64) ([]*ServerMetric, bool) {
+	return db.get().GetServers(id, maxResults)
 }
 
 // GetServerSockets returns a slice of server's (identified by id) normal socket's
@@ -134,10 +134,10 @@ func GetServers(id int64) ([]*ServerMetric, bool) {
 // be queried for.
 //
 // The arg startID specifies that only sockets with id at or above it will be
-// included in the result. The returned slice is up to a length of EntryPerPage,
-// and is sorted in ascending id order.
-func GetServerSockets(id int64, startID int64) ([]*SocketMetric, bool) {
-	return db.get().GetServerSockets(id, startID)
+// included in the result. The returned slice is up to a length of the arg maxResults
+// or EntryPerPage if maxResults is zero, and is sorted in ascending id order.
+func GetServerSockets(id int64, startID int64, maxResults int64) ([]*SocketMetric, bool) {
+	return db.get().GetServerSockets(id, startID, maxResults)
 }
 
 // GetChannel returns the ChannelMetric for the channel (identified by id).
@@ -153,6 +153,11 @@ func GetSubChannel(id int64) *SubChannelMetric {
 // GetSocket returns the SocketInternalMetric for the socket (identified by id).
 func GetSocket(id int64) *SocketMetric {
 	return db.get().GetSocket(id)
+}
+
+// GetServer returns the ServerMetric for the server (identified by id).
+func GetServer(id int64) *ServerMetric {
+	return db.get().GetServer(id)
 }
 
 // RegisterChannel registers the given channel c in channelz database with ref
@@ -447,29 +452,32 @@ func copyMap(m map[int64]string) map[int64]string {
 	return n
 }
 
-func min(a, b int) int {
+func min(a, b int64) int64 {
 	if a < b {
 		return a
 	}
 	return b
 }
 
-func (c *channelMap) GetTopChannels(id int64) ([]*ChannelMetric, bool) {
+func (c *channelMap) GetTopChannels(id int64, maxResults int64) ([]*ChannelMetric, bool) {
+	if maxResults <= 0 {
+		maxResults = EntryPerPage
+	}
 	c.mu.RLock()
-	l := len(c.topLevelChannels)
+	l := int64(len(c.topLevelChannels))
 	ids := make([]int64, 0, l)
-	cns := make([]*channel, 0, min(l, EntryPerPage))
+	cns := make([]*channel, 0, min(l, maxResults))
 
 	for k := range c.topLevelChannels {
 		ids = append(ids, k)
 	}
 	sort.Sort(int64Slice(ids))
 	idx := sort.Search(len(ids), func(i int) bool { return ids[i] >= id })
-	count := 0
+	count := int64(0)
 	var end bool
 	var t []*ChannelMetric
 	for i, v := range ids[idx:] {
-		if count == EntryPerPage {
+		if count == maxResults {
 			break
 		}
 		if cn, ok := c.channels[v]; ok {
@@ -499,21 +507,24 @@ func (c *channelMap) GetTopChannels(id int64) ([]*ChannelMetric, bool) {
 	return t, end
 }
 
-func (c *channelMap) GetServers(id int64) ([]*ServerMetric, bool) {
+func (c *channelMap) GetServers(id, maxResults int64) ([]*ServerMetric, bool) {
+	if maxResults <= 0 {
+		maxResults = EntryPerPage
+	}
 	c.mu.RLock()
-	l := len(c.servers)
+	l := int64(len(c.servers))
 	ids := make([]int64, 0, l)
-	ss := make([]*server, 0, min(l, EntryPerPage))
+	ss := make([]*server, 0, min(l, maxResults))
 	for k := range c.servers {
 		ids = append(ids, k)
 	}
 	sort.Sort(int64Slice(ids))
 	idx := sort.Search(len(ids), func(i int) bool { return ids[i] >= id })
-	count := 0
+	count := int64(0)
 	var end bool
 	var s []*ServerMetric
 	for i, v := range ids[idx:] {
-		if count == EntryPerPage {
+		if count == maxResults {
 			break
 		}
 		if svr, ok := c.servers[v]; ok {
@@ -541,7 +552,10 @@ func (c *channelMap) GetServers(id int64) ([]*ServerMetric, bool) {
 	return s, end
 }
 
-func (c *channelMap) GetServerSockets(id int64, startID int64) ([]*SocketMetric, bool) {
+func (c *channelMap) GetServerSockets(id int64, startID int64, maxResults int64) ([]*SocketMetric, bool) {
+	if maxResults <= 0 {
+		maxResults = EntryPerPage
+	}
 	var svr *server
 	var ok bool
 	c.mu.RLock()
@@ -551,18 +565,18 @@ func (c *channelMap) GetServerSockets(id int64, startID int64) ([]*SocketMetric,
 		return nil, true
 	}
 	svrskts := svr.sockets
-	l := len(svrskts)
+	l := int64(len(svrskts))
 	ids := make([]int64, 0, l)
-	sks := make([]*normalSocket, 0, min(l, EntryPerPage))
+	sks := make([]*normalSocket, 0, min(l, maxResults))
 	for k := range svrskts {
 		ids = append(ids, k)
 	}
 	sort.Sort(int64Slice(ids))
 	idx := sort.Search(len(ids), func(i int) bool { return ids[i] >= startID })
-	count := 0
+	count := int64(0)
 	var end bool
 	for i, v := range ids[idx:] {
-		if count == EntryPerPage {
+		if count == maxResults {
 			break
 		}
 		if ns, ok := c.normalSockets[v]; ok {
@@ -653,6 +667,23 @@ func (c *channelMap) GetSocket(id int64) *SocketMetric {
 	}
 	c.mu.RUnlock()
 	return nil
+}
+
+func (c *channelMap) GetServer(id int64) *ServerMetric {
+	sm := &ServerMetric{}
+	var svr *server
+	var ok bool
+	c.mu.RLock()
+	if svr, ok = c.servers[id]; !ok {
+		c.mu.RUnlock()
+		return nil
+	}
+	sm.ListenSockets = copyMap(svr.listenSockets)
+	c.mu.RUnlock()
+	sm.ID = svr.id
+	sm.RefName = svr.refName
+	sm.ServerData = svr.s.ChannelzMetric()
+	return sm
 }
 
 type idGenerator struct {

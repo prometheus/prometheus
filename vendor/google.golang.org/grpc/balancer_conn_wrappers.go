@@ -178,6 +178,28 @@ func (ccb *ccBalancerWrapper) handleSubConnStateChange(sc balancer.SubConn, s co
 }
 
 func (ccb *ccBalancerWrapper) handleResolvedAddrs(addrs []resolver.Address, err error) {
+	if ccb.cc.curBalancerName != grpclbName {
+		var containsGRPCLB bool
+		for _, a := range addrs {
+			if a.Type == resolver.GRPCLB {
+				containsGRPCLB = true
+				break
+			}
+		}
+		if containsGRPCLB {
+			// The current balancer is not grpclb, but addresses contain grpclb
+			// address. This means we failed to switch to grpclb, most likely
+			// because grpclb is not registered. Filter out all grpclb addresses
+			// from addrs before sending to balancer.
+			tempAddrs := make([]resolver.Address, 0, len(addrs))
+			for _, a := range addrs {
+				if a.Type != resolver.GRPCLB {
+					tempAddrs = append(tempAddrs, a)
+				}
+			}
+			addrs = tempAddrs
+		}
+	}
 	select {
 	case <-ccb.resolverUpdateCh:
 	default:

@@ -61,8 +61,6 @@ github.com/census-instrumentation/opencensus-proto/gen-go/resource/v1
 github.com/census-instrumentation/opencensus-proto/gen-go/trace/v1
 # github.com/cespare/xxhash v1.1.0
 github.com/cespare/xxhash
-# github.com/cockroachdb/cmux v0.0.0-20170110192607-30d10be49292
-github.com/cockroachdb/cmux
 # github.com/cockroachdb/cockroach v0.0.0-20170608034007-84bc9597164f
 github.com/cockroachdb/cockroach/pkg/util/protoutil
 github.com/cockroachdb/cockroach/pkg/util/httputil
@@ -82,16 +80,16 @@ github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
 # github.com/go-logfmt/logfmt v0.4.0
 github.com/go-logfmt/logfmt
-# github.com/gogo/protobuf v1.2.0
+# github.com/gogo/protobuf v1.2.1
 github.com/gogo/protobuf/proto
+github.com/gogo/protobuf/gogoproto
 github.com/gogo/protobuf/types
 github.com/gogo/protobuf/protoc-gen-gogofast
 github.com/gogo/protobuf/sortkeys
+github.com/gogo/protobuf/protoc-gen-gogo/descriptor
 github.com/gogo/protobuf/vanity
 github.com/gogo/protobuf/vanity/command
 github.com/gogo/protobuf/jsonpb
-github.com/gogo/protobuf/gogoproto
-github.com/gogo/protobuf/protoc-gen-gogo/descriptor
 github.com/gogo/protobuf/plugin/compare
 github.com/gogo/protobuf/plugin/defaultcheck
 github.com/gogo/protobuf/plugin/description
@@ -127,6 +125,7 @@ github.com/golang/protobuf/ptypes
 github.com/golang/protobuf/protoc-gen-go/plugin
 github.com/golang/protobuf/ptypes/struct
 github.com/golang/protobuf/protoc-gen-go/generator/internal/remap
+github.com/golang/protobuf/descriptor
 # github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
 github.com/golang/snappy
 # github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c
@@ -155,12 +154,12 @@ github.com/gophercloud/gophercloud/openstack/identity/v2/tenants
 # github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7
 github.com/gregjones/httpcache
 github.com/gregjones/httpcache/diskcache
-# github.com/grpc-ecosystem/grpc-gateway v1.6.3
+# github.com/grpc-ecosystem/grpc-gateway v1.8.5
 github.com/grpc-ecosystem/grpc-gateway/runtime
 github.com/grpc-ecosystem/grpc-gateway/utilities
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger
-github.com/grpc-ecosystem/grpc-gateway/runtime/internal
+github.com/grpc-ecosystem/grpc-gateway/internal
 github.com/grpc-ecosystem/grpc-gateway/codegenerator
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/gengateway
@@ -267,6 +266,8 @@ github.com/shurcooL/httpfs/union
 github.com/shurcooL/httpfs/vfsutil
 # github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
 github.com/shurcooL/vfsgen
+# github.com/soheilhy/cmux v0.1.4
+github.com/soheilhy/cmux
 # github.com/stretchr/testify v1.3.0
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
@@ -291,12 +292,12 @@ go.opencensus.io/trace/internal
 golang.org/x/crypto/ed25519
 golang.org/x/crypto/ed25519/internal/edwards25519
 golang.org/x/crypto/ssh/terminal
-# golang.org/x/net v0.0.0-20181201002055-351d144fa1fc
-golang.org/x/net/context
+# golang.org/x/net v0.0.0-20181220203305-927f97764cc3
 golang.org/x/net/netutil
 golang.org/x/net/trace
 golang.org/x/net/ipv4
 golang.org/x/net/ipv6
+golang.org/x/net/context
 golang.org/x/net/context/ctxhttp
 golang.org/x/net/http2
 golang.org/x/net/http2/hpack
@@ -325,12 +326,18 @@ golang.org/x/text/unicode/norm
 golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
 golang.org/x/time/rate
-# golang.org/x/tools v0.0.0-20181023010539-40a48ad93fbe
+# golang.org/x/tools v0.0.0-20190114222345-bf090417da8b
 golang.org/x/tools/cmd/goimports
 golang.org/x/tools/imports
 golang.org/x/tools/go/ast/astutil
+golang.org/x/tools/go/packages
 golang.org/x/tools/internal/gopathwalk
+golang.org/x/tools/go/gcexportdata
+golang.org/x/tools/go/internal/cgo
+golang.org/x/tools/go/internal/packagesdriver
+golang.org/x/tools/internal/semver
 golang.org/x/tools/internal/fastwalk
+golang.org/x/tools/go/internal/gcimporter
 # google.golang.org/api v0.0.0-20180910000450-7ca32eb868bf
 google.golang.org/api/compute/v1
 google.golang.org/api/gensupport
@@ -350,9 +357,10 @@ google.golang.org/appengine/internal/log
 google.golang.org/appengine/internal/remote_api
 # google.golang.org/genproto v0.0.0-20180831171423-11092d34479b
 google.golang.org/genproto/googleapis/api/annotations
+google.golang.org/genproto/googleapis/api/httpbody
 google.golang.org/genproto/protobuf/field_mask
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.17.0
+# google.golang.org/grpc v1.19.1
 google.golang.org/grpc
 google.golang.org/grpc/codes
 google.golang.org/grpc/grpclog

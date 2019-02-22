@@ -26,13 +26,22 @@ func DefaultHTTPProtoErrorHandler(ctx context.Context, mux *ServeMux, marshaler 
 	// return Internal when Marshal failed
 	const fallback = `{"code": 13, "message": "failed to marshal error message"}`
 
-	w.Header().Del("Trailer")
-	w.Header().Set("Content-Type", marshaler.ContentType())
-
 	s, ok := status.FromError(err)
 	if !ok {
 		s = status.New(codes.Unknown, err.Error())
 	}
+
+	w.Header().Del("Trailer")
+
+	contentType := marshaler.ContentType()
+	// Check marshaler on run time in order to keep backwards compatability
+	// An interface param needs to be added to the ContentType() function on 
+	// the Marshal interface to be able to remove this check
+	if httpBodyMarshaler, ok := marshaler.(*HTTPBodyMarshaler); ok {
+		pb := s.Proto()
+		contentType = httpBodyMarshaler.ContentTypeFromMessage(pb)
+	}
+	w.Header().Set("Content-Type", contentType)
 
 	buf, merr := marshaler.Marshal(s.Proto())
 	if merr != nil {

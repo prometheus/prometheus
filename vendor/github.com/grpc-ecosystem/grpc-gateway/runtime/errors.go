@@ -65,7 +65,7 @@ var (
 )
 
 type errorBody struct {
-	Error   string     `protobuf:"bytes,1,name=error" json:"error"`
+	Error string `protobuf:"bytes,1,name=error" json:"error"`
 	// This is to make the error more compatible with users that expect errors to be Status objects:
 	// https://github.com/grpc/grpc/blob/master/src/proto/grpc/status/status.proto
 	// It should be the exact same message as the Error field.
@@ -88,13 +88,22 @@ func (*errorBody) ProtoMessage()    {}
 func DefaultHTTPError(ctx context.Context, mux *ServeMux, marshaler Marshaler, w http.ResponseWriter, _ *http.Request, err error) {
 	const fallback = `{"error": "failed to marshal error message"}`
 
-	w.Header().Del("Trailer")
-	w.Header().Set("Content-Type", marshaler.ContentType())
-
 	s, ok := status.FromError(err)
 	if !ok {
 		s = status.New(codes.Unknown, err.Error())
 	}
+
+	w.Header().Del("Trailer")
+
+	contentType := marshaler.ContentType()
+	// Check marshaler on run time in order to keep backwards compatability
+	// An interface param needs to be added to the ContentType() function on
+	// the Marshal interface to be able to remove this check
+	if httpBodyMarshaler, ok := marshaler.(*HTTPBodyMarshaler); ok {
+		pb := s.Proto()
+		contentType = httpBodyMarshaler.ContentTypeFromMessage(pb)
+	}
+	w.Header().Set("Content-Type", contentType)
 
 	body := &errorBody{
 		Error:   s.Message(),

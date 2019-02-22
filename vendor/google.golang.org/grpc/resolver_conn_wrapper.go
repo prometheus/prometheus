@@ -39,7 +39,7 @@ type ccResolverWrapper struct {
 }
 
 // split2 returns the values from strings.SplitN(s, sep, 2).
-// If sep is not found, it returns ("", s, false) instead.
+// If sep is not found, it returns ("", "", false) instead.
 func split2(s, sep string) (string, string, bool) {
 	spl := strings.SplitN(s, sep, 2)
 	if len(spl) < 2 {
