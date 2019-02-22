@@ -309,7 +309,7 @@ func (t *QueueManager) calculateDesiredShards() {
 		timePerSample = samplesOutDuration / samplesOut
 		desiredShards = (timePerSample * (samplesIn + samplesPending + t.integralAccumulator)) / float64(time.Second)
 	)
-	level.Debug(t.logger).Log("msg", "QueueManager.caclulateDesiredShards",
+	level.Debug(t.logger).Log("msg", "QueueManager.calculateDesiredShards",
 		"samplesIn", samplesIn, "samplesOut", samplesOut,
 		"samplesPending", samplesPending, "desiredShards", desiredShards)
 
