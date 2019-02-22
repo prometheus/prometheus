@@ -107,7 +107,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, &config_util.HTTPClientConfig{}) {
+	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config_util.HTTPClientConfig{}) {
 		return fmt.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
 	return nil

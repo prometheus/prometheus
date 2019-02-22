@@ -632,6 +632,11 @@ func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
 	testutil.Equals(t, ruleFilesExpectedConf, c)
 }
 
+func TestKubernetesEmptyAPIServer(t *testing.T) {
+	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml")
+	testutil.Ok(t, err)
+}
+
 var expectedErrors = []struct {
 	filename string
 	errMsg   string
