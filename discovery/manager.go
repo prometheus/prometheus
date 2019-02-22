@@ -44,10 +44,10 @@ import (
 )
 
 var (
-	failedConfigs = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_configs_failed_total",
-			Help: "Total number of service discovery configurations that failed to load.",
+	failedConfigs = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_sd_failed_configs",
+			Help: "Current number of service discovery configurations that failed to load.",
 		},
 		[]string{"name"},
 	)
@@ -199,6 +199,9 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
 	m.providers = nil
 	m.discoverCancel = nil
+
+	failedConfigs.WithLabelValues(m.name).Set(0)
+
 	for name, scfg := range cfg {
 		m.registerProviders(scfg, name)
 		discoveredTargets.WithLabelValues(m.name, name).Set(0)
