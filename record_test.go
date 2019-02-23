@@ -17,6 +17,8 @@ package tsdb
 import (
 	"testing"
 
+	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/encoding"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
 )
@@ -70,4 +72,47 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		{ref: 13, intervals: Intervals{{Mint: -1000, Maxt: -11}}},
 		{ref: 13, intervals: Intervals{{Mint: 5000, Maxt: 1000}}},
 	}, decTstones)
+}
+
+// TestRecord_Corruputed ensures that corrupted records return the correct error.
+// Bugfix check for pull/521 and pull/523.
+func TestRecord_Corruputed(t *testing.T) {
+	var enc RecordEncoder
+	var dec RecordDecoder
+
+	t.Run("Test corrupted series record", func(t *testing.T) {
+		series := []RefSeries{
+			{
+				Ref:    100,
+				Labels: labels.FromStrings("abc", "def", "123", "456"),
+			},
+		}
+
+		corrupted := enc.Series(series, nil)[:8]
+		_, err := dec.Series(corrupted, nil)
+		testutil.Equals(t, err, encoding.ErrInvalidSize)
+	})
+
+	t.Run("Test corrupted sample record", func(t *testing.T) {
+		samples := []RefSample{
+			{Ref: 0, T: 12423423, V: 1.2345},
+		}
+
+		corrupted := enc.Samples(samples, nil)[:8]
+		_, err := dec.Samples(corrupted, nil)
+		testutil.Equals(t, errors.Cause(err), encoding.ErrInvalidSize)
+	})
+
+	t.Run("Test corrupted tombstone record", func(t *testing.T) {
+		tstones := []Stone{
+			{ref: 123, intervals: Intervals{
+				{Mint: -1000, Maxt: 1231231},
+				{Mint: 5000, Maxt: 0},
+			}},
+		}
+
+		corrupted := enc.Tombstones(tstones, nil)[:8]
+		_, err := dec.Tombstones(corrupted, nil)
+		testutil.Equals(t, err, encoding.ErrInvalidSize)
+	})
 }
