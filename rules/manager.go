@@ -861,8 +861,12 @@ func (m *Manager) RuleGroups() []*Group {
 		rgs = append(rgs, g)
 	}
 
+	// Sort rule groups by file, then by name.
 	sort.Slice(rgs, func(i, j int) bool {
-		return rgs[i].file < rgs[j].file && rgs[i].name < rgs[j].name
+		if rgs[i].file != rgs[j].file {
+			return rgs[i].file < rgs[j].file
+		}
+		return rgs[i].name < rgs[j].name
 	})
 
 	return rgs
