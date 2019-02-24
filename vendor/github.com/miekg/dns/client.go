@@ -13,16 +13,16 @@ import (
 	"time"
 )
 
-const dnsTimeout time.Duration = 2 * time.Second
-const tcpIdleTimeout time.Duration = 8 * time.Second
+const (
+	dnsTimeout     time.Duration = 2 * time.Second
+	tcpIdleTimeout time.Duration = 8 * time.Second
+)
 
 // A Conn represents a connection to a DNS server.
 type Conn struct {
 	net.Conn                         // a net.Conn holding the connection
 	UDPSize        uint16            // minimum receive buffer for UDP messages
 	TsigSecret     map[string]string // secret(s) for Tsig map[<zonename>]<base64 secret>, zonename must be in canonical form (lowercase, fqdn, see RFC 4034 Section 6.2)
-	rtt            time.Duration
-	t              time.Time
 	tsigRequestMAC string
 }
 
@@ -83,33 +83,22 @@ func (c *Client) Dial(address string) (conn *Conn, err error) {
 	// create a new dialer with the appropriate timeout
 	var d net.Dialer
 	if c.Dialer == nil {
-		d = net.Dialer{}
+		d = net.Dialer{Timeout: c.getTimeoutForRequest(c.dialTimeout())}
 	} else {
-		d = net.Dialer(*c.Dialer)
+		d = *c.Dialer
 	}
-	d.Timeout = c.getTimeoutForRequest(c.writeTimeout())
 
-	network := "udp"
-	useTLS := false
-
-	switch c.Net {
-	case "tcp-tls":
-		network = "tcp"
-		useTLS = true
-	case "tcp4-tls":
-		network = "tcp4"
-		useTLS = true
-	case "tcp6-tls":
-		network = "tcp6"
-		useTLS = true
-	default:
-		if c.Net != "" {
-			network = c.Net
-		}
+	network := c.Net
+	if network == "" {
+		network = "udp"
 	}
+
+	useTLS := strings.HasPrefix(network, "tcp") && strings.HasSuffix(network, "-tls")
 
 	conn = new(Conn)
 	if useTLS {
+		network = strings.TrimSuffix(network, "-tls")
+
 		conn.Conn, err = tls.DialWithDialer(&d, network, address, c.TLSConfig)
 	} else {
 		conn.Conn, err = d.Dial(network, address)
@@ -117,6 +106,7 @@ func (c *Client) Dial(address string) (conn *Conn, err error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return conn, nil
 }
 
@@ -177,8 +167,9 @@ func (c *Client) exchange(m *Msg, a string) (r *Msg, rtt time.Duration, err erro
 	}
 
 	co.TsigSecret = c.TsigSecret
+	t := time.Now()
 	// write with the appropriate write timeout
-	co.SetWriteDeadline(time.Now().Add(c.getTimeoutForRequest(c.writeTimeout())))
+	co.SetWriteDeadline(t.Add(c.getTimeoutForRequest(c.writeTimeout())))
 	if err = co.WriteMsg(m); err != nil {
 		return nil, 0, err
 	}
@@ -188,7 +179,8 @@ func (c *Client) exchange(m *Msg, a string) (r *Msg, rtt time.Duration, err erro
 	if err == nil && r.Id != m.Id {
 		err = ErrId
 	}
-	return r, co.rtt, err
+	rtt = time.Since(t)
+	return r, rtt, err
 }
 
 // ReadMsg reads a message from the connection co.
@@ -240,7 +232,6 @@ func (co *Conn) ReadMsgHeader(hdr *Header) ([]byte, error) {
 		}
 		p = make([]byte, l)
 		n, err = tcpRead(r, p)
-		co.rtt = time.Since(co.t)
 	default:
 		if co.UDPSize > MinMsgSize {
 			p = make([]byte, co.UDPSize)
@@ -248,7 +239,6 @@ func (co *Conn) ReadMsgHeader(hdr *Header) ([]byte, error) {
 			p = make([]byte, MinMsgSize)
 		}
 		n, err = co.Read(p)
-		co.rtt = time.Since(co.t)
 	}
 
 	if err != nil {
@@ -330,16 +320,12 @@ func (co *Conn) Read(p []byte) (n int, err error) {
 			return 0, err
 		}
 		if l > len(p) {
-			return int(l), io.ErrShortBuffer
+			return l, io.ErrShortBuffer
 		}
 		return tcpRead(r, p[:l])
 	}
 	// UDP connection
-	n, err = co.Conn.Read(p)
-	if err != nil {
-		return n, err
-	}
-	return n, err
+	return co.Conn.Read(p)
 }
 
 // WriteMsg sends a message through the connection co.
@@ -361,11 +347,8 @@ func (co *Conn) WriteMsg(m *Msg) (err error) {
 	if err != nil {
 		return err
 	}
-	co.t = time.Now()
-	if _, err = co.Write(out); err != nil {
-		return err
-	}
-	return nil
+	_, err = co.Write(out)
+	return err
 }
 
 // Write implements the net.Conn Write method.
@@ -387,8 +370,7 @@ func (co *Conn) Write(p []byte) (n int, err error) {
 		n, err := io.Copy(w, bytes.NewReader(p))
 		return int(n), err
 	}
-	n, err = co.Conn.Write(p)
-	return n, err
+	return co.Conn.Write(p)
 }
 
 // Return the appropriate timeout for a specific request
@@ -455,11 +437,7 @@ func ExchangeConn(c net.Conn, m *Msg) (r *Msg, err error) {
 // DialTimeout acts like Dial but takes a timeout.
 func DialTimeout(network, address string, timeout time.Duration) (conn *Conn, err error) {
 	client := Client{Net: network, Dialer: &net.Dialer{Timeout: timeout}}
-	conn, err = client.Dial(address)
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
+	return client.Dial(address)
 }
 
 // DialWithTLS connects to the address on the named network with TLS.
@@ -468,12 +446,7 @@ func DialWithTLS(network, address string, tlsConfig *tls.Config) (conn *Conn, er
 		network += "-tls"
 	}
 	client := Client{Net: network, TLSConfig: tlsConfig}
-	conn, err = client.Dial(address)
-
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
+	return client.Dial(address)
 }
 
 // DialTimeoutWithTLS acts like DialWithTLS but takes a timeout.
@@ -482,11 +455,7 @@ func DialTimeoutWithTLS(network, address string, tlsConfig *tls.Config, timeout 
 		network += "-tls"
 	}
 	client := Client{Net: network, Dialer: &net.Dialer{Timeout: timeout}, TLSConfig: tlsConfig}
-	conn, err = client.Dial(address)
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
+	return client.Dial(address)
 }
 
 // ExchangeContext acts like Exchange, but honors the deadline on the provided
@@ -497,10 +466,11 @@ func (c *Client) ExchangeContext(ctx context.Context, m *Msg, a string) (r *Msg,
 	if deadline, ok := ctx.Deadline(); !ok {
 		timeout = 0
 	} else {
-		timeout = deadline.Sub(time.Now())
+		timeout = time.Until(deadline)
 	}
 	// not passing the context to the underlying calls, as the API does not support
 	// context. For timeouts you should set up Client.Dialer and call Client.Exchange.
+	// TODO(tmthrgd,miekg): this is a race condition.
 	c.Dialer = &net.Dialer{Timeout: timeout}
 	return c.Exchange(m, a)
 }
