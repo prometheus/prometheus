@@ -27,7 +27,6 @@ import (
 )
 
 func TestWAL_Repair(t *testing.T) {
-
 	for name, test := range map[string]struct {
 		corrSgm    int              // Which segment to corrupt.
 		corrFunc   func(f *os.File) // Func that applies the corruption.
@@ -115,7 +114,8 @@ func TestWAL_Repair(t *testing.T) {
 			// We create 3 segments with 3 records each and
 			// then corrupt a given record in a given segment.
 			// As a result we want a repaired WAL with given intact records.
-			w, err := NewSize(nil, nil, dir, 3*pageSize)
+			segSize := 3 * pageSize
+			w, err := NewSize(nil, nil, dir, segSize)
 			testutil.Ok(t, err)
 
 			var records [][]byte
@@ -136,7 +136,7 @@ func TestWAL_Repair(t *testing.T) {
 
 			testutil.Ok(t, f.Close())
 
-			w, err = New(nil, nil, dir)
+			w, err = NewSize(nil, nil, dir, segSize)
 			testutil.Ok(t, err)
 
 			sr, err := NewSegmentsReader(dir)
@@ -166,6 +166,11 @@ func TestWAL_Repair(t *testing.T) {
 					t.Fatalf("record %d diverges: want %x, got %x", i, records[i][:10], r[:10])
 				}
 			}
+
+			// Make sure the last segment is the corrupt segment.
+			_, last, err := w.Segments()
+			testutil.Ok(t, err)
+			testutil.Equals(t, test.corrSgm, last)
 		})
 	}
 }
