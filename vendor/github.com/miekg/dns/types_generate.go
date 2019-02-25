@@ -153,8 +153,8 @@ func main() {
 		if isEmbedded {
 			continue
 		}
-		fmt.Fprintf(b, "func (rr *%s) len() int {\n", name)
-		fmt.Fprintf(b, "l := rr.Hdr.len()\n")
+		fmt.Fprintf(b, "func (rr *%s) len(off int, compression map[string]struct{}) int {\n", name)
+		fmt.Fprintf(b, "l := rr.Hdr.len(off, compression)\n")
 		for i := 1; i < st.NumFields(); i++ {
 			o := func(s string) { fmt.Fprintf(b, s, st.Field(i).Name()) }
 
@@ -162,7 +162,11 @@ func main() {
 				switch st.Tag(i) {
 				case `dns:"-"`:
 					// ignored
-				case `dns:"cdomain-name"`, `dns:"domain-name"`, `dns:"txt"`:
+				case `dns:"cdomain-name"`:
+					o("for _, x := range rr.%s { l += domainNameLen(x, off+l, compression, true) }\n")
+				case `dns:"domain-name"`:
+					o("for _, x := range rr.%s { l += domainNameLen(x, off+l, compression, false) }\n")
+				case `dns:"txt"`:
 					o("for _, x := range rr.%s { l += len(x) + 1 }\n")
 				default:
 					log.Fatalln(name, st.Field(i).Name(), st.Tag(i))
@@ -173,8 +177,10 @@ func main() {
 			switch {
 			case st.Tag(i) == `dns:"-"`:
 				// ignored
-			case st.Tag(i) == `dns:"cdomain-name"`, st.Tag(i) == `dns:"domain-name"`:
-				o("l += len(rr.%s) + 1\n")
+			case st.Tag(i) == `dns:"cdomain-name"`:
+				o("l += domainNameLen(rr.%s, off+l, compression, true)\n")
+			case st.Tag(i) == `dns:"domain-name"`:
+				o("l += domainNameLen(rr.%s, off+l, compression, false)\n")
 			case st.Tag(i) == `dns:"octet"`:
 				o("l += len(rr.%s)\n")
 			case strings.HasPrefix(st.Tag(i), `dns:"size-base64`):
@@ -187,6 +193,8 @@ func main() {
 				fallthrough
 			case st.Tag(i) == `dns:"hex"`:
 				o("l += len(rr.%s)/2 + 1\n")
+			case st.Tag(i) == `dns:"any"`:
+				o("l += len(rr.%s)\n")
 			case st.Tag(i) == `dns:"a"`:
 				o("l += net.IPv4len // %s\n")
 			case st.Tag(i) == `dns:"aaaa"`:
@@ -226,7 +234,7 @@ func main() {
 			continue
 		}
 		fmt.Fprintf(b, "func (rr *%s) copy() RR {\n", name)
-		fields := []string{"*rr.Hdr.copyHeader()"}
+		fields := []string{"rr.Hdr"}
 		for i := 1; i < st.NumFields(); i++ {
 			f := st.Field(i).Name()
 			if sl, ok := st.Field(i).Type().(*types.Slice); ok {
@@ -235,6 +243,13 @@ func main() {
 				if strings.Contains(t, ".") {
 					splits := strings.Split(t, ".")
 					t = splits[len(splits)-1]
+				}
+				// For the EDNS0 interface (used in the OPT RR), we need to call the copy method on each element.
+				if t == "EDNS0" {
+					fmt.Fprintf(b, "%s := make([]%s, len(rr.%s));\nfor i,e := range rr.%s {\n %s[i] = e.copy()\n}\n",
+						f, t, f, f, f)
+					fields = append(fields, f)
+					continue
 				}
 				fmt.Fprintf(b, "%s := make([]%s, len(rr.%s)); copy(%s, rr.%s)\n",
 					f, t, f, f, f)
