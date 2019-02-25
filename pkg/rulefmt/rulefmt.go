@@ -50,7 +50,7 @@ func (g *RuleGroups) Validate() (errs []error) {
 
 	for _, g := range g.Groups {
 		if g.Name == "" {
-			errs = append(errs, errors.Errorf("Groupname should not be empty"))
+			errs = append(errs, errors.Errorf("groupname should not be empty"))
 		}
 
 		if _, ok := set[g.Name]; ok {
