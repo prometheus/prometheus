@@ -241,16 +241,16 @@ func (d *Discovery) shouldWatchFromTags(tags []string) bool {
 		return true
 	}
 
-	a := struct{}{}
-	found := make(map[string]struct{})
-	for _, tag := range tags {
-		for _, wtag := range d.watchedTags {
+tagOuter:
+	for _, wtag := range d.watchedTags {
+		for _, tag := range tags {
 			if wtag == tag {
-				found[wtag] = a
+				continue tagOuter
 			}
 		}
+		return false
 	}
-	return len(found) == len(d.watchedTags)
+	return true
 }
 
 // Get the local datacenter if not specified.
