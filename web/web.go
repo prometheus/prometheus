@@ -48,7 +48,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/client_model/go"
+	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -553,7 +553,10 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 
 	// Inject some convenience variables that are easier to remember for users
 	// who are not used to Go's templating system.
-	defs := "{{$externalLabels := .ExternalLabels}}"
+	defs := "{{$rawParams := .RawParams }}"
+	defs += "{{$params := .Params}}"
+	defs += "{{$path := .Path}}"
+	defs += "{{$externalLabels := .ExternalLabels}}"
 
 	data := struct {
 		RawParams      url.Values
