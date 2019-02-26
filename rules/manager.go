@@ -813,7 +813,8 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 				itv = time.Duration(rg.Interval)
 			}
 
-			rules := make([]Rule, 0, len(rg.Rules))
+			recordingRules := make([]Rule, 0, len(rg.Rules))
+			alertRules := make([]Rule, 0, len(rg.Rules))
 			for _, r := range rg.Rules {
 				expr, err := promql.ParseExpr(r.Expr)
 				if err != nil {
@@ -821,7 +822,7 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 				}
 
 				if r.Alert != "" {
-					rules = append(rules, NewAlertingRule(
+					alertRules = append(alertRules, NewAlertingRule(
 						r.Alert,
 						expr,
 						time.Duration(r.For),
@@ -832,14 +833,14 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 					))
 					continue
 				}
-				rules = append(rules, NewRecordingRule(
+				recordingRules = append(recordingRules, NewRecordingRule(
 					r.Record,
 					expr,
 					labels.FromMap(r.Labels),
 				))
 			}
 
-			groups[groupKey(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, rules, shouldRestore, m.opts)
+			groups[groupKey(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, append(recordingRules, alertRules...), shouldRestore, m.opts)
 		}
 	}
 
