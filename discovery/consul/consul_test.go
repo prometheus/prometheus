@@ -69,46 +69,92 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 }
 
 func TestConfiguredServiceWithTags(t *testing.T) {
-	conf := &SDConfig{
-		Services:    []string{"configuredServiceName"},
-		ServiceTags: []string{"http", "v1"},
-	}
-	consulDiscovery, err := NewDiscovery(conf, nil)
-
-	if err != nil {
-		t.Errorf("Unexpected error when initializing discovery %v", err)
-	}
-	if consulDiscovery.shouldWatch("configuredServiceName", []string{""}) {
-		t.Errorf("Expected service %s to not be watched without tag", "configuredServiceName")
-	}
-	if !consulDiscovery.shouldWatch("configuredServiceName", []string{"http", "v1"}) {
-		t.Errorf("Expected service %s to be watched with tags %s and %s", "configuredServiceName", "http", "v1")
-	}
-	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}) {
-		t.Errorf("Expected service %s to not be watched without tag", "nonConfiguredServiceName")
-	}
-	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{"http"}) {
-		t.Errorf("Expected service %s to not be watched with tag %s", "nonConfiguredServiceName", "http")
-	}
-	// Service has all configured tags for watch plus additional foo tag.
-	if !consulDiscovery.shouldWatch("configuredServiceName", []string{"http", "v1", "foo"}) {
-		t.Errorf("Expected service %s to be watched with tags %+v", "configuredServiceName", conf.ServiceTags)
+	type testcase struct {
+		// What we've configured to watch.
+		conf *SDConfig
+		// The service we're checking if we should watch or not.
+		serviceName string
+		serviceTags []string
+		shouldWatch bool
 	}
 
-	conf.ServiceTags = append(conf.ServiceTags, "foo")
-	consulDiscovery, err = NewDiscovery(conf, nil)
-	if err != nil {
-		t.Errorf("Unexpected error when initializing discovery %v", err)
+	cases := []testcase{
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{""},
+			shouldWatch: false,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1"},
+			shouldWatch: true,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "nonConfiguredServiceName",
+			serviceTags: []string{""},
+			shouldWatch: false,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "nonConfiguredServiceName",
+			serviceTags: []string{"http, v1"},
+			shouldWatch: false,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1", "foo"},
+			shouldWatch: true,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1", "foo"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1", "foo"},
+			shouldWatch: true,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1", "v1"},
+			shouldWatch: true,
+		},
 	}
 
-	// Service doesn't have all configured tags for watch, is missing foo tag.
-	if consulDiscovery.shouldWatch("configuredServiceName", []string{"http", "v1"}) {
-		t.Errorf("Expected service %s to not be watched with tag %+v", "configuredServiceName", conf.ServiceTags)
-	}
+	for _, tc := range cases {
+		consulDiscovery, err := NewDiscovery(tc.conf, nil)
 
-	// Service with duplicate tags and same amount of tags as we're watching should not be watched.
-	if consulDiscovery.shouldWatch("configuredServiceName", []string{"http", "v1", "v1"}) {
-		t.Errorf("Expected service %s to not be watched with tag %+v", "configuredServiceName", conf.ServiceTags)
+		if err != nil {
+			t.Errorf("Unexpected error when initializing discovery %v", err)
+		}
+		ret := consulDiscovery.shouldWatch(tc.serviceName, tc.serviceTags)
+		if ret != tc.shouldWatch {
+			t.Errorf("Expected should watch? %t, got %t. Watched serivce and tags: %s %+v, input was %s %+v", tc.shouldWatch, ret, tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
+		}
+
 	}
 }
 
