@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -132,6 +133,19 @@ func NewTemplateExpander(
 			},
 			"label": func(label string, s *sample) string {
 				return s.Labels[label]
+			},
+			"externalLabel": func(label string) string {
+				if config.CurrentConfig == nil {
+					return ""
+				}
+				config.CurrentConfigMutex.RLock()
+				defer config.CurrentConfigMutex.RUnlock()
+				for eln, elv := range (*config.CurrentConfig).GlobalConfig.ExternalLabels {
+					if label == string(eln) {
+						return string(elv)
+					}
+				}
+				return ""
 			},
 			"value": func(s *sample) float64 {
 				return s.Value
