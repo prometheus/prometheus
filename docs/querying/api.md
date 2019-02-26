@@ -18,7 +18,7 @@ and one of the following HTTP response codes:
 
 - `400 Bad Request` when parameters are missing or incorrect.
 - `422 Unprocessable Entity` when an expression can't be executed
-  ([RFC4918](http://tools.ietf.org/html/rfc4918#page-78)).
+  ([RFC4918](https://tools.ietf.org/html/rfc4918#page-78)).
 - `503 Service Unavailable` when queries time out or abort.
 
 Other non-`2xx` codes may be returned for errors occurring before the API
