@@ -167,7 +167,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer ticker.Stop()
 
 	// Get an initial set right away.
-	tg, err := d.refresh()
+	tg, err := d.refresh(ctx)
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 	} else {
@@ -181,7 +181,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for {
 		select {
 		case <-ticker.C:
-			tg, err := d.refresh()
+			tg, err := d.refresh(ctx)
 			if err != nil {
 				level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 				continue
@@ -198,7 +198,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 }
 
-func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
+func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err error) {
 	t0 := time.Now()
 	defer func() {
 		ec2SDRefreshDuration.Observe(time.Since(t0).Seconds())
@@ -236,7 +236,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 	input := &ec2.DescribeInstancesInput{Filters: filters}
 
-	if err = ec2s.DescribeInstancesPages(input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
+	if err = ec2s.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {
