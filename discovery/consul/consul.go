@@ -448,7 +448,7 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 
 // Get updates for a service.
 func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, catalog *consul.Catalog, lastIndex *uint64) error {
-	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tag", srv.tags)
+	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tags", srv.tags)
 
 	t0 := time.Now()
 	opts := &consul.QueryOptions{
