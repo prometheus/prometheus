@@ -246,7 +246,7 @@ A `tls_config` allows configuring TLS connections.
 [ key_file: <filename> ]
 
 # ServerName extension to indicate the name of the server.
-# http://tools.ietf.org/html/rfc4366#section-3.1
+# https://tools.ietf.org/html/rfc4366#section-3.1
 [ server_name: <string> ]
 
 # Disable validation of the server certificate.
@@ -938,7 +938,7 @@ Serverset SD configurations allow retrieving scrape targets from [Serversets]
 (https://github.com/twitter/finagle/tree/master/finagle-serversets) which are
 stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are commonly
 used by [Finagle](https://twitter.github.io/finagle/) and
-[Aurora](http://aurora.apache.org/).
+[Aurora](https://aurora.apache.org/).
 
 The following meta labels are available on targets during relabeling:
 
