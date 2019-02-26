@@ -228,7 +228,7 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*targetgroup
 		}
 	}()
 
-	targetMap, err := d.fetchTargetGroups()
+	targetMap, err := d.fetchTargetGroups(ctx)
 	if err != nil {
 		return err
 	}
@@ -261,9 +261,9 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*targetgroup
 	return nil
 }
 
-func (d *Discovery) fetchTargetGroups() (map[string]*targetgroup.Group, error) {
+func (d *Discovery) fetchTargetGroups(ctx context.Context) (map[string]*targetgroup.Group, error) {
 	url := RandomAppsURL(d.servers)
-	apps, err := d.appsClient(d.client, url)
+	apps, err := d.appsClient(ctx, d.client, url)
 	if err != nil {
 		return nil, err
 	}
@@ -341,14 +341,15 @@ type AppList struct {
 }
 
 // AppListClient defines a function that can be used to get an application list from marathon.
-type AppListClient func(client *http.Client, url string) (*AppList, error)
+type AppListClient func(ctx context.Context, client *http.Client, url string) (*AppList, error)
 
 // fetchApps requests a list of applications from a marathon server.
-func fetchApps(client *http.Client, url string) (*AppList, error) {
+func fetchApps(ctx context.Context, client *http.Client, url string) (*AppList, error) {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
+	request = request.WithContext(ctx)
 
 	resp, err := client.Do(request)
 	if err != nil {
