@@ -360,7 +360,7 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 
 			// Get the IP address information via separate call to the network provider.
 			for _, nic := range *vm.NetworkProfile.NetworkInterfaces {
-				networkInterface, err := client.getNetworkInterfaceByID(*nic.ID)
+				networkInterface, err := client.getNetworkInterfaceByID(ctx, *nic.ID)
 				if err != nil {
 					level.Error(d.logger).Log("msg", "Unable to get network interface", "name", *nic.ID, "err", err)
 					ch <- target{labelSet: nil, err: err}
@@ -533,7 +533,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	}
 }
 
-func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (*network.Interface, error) {
+func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*network.Interface, error) {
 	result := network.Interface{}
 	queryParameters := map[string]interface{}{
 		"api-version": "2018-10-01",
@@ -544,7 +544,7 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (*
 		autorest.WithBaseURL(client.nic.BaseURI),
 		autorest.WithPath(networkInterfaceID),
 		autorest.WithQueryParameters(queryParameters))
-	req, err := preparer.Prepare(&http.Request{})
+	req, err := preparer.Prepare((&http.Request{}).WithContext(ctx))
 	if err != nil {
 		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
 	}
