@@ -51,8 +51,8 @@ func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
 // Compactor provides compaction against an underlying storage
 // of time series data.
 type Compactor interface {
-	// Plan returns a set of non-overlapping directories that can
-	// be compacted concurrently.
+	// Plan returns a set of directories that can be compacted concurrently.
+	// The directories can be overlapping.
 	// Results returned when compactions are in progress are undefined.
 	Plan(dir string) ([]string, error)
 

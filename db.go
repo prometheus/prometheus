@@ -45,10 +45,11 @@ import (
 // DefaultOptions used for the DB. They are sane for setups using
 // millisecond precision timestamps.
 var DefaultOptions = &Options{
-	WALSegmentSize:    wal.DefaultSegmentSize,
-	RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
-	BlockRanges:       ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
-	NoLockfile:        false,
+	WALSegmentSize:        wal.DefaultSegmentSize,
+	RetentionDuration:     15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
+	BlockRanges:           ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
+	NoLockfile:            false,
+	AllowOverlappingBlock: false,
 }
 
 // Options of the DB storage.
@@ -71,6 +72,10 @@ type Options struct {
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
+
+	// Overlapping blocks are allowed iff AllowOverlappingBlock is true.
+	// This in-turn enables vertical compaction and vertical query merge.
+	AllowOverlappingBlock bool
 }
 
 // Appender allows appending a batch of data. It must be completed with a
@@ -548,6 +553,11 @@ func (db *DB) reload() (err error) {
 	sort.Slice(loadable, func(i, j int) bool {
 		return loadable[i].Meta().MinTime < loadable[j].Meta().MinTime
 	})
+	if !db.opts.AllowOverlappingBlock {
+		if err := validateBlockSequence(loadable); err != nil {
+			return errors.Wrap(err, "invalid block sequence")
+		}
+	}
 
 	// Swap new blocks first for subsequently created readers to be seen.
 	db.mtx.Lock()
@@ -696,6 +706,25 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 			return errors.Wrapf(err, "delete obsolete block %s", ulid)
 		}
 	}
+	return nil
+}
+
+// validateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
+func validateBlockSequence(bs []*Block) error {
+	if len(bs) <= 1 {
+		return nil
+	}
+
+	var metas []BlockMeta
+	for _, b := range bs {
+		metas = append(metas, b.meta)
+	}
+
+	overlaps := OverlappingBlocks(metas)
+	if len(overlaps) > 0 {
+		return errors.Errorf("block time ranges overlap: %s", overlaps)
+	}
+
 	return nil
 }
 
