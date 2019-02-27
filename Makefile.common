@@ -70,7 +70,7 @@ else
 	GO_BUILD_PLATFORM ?= $(GOHOSTOS)-$(GOHOSTARCH)
 endif
 
-PROMU_VERSION ?= 0.2.0
+PROMU_VERSION ?= 0.3.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
 STATICCHECK_VERSION ?= 2019.1
 STATICCHECK_URL     := https://github.com/dominikh/go-tools/releases/download/$(STATICCHECK_VERSION)/staticcheck_$(GOHOSTOS)_$(GOHOSTARCH)
