@@ -51,7 +51,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			expectedTargets: nil,
 		},
 		{
-			title: "Multips TPs no updates",
+			title: "Multiple TPs no updates",
 			updates: map[string][]update{
 				"tp1": {},
 				"tp2": {},
