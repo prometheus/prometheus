@@ -260,8 +260,8 @@ github.com/shurcooL/httpfs/vfsutil
 # github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
 github.com/shurcooL/vfsgen
 # github.com/stretchr/testify v1.2.2
-github.com/stretchr/testify/require
 github.com/stretchr/testify/assert
+github.com/stretchr/testify/require
 # go.opencensus.io v0.18.1-0.20181204023538-aab39bd6a98b
 go.opencensus.io/plugin/ochttp
 go.opencensus.io/plugin/ochttp/propagation/tracecontext
