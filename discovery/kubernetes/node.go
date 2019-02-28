@@ -163,12 +163,10 @@ func nodeLabels(n *apiv1.Node) model.LabelSet {
 			}
 		case k == roleLabel && v != "":
 			ls[nodeRoleLabel] = lv(v)
+		default:
+			ln := strutil.SanitizeLabelName(nodeLabelPrefix + k)
+			ls[model.LabelName(ln)] = lv(v)
 		}
-	}
-
-	for k, v := range n.Labels {
-		ln := strutil.SanitizeLabelName(nodeLabelPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
 	}
 
 	for k, v := range n.Annotations {
