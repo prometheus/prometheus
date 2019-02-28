@@ -190,11 +190,9 @@ type QueueManager struct {
 func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*pkgrelabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
-	} else {
-		logger = log.With(logger, "queue", client.Name())
 	}
 	t := &QueueManager{
-		logger:         logger,
+		logger:         log.With(logger, "queue", client.Name()),
 		flushDeadline:  flushDeadline,
 		cfg:            cfg,
 		externalLabels: externalLabels,
@@ -414,11 +412,15 @@ func (t *QueueManager) calculateDesiredShards() {
 
 	var (
 		timePerSample = samplesOutDuration / samplesOut
-		desiredShards = (timePerSample * (samplesIn - samplesDropped + samplesPending + t.integralAccumulator)) / float64(time.Second)
+		desiredShards = (timePerSample * (samplesPending + t.integralAccumulator)) / float64(time.Second)
 	)
 	level.Debug(t.logger).Log("msg", "QueueManager.caclulateDesiredShards",
-		"samplesIn", samplesIn, "samplesDropped", samplesDropped,
-		"samplesOut", samplesOut, "samplesPending", samplesPending,
+		"samplesIn", samplesIn,
+		"samplesOut", samplesOut,
+		"samplesDropped", samplesDropped,
+		"samplesPending", samplesPending,
+		"samplesOutDuration", samplesOutDuration,
+		"timePerSample", timePerSample,
 		"desiredShards", desiredShards)
 
 	// Changes in the number of shards must be greater than shardToleranceFraction.

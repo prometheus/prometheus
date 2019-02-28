@@ -59,7 +59,16 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 		flushDeadline:          flushDeadline,
 		walDir:                 walDir,
 	}
+	go s.run()
 	return s
+}
+
+func (s *Storage) run() {
+	ticker := time.NewTicker(shardUpdateDuration)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.samplesIn.tick()
+	}
 }
 
 // ApplyConfig updates the state as the new config requires.
