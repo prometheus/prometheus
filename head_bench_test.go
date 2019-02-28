@@ -54,19 +54,61 @@ func BenchmarkHeadPostingForMatchers(b *testing.B) {
 	// Put a series, select it. GC it and then access it.
 	h, err := NewHead(nil, nil, nil, 1000)
 	testutil.Ok(b, err)
-	defer h.Close()
+	defer func() {
+		testutil.Ok(b, h.Close())
+	}()
 
-	// TODO: vary number of series
-	for i := 0; i < 1000000; i++ {
-		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)))
+	var hash uint64
+	for n := 0; n < 10; n++ {
+		for i := 0; i < 100000; i++ {
+			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", strconv.Itoa(i), "j", "foo"))
+			hash++
+			// Have some series that won't be matched, to properly test inverted matches.
+			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", strconv.Itoa(i), "j", "bar"))
+			hash++
+		}
 	}
 
-	b.ResetTimer()
+	n1 := labels.NewEqualMatcher("n", "1")
 
-	all, _ := labels.NewRegexpMatcher("a", ".*")
+	jFoo := labels.NewEqualMatcher("j", "foo")
+	jNotFoo := labels.Not(jFoo)
 
-	for i := 0; i < b.N; i++ {
-		_, err := PostingsForMatchers(h.indexRange(0, 1000), all)
-		testutil.Ok(b, err)
+	iStar := labels.NewMustRegexpMatcher("i", "^.*$")
+	iPlus := labels.NewMustRegexpMatcher("i", "^.+$")
+	i1Plus := labels.NewMustRegexpMatcher("i", "^1.+$")
+	iEmptyRe := labels.NewMustRegexpMatcher("i", "^$")
+	iNotEmpty := labels.Not(labels.NewEqualMatcher("i", ""))
+	iNot2 := labels.Not(labels.NewEqualMatcher("n", "2"))
+	iNot2Star := labels.Not(labels.NewMustRegexpMatcher("i", "^2.*$"))
+
+	cases := []struct {
+		name     string
+		matchers []labels.Matcher
+	}{
+		{`n="1"`, []labels.Matcher{n1}},
+		{`n="1",j="foo"`, []labels.Matcher{n1, jFoo}},
+		{`j="foo",n="1"`, []labels.Matcher{jFoo, n1}},
+		{`n="1",j!="foo"`, []labels.Matcher{n1, jNotFoo}},
+		{`i=~".*"`, []labels.Matcher{iStar}},
+		{`i=~".+"`, []labels.Matcher{iPlus}},
+		{`i=~""`, []labels.Matcher{iEmptyRe}},
+		{`i!=""`, []labels.Matcher{iNotEmpty}},
+		{`n="1",i=~".*",j="foo"`, []labels.Matcher{n1, iStar, jFoo}},
+		{`n="1",i=~".*",i!="2",j="foo"`, []labels.Matcher{n1, iStar, iNot2, jFoo}},
+		{`n="1",i!="",j="foo"`, []labels.Matcher{n1, iNotEmpty, jFoo}},
+		{`n="1",i=~".+",j="foo"`, []labels.Matcher{n1, iPlus, jFoo}},
+		{`n="1",i=~"1.+",j="foo"`, []labels.Matcher{n1, i1Plus, jFoo}},
+		{`n="1",i=~".+",i!="2",j="foo"`, []labels.Matcher{n1, iPlus, iNot2, jFoo}},
+		{`n="1",i=~".+",i!~"2.*",j="foo"`, []labels.Matcher{n1, iPlus, iNot2Star, jFoo}},
+	}
+
+	for _, c := range cases {
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, err := PostingsForMatchers(h.indexRange(0, 1000), c.matchers...)
+				testutil.Ok(b, err)
+			}
+		})
 	}
 }
