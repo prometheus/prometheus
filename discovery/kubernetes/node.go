@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -140,15 +141,30 @@ func nodeSourceFromName(name string) string {
 
 const (
 	nodeNameLabel        = metaLabelPrefix + "node_name"
+	nodeRoleLabel        = metaLabelPrefix + "node_role"
 	nodeLabelPrefix      = metaLabelPrefix + "node_label_"
 	nodeAnnotationPrefix = metaLabelPrefix + "node_annotation_"
 	nodeAddressPrefix    = metaLabelPrefix + "node_address_"
+
+	rolePrefix = "node-role.kubernetes.io/"
+	roleLabel  = "kubernetes.io/role"
 )
 
 func nodeLabels(n *apiv1.Node) model.LabelSet {
 	ls := make(model.LabelSet, len(n.Labels)+len(n.Annotations)+1)
 
 	ls[nodeNameLabel] = lv(n.Name)
+
+	for k, v := range n.Labels {
+		switch {
+		case strings.HasPrefix(k, rolePrefix):
+			if role := strings.TrimPrefix(k, rolePrefix); len(role) > 0 {
+				ls[nodeRoleLabel] = lv(role)
+			}
+		case k == roleLabel && v != "":
+			ls[nodeRoleLabel] = lv(v)
+		}
+	}
 
 	for k, v := range n.Labels {
 		ln := strutil.SanitizeLabelName(nodeLabelPrefix + k)
