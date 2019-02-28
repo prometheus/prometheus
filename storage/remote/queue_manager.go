@@ -106,15 +106,6 @@ var (
 		},
 		[]string{queue},
 	)
-	queueLastSendTimestamp = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "queue_last_send_timestamp_seconds",
-			Help:      "Timestamp of the last successful send by this queue.",
-		},
-		[]string{queue},
-	)
 	queueHighestSentTimestamp = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -160,7 +151,6 @@ func init() {
 	prometheus.MustRegister(droppedSamplesTotal)
 	prometheus.MustRegister(enqueueRetriesTotal)
 	prometheus.MustRegister(sentBatchDuration)
-	prometheus.MustRegister(queueLastSendTimestamp)
 	prometheus.MustRegister(queueHighestSentTimestamp)
 	prometheus.MustRegister(queuePendingSamples)
 	prometheus.MustRegister(shardCapacity)
@@ -189,12 +179,10 @@ type QueueManager struct {
 	client                     StorageClient
 	queueName                  string
 	watcher                    *WALWatcher
-	lastSendTimestampMetric    prometheus.Gauge
 	highestSentTimestampMetric prometheus.Gauge
 	pendingSamplesMetric       prometheus.Gauge
 	enqueueRetriesMetric       prometheus.Counter
 
-	lastSendTimestamp    int64
 	highestSentTimestamp int64
 	timestampLock        sync.Mutex
 
@@ -247,7 +235,6 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, high
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 	}
 
-	t.lastSendTimestampMetric = queueLastSendTimestamp.WithLabelValues(t.queueName)
 	t.highestSentTimestampMetric = queueHighestSentTimestamp.WithLabelValues(t.queueName)
 	t.pendingSamplesMetric = queuePendingSamples.WithLabelValues(t.queueName)
 	t.enqueueRetriesMetric = enqueueRetriesTotal.WithLabelValues(t.queueName)
@@ -411,12 +398,6 @@ func (t *QueueManager) updateShardsLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now().Unix()
-			threshold := int64(time.Duration(2 * t.cfg.BatchSendDeadline).Seconds())
-			if now-t.lastSendTimestamp > threshold {
-				level.Debug(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold")
-				continue
-			}
 			t.calculateDesiredShards()
 		case <-t.quit:
 			return
@@ -523,13 +504,6 @@ func (t *QueueManager) setHighestSentTimestamp(highest int64) {
 		t.highestSentTimestamp = highest
 		t.highestSentTimestampMetric.Set(float64(t.highestSentTimestamp) / 1000.)
 	}
-}
-
-func (t *QueueManager) setLastSendTimestamp(now time.Time) {
-	t.timestampLock.Lock()
-	defer t.timestampLock.Unlock()
-	t.lastSendTimestampMetric.Set(float64(now.UnixNano()) / 1e9)
-	t.lastSendTimestamp = now.Unix()
 }
 
 type shards struct {
@@ -713,11 +687,12 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries) {
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries) error {
 	backoff := s.qm.cfg.MinBackoff
 	req, highest, err := buildWriteRequest(samples)
-	// Failing to build the write request is non-recoverable, since it will
-	// only error if marshaling the proto to bytes fails.
 	if err != nil {
+		// Failing to build the write request is non-recoverable, since it will
+		// only error if marshaling the proto to bytes fails.
 		return err
 	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -731,8 +706,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 		if err == nil {
 			succeededSamplesTotal.WithLabelValues(s.qm.queueName).Add(float64(len(samples)))
-			now := time.Now()
-			s.qm.setLastSendTimestamp(now)
 			s.qm.setHighestSentTimestamp(highest)
 			return nil
 		}
@@ -741,7 +714,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return err
 		}
 		retriedSamplesTotal.WithLabelValues(s.qm.queueName).Add(float64(len(samples)))
-		level.Error(s.qm.logger).Log("err", err)
 
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
