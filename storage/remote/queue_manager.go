@@ -27,6 +27,7 @@ import (
 	"github.com/golang/snappy"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	pkgrelabel "github.com/prometheus/prometheus/pkg/relabel"
@@ -51,7 +52,7 @@ const (
 )
 
 var (
-	succeededSamplesTotal = prometheus.NewCounterVec(
+	succeededSamplesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -60,7 +61,7 @@ var (
 		},
 		[]string{queue},
 	)
-	failedSamplesTotal = prometheus.NewCounterVec(
+	failedSamplesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -69,7 +70,7 @@ var (
 		},
 		[]string{queue},
 	)
-	retriedSamplesTotal = prometheus.NewCounterVec(
+	retriedSamplesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -78,7 +79,7 @@ var (
 		},
 		[]string{queue},
 	)
-	droppedSamplesTotal = prometheus.NewCounterVec(
+	droppedSamplesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -87,7 +88,7 @@ var (
 		},
 		[]string{queue},
 	)
-	enqueueRetriesTotal = prometheus.NewCounterVec(
+	enqueueRetriesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -96,7 +97,7 @@ var (
 		},
 		[]string{queue},
 	)
-	sentBatchDuration = prometheus.NewHistogramVec(
+	sentBatchDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -106,7 +107,7 @@ var (
 		},
 		[]string{queue},
 	)
-	queueHighestSentTimestamp = prometheus.NewGaugeVec(
+	queueHighestSentTimestamp = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -115,7 +116,7 @@ var (
 		},
 		[]string{queue},
 	)
-	queuePendingSamples = prometheus.NewGaugeVec(
+	queuePendingSamples = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -124,7 +125,7 @@ var (
 		},
 		[]string{queue},
 	)
-	shardCapacity = prometheus.NewGaugeVec(
+	shardCapacity = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -133,7 +134,7 @@ var (
 		},
 		[]string{queue},
 	)
-	numShards = prometheus.NewGaugeVec(
+	numShards = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -143,19 +144,6 @@ var (
 		[]string{queue},
 	)
 )
-
-func init() {
-	prometheus.MustRegister(succeededSamplesTotal)
-	prometheus.MustRegister(failedSamplesTotal)
-	prometheus.MustRegister(retriedSamplesTotal)
-	prometheus.MustRegister(droppedSamplesTotal)
-	prometheus.MustRegister(enqueueRetriesTotal)
-	prometheus.MustRegister(sentBatchDuration)
-	prometheus.MustRegister(queueHighestSentTimestamp)
-	prometheus.MustRegister(queuePendingSamples)
-	prometheus.MustRegister(shardCapacity)
-	prometheus.MustRegister(numShards)
-}
 
 // StorageClient defines an interface for sending a batch of samples to an
 // external timeseries database.
@@ -183,11 +171,6 @@ type QueueManager struct {
 	pendingSamplesMetric       prometheus.Gauge
 	enqueueRetriesMetric       prometheus.Counter
 
-	highestSentTimestamp int64
-	timestampLock        sync.Mutex
-
-	highestTimestampIn *int64 // highest timestamp of any sample ingested by remote storage via scrape (Appender)
-
 	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64][]prompb.Label
 	seriesSegmentIndexes map[uint64]int
@@ -204,7 +187,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, highestTimestampIn *int64, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*pkgrelabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
+func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*pkgrelabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	} else {
@@ -218,8 +201,6 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, high
 		relabelConfigs: relabelConfigs,
 		client:         client,
 		queueName:      client.Name(),
-
-		highestTimestampIn: highestTimestampIn,
 
 		seriesLabels:         make(map[uint64][]prompb.Label),
 		seriesSegmentIndexes: make(map[uint64]int),
@@ -235,7 +216,9 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, high
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 	}
 
-	t.highestSentTimestampMetric = queueHighestSentTimestamp.WithLabelValues(t.queueName)
+	t.highestSentTimestampMetric = &maxGauge{
+		Gauge: queueHighestSentTimestamp.WithLabelValues(t.queueName),
+	}
 	t.pendingSamplesMetric = queuePendingSamples.WithLabelValues(t.queueName)
 	t.enqueueRetriesMetric = enqueueRetriesTotal.WithLabelValues(t.queueName)
 	t.watcher = NewWALWatcher(logger, client.Name(), t, walDir)
@@ -406,7 +389,6 @@ func (t *QueueManager) updateShardsLoop() {
 }
 
 func (t *QueueManager) calculateDesiredShards() {
-	t.samplesIn.tick()
 	t.samplesOut.tick()
 	t.samplesDropped.tick()
 	t.samplesOutDuration.tick()
@@ -494,16 +476,6 @@ func (t *QueueManager) newShards() *shards {
 		done: make(chan struct{}),
 	}
 	return s
-}
-
-// Check and set highestSentTimestamp
-func (t *QueueManager) setHighestSentTimestamp(highest int64) {
-	t.timestampLock.Lock()
-	defer t.timestampLock.Unlock()
-	if highest > t.highestSentTimestamp {
-		t.highestSentTimestamp = highest
-		t.highestSentTimestampMetric.Set(float64(t.highestSentTimestamp) / 1000.)
-	}
 }
 
 type shards struct {
@@ -706,7 +678,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 		if err == nil {
 			succeededSamplesTotal.WithLabelValues(s.qm.queueName).Add(float64(len(samples)))
-			s.qm.setHighestSentTimestamp(highest)
+			s.qm.highestSentTimestampMetric.Set(float64(highest / 1000))
 			return nil
 		}
 
