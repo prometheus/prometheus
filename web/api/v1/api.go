@@ -15,6 +15,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -682,13 +683,20 @@ type AlertDiscovery struct {
 	Alerts []*Alert `json:"alerts"`
 }
 
+// AlertValue
+type AlertValue float64
+
+func (p AlertValue) MarshalJSON() ([]byte, error) {
+	return json.Marshal(strconv.FormatFloat(float64(p), 'f', -1, 64))
+}
+
 // Alert has info for an alert.
 type Alert struct {
 	Labels      labels.Labels `json:"labels"`
 	Annotations labels.Labels `json:"annotations"`
 	State       string        `json:"state"`
 	ActiveAt    *time.Time    `json:"activeAt,omitempty"`
-	Value       float64       `json:"value"`
+	Value       AlertValue    `json:"value"`
 }
 
 func (api *API) alerts(r *http.Request) apiFuncResult {
@@ -715,7 +723,7 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 			Annotations: ruleAlert.Annotations,
 			State:       ruleAlert.State.String(),
 			ActiveAt:    &ruleAlert.ActiveAt,
-			Value:       ruleAlert.Value,
+			Value:       AlertValue(ruleAlert.Value),
 		}
 	}
 
