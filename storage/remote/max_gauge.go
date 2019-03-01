@@ -33,3 +33,7 @@ func (m *maxGauge) Set(value float64) {
 		m.Gauge.Set(value)
 	}
 }
+
+func (m *maxGauge) Get() float64 {
+	return m.value
+}

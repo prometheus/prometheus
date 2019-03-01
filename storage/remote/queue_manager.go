@@ -400,8 +400,8 @@ func (t *QueueManager) calculateDesiredShards() {
 		samplesOut         = t.samplesOut.rate()
 		samplesKeptRatio   = samplesOut / (t.samplesDropped.rate() + samplesOut)
 		samplesOutDuration = t.samplesOutDuration.rate()
-		highestSent        = t.highestSentTimestampMetric.value
-		highestRecv        = highestTimestamp.value
+		highestSent        = t.highestSentTimestampMetric.Get()
+		highestRecv        = highestTimestamp.Get()
 		samplesPending     = (highestRecv - highestSent) * samplesIn * samplesKeptRatio
 	)
 
@@ -692,6 +692,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return err
 		}
 		retriedSamplesTotal.WithLabelValues(s.qm.queueName).Add(float64(len(samples)))
+		level.Debug(s.qm.logger).Log("msg", "failed to send batch, retrying", "err", err)
 
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
