@@ -24,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/tsdb"
 )
 
 type fanout struct {
@@ -114,14 +115,13 @@ func (f *fanout) Close() error {
 		return err
 	}
 
-	// TODO return multiple errors?
-	var lastErr error
+	var merr tsdb.MultiError
 	for _, storage := range f.secondaries {
 		if err := storage.Close(); err != nil {
-			lastErr = err
+			merr.Add(err)
 		}
 	}
-	return lastErr
+	return merr.Err()
 }
 
 // fanoutAppender implements Appender.
@@ -333,14 +333,13 @@ func (q *mergeQuerier) LabelNames() ([]string, error) {
 
 // Close releases the resources of the Querier.
 func (q *mergeQuerier) Close() error {
-	// TODO return multiple errors?
-	var lastErr error
+	var merr tsdb.MultiError
 	for _, querier := range q.queriers {
 		if err := querier.Close(); err != nil {
-			lastErr = err
+			merr.Add(err)
 		}
 	}
-	return lastErr
+	return merr.Err()
 }
 
 // mergeSeriesSet implements SeriesSet
