@@ -159,9 +159,9 @@
           {
             alert: 'PrometheusRemoteWriteBehind',
             expr: |||
-              prometheus_remote_storage_highest_timestamp_in{%(prometheusSelector)s}
+              prometheus_remote_storage_highest_timestamp_in_seconds{%(prometheusSelector)s}
                 - on(job, instance) group_right
-              prometheus_remote_storage_queue_highest_sent_timestamp{%(prometheusSelector)s}
+              prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(prometheusSelector)s}
                 > 60
             ||| % $._config,
             'for': '15m',
