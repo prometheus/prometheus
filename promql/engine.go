@@ -614,7 +614,7 @@ func extractFuncFromPath(p []Node) string {
 	return extractFuncFromPath(p[:len(p)-1])
 }
 
-func checkForSeriesSetExpansion(ctx context.Context, expr Expr) error {
+func checkForSeriesSetExpansion(ctx context.Context, expr Expr) {
 	switch e := expr.(type) {
 	case *MatrixSelector:
 		if e.series == nil {
@@ -635,7 +635,6 @@ func checkForSeriesSetExpansion(ctx context.Context, expr Expr) error {
 			}
 		}
 	}
-	return nil
 }
 
 func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.Series, err error) {
@@ -966,9 +965,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 
 		sel := e.Args[matrixArgIndex].(*MatrixSelector)
-		if err := checkForSeriesSetExpansion(ev.ctx, sel); err != nil {
-			ev.error(err)
-		}
+		checkForSeriesSetExpansion(ev.ctx, sel)
 		mat := make(Matrix, 0, len(sel.series)) // Output matrix.
 		offset := durationMilliseconds(sel.Offset)
 		selRange := durationMilliseconds(sel.Range)
@@ -1100,9 +1097,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		})
 
 	case *VectorSelector:
-		if err := checkForSeriesSetExpansion(ev.ctx, e); err != nil {
-			ev.error(err)
-		}
+		checkForSeriesSetExpansion(ev.ctx, e)
 		mat := make(Matrix, 0, len(e.series))
 		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 		for i, s := range e.series {
@@ -1175,9 +1170,7 @@ func durationToInt64Millis(d time.Duration) int64 {
 
 // vectorSelector evaluates a *VectorSelector expression.
 func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
-	if err := checkForSeriesSetExpansion(ev.ctx, node); err != nil {
-		ev.error(err)
-	}
+	checkForSeriesSetExpansion(ev.ctx, node)
 
 	var (
 		vec = make(Vector, 0, len(node.series))
@@ -1249,9 +1242,7 @@ func putPointSlice(p []Point) {
 
 // matrixSelector evaluates a *MatrixSelector expression.
 func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
-	if err := checkForSeriesSetExpansion(ev.ctx, node); err != nil {
-		ev.error(err)
-	}
+	checkForSeriesSetExpansion(ev.ctx, node)
 
 	var (
 		offset = durationMilliseconds(node.Offset)
