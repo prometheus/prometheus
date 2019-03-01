@@ -167,7 +167,7 @@ type QueueManager struct {
 	client                     StorageClient
 	queueName                  string
 	watcher                    *WALWatcher
-	highestSentTimestampMetric prometheus.Gauge
+	highestSentTimestampMetric *maxGauge
 	pendingSamplesMetric       prometheus.Gauge
 	enqueueRetriesMetric       prometheus.Counter
 
@@ -396,11 +396,15 @@ func (t *QueueManager) calculateDesiredShards() {
 	// (received - send) so we can catch up with any backlog. We use the average
 	// outgoing batch latency to work out how many shards we need.
 	var (
-		samplesIn          = t.samplesIn.rate()
-		samplesOut         = t.samplesOut.rate()
-		samplesDropped     = t.samplesDropped.rate()
-		samplesPending     = samplesIn - samplesDropped - samplesOut
+		samplesIn      = t.samplesIn.rate()
+		samplesOut     = t.samplesOut.rate()
+		samplesDropped = t.samplesDropped.rate()
+		//samplesPending     = samplesIn - samplesDropped - samplesOut
 		samplesOutDuration = t.samplesOutDuration.rate()
+
+		highestSent    = t.highestSentTimestampMetric.value
+		highestRecv    = highestTimestamp.value
+		samplesPending = (highestRecv - highestSent) * samplesIn
 	)
 
 	// We use an integral accumulator, like in a PID, to help dampen oscillation.
@@ -412,7 +416,7 @@ func (t *QueueManager) calculateDesiredShards() {
 
 	var (
 		timePerSample = samplesOutDuration / samplesOut
-		desiredShards = (timePerSample * (samplesPending + t.integralAccumulator)) / float64(time.Second)
+		desiredShards = (timePerSample * samplesPending) / float64(time.Second)
 	)
 	level.Debug(t.logger).Log("msg", "QueueManager.caclulateDesiredShards",
 		"samplesIn", samplesIn,
@@ -421,7 +425,9 @@ func (t *QueueManager) calculateDesiredShards() {
 		"samplesPending", samplesPending,
 		"samplesOutDuration", samplesOutDuration,
 		"timePerSample", timePerSample,
-		"desiredShards", desiredShards)
+		"desiredShards", desiredShards,
+		"highestSent", highestSent,
+		"highestRecv", highestRecv)
 
 	// Changes in the number of shards must be greater than shardToleranceFraction.
 	var (

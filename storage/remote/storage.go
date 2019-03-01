@@ -57,6 +57,7 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 		logger:                 logging.Dedupe(l, 1*time.Minute),
 		localStartTimeCallback: stCallback,
 		flushDeadline:          flushDeadline,
+		samplesIn:              newEWMARate(ewmaWeight, shardUpdateDuration),
 		walDir:                 walDir,
 	}
 	go s.run()
