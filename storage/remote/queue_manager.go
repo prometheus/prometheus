@@ -396,15 +396,13 @@ func (t *QueueManager) calculateDesiredShards() {
 	// (received - send) so we can catch up with any backlog. We use the average
 	// outgoing batch latency to work out how many shards we need.
 	var (
-		samplesIn      = t.samplesIn.rate()
-		samplesOut     = t.samplesOut.rate()
-		samplesDropped = t.samplesDropped.rate()
-		//samplesPending     = samplesIn - samplesDropped - samplesOut
+		samplesIn          = t.samplesIn.rate()
+		samplesOut         = t.samplesOut.rate()
+		samplesKeptRatio   = samplesOut / (t.samplesDropped.rate() + samplesOut)
 		samplesOutDuration = t.samplesOutDuration.rate()
-
-		highestSent    = t.highestSentTimestampMetric.value
-		highestRecv    = highestTimestamp.value
-		samplesPending = (highestRecv - highestSent) * samplesIn
+		highestSent        = t.highestSentTimestampMetric.value
+		highestRecv        = highestTimestamp.value
+		samplesPending     = (highestRecv - highestSent) * samplesIn * samplesKeptRatio
 	)
 
 	// We use an integral accumulator, like in a PID, to help dampen oscillation.
@@ -421,7 +419,7 @@ func (t *QueueManager) calculateDesiredShards() {
 	level.Debug(t.logger).Log("msg", "QueueManager.caclulateDesiredShards",
 		"samplesIn", samplesIn,
 		"samplesOut", samplesOut,
-		"samplesDropped", samplesDropped,
+		"samplesKeptRatio", samplesKeptRatio,
 		"samplesPending", samplesPending,
 		"samplesOutDuration", samplesOutDuration,
 		"timePerSample", timePerSample,
