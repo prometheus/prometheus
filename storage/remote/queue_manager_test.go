@@ -54,13 +54,12 @@ func TestSampleDelivery(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	cfg.MaxShards = 1
-	var temp int64
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliver")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), &temp, cfg, nil, nil, c, defaultFlushDeadline)
+	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
 	m.seriesLabels = refSeriesToLabelsProto(series)
 
 	// These should be received by the client.
@@ -83,13 +82,12 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1
 	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
-	var temp int64
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliveryTimeout")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), &temp, cfg, nil, nil, c, defaultFlushDeadline)
+	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
 	m.seriesLabels = refSeriesToLabelsProto(series)
 	m.Start()
 	defer m.Stop()
@@ -124,13 +122,12 @@ func TestSampleDeliveryOrder(t *testing.T) {
 
 	c := NewTestStorageClient()
 	c.expectSamples(samples, series)
-	var temp int64
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliveryOrder")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), &temp, config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
+	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
 	m.seriesLabels = refSeriesToLabelsProto(series)
 
 	m.Start()
@@ -144,13 +141,11 @@ func TestShutdown(t *testing.T) {
 	deadline := 1 * time.Second
 	c := NewTestBlockedStorageClient()
 
-	var temp int64
-
 	dir, err := ioutil.TempDir("", "TestShutdown")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), &temp, config.DefaultQueueConfig, nil, nil, c, deadline)
+	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, deadline)
 	samples, series := createTimeseries(2 * config.DefaultQueueConfig.MaxSamplesPerSend)
 	m.seriesLabels = refSeriesToLabelsProto(series)
 	m.Start()
@@ -179,7 +174,6 @@ func TestShutdown(t *testing.T) {
 func TestSeriesReset(t *testing.T) {
 	c := NewTestBlockedStorageClient()
 	deadline := 5 * time.Second
-	var temp int64
 	numSegments := 4
 	numSeries := 25
 
@@ -187,7 +181,7 @@ func TestSeriesReset(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), &temp, config.DefaultQueueConfig, nil, nil, c, deadline)
+	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, deadline)
 	for i := 0; i < numSegments; i++ {
 		series := []tsdb.RefSeries{}
 		for j := 0; j < numSeries; j++ {
@@ -211,13 +205,11 @@ func TestReshard(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1
 
-	var temp int64
-
 	dir, err := ioutil.TempDir("", "TestReshard")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), &temp, cfg, nil, nil, c, defaultFlushDeadline)
+	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
 	m.seriesLabels = refSeriesToLabelsProto(series)
 
 	m.Start()
@@ -406,11 +398,10 @@ func BenchmarkStartup(b *testing.B) {
 	logger = log.With(logger, "caller", log.DefaultCaller)
 
 	for n := 0; n < b.N; n++ {
-		var temp int64
 		c := NewTestBlockedStorageClient()
 		m := NewQueueManager(logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
-			&temp, config.DefaultQueueConfig, nil, nil, c, 1*time.Minute)
+			config.DefaultQueueConfig, nil, nil, c, 1*time.Minute)
 		m.watcher.startTime = math.MaxInt64
 		m.watcher.maxSegment = segments[len(segments)-2]
 		err := m.watcher.run()

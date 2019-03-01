@@ -14,8 +14,27 @@
 package remote
 
 import (
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+)
+
+var (
+	samplesIn = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "samples_in_total",
+		Help:      "Samples in to remote storage, compare to samples out for queue managers.",
+	})
+	highestTimestamp = maxGauge{
+		Gauge: promauto.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "highest_timestamp_in_seconds",
+			Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
+		}),
+	}
 )
 
 // Appender implements scrape.Appendable.
@@ -49,14 +68,9 @@ func (t *timestampTracker) AddFast(l labels.Labels, _ uint64, ts int64, v float6
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
 	t.storage.samplesIn.incr(t.samples)
-	t.storage.samplesInMetric.Add(float64(t.samples))
 
-	t.storage.highestTimestampMtx.Lock()
-	defer t.storage.highestTimestampMtx.Unlock()
-	if t.highestTimestamp > t.storage.highestTimestamp {
-		t.storage.highestTimestamp = t.highestTimestamp
-		t.storage.highestTimestampMetric.Set(float64(t.highestTimestamp) / 1000.)
-	}
+	samplesIn.Add(float64(t.samples))
+	highestTimestamp.Set(float64(t.highestTimestamp / 1000))
 	return nil
 }
 

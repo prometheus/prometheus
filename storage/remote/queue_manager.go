@@ -27,6 +27,7 @@ import (
 	"github.com/golang/snappy"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	pkgrelabel "github.com/prometheus/prometheus/pkg/relabel"
@@ -51,7 +52,7 @@ const (
 )
 
 var (
-	succeededSamplesTotal = prometheus.NewCounterVec(
+	succeededSamplesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -60,7 +61,7 @@ var (
 		},
 		[]string{queue},
 	)
-	failedSamplesTotal = prometheus.NewCounterVec(
+	failedSamplesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -69,7 +70,7 @@ var (
 		},
 		[]string{queue},
 	)
-	retriedSamplesTotal = prometheus.NewCounterVec(
+	retriedSamplesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -78,7 +79,7 @@ var (
 		},
 		[]string{queue},
 	)
-	droppedSamplesTotal = prometheus.NewCounterVec(
+	droppedSamplesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -87,7 +88,7 @@ var (
 		},
 		[]string{queue},
 	)
-	enqueueRetriesTotal = prometheus.NewCounterVec(
+	enqueueRetriesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -96,7 +97,7 @@ var (
 		},
 		[]string{queue},
 	)
-	sentBatchDuration = prometheus.NewHistogramVec(
+	sentBatchDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -106,16 +107,7 @@ var (
 		},
 		[]string{queue},
 	)
-	queueLastSendTimestamp = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "queue_last_send_timestamp_seconds",
-			Help:      "Timestamp of the last successful send by this queue.",
-		},
-		[]string{queue},
-	)
-	queueHighestSentTimestamp = prometheus.NewGaugeVec(
+	queueHighestSentTimestamp = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -124,7 +116,7 @@ var (
 		},
 		[]string{queue},
 	)
-	queuePendingSamples = prometheus.NewGaugeVec(
+	queuePendingSamples = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -133,7 +125,7 @@ var (
 		},
 		[]string{queue},
 	)
-	shardCapacity = prometheus.NewGaugeVec(
+	shardCapacity = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -142,7 +134,7 @@ var (
 		},
 		[]string{queue},
 	)
-	numShards = prometheus.NewGaugeVec(
+	numShards = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -152,20 +144,6 @@ var (
 		[]string{queue},
 	)
 )
-
-func init() {
-	prometheus.MustRegister(succeededSamplesTotal)
-	prometheus.MustRegister(failedSamplesTotal)
-	prometheus.MustRegister(retriedSamplesTotal)
-	prometheus.MustRegister(droppedSamplesTotal)
-	prometheus.MustRegister(enqueueRetriesTotal)
-	prometheus.MustRegister(sentBatchDuration)
-	prometheus.MustRegister(queueLastSendTimestamp)
-	prometheus.MustRegister(queueHighestSentTimestamp)
-	prometheus.MustRegister(queuePendingSamples)
-	prometheus.MustRegister(shardCapacity)
-	prometheus.MustRegister(numShards)
-}
 
 // StorageClient defines an interface for sending a batch of samples to an
 // external timeseries database.
@@ -189,16 +167,9 @@ type QueueManager struct {
 	client                     StorageClient
 	queueName                  string
 	watcher                    *WALWatcher
-	lastSendTimestampMetric    prometheus.Gauge
-	highestSentTimestampMetric prometheus.Gauge
+	highestSentTimestampMetric *maxGauge
 	pendingSamplesMetric       prometheus.Gauge
 	enqueueRetriesMetric       prometheus.Counter
-
-	lastSendTimestamp    int64
-	highestSentTimestamp int64
-	timestampLock        sync.Mutex
-
-	highestTimestampIn *int64 // highest timestamp of any sample ingested by remote storage via scrape (Appender)
 
 	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64][]prompb.Label
@@ -216,22 +187,18 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, highestTimestampIn *int64, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*pkgrelabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
+func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*pkgrelabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
-	} else {
-		logger = log.With(logger, "queue", client.Name())
 	}
 	t := &QueueManager{
-		logger:         logger,
+		logger:         log.With(logger, "queue", client.Name()),
 		flushDeadline:  flushDeadline,
 		cfg:            cfg,
 		externalLabels: externalLabels,
 		relabelConfigs: relabelConfigs,
 		client:         client,
 		queueName:      client.Name(),
-
-		highestTimestampIn: highestTimestampIn,
 
 		seriesLabels:         make(map[uint64][]prompb.Label),
 		seriesSegmentIndexes: make(map[uint64]int),
@@ -247,8 +214,9 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, high
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 	}
 
-	t.lastSendTimestampMetric = queueLastSendTimestamp.WithLabelValues(t.queueName)
-	t.highestSentTimestampMetric = queueHighestSentTimestamp.WithLabelValues(t.queueName)
+	t.highestSentTimestampMetric = &maxGauge{
+		Gauge: queueHighestSentTimestamp.WithLabelValues(t.queueName),
+	}
 	t.pendingSamplesMetric = queuePendingSamples.WithLabelValues(t.queueName)
 	t.enqueueRetriesMetric = enqueueRetriesTotal.WithLabelValues(t.queueName)
 	t.watcher = NewWALWatcher(logger, client.Name(), t, walDir)
@@ -411,12 +379,6 @@ func (t *QueueManager) updateShardsLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now().Unix()
-			threshold := int64(time.Duration(2 * t.cfg.BatchSendDeadline).Seconds())
-			if now-t.lastSendTimestamp > threshold {
-				level.Debug(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold")
-				continue
-			}
 			t.calculateDesiredShards()
 		case <-t.quit:
 			return
@@ -425,7 +387,6 @@ func (t *QueueManager) updateShardsLoop() {
 }
 
 func (t *QueueManager) calculateDesiredShards() {
-	t.samplesIn.tick()
 	t.samplesOut.tick()
 	t.samplesDropped.tick()
 	t.samplesOutDuration.tick()
@@ -437,9 +398,11 @@ func (t *QueueManager) calculateDesiredShards() {
 	var (
 		samplesIn          = t.samplesIn.rate()
 		samplesOut         = t.samplesOut.rate()
-		samplesDropped     = t.samplesDropped.rate()
-		samplesPending     = samplesIn - samplesDropped - samplesOut
+		samplesKeptRatio   = samplesOut / (t.samplesDropped.rate() + samplesOut)
 		samplesOutDuration = t.samplesOutDuration.rate()
+		highestSent        = t.highestSentTimestampMetric.Get()
+		highestRecv        = highestTimestamp.Get()
+		samplesPending     = (highestRecv - highestSent) * samplesIn * samplesKeptRatio
 	)
 
 	// We use an integral accumulator, like in a PID, to help dampen oscillation.
@@ -451,12 +414,18 @@ func (t *QueueManager) calculateDesiredShards() {
 
 	var (
 		timePerSample = samplesOutDuration / samplesOut
-		desiredShards = (timePerSample * (samplesIn - samplesDropped + samplesPending + t.integralAccumulator)) / float64(time.Second)
+		desiredShards = (timePerSample * samplesPending) / float64(time.Second)
 	)
 	level.Debug(t.logger).Log("msg", "QueueManager.caclulateDesiredShards",
-		"samplesIn", samplesIn, "samplesDropped", samplesDropped,
-		"samplesOut", samplesOut, "samplesPending", samplesPending,
-		"desiredShards", desiredShards)
+		"samplesIn", samplesIn,
+		"samplesOut", samplesOut,
+		"samplesKeptRatio", samplesKeptRatio,
+		"samplesPending", samplesPending,
+		"samplesOutDuration", samplesOutDuration,
+		"timePerSample", timePerSample,
+		"desiredShards", desiredShards,
+		"highestSent", highestSent,
+		"highestRecv", highestRecv)
 
 	// Changes in the number of shards must be greater than shardToleranceFraction.
 	var (
@@ -513,23 +482,6 @@ func (t *QueueManager) newShards() *shards {
 		done: make(chan struct{}),
 	}
 	return s
-}
-
-// Check and set highestSentTimestamp
-func (t *QueueManager) setHighestSentTimestamp(highest int64) {
-	t.timestampLock.Lock()
-	defer t.timestampLock.Unlock()
-	if highest > t.highestSentTimestamp {
-		t.highestSentTimestamp = highest
-		t.highestSentTimestampMetric.Set(float64(t.highestSentTimestamp) / 1000.)
-	}
-}
-
-func (t *QueueManager) setLastSendTimestamp(now time.Time) {
-	t.timestampLock.Lock()
-	defer t.timestampLock.Unlock()
-	t.lastSendTimestampMetric.Set(float64(now.UnixNano()) / 1e9)
-	t.lastSendTimestamp = now.Unix()
 }
 
 type shards struct {
@@ -713,11 +665,12 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries) {
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries) error {
 	backoff := s.qm.cfg.MinBackoff
 	req, highest, err := buildWriteRequest(samples)
-	// Failing to build the write request is non-recoverable, since it will
-	// only error if marshaling the proto to bytes fails.
 	if err != nil {
+		// Failing to build the write request is non-recoverable, since it will
+		// only error if marshaling the proto to bytes fails.
 		return err
 	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -731,9 +684,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 		if err == nil {
 			succeededSamplesTotal.WithLabelValues(s.qm.queueName).Add(float64(len(samples)))
-			now := time.Now()
-			s.qm.setLastSendTimestamp(now)
-			s.qm.setHighestSentTimestamp(highest)
+			s.qm.highestSentTimestampMetric.Set(float64(highest / 1000))
 			return nil
 		}
 
@@ -741,7 +692,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return err
 		}
 		retriedSamplesTotal.WithLabelValues(s.qm.queueName).Add(float64(len(samples)))
-		level.Error(s.qm.logger).Log("err", err)
+		level.Debug(s.qm.logger).Log("msg", "failed to send batch, retrying", "err", err)
 
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
