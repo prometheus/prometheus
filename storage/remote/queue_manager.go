@@ -155,7 +155,7 @@ type StorageClient interface {
 }
 
 // QueueManager manages a queue of samples to be sent to the Storage
-// indicated by the provided StorageClient. Implements writeTo interface
+// indicated by the provided StorageClient. Implements WriteTo interface
 // used by WAL Watcher.
 type QueueManager struct {
 	logger log.Logger

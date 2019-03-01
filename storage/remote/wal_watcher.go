@@ -87,16 +87,22 @@ func init() {
 	prometheus.MustRegister(watcherCurrentSegment)
 }
 
-type writeTo interface {
-	Append([]tsdb.RefSample) bool
-	StoreSeries([]tsdb.RefSeries, int)
-	SeriesReset(int)
+// WriteTo is an interface for a WALWatcher to append samples and series to.
+type WriteTo interface {
+	// Append provides a slice of tsdb samples to be handled. Only the series ref is passed, not all the labels.
+	Append(samples []tsdb.RefSample) bool
+
+	// StoreSeries provides series present in the specified segment. Must be cached to provide labels the samples passed by Append.
+	StoreSeries(series []tsdb.RefSeries, segment int)
+
+	// SeriesReset tells the WriteTo implementer that all series with a segment lower than segment can be cleared.
+	SeriesReset(segment int)
 }
 
 // WALWatcher watches the TSDB WAL for a given WriteTo.
 type WALWatcher struct {
 	name           string
-	writer         writeTo
+	writer         WriteTo
 	logger         log.Logger
 	walDir         string
 	lastCheckpoint string
@@ -116,7 +122,7 @@ type WALWatcher struct {
 }
 
 // NewWALWatcher creates a new WAL watcher for a given WriteTo.
-func NewWALWatcher(logger log.Logger, name string, writer writeTo, walDir string) *WALWatcher {
+func NewWALWatcher(logger log.Logger, name string, writer WriteTo, walDir string) *WALWatcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
