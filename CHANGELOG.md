@@ -1,7 +1,7 @@
 ## 2.8.0-rc.0 / 2019-03-01
 
 * [CHANGE] `prometheus_tsdb_storage_blocks_bytes_total` is now `prometheus_tsdb_storage_blocks_bytes`. prometheus/tsdb#506
-* [FEATURE] Time overlapping blocks are now allowed; vertical compaction and vertical query merge. It is an optional feature which is controlled by `--storage.abc` flag [TODO(codesome): modify the flag after vendoring], disabled by default. prometheus/tsdb#370
+* [FEATURE] [EXPERIMENTAL] Time overlapping blocks are now allowed; vertical compaction and vertical query merge. It is an optional feature which is controlled by `--storage.tsdb.allow-overlapping-blocks` flag, disabled by default. prometheus/tsdb#370
 * [ENHANCEMENT] Use the WAL for remote_write API. #4588
 * [ENHANCEMENT] Query performance improvements. prometheus/tsdb#531
 * [ENHANCEMENT] UI enhancements with upgrade to Bootstrap 4. #5226
