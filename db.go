@@ -45,11 +45,11 @@ import (
 // DefaultOptions used for the DB. They are sane for setups using
 // millisecond precision timestamps.
 var DefaultOptions = &Options{
-	WALSegmentSize:        wal.DefaultSegmentSize,
-	RetentionDuration:     15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
-	BlockRanges:           ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
-	NoLockfile:            false,
-	AllowOverlappingBlock: false,
+	WALSegmentSize:         wal.DefaultSegmentSize,
+	RetentionDuration:      15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
+	BlockRanges:            ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
+	NoLockfile:             false,
+	AllowOverlappingBlocks: false,
 }
 
 // Options of the DB storage.
@@ -73,9 +73,9 @@ type Options struct {
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
 
-	// Overlapping blocks are allowed iff AllowOverlappingBlock is true.
+	// Overlapping blocks are allowed if AllowOverlappingBlocks is true.
 	// This in-turn enables vertical compaction and vertical query merge.
-	AllowOverlappingBlock bool
+	AllowOverlappingBlocks bool
 }
 
 // Appender allows appending a batch of data. It must be completed with a
@@ -553,7 +553,7 @@ func (db *DB) reload() (err error) {
 	sort.Slice(loadable, func(i, j int) bool {
 		return loadable[i].Meta().MinTime < loadable[j].Meta().MinTime
 	})
-	if !db.opts.AllowOverlappingBlock {
+	if !db.opts.AllowOverlappingBlocks {
 		if err := validateBlockSequence(loadable); err != nil {
 			return errors.Wrap(err, "invalid block sequence")
 		}

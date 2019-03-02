@@ -1933,7 +1933,7 @@ func TestVerticalCompaction(t *testing.T) {
 				createBlock(t, tmpdir, series)
 			}
 			opts := *DefaultOptions
-			opts.AllowOverlappingBlock = true
+			opts.AllowOverlappingBlocks = true
 			db, err := Open(tmpdir, nil, nil, &opts)
 			testutil.Ok(t, err)
 			defer func() {

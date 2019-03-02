@@ -1,5 +1,8 @@
 ## master / unreleased
 
+## 0.6.0
+  - [CHANGE] `AllowOverlappingBlock` is now `AllowOverlappingBlocks`.
+
 ## 0.5.0
  - [FEATURE] Time-ovelapping blocks are now allowed. [#370](https://github.com/prometheus/tsdb/pull/370)
    - Disabled by default and can be enabled via `AllowOverlappingBlock` option.
