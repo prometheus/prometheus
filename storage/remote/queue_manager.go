@@ -529,7 +529,7 @@ func (s *shards) start(n int) {
 // stop the shards; subsequent call to enqueue will return false.
 func (s *shards) stop() {
 	// Attempt a clean shutdown, but only wait flushDeadline for all the shards
-	// to cleanly exit.  As we're doing RPCs, enqueue can block indefinately.
+	// to cleanly exit.  As we're doing RPCs, enqueue can block indefinitely.
 	// We must be able so call stop concurrently, hence we can only take the
 	// RLock here.
 	s.mtx.RLock()
