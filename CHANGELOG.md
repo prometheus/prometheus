@@ -17,6 +17,7 @@
   * `prometheus_target_scrape_pools_failed_total`
   * `prometheus_target_scrape_pool_reloads_total`
   * `prometheus_target_scrape_pool_reloads_failed_total`
+* [BUGFIX] Fix panic when aggregator param is not a literal. #5290
 
 ## 2.7.1 / 2019-01-31
 
