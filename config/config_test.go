@@ -121,9 +121,10 @@ var expectedConf = &Config{
 		{
 			JobName: "prometheus",
 
-			HonorLabels:    true,
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorLabels:     true,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -193,9 +194,10 @@ var expectedConf = &Config{
 
 			JobName: "service-x",
 
-			ScrapeInterval: model.Duration(50 * time.Second),
-			ScrapeTimeout:  model.Duration(5 * time.Second),
-			SampleLimit:    1000,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(50 * time.Second),
+			ScrapeTimeout:   model.Duration(5 * time.Second),
+			SampleLimit:     1000,
 
 			HTTPClientConfig: config_util.HTTPClientConfig{
 				BasicAuth: &config_util.BasicAuth{
@@ -282,8 +284,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-y",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -324,8 +327,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-z",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  model.Duration(10 * time.Second),
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   model.Duration(10 * time.Second),
 
 			MetricsPath: "/metrics",
 			Scheme:      "http",
@@ -342,8 +346,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -371,8 +376,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes-namespaces",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -400,8 +406,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-marathon",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -427,8 +434,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-ec2",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -459,8 +467,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-azure",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -483,8 +492,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-nerve",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -502,8 +512,9 @@ var expectedConf = &Config{
 		{
 			JobName: "0123service-xxx",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -520,10 +531,32 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "badfederation",
+
+			HonorTimestamps: false,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: "/federate",
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				StaticConfigs: []*targetgroup.Group{
+					{
+						Targets: []model.LabelSet{
+							{model.AddressLabel: "localhost:9090"},
+						},
+						Source: "0",
+					},
+				},
+			},
+		},
+		{
 			JobName: "測試",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -542,8 +575,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-triton",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -569,8 +603,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-openstack",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,

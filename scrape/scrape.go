@@ -162,11 +162,12 @@ type scrapePool struct {
 }
 
 type scrapeLoopOptions struct {
-	target      *Target
-	scraper     scraper
-	limit       int
-	honorLabels bool
-	mrc         []*relabel.Config
+	target          *Target
+	scraper         scraper
+	limit           int
+	honorLabels     bool
+	honorTimestamps bool
+	mrc             []*relabel.Config
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -220,6 +221,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 			},
 			cache,
 			jitterSeed,
+			opts.honorTimestamps,
 		)
 	}
 
@@ -284,12 +286,13 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.client = client
 
 	var (
-		wg       sync.WaitGroup
-		interval = time.Duration(sp.config.ScrapeInterval)
-		timeout  = time.Duration(sp.config.ScrapeTimeout)
-		limit    = int(sp.config.SampleLimit)
-		honor    = sp.config.HonorLabels
-		mrc      = sp.config.MetricRelabelConfigs
+		wg              sync.WaitGroup
+		interval        = time.Duration(sp.config.ScrapeInterval)
+		timeout         = time.Duration(sp.config.ScrapeTimeout)
+		limit           = int(sp.config.SampleLimit)
+		honorLabels     = sp.config.HonorLabels
+		honorTimestamps = sp.config.HonorTimestamps
+		mrc             = sp.config.MetricRelabelConfigs
 	)
 
 	for fp, oldLoop := range sp.loops {
@@ -297,11 +300,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 			t       = sp.activeTargets[fp]
 			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout}
 			newLoop = sp.newLoop(scrapeLoopOptions{
-				target:      t,
-				scraper:     s,
-				limit:       limit,
-				honorLabels: honor,
-				mrc:         mrc,
+				target:          t,
+				scraper:         s,
+				limit:           limit,
+				honorLabels:     honorLabels,
+				honorTimestamps: honorTimestamps,
+				mrc:             mrc,
 			})
 		)
 		wg.Add(1)
@@ -362,12 +366,13 @@ func (sp *scrapePool) sync(targets []*Target) {
 	defer sp.mtx.Unlock()
 
 	var (
-		uniqueTargets = map[uint64]struct{}{}
-		interval      = time.Duration(sp.config.ScrapeInterval)
-		timeout       = time.Duration(sp.config.ScrapeTimeout)
-		limit         = int(sp.config.SampleLimit)
-		honor         = sp.config.HonorLabels
-		mrc           = sp.config.MetricRelabelConfigs
+		uniqueTargets   = map[uint64]struct{}{}
+		interval        = time.Duration(sp.config.ScrapeInterval)
+		timeout         = time.Duration(sp.config.ScrapeTimeout)
+		limit           = int(sp.config.SampleLimit)
+		honorLabels     = sp.config.HonorLabels
+		honorTimestamps = sp.config.HonorTimestamps
+		mrc             = sp.config.MetricRelabelConfigs
 	)
 
 	for _, t := range targets {
@@ -378,11 +383,12 @@ func (sp *scrapePool) sync(targets []*Target) {
 		if _, ok := sp.activeTargets[hash]; !ok {
 			s := &targetScraper{Target: t, client: sp.client, timeout: timeout}
 			l := sp.newLoop(scrapeLoopOptions{
-				target:      t,
-				scraper:     s,
-				limit:       limit,
-				honorLabels: honor,
-				mrc:         mrc,
+				target:          t,
+				scraper:         s,
+				limit:           limit,
+				honorLabels:     honorLabels,
+				honorTimestamps: honorTimestamps,
+				mrc:             mrc,
 			})
 
 			sp.activeTargets[hash] = t
@@ -576,12 +582,13 @@ type cacheEntry struct {
 }
 
 type scrapeLoop struct {
-	scraper        scraper
-	l              log.Logger
-	cache          *scrapeCache
-	lastScrapeSize int
-	buffers        *pool.Pool
-	jitterSeed     uint64
+	scraper         scraper
+	l               log.Logger
+	cache           *scrapeCache
+	lastScrapeSize  int
+	buffers         *pool.Pool
+	jitterSeed      uint64
+	honorTimestamps bool
 
 	appender            func() storage.Appender
 	sampleMutator       labelsMutator
@@ -801,6 +808,7 @@ func newScrapeLoop(ctx context.Context,
 	appender func() storage.Appender,
 	cache *scrapeCache,
 	jitterSeed uint64,
+	honorTimestamps bool,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -822,6 +830,7 @@ func newScrapeLoop(ctx context.Context,
 		jitterSeed:          jitterSeed,
 		l:                   l,
 		ctx:                 ctx,
+		honorTimestamps:     honorTimestamps,
 	}
 	sl.scrapeCtx, sl.cancel = context.WithCancel(ctx)
 
@@ -1039,6 +1048,9 @@ loop:
 
 		t := defTime
 		met, tp, v := p.Series()
+		if !sl.honorTimestamps {
+			tp = nil
+		}
 		if tp != nil {
 			t = *tp
 		}

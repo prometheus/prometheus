@@ -82,9 +82,10 @@ var (
 	DefaultScrapeConfig = ScrapeConfig{
 		// ScrapeTimeout and ScrapeInterval default to the
 		// configured globals.
-		MetricsPath: "/metrics",
-		Scheme:      "http",
-		HonorLabels: false,
+		MetricsPath:     "/metrics",
+		Scheme:          "http",
+		HonorLabels:     false,
+		HonorTimestamps: true,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -334,6 +335,8 @@ type ScrapeConfig struct {
 	JobName string `yaml:"job_name"`
 	// Indicator whether the scraped metrics should remain unmodified.
 	HonorLabels bool `yaml:"honor_labels,omitempty"`
+	// Indicator whether the scraped timestamps should be respected.
+	HonorTimestamps bool `yaml:"honor_timestamps"`
 	// A set of query parameters with which the target is scraped.
 	Params url.Values `yaml:"params,omitempty"`
 	// How frequently to scrape the targets of this scrape config.
