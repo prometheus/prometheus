@@ -169,12 +169,7 @@ func (w *WALWatcher) loop() {
 }
 
 func (w *WALWatcher) run() error {
-	nw, err := wal.New(nil, nil, w.walDir)
-	if err != nil {
-		return errors.Wrap(err, "wal.New")
-	}
-
-	_, lastSegment, err := nw.Segments()
+	_, lastSegment, err := w.firstAndLast()
 	if err != nil {
 		return errors.Wrap(err, "wal.Segments")
 	}
@@ -203,7 +198,7 @@ func (w *WALWatcher) run() error {
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
-		if err := w.watch(nw, currentSegment, currentSegment >= lastSegment); err != nil {
+		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil {
 			return err
 		}
 
@@ -220,25 +215,10 @@ func (w *WALWatcher) run() error {
 
 // findSegmentForIndex finds the first segment greater than or equal to index.
 func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
-	files, err := fileutil.ReadDir(w.walDir)
+	refs, err := w.segments()
 	if err != nil {
-		return -1, err
+		return -1, nil
 	}
-
-	var refs []int
-	var last int
-	for _, fn := range files {
-		k, err := strconv.Atoi(fn)
-		if err != nil {
-			continue
-		}
-		if len(refs) > 0 && k > last+1 {
-			return -1, errors.New("segments are not sequential")
-		}
-		refs = append(refs, k)
-		last = k
-	}
-	sort.Ints(refs)
 
 	for _, r := range refs {
 		if r >= index {
@@ -249,10 +229,46 @@ func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
 	return -1, errors.New("failed to find segment for index")
 }
 
+func (w *WALWatcher) firstAndLast() (int, int, error) {
+	refs, err := w.segments()
+	if err != nil {
+		return -1, -1, nil
+	}
+
+	if len(refs) == 0 {
+		return -1, -1, nil
+	}
+	return refs[0], refs[len(refs)-1], nil
+}
+
+func (w *WALWatcher) segments() ([]int, error) {
+	files, err := fileutil.ReadDir(w.walDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var refs []int
+	var last int
+	for _, fn := range files {
+		k, err := strconv.Atoi(fn)
+		if err != nil {
+			continue
+		}
+		if len(refs) > 0 && k > last+1 {
+			return nil, errors.New("segments are not sequential")
+		}
+		refs = append(refs, k)
+		last = k
+	}
+	sort.Ints(refs)
+
+	return refs, nil
+}
+
 // Use tail true to indicate that the reader is currently on a segment that is
 // actively being written to. If false, assume it's a full segment and we're
 // replaying it on start to cache the series records.
-func (w *WALWatcher) watch(wl *wal.WAL, segmentNum int, tail bool) error {
+func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 	segment, err := wal.OpenReadSegment(wal.SegmentName(w.walDir, segmentNum))
 	if err != nil {
 		return err
@@ -297,7 +313,7 @@ func (w *WALWatcher) watch(wl *wal.WAL, segmentNum int, tail bool) error {
 			}
 
 		case <-segmentTicker.C:
-			_, last, err := wl.Segments()
+			_, last, err := w.firstAndLast()
 			if err != nil {
 				return errors.Wrap(err, "segments")
 			}
