@@ -242,6 +242,8 @@ func (w *WALWatcher) firstAndLast() (int, int, error) {
 	return refs[0], refs[len(refs)-1], nil
 }
 
+// Copied from tsdb/wal/wal.go so we do not have to open a WAL.
+// Plan is to move WAL watcher to TSDB and dedupe these implementations.
 func (w *WALWatcher) segments() ([]int, error) {
 	files, err := fileutil.ReadDir(w.walDir)
 	if err != nil {
