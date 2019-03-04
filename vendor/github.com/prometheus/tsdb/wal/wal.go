@@ -228,19 +228,23 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	}
 	// Fresh dir, no segments yet.
 	if j == -1 {
-		if w.segment, err = CreateSegment(w.dir, 0); err != nil {
-			return nil, err
-		}
-	} else {
-		if w.segment, err = OpenWriteSegment(logger, w.dir, j); err != nil {
-			return nil, err
-		}
-		// Correctly initialize donePages.
-		stat, err := w.segment.Stat()
+		segment, err := CreateSegment(w.dir, 0)
 		if err != nil {
 			return nil, err
 		}
-		w.donePages = int(stat.Size() / pageSize)
+
+		if err := w.setSegment(segment); err != nil {
+			return nil, err
+		}
+	} else {
+		segment, err := OpenWriteSegment(logger, w.dir, j)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := w.setSegment(segment); err != nil {
+			return nil, err
+		}
 	}
 	go w.run()
 
@@ -331,7 +335,9 @@ func (w *WAL) Repair(origErr error) error {
 	if err != nil {
 		return err
 	}
-	w.segment = s
+	if err := w.setSegment(s); err != nil {
+		return err
+	}
 
 	f, err := os.Open(tmpfn)
 	if err != nil {
@@ -382,8 +388,9 @@ func (w *WAL) nextSegment() error {
 		return errors.Wrap(err, "create new segment file")
 	}
 	prev := w.segment
-	w.segment = next
-	w.donePages = 0
+	if err := w.setSegment(next); err != nil {
+		return err
+	}
 
 	// Don't block further writes by fsyncing the last segment.
 	w.actorc <- func() {
@@ -394,6 +401,19 @@ func (w *WAL) nextSegment() error {
 			level.Error(w.logger).Log("msg", "close previous segment", "err", err)
 		}
 	}
+	return nil
+}
+
+func (w *WAL) setSegment(segment *Segment) error {
+	w.segment = segment
+
+	// Correctly initialize donePages.
+	stat, err := segment.Stat()
+	if err != nil {
+		return err
+	}
+	w.donePages = int(stat.Size() / pageSize)
+
 	return nil
 }
 
