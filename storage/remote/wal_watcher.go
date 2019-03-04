@@ -445,7 +445,7 @@ func recordType(rt tsdb.RecordType) string {
 	case tsdb.RecordTombstones:
 		return "tombstones"
 	default:
-		return "unkown"
+		return "unknown"
 	}
 }
 
