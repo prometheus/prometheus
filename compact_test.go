@@ -653,7 +653,8 @@ func TestCompaction_populateBlock(t *testing.T) {
 			expErr:         errors.New("found chunk with minTime: 10 maxTime: 20 outside of compacted minTime: 0 maxTime: 10"),
 		},
 		{
-			// No special deduplication expected.
+			// Deduplication expected.
+			// Introduced by pull/370 and pull/539.
 			title: "Populate from two blocks containing duplicated chunk.",
 			inputSeriesSamples: [][]seriesSamples{
 				{
@@ -672,7 +673,53 @@ func TestCompaction_populateBlock(t *testing.T) {
 			expSeriesSamples: []seriesSamples{
 				{
 					lset:   map[string]string{"a": "b"},
-					chunks: [][]sample{{{t: 1}, {t: 2}}, {{t: 10}, {t: 20}}, {{t: 10}, {t: 20}}},
+					chunks: [][]sample{{{t: 1}, {t: 2}}, {{t: 10}, {t: 20}}},
+				},
+			},
+		},
+		{
+			// Introduced by https://github.com/prometheus/tsdb/pull/539.
+			title: "Populate from three blocks that the last two are overlapping.",
+			inputSeriesSamples: [][]seriesSamples{
+				{
+					{
+						lset:   map[string]string{"before": "fix"},
+						chunks: [][]sample{{{t: 0}, {t: 10}, {t: 11}, {t: 20}}},
+					},
+					{
+						lset:   map[string]string{"after": "fix"},
+						chunks: [][]sample{{{t: 0}, {t: 10}, {t: 11}, {t: 20}}},
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"before": "fix"},
+						chunks: [][]sample{{{t: 19}, {t: 30}}},
+					},
+					{
+						lset:   map[string]string{"after": "fix"},
+						chunks: [][]sample{{{t: 21}, {t: 30}}},
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"before": "fix"},
+						chunks: [][]sample{{{t: 27}, {t: 35}}},
+					},
+					{
+						lset:   map[string]string{"after": "fix"},
+						chunks: [][]sample{{{t: 27}, {t: 35}}},
+					},
+				},
+			},
+			expSeriesSamples: []seriesSamples{
+				{
+					lset:   map[string]string{"after": "fix"},
+					chunks: [][]sample{{{t: 0}, {t: 10}, {t: 11}, {t: 20}}, {{t: 21}, {t: 27}, {t: 30}, {t: 35}}},
+				},
+				{
+					lset:   map[string]string{"before": "fix"},
+					chunks: [][]sample{{{t: 0}, {t: 10}, {t: 11}, {t: 19}, {t: 20}, {t: 27}, {t: 30}, {t: 35}}},
 				},
 			},
 		},

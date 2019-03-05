@@ -1,4 +1,5 @@
 ## master / unreleased
+  - [BUGFIX] Update `last` after appending a non-overlapping chunk in `chunks.MergeOverlappingChunks`. [#539](https://github.com/prometheus/tsdb/pull/539)
 
 ## 0.6.0
   - [CHANGE] `AllowOverlappingBlock` is now `AllowOverlappingBlocks`.
