@@ -1,6 +1,7 @@
 var Prometheus = Prometheus || {};
 var graphTemplate;
 
+var INPUT_DEBOUNCE_WAIT = 500; // ms
 var SECOND = 1000;
 
 /**
@@ -75,7 +76,9 @@ Prometheus.Graph.prototype.initialize = function() {
       self.queryForm.submit();
       e.preventDefault();
     }
-    $(this).on('keyup input', function() { resizeTextarea(this); });
+    $(this).on('keyup input', debounce(function() {
+      resizeTextarea(this);
+    }, INPUT_DEBOUNCE_WAIT));
   });
 
   self.expr.click(function(e) {
@@ -1158,6 +1161,20 @@ const queryHistory = {
     });
   }
 };
+
+// Defers invocation of fn for waitPeriod if returned function is called repeatedly
+function debounce(fn, waitPeriod) {
+  var timeout;
+  return function() {
+    clearTimeout(timeout);
+    var args = arguments;
+    var scope = this;
+    function invokeFn() {
+      return fn.apply(scope, args);
+    }
+    timeout = setTimeout(invokeFn, waitPeriod);
+  };
+}
 
 function escapeHTML(string) {
   var entityMap = {
