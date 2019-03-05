@@ -213,6 +213,7 @@ func MergeOverlappingChunks(chks []Meta) ([]Meta, error) {
 		// So never overlaps with newChks[last-1] or anything before that.
 		if c.MinTime > newChks[last].MaxTime {
 			newChks = append(newChks, c)
+			last += 1
 			continue
 		}
 		nc := &newChks[last]
