@@ -1,3 +1,7 @@
+## 2.7.2 / 2019-03-02
+
+* [BUGFIX] `prometheus_rule_group_last_evaluation_timestamp_seconds` is now a unix timestamp. #5186
+
 ## 2.7.1 / 2019-01-31
 
 This release has a fix for a Stored DOM XSS vulnerability that can be triggered when using the query history functionality. Thanks to Dor Tumarkin from Checkmarx for reporting it.
