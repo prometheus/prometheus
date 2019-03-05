@@ -35,7 +35,7 @@ type startTimeCallback func() (int64, error)
 // storage.Storage.
 type Storage struct {
 	logger log.Logger
-	mtx    sync.RWMutex
+	mtx    sync.Mutex
 
 	// For writes
 	walDir        string
@@ -112,8 +112,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	}
 
 	// Update read clients
-
-	s.queryables = make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
+	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
 	for i, rrConf := range conf.RemoteReadConfigs {
 		c, err := NewClient(i, &ClientConfig{
 			URL:              rrConf.URL,
@@ -132,8 +131,9 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if !rrConf.ReadRecent {
 			q = PreferLocalStorageFilter(q, s.localStartTimeCallback)
 		}
-		s.queryables = append(s.queryables, q)
+		queryables = append(queryables, q)
 	}
+	s.queryables = queryables
 
 	return nil
 }
