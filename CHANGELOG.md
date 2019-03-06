@@ -1,17 +1,17 @@
 ## 2.8.0-rc.0 / 2019-03-06
 
 * [CHANGE] `prometheus_tsdb_storage_blocks_bytes_total` is now `prometheus_tsdb_storage_blocks_bytes`. prometheus/tsdb#506
-* [FEATURE] [EXPERIMENTAL] Time overlapping blocks are now allowed; vertical compaction and vertical query merge. It is an optional feature which is controlled by `--storage.tsdb.allow-overlapping-blocks` flag, disabled by default. prometheus/tsdb#370
+* [FEATURE] [EXPERIMENTAL] Time overlapping blocks are now allowed; vertical compaction and vertical query merge. It is an optional feature which is controlled by the `--storage.tsdb.allow-overlapping-blocks` flag, disabled by default. prometheus/tsdb#370
 * [ENHANCEMENT] Use the WAL for remote_write API. #4588
 * [ENHANCEMENT] Query performance improvements. prometheus/tsdb#531
 * [ENHANCEMENT] UI enhancements with upgrade to Bootstrap 4. #5226
-* [ENHANCEMENT] Reduction time that alertmanagers are in flux when reloaded. #5126
+* [ENHANCEMENT] Reduce time that Alertmanagers are in flux when reloaded. #5126
 * [ENHANCEMENT] Limit number of metrics displayed on UI to 10000. #5139
 * [ENHANCEMENT] (1) Remember All/Unhealthy choice on target-overview when reloading page. (2) Resize text-input area on Graph page on mouseclick. #5201
 * [ENHANCEMENT] In `histogram_quantile` merge buckets with equivalent le values. #5158.
 * [ENHANCEMENT] Show list of offending labels in the error message in many-to-many scenarios. #5189
 * [BUGFIX] Fix sorting of rule groups. #5260
-* [BUGFIX] discovery/kubernetes: fix support for password_file and bearer_token_file. #5211
+* [BUGFIX] Fix support for password_file and bearer_token_file in Kubernetes SD. #5211
 * [BUGFIX] Scrape: catch errors when creating HTTP clients #5182. Adds new metrics:
   * `prometheus_target_scrape_pools_total`
   * `prometheus_target_scrape_pools_failed_total`
