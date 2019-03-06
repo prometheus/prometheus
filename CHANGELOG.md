@@ -1,4 +1,4 @@
-## 2.8.0-rc.0 / 2019-03-01
+## 2.8.0-rc.0 / 2019-03-06
 
 * [CHANGE] `prometheus_tsdb_storage_blocks_bytes_total` is now `prometheus_tsdb_storage_blocks_bytes`. prometheus/tsdb#506
 * [FEATURE] [EXPERIMENTAL] Time overlapping blocks are now allowed; vertical compaction and vertical query merge. It is an optional feature which is controlled by `--storage.tsdb.allow-overlapping-blocks` flag, disabled by default. prometheus/tsdb#370
@@ -18,6 +18,10 @@
   * `prometheus_target_scrape_pool_reloads_total`
   * `prometheus_target_scrape_pool_reloads_failed_total`
 * [BUGFIX] Fix panic when aggregator param is not a literal. #5290
+
+## 2.7.2 / 2019-03-02
+
+* [BUGFIX] `prometheus_rule_group_last_evaluation_timestamp_seconds` is now a unix timestamp. #5186
 
 ## 2.7.1 / 2019-01-31
 

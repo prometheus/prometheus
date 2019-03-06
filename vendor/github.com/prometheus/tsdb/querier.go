@@ -354,11 +354,23 @@ func postingsForUnsetLabelMatcher(ix IndexReader, m labels.Matcher) (index.Posti
 		rit = append(rit, it)
 	}
 
+	merged := index.Merge(rit...)
+	// With many many postings, it's best to pre-calculate
+	// the merged list via next rather than have a ton of seeks
+	// in Without/Intersection.
+	if len(rit) > 100 {
+		pl, err := index.ExpandPostings(merged)
+		if err != nil {
+			return nil, err
+		}
+		merged = index.NewListPostings(pl)
+	}
+
 	allPostings, err := ix.Postings(index.AllPostingsKey())
 	if err != nil {
 		return nil, err
 	}
-	return index.Without(allPostings, index.Merge(rit...)), nil
+	return index.Without(allPostings, merged), nil
 }
 
 func mergeStrings(a, b []string) []string {

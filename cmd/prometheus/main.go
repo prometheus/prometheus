@@ -198,6 +198,9 @@ func main() {
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
+	a.Flag("storage.tsdb.allow-overlapping-blocks", "[EXPERIMENTAL] Allow overlapping blocks which in-turn enables vertical compaction and vertical query merge.").
+		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
+
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
@@ -652,6 +655,7 @@ func main() {
 					"NoLockfile", cfg.tsdb.NoLockfile,
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
+					"AllowOverlappingBlocks", cfg.tsdb.AllowOverlappingBlocks,
 				)
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)

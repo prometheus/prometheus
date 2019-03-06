@@ -126,6 +126,10 @@ type Options struct {
 
 	// Disable creation and consideration of lockfile.
 	NoLockfile bool
+
+	// When true it disables the overlapping blocks check.
+	// This in-turn enables vertical compaction and vertical query merge.
+	AllowOverlappingBlocks bool
 }
 
 var (
@@ -185,11 +189,12 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	}
 
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
-		WALSegmentSize:    int(opts.WALSegmentSize),
-		RetentionDuration: uint64(time.Duration(opts.RetentionDuration).Seconds() * 1000),
-		MaxBytes:          int64(opts.MaxBytes),
-		BlockRanges:       rngs,
-		NoLockfile:        opts.NoLockfile,
+		WALSegmentSize:         int(opts.WALSegmentSize),
+		RetentionDuration:      uint64(time.Duration(opts.RetentionDuration).Seconds() * 1000),
+		MaxBytes:               int64(opts.MaxBytes),
+		BlockRanges:            rngs,
+		NoLockfile:             opts.NoLockfile,
+		AllowOverlappingBlocks: opts.AllowOverlappingBlocks,
 	})
 	if err != nil {
 		return nil, err

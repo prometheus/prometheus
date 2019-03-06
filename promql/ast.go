@@ -260,6 +260,11 @@ func Walk(v Visitor, node Node, path []Node) error {
 			}
 		}
 	case *AggregateExpr:
+		if n.Param != nil {
+			if err := Walk(v, n.Param, path); err != nil {
+				return err
+			}
+		}
 		if err := Walk(v, n.Expr, path); err != nil {
 			return err
 		}

@@ -35,21 +35,17 @@ type startTimeCallback func() (int64, error)
 // storage.Storage.
 type Storage struct {
 	logger log.Logger
-	mtx    sync.RWMutex
+	mtx    sync.Mutex
 
 	// For writes
-	walDir                 string
-	queues                 []*QueueManager
-	samplesIn              *ewmaRate
-	samplesInMetric        prometheus.Counter
-	highestTimestampMtx    sync.Mutex
-	highestTimestamp       int64
-	highestTimestampMetric prometheus.Gauge
+	walDir        string
+	queues        []*QueueManager
+	samplesIn     *ewmaRate
+	flushDeadline time.Duration
 
 	// For reads
 	queryables             []storage.Queryable
 	localStartTimeCallback startTimeCallback
-	flushDeadline          time.Duration
 }
 
 // NewStorage returns a remote.Storage.
@@ -57,26 +53,23 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	shardUpdateDuration := 10 * time.Second
 	s := &Storage{
 		logger:                 logging.Dedupe(l, 1*time.Minute),
 		localStartTimeCallback: stCallback,
 		flushDeadline:          flushDeadline,
+		samplesIn:              newEWMARate(ewmaWeight, shardUpdateDuration),
 		walDir:                 walDir,
-		// queues:                 make(map[*QueueManager]struct{}),
-		samplesIn: newEWMARate(ewmaWeight, shardUpdateDuration),
-		samplesInMetric: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_remote_storage_samples_in_total",
-			Help: "Samples in to remote storage, compare to samples out for queue managers.",
-		}),
-		highestTimestampMetric: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_remote_storage_highest_timestamp_in_seconds",
-			Help: "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
-		}),
 	}
-	reg.MustRegister(s.samplesInMetric)
-	reg.MustRegister(s.highestTimestampMetric)
+	go s.run()
 	return s
+}
+
+func (s *Storage) run() {
+	ticker := time.NewTicker(shardUpdateDuration)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.samplesIn.tick()
+	}
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -101,7 +94,6 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			s.logger,
 			s.walDir,
 			s.samplesIn,
-			&s.highestTimestamp,
 			rwConf.QueueConfig,
 			conf.GlobalConfig.ExternalLabels,
 			rwConf.WriteRelabelConfigs,
@@ -120,8 +112,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	}
 
 	// Update read clients
-
-	s.queryables = make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
+	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
 	for i, rrConf := range conf.RemoteReadConfigs {
 		c, err := NewClient(i, &ClientConfig{
 			URL:              rrConf.URL,
@@ -140,8 +131,9 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if !rrConf.ReadRecent {
 			q = PreferLocalStorageFilter(q, s.localStartTimeCallback)
 		}
-		s.queryables = append(s.queryables, q)
+		queryables = append(queryables, q)
 	}
+	s.queryables = queryables
 
 	return nil
 }
