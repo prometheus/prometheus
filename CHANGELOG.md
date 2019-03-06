@@ -1,4 +1,5 @@
 ## master / unreleased
+ - [REMOVED] `FromData` is considered unused so was removed.
 
 ## 0.6.1
   - [BUGFIX] Update `last` after appending a non-overlapping chunk in `chunks.MergeOverlappingChunks`. [#539](https://github.com/prometheus/tsdb/pull/539)
