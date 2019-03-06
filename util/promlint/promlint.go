@@ -17,6 +17,7 @@ package promlint
 import (
 	"fmt"
 	"io"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -101,6 +102,7 @@ func lint(mf dto.MetricFamily) []Problem {
 		lintMetricUnits,
 		lintCounter,
 		lintHistogramSummaryReserved,
+		lintNotUniqueMetric,
 	}
 
 	var problems []Problem
@@ -109,6 +111,22 @@ func lint(mf dto.MetricFamily) []Problem {
 	}
 
 	// TODO(mdlayher): lint rules for specific metrics types.
+	return problems
+}
+
+// lintNotUniqueMetric detects duplicate metric.
+func lintNotUniqueMetric(mf dto.MetricFamily) []Problem {
+	var problems problems
+
+	for i, m := range mf.Metric {
+		for _, k := range mf.Metric[i+1:] {
+			if reflect.DeepEqual(m.Label, k.Label) {
+				problems.Add(mf, "metric not unique")
+				break
+			}
+		}
+	}
+
 	return problems
 }
 

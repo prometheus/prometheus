@@ -21,6 +21,49 @@ import (
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
+func TestLintMetricNotUnique(t *testing.T) {
+	const msg = "metric not unique"
+
+	tests := []struct {
+		name     string
+		in       string
+		problems []promlint.Problem
+	}{
+		{
+			name: "metric not unique",
+			in: `
+# HELP not_unique_counter_total the helptext
+# TYPE not_unique_counter_total counter
+not_unique_counter_total{bar="abc", spam="xyz"} 1
+not_unique_counter_total{bar="abc", spam="xyz"} 2
+`,
+			problems: []promlint.Problem{
+				{
+					Metric: "not_unique_counter_total",
+					Text:   msg,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := promlint.New(strings.NewReader(tt.in))
+
+			problems, err := l.Lint()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if want, got := tt.problems, problems; !reflect.DeepEqual(want, got) {
+				t.Fatalf("unexpected problems:\n- want: %v\n-  got: %v",
+					want, got)
+			}
+		})
+	}
+
+}
+
 func TestLintNoHelpText(t *testing.T) {
 	const msg = "no help text"
 
