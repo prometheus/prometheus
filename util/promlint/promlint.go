@@ -102,7 +102,7 @@ func lint(mf dto.MetricFamily) []Problem {
 		lintMetricUnits,
 		lintCounter,
 		lintHistogramSummaryReserved,
-		lintNotUniqueMetric,
+		lintDuplicateMetric,
 	}
 
 	var problems []Problem
@@ -114,8 +114,8 @@ func lint(mf dto.MetricFamily) []Problem {
 	return problems
 }
 
-// lintNotUniqueMetric detects duplicate metric.
-func lintNotUniqueMetric(mf dto.MetricFamily) []Problem {
+// lintDuplicateMetric detects duplicate metric.
+func lintDuplicateMetric(mf dto.MetricFamily) []Problem {
 	var problems problems
 
 	for i, m := range mf.Metric {

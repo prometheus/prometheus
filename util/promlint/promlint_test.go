@@ -21,7 +21,7 @@ import (
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
-func TestLintMetricNotUnique(t *testing.T) {
+func TestLintDuplicateMetric(t *testing.T) {
 	const msg = "metric not unique"
 
 	tests := []struct {
