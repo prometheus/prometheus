@@ -363,32 +363,12 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	return result
 }
 
-func labelsetToLabelsProto(ls model.LabelSet) []prompb.Label {
-	result := make([]prompb.Label, 0, len(ls))
-	keys := make([]string, 0, len(ls))
-
-	for k := range ls {
-		keys = append(keys, string(k))
-	}
-	sort.Strings(keys)
-
-	for _, k := range keys {
-		ln := model.LabelName(k)
-		result = append(result, prompb.Label{
-			Name:  k,
-			Value: string(ls[ln]),
-		})
-	}
-
-	return result
-}
-
 func labelsToLabelsProto(labels labels.Labels) []prompb.Label {
 	result := make([]prompb.Label, 0, len(labels))
 	for _, l := range labels {
 		result = append(result, prompb.Label{
-			Name:  iterner.intern(l.Name),
-			Value: iterner.intern(l.Value),
+			Name:  interner.intern(l.Name),
+			Value: interner.intern(l.Value),
 		})
 	}
 	return result
