@@ -318,8 +318,8 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
-		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
-		{Name: model.SchemeLabel, Value: cfg.Scheme},
+		{Name: model.MetricsPathLabel, Value: string(cfg.MetricsPath)},
+		{Name: model.SchemeLabel, Value: string(cfg.Scheme)},
 	}
 	lb := labels.NewBuilder(lset)
 

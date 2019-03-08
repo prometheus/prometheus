@@ -34,6 +34,9 @@ var (
 	patRulePath = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 )
 
+type metricsPath string
+type scheme string
+
 // Load parses the YAML input s into a Config.
 func Load(s string) (*Config, error) {
 	cfg := &Config{}
@@ -328,9 +331,9 @@ type ScrapeConfig struct {
 	// The timeout for scraping targets of this config.
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
-	MetricsPath string `yaml:"metrics_path,omitempty"`
+	MetricsPath metricsPath `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
-	Scheme string `yaml:"scheme,omitempty"`
+	Scheme scheme `yaml:"scheme,omitempty"`
 	// More than this many samples post metric-relabelling will cause the scrape to fail.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
 
@@ -603,4 +606,14 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	return c.HTTPClientConfig.Validate()
+}
+
+// IsZero is used to hide the metricsPath in the web ui config if it matches the default value.
+func (m metricsPath) IsZero() bool {
+	return m == "/metrics"
+}
+
+// IsZero is used to hide the scheme in the web ui config if it matches the default value.
+func (s scheme) IsZero() bool {
+	return s == "http"
 }
