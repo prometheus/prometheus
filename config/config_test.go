@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -58,9 +59,9 @@ var expectedConf = &Config{
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval: model.Duration(30 * time.Second),
 
-		ExternalLabels: model.LabelSet{
-			"monitor": "codelab",
-			"foo":     "bar",
+		ExternalLabels: labels.Labels{
+			{Name: "foo", Value: "bar"},
+			{Name: "monitor", Value: "codelab"},
 		},
 	},
 

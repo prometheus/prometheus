@@ -28,12 +28,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	pkgrelabel "github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/relabel"
 	"github.com/prometheus/tsdb"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 // String constants for instrumentation.
@@ -161,8 +161,8 @@ type QueueManager struct {
 	logger         log.Logger
 	flushDeadline  time.Duration
 	cfg            config.QueueConfig
-	externalLabels model.LabelSet
-	relabelConfigs []*pkgrelabel.Config
+	externalLabels labels.Labels
+	relabelConfigs []*relabel.Config
 	client         StorageClient
 	watcher        *WALWatcher
 
@@ -192,7 +192,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*pkgrelabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
+func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels labels.Labels, relabelConfigs []*relabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -331,17 +331,13 @@ func (t *QueueManager) Stop() {
 func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 	temp := make(map[uint64][]prompb.Label, len(series))
 	for _, s := range series {
-		ls := make(model.LabelSet, len(s.Labels))
-		for _, label := range s.Labels {
-			ls[model.LabelName(label.Name)] = model.LabelValue(label.Value)
-		}
-		t.processExternalLabels(ls)
+		ls := processExternalLabels(s.Labels, t.externalLabels)
 		rl := relabel.Process(ls, t.relabelConfigs...)
 		if len(rl) == 0 {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
-		temp[s.Ref] = labelsetToLabelsProto(rl)
+		temp[s.Ref] = labelsToLabelsProto(rl)
 	}
 
 	t.seriesMtx.Lock()
@@ -369,12 +365,37 @@ func (t *QueueManager) SeriesReset(index int) {
 	}
 }
 
-func (t *QueueManager) processExternalLabels(ls model.LabelSet) {
-	for ln, lv := range t.externalLabels {
-		if _, ok := ls[ln]; !ok {
-			ls[ln] = lv
+// processExternalLabels merges externalLabels into ls.  If ls contains
+// a label in externalLabels, the value in ls wins.
+func processExternalLabels(ls tsdbLabels.Labels, externalLabels labels.Labels) labels.Labels {
+	i, j, result := 0, 0, make(labels.Labels, 0, len(ls)+len(externalLabels))
+	for i < len(ls) && j < len(externalLabels) {
+		if ls[i].Name < externalLabels[j].Name {
+			result = append(result, labels.Label{
+				Name:  ls[i].Name,
+				Value: ls[i].Value,
+			})
+			i++
+		} else if ls[i].Name > externalLabels[j].Name {
+			result = append(result, externalLabels[j])
+			j++
+		} else {
+			result = append(result, labels.Label{
+				Name:  ls[i].Name,
+				Value: ls[i].Value,
+			})
+			i++
+			j++
 		}
 	}
+	for ; i < len(ls); i++ {
+		result = append(result, labels.Label{
+			Name:  ls[i].Name,
+			Value: ls[i].Value,
+		})
+	}
+	result = append(result, externalLabels[j:]...)
+	return result
 }
 
 func (t *QueueManager) updateShardsLoop() {

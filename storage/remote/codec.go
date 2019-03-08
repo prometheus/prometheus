@@ -387,8 +387,8 @@ func labelsToLabelsProto(labels labels.Labels) []prompb.Label {
 	result := make([]prompb.Label, 0, len(labels))
 	for _, l := range labels {
 		result = append(result, prompb.Label{
-			Name:  l.Name,
-			Value: l.Value,
+			Name:  iterner.intern(l.Name),
+			Value: iterner.intern(l.Value),
 		})
 	}
 	return result

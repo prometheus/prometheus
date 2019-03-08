@@ -142,15 +142,15 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	sort.Sort(byName(vec))
 
-	externalLabels := h.config.GlobalConfig.ExternalLabels.Clone()
+	externalLabels := h.config.GlobalConfig.ExternalLabels.Map()
 	if _, ok := externalLabels[model.InstanceLabel]; !ok {
 		externalLabels[model.InstanceLabel] = ""
 	}
-	externalLabelNames := make(model.LabelNames, 0, len(externalLabels))
+	externalLabelNames := make([]string, 0, len(externalLabels))
 	for ln := range externalLabels {
 		externalLabelNames = append(externalLabelNames, ln)
 	}
-	sort.Sort(externalLabelNames)
+	sort.Strings(externalLabelNames)
 
 	var (
 		lastMetricName string
@@ -196,7 +196,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				Name:  proto.String(l.Name),
 				Value: proto.String(l.Value),
 			})
-			if _, ok := externalLabels[model.LabelName(l.Name)]; ok {
+			if _, ok := externalLabels[l.Name]; ok {
 				globalUsed[l.Name] = struct{}{}
 			}
 		}

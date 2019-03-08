@@ -34,10 +34,11 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/prometheus/tsdb"
-	"github.com/prometheus/tsdb/labels"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -116,7 +117,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 		})
 		series = append(series, tsdb.RefSeries{
 			Ref:    uint64(i),
-			Labels: labels.Labels{labels.Label{Name: "__name__", Value: name}},
+			Labels: tsdbLabels.Labels{tsdbLabels.Label{Name: "__name__", Value: name}},
 		})
 	}
 
@@ -185,7 +186,7 @@ func TestSeriesReset(t *testing.T) {
 	for i := 0; i < numSegments; i++ {
 		series := []tsdb.RefSeries{}
 		for j := 0; j < numSeries; j++ {
-			series = append(series, tsdb.RefSeries{Ref: uint64((i * 100) + j), Labels: labels.Labels{labels.Label{Name: "a", Value: "a"}}})
+			series = append(series, tsdb.RefSeries{Ref: uint64((i * 100) + j), Labels: tsdbLabels.Labels{{Name: "a", Value: "a"}}})
 		}
 		m.StoreSeries(series, i)
 	}
@@ -244,7 +245,7 @@ func createTimeseries(n int) ([]tsdb.RefSample, []tsdb.RefSeries) {
 		})
 		series = append(series, tsdb.RefSeries{
 			Ref:    uint64(i),
-			Labels: labels.Labels{labels.Label{Name: "__name__", Value: name}},
+			Labels: tsdbLabels.Labels{{Name: "__name__", Value: name}},
 		})
 	}
 	return samples, series
@@ -406,5 +407,36 @@ func BenchmarkStartup(b *testing.B) {
 		m.watcher.maxSegment = segments[len(segments)-2]
 		err := m.watcher.run()
 		testutil.Ok(b, err)
+	}
+}
+
+func TestProcessExternalLabels(t *testing.T) {
+	for _, tc := range []struct {
+		labels         tsdbLabels.Labels
+		externalLabels labels.Labels
+		expected       labels.Labels
+	}{
+		// Test adding labels at the end.
+		{
+			labels:         tsdbLabels.Labels{{Name: "a", Value: "b"}},
+			externalLabels: labels.Labels{{Name: "c", Value: "d"}},
+			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+		},
+
+		// Test adding labels at the beginning.
+		{
+			labels:         tsdbLabels.Labels{{Name: "c", Value: "d"}},
+			externalLabels: labels.Labels{{Name: "a", Value: "b"}},
+			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+		},
+
+		// Test we don't override existing labels.
+		{
+			labels:         tsdbLabels.Labels{{Name: "a", Value: "b"}},
+			externalLabels: labels.Labels{{Name: "a", Value: "c"}},
+			expected:       labels.Labels{{Name: "a", Value: "b"}},
+		},
+	} {
+		require.Equal(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
 	}
 }

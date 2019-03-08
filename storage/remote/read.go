@@ -96,7 +96,7 @@ func (q *querier) Close() error {
 
 // ExternalLabelsHandler returns a storage.Queryable which creates a
 // externalLabelsQuerier.
-func ExternalLabelsHandler(next storage.Queryable, externalLabels model.LabelSet) storage.Queryable {
+func ExternalLabelsHandler(next storage.Queryable, externalLabels labels.Labels) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		q, err := next.Querier(ctx, mint, maxt)
 		if err != nil {
@@ -111,7 +111,7 @@ func ExternalLabelsHandler(next storage.Queryable, externalLabels model.LabelSet
 type externalLabelsQuerier struct {
 	storage.Querier
 
-	externalLabels model.LabelSet
+	externalLabels labels.Labels
 }
 
 // Select adds equality matchers for all external labels to the list of matchers
@@ -197,8 +197,8 @@ func (q requiredMatchersQuerier) Select(p *storage.SelectParams, matchers ...*la
 // time series again.
 func (q externalLabelsQuerier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, model.LabelSet) {
 	el := make(model.LabelSet, len(q.externalLabels))
-	for k, v := range q.externalLabels {
-		el[k] = v
+	for _, l := range q.externalLabels {
+		el[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 	}
 	for _, m := range ms {
 		if _, ok := el[model.LabelName(m.Name)]; ok {
