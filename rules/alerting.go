@@ -85,11 +85,12 @@ type Alert struct {
 	Value float64
 	// The interval during which the condition of this alert held true.
 	// ResolvedAt will be 0 to indicate a still active alert.
-	ActiveAt   time.Time
-	FiredAt    time.Time
-	ResolvedAt time.Time
-	LastSentAt time.Time
-	ValidUntil time.Time
+	ActiveAt    time.Time
+	FiredAt     time.Time
+	ResolvedAt  time.Time
+	LastSentAt  time.Time
+	ValidUntil  time.Time
+	EvaluatedAt time.Time
 }
 
 func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
@@ -348,6 +349,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		if alert, ok := r.active[h]; ok && alert.State != StateInactive {
 			alert.Value = smpl.V
 			alert.Annotations = annotations
+			alert.EvaluatedAt = ts
 			continue
 		}
 
@@ -355,6 +357,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			Labels:      lbs,
 			Annotations: annotations,
 			ActiveAt:    ts,
+			EvaluatedAt: ts,
 			State:       StatePending,
 			Value:       smpl.V,
 		}

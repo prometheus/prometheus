@@ -15,7 +15,6 @@ package v1
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -683,20 +682,13 @@ type AlertDiscovery struct {
 	Alerts []*Alert `json:"alerts"`
 }
 
-// AlertValue
-type AlertValue float64
-
-func (p AlertValue) MarshalJSON() ([]byte, error) {
-	return json.Marshal(strconv.FormatFloat(float64(p), 'f', -1, 64))
-}
-
 // Alert has info for an alert.
 type Alert struct {
 	Labels      labels.Labels `json:"labels"`
 	Annotations labels.Labels `json:"annotations"`
 	State       string        `json:"state"`
 	ActiveAt    *time.Time    `json:"activeAt,omitempty"`
-	Value       AlertValue    `json:"value"`
+	Scalar      promql.Scalar `json:"value"`
 }
 
 func (api *API) alerts(r *http.Request) apiFuncResult {
@@ -723,7 +715,7 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 			Annotations: ruleAlert.Annotations,
 			State:       ruleAlert.State.String(),
 			ActiveAt:    &ruleAlert.ActiveAt,
-			Value:       AlertValue(ruleAlert.Value),
+			Scalar:      promql.Scalar{T: timestamp.FromTime(ruleAlert.EvaluatedAt), V: ruleAlert.Value},
 		}
 	}
 
