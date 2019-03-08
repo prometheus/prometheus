@@ -163,6 +163,10 @@ input[name="end_input"], input[name="range_input"] {
   border-color: #ccc;
 }
 
+.prometheus_input_group .timepicker-picker .btn {
+  border-color: transparent;
+}
+
 .prometheus_input_group .input {
   width: 100px;
   
