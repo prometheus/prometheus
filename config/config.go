@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 
 	config_util "github.com/prometheus/common/config"
@@ -286,7 +287,7 @@ type GlobalConfig struct {
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
-	ExternalLabels model.LabelSet `yaml:"external_labels,omitempty"`
+	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -297,6 +298,12 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain GlobalConfig
 	if err := unmarshal((*plain)(gc)); err != nil {
 		return err
+	}
+
+	for _, l := range gc.ExternalLabels {
+		if !model.LabelName(l.Name).IsValid() {
+			return fmt.Errorf("%q is not a valid label name", l.Name)
+		}
 	}
 
 	// First set the correct scrape interval, then check that the timeout

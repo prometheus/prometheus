@@ -122,7 +122,7 @@ type Manager struct {
 // Options are the configurable parameters of a Handler.
 type Options struct {
 	QueueCapacity  int
-	ExternalLabels model.LabelSet
+	ExternalLabels labels.Labels
 	RelabelConfigs []*relabel.Config
 	// Used for sending HTTP requests to the Alertmanager.
 	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
@@ -351,9 +351,9 @@ func (n *Manager) Send(alerts ...*Alert) {
 	for _, a := range alerts {
 		lb := labels.NewBuilder(a.Labels)
 
-		for ln, lv := range n.opts.ExternalLabels {
-			if a.Labels.Get(string(ln)) == "" {
-				lb.Set(string(ln), string(lv))
+		for _, l := range n.opts.ExternalLabels {
+			if a.Labels.Get(l.Name) == "" {
+				lb.Set(l.Name, l.Value)
 			}
 		}
 

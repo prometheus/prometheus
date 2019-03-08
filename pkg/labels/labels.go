@@ -81,6 +81,23 @@ func (ls *Labels) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// MarshalYAML implements yaml.Marshaler.
+func (ls Labels) MarshalYAML() (interface{}, error) {
+	return ls.Map(), nil
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var m map[string]string
+
+	if err := unmarshal(&m); err != nil {
+		return err
+	}
+
+	*ls = FromMap(m)
+	return nil
+}
+
 // MatchLabels returns a subset of Labels that matches/does not match with the provided label names based on the 'on' boolean.
 // If on is set to true, it returns the subset of labels that match with the provided label names and its inverse when 'on' is set to false.
 func (ls Labels) MatchLabels(on bool, names ...string) Labels {

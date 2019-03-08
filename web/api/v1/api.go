@@ -864,11 +864,11 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		// Change equality matchers which match external labels
 		// to a matcher that looks for an empty label,
 		// as that label should not be present in the storage.
-		externalLabels := api.config().GlobalConfig.ExternalLabels.Clone()
+		externalLabels := api.config().GlobalConfig.ExternalLabels.Map()
 		filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
 		for _, m := range matchers {
-			value := externalLabels[model.LabelName(m.Name)]
-			if m.Type == labels.MatchEqual && value == model.LabelValue(m.Value) {
+			value := externalLabels[m.Name]
+			if m.Type == labels.MatchEqual && value == m.Value {
 				matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)

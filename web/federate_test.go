@@ -22,13 +22,14 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 )
 
 var scenarios = map[string]struct {
 	params         string
 	accept         string
-	externalLabels model.LabelSet
+	externalLabels labels.Labels
 	code           int
 	body           string
 }{
@@ -146,7 +147,7 @@ test_metric_without_labels{instance=""} 1001 6000000
 	},
 	"external labels are added if not already present": {
 		params:         "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
-		externalLabels: model.LabelSet{"zone": "ie", "foo": "baz"},
+		externalLabels: labels.Labels{{Name: "zone", Value: "ie"}, {Name: "foo", Value: "baz"}},
 		code:           200,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i",zone="ie"} 10000 6000000
@@ -163,7 +164,7 @@ test_metric_without_labels{foo="baz",instance="",zone="ie"} 1001 6000000
 		// This makes no sense as a configuration, but we should
 		// know what it does anyway.
 		params:         "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
-		externalLabels: model.LabelSet{"instance": "baz"},
+		externalLabels: labels.Labels{{Name: "instance", Value: "baz"}},
 		code:           200,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i"} 10000 6000000

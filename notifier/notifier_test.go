@@ -237,7 +237,7 @@ func TestCustomDo(t *testing.T) {
 func TestExternalLabels(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
-		ExternalLabels: model.LabelSet{"a": "b"},
+		ExternalLabels: labels.Labels{{Name: "a", Value: "b"}},
 		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},

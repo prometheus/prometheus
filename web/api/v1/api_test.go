@@ -927,10 +927,10 @@ func TestReadEndpoint(t *testing.T) {
 		config: func() config.Config {
 			return config.Config{
 				GlobalConfig: config.GlobalConfig{
-					ExternalLabels: model.LabelSet{
-						"baz": "a",
-						"b":   "c",
-						"d":   "e",
+					ExternalLabels: labels.Labels{
+						{Name: "baz", Value: "a"},
+						{Name: "b", Value: "c"},
+						{Name: "d", Value: "e"},
 					},
 				},
 			}

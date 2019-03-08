@@ -247,8 +247,8 @@ github.com/prometheus/procfs/internal/util
 # github.com/prometheus/tsdb v0.6.1
 github.com/prometheus/tsdb
 github.com/prometheus/tsdb/fileutil
-github.com/prometheus/tsdb/wal
 github.com/prometheus/tsdb/labels
+github.com/prometheus/tsdb/wal
 github.com/prometheus/tsdb/chunkenc
 github.com/prometheus/tsdb/chunks
 github.com/prometheus/tsdb/encoding
