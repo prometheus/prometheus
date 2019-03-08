@@ -274,7 +274,7 @@ scrape_configs:
 	)
 
 	scrapeManager := NewManager(nil, nil)
-	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*relabel.Config) loop {
+	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
 		return noopLoop()
 	}
