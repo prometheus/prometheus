@@ -294,6 +294,7 @@ func main() {
 			}
 			cfg.tsdb.RetentionDuration = y
 			newFlagRetentionDuration = y // Update the flag so that is shows it correctly in the `/flags` web gui.
+			level.Info(logger).Log("msg", "time retention value is too high. Limiting to: "+y.String())
 		}
 	}
 
