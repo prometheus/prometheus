@@ -188,7 +188,8 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 		}
 	}
 
-	db, err := tsdb.Open(path, l, r, &tsdb.Options{
+	pr := prometheus.WrapRegistererWithPrefix("prometheus_", r)
+	db, err := tsdb.Open(path, l, pr, &tsdb.Options{
 		WALSegmentSize:         int(opts.WALSegmentSize),
 		RetentionDuration:      uint64(time.Duration(opts.RetentionDuration).Seconds() * 1000),
 		MaxBytes:               int64(opts.MaxBytes),
