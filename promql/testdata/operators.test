@@ -376,3 +376,15 @@ load 5m
   testmetric2{src="a",dst="b"} 1
 
 eval_fail instant at 0m -{__name__=~'testmetric1|testmetric2'}
+
+clear
+
+load 5m
+  metricA{instance="abc",job="node"} 2
+
+# Issue #5326
+# Following the documentation, the result should be:
+#   metricA{instance="abc",job="node"} 2
+eval instant at 5m metricA == on (instance) metricA
+  {instance="abc"} 2
+
