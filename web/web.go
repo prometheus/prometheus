@@ -40,7 +40,6 @@ import (
 
 	template_text "text/template"
 
-	"github.com/alecthomas/units"
 	"github.com/cockroachdb/cmux"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -593,8 +592,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		TimeSeriesCount     int64
 		LastConfigTime      time.Time
 		ReloadConfigSuccess bool
-		RetentionTime       model.Duration
-		RetentionSize       units.Base2Bytes
+		StorageRetention    string
 	}{
 		Birth:          h.birth,
 		CWD:            h.cwd,
@@ -603,9 +601,18 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		GoroutineCount: runtime.NumGoroutine(),
 		GOMAXPROCS:     runtime.GOMAXPROCS(0),
 		GOGC:           os.Getenv("GOGC"),
-		RetentionTime:  h.options.TSDBCfg.RetentionDuration,
-		RetentionSize:  h.options.TSDBCfg.MaxBytes,
 	}
+
+	if h.options.TSDBCfg.RetentionDuration != 0 {
+		status.StorageRetention = h.options.TSDBCfg.RetentionDuration.String()
+	}
+	if h.options.TSDBCfg.MaxBytes != 0 {
+		if status.StorageRetention != "" {
+			status.StorageRetention = status.StorageRetention + " or "
+		}
+		status.StorageRetention = status.StorageRetention + h.options.TSDBCfg.MaxBytes.String()
+	}
+
 	metrics, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error gathering runtime status: %s", err), http.StatusInternalServerError)
