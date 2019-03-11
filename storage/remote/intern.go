@@ -18,18 +18,26 @@
 
 package remote
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 var interner = newPool()
 
 type pool struct {
 	mtx  sync.RWMutex
-	pool map[string]string
+	pool map[string]*entry
+}
+
+type entry struct {
+	s    string
+	refs int64
 }
 
 func newPool() *pool {
 	return &pool{
-		pool: map[string]string{},
+		pool: map[string]*entry{},
 	}
 }
 
@@ -42,18 +50,44 @@ func (p *pool) intern(s string) string {
 	interned, ok := p.pool[s]
 	p.mtx.RUnlock()
 	if ok {
-		return interned
+		atomic.AddInt64(&interned.refs, 1)
+		return interned.s
+	}
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if interned, ok := p.pool[s]; ok {
+		atomic.AddInt64(&interned.refs, 1)
+		return interned.s
+	}
+
+	s = pack(s)
+	p.pool[s] = &entry{
+		s:    s,
+		refs: 1,
+	}
+	return s
+}
+
+func (p *pool) release(s string) {
+	p.mtx.RLock()
+	interned, ok := p.pool[s]
+	p.mtx.RUnlock()
+
+	if !ok {
+		panic("released unknown string")
+	}
+
+	refs := atomic.AddInt64(&interned.refs, -1)
+	if refs > 0 {
+		return
 	}
 
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	if interned, ok := p.pool[s]; ok {
-		return interned
+	if atomic.LoadInt64(&interned.refs) != 0 {
+		return
 	}
-
-	s = pack(s)
-	p.pool[s] = s
-	return s
+	delete(p.pool, s)
 }
 
 // StrPack returns a new instance of s which is tightly packed in memory.

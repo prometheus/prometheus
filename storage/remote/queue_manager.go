@@ -343,8 +343,12 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for ref, labels := range temp {
-		t.seriesLabels[ref] = labels
 		t.seriesSegmentIndexes[ref] = index
+
+		if orig, ok := t.seriesLabels[ref]; ok {
+			release(orig)
+		}
+		t.seriesLabels[ref] = labels
 	}
 }
 
@@ -359,9 +363,17 @@ func (t *QueueManager) SeriesReset(index int) {
 	// that were not also present in the checkpoint.
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
-			delete(t.seriesLabels, k)
 			delete(t.seriesSegmentIndexes, k)
+			release(t.seriesLabels[k])
+			delete(t.seriesLabels, k)
 		}
+	}
+}
+
+func release(ls []prompb.Label) {
+	for _, l := range ls {
+		interner.release(l.Name)
+		interner.release(l.Value)
 	}
 }
 
