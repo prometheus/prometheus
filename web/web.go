@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	prometheus_tsdb "github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/tsdb"
 	"golang.org/x/net/netutil"
 
@@ -165,6 +166,7 @@ type PrometheusVersion struct {
 type Options struct {
 	Context       context.Context
 	TSDB          func() *tsdb.DB
+	TSDBCfg       prometheus_tsdb.Options
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
 	ScrapeManager *scrape.Manager
@@ -590,6 +592,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		TimeSeriesCount     int64
 		LastConfigTime      time.Time
 		ReloadConfigSuccess bool
+		StorageRetention    string
 	}{
 		Birth:          h.birth,
 		CWD:            h.cwd,
@@ -599,6 +602,17 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		GOMAXPROCS:     runtime.GOMAXPROCS(0),
 		GOGC:           os.Getenv("GOGC"),
 	}
+
+	if h.options.TSDBCfg.RetentionDuration != 0 {
+		status.StorageRetention = h.options.TSDBCfg.RetentionDuration.String()
+	}
+	if h.options.TSDBCfg.MaxBytes != 0 {
+		if status.StorageRetention != "" {
+			status.StorageRetention = status.StorageRetention + " or "
+		}
+		status.StorageRetention = status.StorageRetention + h.options.TSDBCfg.MaxBytes.String()
+	}
+
 	metrics, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error gathering runtime status: %s", err), http.StatusInternalServerError)

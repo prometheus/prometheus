@@ -19,7 +19,6 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net"
 	"net/http"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
@@ -286,9 +285,14 @@ func main() {
 			level.Info(logger).Log("msg", "no time or size retention was set so using the default time retention", "duration", defaultRetentionDuration)
 		}
 
-		// Check for overflows. This limits our max retention to ~292.5y.
+		// Check for overflows. This limits our max retention to 100y.
 		if cfg.tsdb.RetentionDuration < 0 {
-			cfg.tsdb.RetentionDuration = math.MaxInt64
+			y, err := model.ParseDuration("100y")
+			if err != nil {
+				panic(err)
+			}
+			cfg.tsdb.RetentionDuration = y
+			level.Info(logger).Log("msg", "time retention value is too high. Limiting to: "+y.String())
 		}
 	}
 
@@ -371,6 +375,7 @@ func main() {
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
+	cfg.web.TSDBCfg = cfg.tsdb
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,
