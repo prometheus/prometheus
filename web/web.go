@@ -40,6 +40,7 @@ import (
 
 	template_text "text/template"
 
+	"github.com/alecthomas/units"
 	"github.com/cockroachdb/cmux"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -51,6 +52,7 @@ import (
 	"github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	prometheus_tsdb "github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/tsdb"
 	"golang.org/x/net/netutil"
 
@@ -165,6 +167,7 @@ type PrometheusVersion struct {
 type Options struct {
 	Context       context.Context
 	TSDB          func() *tsdb.DB
+	TSDBCfg       prometheus_tsdb.Options
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
 	ScrapeManager *scrape.Manager
@@ -590,6 +593,8 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		TimeSeriesCount     int64
 		LastConfigTime      time.Time
 		ReloadConfigSuccess bool
+		RetentionTime       model.Duration
+		RetentionSize       units.Base2Bytes
 	}{
 		Birth:          h.birth,
 		CWD:            h.cwd,
@@ -598,6 +603,8 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		GoroutineCount: runtime.NumGoroutine(),
 		GOMAXPROCS:     runtime.GOMAXPROCS(0),
 		GOGC:           os.Getenv("GOGC"),
+		RetentionTime:  h.options.TSDBCfg.RetentionDuration,
+		RetentionSize:  h.options.TSDBCfg.MaxBytes,
 	}
 	metrics, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {

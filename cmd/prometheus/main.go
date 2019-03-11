@@ -282,7 +282,6 @@ func main() {
 
 		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 {
 			cfg.tsdb.RetentionDuration = defaultRetentionDuration
-			newFlagRetentionDuration = defaultRetentionDuration // Update the flag so that is shows it correctly in the `/flags` web gui.
 			level.Info(logger).Log("msg", "no time or size retention was set so using the default time retention", "duration", defaultRetentionDuration)
 		}
 
@@ -293,7 +292,6 @@ func main() {
 				panic(err)
 			}
 			cfg.tsdb.RetentionDuration = y
-			newFlagRetentionDuration = y // Update the flag so that is shows it correctly in the `/flags` web gui.
 			level.Info(logger).Log("msg", "time retention value is too high. Limiting to: "+y.String())
 		}
 	}
@@ -377,6 +375,7 @@ func main() {
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
+	cfg.web.TSDBCfg = cfg.tsdb
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,
