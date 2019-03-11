@@ -698,7 +698,7 @@ func (api *API) alerts(r *http.Request) apiFuncResult {
 	for _, alertingRule := range alertingRules {
 		alerts = append(
 			alerts,
-			rulesAlertsToAPIAlerts(alertingRule.ActiveAlerts())...,
+			rulesAlertsToAPIAlerts(alertingRule.ActiveAlerts(), alertingRule.GetEvaluationTimestamp())...,
 		)
 	}
 
@@ -707,7 +707,7 @@ func (api *API) alerts(r *http.Request) apiFuncResult {
 	return apiFuncResult{res, nil, nil, nil}
 }
 
-func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
+func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert, alertTimestamp time.Time) []*Alert {
 	apiAlerts := make([]*Alert, len(rulesAlerts))
 	for i, ruleAlert := range rulesAlerts {
 		apiAlerts[i] = &Alert{
@@ -715,7 +715,7 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 			Annotations: ruleAlert.Annotations,
 			State:       ruleAlert.State.String(),
 			ActiveAt:    &ruleAlert.ActiveAt,
-			Scalar:      promql.Scalar{T: timestamp.FromTime(ruleAlert.EvaluatedAt), V: ruleAlert.Value},
+			Scalar:      promql.Scalar{T: timestamp.FromTime(alertTimestamp), V: ruleAlert.Value},
 		}
 	}
 
@@ -790,7 +790,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					Duration:    rule.Duration().Seconds(),
 					Labels:      rule.Labels(),
 					Annotations: rule.Annotations(),
-					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts(), rule.GetEvaluationTimestamp()),
 					Health:      rule.Health(),
 					LastError:   lastError,
 					Type:        "alerting",
