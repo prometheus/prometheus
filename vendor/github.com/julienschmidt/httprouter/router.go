@@ -138,6 +138,10 @@ type Router struct {
 	// handler.
 	HandleMethodNotAllowed bool
 
+	// If enabled, the router automatically replies to OPTIONS requests.
+	// Custom OPTIONS handlers take priority over automatic replies.
+	HandleOPTIONS bool
+
 	// Configurable http.Handler which is called when no matching route is
 	// found. If it is not set, http.NotFound is used.
 	NotFound http.Handler
@@ -145,6 +149,8 @@ type Router struct {
 	// Configurable http.Handler which is called when a request
 	// cannot be routed and HandleMethodNotAllowed is true.
 	// If it is not set, http.Error with http.StatusMethodNotAllowed is used.
+	// The "Allow" header with allowed request methods is set before the handler
+	// is called.
 	MethodNotAllowed http.Handler
 
 	// Function to handle panics recovered from http handlers.
@@ -165,6 +171,7 @@ func New() *Router {
 		RedirectTrailingSlash:  true,
 		RedirectFixedPath:      true,
 		HandleMethodNotAllowed: true,
+		HandleOPTIONS:          true,
 	}
 }
 
@@ -229,16 +236,6 @@ func (r *Router) Handle(method, path string, handle Handle) {
 	root.addRoute(path, handle)
 }
 
-// Handler is an adapter which allows the usage of an http.Handler as a
-// request handle.
-func (r *Router) Handler(method, path string, handler http.Handler) {
-	r.Handle(method, path,
-		func(w http.ResponseWriter, req *http.Request, _ Params) {
-			handler.ServeHTTP(w, req)
-		},
-	)
-}
-
 // HandlerFunc is an adapter which allows the usage of an http.HandlerFunc as a
 // request handle.
 func (r *Router) HandlerFunc(method, path string, handler http.HandlerFunc) {
@@ -286,15 +283,53 @@ func (r *Router) Lookup(method, path string) (Handle, Params, bool) {
 	return nil, nil, false
 }
 
+func (r *Router) allowed(path, reqMethod string) (allow string) {
+	if path == "*" { // server-wide
+		for method := range r.trees {
+			if method == "OPTIONS" {
+				continue
+			}
+
+			// add request method to list of allowed methods
+			if len(allow) == 0 {
+				allow = method
+			} else {
+				allow += ", " + method
+			}
+		}
+	} else { // specific path
+		for method := range r.trees {
+			// Skip the requested method - we already tried this one
+			if method == reqMethod || method == "OPTIONS" {
+				continue
+			}
+
+			handle, _, _ := r.trees[method].getValue(path)
+			if handle != nil {
+				// add request method to list of allowed methods
+				if len(allow) == 0 {
+					allow = method
+				} else {
+					allow += ", " + method
+				}
+			}
+		}
+	}
+	if len(allow) > 0 {
+		allow += ", OPTIONS"
+	}
+	return
+}
+
 // ServeHTTP makes the router implement the http.Handler interface.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if r.PanicHandler != nil {
 		defer r.recv(w, req)
 	}
 
-	if root := r.trees[req.Method]; root != nil {
-		path := req.URL.Path
+	path := req.URL.Path
 
+	if root := r.trees[req.Method]; root != nil {
 		if handle, ps, tsr := root.getValue(path); handle != nil {
 			handle(w, req, ps)
 			return
@@ -331,16 +366,17 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Handle 405
-	if r.HandleMethodNotAllowed {
-		for method := range r.trees {
-			// Skip the requested method - we already tried this one
-			if method == req.Method {
-				continue
-			}
-
-			handle, _, _ := r.trees[method].getValue(req.URL.Path)
-			if handle != nil {
+	if req.Method == "OPTIONS" && r.HandleOPTIONS {
+		// Handle OPTIONS requests
+		if allow := r.allowed(path, req.Method); len(allow) > 0 {
+			w.Header().Set("Allow", allow)
+			return
+		}
+	} else {
+		// Handle 405
+		if r.HandleMethodNotAllowed {
+			if allow := r.allowed(path, req.Method); len(allow) > 0 {
+				w.Header().Set("Allow", allow)
 				if r.MethodNotAllowed != nil {
 					r.MethodNotAllowed.ServeHTTP(w, req)
 				} else {

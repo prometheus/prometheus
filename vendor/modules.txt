@@ -188,7 +188,7 @@ github.com/influxdata/influxdb/pkg/escape
 github.com/jmespath/go-jmespath
 # github.com/json-iterator/go v0.0.0-20180612202835-f2b4162afba3
 github.com/json-iterator/go
-# github.com/julienschmidt/httprouter v0.0.0-20150905172533-109e267447e9
+# github.com/julienschmidt/httprouter v1.2.0
 github.com/julienschmidt/httprouter
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 github.com/kr/logfmt
@@ -233,7 +233,7 @@ github.com/prometheus/client_golang/prometheus/promauto
 github.com/prometheus/client_golang/prometheus/internal
 # github.com/prometheus/client_model v0.0.0-20180712105110-5c3871d89910
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.0.0-20181126121408-4724e9255275
+# github.com/prometheus/common v0.2.1-0.20190405101317-a82f4c12f983
 github.com/prometheus/common/model
 github.com/prometheus/common/promlog
 github.com/prometheus/common/promlog/flag
