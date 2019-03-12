@@ -1,4 +1,6 @@
-## 2.8.0-rc.0 / 2019-03-06
+## 2.8.0 / 2019-03-12
+
+This release uses Write-Ahead Logging (WAL) for the remote_write API. This currently causes a slight increase in memory usage, which will be addressed in future releases.
 
 * [CHANGE] `prometheus_tsdb_storage_blocks_bytes_total` is now `prometheus_tsdb_storage_blocks_bytes`. prometheus/tsdb#506
 * [FEATURE] [EXPERIMENTAL] Time overlapping blocks are now allowed; vertical compaction and vertical query merge. It is an optional feature which is controlled by the `--storage.tsdb.allow-overlapping-blocks` flag, disabled by default. prometheus/tsdb#370
@@ -10,6 +12,7 @@
 * [ENHANCEMENT] (1) Remember All/Unhealthy choice on target-overview when reloading page. (2) Resize text-input area on Graph page on mouseclick. #5201
 * [ENHANCEMENT] In `histogram_quantile` merge buckets with equivalent le values. #5158.
 * [ENHANCEMENT] Show list of offending labels in the error message in many-to-many scenarios. #5189
+* [ENHANCEMENT] Show `Storage Retention` criteria in effect on `/status` page. #5322
 * [BUGFIX] Fix sorting of rule groups. #5260
 * [BUGFIX] Fix support for password_file and bearer_token_file in Kubernetes SD. #5211
 * [BUGFIX] Scrape: catch errors when creating HTTP clients #5182. Adds new metrics:
