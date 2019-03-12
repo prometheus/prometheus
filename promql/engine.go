@@ -1893,7 +1893,7 @@ func btos(b bool) float64 {
 // result of the op operation.
 func shouldDropMetricName(op ItemType) bool {
 	switch op {
-	case itemADD, itemSUB, itemDIV, itemMUL, itemMOD:
+	case itemADD, itemSUB, itemDIV, itemMUL, itemPOW, itemMOD:
 		return true
 	default:
 		return false
