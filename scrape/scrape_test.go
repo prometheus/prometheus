@@ -219,7 +219,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*relabel.Config) loop {
+	newLoop := func(opts scrapeLoopOptions) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -229,8 +229,8 @@ func TestScrapePoolReload(t *testing.T) {
 				t.Errorf("Expected scrape timeout %d but got %d", 2*time.Second, timeout)
 			}
 			mtx.Lock()
-			if !stopped[s.(*targetScraper).hash()] {
-				t.Errorf("Scrape loop for %v not stopped yet", s.(*targetScraper))
+			if !stopped[opts.scraper.(*targetScraper).hash()] {
+				t.Errorf("Scrape loop for %v not stopped yet", opts.scraper.(*targetScraper))
 			}
 			mtx.Unlock()
 		}
@@ -307,7 +307,9 @@ func TestScrapePoolAppender(t *testing.T) {
 	app := &nopAppendable{}
 	sp, _ := newScrapePool(cfg, app, nil)
 
-	loop := sp.newLoop(&Target{}, nil, 0, false, nil)
+	loop := sp.newLoop(scrapeLoopOptions{
+		target: &Target{},
+	})
 	appl, ok := loop.(*scrapeLoop)
 	if !ok {
 		t.Fatalf("Expected scrapeLoop but got %T", loop)
@@ -322,7 +324,10 @@ func TestScrapePoolAppender(t *testing.T) {
 		t.Fatalf("Expected base appender but got %T", tl.Appender)
 	}
 
-	loop = sp.newLoop(&Target{}, nil, 100, false, nil)
+	loop = sp.newLoop(scrapeLoopOptions{
+		target: &Target{},
+		limit:  100,
+	})
 	appl, ok = loop.(*scrapeLoop)
 	if !ok {
 		t.Fatalf("Expected scrapeLoop but got %T", loop)
