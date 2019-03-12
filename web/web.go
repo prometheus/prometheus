@@ -253,10 +253,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Flags,
 		h.testReady,
 		func() api_v1.TSDBAdmin {
-			if db := h.options.TSDB(); db != nil {
-				return db
-			}
-			return nil
+			return h.options.TSDB()
 		},
 		h.options.EnableAdminAPI,
 		logger,
