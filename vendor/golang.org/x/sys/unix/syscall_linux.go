@@ -12,6 +12,9 @@
 package unix
 
 import (
+	"encoding/binary"
+	"net"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -55,6 +58,15 @@ func Fchmodat(dirfd int, path string, mode uint32, flags int) (err error) {
 // ioctl itself should not be exposed directly, but additional get/set
 // functions for specific types are permissible.
 
+// IoctlSetPointerInt performs an ioctl operation which sets an
+// integer value on fd, using the specified request number. The ioctl
+// argument is called with a pointer to the integer value, rather than
+// passing the integer value directly.
+func IoctlSetPointerInt(fd int, req uint, value int) error {
+	v := int32(value)
+	return ioctl(fd, req, uintptr(unsafe.Pointer(&v)))
+}
+
 // IoctlSetInt performs an ioctl operation which sets an integer value
 // on fd, using the specified request number.
 func IoctlSetInt(fd int, req uint, value int) error {
@@ -67,6 +79,12 @@ func ioctlSetWinsize(fd int, req uint, value *Winsize) error {
 
 func ioctlSetTermios(fd int, req uint, value *Termios) error {
 	return ioctl(fd, req, uintptr(unsafe.Pointer(value)))
+}
+
+func IoctlSetRTCTime(fd int, value *RTCTime) error {
+	err := ioctl(fd, RTC_SET_TIME, uintptr(unsafe.Pointer(value)))
+	runtime.KeepAlive(value)
+	return err
 }
 
 // IoctlGetInt performs an ioctl operation which gets an integer value
@@ -86,6 +104,12 @@ func IoctlGetWinsize(fd int, req uint) (*Winsize, error) {
 func IoctlGetTermios(fd int, req uint) (*Termios, error) {
 	var value Termios
 	err := ioctl(fd, req, uintptr(unsafe.Pointer(&value)))
+	return &value, err
+}
+
+func IoctlGetRTCTime(fd int) (*RTCTime, error) {
+	var value RTCTime
+	err := ioctl(fd, RTC_RD_TIME, uintptr(unsafe.Pointer(&value)))
 	return &value, err
 }
 
@@ -710,6 +734,51 @@ func (sa *SockaddrXDP) sockaddr() (unsafe.Pointer, _Socklen, error) {
 	return unsafe.Pointer(&sa.raw), SizeofSockaddrXDP, nil
 }
 
+// This constant mirrors the #define of PX_PROTO_OE in
+// linux/if_pppox.h. We're defining this by hand here instead of
+// autogenerating through mkerrors.sh because including
+// linux/if_pppox.h causes some declaration conflicts with other
+// includes (linux/if_pppox.h includes linux/in.h, which conflicts
+// with netinet/in.h). Given that we only need a single zero constant
+// out of that file, it's cleaner to just define it by hand here.
+const px_proto_oe = 0
+
+type SockaddrPPPoE struct {
+	SID    uint16
+	Remote net.HardwareAddr
+	Dev    string
+	raw    RawSockaddrPPPoX
+}
+
+func (sa *SockaddrPPPoE) sockaddr() (unsafe.Pointer, _Socklen, error) {
+	if len(sa.Remote) != 6 {
+		return nil, 0, EINVAL
+	}
+	if len(sa.Dev) > IFNAMSIZ-1 {
+		return nil, 0, EINVAL
+	}
+
+	*(*uint16)(unsafe.Pointer(&sa.raw[0])) = AF_PPPOX
+	// This next field is in host-endian byte order. We can't use the
+	// same unsafe pointer cast as above, because this value is not
+	// 32-bit aligned and some architectures don't allow unaligned
+	// access.
+	//
+	// However, the value of px_proto_oe is 0, so we can use
+	// encoding/binary helpers to write the bytes without worrying
+	// about the ordering.
+	binary.BigEndian.PutUint32(sa.raw[2:6], px_proto_oe)
+	// This field is deliberately big-endian, unlike the previous
+	// one. The kernel expects SID to be in network byte order.
+	binary.BigEndian.PutUint16(sa.raw[6:8], sa.SID)
+	copy(sa.raw[8:14], sa.Remote)
+	for i := 14; i < 14+IFNAMSIZ; i++ {
+		sa.raw[i] = 0
+	}
+	copy(sa.raw[14:], sa.Dev)
+	return unsafe.Pointer(&sa.raw), SizeofSockaddrPPPoX, nil
+}
+
 func anyToSockaddr(fd int, rsa *RawSockaddrAny) (Sockaddr, error) {
 	switch rsa.Addr.Family {
 	case AF_NETLINK:
@@ -818,6 +887,22 @@ func anyToSockaddr(fd int, rsa *RawSockaddrAny) (Sockaddr, error) {
 			Ifindex:      pp.Ifindex,
 			QueueID:      pp.Queue_id,
 			SharedUmemFD: pp.Shared_umem_fd,
+		}
+		return sa, nil
+	case AF_PPPOX:
+		pp := (*RawSockaddrPPPoX)(unsafe.Pointer(rsa))
+		if binary.BigEndian.Uint32(pp[2:6]) != px_proto_oe {
+			return nil, EINVAL
+		}
+		sa := &SockaddrPPPoE{
+			SID:    binary.BigEndian.Uint16(pp[6:8]),
+			Remote: net.HardwareAddr(pp[8:14]),
+		}
+		for i := 14; i < 14+IFNAMSIZ; i++ {
+			if pp[i] == 0 {
+				sa.Dev = string(pp[14:i])
+				break
+			}
 		}
 		return sa, nil
 	}
@@ -1288,6 +1373,13 @@ func Mount(source string, target string, fstype string, flags uintptr, data stri
 	return mount(source, target, fstype, flags, datap)
 }
 
+func Sendfile(outfd int, infd int, offset *int64, count int) (written int, err error) {
+	if raceenabled {
+		raceReleaseMerge(unsafe.Pointer(&ioSync))
+	}
+	return sendfile(outfd, infd, offset, count)
+}
+
 // Sendto
 // Recvfrom
 // Socketpair
@@ -1302,6 +1394,7 @@ func Mount(source string, target string, fstype string, flags uintptr, data stri
 //sys	Chroot(path string) (err error)
 //sys	ClockGetres(clockid int32, res *Timespec) (err error)
 //sys	ClockGettime(clockid int32, time *Timespec) (err error)
+//sys	ClockNanosleep(clockid int32, flags int, request *Timespec, remain *Timespec) (err error)
 //sys	Close(fd int) (err error)
 //sys	CopyFileRange(rfd int, roff *int64, wfd int, woff *int64, len int, flags int) (n int, err error)
 //sys	DeleteModule(name string, flags int) (err error)
@@ -1362,7 +1455,6 @@ func Getpgrp() (pid int) {
 //sys	Pselect(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timespec, sigmask *Sigset_t) (n int, err error) = SYS_PSELECT6
 //sys	read(fd int, p []byte) (n int, err error)
 //sys	Removexattr(path string, attr string) (err error)
-//sys	Renameat(olddirfd int, oldpath string, newdirfd int, newpath string) (err error)
 //sys	Renameat2(olddirfd int, oldpath string, newdirfd int, newpath string, flags uint) (err error)
 //sys	RequestKey(keyType string, description string, callback string, destRingid int) (id int, err error)
 //sys	Setdomainname(p []byte) (err error)
@@ -1387,6 +1479,7 @@ func Setgid(uid int) (err error) {
 
 //sys	Setpriority(which int, who int, prio int) (err error)
 //sys	Setxattr(path string, attr string, data []byte, flags int) (err error)
+//sys	Signalfd(fd int, mask *Sigset_t, flags int) = SYS_SIGNALFD4
 //sys	Statx(dirfd int, path string, flags int, mask int, stat *Statx_t) (err error)
 //sys	Sync()
 //sys	Syncfs(fd int) (err error)
@@ -1431,15 +1524,12 @@ func Munmap(b []byte) (err error) {
 // Vmsplice splices user pages from a slice of Iovecs into a pipe specified by fd,
 // using the specified flags.
 func Vmsplice(fd int, iovs []Iovec, flags int) (int, error) {
-	n, _, errno := Syscall6(
-		SYS_VMSPLICE,
-		uintptr(fd),
-		uintptr(unsafe.Pointer(&iovs[0])),
-		uintptr(len(iovs)),
-		uintptr(flags),
-		0,
-		0,
-	)
+	var p unsafe.Pointer
+	if len(iovs) > 0 {
+		p = unsafe.Pointer(&iovs[0])
+	}
+
+	n, _, errno := Syscall6(SYS_VMSPLICE, uintptr(fd), uintptr(p), uintptr(len(iovs)), uintptr(flags), 0, 0)
 	if errno != 0 {
 		return 0, syscall.Errno(errno)
 	}
@@ -1606,7 +1696,6 @@ func Faccessat(dirfd int, path string, mode uint32, flags int) (err error) {
 // Shmdt
 // Shmget
 // Sigaltstack
-// Signalfd
 // Swapoff
 // Swapon
 // Sysfs

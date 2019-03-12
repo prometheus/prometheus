@@ -42,7 +42,7 @@ require (
 	github.com/google/gofuzz v0.0.0-20150304233714-bbcb9da2d746 // indirect
 	github.com/google/pprof v0.0.0-20180605153948-8b03ce837f34
 	github.com/googleapis/gnostic v0.0.0-20180520015035-48a0ecefe2e4 // indirect
-	github.com/gophercloud/gophercloud v0.0.0-20181206160319-9d88c34913a9
+	github.com/gophercloud/gophercloud v0.0.0-20190301152420-fca40860790e
 	github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 // indirect
 	github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.6.3
@@ -110,7 +110,6 @@ require (
 	github.com/spf13/pflag v1.0.3 // indirect
 	github.com/stretchr/testify v1.2.2
 	github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926 // indirect
-	golang.org/x/crypto v0.0.0-20180621125126-a49355c7e3f8 // indirect
 	golang.org/x/net v0.0.0-20180906233101-161cd47e91fd
 	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
 	golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
@@ -124,7 +123,7 @@ require (
 	gopkg.in/inf.v0 v0.9.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/vmihailenco/msgpack.v2 v2.9.1 // indirect
-	gopkg.in/yaml.v2 v2.2.1
+	gopkg.in/yaml.v2 v2.2.2
 	k8s.io/api v0.0.0-20181213150558-05914d821849
 	k8s.io/apimachinery v0.0.0-20181127025237-2b1284ed4c93
 	k8s.io/client-go v2.0.0-alpha.0.0.20181121191925-a47917edff34+incompatible

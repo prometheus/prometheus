@@ -59,11 +59,14 @@ func AuthOptionsFromEnv() (gophercloud.AuthOptions, error) {
 		return nilOptions, err
 	}
 
-	if username == "" && userID == "" {
-		err := gophercloud.ErrMissingAnyoneOfEnvironmentVariables{
-			EnvironmentVariables: []string{"OS_USERNAME", "OS_USERID"},
+	if userID == "" && username == "" {
+		// Empty username and userID could be ignored, when applicationCredentialID and applicationCredentialSecret are set
+		if applicationCredentialID == "" && applicationCredentialSecret == "" {
+			err := gophercloud.ErrMissingAnyoneOfEnvironmentVariables{
+				EnvironmentVariables: []string{"OS_USERID", "OS_USERNAME"},
+			}
+			return nilOptions, err
 		}
-		return nilOptions, err
 	}
 
 	if password == "" && applicationCredentialID == "" && applicationCredentialName == "" {
@@ -78,6 +81,19 @@ func AuthOptionsFromEnv() (gophercloud.AuthOptions, error) {
 			EnvironmentVariable: "OS_APPLICATION_CREDENTIAL_SECRET",
 		}
 		return nilOptions, err
+	}
+
+	if applicationCredentialID == "" && applicationCredentialName != "" && applicationCredentialSecret != "" {
+		if userID == "" && username == "" {
+			return nilOptions, gophercloud.ErrMissingAnyoneOfEnvironmentVariables{
+				EnvironmentVariables: []string{"OS_USERID", "OS_USERNAME"},
+			}
+		}
+		if username != "" && domainID == "" && domainName == "" {
+			return nilOptions, gophercloud.ErrMissingAnyoneOfEnvironmentVariables{
+				EnvironmentVariables: []string{"OS_DOMAIN_ID", "OS_DOMAIN_NAME"},
+			}
+		}
 	}
 
 	ao := gophercloud.AuthOptions{

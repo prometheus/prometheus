@@ -129,6 +129,8 @@ func (client *ServiceClient) setMicroversionHeader(opts *RequestOpts) {
 		opts.MoreHeaders["X-OpenStack-Manila-API-Version"] = client.Microversion
 	case "volume":
 		opts.MoreHeaders["X-OpenStack-Volume-API-Version"] = client.Microversion
+	case "baremetal":
+		opts.MoreHeaders["X-OpenStack-Ironic-API-Version"] = client.Microversion
 	}
 
 	if client.Type != "" {

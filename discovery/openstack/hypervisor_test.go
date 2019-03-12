@@ -14,6 +14,8 @@
 package openstack
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -38,7 +40,7 @@ func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
 	s.Mock.HandleAuthSuccessfully()
 }
 
-func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (Discovery, error) {
+func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (*Discovery, error) {
 	conf := SDConfig{
 		IdentityEndpoint: s.Mock.Endpoint(),
 		Password:         "test",
@@ -56,7 +58,8 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 	mock.SetupTest(t)
 
 	hypervisor, _ := mock.openstackAuthSuccess()
-	tg, err := hypervisor.refresh()
+	ctx := context.Background()
+	tg, err := hypervisor.r.refresh(ctx)
 	testutil.Ok(t, err)
 	testutil.Assert(t, tg != nil, "")
 	testutil.Assert(t, tg.Targets != nil, "")
@@ -75,6 +78,20 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_host_ip"], model.LabelValue("172.16.70.13"))
 	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_state"], model.LabelValue("up"))
 	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_status"], model.LabelValue("enabled"))
+
+	mock.TearDownSuite()
+}
+
+func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
+	mock := &OpenstackSDHypervisorTestSuite{}
+	mock.SetupTest(t)
+
+	hypervisor, _ := mock.openstackAuthSuccess()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := hypervisor.r.refresh(ctx)
+	testutil.NotOk(t, err, "")
+	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
 
 	mock.TearDownSuite()
 }

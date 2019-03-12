@@ -48,7 +48,6 @@ type InstanceDiscovery struct {
 	provider   *gophercloud.ProviderClient
 	authOpts   *gophercloud.AuthOptions
 	region     string
-	interval   time.Duration
 	logger     log.Logger
 	port       int
 	allTenants bool
@@ -56,49 +55,12 @@ type InstanceDiscovery struct {
 
 // NewInstanceDiscovery returns a new instance discovery.
 func NewInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	interval time.Duration, port int, region string, allTenants bool, l log.Logger) *InstanceDiscovery {
+	port int, region string, allTenants bool, l log.Logger) *InstanceDiscovery {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
 	return &InstanceDiscovery{provider: provider, authOpts: opts,
-		region: region, interval: interval, port: port, allTenants: allTenants, logger: l}
-}
-
-// Run implements the Discoverer interface.
-func (i *InstanceDiscovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// Get an initial set right away.
-	tg, err := i.refresh()
-	if err != nil {
-		level.Error(i.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
-	} else {
-		select {
-		case ch <- []*targetgroup.Group{tg}:
-		case <-ctx.Done():
-			return
-		}
-	}
-
-	ticker := time.NewTicker(i.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			tg, err := i.refresh()
-			if err != nil {
-				level.Error(i.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
-				continue
-			}
-
-			select {
-			case ch <- []*targetgroup.Group{tg}:
-			case <-ctx.Done():
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
+		region: region, port: port, allTenants: allTenants, logger: l}
 }
 
 type floatingIPKey struct {
@@ -106,7 +68,7 @@ type floatingIPKey struct {
 	fixed string
 }
 
-func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
+func (i *InstanceDiscovery) refresh(ctx context.Context) (*targetgroup.Group, error) {
 	var err error
 	t0 := time.Now()
 	defer func() {
@@ -116,6 +78,7 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 		}
 	}()
 
+	i.provider.Context = ctx
 	err = openstack.Authenticate(i.provider, *i.authOpts)
 	if err != nil {
 		return nil, fmt.Errorf("could not authenticate to OpenStack: %s", err)
@@ -161,6 +124,9 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 		Source: fmt.Sprintf("OS_" + i.region),
 	}
 	err = pager.EachPage(func(page pagination.Page) (bool, error) {
+		if ctx.Err() != nil {
+			return false, fmt.Errorf("could not extract instances: %s", ctx.Err())
+		}
 		instanceList, err := servers.ExtractServers(page)
 		if err != nil {
 			return false, fmt.Errorf("could not extract instances: %s", err)
