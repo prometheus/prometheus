@@ -14,7 +14,11 @@
 package scrape
 
 import (
+	"encoding"
 	"fmt"
+	"hash/fnv"
+	"net"
+	"os"
 	"reflect"
 	"sync"
 	"time"
@@ -22,6 +26,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/storage"
@@ -54,6 +59,7 @@ type Manager struct {
 	append    Appendable
 	graceShut chan struct{}
 
+	jitterSeed    uint64     // Global jitterSeed seed is used to spread scrape workload across HA setup.
 	mtxScrape     sync.Mutex // Guards the fields below.
 	scrapeConfigs map[string]*config.ScrapeConfig
 	scrapePools   map[string]*scrapePool
@@ -111,7 +117,7 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp, err := newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", setName))
+			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName))
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
@@ -129,6 +135,20 @@ func (m *Manager) reload() {
 	}
 	m.mtxScrape.Unlock()
 	wg.Wait()
+}
+
+// setJitterSeed calculates a global jitterSeed per server relying on extra label set.
+func (m *Manager) setJitterSeed(labels model.LabelSet) error {
+	h := fnv.New64a()
+	hostname, err := getFqdn()
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(h, "%s%s", hostname, labels.String()); err != nil {
+		return err
+	}
+	m.jitterSeed = h.Sum64()
+	return nil
 }
 
 // Stop cancels all running scrape pools and blocks until all have exited.
@@ -158,6 +178,10 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		c[scfg.JobName] = scfg
 	}
 	m.scrapeConfigs = c
+
+	if err := m.setJitterSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
+		return err
+	}
 
 	// Cleanup and reload pool if the configuration has changed.
 	var failed bool
@@ -215,4 +239,46 @@ func (m *Manager) TargetsDropped() map[string][]*Target {
 		targets[tset] = sp.DroppedTargets()
 	}
 	return targets
+}
+
+// getFqdn returns a fqdn if it's possible, otherwise falls back a hostname.
+func getFqdn() (string, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", err
+	}
+
+	ips, err := net.LookupIP(hostname)
+	if err != nil {
+		return hostname, err
+	}
+
+	lookup := func(ipStr encoding.TextMarshaler) (string, error) {
+		ip, err := ipStr.MarshalText()
+		if err != nil {
+			return "", err
+		}
+		hosts, err := net.LookupAddr(string(ip))
+		if err != nil || len(hosts) == 0 {
+			return "", err
+		}
+		return hosts[0], nil
+	}
+
+	for _, addr := range ips {
+		if ip := addr.To4(); ip != nil {
+			if fqdn, err := lookup(ip); err == nil {
+				return fqdn, nil
+			}
+
+		}
+
+		if ip := addr.To16(); ip != nil {
+			if fqdn, err := lookup(ip); err == nil {
+				return fqdn, nil
+			}
+
+		}
+	}
+	return hostname, nil
 }
