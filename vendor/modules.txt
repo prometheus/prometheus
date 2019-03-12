@@ -166,9 +166,9 @@ github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/genswagger
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/httprule
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/generator
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options
-# github.com/hashicorp/consul v0.0.0-20180615161029-bed22a81e9fd
+# github.com/hashicorp/consul v1.4.2
 github.com/hashicorp/consul/api
-# github.com/hashicorp/go-cleanhttp v0.0.0-20160407174126-ad28ea4487f0
+# github.com/hashicorp/go-cleanhttp v0.5.0
 github.com/hashicorp/go-cleanhttp
 # github.com/hashicorp/go-rootcerts v0.0.0-20160503143440-6bb64b370b90
 github.com/hashicorp/go-rootcerts
@@ -195,6 +195,8 @@ github.com/matttproud/golang_protobuf_extensions/pbutil
 github.com/miekg/dns
 # github.com/mitchellh/go-homedir v0.0.0-20180523094522-3864e76763d9
 github.com/mitchellh/go-homedir
+# github.com/mitchellh/mapstructure v1.1.2
+github.com/mitchellh/mapstructure
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
 github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742

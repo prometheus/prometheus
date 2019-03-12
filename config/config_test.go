@@ -294,7 +294,7 @@ var expectedConf = &Config{
 						Server:          "localhost:1234",
 						Token:           "mysecret",
 						Services:        []string{"nginx", "cache", "mysql"},
-						ServiceTag:      "canary",
+						ServiceTags:     []string{"canary", "v1"},
 						NodeMeta:        map[string]string{"rack": "123"},
 						TagSeparator:    consul.DefaultSDConfig.TagSeparator,
 						Scheme:          "https",

@@ -337,8 +337,9 @@ services:
 # See https://www.consul.io/api/catalog.html#list-nodes-for-service to know more
 # about the possible filters that can be used.
 
-# An optional tag used to filter nodes for a given service.
-[ tag: <string> ]
+# An optional list of tags used to filter nodes for a given service. Services must contain all tags in the list.
+tags:
+  [ - <string> ]
 
 # Node metadata used to filter nodes for a given service.
 [ node_meta:

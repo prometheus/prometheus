@@ -46,8 +46,8 @@ func TestConfiguredService(t *testing.T) {
 
 func TestConfiguredServiceWithTag(t *testing.T) {
 	conf := &SDConfig{
-		Services:   []string{"configuredServiceName"},
-		ServiceTag: "http",
+		Services:    []string{"configuredServiceName"},
+		ServiceTags: []string{"http"},
 	}
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
@@ -65,6 +65,96 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 	}
 	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{"http"}) {
 		t.Errorf("Expected service %s to not be watched with tag %s", "nonConfiguredServiceName", "http")
+	}
+}
+
+func TestConfiguredServiceWithTags(t *testing.T) {
+	type testcase struct {
+		// What we've configured to watch.
+		conf *SDConfig
+		// The service we're checking if we should watch or not.
+		serviceName string
+		serviceTags []string
+		shouldWatch bool
+	}
+
+	cases := []testcase{
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{""},
+			shouldWatch: false,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1"},
+			shouldWatch: true,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "nonConfiguredServiceName",
+			serviceTags: []string{""},
+			shouldWatch: false,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "nonConfiguredServiceName",
+			serviceTags: []string{"http, v1"},
+			shouldWatch: false,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1", "foo"},
+			shouldWatch: true,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1", "foo"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1", "foo"},
+			shouldWatch: true,
+		},
+		testcase{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1", "v1"},
+			shouldWatch: true,
+		},
+	}
+
+	for _, tc := range cases {
+		consulDiscovery, err := NewDiscovery(tc.conf, nil)
+
+		if err != nil {
+			t.Errorf("Unexpected error when initializing discovery %v", err)
+		}
+		ret := consulDiscovery.shouldWatch(tc.serviceName, tc.serviceTags)
+		if ret != tc.shouldWatch {
+			t.Errorf("Expected should watch? %t, got %t. Watched serivce and tags: %s %+v, input was %s %+v", tc.shouldWatch, ret, tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
+		}
+
 	}
 }
 
@@ -195,7 +285,7 @@ func TestAllOptions(t *testing.T) {
 
 	config.Services = []string{"test"}
 	config.NodeMeta = map[string]string{"rack_name": "2304"}
-	config.ServiceTag = "tag1"
+	config.ServiceTags = []string{"tag1"}
 	config.AllowStale = true
 	config.Token = "fake-token"
 
