@@ -32,6 +32,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -54,12 +56,12 @@ const (
 )
 
 var (
-	azureSDRefreshFailuresCount = prometheus.NewCounter(
+	refreshFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_azure_refresh_failures_total",
 			Help: "Number of Azure-SD refresh failures.",
 		})
-	azureSDRefreshDuration = prometheus.NewSummary(
+	refreshDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Name: "prometheus_sd_azure_refresh_duration_seconds",
 			Help: "The duration of a Azure-SD refresh in seconds.",
@@ -126,17 +128,15 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 func init() {
-	prometheus.MustRegister(azureSDRefreshDuration)
-	prometheus.MustRegister(azureSDRefreshFailuresCount)
+	prometheus.MustRegister(refreshDuration)
+	prometheus.MustRegister(refreshFailuresCount)
 }
 
-// Discovery periodically performs Azure-SD requests. It implements
-// the Discoverer interface.
 type Discovery struct {
-	cfg      *SDConfig
-	interval time.Duration
-	port     int
-	logger   log.Logger
+	*refresh.Discovery
+	logger log.Logger
+	cfg    *SDConfig
+	port   int
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
@@ -144,42 +144,19 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	return &Discovery{
-		cfg:      cfg,
-		interval: time.Duration(cfg.RefreshInterval),
-		port:     cfg.Port,
-		logger:   logger,
+	d := &Discovery{
+		cfg:    cfg,
+		port:   cfg.Port,
+		logger: logger,
 	}
-}
-
-// Run implements the Discoverer interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		tg, err := d.refresh(ctx)
-		if err != nil {
-			level.Error(d.logger).Log("msg", "Unable to refresh during Azure discovery", "err", err)
-		} else {
-			select {
-			case <-ctx.Done():
-			case ch <- []*targetgroup.Group{tg}:
-			}
-		}
-
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			return
-		}
-	}
+	d.Discovery = refresh.NewDiscovery(
+		logger,
+		time.Duration(cfg.RefreshInterval),
+		d.refresh,
+		refresh.WithDuration(refreshDuration),
+		refresh.WithFailCount(refreshFailuresCount),
+	)
+	return d
 }
 
 // azureClient represents multiple Azure Resource Manager providers.
@@ -281,17 +258,9 @@ func newAzureResourceFromID(id string, logger log.Logger) (azureResource, error)
 	}, nil
 }
 
-func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err error) {
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
 
-	t0 := time.Now()
-	defer func() {
-		azureSDRefreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			azureSDRefreshFailuresCount.Inc()
-		}
-	}()
-	tg = &targetgroup.Group{}
 	client, err := createAzureClient(*d.cfg)
 	if err != nil {
 		return nil, fmt.Errorf("could not create Azure client: %s", err)
@@ -405,6 +374,7 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 	wg.Wait()
 	close(ch)
 
+	var tg targetgroup.Group
 	for tgt := range ch {
 		if tgt.err != nil {
 			return nil, fmt.Errorf("unable to complete Azure service discovery: %s", err)
@@ -414,7 +384,7 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 		}
 	}
 
-	return tg, nil
+	return []*targetgroup.Group{&tg}, nil
 }
 
 func (client *azureClient) getVMs(ctx context.Context) ([]virtualMachine, error) {

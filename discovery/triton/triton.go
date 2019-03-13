@@ -24,12 +24,12 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -103,7 +103,7 @@ func init() {
 }
 
 // DiscoveryResponse models a JSON response from the Triton discovery.
-type DiscoveryResponse struct {
+type discoveryResponse struct {
 	Containers []struct {
 		Groups      []string `json:"groups"`
 		ServerUUID  string   `json:"server_uuid"`
@@ -117,18 +117,14 @@ type DiscoveryResponse struct {
 // Discovery periodically performs Triton-SD requests. It implements
 // the Discoverer interface.
 type Discovery struct {
+	*refresh.Discovery
 	client   *http.Client
 	interval time.Duration
-	logger   log.Logger
 	sdConfig *SDConfig
 }
 
 // New returns a new Discovery which periodically refreshes its targets.
 func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
-	if logger == nil {
-		logger = log.NewNopLogger()
-	}
-
 	tls, err := config_util.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -143,45 +139,26 @@ func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
 	}
 	client := &http.Client{Transport: transport}
 
-	return &Discovery{
+	d := &Discovery{
 		client:   client,
 		interval: time.Duration(conf.RefreshInterval),
-		logger:   logger,
 		sdConfig: conf,
-	}, nil
+	}
+	d.Discovery = refresh.NewDiscovery(
+		logger,
+		time.Duration(conf.RefreshInterval),
+		d.refresh,
+		refresh.WithDuration(refreshDuration),
+		refresh.WithFailCount(refreshFailuresCount),
+	)
+	return d, nil
 }
 
-// Run implements the Discoverer interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	defer close(ch)
-
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
-	// Get an initial set right away.
-	tg, err := d.refresh(ctx)
-	if err != nil {
-		level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
-	} else {
-		ch <- []*targetgroup.Group{tg}
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			tg, err := d.refresh(ctx)
-			if err != nil {
-				level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
-			} else {
-				ch <- []*targetgroup.Group{tg}
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err error) {
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	var (
+		err error
+		tg  *targetgroup.Group
+	)
 	t0 := time.Now()
 	defer func() {
 		refreshDuration.Observe(time.Since(t0).Seconds())
@@ -217,7 +194,7 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 		return nil, fmt.Errorf("an error occurred when reading the response body: %s", err)
 	}
 
-	dr := DiscoveryResponse{}
+	dr := discoveryResponse{}
 	err = json.Unmarshal(data, &dr)
 	if err != nil {
 		return nil, fmt.Errorf("an error occurred unmarshaling the discovery response json: %s", err)
@@ -242,5 +219,5 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 		tg.Targets = append(tg.Targets, labels)
 	}
 
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }

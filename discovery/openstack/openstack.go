@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/mwitkow/go-conntrack"
@@ -29,6 +28,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -71,7 +71,7 @@ type SDConfig struct {
 	TLSConfig                   config_util.TLSConfig `yaml:"tls_config,omitempty"`
 }
 
-// OpenStackRole is role of the target in OpenStack.
+// Role is the role of the target in OpenStack.
 type Role string
 
 // The valid options for OpenStackRole.
@@ -120,19 +120,26 @@ func init() {
 }
 
 type refresher interface {
-	refresh(ctx context.Context) (tg *targetgroup.Group, err error)
+	refresh(context.Context) ([]*targetgroup.Group, error)
 }
 
-// Discovery periodically performs OpenStack-SD requests. It implements
-// the Discoverer interface.
-type Discovery struct {
-	interval time.Duration
-	logger   log.Logger
-	r        refresher
+// NewDiscovery returns a new OpenStack Discoverer which periodically refreshes its targets.
+func NewDiscovery(conf *SDConfig, l log.Logger) (*refresh.Discovery, error) {
+	r, err := newRefresher(conf, l)
+	if err != nil {
+		return nil, err
+	}
+	return refresh.NewDiscovery(
+		l,
+		time.Duration(conf.RefreshInterval),
+		r.refresh,
+		refresh.WithDuration(refreshDuration),
+		refresh.WithFailCount(refreshFailuresCount),
+	), nil
+
 }
 
-// NewDiscovery returns a new OpenStackDiscovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, l log.Logger) (*Discovery, error) {
+func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {
 	var opts gophercloud.AuthOptions
 	if conf.IdentityEndpoint == "" {
 		var err error
@@ -174,51 +181,11 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (*Discovery, error) {
 		},
 		Timeout: 5 * time.Duration(conf.RefreshInterval),
 	}
-	var r refresher
 	switch conf.Role {
 	case OpenStackRoleHypervisor:
-		r = NewHypervisorDiscovery(client, &opts, conf.Port, conf.Region, l)
+		return newHypervisorDiscovery(client, &opts, conf.Port, conf.Region, l), nil
 	case OpenStackRoleInstance:
-		r = NewInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, l)
-	default:
-		return nil, errors.New("unknown OpenStack discovery role")
+		return newInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, l), nil
 	}
-	return &Discovery{r: r, logger: l, interval: time.Duration(conf.RefreshInterval)}, nil
-}
-
-// Run implements the Discoverer interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// Get an initial set right away.
-	tg, err := d.r.refresh(ctx)
-	if err != nil {
-		level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
-	} else {
-		select {
-		case ch <- []*targetgroup.Group{tg}:
-		case <-ctx.Done():
-			return
-		}
-	}
-
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			tg, err := d.r.refresh(ctx)
-			if err != nil {
-				level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
-				continue
-			}
-
-			select {
-			case ch <- []*targetgroup.Group{tg}:
-			case <-ctx.Done():
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
+	return nil, errors.New("unknown OpenStack discovery role")
 }

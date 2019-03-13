@@ -45,14 +45,14 @@ type HypervisorDiscovery struct {
 	port     int
 }
 
-// NewHypervisorDiscovery returns a new hypervisor discovery.
-func NewHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
+// newHypervisorDiscovery returns a new hypervisor discovery.
+func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
 	port int, region string, l log.Logger) *HypervisorDiscovery {
 	return &HypervisorDiscovery{provider: provider, authOpts: opts,
 		region: region, port: port, logger: l}
 }
 
-func (h *HypervisorDiscovery) refresh(ctx context.Context) (*targetgroup.Group, error) {
+func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var err error
 	t0 := time.Now()
 	defer func() {
@@ -102,5 +102,5 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) (*targetgroup.Group, 
 		return nil, err
 	}
 
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }

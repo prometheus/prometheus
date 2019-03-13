@@ -26,12 +26,12 @@ import (
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -56,12 +56,12 @@ const (
 )
 
 var (
-	ec2SDRefreshFailuresCount = prometheus.NewCounter(
+	refreshFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_ec2_refresh_failures_total",
 			Help: "The number of EC2-SD scrape failures.",
 		})
-	ec2SDRefreshDuration = prometheus.NewSummary(
+	refreshDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Name: "prometheus_sd_ec2_refresh_duration_seconds",
 			Help: "The duration of a EC2-SD refresh in seconds.",
@@ -121,20 +121,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 func init() {
-	prometheus.MustRegister(ec2SDRefreshFailuresCount)
-	prometheus.MustRegister(ec2SDRefreshDuration)
+	prometheus.MustRegister(refreshFailuresCount)
+	prometheus.MustRegister(refreshDuration)
 }
 
 // Discovery periodically performs EC2-SD requests. It implements
 // the Discoverer interface.
 type Discovery struct {
+	*refresh.Discovery
 	aws      *aws.Config
 	interval time.Duration
 	profile  string
 	roleARN  string
 	port     int
 	filters  []*Filter
-	logger   log.Logger
 }
 
 // NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
@@ -146,7 +146,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	return &Discovery{
+	d := &Discovery{
 		aws: &aws.Config{
 			Endpoint:    &conf.Endpoint,
 			Region:      &conf.Region,
@@ -157,56 +157,18 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 		filters:  conf.Filters,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
-		logger:   logger,
 	}
+	d.Discovery = refresh.NewDiscovery(
+		logger,
+		time.Duration(conf.RefreshInterval),
+		d.refresh,
+		refresh.WithDuration(refreshDuration),
+		refresh.WithFailCount(refreshFailuresCount),
+	)
+	return d
 }
 
-// Run implements the Discoverer interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
-	// Get an initial set right away.
-	tg, err := d.refresh(ctx)
-	if err != nil {
-		level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
-	} else {
-		select {
-		case ch <- []*targetgroup.Group{tg}:
-		case <-ctx.Done():
-			return
-		}
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			tg, err := d.refresh(ctx)
-			if err != nil {
-				level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
-				continue
-			}
-
-			select {
-			case ch <- []*targetgroup.Group{tg}:
-			case <-ctx.Done():
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err error) {
-	t0 := time.Now()
-	defer func() {
-		ec2SDRefreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			ec2SDRefreshFailuresCount.Inc()
-		}
-	}()
-
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
 		Config:  *d.aws,
 		Profile: d.profile,
@@ -222,7 +184,7 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 	} else {
 		ec2s = ec2.New(sess)
 	}
-	tg = &targetgroup.Group{
+	tg := &targetgroup.Group{
 		Source: *d.aws.Region,
 	}
 
@@ -306,5 +268,5 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 	}); err != nil {
 		return nil, fmt.Errorf("could not describe instances: %s", err)
 	}
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }
