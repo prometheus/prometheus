@@ -252,14 +252,14 @@ type azureResource struct {
 
 // virtualMachine represents an Azure virtual machine (which can also be created by a VMSS)
 type virtualMachine struct {
-	ID             string
-	Name           string
-	Type           string
-	Location       string
-	OsType         string
-	ScaleSet       string
-	Tags           map[string]*string
-	NetworkProfile compute.NetworkProfile
+	ID                string
+	Name              string
+	Type              string
+	Location          string
+	OsType            string
+	ScaleSet          string
+	Tags              map[string]*string
+	NetworkInterfaces []string
 }
 
 // Create a new azureResource object from an ID string.
@@ -359,10 +359,11 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 			}
 
 			// Get the IP address information via separate call to the network provider.
-			for _, nic := range *vm.NetworkProfile.NetworkInterfaces {
-				networkInterface, err := client.getNetworkInterfaceByID(ctx, *nic.ID)
+			for _, nicID := range vm.NetworkInterfaces {
+				networkInterface, err := client.getNetworkInterfaceByID(ctx, nicID)
+
 				if err != nil {
-					level.Error(d.logger).Log("msg", "Unable to get network interface", "name", *nic.ID, "err", err)
+					level.Error(d.logger).Log("msg", "Unable to get network interface", "name", nicID, "err", err)
 					ch <- target{labelSet: nil, err: err}
 					// Get out of this routine because we cannot continue without a network interface.
 					return
@@ -496,40 +497,54 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet compute.
 func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 	osType := string(vm.StorageProfile.OsDisk.OsType)
 	tags := map[string]*string{}
+	networkInterfaces := []string{}
 
 	if vm.Tags != nil {
 		tags = vm.Tags
 	}
 
+	if vm.NetworkProfile != nil {
+		for _, vmNIC := range *(vm.NetworkProfile.NetworkInterfaces) {
+			networkInterfaces = append(networkInterfaces, *vmNIC.ID)
+		}
+	}
+
 	return virtualMachine{
-		ID:             *(vm.ID),
-		Name:           *(vm.Name),
-		Type:           *(vm.Type),
-		Location:       *(vm.Location),
-		OsType:         osType,
-		ScaleSet:       "",
-		Tags:           tags,
-		NetworkProfile: *(vm.NetworkProfile),
+		ID:                *(vm.ID),
+		Name:              *(vm.Name),
+		Type:              *(vm.Type),
+		Location:          *(vm.Location),
+		OsType:            osType,
+		ScaleSet:          "",
+		Tags:              tags,
+		NetworkInterfaces: networkInterfaces,
 	}
 }
 
 func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName string) virtualMachine {
 	osType := string(vm.StorageProfile.OsDisk.OsType)
 	tags := map[string]*string{}
+	networkInterfaces := []string{}
 
 	if vm.Tags != nil {
 		tags = vm.Tags
 	}
 
+	if vm.NetworkProfile != nil {
+		for _, vmNIC := range *(vm.NetworkProfile.NetworkInterfaces) {
+			networkInterfaces = append(networkInterfaces, *vmNIC.ID)
+		}
+	}
+
 	return virtualMachine{
-		ID:             *(vm.ID),
-		Name:           *(vm.Name),
-		Type:           *(vm.Type),
-		Location:       *(vm.Location),
-		OsType:         osType,
-		ScaleSet:       scaleSetName,
-		Tags:           tags,
-		NetworkProfile: *(vm.NetworkProfile),
+		ID:                *(vm.ID),
+		Name:              *(vm.Name),
+		Type:              *(vm.Type),
+		Location:          *(vm.Location),
+		OsType:            osType,
+		ScaleSet:          scaleSetName,
+		Tags:              tags,
+		NetworkInterfaces: networkInterfaces,
 	}
 }
 
