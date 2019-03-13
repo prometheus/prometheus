@@ -60,7 +60,6 @@ func (p *pool) intern(s string) string {
 		return interned.s
 	}
 
-	s = pack(s)
 	p.pool[s] = &entry{
 		s:    s,
 		refs: 1,
@@ -88,12 +87,4 @@ func (p *pool) release(s string) {
 		return
 	}
 	delete(p.pool, s)
-}
-
-// StrPack returns a new instance of s which is tightly packed in memory.
-// It is intended for avoiding the situation where having a live reference
-// to a string slice over an unreferenced biger underlying string keeps the biger one
-// in memory anyway - it can't be GCed.
-func pack(s string) string {
-	return string([]byte(s))
 }

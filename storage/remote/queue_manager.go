@@ -325,6 +325,13 @@ func (t *QueueManager) Stop() {
 	t.shards.stop()
 	t.watcher.Stop()
 	t.wg.Wait()
+
+	// On shutdown, release the strings in the labels from the intern pool.
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
+	for _, labels := range t.seriesLabels {
+		release(labels)
+	}
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
@@ -345,6 +352,9 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 	for ref, labels := range temp {
 		t.seriesSegmentIndexes[ref] = index
 
+		// We should not ever be replacing a series labels in the map, but just
+		// in case we do we need to ensure we do not leak the replaced interned
+		// strings.
 		if orig, ok := t.seriesLabels[ref]; ok {
 			release(orig)
 		}
@@ -377,7 +387,7 @@ func release(ls []prompb.Label) {
 	}
 }
 
-// processExternalLabels merges externalLabels into ls.  If ls contains
+// processExternalLabels merges externalLabels into ls. If ls contains
 // a label in externalLabels, the value in ls wins.
 func processExternalLabels(ls tsdbLabels.Labels, externalLabels labels.Labels) labels.Labels {
 	i, j, result := 0, 0, make(labels.Labels, 0, len(ls)+len(externalLabels))

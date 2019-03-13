@@ -19,7 +19,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -33,7 +32,6 @@ func mustNewLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher 
 	return m
 }
 
-/*
 func TestExternalLabelsQuerierSelect(t *testing.T) {
 	matchers := []*labels.Matcher{
 		mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
@@ -52,14 +50,14 @@ func TestExternalLabelsQuerierSelect(t *testing.T) {
 	if !reflect.DeepEqual(want, have) {
 		t.Errorf("expected series set %+v, got %+v", want, have)
 	}
-}*/
+}
 
 func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 	tests := []struct {
 		el          labels.Labels
 		inMatchers  []*labels.Matcher
 		outMatchers []*labels.Matcher
-		added       model.LabelSet
+		added       labels.Labels
 	}{
 		{
 			inMatchers: []*labels.Matcher{
@@ -68,12 +66,12 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 			outMatchers: []*labels.Matcher{
 				mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
 			},
-			added: model.LabelSet{},
+			added: labels.Labels{},
 		},
 		{
 			el: labels.Labels{
-				{Name: "region", Value: "europe"},
 				{Name: "dc", Value: "berlin-01"},
+				{Name: "region", Value: "europe"},
 			},
 			inMatchers: []*labels.Matcher{
 				mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
@@ -83,7 +81,10 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 				mustNewLabelMatcher(labels.MatchEqual, "region", "europe"),
 				mustNewLabelMatcher(labels.MatchEqual, "dc", "berlin-01"),
 			},
-			added: model.LabelSet{"region": "europe", "dc": "berlin-01"},
+			added: labels.Labels{
+				{Name: "dc", Value: "berlin-01"},
+				{Name: "region", Value: "europe"},
+			},
 		},
 		{
 			el: labels.Labels{
@@ -99,7 +100,9 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 				mustNewLabelMatcher(labels.MatchEqual, "region", "europe"),
 				mustNewLabelMatcher(labels.MatchEqual, "dc", "munich-02"),
 			},
-			added: model.LabelSet{"region": "europe"},
+			added: labels.Labels{
+				{Name: "region", Value: "europe"},
+			},
 		},
 	}
 
@@ -122,12 +125,12 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 func TestSeriesSetFilter(t *testing.T) {
 	tests := []struct {
 		in       *prompb.QueryResult
-		toRemove model.LabelSet
+		toRemove labels.Labels
 
 		expected *prompb.QueryResult
 	}{
 		{
-			toRemove: model.LabelSet{"foo": "bar"},
+			toRemove: labels.Labels{{Name: "foo", Value: "bar"}},
 			in: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
 					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b")), Samples: []prompb.Sample{}},
