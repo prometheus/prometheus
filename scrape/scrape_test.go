@@ -150,6 +150,7 @@ func TestScrapePoolStop(t *testing.T) {
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
 		cancel:        func() {},
+		client:        http.DefaultClient,
 	}
 	var mtx sync.Mutex
 	stopped := map[uint64]bool{}
@@ -243,6 +244,7 @@ func TestScrapePoolReload(t *testing.T) {
 		loops:         map[uint64]loop{},
 		newLoop:       newLoop,
 		logger:        nil,
+		client:        http.DefaultClient,
 	}
 
 	// Reloading a scrape pool with a new scrape configuration must stop all scrape
