@@ -116,6 +116,15 @@ common-check_license:
                exit 1; \
        fi
 
+.PHONY: common-deps
+common-deps:
+	@echo ">> getting dependencies"
+ifdef GO111MODULE
+	GO111MODULE=$(GO111MODULE) $(GO) mod download
+else
+	$(GO) get $(GOOPTS) -t ./...
+endif
+
 .PHONY: common-test-short
 common-test-short:
 	@echo ">> running short tests"
@@ -220,7 +229,6 @@ precheck::
 
 define PRECHECK_COMMAND_template =
 precheck:: $(1)_precheck
-
 
 PRECHECK_COMMAND_$(1) ?= $(1) $$(strip $$(PRECHECK_OPTIONS_$(1)))
 .PHONY: $(1)_precheck
