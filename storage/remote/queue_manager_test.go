@@ -61,7 +61,7 @@ func TestSampleDelivery(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
-	m.seriesLabels = refSeriesToLabelsProto(series)
+	m.StoreSeries(series, 0)
 
 	// These should be received by the client.
 	m.Start()
@@ -89,7 +89,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
-	m.seriesLabels = refSeriesToLabelsProto(series)
+	m.StoreSeries(series, 0)
 	m.Start()
 	defer m.Stop()
 
@@ -129,7 +129,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
-	m.seriesLabels = refSeriesToLabelsProto(series)
+	m.StoreSeries(series, 0)
 
 	m.Start()
 	defer m.Stop()
@@ -148,7 +148,7 @@ func TestShutdown(t *testing.T) {
 
 	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, deadline)
 	samples, series := createTimeseries(2 * config.DefaultQueueConfig.MaxSamplesPerSend)
-	m.seriesLabels = refSeriesToLabelsProto(series)
+	m.StoreSeries(series, 0)
 	m.Start()
 
 	// Append blocks to guarantee delivery, so we do it in the background.
@@ -211,7 +211,7 @@ func TestReshard(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
-	m.seriesLabels = refSeriesToLabelsProto(series)
+	m.StoreSeries(series, 0)
 
 	m.Start()
 	defer m.Stop()
@@ -258,19 +258,6 @@ func getSeriesNameFromRef(r tsdb.RefSeries) string {
 		}
 	}
 	return ""
-}
-
-func refSeriesToLabelsProto(series []tsdb.RefSeries) map[uint64][]prompb.Label {
-	result := make(map[uint64][]prompb.Label)
-	for _, s := range series {
-		for _, l := range s.Labels {
-			result[s.Ref] = append(result[s.Ref], prompb.Label{
-				Name:  l.Name,
-				Value: l.Value,
-			})
-		}
-	}
-	return result
 }
 
 type TestStorageClient struct {

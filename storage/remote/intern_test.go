@@ -20,6 +20,7 @@ package remote
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -79,7 +80,9 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 
 	time.Sleep(time.Millisecond)
 
+	interner.mtx.RLock()
 	interned, ok = interner.pool[testString]
+	interner.mtx.RUnlock()
 	testutil.Equals(t, ok, true)
-	testutil.Assert(t, interned.refs == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	testutil.Assert(t, atomic.LoadInt64(&interned.refs) == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 }
