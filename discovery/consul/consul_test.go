@@ -152,7 +152,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 		}
 		ret := consulDiscovery.shouldWatch(tc.serviceName, tc.serviceTags)
 		if ret != tc.shouldWatch {
-			t.Errorf("Expected should watch? %t, got %t. Watched serivce and tags: %s %+v, input was %s %+v", tc.shouldWatch, ret, tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
+			t.Errorf("Expected should watch? %t, got %t. Watched service and tags: %s %+v, input was %s %+v", tc.shouldWatch, ret, tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
 		}
 
 	}

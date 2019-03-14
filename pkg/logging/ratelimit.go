@@ -22,7 +22,7 @@ type ratelimiter struct {
 	next    log.Logger
 }
 
-// RateLimit write to a loger.
+// RateLimit write to a logger.
 func RateLimit(next log.Logger, limit rate.Limit) log.Logger {
 	return &ratelimiter{
 		limiter: rate.NewLimiter(limit, int(limit)),

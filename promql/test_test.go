@@ -32,7 +32,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 
 	cases := []struct {
 		loadString string
-		// These testCases are run in sequence. So the testCase being run is dependant on the previous testCase.
+		// These testCases are run in sequence. So the testCase being run is dependent on the previous testCase.
 		testCases []testCase
 	}{
 		{

@@ -73,7 +73,7 @@ PROMU_VERSION ?= 0.3.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
 
 STATICCHECK :=
-# staticcheck only supports linux, freebsd, darwin and windows plaforms on i386/amd64
+# staticcheck only supports linux, freebsd, darwin and windows platforms on i386/amd64
 # windows isn't included here because of the path separator being different.
 ifeq ($(GOHOSTOS),$(filter $(GOHOSTOS),linux freebsd darwin))
 	ifeq ($(GOHOSTARCH),$(filter $(GOHOSTARCH),amd64 i386))
