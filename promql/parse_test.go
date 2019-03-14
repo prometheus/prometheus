@@ -71,77 +71,77 @@ var testExpr = []struct {
 		expected: &NumberLiteral{-493},
 	}, {
 		input:    "1 + 1",
-		expected: &BinaryExpr{itemADD, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		expected: &BinaryExpr{ItemADD, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 - 1",
-		expected: &BinaryExpr{itemSUB, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		expected: &BinaryExpr{ItemSUB, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 * 1",
-		expected: &BinaryExpr{itemMUL, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		expected: &BinaryExpr{ItemMUL, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 % 1",
-		expected: &BinaryExpr{itemMOD, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		expected: &BinaryExpr{ItemMOD, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 / 1",
-		expected: &BinaryExpr{itemDIV, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		expected: &BinaryExpr{ItemDIV, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 == bool 1",
-		expected: &BinaryExpr{itemEQL, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{ItemEQL, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
 		input:    "1 != bool 1",
-		expected: &BinaryExpr{itemNEQ, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{ItemNEQ, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
 		input:    "1 > bool 1",
-		expected: &BinaryExpr{itemGTR, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{ItemGTR, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
 		input:    "1 >= bool 1",
-		expected: &BinaryExpr{itemGTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{ItemGTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
 		input:    "1 < bool 1",
-		expected: &BinaryExpr{itemLSS, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{ItemLSS, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
 		input:    "1 <= bool 1",
-		expected: &BinaryExpr{itemLTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{ItemLTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
 		input: "+1 + -2 * 1",
 		expected: &BinaryExpr{
-			Op:  itemADD,
+			Op:  ItemADD,
 			LHS: &NumberLiteral{1},
 			RHS: &BinaryExpr{
-				Op: itemMUL, LHS: &NumberLiteral{-2}, RHS: &NumberLiteral{1},
+				Op: ItemMUL, LHS: &NumberLiteral{-2}, RHS: &NumberLiteral{1},
 			},
 		},
 	}, {
 		input: "1 + 2/(3*1)",
 		expected: &BinaryExpr{
-			Op:  itemADD,
+			Op:  ItemADD,
 			LHS: &NumberLiteral{1},
 			RHS: &BinaryExpr{
-				Op:  itemDIV,
+				Op:  ItemDIV,
 				LHS: &NumberLiteral{2},
 				RHS: &ParenExpr{&BinaryExpr{
-					Op: itemMUL, LHS: &NumberLiteral{3}, RHS: &NumberLiteral{1},
+					Op: ItemMUL, LHS: &NumberLiteral{3}, RHS: &NumberLiteral{1},
 				}},
 			},
 		},
 	}, {
 		input: "1 < bool 2 - 1 * 2",
 		expected: &BinaryExpr{
-			Op:         itemLSS,
+			Op:         ItemLSS,
 			ReturnBool: true,
 			LHS:        &NumberLiteral{1},
 			RHS: &BinaryExpr{
-				Op:  itemSUB,
+				Op:  ItemSUB,
 				LHS: &NumberLiteral{2},
 				RHS: &BinaryExpr{
-					Op: itemMUL, LHS: &NumberLiteral{1}, RHS: &NumberLiteral{2},
+					Op: ItemMUL, LHS: &NumberLiteral{1}, RHS: &NumberLiteral{2},
 				},
 			},
 		},
 	}, {
 		input: "-some_metric",
 		expected: &UnaryExpr{
-			Op: itemSUB,
+			Op: ItemSUB,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -152,7 +152,7 @@ var testExpr = []struct {
 	}, {
 		input: "+some_metric",
 		expected: &UnaryExpr{
-			Op: itemADD,
+			Op: ItemADD,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -261,7 +261,7 @@ var testExpr = []struct {
 	{
 		input: "foo * bar",
 		expected: &BinaryExpr{
-			Op: itemMUL,
+			Op: ItemMUL,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -279,7 +279,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo == 1",
 		expected: &BinaryExpr{
-			Op: itemEQL,
+			Op: ItemEQL,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -291,7 +291,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo == bool 1",
 		expected: &BinaryExpr{
-			Op: itemEQL,
+			Op: ItemEQL,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -304,7 +304,7 @@ var testExpr = []struct {
 	}, {
 		input: "2.5 / bar",
 		expected: &BinaryExpr{
-			Op:  itemDIV,
+			Op:  ItemDIV,
 			LHS: &NumberLiteral{2.5},
 			RHS: &VectorSelector{
 				Name: "bar",
@@ -316,7 +316,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo and bar",
 		expected: &BinaryExpr{
-			Op: itemLAND,
+			Op: ItemLAND,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -334,7 +334,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo or bar",
 		expected: &BinaryExpr{
-			Op: itemLOR,
+			Op: ItemLOR,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -352,7 +352,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo unless bar",
 		expected: &BinaryExpr{
-			Op: itemLUnless,
+			Op: ItemLUnless,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -371,9 +371,9 @@ var testExpr = []struct {
 		// Test and/or precedence and reassigning of operands.
 		input: "foo + bar or bla and blub",
 		expected: &BinaryExpr{
-			Op: itemLOR,
+			Op: ItemLOR,
 			LHS: &BinaryExpr{
-				Op: itemADD,
+				Op: ItemADD,
 				LHS: &VectorSelector{
 					Name: "foo",
 					LabelMatchers: []*labels.Matcher{
@@ -389,7 +389,7 @@ var testExpr = []struct {
 				VectorMatching: &VectorMatching{Card: CardOneToOne},
 			},
 			RHS: &BinaryExpr{
-				Op: itemLAND,
+				Op: ItemLAND,
 				LHS: &VectorSelector{
 					Name: "bla",
 					LabelMatchers: []*labels.Matcher{
@@ -410,11 +410,11 @@ var testExpr = []struct {
 		// Test and/or/unless precedence.
 		input: "foo and bar unless baz or qux",
 		expected: &BinaryExpr{
-			Op: itemLOR,
+			Op: ItemLOR,
 			LHS: &BinaryExpr{
-				Op: itemLUnless,
+				Op: ItemLUnless,
 				LHS: &BinaryExpr{
-					Op: itemLAND,
+					Op: ItemLAND,
 					LHS: &VectorSelector{
 						Name: "foo",
 						LabelMatchers: []*labels.Matcher{
@@ -449,7 +449,7 @@ var testExpr = []struct {
 		// Test precedence and reassigning of operands.
 		input: "bar + on(foo) bla / on(baz, buz) group_right(test) blub",
 		expected: &BinaryExpr{
-			Op: itemADD,
+			Op: ItemADD,
 			LHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
@@ -457,7 +457,7 @@ var testExpr = []struct {
 				},
 			},
 			RHS: &BinaryExpr{
-				Op: itemDIV,
+				Op: ItemDIV,
 				LHS: &VectorSelector{
 					Name: "bla",
 					LabelMatchers: []*labels.Matcher{
@@ -486,7 +486,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo * on(test,blub) bar",
 		expected: &BinaryExpr{
-			Op: itemMUL,
+			Op: ItemMUL,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -508,7 +508,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo * on(test,blub) group_left bar",
 		expected: &BinaryExpr{
-			Op: itemMUL,
+			Op: ItemMUL,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -530,7 +530,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo and on(test,blub) bar",
 		expected: &BinaryExpr{
-			Op: itemLAND,
+			Op: ItemLAND,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -552,7 +552,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo and on() bar",
 		expected: &BinaryExpr{
-			Op: itemLAND,
+			Op: ItemLAND,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -574,7 +574,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo and ignoring(test,blub) bar",
 		expected: &BinaryExpr{
-			Op: itemLAND,
+			Op: ItemLAND,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -595,7 +595,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo and ignoring() bar",
 		expected: &BinaryExpr{
-			Op: itemLAND,
+			Op: ItemLAND,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -616,7 +616,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo unless on(bar) baz",
 		expected: &BinaryExpr{
-			Op: itemLUnless,
+			Op: ItemLUnless,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -638,7 +638,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo / on(test,blub) group_left(bar) bar",
 		expected: &BinaryExpr{
-			Op: itemDIV,
+			Op: ItemDIV,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -661,7 +661,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo / ignoring(test,blub) group_left(blub) bar",
 		expected: &BinaryExpr{
-			Op: itemDIV,
+			Op: ItemDIV,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -683,7 +683,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo / ignoring(test,blub) group_left(bar) bar",
 		expected: &BinaryExpr{
-			Op: itemDIV,
+			Op: ItemDIV,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -705,7 +705,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo - on(test,blub) group_right(bar,foo) bar",
 		expected: &BinaryExpr{
-			Op: itemSUB,
+			Op: ItemSUB,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -728,7 +728,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo - ignoring(test,blub) group_right(bar,foo) bar",
 		expected: &BinaryExpr{
-			Op: itemSUB,
+			Op: ItemSUB,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -1057,7 +1057,7 @@ var testExpr = []struct {
 	{
 		input: "sum by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: itemSum,
+			Op: ItemSum,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1069,7 +1069,7 @@ var testExpr = []struct {
 	}, {
 		input: "avg by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: itemAvg,
+			Op: ItemAvg,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1081,7 +1081,7 @@ var testExpr = []struct {
 	}, {
 		input: "max by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: itemMax,
+			Op: ItemMax,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1093,7 +1093,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum without (foo) (some_metric)",
 		expected: &AggregateExpr{
-			Op:      itemSum,
+			Op:      ItemSum,
 			Without: true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -1106,7 +1106,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum (some_metric) without (foo)",
 		expected: &AggregateExpr{
-			Op:      itemSum,
+			Op:      ItemSum,
 			Without: true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -1119,7 +1119,7 @@ var testExpr = []struct {
 	}, {
 		input: "stddev(some_metric)",
 		expected: &AggregateExpr{
-			Op: itemStddev,
+			Op: ItemStddev,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1130,7 +1130,7 @@ var testExpr = []struct {
 	}, {
 		input: "stdvar by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: itemStdvar,
+			Op: ItemStdvar,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1142,7 +1142,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum by ()(some_metric)",
 		expected: &AggregateExpr{
-			Op: itemSum,
+			Op: ItemSum,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1154,7 +1154,7 @@ var testExpr = []struct {
 	}, {
 		input: "topk(5, some_metric)",
 		expected: &AggregateExpr{
-			Op: itemTopK,
+			Op: ItemTopK,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1166,7 +1166,7 @@ var testExpr = []struct {
 	}, {
 		input: "count_values(\"value\", some_metric)",
 		expected: &AggregateExpr{
-			Op: itemCountValues,
+			Op: ItemCountValues,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1179,7 +1179,7 @@ var testExpr = []struct {
 		// Test usage of keywords as label names.
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric)",
 		expected: &AggregateExpr{
-			Op:      itemSum,
+			Op:      ItemSum,
 			Without: true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -1494,7 +1494,7 @@ var testExpr = []struct {
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
 		expected: &SubqueryExpr{
 			Expr: &AggregateExpr{
-				Op:      itemSum,
+				Op:      ItemSum,
 				Without: true,
 				Expr: &VectorSelector{
 					Name: "some_metric",
@@ -1525,7 +1525,7 @@ var testExpr = []struct {
 		expected: &SubqueryExpr{
 			Expr: &ParenExpr{
 				Expr: &BinaryExpr{
-					Op: itemADD,
+					Op: ItemADD,
 					VectorMatching: &VectorMatching{
 						Card: CardOneToOne,
 					},
@@ -1551,7 +1551,7 @@ var testExpr = []struct {
 		expected: &SubqueryExpr{
 			Expr: &ParenExpr{
 				Expr: &BinaryExpr{
-					Op: itemADD,
+					Op: ItemADD,
 					VectorMatching: &VectorMatching{
 						Card: CardOneToOne,
 					},
