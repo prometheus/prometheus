@@ -386,14 +386,6 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 	return &cr, nil
 }
 
-// NewReader returns a new chunk reader against the given byte slices.
-func NewReader(bs []ByteSlice, pool chunkenc.Pool) (*Reader, error) {
-	if pool == nil {
-		pool = chunkenc.NewPool()
-	}
-	return newReader(bs, nil, pool)
-}
-
 // NewDirReader returns a new Reader against sequentially numbered files in the
 // given directory.
 func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {

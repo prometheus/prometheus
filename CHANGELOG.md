@@ -1,4 +1,5 @@
 ## master / unreleased
+ - [REMOVED] `chunks.NewReader` is removed as it wasn't used anywhere.
  - [REMOVED] `FromData` is considered unused so was removed.
 
 ## 0.6.1
