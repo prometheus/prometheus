@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
-
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -1040,7 +1039,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *UnaryExpr:
 		mat := ev.eval(e.Expr).(Matrix)
-		if e.Op == itemSUB {
+		if e.Op == ItemSUB {
 			for i := range mat {
 				mat[i].Metric = dropMetricName(mat[i].Metric)
 				for j := range mat[i].Points {
@@ -1062,15 +1061,15 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}, e.LHS, e.RHS)
 		case lt == ValueTypeVector && rt == ValueTypeVector:
 			switch e.Op {
-			case itemLAND:
+			case ItemLAND:
 				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
-			case itemLOR:
+			case ItemLOR:
 				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
-			case itemLUnless:
+			case ItemLUnless:
 				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
@@ -1605,29 +1604,29 @@ func dropMetricName(l labels.Labels) labels.Labels {
 // scalarBinop evaluates a binary operation between two Scalars.
 func scalarBinop(op ItemType, lhs, rhs float64) float64 {
 	switch op {
-	case itemADD:
+	case ItemADD:
 		return lhs + rhs
-	case itemSUB:
+	case ItemSUB:
 		return lhs - rhs
-	case itemMUL:
+	case ItemMUL:
 		return lhs * rhs
-	case itemDIV:
+	case ItemDIV:
 		return lhs / rhs
-	case itemPOW:
+	case ItemPOW:
 		return math.Pow(lhs, rhs)
-	case itemMOD:
+	case ItemMOD:
 		return math.Mod(lhs, rhs)
-	case itemEQL:
+	case ItemEQL:
 		return btos(lhs == rhs)
-	case itemNEQ:
+	case ItemNEQ:
 		return btos(lhs != rhs)
-	case itemGTR:
+	case ItemGTR:
 		return btos(lhs > rhs)
-	case itemLSS:
+	case ItemLSS:
 		return btos(lhs < rhs)
-	case itemGTE:
+	case ItemGTE:
 		return btos(lhs >= rhs)
-	case itemLTE:
+	case ItemLTE:
 		return btos(lhs <= rhs)
 	}
 	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
@@ -1636,29 +1635,29 @@ func scalarBinop(op ItemType, lhs, rhs float64) float64 {
 // vectorElemBinop evaluates a binary operation between two Vector elements.
 func vectorElemBinop(op ItemType, lhs, rhs float64) (float64, bool) {
 	switch op {
-	case itemADD:
+	case ItemADD:
 		return lhs + rhs, true
-	case itemSUB:
+	case ItemSUB:
 		return lhs - rhs, true
-	case itemMUL:
+	case ItemMUL:
 		return lhs * rhs, true
-	case itemDIV:
+	case ItemDIV:
 		return lhs / rhs, true
-	case itemPOW:
+	case ItemPOW:
 		return math.Pow(lhs, rhs), true
-	case itemMOD:
+	case ItemMOD:
 		return math.Mod(lhs, rhs), true
-	case itemEQL:
+	case ItemEQL:
 		return lhs, lhs == rhs
-	case itemNEQ:
+	case ItemNEQ:
 		return lhs, lhs != rhs
-	case itemGTR:
+	case ItemGTR:
 		return lhs, lhs > rhs
-	case itemLSS:
+	case ItemLSS:
 		return lhs, lhs < rhs
-	case itemGTE:
+	case ItemGTE:
 		return lhs, lhs >= rhs
-	case itemLTE:
+	case ItemLTE:
 		return lhs, lhs <= rhs
 	}
 	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
@@ -1678,7 +1677,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 
 	result := map[uint64]*groupedAggregation{}
 	var k int64
-	if op == itemTopK || op == itemBottomK {
+	if op == ItemTopK || op == ItemBottomK {
 		f := param.(float64)
 		if !convertibleToInt64(f) {
 			ev.errorf("Scalar value %v overflows int64", f)
@@ -1689,11 +1688,11 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		}
 	}
 	var q float64
-	if op == itemQuantile {
+	if op == ItemQuantile {
 		q = param.(float64)
 	}
 	var valueLabel string
-	if op == itemCountValues {
+	if op == ItemCountValues {
 		valueLabel = param.(string)
 		if !model.LabelName(valueLabel).IsValid() {
 			ev.errorf("invalid label name %q", valueLabel)
@@ -1706,7 +1705,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	for _, s := range vec {
 		metric := s.Metric
 
-		if op == itemCountValues {
+		if op == ItemCountValues {
 			lb := labels.NewBuilder(metric)
 			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
 			metric = lb.Labels()
@@ -1754,15 +1753,15 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			if k > inputVecLen {
 				resultSize = inputVecLen
 			}
-			if op == itemStdvar || op == itemStddev {
+			if op == ItemStdvar || op == ItemStddev {
 				result[groupingKey].value = 0.0
-			} else if op == itemTopK || op == itemQuantile {
+			} else if op == ItemTopK || op == ItemQuantile {
 				result[groupingKey].heap = make(vectorByValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
-			} else if op == itemBottomK {
+			} else if op == ItemBottomK {
 				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].reverseHeap, &Sample{
 					Point:  Point{V: s.V},
@@ -1773,33 +1772,33 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		}
 
 		switch op {
-		case itemSum:
+		case ItemSum:
 			group.value += s.V
 
-		case itemAvg:
+		case ItemAvg:
 			group.groupCount++
 			group.mean += (s.V - group.mean) / float64(group.groupCount)
 
-		case itemMax:
+		case ItemMax:
 			if group.value < s.V || math.IsNaN(group.value) {
 				group.value = s.V
 			}
 
-		case itemMin:
+		case ItemMin:
 			if group.value > s.V || math.IsNaN(group.value) {
 				group.value = s.V
 			}
 
-		case itemCount, itemCountValues:
+		case ItemCount, ItemCountValues:
 			group.groupCount++
 
-		case itemStdvar, itemStddev:
+		case ItemStdvar, ItemStddev:
 			group.groupCount++
 			delta := s.V - group.mean
 			group.mean += delta / float64(group.groupCount)
 			group.value += delta * (s.V - group.mean)
 
-		case itemTopK:
+		case ItemTopK:
 			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(group.heap[0].V) {
 				if int64(len(group.heap)) == k {
 					heap.Pop(&group.heap)
@@ -1810,7 +1809,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				})
 			}
 
-		case itemBottomK:
+		case ItemBottomK:
 			if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].V > s.V || math.IsNaN(group.reverseHeap[0].V) {
 				if int64(len(group.reverseHeap)) == k {
 					heap.Pop(&group.reverseHeap)
@@ -1821,7 +1820,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				})
 			}
 
-		case itemQuantile:
+		case ItemQuantile:
 			group.heap = append(group.heap, s)
 
 		default:
@@ -1832,19 +1831,19 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	// Construct the result Vector from the aggregated groups.
 	for _, aggr := range result {
 		switch op {
-		case itemAvg:
+		case ItemAvg:
 			aggr.value = aggr.mean
 
-		case itemCount, itemCountValues:
+		case ItemCount, ItemCountValues:
 			aggr.value = float64(aggr.groupCount)
 
-		case itemStdvar:
+		case ItemStdvar:
 			aggr.value = aggr.value / float64(aggr.groupCount)
 
-		case itemStddev:
+		case ItemStddev:
 			aggr.value = math.Sqrt(aggr.value / float64(aggr.groupCount))
 
-		case itemTopK:
+		case ItemTopK:
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.heap))
 			for _, v := range aggr.heap {
@@ -1855,7 +1854,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			}
 			continue // Bypass default append.
 
-		case itemBottomK:
+		case ItemBottomK:
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.reverseHeap))
 			for _, v := range aggr.reverseHeap {
@@ -1866,7 +1865,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			}
 			continue // Bypass default append.
 
-		case itemQuantile:
+		case ItemQuantile:
 			aggr.value = quantile(q, aggr.heap)
 
 		default:
@@ -1893,7 +1892,7 @@ func btos(b bool) float64 {
 // result of the op operation.
 func shouldDropMetricName(op ItemType) bool {
 	switch op {
-	case itemADD, itemSUB, itemDIV, itemMUL, itemPOW, itemMOD:
+	case ItemADD, ItemSUB, ItemDIV, ItemMUL, ItemPOW, ItemMOD:
 		return true
 	default:
 		return false
