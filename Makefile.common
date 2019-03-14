@@ -60,7 +60,6 @@ $(warning Some recipes may not work as expected as the current Go runtime is '$(
 	endif
 endif
 PROMU        := $(FIRST_GOPATH)/bin/promu
-STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
 pkgs          = ./...
 
 ifeq (arm, $(GOHOSTARCH))
@@ -72,8 +71,17 @@ endif
 
 PROMU_VERSION ?= 0.3.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
-STATICCHECK_VERSION ?= 2019.1
-STATICCHECK_URL     := https://github.com/dominikh/go-tools/releases/download/$(STATICCHECK_VERSION)/staticcheck_$(GOHOSTOS)_$(GOHOSTARCH)
+
+STATICCHECK :=
+# staticcheck only supports linux, freebsd, darwin and windows plaforms on i386/amd64
+# windows isn't included here because of the path separator being different.
+ifeq ($(GOHOSTOS),$(filter $(GOHOSTOS),linux freebsd darwin))
+	ifeq ($(GOHOSTARCH),$(filter $(GOHOSTARCH),amd64 i386))
+		STATICCHECK := $(FIRST_GOPATH)/bin/staticcheck
+		STATICCHECK_VERSION ?= 2019.1
+		STATICCHECK_URL := https://github.com/dominikh/go-tools/releases/download/$(STATICCHECK_VERSION)/staticcheck_$(GOHOSTOS)_$(GOHOSTARCH)
+	endif
+endif
 
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
@@ -147,6 +155,7 @@ common-vet:
 
 .PHONY: common-staticcheck
 common-staticcheck: $(STATICCHECK)
+ifdef STATICCHECK
 	@echo ">> running staticcheck"
 	chmod +x $(STATICCHECK)
 ifdef GO111MODULE
@@ -156,6 +165,7 @@ ifdef GO111MODULE
 	GO111MODULE=$(GO111MODULE) $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 else
 	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
+endif
 endif
 
 .PHONY: common-unused
@@ -214,9 +224,11 @@ proto:
 	@echo ">> generating code from proto files"
 	@./scripts/genproto.sh
 
+ifdef STATICCHECK
 $(STATICCHECK):
 	mkdir -p $(FIRST_GOPATH)/bin
 	curl -s -L $(STATICCHECK_URL) > $(STATICCHECK)
+endif
 
 ifdef GOVENDOR
 .PHONY: $(GOVENDOR)
