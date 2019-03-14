@@ -680,6 +680,9 @@ var expectedErrors = []struct {
 		filename: "labelname2.bad.yml",
 		errMsg:   `"not:allowed" is not a valid label name`,
 	}, {
+		filename: "labelvalue.bad.yml",
+		errMsg:   `"\xff" is not a valid label value`,
+	}, {
 		filename: "regex.bad.yml",
 		errMsg:   "error parsing regexp",
 	}, {

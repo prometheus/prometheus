@@ -303,6 +303,9 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if !model.LabelName(l.Name).IsValid() {
 			return fmt.Errorf("%q is not a valid label name", l.Name)
 		}
+		if !model.LabelValue(l.Value).IsValid() {
+			return fmt.Errorf("%q is not a valid label value", l.Value)
+		}
 	}
 
 	// First set the correct scrape interval, then check that the timeout
