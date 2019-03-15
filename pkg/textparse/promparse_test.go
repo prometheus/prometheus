@@ -101,7 +101,7 @@ testmetric{label="\"bar\""} 1`
 		}, {
 			m:    `wind_speed{A="2",c="3"}`,
 			v:    12345,
-			lset: labels.FromStrings("__name__", "wind_speed", "A", "2", "c", "3"),
+			lset: labels.FromStrings("A", "2", "__name__", "wind_speed", "c", "3"),
 		}, {
 			comment: "# comment with escaped \\n newline",
 		}, {
