@@ -412,7 +412,7 @@ func nameAndLabels(rule Rule) string {
 
 // CopyState copies the alerting rule and staleness related state from the given group.
 //
-// Rules are matched based on their name. If there are duplicates, the
+// Rules are matched based on their name and labels. If there are duplicates, the
 // first is matched with the first, second with the second etc.
 func (g *Group) CopyState(from *Group) {
 	g.evaluationDuration = from.evaluationDuration
