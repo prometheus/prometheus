@@ -189,6 +189,8 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 // interval and acted upon (currently either recorded or used for alerting).
 type Rule interface {
 	Name() string
+	// Labels of the rule.
+	Labels() labels.Labels
 	// eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
@@ -404,9 +406,13 @@ func (g *Group) evalTimestamp() time.Time {
 	return time.Unix(0, base+offset)
 }
 
+func nameAndLabels(rule Rule) string {
+	return rule.Name() + rule.Labels().String()
+}
+
 // CopyState copies the alerting rule and staleness related state from the given group.
 //
-// Rules are matched based on their name. If there are duplicates, the
+// Rules are matched based on their name and labels. If there are duplicates, the
 // first is matched with the first, second with the second etc.
 func (g *Group) CopyState(from *Group) {
 	g.evaluationDuration = from.evaluationDuration
@@ -414,18 +420,20 @@ func (g *Group) CopyState(from *Group) {
 	ruleMap := make(map[string][]int, len(from.rules))
 
 	for fi, fromRule := range from.rules {
-		l := ruleMap[fromRule.Name()]
-		ruleMap[fromRule.Name()] = append(l, fi)
+		nameAndLabels := nameAndLabels(fromRule)
+		l := ruleMap[nameAndLabels]
+		ruleMap[nameAndLabels] = append(l, fi)
 	}
 
 	for i, rule := range g.rules {
-		indexes := ruleMap[rule.Name()]
+		nameAndLabels := nameAndLabels(rule)
+		indexes := ruleMap[nameAndLabels]
 		if len(indexes) == 0 {
 			continue
 		}
 		fi := indexes[0]
 		g.seriesInPreviousEval[i] = from.seriesInPreviousEval[fi]
-		ruleMap[rule.Name()] = indexes[1:]
+		ruleMap[nameAndLabels] = indexes[1:]
 
 		ar, ok := rule.(*AlertingRule)
 		if !ok {
