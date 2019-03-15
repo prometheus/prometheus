@@ -135,6 +135,16 @@ job_name: <job_name>
 # when a time series does not have a given label yet and are ignored otherwise.
 [ honor_labels: <boolean> | default = false ]
 
+# honor_timestamps controls whether Prometheus respects the timestamps present
+# in scraped data.
+#
+# If honor_timestamps is set to "true", the timestamps of the metrics exposed
+# by the target will be used.
+#
+# If honor_timestamps is set to "false", the timestamps of the metrics exposed
+# by the target will be ignored.
+[ honor_timestamps: <boolean> | default = true ]
+
 # Configures the protocol scheme used for requests.
 [ scheme: <scheme> | default = http ]
 

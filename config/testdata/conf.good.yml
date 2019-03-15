@@ -230,6 +230,13 @@ scrape_configs:
     - targets:
       - localhost:9090
 
+- job_name: badfederation
+  honor_timestamps: false
+  metrics_path: /federate
+  static_configs:
+    - targets:
+      - localhost:9090
+
 - job_name: 測試
   metrics_path: /metrics
   static_configs:
