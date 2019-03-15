@@ -25,7 +25,9 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 	name := "name"
 	vmType := "type"
 	location := "westeurope"
-	networkProfile := compute.NetworkProfile{}
+	networkProfile := compute.NetworkProfile{
+		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	}
 	properties := &compute.VirtualMachineProperties{
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
@@ -45,13 +47,13 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 	}
 
 	expectedVM := virtualMachine{
-		ID:             id,
-		Name:           name,
-		Type:           vmType,
-		Location:       location,
-		OsType:         "Linux",
-		Tags:           map[string]*string{},
-		NetworkProfile: networkProfile,
+		ID:                id,
+		Name:              name,
+		Type:              vmType,
+		Location:          location,
+		OsType:            "Linux",
+		Tags:              map[string]*string{},
+		NetworkInterfaces: []string{},
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -69,7 +71,9 @@ func TestMapFromVMWithTags(t *testing.T) {
 	tags := map[string]*string{
 		"prometheus": new(string),
 	}
-	networkProfile := compute.NetworkProfile{}
+	networkProfile := compute.NetworkProfile{
+		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	}
 	properties := &compute.VirtualMachineProperties{
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
@@ -89,13 +93,13 @@ func TestMapFromVMWithTags(t *testing.T) {
 	}
 
 	expectedVM := virtualMachine{
-		ID:             id,
-		Name:           name,
-		Type:           vmType,
-		Location:       location,
-		OsType:         "Linux",
-		Tags:           tags,
-		NetworkProfile: networkProfile,
+		ID:                id,
+		Name:              name,
+		Type:              vmType,
+		Location:          location,
+		OsType:            "Linux",
+		Tags:              tags,
+		NetworkInterfaces: []string{},
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -110,7 +114,9 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	name := "name"
 	vmType := "type"
 	location := "westeurope"
-	networkProfile := compute.NetworkProfile{}
+	networkProfile := compute.NetworkProfile{
+		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	}
 	properties := &compute.VirtualMachineScaleSetVMProperties{
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
@@ -131,14 +137,14 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 
 	scaleSet := "testSet"
 	expectedVM := virtualMachine{
-		ID:             id,
-		Name:           name,
-		Type:           vmType,
-		Location:       location,
-		OsType:         "Linux",
-		Tags:           map[string]*string{},
-		NetworkProfile: networkProfile,
-		ScaleSet:       scaleSet,
+		ID:                id,
+		Name:              name,
+		Type:              vmType,
+		Location:          location,
+		OsType:            "Linux",
+		Tags:              map[string]*string{},
+		NetworkInterfaces: []string{},
+		ScaleSet:          scaleSet,
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
@@ -156,7 +162,9 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 	tags := map[string]*string{
 		"prometheus": new(string),
 	}
-	networkProfile := compute.NetworkProfile{}
+	networkProfile := compute.NetworkProfile{
+		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	}
 	properties := &compute.VirtualMachineScaleSetVMProperties{
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
@@ -177,14 +185,14 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 
 	scaleSet := "testSet"
 	expectedVM := virtualMachine{
-		ID:             id,
-		Name:           name,
-		Type:           vmType,
-		Location:       location,
-		OsType:         "Linux",
-		Tags:           tags,
-		NetworkProfile: networkProfile,
-		ScaleSet:       scaleSet,
+		ID:                id,
+		Name:              name,
+		Type:              vmType,
+		Location:          location,
+		OsType:            "Linux",
+		Tags:              tags,
+		NetworkInterfaces: []string{},
+		ScaleSet:          scaleSet,
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
