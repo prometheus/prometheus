@@ -250,7 +250,7 @@ func getFqdn() (string, error) {
 
 	ips, err := net.LookupIP(hostname)
 	if err != nil {
-		return hostname, err
+		return hostname, nil
 	}
 
 	lookup := func(ipStr encoding.TextMarshaler) (string, error) {
