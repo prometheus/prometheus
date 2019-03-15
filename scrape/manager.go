@@ -241,7 +241,7 @@ func (m *Manager) TargetsDropped() map[string][]*Target {
 	return targets
 }
 
-// getFqdn returns a fqdn if it's possible, otherwise falls back a hostname.
+// getFqdn returns a FQDN if it's possible, otherwise falls back to hostname.
 func getFqdn() (string, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -250,6 +250,7 @@ func getFqdn() (string, error) {
 
 	ips, err := net.LookupIP(hostname)
 	if err != nil {
+		// Return the system hostname if we can't look up the IP address.
 		return hostname, nil
 	}
 
