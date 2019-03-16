@@ -248,6 +248,11 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
 	r.Post("/admin/tsdb/clean_tombstones", wrap(api.cleanTombstones))
 	r.Post("/admin/tsdb/snapshot", wrap(api.snapshot))
+
+	r.Put("/admin/tsdb/delete_series", wrap(api.deleteSeries))
+	r.Put("/admin/tsdb/clean_tombstones", wrap(api.cleanTombstones))
+	r.Put("/admin/tsdb/snapshot", wrap(api.snapshot))
+
 }
 
 type queryData struct {
