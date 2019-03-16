@@ -127,17 +127,20 @@ type rulesRetrieverMock struct {
 }
 
 func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
-	expr1, err := promql.ParseExpr(`absent(test_metric3) != 1`)
+	expr1Raw := `absent(test_metric3) != 1`
+	expr1, err := promql.ParseExpr(expr1Raw)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
-	expr2, err := promql.ParseExpr(`up == 1`)
+	expr2Raw := `up == 1`
+	expr2, err := promql.ParseExpr(expr2Raw)
 	if err != nil {
 		m.testing.Fatalf("Unable to parse alert expression: %s", err)
 	}
 
 	rule1 := rules.NewAlertingRule(
 		"test_metric3",
+		expr1Raw,
 		expr1,
 		time.Second,
 		labels.Labels{},
@@ -147,6 +150,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 	)
 	rule2 := rules.NewAlertingRule(
 		"test_metric4",
+		expr2Raw,
 		expr2,
 		time.Second,
 		labels.Labels{},
@@ -188,11 +192,12 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 		r = append(r, alertrule)
 	}
 
-	recordingExpr, err := promql.ParseExpr(`vector(1)`)
+	exprRaw := `vector(1)`
+	expr, err := promql.ParseExpr(exprRaw)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
-	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
+	recordingRule := rules.NewRecordingRule("recording-rule-1", exprRaw, expr, labels.Labels{})
 	r = append(r, recordingRule)
 
 	group := rules.NewGroup("grp", "/path/to/file", time.Second, r, false, opts)

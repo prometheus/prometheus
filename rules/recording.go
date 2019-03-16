@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
 	name   string
+	expr   string
 	vector promql.Expr
 	labels labels.Labels
 	// Protects the below.
@@ -47,9 +49,10 @@ type RecordingRule struct {
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector promql.Expr, lset labels.Labels) *RecordingRule {
+func NewRecordingRule(name string, expr string, vector promql.Expr, lset labels.Labels) *RecordingRule {
 	return &RecordingRule{
 		name:   name,
+		expr:   expr,
 		vector: vector,
 		health: HealthUnknown,
 		labels: lset,
@@ -59,6 +62,11 @@ func NewRecordingRule(name string, vector promql.Expr, lset labels.Labels) *Reco
 // Name returns the rule name.
 func (rule *RecordingRule) Name() string {
 	return rule.name
+}
+
+// Expression returns the rule expression.
+func (rule *RecordingRule) Expression() string {
+	return rule.expr
 }
 
 // Query returns the rule query expression.
@@ -175,7 +183,7 @@ func (rule *RecordingRule) GetEvaluationTimestamp() time.Time {
 
 // HTMLSnippet returns an HTML snippet representing this rule.
 func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
-	ruleExpr := rule.vector.String()
+	ruleExpr := strings.Trim(rule.Expression(), "\n")
 	labels := make(map[string]string, len(rule.labels))
 	for _, l := range rule.labels {
 		labels[l.Name] = template.HTMLEscapeString(l.Value)

@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -109,6 +110,8 @@ func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
 type AlertingRule struct {
 	// The name of the alert.
 	name string
+	// The alert expression in its raw form.
+	expr string
 	// The vector expression from which to generate alerts.
 	vector promql.Expr
 	// The duration for which a labelset needs to persist in the expression
@@ -139,9 +142,10 @@ type AlertingRule struct {
 }
 
 // NewAlertingRule constructs a new AlertingRule.
-func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, restored bool, logger log.Logger) *AlertingRule {
+func NewAlertingRule(name string, expr string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, restored bool, logger log.Logger) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
+		expr:         expr,
 		vector:       vec,
 		holdDuration: hold,
 		labels:       lbls,
@@ -156,6 +160,13 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 // Name returns the name of the alerting rule.
 func (r *AlertingRule) Name() string {
 	return r.name
+}
+
+// Expression returns the raw expression of the alerting rule.
+func (r *AlertingRule) Expression() string {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	return r.expr
 }
 
 // SetLastError sets the current error seen by the alerting rule.
@@ -491,6 +502,7 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		alertNameLabel:        model.LabelValue(r.name),
 	}
 
+	ruleExpr := strings.Trim(r.Expression(), "\n")
 	labelsMap := make(map[string]string, len(r.labels))
 	for _, l := range r.labels {
 		labelsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
@@ -503,7 +515,7 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 
 	ar := rulefmt.Rule{
 		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
-		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
+		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(ruleExpr), html_template.HTMLEscapeString(ruleExpr)),
 		For:         model.Duration(r.holdDuration),
 		Labels:      labelsMap,
 		Annotations: annotationsMap,

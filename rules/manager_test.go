@@ -43,11 +43,13 @@ func TestAlertingRule(t *testing.T) {
 	err = suite.Run()
 	testutil.Ok(t, err)
 
-	expr, err := promql.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	exprRaw := `http_requests{group="canary", job="app-server"} < 100`
+	expr, err := promql.ParseExpr(exprRaw)
 	testutil.Ok(t, err)
 
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
+		exprRaw,
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
@@ -184,11 +186,13 @@ func TestForStateAddSamples(t *testing.T) {
 	err = suite.Run()
 	testutil.Ok(t, err)
 
-	expr, err := promql.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	exprRaw := `http_requests{group="canary", job="app-server"} < 100`
+	expr, err := promql.ParseExpr(exprRaw)
 	testutil.Ok(t, err)
 
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
+		exprRaw,
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
@@ -345,7 +349,8 @@ func TestForStateRestore(t *testing.T) {
 	err = suite.Run()
 	testutil.Ok(t, err)
 
-	expr, err := promql.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	exprRaw := `http_requests{group="canary", job="app-server"} < 100`
+	expr, err := promql.ParseExpr(exprRaw)
 	testutil.Ok(t, err)
 
 	opts := &ManagerOptions{
@@ -363,6 +368,7 @@ func TestForStateRestore(t *testing.T) {
 	// Initial run before prometheus goes down.
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
+		exprRaw,
 		expr,
 		alertForDuration,
 		labels.FromStrings("severity", "critical"),
@@ -423,6 +429,7 @@ func TestForStateRestore(t *testing.T) {
 	testFunc := func(tst testInput) {
 		newRule := NewAlertingRule(
 			"HTTPRequestRateLow",
+			exprRaw,
 			expr,
 			alertForDuration,
 			labels.FromStrings("severity", "critical"),
@@ -510,9 +517,10 @@ func TestStaleness(t *testing.T) {
 		Logger:     log.NewNopLogger(),
 	}
 
-	expr, err := promql.ParseExpr("a + 1")
+	exprRaw := `a + 1`
+	expr, err := promql.ParseExpr(exprRaw)
 	testutil.Ok(t, err)
-	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+	rule := NewRecordingRule("a_plus_one", exprRaw, expr, labels.Labels{})
 	group := NewGroup("default", "", time.Second, []Rule{rule}, true, opts)
 
 	// A time series that has two samples and then goes stale.
@@ -581,12 +589,12 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, nil, nil, true, nil),
-			NewRecordingRule("rule1", nil, nil),
-			NewRecordingRule("rule2", nil, nil),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, true, nil),
+			NewAlertingRule("alert", "", nil, 0, nil, nil, true, nil),
+			NewRecordingRule("rule1", "", nil, nil),
+			NewRecordingRule("rule2", "", nil, nil),
+			NewRecordingRule("rule3", "", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
+			NewRecordingRule("rule3", "", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
+			NewAlertingRule("alert2", "", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, true, nil),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{"a": nil},
@@ -601,14 +609,14 @@ func TestCopyState(t *testing.T) {
 	oldGroup.rules[0].(*AlertingRule).active[42] = nil
 	newGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v0"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
-			NewAlertingRule("alert", nil, 0, nil, nil, true, nil),
-			NewRecordingRule("rule1", nil, nil),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v0"}}, nil, true, nil),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, true, nil),
-			NewRecordingRule("rule4", nil, nil),
+			NewRecordingRule("rule3", "", nil, labels.Labels{{Name: "l1", Value: "v0"}}),
+			NewRecordingRule("rule3", "", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
+			NewRecordingRule("rule3", "", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
+			NewAlertingRule("alert", "", nil, 0, nil, nil, true, nil),
+			NewRecordingRule("rule1", "", nil, nil),
+			NewAlertingRule("alert2", "", nil, 0, labels.Labels{{Name: "l2", Value: "v0"}}, nil, true, nil),
+			NewAlertingRule("alert2", "", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, true, nil),
+			NewRecordingRule("rule4", "", nil, nil),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
 	}
@@ -697,9 +705,10 @@ func TestNotify(t *testing.T) {
 		ResendDelay: 2 * time.Second,
 	}
 
-	expr, err := promql.ParseExpr("a > 1")
+	exprRaw := `a > 1`
+	expr, err := promql.ParseExpr(exprRaw)
 	testutil.Ok(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", exprRaw, expr, 0, labels.Labels{}, labels.Labels{}, true, log.NewNopLogger())
 	group := NewGroup("alert", "", time.Second, []Rule{rule}, true, opts)
 
 	app, _ := storage.Appender()

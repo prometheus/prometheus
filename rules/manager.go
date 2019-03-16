@@ -831,6 +831,7 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 				if r.Alert != "" {
 					rules = append(rules, NewAlertingRule(
 						r.Alert,
+						r.Expr,
 						expr,
 						time.Duration(r.For),
 						labels.FromMap(r.Labels),
@@ -842,6 +843,7 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 				}
 				rules = append(rules, NewRecordingRule(
 					r.Record,
+					r.Expr,
 					expr,
 					labels.FromMap(r.Labels),
 				))
