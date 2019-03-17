@@ -21,7 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
-	types "k8s.io/apimachinery/pkg/types"
 	core "k8s.io/client-go/testing"
 )
 
@@ -53,13 +52,10 @@ func (c *FakeEvents) UpdateWithEventNamespace(event *v1.Event) (*v1.Event, error
 }
 
 // PatchWithEventNamespace patches an existing event. Returns the copy of the event the server returns, or an error.
-// TODO: Should take a PatchType as an argument probably.
 func (c *FakeEvents) PatchWithEventNamespace(event *v1.Event, data []byte) (*v1.Event, error) {
-	// TODO: Should be configurable to support additional patch strategies.
-	pt := types.StrategicMergePatchType
-	action := core.NewRootPatchAction(eventsResource, event.Name, pt, data)
+	action := core.NewRootPatchAction(eventsResource, event.Name, data)
 	if c.ns != "" {
-		action = core.NewPatchAction(eventsResource, c.ns, event.Name, pt, data)
+		action = core.NewPatchAction(eventsResource, c.ns, event.Name, data)
 	}
 	obj, err := c.Fake.Invokes(action, event)
 	if obj == nil {

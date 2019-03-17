@@ -26,4 +26,6 @@ type DeploymentExpansion interface{}
 
 type ReplicaSetExpansion interface{}
 
+type ScaleExpansion interface{}
+
 type StatefulSetExpansion interface{}

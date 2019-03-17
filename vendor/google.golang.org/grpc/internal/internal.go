@@ -23,13 +23,20 @@ package internal
 import "context"
 
 var (
-	// WithContextDialer is exported by clientconn.go
+	// WithContextDialer is exported by dialoptions.go
 	WithContextDialer interface{} // func(context.Context, string) (net.Conn, error) grpc.DialOption
-	// WithResolverBuilder is exported by clientconn.go
+	// WithResolverBuilder is exported by dialoptions.go
 	WithResolverBuilder interface{} // func (resolver.Builder) grpc.DialOption
+	// WithHealthCheckFunc is not exported by dialoptions.go
+	WithHealthCheckFunc interface{} // func (HealthChecker) DialOption
 	// HealthCheckFunc is used to provide client-side LB channel health checking
-	HealthCheckFunc func(ctx context.Context, newStream func() (interface{}, error), reportHealth func(bool), serviceName string) error
+	HealthCheckFunc HealthChecker
+	// BalancerUnregister is exported by package balancer to unregister a balancer.
+	BalancerUnregister func(name string)
 )
+
+// HealthChecker defines the signature of the client-side LB channel health checking function.
+type HealthChecker func(ctx context.Context, newStream func() (interface{}, error), reportHealth func(bool), serviceName string) error
 
 const (
 	// CredsBundleModeFallback switches GoogleDefaultCreds to fallback mode.

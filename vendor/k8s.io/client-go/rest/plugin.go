@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"sync"
 
-	"k8s.io/klog"
+	"github.com/golang/glog"
 
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -57,7 +57,7 @@ func RegisterAuthProviderPlugin(name string, plugin Factory) error {
 	if _, found := plugins[name]; found {
 		return fmt.Errorf("Auth Provider Plugin %q was registered twice", name)
 	}
-	klog.V(4).Infof("Registered Auth Provider Plugin %q", name)
+	glog.V(4).Infof("Registered Auth Provider Plugin %q", name)
 	plugins[name] = plugin
 	return nil
 }

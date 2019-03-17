@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/klog"
+	"github.com/golang/glog"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -156,7 +156,7 @@ func (c *mutationCache) ByIndex(name string, indexKey string) ([]interface{}, er
 			}
 			elements, err := fn(updated)
 			if err != nil {
-				klog.V(4).Infof("Unable to calculate an index entry for mutation cache entry %s: %v", key, err)
+				glog.V(4).Infof("Unable to calculate an index entry for mutation cache entry %s: %v", key, err)
 				continue
 			}
 			for _, inIndex := range elements {

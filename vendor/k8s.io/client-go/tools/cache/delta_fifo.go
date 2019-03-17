@@ -23,7 +23,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"k8s.io/klog"
+	"github.com/golang/glog"
 )
 
 // NewDeltaFIFO returns a Store which can be used process changes to items.
@@ -320,15 +320,17 @@ func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) err
 	newDeltas := append(f.items[id], Delta{actionType, obj})
 	newDeltas = dedupDeltas(newDeltas)
 
+	_, exists := f.items[id]
 	if len(newDeltas) > 0 {
-		if _, exists := f.items[id]; !exists {
+		if !exists {
 			f.queue = append(f.queue, id)
 		}
 		f.items[id] = newDeltas
 		f.cond.Broadcast()
-	} else {
-		// We need to remove this from our map (extra items in the queue are
-		// ignored if they are not in the map).
+	} else if exists {
+		// We need to remove this from our map (extra items
+		// in the queue are ignored if they are not in the
+		// map).
 		delete(f.items, id)
 	}
 	return nil
@@ -346,6 +348,9 @@ func (f *DeltaFIFO) List() []interface{} {
 func (f *DeltaFIFO) listLocked() []interface{} {
 	list := make([]interface{}, 0, len(f.items))
 	for _, item := range f.items {
+		// Copy item's slice so operations on this slice
+		// won't interfere with the object we return.
+		item = copyDeltas(item)
 		list = append(list, item.Newest().Object)
 	}
 	return list
@@ -393,7 +398,10 @@ func (f *DeltaFIFO) GetByKey(key string) (item interface{}, exists bool, err err
 func (f *DeltaFIFO) IsClosed() bool {
 	f.closedLock.Lock()
 	defer f.closedLock.Unlock()
-	return f.closed
+	if f.closed {
+		return true
+	}
+	return false
 }
 
 // Pop blocks until an item is added to the queue, and then returns it.  If
@@ -424,10 +432,10 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 		}
 		id := f.queue[0]
 		f.queue = f.queue[1:]
+		item, ok := f.items[id]
 		if f.initialPopulationCount > 0 {
 			f.initialPopulationCount--
 		}
-		item, ok := f.items[id]
 		if !ok {
 			// Item may have been deleted subsequently.
 			continue
@@ -498,10 +506,10 @@ func (f *DeltaFIFO) Replace(list []interface{}, resourceVersion string) error {
 		deletedObj, exists, err := f.knownObjects.GetByKey(k)
 		if err != nil {
 			deletedObj = nil
-			klog.Errorf("Unexpected error %v during lookup of key %v, placing DeleteFinalStateUnknown marker without object", err, k)
+			glog.Errorf("Unexpected error %v during lookup of key %v, placing DeleteFinalStateUnknown marker without object", err, k)
 		} else if !exists {
 			deletedObj = nil
-			klog.Infof("Key %v does not exist in known objects store, placing DeleteFinalStateUnknown marker without object", k)
+			glog.Infof("Key %v does not exist in known objects store, placing DeleteFinalStateUnknown marker without object", k)
 		}
 		queuedDeletions++
 		if err := f.queueActionLocked(Deleted, DeletedFinalStateUnknown{k, deletedObj}); err != nil {
@@ -545,10 +553,10 @@ func (f *DeltaFIFO) syncKey(key string) error {
 func (f *DeltaFIFO) syncKeyLocked(key string) error {
 	obj, exists, err := f.knownObjects.GetByKey(key)
 	if err != nil {
-		klog.Errorf("Unexpected error %v during lookup of key %v, unable to queue object for sync", err, key)
+		glog.Errorf("Unexpected error %v during lookup of key %v, unable to queue object for sync", err, key)
 		return nil
 	} else if !exists {
-		klog.Infof("Key %v does not exist in known objects store, unable to queue object for sync", key)
+		glog.Infof("Key %v does not exist in known objects store, unable to queue object for sync", key)
 		return nil
 	}
 

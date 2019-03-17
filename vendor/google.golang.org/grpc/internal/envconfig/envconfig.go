@@ -34,7 +34,7 @@ const (
 type RequireHandshakeSetting int
 
 const (
-	// RequireHandshakeHybrid (default, deprecated) indicates to wait for
+	// RequireHandshakeHybrid (default, deprecated) indicates to not wait for
 	// handshake before considering a connection ready, but wait before
 	// considering successful.
 	RequireHandshakeHybrid RequireHandshakeSetting = iota
@@ -59,6 +59,7 @@ var (
 func init() {
 	switch strings.ToLower(os.Getenv(requireHandshakeStr)) {
 	case "on":
+	default:
 		RequireHandshake = RequireHandshakeOn
 	case "off":
 		RequireHandshake = RequireHandshakeOff

@@ -28,7 +28,7 @@ import (
 	"k8s.io/client-go/util/buffer"
 	"k8s.io/client-go/util/retry"
 
-	"k8s.io/klog"
+	"github.com/golang/glog"
 )
 
 // SharedInformer has a shared data cache and is capable of distributing notifications for changes
@@ -86,7 +86,7 @@ func NewSharedIndexInformer(lw ListerWatcher, objType runtime.Object, defaultEve
 		resyncCheckPeriod:               defaultEventHandlerResyncPeriod,
 		defaultEventHandlerResyncPeriod: defaultEventHandlerResyncPeriod,
 		cacheMutationDetector:           NewCacheMutationDetector(fmt.Sprintf("%T", objType)),
-		clock:                           realClock,
+		clock: realClock,
 	}
 	return sharedIndexInformer
 }
@@ -116,11 +116,11 @@ func WaitForCacheSync(stopCh <-chan struct{}, cacheSyncs ...InformerSynced) bool
 		},
 		stopCh)
 	if err != nil {
-		klog.V(2).Infof("stop requested")
+		glog.V(2).Infof("stop requested")
 		return false
 	}
 
-	klog.V(4).Infof("caches populated")
+	glog.V(4).Infof("caches populated")
 	return true
 }
 
@@ -279,11 +279,11 @@ func determineResyncPeriod(desired, check time.Duration) time.Duration {
 		return desired
 	}
 	if check == 0 {
-		klog.Warningf("The specified resyncPeriod %v is invalid because this shared informer doesn't support resyncing", desired)
+		glog.Warningf("The specified resyncPeriod %v is invalid because this shared informer doesn't support resyncing", desired)
 		return 0
 	}
 	if desired < check {
-		klog.Warningf("The specified resyncPeriod %v is being increased to the minimum resyncCheckPeriod %v", desired, check)
+		glog.Warningf("The specified resyncPeriod %v is being increased to the minimum resyncCheckPeriod %v", desired, check)
 		return check
 	}
 	return desired
@@ -296,19 +296,19 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 	defer s.startedLock.Unlock()
 
 	if s.stopped {
-		klog.V(2).Infof("Handler %v was not added to shared informer because it has stopped already", handler)
+		glog.V(2).Infof("Handler %v was not added to shared informer because it has stopped already", handler)
 		return
 	}
 
 	if resyncPeriod > 0 {
 		if resyncPeriod < minimumResyncPeriod {
-			klog.Warningf("resyncPeriod %d is too small. Changing it to the minimum allowed value of %d", resyncPeriod, minimumResyncPeriod)
+			glog.Warningf("resyncPeriod %d is too small. Changing it to the minimum allowed value of %d", resyncPeriod, minimumResyncPeriod)
 			resyncPeriod = minimumResyncPeriod
 		}
 
 		if resyncPeriod < s.resyncCheckPeriod {
 			if s.started {
-				klog.Warningf("resyncPeriod %d is smaller than resyncCheckPeriod %d and the informer has already started. Changing it to %d", resyncPeriod, s.resyncCheckPeriod, s.resyncCheckPeriod)
+				glog.Warningf("resyncPeriod %d is smaller than resyncCheckPeriod %d and the informer has already started. Changing it to %d", resyncPeriod, s.resyncCheckPeriod, s.resyncCheckPeriod)
 				resyncPeriod = s.resyncCheckPeriod
 			} else {
 				// if the event handler's resyncPeriod is smaller than the current resyncCheckPeriod, update

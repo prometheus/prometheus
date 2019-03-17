@@ -17,6 +17,7 @@ package view
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -69,6 +70,8 @@ func (v *View) same(other *View) bool {
 		v.Measure.Name() == other.Measure.Name()
 }
 
+var ErrNegativeBucketBounds = errors.New("negative bucket bounds not supported")
+
 // canonicalize canonicalizes v by setting explicit
 // defaults for Name and Description and sorting the TagKeys
 func (v *View) canonicalize() error {
@@ -90,6 +93,12 @@ func (v *View) canonicalize() error {
 	sort.Slice(v.TagKeys, func(i, j int) bool {
 		return v.TagKeys[i].Name() < v.TagKeys[j].Name()
 	})
+	sort.Float64s(v.Aggregation.Buckets)
+	for _, b := range v.Aggregation.Buckets {
+		if b < 0 {
+			return ErrNegativeBucketBounds
+		}
+	}
 	return nil
 }
 

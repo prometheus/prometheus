@@ -29,8 +29,6 @@ import (
 func init() {
 	sDec, _ := base64.StdEncoding.DecodeString("REDACTED+")
 	redactedBytes = []byte(string(sDec))
-	sDec, _ = base64.StdEncoding.DecodeString("DATA+OMITTED")
-	dataOmittedBytes = []byte(string(sDec))
 }
 
 // IsConfigEmpty returns true if the config is empty.
@@ -81,10 +79,7 @@ func MinifyConfig(config *Config) error {
 	return nil
 }
 
-var (
-	redactedBytes    []byte
-	dataOmittedBytes []byte
-)
+var redactedBytes []byte
 
 // Flatten redacts raw data entries from the config object for a human-readable view.
 func ShortenConfig(config *Config) {
@@ -102,7 +97,7 @@ func ShortenConfig(config *Config) {
 	}
 	for key, cluster := range config.Clusters {
 		if len(cluster.CertificateAuthorityData) > 0 {
-			cluster.CertificateAuthorityData = dataOmittedBytes
+			cluster.CertificateAuthorityData = redactedBytes
 		}
 		config.Clusters[key] = cluster
 	}

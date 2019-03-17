@@ -26,23 +26,12 @@ import (
 func (c *FakePods) Bind(binding *v1.Binding) error {
 	action := core.CreateActionImpl{}
 	action.Verb = "create"
-	action.Namespace = binding.Namespace
 	action.Resource = podsResource
-	action.Subresource = "binding"
+	action.Subresource = "bindings"
 	action.Object = binding
 
 	_, err := c.Fake.Invokes(action, binding)
 	return err
-}
-
-func (c *FakePods) GetBinding(name string) (result *v1.Binding, err error) {
-	obj, err := c.Fake.
-		Invokes(core.NewGetSubresourceAction(podsResource, c.ns, "binding", name), &v1.Binding{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1.Binding), err
 }
 
 func (c *FakePods) GetLogs(name string, opts *v1.PodLogOptions) *restclient.Request {
@@ -50,7 +39,7 @@ func (c *FakePods) GetLogs(name string, opts *v1.PodLogOptions) *restclient.Requ
 	action.Verb = "get"
 	action.Namespace = c.ns
 	action.Resource = podsResource
-	action.Subresource = "log"
+	action.Subresource = "logs"
 	action.Value = opts
 
 	_, _ = c.Fake.Invokes(action, &v1.Pod{})

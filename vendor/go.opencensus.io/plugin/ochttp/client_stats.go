@@ -61,6 +61,9 @@ func (t statsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		track.end()
 	} else {
 		track.statusCode = resp.StatusCode
+		if req.Method != "HEAD" {
+			track.respContentLength = resp.ContentLength
+		}
 		if resp.Body == nil {
 			track.end()
 		} else {
@@ -82,13 +85,14 @@ func (t statsTransport) CancelRequest(req *http.Request) {
 }
 
 type tracker struct {
-	ctx        context.Context
-	respSize   int64
-	reqSize    int64
-	start      time.Time
-	body       io.ReadCloser
-	statusCode int
-	endOnce    sync.Once
+	ctx               context.Context
+	respSize          int64
+	respContentLength int64
+	reqSize           int64
+	start             time.Time
+	body              io.ReadCloser
+	statusCode        int
+	endOnce           sync.Once
 }
 
 var _ io.ReadCloser = (*tracker)(nil)
@@ -96,9 +100,13 @@ var _ io.ReadCloser = (*tracker)(nil)
 func (t *tracker) end() {
 	t.endOnce.Do(func() {
 		latencyMs := float64(time.Since(t.start)) / float64(time.Millisecond)
+		respSize := t.respSize
+		if t.respSize == 0 && t.respContentLength > 0 {
+			respSize = t.respContentLength
+		}
 		m := []stats.Measurement{
 			ClientSentBytes.M(t.reqSize),
-			ClientReceivedBytes.M(t.respSize),
+			ClientReceivedBytes.M(respSize),
 			ClientRoundtripLatency.M(latencyMs),
 			ClientLatency.M(latencyMs),
 			ClientResponseBytes.M(t.respSize),
@@ -116,9 +124,9 @@ func (t *tracker) end() {
 
 func (t *tracker) Read(b []byte) (int, error) {
 	n, err := t.body.Read(b)
+	t.respSize += int64(n)
 	switch err {
 	case nil:
-		t.respSize += int64(n)
 		return n, nil
 	case io.EOF:
 		t.end()

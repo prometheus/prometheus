@@ -310,6 +310,12 @@ func NewBareMetalV1(client *gophercloud.ProviderClient, eo gophercloud.EndpointO
 	return initClientOpts(client, eo, "baremetal")
 }
 
+// NewBareMetalIntrospectionV1 creates a ServiceClient that may be used with the v1
+// bare metal introspection package.
+func NewBareMetalIntrospectionV1(client *gophercloud.ProviderClient, eo gophercloud.EndpointOpts) (*gophercloud.ServiceClient, error) {
+	return initClientOpts(client, eo, "baremetal-inspector")
+}
+
 // NewObjectStorageV1 creates a ServiceClient that may be used with the v1
 // object storage package.
 func NewObjectStorageV1(client *gophercloud.ProviderClient, eo gophercloud.EndpointOpts) (*gophercloud.ServiceClient, error) {

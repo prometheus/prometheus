@@ -20,6 +20,7 @@
 package metadata // import "cloud.google.com/go/compute/metadata"
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -31,9 +32,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/net/context"
-	"golang.org/x/net/context/ctxhttp"
 )
 
 const (
@@ -139,11 +137,11 @@ func testOnGCE() bool {
 	resc := make(chan bool, 2)
 
 	// Try two strategies in parallel.
-	// See https://github.com/GoogleCloudPlatform/google-cloud-go/issues/194
+	// See https://github.com/googleapis/google-cloud-go/issues/194
 	go func() {
 		req, _ := http.NewRequest("GET", "http://"+metadataIP, nil)
 		req.Header.Set("User-Agent", userAgent)
-		res, err := ctxhttp.Do(ctx, defaultClient.hc, req)
+		res, err := defaultClient.hc.Do(req.WithContext(ctx))
 		if err != nil {
 			resc <- false
 			return
@@ -302,8 +300,8 @@ func (c *Client) getETag(suffix string) (value, etag string, err error) {
 		// being stable anyway.
 		host = metadataIP
 	}
-	url := "http://" + host + "/computeMetadata/v1/" + suffix
-	req, _ := http.NewRequest("GET", url, nil)
+	u := "http://" + host + "/computeMetadata/v1/" + suffix
+	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("Metadata-Flavor", "Google")
 	req.Header.Set("User-Agent", userAgent)
 	res, err := c.hc.Do(req)
@@ -314,12 +312,12 @@ func (c *Client) getETag(suffix string) (value, etag string, err error) {
 	if res.StatusCode == http.StatusNotFound {
 		return "", "", NotDefinedError(suffix)
 	}
-	if res.StatusCode != 200 {
-		return "", "", fmt.Errorf("status code %d trying to fetch %s", res.StatusCode, url)
-	}
 	all, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return "", "", err
+	}
+	if res.StatusCode != 200 {
+		return "", "", &Error{Code: res.StatusCode, Message: string(all)}
 	}
 	return string(all), res.Header.Get("Etag"), nil
 }
@@ -500,4 +498,16 @@ func (c *Client) Subscribe(suffix string, fn func(v string, ok bool) error) erro
 			return err
 		}
 	}
+}
+
+// Error contains an error response from the server.
+type Error struct {
+	// Code is the HTTP response status code.
+	Code int
+	// Message is the server response message.
+	Message string
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("compute: Received %d `%s`", e.Code, e.Message)
 }

@@ -24,11 +24,9 @@ import (
 	"sync"
 
 	"google.golang.org/grpc/balancer"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/resolver"
-	"google.golang.org/grpc/status"
 )
 
 type balancerWrapperBuilder struct {
@@ -315,12 +313,12 @@ func (bw *balancerWrapper) Pick(ctx context.Context, opts balancer.PickOptions) 
 			Metadata:   a.Metadata,
 		}]
 		if !ok && failfast {
-			return nil, nil, status.Errorf(codes.Unavailable, "there is no connection available")
+			return nil, nil, balancer.ErrTransientFailure
 		}
 		if s, ok := bw.connSt[sc]; failfast && (!ok || s.s != connectivity.Ready) {
 			// If the returned sc is not ready and RPC is failfast,
 			// return error, and this RPC will fail.
-			return nil, nil, status.Errorf(codes.Unavailable, "there is no connection available")
+			return nil, nil, balancer.ErrTransientFailure
 		}
 	}
 

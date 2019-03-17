@@ -14,6 +14,13 @@
     run: .zuul/playbooks/gophercloud-acceptance-test/run.yaml
 
 - job:
+    name: gophercloud-acceptance-test-ironic
+    parent: golang-test
+    description: |
+      Run gophercloud ironic acceptance test on master branch
+    run: .zuul/playbooks/gophercloud-acceptance-test-ironic/run.yaml
+
+- job:
     name: gophercloud-acceptance-test-queens
     parent: gophercloud-acceptance-test
     description: |
@@ -74,6 +81,7 @@
       jobs:
         - gophercloud-unittest
         - gophercloud-acceptance-test
+        - gophercloud-acceptance-test-ironic
     recheck-mitaka:
       jobs:
         - gophercloud-acceptance-test-mitaka

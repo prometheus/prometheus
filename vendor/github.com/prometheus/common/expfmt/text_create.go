@@ -436,11 +436,11 @@ func writeEscapedString(w enhancedWriter, v string, includeDoubleQuote bool) (in
 func writeFloat(w enhancedWriter, f float64) (int, error) {
 	switch {
 	case f == 1:
-		return 1, w.WriteByte('1')
+		return w.WriteString("1.0")
 	case f == 0:
-		return 1, w.WriteByte('0')
+		return w.WriteString("0.0")
 	case f == -1:
-		return w.WriteString("-1")
+		return w.WriteString("-1.0")
 	case math.IsNaN(f):
 		return w.WriteString("NaN")
 	case math.IsInf(f, +1):
@@ -450,6 +450,12 @@ func writeFloat(w enhancedWriter, f float64) (int, error) {
 	default:
 		bp := numBufPool.Get().(*[]byte)
 		*bp = strconv.AppendFloat((*bp)[:0], f, 'g', -1, 64)
+		// Add a .0 if used fixed point and there is no decimal
+		// point already. This is for future proofing with OpenMetrics,
+		// where floats always contain either an exponent or decimal.
+		if !bytes.ContainsAny(*bp, "e.") {
+			*bp = append(*bp, '.', '0')
+		}
 		written, err := w.Write(*bp)
 		numBufPool.Put(bp)
 		return written, err

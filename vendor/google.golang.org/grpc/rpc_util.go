@@ -253,8 +253,8 @@ func (o PeerCallOption) after(c *callInfo) {
 	}
 }
 
-// FailFast configures the action to take when an RPC is attempted on broken
-// connections or unreachable servers.  If failFast is true, the RPC will fail
+// WaitForReady configures the action to take when an RPC is attempted on broken
+// connections or unreachable servers. If waitForReady is false, the RPC will fail
 // immediately. Otherwise, the RPC client will block the call until a
 // connection is available (or the call is canceled or times out) and will
 // retry the call if it fails due to a transient error.  gRPC will not retry if
@@ -262,7 +262,14 @@ func (o PeerCallOption) after(c *callInfo) {
 // the data.  Please refer to
 // https://github.com/grpc/grpc/blob/master/doc/wait-for-ready.md.
 //
-// By default, RPCs are "Fail Fast".
+// By default, RPCs don't "wait for ready".
+func WaitForReady(waitForReady bool) CallOption {
+	return FailFastCallOption{FailFast: !waitForReady}
+}
+
+// FailFast is the opposite of WaitForReady.
+//
+// Deprecated: use WaitForReady.
 func FailFast(failFast bool) CallOption {
 	return FailFastCallOption{FailFast: failFast}
 }
@@ -678,23 +685,17 @@ func rpcInfoFromContext(ctx context.Context) (s *rpcInfo, ok bool) {
 // Code returns the error code for err if it was produced by the rpc system.
 // Otherwise, it returns codes.Unknown.
 //
-// Deprecated: use status.FromError and Code method instead.
+// Deprecated: use status.Code instead.
 func Code(err error) codes.Code {
-	if s, ok := status.FromError(err); ok {
-		return s.Code()
-	}
-	return codes.Unknown
+	return status.Code(err)
 }
 
 // ErrorDesc returns the error description of err if it was produced by the rpc system.
 // Otherwise, it returns err.Error() or empty string when err is nil.
 //
-// Deprecated: use status.FromError and Message method instead.
+// Deprecated: use status.Convert and Message method instead.
 func ErrorDesc(err error) string {
-	if s, ok := status.FromError(err); ok {
-		return s.Message()
-	}
-	return err.Error()
+	return status.Convert(err).Message()
 }
 
 // Errorf returns an error containing an error code and a description;

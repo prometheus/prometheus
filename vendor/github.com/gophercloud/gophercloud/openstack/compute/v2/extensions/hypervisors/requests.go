@@ -1,8 +1,6 @@
 package hypervisors
 
 import (
-	"strconv"
-
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/pagination"
 )
@@ -23,18 +21,16 @@ func GetStatistics(client *gophercloud.ServiceClient) (r StatisticsResult) {
 }
 
 // Get makes a request against the API to get details for specific hypervisor.
-func Get(client *gophercloud.ServiceClient, hypervisorID int) (r HypervisorResult) {
-	v := strconv.Itoa(hypervisorID)
-	_, r.Err = client.Get(hypervisorsGetURL(client, v), &r.Body, &gophercloud.RequestOpts{
+func Get(client *gophercloud.ServiceClient, hypervisorID string) (r HypervisorResult) {
+	_, r.Err = client.Get(hypervisorsGetURL(client, hypervisorID), &r.Body, &gophercloud.RequestOpts{
 		OkCodes: []int{200},
 	})
 	return
 }
 
 // GetUptime makes a request against the API to get uptime for specific hypervisor.
-func GetUptime(client *gophercloud.ServiceClient, hypervisorID int) (r UptimeResult) {
-	v := strconv.Itoa(hypervisorID)
-	_, r.Err = client.Get(hypervisorsUptimeURL(client, v), &r.Body, &gophercloud.RequestOpts{
+func GetUptime(client *gophercloud.ServiceClient, hypervisorID string) (r UptimeResult) {
+	_, r.Err = client.Get(hypervisorsUptimeURL(client, hypervisorID), &r.Body, &gophercloud.RequestOpts{
 		OkCodes: []int{200},
 	})
 	return

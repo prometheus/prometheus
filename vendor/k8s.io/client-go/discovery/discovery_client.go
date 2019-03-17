@@ -263,8 +263,8 @@ func ServerPreferredResources(d DiscoveryInterface) ([]*metav1.APIResourceList, 
 
 	result := []*metav1.APIResourceList{}
 	grVersions := map[schema.GroupResource]string{}                         // selected version of a GroupResource
-	grAPIResources := map[schema.GroupResource]*metav1.APIResource{}        // selected APIResource for a GroupResource
-	gvAPIResourceLists := map[schema.GroupVersion]*metav1.APIResourceList{} // blueprint for a APIResourceList for later grouping
+	grApiResources := map[schema.GroupResource]*metav1.APIResource{}        // selected APIResource for a GroupResource
+	gvApiResourceLists := map[schema.GroupVersion]*metav1.APIResourceList{} // blueprint for a APIResourceList for later grouping
 
 	for _, apiGroup := range serverGroupList.Groups {
 		for _, version := range apiGroup.Versions {
@@ -276,11 +276,11 @@ func ServerPreferredResources(d DiscoveryInterface) ([]*metav1.APIResourceList, 
 			}
 
 			// create empty list which is filled later in another loop
-			emptyAPIResourceList := metav1.APIResourceList{
+			emptyApiResourceList := metav1.APIResourceList{
 				GroupVersion: version.GroupVersion,
 			}
-			gvAPIResourceLists[groupVersion] = &emptyAPIResourceList
-			result = append(result, &emptyAPIResourceList)
+			gvApiResourceLists[groupVersion] = &emptyApiResourceList
+			result = append(result, &emptyApiResourceList)
 
 			for i := range apiResourceList.APIResources {
 				apiResource := &apiResourceList.APIResources[i]
@@ -288,21 +288,21 @@ func ServerPreferredResources(d DiscoveryInterface) ([]*metav1.APIResourceList, 
 					continue
 				}
 				gv := schema.GroupResource{Group: apiGroup.Name, Resource: apiResource.Name}
-				if _, ok := grAPIResources[gv]; ok && version.Version != apiGroup.PreferredVersion.Version {
+				if _, ok := grApiResources[gv]; ok && version.Version != apiGroup.PreferredVersion.Version {
 					// only override with preferred version
 					continue
 				}
 				grVersions[gv] = version.Version
-				grAPIResources[gv] = apiResource
+				grApiResources[gv] = apiResource
 			}
 		}
 	}
 
 	// group selected APIResources according to GroupVersion into APIResourceLists
-	for groupResource, apiResource := range grAPIResources {
+	for groupResource, apiResource := range grApiResources {
 		version := grVersions[groupResource]
 		groupVersion := schema.GroupVersion{Group: groupResource.Group, Version: version}
-		apiResourceList := gvAPIResourceLists[groupVersion]
+		apiResourceList := gvApiResourceLists[groupVersion]
 		apiResourceList.APIResources = append(apiResourceList.APIResources, *apiResource)
 	}
 
@@ -464,9 +464,9 @@ func NewDiscoveryClient(c restclient.Interface) *DiscoveryClient {
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (d *DiscoveryClient) RESTClient() restclient.Interface {
-	if d == nil {
+func (c *DiscoveryClient) RESTClient() restclient.Interface {
+	if c == nil {
 		return nil
 	}
-	return d.restClient
+	return c.restClient
 }

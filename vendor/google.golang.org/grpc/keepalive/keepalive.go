@@ -57,7 +57,7 @@ type ServerParameters struct {
 	// random jitter of +/-10% will be added to MaxConnectionAge to spread out
 	// connection storms.
 	MaxConnectionAge time.Duration // The current default value is infinity.
-	// MaxConnectinoAgeGrace is an additive period after MaxConnectionAge after
+	// MaxConnectionAgeGrace is an additive period after MaxConnectionAge after
 	// which the connection will be forcibly closed.
 	MaxConnectionAgeGrace time.Duration // The current default value is infinity.
 	// After a duration of this time if the server doesn't see any activity it

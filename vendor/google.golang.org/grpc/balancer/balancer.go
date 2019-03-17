@@ -28,6 +28,7 @@ import (
 
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/resolver"
 )
@@ -45,6 +46,18 @@ var (
 // registered with the same name, the one registered last will take effect.
 func Register(b Builder) {
 	m[strings.ToLower(b.Name())] = b
+}
+
+// unregisterForTesting deletes the balancer with the given name from the
+// balancer map.
+//
+// This function is not thread-safe.
+func unregisterForTesting(name string) {
+	delete(m, name)
+}
+
+func init() {
+	internal.BalancerUnregister = unregisterForTesting
 }
 
 // Get returns the resolver builder registered with the given name.

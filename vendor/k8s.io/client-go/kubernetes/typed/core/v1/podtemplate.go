@@ -19,10 +19,8 @@ limitations under the License.
 package v1
 
 import (
-	"time"
-
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	scheme "k8s.io/client-go/kubernetes/scheme"
@@ -39,11 +37,11 @@ type PodTemplatesGetter interface {
 type PodTemplateInterface interface {
 	Create(*v1.PodTemplate) (*v1.PodTemplate, error)
 	Update(*v1.PodTemplate) (*v1.PodTemplate, error)
-	Delete(name string, options *metav1.DeleteOptions) error
-	DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error
-	Get(name string, options metav1.GetOptions) (*v1.PodTemplate, error)
-	List(opts metav1.ListOptions) (*v1.PodTemplateList, error)
-	Watch(opts metav1.ListOptions) (watch.Interface, error)
+	Delete(name string, options *meta_v1.DeleteOptions) error
+	DeleteCollection(options *meta_v1.DeleteOptions, listOptions meta_v1.ListOptions) error
+	Get(name string, options meta_v1.GetOptions) (*v1.PodTemplate, error)
+	List(opts meta_v1.ListOptions) (*v1.PodTemplateList, error)
+	Watch(opts meta_v1.ListOptions) (watch.Interface, error)
 	Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.PodTemplate, err error)
 	PodTemplateExpansion
 }
@@ -63,7 +61,7 @@ func newPodTemplates(c *CoreV1Client, namespace string) *podTemplates {
 }
 
 // Get takes name of the podTemplate, and returns the corresponding podTemplate object, and an error if there is any.
-func (c *podTemplates) Get(name string, options metav1.GetOptions) (result *v1.PodTemplate, err error) {
+func (c *podTemplates) Get(name string, options meta_v1.GetOptions) (result *v1.PodTemplate, err error) {
 	result = &v1.PodTemplate{}
 	err = c.client.Get().
 		Namespace(c.ns).
@@ -76,34 +74,24 @@ func (c *podTemplates) Get(name string, options metav1.GetOptions) (result *v1.P
 }
 
 // List takes label and field selectors, and returns the list of PodTemplates that match those selectors.
-func (c *podTemplates) List(opts metav1.ListOptions) (result *v1.PodTemplateList, err error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
+func (c *podTemplates) List(opts meta_v1.ListOptions) (result *v1.PodTemplateList, err error) {
 	result = &v1.PodTemplateList{}
 	err = c.client.Get().
 		Namespace(c.ns).
 		Resource("podtemplates").
 		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
 		Do().
 		Into(result)
 	return
 }
 
 // Watch returns a watch.Interface that watches the requested podTemplates.
-func (c *podTemplates) Watch(opts metav1.ListOptions) (watch.Interface, error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
+func (c *podTemplates) Watch(opts meta_v1.ListOptions) (watch.Interface, error) {
 	opts.Watch = true
 	return c.client.Get().
 		Namespace(c.ns).
 		Resource("podtemplates").
 		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
 		Watch()
 }
 
@@ -133,7 +121,7 @@ func (c *podTemplates) Update(podTemplate *v1.PodTemplate) (result *v1.PodTempla
 }
 
 // Delete takes name of the podTemplate and deletes it. Returns an error if one occurs.
-func (c *podTemplates) Delete(name string, options *metav1.DeleteOptions) error {
+func (c *podTemplates) Delete(name string, options *meta_v1.DeleteOptions) error {
 	return c.client.Delete().
 		Namespace(c.ns).
 		Resource("podtemplates").
@@ -144,16 +132,11 @@ func (c *podTemplates) Delete(name string, options *metav1.DeleteOptions) error 
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *podTemplates) DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error {
-	var timeout time.Duration
-	if listOptions.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOptions.TimeoutSeconds) * time.Second
-	}
+func (c *podTemplates) DeleteCollection(options *meta_v1.DeleteOptions, listOptions meta_v1.ListOptions) error {
 	return c.client.Delete().
 		Namespace(c.ns).
 		Resource("podtemplates").
 		VersionedParams(&listOptions, scheme.ParameterCodec).
-		Timeout(timeout).
 		Body(options).
 		Do().
 		Error()

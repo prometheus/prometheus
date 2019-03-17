@@ -50,13 +50,13 @@ func viewDataToMetric(vd *view.Data) (*metricspb.Metric, error) {
 	}
 
 	metric := &metricspb.Metric{
-		Descriptor_: descriptor,
-		Timeseries:  timeseries,
+		MetricDescriptor: descriptor,
+		Timeseries:       timeseries,
 	}
 	return metric, nil
 }
 
-func viewToMetricDescriptor(v *view.View) (*metricspb.Metric_MetricDescriptor, error) {
+func viewToMetricDescriptor(v *view.View) (*metricspb.MetricDescriptor, error) {
 	if v == nil {
 		return nil, errNilView
 	}
@@ -64,14 +64,12 @@ func viewToMetricDescriptor(v *view.View) (*metricspb.Metric_MetricDescriptor, e
 		return nil, errNilMeasure
 	}
 
-	desc := &metricspb.Metric_MetricDescriptor{
-		MetricDescriptor: &metricspb.MetricDescriptor{
-			Name:        stringOrCall(v.Name, v.Measure.Name),
-			Description: stringOrCall(v.Description, v.Measure.Description),
-			Unit:        v.Measure.Unit(),
-			Type:        aggregationToMetricDescriptorType(v),
-			LabelKeys:   tagKeysToLabelKeys(v.TagKeys),
-		},
+	desc := &metricspb.MetricDescriptor{
+		Name:        stringOrCall(v.Name, v.Measure.Name),
+		Description: stringOrCall(v.Description, v.Measure.Description),
+		Unit:        v.Measure.Unit(),
+		Type:        aggregationToMetricDescriptorType(v),
+		LabelKeys:   tagKeysToLabelKeys(v.TagKeys),
 	}
 	return desc, nil
 }

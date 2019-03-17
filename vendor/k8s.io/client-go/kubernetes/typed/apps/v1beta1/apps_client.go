@@ -29,6 +29,7 @@ type AppsV1beta1Interface interface {
 	RESTClient() rest.Interface
 	ControllerRevisionsGetter
 	DeploymentsGetter
+	ScalesGetter
 	StatefulSetsGetter
 }
 
@@ -43,6 +44,10 @@ func (c *AppsV1beta1Client) ControllerRevisions(namespace string) ControllerRevi
 
 func (c *AppsV1beta1Client) Deployments(namespace string) DeploymentInterface {
 	return newDeployments(c, namespace)
+}
+
+func (c *AppsV1beta1Client) Scales(namespace string) ScaleInterface {
+	return newScales(c, namespace)
 }
 
 func (c *AppsV1beta1Client) StatefulSets(namespace string) StatefulSetInterface {

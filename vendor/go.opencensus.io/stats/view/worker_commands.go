@@ -58,6 +58,12 @@ type registerViewReq struct {
 }
 
 func (cmd *registerViewReq) handleCommand(w *worker) {
+	for _, v := range cmd.views {
+		if err := v.canonicalize(); err != nil {
+			cmd.err <- err
+			return
+		}
+	}
 	var errstr []string
 	for _, view := range cmd.views {
 		vi, err := w.tryRegisterView(view)
