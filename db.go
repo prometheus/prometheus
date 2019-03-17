@@ -92,8 +92,8 @@ type Appender interface {
 	// If the reference is 0 it must not be used for caching.
 	Add(l labels.Labels, t int64, v float64) (uint64, error)
 
-	// Add adds a sample pair for the referenced series. It is generally faster
-	// than adding a sample by providing its full label set.
+	// AddFast adds a sample pair for the referenced series. It is generally
+	// faster than adding a sample by providing its full label set.
 	AddFast(ref uint64, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
