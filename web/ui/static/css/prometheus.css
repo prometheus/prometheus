@@ -24,3 +24,8 @@ body {
 .label {
   white-space: normal;
 }
+
+/* The navbar adds horizontal padding already */
+.navbar .container-fluid {
+    padding: 0;
+}
