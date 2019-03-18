@@ -891,8 +891,8 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	var enc RecordEncoder
 	if h.wal != nil {
 		// Although we don't store the stones in the head
-		// we need to write them  to the WAL to mark these as deleted
-		// after a restart while loeading the WAL.
+		// we need to write them to the WAL to mark these as deleted
+		// after a restart while loading the WAL.
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
 			return err
 		}
