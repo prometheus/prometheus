@@ -20,6 +20,8 @@ github.com/alecthomas/template
 github.com/alecthomas/template/parse
 # github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf
 github.com/alecthomas/units
+# github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da
+github.com/armon/go-metrics
 # github.com/aws/aws-sdk-go v0.0.0-20180507225419-00862f899353
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/credentials
@@ -127,7 +129,7 @@ github.com/golang/protobuf/ptypes/struct
 github.com/golang/protobuf/protoc-gen-go/generator/internal/remap
 # github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
 github.com/golang/snappy
-# github.com/google/btree v0.0.0-20180124185431-e89373fe6b4a
+# github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c
 github.com/google/btree
 # github.com/google/gofuzz v0.0.0-20150304233714-bbcb9da2d746
 github.com/google/gofuzz
@@ -170,12 +172,14 @@ github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options
 github.com/hashicorp/consul/api
 # github.com/hashicorp/go-cleanhttp v0.5.0
 github.com/hashicorp/go-cleanhttp
+# github.com/hashicorp/go-immutable-radix v1.0.0
+github.com/hashicorp/go-immutable-radix
 # github.com/hashicorp/go-rootcerts v0.0.0-20160503143440-6bb64b370b90
 github.com/hashicorp/go-rootcerts
 # github.com/hashicorp/golang-lru v0.5.0
 github.com/hashicorp/golang-lru
 github.com/hashicorp/golang-lru/simplelru
-# github.com/hashicorp/serf v0.0.0-20161007004122-1d4fa605f6ff
+# github.com/hashicorp/serf v0.8.2
 github.com/hashicorp/serf/coordinate
 # github.com/influxdata/influxdb v0.0.0-20170331210902-15e594fc09f1
 github.com/influxdata/influxdb/client/v2
@@ -263,7 +267,7 @@ github.com/shurcooL/httpfs/union
 github.com/shurcooL/httpfs/vfsutil
 # github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
 github.com/shurcooL/vfsgen
-# github.com/stretchr/testify v1.2.2
+# github.com/stretchr/testify v1.3.0
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
 # go.opencensus.io v0.18.1-0.20181204023538-aab39bd6a98b
@@ -287,7 +291,7 @@ go.opencensus.io/trace/internal
 golang.org/x/crypto/ed25519
 golang.org/x/crypto/ed25519/internal/edwards25519
 golang.org/x/crypto/ssh/terminal
-# golang.org/x/net v0.0.0-20180906233101-161cd47e91fd
+# golang.org/x/net v0.0.0-20181201002055-351d144fa1fc
 golang.org/x/net/context
 golang.org/x/net/netutil
 golang.org/x/net/trace
@@ -308,7 +312,7 @@ golang.org/x/oauth2
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
-# golang.org/x/sync v0.0.0-20181108010431-42b317875d0f
+# golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
 # golang.org/x/sys v0.0.0-20190209173611-3b5209105503
