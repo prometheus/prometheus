@@ -584,6 +584,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		GoroutineCount      int
 		GOMAXPROCS          int
 		GOGC                string
+		GODEBUG             string
 		CorruptionCount     int64
 		ChunkCount          int64
 		TimeSeriesCount     int64
@@ -598,6 +599,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		GoroutineCount: runtime.NumGoroutine(),
 		GOMAXPROCS:     runtime.GOMAXPROCS(0),
 		GOGC:           os.Getenv("GOGC"),
+		GODEBUG:        os.Getenv("GODEBUG"),
 	}
 
 	if h.options.TSDBCfg.RetentionDuration != 0 {
