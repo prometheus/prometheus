@@ -150,7 +150,9 @@ func (m mockIndex) LabelIndices() ([][]string, error) {
 func TestIndexRW_Create_Open(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_index_create")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	fn := filepath.Join(dir, indexFilename)
 
@@ -168,6 +170,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	testutil.Ok(t, err)
 	_, err = f.WriteAt([]byte{0, 0}, 0)
 	testutil.Ok(t, err)
+	f.Close()
 
 	_, err = NewFileReader(dir)
 	testutil.NotOk(t, err)
@@ -176,7 +179,9 @@ func TestIndexRW_Create_Open(t *testing.T) {
 func TestIndexRW_Postings(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_index_postings")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	fn := filepath.Join(dir, indexFilename)
 
@@ -236,7 +241,9 @@ func TestIndexRW_Postings(t *testing.T) {
 func TestPersistence_index_e2e(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_persistence_e2e")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	lbls, err := labels.ReadLabels(filepath.Join("..", "testdata", "20kseries.json"), 20000)
 	testutil.Ok(t, err)

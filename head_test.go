@@ -117,7 +117,9 @@ func TestHead_ReadWAL(t *testing.T) {
 	}
 	dir, err := ioutil.TempDir("", "test_read_wal")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	w, err := wal.New(nil, nil, dir)
 	testutil.Ok(t, err)
@@ -281,7 +283,9 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 	}
 	dir, err := ioutil.TempDir("", "test_delete_series")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	w, err := wal.New(nil, nil, dir)
 	testutil.Ok(t, err)
@@ -337,13 +341,17 @@ Outer:
 	for _, c := range cases {
 		dir, err := ioutil.TempDir("", "test_wal_reload")
 		testutil.Ok(t, err)
-		defer os.RemoveAll(dir)
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(dir))
+		}()
 
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"))
 		testutil.Ok(t, err)
+		defer w.Close()
 
 		head, err := NewHead(nil, nil, w, 1000)
 		testutil.Ok(t, err)
+		defer head.Close()
 
 		app := head.Appender()
 		for _, smpl := range smplsAll {
@@ -361,8 +369,10 @@ Outer:
 		// Compare the samples for both heads - before and after the reload.
 		reloadedW, err := wal.New(nil, nil, w.Dir()) // Use a new wal to ensure deleted samples are gone even after a reload.
 		testutil.Ok(t, err)
+		defer reloadedW.Close()
 		reloadedHead, err := NewHead(nil, nil, reloadedW, 1000)
 		testutil.Ok(t, err)
+		defer reloadedHead.Close()
 		testutil.Ok(t, reloadedHead.Init(0))
 		for _, h := range []*Head{head, reloadedHead} {
 			indexr, err := h.Index()
@@ -543,7 +553,9 @@ func TestDelete_e2e(t *testing.T) {
 		seriesMap[labels.New(l...).String()] = []tsdbutil.Sample{}
 	}
 	dir, _ := ioutil.TempDir("", "test")
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 	hb, err := NewHead(nil, nil, nil, 100000)
 	testutil.Ok(t, err)
 	defer hb.Close()
@@ -907,7 +919,9 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 func TestHead_LogRollback(t *testing.T) {
 	dir, err := ioutil.TempDir("", "wal_rollback")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	w, err := wal.New(nil, nil, dir)
 	testutil.Ok(t, err)
@@ -974,7 +988,9 @@ func TestWalRepair(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "wal_head_repair")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			w, err := wal.New(nil, nil, dir)
 			testutil.Ok(t, err)

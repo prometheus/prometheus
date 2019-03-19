@@ -421,7 +421,9 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 
 	tmpdir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(tmpdir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(tmpdir))
+	}()
 
 	testutil.NotOk(t, compactor.write(tmpdir, &BlockMeta{}, erringBReader{}))
 	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + ".tmp")
@@ -907,7 +909,9 @@ func TestDisableAutoCompactions(t *testing.T) {
 func TestCancelCompactions(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "testCancelCompaction")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(tmpdir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(tmpdir))
+	}()
 
 	// Create some blocks to fall within the compaction range.
 	createBlock(t, tmpdir, genSeries(10, 10000, 0, 1000))
@@ -918,7 +922,9 @@ func TestCancelCompactions(t *testing.T) {
 	tmpdirCopy := tmpdir + "Copy"
 	err = fileutil.CopyDirs(tmpdir, tmpdirCopy)
 	testutil.Ok(t, err)
-	defer os.RemoveAll(tmpdirCopy)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(tmpdirCopy))
+	}()
 
 	// Measure the compaction time without interupting it.
 	var timeCompactionUninterrupted time.Duration

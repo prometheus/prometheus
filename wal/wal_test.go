@@ -109,7 +109,9 @@ func TestWAL_Repair(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "wal_repair")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			// We create 3 segments with 3 records each and
 			// then corrupt a given record in a given segment.
@@ -138,6 +140,7 @@ func TestWAL_Repair(t *testing.T) {
 
 			w, err = NewSize(nil, nil, dir, segSize)
 			testutil.Ok(t, err)
+			defer w.Close()
 
 			sr, err := NewSegmentsReader(dir)
 			testutil.Ok(t, err)
@@ -151,6 +154,7 @@ func TestWAL_Repair(t *testing.T) {
 			testutil.Ok(t, w.Repair(r.Err()))
 			sr, err = NewSegmentsReader(dir)
 			testutil.Ok(t, err)
+			defer sr.Close()
 			r = NewReader(sr)
 
 			var result [][]byte
@@ -181,7 +185,9 @@ func TestWAL_Repair(t *testing.T) {
 func TestCorruptAndCarryOn(t *testing.T) {
 	dir, err := ioutil.TempDir("", "wal_repair")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	var (
 		logger      = testutil.NewLogger(t)
@@ -295,13 +301,16 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		testutil.Equals(t, 9, i, "wrong number of records")
 		testutil.Assert(t, !reader.Next(), "unexpected record")
 		testutil.Equals(t, nil, reader.Err())
+		sr.Close()
 	}
 }
 
 func BenchmarkWAL_LogBatched(b *testing.B) {
 	dir, err := ioutil.TempDir("", "bench_logbatch")
 	testutil.Ok(b, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(dir))
+	}()
 
 	w, err := New(nil, nil, "testdir")
 	testutil.Ok(b, err)
@@ -329,7 +338,9 @@ func BenchmarkWAL_LogBatched(b *testing.B) {
 func BenchmarkWAL_Log(b *testing.B) {
 	dir, err := ioutil.TempDir("", "bench_logsingle")
 	testutil.Ok(b, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(dir))
+	}()
 
 	w, err := New(nil, nil, "testdir")
 	testutil.Ok(b, err)

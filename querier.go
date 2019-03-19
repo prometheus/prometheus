@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
+	tsdb_errors "github.com/prometheus/tsdb/errors"
 	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 )
@@ -134,7 +135,7 @@ func (q *querier) sel(qs []Querier, ms []labels.Matcher) (SeriesSet, error) {
 }
 
 func (q *querier) Close() error {
-	var merr MultiError
+	var merr tsdb_errors.MultiError
 
 	for _, bq := range q.blocks {
 		merr.Add(bq.Close())
@@ -251,7 +252,7 @@ func (q *blockQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 }
 
 func (q *blockQuerier) Close() error {
-	var merr MultiError
+	var merr tsdb_errors.MultiError
 
 	merr.Add(q.index.Close())
 	merr.Add(q.chunks.Close())

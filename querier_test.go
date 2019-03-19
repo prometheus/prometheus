@@ -1232,7 +1232,9 @@ func BenchmarkPersistedQueries(b *testing.B) {
 			b.Run(fmt.Sprintf("series=%d,samplesPerSeries=%d", nSeries, nSamples), func(b *testing.B) {
 				dir, err := ioutil.TempDir("", "bench_persisted")
 				testutil.Ok(b, err)
-				defer os.RemoveAll(dir)
+				defer func() {
+					testutil.Ok(b, os.RemoveAll(dir))
+				}()
 
 				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, 1, int64(nSamples))), nil)
 				testutil.Ok(b, err)

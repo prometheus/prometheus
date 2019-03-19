@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	tsdb_errors "github.com/prometheus/tsdb/errors"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/wal"
 )
@@ -67,7 +68,7 @@ func LastCheckpoint(dir string) (string, int, error) {
 
 // DeleteCheckpoints deletes all checkpoints in a directory below a given index.
 func DeleteCheckpoints(dir string, maxIndex int) error {
-	var errs MultiError
+	var errs tsdb_errors.MultiError
 
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {

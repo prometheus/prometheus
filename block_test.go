@@ -32,7 +32,9 @@ import (
 func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 	dir, err := ioutil.TempDir("", "metaversion")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	testutil.Ok(t, writeMetaFile(dir, &BlockMeta{}))
 
@@ -44,7 +46,9 @@ func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 func TestSetCompactionFailed(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(tmpdir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(tmpdir))
+	}()
 
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 0))
 	b, err := OpenBlock(nil, blockDir, nil)
@@ -58,6 +62,19 @@ func TestSetCompactionFailed(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, true, b.meta.Compaction.Failed)
 	testutil.Ok(t, b.Close())
+}
+
+func TestCreateBlock(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(tmpdir))
+	}()
+	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil)
+	if err == nil {
+		testutil.Ok(t, b.Close())
+	}
+	testutil.Ok(t, err)
 }
 
 // createBlock creates a block with given set of series and returns its dir.

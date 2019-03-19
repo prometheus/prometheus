@@ -437,7 +437,9 @@ func TestDB_Snapshot(t *testing.T) {
 	snap, err := ioutil.TempDir("", "snap")
 	testutil.Ok(t, err)
 
-	defer os.RemoveAll(snap)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(snap))
+	}()
 	testutil.Ok(t, db.Snapshot(snap, true))
 	testutil.Ok(t, db.Close())
 
@@ -504,7 +506,9 @@ Outer:
 		snap, err := ioutil.TempDir("", "snap")
 		testutil.Ok(t, err)
 
-		defer os.RemoveAll(snap)
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(snap))
+		}()
 		testutil.Ok(t, db.Snapshot(snap, true))
 		testutil.Ok(t, db.Close())
 
@@ -800,7 +804,9 @@ func TestTombstoneClean(t *testing.T) {
 		snap, err := ioutil.TempDir("", "snap")
 		testutil.Ok(t, err)
 
-		defer os.RemoveAll(snap)
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(snap))
+		}()
 		testutil.Ok(t, db.Snapshot(snap, true))
 		testutil.Ok(t, db.Close())
 
@@ -1323,10 +1329,13 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("clean", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
 		testutil.Ok(t, err)
-		defer os.RemoveAll(dir)
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(dir))
+		}()
 
 		db, err := Open(dir, nil, nil, nil)
 		testutil.Ok(t, err)
+		defer db.Close()
 
 		// Should be set to init values if no WAL or blocks exist so far.
 		testutil.Equals(t, int64(math.MaxInt64), db.head.MinTime())
@@ -1343,7 +1352,9 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("wal-only", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
 		testutil.Ok(t, err)
-		defer os.RemoveAll(dir)
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(dir))
+		}()
 
 		testutil.Ok(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"))
@@ -1365,6 +1376,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		db, err := Open(dir, nil, nil, nil)
 		testutil.Ok(t, err)
+		defer db.Close()
 
 		testutil.Equals(t, int64(5000), db.head.MinTime())
 		testutil.Equals(t, int64(15000), db.head.MaxTime())
@@ -1372,12 +1384,15 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("existing-block", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
 		testutil.Ok(t, err)
-		defer os.RemoveAll(dir)
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(dir))
+		}()
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 2000))
 
 		db, err := Open(dir, nil, nil, nil)
 		testutil.Ok(t, err)
+		defer db.Close()
 
 		testutil.Equals(t, int64(2000), db.head.MinTime())
 		testutil.Equals(t, int64(2000), db.head.MaxTime())
@@ -1385,7 +1400,9 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("existing-block-and-wal", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
 		testutil.Ok(t, err)
-		defer os.RemoveAll(dir)
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(dir))
+		}()
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
 
@@ -1411,6 +1428,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		db, err := Open(dir, nil, r, nil)
 		testutil.Ok(t, err)
+		defer db.Close()
 
 		testutil.Equals(t, int64(6000), db.head.MinTime())
 		testutil.Equals(t, int64(15000), db.head.MaxTime())
