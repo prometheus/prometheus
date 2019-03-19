@@ -306,7 +306,6 @@ func TestPersistence_index_e2e(t *testing.T) {
 			valset[l.Value] = struct{}{}
 		}
 		postings.Add(uint64(i), s.labels)
-		i++
 	}
 
 	for k, v := range values {
