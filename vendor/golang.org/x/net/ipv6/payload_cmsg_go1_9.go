@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // +build go1.9
-// +build !js,!nacl,!plan9,!windows
+// +build darwin dragonfly freebsd linux netbsd openbsd solaris
 
 package ipv6
 
