@@ -931,6 +931,9 @@ mainLoop:
 
 		select {
 		case <-sl.runCtx.Done():
+			// The function needs to exit now as either the loop or the pool
+			// has been canceled. Stale markers will be written unless it is
+			// the whole pool that has been canceled.
 			break mainLoop
 		default:
 		}

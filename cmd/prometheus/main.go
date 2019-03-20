@@ -72,9 +72,8 @@ var (
 		Help: "Timestamp of the last successful configuration reload.",
 	})
 	configDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_config_reload_duration_seconds",
-		Help:    "Histogram of configuration reload durations.",
-		Buckets: []float64{.1, 1, 5, 10},
+		Name: "prometheus_config_reload_duration_seconds",
+		Help: "Histogram of configuration reload durations.",
 	})
 
 	defaultRetentionString   = "15d"
