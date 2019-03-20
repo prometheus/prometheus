@@ -954,7 +954,7 @@ func (h *Head) gc() {
 	h.postings.Delete(deleted)
 
 	// Rebuild symbols and label value indices from what is left in the postings terms.
-	symbols := make(map[string]struct{})
+	symbols := make(map[string]struct{}, len(h.symbols))
 	values := make(map[string]stringset, len(h.values))
 
 	if err := h.postings.Iter(func(t labels.Label, _ index.Postings) error {
