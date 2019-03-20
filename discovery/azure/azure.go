@@ -421,22 +421,15 @@ func (client *azureClient) getVMs(ctx context.Context) ([]virtualMachine, error)
 	var vms []virtualMachine
 	result, err := client.vm.ListAll(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not list virtual machines: %s", err)
+		return nil, fmt.Errorf("could not list virtual machines: %s", err.Error())
 	}
-
-	for _, vm := range result.Values() {
-		vms = append(vms, mapFromVM(vm))
-	}
-
-	// If we still have results, keep going until we have no more.
 	for result.NotDone() {
-		err = result.NextWithContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("could not list virtual machines: %s", err)
-		}
-
 		for _, vm := range result.Values() {
 			vms = append(vms, mapFromVM(vm))
+		}
+		err = result.NextWithContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("could not list virtual machines: %s", err.Error())
 		}
 	}
 
@@ -447,16 +440,14 @@ func (client *azureClient) getScaleSets(ctx context.Context) ([]compute.VirtualM
 	var scaleSets []compute.VirtualMachineScaleSet
 	result, err := client.vmss.ListAll(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not list virtual machine scale sets: %s", err)
+		return nil, fmt.Errorf("could not list virtual machine scale sets: %s", err.Error())
 	}
-	scaleSets = append(scaleSets, result.Values()...)
-
 	for result.NotDone() {
+		scaleSets = append(scaleSets, result.Values()...)
 		err = result.NextWithContext(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("could not list virtual machine scale sets: %s", err)
+			return nil, fmt.Errorf("could not list virtual machine scale sets: %s", err.Error())
 		}
-		scaleSets = append(scaleSets, result.Values()...)
 	}
 
 	return scaleSets, nil
@@ -473,21 +464,15 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet compute.
 
 	result, err := client.vmssvm.List(ctx, r.ResourceGroup, *(scaleSet.Name), "", "", "")
 	if err != nil {
-		return nil, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
+		return nil, fmt.Errorf("could not list virtual machine scale set vms: %s", err.Error())
 	}
-
-	for _, vm := range result.Values() {
-		vms = append(vms, mapFromVMScaleSetVM(vm, *scaleSet.Name))
-	}
-
 	for result.NotDone() {
-		err = result.NextWithContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
-		}
-
 		for _, vm := range result.Values() {
 			vms = append(vms, mapFromVMScaleSetVM(vm, *scaleSet.Name))
+		}
+		err = result.NextWithContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("could not list virtual machine scale set vms: %s", err.Error())
 		}
 	}
 
