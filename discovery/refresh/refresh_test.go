@@ -60,7 +60,7 @@ func TestRefresh(t *testing.T) {
 		return nil, fmt.Errorf("some error")
 	}
 	interval := time.Millisecond
-	d := NewDiscovery(nil, interval, refresh)
+	d := NewDiscovery(nil, "test", interval, refresh)
 
 	ch := make(chan []*targetgroup.Group)
 	ctx, cancel := context.WithCancel(context.Background())

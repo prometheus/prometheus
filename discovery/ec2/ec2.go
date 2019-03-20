@@ -26,7 +26,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -55,23 +54,11 @@ const (
 	subnetSeparator         = ","
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_ec2_refresh_failures_total",
-			Help: "The number of EC2-SD scrape failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_ec2_refresh_duration_seconds",
-			Help: "The duration of a EC2-SD refresh in seconds.",
-		})
-	// DefaultSDConfig is the default EC2 SD configuration.
-	DefaultSDConfig = SDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(60 * time.Second),
-	}
-)
+// DefaultSDConfig is the default EC2 SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:            80,
+	RefreshInterval: model.Duration(60 * time.Second),
+}
 
 // Filter is the configuration for filtering EC2 instances.
 type Filter struct {
@@ -120,11 +107,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func init() {
-	prometheus.MustRegister(refreshFailuresCount)
-	prometheus.MustRegister(refreshDuration)
-}
-
 // Discovery periodically performs EC2-SD requests. It implements
 // the Discoverer interface.
 type Discovery struct {
@@ -160,10 +142,9 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
+		"ec2",
 		time.Duration(conf.RefreshInterval),
 		d.refresh,
-		refresh.WithDuration(refreshDuration),
-		refresh.WithFailCount(refreshFailuresCount),
 	)
 	return d
 }

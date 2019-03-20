@@ -29,7 +29,6 @@ import (
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -55,26 +54,13 @@ const (
 	authMethodManagedIdentity = "ManagedIdentity"
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_azure_refresh_failures_total",
-			Help: "Number of Azure-SD refresh failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_azure_refresh_duration_seconds",
-			Help: "The duration of a Azure-SD refresh in seconds.",
-		})
-
-	// DefaultSDConfig is the default Azure SD configuration.
-	DefaultSDConfig = SDConfig{
-		Port:                 80,
-		RefreshInterval:      model.Duration(5 * time.Minute),
-		Environment:          azure.PublicCloud.Name,
-		AuthenticationMethod: authMethodOAuth,
-	}
-)
+// DefaultSDConfig is the default Azure SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:                 80,
+	RefreshInterval:      model.Duration(5 * time.Minute),
+	Environment:          azure.PublicCloud.Name,
+	AuthenticationMethod: authMethodOAuth,
+}
 
 // SDConfig is the configuration for Azure based service discovery.
 type SDConfig struct {
@@ -127,11 +113,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func init() {
-	prometheus.MustRegister(refreshDuration)
-	prometheus.MustRegister(refreshFailuresCount)
-}
-
 type Discovery struct {
 	*refresh.Discovery
 	logger log.Logger
@@ -151,10 +132,9 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
+		"azure",
 		time.Duration(cfg.RefreshInterval),
 		d.refresh,
-		refresh.WithDuration(refreshDuration),
-		refresh.WithFailCount(refreshFailuresCount),
 	)
 	return d
 }

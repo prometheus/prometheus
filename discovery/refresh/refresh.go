@@ -24,62 +24,55 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-type Option func(*Discovery)
+var (
+	failuresCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_refresh_failures_total",
+			Help: "Number of refresh failures for the given SD mechanism.",
+		},
+		[]string{"mechanism"},
+	)
+	duration = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name: "prometheus_sd_refresh_duration_seconds",
+			Help: "The duration of a refresh in seconds for the given SD mechanism.",
+		},
+		[]string{"mechanism"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(duration, failuresCount)
+}
 
 // Discovery implements the Discoverer interface.
 type Discovery struct {
 	logger   log.Logger
 	interval time.Duration
 	refreshf func(ctx context.Context) ([]*targetgroup.Group, error)
+
+	failures prometheus.Counter
+	duration prometheus.Observer
 }
 
 // NewDiscovery returns a Discoverer function that calls a refresh() function at every interval.
-func NewDiscovery(l log.Logger, interval time.Duration, refreshf func(ctx context.Context) ([]*targetgroup.Group, error), opts ...Option) *Discovery {
+func NewDiscovery(l log.Logger, mech string, interval time.Duration, refreshf func(ctx context.Context) ([]*targetgroup.Group, error)) *Discovery {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	d := &Discovery{
+	return &Discovery{
 		logger:   l,
 		interval: interval,
 		refreshf: refreshf,
-	}
-
-	for _, opt := range opts {
-		opt(d)
-	}
-	return d
-}
-
-// WithDuration measures the duration of the refresh operation.
-func WithDuration(o prometheus.Observer) func(*Discovery) {
-	return func(d *Discovery) {
-		refreshf := d.refreshf
-		d.refreshf = func(ctx context.Context) ([]*targetgroup.Group, error) {
-			now := time.Now()
-			defer o.Observe(time.Since(now).Seconds())
-			return refreshf(ctx)
-		}
-	}
-}
-
-// WithFailCount measures the number of failures for the refresh operation.
-func WithFailCount(c prometheus.Counter) func(*Discovery) {
-	return func(d *Discovery) {
-		refreshf := d.refreshf
-		d.refreshf = func(ctx context.Context) ([]*targetgroup.Group, error) {
-			tgs, err := refreshf(ctx)
-			if err != nil {
-				c.Inc()
-			}
-			return tgs, err
-		}
+		failures: failuresCount.WithLabelValues(mech),
+		duration: duration.WithLabelValues(mech),
 	}
 }
 
 // Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
-	tgs, err := d.refreshf(ctx)
+	tgs, err := d.refresh(ctx)
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
 	} else {
@@ -96,7 +89,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for {
 		select {
 		case <-ticker.C:
-			tgs, err := d.refreshf(ctx)
+			tgs, err := d.refresh(ctx)
 			if err != nil {
 				level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
 				continue
@@ -111,4 +104,14 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			return
 		}
 	}
+}
+
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	now := time.Now()
+	defer d.duration.Observe(time.Since(now).Seconds())
+	tgs, err := d.refreshf(ctx)
+	if err != nil {
+		d.failures.Inc()
+	}
+	return tgs, err
 }

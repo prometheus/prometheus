@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/gophercloud/gophercloud"
@@ -53,17 +52,8 @@ func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercl
 }
 
 func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	var err error
-	t0 := time.Now()
-	defer func() {
-		refreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			refreshFailuresCount.Inc()
-		}
-	}()
-
 	h.provider.Context = ctx
-	err = openstack.Authenticate(h.provider, *h.authOpts)
+	err := openstack.Authenticate(h.provider, *h.authOpts)
 	if err != nil {
 		return nil, fmt.Errorf("could not authenticate to OpenStack: %s", err)
 	}

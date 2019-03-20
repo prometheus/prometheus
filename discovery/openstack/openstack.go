@@ -24,7 +24,6 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/mwitkow/go-conntrack"
-	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -32,23 +31,11 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_openstack_refresh_failures_total",
-			Help: "The number of OpenStack-SD scrape failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_openstack_refresh_duration_seconds",
-			Help: "The duration of an OpenStack-SD refresh in seconds.",
-		})
-	// DefaultSDConfig is the default OpenStack SD configuration.
-	DefaultSDConfig = SDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(60 * time.Second),
-	}
-)
+// DefaultSDConfig is the default OpenStack SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:            80,
+	RefreshInterval: model.Duration(60 * time.Second),
+}
 
 // SDConfig is the configuration for OpenStack based service discovery.
 type SDConfig struct {
@@ -114,11 +101,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func init() {
-	prometheus.MustRegister(refreshFailuresCount)
-	prometheus.MustRegister(refreshDuration)
-}
-
 type refresher interface {
 	refresh(context.Context) ([]*targetgroup.Group, error)
 }
@@ -131,10 +113,9 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (*refresh.Discovery, error) {
 	}
 	return refresh.NewDiscovery(
 		l,
+		"openstack",
 		time.Duration(conf.RefreshInterval),
 		r.refresh,
-		refresh.WithDuration(refreshDuration),
-		refresh.WithFailCount(refreshFailuresCount),
 	), nil
 
 }

@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -55,29 +54,12 @@ const (
 	portMappingLabelPrefix = metaLabelPrefix + "port_mapping_label_"
 	// portDefinitionLabelPrefix is the prefix for the application portDefinitions labels.
 	portDefinitionLabelPrefix = metaLabelPrefix + "port_definition_label_"
-
-	// Constants for instrumentation.
-	namespace = "prometheus"
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_marathon_refresh_failures_total",
-			Help:      "The number of Marathon-SD refresh failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace: namespace,
-			Name:      "sd_marathon_refresh_duration_seconds",
-			Help:      "The duration of a Marathon-SD refresh in seconds.",
-		})
-	// DefaultSDConfig is the default Marathon SD configuration.
-	DefaultSDConfig = SDConfig{
-		RefreshInterval: model.Duration(30 * time.Second),
-	}
-)
+// DefaultSDConfig is the default Marathon SD configuration.
+var DefaultSDConfig = SDConfig{
+	RefreshInterval: model.Duration(30 * time.Second),
+}
 
 // SDConfig is the configuration for services running on Marathon.
 type SDConfig struct {
@@ -109,11 +91,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return fmt.Errorf("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
 	}
 	return c.HTTPClientConfig.Validate()
-}
-
-func init() {
-	prometheus.MustRegister(refreshFailuresCount)
-	prometheus.MustRegister(refreshDuration)
 }
 
 const appListPath string = "/v2/apps/?embed=apps.tasks"
@@ -150,10 +127,9 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
+		"marathon",
 		time.Duration(conf.RefreshInterval),
 		d.refresh,
-		refresh.WithDuration(refreshDuration),
-		refresh.WithFailCount(refreshFailuresCount),
 	)
 	return d, nil
 }

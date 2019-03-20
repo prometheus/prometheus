@@ -52,11 +52,6 @@ var (
 			Name:      "sd_dns_lookup_failures_total",
 			Help:      "The number of DNS-SD lookup failures.",
 		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_dns_refresh_duration_seconds",
-			Help: "The duration of a DNS-SD refresh in seconds.",
-		})
 
 	// DefaultSDConfig is the default DNS SD configuration.
 	DefaultSDConfig = SDConfig{
@@ -99,7 +94,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 func init() {
 	prometheus.MustRegister(dnsSDLookupFailuresCount)
 	prometheus.MustRegister(dnsSDLookupsCount)
-	prometheus.MustRegister(refreshDuration)
 }
 
 // Discovery periodically performs DNS-SD requests. It implements
@@ -135,9 +129,9 @@ func NewDiscovery(conf SDConfig, logger log.Logger) *Discovery {
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
+		"dns",
 		time.Duration(conf.RefreshInterval),
 		d.refresh,
-		refresh.WithDuration(refreshDuration),
 	)
 	return d
 }

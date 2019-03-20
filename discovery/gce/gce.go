@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
@@ -49,24 +48,12 @@ const (
 	gceLabelMachineType    = gceLabel + "machine_type"
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_gce_refresh_failures_total",
-			Help: "The number of GCE-SD refresh failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_gce_refresh_duration",
-			Help: "The duration of a GCE-SD refresh in seconds.",
-		})
-	// DefaultSDConfig is the default GCE SD configuration.
-	DefaultSDConfig = SDConfig{
-		Port:            80,
-		TagSeparator:    ",",
-		RefreshInterval: model.Duration(60 * time.Second),
-	}
-)
+// DefaultSDConfig is the default GCE SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:            80,
+	TagSeparator:    ",",
+	RefreshInterval: model.Duration(60 * time.Second),
+}
 
 // SDConfig is the configuration for GCE based service discovery.
 type SDConfig struct {
@@ -102,11 +89,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return fmt.Errorf("GCE SD configuration requires a zone")
 	}
 	return nil
-}
-
-func init() {
-	prometheus.MustRegister(refreshFailuresCount)
-	prometheus.MustRegister(refreshDuration)
 }
 
 // Discovery periodically performs GCE-SD requests. It implements
@@ -145,10 +127,9 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 
 	d.Discovery = refresh.NewDiscovery(
 		logger,
+		"gce",
 		time.Duration(conf.RefreshInterval),
 		d.refresh,
-		refresh.WithDuration(refreshDuration),
-		refresh.WithFailCount(refreshFailuresCount),
 	)
 	return d, nil
 }

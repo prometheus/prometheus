@@ -25,7 +25,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/mwitkow/go-conntrack"
-	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -43,24 +42,12 @@ const (
 	tritonLabelServerID     = tritonLabel + "server_id"
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_triton_refresh_failures_total",
-			Help: "The number of Triton-SD scrape failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_triton_refresh_duration_seconds",
-			Help: "The duration of a Triton-SD refresh in seconds.",
-		})
-	// DefaultSDConfig is the default Triton SD configuration.
-	DefaultSDConfig = SDConfig{
-		Port:            9163,
-		RefreshInterval: model.Duration(60 * time.Second),
-		Version:         1,
-	}
-)
+// DefaultSDConfig is the default Triton SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:            9163,
+	RefreshInterval: model.Duration(60 * time.Second),
+	Version:         1,
+}
 
 // SDConfig is the configuration for Triton based service discovery.
 type SDConfig struct {
@@ -95,11 +82,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return fmt.Errorf("triton SD configuration requires RefreshInterval to be a positive integer")
 	}
 	return nil
-}
-
-func init() {
-	prometheus.MustRegister(refreshFailuresCount)
-	prometheus.MustRegister(refreshDuration)
 }
 
 // DiscoveryResponse models a JSON response from the Triton discovery.
@@ -146,34 +128,21 @@ func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
+		"triton",
 		time.Duration(conf.RefreshInterval),
 		d.refresh,
-		refresh.WithDuration(refreshDuration),
-		refresh.WithFailCount(refreshFailuresCount),
 	)
 	return d, nil
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	var (
-		err error
-		tg  *targetgroup.Group
-	)
-	t0 := time.Now()
-	defer func() {
-		refreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			refreshFailuresCount.Inc()
-		}
-	}()
-
 	var endpoint = fmt.Sprintf("https://%s:%d/v%d/discover", d.sdConfig.Endpoint, d.sdConfig.Port, d.sdConfig.Version)
 	if len(d.sdConfig.Groups) > 0 {
 		groups := url.QueryEscape(strings.Join(d.sdConfig.Groups, ","))
 		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
 	}
 
-	tg = &targetgroup.Group{
+	tg := &targetgroup.Group{
 		Source: endpoint,
 	}
 
