@@ -54,14 +54,16 @@ Series records encode the labels that identifies a series and its unique ID.
 
 Sample records encode samples as a list of triples `(series_id, timestamp, value)`.
 Series reference and timestamp are encoded as deltas w.r.t the first sample.
+The first row stores the starting id and the starting timestamp.
+The first sample record begins at the second row.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │ type = 2 <1b>                                                    │
 ├──────────────────────────────────────────────────────────────────┤
-│ ┌────────────────────┬───────────────────────────┬─────────────┐ │
-│ │ id <8b>            │ timestamp <8b>            │ value <8b>  │ │
-│ └────────────────────┴───────────────────────────┴─────────────┘ │
+│ ┌────────────────────┬───────────────────────────┐               │
+│ │ id <8b>            │ timestamp <8b>            │               │
+│ └────────────────────┴───────────────────────────┘               │
 │ ┌────────────────────┬───────────────────────────┬─────────────┐ │
 │ │ id_delta <uvarint> │ timestamp_delta <uvarint> │ value <8b>  │ │
 │ └────────────────────┴───────────────────────────┴─────────────┘ │
