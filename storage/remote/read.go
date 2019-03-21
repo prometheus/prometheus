@@ -59,7 +59,12 @@ type querier struct {
 // Select implements storage.Querier and uses the given matchers to read series
 // sets from the Client.
 func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	query, err := ToQuery(q.mint, q.maxt, matchers, p)
+	// use end time from select parameters which apply offset for the specific selector
+	qmaxt := q.maxt
+	if p != nil {
+		qmaxt = p.End
+	}
+	query, err := ToQuery(q.mint, qmaxt, matchers, p)
 	if err != nil {
 		return nil, nil, err
 	}
