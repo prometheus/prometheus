@@ -212,7 +212,7 @@ func TestIndexRW_Postings(t *testing.T) {
 	testutil.Ok(t, iw.AddSeries(3, series[2]))
 	testutil.Ok(t, iw.AddSeries(4, series[3]))
 
-	err = iw.WritePostings("a", "1", newListPostings([]uint64{1, 2, 3, 4}))
+	err = iw.WritePostings("a", "1", newListPostings(1, 2, 3, 4))
 	testutil.Ok(t, err)
 
 	testutil.Ok(t, iw.Close())
@@ -323,9 +323,9 @@ func TestPersistence_index_e2e(t *testing.T) {
 	for i := range all {
 		all[i] = uint64(i)
 	}
-	err = iw.WritePostings("", "", newListPostings(all))
+	err = iw.WritePostings("", "", newListPostings(all...))
 	testutil.Ok(t, err)
-	mi.WritePostings("", "", newListPostings(all))
+	mi.WritePostings("", "", newListPostings(all...))
 
 	for n, e := range postings.m {
 		for v := range e {

@@ -264,6 +264,7 @@ func (q *blockQuerier) Close() error {
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. It returns a list of label names that must be manually
 // checked to not exist in series the postings list points to.
+// It returns EmptyPostings() if it can be determined beforehand that no results will be found.
 func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, error) {
 	var its []index.Postings
 
