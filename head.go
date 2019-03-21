@@ -39,7 +39,7 @@ var (
 	ErrNotFound = errors.Errorf("not found")
 
 	// ErrOutOfOrderSample is returned if an appended sample has a
-	// timestamp larger than the most recent sample.
+	// timestamp smaller than the most recent sample.
 	ErrOutOfOrderSample = errors.New("out of order sample")
 
 	// ErrAmendSample is returned if an appended sample has the same timestamp
