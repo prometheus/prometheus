@@ -28,7 +28,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -513,6 +513,7 @@ func (ng *Engine) cumulativeSubqueryOffset(path []Node) time.Duration {
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, storage.Warnings, error) {
 	var maxOffset time.Duration
+	var endMaxOffset time.Duration
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		subqOffset := ng.cumulativeSubqueryOffset(path)
 		switch n := node.(type) {
@@ -523,6 +524,9 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			if n.Offset+LookbackDelta+subqOffset > maxOffset {
 				maxOffset = n.Offset + LookbackDelta + subqOffset
 			}
+			if endMaxOffset < n.Offset {
+				endMaxOffset = n.Offset
+			}
 		case *MatrixSelector:
 			if maxOffset < n.Range+subqOffset {
 				maxOffset = n.Range + subqOffset
@@ -530,13 +534,17 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			if n.Offset+n.Range+subqOffset > maxOffset {
 				maxOffset = n.Offset + n.Range + subqOffset
 			}
+			if endMaxOffset < n.Offset {
+				endMaxOffset = n.Offset
+			}
 		}
 		return nil
 	})
 
 	mint := s.Start.Add(-maxOffset)
+	mmax := s.End.Add(-endMaxOffset)
 
-	querier, err := q.Querier(ctx, timestamp.FromTime(mint), timestamp.FromTime(s.End))
+	querier, err := q.Querier(ctx, timestamp.FromTime(mint), timestamp.FromTime(mmax))
 	if err != nil {
 		return nil, nil, err
 	}
