@@ -35,23 +35,23 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/oklog/oklog/pkg/group"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/version"
-	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
-	"gopkg.in/alecthomas/kingpin.v2"
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
-	"github.com/mwitkow/go-conntrack"
-	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/relabel"
+	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -439,7 +439,7 @@ func main() {
 				fs, err := filepath.Glob(pat)
 				if err != nil {
 					// The only error can be a bad pattern.
-					return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
+					return errors.Wrapf(err, "error retrieving rule files for %s", pat)
 				}
 				files = append(files, fs...)
 			}
@@ -600,7 +600,7 @@ func main() {
 				}
 
 				if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
-					return fmt.Errorf("error loading config from %q: %s", cfg.configFile, err)
+					return errors.Wrapf(err, "error loading config from %q", cfg.configFile)
 				}
 
 				reloadReady.Close()
@@ -650,7 +650,7 @@ func main() {
 					&cfg.tsdb,
 				)
 				if err != nil {
-					return fmt.Errorf("opening storage failed: %s", err)
+					return errors.Wrapf(err, "opening storage failed")
 				}
 				level.Info(logger).Log("msg", "TSDB started")
 				level.Debug(logger).Log("msg", "TSDB options",
@@ -682,7 +682,7 @@ func main() {
 		g.Add(
 			func() error {
 				if err := webHandler.Run(ctxWeb); err != nil {
-					return fmt.Errorf("error starting web server: %s", err)
+					return errors.Wrapf(err, "error starting web server")
 				}
 				return nil
 			},
@@ -734,7 +734,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 
 	conf, err := config.LoadFile(filename)
 	if err != nil {
-		return fmt.Errorf("couldn't load configuration (--config.file=%q): %v", filename, err)
+		return errors.Wrapf(err, "couldn't load configuration (--config.file=%q)", filename)
 	}
 
 	failed := false
@@ -745,7 +745,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 		}
 	}
 	if failed {
-		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
+		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
 	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
@@ -782,7 +782,7 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	}
 
 	if startsOrEndsWithQuote(u) {
-		return nil, fmt.Errorf("URL must not begin or end with quotes")
+		return nil, errors.New("URL must not begin or end with quotes")
 	}
 
 	eu, err := url.Parse(u)

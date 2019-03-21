@@ -25,10 +25,11 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/pkg/errors"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
-	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -102,7 +103,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		if scanner.Scan() {
 			line = scanner.Text()
 		}
-		err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
+		err = errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 	}
 	if httpResp.StatusCode/100 == 5 {
 		return recoverableError{err}
@@ -126,13 +127,13 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 	data, err := proto.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("unable to marshal read request: %v", err)
+		return nil, errors.Wrapf(err, "unable to marshal read request")
 	}
 
 	compressed := snappy.Encode(nil, data)
 	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(compressed))
 	if err != nil {
-		return nil, fmt.Errorf("unable to create request: %v", err)
+		return nil, errors.Wrap(err, "unable to create request")
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Add("Accept-Encoding", "snappy")
@@ -145,31 +146,31 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 
 	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("error sending request: %v", err)
+		return nil, errors.Wrap(err, "error sending request")
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("server returned HTTP status %s", httpResp.Status)
+		return nil, errors.Errorf("server returned HTTP status %s", httpResp.Status)
 	}
 
 	compressed, err = ioutil.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
+		return nil, errors.Wrap(err, "error reading response")
 	}
 
 	uncompressed, err := snappy.Decode(nil, compressed)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
+		return nil, errors.Wrap(err, "error reading response")
 	}
 
 	var resp prompb.ReadResponse
 	err = proto.Unmarshal(uncompressed, &resp)
 	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response body: %v", err)
+		return nil, errors.Wrap(err, "unable to unmarshal response body")
 	}
 
 	if len(resp.Results) != len(req.Queries) {
-		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
+		return nil, errors.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
 
 	return resp.Results[0], nil

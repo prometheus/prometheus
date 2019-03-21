@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -50,7 +51,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/testutil"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 type testTargetRetriever struct{}
@@ -1026,7 +1026,7 @@ func (f *fakeDB) Dir() string {
 func (f *fakeDB) Snapshot(dir string, withHead bool) error { return f.err }
 
 func TestAdminEndpoints(t *testing.T) {
-	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: fmt.Errorf("some error")}
+	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: errors.New("some error")}
 	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
 	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
 	deleteAPI := func(api *API) apiFunc { return api.deleteSeries }

@@ -22,6 +22,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -280,13 +281,13 @@ func (c *concreteSeriesIterator) Err() error {
 func validateLabelsAndMetricName(ls labels.Labels) error {
 	for _, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
-			return fmt.Errorf("invalid metric name: %v", l.Value)
+			return errors.Errorf("invalid metric name: %v", l.Value)
 		}
 		if !model.LabelName(l.Name).IsValid() {
-			return fmt.Errorf("invalid label name: %v", l.Name)
+			return errors.Errorf("invalid label name: %v", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
-			return fmt.Errorf("invalid label value: %v", l.Value)
+			return errors.Errorf("invalid label value: %v", l.Value)
 		}
 	}
 	return nil
@@ -306,7 +307,7 @@ func toLabelMatchers(matchers []*labels.Matcher) ([]*prompb.LabelMatcher, error)
 		case labels.MatchNotRegexp:
 			mType = prompb.LabelMatcher_NRE
 		default:
-			return nil, fmt.Errorf("invalid matcher type")
+			return nil, errors.New("invalid matcher type")
 		}
 		pbMatchers = append(pbMatchers, &prompb.LabelMatcher{
 			Type:  mType,
@@ -331,7 +332,7 @@ func fromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 		case prompb.LabelMatcher_NRE:
 			mtype = labels.MatchNotRegexp
 		default:
-			return nil, fmt.Errorf("invalid matcher type")
+			return nil, errors.New("invalid matcher type")
 		}
 		matcher, err := labels.NewMatcher(mtype, matcher.Name, matcher.Value)
 		if err != nil {

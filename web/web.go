@@ -34,26 +34,24 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
-
-	"google.golang.org/grpc"
-
 	template_text "text/template"
+	"time"
 
 	"github.com/cockroachdb/cmux"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/mwitkow/go-conntrack"
+	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	"github.com/opentracing/opentracing-go"
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/client_model/go"
+	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	prometheus_tsdb "github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/tsdb"
 	"golang.org/x/net/netutil"
+	"google.golang.org/grpc"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -61,6 +59,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	prometheus_tsdb "github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -873,11 +872,11 @@ func (h *Handler) getTemplate(name string) (string, error) {
 
 	err := appendf("_base.html")
 	if err != nil {
-		return "", fmt.Errorf("error reading base template: %s", err)
+		return "", errors.Wrap(err, "error reading base template")
 	}
 	err = appendf(name)
 	if err != nil {
-		return "", fmt.Errorf("error reading page template %s: %s", name, err)
+		return "", errors.Wrapf(err, "error reading page template %s", name)
 	}
 
 	return tmpl, nil

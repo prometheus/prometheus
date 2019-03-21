@@ -25,13 +25,14 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
-	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -108,13 +109,13 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		metadata := ec2metadata.New(sess)
 		region, err := metadata.Region()
 		if err != nil {
-			return fmt.Errorf("EC2 SD configuration requires a region")
+			return errors.New("EC2 SD configuration requires a region")
 		}
 		c.Region = region
 	}
 	for _, f := range c.Filters {
 		if len(f.Values) == 0 {
-			return fmt.Errorf("EC2 SD configuration filter values cannot be empty")
+			return errors.New("EC2 SD configuration filter values cannot be empty")
 		}
 	}
 	return nil
@@ -212,7 +213,7 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 		Profile: d.profile,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not create aws session: %s", err)
+		return nil, errors.Wrap(err, "could not create aws session")
 	}
 
 	var ec2s *ec2.EC2
@@ -304,7 +305,7 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 		}
 		return true
 	}); err != nil {
-		return nil, fmt.Errorf("could not describe instances: %s", err)
+		return nil, errors.Wrap(err, "could not describe instances")
 	}
 	return tg, nil
 }

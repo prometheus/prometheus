@@ -14,16 +14,17 @@
 package promql
 
 import (
-	"fmt"
 	"math"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 var testExpr = []struct {
@@ -1644,7 +1645,7 @@ func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 func mustGetFunction(name string) *Function {
 	f, ok := getFunction(name)
 	if !ok {
-		panic(fmt.Errorf("function %q does not exist", name))
+		panic(errors.Errorf("function %q does not exist", name))
 	}
 	return f
 }
@@ -1795,7 +1796,7 @@ func TestRecoverParserError(t *testing.T) {
 	p := newParser("foo bar")
 	var err error
 
-	e := fmt.Errorf("custom error")
+	e := errors.New("custom error")
 
 	defer func() {
 		if err.Error() != e.Error() {

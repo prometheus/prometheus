@@ -29,8 +29,10 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -307,7 +309,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 		return nil, err
 	}
 	if expr.Type() != ValueTypeVector && expr.Type() != ValueTypeScalar {
-		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", documentedType(expr.Type()))
+		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", documentedType(expr.Type()))
 	}
 	qry := ng.newQuery(q, expr, start, end, interval)
 	qry.q = qs
@@ -391,7 +393,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, 
 		return nil, nil, s(ctx)
 	}
 
-	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
+	panic(errors.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
 }
 
 func timeMilliseconds(t time.Time) int64 {
@@ -441,7 +443,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 		mat, ok := val.(Matrix)
 		if !ok {
-			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
+			panic(errors.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 		}
 		query.matrix = mat
 		switch s.Expr.Type() {
@@ -459,7 +461,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		case ValueTypeMatrix:
 			return mat, warnings, nil
 		default:
-			panic(fmt.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
+			panic(errors.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
 		}
 
 	}
@@ -482,7 +484,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	mat, ok := val.(Matrix)
 	if !ok {
-		panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
+		panic(errors.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 	}
 	query.matrix = mat
 
@@ -666,7 +668,7 @@ type evaluator struct {
 
 // errorf causes a panic with the input formatted into an error.
 func (ev *evaluator) errorf(format string, args ...interface{}) {
-	ev.error(fmt.Errorf(format, args...))
+	ev.error(errors.Errorf(format, args...))
 }
 
 // error causes a panic with the given error.
@@ -686,7 +688,7 @@ func (ev *evaluator) recover(errp *error) {
 		buf = buf[:runtime.Stack(buf, false)]
 
 		level.Error(ev.logger).Log("msg", "runtime panic in parser", "err", e, "stacktrace", string(buf))
-		*errp = fmt.Errorf("unexpected error: %s", err)
+		*errp = errors.Wrap(err, "unexpected error")
 	} else {
 		*errp = e.(error)
 	}
@@ -1127,7 +1129,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *MatrixSelector:
 		if ev.startTimestamp != ev.endTimestamp {
-			panic(fmt.Errorf("cannot do range evaluation of matrix selector"))
+			panic(errors.New("cannot do range evaluation of matrix selector"))
 		}
 		return ev.matrixSelector(e)
 
@@ -1160,7 +1162,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return res
 	}
 
-	panic(fmt.Errorf("unhandled expression of type: %T", expr))
+	panic(errors.Errorf("unhandled expression of type: %T", expr))
 }
 
 func durationToInt64Millis(d time.Duration) int64 {
@@ -1629,7 +1631,7 @@ func scalarBinop(op ItemType, lhs, rhs float64) float64 {
 	case ItemLTE:
 		return btos(lhs <= rhs)
 	}
-	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
+	panic(errors.Errorf("operator %q not allowed for Scalar operations", op))
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
@@ -1660,7 +1662,7 @@ func vectorElemBinop(op ItemType, lhs, rhs float64) (float64, bool) {
 	case ItemLTE:
 		return lhs, lhs <= rhs
 	}
-	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
+	panic(errors.Errorf("operator %q not allowed for operations between Vectors", op))
 }
 
 type groupedAggregation struct {
@@ -1824,7 +1826,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			group.heap = append(group.heap, s)
 
 		default:
-			panic(fmt.Errorf("expected aggregation operator but got %q", op))
+			panic(errors.Errorf("expected aggregation operator but got %q", op))
 		}
 	}
 

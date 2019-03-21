@@ -15,10 +15,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 )
 
@@ -34,7 +34,7 @@ func newPrometheusHTTPClient(serverURL string) (*prometheusHTTPClient, error) {
 		Address: serverURL,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error creating HTTP client: %s", err)
+		return nil, errors.Wrapf(err, "error creating HTTP client")
 	}
 	return &prometheusHTTPClient{
 		requestTimeout: defaultTimeout,

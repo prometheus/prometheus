@@ -14,8 +14,9 @@
 package promql
 
 import (
-	"fmt"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -301,7 +302,7 @@ func Walk(v Visitor, node Node, path []Node) error {
 		// nothing to do
 
 	default:
-		panic(fmt.Errorf("promql.Walk: unhandled node type %T", node))
+		panic(errors.Errorf("promql.Walk: unhandled node type %T", node))
 	}
 
 	_, err = v.Visit(nil, nil)

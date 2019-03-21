@@ -27,9 +27,11 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -96,16 +98,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.Servers) == 0 {
-		return fmt.Errorf("marathon_sd: must contain at least one Marathon server")
+		return errors.New("marathon_sd: must contain at least one Marathon server")
 	}
 	if len(c.AuthToken) > 0 && len(c.AuthTokenFile) > 0 {
-		return fmt.Errorf("marathon_sd: at most one of auth_token & auth_token_file must be configured")
+		return errors.New("marathon_sd: at most one of auth_token & auth_token_file must be configured")
 	}
 	if c.HTTPClientConfig.BasicAuth != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return fmt.Errorf("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
+		return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
 	}
 	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return fmt.Errorf("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
+		return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
 	}
 	return c.HTTPClientConfig.Validate()
 }
@@ -185,7 +187,7 @@ func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.
 	// fail-fast if we can't read the file.
 	_, err := ioutil.ReadFile(tokenFile)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read auth token file %s: %s", tokenFile, err)
+		return nil, errors.Wrapf(err, "unable to read auth token file %s", tokenFile)
 	}
 	return &authTokenFileRoundTripper{tokenFile, rt}, nil
 }
@@ -193,7 +195,7 @@ func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.
 func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	b, err := ioutil.ReadFile(rt.authTokenFile)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read auth token file %s: %s", rt.authTokenFile, err)
+		return nil, errors.Wrapf(err, "unable to read auth token file %s", rt.authTokenFile)
 	}
 	authToken := strings.TrimSpace(string(b))
 
@@ -358,13 +360,13 @@ func fetchApps(ctx context.Context, client *http.Client, url string) (*AppList, 
 	defer resp.Body.Close()
 
 	if (resp.StatusCode < 200) || (resp.StatusCode >= 300) {
-		return nil, fmt.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
+		return nil, errors.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
 	}
 
 	var apps AppList
 	err = json.NewDecoder(resp.Body).Decode(&apps)
 	if err != nil {
-		return nil, fmt.Errorf("%q: %v", url, err)
+		return nil, errors.Wrapf(err, "%q", url)
 	}
 	return &apps, nil
 }

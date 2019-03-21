@@ -24,7 +24,8 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"github.com/pkg/errors"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -84,7 +85,7 @@ func ruleUnitTest(filename string) []error {
 	groupOrderMap := make(map[string]int)
 	for i, gn := range unitTestInp.GroupEvalOrder {
 		if _, ok := groupOrderMap[gn]; ok {
-			return []error{fmt.Errorf("group name repeated in evaluation order: %s", gn)}
+			return []error{errors.Errorf("group name repeated in evaluation order: %s", gn)}
 		}
 		groupOrderMap[gn] = i
 	}
@@ -261,14 +262,14 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				}
 
 				if gotAlerts.Len() != expAlerts.Len() {
-					errs = append(errs, fmt.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
 						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
 				} else {
 					sort.Sort(gotAlerts)
 					sort.Sort(expAlerts)
 
 					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						errs = append(errs, fmt.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
 							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
 					}
 				}
@@ -284,7 +285,7 @@ Outer:
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(testCase.EvalTime),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {
-			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
+			errs = append(errs, errors.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
 				testCase.EvalTime.String(), err.Error()))
 			continue
 		}
@@ -301,7 +302,7 @@ Outer:
 		for _, s := range testCase.ExpSamples {
 			lb, err := promql.ParseMetric(s.Labels)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
+				errs = append(errs, errors.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
 					testCase.EvalTime.String(), err.Error()))
 				continue Outer
 			}
@@ -318,7 +319,7 @@ Outer:
 			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
 		})
 		if !reflect.DeepEqual(expSamples, gotSamples) {
-			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, \n        exp:%#v, \n        got:%#v", testCase.Expr,
+			errs = append(errs, errors.Errorf("    expr:'%s', time:%s, \n        exp:%#v, \n        got:%#v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
 		}
 	}
@@ -397,7 +398,7 @@ func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, q
 			Metric: labels.Labels{},
 		}}, nil
 	default:
-		return nil, fmt.Errorf("rule result is not a vector or scalar")
+		return nil, errors.New("rule result is not a vector or scalar")
 	}
 }
 

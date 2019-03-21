@@ -14,18 +14,19 @@
 package scrape
 
 import (
-	"fmt"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	yaml "gopkg.in/yaml.v2"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
-	yaml "gopkg.in/yaml.v2"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -127,7 +128,7 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     fmt.Errorf("no address"),
+			err:     errors.New("no address"),
 		},
 		// Address label missing, but added in relabelling.
 		{
@@ -206,14 +207,14 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     fmt.Errorf("invalid label value for \"custom\": \"\\xbd\""),
+			err:     errors.New("invalid label value for \"custom\": \"\\xbd\""),
 		},
 	}
 	for _, c := range cases {
 		in := c.in.Copy()
 
 		res, orig, err := populateLabels(c.in, c.cfg)
-		testutil.Equals(t, c.err, err)
+		testutil.ErrorEqual(err, c.err)
 		testutil.Equals(t, c.in, in)
 		testutil.Equals(t, c.res, res)
 		testutil.Equals(t, c.resOrig, orig)

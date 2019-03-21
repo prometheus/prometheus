@@ -16,7 +16,6 @@ package rules
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 	"net/url"
 	"sort"
@@ -29,8 +28,8 @@ import (
 	"github.com/go-kit/kit/log/level"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -180,7 +179,7 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 				Metric: labels.Labels{},
 			}}, nil
 		default:
-			return nil, fmt.Errorf("rule result is not a vector or scalar")
+			return nil, errors.New("rule result is not a vector or scalar")
 		}
 	}
 }

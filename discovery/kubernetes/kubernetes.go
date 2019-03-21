@@ -15,13 +15,13 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -80,7 +80,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleIngress:
 		return nil
 	default:
-		return fmt.Errorf("unknown Kubernetes SD role %q", *c)
+		return errors.Errorf("unknown Kubernetes SD role %q", *c)
 	}
 }
 
@@ -101,14 +101,14 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
+		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
 	}
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
 		return err
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config_util.HTTPClientConfig{}) {
-		return fmt.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
+		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
 	return nil
 }

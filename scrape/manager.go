@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -199,7 +200,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 
 	if failed {
-		return fmt.Errorf("failed to apply the new configuration")
+		return errors.New("failed to apply the new configuration")
 	}
 	return nil
 }

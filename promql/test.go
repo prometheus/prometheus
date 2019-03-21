@@ -15,7 +15,6 @@ package promql
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -24,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -102,7 +102,7 @@ func (t *Test) Storage() storage.Storage {
 func raise(line int, format string, v ...interface{}) error {
 	return &ParseErr{
 		Line: line + 1,
-		Err:  fmt.Errorf(format, v...),
+		Err:  errors.Errorf(format, v...),
 	}
 }
 
@@ -356,21 +356,21 @@ func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
 func (ev *evalCmd) compareResult(result Value) error {
 	switch val := result.(type) {
 	case Matrix:
-		return fmt.Errorf("received range result on instant evaluation")
+		return errors.New("received range result on instant evaluation")
 
 	case Vector:
 		seen := map[uint64]bool{}
 		for pos, v := range val {
 			fp := v.Metric.Hash()
 			if _, ok := ev.metrics[fp]; !ok {
-				return fmt.Errorf("unexpected metric %s in result", v.Metric)
+				return errors.Errorf("unexpected metric %s in result", v.Metric)
 			}
 			exp := ev.expected[fp]
 			if ev.ordered && exp.pos != pos+1 {
-				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
+				return errors.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
 			if !almostEqual(exp.vals[0].value, v.V) {
-				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].value, v.Metric, v.V)
+				return errors.Errorf("expected %v for %s but got %v", exp.vals[0].value, v.Metric, v.V)
 			}
 
 			seen[fp] = true
@@ -381,17 +381,17 @@ func (ev *evalCmd) compareResult(result Value) error {
 				for _, ss := range val {
 					fmt.Println("    ", ss.Metric, ss.Point)
 				}
-				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
+				return errors.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
 			}
 		}
 
 	case Scalar:
 		if !almostEqual(ev.expected[0].vals[0].value, val.V) {
-			return fmt.Errorf("expected Scalar %v but got %v", val.V, ev.expected[0].vals[0].value)
+			return errors.Errorf("expected Scalar %v but got %v", val.V, ev.expected[0].vals[0].value)
 		}
 
 	default:
-		panic(fmt.Errorf("promql.Test.compareResult: unexpected result type %T", result))
+		panic(errors.Errorf("promql.Test.compareResult: unexpected result type %T", result))
 	}
 	return nil
 }
@@ -447,16 +447,16 @@ func (t *Test) exec(tc testCommand) error {
 			if cmd.fail {
 				return nil
 			}
-			return fmt.Errorf("error evaluating query %q (line %d): %s", cmd.expr, cmd.line, res.Err)
+			return errors.Wrapf(res.Err, "error evaluating query %q (line %d)", cmd.expr, cmd.line)
 		}
 		defer q.Close()
 		if res.Err == nil && cmd.fail {
-			return fmt.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
+			return errors.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 		}
 
 		err = cmd.compareResult(res.Value)
 		if err != nil {
-			return fmt.Errorf("error in %s %s: %s", cmd, cmd.expr, err)
+			return errors.Wrapf(err, "error in %s %s", cmd, cmd.expr)
 		}
 
 		// Check query returns same result in range mode,
@@ -467,7 +467,7 @@ func (t *Test) exec(tc testCommand) error {
 		}
 		rangeRes := q.Exec(t.context)
 		if rangeRes.Err != nil {
-			return fmt.Errorf("error evaluating query %q (line %d) in range mode: %s", cmd.expr, cmd.line, rangeRes.Err)
+			return errors.Wrapf(rangeRes.Err, "error evaluating query %q (line %d) in range mode", cmd.expr, cmd.line)
 		}
 		defer q.Close()
 		if cmd.ordered {
@@ -490,7 +490,7 @@ func (t *Test) exec(tc testCommand) error {
 			err = cmd.compareResult(vec)
 		}
 		if err != nil {
-			return fmt.Errorf("error in %s %s (line %d) rande mode: %s", cmd, cmd.expr, cmd.line, err)
+			return errors.Wrapf(err, "error in %s %s (line %d) rande mode", cmd, cmd.expr, cmd.line)
 		}
 
 	default:
@@ -561,7 +561,7 @@ func parseNumber(s string) (float64, error) {
 		f, err = strconv.ParseFloat(s, 64)
 	}
 	if err != nil {
-		return 0, fmt.Errorf("error parsing number: %s", err)
+		return 0, errors.Wrap(err, "error parsing number")
 	}
 	return f, nil
 }

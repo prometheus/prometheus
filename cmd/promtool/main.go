@@ -26,15 +26,15 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/alecthomas/kingpin.v2"
-
 	"github.com/google/pprof/profile"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
-	"github.com/prometheus/client_golang/api/prometheus/v1"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/util/promlint"
@@ -202,10 +202,10 @@ func checkConfig(filename string) ([]string, error) {
 		// If an explicit file was given, error if it is not accessible.
 		if !strings.Contains(rf, "*") {
 			if len(rfs) == 0 {
-				return nil, fmt.Errorf("%q does not point to an existing file", rf)
+				return nil, errors.Errorf("%q does not point to an existing file", rf)
 			}
 			if err := checkFileExists(rfs[0]); err != nil {
-				return nil, fmt.Errorf("error checking rule file %q: %s", rfs[0], err)
+				return nil, errors.Wrapf(err, "error checking rule file %q", rfs[0])
 			}
 		}
 		ruleFiles = append(ruleFiles, rfs...)
@@ -213,7 +213,7 @@ func checkConfig(filename string) ([]string, error) {
 
 	for _, scfg := range cfg.ScrapeConfigs {
 		if err := checkFileExists(scfg.HTTPClientConfig.BearerTokenFile); err != nil {
-			return nil, fmt.Errorf("error checking bearer token file %q: %s", scfg.HTTPClientConfig.BearerTokenFile, err)
+			return nil, errors.Wrapf(err, "error checking bearer token file %q", scfg.HTTPClientConfig.BearerTokenFile)
 		}
 
 		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig); err != nil {
@@ -247,17 +247,17 @@ func checkConfig(filename string) ([]string, error) {
 
 func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
 	if err := checkFileExists(tlsConfig.CertFile); err != nil {
-		return fmt.Errorf("error checking client cert file %q: %s", tlsConfig.CertFile, err)
+		return errors.Wrapf(err, "error checking client cert file %q", tlsConfig.CertFile)
 	}
 	if err := checkFileExists(tlsConfig.KeyFile); err != nil {
-		return fmt.Errorf("error checking client key file %q: %s", tlsConfig.KeyFile, err)
+		return errors.Wrapf(err, "error checking client key file %q", tlsConfig.KeyFile)
 	}
 
 	if len(tlsConfig.CertFile) > 0 && len(tlsConfig.KeyFile) == 0 {
-		return fmt.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
+		return errors.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
 	}
 	if len(tlsConfig.KeyFile) > 0 && len(tlsConfig.CertFile) == 0 {
-		return fmt.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
+		return errors.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
 	}
 
 	return nil
@@ -510,7 +510,7 @@ func parseTime(s string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil
 	}
-	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+	return time.Time{}, errors.Errorf("cannot parse %q to a valid timestamp", s)
 }
 
 type endpointsGroup struct {

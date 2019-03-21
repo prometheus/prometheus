@@ -16,7 +16,6 @@ package template
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -28,9 +27,10 @@ import (
 	html_template "html/template"
 	text_template "text/template"
 
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -288,7 +288,7 @@ func (te Expander) Expand() (result string, resultErr error) {
 			var ok bool
 			resultErr, ok = r.(error)
 			if !ok {
-				resultErr = fmt.Errorf("panic expanding template %v: %v", te.name, r)
+				resultErr = errors.Errorf("panic expanding template %v: %v", te.name, r)
 			}
 		}
 		if resultErr != nil {
@@ -300,12 +300,12 @@ func (te Expander) Expand() (result string, resultErr error) {
 
 	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
 	if err != nil {
-		return "", fmt.Errorf("error parsing template %v: %v", te.name, err)
+		return "", errors.Wrapf(err, "error parsing template %v", te.name)
 	}
 	var buffer bytes.Buffer
 	err = tmpl.Execute(&buffer, te.data)
 	if err != nil {
-		return "", fmt.Errorf("error executing template %v: %v", te.name, err)
+		return "", errors.Wrapf(err, "error executing template %v", te.name)
 	}
 	return buffer.String(), nil
 }
@@ -317,7 +317,7 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 			var ok bool
 			resultErr, ok = r.(error)
 			if !ok {
-				resultErr = fmt.Errorf("panic expanding template %v: %v", te.name, r)
+				resultErr = errors.Errorf("panic expanding template %s: %v", te.name, r)
 			}
 		}
 	}()
@@ -333,18 +333,18 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 	})
 	tmpl, err := tmpl.Parse(te.text)
 	if err != nil {
-		return "", fmt.Errorf("error parsing template %v: %v", te.name, err)
+		return "", errors.Wrapf(err, "error parsing template %v", te.name)
 	}
 	if len(templateFiles) > 0 {
 		_, err = tmpl.ParseFiles(templateFiles...)
 		if err != nil {
-			return "", fmt.Errorf("error parsing template files for %v: %v", te.name, err)
+			return "", errors.Wrapf(err, "error parsing template files for %v", te.name)
 		}
 	}
 	var buffer bytes.Buffer
 	err = tmpl.Execute(&buffer, te.data)
 	if err != nil {
-		return "", fmt.Errorf("error executing template %v: %v", te.name, err)
+		return "", errors.Wrapf(err, "error executing template %v", te.name)
 	}
 	return buffer.String(), nil
 }

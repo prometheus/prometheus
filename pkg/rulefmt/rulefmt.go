@@ -15,16 +15,16 @@ package rulefmt
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	yaml "gopkg.in/yaml.v2"
+
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/template"
-	"gopkg.in/yaml.v2"
 )
 
 // Error represents semantical errors on parsing rule groups.
@@ -174,7 +174,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 	for _, val := range rl.Labels {
 		err := parseTest(val)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("msg=%s", err.Error()))
+			errs = append(errs, errors.Errorf("msg=%s", err.Error()))
 		}
 	}
 
@@ -182,7 +182,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 	for _, val := range rl.Annotations {
 		err := parseTest(val)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("msg=%s", err.Error()))
+			errs = append(errs, errors.Errorf("msg=%s", err.Error()))
 		}
 	}
 

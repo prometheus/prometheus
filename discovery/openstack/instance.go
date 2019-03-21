@@ -26,7 +26,9 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/pagination"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -81,13 +83,13 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) (*targetgroup.Group, er
 	i.provider.Context = ctx
 	err = openstack.Authenticate(i.provider, *i.authOpts)
 	if err != nil {
-		return nil, fmt.Errorf("could not authenticate to OpenStack: %s", err)
+		return nil, errors.Wrap(err, "could not authenticate to OpenStack")
 	}
 	client, err := openstack.NewComputeV2(i.provider, gophercloud.EndpointOpts{
 		Region: i.region,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not create OpenStack compute session: %s", err)
+		return nil, errors.Wrap(err, "could not create OpenStack compute session")
 	}
 
 	// OpenStack API reference
@@ -98,7 +100,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) (*targetgroup.Group, er
 	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
 		result, err := floatingips.ExtractFloatingIPs(page)
 		if err != nil {
-			return false, fmt.Errorf("could not extract floatingips: %s", err)
+			return false, errors.Wrap(err, "could not extract floatingips")
 		}
 		for _, ip := range result {
 			// Skip not associated ips
@@ -125,11 +127,11 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) (*targetgroup.Group, er
 	}
 	err = pager.EachPage(func(page pagination.Page) (bool, error) {
 		if ctx.Err() != nil {
-			return false, fmt.Errorf("could not extract instances: %s", ctx.Err())
+			return false, errors.Wrap(ctx.Err(), "could not extract instances")
 		}
 		instanceList, err := servers.ExtractServers(page)
 		if err != nil {
-			return false, fmt.Errorf("could not extract instances: %s", err)
+			return false, errors.Wrap(err, "could not extract instances")
 		}
 
 		for _, s := range instanceList {

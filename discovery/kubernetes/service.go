@@ -15,12 +15,12 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strconv"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -123,7 +123,7 @@ func convertToService(o interface{}) (*apiv1.Service, error) {
 	if ok {
 		return service, nil
 	}
-	return nil, fmt.Errorf("received unexpected object: %v", o)
+	return nil, errors.Errorf("received unexpected object: %v", o)
 }
 
 func serviceSource(s *apiv1.Service) string {
