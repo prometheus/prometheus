@@ -15,12 +15,13 @@ package promql
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -194,7 +195,7 @@ func TestQueryError(t *testing.T) {
 		Timeout:       10 * time.Second,
 	}
 	engine := NewEngine(opts)
-	errStorage := ErrStorage{fmt.Errorf("storage error")}
+	errStorage := ErrStorage{errors.New("storage error")}
 	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
 	})
@@ -641,7 +642,7 @@ func TestRecoverEvaluatorError(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 	var err error
 
-	e := fmt.Errorf("custom error")
+	e := errors.New("custom error")
 
 	defer func() {
 		if err.Error() != e.Error() {

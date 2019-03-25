@@ -24,7 +24,8 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/mwitkow/go-conntrack"
+	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -70,16 +71,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Account == "" {
-		return fmt.Errorf("triton SD configuration requires an account")
+		return errors.New("triton SD configuration requires an account")
 	}
 	if c.DNSSuffix == "" {
-		return fmt.Errorf("triton SD configuration requires a dns_suffix")
+		return errors.New("triton SD configuration requires a dns_suffix")
 	}
 	if c.Endpoint == "" {
-		return fmt.Errorf("triton SD configuration requires an endpoint")
+		return errors.New("triton SD configuration requires an endpoint")
 	}
 	if c.RefreshInterval <= 0 {
-		return fmt.Errorf("triton SD configuration requires RefreshInterval to be a positive integer")
+		return errors.New("triton SD configuration requires RefreshInterval to be a positive integer")
 	}
 	return nil
 }
@@ -153,20 +154,20 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	req = req.WithContext(ctx)
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("an error occurred when requesting targets from the discovery endpoint: %s", err)
+		return nil, errors.Wrap(err, "an error occurred when requesting targets from the discovery endpoint")
 	}
 
 	defer resp.Body.Close()
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("an error occurred when reading the response body: %s", err)
+		return nil, errors.Wrap(err, "an error occurred when reading the response body")
 	}
 
 	dr := discoveryResponse{}
 	err = json.Unmarshal(data, &dr)
 	if err != nil {
-		return nil, fmt.Errorf("an error occurred unmarshaling the discovery response json: %s", err)
+		return nil, errors.Wrap(err, "an error occurred unmarshaling the discovery response json")
 	}
 
 	for _, container := range dr.Containers {

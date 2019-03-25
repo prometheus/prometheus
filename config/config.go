@@ -22,13 +22,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
-
+	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	yaml "gopkg.in/yaml.v2"
+
 	sd_config "github.com/prometheus/prometheus/discovery/config"
-	"gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
 )
 
 var (
@@ -59,7 +60,7 @@ func LoadFile(filename string) (*Config, error) {
 	}
 	cfg, err := Load(string(content))
 	if err != nil {
-		return nil, fmt.Errorf("parsing YAML file %s: %v", filename, err)
+		return nil, errors.Wrapf(err, "parsing YAML file %s", filename)
 	}
 	resolveFilepaths(filepath.Dir(filename), cfg)
 	return cfg, nil
@@ -234,14 +235,14 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	for _, rf := range c.RuleFiles {
 		if !patRulePath.MatchString(rf) {
-			return fmt.Errorf("invalid rule file path %q", rf)
+			return errors.Errorf("invalid rule file path %q", rf)
 		}
 	}
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
 		if scfg == nil {
-			return fmt.Errorf("empty or null scrape config section")
+			return errors.New("empty or null scrape config section")
 		}
 		// First set the correct scrape interval, then check that the timeout
 		// (inferred or explicit) is not greater than that.
@@ -249,7 +250,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			scfg.ScrapeInterval = c.GlobalConfig.ScrapeInterval
 		}
 		if scfg.ScrapeTimeout > scfg.ScrapeInterval {
-			return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", scfg.JobName)
+			return errors.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", scfg.JobName)
 		}
 		if scfg.ScrapeTimeout == 0 {
 			if c.GlobalConfig.ScrapeTimeout > scfg.ScrapeInterval {
@@ -260,18 +261,18 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 
 		if _, ok := jobNames[scfg.JobName]; ok {
-			return fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
+			return errors.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}
 		jobNames[scfg.JobName] = struct{}{}
 	}
 	for _, rwcfg := range c.RemoteWriteConfigs {
 		if rwcfg == nil {
-			return fmt.Errorf("empty or null remote write config section")
+			return errors.New("empty or null remote write config section")
 		}
 	}
 	for _, rrcfg := range c.RemoteReadConfigs {
 		if rrcfg == nil {
-			return fmt.Errorf("empty or null remote read config section")
+			return errors.New("empty or null remote read config section")
 		}
 	}
 	return nil
@@ -302,10 +303,10 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	for _, l := range gc.ExternalLabels {
 		if !model.LabelName(l.Name).IsValid() {
-			return fmt.Errorf("%q is not a valid label name", l.Name)
+			return errors.Errorf("%q is not a valid label name", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
-			return fmt.Errorf("%q is not a valid label value", l.Value)
+			return errors.Errorf("%q is not a valid label value", l.Value)
 		}
 	}
 
@@ -315,7 +316,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		gc.ScrapeInterval = DefaultGlobalConfig.ScrapeInterval
 	}
 	if gc.ScrapeTimeout > gc.ScrapeInterval {
-		return fmt.Errorf("global scrape timeout greater than scrape interval")
+		return errors.New("global scrape timeout greater than scrape interval")
 	}
 	if gc.ScrapeTimeout == 0 {
 		if DefaultGlobalConfig.ScrapeTimeout > gc.ScrapeInterval {
@@ -381,7 +382,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.JobName) == 0 {
-		return fmt.Errorf("job_name is empty")
+		return errors.New("job_name is empty")
 	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
@@ -411,12 +412,12 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	for _, rlcfg := range c.RelabelConfigs {
 		if rlcfg == nil {
-			return fmt.Errorf("empty or null target relabeling rule in scrape config")
+			return errors.New("empty or null target relabeling rule in scrape config")
 		}
 	}
 	for _, rlcfg := range c.MetricRelabelConfigs {
 		if rlcfg == nil {
-			return fmt.Errorf("empty or null metric relabeling rule in scrape config")
+			return errors.New("empty or null metric relabeling rule in scrape config")
 		}
 	}
 
@@ -447,7 +448,7 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 	for _, rlcfg := range c.AlertRelabelConfigs {
 		if rlcfg == nil {
-			return fmt.Errorf("empty or null alert relabeling rule")
+			return errors.New("empty or null alert relabeling rule")
 		}
 	}
 	return nil
@@ -507,7 +508,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 
 	for _, rlcfg := range c.RelabelConfigs {
 		if rlcfg == nil {
-			return fmt.Errorf("empty or null Alertmanager target relabeling rule")
+			return errors.New("empty or null Alertmanager target relabeling rule")
 		}
 	}
 
@@ -524,7 +525,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 func CheckTargetAddress(address model.LabelValue) error {
 	// For now check for a URL, we may want to expand this later.
 	if strings.Contains(string(address), "/") {
-		return fmt.Errorf("%q is not a valid hostname", address)
+		return errors.Errorf("%q is not a valid hostname", address)
 	}
 	return nil
 }
@@ -561,11 +562,11 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 	if c.URL == nil {
-		return fmt.Errorf("url for remote_write is empty")
+		return errors.New("url for remote_write is empty")
 	}
 	for _, rlcfg := range c.WriteRelabelConfigs {
 		if rlcfg == nil {
-			return fmt.Errorf("empty or null relabeling rule in remote write config")
+			return errors.New("empty or null relabeling rule in remote write config")
 		}
 	}
 
@@ -623,7 +624,7 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 		return err
 	}
 	if c.URL == nil {
-		return fmt.Errorf("url for remote_read is empty")
+		return errors.New("url for remote_read is empty")
 	}
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.

@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -71,7 +72,7 @@ func (s AlertState) String() string {
 	case StateFiring:
 		return "firing"
 	}
-	panic(fmt.Errorf("unknown alert state: %v", s.String()))
+	panic(errors.Errorf("unknown alert state: %s", s.String()))
 }
 
 // Alert is the user-level representation of a single instance of an alerting rule.

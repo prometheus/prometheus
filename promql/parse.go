@@ -23,7 +23,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -285,7 +287,7 @@ func (p *parser) backup() {
 
 // errorf formats the error and terminates processing.
 func (p *parser) errorf(format string, args ...interface{}) {
-	p.error(fmt.Errorf(format, args...))
+	p.error(errors.Errorf(format, args...))
 }
 
 // error terminates processing.
@@ -319,7 +321,7 @@ func (p *parser) expectOneOf(exp1, exp2 ItemType, context string) item {
 	return token
 }
 
-var errUnexpected = fmt.Errorf("unexpected error")
+var errUnexpected = errors.New("unexpected error")
 
 // recover is the handler that turns panics into returns from the top level of Parse.
 func (p *parser) recover(errp *error) {
@@ -1070,7 +1072,7 @@ func parseDuration(ds string) (time.Duration, error) {
 		return 0, err
 	}
 	if dur == 0 {
-		return 0, fmt.Errorf("duration must be greater than 0")
+		return 0, errors.New("duration must be greater than 0")
 	}
 	return time.Duration(dur), nil
 }

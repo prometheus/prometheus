@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -690,7 +691,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		} else if numScrapes == 5 {
 			cancel()
 		}
-		return fmt.Errorf("scrape failed")
+		return errors.New("scrape failed")
 	}
 
 	go func() {
@@ -752,7 +753,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		} else if numScrapes == 3 {
 			cancel()
 		}
-		return fmt.Errorf("scrape failed")
+		return errors.New("scrape failed")
 	}
 
 	go func() {
@@ -1079,7 +1080,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		cancel()
-		return fmt.Errorf("scrape failed")
+		return errors.New("scrape failed")
 	}
 
 	sl.run(10*time.Millisecond, time.Hour, nil)
@@ -1292,9 +1293,9 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 	go func() {
 		_, err := ts.scrape(ctx, ioutil.Discard)
 		if err == nil {
-			errc <- fmt.Errorf("Expected error but got nil")
+			errc <- errors.New("Expected error but got nil")
 		} else if ctx.Err() != context.Canceled {
-			errc <- fmt.Errorf("Expected context cancelation error but got: %s", ctx.Err())
+			errc <- errors.Errorf("Expected context cancelation error but got: %s", ctx.Err())
 		}
 		close(errc)
 	}()

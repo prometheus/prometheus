@@ -17,7 +17,6 @@
 package textparse
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -26,6 +25,8 @@ import (
 	"strings"
 	"unicode/utf8"
 	"unsafe"
+
+	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -244,7 +245,7 @@ func (p *PromParser) nextToken() token {
 }
 
 func parseError(exp string, got token) error {
-	return fmt.Errorf("%s, got %q", exp, got)
+	return errors.Errorf("%s, got %q", exp, got)
 }
 
 // Next advances the parser to the next sample. It returns false if no
@@ -293,11 +294,11 @@ func (p *PromParser) Next() (Entry, error) {
 			case "untyped":
 				p.mtype = MetricTypeUnknown
 			default:
-				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
+				return EntryInvalid, errors.Errorf("invalid metric type %q", s)
 			}
 		case tHelp:
 			if !utf8.Valid(p.text) {
-				return EntryInvalid, fmt.Errorf("help text is not a valid utf8 string")
+				return EntryInvalid, errors.Errorf("help text is not a valid utf8 string")
 			}
 		}
 		if t := p.nextToken(); t != tLinebreak {
@@ -356,7 +357,7 @@ func (p *PromParser) Next() (Entry, error) {
 		return EntrySeries, nil
 
 	default:
-		err = fmt.Errorf("%q is not a valid start token", t)
+		err = errors.Errorf("%q is not a valid start token", t)
 	}
 	return EntryInvalid, err
 }
@@ -380,7 +381,7 @@ func (p *PromParser) parseLVals() error {
 			return parseError("expected label value", t)
 		}
 		if !utf8.Valid(p.l.buf()) {
-			return fmt.Errorf("invalid UTF-8 label value")
+			return errors.Errorf("invalid UTF-8 label value")
 		}
 
 		// The promlexer ensures the value string is quoted. Strip first

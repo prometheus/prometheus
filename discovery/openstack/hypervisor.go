@@ -23,7 +23,9 @@ import (
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
 	"github.com/gophercloud/gophercloud/pagination"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -55,13 +57,13 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 	h.provider.Context = ctx
 	err := openstack.Authenticate(h.provider, *h.authOpts)
 	if err != nil {
-		return nil, fmt.Errorf("could not authenticate to OpenStack: %s", err)
+		return nil, errors.Wrap(err, "could not authenticate to OpenStack")
 	}
 	client, err := openstack.NewComputeV2(h.provider, gophercloud.EndpointOpts{
 		Region: h.region,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not create OpenStack compute session: %s", err)
+		return nil, errors.Wrap(err, "could not create OpenStack compute session")
 	}
 
 	tg := &targetgroup.Group{
@@ -73,7 +75,7 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 	err = pagerHypervisors.EachPage(func(page pagination.Page) (bool, error) {
 		hypervisorList, err := hypervisors.ExtractHypervisors(page)
 		if err != nil {
-			return false, fmt.Errorf("could not extract hypervisors: %s", err)
+			return false, errors.Wrap(err, "could not extract hypervisors")
 		}
 		for _, hypervisor := range hypervisorList {
 			labels := model.LabelSet{}

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
@@ -83,10 +84,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Project == "" {
-		return fmt.Errorf("GCE SD configuration requires a project")
+		return errors.New("GCE SD configuration requires a project")
 	}
 	if c.Zone == "" {
-		return fmt.Errorf("GCE SD configuration requires a zone")
+		return errors.New("GCE SD configuration requires a zone")
 	}
 	return nil
 }
@@ -117,11 +118,11 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	var err error
 	d.client, err = google.DefaultClient(context.Background(), compute.ComputeReadonlyScope)
 	if err != nil {
-		return nil, fmt.Errorf("error setting up communication with GCE service: %s", err)
+		return nil, errors.Wrap(err, "error setting up communication with GCE service")
 	}
 	d.svc, err = compute.New(d.client)
 	if err != nil {
-		return nil, fmt.Errorf("error setting up communication with GCE service: %s", err)
+		return nil, errors.Wrap(err, "error setting up communication with GCE service")
 	}
 	d.isvc = compute.NewInstancesService(d.svc)
 
@@ -200,7 +201,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving refresh targets from gce: %s", err)
+		return nil, errors.Wrap(err, "error retrieving refresh targets from gce")
 	}
 	return []*targetgroup.Group{tg}, nil
 }

@@ -24,8 +24,10 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/miekg/dns"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -77,16 +79,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.Names) == 0 {
-		return fmt.Errorf("DNS-SD config must contain at least one SRV record name")
+		return errors.New("DNS-SD config must contain at least one SRV record name")
 	}
 	switch strings.ToUpper(c.Type) {
 	case "SRV":
 	case "A", "AAAA":
 		if c.Port == 0 {
-			return fmt.Errorf("a port is required in DNS-SD configs for all record types except SRV")
+			return errors.New("a port is required in DNS-SD configs for all record types except SRV")
 		}
 	default:
-		return fmt.Errorf("invalid DNS-SD records type %s", c.Type)
+		return errors.Errorf("invalid DNS-SD records type %s", c.Type)
 	}
 	return nil
 }
@@ -239,7 +241,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
-		return nil, fmt.Errorf("could not load resolv.conf: %s", err)
+		return nil, errors.Wrap(err, "could not load resolv.conf")
 	}
 
 	allResponsesValid := true
@@ -265,7 +267,7 @@ func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Ms
 		return &dns.Msg{}, nil
 	}
 	// Outcome 3: boned.
-	return nil, fmt.Errorf("could not resolve %q: all servers responded with errors to at least one search domain", name)
+	return nil, errors.Errorf("could not resolve %q: all servers responded with errors to at least one search domain", name)
 }
 
 // lookupFromAnyServer uses all configured servers to try and resolve a specific
@@ -301,7 +303,7 @@ func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logg
 		}
 	}
 
-	return nil, fmt.Errorf("could not resolve %s: no servers returned a viable answer", name)
+	return nil, errors.Errorf("could not resolve %s: no servers returned a viable answer", name)
 }
 
 // askServerForName makes a request to a specific DNS server for a specific
@@ -323,7 +325,7 @@ func askServerForName(name string, queryType uint16, client *dns.Client, servAdd
 
 	if response.Truncated {
 		if client.Net == "tcp" {
-			return nil, fmt.Errorf("got truncated message on TCP (64kiB limit exceeded?)")
+			return nil, errors.New("got truncated message on TCP (64kiB limit exceeded?)")
 		}
 
 		client.Net = "tcp"

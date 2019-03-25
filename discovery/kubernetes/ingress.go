@@ -15,16 +15,17 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // Ingress implements discovery of Kubernetes ingresss.
@@ -118,7 +119,7 @@ func convertToIngress(o interface{}) (*v1beta1.Ingress, error) {
 		return ingress, nil
 	}
 
-	return nil, fmt.Errorf("received unexpected object: %v", o)
+	return nil, errors.Errorf("received unexpected object: %v", o)
 }
 
 func ingressSource(s *v1beta1.Ingress) string {

@@ -15,15 +15,14 @@ package openstack
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/mwitkow/go-conntrack"
+	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -80,7 +79,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case OpenStackRoleHypervisor, OpenStackRoleInstance:
 		return nil
 	default:
-		return fmt.Errorf("unknown OpenStack SD role %q", *c)
+		return errors.Errorf("unknown OpenStack SD role %q", *c)
 	}
 }
 
@@ -93,10 +92,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: instance, hypervisor)")
+		return errors.New("role missing (one of: instance, hypervisor)")
 	}
 	if c.Region == "" {
-		return fmt.Errorf("openstack SD configuration requires a region")
+		return errors.New("openstack SD configuration requires a region")
 	}
 	return nil
 }

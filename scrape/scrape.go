@@ -536,7 +536,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("server returned HTTP status %s", resp.Status)
+		return "", errors.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	if resp.Header.Get("Content-Encoding") != "gzip" {
