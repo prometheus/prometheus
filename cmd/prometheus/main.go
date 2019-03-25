@@ -292,7 +292,7 @@ func main() {
 				panic(err)
 			}
 			cfg.tsdb.RetentionDuration = y
-			level.Info(logger).Log("msg", "time retention value is too high. Limiting to: "+y.String())
+			level.Warn(logger).Log("msg", "time retention value is too high. Limiting to: "+y.String())
 		}
 	}
 
