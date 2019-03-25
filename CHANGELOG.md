@@ -1,6 +1,7 @@
 ## master / unreleased
  - [REMOVED] `chunks.NewReader` is removed as it wasn't used anywhere.
  - [REMOVED] `FromData` is considered unused so was removed.
+ - [FEATURE] Added option WALSegmentSize -1 to disable the WAL.
 
 ## 0.6.1
   - [BUGFIX] Update `last` after appending a non-overlapping chunk in `chunks.MergeOverlappingChunks`. [#539](https://github.com/prometheus/tsdb/pull/539)
@@ -15,7 +16,7 @@
    - Added `MergeOverlappingChunks` function in `chunks/chunks.go` to merge multiple time-overlapping Chunk Metas.
    - Added `MinTime` and `MaxTime` method for `BlockReader`.
  - [FEATURE] New `dump` command to tsdb tool to dump all samples.
- - [FEATURE] New `encoding` package for common binary encoding/decoding helpers. 
+ - [FEATURE] New `encoding` package for common binary encoding/decoding helpers.
     - Added to remove some code duplication.
  - [ENHANCEMENT] When closing the db any running compaction will be cancelled so it doesn't block.
    - `NewLeveledCompactor` takes a context.
@@ -41,7 +42,7 @@
  - [CHANGE] `LastCheckpoint()` used to return just the segment name and now it returns the full relative path.
  - [CHANGE] `NewSegmentsRangeReader()` can now read over miltiple wal ranges by using the new `SegmentRange{}` struct.
  - [CHANGE] `CorruptionErr{}` now also exposes the Segment `Dir` which is added when displaying any errors.
- - [CHANGE] `Head.Init()` is changed to `Head.Init(minValidTime int64)`  
+ - [CHANGE] `Head.Init()` is changed to `Head.Init(minValidTime int64)`
  - [CHANGE] `SymbolTable()` renamed to `SymbolTableSize()` to make the name consistent with the  `Block{ symbolTableSize uint64 }` field.
  - [CHANGE] `wal.Reader{}` now exposes `Segment()` for the current segment being read  and `Offset()` for the current offset.
  - [FEATURE] tsdbutil analyze subcomand to find churn, high cardinality, etc.
