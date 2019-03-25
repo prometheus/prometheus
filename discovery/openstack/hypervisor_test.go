@@ -40,7 +40,7 @@ func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
 	s.Mock.HandleAuthSuccessfully()
 }
 
-func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (*Discovery, error) {
+func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (refresher, error) {
 	conf := SDConfig{
 		IdentityEndpoint: s.Mock.Endpoint(),
 		Password:         "test",
@@ -49,7 +49,7 @@ func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (*Discovery, err
 		Region:           "RegionOne",
 		Role:             "hypervisor",
 	}
-	return NewDiscovery(&conf, nil)
+	return newRefresher(&conf, nil)
 }
 
 func TestOpenstackSDHypervisorRefresh(t *testing.T) {
@@ -59,7 +59,9 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 
 	hypervisor, _ := mock.openstackAuthSuccess()
 	ctx := context.Background()
-	tg, err := hypervisor.r.refresh(ctx)
+	tgs, err := hypervisor.refresh(ctx)
+	testutil.Equals(t, 1, len(tgs))
+	tg := tgs[0]
 	testutil.Ok(t, err)
 	testutil.Assert(t, tg != nil, "")
 	testutil.Assert(t, tg.Targets != nil, "")
@@ -89,7 +91,7 @@ func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
 	hypervisor, _ := mock.openstackAuthSuccess()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := hypervisor.r.refresh(ctx)
+	_, err := hypervisor.refresh(ctx)
 	testutil.NotOk(t, err, "")
 	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
 

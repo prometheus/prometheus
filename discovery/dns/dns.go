@@ -26,6 +26,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -98,12 +99,11 @@ func init() {
 // Discovery periodically performs DNS-SD requests. It implements
 // the Discoverer interface.
 type Discovery struct {
-	names []string
-
-	interval time.Duration
-	port     int
-	qtype    uint16
-	logger   log.Logger
+	*refresh.Discovery
+	names  []string
+	port   int
+	qtype  uint16
+	logger log.Logger
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
@@ -121,50 +121,50 @@ func NewDiscovery(conf SDConfig, logger log.Logger) *Discovery {
 	case "SRV":
 		qtype = dns.TypeSRV
 	}
-	return &Discovery{
-		names:    conf.Names,
-		interval: time.Duration(conf.RefreshInterval),
-		qtype:    qtype,
-		port:     conf.Port,
-		logger:   logger,
+	d := &Discovery{
+		names:  conf.Names,
+		qtype:  qtype,
+		port:   conf.Port,
+		logger: logger,
 	}
+	d.Discovery = refresh.NewDiscovery(
+		logger,
+		"dns",
+		time.Duration(conf.RefreshInterval),
+		d.refresh,
+	)
+	return d
 }
 
-// Run implements the Discoverer interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
-	// Get an initial set right away.
-	d.refreshAll(ctx, ch)
-
-	for {
-		select {
-		case <-ticker.C:
-			d.refreshAll(ctx, ch)
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (d *Discovery) refreshAll(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	var wg sync.WaitGroup
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	var (
+		wg  sync.WaitGroup
+		ch  = make(chan *targetgroup.Group)
+		tgs = make([]*targetgroup.Group, len(d.names))
+	)
 
 	wg.Add(len(d.names))
 	for _, name := range d.names {
 		go func(n string) {
-			if err := d.refresh(ctx, n, ch); err != nil {
+			if err := d.refreshOne(ctx, n, ch); err != nil {
 				level.Error(d.logger).Log("msg", "Error refreshing DNS targets", "err", err)
 			}
 			wg.Done()
 		}(name)
 	}
 
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	for tg := range ch {
+		tgs = append(tgs, tg)
+	}
+	return tgs, nil
 }
 
-func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*targetgroup.Group) error {
+func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targetgroup.Group) error {
 	response, err := lookupWithSearchPath(name, d.qtype, d.logger)
 	dnsSDLookupsCount.Inc()
 	if err != nil {
@@ -203,7 +203,7 @@ func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*targe
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case ch <- []*targetgroup.Group{tg}:
+	case ch <- tg:
 	}
 
 	return nil

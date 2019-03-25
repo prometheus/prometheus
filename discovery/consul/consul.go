@@ -327,7 +327,6 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				<-ticker.C
 			}
 		}
-
 	} else {
 		// We only have fully defined services.
 		for _, name := range d.watchedServices {
