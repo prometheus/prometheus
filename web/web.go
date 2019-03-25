@@ -306,7 +306,9 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	if o.EnableLifecycle {
 		router.Post("/-/quit", h.quit)
+		router.Put("/-/quit", h.quit)
 		router.Post("/-/reload", h.reload)
+		router.Put("/-/reload", h.reload)
 	} else {
 		router.Post("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
@@ -319,11 +321,11 @@ func New(logger log.Logger, o *Options) *Handler {
 	}
 	router.Get("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		w.Write([]byte("Only POST requests allowed"))
+		w.Write([]byte("Only POST or PUT requests allowed"))
 	})
 	router.Get("/-/reload", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		w.Write([]byte("Only POST requests allowed"))
+		w.Write([]byte("Only POST or PUT requests allowed"))
 	})
 
 	router.Get("/debug/*subpath", serveDebug)

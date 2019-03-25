@@ -500,13 +500,14 @@ const (
 // thus creating a "greaterOrEqual" or "lessThanEqual" rather than just a
 // "greaterThan" or "lessThan" queries.
 func (n *node) iterate(dir direction, start, stop Item, includeStart bool, hit bool, iter ItemIterator) (bool, bool) {
-	var ok bool
+	var ok, found bool
+	var index int
 	switch dir {
 	case ascend:
-		for i := 0; i < len(n.items); i++ {
-			if start != nil && n.items[i].Less(start) {
-				continue
-			}
+		if start != nil {
+			index, _ = n.items.find(start)
+		}
+		for i := index; i < len(n.items); i++ {
 			if len(n.children) > 0 {
 				if hit, ok = n.children[i].iterate(dir, start, stop, includeStart, hit, iter); !ok {
 					return hit, false
@@ -530,7 +531,15 @@ func (n *node) iterate(dir direction, start, stop Item, includeStart bool, hit b
 			}
 		}
 	case descend:
-		for i := len(n.items) - 1; i >= 0; i-- {
+		if start != nil {
+			index, found = n.items.find(start)
+			if !found {
+				index = index - 1
+			}
+		} else {
+			index = len(n.items) - 1
+		}
+		for i := index; i >= 0; i-- {
 			if start != nil && !n.items[i].Less(start) {
 				if !includeStart || hit || start.Less(n.items[i]) {
 					continue

@@ -24,13 +24,12 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -44,24 +43,12 @@ const (
 	tritonLabelServerID     = tritonLabel + "server_id"
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_triton_refresh_failures_total",
-			Help: "The number of Triton-SD scrape failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_triton_refresh_duration_seconds",
-			Help: "The duration of a Triton-SD refresh in seconds.",
-		})
-	// DefaultSDConfig is the default Triton SD configuration.
-	DefaultSDConfig = SDConfig{
-		Port:            9163,
-		RefreshInterval: model.Duration(60 * time.Second),
-		Version:         1,
-	}
-)
+// DefaultSDConfig is the default Triton SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:            9163,
+	RefreshInterval: model.Duration(60 * time.Second),
+	Version:         1,
+}
 
 // SDConfig is the configuration for Triton based service discovery.
 type SDConfig struct {
@@ -98,13 +85,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func init() {
-	prometheus.MustRegister(refreshFailuresCount)
-	prometheus.MustRegister(refreshDuration)
-}
-
 // DiscoveryResponse models a JSON response from the Triton discovery.
-type DiscoveryResponse struct {
+type discoveryResponse struct {
 	Containers []struct {
 		Groups      []string `json:"groups"`
 		ServerUUID  string   `json:"server_uuid"`
@@ -118,18 +100,14 @@ type DiscoveryResponse struct {
 // Discovery periodically performs Triton-SD requests. It implements
 // the Discoverer interface.
 type Discovery struct {
+	*refresh.Discovery
 	client   *http.Client
 	interval time.Duration
-	logger   log.Logger
 	sdConfig *SDConfig
 }
 
 // New returns a new Discovery which periodically refreshes its targets.
 func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
-	if logger == nil {
-		logger = log.NewNopLogger()
-	}
-
 	tls, err := config_util.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -144,60 +122,28 @@ func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
 	}
 	client := &http.Client{Transport: transport}
 
-	return &Discovery{
+	d := &Discovery{
 		client:   client,
 		interval: time.Duration(conf.RefreshInterval),
-		logger:   logger,
 		sdConfig: conf,
-	}, nil
+	}
+	d.Discovery = refresh.NewDiscovery(
+		logger,
+		"triton",
+		time.Duration(conf.RefreshInterval),
+		d.refresh,
+	)
+	return d, nil
 }
 
-// Run implements the Discoverer interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	defer close(ch)
-
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
-	// Get an initial set right away.
-	tg, err := d.refresh(ctx)
-	if err != nil {
-		level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
-	} else {
-		ch <- []*targetgroup.Group{tg}
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			tg, err := d.refresh(ctx)
-			if err != nil {
-				level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
-			} else {
-				ch <- []*targetgroup.Group{tg}
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err error) {
-	t0 := time.Now()
-	defer func() {
-		refreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			refreshFailuresCount.Inc()
-		}
-	}()
-
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var endpoint = fmt.Sprintf("https://%s:%d/v%d/discover", d.sdConfig.Endpoint, d.sdConfig.Port, d.sdConfig.Version)
 	if len(d.sdConfig.Groups) > 0 {
 		groups := url.QueryEscape(strings.Join(d.sdConfig.Groups, ","))
 		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
 	}
 
-	tg = &targetgroup.Group{
+	tg := &targetgroup.Group{
 		Source: endpoint,
 	}
 
@@ -218,7 +164,7 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 		return nil, errors.Wrap(err, "an error occurred when reading the response body")
 	}
 
-	dr := DiscoveryResponse{}
+	dr := discoveryResponse{}
 	err = json.Unmarshal(data, &dr)
 	if err != nil {
 		return nil, errors.Wrap(err, "an error occurred unmarshaling the discovery response json")
@@ -243,5 +189,5 @@ func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err err
 		tg.Targets = append(tg.Targets, labels)
 	}
 
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }

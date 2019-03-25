@@ -32,9 +32,9 @@ type Weighted struct {
 	waiters list.List
 }
 
-// Acquire acquires the semaphore with a weight of n, blocking only until ctx
-// is done. On success, returns nil. On failure, returns ctx.Err() and leaves
-// the semaphore unchanged.
+// Acquire acquires the semaphore with a weight of n, blocking until resources
+// are available or ctx is done. On success, returns nil. On failure, returns
+// ctx.Err() and leaves the semaphore unchanged.
 //
 // If ctx is already done, Acquire may still succeed without blocking.
 func (s *Weighted) Acquire(ctx context.Context, n int64) error {

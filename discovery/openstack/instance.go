@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -56,7 +55,7 @@ type InstanceDiscovery struct {
 }
 
 // NewInstanceDiscovery returns a new instance discovery.
-func NewInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
+func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
 	port int, region string, allTenants bool, l log.Logger) *InstanceDiscovery {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -70,18 +69,9 @@ type floatingIPKey struct {
 	fixed string
 }
 
-func (i *InstanceDiscovery) refresh(ctx context.Context) (*targetgroup.Group, error) {
-	var err error
-	t0 := time.Now()
-	defer func() {
-		refreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			refreshFailuresCount.Inc()
-		}
-	}()
-
+func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	i.provider.Context = ctx
-	err = openstack.Authenticate(i.provider, *i.authOpts)
+	err := openstack.Authenticate(i.provider, *i.authOpts)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not authenticate to OpenStack")
 	}
@@ -202,5 +192,5 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) (*targetgroup.Group, er
 		return nil, err
 	}
 
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }

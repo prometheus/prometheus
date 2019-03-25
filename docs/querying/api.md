@@ -694,6 +694,7 @@ It will optionally skip snapshotting data that is only present in the head block
 
 ```
 POST /api/v1/admin/tsdb/snapshot?skip_head=<bool>
+PUT /api/v1/admin/tsdb/snapshot?skip_head=<bool>
 ```
 
 ```json
@@ -705,10 +706,9 @@ $ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/snapshot
   }
 }
 ```
-
 The snapshot now exists at `<data-dir>/snapshots/20171210T211224Z-2be650b6d019eb54`
 
-*New in v2.1*
+*New in v2.1 and supports PUT from v2.9*
 
 ### Delete Series
 DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the Clean Tombstones endpoint.
@@ -717,6 +717,7 @@ If successful, a `204` is returned.
 
 ```
 POST /api/v1/admin/tsdb/delete_series
+PUT /api/v1/admin/tsdb/delete_series
 ```
 
 URL query parameters:
@@ -733,7 +734,7 @@ Example:
 $ curl -X POST \
   -g 'http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
-*New in v2.1*
+*New in v2.1 and supports PUT from v2.9*
 
 ### Clean Tombstones
 CleanTombstones removes the deleted data from disk and cleans up the existing tombstones. This can be used after deleting series to free up space.
@@ -742,6 +743,7 @@ If successful, a `204` is returned.
 
 ```
 POST /api/v1/admin/tsdb/clean_tombstones
+PUT /api/v1/admin/tsdb/clean_tombstones
 ```
 
 This takes no parameters or body.
@@ -750,4 +752,4 @@ This takes no parameters or body.
 $ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/clean_tombstones
 ```
 
-*New in v2.1*
+*New in v2.1 and supports PUT from v2.9*

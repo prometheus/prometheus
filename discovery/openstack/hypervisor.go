@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/gophercloud/gophercloud"
@@ -47,25 +46,16 @@ type HypervisorDiscovery struct {
 	port     int
 }
 
-// NewHypervisorDiscovery returns a new hypervisor discovery.
-func NewHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
+// newHypervisorDiscovery returns a new hypervisor discovery.
+func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
 	port int, region string, l log.Logger) *HypervisorDiscovery {
 	return &HypervisorDiscovery{provider: provider, authOpts: opts,
 		region: region, port: port, logger: l}
 }
 
-func (h *HypervisorDiscovery) refresh(ctx context.Context) (*targetgroup.Group, error) {
-	var err error
-	t0 := time.Now()
-	defer func() {
-		refreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			refreshFailuresCount.Inc()
-		}
-	}()
-
+func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	h.provider.Context = ctx
-	err = openstack.Authenticate(h.provider, *h.authOpts)
+	err := openstack.Authenticate(h.provider, *h.authOpts)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not authenticate to OpenStack")
 	}
@@ -104,5 +94,5 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) (*targetgroup.Group, 
 		return nil, err
 	}
 
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }
