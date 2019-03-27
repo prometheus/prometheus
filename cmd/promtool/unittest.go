@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -68,6 +69,7 @@ func ruleUnitTest(filename string) []error {
 	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
 		return []error{err}
 	}
+	resolveFilepaths(filepath.Dir(filename), &unitTestInp)
 
 	if unitTestInp.EvaluationInterval == 0 {
 		unitTestInp.EvaluationInterval = 1 * time.Minute
@@ -123,6 +125,16 @@ func (utf *unitTestFile) maxEvalTime() time.Duration {
 		}
 	}
 	return maxd
+}
+
+// resolveFilepaths joins all relative paths in a configuration
+// with a given base directory.
+func resolveFilepaths(baseDir string, utf *unitTestFile) {
+	for i, rf := range utf.RuleFiles {
+		if rf != "" && !filepath.IsAbs(rf) {
+			utf.RuleFiles[i] = filepath.Join(baseDir, rf)
+		}
+	}
 }
 
 // testGroup is a group of input series and tests associated with it.
