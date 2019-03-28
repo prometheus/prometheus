@@ -125,6 +125,12 @@ var (
 			Help: "Total number of samples rejected due to timestamp falling outside of the time bounds",
 		},
 	)
+	targetScrapeCacheFlushForced = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_cache_flush_forced_total",
+			Help: "How many times a scrape cache was flushed due to getting big while scrapes are failing.",
+		},
+	)
 )
 
 func init() {
@@ -140,6 +146,7 @@ func init() {
 	prometheus.MustRegister(targetScrapeSampleDuplicate)
 	prometheus.MustRegister(targetScrapeSampleOutOfOrder)
 	prometheus.MustRegister(targetScrapeSampleOutOfBounds)
+	prometheus.MustRegister(targetScrapeCacheFlushForced)
 }
 
 // scrapePool manages scrapes for sets of targets.
@@ -606,6 +613,9 @@ type scrapeLoop struct {
 type scrapeCache struct {
 	iter uint64 // Current scrape iteration.
 
+	// How many series and metadata entries there were at the last success.
+	successfulCount int
+
 	// Parsed string to an entry with information about the actual label set
 	// and its storage reference.
 	series map[string]*cacheEntry
@@ -643,8 +653,24 @@ func newScrapeCache() *scrapeCache {
 	}
 }
 
-func (c *scrapeCache) iterDone(cleanCache bool) {
-	if cleanCache {
+func (c *scrapeCache) iterDone(flushCache bool) {
+	c.metaMtx.Lock()
+	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
+	c.metaMtx.Unlock()
+
+	if flushCache {
+		c.successfulCount = count
+	} else if count > c.successfulCount*2+1000 {
+		// If a target had varying labels in scrapes that ultimately failed,
+		// the caches would grow indefinitely. Force a flush when this happens.
+		// We use the heuristic that this is a doubling of the cache size
+		// since the last scrape, and allow an additional 1000 in case
+		// initial scrapes all fail.
+		flushCache = true
+		targetScrapeCacheFlushForced.Inc()
+	}
+
+	if flushCache {
 		// All caches may grow over time through series churn
 		// or multiple string representations of the same metric. Clean up entries
 		// that haven't appeared in the last scrape.
@@ -1185,6 +1211,8 @@ loop:
 		return total, added, err
 	}
 
+	// Only perform cache cleaning if the scrape was not empty.
+	// An empty scrape (usually) is used to indicate a failed scrape.
 	sl.cache.iterDone(len(b) > 0)
 
 	return total, added, nil
