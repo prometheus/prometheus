@@ -643,28 +643,32 @@ func newScrapeCache() *scrapeCache {
 	}
 }
 
-func (c *scrapeCache) iterDone() {
-	// All caches may grow over time through series churn
-	// or multiple string representations of the same metric. Clean up entries
-	// that haven't appeared in the last scrape.
-	for s, e := range c.series {
-		if c.iter-e.lastIter > 2 {
-			delete(c.series, s)
+func (c *scrapeCache) iterDone(cleanCache bool) {
+	if cleanCache {
+		// All caches may grow over time through series churn
+		// or multiple string representations of the same metric. Clean up entries
+		// that haven't appeared in the last scrape.
+		for s, e := range c.series {
+			if c.iter != e.lastIter {
+				delete(c.series, s)
+			}
 		}
-	}
-	for s, iter := range c.droppedSeries {
-		if c.iter-*iter > 2 {
-			delete(c.droppedSeries, s)
+		for s, iter := range c.droppedSeries {
+			if c.iter != *iter {
+				delete(c.droppedSeries, s)
+			}
 		}
-	}
-	c.metaMtx.Lock()
-	for m, e := range c.metadata {
-		// Keep metadata around for 10 scrapes after its metric disappeared.
-		if c.iter-e.lastIter > 10 {
-			delete(c.metadata, m)
+		c.metaMtx.Lock()
+		for m, e := range c.metadata {
+			// Keep metadata around for 10 scrapes after its metric disappeared.
+			if c.iter-e.lastIter > 10 {
+				delete(c.metadata, m)
+			}
 		}
+		c.metaMtx.Unlock()
+
+		c.iter++
 	}
-	c.metaMtx.Unlock()
 
 	// Swap current and previous series.
 	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev
@@ -673,8 +677,6 @@ func (c *scrapeCache) iterDone() {
 	for k := range c.seriesCur {
 		delete(c.seriesCur, k)
 	}
-
-	c.iter++
 }
 
 func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
@@ -1110,7 +1112,6 @@ loop:
 
 			var ref uint64
 			ref, err = app.Add(lset, t, v)
-			// TODO(fabxc): also add a dropped-cache?
 			switch err {
 			case nil:
 			case storage.ErrOutOfOrderSample:
@@ -1184,7 +1185,7 @@ loop:
 		return total, added, err
 	}
 
-	sl.cache.iterDone()
+	sl.cache.iterDone(len(b) > 0)
 
 	return total, added, nil
 }

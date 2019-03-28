@@ -770,13 +770,92 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	// 1 successfully scraped sample, 1 stale marker after first fail, 4 report samples for
 	// each scrape successful or not.
 	if len(appender.result) != 14 {
-		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 22, len(appender.result))
+		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 14, len(appender.result))
 	}
 	if appender.result[0].v != 42.0 {
 		t.Fatalf("Appended first sample not as expected. Wanted: %f Got: %f", appender.result[0].v, 42.0)
 	}
 	if !value.IsStaleNaN(appender.result[5].v) {
 		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[5].v))
+	}
+}
+
+func TestScrapeLoopCache(t *testing.T) {
+	s := testutil.NewStorage(t)
+	defer s.Close()
+
+	sapp, err := s.Appender()
+	if err != nil {
+		t.Error(err)
+	}
+	appender := &collectResultAppender{next: sapp}
+	var (
+		signal  = make(chan struct{})
+		scraper = &testScraper{}
+		app     = func() storage.Appender { return appender }
+	)
+	defer close(signal)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+		nil,
+		0,
+		true,
+	)
+
+	numScrapes := 0
+
+	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		if numScrapes == 1 || numScrapes == 2 {
+			if _, ok := sl.cache.series["metric_a"]; !ok {
+				t.Errorf("metric_a missing from cache after scrape %d", numScrapes)
+			}
+			if _, ok := sl.cache.series["metric_b"]; !ok {
+				t.Errorf("metric_b missing from cache after scrape %d", numScrapes)
+			}
+		} else if numScrapes == 3 {
+			if _, ok := sl.cache.series["metric_a"]; !ok {
+				t.Errorf("metric_a missing from cache after scrape %d", numScrapes)
+			}
+			if _, ok := sl.cache.series["metric_b"]; ok {
+				t.Errorf("metric_b present in cache after scrape %d", numScrapes)
+			}
+		}
+
+		numScrapes++
+
+		if numScrapes == 1 {
+			w.Write([]byte("metric_a 42\nmetric_b 43\n"))
+			return nil
+		} else if numScrapes == 3 {
+			w.Write([]byte("metric_a 44\n"))
+			return nil
+		} else if numScrapes == 4 {
+			cancel()
+		}
+		return fmt.Errorf("scrape failed")
+	}
+
+	go func() {
+		sl.run(10*time.Millisecond, time.Hour, nil)
+		signal <- struct{}{}
+	}()
+
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Scrape wasn't stopped.")
+	}
+
+	// 1 successfully scraped sample, 1 stale marker after first fail, 4 report samples for
+	// each scrape successful or not.
+	if len(appender.result) != 22 {
+		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 22, len(appender.result))
 	}
 }
 
