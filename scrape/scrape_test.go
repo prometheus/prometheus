@@ -859,6 +859,66 @@ func TestScrapeLoopCache(t *testing.T) {
 	}
 }
 
+func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
+	s := testutil.NewStorage(t)
+	defer s.Close()
+
+	sapp, err := s.Appender()
+	if err != nil {
+		t.Error(err)
+	}
+	appender := &collectResultAppender{next: sapp}
+	var (
+		signal  = make(chan struct{})
+		scraper = &testScraper{}
+		app     = func() storage.Appender { return appender }
+	)
+	defer close(signal)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+		nil,
+		0,
+		true,
+	)
+
+	numScrapes := 0
+
+	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		numScrapes++
+		if numScrapes < 5 {
+			s := ""
+			for i := 0; i < 500; i++ {
+				s = fmt.Sprintf("%smetric_%d_%d 42\n", s, i, numScrapes)
+			}
+			w.Write([]byte(fmt.Sprintf(s + "&")))
+		} else {
+			cancel()
+		}
+		return nil
+	}
+
+	go func() {
+		sl.run(10*time.Millisecond, time.Hour, nil)
+		signal <- struct{}{}
+	}()
+
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Scrape wasn't stopped.")
+	}
+
+	if len(sl.cache.series) > 2000 {
+		t.Fatalf("More than 2000 series cached. Got: %d", len(sl.cache.series))
+	}
+}
+
 func TestScrapeLoopAppend(t *testing.T) {
 
 	tests := []struct {
