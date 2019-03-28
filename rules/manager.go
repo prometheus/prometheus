@@ -899,9 +899,12 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 	defer m.mtx.RUnlock()
 
 	alerts := []*AlertingRule{}
-	for _, rule := range m.Rules() {
-		if alertingRule, ok := rule.(*AlertingRule); ok {
-			alerts = append(alerts, alertingRule)
+	for _, g := range m.groups {
+		for _, rule := range g.rules {
+			if alertingRule, ok := rule.(*AlertingRule); ok {
+				alertingRule.gname = g.name
+				alerts = append(alerts, alertingRule)
+			}
 		}
 	}
 	return alerts
