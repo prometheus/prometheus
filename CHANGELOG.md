@@ -1,3 +1,7 @@
+## 2.8.1 / 2019-03-28
+
+* [BUGFIX] Display the job labels in `/targets` which was removed accidentally. #5406
+
 ## 2.8.0 / 2019-03-12
 
 This release uses Write-Ahead Logging (WAL) for the remote_write API. This currently causes a slight increase in memory usage, which will be addressed in future releases.

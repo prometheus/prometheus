@@ -766,12 +766,6 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"pageTitle":    func() string { return opts.PageTitle },
 		"buildVersion": func() string { return opts.Version.Revision },
-		"stripLabels": func(lset map[string]string, labels ...string) map[string]string {
-			for _, ln := range labels {
-				delete(lset, ln)
-			}
-			return lset
-		},
 		"globalURL": func(u *url.URL) *url.URL {
 			host, port, err := net.SplitHostPort(u.Host)
 			if err != nil {
