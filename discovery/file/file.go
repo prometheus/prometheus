@@ -290,7 +290,11 @@ func (d *Discovery) stop() {
 	// Closing the watcher will deadlock unless all events and errors are drained.
 	go func() {
 		for {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
 			select {
+			case <-ticker.C:
+				level.Info(d.logger).Log("msg", "Draining watcher events...", "paths", fmt.Sprintf("%v", d.paths))
 			case <-d.watcher.Errors:
 			case <-d.watcher.Events:
 				// Drain all events and errors.
