@@ -111,8 +111,6 @@ func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
 type AlertingRule struct {
 	// The name of the alert.
 	name string
-	//The name of the alerts group
-	gname string
 	// The vector expression from which to generate alerts.
 	vector promql.Expr
 	// The duration for which a labelset needs to persist in the expression
@@ -172,11 +170,6 @@ func NewAlertingRule(
 // Name returns the name of the alerting rule.
 func (r *AlertingRule) Name() string {
 	return r.name
-}
-
-// Gname returns the name of the alerts group.
-func (r *AlertingRule) Gname() string {
-	return r.gname
 }
 
 // SetLastError sets the current error seen by the alerting rule.
