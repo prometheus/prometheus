@@ -497,19 +497,19 @@ func (h *Handler) Run(ctx context.Context) error {
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
-	alerts := h.ruleManager.AlertingRules()
-	alertsSorter := byAlertStateAndNameSorter{alerts: alerts}
-	sort.Sort(alertsSorter)
+	alerts := h.ruleManager.AlertingRulesbyGroup()
+	for _, g := range alerts.Groups{
+		alertsSorter := byAlertStateAndNameSorter{alerts: g.Rules}
+		sort.Sort(alertsSorter)
 
-	alertStatus := AlertStatus{
-		AlertingRules: alertsSorter.alerts,
-		AlertStateToRowClass: map[rules.AlertState]string{
-			rules.StateInactive: "success",
-			rules.StatePending:  "warning",
-			rules.StateFiring:   "danger",
-		},
-	}
-	h.executeTemplate(w, "alerts.html", alertStatus)
+		g.Rules = alertsSorter.alerts
+		g.AlertStateToRowClass = map[rules.AlertState]string{
+				rules.StateInactive: "success",
+				rules.StatePending:  "warning",
+				rules.StateFiring:   "danger",
+			}
+		}
+	h.executeTemplate(w, "alerts.html", alerts)
 }
 
 func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {

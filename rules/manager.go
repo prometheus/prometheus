@@ -899,15 +899,40 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 	defer m.mtx.RUnlock()
 
 	alerts := []*AlertingRule{}
-	for _, g := range m.groups {
-		for _, rule := range g.rules {
-			if alertingRule, ok := rule.(*AlertingRule); ok {
-				alertingRule.gname = g.name
-				alerts = append(alerts, alertingRule)
-			}
+	for _, rule := range m.Rules() {
+		if alertingRule, ok := rule.(*AlertingRule); ok {
+			alerts = append(alerts, alertingRule)
 		}
 	}
 	return alerts
+}
+
+// AlertingRules returns the list of the manager's alerting rules organised by group.
+func (m *Manager) AlertingRulesbyGroup() *AlertingGroups {
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+
+	alerts := &AlertingGroups{}
+	for _, g := range m.groups {
+		group := &AlertingGroup{Name: g.name}
+		for _, rule := range g.rules {
+			if alertingRule, ok := rule.(*AlertingRule); ok {
+				group.Rules = append(group.Rules, alertingRule)
+			}
+		}
+		alerts.Groups = append(alerts.Groups, group)
+	}
+	return alerts
+}
+
+type AlertingGroups struct {
+	Groups []*AlertingGroup
+}
+
+type AlertingGroup struct {
+	Name                 string
+	Rules                []*AlertingRule
+	AlertStateToRowClass map[AlertState]string
 }
 
 // Describe implements prometheus.Collector.
