@@ -1,6 +1,6 @@
 ## 2.8.1 / 2019-03-28
 
-* [BUGFIX] Display the job labels in `/targets` which was removed accidently. #5406
+* [BUGFIX] Display the job labels in `/targets` which was removed accidentally. #5406
 
 ## 2.8.0 / 2019-03-12
 
