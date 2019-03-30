@@ -231,6 +231,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/label/:name/values", wrap(api.labelValues))
 
 	r.Get("/series", wrap(api.series))
+	r.Post("/series", wrap(api.series))
 	r.Del("/series", wrap(api.dropSeries))
 
 	r.Get("/targets", wrap(api.targets))

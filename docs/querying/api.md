@@ -201,10 +201,11 @@ $ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10
 
 ### Finding series by label matchers
 
-The following endpoint returns the list of time series that match a certain label set.
+The following endpoints return the list of time series that match a certain label set.
 
 ```
 GET /api/v1/series
+POST /api/v1/series
 ```
 
 URL query parameters:
@@ -214,6 +215,10 @@ URL query parameters:
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
 
+You can URL-encode these parameters directly in the request body by using the `POST` method and
+`Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
+or dynamic number of series selectors that may breach server-side URL character limits.
+
 The `data` section of the query result consists of a list of objects that
 contain the label name/value pairs which identify each series.
 
@@ -221,7 +226,7 @@ The following example returns all series that match either of the selectors
 `up` or `process_start_time_seconds{job="prometheus"}`:
 
 ```json
-$ curl -g 'http://localhost:9090/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
+$ curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode='match[]=up' --data-urlencode='match[]=process_start_time_seconds{job="prometheus"}'
 {
    "status" : "success",
    "data" : [
