@@ -56,12 +56,12 @@ type HealthStatus string
 const (
 	// Possible values for ErrorType.
 	ErrBadData     ErrorType = "bad_data"
-	ErrTimeout               = "timeout"
-	ErrCanceled              = "canceled"
-	ErrExec                  = "execution"
-	ErrBadResponse           = "bad_response"
-	ErrServer                = "server_error"
-	ErrClient                = "client_error"
+	ErrTimeout     ErrorType = "timeout"
+	ErrCanceled    ErrorType = "canceled"
+	ErrExec        ErrorType = "execution"
+	ErrBadResponse ErrorType = "bad_response"
+	ErrServer      ErrorType = "server_error"
+	ErrClient      ErrorType = "client_error"
 
 	// Possible values for HealthStatus.
 	HealthGood    HealthStatus = "up"
