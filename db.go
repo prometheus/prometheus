@@ -391,7 +391,7 @@ func (a dbAppender) Commit() error {
 
 	// We could just run this check every few minutes practically. But for benchmarks
 	// and high frequency use cases this is the safer way.
-	if a.db.head.MaxTime()-a.db.head.MinTime() > a.db.head.chunkRange/2*3 {
+	if a.db.head.compactable() {
 		select {
 		case a.db.compactc <- struct{}{}:
 		default:
@@ -418,13 +418,11 @@ func (db *DB) compact() (err error) {
 			return nil
 		default:
 		}
-		// The head has a compactable range if 1.5 level 0 ranges are between the oldest
-		// and newest timestamp. The 0.5 acts as a buffer of the appendable window.
-		if db.head.MaxTime()-db.head.MinTime() <= db.opts.BlockRanges[0]/2*3 {
+		if !db.head.compactable() {
 			break
 		}
 		mint := db.head.MinTime()
-		maxt := rangeForTimestamp(mint, db.opts.BlockRanges[0])
+		maxt := rangeForTimestamp(mint, db.head.chunkRange)
 
 		// Wrap head into a range that bounds all reads to it.
 		head := &rangeHead{

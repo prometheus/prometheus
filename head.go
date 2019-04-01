@@ -1020,6 +1020,13 @@ func (h *Head) MaxTime() int64 {
 	return atomic.LoadInt64(&h.maxTime)
 }
 
+// compactable returns whether the head has a compactable range.
+// The head has a compactable range when the head time range is 1.5 times the chunk range.
+// The 0.5 acts as a buffer of the appendable window.
+func (h *Head) compactable() bool {
+	return h.MaxTime()-h.MinTime() > h.chunkRange/2*3
+}
+
 // Close flushes the WAL and closes the head.
 func (h *Head) Close() error {
 	if h.wal == nil {
