@@ -88,7 +88,7 @@ The current server time is used if the `time` parameter is omitted.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
-or dynamic number of series selectors that may breach server-side URL character limits.
+query that may breach server-side URL character limits.
 
 The `data` section of the query result has the following format:
 
@@ -154,7 +154,7 @@ URL query parameters:
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
-or dynamic number of series selectors that may breach server-side URL character limits.
+query that may breach server-side URL character limits.
 
 The `data` section of the query result has the following format:
 
