@@ -408,13 +408,16 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 	}
 
 	var (
-		bs []ByteSlice
-		cs []io.Closer
+		bs   []ByteSlice
+		cs   []io.Closer
+		merr tsdb_errors.MultiError
 	)
 	for _, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
-			return nil, errors.Wrapf(err, "mmap files")
+			merr.Add(errors.Wrap(err, "mmap files"))
+			merr.Add(closeAll(cs))
+			return nil, merr
 		}
 		cs = append(cs, f)
 		bs = append(bs, realByteSlice(f.Bytes()))
@@ -422,7 +425,6 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 
 	reader, err := newReader(bs, cs, pool)
 	if err != nil {
-		var merr tsdb_errors.MultiError
 		merr.Add(err)
 		merr.Add(closeAll(cs))
 		return nil, merr
