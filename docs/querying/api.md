@@ -201,7 +201,7 @@ $ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10
 
 ### Finding series by label matchers
 
-The following endpoints return the list of time series that match a certain label set.
+The following endpoint returns the list of time series that match a certain label set.
 
 ```
 GET /api/v1/series
