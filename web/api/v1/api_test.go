@@ -835,7 +835,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 
 	methods := func(f apiFunc) []string {
 		fp := reflect.ValueOf(f).Pointer()
-		if fp == reflect.ValueOf(api.query).Pointer() || fp == reflect.ValueOf(api.queryRange).Pointer() {
+		if fp == reflect.ValueOf(api.query).Pointer() || fp == reflect.ValueOf(api.queryRange).Pointer() || fp == reflect.ValueOf(api.series).Pointer() {
 			return []string{http.MethodGet, http.MethodPost}
 		}
 		return []string{http.MethodGet}
