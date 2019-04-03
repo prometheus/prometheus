@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/tsdb/errors"
 	"github.com/prometheus/tsdb/fileutil"
+	_ "github.com/prometheus/tsdb/goversion"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/wal"
 	"golang.org/x/sync/errgroup"

@@ -192,7 +192,7 @@ func NewWriter(fn string) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := fileutil.Fsync(df); err != nil {
+	if err := df.Sync(); err != nil {
 		return nil, errors.Wrap(err, "sync dir")
 	}
 
@@ -554,7 +554,7 @@ func (w *Writer) Close() error {
 	if err := w.fbuf.Flush(); err != nil {
 		return err
 	}
-	if err := fileutil.Fsync(w.f); err != nil {
+	if err := w.f.Sync(); err != nil {
 		return err
 	}
 	return w.f.Close()
