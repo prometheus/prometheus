@@ -216,7 +216,7 @@ func (w *WALWatcher) run() error {
 
 // findSegmentForIndex finds the first segment greater than or equal to index.
 func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
-	refs, err := w.segments()
+	refs, err := w.segments(w.walDir)
 	if err != nil {
 		return -1, nil
 	}
@@ -231,7 +231,7 @@ func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
 }
 
 func (w *WALWatcher) firstAndLast() (int, int, error) {
-	refs, err := w.segments()
+	refs, err := w.segments(w.walDir)
 	if err != nil {
 		return -1, -1, nil
 	}
@@ -244,8 +244,8 @@ func (w *WALWatcher) firstAndLast() (int, int, error) {
 
 // Copied from tsdb/wal/wal.go so we do not have to open a WAL.
 // Plan is to move WAL watcher to TSDB and dedupe these implementations.
-func (w *WALWatcher) segments() ([]int, error) {
-	files, err := fileutil.ReadDir(w.walDir)
+func (w *WALWatcher) segments(dir string) ([]int, error) {
+	files, err := fileutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -476,27 +476,37 @@ func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 		return errors.Wrap(err, "checkpointNum")
 	}
 
-	sr, err := wal.NewSegmentsReader(checkpointDir)
+	// Ensure we read the whole contents of every segment in the checkpoint dir.
+	segs, err := w.segments(checkpointDir)
 	if err != nil {
-		return errors.Wrap(err, "NewSegmentsReader")
+		return errors.Wrap(err, "Unable to get segments checkpoint dir")
 	}
-	defer sr.Close()
+	for _, seg := range segs {
+		size, err := getSegmentSize(checkpointDir, seg)
+		if err != nil {
+			return errors.Wrap(err, "getSegmentSize")
+		}
 
-	size, err := getCheckpointSize(checkpointDir)
-	if err != nil {
-		return errors.Wrap(err, "getCheckpointSize")
+		sr, err := wal.OpenReadSegment(wal.SegmentName(checkpointDir, seg))
+		if err != nil {
+			return errors.Wrap(err, "unable to open segment")
+		}
+		defer sr.Close()
+
+		r := wal.NewLiveReader(w.logger, sr)
+		if err := w.readSegment(r, index, false); err != io.EOF && err != nil {
+			sr.Close()
+			return errors.Wrap(err, "readSegment")
+		}
+
+		if r.Offset() != size {
+			sr.Close()
+			return fmt.Errorf("readCheckpoint wasn't able to read all data from the checkpoint %s/%08d, size: %d, totalRead: %d", checkpointDir, seg, size, r.Offset())
+		}
+		sr.Close()
 	}
 
-	r := wal.NewLiveReader(w.logger, sr)
-	if err := w.readSegment(r, index, false); err != io.EOF {
-		return errors.Wrap(err, "readSegment")
-	}
-
-	if r.Offset() != size {
-		level.Warn(w.logger).Log("msg", "may not have read all data from checkpoint", "totalRead", r.Offset(), "size", size)
-	}
 	level.Debug(w.logger).Log("msg", "read series references from checkpoint", "checkpoint", checkpointDir)
-
 	return nil
 }
 

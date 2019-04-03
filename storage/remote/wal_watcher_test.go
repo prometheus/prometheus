@@ -438,3 +438,21 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 	// or modify the Equals to Assert(len(wt.seriesLabels) < seriesCount*10)
 	testutil.Equals(t, 6, wt.checkNumLabels())
 }
+
+func TestReadCheckpoint(t *testing.T) {
+	dir := os.Getenv("WALDIR")
+	if dir == "" {
+		return
+	}
+
+	wt := newWriteToMock()
+	watcher := NewWALWatcher(nil, "", wt, dir)
+	watcher.maxSegment = -1
+
+	// Backfill from the checkpoint first if it exists.
+	lastCheckpoint, _, err := tsdb.LastCheckpoint(watcher.walDir)
+	testutil.Ok(t, err)
+
+	err = watcher.readCheckpoint(lastCheckpoint)
+	testutil.Ok(t, err)
+}
