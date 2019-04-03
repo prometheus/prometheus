@@ -495,15 +495,12 @@ func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 
 		r := wal.NewLiveReader(w.logger, sr)
 		if err := w.readSegment(r, index, false); err != io.EOF && err != nil {
-			sr.Close()
 			return errors.Wrap(err, "readSegment")
 		}
 
 		if r.Offset() != size {
-			sr.Close()
 			return fmt.Errorf("readCheckpoint wasn't able to read all data from the checkpoint %s/%08d, size: %d, totalRead: %d", checkpointDir, seg, size, r.Offset())
 		}
-		sr.Close()
 	}
 
 	level.Debug(w.logger).Log("msg", "read series references from checkpoint", "checkpoint", checkpointDir)
@@ -523,26 +520,6 @@ func checkpointNum(dir string) (int, error) {
 	}
 
 	return result, nil
-}
-
-func getCheckpointSize(dir string) (int64, error) {
-	i := int64(0)
-	segs, err := fileutil.ReadDir(dir)
-	if err != nil {
-		return 0, err
-	}
-	for _, fn := range segs {
-		num, err := strconv.Atoi(fn)
-		if err != nil {
-			return i, err
-		}
-		sz, err := getSegmentSize(dir, num)
-		if err != nil {
-			return i, err
-		}
-		i += sz
-	}
-	return i, nil
 }
 
 // Get size of segment.
