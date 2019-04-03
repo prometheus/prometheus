@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/encoding"
+	tsdb_errors "github.com/prometheus/tsdb/errors"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 )
@@ -625,7 +626,15 @@ func NewFileReader(path string) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newReader(realByteSlice(f.Bytes()), f)
+	r, err := newReader(realByteSlice(f.Bytes()), f)
+	if err != nil {
+		var merr tsdb_errors.MultiError
+		merr.Add(err)
+		merr.Add(f.Close())
+		return nil, merr
+	}
+
+	return r, nil
 }
 
 func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
