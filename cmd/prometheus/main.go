@@ -35,14 +35,14 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/oklog/pkg/group"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/version"
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
 	promlogflag "github.com/prometheus/common/promlog/flag"
@@ -270,18 +270,21 @@ func main() {
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
 	{ // Time retention settings.
-		if oldFlagRetentionDuration != 0 {
-			level.Warn(logger).Log("deprecation_notice", "'storage.tsdb.retention' flag is deprecated use 'storage.tsdb.retention.time' instead.")
-			cfg.tsdb.RetentionDuration = oldFlagRetentionDuration
+		setRetentionDuration := func(value model.Duration) { // Set retention duration with consistency between cfg and kingpin flag values
+			cfg.tsdb.RetentionDuration = value
+			newFlagRetentionDuration = value
+			oldFlagRetentionDuration = value
 		}
 
+		switch {
 		// When the new flag is set it takes precedence.
-		if newFlagRetentionDuration != 0 {
-			cfg.tsdb.RetentionDuration = newFlagRetentionDuration
-		}
-
-		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 {
-			cfg.tsdb.RetentionDuration = defaultRetentionDuration
+		case newFlagRetentionDuration != 0:
+			setRetentionDuration(newFlagRetentionDuration)
+		case oldFlagRetentionDuration != 0:
+			level.Warn(logger).Log("deprecation_notice", "'storage.tsdb.retention' flag is deprecated use 'storage.tsdb.retention.time' instead.")
+			setRetentionDuration(oldFlagRetentionDuration)
+		case cfg.tsdb.MaxBytes == 0:
+			setRetentionDuration(defaultRetentionDuration)
 			level.Info(logger).Log("msg", "no time or size retention was set so using the default time retention", "duration", defaultRetentionDuration)
 		}
 
@@ -296,7 +299,7 @@ func main() {
 		}
 	}
 
-	{ // Max block size  settings.
+	{ // Max block size settings.
 		if cfg.tsdb.MaxBlockDuration == 0 {
 			maxBlockDuration, err := model.ParseDuration("31d")
 			if err != nil {
