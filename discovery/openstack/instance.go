@@ -27,7 +27,6 @@ import (
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -35,13 +34,15 @@ import (
 const (
 	openstackLabelPrefix         = model.MetaLabelPrefix + "openstack_"
 	openstackLabelAddressPool    = openstackLabelPrefix + "address_pool"
+	openstackLabelInstanceFlavor = openstackLabelPrefix + "instance_flavor"
 	openstackLabelInstanceID     = openstackLabelPrefix + "instance_id"
 	openstackLabelInstanceName   = openstackLabelPrefix + "instance_name"
 	openstackLabelInstanceStatus = openstackLabelPrefix + "instance_status"
-	openstackLabelInstanceFlavor = openstackLabelPrefix + "instance_flavor"
-	openstackLabelPublicIP       = openstackLabelPrefix + "public_ip"
 	openstackLabelPrivateIP      = openstackLabelPrefix + "private_ip"
+	openstackLabelProjectID      = openstackLabelPrefix + "project_id"
+	openstackLabelPublicIP       = openstackLabelPrefix + "public_ip"
 	openstackLabelTagPrefix      = openstackLabelPrefix + "tag_"
+	openstackLabelUserID         = openstackLabelPrefix + "user_id"
 )
 
 // InstanceDiscovery discovers OpenStack instances.
@@ -134,6 +135,8 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 				openstackLabelInstanceID:     model.LabelValue(s.ID),
 				openstackLabelInstanceStatus: model.LabelValue(s.Status),
 				openstackLabelInstanceName:   model.LabelValue(s.Name),
+				openstackLabelProjectID:      model.LabelValue(s.TenantID),
+				openstackLabelUserID:         model.LabelValue(s.UserID),
 			}
 
 			id, ok := s.Flavor["id"].(string)
