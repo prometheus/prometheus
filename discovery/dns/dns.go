@@ -106,6 +106,8 @@ type Discovery struct {
 	port   int
 	qtype  uint16
 	logger log.Logger
+
+	lookupFn func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error)
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
@@ -124,10 +126,11 @@ func NewDiscovery(conf SDConfig, logger log.Logger) *Discovery {
 		qtype = dns.TypeSRV
 	}
 	d := &Discovery{
-		names:  conf.Names,
-		qtype:  qtype,
-		port:   conf.Port,
-		logger: logger,
+		names:    conf.Names,
+		qtype:    qtype,
+		port:     conf.Port,
+		logger:   logger,
+		lookupFn: lookupWithSearchPath,
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
@@ -142,7 +145,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var (
 		wg  sync.WaitGroup
 		ch  = make(chan *targetgroup.Group)
-		tgs = make([]*targetgroup.Group, len(d.names))
+		tgs = make([]*targetgroup.Group, 0, len(d.names))
 	)
 
 	wg.Add(len(d.names))
@@ -167,7 +170,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 }
 
 func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targetgroup.Group) error {
-	response, err := lookupWithSearchPath(name, d.qtype, d.logger)
+	response, err := d.lookupFn(name, d.qtype, d.logger)
 	dnsSDLookupsCount.Inc()
 	if err != nil {
 		dnsSDLookupFailuresCount.Inc()
