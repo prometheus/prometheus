@@ -503,14 +503,16 @@ interface.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_openstack_address_pool`: the pool of the private IP.
+* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
 * `__meta_openstack_instance_name`: the OpenStack instance name.
 * `__meta_openstack_instance_status`: the status of the OpenStack instance.
-* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
-* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
 * `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
-* `__meta_openstack_address_pool`: the pool of the private IP.
+* `__meta_openstack_project_id`: the project (tenant) owning this instance.
+* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
 * `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
+* `__meta_openstack_user_id`: the user account owning the tenant.
 
 See below for the configuration options for OpenStack discovery:
 

@@ -84,6 +84,8 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.32"),
 			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.2"),
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
+			"__meta_openstack_project_id":      model.LabelValue("fcad67a6189847c4aecfa3c81a05783b"),
+			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
 		},
 		{
 			"__address__":                      model.LabelValue("10.0.0.31:0"),
@@ -93,6 +95,8 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_instance_name":   model.LabelValue("derp"),
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.31"),
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
+			"__meta_openstack_project_id":      model.LabelValue("fcad67a6189847c4aecfa3c81a05783b"),
+			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
 		},
 		{
 			"__address__":                      model.LabelValue("10.0.0.33:0"),
@@ -103,6 +107,8 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.33"),
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
 			"__meta_openstack_tag_env":         model.LabelValue("prod"),
+			"__meta_openstack_project_id":      model.LabelValue("fcad67a6189847c4aecfa3c81a05783b"),
+			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
 		},
 		{
 			"__address__":                      model.LabelValue("10.0.0.34:0"),
@@ -114,6 +120,8 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
 			"__meta_openstack_tag_env":         model.LabelValue("prod"),
 			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.4"),
+			"__meta_openstack_project_id":      model.LabelValue("fcad67a6189847c4aecfa3c81a05783b"),
+			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
