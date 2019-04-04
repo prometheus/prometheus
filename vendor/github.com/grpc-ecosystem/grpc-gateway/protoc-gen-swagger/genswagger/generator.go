@@ -9,8 +9,12 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
+	pbdescriptor "github.com/golang/protobuf/descriptor"
 	"github.com/golang/protobuf/proto"
+	protocdescriptor "github.com/golang/protobuf/protoc-gen-go/descriptor"
 	plugin "github.com/golang/protobuf/protoc-gen-go/plugin"
+	"github.com/golang/protobuf/ptypes/any"
+	"github.com/grpc-ecosystem/grpc-gateway/internal"
 	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor"
 	gen "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/generator"
 	swagger_options "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options"
@@ -47,6 +51,9 @@ func mergeTargetFile(targets []*wrapper, mergeFileName string) *wrapper {
 			for k, v := range f.swagger.Definitions {
 				mergedTarget.swagger.Definitions[k] = v
 			}
+			for k, v := range f.swagger.StreamDefinitions {
+				mergedTarget.swagger.StreamDefinitions[k] = v
+			}
 			for k, v := range f.swagger.Paths {
 				mergedTarget.swagger.Paths[k] = v
 			}
@@ -60,11 +67,13 @@ func mergeTargetFile(targets []*wrapper, mergeFileName string) *wrapper {
 }
 
 // convert swagger file obj to plugin.CodeGeneratorResponse_File
-func encodeSwagger(file *wrapper) *plugin.CodeGeneratorResponse_File {
+func encodeSwagger(file *wrapper) (*plugin.CodeGeneratorResponse_File, error) {
 	var formatted bytes.Buffer
 	enc := json.NewEncoder(&formatted)
 	enc.SetIndent("", "  ")
-	enc.Encode(*file.swagger)
+	if err := enc.Encode(*file.swagger); err != nil {
+		return nil, err
+	}
 	name := file.fileName
 	ext := filepath.Ext(name)
 	base := strings.TrimSuffix(name, ext)
@@ -72,7 +81,7 @@ func encodeSwagger(file *wrapper) *plugin.CodeGeneratorResponse_File {
 	return &plugin.CodeGeneratorResponse_File{
 		Name:    proto.String(output),
 		Content: proto.String(formatted.String()),
-	}
+	}, nil
 }
 
 func (g *generator) Generate(targets []*descriptor.File) ([]*plugin.CodeGeneratorResponse_File, error) {
@@ -120,13 +129,43 @@ func (g *generator) Generate(targets []*descriptor.File) ([]*plugin.CodeGenerato
 
 	if g.reg.IsAllowMerge() {
 		targetSwagger := mergeTargetFile(swaggers, g.reg.GetMergeFileName())
-		files = append(files, encodeSwagger(targetSwagger))
+		f, err := encodeSwagger(targetSwagger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode swagger for %s: %s", g.reg.GetMergeFileName(), err)
+		}
+		files = append(files, f)
 		glog.V(1).Infof("New swagger file will emit")
 	} else {
 		for _, file := range swaggers {
-			files = append(files, encodeSwagger(file))
+			f, err := encodeSwagger(file)
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode swagger for %s: %s", file.fileName, err)
+			}
+			files = append(files, f)
 			glog.V(1).Infof("New swagger file will emit")
 		}
 	}
 	return files, nil
+}
+
+//AddStreamError Adds grpc.gateway.runtime.StreamError and google.protobuf.Any to registry for stream responses
+func AddStreamError(reg *descriptor.Registry) error {
+	//load internal protos
+	any := fileDescriptorProtoForMessage(&any.Any{})
+	streamError := fileDescriptorProtoForMessage(&internal.StreamError{})
+	if err := reg.Load(&plugin.CodeGeneratorRequest{
+		ProtoFile: []*protocdescriptor.FileDescriptorProto{
+			any,
+			streamError,
+		},
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func fileDescriptorProtoForMessage(msg pbdescriptor.Message) *protocdescriptor.FileDescriptorProto {
+	fdp, _ := pbdescriptor.ForMessage(msg)
+	fdp.SourceCodeInfo = &protocdescriptor.SourceCodeInfo{}
+	return fdp
 }

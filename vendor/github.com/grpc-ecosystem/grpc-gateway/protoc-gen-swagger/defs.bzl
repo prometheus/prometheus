@@ -38,9 +38,10 @@ def _run_proto_gen_swagger(ctx, direct_proto_srcs, transitive_proto_srcs, action
             sibling = proto,
         )
 
-        inputs = direct_proto_srcs + transitive_proto_srcs + [protoc_gen_swagger]
+        inputs = direct_proto_srcs + transitive_proto_srcs
+        tools = [protoc_gen_swagger]
 
-        options = ["logtostderr=true"]
+        options = ["logtostderr=true", "allow_repeated_fields_in_body=true"]
         if grpc_api_configuration:
             options.append("grpc_api_configuration=%s" % grpc_api_configuration.path)
             inputs.append(grpc_api_configuration)
@@ -50,12 +51,13 @@ def _run_proto_gen_swagger(ctx, direct_proto_srcs, transitive_proto_srcs, action
         args = actions.args()
         args.add("--plugin=%s" % protoc_gen_swagger.path)
         args.add("--swagger_out=%s:%s" % (",".join(options), ctx.bin_dir.path))
-        args.add(["-I%s" % include for include in includes])
+        args.add_all(["-I%s" % include for include in includes])
         args.add(proto.path)
 
         actions.run(
             executable = protoc,
             inputs = inputs,
+            tools = tools,
             outputs = [swagger_file],
             arguments = [args],
         )
@@ -65,10 +67,10 @@ def _run_proto_gen_swagger(ctx, direct_proto_srcs, transitive_proto_srcs, action
     return swagger_files
 
 def _proto_gen_swagger_impl(ctx):
-    proto = ctx.attr.proto.proto
+    proto = ctx.attr.proto[ProtoInfo]
     grpc_api_configuration = ctx.file.grpc_api_configuration
 
-    return struct(
+    return [DefaultInfo(
         files = depset(
             _run_proto_gen_swagger(
                 ctx,
@@ -80,7 +82,7 @@ def _proto_gen_swagger_impl(ctx):
                 grpc_api_configuration = grpc_api_configuration,
             ),
         ),
-    )
+    )]
 
 protoc_gen_swagger = rule(
     attrs = {

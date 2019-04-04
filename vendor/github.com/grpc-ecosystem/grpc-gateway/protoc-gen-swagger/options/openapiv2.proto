@@ -169,8 +169,7 @@ message JSONSchema {
   string title = 5;
   string description = 6;
   string default = 7;
-  // field 8 is reserved for 'readOnly', which has an OpenAPI v2-specific meaning and is defined there.
-  reserved 8;
+  bool read_only = 8;
   // field 9 is reserved for 'examples', which is omitted from OpenAPI v2 in favor of 'example' field.
   reserved 9;
   double multiple_of = 10;

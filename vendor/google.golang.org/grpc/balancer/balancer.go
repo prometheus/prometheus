@@ -28,6 +28,7 @@ import (
 
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/resolver"
 )
@@ -47,8 +48,20 @@ func Register(b Builder) {
 	m[strings.ToLower(b.Name())] = b
 }
 
+// unregisterForTesting deletes the balancer with the given name from the
+// balancer map.
+//
+// This function is not thread-safe.
+func unregisterForTesting(name string) {
+	delete(m, name)
+}
+
+func init() {
+	internal.BalancerUnregister = unregisterForTesting
+}
+
 // Get returns the resolver builder registered with the given name.
-// Note that the compare is done in a case-insenstive fashion.
+// Note that the compare is done in a case-insensitive fashion.
 // If no builder is register with the name, nil will be returned.
 func Get(name string) Builder {
 	if b, ok := m[strings.ToLower(name)]; ok {
@@ -114,7 +127,7 @@ type ClientConn interface {
 	// The SubConn will be shutdown.
 	RemoveSubConn(SubConn)
 
-	// UpdateBalancerState is called by balancer to nofity gRPC that some internal
+	// UpdateBalancerState is called by balancer to notify gRPC that some internal
 	// state in balancer has changed.
 	//
 	// gRPC will update the connectivity state of the ClientConn, and will call pick
@@ -214,9 +227,10 @@ type Picker interface {
 	// - Else (error is other non-nil error):
 	//   - The RPC will fail with unavailable error.
 	//
-	// The returned done() function will be called once the rpc has finished, with the
-	// final status of that RPC.
-	// done may be nil if balancer doesn't care about the RPC status.
+	// The returned done() function will be called once the rpc has finished,
+	// with the final status of that RPC.  If the SubConn returned is not a
+	// valid SubConn type, done may not be called.  done may be nil if balancer
+	// doesn't care about the RPC status.
 	Pick(ctx context.Context, opts PickOptions) (conn SubConn, done func(DoneInfo), err error)
 }
 

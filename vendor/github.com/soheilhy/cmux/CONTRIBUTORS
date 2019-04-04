@@ -3,6 +3,7 @@
 # Auto-generated with:
 #		git log --oneline --pretty=format:'%an <%aE>' | sort -u
 #
+Andreas Jaekle <andreas@jaekle.net>
 Dmitri Shuralyov <shurcooL@gmail.com>
 Ethan Mosbaugh <emosbaugh@gmail.com>
 Soheil Hassas Yeganeh <soheil.h.y@gmail.com>

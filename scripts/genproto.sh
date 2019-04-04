@@ -51,6 +51,7 @@ for dir in ${DIRS}; do
 
 		sed -i.bak -E 's/import _ \"github.com\/gogo\/protobuf\/gogoproto\"//g' -- *.pb.go
 		sed -i.bak -E 's/import _ \"google\/protobuf\"//g' -- *.pb.go
+		sed -i.bak -E 's/\t_ \"google\/protobuf\"//g' -- *.pb.go
 		sed -i.bak -E 's/golang\/protobuf/gogo\/protobuf/g' -- *.go
 		rm -f -- *.bak
 		goimports -w ./*.pb.go
