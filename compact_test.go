@@ -173,27 +173,25 @@ func TestLeveledCompactor_plan(t *testing.T) {
 	}, nil)
 	testutil.Ok(t, err)
 
-	cases := []struct {
+	cases := map[string]struct {
 		metas    []dirMeta
 		expected []string
 	}{
-		{
+		"Outside Range": {
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 			},
 			expected: nil,
 		},
-		// We should wait for four blocks of size 20 to appear before compacting.
-		{
+		"We should wait for four blocks of size 20 to appear before compacting.": {
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
 			},
 			expected: nil,
 		},
-		// We should wait for a next block of size 20 to appear before compacting
-		// the existing ones. We have three, but we ignore the fresh one from WAl.
-		{
+		`We should wait for a next block of size 20 to appear before compacting
+		the existing ones. We have three, but we ignore the fresh one from WAl`: {
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
@@ -201,8 +199,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: nil,
 		},
-		// Block to fill the entire parent range appeared – should be compacted.
-		{
+		"Block to fill the entire parent range appeared – should be compacted": {
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
@@ -211,9 +208,8 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"1", "2", "3"},
 		},
-		// Block for the next parent range appeared with gap with size 20. Nothing will happen in the first one
-		// anymore but we ignore fresh one still, so no compaction.
-		{
+		`Block for the next parent range appeared with gap with size 20. Nothing will happen in the first one
+		anymore but we ignore fresh one still, so no compaction`: {
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
@@ -221,9 +217,8 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: nil,
 		},
-		// Block for the next parent range appeared, and we have a gap with size 20 between second and third block.
-		// We will not get this missed gap anymore and we should compact just these two.
-		{
+		`Block for the next parent range appeared, and we have a gap with size 20 between second and third block.
+		We will not get this missed gap anymore and we should compact just these two.`: {
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
@@ -232,8 +227,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"1", "2"},
 		},
-		{
-			// We have 20, 20, 20, 60, 60 range blocks. "5" is marked as fresh one.
+		"We have 20, 20, 20, 60, 60 range blocks. '5' is marked as fresh one": {
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
@@ -243,8 +237,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"1", "2", "3"},
 		},
-		{
-			// We have 20, 60, 20, 60, 240 range blocks. We can compact 20 + 60 + 60.
+		"We have 20, 60, 20, 60, 240 range blocks. We can compact 20 + 60 + 60": {
 			metas: []dirMeta{
 				metaRange("2", 20, 40, nil),
 				metaRange("4", 60, 120, nil),
@@ -254,8 +247,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"2", "4", "6"},
 		},
-		// Do not select large blocks that have many tombstones when there is no fresh block.
-		{
+		"Do not select large blocks that have many tombstones when there is no fresh block": {
 			metas: []dirMeta{
 				metaRange("1", 0, 540, &BlockStats{
 					NumSeries:     10,
@@ -264,8 +256,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: nil,
 		},
-		// Select large blocks that have many tombstones when fresh appears.
-		{
+		"Select large blocks that have many tombstones when fresh appears": {
 			metas: []dirMeta{
 				metaRange("1", 0, 540, &BlockStats{
 					NumSeries:     10,
@@ -275,8 +266,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"1"},
 		},
-		// For small blocks, do not compact tombstones, even when fresh appears.
-		{
+		"For small blocks, do not compact tombstones, even when fresh appears.": {
 			metas: []dirMeta{
 				metaRange("1", 0, 60, &BlockStats{
 					NumSeries:     10,
@@ -286,9 +276,8 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: nil,
 		},
-		// Regression test: we were stuck in a compact loop where we always recompacted
-		// the same block when tombstones and series counts were zero.
-		{
+		`Regression test: we were stuck in a compact loop where we always recompacted
+		the same block when tombstones and series counts were zero`: {
 			metas: []dirMeta{
 				metaRange("1", 0, 540, &BlockStats{
 					NumSeries:     0,
@@ -298,12 +287,11 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: nil,
 		},
-		// Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
-		// We need to actually look on max time instead.
-		//
-		// With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
-		// block overlaps.
-		{
+		`Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
+		We need to actually look on max time instead.
+		
+		With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
+		block overlaps`: {
 			metas: []dirMeta{
 				metaRange("5", 0, 360, nil),
 				metaRange("6", 540, 560, nil), // Fresh one.
@@ -312,8 +300,10 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"7", "8"},
 		},
-		// For overlapping blocks.
-		{
+		// |--------------|
+		//               |----------------|
+		//                                |--------------|
+		"Overlapping blocks 1": {
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 19, 40, nil),
@@ -321,7 +311,10 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"1", "2"},
 		},
-		{
+		// |--------------|
+		//                |--------------|
+		//                        |--------------|
+		"Overlapping blocks 2": {
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
@@ -329,7 +322,10 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"2", "3"},
 		},
-		{
+		// |--------------|
+		//         |---------------------|
+		//                       |--------------|
+		"Overlapping blocks 3": {
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 10, 40, nil),
@@ -337,7 +333,11 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"1", "2", "3"},
 		},
-		{
+		// |--------------|
+		//               |--------------------------------|
+		//                |--------------|
+		//                               |--------------|
+		"Overlapping blocks 4": {
 			metas: []dirMeta{
 				metaRange("5", 0, 360, nil),
 				metaRange("6", 340, 560, nil),
@@ -346,10 +346,23 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: []string{"5", "6", "7", "8"},
 		},
+		// |--------------|
+		//               |--------------|
+		//                                            |--------------|
+		//                                                          |--------------|
+		"Overlapping blocks 5": {
+			metas: []dirMeta{
+				metaRange("1", 0, 10, nil),
+				metaRange("2", 9, 20, nil),
+				metaRange("3", 30, 40, nil),
+				metaRange("4", 39, 50, nil),
+			},
+			expected: []string{"1", "2"},
+		},
 	}
 
-	for _, c := range cases {
-		if !t.Run("", func(t *testing.T) {
+	for title, c := range cases {
+		if !t.Run(title, func(t *testing.T) {
 			res, err := compactor.plan(c.metas)
 			testutil.Ok(t, err)
 			testutil.Equals(t, c.expected, res)

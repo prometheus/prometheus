@@ -1706,8 +1706,10 @@ func TestCorrectNumTombstones(t *testing.T) {
 
 func TestVerticalCompaction(t *testing.T) {
 	cases := []struct {
-		blockSeries [][]Series
-		expSeries   map[string][]tsdbutil.Sample
+		blockSeries          [][]Series
+		expSeries            map[string][]tsdbutil.Sample
+		expBlockNum          int
+		expOverlappingBlocks int
 	}{
 		// Case 0
 		// |--------------|
@@ -1734,6 +1736,8 @@ func TestVerticalCompaction(t *testing.T) {
 				sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 99},
 				sample{12, 99}, sample{13, 99}, sample{14, 99},
 			}},
+			expBlockNum:          1,
+			expOverlappingBlocks: 1,
 		},
 		// Case 1
 		// |-------------------------------|
@@ -1760,6 +1764,8 @@ func TestVerticalCompaction(t *testing.T) {
 				sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 0},
 				sample{13, 0}, sample{17, 0},
 			}},
+			expBlockNum:          1,
+			expOverlappingBlocks: 1,
 		},
 		// Case 2
 		// |-------------------------------|
@@ -1794,6 +1800,8 @@ func TestVerticalCompaction(t *testing.T) {
 				sample{14, 59}, sample{15, 59}, sample{17, 59}, sample{20, 59},
 				sample{21, 59}, sample{22, 59},
 			}},
+			expBlockNum:          1,
+			expOverlappingBlocks: 1,
 		},
 		// Case 3
 		// |-------------------|
@@ -1828,6 +1836,8 @@ func TestVerticalCompaction(t *testing.T) {
 				sample{15, 59}, sample{16, 99}, sample{17, 59}, sample{20, 59},
 				sample{21, 59}, sample{22, 59},
 			}},
+			expBlockNum:          1,
+			expOverlappingBlocks: 1,
 		},
 		// Case 4
 		// |-------------------------------------|
@@ -1864,6 +1874,8 @@ func TestVerticalCompaction(t *testing.T) {
 				sample{13, 99}, sample{15, 99}, sample{16, 99}, sample{17, 99},
 				sample{20, 0}, sample{22, 0},
 			}},
+			expBlockNum:          1,
+			expOverlappingBlocks: 1,
 		},
 		// Case 5: series are merged properly when there are multiple series.
 		// |-------------------------------------|
@@ -1958,6 +1970,53 @@ func TestVerticalCompaction(t *testing.T) {
 					sample{20, 0}, sample{22, 0},
 				},
 			},
+			expBlockNum:          1,
+			expOverlappingBlocks: 1,
+		},
+		// Case 6
+		// |--------------|
+		//        |----------------|
+		//                                         |--------------|
+		//                                                  |----------------|
+		{
+			blockSeries: [][]Series{
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
+						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
+						sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 99},
+						sample{12, 99}, sample{13, 99}, sample{14, 99},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{20, 0}, sample{21, 0}, sample{22, 0}, sample{24, 0},
+						sample{25, 0}, sample{27, 0}, sample{28, 0}, sample{29, 0},
+					}),
+				},
+				[]Series{
+					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
+						sample{23, 99}, sample{25, 99}, sample{26, 99}, sample{27, 99},
+						sample{28, 99}, sample{29, 99}, sample{30, 99}, sample{31, 99},
+					}),
+				},
+			},
+			expSeries: map[string][]tsdbutil.Sample{`{a="b"}`: {
+				sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{3, 99},
+				sample{4, 0}, sample{5, 99}, sample{6, 99}, sample{7, 99},
+				sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 99},
+				sample{12, 99}, sample{13, 99}, sample{14, 99},
+				sample{20, 0}, sample{21, 0}, sample{22, 0}, sample{23, 99},
+				sample{24, 0}, sample{25, 99}, sample{26, 99}, sample{27, 99},
+				sample{28, 99}, sample{29, 99}, sample{30, 99}, sample{31, 99},
+			}},
+			expBlockNum:          2,
+			expOverlappingBlocks: 2,
 		},
 	}
 
@@ -1995,9 +2054,9 @@ func TestVerticalCompaction(t *testing.T) {
 			testutil.Equals(t, 0, int(prom_testutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count should be still 0 here")
 			err = db.compact()
 			testutil.Ok(t, err)
-			testutil.Equals(t, 1, len(db.Blocks()), "Wrong number of blocks [after compact]")
+			testutil.Equals(t, c.expBlockNum, len(db.Blocks()), "Wrong number of blocks [after compact]")
 
-			testutil.Equals(t, 1, int(prom_testutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count mismatch")
+			testutil.Equals(t, c.expOverlappingBlocks, int(prom_testutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count mismatch")
 
 			// Query test after merging the overlapping blocks.
 			querier, err = db.Querier(0, 100)

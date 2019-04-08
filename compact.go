@@ -267,8 +267,8 @@ func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
 	return nil
 }
 
-// selectOverlappingDirs returns all dirs with overlaping time ranges.
-// It expects sorted input by mint.
+// selectOverlappingDirs returns all dirs with overlapping time ranges.
+// It expects sorted input by mint and returns the overlapping dirs in the same order as received.
 func (c *LeveledCompactor) selectOverlappingDirs(ds []dirMeta) []string {
 	if len(ds) < 2 {
 		return nil
@@ -281,6 +281,8 @@ func (c *LeveledCompactor) selectOverlappingDirs(ds []dirMeta) []string {
 				overlappingDirs = append(overlappingDirs, ds[i].dir)
 			}
 			overlappingDirs = append(overlappingDirs, d.dir)
+		} else if len(overlappingDirs) > 0 {
+			break
 		}
 		if d.meta.MaxTime > globalMaxt {
 			globalMaxt = d.meta.MaxTime

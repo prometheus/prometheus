@@ -3,6 +3,7 @@
  - [REMOVED] `chunks.NewReader` is removed as it wasn't used anywhere.
  - [REMOVED] `FromData` is considered unused so was removed.
  - [FEATURE] Added option WALSegmentSize -1 to disable the WAL.
+ - [BUGFIX] Bugfix in selectOverlappingDirs. Only return the first overlapping blocks.
  - [BUGFIX] Fsync the meta file to persist it on disk to avoid data loss in case of a host crash.
  - [BUGFIX] Fix fd and vm_area leak on error path in chunks.NewDirReader.
  - [BUGFIX] Fix fd and vm_area leak on error path in index.NewFileReader.
