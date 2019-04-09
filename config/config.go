@@ -37,14 +37,14 @@ var (
 )
 
 // Load parses the YAML input s into a Config.
-func Load(s string) (*Config, error) {
+func Load(s []byte) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
 	// never called. We thus have to set the DefaultConfig at the entry
 	// point as well.
 	*cfg = DefaultConfig
 
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	err := yaml.UnmarshalStrict(s, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func LoadFile(filename string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := Load(string(content))
+	cfg, err := Load(content)
 	if err != nil {
 		return nil, errors.Wrapf(err, "parsing YAML file %s", filename)
 	}

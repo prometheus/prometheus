@@ -909,14 +909,14 @@ func TestBadStaticConfigsYML(t *testing.T) {
 }
 
 func TestEmptyConfig(t *testing.T) {
-	c, err := Load("")
+	c, err := Load([]byte(""))
 	testutil.Ok(t, err)
 	exp := DefaultConfig
 	testutil.Equals(t, exp, *c)
 }
 
 func TestEmptyGlobalBlock(t *testing.T) {
-	c, err := Load("global:\n")
+	c, err := Load([]byte("global:\n"))
 	testutil.Ok(t, err)
 	exp := DefaultConfig
 	exp.original = "global:\n"
