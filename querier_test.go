@@ -1366,7 +1366,7 @@ func (m mockIndex) Symbols() (map[string]struct{}, error) {
 	return m.symbols, nil
 }
 
-func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
+func (m *mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
@@ -1690,4 +1690,212 @@ func BenchmarkQuerySeek(b *testing.B) {
 			})
 		}
 	}
+}
+
+func TestPostingsForMatchers(t *testing.T) {
+	h, err := NewHead(nil, nil, nil, 1000)
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
+
+	app := h.Appender()
+	app.Add(labels.FromStrings("n", "1"), 0, 0)
+	app.Add(labels.FromStrings("n", "1", "i", "a"), 0, 0)
+	app.Add(labels.FromStrings("n", "1", "i", "b"), 0, 0)
+	app.Add(labels.FromStrings("n", "2"), 0, 0)
+	testutil.Ok(t, app.Commit())
+
+	cases := []struct {
+		matchers []labels.Matcher
+		exp      []labels.Labels
+	}{
+		// Simple equals.
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.NewEqualMatcher("i", "a")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.NewEqualMatcher("i", "missing")},
+			exp:      []labels.Labels{},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("missing", "")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "2"),
+			},
+		},
+		// Not equals.
+		{
+			matchers: []labels.Matcher{labels.Not(labels.NewEqualMatcher("n", "1"))},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.Not(labels.NewEqualMatcher("i", ""))},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.Not(labels.NewEqualMatcher("missing", ""))},
+			exp:      []labels.Labels{},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.Not(labels.NewEqualMatcher("i", "a"))},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.Not(labels.NewEqualMatcher("i", ""))},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		// Regex.
+		{
+			matchers: []labels.Matcher{labels.NewMustRegexpMatcher("n", "^1$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.NewMustRegexpMatcher("i", "^a$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.NewMustRegexpMatcher("i", "^a?$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewMustRegexpMatcher("i", "^$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.NewMustRegexpMatcher("i", "^$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.NewMustRegexpMatcher("i", "^.*$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.NewMustRegexpMatcher("i", "^.+$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		// Not regex.
+		{
+			matchers: []labels.Matcher{labels.Not(labels.NewMustRegexpMatcher("n", "^1$"))},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.Not(labels.NewMustRegexpMatcher("i", "^a$"))},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.Not(labels.NewMustRegexpMatcher("i", "^a?$"))},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.Not(labels.NewMustRegexpMatcher("i", "^$"))},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.Not(labels.NewMustRegexpMatcher("i", "^.*$"))},
+			exp:      []labels.Labels{},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.Not(labels.NewMustRegexpMatcher("i", "^.+$"))},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+			},
+		},
+		// Combinations.
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.Not(labels.NewEqualMatcher("i", "")), labels.NewEqualMatcher("i", "a")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.Not(labels.NewEqualMatcher("i", "b")), labels.NewMustRegexpMatcher("i", "^(b|a).*$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+			},
+		},
+	}
+
+	ir, err := h.Index()
+	testutil.Ok(t, err)
+
+	for _, c := range cases {
+		exp := map[string]struct{}{}
+		for _, l := range c.exp {
+			exp[l.String()] = struct{}{}
+		}
+		p, err := PostingsForMatchers(ir, c.matchers...)
+		testutil.Ok(t, err)
+
+		for p.Next() {
+			lbls := labels.Labels{}
+			ir.Series(p.At(), &lbls, &[]chunks.Meta{})
+			if _, ok := exp[lbls.String()]; !ok {
+				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
+			} else {
+				delete(exp, lbls.String())
+			}
+		}
+		testutil.Ok(t, p.Err())
+		if len(exp) != 0 {
+			t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
+		}
+	}
+
 }

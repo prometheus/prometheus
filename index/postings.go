@@ -600,8 +600,8 @@ func (rp *removedPostings) Err() error {
 	return rp.remove.Err()
 }
 
-// listPostings implements the Postings interface over a plain list.
-type listPostings struct {
+// ListPostings implements the Postings interface over a plain list.
+type ListPostings struct {
 	list []uint64
 	cur  uint64
 }
@@ -610,15 +610,15 @@ func NewListPostings(list []uint64) Postings {
 	return newListPostings(list...)
 }
 
-func newListPostings(list ...uint64) *listPostings {
-	return &listPostings{list: list}
+func newListPostings(list ...uint64) *ListPostings {
+	return &ListPostings{list: list}
 }
 
-func (it *listPostings) At() uint64 {
+func (it *ListPostings) At() uint64 {
 	return it.cur
 }
 
-func (it *listPostings) Next() bool {
+func (it *ListPostings) Next() bool {
 	if len(it.list) > 0 {
 		it.cur = it.list[0]
 		it.list = it.list[1:]
@@ -628,7 +628,7 @@ func (it *listPostings) Next() bool {
 	return false
 }
 
-func (it *listPostings) Seek(x uint64) bool {
+func (it *ListPostings) Seek(x uint64) bool {
 	// If the current value satisfies, then return.
 	if it.cur >= x {
 		return true
@@ -650,7 +650,7 @@ func (it *listPostings) Seek(x uint64) bool {
 	return false
 }
 
-func (it *listPostings) Err() error {
+func (it *ListPostings) Err() error {
 	return nil
 }
 

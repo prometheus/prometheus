@@ -49,9 +49,7 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 	})
 }
 
-// TODO: generalize benchmark and pass all postings for matchers here
 func BenchmarkHeadPostingForMatchers(b *testing.B) {
-	// Put a series, select it. GC it and then access it.
 	h, err := NewHead(nil, nil, nil, 1000)
 	testutil.Ok(b, err)
 	defer func() {
@@ -65,6 +63,12 @@ func BenchmarkHeadPostingForMatchers(b *testing.B) {
 			hash++
 			// Have some series that won't be matched, to properly test inverted matches.
 			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", strconv.Itoa(i), "j", "bar"))
+			hash++
+			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", "0_"+strconv.Itoa(i), "j", "bar"))
+			hash++
+			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", "1_"+strconv.Itoa(i), "j", "bar"))
+			hash++
+			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", "2_"+strconv.Itoa(i), "j", "bar"))
 			hash++
 		}
 	}
