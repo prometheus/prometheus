@@ -501,6 +501,57 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, ressmpls)
 }
+
+func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test_delete_wal")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.NewSize(nil, nil, dir, 32768)
+	testutil.Ok(t, err)
+
+	// Enough samples to cause a checkpoint.
+	numSamples := 10000
+	hb, err := NewHead(nil, nil, wlog, int64(numSamples)*10)
+	testutil.Ok(t, err)
+	defer hb.Close()
+	for i := 0; i < numSamples; i++ {
+		app := hb.Appender()
+		_, err := app.Add(labels.Labels{{"a", "b"}}, int64(i), 0)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+	}
+	testutil.Ok(t, hb.Delete(0, int64(numSamples), labels.NewEqualMatcher("a", "b")))
+	testutil.Ok(t, hb.Truncate(1))
+	testutil.Ok(t, hb.Close())
+
+	// Confirm there's been a checkpoint.
+	cdir, _, err := LastCheckpoint(dir)
+	testutil.Ok(t, err)
+	// Read in checkpoint and WAL.
+	recs := readTestWAL(t, cdir)
+	recs = append(recs, readTestWAL(t, dir)...)
+
+	var series, samples, stones int
+	for _, rec := range recs {
+		switch rec.(type) {
+		case []RefSeries:
+			series++
+		case []RefSample:
+			samples++
+		case []Stone:
+			stones++
+		default:
+			t.Fatalf("unknown record type")
+		}
+	}
+	testutil.Equals(t, 1, series)
+	testutil.Equals(t, 9999, samples)
+	testutil.Equals(t, 1, stones)
+
+}
+
 func TestDelete_e2e(t *testing.T) {
 	numDatapoints := 1000
 	numRanges := 1000

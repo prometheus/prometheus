@@ -75,6 +75,9 @@ type Head struct {
 	symbols map[string]struct{}
 	values  map[string]stringset // label names to possible values
 
+	deletedMtx sync.Mutex
+	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
+
 	postings *index.MemPostings // postings lists for terms
 }
 
@@ -234,6 +237,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
+		deleted:    map[uint64]int{},
 	}
 	h.metrics = newHeadMetrics(h, r)
 
@@ -557,7 +561,13 @@ func (h *Head) Truncate(mint int64) (err error) {
 	}
 
 	keep := func(id uint64) bool {
-		return h.series.getByID(id) != nil
+		if h.series.getByID(id) != nil {
+			return true
+		}
+		h.deletedMtx.Lock()
+		_, ok := h.deleted[id]
+		h.deletedMtx.Unlock()
+		return ok
 	}
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = Checkpoint(h.wal, first, last, keep, mint); err != nil {
@@ -570,6 +580,17 @@ func (h *Head) Truncate(mint int64) (err error) {
 		// that supersedes them.
 		level.Error(h.logger).Log("msg", "truncating segments failed", "err", err)
 	}
+
+	// The checkpoint is written and segments before it is truncated, so we no
+	// longer need to track deleted series that are before it.
+	h.deletedMtx.Lock()
+	for ref, segment := range h.deleted {
+		if segment < first {
+			delete(h.deleted, ref)
+		}
+	}
+	h.deletedMtx.Unlock()
+
 	h.metrics.checkpointDeleteTotal.Inc()
 	if err := DeleteCheckpoints(h.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond
@@ -952,6 +973,21 @@ func (h *Head) gc() {
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted)
+
+	if h.wal != nil {
+		_, last, _ := h.wal.Segments()
+		h.deletedMtx.Lock()
+		// Keep series records until we're past segment 'last'
+		// because the WAL will still have samples records with
+		// this ref ID. If we didn't keep these series records then
+		// on start up when we replay the WAL, or any other code
+		// that reads the WAL, wouldn't be able to use those
+		// samples since we would have no labels for that ref ID.
+		for ref := range deleted {
+			h.deleted[ref] = last
+		}
+		h.deletedMtx.Unlock()
+	}
 
 	// Rebuild symbols and label value indices from what is left in the postings terms.
 	symbols := make(map[string]struct{}, len(h.symbols))
