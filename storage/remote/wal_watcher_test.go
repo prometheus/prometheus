@@ -88,7 +88,7 @@ func newWriteToMock() *writeToMock {
 	}
 }
 
-func Test_tail_samples(t *testing.T) {
+func TestTailSamples(t *testing.T) {
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
@@ -160,7 +160,7 @@ func Test_tail_samples(t *testing.T) {
 	testutil.Equals(t, expectedSamples, wt.samplesAppended)
 }
 
-func Test_readToEnd_noCheckpoint(t *testing.T) {
+func TestReadToEndNoCheckpoint(t *testing.T) {
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
@@ -222,7 +222,7 @@ func Test_readToEnd_noCheckpoint(t *testing.T) {
 	testutil.Equals(t, expected, wt.checkNumLabels())
 }
 
-func Test_readToEnd_withCheckpoint(t *testing.T) {
+func TestReadToEndWithCheckpoint(t *testing.T) {
 	segmentSize := 32 * 1024
 	// We need something similar to this # of series and samples
 	// in order to get enough segments for us to checkpoint.
@@ -304,7 +304,7 @@ func Test_readToEnd_withCheckpoint(t *testing.T) {
 	testutil.Equals(t, expected, wt.checkNumLabels())
 }
 
-func Test_readCheckpoint(t *testing.T) {
+func TestReadCheckpoint(t *testing.T) {
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
@@ -366,12 +366,77 @@ func Test_readCheckpoint(t *testing.T) {
 	testutil.Equals(t, expectedSeries, wt.checkNumLabels())
 }
 
-func Test_checkpoint_seriesReset(t *testing.T) {
+func TestReadCheckpointMultipleSegments(t *testing.T) {
+	pageSize := 32 * 1024
+
+	const segments = 1
+	const seriesCount = 20
+	const samplesCount = 300
+
+	dir, err := ioutil.TempDir("", "readCheckpoint")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	wdir := path.Join(dir, "wal")
+	err = os.Mkdir(wdir, 0777)
+	testutil.Ok(t, err)
+
+	enc := tsdb.RecordEncoder{}
+	w, err := wal.NewSize(nil, nil, wdir, pageSize)
+	testutil.Ok(t, err)
+
+	// Write a bunch of data.
+	for i := 0; i < segments; i++ {
+		for j := 0; j < seriesCount; j++ {
+			ref := j + (i * 100)
+			series := enc.Series([]tsdb.RefSeries{
+				tsdb.RefSeries{
+					Ref:    uint64(ref),
+					Labels: labels.Labels{labels.Label{"__name__", fmt.Sprintf("metric_%d", j)}},
+				},
+			}, nil)
+			testutil.Ok(t, w.Log(series))
+
+			for k := 0; k < samplesCount; k++ {
+				inner := rand.Intn(ref + 1)
+				sample := enc.Samples([]tsdb.RefSample{
+					tsdb.RefSample{
+						Ref: uint64(inner),
+						T:   int64(i),
+						V:   float64(i),
+					},
+				}, nil)
+				testutil.Ok(t, w.Log(sample))
+			}
+		}
+	}
+
+	// At this point we should have at least 6 segments, lets create a checkpoint dir of the first 5.
+	checkpointDir := dir + "/wal/checkpoint.000004"
+	err = os.Mkdir(checkpointDir, 0777)
+	testutil.Ok(t, err)
+	for i := 0; i <= 4; i++ {
+		err := os.Rename(wal.SegmentName(dir+"/wal", i), wal.SegmentName(checkpointDir, i))
+		testutil.Ok(t, err)
+	}
+
+	wt := newWriteToMock()
+	watcher := NewWALWatcher(nil, "", wt, dir)
+	watcher.maxSegment = -1
+
+	lastCheckpoint, _, err := tsdb.LastCheckpoint(watcher.walDir)
+	testutil.Ok(t, err)
+
+	err = watcher.readCheckpoint(lastCheckpoint)
+	testutil.Ok(t, err)
+}
+
+func TestCheckpointSeriesReset(t *testing.T) {
 	segmentSize := 32 * 1024
 	// We need something similar to this # of series and samples
 	// in order to get enough segments for us to checkpoint.
-	const seriesCount = 10
-	const samplesCount = 250
+	const seriesCount = 20
+	const samplesCount = 350
 
 	dir, err := ioutil.TempDir("", "seriesReset")
 	testutil.Ok(t, err)
@@ -421,20 +486,22 @@ func Test_checkpoint_seriesReset(t *testing.T) {
 	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expected
 	})
-	watcher.Stop()
 	testutil.Equals(t, seriesCount, wt.checkNumLabels())
 
-	_, err = tsdb.Checkpoint(w, 0, 1, func(x uint64) bool { return true }, 0)
+	_, err = tsdb.Checkpoint(w, 2, 4, func(x uint64) bool { return true }, 0)
 	testutil.Ok(t, err)
 
-	w.Truncate(1)
+	err = w.Truncate(5)
+	testutil.Ok(t, err)
 
 	_, cpi, err := tsdb.LastCheckpoint(path.Join(dir, "wal"))
 	testutil.Ok(t, err)
 	err = watcher.garbageCollectSeries(cpi + 1)
 	testutil.Ok(t, err)
+
+	watcher.Stop()
 	// If you modify the checkpoint and truncate segment #'s run the test to see how
 	// many series records you end up with and change the last Equals check accordingly
 	// or modify the Equals to Assert(len(wt.seriesLabels) < seriesCount*10)
-	testutil.Equals(t, 6, wt.checkNumLabels())
+	testutil.Equals(t, 14, wt.checkNumLabels())
 }
