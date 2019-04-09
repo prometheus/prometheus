@@ -131,12 +131,14 @@ func ingressSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	ingressNameLabel        = metaLabelPrefix + "ingress_name"
-	ingressLabelPrefix      = metaLabelPrefix + "ingress_label_"
-	ingressAnnotationPrefix = metaLabelPrefix + "ingress_annotation_"
-	ingressSchemeLabel      = metaLabelPrefix + "ingress_scheme"
-	ingressHostLabel        = metaLabelPrefix + "ingress_host"
-	ingressPathLabel        = metaLabelPrefix + "ingress_path"
+	ingressNameLabel               = metaLabelPrefix + "ingress_name"
+	ingressLabelPrefix             = metaLabelPrefix + "ingress_label_"
+	ingressLabelPresentPrefix      = metaLabelPrefix + "ingress_labelpresent_"
+	ingressAnnotationPrefix        = metaLabelPrefix + "ingress_annotation_"
+	ingressAnnotationPresentPrefix = metaLabelPrefix + "ingress_annotationpresent_"
+	ingressSchemeLabel             = metaLabelPrefix + "ingress_scheme"
+	ingressHostLabel               = metaLabelPrefix + "ingress_host"
+	ingressPathLabel               = metaLabelPrefix + "ingress_path"
 )
 
 func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
@@ -145,13 +147,15 @@ func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
 	ls[namespaceLabel] = lv(ingress.Namespace)
 
 	for k, v := range ingress.Labels {
-		ln := strutil.SanitizeLabelName(ingressLabelPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(ingressLabelPrefix+ln)] = lv(v)
+		ls[model.LabelName(ingressLabelPresentPrefix+ln)] = presentValue
 	}
 
 	for k, v := range ingress.Annotations {
-		ln := strutil.SanitizeLabelName(ingressAnnotationPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(ingressAnnotationPrefix+ln)] = lv(v)
+		ls[model.LabelName(ingressAnnotationPresentPrefix+ln)] = presentValue
 	}
 	return ls
 }

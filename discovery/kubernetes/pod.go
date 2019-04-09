@@ -144,7 +144,9 @@ const (
 	podReadyLabel                 = metaLabelPrefix + "pod_ready"
 	podPhaseLabel                 = metaLabelPrefix + "pod_phase"
 	podLabelPrefix                = metaLabelPrefix + "pod_label_"
+	podLabelPresentPrefix         = metaLabelPrefix + "pod_labelpresent_"
 	podAnnotationPrefix           = metaLabelPrefix + "pod_annotation_"
+	podAnnotationPresentPrefix    = metaLabelPrefix + "pod_annotationpresent_"
 	podNodeNameLabel              = metaLabelPrefix + "pod_node_name"
 	podHostIPLabel                = metaLabelPrefix + "pod_host_ip"
 	podUID                        = metaLabelPrefix + "pod_uid"
@@ -185,13 +187,15 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 	}
 
 	for k, v := range pod.Labels {
-		ln := strutil.SanitizeLabelName(podLabelPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(podLabelPrefix+k)] = lv(v)
+		ls[model.LabelName(podLabelPresentPrefix+ln)] = presentValue
 	}
 
 	for k, v := range pod.Annotations {
-		ln := strutil.SanitizeLabelName(podAnnotationPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(podAnnotationPrefix+ln)] = lv(v)
+		ls[model.LabelName(podAnnotationPresentPrefix+ln)] = presentValue
 	}
 
 	return ls

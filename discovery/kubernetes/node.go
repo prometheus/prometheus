@@ -140,10 +140,12 @@ func nodeSourceFromName(name string) string {
 }
 
 const (
-	nodeNameLabel        = metaLabelPrefix + "node_name"
-	nodeLabelPrefix      = metaLabelPrefix + "node_label_"
-	nodeAnnotationPrefix = metaLabelPrefix + "node_annotation_"
-	nodeAddressPrefix    = metaLabelPrefix + "node_address_"
+	nodeNameLabel               = metaLabelPrefix + "node_name"
+	nodeLabelPrefix             = metaLabelPrefix + "node_label_"
+	nodeLabelPresentPrefix      = metaLabelPrefix + "node_labelpresent_"
+	nodeAnnotationPrefix        = metaLabelPrefix + "node_annotation_"
+	nodeAnnotationPresentPrefix = metaLabelPrefix + "node_annotationpresent_"
+	nodeAddressPrefix           = metaLabelPrefix + "node_address_"
 )
 
 func nodeLabels(n *apiv1.Node) model.LabelSet {
@@ -152,13 +154,15 @@ func nodeLabels(n *apiv1.Node) model.LabelSet {
 	ls[nodeNameLabel] = lv(n.Name)
 
 	for k, v := range n.Labels {
-		ln := strutil.SanitizeLabelName(nodeLabelPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
+		ls[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
 	}
 
 	for k, v := range n.Annotations {
-		ln := strutil.SanitizeLabelName(nodeAnnotationPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(nodeAnnotationPrefix+ln)] = lv(v)
+		ls[model.LabelName(nodeAnnotationPresentPrefix+ln)] = presentValue
 	}
 	return ls
 }

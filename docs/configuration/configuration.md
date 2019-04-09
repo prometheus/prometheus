@@ -708,7 +708,9 @@ Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
 * `__meta_kubernetes_node_label_<labelname>`: Each label from the node object.
+* `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
+* `__meta_kubernetes_node_annotationpresent_<annotationname>`: `true` for each annotation from the node object.
 * `__meta_kubernetes_node_address_<address_type>`: The first address for each node address type, if it exists.
 
 In addition, the `instance` label for the node will be set to the node name
@@ -724,10 +726,12 @@ service port.
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the service object.
-* `__meta_kubernetes_service_annotation_<annotationname>`: The annotation of the service object.
+* `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
+* `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
-* `__meta_kubernetes_service_label_<labelname>`: The label of the service object.
+* `__meta_kubernetes_service_label_<labelname>`: Each label from the service object.
+* `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
 * `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
 * `__meta_kubernetes_service_port_number`: Number of the service port for the target.
@@ -744,8 +748,10 @@ Available meta labels:
 * `__meta_kubernetes_namespace`: The namespace of the pod object.
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
-* `__meta_kubernetes_pod_label_<labelname>`: The label of the pod object.
-* `__meta_kubernetes_pod_annotation_<annotationname>`: The annotation of the pod object.
+* `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object.
+* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true`for each label from the pod object.
+* `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
+* `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_name`: Name of the container the target address points to.
 * `__meta_kubernetes_pod_container_port_name`: Name of the container port.
 * `__meta_kubernetes_pod_container_port_number`: Number of the container port.
@@ -789,8 +795,10 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the ingress object.
 * `__meta_kubernetes_ingress_name`: The name of the ingress object.
-* `__meta_kubernetes_ingress_label_<labelname>`: The label of the ingress object.
-* `__meta_kubernetes_ingress_annotation_<annotationname>`: The annotation of the ingress object.
+* `__meta_kubernetes_ingress_label_<labelname>`: Each label from the ingress object.
+* `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object.
+* `__meta_kubernetes_ingress_annotation_<annotationname>`: Each annotation from the ingress object.
+* `__meta_kubernetes_ingress_annotationpresent_<annotationname>`: `true` for each annotation from the ingress object.
 * `__meta_kubernetes_ingress_scheme`: Protocol scheme of ingress, `https` if TLS
   config is set. Defaults to `http`.
 * `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.
