@@ -355,8 +355,8 @@ func (g *Group) stop() {
 
 func (g *Group) hash() uint64 {
 	l := labels.New(
-		labels.Label{"name", g.name},
-		labels.Label{"file", g.file},
+		labels.Label{Name: "name", Value: g.name},
+		labels.Label{Name: "file", Value: g.file},
 	)
 	return l.Hash()
 }

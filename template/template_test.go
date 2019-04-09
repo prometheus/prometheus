@@ -25,18 +25,16 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-type testTemplatesScenario struct {
-	text        string
-	output      string
-	input       interface{}
-	queryResult promql.Vector
-	shouldFail  bool
-	html        bool
-	errorMsg    string
-}
-
 func TestTemplateExpansion(t *testing.T) {
-	scenarios := []testTemplatesScenario{
+	scenarios := []struct {
+		text        string
+		output      string
+		input       interface{}
+		queryResult promql.Vector
+		shouldFail  bool
+		html        bool
+		errorMsg    string
+	}{
 		{
 			// No template.
 			text:   "plain text",

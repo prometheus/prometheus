@@ -136,7 +136,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 	if set.Err() != nil {
 		federationErrors.Inc()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, set.Err().Error(), http.StatusInternalServerError)
 		return
 	}
 
