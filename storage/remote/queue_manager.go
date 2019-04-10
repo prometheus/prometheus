@@ -189,6 +189,7 @@ type QueueManager struct {
 	sentBatchDuration          prometheus.Observer
 	succeededSamplesTotal      prometheus.Counter
 	retriedSamplesTotal        prometheus.Counter
+	queueMetrics               []prometheus.Collector
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -231,6 +232,11 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 		sentBatchDuration:     sentBatchDuration.WithLabelValues(name),
 		succeededSamplesTotal: succeededSamplesTotal.WithLabelValues(name),
 		retriedSamplesTotal:   retriedSamplesTotal.WithLabelValues(name),
+	}
+	// We can't add sentBatchDuration because Observer doesn't implement Collector interface.
+	t.queueMetrics = []prometheus.Collector{
+		t.highestSentTimestampMetric.Gauge, t.pendingSamplesMetric, t.enqueueRetriesMetric,
+		t.droppedSamplesTotal, t.numShardsMetric, t.failedSamplesTotal, t.succeededSamplesTotal, t.retriedSamplesTotal,
 	}
 
 	t.watcher = NewWALWatcher(logger, name, t, walDir)
@@ -331,6 +337,10 @@ func (t *QueueManager) Stop() {
 	defer t.seriesMtx.Unlock()
 	for _, labels := range t.seriesLabels {
 		release(labels)
+	}
+	// Un-register metrics so we don't have alerts for queues that are gone.
+	for _, m := range t.queueMetrics {
+		prometheus.Unregister(m)
 	}
 }
 
