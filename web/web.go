@@ -498,10 +498,12 @@ func (h *Handler) Run(ctx context.Context) error {
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 	alerts := h.ruleManager.AlertingRulesbyGroup()
+	groupSorter := groupNameSorter{Groups:alerts}
+	sort.Sort(groupSorter)
+	alerts = groupSorter.Groups
 	for _, g := range alerts.Groups{
 		alertsSorter := byAlertStateAndNameSorter{alerts: g.Rules}
 		sort.Sort(alertsSorter)
-
 		g.Rules = alertsSorter.alerts
 		g.AlertStateToRowClass = map[rules.AlertState]string{
 				rules.StateInactive: "success",
@@ -931,3 +933,22 @@ func (s byAlertStateAndNameSorter) Less(i, j int) bool {
 func (s byAlertStateAndNameSorter) Swap(i, j int) {
 	s.alerts[i], s.alerts[j] = s.alerts[j], s.alerts[i]
 }
+
+//NEW CODE TO SORT GROUP NAMES
+type groupNameSorter struct {
+	Groups               []*rules.AlertingGroups
+}
+
+func (s groupNameSorter) Len() int {
+	return len(s.Groups)
+}
+
+func (s groupNameSorter) Less(i, j int) bool {
+	return s.Groups[i] < s.Groups[j]
+}
+
+func (s groupNameSorter) Swap(i, j int) {
+	s.Groups[i], s.Groups[j] = s.Groups[j], s.Groups[i]
+}
+
+
