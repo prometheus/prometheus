@@ -19,6 +19,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"golang.org/x/tools/go/gcexportdata"
@@ -250,6 +251,9 @@ type Package struct {
 	// TypesInfo provides type information about the package's syntax trees.
 	// It is set only when Syntax is set.
 	TypesInfo *types.Info
+
+	// TypesSizes provides the effective size function for types in TypesInfo.
+	TypesSizes types.Sizes
 }
 
 // An Error describes a problem with a package's metadata, syntax, or types.
@@ -582,6 +586,7 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 		lpkg.Fset = ld.Fset
 		lpkg.Syntax = []*ast.File{}
 		lpkg.TypesInfo = new(types.Info)
+		lpkg.TypesSizes = ld.sizes
 		return
 	}
 
@@ -669,6 +674,7 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 		Scopes:     make(map[ast.Node]*types.Scope),
 		Selections: make(map[*ast.SelectorExpr]*types.Selection),
 	}
+	lpkg.TypesSizes = ld.sizes
 
 	importer := importerFunc(func(path string) (*types.Package, error) {
 		if path == "unsafe" {
@@ -768,6 +774,11 @@ func (ld *loader) parseFiles(filenames []string) ([]*ast.File, []error) {
 	parsed := make([]*ast.File, n)
 	errors := make([]error, n)
 	for i, file := range filenames {
+		if ld.Config.Context.Err() != nil {
+			parsed[i] = nil
+			errors[i] = ld.Config.Context.Err()
+			continue
+		}
 		wg.Add(1)
 		go func(i int, filename string) {
 			ioLimit <- true // wait
@@ -828,7 +839,7 @@ func sameFile(x, y string) bool {
 		// overlay case implies x==y.)
 		return true
 	}
-	if filepath.Base(x) == filepath.Base(y) { // (optimisation)
+	if strings.EqualFold(filepath.Base(x), filepath.Base(y)) { // (optimisation)
 		if xi, err := os.Stat(x); err == nil {
 			if yi, err := os.Stat(y); err == nil {
 				return os.SameFile(xi, yi)

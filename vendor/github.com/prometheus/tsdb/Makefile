@@ -20,11 +20,6 @@ TSDB_BENCHMARK_OUTPUT_DIR ?= "$(TSDB_CLI_DIR)/benchout"
 
 include Makefile.common
 
-.PHONY: deps
-deps:
-	@echo ">> getting dependencies"
-	GO111MODULE=$(GO111MODULE) $(GO) get $(GOOPTS) -t ./...
-
 build:
 	GO111MODULE=$(GO111MODULE) $(GO) build -o $(TSDB_BIN) $(TSDB_CLI_DIR)
 

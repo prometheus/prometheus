@@ -595,7 +595,7 @@ func (w *WAL) Truncate(i int) (err error) {
 
 func (w *WAL) fsync(f *Segment) error {
 	start := time.Now()
-	err := fileutil.Fsync(f.File)
+	err := f.File.Sync()
 	w.fsyncDuration.Observe(time.Since(start).Seconds())
 	return err
 }

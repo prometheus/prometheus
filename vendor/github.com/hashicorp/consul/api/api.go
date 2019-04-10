@@ -93,7 +93,7 @@ type QueryOptions struct {
 	// If there is a cached response that is older than the MaxAge, it is treated
 	// as a cache miss and a new fetch invoked. If the fetch fails, the error is
 	// returned. Clients that wish to allow for stale results on error can set
-	// StaleIfError to a longer duration to change this behaviour. It is ignored
+	// StaleIfError to a longer duration to change this behavior. It is ignored
 	// if the endpoint supports background refresh caching. See
 	// https://www.consul.io/api/index.html#agent-caching for more details.
 	MaxAge time.Duration

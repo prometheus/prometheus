@@ -181,10 +181,8 @@ func (rr *SIG) Verify(k *KEY, buf []byte) error {
 	case DSA:
 		pk := k.publicKeyDSA()
 		sig = sig[1:]
-		r := big.NewInt(0)
-		r.SetBytes(sig[:len(sig)/2])
-		s := big.NewInt(0)
-		s.SetBytes(sig[len(sig)/2:])
+		r := new(big.Int).SetBytes(sig[:len(sig)/2])
+		s := new(big.Int).SetBytes(sig[len(sig)/2:])
 		if pk != nil {
 			if dsa.Verify(pk, hashed, r, s) {
 				return nil
@@ -198,10 +196,8 @@ func (rr *SIG) Verify(k *KEY, buf []byte) error {
 		}
 	case ECDSAP256SHA256, ECDSAP384SHA384:
 		pk := k.publicKeyECDSA()
-		r := big.NewInt(0)
-		r.SetBytes(sig[:len(sig)/2])
-		s := big.NewInt(0)
-		s.SetBytes(sig[len(sig)/2:])
+		r := new(big.Int).SetBytes(sig[:len(sig)/2])
+		s := new(big.Int).SetBytes(sig[len(sig)/2:])
 		if pk != nil {
 			if ecdsa.Verify(pk, hashed, r, s) {
 				return nil

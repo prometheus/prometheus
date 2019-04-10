@@ -7,18 +7,21 @@ package ipv4
 import (
 	"errors"
 	"net"
+	"runtime"
 )
 
 var (
 	errInvalidConn              = errors.New("invalid connection")
 	errMissingAddress           = errors.New("missing address")
 	errMissingHeader            = errors.New("missing header")
+	errNilHeader                = errors.New("nil header")
 	errHeaderTooShort           = errors.New("header too short")
-	errBufferTooShort           = errors.New("buffer too short")
+	errExtHeaderTooShort        = errors.New("extension header too short")
 	errInvalidConnType          = errors.New("invalid conn type")
 	errOpNoSupport              = errors.New("operation not supported")
 	errNoSuchInterface          = errors.New("no such interface")
 	errNoSuchMulticastInterface = errors.New("no such multicast interface")
+	errNotImplemented           = errors.New("not implemented on " + runtime.GOOS + "/" + runtime.GOARCH)
 
 	// See http://www.freebsd.org/doc/en/books/porters-handbook/freebsd-versions.html.
 	freebsdVersion uint32

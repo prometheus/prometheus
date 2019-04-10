@@ -20,6 +20,7 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -40,6 +41,7 @@ const (
 	epLabelValues     = apiPrefix + "/label/:name/values"
 	epSeries          = apiPrefix + "/series"
 	epTargets         = apiPrefix + "/targets"
+	epRules           = apiPrefix + "/rules"
 	epSnapshot        = apiPrefix + "/admin/tsdb/snapshot"
 	epDeleteSeries    = apiPrefix + "/admin/tsdb/delete_series"
 	epCleanTombstones = apiPrefix + "/admin/tsdb/clean_tombstones"
@@ -47,13 +49,27 @@ const (
 	epFlags           = apiPrefix + "/status/flags"
 )
 
+// AlertState models the state of an alert.
+type AlertState string
+
 // ErrorType models the different API error types.
 type ErrorType string
 
 // HealthStatus models the health status of a scrape target.
 type HealthStatus string
 
+// RuleType models the type of a rule.
+type RuleType string
+
+// RuleHealth models the health status of a rule.
+type RuleHealth string
+
 const (
+	// Possible values for AlertState.
+	AlertStateFiring   AlertState = "firing"
+	AlertStateInactive AlertState = "inactive"
+	AlertStatePending  AlertState = "pending"
+
 	// Possible values for ErrorType.
 	ErrBadData     ErrorType = "bad_data"
 	ErrTimeout     ErrorType = "timeout"
@@ -67,6 +83,15 @@ const (
 	HealthGood    HealthStatus = "up"
 	HealthUnknown HealthStatus = "unknown"
 	HealthBad     HealthStatus = "down"
+
+	// Possible values for RuleType.
+	RuleTypeRecording RuleType = "recording"
+	RuleTypeAlerting  RuleType = "alerting"
+
+	// Possible values for RuleHealth.
+	RuleHealthGood    = "ok"
+	RuleHealthUnknown = "unknown"
+	RuleHealthBad     = "err"
 )
 
 // Error is an error returned by the API.
@@ -111,6 +136,8 @@ type API interface {
 	// Snapshot creates a snapshot of all current data into snapshots/<datetime>-<rand>
 	// under the TSDB's data directory and returns the directory as response.
 	Snapshot(ctx context.Context, skipHead bool) (SnapshotResult, error)
+	// Rules returns a list of alerting and recording rules that are currently loaded.
+	Rules(ctx context.Context) (RulesResult, error)
 	// Targets returns an overview of the current state of the Prometheus target discovery.
 	Targets(ctx context.Context) (TargetsResult, error)
 }
@@ -139,6 +166,63 @@ type SnapshotResult struct {
 	Name string `json:"name"`
 }
 
+// RulesResult contains the result from querying the rules endpoint.
+type RulesResult struct {
+	Groups []RuleGroup `json:"groups"`
+}
+
+// RuleGroup models a rule group that contains a set of recording and alerting rules.
+type RuleGroup struct {
+	Name     string  `json:"name"`
+	File     string  `json:"file"`
+	Interval float64 `json:"interval"`
+	Rules    Rules   `json:"rules"`
+}
+
+// Recording and alerting rules are stored in the same slice to preserve the order
+// that rules are returned in by the API.
+//
+// Rule types can be determined using a type switch:
+//   switch v := rule.(type) {
+//   case RecordingRule:
+//   	fmt.Print("got a recording rule")
+//   case AlertingRule:
+//   	fmt.Print("got a alerting rule")
+//   default:
+//   	fmt.Printf("unknown rule type %s", v)
+//   }
+type Rules []interface{}
+
+// AlertingRule models a alerting rule.
+type AlertingRule struct {
+	Name        string         `json:"name"`
+	Query       string         `json:"query"`
+	Duration    float64        `json:"duration"`
+	Labels      model.LabelSet `json:"labels"`
+	Annotations model.LabelSet `json:"annotations"`
+	Alerts      []*Alert       `json:"alerts"`
+	Health      RuleHealth     `json:"health"`
+	LastError   string         `json:"lastError,omitempty"`
+}
+
+// RecordingRule models a recording rule.
+type RecordingRule struct {
+	Name      string         `json:"name"`
+	Query     string         `json:"query"`
+	Labels    model.LabelSet `json:"labels,omitempty"`
+	Health    RuleHealth     `json:"health"`
+	LastError string         `json:"lastError,omitempty"`
+}
+
+// Alert models an active alert.
+type Alert struct {
+	ActiveAt    time.Time `json:"activeAt"`
+	Annotations model.LabelSet
+	Labels      model.LabelSet
+	State       AlertState
+	Value       float64
+}
+
 // TargetsResult contains the result from querying the targets endpoint.
 type TargetsResult struct {
 	Active  []ActiveTarget  `json:"activeTargets"`
@@ -147,17 +231,17 @@ type TargetsResult struct {
 
 // ActiveTarget models an active Prometheus scrape target.
 type ActiveTarget struct {
-	DiscoveredLabels model.LabelSet `json:"discoveredLabels"`
-	Labels           model.LabelSet `json:"labels"`
-	ScrapeURL        string         `json:"scrapeUrl"`
-	LastError        string         `json:"lastError"`
-	LastScrape       time.Time      `json:"lastScrape"`
-	Health           HealthStatus   `json:"health"`
+	DiscoveredLabels map[string]string `json:"discoveredLabels"`
+	Labels           model.LabelSet    `json:"labels"`
+	ScrapeURL        string            `json:"scrapeUrl"`
+	LastError        string            `json:"lastError"`
+	LastScrape       time.Time         `json:"lastScrape"`
+	Health           HealthStatus      `json:"health"`
 }
 
 // DroppedTarget models a dropped Prometheus scrape target.
 type DroppedTarget struct {
-	DiscoveredLabels model.LabelSet `json:"discoveredLabels"`
+	DiscoveredLabels map[string]string `json:"discoveredLabels"`
 }
 
 // queryResult contains result data for a query.
@@ -167,6 +251,111 @@ type queryResult struct {
 
 	// The decoded value.
 	v model.Value
+}
+
+func (rg *RuleGroup) UnmarshalJSON(b []byte) error {
+	v := struct {
+		Name     string            `json:"name"`
+		File     string            `json:"file"`
+		Interval float64           `json:"interval"`
+		Rules    []json.RawMessage `json:"rules"`
+	}{}
+
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+
+	rg.Name = v.Name
+	rg.File = v.File
+	rg.Interval = v.Interval
+
+	for _, rule := range v.Rules {
+		alertingRule := AlertingRule{}
+		if err := json.Unmarshal(rule, &alertingRule); err == nil {
+			rg.Rules = append(rg.Rules, alertingRule)
+			continue
+		}
+		recordingRule := RecordingRule{}
+		if err := json.Unmarshal(rule, &recordingRule); err == nil {
+			rg.Rules = append(rg.Rules, recordingRule)
+			continue
+		}
+		return errors.New("failed to decode JSON into an alerting or recording rule")
+	}
+
+	return nil
+}
+
+func (r *AlertingRule) UnmarshalJSON(b []byte) error {
+	v := struct {
+		Type string `json:"type"`
+	}{}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	if v.Type == "" {
+		return errors.New("type field not present in rule")
+	}
+	if v.Type != string(RuleTypeAlerting) {
+		return fmt.Errorf("expected rule of type %s but got %s", string(RuleTypeAlerting), v.Type)
+	}
+
+	rule := struct {
+		Name        string         `json:"name"`
+		Query       string         `json:"query"`
+		Duration    float64        `json:"duration"`
+		Labels      model.LabelSet `json:"labels"`
+		Annotations model.LabelSet `json:"annotations"`
+		Alerts      []*Alert       `json:"alerts"`
+		Health      RuleHealth     `json:"health"`
+		LastError   string         `json:"lastError,omitempty"`
+	}{}
+	if err := json.Unmarshal(b, &rule); err != nil {
+		return err
+	}
+	r.Health = rule.Health
+	r.Annotations = rule.Annotations
+	r.Name = rule.Name
+	r.Query = rule.Query
+	r.Alerts = rule.Alerts
+	r.Duration = rule.Duration
+	r.Labels = rule.Labels
+	r.LastError = rule.LastError
+
+	return nil
+}
+
+func (r *RecordingRule) UnmarshalJSON(b []byte) error {
+	v := struct {
+		Type string `json:"type"`
+	}{}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	if v.Type == "" {
+		return errors.New("type field not present in rule")
+	}
+	if v.Type != string(RuleTypeRecording) {
+		return fmt.Errorf("expected rule of type %s but got %s", string(RuleTypeRecording), v.Type)
+	}
+
+	rule := struct {
+		Name      string         `json:"name"`
+		Query     string         `json:"query"`
+		Labels    model.LabelSet `json:"labels,omitempty"`
+		Health    RuleHealth     `json:"health"`
+		LastError string         `json:"lastError,omitempty"`
+	}{}
+	if err := json.Unmarshal(b, &rule); err != nil {
+		return err
+	}
+	r.Health = rule.Health
+	r.Labels = rule.Labels
+	r.Name = rule.Name
+	r.LastError = rule.LastError
+	r.Query = rule.Query
+
+	return nil
 }
 
 func (qr *queryResult) UnmarshalJSON(b []byte) error {
@@ -423,6 +612,24 @@ func (h *httpAPI) Snapshot(ctx context.Context, skipHead bool) (SnapshotResult, 
 	}
 
 	var res SnapshotResult
+	err = json.Unmarshal(body, &res)
+	return res, err
+}
+
+func (h *httpAPI) Rules(ctx context.Context) (RulesResult, error) {
+	u := h.client.URL(epRules, nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return RulesResult{}, err
+	}
+
+	_, body, err := h.client.Do(ctx, req)
+	if err != nil {
+		return RulesResult{}, err
+	}
+
+	var res RulesResult
 	err = json.Unmarshal(body, &res)
 	return res, err
 }

@@ -408,6 +408,11 @@ type TCPInfo struct {
 	Total_retrans  uint32
 }
 
+type CanFilter struct {
+	Id   uint32
+	Mask uint32
+}
+
 const (
 	SizeofSockaddrInet4     = 0x10
 	SizeofSockaddrInet6     = 0x1c
@@ -437,6 +442,7 @@ const (
 	SizeofICMPv6Filter      = 0x20
 	SizeofUcred             = 0xc
 	SizeofTCPInfo           = 0x68
+	SizeofCanFilter         = 0x8
 )
 
 const (

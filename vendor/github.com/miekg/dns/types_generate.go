@@ -196,9 +196,9 @@ func main() {
 			case st.Tag(i) == `dns:"any"`:
 				o("l += len(rr.%s)\n")
 			case st.Tag(i) == `dns:"a"`:
-				o("l += net.IPv4len // %s\n")
+				o("if len(rr.%s) != 0 { l += net.IPv4len }\n")
 			case st.Tag(i) == `dns:"aaaa"`:
-				o("l += net.IPv6len // %s\n")
+				o("if len(rr.%s) != 0 { l += net.IPv6len }\n")
 			case st.Tag(i) == `dns:"txt"`:
 				o("for _, t := range rr.%s { l += len(t) + 1 }\n")
 			case st.Tag(i) == `dns:"uint48"`:

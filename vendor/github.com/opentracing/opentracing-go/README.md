@@ -95,7 +95,7 @@ reference.
 
             // Transmit the span's TraceContext as HTTP headers on our
             // outbound request.
-            tracer.Inject(
+            opentracing.GlobalTracer().Inject(
                 span.Context(),
                 opentracing.HTTPHeaders,
                 opentracing.HTTPHeadersCarrier(httpReq.Header))

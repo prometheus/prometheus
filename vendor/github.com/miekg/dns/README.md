@@ -68,6 +68,7 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://blitiri.com.ar/p/dnss ([github mirror](https://github.com/albertito/dnss))
 * https://github.com/semihalev/sdns
 * https://render.com
+* https://github.com/peterzen/goresolver
 
 Send pull request if you want to be listed here.
 

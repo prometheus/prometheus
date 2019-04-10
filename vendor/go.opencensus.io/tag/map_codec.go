@@ -162,6 +162,9 @@ func (eg *encoderGRPC) bytes() []byte {
 // Encode encodes the tag map into a []byte. It is useful to propagate
 // the tag maps on wire in binary format.
 func Encode(m *Map) []byte {
+	if m == nil {
+		return nil
+	}
 	eg := &encoderGRPC{
 		buf: make([]byte, len(m.m)),
 	}
