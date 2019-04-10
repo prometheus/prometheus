@@ -54,6 +54,7 @@ type k8sDiscoveryTest struct {
 }
 
 func (d k8sDiscoveryTest) Run(t *testing.T) {
+	t.Helper()
 	ch := make(chan []*targetgroup.Group)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -124,6 +125,7 @@ Loop:
 }
 
 func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Group) {
+	t.Helper()
 	b1, err := json.Marshal(expected)
 	if err != nil {
 		panic(err)

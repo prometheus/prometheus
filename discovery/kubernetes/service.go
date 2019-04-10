@@ -135,13 +135,15 @@ func serviceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	serviceNameLabel         = metaLabelPrefix + "service_name"
-	serviceLabelPrefix       = metaLabelPrefix + "service_label_"
-	serviceAnnotationPrefix  = metaLabelPrefix + "service_annotation_"
-	servicePortNameLabel     = metaLabelPrefix + "service_port_name"
-	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
-	serviceClusterIPLabel    = metaLabelPrefix + "service_cluster_ip"
-	serviceExternalNameLabel = metaLabelPrefix + "service_external_name"
+	serviceNameLabel               = metaLabelPrefix + "service_name"
+	serviceLabelPrefix             = metaLabelPrefix + "service_label_"
+	serviceLabelPresentPrefix      = metaLabelPrefix + "service_labelpresent_"
+	serviceAnnotationPrefix        = metaLabelPrefix + "service_annotation_"
+	serviceAnnotationPresentPrefix = metaLabelPrefix + "service_annotationpresent_"
+	servicePortNameLabel           = metaLabelPrefix + "service_port_name"
+	servicePortProtocolLabel       = metaLabelPrefix + "service_port_protocol"
+	serviceClusterIPLabel          = metaLabelPrefix + "service_cluster_ip"
+	serviceExternalNameLabel       = metaLabelPrefix + "service_external_name"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
@@ -151,13 +153,15 @@ func serviceLabels(svc *apiv1.Service) model.LabelSet {
 	ls[namespaceLabel] = lv(svc.Namespace)
 
 	for k, v := range svc.Labels {
-		ln := strutil.SanitizeLabelName(serviceLabelPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(serviceLabelPrefix+ln)] = lv(v)
+		ls[model.LabelName(serviceLabelPresentPrefix+ln)] = presentValue
 	}
 
 	for k, v := range svc.Annotations {
-		ln := strutil.SanitizeLabelName(serviceAnnotationPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(serviceAnnotationPrefix+ln)] = lv(v)
+		ls[model.LabelName(serviceAnnotationPresentPrefix+ln)] = presentValue
 	}
 	return ls
 }

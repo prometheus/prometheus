@@ -43,6 +43,7 @@ const (
 	metaLabelPrefix  = model.MetaLabelPrefix + "kubernetes_"
 	namespaceLabel   = metaLabelPrefix + "namespace"
 	metricsNamespace = "prometheus_sd_kubernetes"
+	presentValue     = model.LabelValue("true")
 )
 
 var (
