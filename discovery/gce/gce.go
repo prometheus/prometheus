@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/option"
 
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -120,7 +121,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "error setting up communication with GCE service")
 	}
-	d.svc, err = compute.New(d.client)
+	d.svc, err = compute.NewService(context.Background(), option.WithHTTPClient(d.client))
 	if err != nil {
 		return nil, errors.Wrap(err, "error setting up communication with GCE service")
 	}

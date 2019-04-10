@@ -24,6 +24,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/encoding"
+	tsdb_errors "github.com/prometheus/tsdb/errors"
 )
 
 const tombstoneFilename = "tombstones"
@@ -98,6 +99,12 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 	_, err = f.Write(hash.Sum(nil))
 	if err != nil {
 		return err
+	}
+
+	var merr tsdb_errors.MultiError
+	if merr.Add(f.Sync()); merr.Err() != nil {
+		merr.Add(f.Close())
+		return merr.Err()
 	}
 
 	if err = f.Close(); err != nil {

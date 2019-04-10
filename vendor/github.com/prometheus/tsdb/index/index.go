@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/encoding"
+	tsdb_errors "github.com/prometheus/tsdb/errors"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 )
@@ -192,7 +193,7 @@ func NewWriter(fn string) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := fileutil.Fsync(df); err != nil {
+	if err := df.Sync(); err != nil {
 		return nil, errors.Wrap(err, "sync dir")
 	}
 
@@ -554,7 +555,7 @@ func (w *Writer) Close() error {
 	if err := w.fbuf.Flush(); err != nil {
 		return err
 	}
-	if err := fileutil.Fsync(w.f); err != nil {
+	if err := w.f.Sync(); err != nil {
 		return err
 	}
 	return w.f.Close()
@@ -625,7 +626,15 @@ func NewFileReader(path string) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newReader(realByteSlice(f.Bytes()), f)
+	r, err := newReader(realByteSlice(f.Bytes()), f)
+	if err != nil {
+		var merr tsdb_errors.MultiError
+		merr.Add(err)
+		merr.Add(f.Close())
+		return nil, merr
+	}
+
+	return r, nil
 }
 
 func newReader(b ByteSlice, c io.Closer) (*Reader, error) {

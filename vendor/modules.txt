@@ -1,6 +1,6 @@
-# cloud.google.com/go v0.26.0
+# cloud.google.com/go v0.34.0
 cloud.google.com/go/compute/metadata
-# contrib.go.opencensus.io/exporter/ocagent v0.4.1
+# contrib.go.opencensus.io/exporter/ocagent v0.4.12
 contrib.go.opencensus.io/exporter/ocagent
 # github.com/Azure/azure-sdk-for-go v23.2.0+incompatible
 github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute
@@ -52,7 +52,7 @@ github.com/aws/aws-sdk-go/private/protocol/query/queryutil
 github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil
 # github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973
 github.com/beorn7/perks/quantile
-# github.com/census-instrumentation/opencensus-proto v0.1.0
+# github.com/census-instrumentation/opencensus-proto v0.2.0
 github.com/census-instrumentation/opencensus-proto/gen-go/agent/common/v1
 github.com/census-instrumentation/opencensus-proto/gen-go/agent/metrics/v1
 github.com/census-instrumentation/opencensus-proto/gen-go/agent/trace/v1
@@ -112,7 +112,7 @@ github.com/gogo/protobuf/protoc-gen-gogo/plugin
 github.com/gogo/protobuf/protoc-gen-gogo/generator/internal/remap
 # github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 github.com/golang/glog
-# github.com/golang/protobuf v1.2.0
+# github.com/golang/protobuf v1.3.1
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/jsonpb
 github.com/golang/protobuf/protoc-gen-go/generator
@@ -126,7 +126,7 @@ github.com/golang/protobuf/protoc-gen-go/plugin
 github.com/golang/protobuf/ptypes/struct
 github.com/golang/protobuf/protoc-gen-go/generator/internal/remap
 github.com/golang/protobuf/descriptor
-# github.com/golang/snappy v0.0.0-20160529050041-d9eb7a3d35ec
+# github.com/golang/snappy v0.0.1
 github.com/golang/snappy
 # github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c
 github.com/google/btree
@@ -167,15 +167,15 @@ github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/genswagger
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/httprule
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/generator
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options
-# github.com/hashicorp/consul v1.4.2
+# github.com/hashicorp/consul v1.4.4
 github.com/hashicorp/consul/api
-# github.com/hashicorp/go-cleanhttp v0.5.0
+# github.com/hashicorp/go-cleanhttp v0.5.1
 github.com/hashicorp/go-cleanhttp
 # github.com/hashicorp/go-immutable-radix v1.0.0
 github.com/hashicorp/go-immutable-radix
 # github.com/hashicorp/go-rootcerts v0.0.0-20160503143440-6bb64b370b90
 github.com/hashicorp/go-rootcerts
-# github.com/hashicorp/golang-lru v0.5.0
+# github.com/hashicorp/golang-lru v0.5.1
 github.com/hashicorp/golang-lru
 github.com/hashicorp/golang-lru/simplelru
 # github.com/hashicorp/serf v0.8.2
@@ -194,7 +194,7 @@ github.com/julienschmidt/httprouter
 github.com/kr/logfmt
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/miekg/dns v1.1.4
+# github.com/miekg/dns v1.1.8
 github.com/miekg/dns
 # github.com/mitchellh/go-homedir v0.0.0-20180523094522-3864e76763d9
 github.com/mitchellh/go-homedir
@@ -212,7 +212,7 @@ github.com/oklog/oklog/pkg/group
 github.com/oklog/ulid
 # github.com/opentracing-contrib/go-stdlib v0.0.0-20170113013457-1de4cc2120e7
 github.com/opentracing-contrib/go-stdlib/nethttp
-# github.com/opentracing/opentracing-go v1.0.1
+# github.com/opentracing/opentracing-go v1.0.2
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/log
 github.com/opentracing/opentracing-go/ext
@@ -220,18 +220,18 @@ github.com/opentracing/opentracing-go/ext
 github.com/peterbourgon/diskv
 # github.com/petermattis/goid v0.0.0-20170504144140-0ded85884ba5
 github.com/petermattis/goid
-# github.com/pkg/errors v0.8.0
+# github.com/pkg/errors v0.8.1
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/client_golang v0.9.2
+# github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
 github.com/prometheus/client_golang/prometheus/promhttp
 github.com/prometheus/client_golang/prometheus/promauto
 github.com/prometheus/client_golang/prometheus/internal
-# github.com/prometheus/client_model v0.0.0-20180712105110-5c3871d89910
+# github.com/prometheus/client_model v0.0.0-20190115171406-56726106282f
 github.com/prometheus/client_model/go
 # github.com/prometheus/common v0.3.0
 github.com/prometheus/common/model
@@ -242,12 +242,12 @@ github.com/prometheus/common/config
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/route
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
-# github.com/prometheus/procfs v0.0.0-20181204211112-1dc9a6cbc91a
+# github.com/prometheus/procfs v0.0.0-20190117184657-bf6a532e95b1
 github.com/prometheus/procfs
 github.com/prometheus/procfs/nfs
 github.com/prometheus/procfs/xfs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/tsdb v0.6.1
+# github.com/prometheus/tsdb v0.7.0
 github.com/prometheus/tsdb
 github.com/prometheus/tsdb/fileutil
 github.com/prometheus/tsdb/labels
@@ -255,6 +255,8 @@ github.com/prometheus/tsdb/wal
 github.com/prometheus/tsdb/chunkenc
 github.com/prometheus/tsdb/chunks
 github.com/prometheus/tsdb/encoding
+github.com/prometheus/tsdb/errors
+github.com/prometheus/tsdb/goversion
 github.com/prometheus/tsdb/index
 # github.com/samuel/go-zookeeper v0.0.0-20161028232340-1d7be4effb13
 github.com/samuel/go-zookeeper/zk
@@ -271,13 +273,13 @@ github.com/soheilhy/cmux
 # github.com/stretchr/testify v1.3.0
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
-# go.opencensus.io v0.18.1-0.20181204023538-aab39bd6a98b
+# go.opencensus.io v0.20.2
 go.opencensus.io/plugin/ochttp
 go.opencensus.io/plugin/ochttp/propagation/tracecontext
 go.opencensus.io/stats/view
 go.opencensus.io/trace
 go.opencensus.io
-go.opencensus.io/exemplar
+go.opencensus.io/plugin/ocgrpc
 go.opencensus.io/resource
 go.opencensus.io/stats
 go.opencensus.io/tag
@@ -285,38 +287,40 @@ go.opencensus.io/trace/tracestate
 go.opencensus.io/plugin/ochttp/propagation/b3
 go.opencensus.io/trace/propagation
 go.opencensus.io/internal/tagencoding
+go.opencensus.io/metric/metricdata
+go.opencensus.io/metric/metricproducer
 go.opencensus.io/stats/internal
 go.opencensus.io/internal
 go.opencensus.io/trace/internal
-# golang.org/x/crypto v0.0.0-20190211182817-74369b46fc67
+# golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2
 golang.org/x/crypto/ed25519
 golang.org/x/crypto/ed25519/internal/edwards25519
 golang.org/x/crypto/ssh/terminal
-# golang.org/x/net v0.0.0-20181220203305-927f97764cc3
+# golang.org/x/net v0.0.0-20190311183353-d8887717615a
 golang.org/x/net/netutil
 golang.org/x/net/trace
 golang.org/x/net/ipv4
 golang.org/x/net/ipv6
-golang.org/x/net/context
-golang.org/x/net/context/ctxhttp
 golang.org/x/net/http2
+golang.org/x/net/context
 golang.org/x/net/http2/hpack
 golang.org/x/net/internal/timeseries
 golang.org/x/net/bpf
 golang.org/x/net/internal/iana
 golang.org/x/net/internal/socket
+golang.org/x/net/context/ctxhttp
 golang.org/x/net/http/httpguts
 golang.org/x/net/idna
-# golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
+# golang.org/x/oauth2 v0.0.0-20190226205417-e64efc72b421
 golang.org/x/oauth2/google
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
-# golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4
+# golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.0.0-20190209173611-3b5209105503
+# golang.org/x/sys v0.0.0-20190222072716-a9d3bda3a223
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 # golang.org/x/text v0.3.0
@@ -326,25 +330,31 @@ golang.org/x/text/unicode/norm
 golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
 golang.org/x/time/rate
-# golang.org/x/tools v0.0.0-20190114222345-bf090417da8b
+# golang.org/x/tools v0.0.0-20190312170243-e65039ee4138
 golang.org/x/tools/cmd/goimports
 golang.org/x/tools/imports
 golang.org/x/tools/go/ast/astutil
 golang.org/x/tools/go/packages
 golang.org/x/tools/internal/gopathwalk
+golang.org/x/tools/internal/module
 golang.org/x/tools/go/gcexportdata
 golang.org/x/tools/go/internal/cgo
 golang.org/x/tools/go/internal/packagesdriver
 golang.org/x/tools/internal/semver
 golang.org/x/tools/internal/fastwalk
 golang.org/x/tools/go/internal/gcimporter
-# google.golang.org/api v0.0.0-20180910000450-7ca32eb868bf
+# google.golang.org/api v0.3.2
 google.golang.org/api/compute/v1
+google.golang.org/api/option
 google.golang.org/api/gensupport
 google.golang.org/api/googleapi
+google.golang.org/api/transport/http
+google.golang.org/api/internal
 google.golang.org/api/googleapi/internal/uritemplates
+google.golang.org/api/googleapi/transport
+google.golang.org/api/transport/http/internal/propagation
 google.golang.org/api/support/bundler
-# google.golang.org/appengine v1.1.0
+# google.golang.org/appengine v1.4.0
 google.golang.org/appengine
 google.golang.org/appengine/urlfetch
 google.golang.org/appengine/internal
@@ -355,7 +365,7 @@ google.golang.org/appengine/internal/base
 google.golang.org/appengine/internal/datastore
 google.golang.org/appengine/internal/log
 google.golang.org/appengine/internal/remote_api
-# google.golang.org/genproto v0.0.0-20180831171423-11092d34479b
+# google.golang.org/genproto v0.0.0-20190307195333-5fe7a883aa19
 google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/api/httpbody
 google.golang.org/genproto/protobuf/field_mask
@@ -394,9 +404,9 @@ google.golang.org/grpc/binarylog/grpc_binarylog_v1
 google.golang.org/grpc/internal/syscall
 # gopkg.in/alecthomas/kingpin.v2 v2.2.6
 gopkg.in/alecthomas/kingpin.v2
-# gopkg.in/fsnotify/fsnotify.v1 v1.3.0
+# gopkg.in/fsnotify/fsnotify.v1 v1.3.1
 gopkg.in/fsnotify/fsnotify.v1
-# gopkg.in/inf.v0 v0.9.0
+# gopkg.in/inf.v0 v0.9.1
 gopkg.in/inf.v0
 # gopkg.in/yaml.v2 v2.2.2
 gopkg.in/yaml.v2

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3.1 / 2016-06-28
+
+* windows: fix for double backslash when watching the root of a drive [#151](https://github.com/fsnotify/fsnotify/issues/151) (thanks @brunoqc)
+
 ## v1.3.0 / 2016-04-19
 
 * Support linux/arm64 by [patching](https://go-review.googlesource.com/#/c/21971/) x/sys/unix and switching to to it from syscall (thanks @suihkulokki) [#135](https://github.com/fsnotify/fsnotify/pull/135)

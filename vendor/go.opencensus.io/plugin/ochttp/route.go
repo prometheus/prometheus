@@ -15,10 +15,20 @@
 package ochttp
 
 import (
+	"context"
 	"net/http"
 
 	"go.opencensus.io/tag"
 )
+
+// SetRoute sets the http_server_route tag to the given value.
+// It's useful when an HTTP framework does not support the http.Handler interface
+// and using WithRouteTag is not an option, but provides a way to hook into the request flow.
+func SetRoute(ctx context.Context, route string) {
+	if a, ok := ctx.Value(addedTagsKey{}).(*addedTags); ok {
+		a.t = append(a.t, tag.Upsert(KeyServerRoute, route))
+	}
+}
 
 // WithRouteTag returns an http.Handler that records stats with the
 // http_server_route tag set to the given value.

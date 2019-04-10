@@ -429,8 +429,8 @@ Loop:
 			if budget <= 0 {
 				return "", lenmsg, ErrLongDomain
 			}
-			for j := off; j < off+c; j++ {
-				switch b := msg[j]; b {
+			for _, b := range msg[off : off+c] {
+				switch b {
 				case '.', '(', ')', ';', ' ', '@':
 					fallthrough
 				case '"', '\\':
@@ -489,11 +489,11 @@ func packTxt(txt []string, msg []byte, offset int, tmp []byte) (int, error) {
 		return offset, nil
 	}
 	var err error
-	for i := range txt {
-		if len(txt[i]) > len(tmp) {
+	for _, s := range txt {
+		if len(s) > len(tmp) {
 			return offset, ErrBuf
 		}
-		offset, err = packTxtString(txt[i], msg, offset, tmp)
+		offset, err = packTxtString(s, msg, offset, tmp)
 		if err != nil {
 			return offset, err
 		}
@@ -934,31 +934,31 @@ func (dns *Msg) String() string {
 	s += "ADDITIONAL: " + strconv.Itoa(len(dns.Extra)) + "\n"
 	if len(dns.Question) > 0 {
 		s += "\n;; QUESTION SECTION:\n"
-		for i := 0; i < len(dns.Question); i++ {
-			s += dns.Question[i].String() + "\n"
+		for _, r := range dns.Question {
+			s += r.String() + "\n"
 		}
 	}
 	if len(dns.Answer) > 0 {
 		s += "\n;; ANSWER SECTION:\n"
-		for i := 0; i < len(dns.Answer); i++ {
-			if dns.Answer[i] != nil {
-				s += dns.Answer[i].String() + "\n"
+		for _, r := range dns.Answer {
+			if r != nil {
+				s += r.String() + "\n"
 			}
 		}
 	}
 	if len(dns.Ns) > 0 {
 		s += "\n;; AUTHORITY SECTION:\n"
-		for i := 0; i < len(dns.Ns); i++ {
-			if dns.Ns[i] != nil {
-				s += dns.Ns[i].String() + "\n"
+		for _, r := range dns.Ns {
+			if r != nil {
+				s += r.String() + "\n"
 			}
 		}
 	}
 	if len(dns.Extra) > 0 {
 		s += "\n;; ADDITIONAL SECTION:\n"
-		for i := 0; i < len(dns.Extra); i++ {
-			if dns.Extra[i] != nil {
-				s += dns.Extra[i].String() + "\n"
+		for _, r := range dns.Extra {
+			if r != nil {
+				s += r.String() + "\n"
 			}
 		}
 	}
@@ -1091,33 +1091,20 @@ func (dns *Msg) CopyTo(r1 *Msg) *Msg {
 	}
 
 	rrArr := make([]RR, len(dns.Answer)+len(dns.Ns)+len(dns.Extra))
-	var rri int
+	r1.Answer, rrArr = rrArr[:0:len(dns.Answer)], rrArr[len(dns.Answer):]
+	r1.Ns, rrArr = rrArr[:0:len(dns.Ns)], rrArr[len(dns.Ns):]
+	r1.Extra = rrArr[:0:len(dns.Extra)]
 
-	if len(dns.Answer) > 0 {
-		rrbegin := rri
-		for i := 0; i < len(dns.Answer); i++ {
-			rrArr[rri] = dns.Answer[i].copy()
-			rri++
-		}
-		r1.Answer = rrArr[rrbegin:rri:rri]
+	for _, r := range dns.Answer {
+		r1.Answer = append(r1.Answer, r.copy())
 	}
 
-	if len(dns.Ns) > 0 {
-		rrbegin := rri
-		for i := 0; i < len(dns.Ns); i++ {
-			rrArr[rri] = dns.Ns[i].copy()
-			rri++
-		}
-		r1.Ns = rrArr[rrbegin:rri:rri]
+	for _, r := range dns.Ns {
+		r1.Ns = append(r1.Ns, r.copy())
 	}
 
-	if len(dns.Extra) > 0 {
-		rrbegin := rri
-		for i := 0; i < len(dns.Extra); i++ {
-			rrArr[rri] = dns.Extra[i].copy()
-			rri++
-		}
-		r1.Extra = rrArr[rrbegin:rri:rri]
+	for _, r := range dns.Extra {
+		r1.Extra = append(r1.Extra, r.copy())
 	}
 
 	return r1

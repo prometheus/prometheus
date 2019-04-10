@@ -104,7 +104,7 @@ extractQueries:
 				containFiles = append(containFiles, value)
 			case "pattern":
 				restPatterns = append(restPatterns, value)
-			case "name":
+			case "iamashamedtousethedisabledqueryname":
 				packagesNamed = append(packagesNamed, value)
 			case "": // not a reserved query
 				restPatterns = append(restPatterns, pattern)
@@ -283,7 +283,10 @@ func runNamedQueries(cfg *Config, driver driver, response *responseDeduper, quer
 		matchesMu.Lock()
 		defer matchesMu.Unlock()
 
-		path := dir[len(root.Path)+1:]
+		path := dir
+		if dir != root.Path {
+			path = dir[len(root.Path)+1:]
+		}
 		if pathMatchesQueries(path, queries) {
 			switch root.Type {
 			case gopathwalk.RootModuleCache:
@@ -617,16 +620,25 @@ func golistDriverCurrent(cfg *Config, words ...string) (*driverResponse, error) 
 			OtherFiles:      absJoin(p.Dir, otherFiles(p)...),
 		}
 
-		// Workaround for https://golang.org/issue/28749.
-		// TODO(adonovan): delete before go1.12 release.
-		out := pkg.CompiledGoFiles[:0]
-		for _, f := range pkg.CompiledGoFiles {
-			if strings.HasSuffix(f, ".s") {
-				continue
+		// Work around https://golang.org/issue/28749:
+		// cmd/go puts assembly, C, and C++ files in CompiledGoFiles.
+		// Filter out any elements of CompiledGoFiles that are also in OtherFiles.
+		// We have to keep this workaround in place until go1.12 is a distant memory.
+		if len(pkg.OtherFiles) > 0 {
+			other := make(map[string]bool, len(pkg.OtherFiles))
+			for _, f := range pkg.OtherFiles {
+				other[f] = true
 			}
-			out = append(out, f)
+
+			out := pkg.CompiledGoFiles[:0]
+			for _, f := range pkg.CompiledGoFiles {
+				if other[f] {
+					continue
+				}
+				out = append(out, f)
+			}
+			pkg.CompiledGoFiles = out
 		}
-		pkg.CompiledGoFiles = out
 
 		// Extract the PkgPath from the package's ID.
 		if i := strings.IndexByte(pkg.ID, ' '); i >= 0 {
@@ -725,9 +737,6 @@ func golistargs(cfg *Config, words []string) []string {
 
 // invokeGo returns the stdout of a go command invocation.
 func invokeGo(cfg *Config, args ...string) (*bytes.Buffer, error) {
-	if debug {
-		defer func(start time.Time) { log.Printf("%s for %v", time.Since(start), cmdDebugStr(cfg, args...)) }(time.Now())
-	}
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
 	cmd := exec.CommandContext(cfg.Context, "go", args...)
@@ -741,6 +750,12 @@ func invokeGo(cfg *Config, args ...string) (*bytes.Buffer, error) {
 	cmd.Dir = cfg.Dir
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	if debug {
+		defer func(start time.Time) {
+			log.Printf("%s for %v, stderr: <<%s>>\n", time.Since(start), cmdDebugStr(cmd, args...), stderr)
+		}(time.Now())
+	}
+
 	if err := cmd.Run(); err != nil {
 		exitErr, ok := err.(*exec.ExitError)
 		if !ok {
@@ -774,12 +789,12 @@ func invokeGo(cfg *Config, args ...string) (*bytes.Buffer, error) {
 	// be useful for debugging. Print them if $GOPACKAGESPRINTGOLISTERRORS
 	// is set.
 	if len(stderr.Bytes()) != 0 && os.Getenv("GOPACKAGESPRINTGOLISTERRORS") != "" {
-		fmt.Fprintf(os.Stderr, "%s stderr: <<%s>>\n", cmdDebugStr(cfg, args...), stderr)
+		fmt.Fprintf(os.Stderr, "%s stderr: <<%s>>\n", cmdDebugStr(cmd, args...), stderr)
 	}
 
 	// debugging
 	if false {
-		fmt.Fprintf(os.Stderr, "%s stdout: <<%s>>\n", cmdDebugStr(cfg, args...), stdout)
+		fmt.Fprintf(os.Stderr, "%s stdout: <<%s>>\n", cmdDebugStr(cmd, args...), stdout)
 	}
 
 	return stdout, nil
@@ -794,13 +809,17 @@ func containsGoFile(s []string) bool {
 	return false
 }
 
-func cmdDebugStr(cfg *Config, args ...string) string {
+func cmdDebugStr(cmd *exec.Cmd, args ...string) string {
 	env := make(map[string]string)
-	for _, kv := range cfg.Env {
+	for _, kv := range cmd.Env {
 		split := strings.Split(kv, "=")
 		k, v := split[0], split[1]
 		env[k] = v
 	}
+	var quotedArgs []string
+	for _, arg := range args {
+		quotedArgs = append(quotedArgs, strconv.Quote(arg))
+	}
 
-	return fmt.Sprintf("GOROOT=%v GOPATH=%v GO111MODULE=%v PWD=%v go %v", env["GOROOT"], env["GOPATH"], env["GO111MODULE"], env["PWD"], args)
+	return fmt.Sprintf("GOROOT=%v GOPATH=%v GO111MODULE=%v PWD=%v go %s", env["GOROOT"], env["GOPATH"], env["GO111MODULE"], env["PWD"], strings.Join(quotedArgs, " "))
 }

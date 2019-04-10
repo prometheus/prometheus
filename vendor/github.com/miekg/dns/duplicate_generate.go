@@ -92,7 +92,7 @@ func main() {
 
 				if st.Tag(i) == `dns:"cdomain-name"` || st.Tag(i) == `dns:"domain-name"` {
 					o3(`for i := 0; i < len(r1.%s); i++ {
-						if !isDulicateName(r1.%s[i], r2.%s[i]) {
+						if !isDuplicateName(r1.%s[i], r2.%s[i]) {
 							return false
 						}
 					}`)
@@ -115,7 +115,7 @@ func main() {
 			case `dns:"a"`, `dns:"aaaa"`:
 				o2("if !r1.%s.Equal(r2.%s) {\nreturn false\n}")
 			case `dns:"cdomain-name"`, `dns:"domain-name"`:
-				o2("if !isDulicateName(r1.%s, r2.%s) {\nreturn false\n}")
+				o2("if !isDuplicateName(r1.%s, r2.%s) {\nreturn false\n}")
 			default:
 				o2("if r1.%s != r2.%s {\nreturn false\n}")
 			}

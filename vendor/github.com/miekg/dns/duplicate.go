@@ -27,12 +27,12 @@ func (r1 *RR_Header) isDuplicate(_r2 RR) bool {
 	if r1.Rrtype != r2.Rrtype {
 		return false
 	}
-	if !isDulicateName(r1.Name, r2.Name) {
+	if !isDuplicateName(r1.Name, r2.Name) {
 		return false
 	}
 	// ignore TTL
 	return true
 }
 
-// isDulicateName checks if the domain names s1 and s2 are equal.
-func isDulicateName(s1, s2 string) bool { return equal(s1, s2) }
+// isDuplicateName checks if the domain names s1 and s2 are equal.
+func isDuplicateName(s1, s2 string) bool { return equal(s1, s2) }

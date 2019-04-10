@@ -23,7 +23,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
-	"github.com/prometheus/tsdb/fileutil"
 )
 
 // repairBadIndexVersion repairs an issue in index and meta.json persistence introduced in
@@ -75,7 +74,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		if _, err := repl.WriteAt([]byte{2}, 4); err != nil {
 			return wrapErr(err, d)
 		}
-		if err := fileutil.Fsync(repl); err != nil {
+		if err := repl.Sync(); err != nil {
 			return wrapErr(err, d)
 		}
 		if err := repl.Close(); err != nil {
