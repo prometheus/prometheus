@@ -171,6 +171,9 @@ func main() {
 	a.Flag("web.page-title", "Document title of Prometheus instance.").
 		Default("Prometheus Time Series Collection and Processing Server").StringVar(&cfg.web.PageTitle)
 
+	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Eg. 'https?://(domain1|domain2)\.com'`).
+		Default(".*").StringVar(&cfg.corsRegexString)
+
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 
@@ -234,9 +237,6 @@ func main() {
 		Default("20").IntVar(&cfg.queryConcurrency)
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they would load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
-
-	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Eg. 'https?://(domain1|domain2)\.com'`).
-		Default(".*").StringVar(&cfg.corsRegexString)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
