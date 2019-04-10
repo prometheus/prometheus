@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"net/http"
 	"strconv"
 	"testing"
 	"time"
@@ -286,6 +287,7 @@ scrape_configs:
 		newLoop: newLoop,
 		logger:  nil,
 		config:  cfg1.ScrapeConfigs[0],
+		client:  http.DefaultClient,
 	}
 	scrapeManager.scrapePools = map[string]*scrapePool{
 		"job1": sp,

@@ -272,6 +272,7 @@ func (sp *scrapePool) stop() {
 		delete(sp.activeTargets, fp)
 	}
 	wg.Wait()
+	sp.client.CloseIdleConnections()
 }
 
 // reload the scrape pool with the given scrape configuration. The target state is preserved
@@ -290,6 +291,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		return errors.Wrap(err, "error creating HTTP client")
 	}
 	sp.config = cfg
+	oldClient := sp.client
 	sp.client = client
 
 	var (
@@ -328,6 +330,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	}
 
 	wg.Wait()
+	oldClient.CloseIdleConnections()
 	targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
 		time.Since(start).Seconds(),
 	)
