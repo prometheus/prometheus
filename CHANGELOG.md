@@ -1,3 +1,30 @@
+## 2.9.0-rc.0 / 2019-04-10
+
+* [CHANGE/ENHANCEMENT] Update Consul to support catalog.ServiceMultipleTags. #5151
+* [FEATURE] Add honor_timestamps scrape option. #5304
+* [ENHANCEMENT] Discovery/kubernetes: add present labels for labels/annotations. #5443
+* [ENHANCEMENT] OpenStack SD: Add ProjectID and UserID meta labels. #5431
+* [ENHANCEMENT] Add GODEBUG and retention to the runtime page. #5324 #5322
+* [ENHANCEMENT] Add support for POSTing to /series endpoint. #5422
+* [ENHANCEMENT] Support PUT methods for Lifecycle and Admin APIs. #5376
+* [ENHANCEMENT] Scrape: Add global jitter for HA server. #5181
+* [ENHANCEMENT] Check for cancellation on every step of a range evaluation. #5131
+* [ENHANCEMENT] String interning for labels & values in the remote_write path. #5316
+* [ENHANCEMENT] Don't lose the scrape cache on a failed scrape. #5414
+* [ENHANCEMENT] Reload cert files from disk automatically. common#173
+* [ENHANCEMENT] Use fixed length millisecond timestamp format for logs. common#172
+* [ENHANCEMENT] Performance improvements for postings. tsdb#509 tsdb#572
+* [BUGFIX] Remote Write: fix checkpoint reading. #5429
+* [BUGFIX] Check if label value is valid when unmarshaling external labels from YAML. #5316
+* [BUGFIX] Promparse: sort all labels when parsing. #5372
+* [BUGFIX] Reload rules: copy state on both name and labels. #5368
+* [BUGFIX] Exponentation operator to drop metric name in result of operation. #5329
+* [BUGFIX] Config: resolve more file paths. #5284
+* [BUGFIX] Promtool: resolve relative paths in alert test files. #5336
+* [BUGFIX] Set TLSHandshakeTimeout in HTTP transport. common#179
+* [BUGFIX] Use fsync to be more resilient to machine crashes. tsdb#573 tsdb#578
+* [BUGFIX] Keep series that are still in WAL in checkpoints. tsdb#577
+
 ## 2.8.1 / 2019-03-28
 
 * [BUGFIX] Display the job labels in `/targets` which was removed accidentally. #5406
