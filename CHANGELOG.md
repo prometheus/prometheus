@@ -1,4 +1,6 @@
 ## master / unreleased
+
+## 0.7.0
  - [CHANGE] tsdb now requires golang 1.12 or higher.
  - [REMOVED] `chunks.NewReader` is removed as it wasn't used anywhere.
  - [REMOVED] `FromData` is considered unused so was removed.
@@ -7,6 +9,9 @@
  - [BUGFIX] Fsync the meta file to persist it on disk to avoid data loss in case of a host crash.
  - [BUGFIX] Fix fd and vm_area leak on error path in chunks.NewDirReader.
  - [BUGFIX] Fix fd and vm_area leak on error path in index.NewFileReader.
+ - [BUGFIX] Force persisting the tombstone file to avoid data loss in case of a host crash.
+ - [BUGFIX] Keep series that are still in WAL in checkpoints.
+ - [ENHANCEMENT] Fast path for EmptyPostings cases in Merge, Intersect and Without.
  - [ENHANCEMENT] Be smarter in how we look at matchers.
  - [ENHANCEMENT] PostListings and NotMatcher now public.
 
