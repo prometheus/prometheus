@@ -128,11 +128,6 @@ func NewWALWatcher(logger log.Logger, name string, writer writeTo, walDir string
 		quit:   make(chan struct{}),
 		done:   make(chan struct{}),
 
-		recordsReadMetric:       watcherRecordsRead.MustCurryWith(prometheus.Labels{queue: name}),
-		recordDecodeFailsMetric: watcherRecordDecodeFails.WithLabelValues(name),
-		samplesSentPreTailing:   watcherSamplesSentPreTailing.WithLabelValues(name),
-		currentSegmentMetric:    watcherCurrentSegment.WithLabelValues(name),
-
 		maxSegment: -1,
 	}
 }
@@ -140,6 +135,15 @@ func NewWALWatcher(logger log.Logger, name string, writer writeTo, walDir string
 // Start the WALWatcher.
 func (w *WALWatcher) Start() {
 	level.Info(w.logger).Log("msg", "starting WAL watcher", "queue", w.name)
+
+	// Setup the WAL Watchers metrics. We do this here rather than in the
+	// constructor because of the ordering of creating Queue Managers's,
+	// stopping them, and then starting new ones in storage/remote/storage.go ApplyConfig.
+	w.recordsReadMetric = watcherRecordsRead.MustCurryWith(prometheus.Labels{queue: w.name})
+	w.recordDecodeFailsMetric = watcherRecordDecodeFails.WithLabelValues(w.name)
+	w.samplesSentPreTailing = watcherSamplesSentPreTailing.WithLabelValues(w.name)
+	w.currentSegmentMetric = watcherCurrentSegment.WithLabelValues(w.name)
+
 	go w.loop()
 }
 
@@ -147,6 +151,14 @@ func (w *WALWatcher) Start() {
 func (w *WALWatcher) Stop() {
 	close(w.quit)
 	<-w.done
+
+	// Records read metric has series and samples.
+	watcherRecordsRead.DeleteLabelValues(w.name, "series")
+	watcherRecordsRead.DeleteLabelValues(w.name, "samples")
+	watcherRecordDecodeFails.DeleteLabelValues(w.name)
+	watcherSamplesSentPreTailing.DeleteLabelValues(w.name)
+	watcherCurrentSegment.DeleteLabelValues(w.name)
+
 	level.Info(w.logger).Log("msg", "WAL watcher stopped", "queue", w.name)
 }
 
