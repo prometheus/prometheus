@@ -1581,6 +1581,11 @@ func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap
 			lv, rv = rv, lv
 		}
 		value, keep := vectorElemBinop(op, lv, rv)
+		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
+		// We want to always keep the vector element value as the output value, even if it's on the RHS.
+		if op.isComparisonOperator() && swap {
+			value = rv
+		}
 		if returnBool {
 			if keep {
 				value = 1.0

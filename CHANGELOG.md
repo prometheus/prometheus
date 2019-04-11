@@ -24,6 +24,7 @@
 * [BUGFIX] Set TLSHandshakeTimeout in HTTP transport. common#179
 * [BUGFIX] Use fsync to be more resilient to machine crashes. tsdb#573 tsdb#578
 * [BUGFIX] Keep series that are still in WAL in checkpoints. tsdb#577
+* [BUGFIX] Fix output sample values for scalar-to-vector comparison operations. #5454
 
 ## 2.8.1 / 2019-03-28
 
@@ -195,8 +196,8 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [FEATURE] Persist alert 'for' state across restarts #4061
 * [FEATURE] Add API providing per target metric metadata #4183
 * [FEATURE] Add API providing recording and alerting rules #4318 #4501
-* [ENHANCEMENT] Brand new WAL implementation for TSDB. Forwards incompatible with previous WAL. 
-* [ENHANCEMENT] Show rule evaluation errors in UI #4457 
+* [ENHANCEMENT] Brand new WAL implementation for TSDB. Forwards incompatible with previous WAL.
+* [ENHANCEMENT] Show rule evaluation errors in UI #4457
 * [ENHANCEMENT] Throttle resends of alerts to Alertmanager #4538
 * [ENHANCEMENT] Send EndsAt along with the alert to Alertmanager #4550
 * [ENHANCEMENT] Limit the samples returned by remote read endpoint #4532
