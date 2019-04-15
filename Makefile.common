@@ -88,6 +88,12 @@ BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 DOCKER_REPO             ?= prom
 
+DOCKER_ARCHS            ?= amd64
+
+BUILD_DOCKER_ARCHS = $(addprefix common-docker-,$(DOCKER_ARCHS))
+PUBLISH_DOCKER_ARCHS = $(addprefix common-docker-publish-,$(DOCKER_ARCHS))
+TAG_DOCKER_ARCHS = $(addprefix common-docker-tag-latest-,$(DOCKER_ARCHS))
+
 ifeq ($(GOHOSTARCH),amd64)
         ifeq ($(GOHOSTOS),$(filter $(GOHOSTOS),linux freebsd darwin windows))
                 # Only supported on amd64
@@ -197,17 +203,28 @@ common-tarball: promu
 	@echo ">> building release tarball"
 	$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
-.PHONY: common-docker
-common-docker:
-	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
+.PHONY: common-docker $(BUILD_DOCKER_ARCHS)
+common-docker: $(BUILD_DOCKER_ARCHS)
+$(BUILD_DOCKER_ARCHS): common-docker-%:
+	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)" \
+		--build-arg ARCH="$*" \
+		--build-arg OS="linux" \
+		.
 
-.PHONY: common-docker-publish
-common-docker-publish:
-	docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)"
+.PHONY: common-docker-publish $(PUBLISH_DOCKER_ARCHS)
+common-docker-publish: $(PUBLISH_DOCKER_ARCHS)
+$(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
+	docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)"
 
-.PHONY: common-docker-tag-latest
-common-docker-tag-latest:
-	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):latest"
+.PHONY: common-docker-tag-latest $(TAG_DOCKER_ARCHS)
+common-docker-tag-latest: $(TAG_DOCKER_ARCHS)
+$(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
+	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest"
+
+.PHONY: common-docker-manifest
+common-docker-manifest:
+	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" $(foreach ARCH,$(DOCKER_ARCHS),$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$(ARCH):$(DOCKER_IMAGE_TAG))
+	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)"
 
 .PHONY: promu
 promu: $(PROMU)
