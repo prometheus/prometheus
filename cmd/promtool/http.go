@@ -14,8 +14,6 @@
 package main
 
 import (
-	"context"
-	"net/http"
 	"time"
 
 	"github.com/pkg/errors"
@@ -40,12 +38,6 @@ func newPrometheusHTTPClient(serverURL string) (*prometheusHTTPClient, error) {
 		requestTimeout: defaultTimeout,
 		httpClient:     hc,
 	}, nil
-}
-
-func (c *prometheusHTTPClient) do(req *http.Request) (*http.Response, []byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.requestTimeout)
-	defer cancel()
-	return c.httpClient.Do(ctx, req)
 }
 
 func (c *prometheusHTTPClient) urlJoin(path string) string {
