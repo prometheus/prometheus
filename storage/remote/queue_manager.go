@@ -322,9 +322,9 @@ func (t *QueueManager) Stop() {
 	defer level.Info(t.logger).Log("msg", "Remote storage stopped.")
 
 	close(t.quit)
+	t.wg.Wait()
 	t.shards.stop()
 	t.watcher.Stop()
-	t.wg.Wait()
 
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
