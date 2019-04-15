@@ -361,7 +361,7 @@ func (g *Group) hash() uint64 {
 	return l.Hash()
 }
 
-// AlertingRules returns the list of the group's alerting rules
+// AlertingRules returns the list of the group's alerting rules.
 func (g *Group) AlertingRules() []*AlertingRule {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
@@ -380,7 +380,7 @@ func (g *Group) AlertingRules() []*AlertingRule {
 	return alerts
 }
 
-// HasAlertingRules returns true if the group contains at least one AlertingRule
+// HasAlertingRules returns true if the group contains at least one AlertingRule.
 func (g *Group) HasAlertingRules() bool {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()

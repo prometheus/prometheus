@@ -507,7 +507,7 @@ func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	alertStatus := AlertStatus {
+	alertStatus := AlertStatus{
 		Groups: groups,
 		AlertStateToRowClass: map[rules.AlertState]string{
 			rules.StateInactive: "success",
@@ -930,6 +930,6 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 
 // AlertStatus bundles alerting rules and the mapping of alert states to row classes.
 type AlertStatus struct {
-	Groups        []*rules.Group
+	Groups               []*rules.Group
 	AlertStateToRowClass map[rules.AlertState]string
 }
