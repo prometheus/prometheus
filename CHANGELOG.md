@@ -1,4 +1,8 @@
-## 2.9.0-rc.0 / 2019-04-10
+## 2.9.0 / 2019-04-15
+
+This releases uses Go 1.12, which includes a change in how memory is released
+to Linux. This will cause RSS to be reported as higher, however this is harmless
+and the memory is available to the kernel when it needs it.
 
 * [CHANGE/ENHANCEMENT] Update Consul to support catalog.ServiceMultipleTags. #5151
 * [FEATURE] Add honor_timestamps scrape option. #5304
