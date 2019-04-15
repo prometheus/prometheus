@@ -59,8 +59,8 @@ func TestNodeDiscoveryBeforeStart(t *testing.T) {
 			obj := makeNode(
 				"test",
 				"1.2.3.4",
-				map[string]string{"testlabel": "testvalue"},
-				map[string]string{"testannotation": "testannotationvalue"},
+				map[string]string{"test-label": "testvalue"},
+				map[string]string{"test-annotation": "testannotationvalue"},
 			)
 			c.CoreV1().Nodes().Create(obj)
 		},
@@ -75,11 +75,11 @@ func TestNodeDiscoveryBeforeStart(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_node_name":                             "test",
-					"__meta_kubernetes_node_label_testlabel":                  "testvalue",
-					"__meta_kubernetes_node_labelpresent_testlabel":           "true",
-					"__meta_kubernetes_node_annotation_testannotation":        "testannotationvalue",
-					"__meta_kubernetes_node_annotationpresent_testannotation": "true",
+					"__meta_kubernetes_node_name":                              "test",
+					"__meta_kubernetes_node_label_test_label":                  "testvalue",
+					"__meta_kubernetes_node_labelpresent_test_label":           "true",
+					"__meta_kubernetes_node_annotation_test_annotation":        "testannotationvalue",
+					"__meta_kubernetes_node_annotationpresent_test_annotation": "true",
 				},
 				Source: "node/test",
 			},

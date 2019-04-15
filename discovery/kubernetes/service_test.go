@@ -28,8 +28,8 @@ func makeMultiPortService() *v1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "testservice",
 			Namespace:   "default",
-			Labels:      map[string]string{"testlabel": "testvalue"},
-			Annotations: map[string]string{"testannotation": "testannotationvalue"},
+			Labels:      map[string]string{"test-label": "testvalue"},
+			Annotations: map[string]string{"test-annotation": "testannotationvalue"},
 		},
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{
@@ -186,12 +186,12 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_service_name":                             "testservice",
-					"__meta_kubernetes_namespace":                                "default",
-					"__meta_kubernetes_service_label_testlabel":                  "testvalue",
-					"__meta_kubernetes_service_labelpresent_testlabel":           "true",
-					"__meta_kubernetes_service_annotation_testannotation":        "testannotationvalue",
-					"__meta_kubernetes_service_annotationpresent_testannotation": "true",
+					"__meta_kubernetes_service_name":                              "testservice",
+					"__meta_kubernetes_namespace":                                 "default",
+					"__meta_kubernetes_service_label_test_label":                  "testvalue",
+					"__meta_kubernetes_service_labelpresent_test_label":           "true",
+					"__meta_kubernetes_service_annotation_test_annotation":        "testannotationvalue",
+					"__meta_kubernetes_service_annotationpresent_test_annotation": "true",
 				},
 				Source: "svc/default/testservice",
 			},
