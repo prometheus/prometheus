@@ -38,9 +38,8 @@ The directory structure of a Prometheus server's data directory will look someth
 │   ├── index
 │   └── meta.json
 └── wal
-    ├── 00000000
-    ├── 00000001
-    └── 00000002
+    ├── 00000002
+    └── checkpoint.000001
 ```
 
 The initial two-hour blocks are eventually compacted into longer blocks in the background.
