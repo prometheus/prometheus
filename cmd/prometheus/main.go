@@ -443,7 +443,11 @@ func main() {
 				}
 				files = append(files, fs...)
 			}
-			return ruleManager.Update(time.Duration(cfg.GlobalConfig.EvaluationInterval), files)
+			return ruleManager.Update(
+				time.Duration(cfg.GlobalConfig.EvaluationInterval),
+				files,
+				cfg.GlobalConfig.ExternalLabels,
+			)
 		},
 	}
 
@@ -747,13 +751,8 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	if failed {
 		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
+
 	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
-
-	// Register conf as current config.
-	config.CurrentConfigMutex.Lock()
-	config.CurrentConfig = conf
-	config.CurrentConfigMutex.Unlock()
-
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }

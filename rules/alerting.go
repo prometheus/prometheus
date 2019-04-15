@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,7 +29,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -80,9 +80,8 @@ func (s AlertState) String() string {
 type Alert struct {
 	State AlertState
 
-	Labels         labels.Labels
-	ExternalLabels labels.Labels
-	Annotations    labels.Labels
+	Labels      labels.Labels
+	Annotations labels.Labels
 
 	// The value at the last evaluation of the alerting expression.
 	Value float64
@@ -121,6 +120,8 @@ type AlertingRule struct {
 	labels labels.Labels
 	// Non-identifying key/value pairs.
 	annotations labels.Labels
+	// External labels from the global config.
+	externalLabels map[string]string
 	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
 	// only after the restoration.
 	restored bool
@@ -142,17 +143,27 @@ type AlertingRule struct {
 }
 
 // NewAlertingRule constructs a new AlertingRule.
-func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, restored bool, logger log.Logger) *AlertingRule {
+func NewAlertingRule(
+	name string, vec promql.Expr, hold time.Duration,
+	labels, annotations, externalLabels labels.Labels,
+	restored bool, logger log.Logger,
+) *AlertingRule {
+	el := make(map[string]string, len(externalLabels))
+	for _, lbl := range externalLabels {
+		el[lbl.Name] = lbl.Value
+	}
+
 	return &AlertingRule{
-		name:         name,
-		vector:       vec,
-		holdDuration: hold,
-		labels:       lbls,
-		annotations:  anns,
-		health:       HealthUnknown,
-		active:       map[uint64]*Alert{},
-		logger:       logger,
-		restored:     restored,
+		name:           name,
+		vector:         vec,
+		holdDuration:   hold,
+		labels:         labels,
+		annotations:    annotations,
+		externalLabels: el,
+		health:         HealthUnknown,
+		active:         map[uint64]*Alert{},
+		logger:         logger,
+		restored:       restored,
 	}
 }
 
@@ -302,32 +313,24 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	var vec promql.Vector
 	for _, smpl := range res {
 		// Provide the alert information to the template.
-		l := make(map[string]string)
+		l := make(map[string]string, len(smpl.Metric))
 		for _, lbl := range smpl.Metric {
 			l[lbl.Name] = lbl.Value
 		}
 
-		// Add external labels.
-		el := make(map[string]string)
-		if config.CurrentConfig != nil {
-			config.CurrentConfigMutex.RLock()
-			for eln, elv := range (*config.CurrentConfig).GlobalConfig.ExternalLabels {
-				el[string(eln)] = string(elv)
-			}
-			config.CurrentConfigMutex.RUnlock()
-		}
-
-		tmplData := template.AlertTemplateData(l, el, smpl.V)
+		tmplData := template.AlertTemplateData(l, r.externalLabels, smpl.V)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
-		defs := "{{$labels := .Labels}}"
-		defs += "{{$externalLabels := .ExternalLabels}}"
-		defs += "{{$value := .Value}}"
+		defs := []string{
+			"{{$labels := .Labels}}",
+			"{{$externalLabels := .ExternalLabels}}",
+			"{{$value := .Value}}",
+		}
 
 		expand := func(text string) string {
 			tmpl := template.NewTemplateExpander(
 				ctx,
-				defs+text,
+				strings.Join(append(defs, text), ""),
 				"__alert_"+r.Name(),
 				tmplData,
 				model.Time(timestamp.FromTime(ts)),
@@ -463,7 +466,7 @@ func (r *AlertingRule) ForEachActiveAlert(f func(*Alert)) {
 }
 
 func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay time.Duration, interval time.Duration, notifyFunc NotifyFunc) {
-	alerts := make([]*Alert, 0)
+	alerts := []*Alert{}
 	r.ForEachActiveAlert(func(alert *Alert) {
 		if alert.needsSending(ts, resendDelay) {
 			alert.LastSentAt = ts

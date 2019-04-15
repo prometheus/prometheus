@@ -751,11 +751,11 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, files...)
 	if errs != nil {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
@@ -803,7 +803,9 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 }
 
 // LoadGroups reads groups from a list of files.
-func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
+func (m *Manager) LoadGroups(
+	interval time.Duration, externalLabels labels.Labels, filenames ...string,
+) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
 	shouldRestore := !m.restored
@@ -834,6 +836,7 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 						time.Duration(r.For),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
+						externalLabels,
 						m.restored,
 						log.With(m.logger, "alert", r.Alert),
 					))
