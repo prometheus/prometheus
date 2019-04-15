@@ -188,7 +188,7 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 
 	for k, v := range pod.Labels {
 		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(podLabelPrefix+k)] = lv(v)
+		ls[model.LabelName(podLabelPrefix+ln)] = lv(v)
 		ls[model.LabelName(podLabelPresentPrefix+ln)] = presentValue
 	}
 
