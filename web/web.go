@@ -499,21 +499,23 @@ func (h *Handler) Run(ctx context.Context) error {
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
-	alerts := h.ruleManager.AlertingRulesbyGroup()
-	groupSorter := groupNameSorter{Groups:alerts}
-	sort.Sort(groupSorter)
-	alerts = groupSorter.Groups
-	for _, g := range alerts.Groups{
-		alertsSorter := byAlertStateAndNameSorter{alerts: g.Rules}
-		sort.Sort(alertsSorter)
-		g.Rules = alertsSorter.alerts
-		g.AlertStateToRowClass = map[rules.AlertState]string{
-				rules.StateInactive: "success",
-				rules.StatePending:  "warning",
-				rules.StateFiring:   "danger",
-			}
+
+	var groups []*rules.Group
+	for _, group := range h.ruleManager.RuleGroups() {
+		if group.HasAlertingRules() {
+			groups = append(groups, group)
 		}
-	h.executeTemplate(w, "alerts.html", alerts)
+	}
+
+	alertStatus := AlertStatus {
+		Groups: groups,
+		AlertStateToRowClass: map[rules.AlertState]string{
+			rules.StateInactive: "success",
+			rules.StatePending:  "warning",
+			rules.StateFiring:   "danger",
+		},
+	}
+	h.executeTemplate(w, "alerts.html", alertStatus)
 }
 
 func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
@@ -928,43 +930,6 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 
 // AlertStatus bundles alerting rules and the mapping of alert states to row classes.
 type AlertStatus struct {
-	AlertingRules        []*rules.AlertingRule
+	Groups        []*rules.Group
 	AlertStateToRowClass map[rules.AlertState]string
 }
-
-type byAlertStateAndNameSorter struct {
-	alerts []*rules.AlertingRule
-}
-
-func (s byAlertStateAndNameSorter) Len() int {
-	return len(s.alerts)
-}
-
-func (s byAlertStateAndNameSorter) Less(i, j int) bool {
-	return s.alerts[i].State() > s.alerts[j].State() ||
-		(s.alerts[i].State() == s.alerts[j].State() &&
-			s.alerts[i].Name() < s.alerts[j].Name())
-}
-
-func (s byAlertStateAndNameSorter) Swap(i, j int) {
-	s.alerts[i], s.alerts[j] = s.alerts[j], s.alerts[i]
-}
-
-//NEW CODE TO SORT GROUP NAMES
-type groupNameSorter struct {
-	Groups               []*rules.AlertingGroups
-}
-
-func (s groupNameSorter) Len() int {
-	return len(s.Groups)
-}
-
-func (s groupNameSorter) Less(i, j int) bool {
-	return s.Groups[i] < s.Groups[j]
-}
-
-func (s groupNameSorter) Swap(i, j int) {
-	s.Groups[i], s.Groups[j] = s.Groups[j], s.Groups[i]
-}
-
-

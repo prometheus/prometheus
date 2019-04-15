@@ -12,15 +12,14 @@
   </div>
   <table class="table table-bordered table-collapsed">
     <tbody>
+      {{$alertStateToRowClass := .AlertStateToRowClass}}
       {{range .Groups}}
       <tr>
         <td>
         {{.Name}}
       </td>
       </tr>
-        {{$alertStateToRowClass := .AlertStateToRowClass}}
-
-        {{range .Rules}}
+        {{range .AlertingRules}}
           {{$activeAlerts := .ActiveAlerts}}
           <tr class="alert alert-{{index $alertStateToRowClass .State}} alert_header">
               <td><i class="icon-chevron-down"></i> <b>{{.Name}}</b> ({{len $activeAlerts}} active)</td>
@@ -69,13 +68,13 @@
               {{end}}
             </td>
           </tr>
+        {{end}}
         {{else}}
           <tr>
             <td>
                 No alerting rules defined
             </td>
           </tr>
-        {{end}} <!-- end of range groups -->
     {{end}}
     </tbody>
   </table>

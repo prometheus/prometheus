@@ -361,6 +361,38 @@ func (g *Group) hash() uint64 {
 	return l.Hash()
 }
 
+// AlertingRules returns the list of the group's alerting rules
+func (g *Group) AlertingRules() []*AlertingRule {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	var alerts []*AlertingRule
+	for _, rule := range g.rules {
+		if alertingRule, ok := rule.(*AlertingRule); ok {
+			alerts = append(alerts, alertingRule)
+		}
+	}
+	sort.Slice(alerts, func(i, j int) bool {
+		return alerts[i].State() > alerts[j].State() ||
+			(alerts[i].State() == alerts[j].State() &&
+				alerts[i].Name() < alerts[j].Name())
+	})
+	return alerts
+}
+
+// HasAlertingRules returns true if the group contains at least one AlertingRule
+func (g *Group) HasAlertingRules() bool {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	for _, rule := range g.rules {
+		if _, ok := rule.(*AlertingRule); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // GetEvaluationDuration returns the time in seconds it took to evaluate the rule group.
 func (g *Group) GetEvaluationDuration() time.Duration {
 	g.mtx.Lock()
@@ -873,7 +905,7 @@ func (m *Manager) RuleGroups() []*Group {
 
 	// Sort rule groups by file, then by name.
 	sort.Slice(rgs, func(i, j int) bool {
-		if rgs[i].file != rgs[j].file {
+		if rgs[i].name == rgs[j].name {
 			return rgs[i].file < rgs[j].file
 		}
 		return rgs[i].name < rgs[j].name
@@ -906,35 +938,8 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 			alerts = append(alerts, alertingRule)
 		}
 	}
+
 	return alerts
-}
-
-// AlertingRules returns the list of the manager's alerting rules organised by group.
-func (m *Manager) AlertingRulesbyGroup() *AlertingGroups {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-
-	alerts := &AlertingGroups{}
-	for _, g := range m.groups {
-		group := &AlertingGroup{Name: g.name}
-		for _, rule := range g.rules {
-			if alertingRule, ok := rule.(*AlertingRule); ok {
-				group.Rules = append(group.Rules, alertingRule)
-			}
-		}
-		alerts.Groups = append(alerts.Groups, group)
-	}
-	return alerts
-}
-
-type AlertingGroups struct {
-	Groups []*AlertingGroup
-}
-
-type AlertingGroup struct {
-	Name                 string
-	Rules                []*AlertingRule
-	AlertStateToRowClass map[AlertState]string
 }
 
 // Describe implements prometheus.Collector.
