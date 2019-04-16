@@ -1,3 +1,8 @@
+## 2.9.1 / 2019-04-16
+
+* [BUGFIX] Discovery/kubernetes: fix missing label sanitization #5462
+* [BUGFIX] Remote_write: Prevent reshard concurrent with calling stop #5460
+
 ## 2.9.0 / 2019-04-15
 
 This releases uses Go 1.12, which includes a change in how memory is released
