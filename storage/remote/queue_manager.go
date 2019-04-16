@@ -322,9 +322,12 @@ func (t *QueueManager) Stop() {
 	defer level.Info(t.logger).Log("msg", "Remote storage stopped.")
 
 	close(t.quit)
+	t.wg.Wait()
+	// Wait for all QueueManager routines to end before stopping shards and WAL watcher. This
+	// is to ensure we don't end up executing a reshard and shards.stop() at the same time, which
+	// causes a closed channel panic.
 	t.shards.stop()
 	t.watcher.Stop()
-	t.wg.Wait()
 
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
