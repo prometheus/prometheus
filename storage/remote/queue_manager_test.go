@@ -233,6 +233,30 @@ func TestReshard(t *testing.T) {
 	c.waitForExpectedSamples(t)
 }
 
+func TestReshardRaceWithStop(t *testing.T) {
+	c := NewTestStorageClient()
+	var m *QueueManager
+	h := sync.Mutex{}
+
+	h.Lock()
+
+	go func() {
+		for {
+			m = NewQueueManager(nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
+			m.Start()
+			h.Unlock()
+			h.Lock()
+			m.Stop()
+		}
+	}()
+
+	for i := 1; i < 100; i++ {
+		h.Lock()
+		m.reshardChan <- i
+		h.Unlock()
+	}
+}
+
 func createTimeseries(n int) ([]tsdb.RefSample, []tsdb.RefSeries) {
 	samples := make([]tsdb.RefSample, 0, n)
 	series := make([]tsdb.RefSeries, 0, n)
