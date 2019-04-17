@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Setting -x is absolutely forbidden as it could leak the GitHub token.
 set -uo pipefail
 
 # GITHUB_TOKEN required scope: repo.repo_public
@@ -27,8 +28,10 @@ source_checksum="$(sha256sum Makefile.common | cut -d' ' -f1)"
 tmp_dir=$(mktemp -d)
 trap "rm -rf ${tmp_dir}" EXIT
 
-# iterate over all repositories in ${org}
-curl --retry 5 --silent -u "${git_user}:${GITHUB_TOKEN}" https://api.github.com/users/${org}/repos 2>/dev/null | jq -r '.[] | select( .name != "prometheus" ) | .name' | while read -r; do
+# Iterate over all repositories in ${org}. The GitHub API can return 100 items
+# at most but it should be enough for us as there are less than 40 repositories
+# currently.
+curl --retry 5 --silent -u "${git_user}:${GITHUB_TOKEN}" https://api.github.com/users/${org}/repos?per_page=100 2>/dev/null | jq -r '.[] | select( .name != "prometheus" ) | .name' | while read -r; do
 	repo="${REPLY}"
 	echo -e "\e[32mAnalyzing '${repo}'\e[0m"
 
@@ -44,7 +47,7 @@ curl --retry 5 --silent -u "${git_user}:${GITHUB_TOKEN}" https://api.github.com/
 	fi
 
 	# Clone target repo to temporary directory and checkout to new branch
-	git clone "https://github.com/${org}/${repo}.git" "${tmp_dir}/${repo}"
+	git clone --quiet "https://github.com/${org}/${repo}.git" "${tmp_dir}/${repo}"
 	cd "${tmp_dir}/${repo}"
 	git checkout -b "${branch}"
 
@@ -55,8 +58,10 @@ curl --retry 5 --silent -u "${git_user}:${GITHUB_TOKEN}" https://api.github.com/
 		git config user.name "${git_user}"
 		git add .
 		git commit -s -m "${commit_msg}"
-		if git push "https://${GITHUB_TOKEN}:@github.com/${org}/${repo}" --set-upstream "${branch}"; then
-			curl -u "${git_user}:${GITHUB_TOKEN}" \
+		# stderr is redirected to /dev/null otherwise git-push could leak the token in the logs.
+		if git push --quiet "https://${GITHUB_TOKEN}:@github.com/${org}/${repo}" --set-upstream "${branch}" 2>/dev/null; then
+			curl --show-error --silent \
+				-u "${git_user}:${GITHUB_TOKEN}" \
 				-X POST \
 				-d "{\"title\":\"${pr_title}\",\"base\":\"master\",\"head\":\"${branch}\",\"body\":\"${pr_msg}\"}" \
 				"https://api.github.com/repos/${org}/${repo}/pulls"
