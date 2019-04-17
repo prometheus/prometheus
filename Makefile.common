@@ -166,6 +166,10 @@ else
 endif
 endif
 
+# For backward-compatibility.
+.PHONY: common-staticcheck
+common-staticcheck: lint
+
 .PHONY: common-unused
 common-unused: $(GOVENDOR)
 ifdef GOVENDOR
