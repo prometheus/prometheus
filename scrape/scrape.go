@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"net/http"
 	"sync"
@@ -543,7 +544,10 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", errors.Errorf("server returned HTTP status %s", resp.Status)
