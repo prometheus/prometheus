@@ -91,7 +91,7 @@ If the release has happened in the latest release branch, merge the changes into
 
 To update the docs, a PR needs to be created to `prometheus/docs`. See [this PR](https://github.com/prometheus/docs/pull/952/files) for inspiration.
 
-Once the binaries have been uploaded, announce the release on `prometheus-users@googlegroups.com` and `prometheus-announce@googlegroups.com`. Start the subject with `[ANN]`. Check out previous announcement mails for inspiration.
+Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration. 
 
 ### Pre-releases
 
