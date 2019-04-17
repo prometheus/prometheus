@@ -132,10 +132,7 @@ func NewWALWatcher(logger log.Logger, name string, writer writeTo, walDir string
 	}
 }
 
-// Start the WALWatcher.
-func (w *WALWatcher) Start() {
-	level.Info(w.logger).Log("msg", "starting WAL watcher", "queue", w.name)
-
+func (w *WALWatcher) setMetrics() {
 	// Setup the WAL Watchers metrics. We do this here rather than in the
 	// constructor because of the ordering of creating Queue Managers's,
 	// stopping them, and then starting new ones in storage/remote/storage.go ApplyConfig.
@@ -143,6 +140,12 @@ func (w *WALWatcher) Start() {
 	w.recordDecodeFailsMetric = watcherRecordDecodeFails.WithLabelValues(w.name)
 	w.samplesSentPreTailing = watcherSamplesSentPreTailing.WithLabelValues(w.name)
 	w.currentSegmentMetric = watcherCurrentSegment.WithLabelValues(w.name)
+}
+
+// Start the WALWatcher.
+func (w *WALWatcher) Start() {
+	w.setMetrics()
+	level.Info(w.logger).Log("msg", "starting WAL watcher", "queue", w.name)
 
 	go w.loop()
 }

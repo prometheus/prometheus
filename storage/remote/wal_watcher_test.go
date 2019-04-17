@@ -102,8 +102,6 @@ func TestTailSamples(t *testing.T) {
 	err = os.Mkdir(wdir, 0777)
 	testutil.Ok(t, err)
 
-	// os.Create(wal.SegmentName(wdir, 30))
-
 	enc := tsdb.RecordEncoder{}
 	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize)
 	testutil.Ok(t, err)
@@ -139,6 +137,9 @@ func TestTailSamples(t *testing.T) {
 	wt := newWriteToMock()
 	watcher := NewWALWatcher(nil, "", wt, dir)
 	watcher.startTime = now.UnixNano()
+
+	// Set the Watcher's metrics so they're not nil pointers.
+	watcher.setMetrics()
 	for i := first; i <= last; i++ {
 		segment, err := wal.OpenReadSegment(wal.SegmentName(watcher.walDir, i))
 		testutil.Ok(t, err)
@@ -148,14 +149,12 @@ func TestTailSamples(t *testing.T) {
 		// Use tail true so we can ensure we got the right number of samples.
 		watcher.readSegment(reader, i, true)
 	}
-	go watcher.Start()
 
 	expectedSeries := seriesCount
 	expectedSamples := seriesCount * samplesCount
 	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expectedSeries
 	})
-	watcher.Stop()
 	testutil.Equals(t, expectedSeries, wt.checkNumLabels())
 	testutil.Equals(t, expectedSamples, wt.samplesAppended)
 }
@@ -423,6 +422,9 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 	wt := newWriteToMock()
 	watcher := NewWALWatcher(nil, "", wt, dir)
 	watcher.maxSegment = -1
+
+	// Set the Watcher's metrics so they're not nil pointers.
+	watcher.setMetrics()
 
 	lastCheckpoint, _, err := tsdb.LastCheckpoint(watcher.walDir)
 	testutil.Ok(t, err)
