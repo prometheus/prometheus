@@ -206,13 +206,11 @@ func createIdxChkReaders(tc []seriesSamples) (IndexReader, ChunkReader, int64, i
 	blockMint := int64(math.MaxInt64)
 	blockMaxt := int64(math.MinInt64)
 
+	var chunkRef uint64
 	for i, s := range tc {
 		i = i + 1 // 0 is not a valid posting.
 		metas := make([]chunks.Meta, 0, len(s.chunks))
 		for _, chk := range s.chunks {
-			// Collisions can be there, but for tests, its fine.
-			ref := rand.Uint64()
-
 			if chk[0].t < blockMint {
 				blockMint = chk[0].t
 			}
@@ -223,7 +221,7 @@ func createIdxChkReaders(tc []seriesSamples) (IndexReader, ChunkReader, int64, i
 			metas = append(metas, chunks.Meta{
 				MinTime: chk[0].t,
 				MaxTime: chk[len(chk)-1].t,
-				Ref:     ref,
+				Ref:     chunkRef,
 			})
 
 			chunk := chunkenc.NewXORChunk()
@@ -231,7 +229,8 @@ func createIdxChkReaders(tc []seriesSamples) (IndexReader, ChunkReader, int64, i
 			for _, smpl := range chk {
 				app.Append(smpl.t, smpl.v)
 			}
-			chkReader[ref] = chunk
+			chkReader[chunkRef] = chunk
+			chunkRef += 1
 		}
 
 		ls := labels.FromMap(s.lset)
