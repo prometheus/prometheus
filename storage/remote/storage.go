@@ -15,10 +15,13 @@ package remote
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/json"
 	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -36,6 +39,8 @@ type startTimeCallback func() (int64, error)
 type Storage struct {
 	logger log.Logger
 	mtx    sync.Mutex
+
+	configHash [16]byte
 
 	// For writes
 	walDir        string
@@ -76,6 +81,19 @@ func (s *Storage) run() {
 func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
+
+	cfgBytes, err := json.Marshal(conf.RemoteWriteConfigs)
+	if err != nil {
+		return err
+	}
+
+	hash := md5.Sum(cfgBytes)
+	if hash == s.configHash {
+		level.Debug(s.logger).Log("msg", "remote write config has not changed, no need to restart QueueManagers")
+		return nil
+	}
+
+	s.configHash = hash
 
 	// Update write queues
 	newQueues := []*QueueManager{}
