@@ -19,6 +19,8 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -508,7 +510,10 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	// Any HTTP status 2xx is OK.
 	if resp.StatusCode/100 != 2 {

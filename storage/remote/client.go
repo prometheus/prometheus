@@ -95,7 +95,10 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		// recoverable.
 		return recoverableError{err}
 	}
-	defer httpResp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, httpResp.Body)
+		httpResp.Body.Close()
+	}()
 
 	if httpResp.StatusCode/100 != 2 {
 		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, maxErrMsgLen))
@@ -148,7 +151,10 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	if err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
-	defer httpResp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, httpResp.Body)
+		httpResp.Body.Close()
+	}()
 	if httpResp.StatusCode/100 != 2 {
 		return nil, errors.Errorf("server returned HTTP status %s", httpResp.Status)
 	}
