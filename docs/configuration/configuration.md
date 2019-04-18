@@ -1125,8 +1125,8 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
 * `labelkeep`: Match `regex` against all label names. Any label that does not match will be
   removed from the set of labels.
 
-Care must be taken with `labeldrop` and `labelkeep` to ensure that metrics are still uniquely labeled
-once the labels are removed.
+Care must be taken with `labeldrop` and `labelkeep` to ensure that metrics are
+still uniquely labeled once the labels are removed.
 
 ### `<metric_relabel_configs>`
 
@@ -1147,8 +1147,9 @@ external labels send identical alerts.
 
 ### `<alertmanager_config>`
 
-An `alertmanager_config` section specifies Alertmanager instances the Prometheus server sends
-alerts to. It also provides parameters to configure how to communicate with these Alertmanagers.
+An `alertmanager_config` section specifies Alertmanager instances the Prometheus
+server sends alerts to. It also provides parameters to configure how to
+communicate with these Alertmanagers.
 
 Alertmanagers may be statically configured via the `static_configs` parameter or
 dynamically discovered using one of the supported service-discovery mechanisms.
@@ -1160,6 +1161,9 @@ through the `__alerts_path__` label.
 ```yaml
 # Per-target Alertmanager timeout when pushing alerts.
 [ timeout: <duration> | default = 10s ]
+
+# The api version of Alertmanager.
+[ api_version: <version> | default = v1 ]
 
 # Prefix for the HTTP path alerts are pushed to.
 [ path_prefix: <path> | default = / ]
