@@ -58,8 +58,8 @@ curl --retry 5 --silent -u "${git_user}:${GITHUB_TOKEN}" https://api.github.com/
 		git config user.name "${git_user}"
 		git add .
 		git commit -s -m "${commit_msg}"
-		# stderr is redirected to /dev/null otherwise git-push could leak the token in the logs.
-		if git push --quiet "https://${GITHUB_TOKEN}:@github.com/${org}/${repo}" --set-upstream "${branch}" 2>/dev/null; then
+		# stdout and stderr are redirected to /dev/null otherwise git-push could leak the token in the logs.
+		if git push --quiet "https://${GITHUB_TOKEN}:@github.com/${org}/${repo}" --set-upstream "${branch}" 1>/dev/null 2>&1; then
 			curl --show-error --silent \
 				-u "${git_user}:${GITHUB_TOKEN}" \
 				-X POST \
