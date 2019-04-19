@@ -67,7 +67,7 @@ require (
 	github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742 // indirect
 	github.com/montanaflynn/stats v0.0.0-20180911141734-db72e6cae808 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223
-	github.com/oklog/oklog v0.0.0-20170918173356-f857583a70c3
+	github.com/oklog/run v1.0.0
 	github.com/olekukonko/tablewriter v0.0.1 // indirect
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20170113013457-1de4cc2120e7
 	github.com/opentracing/basictracer-go v1.0.0 // indirect

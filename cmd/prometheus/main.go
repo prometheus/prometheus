@@ -36,7 +36,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
-	"github.com/oklog/oklog/pkg/group"
+	"github.com/oklog/run"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -470,7 +470,7 @@ func main() {
 		})
 	}
 
-	var g group.Group
+	var g run.Group
 	{
 		// Termination handler.
 		term := make(chan os.Signal, 1)
