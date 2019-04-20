@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -141,4 +142,97 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 
 		testutil.Equals(t, result, filteredRes)
 	}
+}
+
+func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 85 70 70
+	`)
+	testutil.Ok(t, err)
+	defer suite.Close()
+
+	err = suite.Run()
+	testutil.Ok(t, err)
+
+	expr, err := promql.ParseExpr(`http_requests < 100`)
+	testutil.Ok(t, err)
+
+	ruleWithoutExternalLabels := NewAlertingRule(
+		"ExternalLabelDoesNotExist",
+		expr,
+		time.Minute,
+		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
+		nil,
+		nil,
+		true, log.NewNopLogger(),
+	)
+	ruleWithExternalLabels := NewAlertingRule(
+		"ExternalLabelExists",
+		expr,
+		time.Minute,
+		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
+		nil,
+		labels.FromStrings("foo", "bar", "dings", "bums"),
+		true, log.NewNopLogger(),
+	)
+	result := promql.Vector{
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "ExternalLabelDoesNotExist",
+				"alertstate", "pending",
+				"instance", "0",
+				"job", "app-server",
+				"templated_label", "There are 0 external Labels, of which foo is .",
+			),
+			Point: promql.Point{V: 1},
+		},
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "ExternalLabelExists",
+				"alertstate", "pending",
+				"instance", "0",
+				"job", "app-server",
+				"templated_label", "There are 2 external Labels, of which foo is bar.",
+			),
+			Point: promql.Point{V: 1},
+		},
+	}
+
+	evalTime := time.Unix(0, 0)
+	result[0].Point.T = timestamp.FromTime(evalTime)
+	result[1].Point.T = timestamp.FromTime(evalTime)
+
+	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
+	res, err := ruleWithoutExternalLabels.Eval(
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+	)
+	testutil.Ok(t, err)
+	for _, smpl := range res {
+		smplName := smpl.Metric.Get("__name__")
+		if smplName == "ALERTS" {
+			filteredRes = append(filteredRes, smpl)
+		} else {
+			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+			testutil.Equals(t, smplName, "ALERTS_FOR_STATE")
+		}
+	}
+
+	res, err = ruleWithExternalLabels.Eval(
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+	)
+	testutil.Ok(t, err)
+	for _, smpl := range res {
+		smplName := smpl.Metric.Get("__name__")
+		if smplName == "ALERTS" {
+			filteredRes = append(filteredRes, smpl)
+		} else {
+			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+			testutil.Equals(t, smplName, "ALERTS_FOR_STATE")
+		}
+	}
+
+	testutil.Equals(t, result, filteredRes)
 }
