@@ -176,10 +176,10 @@ eval instant at 50m http_requests{group="canary"} unless on(job, instance) http_
 	http_requests{group="canary", instance="1", job="app-server"} 800
 
 eval instant at 50m http_requests{group="canary"} / on(instance,job) http_requests{group="production"}
-	{instance="0", job="api-server"} 3
-	{instance="0", job="app-server"} 1.4
-	{instance="1", job="api-server"} 2
-	{instance="1", job="app-server"} 1.3333333333333333
+	{group="canary", instance="0", job="api-server"} 3
+	{group="canary", instance="0", job="app-server"} 1.4
+	{group="canary", instance="1", job="api-server"} 2
+	{group="canary", instance="1", job="app-server"} 1.3333333333333333
 
 eval instant at 50m http_requests{group="canary"} unless ignoring(group, instance) http_requests{instance="0"}
 
@@ -188,10 +188,10 @@ eval instant at 50m http_requests{group="canary"} unless ignoring(group) http_re
 	http_requests{group="canary", instance="1", job="app-server"} 800
 
 eval instant at 50m http_requests{group="canary"} / ignoring(group) http_requests{group="production"}
-	{instance="0", job="api-server"} 3
-	{instance="0", job="app-server"} 1.4
-	{instance="1", job="api-server"} 2
-	{instance="1", job="app-server"} 1.3333333333333333
+	{group="canary", instance="0", job="api-server"} 3
+	{group="canary", instance="0", job="app-server"} 1.4
+	{group="canary", instance="1", job="api-server"} 2
+	{group="canary", instance="1", job="app-server"} 1.3333333333333333
 
 # https://github.com/prometheus/prometheus/issues/1489
 eval instant at 50m http_requests AND ON (dummy) vector(1)
@@ -398,7 +398,7 @@ load 5m
 
 # On with no labels, for metrics with no common labels.
 eval instant at 5m random + on() metricA
-  {} 5
+  {foo="bar"} 5
 
 # Ignoring with no labels is the same as no ignoring.
 eval instant at 5m metricA + ignoring() metricB

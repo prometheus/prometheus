@@ -1544,27 +1544,18 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 		return ret
 	}
 
-	lb := labels.NewBuilder(lhs)
+	var lb *labels.Builder
+	if matching.Card == CardOneToMany {
+		// Choose the rhs metric because lhs and rhs have been swapped.
+		lb = labels.NewBuilder(rhs)
+	} else {
+		lb = labels.NewBuilder(lhs)
+	}
 
 	if shouldDropMetricName(op) {
 		lb.Del(labels.MetricName)
 	}
 
-	if matching.Card == CardOneToOne {
-		if matching.On {
-		Outer:
-			for _, l := range lhs {
-				for _, n := range matching.MatchingLabels {
-					if l.Name == n {
-						continue Outer
-					}
-				}
-				lb.Del(l.Name)
-			}
-		} else {
-			lb.Del(matching.MatchingLabels...)
-		}
-	}
 	for _, ln := range matching.Include {
 		// Included labels from the `group_x` modifier are taken from the "one"-side.
 		if v := rhs.Get(ln); v != "" {
