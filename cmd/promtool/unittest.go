@@ -70,6 +70,7 @@ func ruleUnitTest(filename string) []error {
 		return []error{err}
 	}
 	resolveFilepaths(filepath.Dir(filename), &unitTestInp)
+	globFilepaths(&unitTestInp)
 
 	if unitTestInp.EvaluationInterval == 0 {
 		unitTestInp.EvaluationInterval = 1 * time.Minute
@@ -135,6 +136,20 @@ func resolveFilepaths(baseDir string, utf *unitTestFile) {
 			utf.RuleFiles[i] = filepath.Join(baseDir, rf)
 		}
 	}
+}
+
+// globFilepaths replaces all globs with matching files
+func globFilepaths(utf *unitTestFile) {
+	var globbedFiles []string
+	for _, rf := range utf.RuleFiles {
+		m, err := filepath.Glob(rf)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+		} else {
+			globbedFiles = append(globbedFiles, m...)
+		}
+	}
+	utf.RuleFiles = globbedFiles
 }
 
 // testGroup is a group of input series and tests associated with it.
