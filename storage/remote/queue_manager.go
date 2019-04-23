@@ -189,6 +189,7 @@ type QueueManager struct {
 	sentBatchDuration          prometheus.Observer
 	succeededSamplesTotal      prometheus.Counter
 	retriedSamplesTotal        prometheus.Counter
+	shardCapacity              prometheus.Gauge
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -219,26 +220,10 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 		samplesDropped:     newEWMARate(ewmaWeight, shardUpdateDuration),
 		samplesOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
-
-		highestSentTimestampMetric: &maxGauge{
-			Gauge: queueHighestSentTimestamp.WithLabelValues(name),
-		},
-		pendingSamplesMetric:  queuePendingSamples.WithLabelValues(name),
-		enqueueRetriesMetric:  enqueueRetriesTotal.WithLabelValues(name),
-		droppedSamplesTotal:   droppedSamplesTotal.WithLabelValues(name),
-		numShardsMetric:       numShards.WithLabelValues(name),
-		failedSamplesTotal:    failedSamplesTotal.WithLabelValues(name),
-		sentBatchDuration:     sentBatchDuration.WithLabelValues(name),
-		succeededSamplesTotal: succeededSamplesTotal.WithLabelValues(name),
-		retriedSamplesTotal:   retriedSamplesTotal.WithLabelValues(name),
 	}
 
 	t.watcher = NewWALWatcher(logger, name, t, walDir)
 	t.shards = t.newShards()
-
-	// Initialise some metrics.
-	shardCapacity.WithLabelValues(name).Set(float64(t.cfg.Capacity))
-	t.pendingSamplesMetric.Set(0)
 
 	return t
 }
@@ -307,6 +292,27 @@ outer:
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
 func (t *QueueManager) Start() {
+	// Setup the QueueManagers metrics. We do this here rather than in the
+	// constructor because of the ordering of creating Queue Managers's, stopping them,
+	// and then starting new ones in storage/remote/storage.go ApplyConfig.
+	name := t.client.Name()
+	t.highestSentTimestampMetric = &maxGauge{
+		Gauge: queueHighestSentTimestamp.WithLabelValues(name),
+	}
+	t.pendingSamplesMetric = queuePendingSamples.WithLabelValues(name)
+	t.enqueueRetriesMetric = enqueueRetriesTotal.WithLabelValues(name)
+	t.droppedSamplesTotal = droppedSamplesTotal.WithLabelValues(name)
+	t.numShardsMetric = numShards.WithLabelValues(name)
+	t.failedSamplesTotal = failedSamplesTotal.WithLabelValues(name)
+	t.sentBatchDuration = sentBatchDuration.WithLabelValues(name)
+	t.succeededSamplesTotal = succeededSamplesTotal.WithLabelValues(name)
+	t.retriedSamplesTotal = retriedSamplesTotal.WithLabelValues(name)
+	t.shardCapacity = shardCapacity.WithLabelValues(name)
+
+	// Initialise some metrics.
+	t.shardCapacity.Set(float64(t.cfg.Capacity))
+	t.pendingSamplesMetric.Set(0)
+
 	t.shards.start(t.numShards)
 	t.watcher.Start()
 
@@ -335,6 +341,18 @@ func (t *QueueManager) Stop() {
 	for _, labels := range t.seriesLabels {
 		release(labels)
 	}
+	// Delete metrics so we don't have alerts for queues that are gone.
+	name := t.client.Name()
+	queueHighestSentTimestamp.DeleteLabelValues(name)
+	queuePendingSamples.DeleteLabelValues(name)
+	enqueueRetriesTotal.DeleteLabelValues(name)
+	droppedSamplesTotal.DeleteLabelValues(name)
+	numShards.DeleteLabelValues(name)
+	failedSamplesTotal.DeleteLabelValues(name)
+	sentBatchDuration.DeleteLabelValues(name)
+	succeededSamplesTotal.DeleteLabelValues(name)
+	retriedSamplesTotal.DeleteLabelValues(name)
+	shardCapacity.DeleteLabelValues(name)
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
