@@ -210,6 +210,12 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 			}
 			for _, g := range groups {
 				g.Eval(suite.Context(), ts)
+				for _, r := range g.Rules() {
+					if r.LastError() != nil {
+						errs = append(errs, errors.Errorf("    rule: %s, time: %s, err: %v",
+							r.Name(), ts.Sub(time.Unix(0, 0)), r.LastError()))
+					}
+				}
 			}
 		})
 		if len(errs) > 0 {
