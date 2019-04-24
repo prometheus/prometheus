@@ -28,7 +28,6 @@ import (
 
 var scenarios = map[string]struct {
 	params         string
-	accept         string
 	externalLabels labels.Labels
 	code           int
 	body           string

@@ -142,6 +142,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		time.Second,
 		labels.Labels{},
 		labels.Labels{},
+		labels.Labels{},
 		true,
 		log.NewNopLogger(),
 	)
@@ -149,6 +150,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		"test_metric4",
 		expr2,
 		time.Second,
+		labels.Labels{},
 		labels.Labels{},
 		labels.Labels{},
 		true,

@@ -163,7 +163,8 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		Logger:     &dummyLogger{},
 	}
 	m := rules.NewManager(opts)
-	groupsMap, ers := m.LoadGroups(tg.Interval, ruleFiles...)
+	// TODO(beorn7): Provide a way to pass in external labels.
+	groupsMap, ers := m.LoadGroups(tg.Interval, nil, ruleFiles...)
 	if ers != nil {
 		return ers
 	}
