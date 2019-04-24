@@ -552,6 +552,14 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			Step:  durationToInt64Millis(s.Interval),
 		}
 
+		// We need to make sure we select the timerange selected by the subquery.
+		// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
+		// we can optimise it by separating out the range and offsets, and substracting the offsets
+		// from end also.
+		subqOffset := ng.cumulativeSubqueryOffset(path)
+		offsetMilliseconds := durationMilliseconds(subqOffset)
+		params.Start = params.Start - offsetMilliseconds
+
 		switch n := node.(type) {
 		case *VectorSelector:
 			params.Start = params.Start - durationMilliseconds(LookbackDelta)

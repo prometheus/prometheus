@@ -483,11 +483,12 @@ func (it *mergedPostings) Seek(id uint64) bool {
 	// Heapifying when there is lots of Seeks is inefficient,
 	// mark to be re-heapified on the Next() call.
 	it.heaped = false
-	newH := make(postingsHeap, 0, len(it.h))
 	lowest := ^uint64(0)
+	n := 0
 	for _, i := range it.h {
 		if i.Seek(id) {
-			newH = append(newH, i)
+			it.h[n] = i
+			n++
 			if i.At() < lowest {
 				lowest = i.At()
 			}
@@ -498,7 +499,7 @@ func (it *mergedPostings) Seek(id uint64) bool {
 			}
 		}
 	}
-	it.h = newH
+	it.h = it.h[:n]
 	if len(it.h) == 0 {
 		return false
 	}

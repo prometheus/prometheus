@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -114,7 +115,10 @@ func (c *Client) Write(samples model.Samples) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	// API returns status code 204 for successful writes.
 	// http://opentsdb.net/docs/build/html/api_http/put.html

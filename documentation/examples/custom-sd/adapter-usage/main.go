@@ -17,6 +17,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -98,7 +100,10 @@ func (d *discovery) parseServiceNodes(resp *http.Response, name string) (*target
 	}
 
 	dec := json.NewDecoder(resp.Body)
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 	err := dec.Decode(&nodes)
 
 	if err != nil {

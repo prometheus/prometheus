@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"net"
@@ -306,7 +307,10 @@ func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if (resp.StatusCode < 200) || (resp.StatusCode >= 300) {
 		return nil, errors.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
