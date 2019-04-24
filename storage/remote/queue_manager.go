@@ -357,6 +357,10 @@ func (t *QueueManager) Stop() {
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
 func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
+	// Lock before any calls to labelsToLabels proto, as that's where string interning is done.
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
+
 	temp := make(map[uint64][]prompb.Label, len(series))
 	for _, s := range series {
 		ls := processExternalLabels(s.Labels, t.externalLabels)
@@ -368,8 +372,6 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 		temp[s.Ref] = labelsToLabelsProto(rl)
 	}
 
-	t.seriesMtx.Lock()
-	defer t.seriesMtx.Unlock()
 	for ref, labels := range temp {
 		t.seriesSegmentIndexes[ref] = index
 
