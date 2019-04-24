@@ -60,7 +60,6 @@ $(warning Some recipes may not work as expected as the current Go runtime is '$(
 	endif
 endif
 PROMU        := $(FIRST_GOPATH)/bin/promu
-STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
 pkgs          = ./...
 
 ifeq (arm, $(GOHOSTARCH))
@@ -72,13 +71,28 @@ endif
 
 PROMU_VERSION ?= 0.3.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
-STATICCHECK_VERSION ?= 2019.1
-STATICCHECK_URL     := https://github.com/dominikh/go-tools/releases/download/$(STATICCHECK_VERSION)/staticcheck_$(GOHOSTOS)_$(GOHOSTARCH)
+
+STATICCHECK :=
+# staticcheck only supports linux, freebsd, darwin and windows platforms on i386/amd64
+# windows isn't included here because of the path separator being different.
+ifeq ($(GOHOSTOS),$(filter $(GOHOSTOS),linux freebsd darwin))
+	ifeq ($(GOHOSTARCH),$(filter $(GOHOSTARCH),amd64 i386))
+		STATICCHECK := $(FIRST_GOPATH)/bin/staticcheck
+		STATICCHECK_VERSION ?= 2019.1
+		STATICCHECK_URL := https://github.com/dominikh/go-tools/releases/download/$(STATICCHECK_VERSION)/staticcheck_$(GOHOSTOS)_$(GOHOSTARCH)
+	endif
+endif
 
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 DOCKER_REPO             ?= prom
+
+DOCKER_ARCHS            ?= amd64
+
+BUILD_DOCKER_ARCHS = $(addprefix common-docker-,$(DOCKER_ARCHS))
+PUBLISH_DOCKER_ARCHS = $(addprefix common-docker-publish-,$(DOCKER_ARCHS))
+TAG_DOCKER_ARCHS = $(addprefix common-docker-tag-latest-,$(DOCKER_ARCHS))
 
 ifeq ($(GOHOSTARCH),amd64)
         ifeq ($(GOHOSTOS),$(filter $(GOHOSTOS),linux freebsd darwin windows))
@@ -147,6 +161,7 @@ common-vet:
 
 .PHONY: common-staticcheck
 common-staticcheck: $(STATICCHECK)
+ifdef STATICCHECK
 	@echo ">> running staticcheck"
 	chmod +x $(STATICCHECK)
 ifdef GO111MODULE
@@ -156,6 +171,7 @@ ifdef GO111MODULE
 	GO111MODULE=$(GO111MODULE) $(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 else
 	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
+endif
 endif
 
 .PHONY: common-unused
@@ -187,17 +203,28 @@ common-tarball: promu
 	@echo ">> building release tarball"
 	$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
-.PHONY: common-docker
-common-docker:
-	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
+.PHONY: common-docker $(BUILD_DOCKER_ARCHS)
+common-docker: $(BUILD_DOCKER_ARCHS)
+$(BUILD_DOCKER_ARCHS): common-docker-%:
+	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)" \
+		--build-arg ARCH="$*" \
+		--build-arg OS="linux" \
+		.
 
-.PHONY: common-docker-publish
-common-docker-publish:
-	docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)"
+.PHONY: common-docker-publish $(PUBLISH_DOCKER_ARCHS)
+common-docker-publish: $(PUBLISH_DOCKER_ARCHS)
+$(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
+	docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)"
 
-.PHONY: common-docker-tag-latest
-common-docker-tag-latest:
-	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):latest"
+.PHONY: common-docker-tag-latest $(TAG_DOCKER_ARCHS)
+common-docker-tag-latest: $(TAG_DOCKER_ARCHS)
+$(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
+	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest"
+
+.PHONY: common-docker-manifest
+common-docker-manifest:
+	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" $(foreach ARCH,$(DOCKER_ARCHS),$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$(ARCH):$(DOCKER_IMAGE_TAG))
+	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)"
 
 .PHONY: promu
 promu: $(PROMU)
@@ -214,9 +241,11 @@ proto:
 	@echo ">> generating code from proto files"
 	@./scripts/genproto.sh
 
+ifdef STATICCHECK
 $(STATICCHECK):
 	mkdir -p $(FIRST_GOPATH)/bin
 	curl -s -L $(STATICCHECK_URL) > $(STATICCHECK)
+endif
 
 ifdef GOVENDOR
 .PHONY: $(GOVENDOR)
