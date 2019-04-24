@@ -14,6 +14,7 @@
 package promlint_test
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -21,14 +22,16 @@ import (
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
+type test struct {
+	name     string
+	in       string
+	problems []promlint.Problem
+}
+
 func TestLintNoHelpText(t *testing.T) {
 	const msg = "no help text"
 
-	tests := []struct {
-		name     string
-		in       string
-		problems []promlint.Problem
-	}{
+	tests := []test{
 		{
 			name: "no help",
 			in: `
@@ -81,22 +84,7 @@ go_goroutines 24
 `,
 		},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := promlint.New(strings.NewReader(tt.in))
-
-			problems, err := l.Lint()
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if want, got := tt.problems, problems; !reflect.DeepEqual(want, got) {
-				t.Fatalf("unexpected problems:\n- want: %v\n-  got: %v",
-					want, got)
-			}
-		})
-	}
+	runTests(t, tests)
 }
 
 func TestLintMetricUnits(t *testing.T) {
@@ -253,11 +241,7 @@ thermometers_kelvin 0
 }
 
 func TestLintCounter(t *testing.T) {
-	tests := []struct {
-		name     string
-		in       string
-		problems []promlint.Problem
-	}{
+	tests := []test{
 		{
 			name: "counter without _total suffix",
 			in: `
@@ -316,29 +300,11 @@ x_bytes 10
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := promlint.New(strings.NewReader(tt.in))
-
-			problems, err := l.Lint()
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if want, got := tt.problems, problems; !reflect.DeepEqual(want, got) {
-				t.Fatalf("unexpected problems:\n- want: %v\n-  got: %v",
-					want, got)
-			}
-		})
-	}
+	runTests(t, tests)
 }
 
 func TestLintHistogramSummaryReserved(t *testing.T) {
-	tests := []struct {
-		name     string
-		in       string
-		problems []promlint.Problem
-	}{
+	tests := []test{
 		{
 			name: "gauge with _bucket suffix",
 			in: `
@@ -478,7 +444,116 @@ go_gc_duration_seconds_count 5962
 `,
 		},
 	}
+	runTests(t, tests)
+}
 
+func TestLintMetricTypeInName(t *testing.T) {
+	genTest := func(n, t string, problems ...promlint.Problem) test {
+		return test{
+			name: fmt.Sprintf("%s with _%s suffix", t, t),
+			in: fmt.Sprintf(`
+# HELP %s Test metric.
+# TYPE %s %s
+%s 10
+`, n, n, t, n),
+			problems: append(problems, promlint.Problem{
+				Metric: n,
+				Text:   fmt.Sprintf(`%s metrics should not include the type in metric name`, t),
+			}),
+		}
+	}
+
+	twoProbTest := genTest("http_requests_counter", "counter", promlint.Problem{
+		Metric: "http_requests_counter",
+		Text:   `counter metrics should have "_total" suffix`,
+	})
+
+	tests := []test{
+		twoProbTest,
+		genTest("instance_memory_limit_bytes_gauge", "gauge"),
+		genTest("request_duration_seconds_summary", "summary"),
+		genTest("request_duration_seconds_histogram", "histogram"),
+		genTest("request_duration_seconds_HISTOGRAM", "histogram"),
+
+		genTest("instance_memory_limit_gauge_bytes", "gauge"),
+	}
+	runTests(t, tests)
+}
+
+func TestLintReservedChars(t *testing.T) {
+	tests := []test{
+		{
+			name: "request_duration::_seconds",
+			in: `
+# HELP request_duration::_seconds Test metric.
+# TYPE request_duration::_seconds histogram
+request_duration::_seconds 10
+`,
+			problems: []promlint.Problem{
+				{
+					Metric: "request_duration::_seconds",
+					Text:   "metric names should not contain ':'",
+				},
+			},
+		},
+	}
+	runTests(t, tests)
+}
+
+func TestLintCamelCase(t *testing.T) {
+	tests := []test{
+		{
+			name: "requestDuration_seconds",
+			in: `
+# HELP requestDuration_seconds Test metric.
+# TYPE requestDuration_seconds histogram
+requestDuration_seconds 10
+`,
+			problems: []promlint.Problem{
+				{
+					Metric: "requestDuration_seconds",
+					Text:   "metric names should be written in 'snake_case' not 'camelCase'",
+				},
+			},
+		},
+	}
+	runTests(t, tests)
+}
+
+func TestLintUnitAbbreviations(t *testing.T) {
+	genTest := func(n string) test {
+		return test{
+			name: fmt.Sprintf("%s with abbreviated unit", n),
+			in: fmt.Sprintf(`
+# HELP %s Test metric.
+# TYPE %s gauge
+%s 10
+`, n, n, n),
+			problems: []promlint.Problem{
+				promlint.Problem{
+					Metric: n,
+					Text:   "metric names should not used abbreviated units",
+				},
+			},
+		}
+	}
+	tests := []test{
+		genTest("instance_memory_limit_b"),
+		genTest("instance_memory_limit_kb"),
+		genTest("instance_memory_limit_mb"),
+		genTest("instance_memory_limit_MB"),
+		genTest("instance_memory_limit_gb"),
+		genTest("instance_memory_limit_tb"),
+		genTest("instance_memory_limit_pb"),
+
+		genTest("request_duration_s"),
+		genTest("request_duration_sec"),
+		genTest("request_duration_sec_summary"),
+	}
+	runTests(t, tests)
+}
+
+func runTests(t *testing.T, tests []test) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := promlint.New(strings.NewReader(tt.in))

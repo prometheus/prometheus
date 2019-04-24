@@ -17,6 +17,7 @@ package promlint
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -101,6 +102,10 @@ func lint(mf dto.MetricFamily) []Problem {
 		lintMetricUnits,
 		lintCounter,
 		lintHistogramSummaryReserved,
+		lintMetricTypeInName,
+		lintReservedChars,
+		lintCamelCase,
+		lintUnitAbbreviations,
 	}
 
 	var problems []Problem
@@ -205,6 +210,54 @@ func lintHistogramSummaryReserved(mf dto.MetricFamily) []Problem {
 	return problems
 }
 
+// lintMetricTypeInName detects when the type of the metric is included in the metric name
+func lintMetricTypeInName(mf dto.MetricFamily) []Problem {
+	t := mf.GetType()
+	if t == dto.MetricType_UNTYPED {
+		return nil
+	}
+
+	var problems problems
+	n := strings.ToLower(mf.GetName())
+
+	typename := strings.ToLower(dto.MetricType_name[int32(t)])
+	if strings.Contains(n, "_"+typename+"_") || strings.HasSuffix(n, "_"+typename) {
+		problems.Add(mf, fmt.Sprintf(`%s metrics should not include the type in metric name`, typename))
+	}
+	return problems
+}
+
+// lintReservedChars detects colons in metric names
+func lintReservedChars(mf dto.MetricFamily) []Problem {
+	var problems problems
+	if strings.Contains(mf.GetName(), ":") {
+		problems.Add(mf, "metric names should not contain ':'")
+	}
+	return problems
+}
+
+// lintCamelCase detects metric names written in camelCase
+func lintCamelCase(mf dto.MetricFamily) []Problem {
+	var problems problems
+	re := regexp.MustCompile(`[a-z][A-Z]`)
+	if re.FindString(mf.GetName()) != "" {
+		problems.Add(mf, "metric names should be written in 'snake_case' not 'camelCase'")
+	}
+	return problems
+}
+
+// lintUnitAbbreviations detects abbreviated units in the metric name
+func lintUnitAbbreviations(mf dto.MetricFamily) []Problem {
+	var problems problems
+	n := strings.ToLower(mf.GetName())
+	for _, s := range unitAbbreviations {
+		if strings.Contains(n, "_"+s+"_") || strings.HasSuffix(n, "_"+s) {
+			problems.Add(mf, "metric names should not used abbreviated units")
+		}
+	}
+	return problems
+}
+
 // metricUnits attempts to detect known unit types used as part of a metric name,
 // e.g. "foo_bytes_total" or "bar_baz_milligrams".
 func metricUnits(m string) (unit string, base string, ok bool) {
@@ -264,5 +317,17 @@ var (
 		"tebi",
 		"peta",
 		"pebi",
+	}
+
+	//common abbreviations that we'd like to discourage
+	unitAbbreviations = []string{
+		"s",
+		"sec",
+		"b",
+		"kb",
+		"mb",
+		"gb",
+		"tb",
+		"pb",
 	}
 )
