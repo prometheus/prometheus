@@ -1545,8 +1545,8 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 	}
 
 	var lb *labels.Builder
-	if matching.Card == CardOneToMany {
-		// Choose the rhs metric because lhs and rhs have been swapped.
+	if matching.Card == CardOneToMany && op.isComparisonOperator() {
+		// Choose the rhs metric as the one to output because lhs and rhs have been swapped.
 		lb = labels.NewBuilder(rhs)
 	} else {
 		lb = labels.NewBuilder(lhs)
@@ -1554,6 +1554,22 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 
 	if shouldDropMetricName(op) {
 		lb.Del(labels.MetricName)
+	}
+
+	if matching.Card == CardOneToOne && !op.isComparisonOperator() {
+		if matching.On {
+		Outer:
+			for _, l := range lhs {
+				for _, n := range matching.MatchingLabels {
+					if l.Name == n {
+						continue Outer
+					}
+				}
+				lb.Del(l.Name)
+			}
+		} else {
+			lb.Del(matching.MatchingLabels...)
+		}
 	}
 
 	for _, ln := range matching.Include {
