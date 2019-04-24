@@ -14,5 +14,5 @@ before_install:
 - travis_retry make deps
 
 script:
-- make check_license style unused test staticcheck check_assets
+- make check_license style unused test lint check_assets
 - git diff --exit-code
