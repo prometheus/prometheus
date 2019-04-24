@@ -138,7 +138,7 @@ func resolveFilepaths(baseDir string, utf *unitTestFile) {
 	}
 }
 
-// globFilepaths replaces all globs with matching files
+// globFilepaths replaces all globs with matching files.
 func globFilepaths(utf *unitTestFile) {
 	var globbedFiles []string
 	for _, rf := range utf.RuleFiles {
