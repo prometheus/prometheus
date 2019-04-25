@@ -194,7 +194,7 @@ type seriesSamples struct {
 
 // Index: labels -> postings -> chunkMetas -> chunkRef
 // ChunkReader: ref -> vals
-func createIdxChkReaders(tc []seriesSamples) (IndexReader, ChunkReader, int64, int64) {
+func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkReader, int64, int64) {
 	sort.Slice(tc, func(i, j int) bool {
 		return labels.Compare(labels.FromMap(tc[i].lset), labels.FromMap(tc[i].lset)) < 0
 	})
@@ -234,7 +234,7 @@ func createIdxChkReaders(tc []seriesSamples) (IndexReader, ChunkReader, int64, i
 		}
 
 		ls := labels.FromMap(s.lset)
-		mi.AddSeries(uint64(i), ls, metas...)
+		testutil.Ok(t, mi.AddSeries(uint64(i), ls, metas...))
 
 		postings.Add(uint64(i), ls)
 
@@ -249,12 +249,12 @@ func createIdxChkReaders(tc []seriesSamples) (IndexReader, ChunkReader, int64, i
 	}
 
 	for l, vs := range lblIdx {
-		mi.WriteLabelIndex([]string{l}, vs.slice())
+		testutil.Ok(t, mi.WriteLabelIndex([]string{l}, vs.slice()))
 	}
 
-	postings.Iter(func(l labels.Label, p index.Postings) error {
+	testutil.Ok(t, postings.Iter(func(l labels.Label, p index.Postings) error {
 		return mi.WritePostings(l.Name, l.Value, p)
-	})
+	}))
 
 	return mi, chkReader, blockMint, blockMaxt
 }
@@ -363,7 +363,7 @@ func TestBlockQuerier(t *testing.T) {
 
 Outer:
 	for _, c := range cases.queries {
-		ir, cr, _, _ := createIdxChkReaders(cases.data)
+		ir, cr, _, _ := createIdxChkReaders(t, cases.data)
 		querier := &blockQuerier{
 			index:      ir,
 			chunks:     cr,
@@ -525,7 +525,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 
 Outer:
 	for _, c := range cases.queries {
-		ir, cr, _, _ := createIdxChkReaders(cases.data)
+		ir, cr, _, _ := createIdxChkReaders(t, cases.data)
 		querier := &blockQuerier{
 			index:      ir,
 			chunks:     cr,
@@ -630,7 +630,7 @@ func TestBaseChunkSeries(t *testing.T) {
 	for _, tc := range cases {
 		mi := newMockIndex()
 		for _, s := range tc.series {
-			mi.AddSeries(s.ref, s.lset, s.chunks...)
+			testutil.Ok(t, mi.AddSeries(s.ref, s.lset, s.chunks...))
 		}
 
 		bcs := &baseChunkSeries{
@@ -1884,7 +1884,7 @@ func TestPostingsForMatchers(t *testing.T) {
 
 		for p.Next() {
 			lbls := labels.Labels{}
-			ir.Series(p.At(), &lbls, &[]chunks.Meta{})
+			testutil.Ok(t, ir.Series(p.At(), &lbls, &[]chunks.Meta{}))
 			if _, ok := exp[lbls.String()]; !ok {
 				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
 			} else {

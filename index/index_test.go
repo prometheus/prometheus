@@ -295,7 +295,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	for i, s := range input {
 		err = iw.AddSeries(uint64(i), s.labels, s.chunks...)
 		testutil.Ok(t, err)
-		mi.AddSeries(uint64(i), s.labels, s.chunks...)
+		testutil.Ok(t, mi.AddSeries(uint64(i), s.labels, s.chunks...))
 
 		for _, l := range s.labels {
 			valset, ok := values[l.Name]
@@ -325,7 +325,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 	err = iw.WritePostings("", "", newListPostings(all...))
 	testutil.Ok(t, err)
-	mi.WritePostings("", "", newListPostings(all...))
+	testutil.Ok(t, mi.WritePostings("", "", newListPostings(all...)))
 
 	for n, e := range postings.m {
 		for v := range e {

@@ -69,7 +69,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	testutil.NotOk(t, err)
 
 	// Touch chunks dir in block.
-	os.MkdirAll(filepath.Join(dbDir, "chunks"), 0777)
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dbDir, "chunks"), 0777))
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(filepath.Join(dbDir, "chunks")))
 	}()

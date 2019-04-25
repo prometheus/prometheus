@@ -139,7 +139,8 @@ func TestMemTombstonesConcurrency(t *testing.T) {
 	}()
 	go func() {
 		for x := 0; x < totalRuns; x++ {
-			tomb.Get(uint64(x))
+			_, err := tomb.Get(uint64(x))
+			testutil.Ok(t, err)
 		}
 		wg.Done()
 	}()

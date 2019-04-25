@@ -204,9 +204,7 @@ func ReadLabels(fn string, n int) ([]Labels, error) {
 		hashes[h] = struct{}{}
 		i++
 	}
-	if err != nil {
-		return nil, err
-	}
+
 	if i != n {
 		return mets, errors.Errorf("requested %d metrics but found %d", n, i)
 	}

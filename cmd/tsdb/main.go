@@ -107,7 +107,9 @@ func main() {
 		}
 		dumpSamples(db, *dumpMinTime, *dumpMaxTime)
 	}
-	flag.CommandLine.Set("log.level", "debug")
+	if err := flag.CommandLine.Set("log.level", "debug"); err != nil {
+		exitWithError(err)
+	}
 }
 
 type writeBenchmark struct {

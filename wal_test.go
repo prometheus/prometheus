@@ -146,9 +146,9 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	var readSeries []RefSeries
 	r := w.Reader()
 
-	r.Read(func(s []RefSeries) {
+	testutil.Ok(t, r.Read(func(s []RefSeries) {
 		readSeries = append(readSeries, s...)
-	}, nil, nil)
+	}, nil, nil))
 
 	testutil.Equals(t, expected, readSeries)
 }

@@ -859,7 +859,7 @@ func TestGCChunkAccess(t *testing.T) {
 	_, err = cr.Chunk(chunks[1].Ref)
 	testutil.Ok(t, err)
 
-	h.Truncate(1500) // Remove a chunk.
+	testutil.Ok(t, h.Truncate(1500)) // Remove a chunk.
 
 	_, err = cr.Chunk(chunks[0].Ref)
 	testutil.Equals(t, ErrNotFound, err)
@@ -899,7 +899,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	_, err = cr.Chunk(chunks[1].Ref)
 	testutil.Ok(t, err)
 
-	h.Truncate(2000) // Remove the series.
+	testutil.Ok(t, h.Truncate(2000)) // Remove the series.
 
 	testutil.Equals(t, (*memSeries)(nil), h.series.getByID(1))
 
