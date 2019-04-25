@@ -34,15 +34,19 @@ func SetCORS(w http.ResponseWriter, o *regexp.Regexp, r *http.Request) {
 	}
 
 	for k, v := range corsHeaders {
-		w.Header().Set(k, v)
+		if _, ok := w.Header()[k]; !ok {
+			w.Header().Set(k, v)
+		}
 	}
 
-	if o.String() == "^(?:.*)$" {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		return
-	}
+	if _, ok := w.Header()["Access-Control-Allow-Origin"]; !ok {
+		if o.String() == "^(?:.*)$" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			return
+		}
 
-	if o.MatchString(origin) {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
+		if o.MatchString(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		}
 	}
 }
