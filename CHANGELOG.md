@@ -1,3 +1,11 @@
+## 2.9.2 / 2019-04-24
+
+* [BUGFIX] Make sure subquery range is taken into account for selection #5467
+* [BUGFIX] Exhaust every request body before closing it #5166
+* [BUGFIX] Cmd/promtool: return errors from rule evaluations #5483
+* [BUGFIX] Remote Storage: string interner should not panic in release #5487
+* [BUGFIX] Fix memory allocation regression in mergedPostings.Seek tsdb#586
+
 ## 2.9.1 / 2019-04-16
 
 * [BUGFIX] Discovery/kubernetes: fix missing label sanitization #5462
