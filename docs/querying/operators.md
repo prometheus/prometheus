@@ -35,9 +35,10 @@ the original vector is multiplied by 2.
 
 **Between two instant vectors**, a binary arithmetic operator is applied to
 each entry in the left-hand side vector and its [matching element](#vector-matching)
-in the right-hand vector. The result is propagated into the result vector and the metric
-name is dropped. Entries for which no matching entry in the right-hand vector can be
-found are not part of the result.
+in the right-hand vector. The result is propagated into the result vector with the
+grouping labels becoming the output label set. The metric name is dropped. Entries
+for which no matching entry in the right-hand vector can be found are not part of
+the result.
 
 ### Comparison binary operators
 
@@ -69,10 +70,10 @@ modifier is provided, vector elements that would be dropped instead have the val
 applied to matching entries. Vector elements for which the expression is not
 true or which do not find a match on the other side of the expression get
 dropped from the result, while the others are propagated into a result vector
-with their original (left-hand side) metric names and label values.
+with the grouping labels becoming the output label set.
 If the `bool` modifier is provided, vector elements that would have been
 dropped instead have the value `0` and vector elements that would be kept have
-the value `1` with the left-hand side label values.
+the value `1`, with the grouping labels again becoming the output label set.
 
 ### Logical/set binary operators
 
@@ -223,7 +224,7 @@ number of seen HTTP requests per application and group over all instances via:
     sum(http_requests_total) without (instance)
 
 Which is equivalent to:
- 
+
      sum(http_requests_total) by (application, group)
 
 If we are just interested in the total of HTTP requests we have seen in **all**
