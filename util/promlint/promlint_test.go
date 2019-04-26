@@ -554,6 +554,7 @@ func TestLintUnitAbbreviations(t *testing.T) {
 }
 
 func runTests(t *testing.T, tests []test) {
+	t.Helper()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := promlint.New(strings.NewReader(tt.in))
