@@ -39,7 +39,7 @@ func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 
-	testutil.Ok(t, writeMetaFile(dir, &BlockMeta{}))
+	testutil.Ok(t, writeMetaFile(log.NewNopLogger(), dir, &BlockMeta{}))
 
 	meta, err := readMetaFile(dir)
 	testutil.Ok(t, err)

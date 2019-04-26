@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/tsdb/testutil"
 )
 
@@ -46,7 +47,7 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 		stones.addInterval(ref, dranges...)
 	}
 
-	testutil.Ok(t, writeTombstoneFile(tmpdir, stones))
+	testutil.Ok(t, writeTombstoneFile(log.NewNopLogger(), tmpdir, stones))
 
 	restr, _, err := readTombstones(tmpdir)
 	testutil.Ok(t, err)
