@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/metrics"
 	"k8s.io/client-go/util/workqueue"
@@ -163,19 +164,13 @@ var (
 	)
 )
 
-// gaugeSetFunc is an adapter that allows the use of functions as gauge metric setters.
-type gaugeSetFunc func(float64)
-
-func (s gaugeSetFunc) Set(value float64) {
-	s(value)
-}
-
 // Definition of dummy metric used as a placeholder if we don't want to observe some data.
 type noopMetric struct{}
 
 func (noopMetric) Inc()            {}
 func (noopMetric) Dec()            {}
 func (noopMetric) Observe(float64) {}
+func (noopMetric) Set(float64)     {}
 
 // Definition of client-go metrics adapters for HTTP requests observation
 type clientGoRequestMetricAdapter struct{}
@@ -251,14 +246,14 @@ func (f *clientGoWorkqueueMetricsProvider) NewDepthMetric(name string) workqueue
 func (f *clientGoWorkqueueMetricsProvider) NewAddsMetric(name string) workqueue.CounterMetric {
 	return clientGoWorkqueueAddsMetricVec.WithLabelValues(name)
 }
-func (f *clientGoWorkqueueMetricsProvider) NewLatencyMetric(name string) workqueue.SummaryMetric {
+func (f *clientGoWorkqueueMetricsProvider) NewLatencyMetric(name string) workqueue.HistogramMetric {
 	metric := clientGoWorkqueueLatencyMetricVec.WithLabelValues(name)
 	// Convert microseconds to seconds for consistency across metrics.
 	return prometheus.ObserverFunc(func(v float64) {
 		metric.Observe(v / 1e6)
 	})
 }
-func (f *clientGoWorkqueueMetricsProvider) NewWorkDurationMetric(name string) workqueue.SummaryMetric {
+func (f *clientGoWorkqueueMetricsProvider) NewWorkDurationMetric(name string) workqueue.HistogramMetric {
 	metric := clientGoWorkqueueWorkDurationMetricVec.WithLabelValues(name)
 	// Convert microseconds to seconds for consistency across metrics.
 	return prometheus.ObserverFunc(func(v float64) {
@@ -268,14 +263,31 @@ func (f *clientGoWorkqueueMetricsProvider) NewWorkDurationMetric(name string) wo
 func (f *clientGoWorkqueueMetricsProvider) NewUnfinishedWorkSecondsMetric(name string) workqueue.SettableGaugeMetric {
 	return clientGoWorkqueueUnfinishedWorkSecondsMetricVec.WithLabelValues(name)
 }
-func (f *clientGoWorkqueueMetricsProvider) NewLongestRunningProcessorMicrosecondsMetric(name string) workqueue.SettableGaugeMetric {
-	metric := clientGoWorkqueueLongestRunningProcessorMetricVec.WithLabelValues(name)
-	return gaugeSetFunc(func(v float64) {
-		metric.Set(v / 1e6)
-	})
-
+func (f *clientGoWorkqueueMetricsProvider) NewLongestRunningProcessorSecondsMetric(name string) workqueue.SettableGaugeMetric {
+	return clientGoWorkqueueLongestRunningProcessorMetricVec.WithLabelValues(name)
 }
 func (clientGoWorkqueueMetricsProvider) NewRetriesMetric(name string) workqueue.CounterMetric {
 	// Retries are not used so the metric is omitted.
+	return noopMetric{}
+}
+func (clientGoWorkqueueMetricsProvider) NewDeprecatedDepthMetric(name string) workqueue.GaugeMetric {
+	return noopMetric{}
+}
+func (clientGoWorkqueueMetricsProvider) NewDeprecatedAddsMetric(name string) workqueue.CounterMetric {
+	return noopMetric{}
+}
+func (clientGoWorkqueueMetricsProvider) NewDeprecatedLatencyMetric(name string) workqueue.SummaryMetric {
+	return noopMetric{}
+}
+func (f *clientGoWorkqueueMetricsProvider) NewDeprecatedWorkDurationMetric(name string) workqueue.SummaryMetric {
+	return noopMetric{}
+}
+func (f *clientGoWorkqueueMetricsProvider) NewDeprecatedUnfinishedWorkSecondsMetric(name string) workqueue.SettableGaugeMetric {
+	return noopMetric{}
+}
+func (f *clientGoWorkqueueMetricsProvider) NewDeprecatedLongestRunningProcessorMicrosecondsMetric(name string) workqueue.SettableGaugeMetric {
+	return noopMetric{}
+}
+func (clientGoWorkqueueMetricsProvider) NewDeprecatedRetriesMetric(name string) workqueue.CounterMetric {
 	return noopMetric{}
 }

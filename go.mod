@@ -39,7 +39,6 @@ require (
 	github.com/googleapis/gnostic v0.0.0-20180520015035-48a0ecefe2e4 // indirect
 	github.com/gophercloud/gophercloud v0.0.0-20190301152420-fca40860790e
 	github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 // indirect
-	github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.8.5
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
 	github.com/hashicorp/consul v1.4.4
@@ -72,7 +71,6 @@ require (
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20170113013457-1de4cc2120e7
 	github.com/opentracing/basictracer-go v1.0.0 // indirect
 	github.com/opentracing/opentracing-go v1.0.2
-	github.com/peterbourgon/diskv v0.0.0-20180312054125-0646ccaebea1 // indirect
 	github.com/peterbourgon/g2s v0.0.0-20170223122336-d4e7ad98afea // indirect
 	github.com/petermattis/goid v0.0.0-20170504144140-0ded85884ba5 // indirect
 	github.com/pkg/errors v0.8.1
@@ -105,11 +103,12 @@ require (
 	gopkg.in/fsnotify/fsnotify.v1 v1.3.1
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.2.2
-	k8s.io/api v0.0.0-20181213150558-05914d821849
-	k8s.io/apimachinery v0.0.0-20181127025237-2b1284ed4c93
-	k8s.io/client-go v2.0.0-alpha.0.0.20181121191925-a47917edff34+incompatible
-	k8s.io/klog v0.1.0
+	k8s.io/api v0.0.0-20190409021203-6e4e0e4f393b
+	k8s.io/apimachinery v0.0.0-20190404173353-6a84e37a896d
+	k8s.io/client-go v11.0.1-0.20190409021438-1a26190bd76a+incompatible
+	k8s.io/klog v0.3.0
 	k8s.io/kube-openapi v0.0.0-20180629012420-d83b052f768a // indirect
+	k8s.io/utils v0.0.0-20190308190857-21c4ce38f2a7 // indirect
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
