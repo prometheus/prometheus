@@ -294,11 +294,7 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
-	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
-		fs := http.FileServer(ui.Assets)
-		fs.ServeHTTP(w, r)
-	})
+	router.Get("/static/*filepath", h.static)
 
 	if o.UserAssetsPath != "" {
 		router.Get("/user/*filepath", route.FileServe(o.UserAssetsPath))
@@ -591,6 +587,21 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	io.WriteString(w, result)
+}
+
+func (h *Handler) static(w http.ResponseWriter, r *http.Request) {
+	r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
+	fileExt := filepath.Ext(r.URL.Path)
+
+	switch fileExt {
+	case ".js":
+		w.Header().Set("Content-Type", "application/javascript")
+	case ".css":
+		w.Header().Set("Content-Type", "text/css")
+	}
+
+	fs := http.FileServer(ui.Assets)
+	fs.ServeHTTP(w, r)
 }
 
 func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
