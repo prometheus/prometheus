@@ -205,6 +205,8 @@ type blockQuerier struct {
 	chunks     ChunkReader
 	tombstones TombstoneReader
 
+	closed bool
+
 	mint, maxt int64
 }
 
@@ -252,12 +254,15 @@ func (q *blockQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 }
 
 func (q *blockQuerier) Close() error {
-	var merr tsdb_errors.MultiError
+	if q.closed {
+		return errors.New("block querier already closed")
+	}
 
+	var merr tsdb_errors.MultiError
 	merr.Add(q.index.Close())
 	merr.Add(q.chunks.Close())
 	merr.Add(q.tombstones.Close())
-
+	q.closed = true
 	return merr.Err()
 }
 

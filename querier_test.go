@@ -1898,3 +1898,30 @@ func TestPostingsForMatchers(t *testing.T) {
 	}
 
 }
+
+// TestClose ensures that calling Close more than once doesn't block and doesn't panic.
+func TestClose(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test_storage")
+	if err != nil {
+		t.Fatalf("Opening test dir failed: %s", err)
+	}
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+
+	createBlock(t, dir, genSeries(1, 1, 0, 10))
+	createBlock(t, dir, genSeries(1, 1, 10, 20))
+
+	db, err := Open(dir, nil, nil, DefaultOptions)
+	if err != nil {
+		t.Fatalf("Opening test storage failed: %s", err)
+	}
+	defer func() {
+		testutil.Ok(t, db.Close())
+	}()
+
+	q, err := db.Querier(0, 20)
+	testutil.Ok(t, err)
+	testutil.Ok(t, q.Close())
+	testutil.NotOk(t, q.Close())
+}

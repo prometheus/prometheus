@@ -159,9 +159,9 @@ type WAL struct {
 	logger      log.Logger
 	segmentSize int
 	mtx         sync.RWMutex
-	segment     *Segment // active segment
-	donePages   int      // pages written to the segment
-	page        *page    // active page
+	segment     *Segment // Active segment.
+	donePages   int      // Pages written to the segment.
+	page        *page    // Active page.
 	stopc       chan chan struct{}
 	actorc      chan func()
 	closed      bool // To allow calling Close() more than once without blocking.
@@ -606,7 +606,7 @@ func (w *WAL) Close() (err error) {
 	defer w.mtx.Unlock()
 
 	if w.closed {
-		return nil
+		return errors.New("wal already closed")
 	}
 
 	// Flush the last page and zero out all its remaining size.

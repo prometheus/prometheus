@@ -305,6 +305,19 @@ func TestCorruptAndCarryOn(t *testing.T) {
 	}
 }
 
+// TestClose ensures that calling Close more than once doesn't panic and doesn't block.
+func TestClose(t *testing.T) {
+	dir, err := ioutil.TempDir("", "wal_repair")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	w, err := NewSize(nil, nil, dir, pageSize)
+	testutil.Ok(t, err)
+	testutil.Ok(t, w.Close())
+	testutil.NotOk(t, w.Close())
+}
+
 func BenchmarkWAL_LogBatched(b *testing.B) {
 	dir, err := ioutil.TempDir("", "bench_logbatch")
 	testutil.Ok(b, err)

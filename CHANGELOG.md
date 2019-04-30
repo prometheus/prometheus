@@ -1,4 +1,6 @@
 ## master / unreleased
+ - [BUGFIX] Calling `Close` more than once on a querier returns an error instead of a panic.
+
 
 ## 0.7.1
  - [ENHANCEMENT] Reduce memory usage in mergedPostings.Seek
