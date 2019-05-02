@@ -210,7 +210,7 @@ func lintHistogramSummaryReserved(mf dto.MetricFamily) []Problem {
 	return problems
 }
 
-// lintMetricTypeInName detects when the type of the metric is included in the metric name
+// lintMetricTypeInName detects when the type of the metric is included in the metric name.
 func lintMetricTypeInName(mf dto.MetricFamily) []Problem {
 	t := mf.GetType()
 	if t == dto.MetricType_UNTYPED {
@@ -220,14 +220,14 @@ func lintMetricTypeInName(mf dto.MetricFamily) []Problem {
 	var problems problems
 	n := strings.ToLower(mf.GetName())
 
-	typename := strings.ToLower(dto.MetricType_name[int32(t)])
+	typename := strings.ToLower(t.String())
 	if strings.Contains(n, "_"+typename+"_") || strings.HasSuffix(n, "_"+typename) {
 		problems.Add(mf, fmt.Sprintf(`%s metrics should not include the type in metric name`, typename))
 	}
 	return problems
 }
 
-// lintReservedChars detects colons in metric names
+// lintReservedChars detects colons in metric names.
 func lintReservedChars(mf dto.MetricFamily) []Problem {
 	var problems problems
 	if strings.Contains(mf.GetName(), ":") {
@@ -236,7 +236,7 @@ func lintReservedChars(mf dto.MetricFamily) []Problem {
 	return problems
 }
 
-// lintCamelCase detects metric names written in camelCase
+// lintCamelCase detects metric names written in camelCase.
 func lintCamelCase(mf dto.MetricFamily) []Problem {
 	var problems problems
 	re := regexp.MustCompile(`[a-z][A-Z]`)
@@ -246,7 +246,7 @@ func lintCamelCase(mf dto.MetricFamily) []Problem {
 	return problems
 }
 
-// lintUnitAbbreviations detects abbreviated units in the metric name
+// lintUnitAbbreviations detects abbreviated units in the metric name.
 func lintUnitAbbreviations(mf dto.MetricFamily) []Problem {
 	var problems problems
 	n := strings.ToLower(mf.GetName())
@@ -319,7 +319,7 @@ var (
 		"pebi",
 	}
 
-	//common abbreviations that we'd like to discourage
+	// Common abbreviations that we'd like to discourage.
 	unitAbbreviations = []string{
 		"s",
 		"sec",
