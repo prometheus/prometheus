@@ -153,7 +153,7 @@ For instance, a single label name with 4 different values will be encoded as:
 └────┴───┴───┴──────────────┴──────────────┴──────────────┴──────────────┴───────┘
 ```
 
-The sequence of label index sections is finalized by an [offset table](#offset-table) pointing to the beginning of each label index section for a given set of label names.
+The sequence of label index sections is finalized by a [label offset table](#label-offset-table) containing label offset entries that points to the beginning of each label index section for a given label name.
 
 ### Postings
 
@@ -175,24 +175,48 @@ Postings sections store monotonically increasing lists of series references that
 └─────────────────────────────────────────┘
 ```
 
-The sequence of postings sections is finalized by an [offset table](#offset-table) pointing to the beginning of each postings section for a given set of label names.
+The sequence of postings sections is finalized by a [postings offset table](#postings-offset-table) containing postings offset entries that points to the beginning of each postings section for a given label pair.
 
-### Offset Table
+### Label Offset Table
 
-An offset table stores a sequence of entries that maps a list of strings to an offset. They are used to track label index and postings sections. They are read into memory when an index file is loaded.
+A label offset table stores a sequence of label offset entries.
+Every label offset entry holds the label name and the offset to its values in the label index section.
+They are used to track label index sections. They are read into memory when an index file is loaded.
 
 ```
 ┌─────────────────────┬──────────────────────┐
 │ len <4b>            │ #entries <4b>        │
 ├─────────────────────┴──────────────────────┤
 │ ┌────────────────────────────────────────┐ │
-│ │  n = #strs <uvarint>                   │ │
+│ │  n = 1 <1b>                            │ │
 │ ├──────────────────────┬─────────────────┤ │
-│ │ len(str_1) <uvarint> │ str_1 <bytes>   │ │
+│ │ len(name) <uvarint>  │ name <bytes>    │ │
 │ ├──────────────────────┴─────────────────┤ │
-│ │  ...                                   │ │
+│ │  offset <uvarint64>                    │ │
+│ └────────────────────────────────────────┘ │
+│                    . . .                   │
+├────────────────────────────────────────────┤
+│  CRC32 <4b>                                │
+└────────────────────────────────────────────┘
+```
+
+
+### Postings Offset Table
+
+A postings offset table stores a sequence of postings offset entries.
+Every postings offset entry holds the lable name/value pair and the offset to its series list in the postings section.
+They are used to track postings sections. They are read into memory when an index file is loaded.
+
+```
+┌─────────────────────┬──────────────────────┐
+│ len <4b>            │ #entries <4b>        │
+├─────────────────────┴──────────────────────┤
+│ ┌────────────────────────────────────────┐ │
+│ │  n = 2 <1b>                            │ │
 │ ├──────────────────────┬─────────────────┤ │
-│ │ len(str_n) <uvarint> │ str_n <bytes>   │ │
+│ │ len(name) <uvarint>  │ name <bytes>    │ │
+│ ├──────────────────────┼─────────────────┤ │
+│ │ len(value) <uvarint> │ value <bytes>   │ │
 │ ├──────────────────────┴─────────────────┤ │
 │ │  offset <uvarint64>                    │ │
 │ └────────────────────────────────────────┘ │
@@ -216,11 +240,11 @@ If a reference is zero, it indicates the respective section does not exist and e
 ├─────────────────────────────────────────┤
 │ ref(label indices start) <8b>           │
 ├─────────────────────────────────────────┤
-│ ref(label indices table) <8b>           │
+│ ref(label offset table) <8b>            │
 ├─────────────────────────────────────────┤
 │ ref(postings start) <8b>                │
 ├─────────────────────────────────────────┤
-│ ref(postings table) <8b>                │
+│ ref(postings offset table) <8b>         │
 ├─────────────────────────────────────────┤
 │ CRC32 <4b>                              │
 └─────────────────────────────────────────┘
