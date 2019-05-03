@@ -619,11 +619,14 @@ func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
 type jsonPrinter struct{}
 
 func (j *jsonPrinter) printValue(v model.Value) {
+	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 func (j *jsonPrinter) printSeries(v []model.LabelSet) {
+	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
+	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }

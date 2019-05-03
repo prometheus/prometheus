@@ -838,7 +838,10 @@ func (api *API) serveFlags(r *http.Request) apiFuncResult {
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
-	api.remoteReadGate.Start(r.Context())
+	if err := api.remoteReadGate.Start(r.Context()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	remoteReadQueries.Inc()
 
 	defer api.remoteReadGate.Done()

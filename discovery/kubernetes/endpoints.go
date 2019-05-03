@@ -325,11 +325,12 @@ func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	p.Name = ref.Name
 
 	obj, exists, err := e.podStore.Get(p)
-	if err != nil || !exists {
-		return nil
-	}
 	if err != nil {
 		level.Error(e.logger).Log("msg", "resolving pod ref failed", "err", err)
+		return nil
+	}
+	if !exists {
+		return nil
 	}
 	return obj.(*apiv1.Pod)
 }
@@ -340,11 +341,12 @@ func (e *Endpoints) addServiceLabels(ns, name string, tg *targetgroup.Group) {
 	svc.Name = name
 
 	obj, exists, err := e.serviceStore.Get(svc)
-	if !exists || err != nil {
-		return
-	}
 	if err != nil {
 		level.Error(e.logger).Log("msg", "retrieving service failed", "err", err)
+		return
+	}
+	if !exists {
+		return
 	}
 	svc = obj.(*apiv1.Service)
 

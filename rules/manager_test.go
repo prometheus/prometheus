@@ -552,7 +552,7 @@ func TestStaleness(t *testing.T) {
 	metricSample[2].V = 42 // reflect.DeepEqual cannot handle NaN.
 
 	want := map[string][]promql.Point{
-		metric: {{0, 2}, {1000, 3}, {2000, 42}},
+		metric: {{T: 0, V: 2}, {T: 1000, V: 3}, {T: 2000, V: 42}},
 	}
 
 	testutil.Equals(t, want, samples)

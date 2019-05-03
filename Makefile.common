@@ -73,6 +73,7 @@ PROMU_VERSION ?= 0.3.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
 
 GOLANGCI_LINT :=
+GOLANGCI_LINT_OPTS ?=
 GOLANGCI_LINT_VERSION ?= v1.16.0
 # golangci-lint only supports linux, darwin and windows platforms on i386/amd64.
 # windows isn't included here because of the path separator being different.
@@ -166,7 +167,7 @@ ifdef GO111MODULE
 # 'go list' needs to be executed before staticcheck to prepopulate the modules cache.
 # Otherwise staticcheck might fail randomly for some reason not yet explained.
 	GO111MODULE=$(GO111MODULE) $(GO) list -e -compiled -test=true -export=false -deps=true -find=false -tags= -- ./... > /dev/null
-	GO111MODULE=$(GO111MODULE) $(GOLANGCI_LINT) run $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GOLANGCI_LINT) run $(GOLANGCI_LINT_OPTS) $(pkgs)
 else
 	$(GOLANGCI_LINT) run $(pkgs)
 endif

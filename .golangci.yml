@@ -1,8 +1,13 @@
 run:
   modules-download-mode: vendor
+  deadline: 5m
 
-# Run only staticcheck for now. Additional linters will be enabled one-by-one.
-linters:
-  enable:
-  - staticcheck
-  disable-all: true
+issues:
+  exclude-rules:
+  - path: _test.go
+    linters:
+    - errcheck
+
+linters-settings:
+  errcheck:
+    exclude: scripts/errcheck_excludes.txt

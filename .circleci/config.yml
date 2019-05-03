@@ -15,7 +15,11 @@ jobs:
     steps:
     - checkout
     - run: make promu
-    - run: make check_license style unused lint build check_assets
+    - run:
+        command: make check_license style unused lint build check_assets
+        environment:
+          # Run garbage collection more aggresively to avoid getting OOMed during the lint phase.
+          GOGC: "20"
     - run:
        command: |
          curl -s -L https://github.com/protocolbuffers/protobuf/releases/download/v3.5.1/protoc-3.5.1-linux-x86_64.zip > /tmp/protoc.zip
