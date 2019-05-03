@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	yaml "gopkg.in/yaml.v2"
 
@@ -160,7 +161,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		Appendable: suite.Storage(),
 		Context:    context.Background(),
 		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
-		Logger:     &dummyLogger{},
+		Logger:     log.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
 	// TODO(beorn7): Provide a way to pass in external labels.
@@ -501,10 +502,4 @@ func parsedSamplesString(pss []parsedSample) string {
 
 func (ps *parsedSample) String() string {
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
-}
-
-type dummyLogger struct{}
-
-func (l *dummyLogger) Log(keyvals ...interface{}) error {
-	return nil
 }
