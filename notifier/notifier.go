@@ -364,6 +364,9 @@ func (n *Manager) Send(alerts ...*Alert) {
 	}
 
 	alerts = n.relabelAlerts(alerts)
+	if len(alerts) == 0 {
+		return
+	}
 
 	// Queue capacity should be significantly larger than a single alert
 	// batch could be.
@@ -615,7 +618,7 @@ func postPath(pre string) string {
 	return path.Join("/", pre, alertPushEndpoint)
 }
 
-// alertmanagersFromGroup extracts a list of alertmanagers from a target group
+// alertmanagerFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
 func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager
