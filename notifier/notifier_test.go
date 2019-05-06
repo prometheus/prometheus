@@ -385,7 +385,7 @@ func TestHandlerQueueing(t *testing.T) {
 	expected = alerts[:maxBatchSize]
 	unblock <- struct{}{}
 
-	for i := 2; i < 4; i++ {
+	for i := 2; i < 5; i++ {
 		select {
 		case <-called:
 			expected = alerts[i*maxBatchSize : (i+1)*maxBatchSize]
