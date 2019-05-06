@@ -17,7 +17,8 @@ RUN mkdir -p /prometheus && \
 
 USER       nobody
 EXPOSE     9090
-VOLUME     [ "/prometheus" ]
+VOLUME     [ "/prometheus", \
+             "/etc/prometheus" ]
 WORKDIR    /prometheus
 ENTRYPOINT [ "/bin/prometheus" ]
 CMD        [ "--config.file=/etc/prometheus/prometheus.yml", \
