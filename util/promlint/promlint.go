@@ -252,7 +252,7 @@ func lintUnitAbbreviations(mf dto.MetricFamily) []Problem {
 	n := strings.ToLower(mf.GetName())
 	for _, s := range unitAbbreviations {
 		if strings.Contains(n, "_"+s+"_") || strings.HasSuffix(n, "_"+s) {
-			problems.Add(mf, "metric names should not used abbreviated units")
+			problems.Add(mf, "metric names should not contain abbreviated units")
 		}
 	}
 	return problems
@@ -322,6 +322,9 @@ var (
 	// Common abbreviations that we'd like to discourage.
 	unitAbbreviations = []string{
 		"s",
+		"ms",
+		"us",
+		"ns",
 		"sec",
 		"b",
 		"kb",

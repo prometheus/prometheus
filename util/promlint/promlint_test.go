@@ -532,7 +532,7 @@ func TestLintUnitAbbreviations(t *testing.T) {
 			problems: []promlint.Problem{
 				promlint.Problem{
 					Metric: n,
-					Text:   "metric names should not used abbreviated units",
+					Text:   "metric names should not contain abbreviated units",
 				},
 			},
 		}
@@ -547,6 +547,9 @@ func TestLintUnitAbbreviations(t *testing.T) {
 		genTest("instance_memory_limit_pb"),
 
 		genTest("request_duration_s"),
+		genTest("request_duration_ms"),
+		genTest("request_duration_us"),
+		genTest("request_duration_ns"),
 		genTest("request_duration_sec"),
 		genTest("request_duration_sec_summary"),
 	}
