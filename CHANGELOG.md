@@ -1,5 +1,6 @@
 ## master / unreleased
  - [BUGFIX] Calling `Close` more than once on a querier returns an error instead of a panic.
+ - [ENHANCEMENT] Add (again) FromData function to easily create a chunk from bytes.
 
 
 ## 0.7.1

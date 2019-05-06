@@ -14,6 +14,7 @@
 package chunkenc
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -70,16 +71,18 @@ func (nopIterator) At() (int64, float64) { return 0, 0 }
 func (nopIterator) Next() bool           { return false }
 func (nopIterator) Err() error           { return nil }
 
+// Pool is used to create and reuse chunk references to avoid allocations.
 type Pool interface {
 	Put(Chunk) error
 	Get(e Encoding, b []byte) (Chunk, error)
 }
 
-// Pool is a memory pool of chunk objects.
+// pool is a memory pool of chunk objects.
 type pool struct {
 	xor sync.Pool
 }
 
+// NewPool returns a new pool.
 func NewPool() Pool {
 	return &pool{
 		xor: sync.Pool{
@@ -118,4 +121,15 @@ func (p *pool) Put(c Chunk) error {
 		return errors.Errorf("invalid encoding %q", c.Encoding())
 	}
 	return nil
+}
+
+// FromData returns a chunk from a byte slice of chunk data.
+// This is there so that users of the library can easily create chunks from
+// bytes.
+func FromData(e Encoding, d []byte) (Chunk, error) {
+	switch e {
+	case EncXOR:
+		return &XORChunk{b: bstream{count: 0, stream: d}}, nil
+	}
+	return nil, fmt.Errorf("unknown chunk encoding: %d", e)
 }
