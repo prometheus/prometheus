@@ -755,6 +755,9 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 		return 0, ErrOutOfBounds
 	}
 
+	// Ensure no empty labels have gotten through.
+	lset = lset.WithoutEmpty()
+
 	s, created := a.head.getOrCreate(lset.Hash(), lset)
 	if created {
 		a.series = append(a.series, RefSeries{

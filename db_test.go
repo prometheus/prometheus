@@ -219,6 +219,29 @@ func TestDBAppenderAddRef(t *testing.T) {
 	}, res)
 }
 
+func TestAppendEmptyLabelsIgnored(t *testing.T) {
+	db, delete := openTestDB(t, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		delete()
+	}()
+
+	app1 := db.Appender()
+
+	ref1, err := app1.Add(labels.FromStrings("a", "b"), 123, 0)
+	testutil.Ok(t, err)
+
+	// Construct labels manually so there is an empty label.
+	ref2, err := app1.Add(labels.Labels{labels.Label{"a", "b"}, labels.Label{"c", ""}}, 124, 0)
+	testutil.Ok(t, err)
+
+	// Should be the same series.
+	testutil.Equals(t, ref1, ref2)
+
+	err = app1.Commit()
+	testutil.Ok(t, err)
+}
+
 func TestDeleteSimple(t *testing.T) {
 	numSamples := int64(10)
 
@@ -1580,26 +1603,26 @@ func TestDB_LabelNames(t *testing.T) {
 	}{
 		{
 			sampleLabels1: [][2]string{
-				[2]string{"name1", ""},
-				[2]string{"name3", ""},
-				[2]string{"name2", ""},
+				[2]string{"name1", "1"},
+				[2]string{"name3", "3"},
+				[2]string{"name2", "2"},
 			},
 			sampleLabels2: [][2]string{
-				[2]string{"name4", ""},
-				[2]string{"name1", ""},
+				[2]string{"name4", "4"},
+				[2]string{"name1", "1"},
 			},
 			exp1: []string{"name1", "name2", "name3"},
 			exp2: []string{"name1", "name2", "name3", "name4"},
 		},
 		{
 			sampleLabels1: [][2]string{
-				[2]string{"name2", ""},
-				[2]string{"name1", ""},
-				[2]string{"name2", ""},
+				[2]string{"name2", "2"},
+				[2]string{"name1", "1"},
+				[2]string{"name2", "2"},
 			},
 			sampleLabels2: [][2]string{
-				[2]string{"name6", ""},
-				[2]string{"name0", ""},
+				[2]string{"name6", "6"},
+				[2]string{"name0", "0"},
 			},
 			exp1: []string{"name1", "name2"},
 			exp2: []string{"name0", "name1", "name2", "name6"},

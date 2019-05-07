@@ -103,6 +103,23 @@ func (ls Labels) Map() map[string]string {
 	return m
 }
 
+// WithoutEmpty returns the labelset without empty labels.
+// May return the same labelset.
+func (ls Labels) WithoutEmpty() Labels {
+	for _, v := range ls {
+		if v.Value == "" {
+			els := make(Labels, 0, len(ls)-1)
+			for _, v := range ls {
+				if v.Value != "" {
+					els = append(els, v)
+				}
+			}
+			return els
+		}
+	}
+	return ls
+}
+
 // New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
@@ -119,7 +136,9 @@ func New(ls ...Label) Labels {
 func FromMap(m map[string]string) Labels {
 	l := make(Labels, 0, len(m))
 	for k, v := range m {
-		l = append(l, Label{Name: k, Value: v})
+		if v != "" {
+			l = append(l, Label{Name: k, Value: v})
+		}
 	}
 	sort.Sort(l)
 
@@ -133,7 +152,9 @@ func FromStrings(ss ...string) Labels {
 	}
 	var res Labels
 	for i := 0; i < len(ss); i += 2 {
-		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
+		if ss[i+1] != "" {
+			res = append(res, Label{Name: ss[i], Value: ss[i+1]})
+		}
 	}
 
 	sort.Sort(res)
