@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
@@ -1106,6 +1107,41 @@ func TestCoordinationWithReceiver(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestInvalidConfigsCounter(t *testing.T) {
+	cfg := &config.Config{}
+
+	scrapeConfig := `
+scrape_configs:
+- job_name: 'prometheus'
+  static_configs:
+  - targets: ["foo:9090"]
+`
+	if err := yaml.UnmarshalStrict([]byte(scrapeConfig), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config scrapeConfig: %s", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+
+	failedConfigs.WithLabelValues(discoveryManager.name).Set(1)
+
+	go discoveryManager.Run()
+
+	c := make(map[string]sd_config.ServiceDiscoveryConfig)
+	for _, v := range cfg.ScrapeConfigs {
+		c[v.JobName] = v.ServiceDiscoveryConfig
+	}
+	discoveryManager.ApplyConfig(c)
+
+	m := &dto.Metric{}
+	failedConfigs.WithLabelValues(discoveryManager.name).Write(m)
+
+	if *m.Gauge.Value != 0.0 {
+		t.Fatalf("Gauge was not reset after reading correct configuration")
 	}
 }
 

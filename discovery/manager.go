@@ -41,8 +41,8 @@ import (
 )
 
 var (
-	failedConfigs = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
+	failedConfigs = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
 			Name: "prometheus_sd_configs_failed_total",
 			Help: "Total number of service discovery configurations that failed to load.",
 		},
@@ -319,6 +319,9 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 
 func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
 	var added bool
+
+	failedConfigs.WithLabelValues(m.name).Set(0)
+
 	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
 		t := reflect.TypeOf(cfg).String()
 		for _, p := range m.providers {
