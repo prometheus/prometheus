@@ -44,7 +44,6 @@ var (
 			Namespace:  metricsNamespace,
 			Name:       "http_request_duration_seconds",
 			Help:       "Summary of latencies for HTTP requests to the Kubernetes API by endpoint.",
-			Objectives: map[float64]float64{},
 		},
 		[]string{"endpoint"},
 	)
@@ -62,7 +61,6 @@ var (
 			Namespace:  cacheMetricsNamespace,
 			Name:       "list_duration_seconds",
 			Help:       "Duration of a Kubernetes API call in seconds.",
-			Objectives: map[float64]float64{},
 		},
 	)
 	clientGoCacheItemsInListCountMetric = prometheus.NewSummary(
@@ -70,7 +68,6 @@ var (
 			Namespace:  cacheMetricsNamespace,
 			Name:       "list_items",
 			Help:       "Count of items in a list from the Kubernetes API.",
-			Objectives: map[float64]float64{},
 		},
 	)
 	clientGoCacheWatchesCountMetric = prometheus.NewCounter(
@@ -92,7 +89,6 @@ var (
 			Namespace:  cacheMetricsNamespace,
 			Name:       "watch_duration_seconds",
 			Help:       "Duration of watches on the Kubernetes API.",
-			Objectives: map[float64]float64{},
 		},
 	)
 	clientGoCacheItemsInWatchesCountMetric = prometheus.NewSummary(
@@ -100,7 +96,6 @@ var (
 			Namespace:  cacheMetricsNamespace,
 			Name:       "watch_events",
 			Help:       "Number of items in watches on the Kubernetes API.",
-			Objectives: map[float64]float64{},
 		},
 	)
 	clientGoCacheLastResourceVersionMetric = prometheus.NewGauge(
@@ -133,7 +128,6 @@ var (
 			Namespace:  workqueueMetricsNamespace,
 			Name:       "latency_seconds",
 			Help:       "How long an item stays in the work queue.",
-			Objectives: map[float64]float64{},
 		},
 		[]string{"queue_name"},
 	)
@@ -158,7 +152,6 @@ var (
 			Namespace:  workqueueMetricsNamespace,
 			Name:       "work_duration_seconds",
 			Help:       "How long processing an item from the work queue takes.",
-			Objectives: map[float64]float64{},
 		},
 		[]string{"queue_name"},
 	)

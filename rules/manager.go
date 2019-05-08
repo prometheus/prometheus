@@ -99,7 +99,6 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			Namespace:  namespace,
 			Name:       "rule_group_duration_seconds",
 			Help:       "The duration of rule group evaluations.",
-			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		}),
 		iterationsMissed: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,

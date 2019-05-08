@@ -51,7 +51,6 @@ var (
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_interval_length_seconds",
 			Help:       "Actual intervals between scrapes.",
-			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
 		[]string{"interval"},
 	)
@@ -59,7 +58,6 @@ var (
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_reload_length_seconds",
 			Help:       "Actual interval to reload the scrape pool with a given configuration.",
-			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
 		[]string{"interval"},
 	)
@@ -91,7 +89,6 @@ var (
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_sync_length_seconds",
 			Help:       "Actual interval to sync the scrape pool.",
-			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
 		[]string{"scrape_job"},
 	)
