@@ -96,9 +96,9 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Help:      "The total number of rule evaluations.",
 			}),
 		iterationDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Name:       "rule_group_duration_seconds",
-			Help:       "The duration of rule group evaluations.",
+			Namespace: namespace,
+			Name:      "rule_group_duration_seconds",
+			Help:      "The duration of rule group evaluations.",
 		}),
 		iterationsMissed: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,

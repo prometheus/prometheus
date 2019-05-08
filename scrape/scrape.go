@@ -49,15 +49,15 @@ import (
 var (
 	targetIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name:       "prometheus_target_interval_length_seconds",
-			Help:       "Actual intervals between scrapes.",
+			Name: "prometheus_target_interval_length_seconds",
+			Help: "Actual intervals between scrapes.",
 		},
 		[]string{"interval"},
 	)
 	targetReloadIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name:       "prometheus_target_reload_length_seconds",
-			Help:       "Actual interval to reload the scrape pool with a given configuration.",
+			Name: "prometheus_target_reload_length_seconds",
+			Help: "Actual interval to reload the scrape pool with a given configuration.",
 		},
 		[]string{"interval"},
 	)
@@ -87,8 +87,8 @@ var (
 	)
 	targetSyncIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name:       "prometheus_target_sync_length_seconds",
-			Help:       "Actual interval to sync the scrape pool.",
+			Name: "prometheus_target_sync_length_seconds",
+			Help: "Actual interval to sync the scrape pool.",
 		},
 		[]string{"scrape_job"},
 	)

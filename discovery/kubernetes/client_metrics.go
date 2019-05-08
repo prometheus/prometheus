@@ -41,9 +41,9 @@ var (
 	)
 	clientGoRequestLatencyMetricVec = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Namespace:  metricsNamespace,
-			Name:       "http_request_duration_seconds",
-			Help:       "Summary of latencies for HTTP requests to the Kubernetes API by endpoint.",
+			Namespace: metricsNamespace,
+			Name:      "http_request_duration_seconds",
+			Help:      "Summary of latencies for HTTP requests to the Kubernetes API by endpoint.",
 		},
 		[]string{"endpoint"},
 	)
@@ -58,16 +58,16 @@ var (
 	)
 	clientGoCacheListDurationMetric = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Namespace:  cacheMetricsNamespace,
-			Name:       "list_duration_seconds",
-			Help:       "Duration of a Kubernetes API call in seconds.",
+			Namespace: cacheMetricsNamespace,
+			Name:      "list_duration_seconds",
+			Help:      "Duration of a Kubernetes API call in seconds.",
 		},
 	)
 	clientGoCacheItemsInListCountMetric = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Namespace:  cacheMetricsNamespace,
-			Name:       "list_items",
-			Help:       "Count of items in a list from the Kubernetes API.",
+			Namespace: cacheMetricsNamespace,
+			Name:      "list_items",
+			Help:      "Count of items in a list from the Kubernetes API.",
 		},
 	)
 	clientGoCacheWatchesCountMetric = prometheus.NewCounter(
@@ -86,16 +86,16 @@ var (
 	)
 	clientGoCacheWatchesDurationMetric = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Namespace:  cacheMetricsNamespace,
-			Name:       "watch_duration_seconds",
-			Help:       "Duration of watches on the Kubernetes API.",
+			Namespace: cacheMetricsNamespace,
+			Name:      "watch_duration_seconds",
+			Help:      "Duration of watches on the Kubernetes API.",
 		},
 	)
 	clientGoCacheItemsInWatchesCountMetric = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Namespace:  cacheMetricsNamespace,
-			Name:       "watch_events",
-			Help:       "Number of items in watches on the Kubernetes API.",
+			Namespace: cacheMetricsNamespace,
+			Name:      "watch_events",
+			Help:      "Number of items in watches on the Kubernetes API.",
 		},
 	)
 	clientGoCacheLastResourceVersionMetric = prometheus.NewGauge(
@@ -125,9 +125,9 @@ var (
 	)
 	clientGoWorkqueueLatencyMetricVec = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Namespace:  workqueueMetricsNamespace,
-			Name:       "latency_seconds",
-			Help:       "How long an item stays in the work queue.",
+			Namespace: workqueueMetricsNamespace,
+			Name:      "latency_seconds",
+			Help:      "How long an item stays in the work queue.",
 		},
 		[]string{"queue_name"},
 	)
@@ -149,9 +149,9 @@ var (
 	)
 	clientGoWorkqueueWorkDurationMetricVec = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Namespace:  workqueueMetricsNamespace,
-			Name:       "work_duration_seconds",
-			Help:       "How long processing an item from the work queue takes.",
+			Namespace: workqueueMetricsNamespace,
+			Name:      "work_duration_seconds",
+			Help:      "How long processing an item from the work queue takes.",
 		},
 		[]string{"queue_name"},
 	)
