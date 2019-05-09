@@ -76,7 +76,7 @@ require (
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829
 	github.com/prometheus/client_model v0.0.0-20190115171406-56726106282f
-	github.com/prometheus/common v0.3.0
+	github.com/prometheus/common v0.4.0
 	github.com/prometheus/tsdb v0.7.1
 	github.com/rlmcpherson/s3gof3r v0.5.0 // indirect
 	github.com/rubyist/circuitbreaker v2.2.1+incompatible // indirect
