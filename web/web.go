@@ -48,6 +48,7 @@ import (
 	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"github.com/prometheus/common/server"
 	"github.com/prometheus/tsdb"
 	"github.com/soheilhy/cmux"
 	"golang.org/x/net/netutil"
@@ -296,7 +297,7 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
-		fs := http.FileServer(ui.Assets)
+		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})
 
