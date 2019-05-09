@@ -15,9 +15,9 @@
       {{$alertStateToRowClass := .AlertStateToRowClass}}
       {{range .Groups}}
       <tr>
-        <td>
-        {{.Name}}
-      </td>
+        <td style="padding: 2px">
+          {{.File}} > {{.Name}}
+        </td>
       </tr>
         {{range .AlertingRules}}
           {{$activeAlerts := .ActiveAlerts}}

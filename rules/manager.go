@@ -18,6 +18,7 @@ import (
 	"errors"
 	"math"
 	"net/url"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -267,7 +268,7 @@ func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRes
 func (g *Group) Name() string { return g.name }
 
 // File returns the group's file.
-func (g *Group) File() string { return g.file }
+func (g *Group) File() string { return filepath.Base(g.file) }
 
 // Rules returns the group's rules.
 func (g *Group) Rules() []Rule { return g.rules }
@@ -903,9 +904,8 @@ func (m *Manager) RuleGroups() []*Group {
 		rgs = append(rgs, g)
 	}
 
-	// Sort rule groups by file, then by name.
 	sort.Slice(rgs, func(i, j int) bool {
-		if rgs[i].name == rgs[j].name {
+		if rgs[i].file != rgs[j].file {
 			return rgs[i].file < rgs[j].file
 		}
 		return rgs[i].name < rgs[j].name
