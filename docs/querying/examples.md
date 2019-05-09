@@ -26,8 +26,7 @@ Note that an expression resulting in a range vector cannot be graphed directly,
 but viewed in the tabular ("Console") view of the expression browser.
 
 Using regular expressions, you could select time series only for jobs whose
-name match a certain pattern, in this case, all jobs that end with `server`.
-Note that this does a substring match, not a full string match:
+name match a certain pattern, in this case, all jobs that end with `server`:
 
     http_requests_total{job=~".*server"}
 
