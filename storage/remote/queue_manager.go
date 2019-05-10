@@ -361,7 +361,6 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 
-	temp := make(map[uint64][]prompb.Label, len(series))
 	for _, s := range series {
 		ls := processExternalLabels(s.Labels, t.externalLabels)
 		rl := relabel.Process(ls, t.relabelConfigs...)
@@ -369,19 +368,16 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
-		temp[s.Ref] = labelsToLabelsProto(rl)
-	}
-
-	for ref, labels := range temp {
-		t.seriesSegmentIndexes[ref] = index
+		t.seriesSegmentIndexes[s.Ref] = index
+		labels := labelsToLabelsProto(rl)
 
 		// We should not ever be replacing a series labels in the map, but just
 		// in case we do we need to ensure we do not leak the replaced interned
 		// strings.
-		if orig, ok := t.seriesLabels[ref]; ok {
+		if orig, ok := t.seriesLabels[s.Ref]; ok {
 			release(orig)
 		}
-		t.seriesLabels[ref] = labels
+		t.seriesLabels[s.Ref] = labels
 	}
 }
 
