@@ -82,6 +82,40 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
+	if err := s.applyRemoteWriteConfig(conf); err != nil {
+		return err
+	}
+
+	// Update read clients
+	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
+	for i, rrConf := range conf.RemoteReadConfigs {
+		c, err := NewClient(i, &ClientConfig{
+			URL:              rrConf.URL,
+			Timeout:          rrConf.RemoteTimeout,
+			HTTPClientConfig: rrConf.HTTPClientConfig,
+		})
+		if err != nil {
+			return err
+		}
+
+		q := QueryableClient(c)
+		q = ExternalLabelsHandler(q, conf.GlobalConfig.ExternalLabels)
+		if len(rrConf.RequiredMatchers) > 0 {
+			q = RequiredMatchersFilter(q, labelsToEqualityMatchers(rrConf.RequiredMatchers))
+		}
+		if !rrConf.ReadRecent {
+			q = PreferLocalStorageFilter(q, s.localStartTimeCallback)
+		}
+		queryables = append(queryables, q)
+	}
+	s.queryables = queryables
+
+	return nil
+}
+
+// applyRemoteWriteConfig applies the remote write config only if the config has changed.
+// The caller must hold the lock on s.mtx.
+func (s *Storage) applyRemoteWriteConfig(conf *config.Config) error {
 	cfgBytes, err := json.Marshal(conf.RemoteWriteConfigs)
 	if err != nil {
 		return err
@@ -128,30 +162,6 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	for _, q := range s.queues {
 		q.Start()
 	}
-
-	// Update read clients
-	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
-	for i, rrConf := range conf.RemoteReadConfigs {
-		c, err := NewClient(i, &ClientConfig{
-			URL:              rrConf.URL,
-			Timeout:          rrConf.RemoteTimeout,
-			HTTPClientConfig: rrConf.HTTPClientConfig,
-		})
-		if err != nil {
-			return err
-		}
-
-		q := QueryableClient(c)
-		q = ExternalLabelsHandler(q, conf.GlobalConfig.ExternalLabels)
-		if len(rrConf.RequiredMatchers) > 0 {
-			q = RequiredMatchersFilter(q, labelsToEqualityMatchers(rrConf.RequiredMatchers))
-		}
-		if !rrConf.ReadRecent {
-			q = PreferLocalStorageFilter(q, s.localStartTimeCallback)
-		}
-		queryables = append(queryables, q)
-	}
-	s.queryables = queryables
 
 	return nil
 }
