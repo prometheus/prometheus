@@ -16,12 +16,13 @@
 {{define "content"}}
   <div class="container-fluid">
 
+    {{with .ScrapeConfigData}}
     <h1>Service Discovery</h1>
     <div>
       <ul>
         {{range $i, $job := .Index}}
           <li>
-            <a href="#job-{{$job}}">{{$job}}</a> ({{ index $.Active $i }}/{{ index $.Total $i }} active targets)
+            <a href="#job-{{$job}}">{{$job}}</a> ({{ index $.ScrapeConfigData.Active $i }}/{{ index $.ScrapeConfigData.Total $i }} active targets)
           </li>
         {{end}}
       </ul>
@@ -35,7 +36,7 @@
         {{$job}}
         <button type="button" class="targets collapsed-table btn btn-primary">show more</button>
       </h2>
-      {{with index $.Dropped $i}}
+      {{with index $.ScrapeConfigData.Dropped $i}}
       {{if gt . 100 }}
       <div class="collapsed-element" style="display:none">
         {{ . }} targets have been dropped, showing only the first 100 dropped targets as examples.
@@ -86,7 +87,31 @@
         </tbody>
       </table>
     </div>
-    {{ end }}
+    {{end}}
+    {{end}}
+
+    {{with .AlertConfigData}}
+      <h1>Alert Manager</h1>
+
+      <div class="table-container">
+        <table class="table table-sm table-bordered table-striped table-hover">
+          <thead>
+            <tr>
+              <th>Discovered URL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range $manager := .AlertingManagers}}
+              <tr>
+                <td>
+                  {{$manager.String}}
+                </td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    {{end}}
   </div>
 
 {{end}}

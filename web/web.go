@@ -723,7 +723,17 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.executeTemplate(w, "service-discovery.html", scrapeConfigData)
+	alertConfigData := struct {
+		AlertingManagers []*url.URL
+	}{
+		AlertingManagers: h.notifier.Alertmanagers(),
+	}
+
+	configData := map[string]interface{}{
+		"ScrapeConfigData": scrapeConfigData,
+		"AlertConfigData":  alertConfigData,
+	}
+	h.executeTemplate(w, "service-discovery.html", configData)
 }
 
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
