@@ -15,10 +15,6 @@
 
 package runtime
 
-import (
-	"golang.org/x/sys/unix"
-)
-
 // Statfs returns the file system type (linux only)
 func Statfs(path string) string {
 	return "unknown"
