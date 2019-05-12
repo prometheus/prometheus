@@ -75,8 +75,8 @@ func Statfs(path string) string {
 		panic("unix.Statfs failed: " + err.Error())
 	}
 	fsType := "unknown"
-	if _, ok := fsTypes[fs.Type]; ok {
-		fsType = fsTypes[fs.Type]
+	if _, ok := fsTypes[int64(fs.Type)]; ok {
+		fsType = fsTypes[int64(fs.Type)]
 	}
 	return fsType
 }
