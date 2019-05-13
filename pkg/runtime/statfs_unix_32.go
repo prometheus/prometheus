@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build 386
 // +build !windows
 
 package runtime
@@ -24,7 +25,7 @@ import (
 func Statfs(path string) string {
 
 	// Types of file systems that may be returned by `statfs`
-	fsTypes := map[int64]string{
+	fsTypes := map[int32]string{
 		0xadf5:     "ADFS_SUPER_MAGIC",
 		0xADFF:     "AFFS_SUPER_MAGIC",
 		0x42465331: "BEFS_SUPER_MAGIC",
@@ -73,10 +74,10 @@ func Statfs(path string) string {
 	var fs unix.Statfs_t
 	err := unix.Statfs(path, &fs)
 	if err != nil {
-		return strconv.FormatInt(fs.Type, 16)
+		return strconv.FormatInt(int64(fs.Type), 16)
 	}
 	if _, ok := fsTypes[int64(fs.Type)]; ok {
 		return fsTypes[int64(fs.Type)]
 	}
-	return strconv.FormatInt(fs.Type, 16)
+	return strconv.FormatInt(int64(fs.Type), 16)
 }
