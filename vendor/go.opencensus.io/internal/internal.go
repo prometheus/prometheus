@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"time"
 
-	"go.opencensus.io"
+	opencensus "go.opencensus.io"
 )
 
 // UserAgent is the user agent to be added to the outgoing

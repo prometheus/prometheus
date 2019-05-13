@@ -926,41 +926,86 @@ func (a *Agent) Monitor(loglevel string, stopCh <-chan struct{}, q *QueryOptions
 
 // UpdateACLToken updates the agent's "acl_token". See updateToken for more
 // details.
+//
+// DEPRECATED (ACL-Legacy-Compat) - Prefer UpdateDefaultACLToken for v1.4.3 and above
 func (a *Agent) UpdateACLToken(token string, q *WriteOptions) (*WriteMeta, error) {
 	return a.updateToken("acl_token", token, q)
 }
 
 // UpdateACLAgentToken updates the agent's "acl_agent_token". See updateToken
 // for more details.
+//
+// DEPRECATED (ACL-Legacy-Compat) - Prefer UpdateAgentACLToken for v1.4.3 and above
 func (a *Agent) UpdateACLAgentToken(token string, q *WriteOptions) (*WriteMeta, error) {
 	return a.updateToken("acl_agent_token", token, q)
 }
 
 // UpdateACLAgentMasterToken updates the agent's "acl_agent_master_token". See
 // updateToken for more details.
+//
+// DEPRECATED (ACL-Legacy-Compat) - Prefer UpdateAgentMasterACLToken for v1.4.3 and above
 func (a *Agent) UpdateACLAgentMasterToken(token string, q *WriteOptions) (*WriteMeta, error) {
 	return a.updateToken("acl_agent_master_token", token, q)
 }
 
 // UpdateACLReplicationToken updates the agent's "acl_replication_token". See
 // updateToken for more details.
+//
+// DEPRECATED (ACL-Legacy-Compat) - Prefer UpdateReplicationACLToken for v1.4.3 and above
 func (a *Agent) UpdateACLReplicationToken(token string, q *WriteOptions) (*WriteMeta, error) {
 	return a.updateToken("acl_replication_token", token, q)
 }
 
-// updateToken can be used to update an agent's ACL token after the agent has
-// started. The tokens are not persisted, so will need to be updated again if
-// the agent is restarted.
+// UpdateDefaultACLToken updates the agent's "default" token. See updateToken
+// for more details
+func (a *Agent) UpdateDefaultACLToken(token string, q *WriteOptions) (*WriteMeta, error) {
+	return a.updateTokenFallback("default", "acl_token", token, q)
+}
+
+// UpdateAgentACLToken updates the agent's "agent" token. See updateToken
+// for more details
+func (a *Agent) UpdateAgentACLToken(token string, q *WriteOptions) (*WriteMeta, error) {
+	return a.updateTokenFallback("agent", "acl_agent_token", token, q)
+}
+
+// UpdateAgentMasterACLToken updates the agent's "agent_master" token. See updateToken
+// for more details
+func (a *Agent) UpdateAgentMasterACLToken(token string, q *WriteOptions) (*WriteMeta, error) {
+	return a.updateTokenFallback("agent_master", "acl_agent_master_token", token, q)
+}
+
+// UpdateReplicationACLToken updates the agent's "replication" token. See updateToken
+// for more details
+func (a *Agent) UpdateReplicationACLToken(token string, q *WriteOptions) (*WriteMeta, error) {
+	return a.updateTokenFallback("replication", "acl_replication_token", token, q)
+}
+
+// updateToken can be used to update one of an agent's ACL tokens after the agent has
+// started. The tokens are may not be persisted, so will need to be updated again if
+// the agent is restarted unless the agent is configured to persist them.
 func (a *Agent) updateToken(target, token string, q *WriteOptions) (*WriteMeta, error) {
+	meta, _, err := a.updateTokenOnce(target, token, q)
+	return meta, err
+}
+
+func (a *Agent) updateTokenFallback(target, fallback, token string, q *WriteOptions) (*WriteMeta, error) {
+	meta, status, err := a.updateTokenOnce(target, token, q)
+	if err != nil && status == 404 {
+		meta, _, err = a.updateTokenOnce(fallback, token, q)
+	}
+	return meta, err
+}
+
+func (a *Agent) updateTokenOnce(target, token string, q *WriteOptions) (*WriteMeta, int, error) {
 	r := a.c.newRequest("PUT", fmt.Sprintf("/v1/agent/token/%s", target))
 	r.setWriteOptions(q)
 	r.obj = &AgentToken{Token: token}
 	rtt, resp, err := requireOK(a.c.doRequest(r))
 	if err != nil {
-		return nil, err
+		return nil, resp.StatusCode, err
 	}
 	resp.Body.Close()
 
 	wm := &WriteMeta{RequestTime: rtt}
-	return wm, nil
+	return wm, resp.StatusCode, nil
 }

@@ -138,7 +138,7 @@ func NewBufferedWriter(w io.Writer) *Writer {
 	}
 }
 
-// Writer is an io.Writer than can write Snappy-compressed bytes.
+// Writer is an io.Writer that can write Snappy-compressed bytes.
 type Writer struct {
 	w   io.Writer
 	err error

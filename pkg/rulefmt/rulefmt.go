@@ -16,6 +16,7 @@ package rulefmt
 import (
 	"context"
 	"io/ioutil"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -155,12 +156,16 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 	}
 
 	// Trying to parse templates.
-	tmplData := template.AlertTemplateData(make(map[string]string), 0)
-	defs := "{{$labels := .Labels}}{{$value := .Value}}"
+	tmplData := template.AlertTemplateData(map[string]string{}, map[string]string{}, 0)
+	defs := []string{
+		"{{$labels := .Labels}}",
+		"{{$externalLabels := .ExternalLabels}}",
+		"{{$value := .Value}}",
+	}
 	parseTest := func(text string) error {
 		tmpl := template.NewTemplateExpander(
 			context.TODO(),
-			defs+text,
+			strings.Join(append(defs, text), ""),
 			"__alert_"+rl.Alert,
 			tmplData,
 			model.Time(timestamp.FromTime(time.Now())),

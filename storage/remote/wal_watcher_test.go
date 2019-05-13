@@ -102,8 +102,6 @@ func TestTailSamples(t *testing.T) {
 	err = os.Mkdir(wdir, 0777)
 	testutil.Ok(t, err)
 
-	// os.Create(wal.SegmentName(wdir, 30))
-
 	enc := tsdb.RecordEncoder{}
 	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize)
 	testutil.Ok(t, err)
@@ -114,7 +112,7 @@ func TestTailSamples(t *testing.T) {
 		series := enc.Series([]tsdb.RefSeries{
 			tsdb.RefSeries{
 				Ref:    uint64(ref),
-				Labels: labels.Labels{labels.Label{"__name__", fmt.Sprintf("metric_%d", i)}},
+				Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 			},
 		}, nil)
 		testutil.Ok(t, w.Log(series))
@@ -139,6 +137,9 @@ func TestTailSamples(t *testing.T) {
 	wt := newWriteToMock()
 	watcher := NewWALWatcher(nil, "", wt, dir)
 	watcher.startTime = now.UnixNano()
+
+	// Set the Watcher's metrics so they're not nil pointers.
+	watcher.setMetrics()
 	for i := first; i <= last; i++ {
 		segment, err := wal.OpenReadSegment(wal.SegmentName(watcher.walDir, i))
 		testutil.Ok(t, err)
@@ -148,14 +149,12 @@ func TestTailSamples(t *testing.T) {
 		// Use tail true so we can ensure we got the right number of samples.
 		watcher.readSegment(reader, i, true)
 	}
-	go watcher.Start()
 
 	expectedSeries := seriesCount
 	expectedSamples := seriesCount * samplesCount
 	retry(t, defaultRetryInterval, defaultRetries, func() bool {
 		return wt.checkNumLabels() >= expectedSeries
 	})
-	watcher.Stop()
 	testutil.Equals(t, expectedSeries, wt.checkNumLabels())
 	testutil.Equals(t, expectedSamples, wt.samplesAppended)
 }
@@ -183,7 +182,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 		series := enc.Series([]tsdb.RefSeries{
 			tsdb.RefSeries{
 				Ref:    uint64(i),
-				Labels: labels.Labels{labels.Label{"__name__", fmt.Sprintf("metric_%d", i)}},
+				Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 			},
 		}, nil)
 		recs = append(recs, series)
@@ -247,7 +246,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 		series := enc.Series([]tsdb.RefSeries{
 			tsdb.RefSeries{
 				Ref:    uint64(ref),
-				Labels: labels.Labels{labels.Label{"__name__", fmt.Sprintf("metric_%d", i)}},
+				Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 			},
 		}, nil)
 		testutil.Ok(t, w.Log(series))
@@ -273,7 +272,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 		series := enc.Series([]tsdb.RefSeries{
 			tsdb.RefSeries{
 				Ref:    uint64(i),
-				Labels: labels.Labels{labels.Label{"__name__", fmt.Sprintf("metric_%d", i)}},
+				Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 			},
 		}, nil)
 		testutil.Ok(t, w.Log(series))
@@ -329,7 +328,7 @@ func TestReadCheckpoint(t *testing.T) {
 		series := enc.Series([]tsdb.RefSeries{
 			tsdb.RefSeries{
 				Ref:    uint64(ref),
-				Labels: labels.Labels{labels.Label{"__name__", fmt.Sprintf("metric_%d", i)}},
+				Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 			},
 		}, nil)
 		testutil.Ok(t, w.Log(series))
@@ -392,7 +391,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			series := enc.Series([]tsdb.RefSeries{
 				tsdb.RefSeries{
 					Ref:    uint64(ref),
-					Labels: labels.Labels{labels.Label{"__name__", fmt.Sprintf("metric_%d", j)}},
+					Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", j)}},
 				},
 			}, nil)
 			testutil.Ok(t, w.Log(series))
@@ -423,6 +422,9 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 	wt := newWriteToMock()
 	watcher := NewWALWatcher(nil, "", wt, dir)
 	watcher.maxSegment = -1
+
+	// Set the Watcher's metrics so they're not nil pointers.
+	watcher.setMetrics()
 
 	lastCheckpoint, _, err := tsdb.LastCheckpoint(watcher.walDir)
 	testutil.Ok(t, err)
@@ -456,7 +458,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 		series := enc.Series([]tsdb.RefSeries{
 			tsdb.RefSeries{
 				Ref:    uint64(ref),
-				Labels: labels.Labels{labels.Label{"__name__", fmt.Sprintf("metric_%d", i)}},
+				Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 			},
 		}, nil)
 		testutil.Ok(t, w.Log(series))

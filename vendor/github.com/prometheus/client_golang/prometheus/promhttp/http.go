@@ -47,7 +47,6 @@ import (
 
 const (
 	contentTypeHeader     = "Content-Type"
-	contentLengthHeader   = "Content-Length"
 	contentEncodingHeader = "Content-Encoding"
 	acceptEncodingHeader  = "Accept-Encoding"
 )

@@ -39,7 +39,7 @@ var (
 	ErrNotFound = errors.Errorf("not found")
 
 	// ErrOutOfOrderSample is returned if an appended sample has a
-	// timestamp larger than the most recent sample.
+	// timestamp smaller than the most recent sample.
 	ErrOutOfOrderSample = errors.New("out of order sample")
 
 	// ErrAmendSample is returned if an appended sample has the same timestamp
@@ -74,6 +74,9 @@ type Head struct {
 	symMtx  sync.RWMutex
 	symbols map[string]struct{}
 	values  map[string]stringset // label names to possible values
+
+	deletedMtx sync.Mutex
+	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
 	postings *index.MemPostings // postings lists for terms
 }
@@ -234,6 +237,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
+		deleted:    map[uint64]int{},
 	}
 	h.metrics = newHeadMetrics(h, r)
 
@@ -557,7 +561,13 @@ func (h *Head) Truncate(mint int64) (err error) {
 	}
 
 	keep := func(id uint64) bool {
-		return h.series.getByID(id) != nil
+		if h.series.getByID(id) != nil {
+			return true
+		}
+		h.deletedMtx.Lock()
+		_, ok := h.deleted[id]
+		h.deletedMtx.Unlock()
+		return ok
 	}
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = Checkpoint(h.wal, first, last, keep, mint); err != nil {
@@ -570,6 +580,17 @@ func (h *Head) Truncate(mint int64) (err error) {
 		// that supersedes them.
 		level.Error(h.logger).Log("msg", "truncating segments failed", "err", err)
 	}
+
+	// The checkpoint is written and segments before it is truncated, so we no
+	// longer need to track deleted series that are before it.
+	h.deletedMtx.Lock()
+	for ref, segment := range h.deleted {
+		if segment < first {
+			delete(h.deleted, ref)
+		}
+	}
+	h.deletedMtx.Unlock()
+
 	h.metrics.checkpointDeleteTotal.Inc()
 	if err := DeleteCheckpoints(h.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond
@@ -891,8 +912,8 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	var enc RecordEncoder
 	if h.wal != nil {
 		// Although we don't store the stones in the head
-		// we need to write them  to the WAL to mark these as deleted
-		// after a restart while loeading the WAL.
+		// we need to write them to the WAL to mark these as deleted
+		// after a restart while loading the WAL.
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
 			return err
 		}
@@ -953,8 +974,23 @@ func (h *Head) gc() {
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted)
 
+	if h.wal != nil {
+		_, last, _ := h.wal.Segments()
+		h.deletedMtx.Lock()
+		// Keep series records until we're past segment 'last'
+		// because the WAL will still have samples records with
+		// this ref ID. If we didn't keep these series records then
+		// on start up when we replay the WAL, or any other code
+		// that reads the WAL, wouldn't be able to use those
+		// samples since we would have no labels for that ref ID.
+		for ref := range deleted {
+			h.deleted[ref] = last
+		}
+		h.deletedMtx.Unlock()
+	}
+
 	// Rebuild symbols and label value indices from what is left in the postings terms.
-	symbols := make(map[string]struct{})
+	symbols := make(map[string]struct{}, len(h.symbols))
 	values := make(map[string]stringset, len(h.values))
 
 	if err := h.postings.Iter(func(t labels.Label, _ index.Postings) error {
@@ -1018,6 +1054,13 @@ func (h *Head) MinTime() int64 {
 // MaxTime returns the highest timestamp seen in data of the head.
 func (h *Head) MaxTime() int64 {
 	return atomic.LoadInt64(&h.maxTime)
+}
+
+// compactable returns whether the head has a compactable range.
+// The head has a compactable range when the head time range is 1.5 times the chunk range.
+// The 0.5 acts as a buffer of the appendable window.
+func (h *Head) compactable() bool {
+	return h.MaxTime()-h.MinTime() > h.chunkRange/2*3
 }
 
 // Close flushes the WAL and closes the head.

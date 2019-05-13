@@ -43,7 +43,7 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	s := &Service{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("ingress")}
+	s := &Service{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("service")}
 	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			eventCount.WithLabelValues("service", "add").Inc()

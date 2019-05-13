@@ -14,6 +14,7 @@
 package labels
 
 import (
+	"fmt"
 	"regexp"
 )
 
@@ -36,6 +37,8 @@ type Matcher interface {
 	Name() string
 	// Matches checks whether a value fulfills the constraints.
 	Matches(v string) bool
+	// String returns a human readable matcher.
+	String() string
 }
 
 // EqualMatcher matches on equality.
@@ -44,13 +47,16 @@ type EqualMatcher struct {
 }
 
 // Name implements Matcher interface.
-func (m *EqualMatcher) Name() string { return m.name }
+func (m EqualMatcher) Name() string { return m.name }
 
 // Matches implements Matcher interface.
-func (m *EqualMatcher) Matches(v string) bool { return v == m.value }
+func (m EqualMatcher) Matches(v string) bool { return v == m.value }
+
+// String implements Matcher interface.
+func (m EqualMatcher) String() string { return fmt.Sprintf("%s=%q", m.name, m.value) }
 
 // Value returns the matched value.
-func (m *EqualMatcher) Value() string { return m.value }
+func (m EqualMatcher) Value() string { return m.value }
 
 // NewEqualMatcher returns a new matcher matching an exact label value.
 func NewEqualMatcher(name, value string) Matcher {
@@ -62,8 +68,9 @@ type regexpMatcher struct {
 	re   *regexp.Regexp
 }
 
-func (m *regexpMatcher) Name() string          { return m.name }
-func (m *regexpMatcher) Matches(v string) bool { return m.re.MatchString(v) }
+func (m regexpMatcher) Name() string          { return m.name }
+func (m regexpMatcher) Matches(v string) bool { return m.re.MatchString(v) }
+func (m regexpMatcher) String() string        { return fmt.Sprintf("%s=~%q", m.name, m.re.String()) }
 
 // NewRegexpMatcher returns a new matcher verifying that a value matches
 // the regular expression pattern.
@@ -75,7 +82,7 @@ func NewRegexpMatcher(name, pattern string) (Matcher, error) {
 	return &regexpMatcher{name: name, re: re}, nil
 }
 
-// NewRegexpMatcher returns a new matcher verifying that a value matches
+// NewMustRegexpMatcher returns a new matcher verifying that a value matches
 // the regular expression pattern. Will panic if the pattern is not a valid
 // regular expression.
 func NewMustRegexpMatcher(name, pattern string) Matcher {
@@ -87,14 +94,15 @@ func NewMustRegexpMatcher(name, pattern string) Matcher {
 
 }
 
-// notMatcher inverts the matching result for a matcher.
-type notMatcher struct {
+// NotMatcher inverts the matching result for a matcher.
+type NotMatcher struct {
 	Matcher
 }
 
-func (m *notMatcher) Matches(v string) bool { return !m.Matcher.Matches(v) }
+func (m NotMatcher) Matches(v string) bool { return !m.Matcher.Matches(v) }
+func (m NotMatcher) String() string        { return fmt.Sprintf("not(%s)", m.Matcher.String()) }
 
 // Not inverts the matcher's matching result.
 func Not(m Matcher) Matcher {
-	return &notMatcher{m}
+	return &NotMatcher{m}
 }

@@ -20,25 +20,26 @@ The block for currently incoming samples is kept in memory and not fully persist
 The directory structure of a Prometheus server's data directory will look something like this:
 
 ```
-./data/01BKGV7JBM69T2G1BGBGM6KB12
-./data/01BKGV7JBM69T2G1BGBGM6KB12/meta.json
-./data/01BKGTZQ1SYQJTR4PB43C8PD98
-./data/01BKGTZQ1SYQJTR4PB43C8PD98/meta.json
-./data/01BKGTZQ1SYQJTR4PB43C8PD98/index
-./data/01BKGTZQ1SYQJTR4PB43C8PD98/chunks
-./data/01BKGTZQ1SYQJTR4PB43C8PD98/chunks/000001
-./data/01BKGTZQ1SYQJTR4PB43C8PD98/tombstones
-./data/01BKGTZQ1HHWHV8FBJXW1Y3W0K
-./data/01BKGTZQ1HHWHV8FBJXW1Y3W0K/meta.json
-./data/01BKGV7JC0RY8A6MACW02A2PJD
-./data/01BKGV7JC0RY8A6MACW02A2PJD/meta.json
-./data/01BKGV7JC0RY8A6MACW02A2PJD/index
-./data/01BKGV7JC0RY8A6MACW02A2PJD/chunks
-./data/01BKGV7JC0RY8A6MACW02A2PJD/chunks/000001
-./data/01BKGV7JC0RY8A6MACW02A2PJD/tombstones
-./data/wal/00000000
-./data/wal/00000001
-./data/wal/00000002
+./data
+├── 01BKGV7JBM69T2G1BGBGM6KB12
+│   └── meta.json
+├── 01BKGTZQ1SYQJTR4PB43C8PD98
+│   ├── chunks
+│   │   └── 000001
+│   ├── tombstones
+│   ├── index
+│   └── meta.json
+├── 01BKGTZQ1HHWHV8FBJXW1Y3W0K
+│   └── meta.json
+├── 01BKGV7JC0RY8A6MACW02A2PJD
+│   ├── chunks
+│   │   └── 000001
+│   ├── tombstones
+│   ├── index
+│   └── meta.json
+└── wal
+    ├── 00000002
+    └── checkpoint.000001
 ```
 
 The initial two-hour blocks are eventually compacted into longer blocks in the background.

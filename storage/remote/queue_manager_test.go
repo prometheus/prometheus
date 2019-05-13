@@ -32,6 +32,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/stretchr/testify/require"
 
+	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -231,6 +232,63 @@ func TestReshard(t *testing.T) {
 	}
 
 	c.waitForExpectedSamples(t)
+}
+
+func TestReshardRaceWithStop(t *testing.T) {
+	c := NewTestStorageClient()
+	var m *QueueManager
+	h := sync.Mutex{}
+
+	h.Lock()
+
+	go func() {
+		for {
+			m = NewQueueManager(nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
+			m.Start()
+			h.Unlock()
+			h.Lock()
+			m.Stop()
+		}
+	}()
+
+	for i := 1; i < 100; i++ {
+		h.Lock()
+		m.reshardChan <- i
+		h.Unlock()
+	}
+}
+
+func TestReleaseNoninternedString(t *testing.T) {
+	c := NewTestStorageClient()
+	var m *QueueManager
+	h := sync.Mutex{}
+
+	h.Lock()
+
+	m = NewQueueManager(nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
+	m.Start()
+	go func() {
+		for {
+			m.SeriesReset(1)
+		}
+	}()
+
+	for i := 1; i < 1000; i++ {
+		m.StoreSeries([]tsdb.RefSeries{
+			tsdb.RefSeries{
+				Ref: uint64(i),
+				Labels: tsdbLabels.Labels{
+					tsdbLabels.Label{
+						Name:  "asdf",
+						Value: fmt.Sprintf("%d", i),
+					},
+				},
+			},
+		}, 0)
+	}
+
+	metric := client_testutil.ToFloat64(noReferenceReleases)
+	testutil.Assert(t, metric == 0, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
 }
 
 func createTimeseries(n int) ([]tsdb.RefSample, []tsdb.RefSeries) {

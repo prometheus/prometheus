@@ -1,3 +1,48 @@
+## 2.9.2 / 2019-04-24
+
+* [BUGFIX] Make sure subquery range is taken into account for selection #5467
+* [BUGFIX] Exhaust every request body before closing it #5166
+* [BUGFIX] Cmd/promtool: return errors from rule evaluations #5483
+* [BUGFIX] Remote Storage: string interner should not panic in release #5487
+* [BUGFIX] Fix memory allocation regression in mergedPostings.Seek tsdb#586
+
+## 2.9.1 / 2019-04-16
+
+* [BUGFIX] Discovery/kubernetes: fix missing label sanitization #5462
+* [BUGFIX] Remote_write: Prevent reshard concurrent with calling stop #5460
+
+## 2.9.0 / 2019-04-15
+
+This releases uses Go 1.12, which includes a change in how memory is released
+to Linux. This will cause RSS to be reported as higher, however this is harmless
+and the memory is available to the kernel when it needs it.
+
+* [CHANGE/ENHANCEMENT] Update Consul to support catalog.ServiceMultipleTags. #5151
+* [FEATURE] Add honor_timestamps scrape option. #5304
+* [ENHANCEMENT] Discovery/kubernetes: add present labels for labels/annotations. #5443
+* [ENHANCEMENT] OpenStack SD: Add ProjectID and UserID meta labels. #5431
+* [ENHANCEMENT] Add GODEBUG and retention to the runtime page. #5324 #5322
+* [ENHANCEMENT] Add support for POSTing to /series endpoint. #5422
+* [ENHANCEMENT] Support PUT methods for Lifecycle and Admin APIs. #5376
+* [ENHANCEMENT] Scrape: Add global jitter for HA server. #5181
+* [ENHANCEMENT] Check for cancellation on every step of a range evaluation. #5131
+* [ENHANCEMENT] String interning for labels & values in the remote_write path. #5316
+* [ENHANCEMENT] Don't lose the scrape cache on a failed scrape. #5414
+* [ENHANCEMENT] Reload cert files from disk automatically. common#173
+* [ENHANCEMENT] Use fixed length millisecond timestamp format for logs. common#172
+* [ENHANCEMENT] Performance improvements for postings. tsdb#509 tsdb#572
+* [BUGFIX] Remote Write: fix checkpoint reading. #5429
+* [BUGFIX] Check if label value is valid when unmarshaling external labels from YAML. #5316
+* [BUGFIX] Promparse: sort all labels when parsing. #5372
+* [BUGFIX] Reload rules: copy state on both name and labels. #5368
+* [BUGFIX] Exponentation operator to drop metric name in result of operation. #5329
+* [BUGFIX] Config: resolve more file paths. #5284
+* [BUGFIX] Promtool: resolve relative paths in alert test files. #5336
+* [BUGFIX] Set TLSHandshakeTimeout in HTTP transport. common#179
+* [BUGFIX] Use fsync to be more resilient to machine crashes. tsdb#573 tsdb#578
+* [BUGFIX] Keep series that are still in WAL in checkpoints. tsdb#577
+* [BUGFIX] Fix output sample values for scalar-to-vector comparison operations. #5454
+
 ## 2.8.1 / 2019-03-28
 
 * [BUGFIX] Display the job labels in `/targets` which was removed accidentally. #5406
@@ -168,8 +213,8 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [FEATURE] Persist alert 'for' state across restarts #4061
 * [FEATURE] Add API providing per target metric metadata #4183
 * [FEATURE] Add API providing recording and alerting rules #4318 #4501
-* [ENHANCEMENT] Brand new WAL implementation for TSDB. Forwards incompatible with previous WAL. 
-* [ENHANCEMENT] Show rule evaluation errors in UI #4457 
+* [ENHANCEMENT] Brand new WAL implementation for TSDB. Forwards incompatible with previous WAL.
+* [ENHANCEMENT] Show rule evaluation errors in UI #4457
 * [ENHANCEMENT] Throttle resends of alerts to Alertmanager #4538
 * [ENHANCEMENT] Send EndsAt along with the alert to Alertmanager #4550
 * [ENHANCEMENT] Limit the samples returned by remote read endpoint #4532

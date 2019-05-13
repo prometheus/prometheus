@@ -385,8 +385,8 @@ func TestScrapePoolReloadShouldCancelInFlightScrapes(t *testing.T) {
 	time.Sleep(3 * interval1)
 
 	samples := app.samples()
-	if len(samples) != 2*5 {
-		t.Fatalf("Expected at least 2 scrapes with 5 samples each, got %d samples", len(samples))
+	if len(samples) != 2*6 {
+		t.Fatalf("Expected at least 2 scrapes with 6 samples each, got %d samples", len(samples))
 	}
 	if samples[0].v != 42.0 {
 		t.Fatalf("Appended first sample not as expected. Wanted: %f Got: %f", 42.0, samples[0].v)
@@ -583,15 +583,15 @@ func TestScrapeLoopStop(t *testing.T) {
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
-	// We expected 1 actual sample for each scrape plus 4 for report samples.
+	// We expected 1 actual sample for each scrape plus 5 for report samples.
 	// At least 2 scrapes were made, plus the final stale markers.
-	if len(appender.result) < 5*3 || len(appender.result)%5 != 0 {
-		t.Fatalf("Expected at least 3 scrapes with 5 samples each, got %d samples", len(appender.result))
+	if len(appender.result) < 6*3 || len(appender.result)%6 != 0 {
+		t.Fatalf("Expected at least 3 scrapes with 6 samples each, got %d samples", len(appender.result))
 	}
 	// All samples in a scrape must have the same timestamp.
 	var ts int64
 	for i, s := range appender.result {
-		if i%5 == 0 {
+		if i%6 == 0 {
 			ts = s.t
 		} else if s.t != ts {
 			t.Fatalf("Unexpected multiple timestamps within single scrape")
@@ -725,7 +725,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 	)
 	defer cancel()
 
-	total, _, err := sl.append([]byte(`# TYPE test_metric counter
+	total, _, _, err := sl.append([]byte(`# TYPE test_metric counter
 # HELP test_metric some help text
 # UNIT test_metric metric
 test_metric 1
@@ -752,6 +752,41 @@ test_metric 1
 	testutil.Assert(t, textparse.MetricTypeUnknown == md.Type, "unexpected metric type")
 	testutil.Equals(t, "other help text", md.Help)
 	testutil.Equals(t, "", md.Unit)
+}
+
+func TestScrapeLoopSeriesAdded(t *testing.T) {
+	// Need a full storage for correct Add/AddFast semantics.
+	s := testutil.NewStorage(t)
+	defer s.Close()
+
+	app, err := s.Appender()
+	if err != nil {
+		t.Error(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx,
+		&testScraper{},
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		func() storage.Appender { return app },
+		nil,
+		0,
+		true,
+	)
+	defer cancel()
+
+	total, added, seriesAdded, err := sl.append([]byte("test_metric 1\n"), "", time.Time{})
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, total)
+	testutil.Equals(t, 1, added)
+	testutil.Equals(t, 1, seriesAdded)
+
+	total, added, seriesAdded, err = sl.append([]byte("test_metric 1\n"), "", time.Time{})
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, total)
+	testutil.Equals(t, 1, added)
+	testutil.Equals(t, 0, seriesAdded)
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
@@ -801,15 +836,15 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
-	// 1 successfully scraped sample, 1 stale marker after first fail, 4 report samples for
+	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
-	if len(appender.result) != 18 {
-		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 18, len(appender.result))
+	if len(appender.result) != 22 {
+		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 22, len(appender.result))
 	}
 	if appender.result[0].v != 42.0 {
 		t.Fatalf("Appended first sample not as expected. Wanted: %f Got: %f", 42.0, appender.result[0].v)
 	}
-	if !value.IsStaleNaN(appender.result[5].v) {
+	if !value.IsStaleNaN(appender.result[6].v) {
 		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[5].v))
 	}
 }
@@ -863,16 +898,16 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
-	// 1 successfully scraped sample, 1 stale marker after first fail, 2 report samples for
+	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
-	if len(appender.result) != 10 {
-		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 10, len(appender.result))
+	if len(appender.result) != 12 {
+		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 12, len(appender.result))
 	}
 	if appender.result[0].v != 42.0 {
 		t.Fatalf("Appended first sample not as expected. Wanted: %f Got: %f", 42.0, appender.result[0].v)
 	}
-	if !value.IsStaleNaN(appender.result[5].v) {
-		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[5].v))
+	if !value.IsStaleNaN(appender.result[6].v) {
+		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[6].v))
 	}
 }
 
@@ -948,10 +983,10 @@ func TestScrapeLoopCache(t *testing.T) {
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
-	// 1 successfully scraped sample, 1 stale marker after first fail, 3 report samples for
+	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
-	if len(appender.result) != 17 {
-		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 17, len(appender.result))
+	if len(appender.result) != 20 {
+		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 20, len(appender.result))
 	}
 }
 
@@ -1085,7 +1120,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 
 			now := time.Now()
 
-			_, _, err := sl.append([]byte(test.scrapeLabels), "", now)
+			_, _, _, err := sl.append([]byte(test.scrapeLabels), "", now)
 			if err != nil {
 				t.Fatalf("Unexpected append error: %s", err)
 			}
@@ -1133,7 +1168,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	beforeMetricValue := beforeMetric.GetCounter().GetValue()
 
 	now := time.Now()
-	_, _, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
+	_, _, _, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
 	if err != errSampleLimit {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
@@ -1187,11 +1222,11 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1`), "", now)
+	_, _, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1`), "", now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
-	_, _, err = sl.append([]byte(`metric_a{b="1",a="1"} 2`), "", now.Add(time.Minute))
+	_, _, _, err = sl.append([]byte(`metric_a{b="1",a="1"} 2`), "", now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
@@ -1228,11 +1263,11 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, err := sl.append([]byte("metric_a 1\n"), "", now)
+	_, _, _, err := sl.append([]byte("metric_a 1\n"), "", now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
-	_, _, err = sl.append([]byte(""), "", now.Add(time.Second))
+	_, _, _, err = sl.append([]byte(""), "", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
@@ -1275,11 +1310,11 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, err := sl.append([]byte("metric_a 1 1000\n"), "", now)
+	_, _, _, err := sl.append([]byte("metric_a 1 1000\n"), "", now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
-	_, _, err = sl.append([]byte(""), "", now.Add(time.Second))
+	_, _, _, err = sl.append([]byte(""), "", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
@@ -1403,7 +1438,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 	)
 
 	now := time.Unix(1, 0)
-	_, _, err := sl.append([]byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\n"), "", now)
+	total, added, seriesAdded, err := sl.append([]byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\n"), "", now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
@@ -1417,6 +1452,9 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 	if !reflect.DeepEqual(want, app.result) {
 		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
 	}
+	testutil.Equals(t, 4, total)
+	testutil.Equals(t, 1, added)
+	testutil.Equals(t, 1, seriesAdded)
 }
 
 func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
@@ -1438,15 +1476,10 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	)
 
 	now := time.Now().Add(20 * time.Minute)
-	total, added, err := sl.append([]byte("normal 1\n"), "", now)
-	if total != 1 {
-		t.Error("expected 1 metric")
-		return
-	}
-
-	if added != 0 {
-		t.Error("no metric should be added")
-	}
+	total, added, seriesAdded, err := sl.append([]byte("normal 1\n"), "", now)
+	testutil.Equals(t, 1, total)
+	testutil.Equals(t, 0, added)
+	testutil.Equals(t, 0, seriesAdded)
 
 	if err != nil {
 		t.Errorf("expect no error, got %s", err.Error())
@@ -1636,7 +1669,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1 0`), "", now)
+	_, _, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1 0`), "", now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
@@ -1673,7 +1706,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1 0`), "", now)
+	_, _, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1 0`), "", now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}

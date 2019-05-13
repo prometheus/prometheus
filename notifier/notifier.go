@@ -19,6 +19,8 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -362,6 +364,9 @@ func (n *Manager) Send(alerts ...*Alert) {
 	}
 
 	alerts = n.relabelAlerts(alerts)
+	if len(alerts) == 0 {
+		return
+	}
 
 	// Queue capacity should be significantly larger than a single alert
 	// batch could be.
@@ -508,7 +513,10 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	// Any HTTP status 2xx is OK.
 	if resp.StatusCode/100 != 2 {
@@ -610,7 +618,7 @@ func postPath(pre string) string {
 	return path.Join("/", pre, alertPushEndpoint)
 }
 
-// alertmanagersFromGroup extracts a list of alertmanagers from a target group
+// alertmanagerFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
 func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager

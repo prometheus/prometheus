@@ -19,7 +19,7 @@ var _ = math.Inf
 // is compatible with the proto package it is being compiled against.
 // A compilation error at this line likely means your copy of the
 // proto package needs to be updated.
-const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
+const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
 type LibraryInfo_Language int32
 
@@ -70,8 +70,8 @@ func (LibraryInfo_Language) EnumDescriptor() ([]byte, []int) {
 	return fileDescriptor_126c72ed8a252c84, []int{2, 0}
 }
 
-// Identifier metadata of the Node (Application instrumented with OpenCensus)
-// that connects to OpenCensus Agent.
+// Identifier metadata of the Node that produces the span or tracing data.
+// Note, this is not the metadata about the Node or service that is described by associated spans.
 // In the future we plan to extend the identifier proto definition to support
 // additional information (e.g cloud id, etc.)
 type Node struct {

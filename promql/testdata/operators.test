@@ -220,7 +220,7 @@ eval instant at 50m SUM(http_requests) BY (job) > 1000
 	{job="app-server"} 2600
 
 eval instant at 50m 1000 < SUM(http_requests) BY (job)
-	{job="app-server"} 1000
+	{job="app-server"} 2600
 
 eval instant at 50m SUM(http_requests) BY (job) <= 1000
 	{job="api-server"} 1000
@@ -388,7 +388,7 @@ eval instant at 5m node_cpu % 2
   {instance="def",job="node",mode="idle"} 0
   {instance="def",job="node",mode="user"} 0
 
-	
+
 clear
 
 load 5m

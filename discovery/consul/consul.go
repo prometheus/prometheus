@@ -341,7 +341,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 // Watch the catalog for new services we would like to watch. This is called only
 // when we don't know yet the names of the services and need to ask Consul the
 // entire list of services.
-func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64, services map[string]func()) error {
+func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64, services map[string]func()) {
 	catalog := d.client.Catalog()
 	level.Debug(d.logger).Log("msg", "Watching services", "tags", d.watchedTags)
 
@@ -360,11 +360,11 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 		level.Error(d.logger).Log("msg", "Error refreshing service list", "err", err)
 		rpcFailuresCount.Inc()
 		time.Sleep(retryInterval)
-		return err
+		return
 	}
 	// If the index equals the previous one, the watch timed out with no update.
 	if meta.LastIndex == *lastIndex {
-		return nil
+		return
 	}
 	*lastIndex = meta.LastIndex
 
@@ -396,12 +396,11 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 			// Send clearing target group.
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return
 			case ch <- []*targetgroup.Group{{Source: name}}:
 			}
 		}
 	}
-	return nil
 }
 
 // consulService contains data belonging to the same service.
@@ -441,14 +440,17 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 				return
 			default:
 				srv.watch(ctx, ch, catalog, &lastIndex)
-				<-ticker.C
+				select {
+				case <-ticker.C:
+				case <-ctx.Done():
+				}
 			}
 		}
 	}()
 }
 
 // Get updates for a service.
-func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, catalog *consul.Catalog, lastIndex *uint64) error {
+func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, catalog *consul.Catalog, lastIndex *uint64) {
 	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tags", srv.tags)
 
 	t0 := time.Now()
@@ -465,7 +467,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 	// Check the context before in order to exit early.
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return
 	default:
 		// Continue.
 	}
@@ -474,11 +476,11 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "tags", srv.tags, "err", err)
 		rpcFailuresCount.Inc()
 		time.Sleep(retryInterval)
-		return err
+		return
 	}
 	// If the index equals the previous one, the watch timed out with no update.
 	if meta.LastIndex == *lastIndex {
-		return nil
+		return
 	}
 	*lastIndex = meta.LastIndex
 
@@ -536,8 +538,6 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
 	case ch <- []*targetgroup.Group{&tgroup}:
 	}
-	return nil
 }

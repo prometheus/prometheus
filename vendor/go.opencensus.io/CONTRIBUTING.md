@@ -41,7 +41,8 @@ git remote add fork git@github.com:YOUR_GITHUB_USERNAME/opencensus-go.git
 Run tests:
 
 ```
-$ go test ./...
+$ make install-tools  # Only first time.
+$ make
 ```
 
 Checkout a new branch, make modifications and push the branch to your fork:
@@ -54,3 +55,9 @@ $ git push fork feature
 ```
 
 Open a pull request against the main opencensus-go repo.
+
+## General Notes
+This project uses Appveyor and Travis for CI.
+
+The dependencies are managed with `go mod` if you work with the sources under your
+`$GOPATH` you need to set the environment variable `GO111MODULE=on`.

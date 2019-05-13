@@ -118,7 +118,7 @@ func Rename(from, to string) error {
 		return err
 	}
 
-	if err = Fsync(pdir); err != nil {
+	if err = pdir.Sync(); err != nil {
 		pdir.Close()
 		return err
 	}
@@ -141,7 +141,7 @@ func Replace(from, to string) error {
 		return err
 	}
 
-	if err = Fsync(pdir); err != nil {
+	if err = pdir.Sync(); err != nil {
 		pdir.Close()
 		return err
 	}

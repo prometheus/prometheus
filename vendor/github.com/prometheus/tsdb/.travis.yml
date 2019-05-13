@@ -6,8 +6,6 @@ os:
   - osx
 
 go:
-  - 1.10.x
-  - 1.11.x
   - 1.12.x
 
 go_import_path: github.com/prometheus/tsdb

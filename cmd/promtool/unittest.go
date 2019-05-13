@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	yaml "gopkg.in/yaml.v2"
 
@@ -160,10 +161,11 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		Appendable: suite.Storage(),
 		Context:    context.Background(),
 		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
-		Logger:     &dummyLogger{},
+		Logger:     log.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
-	groupsMap, ers := m.LoadGroups(tg.Interval, ruleFiles...)
+	// TODO(beorn7): Provide a way to pass in external labels.
+	groupsMap, ers := m.LoadGroups(tg.Interval, nil, ruleFiles...)
 	if ers != nil {
 		return ers
 	}
@@ -210,6 +212,12 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 			}
 			for _, g := range groups {
 				g.Eval(suite.Context(), ts)
+				for _, r := range g.Rules() {
+					if r.LastError() != nil {
+						errs = append(errs, errors.Errorf("    rule: %s, time: %s, err: %v",
+							r.Name(), ts.Sub(time.Unix(0, 0)), r.LastError()))
+					}
+				}
 			}
 		})
 		if len(errs) > 0 {
@@ -494,10 +502,4 @@ func parsedSamplesString(pss []parsedSample) string {
 
 func (ps *parsedSample) String() string {
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
-}
-
-type dummyLogger struct{}
-
-func (l *dummyLogger) Log(keyvals ...interface{}) error {
-	return nil
 }

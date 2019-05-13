@@ -6,7 +6,7 @@ This page describes the release process and the currently planned schedule for u
 
 Release cadence of first pre-releases being cut is 6 weeks.
 
-| release series | date of first pre-release (year-month-day) | release shepherd                             |
+| release series | date of first pre-release (year-month-day) | release shepherd                            |
 |----------------|--------------------------------------------|---------------------------------------------|
 | v2.4           | 2018-09-06                                 | Goutham Veeramachaneni (GitHub: @gouthamve) |
 | v2.5           | 2018-10-24                                 | Frederic Branczyk (GitHub: @brancz)         |
@@ -14,7 +14,8 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.7           | 2019-01-16                                 | Goutham Veeramachaneni (GitHub: @gouthamve) |
 | v2.8           | 2019-02-27                                 | Ganesh Vernekar (GitHub: @codesome)         |
 | v2.9           | 2019-04-10                                 | Brian Brazil (GitHub: @brian-brazil)        |
-| v2.10          | 2019-05-22                                 | **searching for volunteer**                 |
+| v2.10          | 2019-05-22                                 | Björn Rabenstein (GitHub: @beorn7)          |
+| v2.11          | 2019-07-03                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -26,6 +27,8 @@ The release shepherd is responsible for the entire release series of a minor rel
 * With the pre-release the release shepherd is responsible for running and monitoring a benchmark run of the pre-release for 3 days, after which, if successful, the pre-release is promoted to a stable release.
 * Once a pre-release has been released, the `master` branch of the repository is frozen for any feature work, only critical bug fix work concerning the minor release is merged.
 * Pre-releases are done from `master`, after pre-releases are promoted to the stable release a `release-major.minor` branch is created.
+
+_Experimental change of the above procedure for the v2.10 release: The `release-2.10` branch is created at the time the first pre-release is cut. All releases of the series including pre-releases are cut from the `release-2.10` branch. `master` will not be frozen for feature work._
 
 See the next section for details on cutting an individual release.
 
@@ -91,7 +94,7 @@ If the release has happened in the latest release branch, merge the changes into
 
 To update the docs, a PR needs to be created to `prometheus/docs`. See [this PR](https://github.com/prometheus/docs/pull/952/files) for inspiration.
 
-Once the binaries have been uploaded, announce the release on `prometheus-users@googlegroups.com` and `prometheus-announce@googlegroups.com`. Start the subject with `[ANN]`. Check out previous announcement mails for inspiration.
+Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration. 
 
 ### Pre-releases
 

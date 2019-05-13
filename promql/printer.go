@@ -179,8 +179,8 @@ func (node *UnaryExpr) String() string {
 func (node *VectorSelector) String() string {
 	labelStrings := make([]string, 0, len(node.LabelMatchers)-1)
 	for _, matcher := range node.LabelMatchers {
-		// Only include the __name__ label if its no equality matching.
-		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual {
+		// Only include the __name__ label if its equality matching and matches the name.
+		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name {
 			continue
 		}
 		labelStrings = append(labelStrings, matcher.String())

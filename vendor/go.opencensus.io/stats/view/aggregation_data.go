@@ -17,8 +17,9 @@ package view
 
 import (
 	"math"
+	"time"
 
-	"go.opencensus.io/exemplar"
+	"go.opencensus.io/metric/metricdata"
 )
 
 // AggregationData represents an aggregated value from a collection.
@@ -26,9 +27,10 @@ import (
 // Mosts users won't directly access aggregration data.
 type AggregationData interface {
 	isAggregationData() bool
-	addSample(e *exemplar.Exemplar)
+	addSample(v float64, attachments map[string]interface{}, t time.Time)
 	clone() AggregationData
 	equal(other AggregationData) bool
+	toPoint(t metricdata.Type, time time.Time) metricdata.Point
 }
 
 const epsilon = 1e-9
@@ -43,7 +45,7 @@ type CountData struct {
 
 func (a *CountData) isAggregationData() bool { return true }
 
-func (a *CountData) addSample(_ *exemplar.Exemplar) {
+func (a *CountData) addSample(_ float64, _ map[string]interface{}, _ time.Time) {
 	a.Value = a.Value + 1
 }
 
@@ -60,6 +62,15 @@ func (a *CountData) equal(other AggregationData) bool {
 	return a.Value == a2.Value
 }
 
+func (a *CountData) toPoint(metricType metricdata.Type, t time.Time) metricdata.Point {
+	switch metricType {
+	case metricdata.TypeCumulativeInt64:
+		return metricdata.NewInt64Point(t, a.Value)
+	default:
+		panic("unsupported metricdata.Type")
+	}
+}
+
 // SumData is the aggregated data for the Sum aggregation.
 // A sum aggregation processes data and sums up the recordings.
 //
@@ -70,8 +81,8 @@ type SumData struct {
 
 func (a *SumData) isAggregationData() bool { return true }
 
-func (a *SumData) addSample(e *exemplar.Exemplar) {
-	a.Value += e.Value
+func (a *SumData) addSample(v float64, _ map[string]interface{}, _ time.Time) {
+	a.Value += v
 }
 
 func (a *SumData) clone() AggregationData {
@@ -84,6 +95,17 @@ func (a *SumData) equal(other AggregationData) bool {
 		return false
 	}
 	return math.Pow(a.Value-a2.Value, 2) < epsilon
+}
+
+func (a *SumData) toPoint(metricType metricdata.Type, t time.Time) metricdata.Point {
+	switch metricType {
+	case metricdata.TypeCumulativeInt64:
+		return metricdata.NewInt64Point(t, int64(a.Value))
+	case metricdata.TypeCumulativeFloat64:
+		return metricdata.NewFloat64Point(t, a.Value)
+	default:
+		panic("unsupported metricdata.Type")
+	}
 }
 
 // DistributionData is the aggregated data for the
@@ -102,7 +124,7 @@ type DistributionData struct {
 	CountPerBucket  []int64 // number of occurrences per bucket
 	// ExemplarsPerBucket is slice the same length as CountPerBucket containing
 	// an exemplar for the associated bucket, or nil.
-	ExemplarsPerBucket []*exemplar.Exemplar
+	ExemplarsPerBucket []*metricdata.Exemplar
 	bounds             []float64 // histogram distribution of the values
 }
 
@@ -110,7 +132,7 @@ func newDistributionData(bounds []float64) *DistributionData {
 	bucketCount := len(bounds) + 1
 	return &DistributionData{
 		CountPerBucket:     make([]int64, bucketCount),
-		ExemplarsPerBucket: make([]*exemplar.Exemplar, bucketCount),
+		ExemplarsPerBucket: make([]*metricdata.Exemplar, bucketCount),
 		bounds:             bounds,
 		Min:                math.MaxFloat64,
 		Max:                math.SmallestNonzeroFloat64,
@@ -129,64 +151,62 @@ func (a *DistributionData) variance() float64 {
 
 func (a *DistributionData) isAggregationData() bool { return true }
 
-func (a *DistributionData) addSample(e *exemplar.Exemplar) {
-	f := e.Value
-	if f < a.Min {
-		a.Min = f
+// TODO(songy23): support exemplar attachments.
+func (a *DistributionData) addSample(v float64, attachments map[string]interface{}, t time.Time) {
+	if v < a.Min {
+		a.Min = v
 	}
-	if f > a.Max {
-		a.Max = f
+	if v > a.Max {
+		a.Max = v
 	}
 	a.Count++
-	a.addToBucket(e)
+	a.addToBucket(v, attachments, t)
 
 	if a.Count == 1 {
-		a.Mean = f
+		a.Mean = v
 		return
 	}
 
 	oldMean := a.Mean
-	a.Mean = a.Mean + (f-a.Mean)/float64(a.Count)
-	a.SumOfSquaredDev = a.SumOfSquaredDev + (f-oldMean)*(f-a.Mean)
+	a.Mean = a.Mean + (v-a.Mean)/float64(a.Count)
+	a.SumOfSquaredDev = a.SumOfSquaredDev + (v-oldMean)*(v-a.Mean)
 }
 
-func (a *DistributionData) addToBucket(e *exemplar.Exemplar) {
+func (a *DistributionData) addToBucket(v float64, attachments map[string]interface{}, t time.Time) {
 	var count *int64
-	var ex **exemplar.Exemplar
-	for i, b := range a.bounds {
-		if e.Value < b {
+	var i int
+	var b float64
+	for i, b = range a.bounds {
+		if v < b {
 			count = &a.CountPerBucket[i]
-			ex = &a.ExemplarsPerBucket[i]
 			break
 		}
 	}
-	if count == nil {
-		count = &a.CountPerBucket[len(a.bounds)]
-		ex = &a.ExemplarsPerBucket[len(a.bounds)]
+	if count == nil { // Last bucket.
+		i = len(a.bounds)
+		count = &a.CountPerBucket[i]
 	}
 	*count++
-	*ex = maybeRetainExemplar(*ex, e)
+	if exemplar := getExemplar(v, attachments, t); exemplar != nil {
+		a.ExemplarsPerBucket[i] = exemplar
+	}
 }
 
-func maybeRetainExemplar(old, cur *exemplar.Exemplar) *exemplar.Exemplar {
-	if old == nil {
-		return cur
+func getExemplar(v float64, attachments map[string]interface{}, t time.Time) *metricdata.Exemplar {
+	if len(attachments) == 0 {
+		return nil
 	}
-
-	// Heuristic to pick the "better" exemplar: first keep the one with a
-	// sampled trace attachment, if neither have a trace attachment, pick the
-	// one with more attachments.
-	_, haveTraceID := cur.Attachments[exemplar.KeyTraceID]
-	if haveTraceID || len(cur.Attachments) >= len(old.Attachments) {
-		return cur
+	return &metricdata.Exemplar{
+		Value:       v,
+		Timestamp:   t,
+		Attachments: attachments,
 	}
-	return old
 }
 
 func (a *DistributionData) clone() AggregationData {
 	c := *a
 	c.CountPerBucket = append([]int64(nil), a.CountPerBucket...)
-	c.ExemplarsPerBucket = append([]*exemplar.Exemplar(nil), a.ExemplarsPerBucket...)
+	c.ExemplarsPerBucket = append([]*metricdata.Exemplar(nil), a.ExemplarsPerBucket...)
 	return &c
 }
 
@@ -209,6 +229,33 @@ func (a *DistributionData) equal(other AggregationData) bool {
 	return a.Count == a2.Count && a.Min == a2.Min && a.Max == a2.Max && math.Pow(a.Mean-a2.Mean, 2) < epsilon && math.Pow(a.variance()-a2.variance(), 2) < epsilon
 }
 
+func (a *DistributionData) toPoint(metricType metricdata.Type, t time.Time) metricdata.Point {
+	switch metricType {
+	case metricdata.TypeCumulativeDistribution:
+		buckets := []metricdata.Bucket{}
+		for i := 0; i < len(a.CountPerBucket); i++ {
+			buckets = append(buckets, metricdata.Bucket{
+				Count:    a.CountPerBucket[i],
+				Exemplar: a.ExemplarsPerBucket[i],
+			})
+		}
+		bucketOptions := &metricdata.BucketOptions{Bounds: a.bounds}
+
+		val := &metricdata.Distribution{
+			Count:                 a.Count,
+			Sum:                   a.Sum(),
+			SumOfSquaredDeviation: a.SumOfSquaredDev,
+			BucketOptions:         bucketOptions,
+			Buckets:               buckets,
+		}
+		return metricdata.NewDistributionPoint(t, val)
+
+	default:
+		// TODO: [rghetia] when we have a use case for TypeGaugeDistribution.
+		panic("unsupported metricdata.Type")
+	}
+}
+
 // LastValueData returns the last value recorded for LastValue aggregation.
 type LastValueData struct {
 	Value float64
@@ -218,8 +265,8 @@ func (l *LastValueData) isAggregationData() bool {
 	return true
 }
 
-func (l *LastValueData) addSample(e *exemplar.Exemplar) {
-	l.Value = e.Value
+func (l *LastValueData) addSample(v float64, _ map[string]interface{}, _ time.Time) {
+	l.Value = v
 }
 
 func (l *LastValueData) clone() AggregationData {
@@ -232,4 +279,15 @@ func (l *LastValueData) equal(other AggregationData) bool {
 		return false
 	}
 	return l.Value == a2.Value
+}
+
+func (l *LastValueData) toPoint(metricType metricdata.Type, t time.Time) metricdata.Point {
+	switch metricType {
+	case metricdata.TypeGaugeInt64:
+		return metricdata.NewInt64Point(t, int64(l.Value))
+	case metricdata.TypeGaugeFloat64:
+		return metricdata.NewFloat64Point(t, l.Value)
+	default:
+		panic("unsupported metricdata.Type")
+	}
 }

@@ -12,6 +12,7 @@ environment:
 
 install:
   - set PATH=%GOPATH%\bin;c:\go\bin;%PATH%
+  - choco upgrade golang --version 1.11.5 # Temporary fix because of a go.sum bug in 1.11
   - go version
   - go env
 

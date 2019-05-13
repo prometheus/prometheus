@@ -142,6 +142,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		time.Second,
 		labels.Labels{},
 		labels.Labels{},
+		labels.Labels{},
 		true,
 		log.NewNopLogger(),
 	)
@@ -149,6 +150,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		"test_metric4",
 		expr2,
 		time.Second,
+		labels.Labels{},
 		labels.Labels{},
 		labels.Labels{},
 		true,
@@ -882,7 +884,7 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 		}
 		return
 	}
-	if got == nil && exp != errorNone {
+	if exp != errorNone {
 		t.Fatalf("Expected error of type %q but got none", exp)
 	}
 }

@@ -36,7 +36,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
-	"github.com/oklog/oklog/pkg/group"
+	"github.com/oklog/run"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -447,7 +447,11 @@ func main() {
 				}
 				files = append(files, fs...)
 			}
-			return ruleManager.Update(time.Duration(cfg.GlobalConfig.EvaluationInterval), files)
+			return ruleManager.Update(
+				time.Duration(cfg.GlobalConfig.EvaluationInterval),
+				files,
+				cfg.GlobalConfig.ExternalLabels,
+			)
 		},
 	}
 
@@ -473,7 +477,7 @@ func main() {
 		})
 	}
 
-	var g group.Group
+	var g run.Group
 	{
 		// Termination handler.
 		term := make(chan os.Signal, 1)
@@ -752,6 +756,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	if failed {
 		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
+
 	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil

@@ -14,6 +14,7 @@
 package notifier
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/json"
@@ -224,7 +225,7 @@ func TestCustomDo(t *testing.T) {
 			testutil.Equals(t, testURL, req.URL.String())
 
 			return &http.Response{
-				Body: ioutil.NopCloser(nil),
+				Body: ioutil.NopCloser(bytes.NewBuffer(nil)),
 			}, nil
 		},
 	}, nil)
@@ -384,7 +385,7 @@ func TestHandlerQueueing(t *testing.T) {
 	expected = alerts[:maxBatchSize]
 	unblock <- struct{}{}
 
-	for i := 2; i < 4; i++ {
+	for i := 2; i < 5; i++ {
 		select {
 		case <-called:
 			expected = alerts[i*maxBatchSize : (i+1)*maxBatchSize]

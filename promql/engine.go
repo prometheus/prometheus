@@ -552,6 +552,14 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			Step:  durationToInt64Millis(s.Interval),
 		}
 
+		// We need to make sure we select the timerange selected by the subquery.
+		// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
+		// we can optimise it by separating out the range and offsets, and substracting the offsets
+		// from end also.
+		subqOffset := ng.cumulativeSubqueryOffset(path)
+		offsetMilliseconds := durationMilliseconds(subqOffset)
+		params.Start = params.Start - offsetMilliseconds
+
 		switch n := node.(type) {
 		case *VectorSelector:
 			params.Start = params.Start - durationMilliseconds(LookbackDelta)
@@ -1581,6 +1589,11 @@ func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap
 			lv, rv = rv, lv
 		}
 		value, keep := vectorElemBinop(op, lv, rv)
+		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
+		// We want to always keep the vector element value as the output value, even if it's on the RHS.
+		if op.isComparisonOperator() && swap {
+			value = rv
+		}
 		if returnBool {
 			if keep {
 				value = 1.0

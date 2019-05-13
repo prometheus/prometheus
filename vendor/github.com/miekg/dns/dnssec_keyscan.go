@@ -109,21 +109,16 @@ func readPrivateKeyRSA(m map[string]string) (*rsa.PrivateKey, error) {
 			}
 			switch k {
 			case "modulus":
-				p.PublicKey.N = big.NewInt(0)
-				p.PublicKey.N.SetBytes(v1)
+				p.PublicKey.N = new(big.Int).SetBytes(v1)
 			case "publicexponent":
-				i := big.NewInt(0)
-				i.SetBytes(v1)
+				i := new(big.Int).SetBytes(v1)
 				p.PublicKey.E = int(i.Int64()) // int64 should be large enough
 			case "privateexponent":
-				p.D = big.NewInt(0)
-				p.D.SetBytes(v1)
+				p.D = new(big.Int).SetBytes(v1)
 			case "prime1":
-				p.Primes[0] = big.NewInt(0)
-				p.Primes[0].SetBytes(v1)
+				p.Primes[0] = new(big.Int).SetBytes(v1)
 			case "prime2":
-				p.Primes[1] = big.NewInt(0)
-				p.Primes[1].SetBytes(v1)
+				p.Primes[1] = new(big.Int).SetBytes(v1)
 			}
 		case "exponent1", "exponent2", "coefficient":
 			// not used in Go (yet)
@@ -136,7 +131,7 @@ func readPrivateKeyRSA(m map[string]string) (*rsa.PrivateKey, error) {
 
 func readPrivateKeyDSA(m map[string]string) (*dsa.PrivateKey, error) {
 	p := new(dsa.PrivateKey)
-	p.X = big.NewInt(0)
+	p.X = new(big.Int)
 	for k, v := range m {
 		switch k {
 		case "private_value(x)":
@@ -154,7 +149,7 @@ func readPrivateKeyDSA(m map[string]string) (*dsa.PrivateKey, error) {
 
 func readPrivateKeyECDSA(m map[string]string) (*ecdsa.PrivateKey, error) {
 	p := new(ecdsa.PrivateKey)
-	p.D = big.NewInt(0)
+	p.D = new(big.Int)
 	// TODO: validate that the required flags are present
 	for k, v := range m {
 		switch k {
@@ -320,6 +315,11 @@ func (kl *klexer) Next() (lex, bool) {
 			if commt {
 				// Reset a comment
 				commt = false
+			}
+
+			if kl.key && str.Len() == 0 {
+				// ignore empty lines
+				break
 			}
 
 			kl.key = true

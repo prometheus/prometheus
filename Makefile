@@ -11,11 +11,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-include Makefile.common
+# Needs to be defined before including Makefile.common to auto-generate targets
+DOCKER_ARCHS ?= amd64 armv7 arm64
 
-STATICCHECK_IGNORE = \
-  github.com/prometheus/prometheus/pkg/textparse/promlex.l.go:SA4006 \
-  github.com/prometheus/prometheus/pkg/textparse/openmetricslex.l.go:SA4006
+include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 

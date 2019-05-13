@@ -21,9 +21,18 @@ package remote
 import (
 	"sync"
 	"sync/atomic"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var interner = newPool()
+var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "string_interner_zero_reference_releases_total",
+	Help:      "The number of times release has been called for strings that are not interned.",
+})
 
 type pool struct {
 	mtx  sync.RWMutex
@@ -73,7 +82,8 @@ func (p *pool) release(s string) {
 	p.mtx.RUnlock()
 
 	if !ok {
-		panic("released unknown string")
+		noReferenceReleases.Inc()
+		return
 	}
 
 	refs := atomic.AddInt64(&interned.refs, -1)

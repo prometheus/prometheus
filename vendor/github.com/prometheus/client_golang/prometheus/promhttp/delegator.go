@@ -38,7 +38,6 @@ type delegator interface {
 type responseWriterDelegator struct {
 	http.ResponseWriter
 
-	handler, method    string
 	status             int
 	written            int64
 	wroteHeader        bool
