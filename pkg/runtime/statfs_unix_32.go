@@ -74,10 +74,10 @@ func Statfs(path string) string {
 	var fs unix.Statfs_t
 	err := unix.Statfs(path, &fs)
 	if err != nil {
-		return strconv.Itoa(int(fs.Type), 16)
+		return strconv.Itoa(int(fs.Type))
 	}
 	if fsType, ok := fsTypes[fs.Type]; ok {
 		return fsType
 	}
-	return strconv.Itoa(int(fs.Type), 16)
+	return strconv.Itoa(int(fs.Type))
 }
