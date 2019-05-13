@@ -76,8 +76,8 @@ func Statfs(path string) string {
 	if err != nil {
 		return strconv.FormatInt(fs.Type, 16)
 	}
-	if _, ok := fsTypes[fs.Type]; ok {
-		return fsTypes[fs.Type]
+	if fsType, ok := fsTypes[fs.Type]; ok {
+		return fsType
 	}
 	return strconv.FormatInt(fs.Type, 16)
 }
