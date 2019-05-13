@@ -332,15 +332,6 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 	it := index.Intersect(its...)
 
 	for _, n := range notIts {
-		if _, ok := n.(*index.ListPostings); !ok {
-			// Best to pre-calculate the merged lists via next rather than have a ton
-			// of seeks in Without.
-			pl, err := index.ExpandPostings(n)
-			if err != nil {
-				return nil, err
-			}
-			n = index.NewListPostings(pl)
-		}
 		it = index.Without(it, n)
 	}
 

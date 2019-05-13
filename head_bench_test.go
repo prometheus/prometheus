@@ -56,20 +56,21 @@ func BenchmarkHeadPostingForMatchers(b *testing.B) {
 		testutil.Ok(b, h.Close())
 	}()
 
-	var hash uint64
+	var ref uint64
+
+	addSeries := func(l labels.Labels) {
+		ref++
+		h.getOrCreateWithID(ref, l.Hash(), l)
+	}
+
 	for n := 0; n < 10; n++ {
 		for i := 0; i < 100000; i++ {
-			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", strconv.Itoa(i), "j", "foo"))
-			hash++
+			addSeries(labels.FromStrings("i", strconv.Itoa(i), "n", strconv.Itoa(n), "j", "foo"))
 			// Have some series that won't be matched, to properly test inverted matches.
-			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", strconv.Itoa(i), "j", "bar"))
-			hash++
-			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", "0_"+strconv.Itoa(i), "j", "bar"))
-			hash++
-			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", "1_"+strconv.Itoa(i), "j", "bar"))
-			hash++
-			h.getOrCreate(hash, labels.FromStrings("i", strconv.Itoa(i), "n", "2_"+strconv.Itoa(i), "j", "bar"))
-			hash++
+			addSeries(labels.FromStrings("i", strconv.Itoa(i), "n", strconv.Itoa(n), "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i), "n", "0_"+strconv.Itoa(n), "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i), "n", "1_"+strconv.Itoa(n), "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i), "n", "2_"+strconv.Itoa(n), "j", "foo"))
 		}
 	}
 
@@ -100,6 +101,7 @@ func BenchmarkHeadPostingForMatchers(b *testing.B) {
 		{`i!=""`, []labels.Matcher{iNotEmpty}},
 		{`n="1",i=~".*",j="foo"`, []labels.Matcher{n1, iStar, jFoo}},
 		{`n="1",i=~".*",i!="2",j="foo"`, []labels.Matcher{n1, iStar, iNot2, jFoo}},
+		{`n="1",i!=""`, []labels.Matcher{n1, iNotEmpty}},
 		{`n="1",i!="",j="foo"`, []labels.Matcher{n1, iNotEmpty, jFoo}},
 		{`n="1",i=~".+",j="foo"`, []labels.Matcher{n1, iPlus, jFoo}},
 		{`n="1",i=~"1.+",j="foo"`, []labels.Matcher{n1, i1Plus, jFoo}},
