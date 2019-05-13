@@ -6,6 +6,7 @@
 
 /prometheus
 /promtool
+/remotewrite
 benchmark.txt
 /data
 /cmd/prometheus/data

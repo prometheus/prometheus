@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/tsdb"
 )
 
 var (
@@ -55,10 +56,11 @@ type WriteStorage struct {
 	queues        []*QueueManager
 	samplesIn     *ewmaRate
 	flushDeadline time.Duration
+	walWatcher    *WALWatcher
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, walDir string, flushDeadline time.Duration) *WriteStorage {
+func NewWriteStorage(logger log.Logger, walDir string, flushDeadline time.Duration, useWALForRate bool) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -67,6 +69,10 @@ func NewWriteStorage(logger log.Logger, walDir string, flushDeadline time.Durati
 		flushDeadline: flushDeadline,
 		samplesIn:     newEWMARate(ewmaWeight, shardUpdateDuration),
 		walDir:        walDir,
+	}
+	if useWALForRate {
+		rws.walWatcher = NewWALWatcher(logger, "samplesInRate", rws.writeTo(), walDir)
+		rws.walWatcher.Start()
 	}
 	go rws.run()
 	return rws
@@ -148,12 +154,21 @@ func (rws *WriteStorage) Appender() (storage.Appender, error) {
 	}, nil
 }
 
+func (rws *WriteStorage) writeTo() writeTo {
+	return &timestampTracker{
+		remoteWriteStorage: rws,
+	}
+}
+
 // Close closes the RemoteWriteStorage.
 func (rws *WriteStorage) Close() error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
 	for _, q := range rws.queues {
 		q.Stop()
+	}
+	if rws.walWatcher != nil {
+		rws.walWatcher.Stop()
 	}
 	return nil
 }
@@ -192,3 +207,22 @@ func (t *timestampTracker) Commit() error {
 func (*timestampTracker) Rollback() error {
 	return nil
 }
+
+// Append implements writeTo.
+func (t *timestampTracker) Append(samples []tsdb.RefSample) bool {
+	for _, sample := range samples {
+		if sample.T > t.highestTimestamp {
+			t.highestTimestamp = sample.T
+		}
+	}
+	t.remoteWriteStorage.samplesIn.incr(int64(len(samples)))
+	samplesIn.Add(float64(len(samples)))
+	highestTimestamp.Set(float64(t.highestTimestamp / 1000))
+	return true
+}
+
+// StoreSeries implements writeTo.
+func (t *timestampTracker) StoreSeries(_ []tsdb.RefSeries, _ int) {}
+
+// StoreSeries implements writeTo.
+func (t *timestampTracker) SeriesReset(_ int) {}
