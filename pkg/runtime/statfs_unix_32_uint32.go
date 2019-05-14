@@ -13,6 +13,7 @@
 
 // +build 386
 // +build !windows
+// +build !linux
 
 package runtime
 
