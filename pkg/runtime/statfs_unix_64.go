@@ -74,10 +74,10 @@ func Statfs(path string) string {
 	var fs unix.Statfs_t
 	err := unix.Statfs(path, &fs)
 	if err != nil {
-		return strconv.FormatInt(fs.Type, 16)
+		return strconv.FormatInt(int64(fs.Type), 16)
 	}
-	if fsType, ok := fsTypes[fs.Type]; ok {
+	if fsType, ok := fsTypes[int64(fs.Type)]; ok {
 		return fsType
 	}
-	return strconv.FormatInt(fs.Type, 16)
+	return strconv.FormatInt(int64(fs.Type), 16)
 }
