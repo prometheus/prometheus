@@ -12,9 +12,9 @@
 // limitations under the License.
 
 // +build 386
-// +build !windows
 // +build !linux
 // +build !openbsd
+// +build !windows
 
 package runtime
 
@@ -23,7 +23,7 @@ import (
 	"syscall"
 )
 
-// Statfs returns the file system type (linux only)
+// Statfs returns the file system type (Unix only)
 func Statfs(path string) string {
 
 	// Types of file systems that may be returned by `statfs`
