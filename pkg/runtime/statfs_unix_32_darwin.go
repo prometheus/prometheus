@@ -12,6 +12,7 @@
 // limitations under the License.
 
 // +build 386
+// +build darwin
 // +build !windows
 
 package runtime
