@@ -836,8 +836,10 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
-	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
-	// each scrape successful or not.
+	// 1 sample on the first scrape.
+	// 1 stale marker on the second scrape because the server returned an error.
+	// No sample for the third and fourth scrapes.
+	// 5 report samples for each scrape successful or not.
 	if len(appender.result) != 22 {
 		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 22, len(appender.result))
 	}
@@ -898,8 +900,9 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
-	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
-	// each scrape successful or not.
+	// 1 sample on the first scrape.
+	// 1 stale marker on the second scrape because of invalid payload.
+	// 5 report samples for each scrape successful or not.
 	if len(appender.result) != 12 {
 		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 12, len(appender.result))
 	}
@@ -983,8 +986,10 @@ func TestScrapeLoopCache(t *testing.T) {
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
-	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
-	// each scrape successful or not.
+	// 2 samples on the first scrape.
+	// 1 sample and 1 stale marker on the second scrape.
+	// 1 sample for the third scrape.
+	// 5 report samples for each scrape.
 	if len(appender.result) != 20 {
 		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 20, len(appender.result))
 	}

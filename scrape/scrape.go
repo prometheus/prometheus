@@ -975,7 +975,7 @@ mainLoop:
 	close(sl.stopped)
 	select {
 	case <-sl.ctx.Done():
-		// The parent context has been cancelled, don't write stale markers.
+		// The parent context has been canceled, don't write stale markers.
 	default:
 		sl.endOfRunStaleness(last, ticker, interval)
 	}
