@@ -14,7 +14,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -26,14 +29,15 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/oklog/run"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
+	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/web"
+	"golang.org/x/net/netutil"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -42,8 +46,11 @@ func main() {
 		configFile string
 
 		localStoragePath    string
-		web                 web.Options
-		RemoteFlushDeadline model.Duration
+		remoteFlushDeadline model.Duration
+
+		listenAddress  string
+		httpTimeout    model.Duration
+		maxConnections int
 
 		promlogConfig promlog.Config
 	}{
@@ -59,13 +66,20 @@ func main() {
 		Default("prometheus.yml").StringVar(&cfg.configFile)
 
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry.").
-		Default("0.0.0.0:9090").StringVar(&cfg.web.ListenAddress)
+		Default("0.0.0.0:9095").StringVar(&cfg.listenAddress)
+
+	a.Flag("web.read-timeout",
+		"Maximum duration before timing out read of the request, and closing idle connections.").
+		Default("5m").SetValue(&cfg.httpTimeout)
+
+	a.Flag("web.max-connections", "Maximum number of simultaneous connections.").
+		Default("512").IntVar(&cfg.maxConnections)
 
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
-		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
+		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.remoteFlushDeadline)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
@@ -78,7 +92,7 @@ func main() {
 
 	logger := promlog.New(&cfg.promlogConfig)
 
-	remoteWriteStorage := remote.NewWriteStorage(logger, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), true)
+	remoteWriteStorage := remote.NewWriteStorage(logger, cfg.localStoragePath, time.Duration(cfg.remoteFlushDeadline), true)
 
 	// sync.Once is used to make sure we can close the channel at different execution stages(SIGTERM or when the config is loaded).
 	type closeOnce struct {
@@ -170,6 +184,42 @@ func main() {
 			},
 		)
 	}
+	{
+		// Web handler.
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				router := route.New()
+				router.Get("/metrics", promhttp.Handler().ServeHTTP)
+				listener, err := net.Listen("tcp", cfg.listenAddress)
+				if err != nil {
+					return err
+				}
+				listener = netutil.LimitListener(listener, cfg.maxConnections)
+
+				mux := http.NewServeMux()
+				mux.Handle("/", router)
+				httpSrv := &http.Server{
+					Handler: mux,
+				}
+
+				errCh := make(chan error)
+				go func() {
+					errCh <- httpSrv.Serve(listener)
+				}()
+				select {
+				case e := <-errCh:
+					return e
+				case <-cancel:
+					httpSrv.Shutdown(context.Background())
+					return nil
+				}
+			},
+			func(err error) {
+				close(cancel)
+			},
+		)
+	}
 	if err := g.Run(); err != nil {
 		level.Error(logger).Log("err", err)
 		os.Exit(1)
@@ -177,7 +227,7 @@ func main() {
 	level.Info(logger).Log("msg", "See you next time!")
 }
 
-func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config) error) (err error) {
+func reloadConfig(filename string, logger log.Logger, reloader func(*config.Config) error) (err error) {
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
 
 	conf, err := config.LoadFile(filename)
@@ -185,18 +235,10 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 		return errors.Wrapf(err, "couldn't load configuration (--config.file=%q)", filename)
 	}
 
-	failed := false
-	for _, rl := range rls {
-		if err := rl(conf); err != nil {
-			level.Error(logger).Log("msg", "Failed to apply configuration", "err", err)
-			failed = true
-		}
-	}
-	if failed {
-		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
+	if err := reloader(conf); err != nil {
+		level.Error(logger).Log("msg", "Failed to apply configuration", "err", err)
 	}
 
-	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }
