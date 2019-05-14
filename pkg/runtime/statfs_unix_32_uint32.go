@@ -12,8 +12,6 @@
 // limitations under the License.
 
 // +build 386
-// +build darwin
-// +build freebsd
 // +build !windows
 
 package runtime
