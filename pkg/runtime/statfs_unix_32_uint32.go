@@ -13,6 +13,7 @@
 
 // +build 386
 // +build darwin
+// +build freebsd
 // +build !windows
 
 package runtime
