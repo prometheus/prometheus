@@ -17,8 +17,8 @@
 package runtime
 
 import (
-	"golang.org/x/sys/unix"
 	"strconv"
+	"syscall"
 )
 
 // Statfs returns the file system type (linux only)
@@ -71,8 +71,8 @@ func Statfs(path string) string {
 		0x012FD16D: "_XIAFS_SUPER_MAGIC",
 	}
 
-	var fs unix.Statfs_t
-	err := unix.Statfs(path, &fs)
+	var fs syscall.Statfs_t
+	err := syscall.Statfs(path, &fs)
 	if err != nil {
 		return strconv.FormatInt(int64(fs.Type), 16)
 	}
