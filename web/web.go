@@ -500,12 +500,16 @@ func (h *Handler) Run(ctx context.Context) error {
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
-	alerts := h.ruleManager.AlertingRules()
-	alertsSorter := byAlertStateAndNameSorter{alerts: alerts}
-	sort.Sort(alertsSorter)
+
+	var groups []*rules.Group
+	for _, group := range h.ruleManager.RuleGroups() {
+		if group.HasAlertingRules() {
+			groups = append(groups, group)
+		}
+	}
 
 	alertStatus := AlertStatus{
-		AlertingRules: alertsSorter.alerts,
+		Groups: groups,
 		AlertStateToRowClass: map[rules.AlertState]string{
 			rules.StateInactive: "success",
 			rules.StatePending:  "warning",
@@ -927,24 +931,6 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 
 // AlertStatus bundles alerting rules and the mapping of alert states to row classes.
 type AlertStatus struct {
-	AlertingRules        []*rules.AlertingRule
+	Groups               []*rules.Group
 	AlertStateToRowClass map[rules.AlertState]string
-}
-
-type byAlertStateAndNameSorter struct {
-	alerts []*rules.AlertingRule
-}
-
-func (s byAlertStateAndNameSorter) Len() int {
-	return len(s.alerts)
-}
-
-func (s byAlertStateAndNameSorter) Less(i, j int) bool {
-	return s.alerts[i].State() > s.alerts[j].State() ||
-		(s.alerts[i].State() == s.alerts[j].State() &&
-			s.alerts[i].Name() < s.alerts[j].Name())
-}
-
-func (s byAlertStateAndNameSorter) Swap(i, j int) {
-	s.alerts[i], s.alerts[j] = s.alerts[j], s.alerts[i]
 }
