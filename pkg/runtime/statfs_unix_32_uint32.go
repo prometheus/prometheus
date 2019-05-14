@@ -14,6 +14,7 @@
 // +build 386
 // +build !windows
 // +build !linux
+// +build !openbsd
 
 package runtime
 

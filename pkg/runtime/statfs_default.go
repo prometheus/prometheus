@@ -12,10 +12,11 @@
 // limitations under the License.
 
 // +build windows
+// +build openbsd
 
 package runtime
 
 // Statfs returns the file system type (Unix only)
 func Statfs(path string) string {
-	return "windows"
+	return "unknown"
 }

@@ -13,6 +13,7 @@
 
 // +build 386
 // +build !windows
+// +build !openbsd
 // +build linux
 
 package runtime
