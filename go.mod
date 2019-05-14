@@ -93,7 +93,7 @@ require (
 	github.com/stretchr/testify v1.3.0
 	golang.org/x/net v0.0.0-20190311183353-d8887717615a
 	golang.org/x/oauth2 v0.0.0-20190226205417-e64efc72b421
-	golang.org/x/sys v0.0.0-20190222072716-a9d3bda3a223
+	golang.org/x/sys v0.0.0-20190222072716-a9d3bda3a223 // indirect
 	golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
 	golang.org/x/tools v0.0.0-20190312170243-e65039ee4138
 	google.golang.org/api v0.3.2
