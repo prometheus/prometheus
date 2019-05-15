@@ -11,8 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build 386
-// +build freebsd darwin
+// +build 386,darwin 386,freebsd
 
 package runtime
 
