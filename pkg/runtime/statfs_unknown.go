@@ -11,11 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build windows
+// +build openbsd windows netbsd
 
 package runtime
 
 // Statfs returns the file system type (Unix only)
+// syscall.Statfs_t isn't available on openbsd
 func Statfs(path string) string {
 	return "unknown"
 }

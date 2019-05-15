@@ -11,10 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build !windows !openbsd !netbsd
 // +build !386
-// +build !windows
-// +build !openbsd
-// +build !netbsd
 
 package runtime
 
