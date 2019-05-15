@@ -11,7 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !windows,386 !openbsd,386 !darwin,386 !freebsd,386 !netbsd,386
+// +build !windows !openbsd !darwin !freebsd !netbsd
+// +build linux,386
 
 package runtime
 
