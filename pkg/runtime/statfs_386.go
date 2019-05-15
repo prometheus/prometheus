@@ -72,7 +72,7 @@ func Statfs(path string) string {
 	if err != nil {
 		return strconv.Itoa(int(fs.Type))
 	}
-	if fsType, ok := fsTypes[fs.Type]; ok {
+	if fsType, ok := fsTypes[int32(fs.Type)] {
 		return fsType
 	}
 	return strconv.Itoa(int(fs.Type))
