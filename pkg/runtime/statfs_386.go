@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build linux
+// +build 386
 
 package runtime
 
@@ -24,12 +24,11 @@ import (
 func Statfs(path string) string {
 
 	// Types of file systems that may be returned by `statfs`
-	fsTypes := map[int64]string{
+	fsTypes := map[int32]string{
 		0xadf5:     "ADFS_SUPER_MAGIC",
 		0xADFF:     "AFFS_SUPER_MAGIC",
 		0x42465331: "BEFS_SUPER_MAGIC",
 		0x1BADFACE: "BFS_MAGIC",
-		0xFF534D42: "CIFS_MAGIC_NUMBER",
 		0x73757245: "CODA_SUPER_MAGIC",
 		0x012FF7B7: "COH_SUPER_MAGIC",
 		0x28cd3d45: "CRAMFS_MAGIC",
@@ -39,8 +38,6 @@ func Statfs(path string) string {
 		0xEF51:     "EXT2_OLD_SUPER_MAGIC",
 		0xEF53:     "EXT4_SUPER_MAGIC",
 		0x4244:     "HFS_SUPER_MAGIC",
-		0xF995E849: "HPFS_SUPER_MAGIC",
-		0x958458f6: "HUGETLBFS_MAGIC",
 		0x9660:     "ISOFS_SUPER_MAGIC",
 		0x72b6:     "JFFS2_SUPER_MAGIC",
 		0x3153464a: "JFS_SUPER_MAGIC",
@@ -64,7 +61,6 @@ func Statfs(path string) string {
 		0x15013346: "UDF_SUPER_MAGIC",
 		0x00011954: "UFS_MAGIC",
 		0x9fa2:     "USBDEVICE_SUPER_MAGIC",
-		0xa501FCF5: "VXFS_SUPER_MAGIC",
 		0x012FF7B4: "XENIX_SUPER_MAGIC",
 		0x58465342: "XFS_SUPER_MAGIC",
 		0x012FD16D: "_XIAFS_SUPER_MAGIC",
@@ -73,10 +69,10 @@ func Statfs(path string) string {
 	var fs syscall.Statfs_t
 	err := syscall.Statfs(path, &fs)
 	if err != nil {
-		return strconv.FormatInt(int64(fs.Type), 16)
+		return strconv.Itoa(int(fs.Type))
 	}
-	if fsType, ok := fsTypes[int64(fs.Type)]; ok {
+	if fsType, ok := fsTypes[fs.Type]; ok {
 		return fsType
 	}
-	return strconv.FormatInt(int64(fs.Type), 16)
+	return strconv.Itoa(int(fs.Type))
 }
