@@ -12,7 +12,7 @@
 // limitations under the License.
 
 // +build 386
-// +build freebsd
+// +build freebsd darwin
 
 package runtime
 
