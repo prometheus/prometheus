@@ -171,7 +171,7 @@ func main() {
 	a.Flag("web.page-title", "Document title of Prometheus instance.").
 		Default("Prometheus Time Series Collection and Processing Server").StringVar(&cfg.web.PageTitle)
 
-	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Eg. 'https?://(domain1|domain2)\.com'`).
+	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Example: 'https?://(domain1|domain2)\.com'`).
 		Default(".*").StringVar(&cfg.corsRegexString)
 
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
@@ -181,14 +181,14 @@ func main() {
 		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
 
 	a.Flag("storage.tsdb.max-block-duration",
-		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
+		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period.)").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
 	a.Flag("storage.tsdb.wal-segment-size",
-		"Size at which to split the tsdb WAL segment files (e.g. 100MB)").
+		"Size at which to split the tsdb WAL segment files. Example: 100MB").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
 
-	a.Flag("storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead").
+	a.Flag("storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead.").
 		SetValue(&oldFlagRetentionDuration)
 
 	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+".").
@@ -200,7 +200,7 @@ func main() {
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
-	a.Flag("storage.tsdb.allow-overlapping-blocks", "[EXPERIMENTAL] Allow overlapping blocks which in-turn enables vertical compaction and vertical query merge.").
+	a.Flag("storage.tsdb.allow-overlapping-blocks", "[EXPERIMENTAL] Allow overlapping blocks, which in turn enables vertical compaction and vertical query merge.").
 		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
 
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
@@ -212,10 +212,10 @@ func main() {
 	a.Flag("storage.remote.read-concurrent-limit", "Maximum number of concurrent remote read calls. 0 means no limit.").
 		Default("10").IntVar(&cfg.web.RemoteReadConcurrencyLimit)
 
-	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring 'for' state of alert.").
+	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"for\" state of alert.").
 		Default("1h").SetValue(&cfg.outageTolerance)
 
-	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored 'for' state. This is maintained only for alerts with configured 'for' time greater than grace period.").
+	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored \"for\" state. This is maintained only for alerts with configured \"for\" time greater than grace period.").
 		Default("10m").SetValue(&cfg.forGracePeriod)
 
 	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
@@ -227,7 +227,7 @@ func main() {
 	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager.").
 		Default("10s").SetValue(&cfg.notifierTimeout)
 
-	a.Flag("query.lookback-delta", "The delta difference allowed for retrieving metrics during expression evaluations.").
+	a.Flag("query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations.").
 		Default("5m").SetValue(&cfg.lookbackDelta)
 
 	a.Flag("query.timeout", "Maximum time a query may take before being aborted.").
@@ -235,7 +235,8 @@ func main() {
 
 	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
 		Default("20").IntVar(&cfg.queryConcurrency)
-	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they would load more samples than this into memory, so this also limits the number of samples a query can return.").
+
+	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
