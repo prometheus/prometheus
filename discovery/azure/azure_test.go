@@ -14,11 +14,22 @@
 package azure
 
 import (
+	"reflect"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-12-01/compute"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+)
+
+var (
+	provisioningStatusCode      = "ProvisioningState/succeeded"
+	provisionDisplayStatus      = "Provisioning succeeded"
+	powerStatusCodeRunning      = "PowerState/running"
+	powerStatusCodeDeallocating = "PowerState/deallocating"
+	powerStatusCodeDeallocated  = "PowerState/deallocated"
+	powerStatusCodeEmpty        = ""
+	powerDisplayStatusRunning   = "VM running"
 )
 
 func TestMain(m *testing.M) {
@@ -44,6 +55,20 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 			},
 		},
 		NetworkProfile: &networkProfile,
+		InstanceView: &compute.VirtualMachineInstanceView{
+			Statuses: &[]compute.InstanceViewStatus{
+				{
+					Code:          &provisioningStatusCode,
+					Level:         "Info",
+					DisplayStatus: &provisionDisplayStatus,
+				},
+				{
+					Code:          &powerStatusCodeRunning,
+					Level:         "Info",
+					DisplayStatus: &powerDisplayStatusRunning,
+				},
+			},
+		},
 	}
 
 	testVM := compute.VirtualMachine{
@@ -55,20 +80,25 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 		VirtualMachineProperties: properties,
 	}
 
+	azres := &azureResource{
+		ID: id,
+	}
+
 	expectedVM := virtualMachine{
-		ID:                id,
+		Resource:          azres,
 		Name:              name,
 		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
-		Tags:              map[string]*string{},
-		NetworkInterfaces: []string{},
+		Tags:              nil,
+		NetworkInterfaces: nil,
+		PowerState:        "unknown",
 	}
 
-	actualVM := mapFromVM(testVM)
+	actualVM := mapFromVM(testVM, azres, nil)
 
-	require.Equal(t, expectedVM, actualVM)
+	require.Equal(t, expectedVM, *actualVM)
 }
 
 func TestMapFromVMWithTags(t *testing.T) {
@@ -93,6 +123,20 @@ func TestMapFromVMWithTags(t *testing.T) {
 			},
 		},
 		NetworkProfile: &networkProfile,
+		InstanceView: &compute.VirtualMachineInstanceView{
+			Statuses: &[]compute.InstanceViewStatus{
+				{
+					Code:          &provisioningStatusCode,
+					Level:         "Info",
+					DisplayStatus: &provisionDisplayStatus,
+				},
+				{
+					Code:          &powerStatusCodeRunning,
+					Level:         "Info",
+					DisplayStatus: &powerDisplayStatusRunning,
+				},
+			},
+		},
 	}
 
 	testVM := compute.VirtualMachine{
@@ -104,20 +148,25 @@ func TestMapFromVMWithTags(t *testing.T) {
 		VirtualMachineProperties: properties,
 	}
 
+	azres := &azureResource{
+		ID: id,
+	}
+
 	expectedVM := virtualMachine{
-		ID:                id,
+		Resource:          azres,
 		Name:              name,
 		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
 		Tags:              tags,
-		NetworkInterfaces: []string{},
+		NetworkInterfaces: nil,
+		PowerState:        "unknown",
 	}
 
-	actualVM := mapFromVM(testVM)
+	actualVM := mapFromVM(testVM, azres, nil)
 
-	require.Equal(t, expectedVM, actualVM)
+	require.Equal(t, expectedVM, *actualVM)
 }
 
 func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
@@ -139,6 +188,20 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 			},
 		},
 		NetworkProfile: &networkProfile,
+		InstanceView: &compute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: &[]compute.InstanceViewStatus{
+				{
+					Code:          &provisioningStatusCode,
+					Level:         "Info",
+					DisplayStatus: &provisionDisplayStatus,
+				},
+				{
+					Code:          &powerStatusCodeRunning,
+					Level:         "Info",
+					DisplayStatus: &powerDisplayStatusRunning,
+				},
+			},
+		},
 	}
 
 	testVM := compute.VirtualMachineScaleSetVM{
@@ -151,21 +214,27 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	}
 
 	scaleSet := "testSet"
+
+	azres := &azureResource{
+		ID: id,
+	}
+
 	expectedVM := virtualMachine{
-		ID:                id,
+		Resource:          azres,
 		Name:              name,
 		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
-		Tags:              map[string]*string{},
+		Tags:              nil,
 		NetworkInterfaces: []string{},
 		ScaleSet:          scaleSet,
+		PowerState:        "running",
 	}
 
-	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
+	actualVM := mapFromVMScaleSetVM(testVM, scaleSet, azres)
 
-	require.Equal(t, expectedVM, actualVM)
+	require.Equal(t, expectedVM, *actualVM)
 }
 
 func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
@@ -190,6 +259,20 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 			},
 		},
 		NetworkProfile: &networkProfile,
+		InstanceView: &compute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: &[]compute.InstanceViewStatus{
+				{
+					Code:          &provisioningStatusCode,
+					Level:         "Info",
+					DisplayStatus: &provisionDisplayStatus,
+				},
+				{
+					Code:          &powerStatusCodeRunning,
+					Level:         "Info",
+					DisplayStatus: &powerDisplayStatusRunning,
+				},
+			},
+		},
 	}
 
 	testVM := compute.VirtualMachineScaleSetVM{
@@ -202,8 +285,13 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 	}
 
 	scaleSet := "testSet"
+
+	azres := &azureResource{
+		ID: id,
+	}
+
 	expectedVM := virtualMachine{
-		ID:                id,
+		Resource:          azres,
 		Name:              name,
 		ComputerName:      computerName,
 		Type:              vmType,
@@ -212,28 +300,91 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		Tags:              tags,
 		NetworkInterfaces: []string{},
 		ScaleSet:          scaleSet,
+		PowerState:        "running",
 	}
 
-	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
+	actualVM := mapFromVMScaleSetVM(testVM, scaleSet, azres)
 
-	require.Equal(t, expectedVM, actualVM)
+	require.Equal(t, expectedVM, *actualVM)
 }
 
 func TestNewAzureResourceFromID(t *testing.T) {
 	for _, tc := range []struct {
 		id       string
-		expected azureResource
+		expected *azureResource
 	}{
 		{
-			id:       "/a/b/c/group/d/e/f/name",
-			expected: azureResource{"name", "group"},
+			id: "/a/b/c/group/d/e/f/name",
+			expected: &azureResource{
+				ID:    "/a/b/c/group/d/e/f/name",
+				Group: "group",
+				Name:  "name",
+			},
 		},
 		{
-			id:       "/a/b/c/group/d/e/f/name/g/h",
-			expected: azureResource{"name", "group"},
+			id: "/a/b/c/group/d/e/f/name/g/subname",
+			expected: &azureResource{
+				ID:      "/a/b/c/group/d/e/f/name/g/subname",
+				Group:   "group",
+				Name:    "name",
+				Subname: "subname",
+			},
 		},
 	} {
-		actual, _ := newAzureResourceFromID(tc.id, nil)
+		actual, _ := newAzureResourceFromID(tc.id)
 		require.Equal(t, tc.expected, actual)
+	}
+}
+
+func TestGetPowerStatusFromVM(t *testing.T) {
+	tests := []struct {
+		statuses   *[]compute.InstanceViewStatus
+		powerstate string
+	}{
+		{
+			&[]compute.InstanceViewStatus{
+				{Code: &provisioningStatusCode},
+				{Code: &powerStatusCodeRunning},
+			},
+			"running",
+		},
+		{
+			&[]compute.InstanceViewStatus{
+				{Code: &provisioningStatusCode},
+				{Code: &powerStatusCodeDeallocating},
+			},
+			"deallocating",
+		},
+		{
+			&[]compute.InstanceViewStatus{
+				{Code: &powerStatusCodeDeallocated},
+				{Code: &provisioningStatusCode},
+			},
+			powerStateDeallocated,
+		},
+		{
+			&[]compute.InstanceViewStatus{
+				{Code: &provisioningStatusCode},
+			},
+			powerStateUnknown,
+		},
+		{
+			&[]compute.InstanceViewStatus{
+				{Code: &powerStatusCodeEmpty},
+				{Code: &provisioningStatusCode},
+			},
+			powerStateUnknown,
+		},
+		{
+			nil,
+			powerStateUnknown,
+		},
+	}
+
+	for _, tc := range tests {
+		powerstate := getPowerState(tc.statuses)
+		if !reflect.DeepEqual(tc.powerstate, powerstate) {
+			t.Errorf("PowerState: expected %v, got: %v", tc.powerstate, powerstate)
+		}
 	}
 }
