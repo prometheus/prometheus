@@ -15,6 +15,7 @@
 // +build !openbsd
 // +build !darwin
 // +build !freebsd
+// +build !netbsd
 // +build 386
 
 package runtime
