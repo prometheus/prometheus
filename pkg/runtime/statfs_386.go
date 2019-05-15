@@ -12,6 +12,7 @@
 // limitations under the License.
 
 // +build !windows
+// +build !openbsd
 // +build !darwin
 // +build !freebsd
 // +build 386
