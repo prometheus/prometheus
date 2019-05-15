@@ -109,6 +109,7 @@ func main() {
 			close(reloadReady.C)
 		})
 	}
+	reload := make(chan chan error)
 
 	var g run.Group
 	{
@@ -149,11 +150,12 @@ func main() {
 						if err := reloadConfig(cfg.configFile, logger, remoteWriteStorage.ApplyConfig); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						}
+					case errChan := <-reload:
+						errChan <- reloadConfig(cfg.configFile, logger, remoteWriteStorage.ApplyConfig)
 					case <-cancel:
 						return nil
 					}
 				}
-
 			},
 			func(err error) {
 				// Wait for any in-progress reloads to complete to avoid
@@ -191,6 +193,9 @@ func main() {
 			func() error {
 				router := route.New()
 				router.Get("/metrics", promhttp.Handler().ServeHTTP)
+				reloadHandler := reloadConfigHandler(reload)
+				router.Post("/-/reload", reloadHandler)
+				router.Put("/-/reload", reloadHandler)
 				listener, err := net.Listen("tcp", cfg.listenAddress)
 				if err != nil {
 					return err
@@ -241,4 +246,15 @@ func reloadConfig(filename string, logger log.Logger, reloader func(*config.Conf
 
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
+}
+
+func reloadConfigHandler(reloadCh chan chan error) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		rc := make(chan error)
+		reloadCh <- rc
+		if err := <-rc; err != nil {
+			http.Error(w, fmt.Sprintf("failed to reload config: %s", err), http.StatusInternalServerError)
+			return
+		}
+	}
 }
