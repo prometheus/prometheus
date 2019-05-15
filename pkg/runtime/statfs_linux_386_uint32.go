@@ -12,9 +12,7 @@
 // limitations under the License.
 
 // +build 386
-// +build linux
-// +build !windows
-// +build !openbsd
+// +build freebsd
 
 package runtime
 
@@ -27,7 +25,7 @@ import (
 func Statfs(path string) string {
 
 	// Types of file systems that may be returned by `statfs`
-	fsTypes := map[int32]string{
+	fsTypes := map[uint32]string{
 		0xadf5:     "ADFS_SUPER_MAGIC",
 		0xADFF:     "AFFS_SUPER_MAGIC",
 		0x42465331: "BEFS_SUPER_MAGIC",
