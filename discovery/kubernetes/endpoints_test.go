@@ -25,6 +25,7 @@ import (
 )
 
 func makeEndpoints() *v1.Endpoints {
+	var nodeName = "foobar"
 	return &v1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
@@ -34,7 +35,9 @@ func makeEndpoints() *v1.Endpoints {
 			{
 				Addresses: []v1.EndpointAddress{
 					{
-						IP: "1.2.3.4",
+						IP:       "1.2.3.4",
+						Hostname: "testendpoint1",
+						NodeName: &nodeName,
 					},
 				},
 				Ports: []v1.EndpointPort{
@@ -83,6 +86,8 @@ func TestEndpointsDiscoveryBeforeRun(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__address__":                              "1.2.3.4:9000",
+						"__meta_kubernetes_endpoint_hostname":      "testendpoint1",
+						"__meta_kubernetes_endpoint_node_name":     "foobar",
 						"__meta_kubernetes_endpoint_port_name":     "testport",
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "true",
@@ -369,6 +374,8 @@ func TestEndpointsDiscoveryWithService(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__address__":                              "1.2.3.4:9000",
+						"__meta_kubernetes_endpoint_hostname":      "testendpoint1",
+						"__meta_kubernetes_endpoint_node_name":     "foobar",
 						"__meta_kubernetes_endpoint_port_name":     "testport",
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "true",
@@ -435,6 +442,8 @@ func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__address__":                              "1.2.3.4:9000",
+						"__meta_kubernetes_endpoint_hostname":      "testendpoint1",
+						"__meta_kubernetes_endpoint_node_name":     "foobar",
 						"__meta_kubernetes_endpoint_port_name":     "testport",
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "true",
@@ -545,6 +554,8 @@ func TestEndpointsDiscoveryNamespaces(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__address__":                              "1.2.3.4:9000",
+						"__meta_kubernetes_endpoint_hostname":      "testendpoint1",
+						"__meta_kubernetes_endpoint_node_name":     "foobar",
 						"__meta_kubernetes_endpoint_port_name":     "testport",
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "true",
