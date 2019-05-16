@@ -192,6 +192,8 @@ func endpointsSourceFromNamespaceAndName(namespace, name string) string {
 
 const (
 	endpointsNameLabel             = metaLabelPrefix + "endpoints_name"
+	endpointNodeName               = metaLabelPrefix + "endpoint_node_name"
+	endpointHostname               = metaLabelPrefix + "endpoint_hostname"
 	endpointReadyLabel             = metaLabelPrefix + "endpoint_ready"
 	endpointPortNameLabel          = metaLabelPrefix + "endpoint_port_name"
 	endpointPortProtocolLabel      = metaLabelPrefix + "endpoint_port_protocol"
@@ -228,6 +230,13 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		if addr.TargetRef != nil {
 			target[model.LabelName(endpointAddressTargetKindLabel)] = lv(addr.TargetRef.Kind)
 			target[model.LabelName(endpointAddressTargetNameLabel)] = lv(addr.TargetRef.Name)
+		}
+
+		if addr.NodeName != nil {
+			target[model.LabelName(endpointNodeName)] = lv(*addr.NodeName)
+		}
+		if addr.Hostname != "" {
+			target[model.LabelName(endpointHostname)] = lv(addr.Hostname)
 		}
 
 		pod := e.resolvePodRef(addr.TargetRef)

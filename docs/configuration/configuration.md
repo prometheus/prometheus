@@ -778,6 +778,8 @@ Available meta labels:
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
 * For all targets discovered directly from the endpoints list (those not additionally inferred
   from underlying pods), the following labels are attached:
+  * `__meta_kubernetes_endpoint_hostname`: Hostname of the endpoint.
+  * `__meta_kubernetes_endpoint_node_name`: Name of the node hosting the endpoint.
   * `__meta_kubernetes_endpoint_ready`: Set to `true` or `false` for the endpoint's ready state.
   * `__meta_kubernetes_endpoint_port_name`: Name of the endpoint port.
   * `__meta_kubernetes_endpoint_port_protocol`: Protocol of the endpoint port.
