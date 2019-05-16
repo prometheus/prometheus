@@ -116,12 +116,19 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 // applyRemoteWriteConfig applies the remote write config only if the config has changed.
 // The caller must hold the lock on s.mtx.
 func (s *Storage) applyRemoteWriteConfig(conf *config.Config) error {
+	// Remote write queues only need to change if the remote write config or
+	// external labels change. Hash these together and only reload if the hash
+	// changes.
 	cfgBytes, err := json.Marshal(conf.RemoteWriteConfigs)
 	if err != nil {
 		return err
 	}
+	externalLabelBytes, err := json.Marshal(conf.GlobalConfig.ExternalLabels)
+	if err != nil {
+		return err
+	}
 
-	hash := md5.Sum(cfgBytes)
+	hash := md5.Sum(append(cfgBytes, externalLabelBytes...))
 	if hash == s.configHash {
 		level.Debug(s.logger).Log("msg", "remote write config has not changed, no need to restart QueueManagers")
 		return nil
