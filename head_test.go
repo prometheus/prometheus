@@ -114,6 +114,9 @@ func TestHead_ReadWAL(t *testing.T) {
 			{Ref: 10, T: 101, V: 5},
 			{Ref: 50, T: 101, V: 6},
 		},
+		[]Stone{
+			{ref: 0, intervals: []Interval{{Mint: 99, Maxt: 101}}},
+		},
 	}
 	dir, err := ioutil.TempDir("", "test_read_wal")
 	testutil.Ok(t, err)

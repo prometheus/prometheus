@@ -421,6 +421,10 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 					if itv.Maxt < h.minValidTime {
 						continue
 					}
+					if m := h.series.getByID(s.ref); m == nil {
+						unknownRefs++
+						continue
+					}
 					allStones.addInterval(s.ref, itv)
 				}
 			}
