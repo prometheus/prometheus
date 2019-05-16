@@ -181,6 +181,9 @@ metadata:
 spec:
   securityContext:
     runAsUser: 0
+  containers:
+    - name: prometheus
+      image: quay.io/prometheus/prometheus
 ...
 ```
 
