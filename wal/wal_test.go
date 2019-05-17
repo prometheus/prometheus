@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/tsdb/testutil"
 )
 
@@ -316,6 +317,35 @@ func TestClose(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Ok(t, w.Close())
 	testutil.NotOk(t, w.Close())
+}
+
+func TestSegmentMetric(t *testing.T) {
+	var (
+		segmentSize = pageSize
+		recordSize  = (pageSize / 2) - recordHeaderSize
+	)
+
+	dir, err := ioutil.TempDir("", "segment_metric")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	w, err := NewSize(nil, nil, dir, segmentSize)
+	testutil.Ok(t, err)
+
+	initialSegment := client_testutil.ToFloat64(w.currentSegment)
+
+	// Write 3 records, each of which is half the segment size, meaning we should rotate to the next segment.
+	for i := 0; i < 3; i++ {
+		buf := make([]byte, recordSize)
+		_, err := rand.Read(buf)
+		testutil.Ok(t, err)
+
+		err = w.Log(buf)
+		testutil.Ok(t, err)
+	}
+	testutil.Assert(t, client_testutil.ToFloat64(w.currentSegment) == initialSegment+1, "segment metric did not increment after segment rotation")
+	testutil.Ok(t, w.Close())
 }
 
 func BenchmarkWAL_LogBatched(b *testing.B) {

@@ -171,6 +171,7 @@ type WAL struct {
 	pageCompletions prometheus.Counter
 	truncateFail    prometheus.Counter
 	truncateTotal   prometheus.Counter
+	currentSegment  prometheus.Gauge
 }
 
 // New returns a new WAL over the given directory.
@@ -218,8 +219,12 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		Name: "prometheus_tsdb_wal_truncations_total",
 		Help: "Total number of WAL truncations attempted.",
 	})
+	w.currentSegment = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_wal_segment_current",
+		Help: "WAL segment index that TSDB is currently writing to.",
+	})
 	if reg != nil {
-		reg.MustRegister(w.fsyncDuration, w.pageFlushes, w.pageCompletions, w.truncateFail, w.truncateTotal)
+		reg.MustRegister(w.fsyncDuration, w.pageFlushes, w.pageCompletions, w.truncateFail, w.truncateTotal, w.currentSegment)
 	}
 
 	_, j, err := w.Segments()
@@ -413,7 +418,7 @@ func (w *WAL) setSegment(segment *Segment) error {
 		return err
 	}
 	w.donePages = int(stat.Size() / pageSize)
-
+	w.currentSegment.Set(float64(segment.Index()))
 	return nil
 }
 
