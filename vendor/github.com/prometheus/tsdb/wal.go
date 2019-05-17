@@ -338,6 +338,12 @@ func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 	if err != nil {
 		return errors.Wrap(err, "create compaction segment")
 	}
+	defer func() {
+		if err := os.RemoveAll(f.Name()); err != nil {
+			level.Error(w.logger).Log("msg", "remove tmp file", "err", err.Error())
+		}
+	}()
+
 	var (
 		csf          = newSegmentFile(f)
 		crc32        = newCRC32()
@@ -389,7 +395,7 @@ func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 	csf.Close()
 
 	candidates[0].Close() // need close before remove on platform windows
-	if err := renameFile(csf.Name(), candidates[0].Name()); err != nil {
+	if err := fileutil.Replace(csf.Name(), candidates[0].Name()); err != nil {
 		return errors.Wrap(err, "rename compaction segment")
 	}
 	for _, f := range candidates[1:] {

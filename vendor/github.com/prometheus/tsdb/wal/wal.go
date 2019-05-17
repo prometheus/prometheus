@@ -159,9 +159,9 @@ type WAL struct {
 	logger      log.Logger
 	segmentSize int
 	mtx         sync.RWMutex
-	segment     *Segment // active segment
-	donePages   int      // pages written to the segment
-	page        *page    // active page
+	segment     *Segment // Active segment.
+	donePages   int      // Pages written to the segment.
+	page        *page    // Active page.
 	stopc       chan chan struct{}
 	actorc      chan func()
 	closed      bool // To allow calling Close() more than once without blocking.
@@ -171,6 +171,7 @@ type WAL struct {
 	pageCompletions prometheus.Counter
 	truncateFail    prometheus.Counter
 	truncateTotal   prometheus.Counter
+	currentSegment  prometheus.Gauge
 }
 
 // New returns a new WAL over the given directory.
@@ -218,8 +219,12 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		Name: "prometheus_tsdb_wal_truncations_total",
 		Help: "Total number of WAL truncations attempted.",
 	})
+	w.currentSegment = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_wal_segment_current",
+		Help: "WAL segment index that TSDB is currently writing to.",
+	})
 	if reg != nil {
-		reg.MustRegister(w.fsyncDuration, w.pageFlushes, w.pageCompletions, w.truncateFail, w.truncateTotal)
+		reg.MustRegister(w.fsyncDuration, w.pageFlushes, w.pageCompletions, w.truncateFail, w.truncateTotal, w.currentSegment)
 	}
 
 	_, j, err := w.Segments()
@@ -413,7 +418,7 @@ func (w *WAL) setSegment(segment *Segment) error {
 		return err
 	}
 	w.donePages = int(stat.Size() / pageSize)
-
+	w.currentSegment.Set(float64(segment.Index()))
 	return nil
 }
 
@@ -426,10 +431,10 @@ func (w *WAL) flushPage(clear bool) error {
 	p := w.page
 	clear = clear || p.full()
 
-	// No more data will fit into the page. Enqueue and clear it.
+	// No more data will fit into the page or an implicit clear.
+	// Enqueue and clear it.
 	if clear {
 		p.alloc = pageSize // Write till end of page.
-		w.pageCompletions.Inc()
 	}
 	n, err := w.segment.Write(p.buf[p.flushed:p.alloc])
 	if err != nil {
@@ -445,6 +450,7 @@ func (w *WAL) flushPage(clear bool) error {
 		p.alloc = 0
 		p.flushed = 0
 		w.donePages++
+		w.pageCompletions.Inc()
 	}
 	return nil
 }
@@ -495,10 +501,18 @@ func (w *WAL) Log(recs ...[]byte) error {
 	return nil
 }
 
-// log writes rec to the log and forces a flush of the current page if its
-// the final record of a batch, the record is bigger than the page size or
-// the current page is full.
+// log writes rec to the log and forces a flush of the current page if:
+// - the final record of a batch
+// - the record is bigger than the page size
+// - the current page is full.
 func (w *WAL) log(rec []byte, final bool) error {
+	// When the last page flush failed the page will remain full.
+	// When the page is full, need to flush it before trying to add more records to it.
+	if w.page.full() {
+		if err := w.flushPage(true); err != nil {
+			return err
+		}
+	}
 	// If the record is too big to fit within the active page in the current
 	// segment, terminate the active segment and advance to the next one.
 	// This ensures that records do not cross segment boundaries.
@@ -606,7 +620,7 @@ func (w *WAL) Close() (err error) {
 	defer w.mtx.Unlock()
 
 	if w.closed {
-		return nil
+		return errors.New("wal already closed")
 	}
 
 	// Flush the last page and zero out all its remaining size.

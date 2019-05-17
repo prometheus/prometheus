@@ -44,7 +44,7 @@ type MDStat struct {
 
 // ParseMDStat parses an mdstat-file and returns a struct with the relevant infos.
 func (fs FS) ParseMDStat() (mdstates []MDStat, err error) {
-	mdStatusFilePath := fs.Path("mdstat")
+	mdStatusFilePath := fs.proc.Path("mdstat")
 	content, err := ioutil.ReadFile(mdStatusFilePath)
 	if err != nil {
 		return []MDStat{}, fmt.Errorf("error parsing %s: %s", mdStatusFilePath, err)

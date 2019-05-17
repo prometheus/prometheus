@@ -127,9 +127,10 @@ type SummaryOpts struct {
 	// its zero value (i.e. nil). To create a Summary without Objectives,
 	// set it to an empty map (i.e. map[float64]float64{}).
 	//
-	// Deprecated: Note that the current value of DefObjectives is
-	// deprecated. It will be replaced by an empty map in v0.10 of the
-	// library. Please explicitly set Objectives to the desired value.
+	// Note that the current value of DefObjectives is deprecated. It will
+	// be replaced by an empty map in v0.10 of the library. Please
+	// explicitly set Objectives to the desired value to avoid problems
+	// during the transition.
 	Objectives map[float64]float64
 
 	// MaxAge defines the duration for which an observation stays relevant
@@ -405,18 +406,21 @@ type summaryCounts struct {
 }
 
 type noObjectivesSummary struct {
-	// countAndHotIdx is a complicated one. For lock-free yet atomic
-	// observations, we need to save the total count of observations again,
-	// combined with the index of the currently-hot counts struct, so that
-	// we can perform the operation on both values atomically. The least
-	// significant bit defines the hot counts struct. The remaining 63 bits
-	// represent the total count of observations. This happens under the
-	// assumption that the 63bit count will never overflow. Rationale: An
-	// observations takes about 30ns. Let's assume it could happen in
-	// 10ns. Overflowing the counter will then take at least (2^63)*10ns,
-	// which is about 3000 years.
+	// countAndHotIdx enables lock-free writes with use of atomic updates.
+	// The most significant bit is the hot index [0 or 1] of the count field
+	// below. Observe calls update the hot one. All remaining bits count the
+	// number of Observe calls. Observe starts by incrementing this counter,
+	// and finish by incrementing the count field in the respective
+	// summaryCounts, as a marker for completion.
 	//
-	// This has to be first in the struct for 64bit alignment. See
+	// Calls of the Write method (which are non-mutating reads from the
+	// perspective of the summary) swap the hot–cold under the writeMtx
+	// lock. A cooldown is awaited (while locked) by comparing the number of
+	// observations with the initiation count. Once they match, then the
+	// last observation on the now cool one has completed. All cool fields must
+	// be merged into the new hot before releasing writeMtx.
+
+	// Fields with atomic access first! See alignment constraint:
 	// http://golang.org/pkg/sync/atomic/#pkg-note-BUG
 	countAndHotIdx uint64
 
@@ -429,7 +433,6 @@ type noObjectivesSummary struct {
 	// pointers to guarantee 64bit alignment of the histogramCounts, see
 	// http://golang.org/pkg/sync/atomic/#pkg-note-BUG.
 	counts [2]*summaryCounts
-	hotIdx int // Index of currently-hot counts. Only used within Write.
 
 	labelPairs []*dto.LabelPair
 }
@@ -439,11 +442,11 @@ func (s *noObjectivesSummary) Desc() *Desc {
 }
 
 func (s *noObjectivesSummary) Observe(v float64) {
-	// We increment s.countAndHotIdx by 2 so that the counter in the upper
-	// 63 bits gets incremented by 1. At the same time, we get the new value
+	// We increment h.countAndHotIdx so that the counter in the lower
+	// 63 bits gets incremented. At the same time, we get the new value
 	// back, which we can use to find the currently-hot counts.
-	n := atomic.AddUint64(&s.countAndHotIdx, 2)
-	hotCounts := s.counts[n%2]
+	n := atomic.AddUint64(&s.countAndHotIdx, 1)
+	hotCounts := s.counts[n>>63]
 
 	for {
 		oldBits := atomic.LoadUint64(&hotCounts.sumBits)
@@ -458,61 +461,33 @@ func (s *noObjectivesSummary) Observe(v float64) {
 }
 
 func (s *noObjectivesSummary) Write(out *dto.Metric) error {
-	var (
-		sum                   = &dto.Summary{}
-		hotCounts, coldCounts *summaryCounts
-		count                 uint64
-	)
-
-	// For simplicity, we mutex the rest of this method. It is not in the
-	// hot path, i.e.  Observe is called much more often than Write. The
-	// complication of making Write lock-free isn't worth it.
+	// For simplicity, we protect this whole method by a mutex. It is not in
+	// the hot path, i.e. Observe is called much more often than Write. The
+	// complication of making Write lock-free isn't worth it, if possible at
+	// all.
 	s.writeMtx.Lock()
 	defer s.writeMtx.Unlock()
 
-	// This is a bit arcane, which is why the following spells out this if
-	// clause in English:
-	//
-	// If the currently-hot counts struct is #0, we atomically increment
-	// s.countAndHotIdx by 1 so that from now on Observe will use the counts
-	// struct #1. Furthermore, the atomic increment gives us the new value,
-	// which, in its most significant 63 bits, tells us the count of
-	// observations done so far up to and including currently ongoing
-	// observations still using the counts struct just changed from hot to
-	// cold. To have a normal uint64 for the count, we bitshift by 1 and
-	// save the result in count. We also set s.hotIdx to 1 for the next
-	// Write call, and we will refer to counts #1 as hotCounts and to counts
-	// #0 as coldCounts.
-	//
-	// If the currently-hot counts struct is #1, we do the corresponding
-	// things the other way round. We have to _decrement_ s.countAndHotIdx
-	// (which is a bit arcane in itself, as we have to express -1 with an
-	// unsigned int...).
-	if s.hotIdx == 0 {
-		count = atomic.AddUint64(&s.countAndHotIdx, 1) >> 1
-		s.hotIdx = 1
-		hotCounts = s.counts[1]
-		coldCounts = s.counts[0]
-	} else {
-		count = atomic.AddUint64(&s.countAndHotIdx, ^uint64(0)) >> 1 // Decrement.
-		s.hotIdx = 0
-		hotCounts = s.counts[0]
-		coldCounts = s.counts[1]
-	}
+	// Adding 1<<63 switches the hot index (from 0 to 1 or from 1 to 0)
+	// without touching the count bits. See the struct comments for a full
+	// description of the algorithm.
+	n := atomic.AddUint64(&s.countAndHotIdx, 1<<63)
+	// count is contained unchanged in the lower 63 bits.
+	count := n & ((1 << 63) - 1)
+	// The most significant bit tells us which counts is hot. The complement
+	// is thus the cold one.
+	hotCounts := s.counts[n>>63]
+	coldCounts := s.counts[(^n)>>63]
 
-	// Now we have to wait for the now-declared-cold counts to actually cool
-	// down, i.e. wait for all observations still using it to finish. That's
-	// the case once the count in the cold counts struct is the same as the
-	// one atomically retrieved from the upper 63bits of s.countAndHotIdx.
-	for {
-		if count == atomic.LoadUint64(&coldCounts.count) {
-			break
-		}
+	// Await cooldown.
+	for count != atomic.LoadUint64(&coldCounts.count) {
 		runtime.Gosched() // Let observations get work done.
 	}
 
-	sum.SampleCount = proto.Uint64(count)
-	sum.SampleSum = proto.Float64(math.Float64frombits(atomic.LoadUint64(&coldCounts.sumBits)))
+	sum := &dto.Summary{
+		SampleCount: proto.Uint64(count),
+		SampleSum:   proto.Float64(math.Float64frombits(atomic.LoadUint64(&coldCounts.sumBits))),
+	}
 
 	out.Summary = sum
 	out.Label = s.labelPairs

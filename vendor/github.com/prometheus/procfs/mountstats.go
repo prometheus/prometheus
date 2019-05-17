@@ -69,6 +69,8 @@ type MountStats interface {
 type MountStatsNFS struct {
 	// The version of statistics provided.
 	StatVersion string
+	// The optional mountaddr of the NFS mount.
+	MountAddress string
 	// The age of the NFS mount.
 	Age time.Duration
 	// Statistics related to byte counters for various operations.
@@ -317,6 +319,7 @@ func parseMount(ss []string) (*Mount, error) {
 func parseMountStatsNFS(s *bufio.Scanner, statVersion string) (*MountStatsNFS, error) {
 	// Field indicators for parsing specific types of data
 	const (
+		fieldOpts       = "opts:"
 		fieldAge        = "age:"
 		fieldBytes      = "bytes:"
 		fieldEvents     = "events:"
@@ -338,6 +341,13 @@ func parseMountStatsNFS(s *bufio.Scanner, statVersion string) (*MountStatsNFS, e
 		}
 
 		switch ss[0] {
+		case fieldOpts:
+			for _, opt := range strings.Split(ss[1], ",") {
+				split := strings.Split(opt, "=")
+				if len(split) == 2 && split[0] == "mountaddr" {
+					stats.MountAddress = split[1]
+				}
+			}
 		case fieldAge:
 			// Age integer is in seconds
 			d, err := time.ParseDuration(ss[1] + "s")

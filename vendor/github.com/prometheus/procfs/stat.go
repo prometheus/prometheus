@@ -153,7 +153,7 @@ func parseSoftIRQStat(line string) (SoftIRQStat, uint64, error) {
 func (fs FS) NewStat() (Stat, error) {
 	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
 
-	f, err := os.Open(fs.Path("stat"))
+	f, err := os.Open(fs.proc.Path("stat"))
 	if err != nil {
 		return Stat{}, err
 	}

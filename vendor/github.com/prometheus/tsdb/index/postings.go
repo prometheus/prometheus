@@ -404,7 +404,6 @@ func (h *postingsHeap) Pop() interface{} {
 type mergedPostings struct {
 	h          postingsHeap
 	initilized bool
-	heaped     bool
 	cur        uint64
 	err        error
 }
@@ -434,12 +433,9 @@ func (it *mergedPostings) Next() bool {
 		return false
 	}
 
-	if !it.heaped {
-		heap.Init(&it.h)
-		it.heaped = true
-	}
 	// The user must issue an initial Next.
 	if !it.initilized {
+		heap.Init(&it.h)
 		it.cur = it.h[0].At()
 		it.initilized = true
 		return true
@@ -477,33 +473,24 @@ func (it *mergedPostings) Seek(id uint64) bool {
 			return false
 		}
 	}
-	if it.cur >= id {
-		return true
-	}
-	// Heapifying when there is lots of Seeks is inefficient,
-	// mark to be re-heapified on the Next() call.
-	it.heaped = false
-	lowest := ^uint64(0)
-	n := 0
-	for _, i := range it.h {
-		if i.Seek(id) {
-			it.h[n] = i
-			n++
-			if i.At() < lowest {
-				lowest = i.At()
-			}
-		} else {
-			if i.Err() != nil {
-				it.err = i.Err()
+	for it.cur < id {
+		cur := it.h[0]
+		if !cur.Seek(id) {
+			heap.Pop(&it.h)
+			if cur.Err() != nil {
+				it.err = cur.Err()
 				return false
 			}
+			if it.h.Len() == 0 {
+				return false
+			}
+		} else {
+			// Value of top of heap has changed, re-heapify.
+			heap.Fix(&it.h, 0)
 		}
+
+		it.cur = it.h[0].At()
 	}
-	it.h = it.h[:n]
-	if len(it.h) == 0 {
-		return false
-	}
-	it.cur = lowest
 	return true
 }
 
