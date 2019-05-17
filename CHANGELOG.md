@@ -1,7 +1,14 @@
 ## master / unreleased
- - [BUGFIX] Calling `Close` more than once on a querier returns an error instead of a panic.
- - [ENHANCEMENT] Add (again) FromData function to easily create a chunk from bytes.
 
+
+## 0.8.0
+ - [BUGFIX] Calling `Close` more than once on a querier returns an error instead of a panic.
+ - [BUGFIX] Don't panic and recover nicely when running out of disk space.
+ - [BUGFIX] Correctly handle empty labels.
+ - [BUGFIX] Don't crash on an unknown tombstone ref.
+ - [ENHANCEMENT] Re-add FromData function to create a chunk from bytes. It is used by Cortex and Thanos.
+ - [ENHANCEMENT] Simplify mergedPostings.Seek.
+ - [FEATURE]  Added `currentSegment` metric for the current WAL segment it is being written to.
 
 ## 0.7.1
  - [ENHANCEMENT] Reduce memory usage in mergedPostings.Seek
