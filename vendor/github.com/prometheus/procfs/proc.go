@@ -20,6 +20,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/prometheus/procfs/internal/fs"
 )
 
 // Proc provides information about a running process.
@@ -27,7 +29,7 @@ type Proc struct {
 	// The process ID.
 	PID int
 
-	fs FS
+	fs fs.FS
 }
 
 // Procs represents a list of Proc structs.
@@ -66,11 +68,11 @@ func AllProcs() (Procs, error) {
 
 // Self returns a process for the current process.
 func (fs FS) Self() (Proc, error) {
-	p, err := os.Readlink(fs.Path("self"))
+	p, err := os.Readlink(fs.proc.Path("self"))
 	if err != nil {
 		return Proc{}, err
 	}
-	pid, err := strconv.Atoi(strings.Replace(p, string(fs), "", -1))
+	pid, err := strconv.Atoi(strings.Replace(p, string(fs.proc), "", -1))
 	if err != nil {
 		return Proc{}, err
 	}
@@ -79,15 +81,15 @@ func (fs FS) Self() (Proc, error) {
 
 // NewProc returns a process for the given pid.
 func (fs FS) NewProc(pid int) (Proc, error) {
-	if _, err := os.Stat(fs.Path(strconv.Itoa(pid))); err != nil {
+	if _, err := os.Stat(fs.proc.Path(strconv.Itoa(pid))); err != nil {
 		return Proc{}, err
 	}
-	return Proc{PID: pid, fs: fs}, nil
+	return Proc{PID: pid, fs: fs.proc}, nil
 }
 
 // AllProcs returns a list of all currently available processes.
 func (fs FS) AllProcs() (Procs, error) {
-	d, err := os.Open(fs.Path())
+	d, err := os.Open(fs.proc.Path())
 	if err != nil {
 		return Procs{}, err
 	}
@@ -104,7 +106,7 @@ func (fs FS) AllProcs() (Procs, error) {
 		if err != nil {
 			continue
 		}
-		p = append(p, Proc{PID: int(pid), fs: fs})
+		p = append(p, Proc{PID: int(pid), fs: fs.proc})
 	}
 
 	return p, nil
