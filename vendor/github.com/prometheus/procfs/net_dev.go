@@ -59,7 +59,7 @@ func NewNetDev() (NetDev, error) {
 
 // NewNetDev returns kernel/system statistics read from /proc/net/dev.
 func (fs FS) NewNetDev() (NetDev, error) {
-	return newNetDev(fs.Path("net/dev"))
+	return newNetDev(fs.proc.Path("net/dev"))
 }
 
 // NewNetDev returns kernel/system statistics read from /proc/[pid]/net/dev.

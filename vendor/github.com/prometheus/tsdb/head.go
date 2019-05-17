@@ -421,6 +421,10 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 					if itv.Maxt < h.minValidTime {
 						continue
 					}
+					if m := h.series.getByID(s.ref); m == nil {
+						unknownRefs++
+						continue
+					}
 					allStones.addInterval(s.ref, itv)
 				}
 			}
@@ -754,6 +758,9 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 	if t < a.minValidTime {
 		return 0, ErrOutOfBounds
 	}
+
+	// Ensure no empty labels have gotten through.
+	lset = lset.WithoutEmpty()
 
 	s, created := a.head.getOrCreate(lset.Hash(), lset)
 	if created {
