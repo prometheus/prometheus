@@ -469,6 +469,79 @@ alerting:
 
 }
 
+func TestAllAlertmanagers(t *testing.T) {
+	var tests = []struct {
+		in       *targetgroup.Group
+		out      string
+		isActive bool
+	}{
+		{
+			in: &targetgroup.Group{
+				Targets: []model.LabelSet{
+					{
+						"__address__": "alertmanager:9093",
+					},
+				},
+			},
+			out:      "http://alertmanager:9093/api/v1/alerts",
+			isActive: true,
+		},
+		{
+			in: &targetgroup.Group{
+				Targets: []model.LabelSet{
+					{
+						"__address__": "dropmanager:9093",
+					},
+				},
+			},
+			out:      "http://dropmanager:9093/api/v1/alerts",
+			isActive: false,
+		},
+	}
+
+	n := NewManager(&Options{}, nil)
+
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - static_configs:
+    relabel_configs:
+      - source_labels: ['__address__']
+        regex: 'dropmanager:9093'
+        action: drop
+`
+	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config: %s", err)
+	}
+
+	if err := n.ApplyConfig(cfg); err != nil {
+		t.Fatalf("Error Applying the config:%v", err)
+	}
+
+	tgs := make(map[string][]*targetgroup.Group)
+	for _, tt := range tests {
+
+		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
+		if err != nil {
+			t.Fatalf("Error creating config hash:%v", err)
+		}
+		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
+			tt.in,
+		}
+		n.reload(tgs)
+		res, dRes := n.AllAlertManagers()
+
+		if tt.isActive {
+			testutil.Equals(t, res[0].String(), tt.out)
+			testutil.Equals(t, len(dRes), 0)
+		} else {
+			testutil.Equals(t, len(res), 0)
+			testutil.Equals(t, dRes[0].String(), tt.out)
+		}
+	}
+}
+
 func TestDroppedAlertmanagers(t *testing.T) {
 	var tests = []struct {
 		in  *targetgroup.Group

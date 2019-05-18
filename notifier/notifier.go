@@ -411,6 +411,30 @@ func (n *Manager) setMore() {
 	}
 }
 
+// AllAlertManagers returns a slices of active Alertmanager URLs and dropped.
+func (n *Manager) AllAlertManagers() ([]*url.URL, []*url.URL) {
+	n.mtx.RLock()
+	amSets := n.alertmanagers
+	n.mtx.RUnlock()
+
+	var res []*url.URL
+	var dRes []*url.URL
+
+	for _, ams := range amSets {
+		ams.mtx.RLock()
+		for _, am := range ams.ams {
+			res = append(res, am.url())
+		}
+
+		for _, dam := range ams.droppedAms {
+			dRes = append(dRes, dam.url())
+		}
+		ams.mtx.RUnlock()
+	}
+
+	return res, dRes
+}
+
 // Alertmanagers returns a slice of Alertmanager URLs.
 func (n *Manager) Alertmanagers() []*url.URL {
 	n.mtx.RLock()

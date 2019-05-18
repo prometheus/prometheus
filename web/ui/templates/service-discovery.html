@@ -98,13 +98,21 @@
           <thead>
             <tr>
               <th>Discovered URL</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {{range $manager := .AlertingManagers}}
+            {{range $manager := .Managers}}
               <tr>
                 <td>
-                  {{$manager.String}}
+                  {{$manager.Url.String}}
+                </td>
+                <td>
+                  {{if $manager.IsActive }}
+                    Active
+                  {{else}}
+                    Dropped
+                  {{end}}
                 </td>
               </tr>
             {{end}}

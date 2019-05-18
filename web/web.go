@@ -723,10 +723,29 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	urls, dUrls := h.notifier.AllAlertManagers()
+	type manager struct {
+		Url      *url.URL
+		IsActive bool
+	}
 	alertConfigData := struct {
-		AlertingManagers []*url.URL
+		Managers []manager
 	}{
-		AlertingManagers: h.notifier.Alertmanagers(),
+		Managers: make([]manager, len(urls)+len(dUrls)),
+	}
+
+	for i, u := range urls {
+		alertConfigData.Managers[i] = manager{
+			Url:      u,
+			IsActive: true,
+		}
+	}
+
+	for i, u := range dUrls {
+		alertConfigData.Managers[len(urls)+i] = manager{
+			Url:      u,
+			IsActive: false,
+		}
 	}
 
 	configData := map[string]interface{}{
