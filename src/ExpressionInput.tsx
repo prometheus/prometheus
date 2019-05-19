@@ -13,9 +13,9 @@ import fuzzy from 'fuzzy';
 
 import { library } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faSpinner, faLevelDownAlt } from '@fortawesome/free-solid-svg-icons';
 
-library.add(faSearch, faSpinner);
+library.add(faSearch, faSpinner, faLevelDownAlt);
 
 interface ExpressionInputProps {
   value: string;
@@ -101,12 +101,6 @@ class ExpressionInput extends Component<ExpressionInputProps> {
           {(downshift) => (
             <div>
               <InputGroup className="expression-input">
-                <InputGroupAddon addonType="prepend">
-                  <InputGroupText>
-                  {this.props.loading ? <FontAwesomeIcon icon="spinner" spin/> : <FontAwesomeIcon icon="search"/>}
-                  </InputGroupText>
-                </InputGroupAddon>
-
                 <Input
                   autoFocus
                   type="textarea"
@@ -143,7 +137,19 @@ class ExpressionInput extends Component<ExpressionInputProps> {
                   } as any)}
                 />
                 <InputGroupAddon addonType="append">
-                  <Button className="execute-btn" color="primary" onClick={() => this.props.executeQuery(this.exprInputRef.current!.value)}>Execute</Button>
+                  <Button
+                    className="execute-btn"
+                    color="primary"
+                    onClick={() => this.props.executeQuery(this.exprInputRef.current!.value)}
+                  >
+                    Execute&nbsp;&nbsp;
+                    {
+                      this.props.loading
+                      ? <FontAwesomeIcon icon="spinner" fixedWidth spin/>
+                      : <FontAwesomeIcon icon="level-down-alt" fixedWidth rotation={90}/>
+                    }
+                  </Button>
+
                 </InputGroupAddon>
               </InputGroup>
               {this.renderAutosuggest(downshift)}
