@@ -73,7 +73,7 @@ class ExpressionInput extends Component<ExpressionInputProps> {
                 })}
               >
                 {/* TODO: Find better way than setting inner HTML dangerously. We just want the <strong> to not be escaped.
-                    This will be a problem when we save history and the user enters HTML into a query. q*/}
+                    This will be a problem when we save history and the user enters HTML into a query. */}
                 <span dangerouslySetInnerHTML={{__html: item.string}}></span>
               </li>
             ))
