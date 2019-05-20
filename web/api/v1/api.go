@@ -133,11 +133,16 @@ type TSDBAdmin interface {
 	Snapshot(dir string, withHead bool) error
 }
 
+type PromQLEngine interface {
+	NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (promql.Query, error)
+	NewRangeQuery(q storage.Queryable, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
+}
+
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
 	Queryable   storage.Queryable
-	QueryEngine *promql.Engine
+	QueryEngine PromQLEngine
 
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
@@ -162,7 +167,7 @@ func init() {
 
 // NewAPI returns an initialized API type.
 func NewAPI(
-	qe *promql.Engine,
+	qe PromQLEngine,
 	q storage.Queryable,
 	tr targetRetriever,
 	ar alertmanagerRetriever,
