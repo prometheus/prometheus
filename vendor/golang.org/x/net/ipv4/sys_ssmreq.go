@@ -13,8 +13,6 @@ import (
 	"golang.org/x/net/internal/socket"
 )
 
-var compatFreeBSD32 bool // 386 emulation on amd64
-
 func (so *sockOpt) setGroupReq(c *socket.Conn, ifi *net.Interface, grp net.IP) error {
 	var gr groupReq
 	if ifi != nil {

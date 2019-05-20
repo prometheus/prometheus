@@ -495,7 +495,7 @@ Option:
 func packDataOpt(options []EDNS0, msg []byte, off int) (int, error) {
 	for _, el := range options {
 		b, err := el.pack()
-		if err != nil || off+3 > len(msg) {
+		if err != nil || off+4 > len(msg) {
 			return len(msg), &Error{err: "overflow packing opt"}
 		}
 		binary.BigEndian.PutUint16(msg[off:], el.Option())      // Option code

@@ -573,13 +573,12 @@ func (srv *Server) serveDNS(m []byte, w *response) {
 		req.Ns, req.Answer, req.Extra = nil, nil, nil
 
 		w.WriteMsg(req)
-
+		fallthrough
+	case MsgIgnore:
 		if w.udp != nil && cap(m) == srv.UDPSize {
 			srv.udpPool.Put(m[:srv.UDPSize])
 		}
 
-		return
-	case MsgIgnore:
 		return
 	}
 

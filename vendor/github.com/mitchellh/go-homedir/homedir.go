@@ -141,14 +141,16 @@ func dirWindows() (string, error) {
 		return home, nil
 	}
 
+	// Prefer standard environment variable USERPROFILE
+	if home := os.Getenv("USERPROFILE"); home != "" {
+		return home, nil
+	}
+
 	drive := os.Getenv("HOMEDRIVE")
 	path := os.Getenv("HOMEPATH")
 	home := drive + path
 	if drive == "" || path == "" {
-		home = os.Getenv("USERPROFILE")
-	}
-	if home == "" {
-		return "", errors.New("HOMEDRIVE, HOMEPATH, and USERPROFILE are blank")
+		return "", errors.New("HOMEDRIVE, HOMEPATH, or USERPROFILE are blank")
 	}
 
 	return home, nil

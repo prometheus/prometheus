@@ -48,16 +48,31 @@ func newParser(r io.Reader) *parser {
 	}
 }
 
-// BOM handles header of BOM-UTF8 format.
+// BOM handles header of UTF-8, UTF-16 LE and UTF-16 BE's BOM format.
 // http://en.wikipedia.org/wiki/Byte_order_mark#Representations_of_byte_order_marks_by_encoding
 func (p *parser) BOM() error {
-	mask, err := p.buf.Peek(3)
+	mask, err := p.buf.Peek(2)
 	if err != nil && err != io.EOF {
 		return err
-	} else if len(mask) < 3 {
+	} else if len(mask) < 2 {
 		return nil
-	} else if mask[0] == 239 && mask[1] == 187 && mask[2] == 191 {
+	}
+
+	switch {
+	case mask[0] == 254 && mask[1] == 255:
+		fallthrough
+	case mask[0] == 255 && mask[1] == 254:
 		p.buf.Read(mask)
+	case mask[0] == 239 && mask[1] == 187:
+		mask, err := p.buf.Peek(3)
+		if err != nil && err != io.EOF {
+			return err
+		} else if len(mask) < 3 {
+			return nil
+		}
+		if mask[2] == 191 {
+			p.buf.Read(mask)
+		}
 	}
 	return nil
 }
@@ -235,6 +250,7 @@ func (f *File) parse(reader io.Reader) (err error) {
 	section, _ := f.NewSection(DEFAULT_SECTION)
 
 	var line []byte
+	var inUnparseableSection bool
 	for !p.isEOF {
 		line, err = p.readUntil('\n')
 		if err != nil {
@@ -280,6 +296,21 @@ func (f *File) parse(reader io.Reader) (err error) {
 			// Reset aotu-counter and comments
 			p.comment.Reset()
 			p.count = 1
+
+			inUnparseableSection = false
+			for i := range f.options.UnparseableSections {
+				if f.options.UnparseableSections[i] == name ||
+					(f.options.Insensitive && strings.ToLower(f.options.UnparseableSections[i]) == strings.ToLower(name)) {
+					inUnparseableSection = true
+					continue
+				}
+			}
+			continue
+		}
+
+		if inUnparseableSection {
+			section.isRawSection = true
+			section.rawBody += string(line)
 			continue
 		}
 
@@ -287,11 +318,14 @@ func (f *File) parse(reader io.Reader) (err error) {
 		if err != nil {
 			// Treat as boolean key when desired, and whole line is key name.
 			if IsErrDelimiterNotFound(err) && f.options.AllowBooleanKeys {
-				key, err := section.NewKey(string(line), "true")
+				kname, err := p.readValue(line, f.options.IgnoreContinuation)
 				if err != nil {
 					return err
 				}
-				key.isBooleanType = true
+				key, err := section.NewBooleanKey(kname)
+				if err != nil {
+					return err
+				}
 				key.Comment = strings.TrimSpace(p.comment.String())
 				p.comment.Reset()
 				continue
@@ -307,17 +341,16 @@ func (f *File) parse(reader io.Reader) (err error) {
 			p.count++
 		}
 
-		key, err := section.NewKey(kname, "")
-		if err != nil {
-			return err
-		}
-		key.isAutoIncrement = isAutoIncr
-
 		value, err := p.readValue(line[offset:], f.options.IgnoreContinuation)
 		if err != nil {
 			return err
 		}
-		key.SetValue(value)
+
+		key, err := section.NewKey(kname, value)
+		if err != nil {
+			return err
+		}
+		key.isAutoIncrement = isAutoIncr
 		key.Comment = strings.TrimSpace(p.comment.String())
 		p.comment.Reset()
 	}

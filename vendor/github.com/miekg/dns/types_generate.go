@@ -189,10 +189,8 @@ func main() {
 				o("l += base64.StdEncoding.DecodedLen(len(rr.%s))\n")
 			case strings.HasPrefix(st.Tag(i), `dns:"size-hex:`): // this has an extra field where the length is stored
 				o("l += len(rr.%s)/2\n")
-			case strings.HasPrefix(st.Tag(i), `dns:"size-hex`):
-				fallthrough
 			case st.Tag(i) == `dns:"hex"`:
-				o("l += len(rr.%s)/2 + 1\n")
+				o("l += len(rr.%s)/2\n")
 			case st.Tag(i) == `dns:"any"`:
 				o("l += len(rr.%s)\n")
 			case st.Tag(i) == `dns:"a"`:

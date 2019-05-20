@@ -8,7 +8,7 @@ require (
 	github.com/StackExchange/wmi v0.0.0-20180725035823-b12b22c5341f // indirect
 	github.com/VividCortex/ewma v1.1.1 // indirect
 	github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf
-	github.com/aws/aws-sdk-go v0.0.0-20180507225419-00862f899353
+	github.com/aws/aws-sdk-go v1.15.24
 	github.com/biogo/store v0.0.0-20160505134755-913427a1d5e8 // indirect
 	github.com/cenk/backoff v2.0.0+incompatible // indirect
 	github.com/certifi/gocertifi v0.0.0-20180905225744-ee1a9a0726d2 // indirect
@@ -19,14 +19,13 @@ require (
 	github.com/cockroachdb/cockroach-go v0.0.0-20181001143604-e0a95dfd547c // indirect
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/coreos/etcd v3.3.12+incompatible // indirect
-	github.com/dgrijalva/jwt-go v0.0.0-20161101193935-9ed569b5d1ac // indirect
+	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/elastic/gosigar v0.9.0 // indirect
 	github.com/elazarl/go-bindata-assetfs v1.0.0 // indirect
 	github.com/evanphx/json-patch v4.1.0+incompatible // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
 	github.com/getsentry/raven-go v0.1.2 // indirect
-	github.com/go-ini/ini v1.21.1 // indirect
 	github.com/go-kit/kit v0.8.0
 	github.com/go-logfmt/logfmt v0.4.0
 	github.com/go-ole/go-ole v1.2.4 // indirect
@@ -34,36 +33,31 @@ require (
 	github.com/gogo/protobuf v1.2.1
 	github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4 // indirect
 	github.com/golang/snappy v0.0.1
-	github.com/google/gofuzz v0.0.0-20150304233714-bbcb9da2d746 // indirect
+	github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf // indirect
 	github.com/google/pprof v0.0.0-20180605153948-8b03ce837f34
-	github.com/googleapis/gnostic v0.0.0-20180520015035-48a0ecefe2e4 // indirect
+	github.com/googleapis/gnostic v0.2.0 // indirect
 	github.com/gophercloud/gophercloud v0.0.0-20190301152420-fca40860790e
 	github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.8.5
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
-	github.com/hashicorp/consul v1.4.4
-	github.com/hashicorp/go-cleanhttp v0.5.1 // indirect
-	github.com/hashicorp/go-rootcerts v0.0.0-20160503143440-6bb64b370b90 // indirect
+	github.com/hashicorp/consul/api v1.1.0
+	github.com/hashicorp/go-msgpack v0.5.4 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
-	github.com/hashicorp/serf v0.8.2 // indirect
 	github.com/influxdata/influxdb v0.0.0-20170331210902-15e594fc09f1
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.2.0+incompatible // indirect
 	github.com/jmespath/go-jmespath v0.0.0-20160803190731-bd40a432e4c7 // indirect
-	github.com/json-iterator/go v0.0.0-20180612202835-f2b4162afba3
+	github.com/json-iterator/go v1.1.5
 	github.com/jtolds/gls v4.2.1+incompatible // indirect
 	github.com/knz/strtime v0.0.0-20181018220328-af2256ee352c // indirect
 	github.com/lib/pq v1.0.0 // indirect
 	github.com/lightstep/lightstep-tracer-go v0.15.6 // indirect
 	github.com/mattn/go-runewidth v0.0.4 // indirect
-	github.com/miekg/dns v1.1.8
-	github.com/mitchellh/go-homedir v0.0.0-20180523094522-3864e76763d9 // indirect
-	github.com/mitchellh/go-testing-interface v1.0.0 // indirect
-	github.com/mitchellh/mapstructure v1.1.2 // indirect
-	github.com/mitchellh/reflectwalk v1.0.0 // indirect
+	github.com/miekg/dns v1.1.10
+	github.com/mitchellh/reflectwalk v1.0.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
-	github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742 // indirect
+	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/montanaflynn/stats v0.0.0-20180911141734-db72e6cae808 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223
 	github.com/oklog/run v1.0.0
@@ -91,10 +85,11 @@ require (
 	github.com/soheilhy/cmux v0.1.4
 	github.com/spf13/pflag v1.0.3 // indirect
 	github.com/stretchr/testify v1.3.0
-	golang.org/x/net v0.0.0-20190311183353-d8887717615a
+	golang.org/x/crypto v0.0.0-20190325154230-a5d413f7728c // indirect
+	golang.org/x/net v0.0.0-20190403144856-b630fd6fe46b
 	golang.org/x/oauth2 v0.0.0-20190226205417-e64efc72b421
-	golang.org/x/sys v0.0.0-20190222072716-a9d3bda3a223 // indirect
-	golang.org/x/time v0.0.0-20170424234030-8be79e1e0910
+	golang.org/x/sys v0.0.0-20190403152447-81d4e9dc473e // indirect
+	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2
 	golang.org/x/tools v0.0.0-20190312170243-e65039ee4138
 	google.golang.org/api v0.3.2
 	google.golang.org/genproto v0.0.0-20190307195333-5fe7a883aa19

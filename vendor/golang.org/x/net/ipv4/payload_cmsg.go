@@ -49,6 +49,9 @@ func (c *payloadHandler) ReadFrom(b []byte) (n int, cm *ControlMessage, src net.
 		return 0, nil, nil, &net.OpError{Op: "read", Net: c.PacketConn.LocalAddr().Network(), Source: c.PacketConn.LocalAddr(), Err: errInvalidConnType}
 	}
 	if m.NN > 0 {
+		if compatFreeBSD32 {
+			adjustFreeBSD32(&m)
+		}
 		cm = new(ControlMessage)
 		if err := cm.Parse(m.OOB[:m.NN]); err != nil {
 			return 0, nil, nil, &net.OpError{Op: "read", Net: c.PacketConn.LocalAddr().Network(), Source: c.PacketConn.LocalAddr(), Err: err}

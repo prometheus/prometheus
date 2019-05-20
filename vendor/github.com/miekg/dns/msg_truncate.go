@@ -4,7 +4,7 @@ package dns
 // size by removing records that exceed the requested size.
 //
 // It will first check if the reply fits without compression and then with
-// compression. If it won't fit with compression, Scrub then walks the
+// compression. If it won't fit with compression, Truncate then walks the
 // record adding as many records as possible without exceeding the
 // requested buffer size.
 //

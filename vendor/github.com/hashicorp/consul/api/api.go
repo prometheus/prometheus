@@ -30,6 +30,10 @@ const (
 	// the HTTP token.
 	HTTPTokenEnvName = "CONSUL_HTTP_TOKEN"
 
+	// HTTPTokenFileEnvName defines an environment variable name which sets
+	// the HTTP token file.
+	HTTPTokenFileEnvName = "CONSUL_HTTP_TOKEN_FILE"
+
 	// HTTPAuthEnvName defines an environment variable name which sets
 	// the HTTP authentication header.
 	HTTPAuthEnvName = "CONSUL_HTTP_AUTH"
@@ -146,6 +150,10 @@ type QueryOptions struct {
 	// ctx is an optional context pass through to the underlying HTTP
 	// request layer. Use Context() and WithContext() to manage this.
 	ctx context.Context
+
+	// Filter requests filtering data prior to it being returned. The string
+	// is a go-bexpr compatible expression.
+	Filter string
 }
 
 func (o *QueryOptions) Context() context.Context {
@@ -276,6 +284,10 @@ type Config struct {
 	// which overrides the agent's default token.
 	Token string
 
+	// TokenFile is a file containing the current token to use for this client.
+	// If provided it is read once at startup and never again.
+	TokenFile string
+
 	TLSConfig TLSConfig
 }
 
@@ -337,6 +349,10 @@ func defaultConfig(transportFn func() *http.Transport) *Config {
 
 	if addr := os.Getenv(HTTPAddrEnvName); addr != "" {
 		config.Address = addr
+	}
+
+	if tokenFile := os.Getenv(HTTPTokenFileEnvName); tokenFile != "" {
+		config.TokenFile = tokenFile
 	}
 
 	if token := os.Getenv(HTTPTokenEnvName); token != "" {
@@ -445,6 +461,7 @@ func (c *Config) GenerateEnv() []string {
 	env = append(env,
 		fmt.Sprintf("%s=%s", HTTPAddrEnvName, c.Address),
 		fmt.Sprintf("%s=%s", HTTPTokenEnvName, c.Token),
+		fmt.Sprintf("%s=%s", HTTPTokenFileEnvName, c.TokenFile),
 		fmt.Sprintf("%s=%t", HTTPSSLEnvName, c.Scheme == "https"),
 		fmt.Sprintf("%s=%s", HTTPCAFile, c.TLSConfig.CAFile),
 		fmt.Sprintf("%s=%s", HTTPCAPath, c.TLSConfig.CAPath),
@@ -537,6 +554,19 @@ func NewClient(config *Config) (*Client, error) {
 		config.Address = parts[1]
 	}
 
+	// If the TokenFile is set, always use that, even if a Token is configured.
+	// This is because when TokenFile is set it is read into the Token field.
+	// We want any derived clients to have to re-read the token file.
+	if config.TokenFile != "" {
+		data, err := ioutil.ReadFile(config.TokenFile)
+		if err != nil {
+			return nil, fmt.Errorf("Error loading token file: %s", err)
+		}
+
+		if token := strings.TrimSpace(string(data)); token != "" {
+			config.Token = token
+		}
+	}
 	if config.Token == "" {
 		config.Token = defConfig.Token
 	}
@@ -613,6 +643,9 @@ func (r *request) setQueryOptions(q *QueryOptions) {
 	}
 	if q.Near != "" {
 		r.params.Set("near", q.Near)
+	}
+	if q.Filter != "" {
+		r.params.Set("filter", q.Filter)
 	}
 	if len(q.NodeMeta) > 0 {
 		for key, value := range q.NodeMeta {
@@ -813,6 +846,8 @@ func (c *Client) write(endpoint string, in, out interface{}, q *WriteOptions) (*
 }
 
 // parseQueryMeta is used to help parse query meta-data
+//
+// TODO(rb): bug? the error from this function is never handled
 func parseQueryMeta(resp *http.Response, q *QueryMeta) error {
 	header := resp.Header
 
@@ -890,10 +925,42 @@ func requireOK(d time.Duration, resp *http.Response, e error) (time.Duration, *h
 		return d, nil, e
 	}
 	if resp.StatusCode != 200 {
-		var buf bytes.Buffer
-		io.Copy(&buf, resp.Body)
-		resp.Body.Close()
-		return d, nil, fmt.Errorf("Unexpected response code: %d (%s)", resp.StatusCode, buf.Bytes())
+		return d, nil, generateUnexpectedResponseCodeError(resp)
 	}
 	return d, resp, nil
+}
+
+func (req *request) filterQuery(filter string) {
+	if filter == "" {
+		return
+	}
+
+	req.params.Set("filter", filter)
+}
+
+// generateUnexpectedResponseCodeError consumes the rest of the body, closes
+// the body stream and generates an error indicating the status code was
+// unexpected.
+func generateUnexpectedResponseCodeError(resp *http.Response) error {
+	var buf bytes.Buffer
+	io.Copy(&buf, resp.Body)
+	resp.Body.Close()
+	return fmt.Errorf("Unexpected response code: %d (%s)", resp.StatusCode, buf.Bytes())
+}
+
+func requireNotFoundOrOK(d time.Duration, resp *http.Response, e error) (bool, time.Duration, *http.Response, error) {
+	if e != nil {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return false, d, nil, e
+	}
+	switch resp.StatusCode {
+	case 200:
+		return true, d, resp, nil
+	case 404:
+		return false, d, resp, nil
+	default:
+		return false, d, nil, generateUnexpectedResponseCodeError(resp)
+	}
 }

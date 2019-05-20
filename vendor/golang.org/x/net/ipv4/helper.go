@@ -8,6 +8,8 @@ import (
 	"errors"
 	"net"
 	"runtime"
+
+	"golang.org/x/net/internal/socket"
 )
 
 var (
@@ -18,14 +20,24 @@ var (
 	errHeaderTooShort           = errors.New("header too short")
 	errExtHeaderTooShort        = errors.New("extension header too short")
 	errInvalidConnType          = errors.New("invalid conn type")
-	errOpNoSupport              = errors.New("operation not supported")
 	errNoSuchInterface          = errors.New("no such interface")
 	errNoSuchMulticastInterface = errors.New("no such multicast interface")
 	errNotImplemented           = errors.New("not implemented on " + runtime.GOOS + "/" + runtime.GOARCH)
 
 	// See http://www.freebsd.org/doc/en/books/porters-handbook/freebsd-versions.html.
-	freebsdVersion uint32
+	freebsdVersion  uint32
+	compatFreeBSD32 bool // 386 emulation on amd64
 )
+
+// See golang.org/issue/30899.
+func adjustFreeBSD32(m *socket.Message) {
+	if freebsdVersion >= 1103000 {
+		l := (m.NN + 4 - 1) &^ (4 - 1)
+		if m.NN < l && l <= len(m.OOB) {
+			m.NN = l
+		}
+	}
+}
 
 func boolint(b bool) int {
 	if b {
