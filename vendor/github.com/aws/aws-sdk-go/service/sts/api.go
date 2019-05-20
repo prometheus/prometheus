@@ -1908,7 +1908,7 @@ type Credentials struct {
 	// The date on which the current credentials expire.
 	//
 	// Expiration is a required field
-	Expiration *time.Time `type:"timestamp" timestampFormat:"iso8601" required:"true"`
+	Expiration *time.Time `type:"timestamp" required:"true"`
 
 	// The secret access key that can be used to sign requests.
 	//

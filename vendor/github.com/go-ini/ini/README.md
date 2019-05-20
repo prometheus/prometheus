@@ -1,4 +1,4 @@
-INI [![Build Status](https://travis-ci.org/go-ini/ini.svg?branch=master)](https://travis-ci.org/go-ini/ini)
+INI [![Build Status](https://travis-ci.org/go-ini/ini.svg?branch=master)](https://travis-ci.org/go-ini/ini) [![Sourcegraph](https://sourcegraph.com/github.com/go-ini/ini/-/badge.svg)](https://sourcegraph.com/github.com/go-ini/ini?badge)
 ===
 
 ![](https://avatars0.githubusercontent.com/u/10216035?v=3&s=200)
@@ -9,7 +9,7 @@ Package ini provides INI file read and write functionality in Go.
 
 ## Feature
 
-- Load multiple data sources(`[]byte` or file) with overwrites.
+- Load multiple data sources(`[]byte`, file and `io.ReadCloser`) with overwrites.
 - Read with recursion values.
 - Read with parent-child sections.
 - Read with auto-increment key names.
@@ -44,10 +44,10 @@ Please add `-u` flag to update in the future.
 
 ### Loading from data sources
 
-A **Data Source** is either raw data in type `[]byte` or a file name with type `string` and you can load **as many data sources as you want**. Passing other types will simply return an error.
+A **Data Source** is either raw data in type `[]byte`, a file name with type `string` or `io.ReadCloser`. You can load **as many data sources as you want**. Passing other types will simply return an error.
 
 ```go
-cfg, err := ini.Load([]byte("raw data"), "filename")
+cfg, err := ini.Load([]byte("raw data"), "filename", ioutil.NopCloser(bytes.NewReader([]byte("some other data"))))
 ```
 
 Or start with an empty object:
@@ -106,6 +106,22 @@ cfg, err := LoadSources(LoadOptions{AllowBooleanKeys: true}, "my.cnf"))
 
 The value of those keys are always `true`, and when you save to a file, it will keep in the same foramt as you read.
 
+To generate such keys in your program, you could use `NewBooleanKey`:
+
+```go
+key, err := sec.NewBooleanKey("skip-host-cache")
+```
+
+#### Comment
+
+Take care that following format will be treated as comment:
+
+1. Line begins with `#` or `;`
+2. Words after `#` or `;`
+3. Words after section name (i.e words after `[some section name]`)
+
+If you want to save a value with `#` or `;`, please quote them with ``` ` ``` or ``` """ ```.
+
 ### Working with sections
 
 To get a section, you would need to:
@@ -123,7 +139,7 @@ section, err := cfg.GetSection("")
 When you're pretty sure the section exists, following code could make your life easier:
 
 ```go
-section := cfg.Section("")
+section := cfg.Section("section name")
 ```
 
 What happens when the section somehow does not exist? Don't panic, it automatically creates and returns a new section to you.
@@ -400,6 +416,12 @@ cfg.WriteTo(writer)
 cfg.WriteToIndent(writer, "\t")
 ```
 
+By default, spaces are used to align "=" sign between key and values, to disable that:
+
+```go
+ini.PrettyFormat = false
+``` 
+
 ## Advanced Usage
 
 ### Recursive Values
@@ -445,6 +467,21 @@ cfg.Section("package.sub").Key("CLONE_URL").String()	// https://gopkg.in/ini.v1
 
 ```go
 cfg.Section("package.sub").ParentKeys() // ["CLONE_URL"]
+```
+
+### Unparseable Sections
+
+Sometimes, you have sections that do not contain key-value pairs but raw content, to handle such case, you can use `LoadOptions.UnparsableSections`:
+
+```go
+cfg, err := LoadSources(LoadOptions{UnparseableSections: []string{"COMMENTS"}}, `[COMMENTS]
+<1><L.Slide#2> This slide has the fuel listed in the wrong units <e.1>`))
+
+body := cfg.Section("COMMENTS").Body()
+
+/* --- start ---
+<1><L.Slide#2> This slide has the fuel listed in the wrong units <e.1>
+------  end  --- */
 ```
 
 ### Auto-increment Key Names

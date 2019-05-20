@@ -198,11 +198,14 @@ func (t *Transfer) Out(w ResponseWriter, q *Msg, ch chan *Envelope) error {
 		r.Authoritative = true
 		// assume it fits TODO(miek): fix
 		r.Answer = append(r.Answer, x.RR...)
+		if tsig := q.IsTsig(); tsig != nil && w.TsigStatus() == nil {
+			r.SetTsig(tsig.Hdr.Name, tsig.Algorithm, tsig.Fudge, time.Now().Unix())
+		}
 		if err := w.WriteMsg(r); err != nil {
 			return err
 		}
+		w.TsigTimersOnly(true)
 	}
-	w.TsigTimersOnly(true)
 	return nil
 }
 

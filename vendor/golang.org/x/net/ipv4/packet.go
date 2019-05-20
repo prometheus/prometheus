@@ -46,6 +46,9 @@ func (c *packetHandler) ReadFrom(b []byte) (h *Header, p []byte, cm *ControlMess
 		return nil, nil, nil, &net.OpError{Op: "read", Net: c.IPConn.LocalAddr().Network(), Source: c.IPConn.LocalAddr(), Err: err}
 	}
 	if m.NN > 0 {
+		if compatFreeBSD32 {
+			adjustFreeBSD32(&m)
+		}
 		cm = new(ControlMessage)
 		if err := cm.Parse(m.OOB[:m.NN]); err != nil {
 			return nil, nil, nil, &net.OpError{Op: "read", Net: c.IPConn.LocalAddr().Network(), Source: c.IPConn.LocalAddr(), Err: err}

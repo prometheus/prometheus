@@ -78,8 +78,14 @@ func parseDelim(actual string) string {
 var reflectTime = reflect.TypeOf(time.Now()).Kind()
 
 // setSliceWithProperType sets proper values to slice based on its type.
-func setSliceWithProperType(key *Key, field reflect.Value, delim string) error {
-	strs := key.Strings(delim)
+func setSliceWithProperType(key *Key, field reflect.Value, delim string, allowShadow bool) error {
+	var strs []string
+	if allowShadow {
+		strs = key.StringsWithShadows(delim)
+	} else {
+		strs = key.Strings(delim)
+	}
+
 	numVals := len(strs)
 	if numVals == 0 {
 		return nil
@@ -92,9 +98,9 @@ func setSliceWithProperType(key *Key, field reflect.Value, delim string) error {
 	case reflect.String:
 		vals = strs
 	case reflect.Int:
-		vals = key.Ints(delim)
+		vals, _ = key.parseInts(strs, true, false)
 	case reflect.Int64:
-		vals = key.Int64s(delim)
+		vals, _ = key.parseInt64s(strs, true, false)
 	case reflect.Uint:
 		vals = key.Uints(delim)
 	case reflect.Uint64:
@@ -133,7 +139,7 @@ func setSliceWithProperType(key *Key, field reflect.Value, delim string) error {
 // setWithProperType sets proper value to field based on its type,
 // but it does not return error for failing parsing,
 // because we want to use default value that is already assigned to strcut.
-func setWithProperType(t reflect.Type, key *Key, field reflect.Value, delim string) error {
+func setWithProperType(t reflect.Type, key *Key, field reflect.Value, delim string, allowShadow bool) error {
 	switch t.Kind() {
 	case reflect.String:
 		if len(key.String()) == 0 {
@@ -174,7 +180,7 @@ func setWithProperType(t reflect.Type, key *Key, field reflect.Value, delim stri
 		}
 		field.SetUint(uintVal)
 
-	case reflect.Float64:
+	case reflect.Float32, reflect.Float64:
 		floatVal, err := key.Float64()
 		if err != nil {
 			return nil
@@ -187,11 +193,23 @@ func setWithProperType(t reflect.Type, key *Key, field reflect.Value, delim stri
 		}
 		field.Set(reflect.ValueOf(timeVal))
 	case reflect.Slice:
-		return setSliceWithProperType(key, field, delim)
+		return setSliceWithProperType(key, field, delim, allowShadow)
 	default:
 		return fmt.Errorf("unsupported type '%s'", t)
 	}
 	return nil
+}
+
+func parseTagOptions(tag string) (rawName string, omitEmpty bool, allowShadow bool) {
+	opts := strings.SplitN(tag, ",", 3)
+	rawName = opts[0]
+	if len(opts) > 1 {
+		omitEmpty = opts[1] == "omitempty"
+	}
+	if len(opts) > 2 {
+		allowShadow = opts[2] == "allowshadow"
+	}
+	return rawName, omitEmpty, allowShadow
 }
 
 func (s *Section) mapTo(val reflect.Value) error {
@@ -209,8 +227,8 @@ func (s *Section) mapTo(val reflect.Value) error {
 			continue
 		}
 
-		opts := strings.SplitN(tag, ",", 2) // strip off possible omitempty
-		fieldName := s.parseFieldName(tpField.Name, opts[0])
+		rawName, _, allowShadow := parseTagOptions(tag)
+		fieldName := s.parseFieldName(tpField.Name, rawName)
 		if len(fieldName) == 0 || !field.CanSet() {
 			continue
 		}
@@ -231,7 +249,8 @@ func (s *Section) mapTo(val reflect.Value) error {
 		}
 
 		if key, err := s.GetKey(fieldName); err == nil {
-			if err = setWithProperType(tpField.Type, key, field, parseDelim(tpField.Tag.Get("delim"))); err != nil {
+			delim := parseDelim(tpField.Tag.Get("delim"))
+			if err = setWithProperType(tpField.Type, key, field, delim, allowShadow); err != nil {
 				return fmt.Errorf("error mapping field(%s): %v", fieldName, err)
 			}
 		}
