@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright 2019 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,12 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ui provides the assets via a virtual filesystem.
+// +build dev
+// +build generate
+
 package ui
 
-import (
-	// The blank import is to make Go modules happy.
-	_ "github.com/shurcooL/vfsgen"
-)
-
-//go:generate go run -mod=vendor "-tags=dev generate" assets_generate.go
+var uiRootDirectory = "."

@@ -25,7 +25,7 @@ import (
 )
 
 var static http.FileSystem = filter.Keep(
-	http.Dir("./static"),
+	http.Dir(uiRootDirectory+"/static"),
 	func(path string, fi os.FileInfo) bool {
 		return fi.IsDir() ||
 			(!strings.HasSuffix(path, "map.js") &&
@@ -36,7 +36,7 @@ var static http.FileSystem = filter.Keep(
 )
 
 var templates http.FileSystem = filter.Keep(
-	http.Dir("./templates"),
+	http.Dir(uiRootDirectory+"/templates"),
 	func(path string, fi os.FileInfo) bool {
 		return fi.IsDir() || strings.HasSuffix(path, ".html")
 	},
