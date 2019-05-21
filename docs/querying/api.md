@@ -465,7 +465,7 @@ $ curl http://localhost:9090/api/v1/rules
                                     "severity": "page"
                                 },
                                 "state": "firing",
-                                "value": 1
+                                "value": "1e+00"
                             }
                         ],
                         "annotations": {
@@ -522,7 +522,7 @@ $ curl http://localhost:9090/api/v1/alerts
                     "alertname": "my-alert"
                 },
                 "state": "firing",
-                "value": 1
+                "value": "1e+00"
             }
         ]
     },
