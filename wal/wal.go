@@ -228,29 +228,25 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	}
 
 	_, j, err := w.Segments()
+	// Index of the Segment we want to open and write to.
+	writeSegmentIndex := 0
 	if err != nil {
 		return nil, errors.Wrap(err, "get segment range")
 	}
-	// Fresh dir, no segments yet.
-	if j == -1 {
-		segment, err := CreateSegment(w.dir, 0)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := w.setSegment(segment); err != nil {
-			return nil, err
-		}
-	} else {
-		segment, err := OpenWriteSegment(logger, w.dir, j)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := w.setSegment(segment); err != nil {
-			return nil, err
-		}
+	// If some segments already exist create one with a higher index than the last segment.
+	if j != -1 {
+		writeSegmentIndex = j + 1
 	}
+
+	segment, err := CreateSegment(w.dir, writeSegmentIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := w.setSegment(segment); err != nil {
+		return nil, err
+	}
+
 	go w.run()
 
 	return w, nil
@@ -363,6 +359,9 @@ func (w *WAL) Repair(origErr error) error {
 	}
 	// We expect an error here from r.Err(), so nothing to handle.
 
+	// We need to pad to the end of the last page in the repaired segment
+	w.flushPage(true)
+
 	// We explicitly close even when there is a defer for Windows to be
 	// able to delete it. The defer is in place to close it in-case there
 	// are errors above.
@@ -371,6 +370,20 @@ func (w *WAL) Repair(origErr error) error {
 	}
 	if err := os.Remove(tmpfn); err != nil {
 		return errors.Wrap(err, "delete corrupted segment")
+	}
+
+	// Explicitly close the the segment we just repaired to avoid issues with Windows.
+	s.Close()
+
+	// We always want to start writing to a new Segment rather than an existing
+	// Segment, which is handled by NewSize, but earlier in Repair we're deleting
+	// all segments that come after the corrupted Segment. Recreate a new Segment here.
+	s, err = CreateSegment(w.dir, cerr.Segment+1)
+	if err != nil {
+		return err
+	}
+	if err := w.setSegment(s); err != nil {
+		return err
 	}
 	return nil
 }
@@ -710,7 +723,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 			segs = append(segs, s)
 		}
 	}
-	return newSegmentBufReader(segs...), nil
+	return NewSegmentBufReader(segs...), nil
 }
 
 // segmentBufReader is a buffered reader that reads in multiples of pages.
@@ -725,7 +738,7 @@ type segmentBufReader struct {
 	off  int // Offset of read data into current segment.
 }
 
-func newSegmentBufReader(segs ...*Segment) *segmentBufReader {
+func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	return &segmentBufReader{
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,

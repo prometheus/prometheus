@@ -143,20 +143,35 @@ func TestWAL_Repair(t *testing.T) {
 			testutil.Ok(t, err)
 			defer w.Close()
 
+			first, last, err := w.Segments()
+			testutil.Ok(t, err)
+
+			// Backfill segments from the most recent checkpoint onwards.
+			for i := first; i <= last; i++ {
+				s, err := OpenReadSegment(SegmentName(w.Dir(), i))
+				testutil.Ok(t, err)
+
+				sr := NewSegmentBufReader(s)
+				testutil.Ok(t, err)
+				r := NewReader(sr)
+				for r.Next() {
+				}
+
+				//Close the segment so we don't break things on Windows.
+				s.Close()
+
+				// No corruption in this segment.
+				if r.Err() == nil {
+					continue
+				}
+				testutil.Ok(t, w.Repair(r.Err()))
+				break
+			}
+
 			sr, err := NewSegmentsReader(dir)
 			testutil.Ok(t, err)
-			r := NewReader(sr)
-
-			for r.Next() {
-			}
-			testutil.NotOk(t, r.Err())
-			testutil.Ok(t, sr.Close())
-
-			testutil.Ok(t, w.Repair(r.Err()))
-			sr, err = NewSegmentsReader(dir)
-			testutil.Ok(t, err)
 			defer sr.Close()
-			r = NewReader(sr)
+			r := NewReader(sr)
 
 			var result [][]byte
 			for r.Next() {
@@ -172,10 +187,13 @@ func TestWAL_Repair(t *testing.T) {
 				}
 			}
 
-			// Make sure the last segment is the corrupt segment.
-			_, last, err := w.Segments()
+			// Make sure there is a new 0 size Segment after the corrupted Segment.
+			_, last, err = w.Segments()
 			testutil.Ok(t, err)
-			testutil.Equals(t, test.corrSgm, last)
+			testutil.Equals(t, test.corrSgm+1, last)
+			fi, err := os.Stat(SegmentName(dir, last))
+			testutil.Ok(t, err)
+			testutil.Equals(t, int64(0), fi.Size())
 		})
 	}
 }
@@ -275,6 +293,10 @@ func TestCorruptAndCarryOn(t *testing.T) {
 
 		err = w.Repair(corruptionErr)
 		testutil.Ok(t, err)
+
+		// Ensure that we have a completely clean slate after reapiring.
+		testutil.Equals(t, w.segment.Index(), 1) // We corrupted segment 0.
+		testutil.Equals(t, w.donePages, 0)
 
 		for i := 0; i < 5; i++ {
 			buf := make([]byte, recordSize)

@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"fmt"
 	"math"
 	"runtime"
 	"sort"
@@ -492,22 +493,32 @@ func (h *Head) Init(minValidTime int64) error {
 		startFrom++
 	}
 
-	// Backfill segments from the last checkpoint onwards
-	sr, err := wal.NewSegmentsRangeReader(wal.SegmentRange{Dir: h.wal.Dir(), First: startFrom, Last: -1})
+	// Find the last segment.
+	_, last, err := h.wal.Segments()
 	if err != nil {
-		return errors.Wrap(err, "open WAL segments")
+		return errors.Wrap(err, "finding WAL segments")
 	}
 
-	err = h.loadWAL(wal.NewReader(sr))
-	sr.Close() // Close the reader so that if there was an error the repair can remove the corrupted file under Windows.
-	if err == nil {
-		return nil
+	// Backfill segments from the most recent checkpoint onwards.
+	for i := startFrom; i <= last; i++ {
+		s, err := wal.OpenReadSegment(wal.SegmentName(h.wal.Dir(), i))
+		if err != nil {
+			return errors.Wrap(err, fmt.Sprintf("open WAL segment: %d", i))
+		}
+
+		sr := wal.NewSegmentBufReader(s)
+		err = h.loadWAL(wal.NewReader(sr))
+		sr.Close() // Close the reader so that if there was an error the repair can remove the corrupted file under Windows.
+		if err == nil {
+			continue
+		}
+		level.Warn(h.logger).Log("msg", "encountered WAL error, attempting repair", "err", err)
+		h.metrics.walCorruptionsTotal.Inc()
+		if err := h.wal.Repair(err); err != nil {
+			return errors.Wrap(err, "repair corrupted WAL")
+		}
 	}
-	level.Warn(h.logger).Log("msg", "encountered WAL error, attempting repair", "err", err)
-	h.metrics.walCorruptionsTotal.Inc()
-	if err := h.wal.Repair(err); err != nil {
-		return errors.Wrap(err, "repair corrupted WAL")
-	}
+
 	return nil
 }
 
