@@ -1,4 +1,4 @@
-## 2.10.0-rc.0 / 2019-05-22
+## 2.10.0 / 2019-05-25
 
 * [CHANGE/BUGFIX] API: Encode alert values as string to correctly represent Inf/NaN. #5582
 * [FEATURE] Template expansion: Make external labels available as `$externalLabels` in alert and console template expansion. #5463
@@ -18,6 +18,7 @@
 * [BUGFIX] PromQL: Correctly display `{__name__="a"}`. #5552
 * [BUGFIX] Discovery/kubernetes: Use `service` rather than `ingress` as the name for the service workqueue. #5520
 * [BUGFIX] Discovery/azure: Don't panic on a VM with a public IP. #5587
+* [BUGFIX] Discovery/triton: Always read HTTP body to completion. #5596
 * [BUGFIX] Web: Fixed Content-Type for js and css instead of using `/etc/mime.types`. #5551
 
 ## 2.9.2 / 2019-04-24
