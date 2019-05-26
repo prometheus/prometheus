@@ -213,7 +213,8 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	tg.Labels = podLabels(pod)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 
-	for _, c := range pod.Spec.Containers {
+	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
+	for _, c := range containers {
 		// If no ports are defined for the container, create an anonymous
 		// target per container.
 		if len(c.Ports) == 0 {
