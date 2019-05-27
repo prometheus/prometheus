@@ -128,6 +128,7 @@ func expectedPodTargetGroups(ns string) map[string]*targetgroup.Group {
 					"__meta_kubernetes_pod_container_port_name":     "testport",
 					"__meta_kubernetes_pod_container_port_number":   "9000",
 					"__meta_kubernetes_pod_container_port_protocol": "TCP",
+					"__meta_kubernetes_pod_container_is_init":       "false",
 				},
 			},
 			Labels: model.LabelSet{
@@ -164,6 +165,7 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_name":     "testport0",
 						"__meta_kubernetes_pod_container_port_number":   "9000",
 						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_is_init":       "false",
 					},
 					{
 						"__address__":                                   "1.2.3.4:9001",
@@ -171,10 +173,12 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_name":     "testport1",
 						"__meta_kubernetes_pod_container_port_number":   "9001",
 						"__meta_kubernetes_pod_container_port_protocol": "UDP",
+						"__meta_kubernetes_pod_container_is_init":       "false",
 					},
 					{
-						"__address__":                          "1.2.3.4",
-						"__meta_kubernetes_pod_container_name": "testcontainer1",
+						"__address__":                             "1.2.3.4",
+						"__meta_kubernetes_pod_container_name":    "testcontainer1",
+						"__meta_kubernetes_pod_container_is_init": "false",
 					},
 				},
 				Labels: model.LabelSet{
