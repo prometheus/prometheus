@@ -1691,6 +1691,192 @@ func BenchmarkQuerySeek(b *testing.B) {
 	}
 }
 
+// Refer to https://github.com/prometheus/prometheus/issues/2651.
+func BenchmarkSetMatcher(b *testing.B) {
+	cases := []struct {
+		numBlocks                   int
+		numSeries                   int
+		numSamplesPerSeriesPerBlock int
+		cardinality                 int
+		pattern                     string
+	}{
+		// The first three cases are to find out whether the set
+		// matcher is always faster than regex matcher.
+		{
+			numBlocks:                   1,
+			numSeries:                   1,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 100,
+			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+		},
+		{
+			numBlocks:                   1,
+			numSeries:                   15,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 100,
+			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+		},
+		{
+			numBlocks:                   1,
+			numSeries:                   15,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 100,
+			pattern:                     "^(?:1|2|3)$",
+		},
+		// Big data sizes benchmarks.
+		{
+			numBlocks:                   20,
+			numSeries:                   1000,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 100,
+			pattern:                     "^(?:1|2|3)$",
+		},
+		{
+			numBlocks:                   20,
+			numSeries:                   1000,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 100,
+			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+		},
+		// Increase cardinality.
+		{
+			numBlocks:                   1,
+			numSeries:                   100000,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 100000,
+			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+		},
+		{
+			numBlocks:                   1,
+			numSeries:                   500000,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 500000,
+			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+		},
+		{
+			numBlocks:                   10,
+			numSeries:                   500000,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 500000,
+			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+		},
+		{
+			numBlocks:                   1,
+			numSeries:                   1000000,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 1000000,
+			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+		},
+	}
+
+	for _, c := range cases {
+		dir, err := ioutil.TempDir("", "bench_postings_for_matchers")
+		testutil.Ok(b, err)
+		defer func() {
+			testutil.Ok(b, os.RemoveAll(dir))
+		}()
+
+		var (
+			blocks          []*Block
+			prefilledLabels []map[string]string
+			generatedSeries []Series
+		)
+		for i := int64(0); i < int64(c.numBlocks); i++ {
+			mint := i * int64(c.numSamplesPerSeriesPerBlock)
+			maxt := mint + int64(c.numSamplesPerSeriesPerBlock) - 1
+			if len(prefilledLabels) == 0 {
+				generatedSeries = genSeries(c.numSeries, 10, mint, maxt)
+				for _, s := range generatedSeries {
+					prefilledLabels = append(prefilledLabels, s.Labels().Map())
+				}
+			} else {
+				generatedSeries = populateSeries(prefilledLabels, mint, maxt)
+			}
+			block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil)
+			testutil.Ok(b, err)
+			blocks = append(blocks, block)
+			defer block.Close()
+		}
+
+		que := &querier{
+			blocks: make([]Querier, 0, len(blocks)),
+		}
+		for _, blk := range blocks {
+			q, err := NewBlockQuerier(blk, math.MinInt64, math.MaxInt64)
+			testutil.Ok(b, err)
+			que.blocks = append(que.blocks, q)
+		}
+		defer que.Close()
+
+		benchMsg := fmt.Sprintf("nSeries=%d,nBlocks=%d,cardinality=%d,pattern=\"%s\"", c.numSeries, c.numBlocks, c.cardinality, c.pattern)
+		b.Run(benchMsg, func(b *testing.B) {
+			b.ResetTimer()
+			b.ReportAllocs()
+			for n := 0; n < b.N; n++ {
+				_, err := que.Select(labels.NewMustRegexpMatcher("test", c.pattern))
+				testutil.Ok(b, err)
+
+			}
+		})
+	}
+}
+
+// Refer to https://github.com/prometheus/prometheus/issues/2651.
+func TestFindSetMatches(t *testing.T) {
+	cases := []struct {
+		pattern string
+		exp     []string
+	}{
+		// Simple sets.
+		{
+			pattern: "^(?:foo|bar|baz)$",
+			exp: []string{
+				"foo",
+				"bar",
+				"baz",
+			},
+		},
+		// Simple sets containing escaped characters.
+		{
+			pattern: "^(?:fo\\.o|bar\\?|\\^baz)$",
+			exp: []string{
+				"fo.o",
+				"bar?",
+				"^baz",
+			},
+		},
+		// Simple sets containing special characters without escaping.
+		{
+			pattern: "^(?:fo.o|bar?|^baz)$",
+			exp:     nil,
+		},
+		// Missing wrapper.
+		{
+			pattern: "foo|bar|baz",
+			exp:     nil,
+		},
+	}
+
+	for _, c := range cases {
+		matches := findSetMatches(c.pattern)
+		if len(c.exp) == 0 {
+			if len(matches) != 0 {
+				t.Errorf("Evaluating %s, unexpected result %v", c.pattern, matches)
+			}
+		} else {
+			if len(matches) != len(c.exp) {
+				t.Errorf("Evaluating %s, length of result not equal to exp", c.pattern)
+			} else {
+				for i := 0; i < len(c.exp); i++ {
+					if c.exp[i] != matches[i] {
+						t.Errorf("Evaluating %s, unexpected result %s", c.pattern, matches[i])
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestPostingsForMatchers(t *testing.T) {
 	h, err := NewHead(nil, nil, nil, 1000)
 	testutil.Ok(t, err)
@@ -1703,6 +1889,7 @@ func TestPostingsForMatchers(t *testing.T) {
 	app.Add(labels.FromStrings("n", "1", "i", "a"), 0, 0)
 	app.Add(labels.FromStrings("n", "1", "i", "b"), 0, 0)
 	app.Add(labels.FromStrings("n", "2"), 0, 0)
+	app.Add(labels.FromStrings("n", "2.5"), 0, 0)
 	testutil.Ok(t, app.Commit())
 
 	cases := []struct {
@@ -1735,6 +1922,7 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
 				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
 			},
 		},
 		// Not equals.
@@ -1742,6 +1930,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			matchers: []labels.Matcher{labels.Not(labels.NewEqualMatcher("n", "1"))},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
 			},
 		},
 		{
@@ -1796,6 +1985,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1"),
 				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
 			},
 		},
 		{
@@ -1824,6 +2014,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			matchers: []labels.Matcher{labels.Not(labels.NewMustRegexpMatcher("n", "^1$"))},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
 			},
 		},
 		{
@@ -1867,6 +2058,46 @@ func TestPostingsForMatchers(t *testing.T) {
 			matchers: []labels.Matcher{labels.NewEqualMatcher("n", "1"), labels.Not(labels.NewEqualMatcher("i", "b")), labels.NewMustRegexpMatcher("i", "^(b|a).*$")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1", "i", "a"),
+			},
+		},
+		// Set optimization for Regex.
+		// Refer to https://github.com/prometheus/prometheus/issues/2651.
+		{
+			matchers: []labels.Matcher{labels.NewMustRegexpMatcher("n", "^(?:1|2)$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewMustRegexpMatcher("i", "^(?:a|b)$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewMustRegexpMatcher("n", "^(?:x1|2)$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matchers: []labels.Matcher{labels.NewMustRegexpMatcher("n", "^(?:2|2\\.5)$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		// Empty value.
+		{
+			matchers: []labels.Matcher{labels.NewMustRegexpMatcher("i", "^(?:c||d)$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
 			},
 		},
 	}
