@@ -216,7 +216,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 
 	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
 	for i, c := range containers {
-		is_init := i >= len(pod.Spec.Containers)
+		isInit := i >= len(pod.Spec.Containers)
 
 		// If no ports are defined for the container, create an anonymous
 		// target per container.
@@ -226,7 +226,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:    lv(pod.Status.PodIP),
 				podContainerNameLabel: lv(c.Name),
-				podContainerIsInit:    lv(strconv.FormatBool(is_init)),
+				podContainerIsInit:    lv(strconv.FormatBool(isInit)),
 			})
 			continue
 		}
@@ -241,7 +241,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 				podContainerPortNumberLabel:   lv(ports),
 				podContainerPortNameLabel:     lv(port.Name),
 				podContainerPortProtocolLabel: lv(string(port.Protocol)),
-				podContainerIsInit:            lv(strconv.FormatBool(is_init)),
+				podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 			})
 		}
 	}
