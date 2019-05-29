@@ -22,7 +22,7 @@ An example rules file with an alert would be:
 groups:
 - name: example
   rules:
-  - alert: HighErrorRate
+  - alert: HighRequestLatency
     expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
     for: 10m
     labels:
