@@ -53,6 +53,10 @@ alert_rule_test:
 # Unit tests PromQL expressions.
 promql_expr_test:
   [ - <promql_test_case> ]
+
+# External labels accessible to the alert template.
+external_labels:
+  [ <labelname>: <string> ... ]
 ```
 
 ### `<series>`
