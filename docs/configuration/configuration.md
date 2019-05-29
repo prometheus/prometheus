@@ -754,10 +754,10 @@ Available meta labels:
 * `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
 * `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_name`: Name of the container the target address points to.
+* `__meta_kubernetes_pod_container_port_is_init`: `true` if the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
 * `__meta_kubernetes_pod_container_port_name`: Name of the container port.
 * `__meta_kubernetes_pod_container_port_number`: Number of the container port.
 * `__meta_kubernetes_pod_container_port_protocol`: Protocol of the container port.
-* `__meta_kubernetes_pod_container_port_is_init`: Designates whether the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
 * `__meta_kubernetes_pod_ready`: Set to `true` or `false` for the pod's ready state.
 * `__meta_kubernetes_pod_phase`: Set to `Pending`, `Running`, `Succeeded`, `Failed` or `Unknown`
   in the [lifecycle](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase).
