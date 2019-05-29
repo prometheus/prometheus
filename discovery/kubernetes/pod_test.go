@@ -170,7 +170,7 @@ func expectedPodTargetGroups(ns string) map[string]*targetgroup.Group {
 					"__meta_kubernetes_pod_container_port_name":     "testport",
 					"__meta_kubernetes_pod_container_port_number":   "9000",
 					"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					"__meta_kubernetes_pod_container_is_init":       "false",
+					"__meta_kubernetes_pod_container_init":          "false",
 				},
 			},
 			Labels: model.LabelSet{
@@ -207,7 +207,7 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_name":     "testport0",
 						"__meta_kubernetes_pod_container_port_number":   "9000",
 						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-						"__meta_kubernetes_pod_container_is_init":       "false",
+						"__meta_kubernetes_pod_container_init":          "false",
 					},
 					{
 						"__address__":                                   "1.2.3.4:9001",
@@ -215,12 +215,12 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_name":     "testport1",
 						"__meta_kubernetes_pod_container_port_number":   "9001",
 						"__meta_kubernetes_pod_container_port_protocol": "UDP",
-						"__meta_kubernetes_pod_container_is_init":       "false",
+						"__meta_kubernetes_pod_container_init":          "false",
 					},
 					{
-						"__address__":                             "1.2.3.4",
-						"__meta_kubernetes_pod_container_name":    "testcontainer1",
-						"__meta_kubernetes_pod_container_is_init": "false",
+						"__address__":                          "1.2.3.4",
+						"__meta_kubernetes_pod_container_name": "testcontainer1",
+						"__meta_kubernetes_pod_container_init": "false",
 					},
 				},
 				Labels: model.LabelSet{
@@ -252,9 +252,9 @@ func TestPodDiscoveryInitContainer(t *testing.T) {
 	key := fmt.Sprintf("pod/%s/testpod", ns)
 	expected := expectedPodTargetGroups(ns)
 	expected[key].Targets = append(expected[key].Targets, model.LabelSet{
-		"__address__":                             "1.2.3.4",
-		"__meta_kubernetes_pod_container_name":    "initcontainer",
-		"__meta_kubernetes_pod_container_is_init": "true",
+		"__address__":                          "1.2.3.4",
+		"__meta_kubernetes_pod_container_name": "initcontainer",
+		"__meta_kubernetes_pod_container_init": "true",
 	})
 	expected[key].Labels["__meta_kubernetes_pod_phase"] = "Pending"
 	expected[key].Labels["__meta_kubernetes_pod_ready"] = "false"
