@@ -657,9 +657,9 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline
 	// anyways.
-	pendingSamples := []prompb.TimeSeries{}
-
 	max := s.qm.cfg.MaxSamplesPerSend
+	pendingSamples := make([]prompb.TimeSeries, 0, max)
+
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
 		if !timer.Stop() {
@@ -695,7 +695,7 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 
 			if len(pendingSamples) >= max {
 				s.sendSamples(ctx, pendingSamples[:max])
-				pendingSamples = pendingSamples[max:]
+				pendingSamples = append(pendingSamples[:0], pendingSamples[max:]...)
 				s.qm.pendingSamplesMetric.Sub(float64(max))
 
 				stop()
