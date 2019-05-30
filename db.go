@@ -147,6 +147,7 @@ type dbMetrics struct {
 	reloads              prometheus.Counter
 	reloadsFailed        prometheus.Counter
 	compactionsTriggered prometheus.Counter
+	compactionsFailed    prometheus.Counter
 	timeRetentionCount   prometheus.Counter
 	compactionsSkipped   prometheus.Counter
 	startTime            prometheus.GaugeFunc
@@ -191,6 +192,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_compactions_triggered_total",
 		Help: "Total number of triggered compactions for the partition.",
 	})
+	m.compactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_compactions_failed_total",
+		Help: "Total number of compactions that failed for the partition.",
+	})
 	m.timeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_time_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum time limit was exceeded.",
@@ -231,6 +236,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.reloadsFailed,
 			m.timeRetentionCount,
 			m.compactionsTriggered,
+			m.compactionsFailed,
 			m.startTime,
 			m.tombCleanTimer,
 			m.blocksBytes,
@@ -411,6 +417,11 @@ func (a dbAppender) Commit() error {
 func (db *DB) compact() (err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
+	defer func() {
+		if err != nil {
+			db.metrics.compactionsFailed.Inc()
+		}
+	}()
 	// Check whether we have pending head blocks that are ready to be persisted.
 	// They have the highest priority.
 	for {

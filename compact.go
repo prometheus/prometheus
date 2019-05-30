@@ -84,7 +84,6 @@ type LeveledCompactor struct {
 type compactorMetrics struct {
 	ran               prometheus.Counter
 	populatingBlocks  prometheus.Gauge
-	failed            prometheus.Counter
 	overlappingBlocks prometheus.Counter
 	duration          prometheus.Histogram
 	chunkSize         prometheus.Histogram
@@ -102,10 +101,6 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m.populatingBlocks = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_compaction_populating_block",
 		Help: "Set to 1 when a block is currently being written to the disk.",
-	})
-	m.failed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_failed_total",
-		Help: "Total number of compactions that failed for the partition.",
 	})
 	m.overlappingBlocks = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_vertical_compactions_total",
@@ -136,7 +131,6 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 		r.MustRegister(
 			m.ran,
 			m.populatingBlocks,
-			m.failed,
 			m.overlappingBlocks,
 			m.duration,
 			m.chunkRange,
@@ -540,9 +534,6 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
 		if err := os.RemoveAll(tmp); err != nil {
 			level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
-		}
-		if err != nil {
-			c.metrics.failed.Inc()
 		}
 		c.metrics.ran.Inc()
 		c.metrics.duration.Observe(time.Since(t).Seconds())
