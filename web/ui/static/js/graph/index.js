@@ -113,6 +113,12 @@ Prometheus.Graph.prototype.initialize = function() {
   self.legend = graphWrapper.find(".legend");
   self.spinner = graphWrapper.find(".spinner");
   self.evalStats = graphWrapper.find(".eval_stats");
+  self.cancelBtn = graphWrapper.find(".cancel_btn");
+
+  self.cancelBtn.click(function() {
+    self.cancelQuery();
+    return false;
+  });
 
   self.endDate = graphWrapper.find("input[name=end_input]");
   self.endDate.datetimepicker({
@@ -188,6 +194,7 @@ Prometheus.Graph.prototype.initialize = function() {
     return false;
   });
   self.spinner.hide();
+  self.cancelBtn.hide();
 
   self.queryForm.find("button[name=inc_range]").click(function() { self.increaseRange(); });
   self.queryForm.find("button[name=dec_range]").click(function() { self.decreaseRange(); });
@@ -467,6 +474,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
   }
 
   self.spinner.show();
+  self.cancelBtn.show();
   self.evalStats.empty();
 
   var startTime = new Date().getTime();
@@ -536,6 +544,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
         }
         self.evalStats.html("Load time: " + duration + "ms <br /> Resolution: " + resolution + "s <br />" + "Total time series: " + totalTimeSeries);
         self.spinner.hide();
+        self.cancelBtn.hide();
       }
   });
 };
@@ -545,6 +554,14 @@ Prometheus.Graph.prototype.showError = function(msg) {
   self.error.text(msg);
   self.error.show();
 };
+
+Prometheus.Graph.prototype.cancelQuery = function() {
+  var self = this;
+  self.queryXhr.abort();
+  self.evalStats.html("Query cancelled");
+  self.spinner.hide();
+  self.cancelBtn.hide();
+}
 
 Prometheus.Graph.prototype.clearError = function(msg) {
   var self = this;

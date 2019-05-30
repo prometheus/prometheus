@@ -2,6 +2,10 @@ body {
   margin: 0;
 }
 
+.cancel_btn:hover {
+  cursor: pointer;
+}
+
 .eval_stats {
   font-size: 11px;
 }
