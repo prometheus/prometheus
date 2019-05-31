@@ -121,7 +121,7 @@ class PanelList extends Component<any, PanelListState> {
       <>
         <Row>
           <Col>
-            {this.state.timeDriftError && <Alert color="danger"><strong>Warning:</strong> {this.state.timeDriftError}</Alert>}
+            {this.state.timeDriftError && <Alert color="danger"><strong>Warning:</strong> Error fetching server time: {this.state.timeDriftError}</Alert>}
           </Col>
         </Row>
         <Row>
