@@ -166,7 +166,6 @@ type QueueManager struct {
 	client         StorageClient
 	watcher        *WALWatcher
 
-	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64][]prompb.Label
 	seriesSegmentIndexes map[uint64]int
 	droppedSeries        map[uint64]struct{}
@@ -231,16 +230,10 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(s []tsdb.RefSample) bool {
-	type enqueuable struct {
-		ts  prompb.TimeSeries
-		ref uint64
-	}
-
-	tempSamples := make([]enqueuable, 0, len(s))
-	t.seriesMtx.Lock()
+outer:
 	for _, sample := range s {
-		// If we have no labels for the series, due to relabelling or otherwise, don't send the sample.
-		if _, ok := t.seriesLabels[sample.Ref]; !ok {
+		lbls, ok := t.seriesLabels[sample.Ref]
+		if !ok {
 			t.droppedSamplesTotal.Inc()
 			t.samplesDropped.incr(1)
 			if _, ok := t.droppedSeries[sample.Ref]; !ok {
@@ -248,23 +241,6 @@ func (t *QueueManager) Append(s []tsdb.RefSample) bool {
 			}
 			continue
 		}
-		tempSamples = append(tempSamples, enqueuable{
-			ts: prompb.TimeSeries{
-				Labels: t.seriesLabels[sample.Ref],
-				Samples: []prompb.Sample{
-					prompb.Sample{
-						Value:     float64(sample.V),
-						Timestamp: sample.T,
-					},
-				},
-			},
-			ref: sample.Ref,
-		})
-	}
-	t.seriesMtx.Unlock()
-
-outer:
-	for _, sample := range tempSamples {
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
 		for {
@@ -274,7 +250,16 @@ outer:
 			default:
 			}
 
-			if t.shards.enqueue(sample.ref, sample.ts) {
+			ts := prompb.TimeSeries{
+				Labels: lbls,
+				Samples: []prompb.Sample{
+					prompb.Sample{
+						Value:     float64(sample.V),
+						Timestamp: sample.T,
+					},
+				},
+			}
+			if t.shards.enqueue(sample.Ref, ts) {
 				continue outer
 			}
 
@@ -336,8 +321,6 @@ func (t *QueueManager) Stop() {
 	t.watcher.Stop()
 
 	// On shutdown, release the strings in the labels from the intern pool.
-	t.seriesMtx.Lock()
-	defer t.seriesMtx.Unlock()
 	for _, labels := range t.seriesLabels {
 		release(labels)
 	}
@@ -357,10 +340,6 @@ func (t *QueueManager) Stop() {
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
 func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
-	// Lock before any calls to labelsToLabels proto, as that's where string interning is done.
-	t.seriesMtx.Lock()
-	defer t.seriesMtx.Unlock()
-
 	for _, s := range series {
 		ls := processExternalLabels(s.Labels, t.externalLabels)
 		rl := relabel.Process(ls, t.relabelConfigs...)
@@ -385,9 +364,6 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 // stored series records with the checkpoints index number, so we can now
 // delete any ref ID's lower than that # from the two maps.
 func (t *QueueManager) SeriesReset(index int) {
-	t.seriesMtx.Lock()
-	defer t.seriesMtx.Unlock()
-
 	// Check for series that are in segments older than the checkpoint
 	// that were not also present in the checkpoint.
 	for k, v := range t.seriesSegmentIndexes {

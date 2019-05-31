@@ -260,18 +260,8 @@ func TestReshardRaceWithStop(t *testing.T) {
 
 func TestReleaseNoninternedString(t *testing.T) {
 	c := NewTestStorageClient()
-	var m *QueueManager
-	h := sync.Mutex{}
-
-	h.Lock()
-
-	m = NewQueueManager(nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
+	m := NewQueueManager(nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
 	m.Start()
-	go func() {
-		for {
-			m.SeriesReset(1)
-		}
-	}()
 
 	for i := 1; i < 1000; i++ {
 		m.StoreSeries([]tsdb.RefSeries{
@@ -285,6 +275,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 				},
 			},
 		}, 0)
+		m.SeriesReset(1)
 	}
 
 	metric := client_testutil.ToFloat64(noReferenceReleases)
