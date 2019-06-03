@@ -635,6 +635,7 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 	// anyways.
 	max := s.qm.cfg.MaxSamplesPerSend
 	pendingSamples := make([]prompb.TimeSeries, 0, max)
+	var buf []byte
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
@@ -656,7 +657,7 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 			if !ok {
 				if len(pendingSamples) > 0 {
 					level.Debug(s.qm.logger).Log("msg", "Flushing samples to remote storage...", "count", len(pendingSamples))
-					s.sendSamples(ctx, pendingSamples)
+					s.sendSamples(ctx, pendingSamples, &buf)
 					s.qm.pendingSamplesMetric.Sub(float64(len(pendingSamples)))
 					level.Debug(s.qm.logger).Log("msg", "Done flushing.")
 				}
@@ -670,7 +671,7 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 			s.qm.pendingSamplesMetric.Inc()
 
 			if len(pendingSamples) >= max {
-				s.sendSamples(ctx, pendingSamples[:max])
+				s.sendSamples(ctx, pendingSamples[:max], &buf)
 				pendingSamples = append(pendingSamples[:0], pendingSamples[max:]...)
 				s.qm.pendingSamplesMetric.Sub(float64(max))
 
@@ -682,7 +683,7 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 			if len(pendingSamples) > 0 {
 				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending samples", "samples", len(pendingSamples), "shard", shardNum)
 				n := len(pendingSamples)
-				s.sendSamples(ctx, pendingSamples)
+				s.sendSamples(ctx, pendingSamples, &buf)
 				pendingSamples = pendingSamples[:0]
 				s.qm.pendingSamplesMetric.Sub(float64(n))
 			}
@@ -691,9 +692,9 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 	}
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries) {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, buf *[]byte) {
 	begin := time.Now()
-	err := s.sendSamplesWithBackoff(ctx, samples)
+	err := s.sendSamplesWithBackoff(ctx, samples, buf)
 	if err != nil {
 		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", len(samples), "err", err)
 		s.qm.failedSamplesTotal.Add(float64(len(samples)))
@@ -706,9 +707,10 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries) {
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries) error {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, buf *[]byte) error {
 	backoff := s.qm.cfg.MinBackoff
-	req, highest, err := buildWriteRequest(samples)
+	req, highest, err := buildWriteRequest(samples, *buf)
+	*buf = req
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -746,7 +748,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	}
 }
 
-func buildWriteRequest(samples []prompb.TimeSeries) ([]byte, int64, error) {
+func buildWriteRequest(samples []prompb.TimeSeries, buf []byte) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample in it.
@@ -763,6 +765,11 @@ func buildWriteRequest(samples []prompb.TimeSeries) ([]byte, int64, error) {
 		return nil, highest, err
 	}
 
-	compressed := snappy.Encode(nil, data)
+	// snappy uses len() to see if it needs to allocate a new slice. Make the
+	// buffer as long as possible.
+	if buf != nil {
+		buf = buf[0:cap(buf)]
+	}
+	compressed := snappy.Encode(buf, data)
 	return compressed, highest, nil
 }
