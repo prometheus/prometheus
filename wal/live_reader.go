@@ -24,19 +24,11 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-)
-
-var (
-	readerCorruptionErrors = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_wal_reader_corruption_errors",
-		Help: "Errors encountered when reading the WAL.",
-	}, []string{"error"})
 )
 
 // NewLiveReader returns a new live reader.
-func NewLiveReader(logger log.Logger, r io.Reader) *LiveReader {
-	return &LiveReader{
+func NewLiveReader(logger log.Logger, reg prometheus.Registerer, r io.Reader) *LiveReader {
+	lr := &LiveReader{
 		logger: logger,
 		rdr:    r,
 
@@ -44,6 +36,17 @@ func NewLiveReader(logger log.Logger, r io.Reader) *LiveReader {
 		// to records spanning pages.
 		permissive: true,
 	}
+
+	lr.readerCorruptionErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_wal_reader_corruption_errors",
+		Help: "Errors encountered when reading the WAL.",
+	}, []string{"error"})
+
+	if reg != nil {
+		reg.MustRegister(lr.readerCorruptionErrors)
+	}
+
+	return lr
 }
 
 // LiveReader reads WAL records from an io.Reader. It allows reading of WALs
@@ -68,6 +71,8 @@ type LiveReader struct {
 	// does.  Until we track down why, set permissive to true to tolerate it.
 	// NB the non-ive Reader implementation allows for this.
 	permissive bool
+
+	readerCorruptionErrors *prometheus.CounterVec
 }
 
 // Err returns any errors encountered reading the WAL.  io.EOFs are not terminal
@@ -258,7 +263,7 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 		if !r.permissive {
 			return nil, 0, fmt.Errorf("record would overflow current page: %d > %d", r.readIndex+recordHeaderSize+length, pageSize)
 		}
-		readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
+		r.readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
 		level.Warn(r.logger).Log("msg", "record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
 	}
 	if recordHeaderSize+length > pageSize {

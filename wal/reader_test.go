@@ -51,7 +51,7 @@ var readerConstructors = map[string]func(io.Reader) reader{
 		return NewReader(r)
 	},
 	"LiveReader": func(r io.Reader) reader {
-		lr := NewLiveReader(log.NewNopLogger(), r)
+		lr := NewLiveReader(log.NewNopLogger(), nil, r)
 		lr.eofNonErr = true
 		return lr
 	},
@@ -216,7 +216,7 @@ func TestReader_Live(t *testing.T) {
 			// Read from a second FD on the same file.
 			readFd, err := os.Open(writeFd.Name())
 			testutil.Ok(t, err)
-			reader := NewLiveReader(logger, readFd)
+			reader := NewLiveReader(logger, nil, readFd)
 			for _, exp := range testReaderCases[i].exp {
 				for !reader.Next() {
 					testutil.Assert(t, reader.Err() == io.EOF, "expect EOF, got: %v", reader.Err())
@@ -374,7 +374,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 	testutil.Ok(t, err)
 	defer seg.Close()
 
-	r := NewLiveReader(logger, seg)
+	r := NewLiveReader(logger, nil, seg)
 	segmentTicker := time.NewTicker(100 * time.Millisecond)
 	readTicker := time.NewTicker(10 * time.Millisecond)
 
@@ -410,7 +410,7 @@ outer:
 			seg, err = OpenReadSegment(SegmentName(dir, seg.i+1))
 			testutil.Ok(t, err)
 			defer seg.Close()
-			r = NewLiveReader(logger, seg)
+			r = NewLiveReader(logger, nil, seg)
 
 		case <-readTicker.C:
 			readSegment(r)
@@ -464,7 +464,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	testutil.Ok(t, err)
 	defer seg.Close()
 
-	r := NewLiveReader(logger, seg)
+	r := NewLiveReader(logger, nil, seg)
 	testutil.Assert(t, r.Next() == false, "expected no records")
 	testutil.Assert(t, r.Err() == io.EOF, "expected error, got: %v", r.Err())
 }
@@ -512,7 +512,7 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	testutil.Ok(t, err)
 	defer seg.Close()
 
-	r := NewLiveReader(logger, seg)
+	r := NewLiveReader(logger, nil, seg)
 	testutil.Assert(t, r.Next() == false, "expected no records")
 	testutil.Assert(t, r.Err().Error() == "record length greater than a single page: 65542 > 32768", "expected error, got: %v", r.Err())
 }
