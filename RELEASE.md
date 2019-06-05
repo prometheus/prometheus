@@ -15,7 +15,10 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.8           | 2019-02-27                                 | Ganesh Vernekar (GitHub: @codesome)         |
 | v2.9           | 2019-04-10                                 | Brian Brazil (GitHub: @brian-brazil)        |
 | v2.10          | 2019-05-22                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.11          | 2019-07-03                                 | **searching for volunteer**                 |
+| v2.11          | 2019-07-03                                 | Ganesh Vernekar (GitHub: @codesome)         |
+| v2.12          | 2019-08-14                                 | Julius Volz (GitHub: @juliusv)              |
+| v2.13          | 2019-09-25                                 | Krasi Georgiev (GitHub: @krasi-georgiev)    |
+| v2.14          | 2019-11-06                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
