@@ -448,7 +448,7 @@ go_gc_duration_seconds_count 5962
 }
 
 func TestLintMetricTypeInName(t *testing.T) {
-	genTest := func(n, t string, problems ...promlint.Problem) test {
+	genTest := func(n, t, err string, problems ...promlint.Problem) test {
 		return test{
 			name: fmt.Sprintf("%s with _%s suffix", t, t),
 			in: fmt.Sprintf(`
@@ -458,24 +458,25 @@ func TestLintMetricTypeInName(t *testing.T) {
 `, n, n, t, n),
 			problems: append(problems, promlint.Problem{
 				Metric: n,
-				Text:   fmt.Sprintf(`%s metrics should not include the type in metric name`, t),
+				Text:   fmt.Sprintf(`metric name should not include type '%s'`, err),
 			}),
 		}
 	}
 
-	twoProbTest := genTest("http_requests_counter", "counter", promlint.Problem{
+	twoProbTest := genTest("http_requests_counter", "counter", "counter", promlint.Problem{
 		Metric: "http_requests_counter",
 		Text:   `counter metrics should have "_total" suffix`,
 	})
 
 	tests := []test{
 		twoProbTest,
-		genTest("instance_memory_limit_bytes_gauge", "gauge"),
-		genTest("request_duration_seconds_summary", "summary"),
-		genTest("request_duration_seconds_histogram", "histogram"),
-		genTest("request_duration_seconds_HISTOGRAM", "histogram"),
+		genTest("instance_memory_limit_bytes_gauge", "gauge", "gauge"),
+		genTest("request_duration_seconds_summary", "summary", "summary"),
+		genTest("request_duration_seconds_summary", "histogram", "summary"),
+		genTest("request_duration_seconds_histogram", "histogram", "histogram"),
+		genTest("request_duration_seconds_HISTOGRAM", "histogram", "histogram"),
 
-		genTest("instance_memory_limit_gauge_bytes", "gauge"),
+		genTest("instance_memory_limit_gauge_bytes", "gauge", "gauge"),
 	}
 	runTests(t, tests)
 }
@@ -516,6 +517,20 @@ requestDuration_seconds 10
 				},
 			},
 		},
+		{
+			name: "request_duration_seconds",
+			in: `
+# HELP request_duration_seconds Test metric.
+# TYPE request_duration_seconds histogram
+request_duration_seconds{httpService="foo"} 10
+`,
+			problems: []promlint.Problem{
+				{
+					Metric: "request_duration_seconds",
+					Text:   "label names should be written in 'snake_case' not 'camelCase'",
+				},
+			},
+		},
 	}
 	runTests(t, tests)
 }
@@ -551,7 +566,7 @@ func TestLintUnitAbbreviations(t *testing.T) {
 		genTest("request_duration_us"),
 		genTest("request_duration_ns"),
 		genTest("request_duration_sec"),
-		genTest("request_duration_sec_summary"),
+		genTest("request_sec_duration"),
 	}
 	runTests(t, tests)
 }

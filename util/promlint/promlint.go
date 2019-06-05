@@ -210,19 +210,20 @@ func lintHistogramSummaryReserved(mf dto.MetricFamily) []Problem {
 	return problems
 }
 
-// lintMetricTypeInName detects when the type of the metric is included in the metric name.
+// lintMetricTypeInName detects when metric types are included in the metric name.
 func lintMetricTypeInName(mf dto.MetricFamily) []Problem {
-	t := mf.GetType()
-	if t == dto.MetricType_UNTYPED {
-		return nil
-	}
-
 	var problems problems
 	n := strings.ToLower(mf.GetName())
 
-	typename := strings.ToLower(t.String())
-	if strings.Contains(n, "_"+typename+"_") || strings.HasSuffix(n, "_"+typename) {
-		problems.Add(mf, fmt.Sprintf(`%s metrics should not include the type in metric name`, typename))
+	for i, t := range dto.MetricType_name {
+		if i == int32(dto.MetricType_UNTYPED) {
+			continue
+		}
+
+		typename := strings.ToLower(t)
+		if strings.Contains(n, "_"+typename+"_") || strings.HasSuffix(n, "_"+typename) {
+			problems.Add(mf, fmt.Sprintf(`metric name should not include type '%s'`, typename))
+		}
 	}
 	return problems
 }
@@ -236,12 +237,20 @@ func lintReservedChars(mf dto.MetricFamily) []Problem {
 	return problems
 }
 
-// lintCamelCase detects metric names written in camelCase.
+// lintCamelCase detects metric names and label names written in camelCase.
 func lintCamelCase(mf dto.MetricFamily) []Problem {
 	var problems problems
 	re := regexp.MustCompile(`[a-z][A-Z]`)
 	if re.FindString(mf.GetName()) != "" {
 		problems.Add(mf, "metric names should be written in 'snake_case' not 'camelCase'")
+	}
+
+	for _, m := range mf.GetMetric() {
+		for _, l := range m.GetLabel() {
+			if re.FindString(l.GetName()) != "" {
+				problems.Add(mf, "label names should be written in 'snake_case' not 'camelCase'")
+			}
+		}
 	}
 	return problems
 }
