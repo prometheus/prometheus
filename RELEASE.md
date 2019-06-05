@@ -1,6 +1,6 @@
 # Releases
 
-This page describes the release process and the currently planned schedule for upcoming releases as well as the respective release shepherd. Release shepherd are chosen on a voluntary basis.
+This page describes the release process and the currently planned schedule for upcoming releases as well as the respective release shepherd. Release shepherds are chosen on a voluntary basis.
 
 ## Release schedule
 
@@ -24,14 +24,12 @@ If you are interested in volunteering please create a pull request against the [
 
 ## Release shepherd responsibilities
 
-The release shepherd is responsible for the entire release series of a minor release, meaning all pre- and patch releases of a minor release. The process starts with the initial pre-release.
+The release shepherd is responsible for the entire release series of a minor release, meaning all pre- and patch releases of a minor release. The process formally starts with the initial pre-release, but some preparations should be done a few days in advance.
 
-* The first pre-release is scheduled according to the above schedule.
-* With the pre-release the release shepherd is responsible for running and monitoring a benchmark run of the pre-release for 3 days, after which, if successful, the pre-release is promoted to a stable release.
-* Once a pre-release has been released, the `master` branch of the repository is frozen for any feature work, only critical bug fix work concerning the minor release is merged.
-* Pre-releases are done from `master`, after pre-releases are promoted to the stable release a `release-major.minor` branch is created.
-
-_Experimental change of the above procedure for the v2.10 release: The `release-2.10` branch is created at the time the first pre-release is cut. All releases of the series including pre-releases are cut from the `release-2.10` branch. `master` will not be frozen for feature work._
+* We aim to keep the master branch in a working state at all times. In principle, it should be possible to cut a release from master at any time. In practice, things might not work out as nicely. A few days before the pre-release is scheduled, the shepherd should check the state of master. Following their best judgement, the shepherd should try to expedite bug fixes that are still in progress but should make it into the release. On the other hand, the shepherd may hold back merging last-minute invasive and risky changes that are better suited for the next minor release.
+* On the date listed in the table above, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called  `release-<major>.<minor>` starting at the commit tagged for the pre-release. In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.
+* With the pre-release, the release shepherd is responsible for running and monitoring a benchmark run of the pre-release for 3 days, after which, if successful, the pre-release is promoted to a stable release.
+* If regressions or critical bugs are detected, they need to get fixed in the release branch (and later merged into master) before cutting a new pre-release (called `-rc.1`, `-rc.2`, etc.).
 
 See the next section for details on cutting an individual release.
 
