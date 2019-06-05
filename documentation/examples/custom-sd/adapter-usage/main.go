@@ -38,7 +38,7 @@ import (
 var (
 	a             = kingpin.New("sd adapter usage", "Tool to generate file_sd target files for unimplemented SD mechanisms.")
 	outputFile    = a.Flag("output.file", "Output file for file_sd compatible file.").Default("custom_sd.json").String()
-	listenAddress = a.Flag("listen.address", "The address the Consul HTTP API is listening on for requests.").Default("localhost:8500").String()
+	listenAddress = a.Flag("listen.address", "The address the Consul HTTP API is listening on for requests.").Default("env(CONSUL_HTTP_ADDR) | localhost:8500").String()
 	logger        log.Logger
 
 	// addressLabel is the name for the label containing a target's address.

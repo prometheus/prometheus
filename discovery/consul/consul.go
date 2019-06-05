@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -82,11 +83,12 @@ var (
 		[]string{"endpoint", "call"},
 	)
 
+	scheme, serverIpAndPort = GetConsulHTTPDefaultAddress()
 	// DefaultSDConfig is the default Consul SD configuration.
 	DefaultSDConfig = SDConfig{
 		TagSeparator:    ",",
-		Scheme:          "http",
-		Server:          "localhost:8500",
+		Scheme:          scheme,
+		Server:          serverIpAndPort,
 		AllowStale:      true,
 		RefreshInterval: model.Duration(watchTimeout),
 	}
@@ -253,6 +255,22 @@ tagOuter:
 		return false
 	}
 	return true
+}
+
+// GetConsulHTTPDefaultAddress return (scheme, IP:port) from env variable `CONSUL_HTTP_ADDR`
+// (standard with consul tools), otherwise will return (`http, `localhost:8500`).
+func GetConsulHTTPDefaultAddress() (string, string) {
+	agentEndpoint, ok := os.LookupEnv("CONSUL_HTTP_ADDR")
+	if ok {
+		if strings.HasPrefix(agentEndpoint, "http://") {
+			return "http", agentEndpoint[7:]
+		}
+		if strings.HasPrefix(agentEndpoint, "https://") {
+			return "https", agentEndpoint[8:]
+		}
+		return "http", agentEndpoint
+	}
+	return "http", "localhost:8500"
 }
 
 // Get the local datacenter if not specified.
