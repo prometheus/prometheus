@@ -86,7 +86,7 @@ endif
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
-DOCKERFILE_PATH			?= ./
+DOCKERFILE_PATH         ?= ./
 DOCKER_REPO             ?= prom
 
 DOCKER_ARCHS            ?= amd64
