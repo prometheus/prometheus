@@ -38,7 +38,7 @@ func NewLiveReader(logger log.Logger, reg prometheus.Registerer, r io.Reader) *L
 	}
 
 	lr.readerCorruptionErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_wal_reader_corruption_errors",
+		Name: "prometheus_tsdb_wal_reader_corruption_errors_total",
 		Help: "Errors encountered when reading the WAL.",
 	}, []string{"error"})
 
