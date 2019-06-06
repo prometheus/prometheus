@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"math"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 	"unsafe"
@@ -934,7 +935,12 @@ mainLoop:
 		// we still call sl.append to trigger stale markers.
 		total, added, seriesAdded, appErr := sl.append(b, contentType, start)
 		if appErr != nil {
-			level.Warn(sl.l).Log("msg", "append failed", "err", appErr)
+			// If it's a syscall error, log an Error
+			if _, ok := appErr.(*os.SyscallError); ok {
+				level.Error(sl.l).Log("msg", "append failed", "err", appErr)
+			} else {
+				level.Warn(sl.l).Log("msg", "append failed", "err", appErr)
+			}
 			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
 			if _, _, _, err := sl.append([]byte{}, "", start); err != nil {
