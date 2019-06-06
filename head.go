@@ -313,7 +313,7 @@ func (h *Head) updateMinMaxTime(mint, maxt int64) {
 	}
 }
 
-func (h *Head) loadWAL(r *wal.Reader) error {
+func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) error {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs uint64
@@ -322,10 +322,11 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 	// They are connected through a ring of channels which ensures that all sample batches
 	// read from the WAL are processed in order.
 	var (
-		wg      sync.WaitGroup
-		n       = runtime.GOMAXPROCS(0)
-		inputs  = make([]chan []RefSample, n)
-		outputs = make([]chan []RefSample, n)
+		wg           sync.WaitGroup
+		multiRefLock sync.Mutex
+		n            = runtime.GOMAXPROCS(0)
+		inputs       = make([]chan []RefSample, n)
+		outputs      = make([]chan []RefSample, n)
 	)
 	wg.Add(n)
 
@@ -364,7 +365,14 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 				}
 			}
 			for _, s := range series {
-				h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
+				series, created := h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
+
+				if !created {
+					// There's already a different ref for this series.
+					multiRefLock.Lock()
+					multiRef[s.Ref] = series.ref
+					multiRefLock.Unlock()
+				}
 
 				if h.lastSeriesID < s.Ref {
 					h.lastSeriesID = s.Ref
@@ -399,6 +407,9 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 					shards[i] = buf[:0]
 				}
 				for _, sam := range samples[:m] {
+					if r, ok := multiRef[sam.Ref]; ok {
+						sam.Ref = r
+					}
 					mod := sam.Ref % uint64(n)
 					shards[mod] = append(shards[mod], sam)
 				}
@@ -478,6 +489,7 @@ func (h *Head) Init(minValidTime int64) error {
 	if err != nil && err != ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
 	}
+	multiRef := map[uint64]uint64{}
 	if err == nil {
 		sr, err := wal.NewSegmentsReader(dir)
 		if err != nil {
@@ -487,7 +499,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wal.NewReader(sr)); err != nil {
+		if err := h.loadWAL(wal.NewReader(sr), multiRef); err != nil {
 			return errors.Wrap(err, "backfill checkpoint")
 		}
 		startFrom++
@@ -507,7 +519,7 @@ func (h *Head) Init(minValidTime int64) error {
 		}
 
 		sr := wal.NewSegmentBufReader(s)
-		err = h.loadWAL(wal.NewReader(sr))
+		err = h.loadWAL(wal.NewReader(sr), multiRef)
 		sr.Close() // Close the reader so that if there was an error the repair can remove the corrupted file under Windows.
 		if err == nil {
 			continue
