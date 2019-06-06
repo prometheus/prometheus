@@ -708,9 +708,13 @@ Snapshot creates a snapshot of all current data into `snapshots/<datetime>-<rand
 It will optionally skip snapshotting data that is only present in the head block, and which has not yet been compacted to disk.
 
 ```
-POST /api/v1/admin/tsdb/snapshot?skip_head=<bool>
-PUT /api/v1/admin/tsdb/snapshot?skip_head=<bool>
+POST /api/v1/admin/tsdb/snapshot
+PUT /api/v1/admin/tsdb/snapshot
 ```
+
+URL query parameters:
+
+- `skip_head=<bool>`: Skip data present in the head block. Optional.
 
 ```json
 $ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/snapshot
