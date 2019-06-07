@@ -86,6 +86,7 @@ endif
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
+DOCKERFILE_PATH         ?= ./
 DOCKER_REPO             ?= prom
 
 DOCKER_ARCHS            ?= amd64
@@ -212,7 +213,7 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)" \
 		--build-arg ARCH="$*" \
 		--build-arg OS="linux" \
-		.
+		$(DOCKERFILE_PATH)
 
 .PHONY: common-docker-publish $(PUBLISH_DOCKER_ARCHS)
 common-docker-publish: $(PUBLISH_DOCKER_ARCHS)
