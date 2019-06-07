@@ -151,6 +151,18 @@ func TestCorruptedChunk(t *testing.T) {
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []Series) string {
+	head := createHead(tb, series)
+	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil)
+	testutil.Ok(tb, err)
+
+	testutil.Ok(tb, os.MkdirAll(dir, 0777))
+
+	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime(), nil)
+	testutil.Ok(tb, err)
+	return filepath.Join(dir, ulid.String())
+}
+
+func createHead(tb testing.TB, series []Series) *Head {
 	head, err := NewHead(nil, nil, nil, 2*60*60*1000)
 	testutil.Ok(tb, err)
 	defer head.Close()
@@ -174,15 +186,7 @@ func createBlock(tb testing.TB, dir string, series []Series) string {
 	}
 	err = app.Commit()
 	testutil.Ok(tb, err)
-
-	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil)
-	testutil.Ok(tb, err)
-
-	testutil.Ok(tb, os.MkdirAll(dir, 0777))
-
-	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime(), nil)
-	testutil.Ok(tb, err)
-	return filepath.Join(dir, ulid.String())
+	return head
 }
 
 const (
@@ -197,6 +201,7 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []Series {
 	}
 
 	series := make([]Series, totalSeries)
+
 	for i := 0; i < totalSeries; i++ {
 		lbls := make(map[string]string, labelCount)
 		lbls[defaultLabelName] = strconv.Itoa(i)
