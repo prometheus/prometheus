@@ -20,7 +20,7 @@ import (
 )
 
 type maxGauge struct {
-	mtx   sync.Mutex
+	mtx   sync.RWMutex
 	value float64
 	prometheus.Gauge
 }
@@ -35,5 +35,7 @@ func (m *maxGauge) Set(value float64) {
 }
 
 func (m *maxGauge) Get() float64 {
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
 	return m.value
 }
