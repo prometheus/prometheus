@@ -1128,3 +1128,40 @@ func TestWalRepair(t *testing.T) {
 	}
 
 }
+
+func TestNewWalSegmentOnTruncate(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test_wal_segemnts")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.NewSize(nil, nil, dir, 32768)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, wlog, 1000)
+	testutil.Ok(t, err)
+	defer h.Close()
+	add := func(ts int64) {
+		app := h.Appender()
+		_, err := app.Add(labels.Labels{{"a", "b"}}, ts, 0)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+	}
+
+	add(0)
+	_, last, err := wlog.Segments()
+	testutil.Ok(t, err)
+	testutil.Equals(t, 0, last)
+
+	add(1)
+	testutil.Ok(t, h.Truncate(1))
+	_, last, err = wlog.Segments()
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, last)
+
+	add(2)
+	testutil.Ok(t, h.Truncate(2))
+	_, last, err = wlog.Segments()
+	testutil.Ok(t, err)
+	testutil.Equals(t, 2, last)
+}

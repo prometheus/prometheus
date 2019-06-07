@@ -576,6 +576,12 @@ func (h *Head) Truncate(mint int64) (err error) {
 	if err != nil {
 		return errors.Wrap(err, "get segment range")
 	}
+	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
+	// needed.
+	err = h.wal.NextSegment()
+	if err != nil {
+		return errors.Wrap(err, "next segment")
+	}
 	last-- // Never consider last segment for checkpoint.
 	if last < 0 {
 		return nil // no segments yet.

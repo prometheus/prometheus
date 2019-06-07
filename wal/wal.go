@@ -393,6 +393,13 @@ func SegmentName(dir string, i int) string {
 	return filepath.Join(dir, fmt.Sprintf("%08d", i))
 }
 
+// NextSegment creates the next segment and closes the previous one.
+func (w *WAL) NextSegment() error {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	return w.nextSegment()
+}
+
 // nextSegment creates the next segment and closes the previous one.
 func (w *WAL) nextSegment() error {
 	// Only flush the current page if it actually holds data.
