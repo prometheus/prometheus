@@ -243,6 +243,10 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 		}
 	case LabelKeep:
 		for _, l := range lset {
+			// Should ignore metrics name
+			if l.Name == labels.MetricName {
+				continue
+			}
 			if !cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
