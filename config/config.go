@@ -116,8 +116,7 @@ var (
 		Capacity:          10,
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
-		// Max number of times to retry a batch on recoverable errors.
-		MaxRetries: 3,
+		// Backoff times for retrying a batch of samples on recoverable errors.
 		MinBackoff: model.Duration(30 * time.Millisecond),
 		MaxBackoff: model.Duration(100 * time.Millisecond),
 	}
@@ -593,9 +592,6 @@ type QueueConfig struct {
 
 	// Maximum time sample will wait in buffer.
 	BatchSendDeadline model.Duration `yaml:"batch_send_deadline,omitempty"`
-
-	// Max number of times to retry a batch on recoverable errors.
-	MaxRetries int `yaml:"max_retries,omitempty"`
 
 	// On recoverable errors, backoff exponentially.
 	MinBackoff model.Duration `yaml:"min_backoff,omitempty"`

@@ -1298,8 +1298,6 @@ queue_config:
   [ max_samples_per_send: <int> | default = 100]
   # Maximum time a sample will wait in buffer.
   [ batch_send_deadline: <duration> | default = 5s ]
-  # Maximum number of times to retry a batch on recoverable errors.
-  [ max_retries: <int> | default = 3 ]
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]
   # Maximum retry delay.
