@@ -1718,11 +1718,13 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		}
 	}
 
+	lb := labels.NewBuilder(nil)
+
 	for _, s := range vec {
 		metric := s.Metric
 
 		if op == ItemCountValues {
-			lb := labels.NewBuilder(metric)
+			lb.Reset(metric)
 			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
 			metric = lb.Labels()
 		}
@@ -1742,7 +1744,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			var m labels.Labels
 
 			if without {
-				lb := labels.NewBuilder(metric)
+				lb.Reset(metric)
 				lb.Del(grouping...)
 				lb.Del(labels.MetricName)
 				m = lb.Labels()

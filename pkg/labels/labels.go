@@ -292,6 +292,13 @@ func NewBuilder(base Labels) *Builder {
 	}
 }
 
+// Reset clears all current state for the builder
+func (b *Builder) Reset(base Labels) {
+	b.base = base
+	b.del = b.del[:0]
+	b.add = b.add[:0]
+}
+
 // Del deletes the label of the given name.
 func (b *Builder) Del(ns ...string) *Builder {
 	for _, n := range ns {
