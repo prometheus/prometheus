@@ -303,68 +303,68 @@ func Intersect(its ...Postings) Postings {
 	if len(its) == 1 {
 		return its[0]
 	}
-
-	l := len(its) / 2
-	a := Intersect(its[:l]...)
-	b := Intersect(its[l:]...)
-
-	if a == EmptyPostings() || b == EmptyPostings() {
-		return EmptyPostings()
+	for _, p := range its {
+		if p == EmptyPostings() {
+			return EmptyPostings()
+		}
 	}
-	return newIntersectPostings(a, b)
+
+	return newIntersectPostings(its...)
 }
 
 type intersectPostings struct {
-	a, b Postings
-	cur  uint64
+	arr []Postings
+	cur uint64
 }
 
-func newIntersectPostings(a, b Postings) *intersectPostings {
-	return &intersectPostings{a: a, b: b}
+func newIntersectPostings(its ...Postings) *intersectPostings {
+	return &intersectPostings{arr: its}
 }
 
 func (it *intersectPostings) At() uint64 {
 	return it.cur
 }
 
-func (it *intersectPostings) doNext(id uint64) bool {
+func (it *intersectPostings) doNext() bool {
+Loop:
 	for {
-		if !it.b.Seek(id) {
-			return false
-		}
-		if vb := it.b.At(); vb != id {
-			if !it.a.Seek(vb) {
+		for _, p := range it.arr {
+			if !p.Seek(it.cur) {
 				return false
 			}
-			id = it.a.At()
-			if vb != id {
-				continue
+			if p.At() > it.cur {
+				it.cur = p.At()
+				continue Loop
 			}
 		}
-		it.cur = id
 		return true
 	}
 }
 
 func (it *intersectPostings) Next() bool {
-	if !it.a.Next() {
-		return false
+	for _, p := range it.arr {
+		if !p.Next() {
+			return false
+		}
+		if p.At() > it.cur {
+			it.cur = p.At()
+		}
 	}
-	return it.doNext(it.a.At())
+	return it.doNext()
 }
 
 func (it *intersectPostings) Seek(id uint64) bool {
-	if !it.a.Seek(id) {
-		return false
-	}
-	return it.doNext(it.a.At())
+	it.cur = id
+	return it.doNext()
 }
 
 func (it *intersectPostings) Err() error {
-	if it.a.Err() != nil {
-		return it.a.Err()
+	for _, p := range it.arr {
+		if p.Err() != nil {
+			return p.Err()
+		}
 	}
-	return it.b.Err()
+	return nil
 }
 
 // Merge returns a new iterator over the union of the input iterators.

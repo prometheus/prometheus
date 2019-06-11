@@ -221,36 +221,90 @@ func TestMultiIntersect(t *testing.T) {
 }
 
 func BenchmarkIntersect(t *testing.B) {
-	var a, b, c, d []uint64
+	t.Run("LongPostings1", func(bench *testing.B) {
+		var a, b, c, d []uint64
 
-	for i := 0; i < 10000000; i += 2 {
-		a = append(a, uint64(i))
-	}
-	for i := 5000000; i < 5000100; i += 4 {
-		b = append(b, uint64(i))
-	}
-	for i := 5090000; i < 5090600; i += 4 {
-		b = append(b, uint64(i))
-	}
-	for i := 4990000; i < 5100000; i++ {
-		c = append(c, uint64(i))
-	}
-	for i := 4000000; i < 6000000; i++ {
-		d = append(d, uint64(i))
-	}
-
-	i1 := newListPostings(a...)
-	i2 := newListPostings(b...)
-	i3 := newListPostings(c...)
-	i4 := newListPostings(d...)
-
-	t.ResetTimer()
-
-	for i := 0; i < t.N; i++ {
-		if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
-			t.Fatal(err)
+		for i := 0; i < 10000000; i += 2 {
+			a = append(a, uint64(i))
 		}
-	}
+		for i := 5000000; i < 5000100; i += 4 {
+			b = append(b, uint64(i))
+		}
+		for i := 5090000; i < 5090600; i += 4 {
+			b = append(b, uint64(i))
+		}
+		for i := 4990000; i < 5100000; i++ {
+			c = append(c, uint64(i))
+		}
+		for i := 4000000; i < 6000000; i++ {
+			d = append(d, uint64(i))
+		}
+
+		i1 := newListPostings(a...)
+		i2 := newListPostings(b...)
+		i3 := newListPostings(c...)
+		i4 := newListPostings(d...)
+
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
+				bench.Fatal(err)
+			}
+		}
+	})
+
+	t.Run("LongPostings2", func(bench *testing.B) {
+		var a, b, c, d []uint64
+
+		for i := 0; i < 12500000; i++ {
+			a = append(a, uint64(i))
+		}
+		for i := 7500000; i < 12500000; i++ {
+			b = append(b, uint64(i))
+		}
+		for i := 9000000; i < 20000000; i++ {
+			c = append(c, uint64(i))
+		}
+		for i := 10000000; i < 12000000; i++ {
+			d = append(d, uint64(i))
+		}
+
+		i1 := newListPostings(a...)
+		i2 := newListPostings(b...)
+		i3 := newListPostings(c...)
+		i4 := newListPostings(d...)
+
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
+				bench.Fatal(err)
+			}
+		}
+	})
+
+	// Many matchers(k >> n).
+	t.Run("ManyPostings", func(bench *testing.B) {
+		var its []Postings
+
+		// 100000 matchers(k=100000).
+		for i := 0; i < 100000; i++ {
+			var temp []uint64
+			for j := 1; j < 100; j++ {
+				temp = append(temp, uint64(j))
+			}
+			its = append(its, newListPostings(temp...))
+		}
+
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			if _, err := ExpandPostings(Intersect(its...)); err != nil {
+				bench.Fatal(err)
+			}
+		}
+	})
 }
 
 func TestMultiMerge(t *testing.T) {
