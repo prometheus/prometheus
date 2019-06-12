@@ -159,6 +159,9 @@ func (a *Adapter) Run() {
 
 // NewAdapter creates a new instance of Adapter.
 func NewAdapter(ctx context.Context, file string, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
 	return &Adapter{
 		ctx:      ctx,
 		provider: discovery.NewProvider(name, d),
