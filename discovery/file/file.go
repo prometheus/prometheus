@@ -135,8 +135,9 @@ func NewTimestampCollector() *TimestampCollector {
 var (
 	fileSDScanDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Name: "prometheus_sd_file_scan_duration_seconds",
-			Help: "The duration of the File-SD scan in seconds.",
+			Name:       "prometheus_sd_file_scan_duration_seconds",
+			Help:       "The duration of the File-SD scan in seconds.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		})
 	fileSDReadErrorsCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
