@@ -31,10 +31,11 @@ Please check the [`low-hanging-fruit`](https://github.com/prometheus/prometheus/
 For complete instructions on how to compile see: [Building From Source](https://github.com/prometheus/prometheus#building-from-source)
 
 For quickly compiling and testing your changes do:
-```
+
+```bash
 # For building.
 go build ./cmd/prometheus/
-./prometheus
+./prometheus --config.file ./documentation/examples/prometheus.yml
 
 # For testing.
 make test         # Make sure all the tests pass before you commit and push :)
