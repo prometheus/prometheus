@@ -27,7 +27,9 @@ import (
 	"github.com/prometheus/tsdb/testutil"
 )
 
-func TestWAL_Repair(t *testing.T) {
+// TestWALRepair_ReadingError ensures that a repair is run for an error
+// when reading a record.
+func TestWALRepair_ReadingError(t *testing.T) {
 	for name, test := range map[string]struct {
 		corrSgm    int              // Which segment to corrupt.
 		corrFunc   func(f *os.File) // Func that applies the corruption.
@@ -129,6 +131,10 @@ func TestWAL_Repair(t *testing.T) {
 				records = append(records, b)
 				testutil.Ok(t, w.Log(b))
 			}
+			first, last, err := w.Segments()
+			testutil.Ok(t, err)
+			testutil.Equals(t, 3, 1+last-first, "wal creation didn't result in expected number of segments")
+
 			testutil.Ok(t, w.Close())
 
 			f, err := os.OpenFile(SegmentName(dir, test.corrSgm), os.O_RDWR, 0666)
@@ -143,7 +149,7 @@ func TestWAL_Repair(t *testing.T) {
 			testutil.Ok(t, err)
 			defer w.Close()
 
-			first, last, err := w.Segments()
+			first, last, err = w.Segments()
 			testutil.Ok(t, err)
 
 			// Backfill segments from the most recent checkpoint onwards.

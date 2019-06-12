@@ -1045,7 +1045,9 @@ func TestHead_LogRollback(t *testing.T) {
 	testutil.Equals(t, []RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, series)
 }
 
-func TestWalRepair(t *testing.T) {
+// TestWalRepair_DecodingError ensures that a repair is run for an error
+// when decoding a record.
+func TestWalRepair_DecodingError(t *testing.T) {
 	var enc RecordEncoder
 	for name, test := range map[string]struct {
 		corrFunc  func(rec []byte) []byte // Func that applies the corruption to a record.
