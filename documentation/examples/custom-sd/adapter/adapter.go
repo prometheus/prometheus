@@ -82,7 +82,6 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 			}
 
 			sdGroup := customSD{
-
 				Targets: newTargets,
 				Labels:  newLabels,
 			}
@@ -96,8 +95,9 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 	return groups
 }
 
-// Parses incoming target groups updates. If the update contains changes to the target groups
-// Adapter already knows about, or new target groups, we Marshal to JSON and write to file.
+// Parses the incoming target groups updates. If the update contains changes to the
+// target groups which the adapter already knows about, or new target groups,
+// we marshal to JSON and write to the output file.
 func (a *Adapter) refreshTargetGroups(allTargetGroups map[string][]*targetgroup.Group) {
 	tempGroups := generateTargetGroups(allTargetGroups)
 
@@ -110,12 +110,12 @@ func (a *Adapter) refreshTargetGroups(allTargetGroups map[string][]*targetgroup.
 	}
 }
 
-// Writes JSON formatted targets to output file.
+// Writes JSON formatted targets to the output file.
 func (a *Adapter) writeOutput() error {
 	arr := mapToArray(a.groups)
 	b, _ := json.MarshalIndent(arr, "", "    ")
 
-	dir, _ := filepath.Split(a.output)
+	dir := filepath.Dir(a.output)
 	tmpfile, err := ioutil.TempFile(dir, "sd-adapter")
 	if err != nil {
 		return err

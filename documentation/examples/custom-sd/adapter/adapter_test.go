@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -162,6 +163,5 @@ func TestGenerateTargetGroups(t *testing.T) {
 				result,
 				testCase.expectedCustomSD)
 		}
-
 	}
 }
