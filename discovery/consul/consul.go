@@ -75,9 +75,10 @@ var (
 		})
 	rpcDuration = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Namespace: namespace,
-			Name:      "sd_consul_rpc_duration_seconds",
-			Help:      "The duration of a Consul RPC call in seconds.",
+			Namespace:  namespace,
+			Name:       "sd_consul_rpc_duration_seconds",
+			Help:       "The duration of a Consul RPC call in seconds.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		},
 		[]string{"endpoint", "call"},
 	)
