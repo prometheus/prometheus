@@ -70,7 +70,9 @@ func ruleUnitTest(filename string) []error {
 	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
 		return []error{err}
 	}
-	resolveFilepaths(filepath.Dir(filename), &unitTestInp)
+	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {
+		return []error{err}
+	}
 
 	if unitTestInp.EvaluationInterval == 0 {
 		unitTestInp.EvaluationInterval = 1 * time.Minute
@@ -128,14 +130,25 @@ func (utf *unitTestFile) maxEvalTime() time.Duration {
 	return maxd
 }
 
-// resolveFilepaths joins all relative paths in a configuration
-// with a given base directory.
-func resolveFilepaths(baseDir string, utf *unitTestFile) {
+// resolveAndGlobFilepaths joins all relative paths in a configuration
+// with a given base directory and replaces all globs with matching files.
+func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 	for i, rf := range utf.RuleFiles {
 		if rf != "" && !filepath.IsAbs(rf) {
 			utf.RuleFiles[i] = filepath.Join(baseDir, rf)
 		}
 	}
+
+	var globbedFiles []string
+	for _, rf := range utf.RuleFiles {
+		m, err := filepath.Glob(rf)
+		if err != nil {
+			return err
+		}
+		globbedFiles = append(globbedFiles, m...)
+	}
+	utf.RuleFiles = globbedFiles
+	return nil
 }
 
 // testGroup is a group of input series and tests associated with it.
