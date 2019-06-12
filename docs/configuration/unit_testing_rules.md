@@ -18,7 +18,7 @@ You can use `promtool` to test your rules.
 ## Test file format
 
 ```yaml
-# This is a list of rule files to consider for testing.
+# This is a list of rule files to consider for testing. Globs are supported.
 rule_files:
   [ - <file_name> ]
 
