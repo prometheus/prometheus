@@ -21,9 +21,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -401,4 +404,32 @@ func TestDebugHandler(t *testing.T) {
 
 		testutil.Equals(t, tc.code, w.Code)
 	}
+}
+
+func TestHTTPMetrics(t *testing.T) {
+	t.Parallel()
+
+	handler := New(nil, &Options{RoutePrefix: "/"})
+	getReady := func() int {
+		t.Helper()
+		w := httptest.NewRecorder()
+
+		req, err := http.NewRequest("GET", "/-/ready", nil)
+		testutil.Ok(t, err)
+
+		handler.router.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	code := getReady()
+	testutil.Equals(t, http.StatusServiceUnavailable, code)
+	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(requestCounter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
+
+	handler.Ready()
+	for range [2]int{} {
+		code = getReady()
+		testutil.Equals(t, http.StatusOK, code)
+	}
+	testutil.Equals(t, 2, int(prom_testutil.ToFloat64(requestCounter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
+	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(requestCounter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 }
