@@ -237,7 +237,7 @@ func lintReservedChars(mf dto.MetricFamily) []Problem {
 	return problems
 }
 
-var camelCase *regexp.Regexp = regexp.MustCompile(`[a-z][A-Z]`)
+var camelCase = regexp.MustCompile(`[a-z][A-Z]`)
 
 // lintCamelCase detects metric names and label names written in camelCase.
 func lintCamelCase(mf dto.MetricFamily) []Problem {
