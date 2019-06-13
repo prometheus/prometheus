@@ -20,7 +20,7 @@ import (
 )
 
 type maxGauge struct {
-	mtx   sync.Mutex
+	mtx   sync.RWMutex
 	value float64
 	prometheus.Gauge
 }
