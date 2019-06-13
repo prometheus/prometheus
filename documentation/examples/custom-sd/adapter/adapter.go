@@ -81,6 +81,10 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 				newLabels[string(name)] = string(value)
 			}
 
+			if len(newTargets) == 0 && len(newLabels) == 0 {
+				continue
+			}
+
 			sdGroup := customSD{
 				Targets: newTargets,
 				Labels:  newLabels,
