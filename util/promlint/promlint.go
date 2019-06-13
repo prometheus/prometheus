@@ -237,17 +237,18 @@ func lintReservedChars(mf dto.MetricFamily) []Problem {
 	return problems
 }
 
+var camelCase *regexp.Regexp = regexp.MustCompile(`[a-z][A-Z]`)
+
 // lintCamelCase detects metric names and label names written in camelCase.
 func lintCamelCase(mf dto.MetricFamily) []Problem {
 	var problems problems
-	re := regexp.MustCompile(`[a-z][A-Z]`)
-	if re.FindString(mf.GetName()) != "" {
+	if camelCase.FindString(mf.GetName()) != "" {
 		problems.Add(mf, "metric names should be written in 'snake_case' not 'camelCase'")
 	}
 
 	for _, m := range mf.GetMetric() {
 		for _, l := range m.GetLabel() {
-			if re.FindString(l.GetName()) != "" {
+			if camelCase.FindString(l.GetName()) != "" {
 				problems.Add(mf, "label names should be written in 'snake_case' not 'camelCase'")
 			}
 		}
