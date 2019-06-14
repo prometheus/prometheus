@@ -315,7 +315,7 @@ func (h *Head) updateMinMaxTime(mint, maxt int64) {
 	}
 }
 
-func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) error {
+func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs uint64
@@ -331,6 +331,18 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) error {
 		outputs      = make([]chan []RefSample, n)
 	)
 	wg.Add(n)
+
+	defer func() {
+		// For CorruptionErr ensure to terminate all workers before exiting.
+		if _, ok := err.(*wal.CorruptionErr); ok {
+			for i := 0; i < n; i++ {
+				close(inputs[i])
+				for range outputs[i] {
+				}
+			}
+			wg.Wait()
+		}
+	}()
 
 	for i := 0; i < n; i++ {
 		outputs[i] = make(chan []RefSample, 300)
@@ -349,9 +361,12 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) error {
 		samples   []RefSample
 		tstones   []Stone
 		allStones = newMemTombstones()
-		err       error
 	)
-	defer allStones.Close()
+	defer func() {
+		if err := allStones.Close(); err != nil {
+			level.Warn(h.logger).Log("msg", "closing  memTombstones during wal read", "err", err)
+		}
+	}()
 	for r.Next() {
 		series, samples, tstones = series[:0], samples[:0], tstones[:0]
 		rec := r.Record()
@@ -450,9 +465,6 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) error {
 			}
 		}
 	}
-	if r.Err() != nil {
-		return errors.Wrap(r.Err(), "read records")
-	}
 
 	// Signal termination to each worker and wait for it to close its output channel.
 	for i := 0; i < n; i++ {
@@ -461,6 +473,10 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) error {
 		}
 	}
 	wg.Wait()
+
+	if r.Err() != nil {
+		return errors.Wrap(r.Err(), "read records")
+	}
 
 	if err := allStones.Iter(func(ref uint64, dranges Intervals) error {
 		return h.chunkRewrite(ref, dranges)
@@ -497,7 +513,11 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return errors.Wrap(err, "open checkpoint")
 		}
-		defer sr.Close()
+		defer func() {
+			if err := sr.Close(); err != nil {
+				level.Warn(h.logger).Log("msg", "error while closing the wal segments reader", "err", err)
+			}
+		}()
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
@@ -522,14 +542,11 @@ func (h *Head) Init(minValidTime int64) error {
 
 		sr := wal.NewSegmentBufReader(s)
 		err = h.loadWAL(wal.NewReader(sr), multiRef)
-		sr.Close() // Close the reader so that if there was an error the repair can remove the corrupted file under Windows.
-		if err == nil {
-			continue
+		if err := sr.Close(); err != nil {
+			level.Warn(h.logger).Log("msg", "error while closing the wal segments reader", "err", err)
 		}
-		level.Warn(h.logger).Log("msg", "encountered WAL error, attempting repair", "err", err)
-		h.metrics.walCorruptionsTotal.Inc()
-		if err := h.wal.Repair(err); err != nil {
-			return errors.Wrap(err, "repair corrupted WAL")
+		if err != nil {
+			return err
 		}
 	}
 
