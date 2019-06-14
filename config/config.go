@@ -614,6 +614,9 @@ type RemoteReadConfig struct {
 	// RequiredMatchers is an optional list of equality matchers which have to
 	// be present in a selector to query the remote read endpoint.
 	RequiredMatchers model.LabelSet `yaml:"required_matchers,omitempty"`
+
+	// Required makes reads from this remote-read endpoint required for querying
+	Required bool `yaml:"required,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

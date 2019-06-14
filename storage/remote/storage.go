@@ -106,6 +106,9 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if !rrConf.ReadRecent {
 			q = PreferLocalStorageFilter(q, s.localStartTimeCallback)
 		}
+		if !rrConf.Required {
+			q = storage.WarningQueryable(q)
+		}
 		queryables = append(queryables, q)
 	}
 	s.queryables = queryables

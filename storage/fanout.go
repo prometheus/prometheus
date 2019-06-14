@@ -188,6 +188,35 @@ func (f *fanoutAppender) Rollback() (err error) {
 	return nil
 }
 
+// WarningQuerierFunc wraps a querierFunc with a warningQuerier
+func WarningQueryable(q Queryable) QueryableFunc {
+	return func(ctx context.Context, mint, maxt int64) (Querier, error) {
+		v, err := q.Querier(ctx, mint, maxt)
+		if err != nil {
+			return nil, err
+		}
+		return NewWarningQuerier(v), nil
+	}
+}
+
+func NewWarningQuerier(q Querier) Querier {
+	return &warningQuerier{q}
+}
+
+// warningQuerier implements Querier and will change all errors to warnings
+type warningQuerier struct {
+	Querier
+}
+
+// Select returns a set of series that matches the given label matchers.
+func (q *warningQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
+	v, w, err := q.Querier.Select(params, matchers...)
+	if err != nil {
+		w = append(w, err)
+	}
+	return v, w, nil
+}
+
 // mergeQuerier implements Querier.
 type mergeQuerier struct {
 	primaryQuerier Querier
@@ -239,15 +268,11 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 		}
 		if err != nil {
 			q.failedQueriers[querier] = struct{}{}
-			// If the error source isn't the primary querier, return the error as a warning and continue.
-			if querier != q.primaryQuerier {
-				warnings = append(warnings, err)
-				continue
-			} else {
-				return nil, nil, err
-			}
+			return nil, nil, err
 		}
-		seriesSets = append(seriesSets, set)
+		if set != nil {
+			seriesSets = append(seriesSets, set)
+		}
 	}
 	return NewMergeSeriesSet(seriesSets, q), warnings, nil
 }
