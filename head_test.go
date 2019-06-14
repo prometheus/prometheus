@@ -19,7 +19,6 @@ import (
 	"math/rand"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"testing"
 
@@ -34,8 +33,7 @@ import (
 )
 
 func BenchmarkCreateSeries(b *testing.B) {
-	lbls, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), b.N)
-	testutil.Ok(b, err)
+	series := genSeries(b.N, 10, 0, 0)
 
 	h, err := NewHead(nil, nil, nil, 10000)
 	testutil.Ok(b, err)
@@ -44,8 +42,8 @@ func BenchmarkCreateSeries(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for _, l := range lbls {
-		h.getOrCreate(l.Hash(), l)
+	for _, s := range series {
+		h.getOrCreate(s.Labels().Hash(), s.Labels())
 	}
 }
 

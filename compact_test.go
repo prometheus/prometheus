@@ -800,11 +800,11 @@ func BenchmarkCompaction(b *testing.B) {
 			compactionType: "normal",
 		},
 		{
-			ranges:         [][2]int64{{0, 10000}, {20000, 30000}, {40000, 50000}, {60000, 70000}},
+			ranges:         [][2]int64{{0, 2000}, {3000, 5000}, {6000, 8000}, {9000, 11000}},
 			compactionType: "normal",
 		},
 		{
-			ranges:         [][2]int64{{0, 100000}, {200000, 300000}, {400000, 500000}, {600000, 700000}},
+			ranges:         [][2]int64{{0, 5000}, {6000, 11000}, {12000, 17000}, {18000, 23000}},
 			compactionType: "normal",
 		},
 		// 40% overlaps.
@@ -817,11 +817,11 @@ func BenchmarkCompaction(b *testing.B) {
 			compactionType: "vertical",
 		},
 		{
-			ranges:         [][2]int64{{0, 10000}, {6000, 16000}, {12000, 22000}, {18000, 28000}},
+			ranges:         [][2]int64{{0, 2000}, {1200, 3200}, {2400, 4400}, {3600, 5600}},
 			compactionType: "vertical",
 		},
 		{
-			ranges:         [][2]int64{{0, 100000}, {60000, 160000}, {120000, 220000}, {180000, 280000}},
+			ranges:         [][2]int64{{0, 5000}, {3000, 8000}, {6000, 11000}, {9000, 14000}},
 			compactionType: "vertical",
 		},
 	}
