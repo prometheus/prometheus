@@ -141,8 +141,9 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Help: "Total number of chunks removed in the head",
 	})
 	m.gcDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "prometheus_tsdb_head_gc_duration_seconds",
-		Help: "Runtime of garbage collection in the head block.",
+		Name:       "prometheus_tsdb_head_gc_duration_seconds",
+		Help:       "Runtime of garbage collection in the head block.",
+		Objectives: map[float64]float64{},
 	})
 	m.maxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_max_time",
@@ -157,8 +158,9 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		return float64(h.MinTime())
 	})
 	m.walTruncateDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "prometheus_tsdb_wal_truncate_duration_seconds",
-		Help: "Duration of WAL truncation.",
+		Name:       "prometheus_tsdb_wal_truncate_duration_seconds",
+		Help:       "Duration of WAL truncation.",
+		Objectives: map[float64]float64{},
 	})
 	m.walCorruptionsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_wal_corruptions_total",

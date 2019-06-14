@@ -200,8 +200,9 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		stopc:       make(chan chan struct{}),
 	}
 	w.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "prometheus_tsdb_wal_fsync_duration_seconds",
-		Help: "Duration of WAL fsync.",
+		Name:       "prometheus_tsdb_wal_fsync_duration_seconds",
+		Help:       "Duration of WAL fsync.",
+		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 	})
 	w.pageFlushes = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_wal_page_flushes_total",
