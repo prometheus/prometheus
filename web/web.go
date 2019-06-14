@@ -508,6 +508,10 @@ func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	sort.Slice(groups, func(i, j int) bool {
+		return countActiveAlerts(groups[i]) > countActiveAlerts(groups[j])
+	})
+
 	alertStatus := AlertStatus{
 		Groups: groups,
 		AlertStateToRowClass: map[rules.AlertState]string{
@@ -517,6 +521,14 @@ func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	h.executeTemplate(w, "alerts.html", alertStatus)
+}
+
+func countActiveAlerts(group *rules.Group) int {
+	var activeAlerts = 0
+	for _, alert := range group.AlertingRules() {
+		activeAlerts += len(alert.ActiveAlerts())
+	}
+	return activeAlerts
 }
 
 func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
