@@ -248,7 +248,9 @@ proto:
 ifdef GOLANGCI_LINT
 $(GOLANGCI_LINT):
 	mkdir -p $(FIRST_GOPATH)/bin
-	curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(FIRST_GOPATH)/bin $(GOLANGCI_LINT_VERSION)
+	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh \
+		| sed -e '/install -d/d' \
+		| sh -s -- -b $(FIRST_GOPATH)/bin $(GOLANGCI_LINT_VERSION)
 endif
 
 ifdef GOVENDOR
