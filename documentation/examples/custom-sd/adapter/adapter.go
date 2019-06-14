@@ -13,19 +13,21 @@
 
 package adapter
 
-// NOTE: you do not need to edit this file when implementing a custom sd.
+// NOTE: you do not need to edit this file when implementing a custom service discovery.
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -33,15 +35,6 @@ import (
 type customSD struct {
 	Targets []string          `json:"targets"`
 	Labels  map[string]string `json:"labels"`
-}
-
-func fingerprint(group *targetgroup.Group) model.Fingerprint {
-	groupFingerprint := model.LabelSet{}.Fingerprint()
-	for _, targets := range group.Targets {
-		groupFingerprint ^= targets.Fingerprint()
-	}
-	groupFingerprint ^= group.Labels.Fingerprint()
-	return groupFingerprint
 }
 
 // Adapter runs an unknown service discovery implementation and converts its target groups
@@ -56,43 +49,44 @@ type Adapter struct {
 	logger   log.Logger
 }
 
-func mapToArray(m map[string]*customSD) []customSD {
-	arr := make([]customSD, 0, len(m))
-	for _, v := range m {
-		arr = append(arr, *v)
-	}
-	return arr
-}
-
 func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[string]*customSD {
 	groups := make(map[string]*customSD)
-	for k, sdTargetGroups := range allTargetGroups {
+	for _, sdTargetGroups := range allTargetGroups {
 		for _, group := range sdTargetGroups {
-			newTargets := make([]string, 0)
-			newLabels := make(map[string]string)
-
-			for _, targets := range group.Targets {
-				for _, target := range targets {
-					newTargets = append(newTargets, string(target))
-				}
-			}
-
+			groupLabels := make(map[string]string, len(group.Labels))
 			for name, value := range group.Labels {
-				newLabels[string(name)] = string(value)
+				groupLabels[string(name)] = string(value)
 			}
 
-			if len(newTargets) == 0 && len(newLabels) == 0 {
-				continue
-			}
+			for _, target := range group.Targets {
+				var (
+					targetAddress string
+					targetLabels  = make(map[string]string)
+				)
 
-			sdGroup := customSD{
-				Targets: newTargets,
-				Labels:  newLabels,
+				for ln, lv := range target {
+					if ln == model.AddressLabel {
+						targetAddress = string(lv)
+						continue
+					}
+					targetLabels[string(ln)] = string(lv)
+				}
+				if targetAddress == "" {
+					continue
+				}
+				for k, v := range groupLabels {
+					if _, ok := targetLabels[k]; !ok {
+						targetLabels[k] = v
+					}
+				}
+				sdGroup := customSD{
+					Targets: []string{targetAddress},
+					Labels:  targetLabels,
+				}
+				// Make a unique key with the target's fingerprint.
+				fp := target.Fingerprint() ^ group.Labels.Fingerprint()
+				groups[fp.String()] = &sdGroup
 			}
-			// Make a unique key, including group's fingerprint, in case the sd_type (map key) and group.Source is not unique.
-			groupFingerprint := fingerprint(group)
-			key := fmt.Sprintf("%s:%s:%s", k, group.Source, groupFingerprint.String())
-			groups[key] = &sdGroup
 		}
 	}
 
@@ -109,16 +103,31 @@ func (a *Adapter) refreshTargetGroups(allTargetGroups map[string][]*targetgroup.
 		a.groups = tempGroups
 		err := a.writeOutput()
 		if err != nil {
-			level.Error(log.With(a.logger, "component", "sd-adapter")).Log("err", err)
+			level.Error(a.logger).Log("msg", "failed to write output", "err", err)
 		}
 	}
 }
 
+func (a *Adapter) serialize(w io.Writer) error {
+	var (
+		arr  = make([]*customSD, 0, len(a.groups))
+		keys = make([]string, 0, len(a.groups))
+	)
+	for k := range a.groups {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		arr = append(arr, a.groups[k])
+	}
+
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "    ")
+	return enc.Encode(arr)
+}
+
 // Writes JSON formatted targets to the output file.
 func (a *Adapter) writeOutput() error {
-	arr := mapToArray(a.groups)
-	b, _ := json.MarshalIndent(arr, "", "    ")
-
 	dir := filepath.Dir(a.output)
 	tmpfile, err := ioutil.TempFile(dir, "sd-adapter")
 	if err != nil {
@@ -126,39 +135,37 @@ func (a *Adapter) writeOutput() error {
 	}
 	defer tmpfile.Close()
 
-	_, err = tmpfile.Write(b)
+	err = a.serialize(tmpfile)
 	if err != nil {
 		return err
 	}
 
-	err = os.Rename(tmpfile.Name(), a.output)
-	if err != nil {
-		return err
-	}
-	return nil
+	return os.Rename(tmpfile.Name(), a.output)
 }
 
 func (a *Adapter) runCustomSD(ctx context.Context) {
-	updates := a.manager.SyncCh()
-	for {
-		select {
-		case <-ctx.Done():
-		case allTargetGroups, ok := <-updates:
-			// Handle the case that a target provider exits and closes the channel
-			// before the context is done.
-			if !ok {
-				return
-			}
-			a.refreshTargetGroups(allTargetGroups)
-		}
-	}
 }
 
-// Run starts a Discovery Manager and the custom service discovery implementation.
+// Run starts the custom service discovery implementation.
 func (a *Adapter) Run() {
 	go a.manager.Run()
 	a.manager.ApplyConfig([]discovery.Provider{a.provider})
-	go a.runCustomSD(a.ctx)
+
+	go func() {
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case allTargetGroups, ok := <-a.manager.SyncCh():
+				// Handle the case that a target provider exits and closes the channel
+				// before the context is done.
+				if !ok {
+					return
+				}
+				a.refreshTargetGroups(allTargetGroups)
+			}
+		}
+	}()
 }
 
 // NewAdapter creates a new instance of Adapter.
@@ -173,6 +180,6 @@ func NewAdapter(ctx context.Context, file string, name string, d discovery.Disco
 		manager:  discovery.NewManager(ctx, logger),
 		output:   file,
 		name:     name,
-		logger:   logger,
+		logger:   log.With(logger, "component", "sd-adapter"),
 	}
 }
