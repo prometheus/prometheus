@@ -410,11 +410,11 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	}
 	defer q.Close()
 
-	names, err := q.LabelNames()
+	names, warnings, err := q.LabelNames()
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
-	return apiFuncResult{names, nil, nil, nil}
+	return apiFuncResult{names, nil, warnings, nil}
 }
 
 func (api *API) labelValues(r *http.Request) apiFuncResult {
@@ -430,12 +430,12 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 	}
 	defer q.Close()
 
-	vals, err := q.LabelValues(name)
+	vals, warnings, err := q.LabelValues(name)
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
 
-	return apiFuncResult{vals, nil, nil, nil}
+	return apiFuncResult{vals, nil, warnings, nil}
 }
 
 var (
