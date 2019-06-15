@@ -115,12 +115,14 @@ func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTree
 func (tc *ZookeeperTreeCache) Stop() {
 	tc.stop <- struct{}{}
 	go func() {
-		go func() {
-			// drain tc.head.events to avoid go routine leak
-			for range tc.head.events {
-			}
-		}()
+		// drain tc.head.events so that go routines can make progress and exit
+		for range tc.head.events {
+		}
+	}()
+	go func() {
 		tc.wg.Wait()
+		// close the tc.head.events after all go rountines have exited so that
+		// the one above will exit
 		close(tc.head.events)
 		close(tc.events)
 	}()
