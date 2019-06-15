@@ -56,6 +56,7 @@ If functions are used in a pipeline, the pipeline value is passed as the last ar
 | humanize      | number        | string  | Converts a number to a more readable format, using [metric prefixes](https://en.wikipedia.org/wiki/Metric_prefix).
 | humanize1024  | number        | string  | Like `humanize`, but uses 1024 as the base rather than 1000. |
 | humanizeDuration | number     | string  | Converts a duration in seconds to a more readable format. |
+| humanizePercentage | number   | string  | Converts a ratio value to a fraction of 100. |
 | humanizeTimestamp | number    | string  | Converts a Unix timestamp in seconds to a more readable format. |
 
 Humanizing functions are intended to produce reasonable output for consumption

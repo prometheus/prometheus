@@ -36,6 +36,7 @@ var PATH_PREFIX = "{{ pathPrefix }}";
 {{ define "humanizeNoSmallPrefix" }}{{ if and (lt . 1.0) (gt . -1.0) }}{{ printf "%.3g" . }}{{ else }}{{ humanize . }}{{ end }}{{ end }}
 {{ define "humanize1024" }}{{ humanize1024 . }}{{ end }}
 {{ define "humanizeDuration" }}{{ humanizeDuration . }}{{ end }}
+{{ define "humanizePercentage" }}{{ humanizePercentage . }}{{ end }}
 {{ define "humanizeTimestamp" }}{{ humanizeTimestamp . }}{{ end }}
 {{ define "printf.1f" }}{{ printf "%.1f" . }}{{ end }}
 {{ define "printf.3g" }}{{ printf "%.3g" . }}{{ end }}

@@ -198,6 +198,11 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "+Inf:+Inf:+Inf:+Inf:-Inf:-Inf:-Inf:-Inf:NaN:NaN:NaN:NaN:",
 		},
 		{
+			// HumanizePercentage - model.SampleValue input.
+			text:   "{{ -0.22222 | humanizePercentage }}:{{ 0.0 | humanizePercentage }}:{{ 0.1234567 | humanizePercentage }}:{{ 1.23456 | humanizePercentage }}",
+			output: "-22.22%:0%:12.35%:123.5%",
+		},
+		{
 			// HumanizeTimestamp - model.SampleValue input.
 			text:   "{{ 1435065584.128 | humanizeTimestamp }}",
 			output: "2015-06-23 13:19:44.128 +0000 UTC",
