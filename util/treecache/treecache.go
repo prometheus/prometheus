@@ -121,14 +121,16 @@ func (tc *ZookeeperTreeCache) Stop() {
 	}()
 	go func() {
 		tc.wg.Wait()
-		// close the tc.head.events after all go rountines have exited so that
-		// the one above will exit
+		// close the tc.head.events after all members of the wait group have exited
+		// this makes the go routine above exit
 		close(tc.head.events)
 		close(tc.events)
 	}()
 }
 
 func (tc *ZookeeperTreeCache) loop(path string) {
+	defer tc.wg.Done()
+
 	failureMode := false
 	retryChan := make(chan struct{})
 
@@ -205,7 +207,6 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 			// stop head as well
 			tc.head.done <- struct{}{}
 			tc.recursiveStop(tc.head)
-			tc.wg.Done()
 			return
 		}
 	}
@@ -265,6 +266,7 @@ func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTr
 
 	tc.wg.Add(1)
 	go func() {
+		defer tc.wg.Done()
 		numWatchers.Inc()
 		// Pass up zookeeper events, until the node is deleted.
 		select {
@@ -275,7 +277,6 @@ func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTr
 		case <-node.done:
 		}
 		numWatchers.Dec()
-		tc.wg.Done()
 	}()
 	return nil
 }
