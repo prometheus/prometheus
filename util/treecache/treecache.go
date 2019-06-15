@@ -103,7 +103,8 @@ func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTree
 	tc.head = &zookeeperTreeCacheNode{
 		events:   make(chan zk.Event),
 		children: map[string]*zookeeperTreeCacheNode{},
-		stopped:  true,
+		done:     make(chan struct{}, 1),
+		stopped:  true, // set head's stop to be true so that recursiveDelete will not stop the head node
 	}
 	tc.wg.Add(1)
 	go tc.loop(path)
@@ -114,7 +115,13 @@ func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTree
 func (tc *ZookeeperTreeCache) Stop() {
 	tc.stop <- struct{}{}
 	go func() {
+		go func() {
+			// drain tc.head.events to avoid go routine leak
+			for range tc.head.events {
+			}
+		}()
 		tc.wg.Wait()
+		close(tc.head.events)
 		close(tc.events)
 	}()
 }
@@ -193,6 +200,8 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 				failureMode = false
 			}
 		case <-tc.stop:
+			// stop head as well
+			tc.head.done <- struct{}{}
 			tc.recursiveStop(tc.head)
 			tc.wg.Done()
 			return
