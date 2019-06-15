@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -68,6 +69,7 @@ type ZookeeperTreeCache struct {
 	prefix string
 	events chan ZookeeperTreeCacheEvent
 	stop   chan struct{}
+	wg     *sync.WaitGroup
 	head   *zookeeperTreeCacheNode
 
 	logger log.Logger
@@ -94,6 +96,7 @@ func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTree
 		prefix: path,
 		events: events,
 		stop:   make(chan struct{}),
+		wg:     &sync.WaitGroup{},
 
 		logger: logger,
 	}
@@ -102,6 +105,7 @@ func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTree
 		children: map[string]*zookeeperTreeCacheNode{},
 		stopped:  true,
 	}
+	tc.wg.Add(1)
 	go tc.loop(path)
 	return tc
 }
@@ -109,6 +113,10 @@ func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTree
 // Stop stops the tree cache.
 func (tc *ZookeeperTreeCache) Stop() {
 	tc.stop <- struct{}{}
+	go func() {
+		tc.wg.Wait()
+		close(tc.events)
+	}()
 }
 
 func (tc *ZookeeperTreeCache) loop(path string) {
@@ -186,6 +194,7 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 			}
 		case <-tc.stop:
 			tc.recursiveStop(tc.head)
+			tc.wg.Done()
 			return
 		}
 	}
@@ -243,6 +252,7 @@ func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTr
 		}
 	}
 
+	tc.wg.Add(1)
 	go func() {
 		numWatchers.Inc()
 		// Pass up zookeeper events, until the node is deleted.
@@ -254,6 +264,7 @@ func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTr
 		case <-node.done:
 		}
 		numWatchers.Dec()
+		tc.wg.Done()
 	}()
 	return nil
 }
