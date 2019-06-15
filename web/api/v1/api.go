@@ -491,8 +491,8 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	var sets []storage.SeriesSet
 	var warnings storage.Warnings
 	for _, mset := range matcherSets {
-		// SelectParams.Func="metadata" should instruct remote_read endpoint to send labels only (without samples)
-		s, wrn, err := q.Select(&storage.SelectParams{Func: "metadata"}, mset...)
+		// SelectParams.Metadata=true should instruct remote_read endpoint to send labels only (without samples)
+		s, wrn, err := q.Select(&storage.SelectParams{Metadata: true}, mset...)
 		warnings = append(warnings, wrn...)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
