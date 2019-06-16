@@ -243,6 +243,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "queue_time"},
+			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		}),
 		queryPrepareTime: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
@@ -250,6 +251,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "prepare_time"},
+			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		}),
 		queryInnerEval: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
@@ -257,6 +259,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "inner_eval"},
+			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		}),
 		queryResultSort: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
@@ -264,6 +267,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "result_sort"},
+			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		}),
 	}
 	metrics.maxConcurrentQueries.Set(float64(opts.MaxConcurrent))
@@ -1718,11 +1722,13 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		}
 	}
 
+	lb := labels.NewBuilder(nil)
+
 	for _, s := range vec {
 		metric := s.Metric
 
 		if op == ItemCountValues {
-			lb := labels.NewBuilder(metric)
+			lb.Reset(metric)
 			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
 			metric = lb.Labels()
 		}
@@ -1742,7 +1748,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			var m labels.Labels
 
 			if without {
-				lb := labels.NewBuilder(metric)
+				lb.Reset(metric)
 				lb.Del(grouping...)
 				lb.Del(labels.MetricName)
 				m = lb.Labels()

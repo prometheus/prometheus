@@ -141,6 +141,7 @@ const (
 	podContainerPortNameLabel     = metaLabelPrefix + "pod_container_port_name"
 	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
 	podContainerPortProtocolLabel = metaLabelPrefix + "pod_container_port_protocol"
+	podContainerIsInit            = metaLabelPrefix + "pod_container_init"
 	podReadyLabel                 = metaLabelPrefix + "pod_ready"
 	podPhaseLabel                 = metaLabelPrefix + "pod_phase"
 	podLabelPrefix                = metaLabelPrefix + "pod_label_"
@@ -213,7 +214,10 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	tg.Labels = podLabels(pod)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 
-	for _, c := range pod.Spec.Containers {
+	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
+	for i, c := range containers {
+		isInit := i >= len(pod.Spec.Containers)
+
 		// If no ports are defined for the container, create an anonymous
 		// target per container.
 		if len(c.Ports) == 0 {
@@ -222,6 +226,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:    lv(pod.Status.PodIP),
 				podContainerNameLabel: lv(c.Name),
+				podContainerIsInit:    lv(strconv.FormatBool(isInit)),
 			})
 			continue
 		}
@@ -236,6 +241,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 				podContainerPortNumberLabel:   lv(ports),
 				podContainerPortNameLabel:     lv(port.Name),
 				podContainerPortProtocolLabel: lv(string(port.Protocol)),
+				podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 			})
 		}
 	}

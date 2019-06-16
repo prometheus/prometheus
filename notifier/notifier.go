@@ -146,10 +146,11 @@ type alertMetrics struct {
 func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanagersDiscovered func() float64) *alertMetrics {
 	m := &alertMetrics{
 		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "latency_seconds",
-			Help:      "Latency quantiles for sending alert notifications.",
+			Namespace:  namespace,
+			Subsystem:  subsystem,
+			Name:       "latency_seconds",
+			Help:       "Latency quantiles for sending alert notifications.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		},
 			[]string{alertmanagerLabel},
 		),
