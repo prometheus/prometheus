@@ -348,7 +348,7 @@ func QueryInstant(url, query string, p printer) int {
 	api := v1.NewAPI(c)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.Query(ctx, query, time.Now())
+	val, _, err := api.Query(ctx, query, time.Now()) // Ignoring warnings for now.
 	cancel()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
@@ -408,7 +408,7 @@ func QueryRange(url, query, start, end string, step time.Duration, p printer) in
 	api := v1.NewAPI(c)
 	r := v1.Range{Start: stime, End: etime, Step: step}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.QueryRange(ctx, query, r)
+	val, _, err := api.QueryRange(ctx, query, r) // Ignoring warnings for now.
 	cancel()
 
 	if err != nil {
@@ -462,7 +462,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.Series(ctx, matchers, stime, etime)
+	val, _, err := api.Series(ctx, matchers, stime, etime) // Ignoring warnings for now.
 	cancel()
 
 	if err != nil {

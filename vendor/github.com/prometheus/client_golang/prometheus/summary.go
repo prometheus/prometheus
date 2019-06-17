@@ -39,7 +39,7 @@ const quantileLabel = "quantile"
 // A typical use-case is the observation of request latencies. By default, a
 // Summary provides the median, the 90th and the 99th percentile of the latency
 // as rank estimations. However, the default behavior will change in the
-// upcoming v0.10 of the library. There will be no rank estimations at all by
+// upcoming v1.0.0 of the library. There will be no rank estimations at all by
 // default. For a sane transition, it is recommended to set the desired rank
 // estimations explicitly.
 //
@@ -58,16 +58,8 @@ type Summary interface {
 	Observe(float64)
 }
 
-// DefObjectives are the default Summary quantile values.
-//
-// Deprecated: DefObjectives will not be used as the default objectives in
-// v0.10 of the library. The default Summary will have no quantiles then.
-var (
-	DefObjectives = map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001}
-
-	errQuantileLabelNotAllowed = fmt.Errorf(
-		"%q is not allowed as label name in summaries", quantileLabel,
-	)
+var errQuantileLabelNotAllowed = fmt.Errorf(
+	"%q is not allowed as label name in summaries", quantileLabel,
 )
 
 // Default values for SummaryOpts.
@@ -86,7 +78,7 @@ const (
 // mandatory to set Name to a non-empty string. While all other fields are
 // optional and can safely be left at their zero value, it is recommended to set
 // a help string and to explicitly set the Objectives field to the desired value
-// as the default value will change in the upcoming v0.10 of the library.
+// as the default value will change in the upcoming v1.0.0 of the library.
 type SummaryOpts struct {
 	// Namespace, Subsystem, and Name are components of the fully-qualified
 	// name of the Summary (created by joining these components with
@@ -123,14 +115,8 @@ type SummaryOpts struct {
 	// Objectives defines the quantile rank estimates with their respective
 	// absolute error. If Objectives[q] = e, then the value reported for q
 	// will be the φ-quantile value for some φ between q-e and q+e.  The
-	// default value is DefObjectives. It is used if Objectives is left at
-	// its zero value (i.e. nil). To create a Summary without Objectives,
-	// set it to an empty map (i.e. map[float64]float64{}).
-	//
-	// Note that the current value of DefObjectives is deprecated. It will
-	// be replaced by an empty map in v0.10 of the library. Please
-	// explicitly set Objectives to the desired value to avoid problems
-	// during the transition.
+	// default value is an empty map, resulting in a summary without
+	// quantiles.
 	Objectives map[float64]float64
 
 	// MaxAge defines the duration for which an observation stays relevant
@@ -199,7 +185,7 @@ func newSummary(desc *Desc, opts SummaryOpts, labelValues ...string) Summary {
 	}
 
 	if opts.Objectives == nil {
-		opts.Objectives = DefObjectives
+		opts.Objectives = map[float64]float64{}
 	}
 
 	if opts.MaxAge < 0 {
