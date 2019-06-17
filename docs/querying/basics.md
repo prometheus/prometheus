@@ -6,10 +6,11 @@ sort_rank: 1
 
 # Querying Prometheus
 
-Prometheus provides a functional expression language that lets the user select
-and aggregate time series data in real time. The result of an expression can
-either be shown as a graph, viewed as tabular data in Prometheus's expression
-browser, or consumed by external systems via the [HTTP API](api.md).
+Prometheus provides a functional query language called PromQL (Prometheus Query
+Language) that lets the user select and aggregate time series data in real
+time. The result of an expression can either be shown as a graph, viewed as
+tabular data in Prometheus's expression browser, or consumed by external
+systems via the [HTTP API](api.md).
 
 ## Examples
 
@@ -87,8 +88,8 @@ against regular expressions. The following label matching operators exist:
 
 * `=`: Select labels that are exactly equal to the provided string.
 * `!=`: Select labels that are not equal to the provided string.
-* `=~`: Select labels that regex-match the provided string (or substring).
-* `!~`: Select labels that do not regex-match the provided string (or substring).
+* `=~`: Select labels that regex-match the provided string.
+* `!~`: Select labels that do not regex-match the provided string.
 
 For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
@@ -168,6 +169,14 @@ The same works for range vectors. This returns the 5-minutes rate that
 `http_requests_total` had a week ago:
 
     rate(http_requests_total[5m] offset 1w)
+
+## Subquery
+
+Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector. 
+
+Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
+
+* `<resolution>` is optional. Default is the global evaluation interval.
 
 ## Operators
 

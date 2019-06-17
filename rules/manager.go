@@ -16,7 +16,6 @@ package rules
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 	"net/url"
 	"sort"
@@ -29,8 +28,8 @@ import (
 	"github.com/go-kit/kit/log/level"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -39,7 +38,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// RuleHealth describes the health state of a target.
+// RuleHealth describes the health state of a rule.
 type RuleHealth string
 
 // The possible health states of a rule based on the last execution.
@@ -53,49 +52,6 @@ const (
 const namespace = "prometheus"
 
 var (
-	evalDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace: namespace,
-			Name:      "rule_evaluation_duration_seconds",
-			Help:      "The duration for a rule to execute.",
-		},
-	)
-	evalFailures = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "rule_evaluation_failures_total",
-			Help:      "The total number of rule evaluation failures.",
-		},
-	)
-	evalTotal = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "rule_evaluations_total",
-			Help:      "The total number of rule evaluations.",
-		},
-	)
-	iterationDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Namespace:  namespace,
-		Name:       "rule_group_duration_seconds",
-		Help:       "The duration of rule group evaluations.",
-		Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
-	})
-	iterationsMissed = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: namespace,
-		Name:      "rule_group_iterations_missed_total",
-		Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
-	})
-	iterationsScheduled = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: namespace,
-		Name:      "rule_group_iterations_total",
-		Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
-	})
-	lastDuration = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, "", "rule_group_last_duration_seconds"),
-		"The duration of the last rule group evaluation.",
-		[]string{"rule_group"},
-		nil,
-	)
 	groupInterval = prometheus.NewDesc(
 		prometheus.BuildFQName(namespace, "", "rule_group_interval_seconds"),
 		"The interval of a rule group.",
@@ -104,12 +60,99 @@ var (
 	)
 )
 
-func init() {
-	prometheus.MustRegister(iterationDuration)
-	prometheus.MustRegister(iterationsScheduled)
-	prometheus.MustRegister(iterationsMissed)
-	prometheus.MustRegister(evalFailures)
-	prometheus.MustRegister(evalDuration)
+// Metrics for rule evaluation.
+type Metrics struct {
+	evalDuration        prometheus.Summary
+	evalFailures        prometheus.Counter
+	evalTotal           prometheus.Counter
+	iterationDuration   prometheus.Summary
+	iterationsMissed    prometheus.Counter
+	iterationsScheduled prometheus.Counter
+	groupLastEvalTime   *prometheus.GaugeVec
+	groupLastDuration   *prometheus.GaugeVec
+	groupRules          *prometheus.GaugeVec
+}
+
+// NewGroupMetrics makes a new Metrics and registers them with the provided registerer,
+// if not nil.
+func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
+	m := &Metrics{
+		evalDuration: prometheus.NewSummary(
+			prometheus.SummaryOpts{
+				Namespace:  namespace,
+				Name:       "rule_evaluation_duration_seconds",
+				Help:       "The duration for a rule to execute.",
+				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+			}),
+		evalFailures: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_evaluation_failures_total",
+				Help:      "The total number of rule evaluation failures.",
+			}),
+		evalTotal: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_evaluations_total",
+				Help:      "The total number of rule evaluations.",
+			}),
+		iterationDuration: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace:  namespace,
+			Name:       "rule_group_duration_seconds",
+			Help:       "The duration of rule group evaluations.",
+			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
+		}),
+		iterationsMissed: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "rule_group_iterations_missed_total",
+			Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
+		}),
+		iterationsScheduled: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "rule_group_iterations_total",
+			Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
+		}),
+		groupLastEvalTime: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_last_evaluation_timestamp_seconds",
+				Help:      "The timestamp of the last rule group evaluation in seconds.",
+			},
+			[]string{"rule_group"},
+		),
+		groupLastDuration: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_last_duration_seconds",
+				Help:      "The duration of the last rule group evaluation.",
+			},
+			[]string{"rule_group"},
+		),
+		groupRules: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_rules",
+				Help:      "The number of rules.",
+			},
+			[]string{"rule_group"},
+		),
+	}
+
+	if reg != nil {
+		reg.MustRegister(
+			m.evalDuration,
+			m.evalFailures,
+			m.evalTotal,
+			m.iterationDuration,
+			m.iterationsMissed,
+			m.iterationsScheduled,
+			m.groupLastEvalTime,
+			m.groupLastDuration,
+			m.groupRules,
+		)
+	}
+
+	return m
 }
 
 // QueryFunc processes PromQL queries.
@@ -137,7 +180,7 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 				Metric: labels.Labels{},
 			}}, nil
 		default:
-			return nil, fmt.Errorf("rule result is not a vector or scalar")
+			return nil, errors.New("rule result is not a vector or scalar")
 		}
 	}
 }
@@ -146,6 +189,8 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 // interval and acted upon (currently either recorded or used for alerting).
 type Rule interface {
 	Name() string
+	// Labels of the rule.
+	Labels() labels.Labels
 	// eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
@@ -159,8 +204,12 @@ type Rule interface {
 	// Health returns the current health of the rule.
 	Health() RuleHealth
 	SetEvaluationDuration(time.Duration)
+	// GetEvaluationDuration returns last evaluation duration.
+	// NOTE: Used dynamically by rules.html template.
 	GetEvaluationDuration() time.Duration
 	SetEvaluationTimestamp(time.Time)
+	// GetEvaluationTimestamp returns last evaluation timestamp.
+	// NOTE: Used dynamically by rules.html template.
 	GetEvaluationTimestamp() time.Time
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
@@ -185,10 +234,21 @@ type Group struct {
 	terminated chan struct{}
 
 	logger log.Logger
+
+	metrics *Metrics
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
 func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRestore bool, opts *ManagerOptions) *Group {
+	metrics := opts.Metrics
+	if metrics == nil {
+		metrics = NewGroupMetrics(opts.Registerer)
+	}
+
+	metrics.groupLastEvalTime.WithLabelValues(groupKey(file, name))
+	metrics.groupLastDuration.WithLabelValues(groupKey(file, name))
+	metrics.groupRules.WithLabelValues(groupKey(file, name)).Set(float64(len(rules)))
+
 	return &Group{
 		name:                 name,
 		file:                 file,
@@ -200,6 +260,7 @@ func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRes
 		done:                 make(chan struct{}),
 		terminated:           make(chan struct{}),
 		logger:               log.With(opts.Logger, "group", name),
+		metrics:              metrics,
 	}
 }
 
@@ -227,15 +288,15 @@ func (g *Group) run(ctx context.Context) {
 	}
 
 	iter := func() {
-		iterationsScheduled.Inc()
+		g.metrics.iterationsScheduled.Inc()
 
 		start := time.Now()
 		g.Eval(ctx, evalTimestamp)
 		timeSinceStart := time.Since(start)
 
-		iterationDuration.Observe(timeSinceStart.Seconds())
-		g.SetEvaluationDuration(timeSinceStart)
-		g.SetEvaluationTimestamp(start)
+		g.metrics.iterationDuration.Observe(timeSinceStart.Seconds())
+		g.setEvaluationDuration(timeSinceStart)
+		g.setEvaluationTimestamp(start)
 	}
 
 	// The assumption here is that since the ticker was started after having
@@ -256,8 +317,8 @@ func (g *Group) run(ctx context.Context) {
 		case <-tick.C:
 			missed := (time.Since(evalTimestamp) / g.interval) - 1
 			if missed > 0 {
-				iterationsMissed.Add(float64(missed))
-				iterationsScheduled.Add(float64(missed))
+				g.metrics.iterationsMissed.Add(float64(missed))
+				g.metrics.iterationsScheduled.Add(float64(missed))
 			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 			iter()
@@ -278,8 +339,8 @@ func (g *Group) run(ctx context.Context) {
 			case <-tick.C:
 				missed := (time.Since(evalTimestamp) / g.interval) - 1
 				if missed > 0 {
-					iterationsMissed.Add(float64(missed))
-					iterationsScheduled.Add(float64(missed))
+					g.metrics.iterationsMissed.Add(float64(missed))
+					g.metrics.iterationsScheduled.Add(float64(missed))
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 				iter()
@@ -295,10 +356,42 @@ func (g *Group) stop() {
 
 func (g *Group) hash() uint64 {
 	l := labels.New(
-		labels.Label{"name", g.name},
-		labels.Label{"file", g.file},
+		labels.Label{Name: "name", Value: g.name},
+		labels.Label{Name: "file", Value: g.file},
 	)
 	return l.Hash()
+}
+
+// AlertingRules returns the list of the group's alerting rules.
+func (g *Group) AlertingRules() []*AlertingRule {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	var alerts []*AlertingRule
+	for _, rule := range g.rules {
+		if alertingRule, ok := rule.(*AlertingRule); ok {
+			alerts = append(alerts, alertingRule)
+		}
+	}
+	sort.Slice(alerts, func(i, j int) bool {
+		return alerts[i].State() > alerts[j].State() ||
+			(alerts[i].State() == alerts[j].State() &&
+				alerts[i].Name() < alerts[j].Name())
+	})
+	return alerts
+}
+
+// HasAlertingRules returns true if the group contains at least one AlertingRule.
+func (g *Group) HasAlertingRules() bool {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	for _, rule := range g.rules {
+		if _, ok := rule.(*AlertingRule); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // GetEvaluationDuration returns the time in seconds it took to evaluate the rule group.
@@ -308,18 +401,13 @@ func (g *Group) GetEvaluationDuration() time.Duration {
 	return g.evaluationDuration
 }
 
-// SetEvaluationDuration sets the time in seconds the last evaluation took.
-func (g *Group) SetEvaluationDuration(dur time.Duration) {
+// setEvaluationDuration sets the time in seconds the last evaluation took.
+func (g *Group) setEvaluationDuration(dur time.Duration) {
+	g.metrics.groupLastDuration.WithLabelValues(groupKey(g.file, g.name)).Set(dur.Seconds())
+
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 	g.evaluationDuration = dur
-}
-
-// SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule group was last evaluated.
-func (g *Group) SetEvaluationTimestamp(ts time.Time) {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
-	g.evaluationTimestamp = ts
 }
 
 // GetEvaluationTimestamp returns the time the last evaluation of the rule group took place.
@@ -327,6 +415,15 @@ func (g *Group) GetEvaluationTimestamp() time.Time {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 	return g.evaluationTimestamp
+}
+
+// setEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule group was last evaluated.
+func (g *Group) setEvaluationTimestamp(ts time.Time) {
+	g.metrics.groupLastEvalTime.WithLabelValues(groupKey(g.file, g.name)).Set(float64(ts.UnixNano()) / 1e9)
+
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	g.evaluationTimestamp = ts
 }
 
 // evalTimestamp returns the immediately preceding consistently slotted evaluation time.
@@ -341,9 +438,13 @@ func (g *Group) evalTimestamp() time.Time {
 	return time.Unix(0, base+offset)
 }
 
+func nameAndLabels(rule Rule) string {
+	return rule.Name() + rule.Labels().String()
+}
+
 // CopyState copies the alerting rule and staleness related state from the given group.
 //
-// Rules are matched based on their name. If there are duplicates, the
+// Rules are matched based on their name and labels. If there are duplicates, the
 // first is matched with the first, second with the second etc.
 func (g *Group) CopyState(from *Group) {
 	g.evaluationDuration = from.evaluationDuration
@@ -351,18 +452,20 @@ func (g *Group) CopyState(from *Group) {
 	ruleMap := make(map[string][]int, len(from.rules))
 
 	for fi, fromRule := range from.rules {
-		l := ruleMap[fromRule.Name()]
-		ruleMap[fromRule.Name()] = append(l, fi)
+		nameAndLabels := nameAndLabels(fromRule)
+		l := ruleMap[nameAndLabels]
+		ruleMap[nameAndLabels] = append(l, fi)
 	}
 
 	for i, rule := range g.rules {
-		indexes := ruleMap[rule.Name()]
+		nameAndLabels := nameAndLabels(rule)
+		indexes := ruleMap[nameAndLabels]
 		if len(indexes) == 0 {
 			continue
 		}
 		fi := indexes[0]
 		g.seriesInPreviousEval[i] = from.seriesInPreviousEval[fi]
-		ruleMap[rule.Name()] = indexes[1:]
+		ruleMap[nameAndLabels] = indexes[1:]
 
 		ar, ok := rule.(*AlertingRule)
 		if !ok {
@@ -393,12 +496,14 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			sp.SetTag("name", rule.Name())
 			defer func(t time.Time) {
 				sp.Finish()
-				evalDuration.Observe(time.Since(t).Seconds())
-				rule.SetEvaluationDuration(time.Since(t))
+
+				since := time.Since(t)
+				g.metrics.evalDuration.Observe(since.Seconds())
+				rule.SetEvaluationDuration(since)
 				rule.SetEvaluationTimestamp(t)
 			}(time.Now())
 
-			evalTotal.Inc()
+			g.metrics.evalTotal.Inc()
 
 			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
 			if err != nil {
@@ -407,7 +512,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
 					level.Warn(g.logger).Log("msg", "Evaluating rule failed", "rule", rule, "err", err)
 				}
-				evalFailures.Inc()
+				g.metrics.evalFailures.Inc()
 				return
 			}
 
@@ -484,6 +589,11 @@ func (g *Group) RestoreForState(ts time.Time) {
 		level.Error(g.logger).Log("msg", "Failed to get Querier", "err", err)
 		return
 	}
+	defer func() {
+		if err := q.Close(); err != nil {
+			level.Error(g.logger).Log("msg", "Failed to close Querier", "err", err)
+		}
+	}()
 
 	for _, rule := range g.Rules() {
 		alertRule, ok := rule.(*AlertingRule)
@@ -511,7 +621,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 				matchers = append(matchers, mt)
 			}
 
-			sset, err := q.Select(nil, matchers...)
+			sset, err, _ := q.Select(nil, matchers...)
 			if err != nil {
 				level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
 					labels.AlertName, alertRule.Name(), "stage", "Select", "err", err)
@@ -627,20 +737,29 @@ type ManagerOptions struct {
 	OutageTolerance time.Duration
 	ForGracePeriod  time.Duration
 	ResendDelay     time.Duration
+
+	Metrics *Metrics
 }
 
 // NewManager returns an implementation of Manager, ready to be started
 // by calling the Run method.
 func NewManager(o *ManagerOptions) *Manager {
+	if o.Metrics == nil {
+		o.Metrics = NewGroupMetrics(o.Registerer)
+	}
+
 	m := &Manager{
 		groups: map[string]*Group{},
 		opts:   o,
 		block:  make(chan struct{}),
 		logger: o.Logger,
 	}
+
 	if o.Registerer != nil {
 		o.Registerer.MustRegister(m)
 	}
+
+	o.Metrics.iterationsMissed.Inc()
 	return m
 }
 
@@ -665,11 +784,11 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, files...)
 	if errs != nil {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
@@ -717,7 +836,9 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 }
 
 // LoadGroups reads groups from a list of files.
-func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
+func (m *Manager) LoadGroups(
+	interval time.Duration, externalLabels labels.Labels, filenames ...string,
+) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
 	shouldRestore := !m.restored
@@ -748,6 +869,7 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 						time.Duration(r.For),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
+						externalLabels,
 						m.restored,
 						log.With(m.logger, "alert", r.Alert),
 					))
@@ -783,7 +905,10 @@ func (m *Manager) RuleGroups() []*Group {
 	}
 
 	sort.Slice(rgs, func(i, j int) bool {
-		return rgs[i].file < rgs[j].file && rgs[i].name < rgs[j].name
+		if rgs[i].file != rgs[j].file {
+			return rgs[i].file < rgs[j].file
+		}
+		return rgs[i].name < rgs[j].name
 	})
 
 	return rgs
@@ -813,23 +938,17 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 			alerts = append(alerts, alertingRule)
 		}
 	}
+
 	return alerts
 }
 
 // Describe implements prometheus.Collector.
 func (m *Manager) Describe(ch chan<- *prometheus.Desc) {
-	ch <- lastDuration
 	ch <- groupInterval
 }
 
 // Collect implements prometheus.Collector.
 func (m *Manager) Collect(ch chan<- prometheus.Metric) {
-	for _, g := range m.RuleGroups() {
-		ch <- prometheus.MustNewConstMetric(lastDuration,
-			prometheus.GaugeValue,
-			g.GetEvaluationDuration().Seconds(),
-			groupKey(g.file, g.name))
-	}
 	for _, g := range m.RuleGroups() {
 		ch <- prometheus.MustNewConstMetric(groupInterval,
 			prometheus.GaugeValue,

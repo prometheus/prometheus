@@ -6,17 +6,28 @@ executors:
   # should also be updated.
   golang:
     docker:
-    - image: circleci/golang:1.11
+    - image: circleci/golang:1.12
 
 jobs:
   test:
     executor: golang
-    resource_class: large
 
     steps:
     - checkout
     - run: make promu
-    - run: make check_license style unused staticcheck build check_assets
+    - run:
+        command: make check_license style unused lint build check_assets
+        environment:
+          # Run garbage collection more aggresively to avoid getting OOMed during the lint phase.
+          GOGC: "20"
+    - run:
+       command: |
+         curl -s -L https://github.com/protocolbuffers/protobuf/releases/download/v3.5.1/protoc-3.5.1-linux-x86_64.zip > /tmp/protoc.zip
+         unzip -d /tmp /tmp/protoc.zip
+         chmod +x /tmp/bin/protoc
+         echo 'export PATH=/tmp/bin:$PATH' >> $BASH_ENV
+         source $BASH_ENV
+         make proto
     - run: git diff --exit-code
     - store_artifacts:
         path: prometheus
@@ -46,11 +57,11 @@ jobs:
 
     steps:
     - checkout
-    - setup_remote_docker
+    - setup_remote_docker:
+        version: 18.06.0-ce
+    - run: docker run --privileged linuxkit/binfmt:v0.6
     - attach_workspace:
         at: .
-    - run: ln -s .build/linux-amd64/prometheus prometheus
-    - run: ln -s .build/linux-amd64/promtool promtool
     - run: make docker
     - run: make docker DOCKER_REPO=quay.io/prometheus
     - run: docker images
@@ -58,16 +69,17 @@ jobs:
     - run: docker login -u $QUAY_LOGIN -p $QUAY_PASSWORD quay.io
     - run: make docker-publish
     - run: make docker-publish DOCKER_REPO=quay.io/prometheus
+    - run: make docker-manifest
+    - run: make docker-manifest DOCKER_REPO=quay.io/prometheus
 
   docker_hub_release_tags:
     executor: golang
 
     steps:
     - checkout
-    - setup_remote_docker
-    - run: mkdir -v -p ${HOME}/bin
-    - run: curl -L 'https://github.com/aktau/github-release/releases/download/v0.7.2/linux-amd64-github-release.tar.bz2' | tar xvjf - --strip-components 3 -C ${HOME}/bin
-    - run: echo 'export PATH=${HOME}/bin:${PATH}' >> ${BASH_ENV}
+    - setup_remote_docker:
+        version: 18.06.0-ce
+    - run: docker run --privileged linuxkit/binfmt:v0.6
     - attach_workspace:
         at: .
     - run: make promu
@@ -77,19 +89,29 @@ jobs:
     - store_artifacts:
         path: .tarballs
         destination: releases
-    - run: ln -s .build/linux-amd64/prometheus prometheus
-    - run: ln -s .build/linux-amd64/promtool promtool
     - run: make docker DOCKER_IMAGE_TAG=$CIRCLE_TAG
     - run: make docker DOCKER_IMAGE_TAG=$CIRCLE_TAG DOCKER_REPO=quay.io/prometheus
     - run: docker login -u $DOCKER_LOGIN -p $DOCKER_PASSWORD
     - run: docker login -u $QUAY_LOGIN -p $QUAY_PASSWORD quay.io
+    - run: make docker-publish DOCKER_IMAGE_TAG="$CIRCLE_TAG"
+    - run: make docker-publish DOCKER_IMAGE_TAG="$CIRCLE_TAG" DOCKER_REPO=quay.io/prometheus
+    - run: make docker-manifest DOCKER_IMAGE_TAG="$CIRCLE_TAG"
+    - run: make docker-manifest DOCKER_IMAGE_TAG="$CIRCLE_TAG" DOCKER_REPO=quay.io/prometheus
     - run: |
         if [[ "$CIRCLE_TAG" =~ ^v[0-9]+(\.[0-9]+){2}$ ]]; then
           make docker-tag-latest DOCKER_IMAGE_TAG="$CIRCLE_TAG"
           make docker-tag-latest DOCKER_IMAGE_TAG="$CIRCLE_TAG" DOCKER_REPO=quay.io/prometheus
+          make docker-publish DOCKER_IMAGE_TAG="latest"
+          make docker-publish DOCKER_IMAGE_TAG="latest" DOCKER_REPO=quay.io/prometheus
+          make docker-manifest DOCKER_IMAGE_TAG="latest"
+          make docker-manifest DOCKER_IMAGE_TAG="latest" DOCKER_REPO=quay.io/prometheus
         fi
-    - run: make docker-publish
-    - run: make docker-publish DOCKER_REPO=quay.io/prometheus
+
+  makefile_sync:
+    executor: golang
+    steps:
+    - checkout
+    - run: ./scripts/sync_makefiles.sh
 
 workflows:
   version: 2
@@ -104,6 +126,7 @@ workflows:
           tags:
             only: /.*/
     - docker_hub_master:
+        context: org-context
         requires:
         - test
         - build
@@ -111,6 +134,7 @@ workflows:
           branches:
             only: master
     - docker_hub_release_tags:
+        context: org-context
         requires:
         - test
         - build
@@ -119,3 +143,14 @@ workflows:
             only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
           branches:
             ignore: /.*/
+  nightly:
+    triggers:
+      - schedule:
+          cron: "0 0 * * *"
+          filters:
+            branches:
+              only:
+                - master
+    jobs:
+    - makefile_sync:
+        context: org-context

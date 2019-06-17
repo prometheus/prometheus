@@ -15,6 +15,7 @@
 package ini
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -29,7 +30,40 @@ type Key struct {
 	isAutoIncrement bool
 	isBooleanType   bool
 
+	isShadow bool
+	shadows  []*Key
+
 	Comment string
+}
+
+// newKey simply return a key object with given values.
+func newKey(s *Section, name, val string) *Key {
+	return &Key{
+		s:     s,
+		name:  name,
+		value: val,
+	}
+}
+
+func (k *Key) addShadow(val string) error {
+	if k.isShadow {
+		return errors.New("cannot add shadow to another shadow key")
+	} else if k.isAutoIncrement || k.isBooleanType {
+		return errors.New("cannot add shadow to auto-increment or boolean key")
+	}
+
+	shadow := newKey(k.s, k.name, val)
+	shadow.isShadow = true
+	k.shadows = append(k.shadows, shadow)
+	return nil
+}
+
+// AddShadow adds a new shadow key to itself.
+func (k *Key) AddShadow(val string) error {
+	if !k.s.f.options.AllowShadows {
+		return errors.New("shadow key is not allowed")
+	}
+	return k.addShadow(val)
 }
 
 // ValueMapper represents a mapping function for values, e.g. os.ExpandEnv
@@ -45,16 +79,29 @@ func (k *Key) Value() string {
 	return k.value
 }
 
-// String returns string representation of value.
-func (k *Key) String() string {
-	val := k.value
+// ValueWithShadows returns raw values of key and its shadows if any.
+func (k *Key) ValueWithShadows() []string {
+	if len(k.shadows) == 0 {
+		return []string{k.value}
+	}
+	vals := make([]string, len(k.shadows)+1)
+	vals[0] = k.value
+	for i := range k.shadows {
+		vals[i+1] = k.shadows[i].value
+	}
+	return vals
+}
+
+// transformValue takes a raw value and transforms to its final string.
+func (k *Key) transformValue(val string) string {
 	if k.s.f.ValueMapper != nil {
 		val = k.s.f.ValueMapper(val)
 	}
-	if strings.Index(val, "%") == -1 {
+
+	// Fail-fast if no indicate char found for recursive value
+	if !strings.Contains(val, "%") {
 		return val
 	}
-
 	for i := 0; i < _DEPTH_VALUES; i++ {
 		vr := varPattern.FindString(val)
 		if len(vr) == 0 {
@@ -76,6 +123,11 @@ func (k *Key) String() string {
 		val = strings.Replace(val, vr, nk.value, -1)
 	}
 	return val
+}
+
+// String returns string representation of value.
+func (k *Key) String() string {
+	return k.transformValue(k.value)
 }
 
 // Validate accepts a validate function which can
@@ -394,9 +446,29 @@ func (k *Key) Strings(delim string) []string {
 
 	vals := strings.Split(str, delim)
 	for i := range vals {
+		// vals[i] = k.transformValue(strings.TrimSpace(vals[i]))
 		vals[i] = strings.TrimSpace(vals[i])
 	}
 	return vals
+}
+
+// StringsWithShadows returns list of string divided by given delimiter.
+// Shadows will also be appended if any.
+func (k *Key) StringsWithShadows(delim string) []string {
+	vals := k.ValueWithShadows()
+	results := make([]string, 0, len(vals)*2)
+	for i := range vals {
+		if len(vals) == 0 {
+			continue
+		}
+
+		results = append(results, strings.Split(vals[i], delim)...)
+	}
+
+	for i := range results {
+		results[i] = k.transformValue(strings.TrimSpace(results[i]))
+	}
+	return results
 }
 
 // Float64s returns list of float64 divided by given delimiter. Any invalid input will be treated as zero value.
@@ -407,13 +479,13 @@ func (k *Key) Float64s(delim string) []float64 {
 
 // Ints returns list of int divided by given delimiter. Any invalid input will be treated as zero value.
 func (k *Key) Ints(delim string) []int {
-	vals, _ := k.getInts(delim, true, false)
+	vals, _ := k.parseInts(k.Strings(delim), true, false)
 	return vals
 }
 
 // Int64s returns list of int64 divided by given delimiter. Any invalid input will be treated as zero value.
 func (k *Key) Int64s(delim string) []int64 {
-	vals, _ := k.getInt64s(delim, true, false)
+	vals, _ := k.parseInt64s(k.Strings(delim), true, false)
 	return vals
 }
 
@@ -452,14 +524,14 @@ func (k *Key) ValidFloat64s(delim string) []float64 {
 // ValidInts returns list of int divided by given delimiter. If some value is not integer, then it will
 // not be included to result list.
 func (k *Key) ValidInts(delim string) []int {
-	vals, _ := k.getInts(delim, false, false)
+	vals, _ := k.parseInts(k.Strings(delim), false, false)
 	return vals
 }
 
 // ValidInt64s returns list of int64 divided by given delimiter. If some value is not 64-bit integer,
 // then it will not be included to result list.
 func (k *Key) ValidInt64s(delim string) []int64 {
-	vals, _ := k.getInt64s(delim, false, false)
+	vals, _ := k.parseInt64s(k.Strings(delim), false, false)
 	return vals
 }
 
@@ -495,12 +567,12 @@ func (k *Key) StrictFloat64s(delim string) ([]float64, error) {
 
 // StrictInts returns list of int divided by given delimiter or error on first invalid input.
 func (k *Key) StrictInts(delim string) ([]int, error) {
-	return k.getInts(delim, false, true)
+	return k.parseInts(k.Strings(delim), false, true)
 }
 
 // StrictInt64s returns list of int64 divided by given delimiter or error on first invalid input.
 func (k *Key) StrictInt64s(delim string) ([]int64, error) {
-	return k.getInt64s(delim, false, true)
+	return k.parseInt64s(k.Strings(delim), false, true)
 }
 
 // StrictUints returns list of uint divided by given delimiter or error on first invalid input.
@@ -541,9 +613,8 @@ func (k *Key) getFloat64s(delim string, addInvalid, returnOnInvalid bool) ([]flo
 	return vals, nil
 }
 
-// getInts returns list of int divided by given delimiter.
-func (k *Key) getInts(delim string, addInvalid, returnOnInvalid bool) ([]int, error) {
-	strs := k.Strings(delim)
+// parseInts transforms strings to ints.
+func (k *Key) parseInts(strs []string, addInvalid, returnOnInvalid bool) ([]int, error) {
 	vals := make([]int, 0, len(strs))
 	for _, str := range strs {
 		val, err := strconv.Atoi(str)
@@ -557,9 +628,8 @@ func (k *Key) getInts(delim string, addInvalid, returnOnInvalid bool) ([]int, er
 	return vals, nil
 }
 
-// getInt64s returns list of int64 divided by given delimiter.
-func (k *Key) getInt64s(delim string, addInvalid, returnOnInvalid bool) ([]int64, error) {
-	strs := k.Strings(delim)
+// parseInt64s transforms strings to int64s.
+func (k *Key) parseInt64s(strs []string, addInvalid, returnOnInvalid bool) ([]int64, error) {
 	vals := make([]int64, 0, len(strs))
 	for _, str := range strs {
 		val, err := strconv.ParseInt(str, 10, 64)

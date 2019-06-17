@@ -1,9 +1,7 @@
 *#
 .#*
-*-stamp
 /*.yaml
 /*.yml
-/*.rules
 *.exe
 
 /prometheus
@@ -12,12 +10,9 @@ benchmark.txt
 /data
 /cmd/prometheus/data
 /cmd/prometheus/debug
-/.build
-/.release
-/.tarballs
 
-!/circle.yml
 !/.travis.yml
 !/.promu.yml
+!/.golangci.yml
 /documentation/examples/remote_storage/remote_storage_adapter/remote_storage_adapter
 /documentation/examples/remote_storage/example_write_adapter/example_writer_adapter

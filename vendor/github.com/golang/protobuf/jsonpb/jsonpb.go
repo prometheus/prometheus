@@ -106,6 +106,9 @@ func defaultResolveAny(typeUrl string) (proto.Message, error) {
 // way they are marshaled to JSON. Messages that implement this should
 // also implement JSONPBUnmarshaler so that the custom format can be
 // parsed.
+//
+// The JSON marshaling must follow the proto to JSON specification:
+//	https://developers.google.com/protocol-buffers/docs/proto3#json
 type JSONPBMarshaler interface {
 	MarshalJSONPB(*Marshaler) ([]byte, error)
 }
@@ -114,6 +117,9 @@ type JSONPBMarshaler interface {
 // the way they are unmarshaled from JSON. Messages that implement this
 // should also implement JSONPBMarshaler so that the custom format can be
 // produced.
+//
+// The JSON unmarshaling must follow the JSON to proto specification:
+//	https://developers.google.com/protocol-buffers/docs/proto3#json
 type JSONPBUnmarshaler interface {
 	UnmarshalJSONPB(*Unmarshaler, []byte) error
 }
@@ -565,6 +571,7 @@ func (m *Marshaler) marshalValue(out *errWriter, prop *proto.Properties, v refle
 				out.write(m.Indent)
 			}
 
+			// TODO handle map key prop properly
 			b, err := json.Marshal(k.Interface())
 			if err != nil {
 				return err
@@ -586,7 +593,11 @@ func (m *Marshaler) marshalValue(out *errWriter, prop *proto.Properties, v refle
 				out.write(` `)
 			}
 
-			if err := m.marshalValue(out, prop, v.MapIndex(k), indent+m.Indent); err != nil {
+			vprop := prop
+			if prop != nil && prop.MapValProp != nil {
+				vprop = prop.MapValProp
+			}
+			if err := m.marshalValue(out, vprop, v.MapIndex(k), indent+m.Indent); err != nil {
 				return err
 			}
 		}
@@ -1010,16 +1021,22 @@ func (u *Unmarshaler) unmarshalValue(target reflect.Value, inputValue json.RawMe
 					k = reflect.ValueOf(ks)
 				} else {
 					k = reflect.New(targetType.Key()).Elem()
-					// TODO: pass the correct Properties if needed.
-					if err := u.unmarshalValue(k, json.RawMessage(ks), nil); err != nil {
+					var kprop *proto.Properties
+					if prop != nil && prop.MapKeyProp != nil {
+						kprop = prop.MapKeyProp
+					}
+					if err := u.unmarshalValue(k, json.RawMessage(ks), kprop); err != nil {
 						return err
 					}
 				}
 
 				// Unmarshal map value.
 				v := reflect.New(targetType.Elem()).Elem()
-				// TODO: pass the correct Properties if needed.
-				if err := u.unmarshalValue(v, raw, nil); err != nil {
+				var vprop *proto.Properties
+				if prop != nil && prop.MapValProp != nil {
+					vprop = prop.MapValProp
+				}
+				if err := u.unmarshalValue(v, raw, vprop); err != nil {
 					return err
 				}
 				target.SetMapIndex(k, v)
@@ -1105,6 +1122,8 @@ func (s mapKeys) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s mapKeys) Less(i, j int) bool {
 	if k := s[i].Kind(); k == s[j].Kind() {
 		switch k {
+		case reflect.String:
+			return s[i].String() < s[j].String()
 		case reflect.Int32, reflect.Int64:
 			return s[i].Int() < s[j].Int()
 		case reflect.Uint32, reflect.Uint64:

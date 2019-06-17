@@ -1,6 +1,6 @@
-/* Move down content because we have a fixed navbar that is 50px tall */
+/* Move down content because we have a fixed navbar that is 50px tall with 20px padding */
 body {
-  padding-top: 50px;
+  padding-top: 70px;
   padding-bottom: 20px;
 }
 
@@ -23,4 +23,9 @@ body {
 
 .label {
   white-space: normal;
+}
+
+/* The navbar adds horizontal padding already */
+.navbar .container-fluid {
+    padding: 0;
 }

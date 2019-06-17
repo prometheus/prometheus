@@ -47,6 +47,7 @@ func TestTargetLabels(t *testing.T) {
 
 func TestTargetOffset(t *testing.T) {
 	interval := 10 * time.Second
+	jitter := uint64(0)
 
 	offsets := make([]time.Duration, 10000)
 
@@ -55,7 +56,7 @@ func TestTargetOffset(t *testing.T) {
 		target := newTestTarget("example.com:80", 0, labels.FromStrings(
 			"label", fmt.Sprintf("%d", i),
 		))
-		offsets[i] = target.offset(interval)
+		offsets[i] = target.offset(interval, jitter)
 	}
 
 	// Put the offsets into buckets and validate that they are all
@@ -74,7 +75,7 @@ func TestTargetOffset(t *testing.T) {
 
 	t.Log(buckets)
 
-	// Calculate whether the the number of targets per bucket
+	// Calculate whether the number of targets per bucket
 	// does not differ more than a given tolerance.
 	avg := len(offsets) / len(buckets)
 	tolerance := 0.15

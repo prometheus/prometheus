@@ -33,10 +33,12 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -49,7 +51,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/testutil"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 type testTargetRetriever struct{}
@@ -141,6 +142,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		time.Second,
 		labels.Labels{},
 		labels.Labels{},
+		labels.Labels{},
 		true,
 		log.NewNopLogger(),
 	)
@@ -148,6 +150,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		"test_metric4",
 		expr2,
 		time.Second,
+		labels.Labels{},
 		labels.Labels{},
 		labels.Labels{},
 		true,
@@ -248,9 +251,9 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
+			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
 			config:                func() config.Config { return samplePrometheusCfg },
-			flagsMap:              sampleFlagMap,
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr,
 		}
@@ -272,9 +275,21 @@ func TestEndpoints(t *testing.T) {
 
 		al := promlog.AllowedLevel{}
 		al.Set("debug")
-		remote := remote.NewStorage(promlog.New(al), func() (int64, error) {
+		af := promlog.AllowedFormat{}
+		al.Set("logfmt")
+		promlogConfig := promlog.Config{
+			Level:  &al,
+			Format: &af,
+		}
+
+		dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
+		testutil.Ok(t, err)
+		defer os.RemoveAll(dbDir)
+
+		testutil.Ok(t, err)
+		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
-		}, 1*time.Second)
+		}, dbDir, 1*time.Second)
 
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{
@@ -301,15 +316,51 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
+			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
 			config:                func() config.Config { return samplePrometheusCfg },
-			flagsMap:              sampleFlagMap,
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr,
 		}
 
 		testEndpoints(t, api, false)
 	})
+
+}
+
+func TestLabelNames(t *testing.T) {
+	// TestEndpoints doesn't have enough label names to test api.labelNames
+	// endpoint properly. Hence we test it separately.
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo1="bar", baz="abc"} 0+100x100
+			test_metric1{foo2="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
+	`)
+	testutil.Ok(t, err)
+	defer suite.Close()
+	testutil.Ok(t, suite.Run())
+
+	api := &API{
+		Queryable: suite.Storage(),
+	}
+	request := func(m string) (*http.Request, error) {
+		if m == http.MethodPost {
+			r, err := http.NewRequest(m, "http://example.com", nil)
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			return r, err
+		}
+		return http.NewRequest(m, "http://example.com", nil)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		ctx := context.Background()
+		req, err := request(method)
+		testutil.Ok(t, err)
+		res := api.labelNames(req.WithContext(ctx))
+		assertAPIError(t, res.err, "")
+		assertAPIResponse(t, res.data, []string{"__name__", "baz", "foo", "foo1", "foo2", "xyz"})
+	}
 }
 
 func setupRemote(s storage.Storage) *httptest.Server {
@@ -336,7 +387,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			}
 			defer querier.Close()
 
-			set, err := querier.Select(selectParams, matchers...)
+			set, _, err := querier.Select(selectParams, matchers...)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -776,12 +827,17 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				},
 				errType: errorBadData,
 			},
+			// Label names.
+			{
+				endpoint: api.labelNames,
+				response: []string{"__name__", "foo"},
+			},
 		}...)
 	}
 
 	methods := func(f apiFunc) []string {
 		fp := reflect.ValueOf(f).Pointer()
-		if fp == reflect.ValueOf(api.query).Pointer() || fp == reflect.ValueOf(api.queryRange).Pointer() {
+		if fp == reflect.ValueOf(api.query).Pointer() || fp == reflect.ValueOf(api.queryRange).Pointer() || fp == reflect.ValueOf(api.series).Pointer() {
 			return []string{http.MethodGet, http.MethodPost}
 		}
 		return []string{http.MethodGet}
@@ -809,9 +865,9 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resp, apiErr, _ := test.endpoint(req.WithContext(ctx))
-			assertAPIError(t, apiErr, test.errType)
-			assertAPIResponse(t, resp, test.response)
+			res := test.endpoint(req.WithContext(ctx))
+			assertAPIError(t, res.err, test.errType)
+			assertAPIResponse(t, res.data, test.response)
 		}
 	}
 }
@@ -828,7 +884,7 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 		}
 		return
 	}
-	if got == nil && exp != errorNone {
+	if exp != errorNone {
 		t.Fatalf("Expected error of type %q but got none", exp)
 	}
 }
@@ -873,10 +929,10 @@ func TestReadEndpoint(t *testing.T) {
 		config: func() config.Config {
 			return config.Config{
 				GlobalConfig: config.GlobalConfig{
-					ExternalLabels: model.LabelSet{
-						"baz": "a",
-						"b":   "c",
-						"d":   "e",
+					ExternalLabels: labels.Labels{
+						{Name: "baz", Value: "a"},
+						{Name: "b", Value: "c"},
+						{Name: "d", Value: "e"},
 					},
 				},
 			}
@@ -939,7 +995,7 @@ func TestReadEndpoint(t *testing.T) {
 	expected := &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
 			{
-				Labels: []*prompb.Label{
+				Labels: []prompb.Label{
 					{Name: "__name__", Value: "test_metric1"},
 					{Name: "b", Value: "c"},
 					{Name: "baz", Value: "qux"},
@@ -972,7 +1028,7 @@ func (f *fakeDB) Dir() string {
 func (f *fakeDB) Snapshot(dir string, withHead bool) error { return f.err }
 
 func TestAdminEndpoints(t *testing.T) {
-	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: fmt.Errorf("some error")}
+	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: errors.New("some error")}
 	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
 	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
 	deleteAPI := func(api *API) apiFunc { return api.deleteSeries }
@@ -1005,7 +1061,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    snapshotAPI,
-			values:      map[string][]string{"skip_head": []string{"true"}},
+			values:      map[string][]string{"skip_head": {"true"}},
 
 			errType: errorNone,
 		},
@@ -1013,7 +1069,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    snapshotAPI,
-			values:      map[string][]string{"skip_head": []string{"xxx"}},
+			values:      map[string][]string{"skip_head": {"xxx"}},
 
 			errType: errorBadData,
 		},
@@ -1079,7 +1135,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"123"}},
+			values:      map[string][]string{"match[]": {"123"}},
 
 			errType: errorBadData,
 		},
@@ -1087,7 +1143,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}, "start": []string{"xxx"}},
+			values:      map[string][]string{"match[]": {"up"}, "start": {"xxx"}},
 
 			errType: errorBadData,
 		},
@@ -1095,7 +1151,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}, "end": []string{"xxx"}},
+			values:      map[string][]string{"match[]": {"up"}, "end": {"xxx"}},
 
 			errType: errorBadData,
 		},
@@ -1103,7 +1159,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}},
+			values:      map[string][]string{"match[]": {"up"}},
 
 			errType: errorNone,
 		},
@@ -1111,7 +1167,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up{job!=\"foo\"}", "{job=~\"bar.+\"}", "up{instance!~\"fred.+\"}"}},
+			values:      map[string][]string{"match[]": {"up{job!=\"foo\"}", "{job=~\"bar.+\"}", "up{instance!~\"fred.+\"}"}},
 
 			errType: errorNone,
 		},
@@ -1119,7 +1175,7 @@ func TestAdminEndpoints(t *testing.T) {
 			db:          tsdbWithError,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
-			values:      map[string][]string{"match[]": []string{"up"}},
+			values:      map[string][]string{"match[]": {"up"}},
 
 			errType: errorInternal,
 		},
@@ -1154,8 +1210,8 @@ func TestAdminEndpoints(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error when creating test request: %s", err)
 			}
-			_, apiErr, _ := endpoint(req)
-			assertAPIError(t, apiErr, tc.errType)
+			res := endpoint(req)
+			assertAPIError(t, res.err, tc.errType)
 		})
 	}
 }
@@ -1163,7 +1219,7 @@ func TestAdminEndpoints(t *testing.T) {
 func TestRespondSuccess(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		api := API{}
-		api.respond(w, "test")
+		api.respond(w, "test", nil)
 	}))
 	defer s.Close()
 
@@ -1270,6 +1326,10 @@ func TestParseTime(t *testing.T) {
 		}, {
 			input:  "2015-06-03T14:21:58.555+01:00",
 			result: ts,
+		}, {
+			// Test float rounding.
+			input:  "1543578564.705",
+			result: time.Unix(1543578564, 705*1e6),
 		},
 	}
 
@@ -1364,12 +1424,6 @@ func TestOptionsMethod(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("Expected status %d, got %d", http.StatusNoContent, resp.StatusCode)
 	}
-
-	for h, v := range corsHeaders {
-		if resp.Header.Get(h) != v {
-			t.Fatalf("Expected %q for header %q, got %q", v, h, resp.Header.Get(h))
-		}
-	}
 }
 
 func TestRespond(t *testing.T) {
@@ -1454,7 +1508,7 @@ func TestRespond(t *testing.T) {
 	for _, c := range cases {
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			api := API{}
-			api.respond(w, c.response)
+			api.respond(w, c.response, nil)
 		}))
 		defer s.Close()
 
@@ -1495,6 +1549,6 @@ func BenchmarkRespond(b *testing.B) {
 	b.ResetTimer()
 	api := API{}
 	for n := 0; n < b.N; n++ {
-		api.respond(&testResponseWriter, response)
+		api.respond(&testResponseWriter, response, nil)
 	}
 }

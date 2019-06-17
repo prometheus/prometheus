@@ -15,58 +15,49 @@ package openstack
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/mwitkow/go-conntrack"
-	"github.com/prometheus/client_golang/prometheus"
+	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_openstack_refresh_failures_total",
-			Help: "The number of OpenStack-SD scrape failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_openstack_refresh_duration_seconds",
-			Help: "The duration of an OpenStack-SD refresh in seconds.",
-		})
-	// DefaultSDConfig is the default OpenStack SD configuration.
-	DefaultSDConfig = SDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(60 * time.Second),
-	}
-)
+// DefaultSDConfig is the default OpenStack SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:            80,
+	RefreshInterval: model.Duration(60 * time.Second),
+}
 
 // SDConfig is the configuration for OpenStack based service discovery.
 type SDConfig struct {
-	IdentityEndpoint string                `yaml:"identity_endpoint"`
-	Username         string                `yaml:"username"`
-	UserID           string                `yaml:"userid"`
-	Password         config_util.Secret    `yaml:"password"`
-	ProjectName      string                `yaml:"project_name"`
-	ProjectID        string                `yaml:"project_id"`
-	DomainName       string                `yaml:"domain_name"`
-	DomainID         string                `yaml:"domain_id"`
-	Role             Role                  `yaml:"role"`
-	Region           string                `yaml:"region"`
-	RefreshInterval  model.Duration        `yaml:"refresh_interval,omitempty"`
-	Port             int                   `yaml:"port"`
-	AllTenants       bool                  `yaml:"all_tenants,omitempty"`
-	TLSConfig        config_util.TLSConfig `yaml:"tls_config,omitempty"`
+	IdentityEndpoint            string                `yaml:"identity_endpoint"`
+	Username                    string                `yaml:"username"`
+	UserID                      string                `yaml:"userid"`
+	Password                    config_util.Secret    `yaml:"password"`
+	ProjectName                 string                `yaml:"project_name"`
+	ProjectID                   string                `yaml:"project_id"`
+	DomainName                  string                `yaml:"domain_name"`
+	DomainID                    string                `yaml:"domain_id"`
+	ApplicationCredentialName   string                `yaml:"application_credential_name"`
+	ApplicationCredentialID     string                `yaml:"application_credential_id"`
+	ApplicationCredentialSecret config_util.Secret    `yaml:"application_credential_secret"`
+	Role                        Role                  `yaml:"role"`
+	Region                      string                `yaml:"region"`
+	RefreshInterval             model.Duration        `yaml:"refresh_interval,omitempty"`
+	Port                        int                   `yaml:"port"`
+	AllTenants                  bool                  `yaml:"all_tenants,omitempty"`
+	TLSConfig                   config_util.TLSConfig `yaml:"tls_config,omitempty"`
 }
 
-// OpenStackRole is role of the target in OpenStack.
+// Role is the role of the target in OpenStack.
 type Role string
 
 // The valid options for OpenStackRole.
@@ -88,7 +79,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case OpenStackRoleHypervisor, OpenStackRoleInstance:
 		return nil
 	default:
-		return fmt.Errorf("unknown OpenStack SD role %q", *c)
+		return errors.Errorf("unknown OpenStack SD role %q", *c)
 	}
 }
 
@@ -101,28 +92,34 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: instance, hypervisor)")
+		return errors.New("role missing (one of: instance, hypervisor)")
 	}
 	if c.Region == "" {
-		return fmt.Errorf("Openstack SD configuration requires a region")
+		return errors.New("openstack SD configuration requires a region")
 	}
 	return nil
 }
 
-func init() {
-	prometheus.MustRegister(refreshFailuresCount)
-	prometheus.MustRegister(refreshDuration)
+type refresher interface {
+	refresh(context.Context) ([]*targetgroup.Group, error)
 }
 
-// Discovery periodically performs OpenStack-SD requests. It implements
-// the Discoverer interface.
-type Discovery interface {
-	Run(ctx context.Context, ch chan<- []*targetgroup.Group)
-	refresh() (tg *targetgroup.Group, err error)
+// NewDiscovery returns a new OpenStack Discoverer which periodically refreshes its targets.
+func NewDiscovery(conf *SDConfig, l log.Logger) (*refresh.Discovery, error) {
+	r, err := newRefresher(conf, l)
+	if err != nil {
+		return nil, err
+	}
+	return refresh.NewDiscovery(
+		l,
+		"openstack",
+		time.Duration(conf.RefreshInterval),
+		r.refresh,
+	), nil
+
 }
 
-// NewDiscovery returns a new OpenStackDiscovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, l log.Logger) (Discovery, error) {
+func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {
 	var opts gophercloud.AuthOptions
 	if conf.IdentityEndpoint == "" {
 		var err error
@@ -132,14 +129,17 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (Discovery, error) {
 		}
 	} else {
 		opts = gophercloud.AuthOptions{
-			IdentityEndpoint: conf.IdentityEndpoint,
-			Username:         conf.Username,
-			UserID:           conf.UserID,
-			Password:         string(conf.Password),
-			TenantName:       conf.ProjectName,
-			TenantID:         conf.ProjectID,
-			DomainName:       conf.DomainName,
-			DomainID:         conf.DomainID,
+			IdentityEndpoint:            conf.IdentityEndpoint,
+			Username:                    conf.Username,
+			UserID:                      conf.UserID,
+			Password:                    string(conf.Password),
+			TenantName:                  conf.ProjectName,
+			TenantID:                    conf.ProjectID,
+			DomainName:                  conf.DomainName,
+			DomainID:                    conf.DomainID,
+			ApplicationCredentialID:     conf.ApplicationCredentialID,
+			ApplicationCredentialName:   conf.ApplicationCredentialName,
+			ApplicationCredentialSecret: string(conf.ApplicationCredentialSecret),
 		}
 	}
 	client, err := openstack.NewClient(opts.IdentityEndpoint)
@@ -163,14 +163,9 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (Discovery, error) {
 	}
 	switch conf.Role {
 	case OpenStackRoleHypervisor:
-		hypervisor := NewHypervisorDiscovery(client, &opts,
-			time.Duration(conf.RefreshInterval), conf.Port, conf.Region, l)
-		return hypervisor, nil
+		return newHypervisorDiscovery(client, &opts, conf.Port, conf.Region, l), nil
 	case OpenStackRoleInstance:
-		instance := NewInstanceDiscovery(client, &opts,
-			time.Duration(conf.RefreshInterval), conf.Port, conf.Region, conf.AllTenants, l)
-		return instance, nil
-	default:
-		return nil, errors.New("unknown OpenStack discovery role")
+		return newInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, l), nil
 	}
+	return nil, errors.New("unknown OpenStack discovery role")
 }

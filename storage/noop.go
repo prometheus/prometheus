@@ -26,12 +26,16 @@ func NoopQuerier() Querier {
 	return noopQuerier{}
 }
 
-func (noopQuerier) Select(*SelectParams, ...*labels.Matcher) (SeriesSet, error) {
-	return NoopSeriesSet(), nil
+func (noopQuerier) Select(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error) {
+	return NoopSeriesSet(), nil, nil
 }
 
-func (noopQuerier) LabelValues(name string) ([]string, error) {
-	return nil, nil
+func (noopQuerier) LabelValues(name string) ([]string, Warnings, error) {
+	return nil, nil, nil
+}
+
+func (noopQuerier) LabelNames() ([]string, Warnings, error) {
+	return nil, nil, nil
 }
 
 func (noopQuerier) Close() error {

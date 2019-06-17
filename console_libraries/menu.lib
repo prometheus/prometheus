@@ -2,33 +2,37 @@
 
 {{/* Navbar, should be passed . */}}
 {{ define "navbar" }}
-<nav class="navbar navbar-inverse navbar-static-top">
+<nav class="navbar fixed-top navbar-expand-sm navbar-dark bg-dark">
   <div class="container-fluid">
     <!-- Brand and toggle get grouped for better mobile display -->
     <div class="navbar-header">
-      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
-        <span class="sr-only">Toggle navigation</span>
-        <span class="icon-bar"></span>
-        <span class="icon-bar"></span>
-        <span class="icon-bar"></span>
+      <button type="button" class="navbar-toggler" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1" aria-expanded="false" aria-controls="navbar-nav" aria-label="toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+        
+       
+        
+        
       </button>
       <a class="navbar-brand" href="{{ pathPrefix }}/">Prometheus</a>
     </div>
 
     <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
       <ul class="nav navbar-nav">
-        <li><a href="{{ pathPrefix }}/alerts">Alerts</a></li>
-        <li><a href="https://www.pagerduty.com/">PagerDuty</a></li>
-      </div>
-    </ul>
+        <li class="nav-item"><a class="nav-link" href="{{ pathPrefix }}/alerts">Alerts</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://www.pagerduty.com/">PagerDuty</a></li>
+      </ul>
+    </div>
   </div>
 </nav>
 {{ end }}
 
 {{/* LHS menu, should be passed . */}}
 {{ define "menu" }}
-<div class="prom_lhs_menu">
-<ul>
+<div class="prom_lhs_menu row">
+<nav class="col-md-2 md-block bg-dark sidebar prom_lhs_menu_nav">
+<div class="sidebar-sticky">
+<ul class="nav flex-column">
+ 
 {{ template "_menuItem" (args . "index.html.example" "Overview") }}
 
 {{ if query "up{job='node'}" }}
@@ -36,15 +40,15 @@
 {{ if match "^node" .Path }}
   {{ if .Params.instance }}
   <ul>
-    <li {{ if eq .Path "node-overview.html" }}class="prom_lhs_menu_selected"{{ end }}>
-      <a href="node-overview.html?instance={{ .Params.instance }}">{{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</a>
+    <li {{ if eq .Path "node-overview.html" }}class="prom_lhs_menu_selected nav-item"{{ end }}>
+      <a class="nav-link" href="node-overview.html?instance={{ .Params.instance }}">{{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</a>
     </li>
     <ul>
-      <li {{ if eq .Path "node-cpu.html" }}class="prom_lhs_menu_selected"{{ end }}>
-        <a href="node-cpu.html?instance={{ .Params.instance }}">CPU</a>
+      <li {{ if eq .Path "node-cpu.html" }}class="prom_lhs_menu_selected nav-item"{{ end }}>
+        <a class="nav-link" href="node-cpu.html?instance={{ .Params.instance }}">CPU</a>
       </li>
-      <li {{ if eq .Path "node-disk.html" }}class="prom_lhs_menu_selected"{{ end }}>
-        <a href="node-disk.html?instance={{ .Params.instance }}">Disk</a>
+      <li {{ if eq .Path "node-disk.html" }}class="prom_lhs_menu_selected nav-item"{{ end }}>
+        <a class="nav-link" href="node-disk.html?instance={{ .Params.instance }}">Disk</a>
       </li>
     </ul>
   </ul>
@@ -57,8 +61,8 @@
 {{ if match "^prometheus" .Path }}
   {{ if .Params.instance }}
   <ul>
-    <li {{ if eq .Path "prometheus-overview.html" }}class="prom_lhs_menu_selected"{{ end }}>
-      <a href="prometheus-overview.html?instance={{ .Params.instance }}">{{.Params.instance }}</a>
+    <li {{ if eq .Path "prometheus-overview.html" }}class="prom_lhs_menu_selected nav-item"{{ end }}>
+      <a class="nav-link" href="prometheus-overview.html?instance={{ .Params.instance }}">{{.Params.instance }}</a>
     </li>
   </ul>
   {{ end }}
@@ -67,10 +71,12 @@
 
 </ul>
 </div>
+</nav>
+</div>
 {{ end }}
 
 {{/* Helper, pass (args . path name) */}}
 {{ define "_menuItem" }}
-  <li {{ if eq .arg0.Path .arg1 }} class="prom_lhs_menu_selected" {{ end }}><a href="{{ .arg1 }}">{{ .arg2 }}</a></li>
+  <li {{ if eq .arg0.Path .arg1 }} class="prom_lhs_menu_selected nav-item" {{ end }}><a class="nav-link" href="{{ .arg1 }}">{{ .arg2 }}</a></li>
 {{ end }}
 

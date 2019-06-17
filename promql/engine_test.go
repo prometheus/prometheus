@@ -15,12 +15,13 @@ package promql
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -169,11 +170,12 @@ type errQuerier struct {
 	err error
 }
 
-func (q *errQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, error) {
-	return errSeriesSet{err: q.err}, q.err
+func (q *errQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	return errSeriesSet{err: q.err}, nil, q.err
 }
-func (*errQuerier) LabelValues(name string) ([]string, error) { return nil, nil }
-func (*errQuerier) Close() error                              { return nil }
+func (*errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) { return nil, nil, nil }
+func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)             { return nil, nil, nil }
+func (*errQuerier) Close() error                                                { return nil }
 
 // errSeriesSet implements storage.SeriesSet which always returns error.
 type errSeriesSet struct {
@@ -193,7 +195,7 @@ func TestQueryError(t *testing.T) {
 		Timeout:       10 * time.Second,
 	}
 	engine := NewEngine(opts)
-	errStorage := ErrStorage{fmt.Errorf("storage error")}
+	errStorage := ErrStorage{errors.New("storage error")}
 	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
 	})
@@ -222,6 +224,168 @@ func TestQueryError(t *testing.T) {
 	}
 	if res.Err != errStorage {
 		t.Fatalf("expected error %q, got %q", errStorage, res.Err)
+	}
+}
+
+// paramCheckerQuerier implements storage.Querier which checks the start and end times
+// in params.
+type paramCheckerQuerier struct {
+	start int64
+	end   int64
+
+	t *testing.T
+}
+
+func (q *paramCheckerQuerier) Select(sp *storage.SelectParams, _ ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	testutil.Equals(q.t, q.start, sp.Start)
+	testutil.Equals(q.t, q.end, sp.End)
+
+	return errSeriesSet{err: nil}, nil, nil
+}
+func (*paramCheckerQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+	return nil, nil, nil
+}
+func (*paramCheckerQuerier) LabelNames() ([]string, storage.Warnings, error) { return nil, nil, nil }
+func (*paramCheckerQuerier) Close() error                                    { return nil }
+
+func TestParamsSetCorrectly(t *testing.T) {
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+
+	// Set the lookback to be smaller and reset at the end.
+	currLookback := LookbackDelta
+	LookbackDelta = 5 * time.Second
+	defer func() {
+		LookbackDelta = currLookback
+	}()
+
+	cases := []struct {
+		query string
+
+		// All times are in seconds.
+		start int64
+		end   int64
+
+		paramStart int64
+		paramEnd   int64
+	}{{
+		query: "foo",
+		start: 10,
+
+		paramStart: 5,
+		paramEnd:   10,
+	}, {
+		query: "foo[2m]",
+		start: 200,
+
+		paramStart: 80, // 200 - 120
+		paramEnd:   200,
+	}, {
+		query: "foo[2m] offset 2m",
+		start: 300,
+
+		paramStart: 60,
+		paramEnd:   180,
+	}, {
+		query: "foo[2m:1s]",
+		start: 300,
+
+		paramStart: 175, // 300 - 120 - 5
+		paramEnd:   300,
+	}, {
+		query: "count_over_time(foo[2m:1s])",
+		start: 300,
+
+		paramStart: 175, // 300 - 120 - 5
+		paramEnd:   300,
+	}, {
+		query: "count_over_time(foo[2m:1s] offset 10s)",
+		start: 300,
+
+		paramStart: 165, // 300 - 120 - 5 - 10
+		paramEnd:   300,
+	}, {
+		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)",
+		start: 300,
+
+		paramStart: 155, // 300 - 120 - 5 - 10 - 10
+		paramEnd:   290,
+	}, {
+		// Range queries now.
+		query: "foo",
+		start: 10,
+		end:   20,
+
+		paramStart: 5,
+		paramEnd:   20,
+	}, {
+		query: "rate(foo[2m])",
+		start: 200,
+		end:   500,
+
+		paramStart: 80, // 200 - 120
+		paramEnd:   500,
+	}, {
+		query: "rate(foo[2m] offset 2m)",
+		start: 300,
+		end:   500,
+
+		paramStart: 60,
+		paramEnd:   380,
+	}, {
+		query: "rate(foo[2m:1s])",
+		start: 300,
+		end:   500,
+
+		paramStart: 175, // 300 - 120 - 5
+		paramEnd:   500,
+	}, {
+		query: "count_over_time(foo[2m:1s])",
+		start: 300,
+		end:   500,
+
+		paramStart: 175, // 300 - 120 - 5
+		paramEnd:   500,
+	}, {
+		query: "count_over_time(foo[2m:1s] offset 10s)",
+		start: 300,
+		end:   500,
+
+		paramStart: 165, // 300 - 120 - 5 - 10
+		paramEnd:   500,
+	}, {
+		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)",
+		start: 300,
+		end:   500,
+
+		paramStart: 155, // 300 - 120 - 5 - 10 - 10
+		paramEnd:   490,
+	}}
+
+	for _, tc := range cases {
+		engine := NewEngine(opts)
+		queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+			return &paramCheckerQuerier{start: tc.paramStart * 1000, end: tc.paramEnd * 1000, t: t}, nil
+		})
+
+		var (
+			query Query
+			err   error
+		)
+		if tc.end == 0 {
+			query, err = engine.NewInstantQuery(queryable, tc.query, time.Unix(tc.start, 0))
+		} else {
+			query, err = engine.NewRangeQuery(queryable, tc.query, time.Unix(tc.start, 0), time.Unix(tc.end, 0), time.Second)
+		}
+		testutil.Ok(t, err)
+
+		res := query.Exec(context.Background())
+		testutil.Ok(t, res.Err)
 	}
 }
 
@@ -424,7 +588,8 @@ load 10s
 			MaxSamples: 1,
 			Result: Result{
 				nil,
-				Scalar{V: 1, T: 1000}},
+				Scalar{V: 1, T: 1000},
+				nil},
 			Start: time.Unix(1, 0),
 		},
 		{
@@ -432,6 +597,7 @@ load 10s
 			MaxSamples: 0,
 			Result: Result{
 				ErrTooManySamples(env),
+				nil,
 				nil,
 			},
 			Start: time.Unix(1, 0),
@@ -441,6 +607,7 @@ load 10s
 			MaxSamples: 0,
 			Result: Result{
 				ErrTooManySamples(env),
+				nil,
 				nil,
 			},
 			Start: time.Unix(1, 0),
@@ -454,6 +621,7 @@ load 10s
 					Sample{Point: Point{V: 1, T: 1000},
 						Metric: labels.FromStrings("__name__", "metric")},
 				},
+				nil,
 			},
 			Start: time.Unix(1, 0),
 		},
@@ -466,6 +634,35 @@ load 10s
 					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric")},
 				},
+				nil,
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query:      "rate(metric[20s])",
+			MaxSamples: 3,
+			Result: Result{
+				nil,
+				Vector{
+					Sample{
+						Point:  Point{V: 0.1, T: 10000},
+						Metric: labels.Labels{},
+					},
+				},
+				nil,
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query:      "metric[20s:5s]",
+			MaxSamples: 3,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+				nil,
 			},
 			Start: time.Unix(10, 0),
 		},
@@ -474,6 +671,7 @@ load 10s
 			MaxSamples: 0,
 			Result: Result{
 				ErrTooManySamples(env),
+				nil,
 				nil,
 			},
 			Start: time.Unix(10, 0),
@@ -488,6 +686,7 @@ load 10s
 					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
 					Metric: labels.FromStrings()},
 				},
+				nil,
 			},
 			Start:    time.Unix(0, 0),
 			End:      time.Unix(2, 0),
@@ -498,6 +697,7 @@ load 10s
 			MaxSamples: 0,
 			Result: Result{
 				ErrTooManySamples(env),
+				nil,
 				nil,
 			},
 			Start:    time.Unix(0, 0),
@@ -513,6 +713,7 @@ load 10s
 					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
 					Metric: labels.FromStrings("__name__", "metric")},
 				},
+				nil,
 			},
 			Start:    time.Unix(0, 0),
 			End:      time.Unix(2, 0),
@@ -523,6 +724,7 @@ load 10s
 			MaxSamples: 2,
 			Result: Result{
 				ErrTooManySamples(env),
+				nil,
 				nil,
 			},
 			Start:    time.Unix(0, 0),
@@ -538,6 +740,7 @@ load 10s
 					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric")},
 				},
+				nil,
 			},
 			Start:    time.Unix(0, 0),
 			End:      time.Unix(10, 0),
@@ -548,6 +751,7 @@ load 10s
 			MaxSamples: 2,
 			Result: Result{
 				ErrTooManySamples(env),
+				nil,
 				nil,
 			},
 			Start:    time.Unix(0, 0),
@@ -589,6 +793,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 
 	// Cause a runtime panic.
 	var a []int
+	//nolint:govet
 	a[123] = 1
 
 	if err.Error() != "unexpected error" {
@@ -600,7 +805,7 @@ func TestRecoverEvaluatorError(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 	var err error
 
-	e := fmt.Errorf("custom error")
+	e := errors.New("custom error")
 
 	defer func() {
 		if err.Error() != e.Error() {
@@ -610,4 +815,266 @@ func TestRecoverEvaluatorError(t *testing.T) {
 	defer ev.recover(&err)
 
 	panic(e)
+}
+
+func TestSubquerySelector(t *testing.T) {
+	tests := []struct {
+		loadString string
+		cases      []struct {
+			Query  string
+			Result Result
+			Start  time.Time
+		}
+	}{
+		{
+			loadString: `load 10s
+							metric 1 2`,
+			cases: []struct {
+				Query  string
+				Result Result
+				Start  time.Time
+			}{
+				{
+					Query: "metric[20s:10s]",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(10, 0),
+				},
+				{
+					Query: "metric[20s:5s]",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(10, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 2s",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(12, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 6s",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(20, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 4s",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}, {V: 2, T: 30000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(35, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 5s",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}, {V: 2, T: 30000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(35, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 6s",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(35, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 7s",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(35, 0),
+				},
+			},
+		},
+		{
+			loadString: `load 10s
+							http_requests{job="api-server", instance="0", group="production"}	0+10x1000 100+30x1000
+							http_requests{job="api-server", instance="1", group="production"}	0+20x1000 200+30x1000
+							http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000
+							http_requests{job="api-server", instance="1", group="canary"}		0+40x2000`,
+			cases: []struct {
+				Query  string
+				Result Result
+				Start  time.Time
+			}{
+				{ // Normal selector.
+					Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 9990, T: 9990000}, {V: 10000, T: 10000000}, {V: 100, T: 10010000}, {V: 130, T: 10020000}},
+							Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production")},
+						},
+						nil,
+					},
+					Start: time.Unix(10020, 0),
+				},
+				{ // Default step.
+					Query: `http_requests{group=~"pro.*",instance="0"}[5m:]`,
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 9840, T: 9840000}, {V: 9900, T: 9900000}, {V: 9960, T: 9960000}, {V: 130, T: 10020000}, {V: 310, T: 10080000}},
+							Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production")},
+						},
+						nil,
+					},
+					Start: time.Unix(10100, 0),
+				},
+				{ // Checking if high offset (>LookbackDelta) is being taken care of.
+					Query: `http_requests{group=~"pro.*",instance="0"}[5m:] offset 20m`,
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 8640, T: 8640000}, {V: 8700, T: 8700000}, {V: 8760, T: 8760000}, {V: 8820, T: 8820000}, {V: 8880, T: 8880000}},
+							Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production")},
+						},
+						nil,
+					},
+					Start: time.Unix(10100, 0),
+				},
+				{
+					Query: `rate(http_requests[1m])[15s:5s]`,
+					Result: Result{
+						nil,
+						Matrix{
+							Series{
+								Points: []Point{{V: 3, T: 7985000}, {V: 3, T: 7990000}, {V: 3, T: 7995000}, {V: 3, T: 8000000}},
+								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+							},
+							Series{
+								Points: []Point{{V: 4, T: 7985000}, {V: 4, T: 7990000}, {V: 4, T: 7995000}, {V: 4, T: 8000000}},
+								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+							},
+							Series{
+								Points: []Point{{V: 1, T: 7985000}, {V: 1, T: 7990000}, {V: 1, T: 7995000}, {V: 1, T: 8000000}},
+								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+							},
+							Series{
+								Points: []Point{{V: 2, T: 7985000}, {V: 2, T: 7990000}, {V: 2, T: 7995000}, {V: 2, T: 8000000}},
+								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+							},
+						},
+						nil,
+					},
+					Start: time.Unix(8000, 0),
+				},
+				{
+					Query: `sum(http_requests{group=~"pro.*"})[30s:10s]`,
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 270, T: 90000}, {V: 300, T: 100000}, {V: 330, T: 110000}, {V: 360, T: 120000}},
+							Metric: labels.Labels{}},
+						},
+						nil,
+					},
+					Start: time.Unix(120, 0),
+				},
+				{
+					Query: `sum(http_requests)[40s:10s]`,
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 800, T: 80000}, {V: 900, T: 90000}, {V: 1000, T: 100000}, {V: 1100, T: 110000}, {V: 1200, T: 120000}},
+							Metric: labels.Labels{}},
+						},
+						nil,
+					},
+					Start: time.Unix(120, 0),
+				},
+				{
+					Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s:5s]`,
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 1000, T: 100000}, {V: 1000, T: 105000}, {V: 1100, T: 110000}, {V: 1100, T: 115000}, {V: 1200, T: 120000}},
+							Metric: labels.Labels{}},
+						},
+						nil,
+					},
+					Start: time.Unix(120, 0),
+				},
+			},
+		},
+	}
+
+	SetDefaultEvaluationInterval(1 * time.Minute)
+	for _, tst := range tests {
+		test, err := NewTest(t, tst.loadString)
+
+		if err != nil {
+			t.Fatalf("unexpected error creating test: %q", err)
+		}
+		defer test.Close()
+
+		err = test.Run()
+		if err != nil {
+			t.Fatalf("unexpected error initializing test: %q", err)
+		}
+
+		engine := test.QueryEngine()
+		for _, c := range tst.cases {
+			var err error
+			var qry Query
+
+			qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+			if err != nil {
+				t.Fatalf("unexpected error creating query: %q", err)
+			}
+			res := qry.Exec(test.Context())
+			if res.Err != nil && res.Err != c.Result.Err {
+				t.Fatalf("unexpected error running query: %q, expected to get result: %q", res.Err, c.Result.Value)
+			}
+			if !reflect.DeepEqual(res.Value, c.Result.Value) {
+				t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
+			}
+		}
+	}
 }

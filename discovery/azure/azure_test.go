@@ -17,7 +17,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/arm/compute"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
 )
 
 func TestMapFromVMWithEmptyTags(t *testing.T) {
@@ -25,7 +25,9 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 	name := "name"
 	vmType := "type"
 	location := "westeurope"
-	networkProfile := compute.NetworkProfile{}
+	networkProfile := compute.NetworkProfile{
+		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	}
 	properties := &compute.VirtualMachineProperties{
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
@@ -36,22 +38,22 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 	}
 
 	testVM := compute.VirtualMachine{
-		ID:         &id,
-		Name:       &name,
-		Type:       &vmType,
-		Location:   &location,
-		Tags:       nil,
-		Properties: properties,
+		ID:                       &id,
+		Name:                     &name,
+		Type:                     &vmType,
+		Location:                 &location,
+		Tags:                     nil,
+		VirtualMachineProperties: properties,
 	}
 
 	expectedVM := virtualMachine{
-		ID:             id,
-		Name:           name,
-		Type:           vmType,
-		Location:       location,
-		OsType:         "Linux",
-		Tags:           map[string]*string{},
-		NetworkProfile: networkProfile,
+		ID:                id,
+		Name:              name,
+		Type:              vmType,
+		Location:          location,
+		OsType:            "Linux",
+		Tags:              map[string]*string{},
+		NetworkInterfaces: []string{},
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -69,7 +71,9 @@ func TestMapFromVMWithTags(t *testing.T) {
 	tags := map[string]*string{
 		"prometheus": new(string),
 	}
-	networkProfile := compute.NetworkProfile{}
+	networkProfile := compute.NetworkProfile{
+		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	}
 	properties := &compute.VirtualMachineProperties{
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
@@ -80,22 +84,22 @@ func TestMapFromVMWithTags(t *testing.T) {
 	}
 
 	testVM := compute.VirtualMachine{
-		ID:         &id,
-		Name:       &name,
-		Type:       &vmType,
-		Location:   &location,
-		Tags:       &tags,
-		Properties: properties,
+		ID:                       &id,
+		Name:                     &name,
+		Type:                     &vmType,
+		Location:                 &location,
+		Tags:                     tags,
+		VirtualMachineProperties: properties,
 	}
 
 	expectedVM := virtualMachine{
-		ID:             id,
-		Name:           name,
-		Type:           vmType,
-		Location:       location,
-		OsType:         "Linux",
-		Tags:           tags,
-		NetworkProfile: networkProfile,
+		ID:                id,
+		Name:              name,
+		Type:              vmType,
+		Location:          location,
+		OsType:            "Linux",
+		Tags:              tags,
+		NetworkInterfaces: []string{},
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -110,7 +114,9 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	name := "name"
 	vmType := "type"
 	location := "westeurope"
-	networkProfile := compute.NetworkProfile{}
+	networkProfile := compute.NetworkProfile{
+		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	}
 	properties := &compute.VirtualMachineScaleSetVMProperties{
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
@@ -121,24 +127,24 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	}
 
 	testVM := compute.VirtualMachineScaleSetVM{
-		ID:         &id,
-		Name:       &name,
-		Type:       &vmType,
-		Location:   &location,
-		Tags:       nil,
-		Properties: properties,
+		ID:                                 &id,
+		Name:                               &name,
+		Type:                               &vmType,
+		Location:                           &location,
+		Tags:                               nil,
+		VirtualMachineScaleSetVMProperties: properties,
 	}
 
 	scaleSet := "testSet"
 	expectedVM := virtualMachine{
-		ID:             id,
-		Name:           name,
-		Type:           vmType,
-		Location:       location,
-		OsType:         "Linux",
-		Tags:           map[string]*string{},
-		NetworkProfile: networkProfile,
-		ScaleSet:       scaleSet,
+		ID:                id,
+		Name:              name,
+		Type:              vmType,
+		Location:          location,
+		OsType:            "Linux",
+		Tags:              map[string]*string{},
+		NetworkInterfaces: []string{},
+		ScaleSet:          scaleSet,
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
@@ -156,7 +162,9 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 	tags := map[string]*string{
 		"prometheus": new(string),
 	}
-	networkProfile := compute.NetworkProfile{}
+	networkProfile := compute.NetworkProfile{
+		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	}
 	properties := &compute.VirtualMachineScaleSetVMProperties{
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
@@ -167,24 +175,24 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 	}
 
 	testVM := compute.VirtualMachineScaleSetVM{
-		ID:         &id,
-		Name:       &name,
-		Type:       &vmType,
-		Location:   &location,
-		Tags:       &tags,
-		Properties: properties,
+		ID:                                 &id,
+		Name:                               &name,
+		Type:                               &vmType,
+		Location:                           &location,
+		Tags:                               tags,
+		VirtualMachineScaleSetVMProperties: properties,
 	}
 
 	scaleSet := "testSet"
 	expectedVM := virtualMachine{
-		ID:             id,
-		Name:           name,
-		Type:           vmType,
-		Location:       location,
-		OsType:         "Linux",
-		Tags:           tags,
-		NetworkProfile: networkProfile,
-		ScaleSet:       scaleSet,
+		ID:                id,
+		Name:              name,
+		Type:              vmType,
+		Location:          location,
+		OsType:            "Linux",
+		Tags:              tags,
+		NetworkInterfaces: []string{},
+		ScaleSet:          scaleSet,
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)

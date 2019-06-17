@@ -1,6 +1,4 @@
 {{define "head"}}
-    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/graph.css?v={{ buildVersion }}">
-
     <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.css?v={{ buildVersion }}">
     <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.css?v={{ buildVersion }}">
 
@@ -15,11 +13,13 @@
 
     <script src="{{ pathPrefix }}/static/vendor/mustache/mustache.min.js?v={{ buildVersion }}"></script>
     <script src="{{ pathPrefix }}/static/vendor/js/jquery.selection.js?v={{ buildVersion }}"></script>
-    <script src="{{ pathPrefix }}/static/vendor/js/jquery.hotkeys.js?v={{ buildVersion }}"></script>
+    <!-- <script src="{{ pathPrefix }}/static/vendor/js/jquery.hotkeys.js?v={{ buildVersion }}"></script> -->
 
     <script src="{{ pathPrefix }}/static/js/graph/index.js?v={{ buildVersion }}"></script>
 
     <script id="graph_template" type="text/x-handlebars-template"></script>
+
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/graph.css?v={{ buildVersion }}">
 {{end}}
 
 {{define "content"}}

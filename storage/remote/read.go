@@ -17,7 +17,6 @@ import (
 	"context"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -59,10 +58,10 @@ type querier struct {
 
 // Select implements storage.Querier and uses the given matchers to read series
 // sets from the Client.
-func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, error) {
+func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	query, err := ToQuery(q.mint, q.maxt, matchers, p)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	remoteReadGauge := remoteReadQueries.WithLabelValues(q.client.Name())
@@ -71,16 +70,22 @@ func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (
 
 	res, err := q.client.Read(q.ctx, query)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return FromQueryResult(res), nil
+	return FromQueryResult(res), nil, nil
 }
 
 // LabelValues implements storage.Querier and is a noop.
-func (q *querier) LabelValues(name string) ([]string, error) {
+func (q *querier) LabelValues(name string) ([]string, storage.Warnings, error) {
 	// TODO implement?
-	return nil, nil
+	return nil, nil, nil
+}
+
+// LabelNames implements storage.Querier and is a noop.
+func (q *querier) LabelNames() ([]string, storage.Warnings, error) {
+	// TODO implement?
+	return nil, nil, nil
 }
 
 // Close implements storage.Querier and is a noop.
@@ -90,7 +95,7 @@ func (q *querier) Close() error {
 
 // ExternalLabelsHandler returns a storage.Queryable which creates a
 // externalLabelsQuerier.
-func ExternalLabelsHandler(next storage.Queryable, externalLabels model.LabelSet) storage.Queryable {
+func ExternalLabelsHandler(next storage.Queryable, externalLabels labels.Labels) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		q, err := next.Querier(ctx, mint, maxt)
 		if err != nil {
@@ -105,19 +110,19 @@ func ExternalLabelsHandler(next storage.Queryable, externalLabels model.LabelSet
 type externalLabelsQuerier struct {
 	storage.Querier
 
-	externalLabels model.LabelSet
+	externalLabels labels.Labels
 }
 
 // Select adds equality matchers for all external labels to the list of matchers
 // before calling the wrapped storage.Queryable. The added external labels are
 // removed from the returned series sets.
-func (q externalLabelsQuerier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, error) {
+func (q externalLabelsQuerier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	m, added := q.addExternalLabels(matchers)
-	s, err := q.Querier.Select(p, m...)
+	s, warnings, err := q.Querier.Select(p, m...)
 	if err != nil {
-		return nil, err
+		return nil, warnings, err
 	}
-	return newSeriesSetFilter(s, added), nil
+	return newSeriesSetFilter(s, added), warnings, nil
 }
 
 // PreferLocalStorageFilter returns a QueryableFunc which creates a NoopQuerier
@@ -164,7 +169,7 @@ type requiredMatchersQuerier struct {
 
 // Select returns a NoopSeriesSet if the given matchers don't match the label
 // set of the requiredMatchersQuerier. Otherwise it'll call the wrapped querier.
-func (q requiredMatchersQuerier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, error) {
+func (q requiredMatchersQuerier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	ms := q.requiredMatchers
 	for _, m := range matchers {
 		for i, r := range ms {
@@ -178,7 +183,7 @@ func (q requiredMatchersQuerier) Select(p *storage.SelectParams, matchers ...*la
 		}
 	}
 	if len(ms) > 0 {
-		return storage.NoopSeriesSet(), nil
+		return storage.NoopSeriesSet(), nil, nil
 	}
 	return q.Querier.Select(p, matchers...)
 }
@@ -189,18 +194,23 @@ func (q requiredMatchersQuerier) Select(p *storage.SelectParams, matchers ...*la
 // We return the new set of matchers, along with a map of labels for which
 // matchers were added, so that these can later be removed from the result
 // time series again.
-func (q externalLabelsQuerier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, model.LabelSet) {
-	el := make(model.LabelSet, len(q.externalLabels))
-	for k, v := range q.externalLabels {
-		el[k] = v
-	}
+func (q externalLabelsQuerier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, labels.Labels) {
+	el := make(labels.Labels, len(q.externalLabels))
+	copy(el, q.externalLabels)
+
+	// ms won't be sorted, so have to O(n^2) the search.
 	for _, m := range ms {
-		if _, ok := el[model.LabelName(m.Name)]; ok {
-			delete(el, model.LabelName(m.Name))
+		for i := 0; i < len(el); {
+			if el[i].Name == m.Name {
+				el = el[:i+copy(el[i:], el[i+1:])]
+				continue
+			}
+			i++
 		}
 	}
-	for k, v := range el {
-		m, err := labels.NewMatcher(labels.MatchEqual, string(k), string(v))
+
+	for _, l := range el {
+		m, err := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
 		if err != nil {
 			panic(err)
 		}
@@ -209,7 +219,7 @@ func (q externalLabelsQuerier) addExternalLabels(ms []*labels.Matcher) ([]*label
 	return ms, el
 }
 
-func newSeriesSetFilter(ss storage.SeriesSet, toFilter model.LabelSet) storage.SeriesSet {
+func newSeriesSetFilter(ss storage.SeriesSet, toFilter labels.Labels) storage.SeriesSet {
 	return &seriesSetFilter{
 		SeriesSet: ss,
 		toFilter:  toFilter,
@@ -218,7 +228,16 @@ func newSeriesSetFilter(ss storage.SeriesSet, toFilter model.LabelSet) storage.S
 
 type seriesSetFilter struct {
 	storage.SeriesSet
-	toFilter model.LabelSet
+	toFilter labels.Labels
+	querier  storage.Querier
+}
+
+func (ssf *seriesSetFilter) GetQuerier() storage.Querier {
+	return ssf.querier
+}
+
+func (ssf *seriesSetFilter) SetQuerier(querier storage.Querier) {
+	ssf.querier = querier
 }
 
 func (ssf seriesSetFilter) At() storage.Series {
@@ -230,17 +249,20 @@ func (ssf seriesSetFilter) At() storage.Series {
 
 type seriesFilter struct {
 	storage.Series
-	toFilter model.LabelSet
+	toFilter labels.Labels
 }
 
 func (sf seriesFilter) Labels() labels.Labels {
 	labels := sf.Series.Labels()
-	for i := 0; i < len(labels); {
-		if _, ok := sf.toFilter[model.LabelName(labels[i].Name)]; ok {
+	for i, j := 0, 0; i < len(labels) && j < len(sf.toFilter); {
+		if labels[i].Name < sf.toFilter[j].Name {
+			i++
+		} else if labels[i].Name > sf.toFilter[j].Name {
+			j++
+		} else {
 			labels = labels[:i+copy(labels[i:], labels[i+1:])]
-			continue
+			j++
 		}
-		i++
 	}
 	return labels
 }

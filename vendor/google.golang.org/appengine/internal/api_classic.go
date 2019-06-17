@@ -59,6 +59,10 @@ func IncomingHeaders(ctx netcontext.Context) http.Header {
 	return nil
 }
 
+func ReqContext(req *http.Request) netcontext.Context {
+	return WithContext(netcontext.Background(), req)
+}
+
 func WithContext(parent netcontext.Context, req *http.Request) netcontext.Context {
 	c := appengine.NewContext(req)
 	return withContext(parent, c)

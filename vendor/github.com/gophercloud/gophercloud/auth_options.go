@@ -9,25 +9,45 @@ ProviderClient representing an active session on that provider.
 
 Its fields are the union of those recognized by each identity implementation and
 provider.
+
+An example of manually providing authentication information:
+
+  opts := gophercloud.AuthOptions{
+    IdentityEndpoint: "https://openstack.example.com:5000/v2.0",
+    Username: "{username}",
+    Password: "{password}",
+    TenantID: "{tenant_id}",
+  }
+
+  provider, err := openstack.AuthenticatedClient(opts)
+
+An example of using AuthOptionsFromEnv(), where the environment variables can
+be read from a file, such as a standard openrc file:
+
+  opts, err := openstack.AuthOptionsFromEnv()
+  provider, err := openstack.AuthenticatedClient(opts)
 */
 type AuthOptions struct {
 	// IdentityEndpoint specifies the HTTP endpoint that is required to work with
 	// the Identity API of the appropriate version. While it's ultimately needed by
 	// all of the identity services, it will often be populated by a provider-level
 	// function.
+	//
+	// The IdentityEndpoint is typically referred to as the "auth_url" or
+	// "OS_AUTH_URL" in the information provided by the cloud operator.
 	IdentityEndpoint string `json:"-"`
 
 	// Username is required if using Identity V2 API. Consult with your provider's
 	// control panel to discover your account's username. In Identity V3, either
 	// UserID or a combination of Username and DomainID or DomainName are needed.
 	Username string `json:"username,omitempty"`
-	UserID   string `json:"id,omitempty"`
+	UserID   string `json:"-"`
 
 	Password string `json:"password,omitempty"`
 
 	// At most one of DomainID and DomainName must be provided if using Username
 	// with Identity V3. Otherwise, either are optional.
-	DomainID   string `json:"id,omitempty"`
+	DomainID   string `json:"-"`
 	DomainName string `json:"name,omitempty"`
 
 	// The TenantID and TenantName fields are optional for the Identity V2 API.
@@ -39,7 +59,7 @@ type AuthOptions struct {
 	// If DomainID or DomainName are provided, they will also apply to TenantName.
 	// It is not currently possible to authenticate with Username and a Domain
 	// and scope to a Project in a different Domain by using TenantName. To
-	// accomplish that, the ProjectID will need to be provided to the TenantID
+	// accomplish that, the ProjectID will need to be provided as the TenantID
 	// option.
 	TenantID   string `json:"tenantId,omitempty"`
 	TenantName string `json:"tenantName,omitempty"`
@@ -50,15 +70,34 @@ type AuthOptions struct {
 	// false, it will not cache these settings, but re-authentication will not be
 	// possible.  This setting defaults to false.
 	//
-	// NOTE: The reauth function will try to re-authenticate endlessly if left unchecked.
-	// The way to limit the number of attempts is to provide a custom HTTP client to the provider client
-	// and provide a transport that implements the RoundTripper interface and stores the number of failed retries.
-	// For an example of this, see here: https://github.com/rackspace/rack/blob/1.0.0/auth/clients.go#L311
+	// NOTE: The reauth function will try to re-authenticate endlessly if left
+	// unchecked. The way to limit the number of attempts is to provide a custom
+	// HTTP client to the provider client and provide a transport that implements
+	// the RoundTripper interface and stores the number of failed retries. For an
+	// example of this, see here:
+	// https://github.com/rackspace/rack/blob/1.0.0/auth/clients.go#L311
 	AllowReauth bool `json:"-"`
 
 	// TokenID allows users to authenticate (possibly as another user) with an
 	// authentication token ID.
 	TokenID string `json:"-"`
+
+	// Scope determines the scoping of the authentication request.
+	Scope *AuthScope `json:"-"`
+
+	// Authentication through Application Credentials requires supplying name, project and secret
+	// For project we can use TenantID
+	ApplicationCredentialID     string `json:"-"`
+	ApplicationCredentialName   string `json:"-"`
+	ApplicationCredentialSecret string `json:"-"`
+}
+
+// AuthScope allows a created token to be limited to a specific domain or project.
+type AuthScope struct {
+	ProjectID   string
+	ProjectName string
+	DomainID    string
+	DomainName  string
 }
 
 // ToTokenV2CreateMap allows AuthOptions to satisfy the AuthOptionsBuilder
@@ -109,7 +148,7 @@ func (opts *AuthOptions) ToTokenV3CreateMap(scope map[string]interface{}) (map[s
 	type userReq struct {
 		ID       *string    `json:"id,omitempty"`
 		Name     *string    `json:"name,omitempty"`
-		Password string     `json:"password"`
+		Password string     `json:"password,omitempty"`
 		Domain   *domainReq `json:"domain,omitempty"`
 	}
 
@@ -121,10 +160,18 @@ func (opts *AuthOptions) ToTokenV3CreateMap(scope map[string]interface{}) (map[s
 		ID string `json:"id"`
 	}
 
+	type applicationCredentialReq struct {
+		ID     *string  `json:"id,omitempty"`
+		Name   *string  `json:"name,omitempty"`
+		User   *userReq `json:"user,omitempty"`
+		Secret *string  `json:"secret,omitempty"`
+	}
+
 	type identityReq struct {
-		Methods  []string     `json:"methods"`
-		Password *passwordReq `json:"password,omitempty"`
-		Token    *tokenReq    `json:"token,omitempty"`
+		Methods               []string                  `json:"methods"`
+		Password              *passwordReq              `json:"password,omitempty"`
+		Token                 *tokenReq                 `json:"token,omitempty"`
+		ApplicationCredential *applicationCredentialReq `json:"application_credential,omitempty"`
 	}
 
 	type authReq struct {
@@ -161,8 +208,68 @@ func (opts *AuthOptions) ToTokenV3CreateMap(scope map[string]interface{}) (map[s
 			req.Auth.Identity.Token = &tokenReq{
 				ID: opts.TokenID,
 			}
+
+		} else if opts.ApplicationCredentialID != "" {
+			// Configure the request for ApplicationCredentialID authentication.
+			// https://github.com/openstack/keystoneauth/blob/stable/rocky/keystoneauth1/identity/v3/application_credential.py#L48-L67
+			// There are three kinds of possible application_credential requests
+			// 1. application_credential id + secret
+			// 2. application_credential name + secret + user_id
+			// 3. application_credential name + secret + username + domain_id / domain_name
+			if opts.ApplicationCredentialSecret == "" {
+				return nil, ErrAppCredMissingSecret{}
+			}
+			req.Auth.Identity.Methods = []string{"application_credential"}
+			req.Auth.Identity.ApplicationCredential = &applicationCredentialReq{
+				ID:     &opts.ApplicationCredentialID,
+				Secret: &opts.ApplicationCredentialSecret,
+			}
+		} else if opts.ApplicationCredentialName != "" {
+			if opts.ApplicationCredentialSecret == "" {
+				return nil, ErrAppCredMissingSecret{}
+			}
+
+			var userRequest *userReq
+
+			if opts.UserID != "" {
+				// UserID could be used without the domain information
+				userRequest = &userReq{
+					ID: &opts.UserID,
+				}
+			}
+
+			if userRequest == nil && opts.Username == "" {
+				// Make sure that Username or UserID are provided
+				return nil, ErrUsernameOrUserID{}
+			}
+
+			if userRequest == nil && opts.DomainID != "" {
+				userRequest = &userReq{
+					Name:   &opts.Username,
+					Domain: &domainReq{ID: &opts.DomainID},
+				}
+			}
+
+			if userRequest == nil && opts.DomainName != "" {
+				userRequest = &userReq{
+					Name:   &opts.Username,
+					Domain: &domainReq{Name: &opts.DomainName},
+				}
+			}
+
+			// Make sure that DomainID or DomainName are provided among Username
+			if userRequest == nil {
+				return nil, ErrDomainIDOrDomainName{}
+			}
+
+			req.Auth.Identity.Methods = []string{"application_credential"}
+			req.Auth.Identity.ApplicationCredential = &applicationCredentialReq{
+				Name:   &opts.ApplicationCredentialName,
+				User:   userRequest,
+				Secret: &opts.ApplicationCredentialSecret,
+			}
 		} else {
-			// If no password or token ID are available, authentication can't continue.
+			// If no password or token ID or ApplicationCredential are available, authentication can't continue.
 			return nil, ErrMissingPassword{}
 		}
 	} else {
@@ -241,82 +348,85 @@ func (opts *AuthOptions) ToTokenV3CreateMap(scope map[string]interface{}) (map[s
 }
 
 func (opts *AuthOptions) ToTokenV3ScopeMap() (map[string]interface{}, error) {
-
-	var scope struct {
-		ProjectID   string
-		ProjectName string
-		DomainID    string
-		DomainName  string
-	}
-
-	if opts.TenantID != "" {
-		scope.ProjectID = opts.TenantID
-	} else {
-		if opts.TenantName != "" {
-			scope.ProjectName = opts.TenantName
-			scope.DomainID = opts.DomainID
-			scope.DomainName = opts.DomainName
+	// For backwards compatibility.
+	// If AuthOptions.Scope was not set, try to determine it.
+	// This works well for common scenarios.
+	if opts.Scope == nil {
+		opts.Scope = new(AuthScope)
+		if opts.TenantID != "" {
+			opts.Scope.ProjectID = opts.TenantID
+		} else {
+			if opts.TenantName != "" {
+				opts.Scope.ProjectName = opts.TenantName
+				opts.Scope.DomainID = opts.DomainID
+				opts.Scope.DomainName = opts.DomainName
+			}
 		}
 	}
 
-	if scope.ProjectName != "" {
+	if opts.Scope.ProjectName != "" {
 		// ProjectName provided: either DomainID or DomainName must also be supplied.
 		// ProjectID may not be supplied.
-		if scope.DomainID == "" && scope.DomainName == "" {
+		if opts.Scope.DomainID == "" && opts.Scope.DomainName == "" {
 			return nil, ErrScopeDomainIDOrDomainName{}
 		}
-		if scope.ProjectID != "" {
+		if opts.Scope.ProjectID != "" {
 			return nil, ErrScopeProjectIDOrProjectName{}
 		}
 
-		if scope.DomainID != "" {
+		if opts.Scope.DomainID != "" {
 			// ProjectName + DomainID
 			return map[string]interface{}{
 				"project": map[string]interface{}{
-					"name":   &scope.ProjectName,
-					"domain": map[string]interface{}{"id": &scope.DomainID},
+					"name":   &opts.Scope.ProjectName,
+					"domain": map[string]interface{}{"id": &opts.Scope.DomainID},
 				},
 			}, nil
 		}
 
-		if scope.DomainName != "" {
+		if opts.Scope.DomainName != "" {
 			// ProjectName + DomainName
 			return map[string]interface{}{
 				"project": map[string]interface{}{
-					"name":   &scope.ProjectName,
-					"domain": map[string]interface{}{"name": &scope.DomainName},
+					"name":   &opts.Scope.ProjectName,
+					"domain": map[string]interface{}{"name": &opts.Scope.DomainName},
 				},
 			}, nil
 		}
-	} else if scope.ProjectID != "" {
+	} else if opts.Scope.ProjectID != "" {
 		// ProjectID provided. ProjectName, DomainID, and DomainName may not be provided.
-		if scope.DomainID != "" {
+		if opts.Scope.DomainID != "" {
 			return nil, ErrScopeProjectIDAlone{}
 		}
-		if scope.DomainName != "" {
+		if opts.Scope.DomainName != "" {
 			return nil, ErrScopeProjectIDAlone{}
 		}
 
 		// ProjectID
 		return map[string]interface{}{
 			"project": map[string]interface{}{
-				"id": &scope.ProjectID,
+				"id": &opts.Scope.ProjectID,
 			},
 		}, nil
-	} else if scope.DomainID != "" {
+	} else if opts.Scope.DomainID != "" {
 		// DomainID provided. ProjectID, ProjectName, and DomainName may not be provided.
-		if scope.DomainName != "" {
+		if opts.Scope.DomainName != "" {
 			return nil, ErrScopeDomainIDOrDomainName{}
 		}
 
 		// DomainID
 		return map[string]interface{}{
 			"domain": map[string]interface{}{
-				"id": &scope.DomainID,
+				"id": &opts.Scope.DomainID,
 			},
 		}, nil
-	} else if scope.DomainName != "" {
-		return nil, ErrScopeDomainName{}
+	} else if opts.Scope.DomainName != "" {
+		// DomainName
+		return map[string]interface{}{
+			"domain": map[string]interface{}{
+				"name": &opts.Scope.DomainName,
+			},
+		}, nil
 	}
 
 	return nil, nil

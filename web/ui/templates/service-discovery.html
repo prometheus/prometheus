@@ -17,8 +17,7 @@
   <div class="container-fluid">
 
     <h1>Service Discovery</h1>
-    <div class="table-container">
-      <table class="table table-condensed table-bordered table-striped table-hover">
+    <div>
       <ul>
         {{range $i, $job := .Index}}
           <li>
@@ -43,7 +42,7 @@
       </div>
       {{end}}
       {{end}}
-      <table class="table table-condensed table-bordered table-striped table-hover" style="display:none">
+      <table class="table table-sm table-bordered table-striped table-hover" style="display:none">
         <thead class="job_details">
           <tr>
             <th>Discovered Labels</th>
@@ -59,11 +58,11 @@
                 <ul class="list-inline" style="list-style-type:none">
                   {{range $label, $value := $labels}}
                     <li>
-                      <span class="label label-primary">{{$label}}="{{$value}}"</span>
+                      <span class="badge badge-primary">{{$label}}="{{$value}}"</span>
                     </li>
                   {{else}}
                   <li>
-                    <span class="label label-default">none</span>
+                    <span class="badge badge-default">none</span>
                   </li>
                   {{end}}
                 </ul>
@@ -73,11 +72,11 @@
                 <ul class="list-inline" style="list-style-type:none">
                   {{range $label, $value := $labels}}
                     <li>
-                      <span class="label label-primary">{{$label}}="{{$value}}"</span>
+                      <span class="badge badge-primary">{{$label}}="{{$value}}"</span>
                     </li>
                   {{else}}
                     <li>
-                      <span class="label label-default">Dropped</span>
+                      <span class="badge badge-default">Dropped</span>
                     </li>
                   {{end}}
                 </ul>

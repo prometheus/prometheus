@@ -18,13 +18,16 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -67,6 +70,9 @@ func ruleUnitTest(filename string) []error {
 	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
 		return []error{err}
 	}
+	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {
+		return []error{err}
+	}
 
 	if unitTestInp.EvaluationInterval == 0 {
 		unitTestInp.EvaluationInterval = 1 * time.Minute
@@ -84,7 +90,7 @@ func ruleUnitTest(filename string) []error {
 	groupOrderMap := make(map[string]int)
 	for i, gn := range unitTestInp.GroupEvalOrder {
 		if _, ok := groupOrderMap[gn]; ok {
-			return []error{fmt.Errorf("Group name repeated in evaluation order: %s", gn)}
+			return []error{errors.Errorf("group name repeated in evaluation order: %s", gn)}
 		}
 		groupOrderMap[gn] = i
 	}
@@ -124,6 +130,27 @@ func (utf *unitTestFile) maxEvalTime() time.Duration {
 	return maxd
 }
 
+// resolveAndGlobFilepaths joins all relative paths in a configuration
+// with a given base directory and replaces all globs with matching files.
+func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
+	for i, rf := range utf.RuleFiles {
+		if rf != "" && !filepath.IsAbs(rf) {
+			utf.RuleFiles[i] = filepath.Join(baseDir, rf)
+		}
+	}
+
+	var globbedFiles []string
+	for _, rf := range utf.RuleFiles {
+		m, err := filepath.Glob(rf)
+		if err != nil {
+			return err
+		}
+		globbedFiles = append(globbedFiles, m...)
+	}
+	utf.RuleFiles = globbedFiles
+	return nil
+}
+
 // testGroup is a group of input series and tests associated with it.
 type testGroup struct {
 	Interval        time.Duration    `yaml:"interval"`
@@ -135,16 +162,11 @@ type testGroup struct {
 // test performs the unit tests.
 func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, groupOrderMap map[string]int, ruleFiles ...string) []error {
 	// Setup testing suite.
-	suite, err := promql.NewTest(nil, tg.seriesLoadingString())
+	suite, err := promql.NewLazyLoader(nil, tg.seriesLoadingString())
 	if err != nil {
 		return []error{err}
 	}
 	defer suite.Close()
-
-	err = suite.Run()
-	if err != nil {
-		return []error{err}
-	}
 
 	// Load the rule files.
 	opts := &rules.ManagerOptions{
@@ -152,10 +174,11 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		Appendable: suite.Storage(),
 		Context:    context.Background(),
 		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
-		Logger:     &dummyLogger{},
+		Logger:     log.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
-	groupsMap, ers := m.LoadGroups(tg.Interval, ruleFiles...)
+	// TODO(beorn7): Provide a way to pass in external labels.
+	groupsMap, ers := m.LoadGroups(tg.Interval, nil, ruleFiles...)
 	if ers != nil {
 		return ers
 	}
@@ -165,14 +188,14 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	// All this preparation is so that we can test alerts as we evaluate the rules.
 	// This avoids storing them in memory, as the number of evals might be high.
 
-	// All the `eval_time` for which we have unit tests.
-	var alertEvalTimes []time.Duration
+	// All the `eval_time` for which we have unit tests for alerts.
+	alertEvalTimesMap := map[time.Duration]struct{}{}
 	// Map of all the eval_time+alertname combination present in the unit tests.
 	alertsInTest := make(map[time.Duration]map[string]struct{})
 	// Map of all the unit tests for given eval_time.
 	alertTests := make(map[time.Duration][]alertTestCase)
 	for _, alert := range tg.AlertRuleTests {
-		alertEvalTimes = append(alertEvalTimes, alert.EvalTime)
+		alertEvalTimesMap[alert.EvalTime] = struct{}{}
 
 		if _, ok := alertsInTest[alert.EvalTime]; !ok {
 			alertsInTest[alert.EvalTime] = make(map[string]struct{})
@@ -180,6 +203,10 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		alertsInTest[alert.EvalTime][alert.Alertname] = struct{}{}
 
 		alertTests[alert.EvalTime] = append(alertTests[alert.EvalTime], alert)
+	}
+	alertEvalTimes := make([]time.Duration, 0, len(alertEvalTimesMap))
+	for k := range alertEvalTimesMap {
+		alertEvalTimes = append(alertEvalTimes, k)
 	}
 	sort.Slice(alertEvalTimes, func(i, j int) bool {
 		return alertEvalTimes[i] < alertEvalTimes[j]
@@ -191,8 +218,23 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	var errs []error
 	for ts := mint; ts.Before(maxt); ts = ts.Add(evalInterval) {
 		// Collects the alerts asked for unit testing.
-		for _, g := range groups {
-			g.Eval(suite.Context(), ts)
+		suite.WithSamplesTill(ts, func(err error) {
+			if err != nil {
+				errs = append(errs, err)
+				return
+			}
+			for _, g := range groups {
+				g.Eval(suite.Context(), ts)
+				for _, r := range g.Rules() {
+					if r.LastError() != nil {
+						errs = append(errs, errors.Errorf("    rule: %s, time: %s, err: %v",
+							r.Name(), ts.Sub(time.Unix(0, 0)), r.LastError()))
+					}
+				}
+			}
+		})
+		if len(errs) > 0 {
+			return errs
 		}
 
 		for {
@@ -253,14 +295,14 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				}
 
 				if gotAlerts.Len() != expAlerts.Len() {
-					errs = append(errs, fmt.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
 						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
 				} else {
 					sort.Sort(gotAlerts)
 					sort.Sort(expAlerts)
 
 					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						errs = append(errs, fmt.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
 							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
 					}
 				}
@@ -276,7 +318,7 @@ Outer:
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(testCase.EvalTime),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {
-			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
+			errs = append(errs, errors.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
 				testCase.EvalTime.String(), err.Error()))
 			continue
 		}
@@ -293,7 +335,7 @@ Outer:
 		for _, s := range testCase.ExpSamples {
 			lb, err := promql.ParseMetric(s.Labels)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
+				errs = append(errs, errors.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
 					testCase.EvalTime.String(), err.Error()))
 				continue Outer
 			}
@@ -303,8 +345,14 @@ Outer:
 			})
 		}
 
+		sort.Slice(expSamples, func(i, j int) bool {
+			return labels.Compare(expSamples[i].Labels, expSamples[j].Labels) <= 0
+		})
+		sort.Slice(gotSamples, func(i, j int) bool {
+			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
+		})
 		if !reflect.DeepEqual(expSamples, gotSamples) {
-			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, \n        exp:%#v, \n        got:%#v", testCase.Expr,
+			errs = append(errs, errors.Errorf("    expr:'%s', time:%s, \n        exp:%#v, \n        got:%#v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
 		}
 	}
@@ -383,7 +431,7 @@ func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, q
 			Metric: labels.Labels{},
 		}}, nil
 	default:
-		return nil, fmt.Errorf("rule result is not a vector or scalar")
+		return nil, errors.New("rule result is not a vector or scalar")
 	}
 }
 
@@ -467,10 +515,4 @@ func parsedSamplesString(pss []parsedSample) string {
 
 func (ps *parsedSample) String() string {
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
-}
-
-type dummyLogger struct{}
-
-func (l *dummyLogger) Log(keyvals ...interface{}) error {
-	return nil
 }

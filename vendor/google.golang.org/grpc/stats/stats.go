@@ -1,35 +1,22 @@
 /*
  *
- * Copyright 2016, Google Inc.
- * All rights reserved.
+ * Copyright 2016 gRPC authors.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- * copyright notice, this list of conditions and the following disclaimer
- * in the documentation and/or other materials provided with the
- * distribution.
- *     * Neither the name of Google Inc. nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  */
+
+//go:generate protoc --go_out=plugins=grpc:. grpc_testing/test.proto
 
 // Package stats is for collecting and reporting various network and RPC stats.
 // This package is for monitoring purpose only. All fields are read-only.
@@ -37,6 +24,7 @@
 package stats // import "google.golang.org/grpc/stats"
 
 import (
+	"context"
 	"net"
 	"time"
 )
@@ -146,8 +134,6 @@ func (s *OutPayload) isRPCStats() {}
 type OutHeader struct {
 	// Client is true if this OutHeader is from client side.
 	Client bool
-	// WireLength is the wire length of header.
-	WireLength int
 
 	// The following fields are valid only if Client is true.
 	// FullMethod is the full RPC method string, i.e., /package.service/method.
@@ -182,9 +168,13 @@ func (s *OutTrailer) isRPCStats() {}
 type End struct {
 	// Client is true if this End is from client side.
 	Client bool
+	// BeginTime is the time when the RPC began.
+	BeginTime time.Time
 	// EndTime is the time when the RPC ends.
 	EndTime time.Time
-	// Error is the error just happened.  It implements status.Status if non-nil.
+	// Error is the error the RPC ended with. It is an error generated from
+	// status.Status and can be converted back to status.Status using
+	// status.FromError if non-nil.
 	Error error
 }
 
@@ -221,3 +211,85 @@ type ConnEnd struct {
 func (s *ConnEnd) IsClient() bool { return s.Client }
 
 func (s *ConnEnd) isConnStats() {}
+
+type incomingTagsKey struct{}
+type outgoingTagsKey struct{}
+
+// SetTags attaches stats tagging data to the context, which will be sent in
+// the outgoing RPC with the header grpc-tags-bin.  Subsequent calls to
+// SetTags will overwrite the values from earlier calls.
+//
+// NOTE: this is provided only for backward compatibility with existing clients
+// and will likely be removed in an upcoming release.  New uses should transmit
+// this type of data using metadata with a different, non-reserved (i.e. does
+// not begin with "grpc-") header name.
+func SetTags(ctx context.Context, b []byte) context.Context {
+	return context.WithValue(ctx, outgoingTagsKey{}, b)
+}
+
+// Tags returns the tags from the context for the inbound RPC.
+//
+// NOTE: this is provided only for backward compatibility with existing clients
+// and will likely be removed in an upcoming release.  New uses should transmit
+// this type of data using metadata with a different, non-reserved (i.e. does
+// not begin with "grpc-") header name.
+func Tags(ctx context.Context) []byte {
+	b, _ := ctx.Value(incomingTagsKey{}).([]byte)
+	return b
+}
+
+// SetIncomingTags attaches stats tagging data to the context, to be read by
+// the application (not sent in outgoing RPCs).
+//
+// This is intended for gRPC-internal use ONLY.
+func SetIncomingTags(ctx context.Context, b []byte) context.Context {
+	return context.WithValue(ctx, incomingTagsKey{}, b)
+}
+
+// OutgoingTags returns the tags from the context for the outbound RPC.
+//
+// This is intended for gRPC-internal use ONLY.
+func OutgoingTags(ctx context.Context) []byte {
+	b, _ := ctx.Value(outgoingTagsKey{}).([]byte)
+	return b
+}
+
+type incomingTraceKey struct{}
+type outgoingTraceKey struct{}
+
+// SetTrace attaches stats tagging data to the context, which will be sent in
+// the outgoing RPC with the header grpc-trace-bin.  Subsequent calls to
+// SetTrace will overwrite the values from earlier calls.
+//
+// NOTE: this is provided only for backward compatibility with existing clients
+// and will likely be removed in an upcoming release.  New uses should transmit
+// this type of data using metadata with a different, non-reserved (i.e. does
+// not begin with "grpc-") header name.
+func SetTrace(ctx context.Context, b []byte) context.Context {
+	return context.WithValue(ctx, outgoingTraceKey{}, b)
+}
+
+// Trace returns the trace from the context for the inbound RPC.
+//
+// NOTE: this is provided only for backward compatibility with existing clients
+// and will likely be removed in an upcoming release.  New uses should transmit
+// this type of data using metadata with a different, non-reserved (i.e. does
+// not begin with "grpc-") header name.
+func Trace(ctx context.Context) []byte {
+	b, _ := ctx.Value(incomingTraceKey{}).([]byte)
+	return b
+}
+
+// SetIncomingTrace attaches stats tagging data to the context, to be read by
+// the application (not sent in outgoing RPCs).  It is intended for
+// gRPC-internal use.
+func SetIncomingTrace(ctx context.Context, b []byte) context.Context {
+	return context.WithValue(ctx, incomingTraceKey{}, b)
+}
+
+// OutgoingTrace returns the trace from the context for the outbound RPC.  It is
+// intended for gRPC-internal use.
+func OutgoingTrace(ctx context.Context) []byte {
+	b, _ := ctx.Value(outgoingTraceKey{}).([]byte)
+	return b
+}

@@ -15,18 +15,19 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strconv"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -127,7 +128,7 @@ func convertToNode(o interface{}) (*apiv1.Node, error) {
 		return node, nil
 	}
 
-	return nil, fmt.Errorf("Received unexpected object: %v", o)
+	return nil, errors.Errorf("received unexpected object: %v", o)
 }
 
 func nodeSource(n *apiv1.Node) string {
@@ -139,10 +140,12 @@ func nodeSourceFromName(name string) string {
 }
 
 const (
-	nodeNameLabel        = metaLabelPrefix + "node_name"
-	nodeLabelPrefix      = metaLabelPrefix + "node_label_"
-	nodeAnnotationPrefix = metaLabelPrefix + "node_annotation_"
-	nodeAddressPrefix    = metaLabelPrefix + "node_address_"
+	nodeNameLabel               = metaLabelPrefix + "node_name"
+	nodeLabelPrefix             = metaLabelPrefix + "node_label_"
+	nodeLabelPresentPrefix      = metaLabelPrefix + "node_labelpresent_"
+	nodeAnnotationPrefix        = metaLabelPrefix + "node_annotation_"
+	nodeAnnotationPresentPrefix = metaLabelPrefix + "node_annotationpresent_"
+	nodeAddressPrefix           = metaLabelPrefix + "node_address_"
 )
 
 func nodeLabels(n *apiv1.Node) model.LabelSet {
@@ -151,13 +154,15 @@ func nodeLabels(n *apiv1.Node) model.LabelSet {
 	ls[nodeNameLabel] = lv(n.Name)
 
 	for k, v := range n.Labels {
-		ln := strutil.SanitizeLabelName(nodeLabelPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
+		ls[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
 	}
 
 	for k, v := range n.Annotations {
-		ln := strutil.SanitizeLabelName(nodeAnnotationPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(nodeAnnotationPrefix+ln)] = lv(v)
+		ls[model.LabelName(nodeAnnotationPresentPrefix+ln)] = presentValue
 	}
 	return ls
 }
@@ -214,5 +219,5 @@ func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, 
 	if addresses, ok := m[apiv1.NodeHostName]; ok {
 		return addresses[0], m, nil
 	}
-	return "", m, fmt.Errorf("host address unknown")
+	return "", m, errors.New("host address unknown")
 }

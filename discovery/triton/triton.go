@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -24,12 +25,12 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/mwitkow/go-conntrack"
-	"github.com/prometheus/client_golang/prometheus"
+	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/pkg/errors"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -41,27 +42,14 @@ const (
 	tritonLabelMachineBrand = tritonLabel + "machine_brand"
 	tritonLabelMachineImage = tritonLabel + "machine_image"
 	tritonLabelServerID     = tritonLabel + "server_id"
-	namespace               = "prometheus"
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_triton_refresh_failures_total",
-			Help: "The number of Triton-SD scrape failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_triton_refresh_duration_seconds",
-			Help: "The duration of a Triton-SD refresh in seconds.",
-		})
-	// DefaultSDConfig is the default Triton SD configuration.
-	DefaultSDConfig = SDConfig{
-		Port:            9163,
-		RefreshInterval: model.Duration(60 * time.Second),
-		Version:         1,
-	}
-)
+// DefaultSDConfig is the default Triton SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:            9163,
+	RefreshInterval: model.Duration(60 * time.Second),
+	Version:         1,
+}
 
 // SDConfig is the configuration for Triton based service discovery.
 type SDConfig struct {
@@ -84,27 +72,22 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Account == "" {
-		return fmt.Errorf("Triton SD configuration requires an account")
+		return errors.New("triton SD configuration requires an account")
 	}
 	if c.DNSSuffix == "" {
-		return fmt.Errorf("Triton SD configuration requires a dns_suffix")
+		return errors.New("triton SD configuration requires a dns_suffix")
 	}
 	if c.Endpoint == "" {
-		return fmt.Errorf("Triton SD configuration requires an endpoint")
+		return errors.New("triton SD configuration requires an endpoint")
 	}
 	if c.RefreshInterval <= 0 {
-		return fmt.Errorf("Triton SD configuration requires RefreshInterval to be a positive integer")
+		return errors.New("triton SD configuration requires RefreshInterval to be a positive integer")
 	}
 	return nil
 }
 
-func init() {
-	prometheus.MustRegister(refreshFailuresCount)
-	prometheus.MustRegister(refreshDuration)
-}
-
 // DiscoveryResponse models a JSON response from the Triton discovery.
-type DiscoveryResponse struct {
+type discoveryResponse struct {
 	Containers []struct {
 		Groups      []string `json:"groups"`
 		ServerUUID  string   `json:"server_uuid"`
@@ -118,18 +101,14 @@ type DiscoveryResponse struct {
 // Discovery periodically performs Triton-SD requests. It implements
 // the Discoverer interface.
 type Discovery struct {
+	*refresh.Discovery
 	client   *http.Client
 	interval time.Duration
-	logger   log.Logger
 	sdConfig *SDConfig
 }
 
 // New returns a new Discovery which periodically refreshes its targets.
 func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
-	if logger == nil {
-		logger = log.NewNopLogger()
-	}
-
 	tls, err := config_util.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -144,79 +123,55 @@ func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
 	}
 	client := &http.Client{Transport: transport}
 
-	return &Discovery{
+	d := &Discovery{
 		client:   client,
 		interval: time.Duration(conf.RefreshInterval),
-		logger:   logger,
 		sdConfig: conf,
-	}, nil
+	}
+	d.Discovery = refresh.NewDiscovery(
+		logger,
+		"triton",
+		time.Duration(conf.RefreshInterval),
+		d.refresh,
+	)
+	return d, nil
 }
 
-// Run implements the Discoverer interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	defer close(ch)
-
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
-	// Get an initial set right away.
-	tg, err := d.refresh()
-	if err != nil {
-		level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
-	} else {
-		ch <- []*targetgroup.Group{tg}
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			tg, err := d.refresh()
-			if err != nil {
-				level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
-			} else {
-				ch <- []*targetgroup.Group{tg}
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
-	t0 := time.Now()
-	defer func() {
-		refreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			refreshFailuresCount.Inc()
-		}
-	}()
-
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var endpoint = fmt.Sprintf("https://%s:%d/v%d/discover", d.sdConfig.Endpoint, d.sdConfig.Port, d.sdConfig.Version)
 	if len(d.sdConfig.Groups) > 0 {
 		groups := url.QueryEscape(strings.Join(d.sdConfig.Groups, ","))
 		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
 	}
 
-	tg = &targetgroup.Group{
+	tg := &targetgroup.Group{
 		Source: endpoint,
 	}
 
-	resp, err := d.client.Get(endpoint)
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred when requesting targets from the discovery endpoint. %s", err)
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "an error occurred when requesting targets from the discovery endpoint")
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred when reading the response body. %s", err)
+		return nil, errors.Wrap(err, "an error occurred when reading the response body")
 	}
 
-	dr := DiscoveryResponse{}
+	dr := discoveryResponse{}
 	err = json.Unmarshal(data, &dr)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred unmarshaling the disovery response json. %s", err)
+		return nil, errors.Wrap(err, "an error occurred unmarshaling the discovery response json")
 	}
 
 	for _, container := range dr.Containers {
@@ -238,5 +193,5 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		tg.Targets = append(tg.Targets, labels)
 	}
 
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }

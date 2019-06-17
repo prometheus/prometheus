@@ -14,7 +14,6 @@
 package runtime
 
 import (
-	"log"
 	"syscall"
 )
 
@@ -23,7 +22,7 @@ func Uname() string {
 	buf := syscall.Utsname{}
 	err := syscall.Uname(&buf)
 	if err != nil {
-		log.Fatal("Error!")
+		panic("syscall.Uname failed: " + err.Error())
 	}
 
 	str := "(" + charsToString(buf.Sysname[:])

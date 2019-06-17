@@ -16,6 +16,9 @@ package prometheus
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -23,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/common/expfmt"
 
 	dto "github.com/prometheus/client_model/go"
 
@@ -533,6 +537,38 @@ func (r *Registry) Gather() ([]*dto.MetricFamily, error) {
 	return internal.NormalizeMetricFamilies(metricFamiliesByName), errs.MaybeUnwrap()
 }
 
+// WriteToTextfile calls Gather on the provided Gatherer, encodes the result in the
+// Prometheus text format, and writes it to a temporary file. Upon success, the
+// temporary file is renamed to the provided filename.
+//
+// This is intended for use with the textfile collector of the node exporter.
+// Note that the node exporter expects the filename to be suffixed with ".prom".
+func WriteToTextfile(filename string, g Gatherer) error {
+	tmp, err := ioutil.TempFile(filepath.Dir(filename), filepath.Base(filename))
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+
+	mfs, err := g.Gather()
+	if err != nil {
+		return err
+	}
+	for _, mf := range mfs {
+		if _, err := expfmt.MetricFamilyToText(tmp, mf); err != nil {
+			return err
+		}
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Chmod(tmp.Name(), 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filename)
+}
+
 // processMetric is an internal helper method only used by the Gather method.
 func processMetric(
 	metric Metric,
@@ -644,7 +680,7 @@ func processMetric(
 // Gatherers is a slice of Gatherer instances that implements the Gatherer
 // interface itself. Its Gather method calls Gather on all Gatherers in the
 // slice in order and returns the merged results. Errors returned from the
-// Gather calles are all returned in a flattened MultiError. Duplicate and
+// Gather calls are all returned in a flattened MultiError. Duplicate and
 // inconsistent Metrics are skipped (first occurrence in slice order wins) and
 // reported in the returned error.
 //
@@ -836,7 +872,13 @@ func checkMetricConsistency(
 	h = hashAddByte(h, separatorByte)
 	// Make sure label pairs are sorted. We depend on it for the consistency
 	// check.
-	sort.Sort(labelPairSorter(dtoMetric.Label))
+	if !sort.IsSorted(labelPairSorter(dtoMetric.Label)) {
+		// We cannot sort dtoMetric.Label in place as it is immutable by contract.
+		copiedLabels := make([]*dto.LabelPair, len(dtoMetric.Label))
+		copy(copiedLabels, dtoMetric.Label)
+		sort.Sort(labelPairSorter(copiedLabels))
+		dtoMetric.Label = copiedLabels
+	}
 	for _, lp := range dtoMetric.Label {
 		h = hashAdd(h, lp.GetName())
 		h = hashAddByte(h, separatorByte)
@@ -867,8 +909,8 @@ func checkDescConsistency(
 	}
 
 	// Is the desc consistent with the content of the metric?
-	lpsFromDesc := make([]*dto.LabelPair, 0, len(dtoMetric.Label))
-	lpsFromDesc = append(lpsFromDesc, desc.constLabelPairs...)
+	lpsFromDesc := make([]*dto.LabelPair, len(desc.constLabelPairs), len(dtoMetric.Label))
+	copy(lpsFromDesc, desc.constLabelPairs)
 	for _, l := range desc.variableLabels {
 		lpsFromDesc = append(lpsFromDesc, &dto.LabelPair{
 			Name: proto.String(l),

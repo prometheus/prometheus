@@ -247,7 +247,7 @@ func (m *SDMock) HandleHypervisorListSuccessfully() {
 		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
 		w.Header().Add("Content-Type", "application/json")
-		fmt.Fprintf(w, hypervisorListBody)
+		fmt.Fprint(w, hypervisorListBody)
 	})
 }
 
@@ -544,7 +544,7 @@ func (m *SDMock) HandleServerListSuccessfully() {
 		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
 		w.Header().Add("Content-Type", "application/json")
-		fmt.Fprintf(w, serverListBody)
+		fmt.Fprint(w, serverListBody)
 	})
 }
 
@@ -583,6 +583,6 @@ func (m *SDMock) HandleFloatingIPListSuccessfully() {
 		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
 		w.Header().Add("Content-Type", "application/json")
-		fmt.Fprintf(w, listOutput)
+		fmt.Fprint(w, listOutput)
 	})
 }

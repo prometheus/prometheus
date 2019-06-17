@@ -23,11 +23,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -67,8 +66,12 @@ var (
 	}
 )
 
+func newTritonDiscovery(c SDConfig) (*Discovery, error) {
+	return New(nil, &c)
+}
+
 func TestTritonSDNew(t *testing.T) {
-	td, err := New(nil, &conf)
+	td, err := newTritonDiscovery(conf)
 	testutil.Ok(t, err)
 	testutil.Assert(t, td != nil, "")
 	testutil.Assert(t, td.client != nil, "")
@@ -81,13 +84,13 @@ func TestTritonSDNew(t *testing.T) {
 }
 
 func TestTritonSDNewBadConfig(t *testing.T) {
-	td, err := New(nil, &badconf)
+	td, err := newTritonDiscovery(badconf)
 	testutil.NotOk(t, err, "")
 	testutil.Assert(t, td == nil, "")
 }
 
 func TestTritonSDNewGroupsConfig(t *testing.T) {
-	td, err := New(nil, &groupsconf)
+	td, err := newTritonDiscovery(groupsconf)
 	testutil.Ok(t, err)
 	testutil.Assert(t, td != nil, "")
 	testutil.Assert(t, td.client != nil, "")
@@ -98,33 +101,6 @@ func TestTritonSDNewGroupsConfig(t *testing.T) {
 	testutil.Equals(t, groupsconf.Endpoint, td.sdConfig.Endpoint)
 	testutil.Equals(t, groupsconf.Groups, td.sdConfig.Groups)
 	testutil.Equals(t, groupsconf.Port, td.sdConfig.Port)
-}
-
-func TestTritonSDRun(t *testing.T) {
-	var (
-		td, err     = New(nil, &conf)
-		ch          = make(chan []*targetgroup.Group)
-		ctx, cancel = context.WithCancel(context.Background())
-	)
-
-	testutil.Ok(t, err)
-	testutil.Assert(t, td != nil, "")
-
-	wait := make(chan struct{})
-	go func() {
-		td.Run(ctx, ch)
-		close(wait)
-	}()
-
-	select {
-	case <-time.After(60 * time.Millisecond):
-		// Expected.
-	case tgs := <-ch:
-		t.Fatalf("Unexpected target groups in triton discovery: %s", tgs)
-	}
-
-	cancel()
-	<-wait
 }
 
 func TestTritonSDRefreshNoTargets(t *testing.T) {
@@ -160,48 +136,55 @@ func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 
 func TestTritonSDRefreshNoServer(t *testing.T) {
 	var (
-		td, err = New(nil, &conf)
+		td, _ = newTritonDiscovery(conf)
 	)
-	testutil.Ok(t, err)
-	testutil.Assert(t, td != nil, "")
 
-	tg, rerr := td.refresh()
-	testutil.NotOk(t, rerr, "")
-	testutil.Equals(t, strings.Contains(rerr.Error(), "an error occurred when requesting targets from the discovery endpoint."), true)
-	testutil.Assert(t, tg != nil, "")
-	testutil.Assert(t, tg.Targets == nil, "")
+	_, err := td.refresh(context.Background())
+	testutil.NotOk(t, err, "")
+	testutil.Equals(t, strings.Contains(err.Error(), "an error occurred when requesting targets from the discovery endpoint"), true)
+}
+
+func TestTritonSDRefreshCancelled(t *testing.T) {
+	var (
+		td, _ = newTritonDiscovery(conf)
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := td.refresh(ctx)
+	testutil.NotOk(t, err, "")
+	testutil.Equals(t, strings.Contains(err.Error(), context.Canceled.Error()), true)
 }
 
 func testTritonSDRefresh(t *testing.T, dstr string) []model.LabelSet {
 	var (
-		td, err = New(nil, &conf)
-		s       = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		td, _ = newTritonDiscovery(conf)
+		s     = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, dstr)
 		}))
 	)
 
 	defer s.Close()
 
-	u, uperr := url.Parse(s.URL)
-	testutil.Ok(t, uperr)
+	u, err := url.Parse(s.URL)
+	testutil.Ok(t, err)
 	testutil.Assert(t, u != nil, "")
 
-	host, strport, sherr := net.SplitHostPort(u.Host)
-	testutil.Ok(t, sherr)
+	host, strport, err := net.SplitHostPort(u.Host)
+	testutil.Ok(t, err)
 	testutil.Assert(t, host != "", "")
 	testutil.Assert(t, strport != "", "")
 
-	port, atoierr := strconv.Atoi(strport)
-	testutil.Ok(t, atoierr)
+	port, err := strconv.Atoi(strport)
+	testutil.Ok(t, err)
 	testutil.Assert(t, port != 0, "")
 
 	td.sdConfig.Port = port
 
+	tgs, err := td.refresh(context.Background())
 	testutil.Ok(t, err)
-	testutil.Assert(t, td != nil, "")
-
-	tg, err := td.refresh()
-	testutil.Ok(t, err)
+	testutil.Equals(t, 1, len(tgs))
+	tg := tgs[0]
 	testutil.Assert(t, tg != nil, "")
 
 	return tg.Targets

@@ -44,13 +44,13 @@ type Pattern struct {
 // It returns an error if the given definition is invalid.
 func NewPattern(version int, ops []int, pool []string, verb string) (Pattern, error) {
 	if version != 1 {
-		grpclog.Printf("unsupported version: %d", version)
+		grpclog.Infof("unsupported version: %d", version)
 		return Pattern{}, ErrInvalidPattern
 	}
 
 	l := len(ops)
 	if l%2 != 0 {
-		grpclog.Printf("odd number of ops codes: %d", l)
+		grpclog.Infof("odd number of ops codes: %d", l)
 		return Pattern{}, ErrInvalidPattern
 	}
 
@@ -73,14 +73,14 @@ func NewPattern(version int, ops []int, pool []string, verb string) (Pattern, er
 			stack++
 		case utilities.OpPushM:
 			if pushMSeen {
-				grpclog.Printf("pushM appears twice")
+				grpclog.Infof("pushM appears twice")
 				return Pattern{}, ErrInvalidPattern
 			}
 			pushMSeen = true
 			stack++
 		case utilities.OpLitPush:
 			if op.operand < 0 || len(pool) <= op.operand {
-				grpclog.Printf("negative literal index: %d", op.operand)
+				grpclog.Infof("negative literal index: %d", op.operand)
 				return Pattern{}, ErrInvalidPattern
 			}
 			if pushMSeen {
@@ -89,7 +89,7 @@ func NewPattern(version int, ops []int, pool []string, verb string) (Pattern, er
 			stack++
 		case utilities.OpConcatN:
 			if op.operand <= 0 {
-				grpclog.Printf("negative concat size: %d", op.operand)
+				grpclog.Infof("negative concat size: %d", op.operand)
 				return Pattern{}, ErrInvalidPattern
 			}
 			stack -= op.operand
@@ -100,7 +100,7 @@ func NewPattern(version int, ops []int, pool []string, verb string) (Pattern, er
 			stack++
 		case utilities.OpCapture:
 			if op.operand < 0 || len(pool) <= op.operand {
-				grpclog.Printf("variable name index out of bound: %d", op.operand)
+				grpclog.Infof("variable name index out of bound: %d", op.operand)
 				return Pattern{}, ErrInvalidPattern
 			}
 			v := pool[op.operand]
@@ -108,11 +108,11 @@ func NewPattern(version int, ops []int, pool []string, verb string) (Pattern, er
 			vars = append(vars, v)
 			stack--
 			if stack < 0 {
-				grpclog.Printf("stack underflow")
+				grpclog.Infof("stack underflow")
 				return Pattern{}, ErrInvalidPattern
 			}
 		default:
-			grpclog.Printf("invalid opcode: %d", op.code)
+			grpclog.Infof("invalid opcode: %d", op.code)
 			return Pattern{}, ErrInvalidPattern
 		}
 

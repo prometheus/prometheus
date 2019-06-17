@@ -17,13 +17,11 @@ import (
 	"testing"
 )
 
-type quoteTest struct {
+var quotetests = []struct {
 	in    string
 	out   string
 	ascii string
-}
-
-var quotetests = []quoteTest{
+}{
 	{"\a\b\f\r\n\t\v", `"\a\b\f\r\n\t\v"`, `"\a\b\f\r\n\t\v"`},
 	{"\\", `"\\"`, `"\\"`},
 	{"abc\xffdef", `"abc\xffdef"`, `"abc\xffdef"`},
@@ -32,12 +30,10 @@ var quotetests = []quoteTest{
 	{"\x04", `"\x04"`, `"\x04"`},
 }
 
-type unQuoteTest struct {
+var unquotetests = []struct {
 	in  string
 	out string
-}
-
-var unquotetests = []unQuoteTest{
+}{
 	{`""`, ""},
 	{`"a"`, "a"},
 	{`"abc"`, "abc"},

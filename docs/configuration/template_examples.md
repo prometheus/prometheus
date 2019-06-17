@@ -9,7 +9,7 @@ Prometheus supports templating in the annotations and labels of alerts,
 as well as in served console pages. Templates have the ability to run
 queries against the local database, iterate over data, use conditionals,
 format data, etc. The Prometheus templating language is based on the [Go
-templating](http://golang.org/pkg/text/template/) system.
+templating](https://golang.org/pkg/text/template/) system.
 
 ## Simple alert field templates
 
@@ -60,7 +60,7 @@ formatting of results, and linking to the [expression browser](https://prometheu
 
 ```go
 {{ with printf "node_memory_MemTotal{job='node',instance='%s'}" .Params.instance | query }}
-  {{ . | first | value | humanize1024}}B
+  {{ . | first | value | humanize1024 }}B
 {{ end }}
 ```
 
@@ -80,7 +80,7 @@ If accessed as `console.html?instance=hostname`, `.Params.instance` will evaluat
     <td>Transmitted</td>
     <td>{{ with printf "rate(node_network_transmit_bytes{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device | query }}{{ . | first | value | humanize }}B/s{{end}}</td>
   </tr>{{ end }}
-<table>
+</table>
 ```
 
 Here we iterate over all network devices and display the network traffic for each.

@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -26,6 +25,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/pagination"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -34,13 +34,15 @@ import (
 const (
 	openstackLabelPrefix         = model.MetaLabelPrefix + "openstack_"
 	openstackLabelAddressPool    = openstackLabelPrefix + "address_pool"
+	openstackLabelInstanceFlavor = openstackLabelPrefix + "instance_flavor"
 	openstackLabelInstanceID     = openstackLabelPrefix + "instance_id"
 	openstackLabelInstanceName   = openstackLabelPrefix + "instance_name"
 	openstackLabelInstanceStatus = openstackLabelPrefix + "instance_status"
-	openstackLabelInstanceFlavor = openstackLabelPrefix + "instance_flavor"
-	openstackLabelPublicIP       = openstackLabelPrefix + "public_ip"
 	openstackLabelPrivateIP      = openstackLabelPrefix + "private_ip"
+	openstackLabelProjectID      = openstackLabelPrefix + "project_id"
+	openstackLabelPublicIP       = openstackLabelPrefix + "public_ip"
 	openstackLabelTagPrefix      = openstackLabelPrefix + "tag_"
+	openstackLabelUserID         = openstackLabelPrefix + "user_id"
 )
 
 // InstanceDiscovery discovers OpenStack instances.
@@ -48,57 +50,19 @@ type InstanceDiscovery struct {
 	provider   *gophercloud.ProviderClient
 	authOpts   *gophercloud.AuthOptions
 	region     string
-	interval   time.Duration
 	logger     log.Logger
 	port       int
 	allTenants bool
 }
 
 // NewInstanceDiscovery returns a new instance discovery.
-func NewInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	interval time.Duration, port int, region string, allTenants bool, l log.Logger) *InstanceDiscovery {
+func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
+	port int, region string, allTenants bool, l log.Logger) *InstanceDiscovery {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
 	return &InstanceDiscovery{provider: provider, authOpts: opts,
-		region: region, interval: interval, port: port, allTenants: allTenants, logger: l}
-}
-
-// Run implements the Discoverer interface.
-func (i *InstanceDiscovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// Get an initial set right away.
-	tg, err := i.refresh()
-	if err != nil {
-		level.Error(i.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
-	} else {
-		select {
-		case ch <- []*targetgroup.Group{tg}:
-		case <-ctx.Done():
-			return
-		}
-	}
-
-	ticker := time.NewTicker(i.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			tg, err := i.refresh()
-			if err != nil {
-				level.Error(i.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
-				continue
-			}
-
-			select {
-			case ch <- []*targetgroup.Group{tg}:
-			case <-ctx.Done():
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
+		region: region, port: port, allTenants: allTenants, logger: l}
 }
 
 type floatingIPKey struct {
@@ -106,25 +70,17 @@ type floatingIPKey struct {
 	fixed string
 }
 
-func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
-	var err error
-	t0 := time.Now()
-	defer func() {
-		refreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			refreshFailuresCount.Inc()
-		}
-	}()
-
-	err = openstack.Authenticate(i.provider, *i.authOpts)
+func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	i.provider.Context = ctx
+	err := openstack.Authenticate(i.provider, *i.authOpts)
 	if err != nil {
-		return nil, fmt.Errorf("could not authenticate to OpenStack: %s", err)
+		return nil, errors.Wrap(err, "could not authenticate to OpenStack")
 	}
 	client, err := openstack.NewComputeV2(i.provider, gophercloud.EndpointOpts{
 		Region: i.region,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not create OpenStack compute session: %s", err)
+		return nil, errors.Wrap(err, "could not create OpenStack compute session")
 	}
 
 	// OpenStack API reference
@@ -135,7 +91,7 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
 		result, err := floatingips.ExtractFloatingIPs(page)
 		if err != nil {
-			return false, fmt.Errorf("could not extract floatingips: %s", err)
+			return false, errors.Wrap(err, "could not extract floatingips")
 		}
 		for _, ip := range result {
 			// Skip not associated ips
@@ -161,9 +117,12 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 		Source: fmt.Sprintf("OS_" + i.region),
 	}
 	err = pager.EachPage(func(page pagination.Page) (bool, error) {
+		if ctx.Err() != nil {
+			return false, errors.Wrap(ctx.Err(), "could not extract instances")
+		}
 		instanceList, err := servers.ExtractServers(page)
 		if err != nil {
-			return false, fmt.Errorf("could not extract instances: %s", err)
+			return false, errors.Wrap(err, "could not extract instances")
 		}
 
 		for _, s := range instanceList {
@@ -176,6 +135,8 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 				openstackLabelInstanceID:     model.LabelValue(s.ID),
 				openstackLabelInstanceStatus: model.LabelValue(s.Status),
 				openstackLabelInstanceName:   model.LabelValue(s.Name),
+				openstackLabelProjectID:      model.LabelValue(s.TenantID),
+				openstackLabelUserID:         model.LabelValue(s.UserID),
 			}
 
 			id, ok := s.Flavor["id"].(string)
@@ -234,5 +195,5 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 		return nil, err
 	}
 
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }

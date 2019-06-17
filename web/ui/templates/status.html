@@ -3,7 +3,7 @@
 {{define "content"}}
   <div class="container-fluid">
     <h2 id="runtime">Runtime Information</h2>
-    <table class="table table-condensed table-bordered table-striped table-hover">
+    <table class="table table-sm table-bordered table-striped table-hover">
       <tbody>
         <tr>
           <th>Uptime</th>
@@ -45,11 +45,19 @@
           <th>GOGC</th>
           <td>{{.GOGC}}</td>
         </tr>
+        <tr>
+          <th>GODEBUG</th>
+          <td>{{.GODEBUG}}</td>
+        </tr>
+        <tr>
+          <th>Storage Retention</th>
+          <td>{{.StorageRetention}}</td>
+        </tr>
       </tbody>
     </table>
 
     <h2 id="buildinformation">Build Information</h2>
-    <table class="table table-condensed table-bordered table-striped table-hover">
+    <table class="table table-sm table-bordered table-striped table-hover">
       <tbody>
         <tr>
           <th scope="row">Version</th>
@@ -79,7 +87,7 @@
     </table>
 
     <h2 id="alertmanagers">Alertmanagers</h2>
-    <table class="table table-condensed table-bordered table-striped table-hover">
+    <table class="table table-sm table-bordered table-striped table-hover">
       <tbody>
         <tr>
            <th>Endpoint</th>

@@ -1,6 +1,7 @@
 var Prometheus = Prometheus || {};
 var graphTemplate;
 
+var INPUT_DEBOUNCE_WAIT = 500; // ms
 var SECOND = 1000;
 
 /**
@@ -62,6 +63,12 @@ Prometheus.Graph.prototype.initialize = function() {
   var graphWrapper = self.el.find("#graph_wrapper" + self.id);
   self.queryForm = graphWrapper.find(".query_form");
 
+  // Auto-resize the text area on input or mouseclick
+  var resizeTextarea = function(el) {
+    var offset = el.offsetHeight - el.clientHeight;
+    $(el).css('height', 'auto').css('height', el.scrollHeight + offset);
+  };
+
   self.expr = graphWrapper.find("textarea[name=expr]");
   self.expr.keypress(function(e) {
     const enter = 13;
@@ -69,14 +76,15 @@ Prometheus.Graph.prototype.initialize = function() {
       self.queryForm.submit();
       e.preventDefault();
     }
-
-    // Auto-resize the text area on input.
-    var offset = this.offsetHeight - this.clientHeight;
-    var resizeTextarea = function(el) {
-        $(el).css('height', 'auto').css('height', el.scrollHeight + offset);
-    };
-    $(this).on('keyup input', function() { resizeTextarea(this); });
+    $(this).on('keyup input', debounce(function() {
+      resizeTextarea(this);
+    }, INPUT_DEBOUNCE_WAIT));
   });
+
+  self.expr.click(function(e) {
+    resizeTextarea(this);
+  });
+
   self.expr.change(self.handleChange);
 
   self.rangeInput = self.queryForm.find("input[name=range_input]");
@@ -107,6 +115,7 @@ Prometheus.Graph.prototype.initialize = function() {
   })
 
   self.error = graphWrapper.find(".error").hide();
+  self.warning = graphWrapper.find(".warning").hide();
   self.graphArea = graphWrapper.find(".graph_area");
   self.graph = self.graphArea.find(".graph");
   self.yAxis = self.graphArea.find(".y_axis");
@@ -151,7 +160,7 @@ Prometheus.Graph.prototype.initialize = function() {
     self.moment.data('DateTimePicker').date(date);
   } else if (self.options.moment_input) {
     self.moment.data('DateTimePicker').date(self.options.moment_input);
-  } 
+  }
   self.moment.on("dp.change", function() { self.submitQuery(); });
 
 
@@ -237,7 +246,7 @@ Prometheus.Graph.prototype.checkTimeDrift = function() {
             var diff = Math.abs(browserTime - serverTime);
 
             if (diff >= 30) {
-              $("#graph_wrapper0").prepend(
+              this.showWarning(
                   "<div class=\"alert alert-warning\"><strong>Warning!</strong> Detected " +
                   diff.toFixed(2) +
                   " seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.</div>"
@@ -286,7 +295,7 @@ Prometheus.Graph.prototype.initTypeahead = function(self) {
   self.expr.typeahead({
     autoSelect: false,
     source: source,
-    items: "all",
+    items: 1000,
     matcher: function (item) {
       // If we have result for current query, skip
       if (self.fuzzyResult.query !== this.query) {
@@ -310,11 +319,7 @@ Prometheus.Graph.prototype.initTypeahead = function(self) {
         return i === 0 ? a.localeCompare(b) : i;
       });
       return items;
-    },
-
-    highlighter: function (item) {
-      return $("<div>" + self.fuzzyResult.map[item].string + "</div>");
-    },
+    }
   });
   // This needs to happen after attaching the typeahead plugin, as it
   // otherwise breaks the typeahead functionality.
@@ -462,6 +467,7 @@ Prometheus.Graph.prototype.decreaseMoment = function() {
 Prometheus.Graph.prototype.submitQuery = function() {
   var self = this;
   self.clearError();
+  self.clearWarning();
   if (!self.expr.val()) {
     return;
   }
@@ -546,10 +552,22 @@ Prometheus.Graph.prototype.showError = function(msg) {
   self.error.show();
 };
 
-Prometheus.Graph.prototype.clearError = function(msg) {
+Prometheus.Graph.prototype.clearError = function() {
   var self = this;
   self.error.text('');
   self.error.hide();
+};
+
+Prometheus.Graph.prototype.showWarning = function(msg) {
+  var self = this;
+  self.warning.html(msg);
+  self.warning.show();
+};
+
+Prometheus.Graph.prototype.clearWarning = function() {
+  var self = this;
+  self.warning.html('');
+  self.warning.hide();
 };
 
 Prometheus.Graph.prototype.updateRefresh = function() {
@@ -803,6 +821,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
       tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>");
       return;
     }
+    data.result = self.limitSeries(data.result);
     for (var i = 0; i < data.result.length; i++) {
       var s = data.result[i];
       var tsName = self.metricToTsName(s.metric);
@@ -814,6 +833,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
       tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>");
       return;
     }
+    data.result = self.limitSeries(data.result);
     for (var i = 0; i < data.result.length; i++) {
       var v = data.result[i];
       var tsName = self.metricToTsName(v.metric);
@@ -885,6 +905,20 @@ Prometheus.Graph.prototype.formatKMBT = function(y) {
   } else if (abs_y <= 1) {
     return y
   }
+}
+
+Prometheus.Graph.prototype.limitSeries = function(result) {
+  var self = this;
+  var MAX_SERIES_NUM = 10000;
+  var message = "<strong>Warning!</strong> Fetched " +
+    result.length + " series, but displaying only first " +
+    MAX_SERIES_NUM + ".";
+
+  if (result.length > MAX_SERIES_NUM) {
+    self.showWarning(message);
+    return result.splice(0, MAX_SERIES_NUM);
+  }
+  return result;
 }
 
 /**
@@ -1127,6 +1161,20 @@ const queryHistory = {
     });
   }
 };
+
+// Defers invocation of fn for waitPeriod if returned function is called repeatedly
+function debounce(fn, waitPeriod) {
+  var timeout;
+  return function() {
+    clearTimeout(timeout);
+    var args = arguments;
+    var scope = this;
+    function invokeFn() {
+      return fn.apply(scope, args);
+    }
+    timeout = setTimeout(invokeFn, waitPeriod);
+  };
+}
 
 function escapeHTML(string) {
   var entityMap = {

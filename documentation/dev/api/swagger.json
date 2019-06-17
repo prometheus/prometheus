@@ -21,7 +21,7 @@
         "operationId": "TSDBCleanTombstones",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/prometheusTSDBCleanTombstonesResponse"
             }
@@ -38,7 +38,7 @@
         "operationId": "DeleteSeries",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/prometheusSeriesDeleteResponse"
             }
@@ -65,7 +65,7 @@
         "operationId": "TSDBSnapshot",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/prometheusTSDBSnapshotResponse"
             }

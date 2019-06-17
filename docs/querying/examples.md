@@ -26,8 +26,7 @@ Note that an expression resulting in a range vector cannot be graphed directly,
 but viewed in the tabular ("Console") view of the expression browser.
 
 Using regular expressions, you could select time series only for jobs whose
-name match a certain pattern, in this case, all jobs that end with `server`.
-Note that this does a substring match, not a full string match:
+name match a certain pattern, in this case, all jobs that end with `server`:
 
     http_requests_total{job=~".*server"}
 
@@ -37,6 +36,16 @@ syntax](https://github.com/google/re2/wiki/Syntax).
 To select all HTTP status codes except 4xx ones, you could run:
 
     http_requests_total{status!~"4.."}
+
+## Subquery
+
+Return the 5-minute rate of the `http_requests_total` metric for the past 30 minutes, with a resolution of 1 minute.
+
+    rate(http_requests_total[5m])[30m:1m]
+
+This is an example of a nested subquery. The subquery for the `deriv` function uses the default resolution. Note that using subqueries unnecessarily is unwise.
+
+    max_over_time(deriv(rate(distance_covered_total[5s])[30s:5s])[10m:])
 
 ## Using functions, operators, etc.
 

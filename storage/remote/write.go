@@ -14,44 +14,67 @@
 package remote
 
 import (
-	"github.com/prometheus/common/model"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
+var (
+	samplesIn = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "samples_in_total",
+		Help:      "Samples in to remote storage, compare to samples out for queue managers.",
+	})
+	highestTimestamp = maxGauge{
+		Gauge: promauto.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "highest_timestamp_in_seconds",
+			Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
+		}),
+	}
+)
+
 // Appender implements scrape.Appendable.
 func (s *Storage) Appender() (storage.Appender, error) {
-	return s, nil
+	return &timestampTracker{
+		storage: s,
+	}, nil
+}
+
+type timestampTracker struct {
+	storage          *Storage
+	samples          int64
+	highestTimestamp int64
 }
 
 // Add implements storage.Appender.
-func (s *Storage) Add(l labels.Labels, t int64, v float64) (uint64, error) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-	for _, q := range s.queues {
-		if err := q.Append(&model.Sample{
-			Metric:    labelsToMetric(l),
-			Timestamp: model.Time(t),
-			Value:     model.SampleValue(v),
-		}); err != nil {
-			panic(err) // QueueManager.Append() should always return nil as per doc string.
-		}
+func (t *timestampTracker) Add(_ labels.Labels, ts int64, v float64) (uint64, error) {
+	t.samples++
+	if ts > t.highestTimestamp {
+		t.highestTimestamp = ts
 	}
 	return 0, nil
 }
 
 // AddFast implements storage.Appender.
-func (s *Storage) AddFast(l labels.Labels, _ uint64, t int64, v float64) error {
-	_, err := s.Add(l, t, v)
+func (t *timestampTracker) AddFast(l labels.Labels, _ uint64, ts int64, v float64) error {
+	_, err := t.Add(l, ts, v)
 	return err
 }
 
 // Commit implements storage.Appender.
-func (*Storage) Commit() error {
+func (t *timestampTracker) Commit() error {
+	t.storage.samplesIn.incr(t.samples)
+
+	samplesIn.Add(float64(t.samples))
+	highestTimestamp.Set(float64(t.highestTimestamp / 1000))
 	return nil
 }
 
 // Rollback implements storage.Appender.
-func (*Storage) Rollback() error {
+func (*timestampTracker) Rollback() error {
 	return nil
 }

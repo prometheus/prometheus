@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -34,22 +35,23 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/oklog/oklog/pkg/group"
+	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/oklog/run"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/version"
-	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
-	"gopkg.in/alecthomas/kingpin.v2"
-	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
-
-	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/common/promlog"
+	"github.com/prometheus/common/version"
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
+	"k8s.io/klog"
+
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/relabel"
+	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -69,10 +71,19 @@ var (
 		Name: "prometheus_config_last_reload_success_timestamp_seconds",
 		Help: "Timestamp of the last successful configuration reload.",
 	})
+
+	defaultRetentionString   = "15d"
+	defaultRetentionDuration model.Duration
 )
 
 func init() {
 	prometheus.MustRegister(version.NewCollector("prometheus"))
+
+	var err error
+	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func main() {
@@ -80,6 +91,11 @@ func main() {
 		runtime.SetBlockProfileRate(20)
 		runtime.SetMutexProfileFraction(20)
 	}
+
+	var (
+		oldFlagRetentionDuration model.Duration
+		newFlagRetentionDuration model.Duration
+	)
 
 	cfg := struct {
 		configFile string
@@ -99,13 +115,15 @@ func main() {
 		queryMaxSamples     int
 		RemoteFlushDeadline model.Duration
 
-		prometheusURL string
+		prometheusURL   string
+		corsRegexString string
 
-		logLevel promlog.AllowedLevel
+		promlogConfig promlog.Config
 	}{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
 		},
+		promlogConfig: promlog.Config{},
 	}
 
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server")
@@ -150,6 +168,12 @@ func main() {
 	a.Flag("web.console.libraries", "Path to the console library directory.").
 		Default("console_libraries").StringVar(&cfg.web.ConsoleLibrariesPath)
 
+	a.Flag("web.page-title", "Document title of Prometheus instance.").
+		Default("Prometheus Time Series Collection and Processing Server").StringVar(&cfg.web.PageTitle)
+
+	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Example: 'https?://(domain1|domain2)\.com'`).
+		Default(".*").StringVar(&cfg.corsRegexString)
+
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 
@@ -157,14 +181,27 @@ func main() {
 		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
 
 	a.Flag("storage.tsdb.max-block-duration",
-		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
+		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period.)").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
-	a.Flag("storage.tsdb.retention", "How long to retain samples in storage.").
-		Default("15d").SetValue(&cfg.tsdb.Retention)
+	a.Flag("storage.tsdb.wal-segment-size",
+		"Size at which to split the tsdb WAL segment files. Example: 100MB").
+		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
+
+	a.Flag("storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead.").
+		SetValue(&oldFlagRetentionDuration)
+
+	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+".").
+		SetValue(&newFlagRetentionDuration)
+
+	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. Units supported: KB, MB, GB, TB, PB. This flag is experimental and can be changed in future releases.").
+		BytesVar(&cfg.tsdb.MaxBytes)
 
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
+
+	a.Flag("storage.tsdb.allow-overlapping-blocks", "[EXPERIMENTAL] Allow overlapping blocks, which in turn enables vertical compaction and vertical query merge.").
+		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
 
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
@@ -175,10 +212,10 @@ func main() {
 	a.Flag("storage.remote.read-concurrent-limit", "Maximum number of concurrent remote read calls. 0 means no limit.").
 		Default("10").IntVar(&cfg.web.RemoteReadConcurrencyLimit)
 
-	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring 'for' state of alert.").
+	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"for\" state of alert.").
 		Default("1h").SetValue(&cfg.outageTolerance)
 
-	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored 'for' state. This is maintained only for alerts with configured 'for' time greater than grace period.").
+	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored \"for\" state. This is maintained only for alerts with configured \"for\" time greater than grace period.").
 		Default("10m").SetValue(&cfg.forGracePeriod)
 
 	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
@@ -190,7 +227,7 @@ func main() {
 	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager.").
 		Default("10s").SetValue(&cfg.notifierTimeout)
 
-	a.Flag("query.lookback-delta", "The delta difference allowed for retrieving metrics during expression evaluations.").
+	a.Flag("query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations.").
 		Default("5m").SetValue(&cfg.lookbackDelta)
 
 	a.Flag("query.timeout", "Maximum time a query may take before being aborted.").
@@ -198,10 +235,11 @@ func main() {
 
 	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
 		Default("20").IntVar(&cfg.queryConcurrency)
-	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they would load more samples than this into memory, so this also limits the number of samples a query can return.").
+
+	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	promlogflag.AddFlags(a, &cfg.logLevel)
+	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
@@ -210,9 +248,17 @@ func main() {
 		os.Exit(2)
 	}
 
+	logger := promlog.New(&cfg.promlogConfig)
+
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "parse external URL %q", cfg.prometheusURL))
+		os.Exit(2)
+	}
+
+	cfg.web.CORSOrigin, err = compileCORSRegexString(cfg.corsRegexString)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "could not compile CORS regex string %q", cfg.corsRegexString))
 		os.Exit(2)
 	}
 
@@ -224,22 +270,54 @@ func main() {
 	// RoutePrefix must always be at least '/'.
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
-	if cfg.tsdb.MaxBlockDuration == 0 {
-		cfg.tsdb.MaxBlockDuration = cfg.tsdb.Retention / 10
+	{ // Time retention settings.
+		if oldFlagRetentionDuration != 0 {
+			level.Warn(logger).Log("deprecation_notice", "'storage.tsdb.retention' flag is deprecated use 'storage.tsdb.retention.time' instead.")
+			cfg.tsdb.RetentionDuration = oldFlagRetentionDuration
+		}
+
+		// When the new flag is set it takes precedence.
+		if newFlagRetentionDuration != 0 {
+			cfg.tsdb.RetentionDuration = newFlagRetentionDuration
+		}
+
+		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 {
+			cfg.tsdb.RetentionDuration = defaultRetentionDuration
+			level.Info(logger).Log("msg", "no time or size retention was set so using the default time retention", "duration", defaultRetentionDuration)
+		}
+
+		// Check for overflows. This limits our max retention to 100y.
+		if cfg.tsdb.RetentionDuration < 0 {
+			y, err := model.ParseDuration("100y")
+			if err != nil {
+				panic(err)
+			}
+			cfg.tsdb.RetentionDuration = y
+			level.Warn(logger).Log("msg", "time retention value is too high. Limiting to: "+y.String())
+		}
+	}
+
+	{ // Max block size  settings.
+		if cfg.tsdb.MaxBlockDuration == 0 {
+			maxBlockDuration, err := model.ParseDuration("31d")
+			if err != nil {
+				panic(err)
+			}
+			// When the time retention is set and not too big use to define the max block duration.
+			if cfg.tsdb.RetentionDuration != 0 && cfg.tsdb.RetentionDuration/10 < maxBlockDuration {
+				maxBlockDuration = cfg.tsdb.RetentionDuration / 10
+			}
+
+			cfg.tsdb.MaxBlockDuration = maxBlockDuration
+		}
 	}
 
 	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	promql.SetDefaultEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
 
-	logger := promlog.New(cfg.logLevel)
-
-	// XXX(fabxc): Kubernetes does background logging which we can only customize by modifying
-	// a global variable.
-	// Ultimately, here is the best place to set it.
-	k8s_runtime.ErrorHandlers = []func(error){
-		func(err error) {
-			level.Error(log.With(logger, "component", "k8s_client_runtime")).Log("err", err)
-		},
-	}
+	// Above level 6, the k8s client would log bearer tokens in clear-text.
+	klog.ClampLevel(6)
+	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
@@ -249,7 +327,7 @@ func main() {
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime, time.Duration(cfg.RemoteFlushDeadline))
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline))
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -257,7 +335,7 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifier = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
+		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
@@ -280,7 +358,7 @@ func main() {
 			Appendable:      fanoutStorage,
 			TSDB:            localStorage,
 			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:      sendAlerts(notifier, cfg.web.ExternalURL.String()),
+			NotifyFunc:      sendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:         ctxRule,
 			ExternalURL:     cfg.web.ExternalURL,
 			Registerer:      prometheus.DefaultRegisterer,
@@ -297,7 +375,8 @@ func main() {
 	cfg.web.QueryEngine = queryEngine
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
-	cfg.web.Notifier = notifier
+	cfg.web.Notifier = notifierManager
+	cfg.web.TSDBCfg = cfg.tsdb
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,
@@ -333,7 +412,6 @@ func main() {
 		webHandler.ApplyConfig,
 		// The Scrape and notifier managers need to reload before the Discovery manager as
 		// they need to read the most updated config when receiving the new targets list.
-		notifier.ApplyConfig,
 		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -342,6 +420,7 @@ func main() {
 			}
 			return discoveryManagerScrape.ApplyConfig(c)
 		},
+		notifierManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
 			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
@@ -355,17 +434,21 @@ func main() {
 			return discoveryManagerNotify.ApplyConfig(c)
 		},
 		func(cfg *config.Config) error {
-			// Get all rule files matching the configuration oaths.
+			// Get all rule files matching the configuration paths.
 			var files []string
 			for _, pat := range cfg.RuleFiles {
 				fs, err := filepath.Glob(pat)
 				if err != nil {
 					// The only error can be a bad pattern.
-					return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
+					return errors.Wrapf(err, "error retrieving rule files for %s", pat)
 				}
 				files = append(files, fs...)
 			}
-			return ruleManager.Update(time.Duration(cfg.GlobalConfig.EvaluationInterval), files)
+			return ruleManager.Update(
+				time.Duration(cfg.GlobalConfig.EvaluationInterval),
+				files,
+				cfg.GlobalConfig.ExternalLabels,
+			)
 		},
 	}
 
@@ -392,7 +475,7 @@ func main() {
 		})
 	}
 
-	var g group.Group
+	var g run.Group
 	{
 		// Termination handler.
 		term := make(chan os.Signal, 1)
@@ -522,7 +605,7 @@ func main() {
 				}
 
 				if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
-					return fmt.Errorf("error loading config from %q: %s", cfg.configFile, err)
+					return errors.Wrapf(err, "error loading config from %q", cfg.configFile)
 				}
 
 				reloadReady.Close()
@@ -560,6 +643,11 @@ func main() {
 		g.Add(
 			func() error {
 				level.Info(logger).Log("msg", "Starting TSDB ...")
+				if cfg.tsdb.WALSegmentSize != 0 {
+					if cfg.tsdb.WALSegmentSize < 10*1024*1024 || cfg.tsdb.WALSegmentSize > 256*1024*1024 {
+						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
+					}
+				}
 				db, err := tsdb.Open(
 					cfg.localStoragePath,
 					log.With(logger, "component", "tsdb"),
@@ -567,9 +655,19 @@ func main() {
 					&cfg.tsdb,
 				)
 				if err != nil {
-					return fmt.Errorf("opening storage failed: %s", err)
+					return errors.Wrapf(err, "opening storage failed")
 				}
+				level.Info(logger).Log("fs_type", prom_runtime.Statfs(cfg.localStoragePath))
 				level.Info(logger).Log("msg", "TSDB started")
+				level.Debug(logger).Log("msg", "TSDB options",
+					"MinBlockDuration", cfg.tsdb.MinBlockDuration,
+					"MaxBlockDuration", cfg.tsdb.MaxBlockDuration,
+					"MaxBytes", cfg.tsdb.MaxBytes,
+					"NoLockfile", cfg.tsdb.NoLockfile,
+					"RetentionDuration", cfg.tsdb.RetentionDuration,
+					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
+					"AllowOverlappingBlocks", cfg.tsdb.AllowOverlappingBlocks,
+				)
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
@@ -590,7 +688,7 @@ func main() {
 		g.Add(
 			func() error {
 				if err := webHandler.Run(ctxWeb); err != nil {
-					return fmt.Errorf("error starting web server: %s", err)
+					return errors.Wrapf(err, "error starting web server")
 				}
 				return nil
 			},
@@ -612,12 +710,12 @@ func main() {
 				// so we wait until the config is fully loaded.
 				<-reloadReady.C
 
-				notifier.Run(discoveryManagerNotify.SyncCh())
+				notifierManager.Run(discoveryManagerNotify.SyncCh())
 				level.Info(logger).Log("msg", "Notifier manager stopped")
 				return nil
 			},
 			func(err error) {
-				notifier.Stop()
+				notifierManager.Stop()
 			},
 		)
 	}
@@ -642,7 +740,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 
 	conf, err := config.LoadFile(filename)
 	if err != nil {
-		return fmt.Errorf("couldn't load configuration (--config.file=%q): %v", filename, err)
+		return errors.Wrapf(err, "couldn't load configuration (--config.file=%q)", filename)
 	}
 
 	failed := false
@@ -653,8 +751,10 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 		}
 	}
 	if failed {
-		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
+		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
+
+	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }
@@ -662,6 +762,15 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 func startsOrEndsWithQuote(s string) bool {
 	return strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") ||
 		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
+}
+
+// compileCORSRegexString compiles given string and adds anchors
+func compileCORSRegexString(s string) (*regexp.Regexp, error) {
+	r, err := relabel.NewRegexp(s)
+	if err != nil {
+		return nil, err
+	}
+	return r.Regexp, nil
 }
 
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset
@@ -680,7 +789,7 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	}
 
 	if startsOrEndsWithQuote(u) {
-		return nil, fmt.Errorf("URL must not begin or end with quotes")
+		return nil, errors.New("URL must not begin or end with quotes")
 	}
 
 	eu, err := url.Parse(u)
@@ -697,8 +806,12 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	return eu, nil
 }
 
+type sender interface {
+	Send(alerts ...*notifier.Alert)
+}
+
 // sendAlerts implements the rules.NotifyFunc for a Notifier.
-func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
+func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*rules.Alert) {
 		var res []*notifier.Alert
 
@@ -718,7 +831,7 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 		}
 
 		if len(alerts) > 0 {
-			n.Send(res...)
+			s.Send(res...)
 		}
 	}
 }

@@ -136,7 +136,7 @@ func NewCounterVec(opts CounterOpts, labelNames []string) *CounterVec {
 	return &CounterVec{
 		metricVec: newMetricVec(desc, func(lvs ...string) Metric {
 			if len(lvs) != len(desc.variableLabels) {
-				panic(errInconsistentCardinality)
+				panic(makeInconsistentCardinalityError(desc.fqName, desc.variableLabels, lvs))
 			}
 			result := &counter{desc: desc, labelPairs: makeLabelPairs(desc, lvs)}
 			result.init(result) // Init self-collection.

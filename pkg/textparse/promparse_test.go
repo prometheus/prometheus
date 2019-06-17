@@ -37,6 +37,7 @@ go_gc_duration_seconds{quantile="0.8", a="b"} 8.3835e-05
 go_gc_duration_seconds{ quantile="0.9", a="b"} 8.3835e-05
 # Hrandom comment starting with prefix of HELP
 #
+wind_speed{A="2",c="3"} 12345
 # comment with escaped \n newline
 # comment with escaped \ escape character
 # HELP nohelp1
@@ -97,6 +98,10 @@ testmetric{label="\"bar\""} 1`
 			comment: "# Hrandom comment starting with prefix of HELP",
 		}, {
 			comment: "#",
+		}, {
+			m:    `wind_speed{A="2",c="3"}`,
+			v:    12345,
+			lset: labels.FromStrings("A", "2", "__name__", "wind_speed", "c", "3"),
 		}, {
 			comment: "# comment with escaped \\n newline",
 		}, {

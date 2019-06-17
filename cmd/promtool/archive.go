@@ -16,17 +16,12 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
-	"fmt"
 	"os"
+
+	"github.com/pkg/errors"
 )
 
 const filePerm = 0644
-
-type archiver interface {
-	write(filename string, b []byte) error
-	close() error
-	filename() string
-}
 
 type tarGzFileWriter struct {
 	tarWriter *tar.Writer
@@ -37,7 +32,7 @@ type tarGzFileWriter struct {
 func newTarGzFileWriter(archiveName string) (*tarGzFileWriter, error) {
 	file, err := os.Create(archiveName)
 	if err != nil {
-		return nil, fmt.Errorf("error creating archive %q: %s", archiveName, err)
+		return nil, errors.Wrapf(err, "error creating archive %q", archiveName)
 	}
 	gzw := gzip.NewWriter(file)
 	tw := tar.NewWriter(gzw)
@@ -71,8 +66,4 @@ func (w *tarGzFileWriter) write(filename string, b []byte) error {
 		return err
 	}
 	return nil
-}
-
-func (w *tarGzFileWriter) filename() string {
-	return w.file.Name()
 }

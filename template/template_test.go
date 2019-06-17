@@ -25,18 +25,16 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-type testTemplatesScenario struct {
-	text        string
-	output      string
-	input       interface{}
-	queryResult promql.Vector
-	shouldFail  bool
-	html        bool
-	errorMsg    string
-}
-
 func TestTemplateExpansion(t *testing.T) {
-	scenarios := []testTemplatesScenario{
+	scenarios := []struct {
+		text        string
+		output      string
+		input       interface{}
+		queryResult promql.Vector
+		shouldFail  bool
+		html        bool
+		errorMsg    string
+	}{
 		{
 			// No template.
 			text:   "plain text",
@@ -198,6 +196,11 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{humanizeTimestamp .}}:{{ end }}",
 			input:  []float64{math.Inf(1), math.Inf(-1), math.NaN()},
 			output: "+Inf:+Inf:+Inf:+Inf:-Inf:-Inf:-Inf:-Inf:NaN:NaN:NaN:NaN:",
+		},
+		{
+			// HumanizePercentage - model.SampleValue input.
+			text:   "{{ -0.22222 | humanizePercentage }}:{{ 0.0 | humanizePercentage }}:{{ 0.1234567 | humanizePercentage }}:{{ 1.23456 | humanizePercentage }}",
+			output: "-22.22%:0%:12.35%:123.5%",
 		},
 		{
 			// HumanizeTimestamp - model.SampleValue input.

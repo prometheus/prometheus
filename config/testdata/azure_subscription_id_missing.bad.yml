@@ -1,0 +1,7 @@
+scrape_configs:
+  - job_name: azure
+    azure_sd_configs:
+      - subscription_id:
+        tenant_id: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
+        client_id: 333333CC-3C33-3333-CCC3-33C3CCCCC33C
+        client_secret: mysecret

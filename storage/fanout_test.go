@@ -109,7 +109,7 @@ func TestMergeSeriesSet(t *testing.T) {
 			),
 		},
 	} {
-		merged := NewMergeSeriesSet(tc.input)
+		merged := NewMergeSeriesSet(tc.input, nil)
 		for merged.Next() {
 			require.True(t, tc.expected.Next())
 			actualSeries := merged.At()
@@ -262,7 +262,7 @@ func makeMergeSeriesSet(numSeriesSets, numSeries, numSamples int) SeriesSet {
 	for i := 0; i < numSeriesSets; i++ {
 		seriesSets = append(seriesSets, makeSeriesSet(numSeries, numSamples))
 	}
-	return NewMergeSeriesSet(seriesSets)
+	return NewMergeSeriesSet(seriesSets, nil)
 }
 
 func benchmarkDrain(seriesSet SeriesSet, b *testing.B) {
