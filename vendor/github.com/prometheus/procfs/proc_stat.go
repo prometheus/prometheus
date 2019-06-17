@@ -105,7 +105,14 @@ type ProcStat struct {
 }
 
 // NewStat returns the current status information of the process.
+//
+// Deprecated: use NewStat() instead
 func (p Proc) NewStat() (ProcStat, error) {
+	return p.Stat()
+}
+
+// Stat returns the current status information of the process.
+func (p Proc) Stat() (ProcStat, error) {
 	f, err := os.Open(p.path("stat"))
 	if err != nil {
 		return ProcStat{}, err
@@ -178,7 +185,7 @@ func (s ProcStat) ResidentMemory() int {
 // StartTime returns the unix timestamp of the process in seconds.
 func (s ProcStat) StartTime() (float64, error) {
 	fs := FS{proc: s.proc}
-	stat, err := fs.NewStat()
+	stat, err := fs.Stat()
 	if err != nil {
 		return 0, err
 	}
