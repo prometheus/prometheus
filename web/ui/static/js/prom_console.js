@@ -21,6 +21,9 @@ PromConsole._stripTrailingZero = function(x) {
 
 // Humanize a number.
 PromConsole.NumberFormatter.humanize = function(x) {
+  if (x === null) {
+    return "null";
+  }
   var ret = PromConsole.NumberFormatter._humanize(
     x, PromConsole.NumberFormatter.prefixesBig,
     PromConsole.NumberFormatter.prefixesSmall, 1000);
@@ -34,6 +37,9 @@ PromConsole.NumberFormatter.humanize = function(x) {
 
 // Humanize a number, don't use milli/micro/etc. prefixes.
 PromConsole.NumberFormatter.humanizeNoSmallPrefix = function(x) {
+  if (x === null) {
+    return "null";
+  }
   if (Math.abs(x) < 1) {
     return PromConsole._stripTrailingZero(x.toPrecision(3));
   }
@@ -47,6 +53,9 @@ PromConsole.NumberFormatter.humanizeNoSmallPrefix = function(x) {
 
 // Humanize a number with 1024 as the base, rather than 1000.
 PromConsole.NumberFormatter.humanize1024 = function(x) {
+  if (x === null) {
+    return "null";
+  }
   var ret = PromConsole.NumberFormatter._humanize(
     x, PromConsole.NumberFormatter.prefixesBig1024,
     [], 1024);
@@ -60,6 +69,9 @@ PromConsole.NumberFormatter.humanize1024 = function(x) {
 
 // Humanize a number, returning an exact representation.
 PromConsole.NumberFormatter.humanizeExact = function(x) {
+  if (x === null) {
+    return "null";
+  }
   var ret = PromConsole.NumberFormatter._humanize(
     x, PromConsole.NumberFormatter.prefixesBig,
     PromConsole.NumberFormatter.prefixesSmall, 1000);

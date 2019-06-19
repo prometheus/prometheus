@@ -1,17 +1,34 @@
+// Copyright 2015 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package route
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
-	"golang.org/x/net/context"
 )
 
 type param string
 
-// Param returns param p for the context.
+// Param returns param p for the context, or the empty string when
+// param does not exist in context.
 func Param(ctx context.Context, p string) string {
-	return ctx.Value(param(p)).(string)
+	if v := ctx.Value(param(p)); v != nil {
+		return v.(string)
+	}
+	return ""
 }
 
 // WithParam returns a new context with param p set to v.

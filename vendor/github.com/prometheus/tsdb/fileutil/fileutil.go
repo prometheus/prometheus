@@ -1,3 +1,16 @@
+// Copyright 2018 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package fileutil provides utility methods used when dealing with the filesystem in tsdb.
 // It is largely copied from github.com/coreos/etcd/pkg/fileutil to avoid the
 // dependency chain it brings with it.
@@ -64,9 +77,8 @@ func copyFile(src, dest string) error {
 // returns relative paths to all files and empty directories.
 func readDirs(src string) ([]string, error) {
 	var files []string
-	var err error
 
-	err = filepath.Walk(src, func(path string, f os.FileInfo, err error) error {
+	err := filepath.Walk(src, func(path string, f os.FileInfo, err error) error {
 		relativePath := strings.TrimPrefix(path, src)
 		if len(relativePath) > 0 {
 			files = append(files, relativePath)
@@ -106,7 +118,7 @@ func Rename(from, to string) error {
 		return err
 	}
 
-	if err = Fsync(pdir); err != nil {
+	if err = pdir.Sync(); err != nil {
 		pdir.Close()
 		return err
 	}
@@ -129,7 +141,7 @@ func Replace(from, to string) error {
 		return err
 	}
 
-	if err = Fsync(pdir); err != nil {
+	if err = pdir.Sync(); err != nil {
 		pdir.Close()
 		return err
 	}

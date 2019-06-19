@@ -19,6 +19,8 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,11 +32,11 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	old_ctx "golang.org/x/net/context"
-	"golang.org/x/net/context/ctxhttp"
+	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -53,6 +55,8 @@ const (
 	subsystem         = "notifications"
 	alertmanagerLabel = "alertmanager"
 )
+
+var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // Alert is a generic representation of an alert in the Prometheus eco-system.
 type Alert struct {
@@ -92,7 +96,7 @@ func (a *Alert) Resolved() bool {
 	return a.ResolvedAt(time.Now())
 }
 
-// ResolvedAt returns true off the activity interval ended before
+// ResolvedAt returns true iff the activity interval ended before
 // the given timestamp.
 func (a *Alert) ResolvedAt(ts time.Time) bool {
 	if a.EndsAt.IsZero() {
@@ -121,10 +125,10 @@ type Manager struct {
 // Options are the configurable parameters of a Handler.
 type Options struct {
 	QueueCapacity  int
-	ExternalLabels model.LabelSet
-	RelabelConfigs []*config.RelabelConfig
+	ExternalLabels labels.Labels
+	RelabelConfigs []*relabel.Config
 	// Used for sending HTTP requests to the Alertmanager.
-	Do func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error)
+	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
 	Registerer prometheus.Registerer
 }
@@ -142,10 +146,11 @@ type alertMetrics struct {
 func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanagersDiscovered func() float64) *alertMetrics {
 	m := &alertMetrics{
 		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "latency_seconds",
-			Help:      "Latency quantiles for sending alert notifications.",
+			Namespace:  namespace,
+			Subsystem:  subsystem,
+			Name:       "latency_seconds",
+			Help:       "Latency quantiles for sending alert notifications.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		},
 			[]string{alertmanagerLabel},
 		),
@@ -206,12 +211,19 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 	return m
 }
 
+func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return client.Do(req.WithContext(ctx))
+}
+
 // NewManager is the manager constructor.
 func NewManager(o *Options, logger log.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	if o.Do == nil {
-		o.Do = ctxhttp.Do
+		o.Do = do
 	}
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -343,9 +355,9 @@ func (n *Manager) Send(alerts ...*Alert) {
 	for _, a := range alerts {
 		lb := labels.NewBuilder(a.Labels)
 
-		for ln, lv := range n.opts.ExternalLabels {
-			if a.Labels.Get(string(ln)) == "" {
-				lb.Set(string(ln), string(lv))
+		for _, l := range n.opts.ExternalLabels {
+			if a.Labels.Get(l.Name) == "" {
+				lb.Set(l.Name, l.Value)
 			}
 		}
 
@@ -353,6 +365,9 @@ func (n *Manager) Send(alerts ...*Alert) {
 	}
 
 	alerts = n.relabelAlerts(alerts)
+	if len(alerts) == 0 {
+		return
+	}
 
 	// Queue capacity should be significantly larger than a single alert
 	// batch could be.
@@ -493,16 +508,20 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Content-Type", contentTypeJSON)
 	resp, err := n.opts.Do(ctx, c, req)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	// Any HTTP status 2xx is OK.
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("bad response status %v", resp.Status)
+		return errors.Errorf("bad response status %s", resp.Status)
 	}
 	return err
 }
@@ -587,7 +606,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 			continue
 		}
 
-		// This will initialise the Counters for the AM to 0.
+		// This will initialize the Counters for the AM to 0.
 		s.metrics.sent.WithLabelValues(us)
 		s.metrics.errors.WithLabelValues(us)
 
@@ -600,7 +619,7 @@ func postPath(pre string) string {
 	return path.Join("/", pre, alertPushEndpoint)
 }
 
-// alertmanagersFromGroup extracts a list of alertmanagers from a target group
+// alertmanagerFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
 func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager
@@ -653,7 +672,7 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			case "https":
 				addr = addr + ":443"
 			default:
-				return nil, nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
+				return nil, nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
 			}
 			lb.Set(model.AddressLabel, addr)
 		}

@@ -220,7 +220,7 @@ eval instant at 50m SUM(http_requests) BY (job) > 1000
 	{job="app-server"} 2600
 
 eval instant at 50m 1000 < SUM(http_requests) BY (job)
-	{job="app-server"} 1000
+	{job="app-server"} 2600
 
 eval instant at 50m SUM(http_requests) BY (job) <= 1000
 	{job="api-server"} 1000
@@ -349,6 +349,45 @@ eval instant at 5m node_cpu > on(job, instance) group_left(target) (threshold or
   node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
   node_cpu{instance="def",job="node",mode="idle"} 8
   node_cpu{instance="def",job="node",mode="user"} 2
+
+
+# Check that binops drop the metric name.
+eval instant at 5m node_cpu + 2
+  {instance="abc",job="node",mode="idle"} 5
+  {instance="abc",job="node",mode="user"} 3
+  {instance="def",job="node",mode="idle"} 10
+  {instance="def",job="node",mode="user"} 4
+
+eval instant at 5m node_cpu - 2
+  {instance="abc",job="node",mode="idle"} 1
+  {instance="abc",job="node",mode="user"} -1
+  {instance="def",job="node",mode="idle"} 6
+  {instance="def",job="node",mode="user"} 0
+
+eval instant at 5m node_cpu / 2
+  {instance="abc",job="node",mode="idle"} 1.5
+  {instance="abc",job="node",mode="user"} 0.5
+  {instance="def",job="node",mode="idle"} 4
+  {instance="def",job="node",mode="user"} 1
+
+eval instant at 5m node_cpu * 2
+  {instance="abc",job="node",mode="idle"} 6
+  {instance="abc",job="node",mode="user"} 2
+  {instance="def",job="node",mode="idle"} 16
+  {instance="def",job="node",mode="user"} 4
+
+eval instant at 5m node_cpu ^ 2
+  {instance="abc",job="node",mode="idle"} 9
+  {instance="abc",job="node",mode="user"} 1
+  {instance="def",job="node",mode="idle"} 64
+  {instance="def",job="node",mode="user"} 4
+
+eval instant at 5m node_cpu % 2
+  {instance="abc",job="node",mode="idle"} 1
+  {instance="abc",job="node",mode="user"} 1
+  {instance="def",job="node",mode="idle"} 0
+  {instance="def",job="node",mode="user"} 0
+
 
 clear
 

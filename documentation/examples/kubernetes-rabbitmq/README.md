@@ -12,8 +12,8 @@ With this pod running you will have the exporter scraping data, but Prometheus h
 yet found the exporter and is not scraping data from it.
 
 For more details on how to use Kubernetes service discovery take a look at the 
-[documentation](http://prometheus.io/docs/operating/configuration/#kubernetes-sd-configurations-kubernetes_sd_config)
-and at the [available examples](./documentation/examples).
+[documentation](https://prometheus.io/docs/operating/configuration/#kubernetes-sd-configurations-kubernetes_sd_config)
+and at the [available examples](./../).
 
 After you got Kubernetes service discovery up and running you just need to advertise that RabbitMQ
 is exposing metrics. To do that you need to define a service that:

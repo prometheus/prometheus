@@ -97,7 +97,7 @@ delta(cpu_temp_celsius{host="zeus"}[2h])
 ## `deriv()`
 
 `deriv(v range-vector)` calculates the per-second derivative of the time series in a range
-vector `v`, using [simple linear regression](http://en.wikipedia.org/wiki/Simple_linear_regression).
+vector `v`, using [simple linear regression](https://en.wikipedia.org/wiki/Simple_linear_regression).
 
 `deriv` should only be used with gauges.
 
@@ -300,7 +300,7 @@ January etc.
 
 `predict_linear(v range-vector, t scalar)` predicts the value of time series
 `t` seconds from now, based on the range vector `v`, using [simple linear
-regression](http://en.wikipedia.org/wiki/Simple_linear_regression).
+regression](https://en.wikipedia.org/wiki/Simple_linear_regression).
 
 `predict_linear` should only be used with gauges.
 

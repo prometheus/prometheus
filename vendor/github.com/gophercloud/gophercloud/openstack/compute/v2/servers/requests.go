@@ -21,13 +21,13 @@ type ListOptsBuilder interface {
 // the server attributes you want to see returned. Marker and Limit are used
 // for pagination.
 type ListOpts struct {
-	// A time/date stamp for when the server last changed status.
+	// ChangesSince is a time/date stamp for when the server last changed status.
 	ChangesSince string `q:"changes-since"`
 
-	// Name of the image in URL format.
+	// Image is the name of the image in URL format.
 	Image string `q:"image"`
 
-	// Name of the flavor in URL format.
+	// Flavor is the name of the flavor in URL format.
 	Flavor string `q:"flavor"`
 
 	// Name of the server as a string; can be queried with regular expressions.
@@ -36,20 +36,25 @@ type ListOpts struct {
 	// underlying database server implemented for Compute.
 	Name string `q:"name"`
 
-	// Value of the status of the server so that you can filter on "ACTIVE" for example.
+	// Status is the value of the status of the server so that you can filter on
+	// "ACTIVE" for example.
 	Status string `q:"status"`
 
-	// Name of the host as a string.
+	// Host is the name of the host as a string.
 	Host string `q:"host"`
 
-	// UUID of the server at which you want to set a marker.
+	// Marker is a UUID of the server at which you want to set a marker.
 	Marker string `q:"marker"`
 
-	// Integer value for the limit of values to return.
+	// Limit is an integer value for the limit of values to return.
 	Limit int `q:"limit"`
 
-	// Bool to show all tenants
+	// AllTenants is a bool to show all tenants.
 	AllTenants bool `q:"all_tenants"`
+
+	// TenantID lists servers for a particular tenant.
+	// Setting "AllTenants = true" is required.
+	TenantID string `q:"tenant_id"`
 }
 
 // ToServerListQuery formats a ListOpts into a query string.
@@ -73,15 +78,16 @@ func List(client *gophercloud.ServiceClient, opts ListOptsBuilder) pagination.Pa
 	})
 }
 
-// CreateOptsBuilder describes struct types that can be accepted by the Create call.
-// The CreateOpts struct in this package does.
+// CreateOptsBuilder allows extensions to add additional parameters to the
+// Create request.
 type CreateOptsBuilder interface {
 	ToServerCreateMap() (map[string]interface{}, error)
 }
 
-// Network is used within CreateOpts to control a new server's network attachments.
+// Network is used within CreateOpts to control a new server's network
+// attachments.
 type Network struct {
-	// UUID of a nova-network to attach to the newly provisioned server.
+	// UUID of a network to attach to the newly provisioned server.
 	// Required unless Port is provided.
 	UUID string
 
@@ -89,19 +95,21 @@ type Network struct {
 	// Required unless UUID is provided.
 	Port string
 
-	// FixedIP [optional] specifies a fixed IPv4 address to be used on this network.
+	// FixedIP specifies a fixed IPv4 address to be used on this network.
 	FixedIP string
 }
 
 // Personality is an array of files that are injected into the server at launch.
 type Personality []*File
 
-// File is used within CreateOpts and RebuildOpts to inject a file into the server at launch.
-// File implements the json.Marshaler interface, so when a Create or Rebuild operation is requested,
-// json.Marshal will call File's MarshalJSON method.
+// File is used within CreateOpts and RebuildOpts to inject a file into the
+// server at launch.
+// File implements the json.Marshaler interface, so when a Create or Rebuild
+// operation is requested, json.Marshal will call File's MarshalJSON method.
 type File struct {
-	// Path of the file
+	// Path of the file.
 	Path string
+
 	// Contents of the file. Maximum content size is 255 bytes.
 	Contents []byte
 }
@@ -123,13 +131,13 @@ type CreateOpts struct {
 	// Name is the name to assign to the newly launched server.
 	Name string `json:"name" required:"true"`
 
-	// ImageRef [optional; required if ImageName is not provided] is the ID or full
-	// URL to the image that contains the server's OS and initial state.
+	// ImageRef [optional; required if ImageName is not provided] is the ID or
+	// full URL to the image that contains the server's OS and initial state.
 	// Also optional if using the boot-from-volume extension.
 	ImageRef string `json:"imageRef"`
 
-	// ImageName [optional; required if ImageRef is not provided] is the name of the
-	// image that contains the server's OS and initial state.
+	// ImageName [optional; required if ImageRef is not provided] is the name of
+	// the image that contains the server's OS and initial state.
 	// Also optional if using the boot-from-volume extension.
 	ImageName string `json:"-"`
 
@@ -141,7 +149,8 @@ type CreateOpts struct {
 	// the flavor that describes the server's specs.
 	FlavorName string `json:"-"`
 
-	// SecurityGroups lists the names of the security groups to which this server should belong.
+	// SecurityGroups lists the names of the security groups to which this server
+	// should belong.
 	SecurityGroups []string `json:"-"`
 
 	// UserData contains configuration information or scripts to use upon launch.
@@ -152,10 +161,12 @@ type CreateOpts struct {
 	AvailabilityZone string `json:"availability_zone,omitempty"`
 
 	// Networks dictates how this server will be attached to available networks.
-	// By default, the server will be attached to all isolated networks for the tenant.
+	// By default, the server will be attached to all isolated networks for the
+	// tenant.
 	Networks []Network `json:"-"`
 
-	// Metadata contains key-value pairs (up to 255 bytes each) to attach to the server.
+	// Metadata contains key-value pairs (up to 255 bytes each) to attach to the
+	// server.
 	Metadata map[string]string `json:"metadata,omitempty"`
 
 	// Personality includes files to inject into the server at launch.
@@ -166,21 +177,32 @@ type CreateOpts struct {
 	ConfigDrive *bool `json:"config_drive,omitempty"`
 
 	// AdminPass sets the root user password. If not set, a randomly-generated
-	// password will be created and returned in the rponse.
+	// password will be created and returned in the response.
 	AdminPass string `json:"adminPass,omitempty"`
 
 	// AccessIPv4 specifies an IPv4 address for the instance.
 	AccessIPv4 string `json:"accessIPv4,omitempty"`
 
-	// AccessIPv6 pecifies an IPv6 address for the instance.
+	// AccessIPv6 specifies an IPv6 address for the instance.
 	AccessIPv6 string `json:"accessIPv6,omitempty"`
+
+	// Min specifies Minimum number of servers to launch.
+	Min int `json:"min_count,omitempty"`
+
+	// Max specifies Maximum number of servers to launch.
+	Max int `json:"max_count,omitempty"`
 
 	// ServiceClient will allow calls to be made to retrieve an image or
 	// flavor ID by name.
 	ServiceClient *gophercloud.ServiceClient `json:"-"`
+
+	// Tags allows a server to be tagged with single-word metadata.
+	// Requires microversion 2.52 or later.
+	Tags []string `json:"tags,omitempty"`
 }
 
-// ToServerCreateMap assembles a request body based on the contents of a CreateOpts.
+// ToServerCreateMap assembles a request body based on the contents of a
+// CreateOpts.
 func (opts CreateOpts) ToServerCreateMap() (map[string]interface{}, error) {
 	sc := opts.ServiceClient
 	opts.ServiceClient = nil
@@ -260,6 +282,14 @@ func (opts CreateOpts) ToServerCreateMap() (map[string]interface{}, error) {
 		b["flavorRef"] = flavorID
 	}
 
+	if opts.Min != 0 {
+		b["min_count"] = opts.Min
+	}
+
+	if opts.Max != 0 {
+		b["max_count"] = opts.Max
+	}
+
 	return map[string]interface{}{"server": b}, nil
 }
 
@@ -274,13 +304,14 @@ func Create(client *gophercloud.ServiceClient, opts CreateOptsBuilder) (r Create
 	return
 }
 
-// Delete requests that a server previously provisioned be removed from your account.
+// Delete requests that a server previously provisioned be removed from your
+// account.
 func Delete(client *gophercloud.ServiceClient, id string) (r DeleteResult) {
 	_, r.Err = client.Delete(deleteURL(client, id), nil)
 	return
 }
 
-// ForceDelete forces the deletion of a server
+// ForceDelete forces the deletion of a server.
 func ForceDelete(client *gophercloud.ServiceClient, id string) (r ActionResult) {
 	_, r.Err = client.Post(actionURL(client, id), map[string]interface{}{"forceDelete": ""}, nil, nil)
 	return
@@ -294,12 +325,14 @@ func Get(client *gophercloud.ServiceClient, id string) (r GetResult) {
 	return
 }
 
-// UpdateOptsBuilder allows extensions to add additional attributes to the Update request.
+// UpdateOptsBuilder allows extensions to add additional attributes to the
+// Update request.
 type UpdateOptsBuilder interface {
 	ToServerUpdateMap() (map[string]interface{}, error)
 }
 
-// UpdateOpts specifies the base attributes that may be updated on an existing server.
+// UpdateOpts specifies the base attributes that may be updated on an existing
+// server.
 type UpdateOpts struct {
 	// Name changes the displayed name of the server.
 	// The server host name will *not* change.
@@ -331,7 +364,8 @@ func Update(client *gophercloud.ServiceClient, id string, opts UpdateOptsBuilder
 	return
 }
 
-// ChangeAdminPassword alters the administrator or root password for a specified server.
+// ChangeAdminPassword alters the administrator or root password for a specified
+// server.
 func ChangeAdminPassword(client *gophercloud.ServiceClient, id, newPassword string) (r ActionResult) {
 	b := map[string]interface{}{
 		"changePassword": map[string]string{
@@ -354,33 +388,38 @@ const (
 	PowerCycle              = HardReboot
 )
 
-// RebootOptsBuilder is an interface that options must satisfy in order to be
-// used when rebooting a server instance
+// RebootOptsBuilder allows extensions to add additional parameters to the
+// reboot request.
 type RebootOptsBuilder interface {
 	ToServerRebootMap() (map[string]interface{}, error)
 }
 
-// RebootOpts satisfies the RebootOptsBuilder interface
+// RebootOpts provides options to the reboot request.
 type RebootOpts struct {
+	// Type is the type of reboot to perform on the server.
 	Type RebootMethod `json:"type" required:"true"`
 }
 
-// ToServerRebootMap allows RebootOpts to satisfiy the RebootOptsBuilder
-// interface
-func (opts *RebootOpts) ToServerRebootMap() (map[string]interface{}, error) {
+// ToServerRebootMap builds a body for the reboot request.
+func (opts RebootOpts) ToServerRebootMap() (map[string]interface{}, error) {
 	return gophercloud.BuildRequestBody(opts, "reboot")
 }
 
-// Reboot requests that a given server reboot.
-// Two methods exist for rebooting a server:
-//
-// HardReboot (aka PowerCycle) starts the server instance by physically cutting power to the machine, or if a VM,
-// terminating it at the hypervisor level.
-// It's done. Caput. Full stop.
-// Then, after a brief while, power is rtored or the VM instance rtarted.
-//
-// SoftReboot (aka OSReboot) simply tells the OS to rtart under its own procedur.
-// E.g., in Linux, asking it to enter runlevel 6, or executing "sudo shutdown -r now", or by asking Windows to rtart the machine.
+/*
+	Reboot requests that a given server reboot.
+
+	Two methods exist for rebooting a server:
+
+	HardReboot (aka PowerCycle) starts the server instance by physically cutting
+	power to the machine, or if a VM, terminating it at the hypervisor level.
+	It's done. Caput. Full stop.
+	Then, after a brief while, power is rtored or the VM instance restarted.
+
+	SoftReboot (aka OSReboot) simply tells the OS to restart under its own
+	procedure.
+	E.g., in Linux, asking it to enter runlevel 6, or executing
+	"sudo shutdown -r now", or by asking Windows to rtart the machine.
+*/
 func Reboot(client *gophercloud.ServiceClient, id string, opts RebootOptsBuilder) (r ActionResult) {
 	b, err := opts.ToServerRebootMap()
 	if err != nil {
@@ -391,31 +430,43 @@ func Reboot(client *gophercloud.ServiceClient, id string, opts RebootOptsBuilder
 	return
 }
 
-// RebuildOptsBuilder is an interface that allows extensions to override the
-// default behaviour of rebuild options
+// RebuildOptsBuilder allows extensions to provide additional parameters to the
+// rebuild request.
 type RebuildOptsBuilder interface {
 	ToServerRebuildMap() (map[string]interface{}, error)
 }
 
 // RebuildOpts represents the configuration options used in a server rebuild
-// operation
+// operation.
 type RebuildOpts struct {
-	// The server's admin password
+	// AdminPass is the server's admin password
 	AdminPass string `json:"adminPass,omitempty"`
-	// The ID of the image you want your server to be provisioned on
-	ImageID   string `json:"imageRef"`
+
+	// ImageID is the ID of the image you want your server to be provisioned on.
+	ImageID string `json:"imageRef"`
+
+	// ImageName is readable name of an image.
 	ImageName string `json:"-"`
+
 	// Name to set the server to
 	Name string `json:"name,omitempty"`
+
 	// AccessIPv4 [optional] provides a new IPv4 address for the instance.
 	AccessIPv4 string `json:"accessIPv4,omitempty"`
+
 	// AccessIPv6 [optional] provides a new IPv6 address for the instance.
 	AccessIPv6 string `json:"accessIPv6,omitempty"`
-	// Metadata [optional] contains key-value pairs (up to 255 bytes each) to attach to the server.
+
+	// Metadata [optional] contains key-value pairs (up to 255 bytes each)
+	// to attach to the server.
 	Metadata map[string]string `json:"metadata,omitempty"`
+
 	// Personality [optional] includes files to inject into the server at launch.
 	// Rebuild will base64-encode file contents for you.
-	Personality   Personality                `json:"personality,omitempty"`
+	Personality Personality `json:"personality,omitempty"`
+
+	// ServiceClient will allow calls to be made to retrieve an image or
+	// flavor ID by name.
 	ServiceClient *gophercloud.ServiceClient `json:"-"`
 }
 
@@ -458,31 +509,34 @@ func Rebuild(client *gophercloud.ServiceClient, id string, opts RebuildOptsBuild
 	return
 }
 
-// ResizeOptsBuilder is an interface that allows extensions to override the default structure of
-// a Resize request.
+// ResizeOptsBuilder allows extensions to add additional parameters to the
+// resize request.
 type ResizeOptsBuilder interface {
 	ToServerResizeMap() (map[string]interface{}, error)
 }
 
-// ResizeOpts represents the configuration options used to control a Resize operation.
+// ResizeOpts represents the configuration options used to control a Resize
+// operation.
 type ResizeOpts struct {
 	// FlavorRef is the ID of the flavor you wish your server to become.
 	FlavorRef string `json:"flavorRef" required:"true"`
 }
 
-// ToServerResizeMap formats a ResizeOpts as a map that can be used as a JSON request body for the
-// Resize request.
+// ToServerResizeMap formats a ResizeOpts as a map that can be used as a JSON
+// request body for the Resize request.
 func (opts ResizeOpts) ToServerResizeMap() (map[string]interface{}, error) {
 	return gophercloud.BuildRequestBody(opts, "resize")
 }
 
 // Resize instructs the provider to change the flavor of the server.
+//
 // Note that this implies rebuilding it.
+//
 // Unfortunately, one cannot pass rebuild parameters to the resize function.
-// When the resize completes, the server will be in RESIZE_VERIFY state.
-// While in this state, you can explore the use of the new server's configuration.
-// If you like it, call ConfirmResize() to commit the resize permanently.
-// Otherwise, call RevertResize() to restore the old configuration.
+// When the resize completes, the server will be in VERIFY_RESIZE state.
+// While in this state, you can explore the use of the new server's
+// configuration. If you like it, call ConfirmResize() to commit the resize
+// permanently. Otherwise, call RevertResize() to restore the old configuration.
 func Resize(client *gophercloud.ServiceClient, id string, opts ResizeOptsBuilder) (r ActionResult) {
 	b, err := opts.ToServerResizeMap()
 	if err != nil {
@@ -509,41 +563,8 @@ func RevertResize(client *gophercloud.ServiceClient, id string) (r ActionResult)
 	return
 }
 
-// RescueOptsBuilder is an interface that allows extensions to override the
-// default structure of a Rescue request.
-type RescueOptsBuilder interface {
-	ToServerRescueMap() (map[string]interface{}, error)
-}
-
-// RescueOpts represents the configuration options used to control a Rescue
-// option.
-type RescueOpts struct {
-	// AdminPass is the desired administrative password for the instance in
-	// RESCUE mode. If it's left blank, the server will generate a password.
-	AdminPass string `json:"adminPass,omitempty"`
-}
-
-// ToServerRescueMap formats a RescueOpts as a map that can be used as a JSON
-// request body for the Rescue request.
-func (opts RescueOpts) ToServerRescueMap() (map[string]interface{}, error) {
-	return gophercloud.BuildRequestBody(opts, "rescue")
-}
-
-// Rescue instructs the provider to place the server into RESCUE mode.
-func Rescue(client *gophercloud.ServiceClient, id string, opts RescueOptsBuilder) (r RescueResult) {
-	b, err := opts.ToServerRescueMap()
-	if err != nil {
-		r.Err = err
-		return
-	}
-	_, r.Err = client.Post(actionURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
-		OkCodes: []int{200},
-	})
-	return
-}
-
-// ResetMetadataOptsBuilder allows extensions to add additional parameters to the
-// Reset request.
+// ResetMetadataOptsBuilder allows extensions to add additional parameters to
+// the Reset request.
 type ResetMetadataOptsBuilder interface {
 	ToMetadataResetMap() (map[string]interface{}, error)
 }
@@ -551,20 +572,23 @@ type ResetMetadataOptsBuilder interface {
 // MetadataOpts is a map that contains key-value pairs.
 type MetadataOpts map[string]string
 
-// ToMetadataResetMap assembles a body for a Reset request based on the contents of a MetadataOpts.
+// ToMetadataResetMap assembles a body for a Reset request based on the contents
+// of a MetadataOpts.
 func (opts MetadataOpts) ToMetadataResetMap() (map[string]interface{}, error) {
 	return map[string]interface{}{"metadata": opts}, nil
 }
 
-// ToMetadataUpdateMap assembles a body for an Update request based on the contents of a MetadataOpts.
+// ToMetadataUpdateMap assembles a body for an Update request based on the
+// contents of a MetadataOpts.
 func (opts MetadataOpts) ToMetadataUpdateMap() (map[string]interface{}, error) {
 	return map[string]interface{}{"metadata": opts}, nil
 }
 
-// ResetMetadata will create multiple new key-value pairs for the given server ID.
-// Note: Using this operation will erase any already-existing metadata and create
-// the new metadata provided. To keep any already-existing metadata, use the
-// UpdateMetadatas or UpdateMetadata function.
+// ResetMetadata will create multiple new key-value pairs for the given server
+// ID.
+// Note: Using this operation will erase any already-existing metadata and
+// create the new metadata provided. To keep any already-existing metadata,
+// use the UpdateMetadatas or UpdateMetadata function.
 func ResetMetadata(client *gophercloud.ServiceClient, id string, opts ResetMetadataOptsBuilder) (r ResetMetadataResult) {
 	b, err := opts.ToMetadataResetMap()
 	if err != nil {
@@ -583,15 +607,15 @@ func Metadata(client *gophercloud.ServiceClient, id string) (r GetMetadataResult
 	return
 }
 
-// UpdateMetadataOptsBuilder allows extensions to add additional parameters to the
-// Create request.
+// UpdateMetadataOptsBuilder allows extensions to add additional parameters to
+// the Create request.
 type UpdateMetadataOptsBuilder interface {
 	ToMetadataUpdateMap() (map[string]interface{}, error)
 }
 
-// UpdateMetadata updates (or creates) all the metadata specified by opts for the given server ID.
-// This operation does not affect already-existing metadata that is not specified
-// by opts.
+// UpdateMetadata updates (or creates) all the metadata specified by opts for
+// the given server ID. This operation does not affect already-existing metadata
+// that is not specified by opts.
 func UpdateMetadata(client *gophercloud.ServiceClient, id string, opts UpdateMetadataOptsBuilder) (r UpdateMetadataResult) {
 	b, err := opts.ToMetadataUpdateMap()
 	if err != nil {
@@ -613,7 +637,8 @@ type MetadatumOptsBuilder interface {
 // MetadatumOpts is a map of length one that contains a key-value pair.
 type MetadatumOpts map[string]string
 
-// ToMetadatumCreateMap assembles a body for a Create request based on the contents of a MetadataumOpts.
+// ToMetadatumCreateMap assembles a body for a Create request based on the
+// contents of a MetadataumOpts.
 func (opts MetadatumOpts) ToMetadatumCreateMap() (map[string]interface{}, string, error) {
 	if len(opts) != 1 {
 		err := gophercloud.ErrInvalidInput{}
@@ -629,7 +654,8 @@ func (opts MetadatumOpts) ToMetadatumCreateMap() (map[string]interface{}, string
 	return metadatum, key, nil
 }
 
-// CreateMetadatum will create or update the key-value pair with the given key for the given server ID.
+// CreateMetadatum will create or update the key-value pair with the given key
+// for the given server ID.
 func CreateMetadatum(client *gophercloud.ServiceClient, id string, opts MetadatumOptsBuilder) (r CreateMetadatumResult) {
 	b, key, err := opts.ToMetadatumCreateMap()
 	if err != nil {
@@ -642,53 +668,60 @@ func CreateMetadatum(client *gophercloud.ServiceClient, id string, opts Metadatu
 	return
 }
 
-// Metadatum requests the key-value pair with the given key for the given server ID.
+// Metadatum requests the key-value pair with the given key for the given
+// server ID.
 func Metadatum(client *gophercloud.ServiceClient, id, key string) (r GetMetadatumResult) {
 	_, r.Err = client.Get(metadatumURL(client, id, key), &r.Body, nil)
 	return
 }
 
-// DeleteMetadatum will delete the key-value pair with the given key for the given server ID.
+// DeleteMetadatum will delete the key-value pair with the given key for the
+// given server ID.
 func DeleteMetadatum(client *gophercloud.ServiceClient, id, key string) (r DeleteMetadatumResult) {
 	_, r.Err = client.Delete(metadatumURL(client, id, key), nil)
 	return
 }
 
-// ListAddresses makes a request against the API to list the servers IP addresses.
+// ListAddresses makes a request against the API to list the servers IP
+// addresses.
 func ListAddresses(client *gophercloud.ServiceClient, id string) pagination.Pager {
 	return pagination.NewPager(client, listAddressesURL(client, id), func(r pagination.PageResult) pagination.Page {
 		return AddressPage{pagination.SinglePageBase(r)}
 	})
 }
 
-// ListAddressesByNetwork makes a request against the API to list the servers IP addresses
-// for the given network.
+// ListAddressesByNetwork makes a request against the API to list the servers IP
+// addresses for the given network.
 func ListAddressesByNetwork(client *gophercloud.ServiceClient, id, network string) pagination.Pager {
 	return pagination.NewPager(client, listAddressesByNetworkURL(client, id, network), func(r pagination.PageResult) pagination.Page {
 		return NetworkAddressPage{pagination.SinglePageBase(r)}
 	})
 }
 
-// CreateImageOptsBuilder is the interface types must satisfy in order to be
-// used as CreateImage options
+// CreateImageOptsBuilder allows extensions to add additional parameters to the
+// CreateImage request.
 type CreateImageOptsBuilder interface {
 	ToServerCreateImageMap() (map[string]interface{}, error)
 }
 
-// CreateImageOpts satisfies the CreateImageOptsBuilder
+// CreateImageOpts provides options to pass to the CreateImage request.
 type CreateImageOpts struct {
-	// Name of the image/snapshot
+	// Name of the image/snapshot.
 	Name string `json:"name" required:"true"`
-	// Metadata contains key-value pairs (up to 255 bytes each) to attach to the created image.
+
+	// Metadata contains key-value pairs (up to 255 bytes each) to attach to
+	// the created image.
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
-// ToServerCreateImageMap formats a CreateImageOpts structure into a request body.
+// ToServerCreateImageMap formats a CreateImageOpts structure into a request
+// body.
 func (opts CreateImageOpts) ToServerCreateImageMap() (map[string]interface{}, error) {
 	return gophercloud.BuildRequestBody(opts, "createImage")
 }
 
-// CreateImage makes a request against the nova API to schedule an image to be created of the server
+// CreateImage makes a request against the nova API to schedule an image to be
+// created of the server
 func CreateImage(client *gophercloud.ServiceClient, id string, opts CreateImageOptsBuilder) (r CreateImageResult) {
 	b, err := opts.ToServerCreateImageMap()
 	if err != nil {
@@ -703,11 +736,17 @@ func CreateImage(client *gophercloud.ServiceClient, id string, opts CreateImageO
 	return
 }
 
-// IDFromName is a convienience function that returns a server's ID given its name.
+// IDFromName is a convienience function that returns a server's ID given its
+// name.
 func IDFromName(client *gophercloud.ServiceClient, name string) (string, error) {
 	count := 0
 	id := ""
-	allPages, err := List(client, nil).AllPages()
+
+	listOpts := ListOpts{
+		Name: name,
+	}
+
+	allPages, err := List(client, listOpts).AllPages()
 	if err != nil {
 		return "", err
 	}
@@ -734,8 +773,40 @@ func IDFromName(client *gophercloud.ServiceClient, name string) (string, error) 
 	}
 }
 
-// GetPassword makes a request against the nova API to get the encrypted administrative password.
+// GetPassword makes a request against the nova API to get the encrypted
+// administrative password.
 func GetPassword(client *gophercloud.ServiceClient, serverId string) (r GetPasswordResult) {
 	_, r.Err = client.Get(passwordURL(client, serverId), &r.Body, nil)
+	return
+}
+
+// ShowConsoleOutputOptsBuilder is the interface types must satisfy in order to be
+// used as ShowConsoleOutput options
+type ShowConsoleOutputOptsBuilder interface {
+	ToServerShowConsoleOutputMap() (map[string]interface{}, error)
+}
+
+// ShowConsoleOutputOpts satisfies the ShowConsoleOutputOptsBuilder
+type ShowConsoleOutputOpts struct {
+	// The number of lines to fetch from the end of console log.
+	// All lines will be returned if this is not specified.
+	Length int `json:"length,omitempty"`
+}
+
+// ToServerShowConsoleOutputMap formats a ShowConsoleOutputOpts structure into a request body.
+func (opts ShowConsoleOutputOpts) ToServerShowConsoleOutputMap() (map[string]interface{}, error) {
+	return gophercloud.BuildRequestBody(opts, "os-getConsoleOutput")
+}
+
+// ShowConsoleOutput makes a request against the nova API to get console log from the server
+func ShowConsoleOutput(client *gophercloud.ServiceClient, id string, opts ShowConsoleOutputOptsBuilder) (r ShowConsoleOutputResult) {
+	b, err := opts.ToServerShowConsoleOutputMap()
+	if err != nil {
+		r.Err = err
+		return
+	}
+	_, r.Err = client.Post(actionURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
+		OkCodes: []int{200},
+	})
 	return
 }

@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"net"
@@ -26,10 +27,11 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -54,29 +56,12 @@ const (
 	portMappingLabelPrefix = metaLabelPrefix + "port_mapping_label_"
 	// portDefinitionLabelPrefix is the prefix for the application portDefinitions labels.
 	portDefinitionLabelPrefix = metaLabelPrefix + "port_definition_label_"
-
-	// Constants for instrumentation.
-	namespace = "prometheus"
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_marathon_refresh_failures_total",
-			Help:      "The number of Marathon-SD refresh failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace: namespace,
-			Name:      "sd_marathon_refresh_duration_seconds",
-			Help:      "The duration of a Marathon-SD refresh in seconds.",
-		})
-	// DefaultSDConfig is the default Marathon SD configuration.
-	DefaultSDConfig = SDConfig{
-		RefreshInterval: model.Duration(30 * time.Second),
-	}
-)
+// DefaultSDConfig is the default Marathon SD configuration.
+var DefaultSDConfig = SDConfig{
+	RefreshInterval: model.Duration(30 * time.Second),
+}
 
 // SDConfig is the configuration for services running on Marathon.
 type SDConfig struct {
@@ -96,43 +81,33 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.Servers) == 0 {
-		return fmt.Errorf("marathon_sd: must contain at least one Marathon server")
+		return errors.New("marathon_sd: must contain at least one Marathon server")
 	}
 	if len(c.AuthToken) > 0 && len(c.AuthTokenFile) > 0 {
-		return fmt.Errorf("marathon_sd: at most one of auth_token & auth_token_file must be configured")
+		return errors.New("marathon_sd: at most one of auth_token & auth_token_file must be configured")
 	}
 	if c.HTTPClientConfig.BasicAuth != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return fmt.Errorf("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
+		return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
 	}
 	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return fmt.Errorf("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
+		return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
 	}
 	return c.HTTPClientConfig.Validate()
-}
-
-func init() {
-	prometheus.MustRegister(refreshFailuresCount)
-	prometheus.MustRegister(refreshDuration)
 }
 
 const appListPath string = "/v2/apps/?embed=apps.tasks"
 
 // Discovery provides service discovery based on a Marathon instance.
 type Discovery struct {
-	client          *http.Client
-	servers         []string
-	refreshInterval time.Duration
-	lastRefresh     map[string]*targetgroup.Group
-	appsClient      AppListClient
-	logger          log.Logger
+	*refresh.Discovery
+	client      *http.Client
+	servers     []string
+	lastRefresh map[string]*targetgroup.Group
+	appsClient  appListClient
 }
 
 // NewDiscovery returns a new Marathon Discovery.
 func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
-	if logger == nil {
-		logger = log.NewNopLogger()
-	}
-
 	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd")
 	if err != nil {
 		return nil, err
@@ -147,13 +122,18 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		return nil, err
 	}
 
-	return &Discovery{
-		client:          &http.Client{Transport: rt},
-		servers:         conf.Servers,
-		refreshInterval: time.Duration(conf.RefreshInterval),
-		appsClient:      fetchApps,
-		logger:          logger,
-	}, nil
+	d := &Discovery{
+		client:     &http.Client{Transport: rt},
+		servers:    conf.Servers,
+		appsClient: fetchApps,
+	}
+	d.Discovery = refresh.NewDiscovery(
+		logger,
+		"marathon",
+		time.Duration(conf.RefreshInterval),
+		d.refresh,
+	)
+	return d, nil
 }
 
 type authTokenRoundTripper struct {
@@ -185,7 +165,7 @@ func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.
 	// fail-fast if we can't read the file.
 	_, err := ioutil.ReadFile(tokenFile)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read auth token file %s: %s", tokenFile, err)
+		return nil, errors.Wrapf(err, "unable to read auth token file %s", tokenFile)
 	}
 	return &authTokenFileRoundTripper{tokenFile, rt}, nil
 }
@@ -193,7 +173,7 @@ func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.
 func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	b, err := ioutil.ReadFile(rt.authTokenFile)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read auth token file %s: %s", rt.authTokenFile, err)
+		return nil, errors.Wrapf(err, "unable to read auth token file %s", rt.authTokenFile)
 	}
 	authToken := strings.TrimSpace(string(b))
 
@@ -204,33 +184,10 @@ func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Res
 	return rt.rt.RoundTrip(request)
 }
 
-// Run implements the Discoverer interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(d.refreshInterval):
-			err := d.updateServices(ctx, ch)
-			if err != nil {
-				level.Error(d.logger).Log("msg", "Error while updating services", "err", err)
-			}
-		}
-	}
-}
-
-func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*targetgroup.Group) (err error) {
-	t0 := time.Now()
-	defer func() {
-		refreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			refreshFailuresCount.Inc()
-		}
-	}()
-
-	targetMap, err := d.fetchTargetGroups()
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	targetMap, err := d.fetchTargetGroups(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	all := make([]*targetgroup.Group, 0, len(targetMap))
@@ -240,154 +197,143 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*targetgroup
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
-	case ch <- all:
+		return nil, ctx.Err()
+	default:
 	}
 
 	// Remove services which did disappear.
 	for source := range d.lastRefresh {
 		_, ok := targetMap[source]
 		if !ok {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case ch <- []*targetgroup.Group{{Source: source}}:
-				level.Debug(d.logger).Log("msg", "Removing group", "source", source)
-			}
+			all = append(all, &targetgroup.Group{Source: source})
 		}
 	}
 
 	d.lastRefresh = targetMap
-	return nil
+	return all, nil
 }
 
-func (d *Discovery) fetchTargetGroups() (map[string]*targetgroup.Group, error) {
-	url := RandomAppsURL(d.servers)
-	apps, err := d.appsClient(d.client, url)
+func (d *Discovery) fetchTargetGroups(ctx context.Context) (map[string]*targetgroup.Group, error) {
+	url := randomAppsURL(d.servers)
+	apps, err := d.appsClient(ctx, d.client, url)
 	if err != nil {
 		return nil, err
 	}
 
-	groups := AppsToTargetGroups(apps)
+	groups := appsToTargetGroups(apps)
 	return groups, nil
 }
 
-// Task describes one instance of a service running on Marathon.
-type Task struct {
+// task describes one instance of a service running on Marathon.
+type task struct {
 	ID          string      `json:"id"`
 	Host        string      `json:"host"`
 	Ports       []uint32    `json:"ports"`
-	IPAddresses []IPAddress `json:"ipAddresses"`
+	IPAddresses []ipAddress `json:"ipAddresses"`
 }
 
-// IPAddress describes the address and protocol the container's network interface is bound to.
-type IPAddress struct {
+// ipAddress describes the address and protocol the container's network interface is bound to.
+type ipAddress struct {
 	Address string `json:"ipAddress"`
 	Proto   string `json:"protocol"`
 }
 
 // PortMapping describes in which port the process are binding inside the docker container.
-type PortMapping struct {
+type portMapping struct {
 	Labels        map[string]string `json:"labels"`
 	ContainerPort uint32            `json:"containerPort"`
+	HostPort      uint32            `json:"hostPort"`
 	ServicePort   uint32            `json:"servicePort"`
 }
 
 // DockerContainer describes a container which uses the docker runtime.
-type DockerContainer struct {
+type dockerContainer struct {
 	Image        string        `json:"image"`
-	PortMappings []PortMapping `json:"portMappings"`
+	PortMappings []portMapping `json:"portMappings"`
 }
 
 // Container describes the runtime an app in running in.
-type Container struct {
-	Docker       DockerContainer `json:"docker"`
-	PortMappings []PortMapping   `json:"portMappings"`
+type container struct {
+	Docker       dockerContainer `json:"docker"`
+	PortMappings []portMapping   `json:"portMappings"`
 }
 
 // PortDefinition describes which load balancer port you should access to access the service.
-type PortDefinition struct {
+type portDefinition struct {
 	Labels map[string]string `json:"labels"`
 	Port   uint32            `json:"port"`
 }
 
 // Network describes the name and type of network the container is attached to.
-type Network struct {
+type network struct {
 	Name string `json:"name"`
 	Mode string `json:"mode"`
 }
 
 // App describes a service running on Marathon.
-type App struct {
+type app struct {
 	ID              string            `json:"id"`
-	Tasks           []Task            `json:"tasks"`
+	Tasks           []task            `json:"tasks"`
 	RunningTasks    int               `json:"tasksRunning"`
 	Labels          map[string]string `json:"labels"`
-	Container       Container         `json:"container"`
-	PortDefinitions []PortDefinition  `json:"portDefinitions"`
-	Networks        []Network         `json:"networks"`
+	Container       container         `json:"container"`
+	PortDefinitions []portDefinition  `json:"portDefinitions"`
+	Networks        []network         `json:"networks"`
+	RequirePorts    bool              `json:"requirePorts"`
 }
 
 // isContainerNet checks if the app's first network is set to mode 'container'.
-func (app App) isContainerNet() bool {
+func (app app) isContainerNet() bool {
 	return len(app.Networks) > 0 && app.Networks[0].Mode == "container"
 }
 
-// AppList is a list of Marathon apps.
-type AppList struct {
-	Apps []App `json:"apps"`
+// appList is a list of Marathon apps.
+type appList struct {
+	Apps []app `json:"apps"`
 }
 
-// AppListClient defines a function that can be used to get an application list from marathon.
-type AppListClient func(client *http.Client, url string) (*AppList, error)
+// appListClient defines a function that can be used to get an application list from marathon.
+type appListClient func(ctx context.Context, client *http.Client, url string) (*appList, error)
 
 // fetchApps requests a list of applications from a marathon server.
-func fetchApps(client *http.Client, url string) (*AppList, error) {
+func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, error) {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
+	request = request.WithContext(ctx)
 
 	resp, err := client.Do(request)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if (resp.StatusCode < 200) || (resp.StatusCode >= 300) {
-		return nil, fmt.Errorf("Non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
+		return nil, errors.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	var apps appList
+	err = json.NewDecoder(resp.Body).Decode(&apps)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "%q", url)
 	}
-
-	apps, err := parseAppJSON(body)
-	if err != nil {
-		return nil, fmt.Errorf("%v in %s", err, url)
-	}
-	return apps, nil
+	return &apps, nil
 }
 
-func parseAppJSON(body []byte) (*AppList, error) {
-	apps := &AppList{}
-	err := json.Unmarshal(body, apps)
-	if err != nil {
-		return nil, err
-	}
-	return apps, nil
-}
-
-// RandomAppsURL randomly selects a server from an array and creates
+// randomAppsURL randomly selects a server from an array and creates
 // an URL pointing to the app list.
-func RandomAppsURL(servers []string) string {
+func randomAppsURL(servers []string) string {
 	// TODO: If possible update server list from Marathon at some point.
 	server := servers[rand.Intn(len(servers))]
 	return fmt.Sprintf("%s%s", server, appListPath)
 }
 
-// AppsToTargetGroups takes an array of Marathon apps and converts them into target groups.
-func AppsToTargetGroups(apps *AppList) map[string]*targetgroup.Group {
+// appsToTargetGroups takes an array of Marathon apps and converts them into target groups.
+func appsToTargetGroups(apps *appList) map[string]*targetgroup.Group {
 	tgroups := map[string]*targetgroup.Group{}
 	for _, a := range apps.Apps {
 		group := createTargetGroup(&a)
@@ -396,7 +342,7 @@ func AppsToTargetGroups(apps *AppList) map[string]*targetgroup.Group {
 	return tgroups
 }
 
-func createTargetGroup(app *App) *targetgroup.Group {
+func createTargetGroup(app *app) *targetgroup.Group {
 	var (
 		targets = targetsForApp(app)
 		appName = model.LabelValue(app.ID)
@@ -419,7 +365,7 @@ func createTargetGroup(app *App) *targetgroup.Group {
 	return tg
 }
 
-func targetsForApp(app *App) []model.LabelSet {
+func targetsForApp(app *app) []model.LabelSet {
 	targets := make([]model.LabelSet, 0, len(app.Tasks))
 
 	var ports []uint32
@@ -446,7 +392,11 @@ func targetsForApp(app *App) []model.LabelSet {
 
 		for i := 0; i < len(app.PortDefinitions); i++ {
 			labels[i] = app.PortDefinitions[i].Labels
-			ports[i] = app.PortDefinitions[i].Port
+			// When requirePorts is false, this port becomes the 'servicePort', not the listen port.
+			// In this case, the port needs to be taken from the task instead of the app.
+			if app.RequirePorts {
+				ports[i] = app.PortDefinitions[i].Port
+			}
 		}
 
 		prefix = portDefinitionLabelPrefix
@@ -466,6 +416,13 @@ func targetsForApp(app *App) []model.LabelSet {
 
 		// Iterate over the ports we gathered using one of the methods above.
 		for i, port := range ports {
+
+			// A zero port here means that either the portMapping has a zero port defined,
+			// or there is a portDefinition with requirePorts set to false. This means the port
+			// is auto-generated by Mesos and needs to be looked up in the task.
+			if port == 0 && len(t.Ports) == len(ports) {
+				port = t.Ports[i]
+			}
 
 			// Each port represents a possible Prometheus target.
 			targetAddress := targetEndpoint(&t, port, app.isContainerNet())
@@ -492,7 +449,7 @@ func targetsForApp(app *App) []model.LabelSet {
 }
 
 // Generate a target endpoint string in host:port format.
-func targetEndpoint(task *Task, port uint32, containerNet bool) string {
+func targetEndpoint(task *task, port uint32, containerNet bool) string {
 
 	var host string
 
@@ -507,7 +464,7 @@ func targetEndpoint(task *Task, port uint32, containerNet bool) string {
 }
 
 // Get a list of ports and a list of labels from a PortMapping.
-func extractPortMapping(portMappings []PortMapping, containerNet bool) ([]uint32, []map[string]string) {
+func extractPortMapping(portMappings []portMapping, containerNet bool) ([]uint32, []map[string]string) {
 
 	ports := make([]uint32, len(portMappings))
 	labels := make([]map[string]string, len(portMappings))
@@ -520,8 +477,10 @@ func extractPortMapping(portMappings []PortMapping, containerNet bool) ([]uint32
 			// If the app is in a container network, connect directly to the container port.
 			ports[i] = portMappings[i].ContainerPort
 		} else {
-			// Otherwise, connect to the randomly-generated service port.
-			ports[i] = portMappings[i].ServicePort
+			// Otherwise, connect to the allocated host port for the container.
+			// Note that this host port is likely set to 0 in the app definition, which means it is
+			// automatically generated and needs to be extracted from the task's 'ports' array at a later stage.
+			ports[i] = portMappings[i].HostPort
 		}
 	}
 

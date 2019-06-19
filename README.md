@@ -1,5 +1,6 @@
-# Prometheus [![Build Status](https://travis-ci.org/prometheus/prometheus.svg)][travis]
+# Prometheus 
 
+[![Build Status](https://travis-ci.org/prometheus/prometheus.svg)][travis]
 [![CircleCI](https://circleci.com/gh/prometheus/prometheus/tree/master.svg?style=shield)][circleci]
 [![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
 [![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg?maxAge=604800)][hub]
@@ -57,7 +58,7 @@ Prometheus will now be reachable at http://localhost:9090/.
 ### Building from source
 
 To build Prometheus from the source code yourself you need to have a working
-Go environment with [version 1.11 or greater installed](http://golang.org/doc/install).
+Go environment with [version 1.12 or greater installed](https://golang.org/doc/install).
 
 You can directly use the `go` tool to download and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:
@@ -86,7 +87,7 @@ The Makefile provides several targets:
 
 ## More information
 
-  * The source code is periodically indexed: [Prometheus Core](http://godoc.org/github.com/prometheus/prometheus).
+  * The source code is periodically indexed: [Prometheus Core](https://godoc.org/github.com/prometheus/prometheus).
   * You will find a Travis CI configuration in `.travis.yml`.
   * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 

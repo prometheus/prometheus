@@ -12,9 +12,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 )
 
 func Main() {
+	MainPath = filepath.Dir(findMainPath())
 	installHealthChecker(http.DefaultServeMux)
 
 	port := "8080"
@@ -29,6 +32,24 @@ func Main() {
 	if err := http.ListenAndServe(host+":"+port, http.HandlerFunc(handleHTTP)); err != nil {
 		log.Fatalf("http.ListenAndServe: %v", err)
 	}
+}
+
+// Find the path to package main by looking at the root Caller.
+func findMainPath() string {
+	pc := make([]uintptr, 100)
+	n := runtime.Callers(2, pc)
+	frames := runtime.CallersFrames(pc[:n])
+	for {
+		frame, more := frames.Next()
+		// Tests won't have package main, instead they have testing.tRunner
+		if frame.Function == "main.main" || frame.Function == "testing.tRunner" {
+			return frame.File
+		}
+		if !more {
+			break
+		}
+	}
+	return ""
 }
 
 func installHealthChecker(mux *http.ServeMux) {

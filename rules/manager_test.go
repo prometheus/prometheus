@@ -51,7 +51,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, true, nil,
+		nil, nil, true, nil,
 	)
 	result := promql.Vector{
 		{
@@ -192,7 +192,7 @@ func TestForStateAddSamples(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, true, nil,
+		nil, nil, true, nil,
 	)
 	result := promql.Vector{
 		{
@@ -366,7 +366,7 @@ func TestForStateRestore(t *testing.T) {
 		expr,
 		alertForDuration,
 		labels.FromStrings("severity", "critical"),
-		nil, true, nil,
+		nil, nil, true, nil,
 	)
 
 	group := NewGroup("default", "", time.Second, []Rule{rule}, true, opts)
@@ -426,7 +426,7 @@ func TestForStateRestore(t *testing.T) {
 			expr,
 			alertForDuration,
 			labels.FromStrings("severity", "critical"),
-			nil, false, nil,
+			nil, nil, false, nil,
 		)
 		newGroup := NewGroup("default", "", time.Second, []Rule{newRule}, true, opts)
 
@@ -538,7 +538,7 @@ func TestStaleness(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
 	testutil.Ok(t, err)
 
-	set, err := querier.Select(nil, matcher)
+	set, _, err := querier.Select(nil, matcher)
 	testutil.Ok(t, err)
 
 	samples, err := readSeriesSet(set)
@@ -552,13 +552,13 @@ func TestStaleness(t *testing.T) {
 	metricSample[2].V = 42 // reflect.DeepEqual cannot handle NaN.
 
 	want := map[string][]promql.Point{
-		metric: []promql.Point{{0, 2}, {1000, 3}, {2000, 42}},
+		metric: {{T: 0, V: 2}, {T: 1000, V: 3}, {T: 2000, V: 42}},
 	}
 
 	testutil.Equals(t, want, samples)
 }
 
-// Convert a SeriesSet into a form useable with reflect.DeepEqual.
+// Convert a SeriesSet into a form usable with reflect.DeepEqual.
 func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 	result := map[string][]promql.Point{}
 
@@ -581,41 +581,47 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, nil, nil, true, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
 			NewRecordingRule("rule1", nil, nil),
 			NewRecordingRule("rule2", nil, nil),
-			NewRecordingRule("rule3", nil, nil),
-			NewRecordingRule("rule3", nil, nil),
+			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
+			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
+			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
-			map[string]labels.Labels{"a": nil},
-			map[string]labels.Labels{"r1": nil},
-			map[string]labels.Labels{"r2": nil},
-			map[string]labels.Labels{"r3a": nil},
-			map[string]labels.Labels{"r3b": nil},
+			{"a": nil},
+			{"r1": nil},
+			{"r2": nil},
+			{"r3a": labels.Labels{{Name: "l1", Value: "v1"}}},
+			{"r3b": labels.Labels{{Name: "l1", Value: "v2"}}},
+			{"a2": labels.Labels{{Name: "l2", Value: "v1"}}},
 		},
 		evaluationDuration: time.Second,
 	}
 	oldGroup.rules[0].(*AlertingRule).active[42] = nil
 	newGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule3", nil, nil),
-			NewRecordingRule("rule3", nil, nil),
-			NewRecordingRule("rule3", nil, nil),
-			NewAlertingRule("alert", nil, 0, nil, nil, true, nil),
+			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v0"}}),
+			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
+			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
+			NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
 			NewRecordingRule("rule1", nil, nil),
+			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v0"}}, nil, nil, true, nil),
+			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil),
 			NewRecordingRule("rule4", nil, nil),
 		},
-		seriesInPreviousEval: make([]map[string]labels.Labels, 6),
+		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
 	}
 	newGroup.CopyState(oldGroup)
 
 	want := []map[string]labels.Labels{
-		map[string]labels.Labels{"r3a": nil},
-		map[string]labels.Labels{"r3b": nil},
 		nil,
-		map[string]labels.Labels{"a": nil},
-		map[string]labels.Labels{"r1": nil},
+		{"r3a": labels.Labels{{Name: "l1", Value: "v1"}}},
+		{"r3b": labels.Labels{{Name: "l1", Value: "v2"}}},
+		{"a": nil},
+		{"r1": nil},
+		nil,
+		{"a2": labels.Labels{{Name: "l2", Value: "v1"}}},
 		nil,
 	}
 	testutil.Equals(t, want, newGroup.seriesInPreviousEval)
@@ -648,7 +654,7 @@ func TestUpdate(t *testing.T) {
 	ruleManager.Run()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files)
+	err := ruleManager.Update(10*time.Second, files, nil)
 	testutil.Ok(t, err)
 	testutil.Assert(t, len(ruleManager.groups) > 0, "expected non-empty rule groups")
 	for _, g := range ruleManager.groups {
@@ -657,7 +663,7 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 
-	err = ruleManager.Update(10*time.Second, files)
+	err = ruleManager.Update(10*time.Second, files, nil)
 	testutil.Ok(t, err)
 	for _, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
@@ -693,7 +699,7 @@ func TestNotify(t *testing.T) {
 
 	expr, err := promql.ParseExpr("a > 1")
 	testutil.Ok(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, nil, true, log.NewNopLogger())
 	group := NewGroup("alert", "", time.Second, []Rule{rule}, true, opts)
 
 	app, _ := storage.Appender()

@@ -14,6 +14,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -24,6 +25,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -159,6 +163,10 @@ func TestComputeExternalURL(t *testing.T) {
 
 // Let's provide an invalid configuration file and verify the exit status indicates the error.
 func TestFailedStartupExitCode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
 	fakeInputFile := "fake-input-file"
 	expectedExitStatus := 1
 
@@ -171,5 +179,108 @@ func TestFailedStartupExitCode(t *testing.T) {
 		testutil.Equals(t, expectedExitStatus, status.ExitStatus())
 	} else {
 		t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
+	}
+}
+
+type senderFunc func(alerts ...*notifier.Alert)
+
+func (s senderFunc) Send(alerts ...*notifier.Alert) {
+	s(alerts...)
+}
+
+func TestSendAlerts(t *testing.T) {
+	testCases := []struct {
+		in  []*rules.Alert
+		exp []*notifier.Alert
+	}{
+		{
+			in: []*rules.Alert{
+				{
+					Labels:      []labels.Label{{Name: "l1", Value: "v1"}},
+					Annotations: []labels.Label{{Name: "a2", Value: "v2"}},
+					ActiveAt:    time.Unix(1, 0),
+					FiredAt:     time.Unix(2, 0),
+					ValidUntil:  time.Unix(3, 0),
+				},
+			},
+			exp: []*notifier.Alert{
+				{
+					Labels:       []labels.Label{{Name: "l1", Value: "v1"}},
+					Annotations:  []labels.Label{{Name: "a2", Value: "v2"}},
+					StartsAt:     time.Unix(2, 0),
+					EndsAt:       time.Unix(3, 0),
+					GeneratorURL: "http://localhost:9090/graph?g0.expr=up&g0.tab=1",
+				},
+			},
+		},
+		{
+			in: []*rules.Alert{
+				{
+					Labels:      []labels.Label{{Name: "l1", Value: "v1"}},
+					Annotations: []labels.Label{{Name: "a2", Value: "v2"}},
+					ActiveAt:    time.Unix(1, 0),
+					FiredAt:     time.Unix(2, 0),
+					ResolvedAt:  time.Unix(4, 0),
+				},
+			},
+			exp: []*notifier.Alert{
+				{
+					Labels:       []labels.Label{{Name: "l1", Value: "v1"}},
+					Annotations:  []labels.Label{{Name: "a2", Value: "v2"}},
+					StartsAt:     time.Unix(2, 0),
+					EndsAt:       time.Unix(4, 0),
+					GeneratorURL: "http://localhost:9090/graph?g0.expr=up&g0.tab=1",
+				},
+			},
+		},
+		{
+			in: []*rules.Alert{},
+		},
+	}
+
+	for i, tc := range testCases {
+		tc := tc
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
+				if len(tc.in) == 0 {
+					t.Fatalf("sender called with 0 alert")
+				}
+				testutil.Equals(t, tc.exp, alerts)
+			})
+			sendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
+		})
+	}
+}
+
+func TestWALSegmentSizeBounds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	for size, expectedExitStatus := range map[string]int{"9MB": 1, "257MB": 1, "10": 2, "1GB": 1, "12MB": 0} {
+		prom := exec.Command(promPath, "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig)
+		err := prom.Start()
+		testutil.Ok(t, err)
+
+		if expectedExitStatus == 0 {
+			done := make(chan error, 1)
+			go func() { done <- prom.Wait() }()
+			select {
+			case err := <-done:
+				t.Errorf("prometheus should be still running: %v", err)
+			case <-time.After(5 * time.Second):
+				prom.Process.Signal(os.Interrupt)
+			}
+			continue
+		}
+
+		err = prom.Wait()
+		testutil.NotOk(t, err, "")
+		if exitError, ok := err.(*exec.ExitError); ok {
+			status := exitError.Sys().(syscall.WaitStatus)
+			testutil.Equals(t, expectedExitStatus, status.ExitStatus())
+		} else {
+			t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
+		}
 	}
 }

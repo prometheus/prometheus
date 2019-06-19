@@ -14,6 +14,7 @@
 package index
 
 import (
+	"container/heap"
 	"encoding/binary"
 	"runtime"
 	"sort"
@@ -36,14 +37,14 @@ func AllPostingsKey() (name, value string) {
 // unordered batch fills on startup.
 type MemPostings struct {
 	mtx     sync.RWMutex
-	m       map[labels.Label][]uint64
+	m       map[string]map[string][]uint64
 	ordered bool
 }
 
 // NewMemPostings returns a memPostings that's ready for reads and writes.
 func NewMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[labels.Label][]uint64, 512),
+		m:       make(map[string]map[string][]uint64, 512),
 		ordered: true,
 	}
 }
@@ -52,7 +53,7 @@ func NewMemPostings() *MemPostings {
 // until ensureOrder was called once.
 func NewUnorderedMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[labels.Label][]uint64, 512),
+		m:       make(map[string]map[string][]uint64, 512),
 		ordered: false,
 	}
 }
@@ -62,8 +63,10 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	p.mtx.RLock()
 	keys := make([]labels.Label, 0, len(p.m))
 
-	for l := range p.m {
-		keys = append(keys, l)
+	for n, e := range p.m {
+		for v := range e {
+			keys = append(keys, labels.Label{Name: n, Value: v})
+		}
 	}
 	p.mtx.RUnlock()
 
@@ -78,14 +81,18 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 
 // Get returns a postings list for the given label pair.
 func (p *MemPostings) Get(name, value string) Postings {
+	var lp []uint64
 	p.mtx.RLock()
-	l := p.m[labels.Label{Name: name, Value: value}]
+	l := p.m[name]
+	if l != nil {
+		lp = l[value]
+	}
 	p.mtx.RUnlock()
 
-	if l == nil {
+	if lp == nil {
 		return EmptyPostings()
 	}
-	return newListPostings(l)
+	return newListPostings(lp...)
 }
 
 // All returns a postings list over all documents ever added.
@@ -118,8 +125,10 @@ func (p *MemPostings) EnsureOrder() {
 		}()
 	}
 
-	for _, l := range p.m {
-		workc <- l
+	for _, e := range p.m {
+		for _, l := range e {
+			workc <- l
+		}
 	}
 	close(workc)
 	wg.Wait()
@@ -129,44 +138,58 @@ func (p *MemPostings) EnsureOrder() {
 
 // Delete removes all ids in the given map from the postings lists.
 func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
-	var keys []labels.Label
+	var keys, vals []string
 
 	// Collect all keys relevant for deletion once. New keys added afterwards
 	// can by definition not be affected by any of the given deletes.
 	p.mtx.RLock()
-	for l := range p.m {
-		keys = append(keys, l)
+	for n := range p.m {
+		keys = append(keys, n)
 	}
 	p.mtx.RUnlock()
 
-	// For each key we first analyse whether the postings list is affected by the deletes.
-	// If yes, we actually reallocate a new postings list.
-	for _, l := range keys {
-		// Only lock for processing one postings list so we don't block reads for too long.
-		p.mtx.Lock()
-
-		found := false
-		for _, id := range p.m[l] {
-			if _, ok := deleted[id]; ok {
-				found = true
-				break
-			}
+	for _, n := range keys {
+		p.mtx.RLock()
+		vals = vals[:0]
+		for v := range p.m[n] {
+			vals = append(vals, v)
 		}
-		if !found {
+		p.mtx.RUnlock()
+
+		// For each posting we first analyse whether the postings list is affected by the deletes.
+		// If yes, we actually reallocate a new postings list.
+		for _, l := range vals {
+			// Only lock for processing one postings list so we don't block reads for too long.
+			p.mtx.Lock()
+
+			found := false
+			for _, id := range p.m[n][l] {
+				if _, ok := deleted[id]; ok {
+					found = true
+					break
+				}
+			}
+			if !found {
+				p.mtx.Unlock()
+				continue
+			}
+			repl := make([]uint64, 0, len(p.m[n][l]))
+
+			for _, id := range p.m[n][l] {
+				if _, ok := deleted[id]; !ok {
+					repl = append(repl, id)
+				}
+			}
+			if len(repl) > 0 {
+				p.m[n][l] = repl
+			} else {
+				delete(p.m[n], l)
+			}
 			p.mtx.Unlock()
-			continue
 		}
-		repl := make([]uint64, 0, len(p.m[l]))
-
-		for _, id := range p.m[l] {
-			if _, ok := deleted[id]; !ok {
-				repl = append(repl, id)
-			}
-		}
-		if len(repl) > 0 {
-			p.m[l] = repl
-		} else {
-			delete(p.m, l)
+		p.mtx.Lock()
+		if len(p.m[n]) == 0 {
+			delete(p.m, n)
 		}
 		p.mtx.Unlock()
 	}
@@ -177,9 +200,11 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
-	for l, p := range p.m {
-		if err := f(l, newListPostings(p)); err != nil {
-			return err
+	for n, e := range p.m {
+		for v, p := range e {
+			if err := f(labels.Label{Name: n, Value: v}, newListPostings(p...)); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -198,8 +223,13 @@ func (p *MemPostings) Add(id uint64, lset labels.Labels) {
 }
 
 func (p *MemPostings) addFor(id uint64, l labels.Label) {
-	list := append(p.m[l], id)
-	p.m[l] = list
+	nm, ok := p.m[l.Name]
+	if !ok {
+		nm = map[string][]uint64{}
+		p.m[l.Name] = nm
+	}
+	list := append(nm[l.Value], id)
+	nm[l.Value] = list
 
 	if !p.ordered {
 		return
@@ -253,6 +283,8 @@ func (e errPostings) Err() error       { return e.err }
 var emptyPostings = errPostings{}
 
 // EmptyPostings returns a postings list that's always empty.
+// NOTE: Returning EmptyPostings sentinel when index.Postings struct has no postings is recommended.
+// It triggers optimized flow in other functions like Intersect, Without etc.
 func EmptyPostings() Postings {
 	return emptyPostings
 }
@@ -266,19 +298,25 @@ func ErrPostings(err error) Postings {
 // input postings.
 func Intersect(its ...Postings) Postings {
 	if len(its) == 0 {
-		return emptyPostings
+		return EmptyPostings()
 	}
 	if len(its) == 1 {
 		return its[0]
 	}
+
 	l := len(its) / 2
-	return newIntersectPostings(Intersect(its[:l]...), Intersect(its[l:]...))
+	a := Intersect(its[:l]...)
+	b := Intersect(its[l:]...)
+
+	if a == EmptyPostings() || b == EmptyPostings() {
+		return EmptyPostings()
+	}
+	return newIntersectPostings(a, b)
 }
 
 type intersectPostings struct {
-	a, b     Postings
-	aok, bok bool
-	cur      uint64
+	a, b Postings
+	cur  uint64
 }
 
 func newIntersectPostings(a, b Postings) *intersectPostings {
@@ -337,85 +375,143 @@ func Merge(its ...Postings) Postings {
 	if len(its) == 1 {
 		return its[0]
 	}
-	l := len(its) / 2
-	return newMergedPostings(Merge(its[:l]...), Merge(its[l:]...))
+
+	p, ok := newMergedPostings(its)
+	if !ok {
+		return EmptyPostings()
+	}
+	return p
+}
+
+type postingsHeap []Postings
+
+func (h postingsHeap) Len() int           { return len(h) }
+func (h postingsHeap) Less(i, j int) bool { return h[i].At() < h[j].At() }
+func (h *postingsHeap) Swap(i, j int)     { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
+
+func (h *postingsHeap) Push(x interface{}) {
+	*h = append(*h, x.(Postings))
+}
+
+func (h *postingsHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
 }
 
 type mergedPostings struct {
-	a, b        Postings
-	initialized bool
-	aok, bok    bool
-	cur         uint64
+	h          postingsHeap
+	initilized bool
+	cur        uint64
+	err        error
 }
 
-func newMergedPostings(a, b Postings) *mergedPostings {
-	return &mergedPostings{a: a, b: b}
-}
+func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
+	ph := make(postingsHeap, 0, len(p))
 
-func (it *mergedPostings) At() uint64 {
-	return it.cur
+	for _, it := range p {
+		// NOTE: mergedPostings struct requires the user to issue an initial Next.
+		if it.Next() {
+			ph = append(ph, it)
+		} else {
+			if it.Err() != nil {
+				return &mergedPostings{err: it.Err()}, true
+			}
+		}
+	}
+
+	if len(ph) == 0 {
+		return nil, false
+	}
+	return &mergedPostings{h: ph}, true
 }
 
 func (it *mergedPostings) Next() bool {
-	if !it.initialized {
-		it.aok = it.a.Next()
-		it.bok = it.b.Next()
-		it.initialized = true
-	}
-
-	if !it.aok && !it.bok {
+	if it.h.Len() == 0 || it.err != nil {
 		return false
 	}
 
-	if !it.aok {
-		it.cur = it.b.At()
-		it.bok = it.b.Next()
-		return true
-	}
-	if !it.bok {
-		it.cur = it.a.At()
-		it.aok = it.a.Next()
+	// The user must issue an initial Next.
+	if !it.initilized {
+		heap.Init(&it.h)
+		it.cur = it.h[0].At()
+		it.initilized = true
 		return true
 	}
 
-	acur, bcur := it.a.At(), it.b.At()
+	for {
+		cur := it.h[0]
+		if !cur.Next() {
+			heap.Pop(&it.h)
+			if cur.Err() != nil {
+				it.err = cur.Err()
+				return false
+			}
+			if it.h.Len() == 0 {
+				return false
+			}
+		} else {
+			// Value of top of heap has changed, re-heapify.
+			heap.Fix(&it.h, 0)
+		}
 
-	if acur < bcur {
-		it.cur = acur
-		it.aok = it.a.Next()
-	} else if acur > bcur {
-		it.cur = bcur
-		it.bok = it.b.Next()
-	} else {
-		it.cur = acur
-		it.aok = it.a.Next()
-		it.bok = it.b.Next()
+		if it.h[0].At() != it.cur {
+			it.cur = it.h[0].At()
+			return true
+		}
+	}
+}
+
+func (it *mergedPostings) Seek(id uint64) bool {
+	if it.h.Len() == 0 || it.err != nil {
+		return false
+	}
+	if !it.initilized {
+		if !it.Next() {
+			return false
+		}
+	}
+	for it.cur < id {
+		cur := it.h[0]
+		if !cur.Seek(id) {
+			heap.Pop(&it.h)
+			if cur.Err() != nil {
+				it.err = cur.Err()
+				return false
+			}
+			if it.h.Len() == 0 {
+				return false
+			}
+		} else {
+			// Value of top of heap has changed, re-heapify.
+			heap.Fix(&it.h, 0)
+		}
+
+		it.cur = it.h[0].At()
 	}
 	return true
 }
 
-func (it *mergedPostings) Seek(id uint64) bool {
-	if it.cur >= id {
-		return true
-	}
-
-	it.aok = it.a.Seek(id)
-	it.bok = it.b.Seek(id)
-	it.initialized = true
-
-	return it.Next()
+func (it mergedPostings) At() uint64 {
+	return it.cur
 }
 
-func (it *mergedPostings) Err() error {
-	if it.a.Err() != nil {
-		return it.a.Err()
-	}
-	return it.b.Err()
+func (it mergedPostings) Err() error {
+	return it.err
 }
 
 // Without returns a new postings list that contains all elements from the full list that
-// are not in the drop list
+// are not in the drop list.
 func Without(full, drop Postings) Postings {
+	if full == EmptyPostings() {
+		return EmptyPostings()
+	}
+
+	if drop == EmptyPostings() {
+		return full
+	}
 	return newRemovedPostings(full, drop)
 }
 
@@ -492,25 +588,25 @@ func (rp *removedPostings) Err() error {
 	return rp.remove.Err()
 }
 
-// listPostings implements the Postings interface over a plain list.
-type listPostings struct {
+// ListPostings implements the Postings interface over a plain list.
+type ListPostings struct {
 	list []uint64
 	cur  uint64
 }
 
 func NewListPostings(list []uint64) Postings {
-	return newListPostings(list)
+	return newListPostings(list...)
 }
 
-func newListPostings(list []uint64) *listPostings {
-	return &listPostings{list: list}
+func newListPostings(list ...uint64) *ListPostings {
+	return &ListPostings{list: list}
 }
 
-func (it *listPostings) At() uint64 {
+func (it *ListPostings) At() uint64 {
 	return it.cur
 }
 
-func (it *listPostings) Next() bool {
+func (it *ListPostings) Next() bool {
 	if len(it.list) > 0 {
 		it.cur = it.list[0]
 		it.list = it.list[1:]
@@ -520,10 +616,13 @@ func (it *listPostings) Next() bool {
 	return false
 }
 
-func (it *listPostings) Seek(x uint64) bool {
+func (it *ListPostings) Seek(x uint64) bool {
 	// If the current value satisfies, then return.
 	if it.cur >= x {
 		return true
+	}
+	if len(it.list) == 0 {
+		return false
 	}
 
 	// Do binary search between current position and end.
@@ -539,7 +638,7 @@ func (it *listPostings) Seek(x uint64) bool {
 	return false
 }
 
-func (it *listPostings) Err() error {
+func (it *ListPostings) Err() error {
 	return nil
 }
 

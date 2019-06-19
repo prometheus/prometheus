@@ -16,7 +16,6 @@ package file
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -28,11 +27,13 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	fsnotify "gopkg.in/fsnotify/fsnotify.v1"
+	yaml "gopkg.in/yaml.v2"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"gopkg.in/fsnotify/fsnotify.v1"
-	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -59,11 +60,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.Files) == 0 {
-		return fmt.Errorf("file service discovery config must contain at least one path name")
+		return errors.New("file service discovery config must contain at least one path name")
 	}
 	for _, name := range c.Files {
 		if !patFileSDName.MatchString(name) {
-			return fmt.Errorf("path name %q is not valid for file discovery", name)
+			return errors.Errorf("path name %q is not valid for file discovery", name)
 		}
 	}
 	return nil
@@ -134,8 +135,9 @@ func NewTimestampCollector() *TimestampCollector {
 var (
 	fileSDScanDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Name: "prometheus_sd_file_scan_duration_seconds",
-			Help: "The duration of the File-SD scan in seconds.",
+			Name:       "prometheus_sd_file_scan_duration_seconds",
+			Help:       "The duration of the File-SD scan in seconds.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		})
 	fileSDReadErrorsCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
@@ -382,7 +384,7 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 	default:
-		panic(fmt.Errorf("discovery.File.readFile: unhandled file extension %q", ext))
+		panic(errors.Errorf("discovery.File.readFile: unhandled file extension %q", ext))
 	}
 
 	for i, tg := range targetGroups {

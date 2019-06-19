@@ -51,13 +51,13 @@ import (
 
 // XORChunk holds XOR encoded sample data.
 type XORChunk struct {
-	b *bstream
+	b bstream
 }
 
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
 func NewXORChunk() *XORChunk {
 	b := make([]byte, 2, 128)
-	return &XORChunk{b: &bstream{stream: b, count: 0}}
+	return &XORChunk{b: bstream{stream: b, count: 0}}
 }
 
 // Encoding returns the encoding type.
@@ -89,7 +89,7 @@ func (c *XORChunk) Appender() (Appender, error) {
 	}
 
 	a := &xorAppender{
-		b:        c.b,
+		b:        &c.b,
 		t:        it.t,
 		v:        it.val,
 		tDelta:   it.tDelta,
@@ -221,7 +221,7 @@ func (a *xorAppender) writeVDelta(v float64) {
 }
 
 type xorIterator struct {
-	br       *bstream
+	br       bstream
 	numTotal uint16
 	numRead  uint16
 
@@ -249,7 +249,7 @@ func (it *xorIterator) Next() bool {
 	}
 
 	if it.numRead == 0 {
-		t, err := binary.ReadVarint(it.br)
+		t, err := binary.ReadVarint(&it.br)
 		if err != nil {
 			it.err = err
 			return false
@@ -266,7 +266,7 @@ func (it *xorIterator) Next() bool {
 		return true
 	}
 	if it.numRead == 1 {
-		tDelta, err := binary.ReadUvarint(it.br)
+		tDelta, err := binary.ReadUvarint(&it.br)
 		if err != nil {
 			it.err = err
 			return false

@@ -37,6 +37,10 @@ var (
 		Name: "prometheus_web_federation_errors_total",
 		Help: "Total number of errors that occurred while sending federation responses.",
 	})
+	federationWarnings = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_web_federation_warnings_total",
+		Help: "Total number of warnings that occurred while sending federation responses.",
+	})
 )
 
 func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
@@ -83,7 +87,11 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s, err := q.Select(params, mset...)
+		s, wrns, err := q.Select(params, mset...)
+		if wrns != nil {
+			level.Debug(h.logger).Log("msg", "federation select returned warnings", "warnings", wrns)
+			federationWarnings.Add(float64(len(wrns)))
+		}
 		if err != nil {
 			federationErrors.Inc()
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -92,7 +100,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets)
+	set := storage.NewMergeSeriesSet(sets, nil)
 	it := storage.NewBuffer(int64(promql.LookbackDelta / 1e6))
 	for set.Next() {
 		s := set.At()
@@ -128,21 +136,21 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 	if set.Err() != nil {
 		federationErrors.Inc()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, set.Err().Error(), http.StatusInternalServerError)
 		return
 	}
 
 	sort.Sort(byName(vec))
 
-	externalLabels := h.config.GlobalConfig.ExternalLabels.Clone()
+	externalLabels := h.config.GlobalConfig.ExternalLabels.Map()
 	if _, ok := externalLabels[model.InstanceLabel]; !ok {
 		externalLabels[model.InstanceLabel] = ""
 	}
-	externalLabelNames := make(model.LabelNames, 0, len(externalLabels))
+	externalLabelNames := make([]string, 0, len(externalLabels))
 	for ln := range externalLabels {
 		externalLabelNames = append(externalLabelNames, ln)
 	}
-	sort.Sort(externalLabelNames)
+	sort.Strings(externalLabelNames)
 
 	var (
 		lastMetricName string
@@ -188,7 +196,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				Name:  proto.String(l.Name),
 				Value: proto.String(l.Value),
 			})
-			if _, ok := externalLabels[model.LabelName(l.Name)]; ok {
+			if _, ok := externalLabels[l.Name]; ok {
 				globalUsed[l.Name] = struct{}{}
 			}
 		}

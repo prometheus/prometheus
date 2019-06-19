@@ -153,6 +153,7 @@ load 5m
 	http_requests{job="app-server", instance="1", group="production"}	0+60x10
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+	foo 3+0x10
 
 eval_ordered instant at 50m topk(3, http_requests)
 	http_requests{group="canary", instance="1", job="app-server"} 800
@@ -207,6 +208,12 @@ eval_ordered instant at 50m topk(9999999999, http_requests{job="api-server",grou
 	http_requests{job="api-server", instance="0", group="production"}	100
 	http_requests{job="api-server", instance="2", group="production"}	NaN
 
+# Bug #5276.
+eval_ordered instant at 50m topk(scalar(foo), http_requests)
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="production", instance="1", job="app-server"} 600
+
 clear
 
 # Tests for count_values.
@@ -257,8 +264,15 @@ load 10s
 	data{test="uneven samples",point="a"} 0
 	data{test="uneven samples",point="b"} 1
 	data{test="uneven samples",point="c"} 4
+	foo .8
 
 eval instant at 1m quantile without(point)(0.8, data)
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
+
+# Bug #5276.
+eval instant at 1m quantile without(point)(scalar(foo), data)
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8

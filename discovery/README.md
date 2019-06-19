@@ -1,4 +1,4 @@
-### Service Discovery
+# Service Discovery
 
 This directory contains the service discovery (SD) component of Prometheus.
 
@@ -15,7 +15,7 @@ what makes a good SD and covers some of the common implementation issues.
 
 The first question to be asked is does it make sense to add this particular
 SD? An SD mechanism should be reasonably well established, and at a minimum in
-use across multiple organisations. It should allow discovering of machines
+use across multiple organizations. It should allow discovering of machines
 and/or services running somewhere. When exactly an SD is popular enough to
 justify being added to Prometheus natively is an open question.
 
@@ -59,7 +59,7 @@ label with the host:port of the target (preferably an IP address to avoid DNS
 lookups). No other labelnames should be exposed.
 
 It is very common for initial pull requests for new SDs to include hardcoded
-assumptions that make sense for the the author's setup. SD should be generic,
+assumptions that make sense for the author's setup. SD should be generic,
 any customisation should be handled via relabelling. There should be basically
 no business logic, filtering, or transformations of the data from the SD beyond
 that which is needed to fit it into the metadata data model. 
@@ -131,23 +131,23 @@ the Prometheus server will be able to see them.
 
 ### The SD interface
 
-A Service Discovery (SD) mechanism has to discover targets and provide them to Prometheus. We expect similar targets to be grouped together, in the form of a [`TargetGroup`](https://godoc.org/github.com/prometheus/prometheus/config#TargetGroup). The SD mechanism sends the targets down to prometheus as list of `TargetGroups`.
+A Service Discovery (SD) mechanism has to discover targets and provide them to Prometheus. We expect similar targets to be grouped together, in the form of a [target group](https://godoc.org/github.com/prometheus/prometheus/discovery/targetgroup#Group). The SD mechanism sends the targets down to prometheus as list of target groups.
 
 An SD mechanism has to implement the `Discoverer` Interface:
 ```go
 type Discoverer interface {
-	Run(ctx context.Context, up chan<- []*config.TargetGroup)
+	Run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
 ```
 
-Prometheus will call the `Run()` method on a provider to initialise the discovery mechanism. The mechanism will then send *all* the `TargetGroup`s into the channel. 
-Now the mechanism will watch for changes. For each update it can send all `TargetGroup`s, or only changed and new `TargetGroup`s, down the channel. `Manager` will handle 
+Prometheus will call the `Run()` method on a provider to initialize the discovery mechanism. The mechanism will then send *all* the target groups into the channel. 
+Now the mechanism will watch for changes. For each update it can send all target groups, or only changed and new target groups, down the channel. `Manager` will handle 
 both cases.
 
 For example if we had a discovery mechanism and it retrieves the following groups:
 
 ```
-[]config.TargetGroup{
+[]targetgroup.Group{
   {
     Targets: []model.LabelSet{
        {
@@ -187,11 +187,11 @@ For example if we had a discovery mechanism and it retrieves the following group
 }
 ```
 
-Here there are two `TargetGroups` one group with source `file1` and another with `file2`. The grouping is implementation specific and could even be one target per group. But, one has to make sure every target group sent by an SD instance should have a `Source` which is unique across all the `TargetGroup`s of that SD instance. 
+Here there are two target groups one group with source `file1` and another with `file2`. The grouping is implementation specific and could even be one target per group. But, one has to make sure every target group sent by an SD instance should have a `Source` which is unique across all the target groups of that SD instance. 
 
-In this case, both the `TargetGroup`s are sent down the channel the first time `Run()` is called. Now, for an update, we need to send the whole _changed_ `TargetGroup` down the channel. i.e, if the target with `hostname: demo-postgres-2` goes away, we send:
+In this case, both the target groups are sent down the channel the first time `Run()` is called. Now, for an update, we need to send the whole _changed_ target group down the channel. i.e, if the target with `hostname: demo-postgres-2` goes away, we send:
 ```
-&config.TargetGroup{
+&targetgroup.Group{
   Targets: []model.LabelSet{
      {
         "__instance__": "10.11.122.11:6001",
@@ -209,7 +209,7 @@ down the channel.
 
 If all the targets in a group go away, we need to send the target groups with empty `Targets` down the channel. i.e, if all targets with `job: postgres` go away, we send:
 ```
-&config.TargetGroup{
+&targetgroup.Group{
   Targets: nil,
   "Source": "file2", 
 }

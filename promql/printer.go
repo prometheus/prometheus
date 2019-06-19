@@ -62,6 +62,9 @@ func tree(node Node, level string) string {
 	case *UnaryExpr:
 		t += tree(n.Expr, level)
 
+	case *SubqueryExpr:
+		t += tree(n.Expr, level)
+
 	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
 		// nothing to do
 
@@ -149,6 +152,14 @@ func (node *MatrixSelector) String() string {
 	return fmt.Sprintf("%s[%s]%s", vecSelector.String(), model.Duration(node.Range), offset)
 }
 
+func (node *SubqueryExpr) String() string {
+	step := ""
+	if node.Step != 0 {
+		step = model.Duration(node.Step).String()
+	}
+	return fmt.Sprintf("%s[%s:%s]", node.Expr.String(), model.Duration(node.Range), step)
+}
+
 func (node *NumberLiteral) String() string {
 	return fmt.Sprint(node.Val)
 }
@@ -168,8 +179,8 @@ func (node *UnaryExpr) String() string {
 func (node *VectorSelector) String() string {
 	labelStrings := make([]string, 0, len(node.LabelMatchers)-1)
 	for _, matcher := range node.LabelMatchers {
-		// Only include the __name__ label if its no equality matching.
-		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual {
+		// Only include the __name__ label if its equality matching and matches the name.
+		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name {
 			continue
 		}
 		labelStrings = append(labelStrings, matcher.String())

@@ -41,11 +41,12 @@ import (
 )
 
 var (
-	failedConfigs = prometheus.NewCounter(
+	failedConfigs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_configs_failed_total",
 			Help: "Total number of service discovery configurations that failed to load.",
 		},
+		[]string{"name"},
 	)
 	discoveredTargets = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -54,23 +55,26 @@ var (
 		},
 		[]string{"name", "config"},
 	)
-	receivedUpdates = prometheus.NewCounter(
+	receivedUpdates = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_received_updates_total",
 			Help: "Total number of update events received from the SD providers.",
 		},
+		[]string{"name"},
 	)
-	delayedUpdates = prometheus.NewCounter(
+	delayedUpdates = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_updates_delayed_total",
 			Help: "Total number of update events that couldn't be sent immediately.",
 		},
+		[]string{"name"},
 	)
-	sentUpdates = prometheus.NewCounter(
+	sentUpdates = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_updates_total",
 			Help: "Total number of update events sent to the SD consumers.",
 		},
+		[]string{"name"},
 	)
 )
 
@@ -226,7 +230,7 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 		case <-ctx.Done():
 			return
 		case tgs, ok := <-updates:
-			receivedUpdates.Inc()
+			receivedUpdates.WithLabelValues(m.name).Inc()
 			if !ok {
 				level.Debug(m.logger).Log("msg", "discoverer channel closed", "provider", p.name)
 				return
@@ -255,11 +259,11 @@ func (m *Manager) sender() {
 		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
 			select {
 			case <-m.triggerSend:
-				sentUpdates.Inc()
+				sentUpdates.WithLabelValues(m.name).Inc()
 				select {
 				case m.syncCh <- m.allGroups():
 				default:
-					delayedUpdates.Inc()
+					delayedUpdates.WithLabelValues(m.name).Inc()
 					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full so will retry the next cycle")
 					select {
 					case m.triggerSend <- struct{}{}:
@@ -314,11 +318,13 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 }
 
 func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
+	var added bool
 	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
 		t := reflect.TypeOf(cfg).String()
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
 				p.subs = append(p.subs, setName)
+				added = true
 				return
 			}
 		}
@@ -326,7 +332,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 		d, err := newDiscoverer()
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
-			failedConfigs.Inc()
+			failedConfigs.WithLabelValues(m.name).Inc()
 			return
 		}
 
@@ -337,6 +343,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 			subs:   []string{setName},
 		}
 		m.providers = append(m.providers, &provider)
+		added = true
 	}
 
 	for _, c := range cfg.DNSSDConfigs {
@@ -401,7 +408,17 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	}
 	if len(cfg.StaticConfigs) > 0 {
 		add(setName, func() (Discoverer, error) {
-			return &StaticProvider{cfg.StaticConfigs}, nil
+			return &StaticProvider{TargetGroups: cfg.StaticConfigs}, nil
+		})
+	}
+	if !added {
+		// Add an empty target group to force the refresh of the corresponding
+		// scrape pool and to notify the receiver that this target set has no
+		// current targets.
+		// It can happen because the combined set of SD configurations is empty
+		// or because we fail to instantiate all the SD configurations.
+		add(setName, func() (Discoverer, error) {
+			return &StaticProvider{TargetGroups: []*targetgroup.Group{{}}}, nil
 		})
 	}
 }

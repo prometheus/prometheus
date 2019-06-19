@@ -15,16 +15,17 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // Ingress implements discovery of Kubernetes ingresss.
@@ -118,7 +119,7 @@ func convertToIngress(o interface{}) (*v1beta1.Ingress, error) {
 		return ingress, nil
 	}
 
-	return nil, fmt.Errorf("Received unexpected object: %v", o)
+	return nil, errors.Errorf("received unexpected object: %v", o)
 }
 
 func ingressSource(s *v1beta1.Ingress) string {
@@ -130,12 +131,14 @@ func ingressSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	ingressNameLabel        = metaLabelPrefix + "ingress_name"
-	ingressLabelPrefix      = metaLabelPrefix + "ingress_label_"
-	ingressAnnotationPrefix = metaLabelPrefix + "ingress_annotation_"
-	ingressSchemeLabel      = metaLabelPrefix + "ingress_scheme"
-	ingressHostLabel        = metaLabelPrefix + "ingress_host"
-	ingressPathLabel        = metaLabelPrefix + "ingress_path"
+	ingressNameLabel               = metaLabelPrefix + "ingress_name"
+	ingressLabelPrefix             = metaLabelPrefix + "ingress_label_"
+	ingressLabelPresentPrefix      = metaLabelPrefix + "ingress_labelpresent_"
+	ingressAnnotationPrefix        = metaLabelPrefix + "ingress_annotation_"
+	ingressAnnotationPresentPrefix = metaLabelPrefix + "ingress_annotationpresent_"
+	ingressSchemeLabel             = metaLabelPrefix + "ingress_scheme"
+	ingressHostLabel               = metaLabelPrefix + "ingress_host"
+	ingressPathLabel               = metaLabelPrefix + "ingress_path"
 )
 
 func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
@@ -144,13 +147,15 @@ func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
 	ls[namespaceLabel] = lv(ingress.Namespace)
 
 	for k, v := range ingress.Labels {
-		ln := strutil.SanitizeLabelName(ingressLabelPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(ingressLabelPrefix+ln)] = lv(v)
+		ls[model.LabelName(ingressLabelPresentPrefix+ln)] = presentValue
 	}
 
 	for k, v := range ingress.Annotations {
-		ln := strutil.SanitizeLabelName(ingressAnnotationPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(ingressAnnotationPrefix+ln)] = lv(v)
+		ls[model.LabelName(ingressAnnotationPresentPrefix+ln)] = presentValue
 	}
 	return ls
 }

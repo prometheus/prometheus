@@ -15,7 +15,7 @@ import opentracing "github.com/opentracing/opentracing-go"
 //
 var (
 	//////////////////////////////////////////////////////////////////////
-	// SpanKind (client/server)
+	// SpanKind (client/server or producer/consumer)
 	//////////////////////////////////////////////////////////////////////
 
 	// SpanKind hints at relationship between spans, e.g. client/server
@@ -30,6 +30,16 @@ var (
 	// or other remote call
 	SpanKindRPCServerEnum = SpanKindEnum("server")
 	SpanKindRPCServer     = opentracing.Tag{Key: string(SpanKind), Value: SpanKindRPCServerEnum}
+
+	// SpanKindProducer marks a span representing the producer-side of a
+	// message bus
+	SpanKindProducerEnum = SpanKindEnum("producer")
+	SpanKindProducer     = opentracing.Tag{Key: string(SpanKind), Value: SpanKindProducerEnum}
+
+	// SpanKindConsumer marks a span representing the consumer-side of a
+	// message bus
+	SpanKindConsumerEnum = SpanKindEnum("consumer")
+	SpanKindConsumer     = opentracing.Tag{Key: string(SpanKind), Value: SpanKindConsumerEnum}
 
 	//////////////////////////////////////////////////////////////////////
 	// Component name
@@ -52,8 +62,13 @@ var (
 	// communications, like an RPC call.
 	//////////////////////////////////////////////////////////////////////
 
-	// PeerService records the service name of the peer
+	// PeerService records the service name of the peer.
 	PeerService = stringTagName("peer.service")
+
+	// PeerAddress records the address name of the peer. This may be a "ip:port",
+	// a bare "hostname", a FQDN or even a database DSN substring
+	// like "mysql://username@127.0.0.1:3306/dbname"
+	PeerAddress = stringTagName("peer.address")
 
 	// PeerHostname records the host name of the peer
 	PeerHostname = stringTagName("peer.hostname")
@@ -81,6 +96,31 @@ var (
 	// HTTPStatusCode is the numeric HTTP status code (200, 404, etc) of the
 	// HTTP response.
 	HTTPStatusCode = uint16TagName("http.status_code")
+
+	//////////////////////////////////////////////////////////////////////
+	// DB Tags
+	//////////////////////////////////////////////////////////////////////
+
+	// DBInstance is database instance name.
+	DBInstance = stringTagName("db.instance")
+
+	// DBStatement is a database statement for the given database type.
+	// It can be a query or a prepared statement (i.e., before substitution).
+	DBStatement = stringTagName("db.statement")
+
+	// DBType is a database type. For any SQL database, "sql".
+	// For others, the lower-case database category, e.g. "redis"
+	DBType = stringTagName("db.type")
+
+	// DBUser is a username for accessing database.
+	DBUser = stringTagName("db.user")
+
+	//////////////////////////////////////////////////////////////////////
+	// Message Bus Tag
+	//////////////////////////////////////////////////////////////////////
+
+	// MessageBusDestination is an address at which messages can be exchanged
+	MessageBusDestination = stringTagName("message_bus.destination")
 
 	//////////////////////////////////////////////////////////////////////
 	// Error Tag

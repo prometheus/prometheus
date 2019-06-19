@@ -21,6 +21,7 @@ div.show-annotations button {
   border: none;
   outline: none;
   padding: 0;
+  color: inherit;
 }
 
 div.show-annotations.is-checked {

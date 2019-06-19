@@ -1,25 +1,24 @@
         <div id="graph_wrapper{{id}}" class="graph_wrapper">
-          <form class="query_form form-inline">
-            <div class="row">
+          <form class="query_form">
+            <div class="form-row">
               <div class="col-lg-10">
                 <textarea rows="1" placeholder="Expression (press Shift+Enter for newlines)" name="expr" id="expr{{id}}" class="form-control expression_input" data-provide="typeahead" autocomplete="off" spellcheck="false">{{expr}}</textarea>
               </div>
               <div class="col-lg-2">
-                <div class="eval_stats pull-right"></div>
+                <div class="eval_stats float-right"></div>
                 <img src="{{ pathPrefix }}/static/img/ajax-loader.gif?v={{ buildVersion }}" class="spinner" alt="ajax_spinner">
               </div>
             </div>
-            <div class="row">
-              <div class="col-lg-10">
-                <input class="btn btn-primary execute_btn" type="submit" value="Execute" name="submit">
-                <select class="form-control expression_select" name="insert_metric">
-                  <option value="">- insert metric at cursor -</option>
-                </select>
-              </div>
+            <div class="form-inline">              
+              <input class="btn btn-primary execute_btn" type="submit" value="Execute" name="submit">
+              <select class="custom-select form-control expression_select" name="insert_metric">
+                <option value="">- insert metric at cursor -</option>
+              </select>
             </div>
-            <div class="row">
+            <div class="form-row">
               <div class="col-lg-12">
                 <div class="error alert alert-danger"></div>
+                <div class="warning alert alert-warning"></div>
               </div>
             </div>
 
@@ -27,12 +26,12 @@
               TODO: Convert this to Bootstrap navbar.  This requires Javascript
                     refresh.
               -->
-            <div class="row">
+            <div class="form-row">
               <div class="col-lg-12">
-                <div role="tabpanel">
+                <div class="list-group" role="tabpanel">
                   <ul class="nav nav-tabs" role="tablist">
-                    <li role="presentation"><a href="#graph{{id}}" aria-controls="graph{{id}}" role="tab" data-toggle="tab">Graph</a></li>
-                    <li role="presentation" class="active"><a href="#console{{id}}" aria-controls="console{{id}}" role="tab" data-toggle="tab">Console</a></li>
+                    <li class="nav-item" role="presentation"><a class="nav-link" href="#graph{{id}}" aria-controls="graph{{id}}" role="tab" data-toggle="tab">Graph</a></li>
+                    <li class="nav-item" role="presentation" class="active"><a class="nav-link" href="#console{{id}}" aria-controls="console{{id}}" role="tab" data-toggle="tab">Console</a></li>
                   </ul>
                   <div class="tab-content">
                     <div role="tabpanel" class="tab-pane graph_container reload" id="graph{{id}}">
@@ -40,22 +39,22 @@
                         <!-- Extracted to force grouped inputs. -->
                         <div class="prometheus_input_group range_input pull-left">
                           <button
-                            class="btn btn-default pull-left"
+                            class="btn btn-light pull-left"
                             type="button"
                             name="dec_range"
                             title="Shrink the time range.">
                             <i class="glyphicon glyphicon-minus"></i>
-                          </button>
-                          <input
+                          </button><!--
+                        --><input
                             class="pull-left input"
                             id="range_input{{id}}"
                             title="Time range of graph"
                             type="text"
                             name="range_input"
                             size="3"
-                            value="{{range_input}}">
-                          <button
-                              class="btn btn-default pull-left"
+                            value="{{range_input}}"><!--
+                        --><button
+                              class="btn btn-light pull-left"
                               type="button"
                               name="inc_range"
                               title="Grow the time range.">
@@ -67,14 +66,14 @@
                         <div class="prometheus_input_group pull-left">
 
                           <button
-                              class="btn btn-default pull-left"
+                              class="btn btn-light pull-left"
                               type="button"
                               name="dec_end"
                               title="Rewind the end time.">
                             <i class="glyphicon glyphicon-backward"></i>
-                          </button>
+                          </button><!--
 
-                          <input
+                       --><input
                               class="pull-left date_input input"
                               id="end{{id}}"
                               title="End time of graph (UTC)"
@@ -83,10 +82,10 @@
                               type="text"
                               name="end_input"
                               size="16"
-                              value="{{end}}">
+                              value="{{end}}"><!--
 
-                          <button
-                              class="btn btn-default pull-left"
+                        --><button
+                              class="btn btn-light pull-left"
                               type="button"
                               name="inc_end"
                               title="Advance the end time.">
@@ -99,7 +98,7 @@
                         </div>
 
                         <div class="prometheus_input_group pull-left">
-                          <button type="button" class="btn btn-default stacked_btn">
+                          <button type="button" class="btn btn-light stacked_btn">
                             <i class="glyphicon"></i> stacked
                           </button>
                           <input type="hidden" name="stacked" value="{{stacked}}">
@@ -115,7 +114,7 @@
                         <div class="prometheus_input_group pull-left">
 
                           <button
-                              class="btn btn-default pull-left"
+                              class="btn btn-light pull-left"
                               type="button"
                               name="dec_moment"
                               title="Rewind the moment.">
@@ -134,7 +133,7 @@
                               value="{{moment}}">
 
                           <button
-                              class="btn btn-default pull-left"
+                              class="btn btn-light pull-left"
                               type="button"
                               name="inc_moment"
                               title="Advance the moment.">
@@ -142,7 +141,7 @@
                           </button>
                         </div>
                       </div>
-                      <table class="table table-condensed table-hover console_table">
+                      <table class="table table-sm table-hover console_table">
                         <thead>
                           <th>Element</th>
                           <th>Value</th>
@@ -156,7 +155,7 @@
                 </div>
               </div>
             </div>
-            <div class="row">
+            <div class="form-row">
               <div class="col-lg-12 text-right">
                     <a name="remove" href="#">Remove Graph</a>
               </div>
