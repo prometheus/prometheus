@@ -4,6 +4,7 @@ require (
 	github.com/cespare/xxhash v1.1.0
 	github.com/dgryski/go-sip13 v0.0.0-20181026042036-e10d5fee7954
 	github.com/go-kit/kit v0.8.0
+	github.com/golang/snappy v0.0.1
 	github.com/oklog/ulid v1.3.1
 	github.com/pkg/errors v0.8.0
 	github.com/prometheus/client_golang v1.0.0

@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -57,6 +58,7 @@ type LiveReader struct {
 	rdr        io.Reader
 	err        error
 	rec        []byte
+	snappyBuf  []byte
 	hdr        [recordHeaderSize]byte
 	buf        [pageSize]byte
 	readIndex  int   // Index in buf to start at for next read.
@@ -171,11 +173,18 @@ func (r *LiveReader) buildRecord() (bool, error) {
 			return false, nil
 		}
 
-		rt := recType(r.hdr[0])
+		rt := recTypeFromHeader(r.hdr[0])
 		if rt == recFirst || rt == recFull {
 			r.rec = r.rec[:0]
+			r.snappyBuf = r.snappyBuf[:0]
 		}
-		r.rec = append(r.rec, temp...)
+
+		compressed := r.hdr[0]&snappyMask != 0
+		if compressed {
+			r.snappyBuf = append(r.snappyBuf, temp...)
+		} else {
+			r.rec = append(r.rec, temp...)
+		}
 
 		if err := validateRecord(rt, r.index); err != nil {
 			r.index = 0
@@ -183,6 +192,16 @@ func (r *LiveReader) buildRecord() (bool, error) {
 		}
 		if rt == recLast || rt == recFull {
 			r.index = 0
+			if compressed && len(r.snappyBuf) > 0 {
+				// The snappy library uses `len` to calculate if we need a new buffer.
+				// In order to allocate as few buffers as possible make the length
+				// equal to the capacity.
+				r.rec = r.rec[:cap(r.rec)]
+				r.rec, err = snappy.Decode(r.rec, r.snappyBuf)
+				if err != nil {
+					return false, err
+				}
+			}
 			return true, nil
 		}
 		// Only increment i for non-zero records since we use it
