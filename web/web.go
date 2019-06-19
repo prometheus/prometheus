@@ -90,6 +90,13 @@ func withStackTracer(h http.Handler, l log.Logger) http.Handler {
 }
 
 var (
+	requestCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_http_requests_total",
+			Help: "Counter of HTTP requests.",
+		},
+		[]string{"handler", "code"},
+	)
 	requestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "prometheus_http_request_duration_seconds",
@@ -109,7 +116,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(requestDuration, responseSize)
+	prometheus.MustRegister(requestCounter, requestDuration, responseSize)
 }
 
 // Handler serves various HTTP endpoints of the Prometheus server
@@ -199,11 +206,14 @@ func instrumentHandlerWithPrefix(prefix string) func(handlerName string, handler
 }
 
 func instrumentHandler(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
-	return promhttp.InstrumentHandlerDuration(
-		requestDuration.MustCurryWith(prometheus.Labels{"handler": handlerName}),
-		promhttp.InstrumentHandlerResponseSize(
-			responseSize.MustCurryWith(prometheus.Labels{"handler": handlerName}),
-			handler,
+	return promhttp.InstrumentHandlerCounter(
+		requestCounter.MustCurryWith(prometheus.Labels{"handler": handlerName}),
+		promhttp.InstrumentHandlerDuration(
+			requestDuration.MustCurryWith(prometheus.Labels{"handler": handlerName}),
+			promhttp.InstrumentHandlerResponseSize(
+				responseSize.MustCurryWith(prometheus.Labels{"handler": handlerName}),
+				handler,
+			),
 		),
 	)
 }
