@@ -37,7 +37,7 @@ class PanelList extends Component<any, PanelListState> {
   }
 
   componentDidMount() {
-    fetch("http://demo.robustperception.io:9090/api/v1/label/__name__/values", {cache: "no-store"})
+    fetch("../../api/v1/label/__name__/values", {cache: "no-store"})
     .then(resp => {
       if (resp.ok) {
         return resp.json();
@@ -49,7 +49,7 @@ class PanelList extends Component<any, PanelListState> {
     .catch(error => this.setState({ fetchMetricsError: error.message }));
 
     const browserTime = new Date().getTime() / 1000;
-    fetch("http://demo.robustperception.io:9090/api/v1/query?query=time()", {cache: "no-store"})
+    fetch("../../api/v1/query?query=time()", {cache: "no-store"})
     .then(resp => {
       if (resp.ok) {
         return resp.json();
@@ -68,7 +68,6 @@ class PanelList extends Component<any, PanelListState> {
     .catch(error => this.setState({ timeDriftError: error.message }));
 
     window.onpopstate = () => {
-      console.log("POPSTATE");
       const panels = decodePanelOptionsFromQueryString(window.location.search);
       if (panels.length !== 0) {
         this.setState({panels: panels});

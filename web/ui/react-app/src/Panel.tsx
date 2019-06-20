@@ -116,18 +116,18 @@ class Panel extends Component<PanelProps, PanelState> {
     this.abortInFlightFetch = () => abortController.abort();
     this.setState({loading: true});
 
-    const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn'T valueof only work when it's a moment?
+    const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueof only work when it's a moment?
     const startTime = endTime - this.props.options.range;
     const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250), 1);
 
-    const url = new URL('http://demo.robustperception.io:9090/');//window.location.href);
+    const url = new URL(window.location.href);
     const params: {[key: string]: string} = {
       'query': expr,
     };
 
     switch (this.props.options.type) {
       case 'graph':
-        url.pathname = '/api/v1/query_range'
+        url.pathname = '../../api/v1/query_range'
         Object.assign(params, {
           start: startTime,
           end: endTime,
@@ -136,7 +136,7 @@ class Panel extends Component<PanelProps, PanelState> {
         // TODO path prefix here and elsewhere.
         break;
       case 'table':
-        url.pathname = '/api/v1/query'
+        url.pathname = '../../api/v1/query'
         Object.assign(params, {
           time: endTime,
         })
