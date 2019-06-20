@@ -23,10 +23,32 @@ message WriteRequest {
   repeated prometheus.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];
 }
 
+// ReadRequest represents remote read request.
 message ReadRequest {
   repeated Query queries = 1;
+
+  enum ResponseType {
+    // Server will return ReadResponse with raw samples.
+    //
+    // Response headers:
+    // Content-Type: "application/x-protobuf"
+    // Content-Encoding: "snappy"
+    SAMPLES = 0;
+
+    // Server will stream varint delimited ChunkedReadResponse message that contains XOR encoded chunks for single series.
+    //
+    // Response headers:
+    // Content-Type: "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"
+    // Content-Encoding: ""
+    STREAMED_XOR_CHUNKS = 1;
+  }
+  // response_type allows negotiating content type of response.
+  // This does not guarantee the returned response. For servers that does not support this field, SAMPLES response type
+  // is used.
+  ResponseType response_type = 2;
 }
 
+// ReadResponse is a response when response_type equals SAMPLES.
 message ReadResponse {
   // In same order as the request's queries.
   repeated QueryResult results = 1;
@@ -42,4 +64,13 @@ message Query {
 message QueryResult {
   // Samples within a time series must be ordered by time.
   repeated prometheus.TimeSeries timeseries = 1;
+}
+
+// ChunkedReadResponse is a response when response_type equals STREAMED_XOR_CHUNKS.
+// We strictly stream full series by series. Single frame can contain partion of the single series.
+message ChunkedReadResponse {
+  repeated prometheus.ChunkedSeries chunked_series = 1;
+
+  // This is used when we have more than one ReadRequest.queries.
+  int64 query_index = 2;
 }
