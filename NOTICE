@@ -85,3 +85,8 @@ go-zookeeper - Native ZooKeeper client for Go
 https://github.com/samuel/go-zookeeper
 Copyright (c) 2013, Samuel Stauffer <samuel@descolada.com>
 See https://github.com/samuel/go-zookeeper/blob/master/LICENSE for license details.
+
+We also include code from a variety of npm packages. For details, see
+https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/package.json
+and
+https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/package-lock.json.
