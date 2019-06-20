@@ -18,8 +18,18 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
+.PHONY: react-app
+react-app:
+	@echo ">> building React app"
+	cd $(PREFIX)/web/ui/react-app && npm install
+	cd $(PREFIX)/web/ui/react-app && PUBLIC_URL=. npm run build
+	rm -rf $(PREFIX)/web/ui/static/graph-new
+	mv $(PREFIX)/web/ui/react-app/build $(PREFIX)/web/ui/static/graph-new
+	# Prevent bad redirect due to Go HTTP router treating index.html specially.
+	mv $(PREFIX)/web/ui/static/graph-new/index.html $(PREFIX)/web/ui/static/graph-new/app.html
+
 .PHONY: assets
-assets:
+assets: react-app
 	@echo ">> writing assets"
 	cd $(PREFIX)/web/ui && GO111MODULE=$(GO111MODULE) $(GO) generate -x -v $(GOOPTS)
 	@$(GOFMT) -w ./web/ui
