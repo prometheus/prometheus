@@ -147,12 +147,13 @@ type API struct {
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 
-	db                    func() TSDBAdmin
-	enableAdmin           bool
-	logger                log.Logger
-	remoteReadSampleLimit int
-	remoteReadGate        *gate.Gate
-	CORSOrigin            *regexp.Regexp
+	db                         func() TSDBAdmin
+	enableAdmin                bool
+	logger                     log.Logger
+	remoteReadSampleLimit      int
+	remoteReadMaxChunksInFrame int
+	remoteReadGate             *gate.Gate
+	CORSOrigin                 *regexp.Regexp
 }
 
 func init() {
@@ -175,6 +176,7 @@ func NewAPI(
 	rr rulesRetriever,
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
+	remoteReadMaxChunksInFrame int,
 	CORSOrigin *regexp.Regexp,
 ) *API {
 	return &API{
@@ -183,17 +185,18 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                   time.Now,
-		config:                configFunc,
-		flagsMap:              flagsMap,
-		ready:                 readyFunc,
-		db:                    db,
-		enableAdmin:           enableAdmin,
-		rulesRetriever:        rr,
-		remoteReadSampleLimit: remoteReadSampleLimit,
-		remoteReadGate:        gate.New(remoteReadConcurrencyLimit),
-		logger:                logger,
-		CORSOrigin:            CORSOrigin,
+		now:                        time.Now,
+		config:                     configFunc,
+		flagsMap:                   flagsMap,
+		ready:                      readyFunc,
+		db:                         db,
+		enableAdmin:                enableAdmin,
+		rulesRetriever:             rr,
+		remoteReadSampleLimit:      remoteReadSampleLimit,
+		remoteReadGate:             gate.New(remoteReadConcurrencyLimit),
+		remoteReadMaxChunksInFrame: remoteReadMaxChunksInFrame,
+		logger:                     logger,
+		CORSOrigin:                 CORSOrigin,
 	}
 }
 
@@ -840,8 +843,23 @@ func (api *API) serveFlags(r *http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
 }
 
+// negotiateResponseType returns first accepted response type that this server supports.
+func negotiateResponseType(accepted []prompb.ReadRequest_ResponseType) prompb.ReadRequest_ResponseType {
+	supported := map[prompb.ReadRequest_ResponseType]struct{}{
+		prompb.ReadRequest_STREAMED_XOR_CHUNKS: {},
+	}
+
+	for _, resType := range accepted {
+		if _, ok := supported[resType]; ok {
+			return resType
+		}
+	}
+	return -1
+}
+
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
-	if err := api.remoteReadGate.Start(r.Context()); err != nil {
+	ctx := r.Context()
+	if err := api.remoteReadGate.Start(ctx); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -856,45 +874,71 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Empty req.AcceptedResponseTypes means non streamed, raw samples response.
-	if len(req.AcceptedResponseTypes) > 0 {
-		http.Error(w, fmt.Sprintf("none of requested response types are implemented: %v", req.AcceptedResponseTypes), http.StatusNotImplemented)
-		return
+	switch negotiateResponseType(req.AcceptedResponseTypes) {
+	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
+		api.streamedChunkedRemoteRead(ctx, w, req)
+	default:
+		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
+		api.sampledRemoteRead(ctx, w, req)
+	}
+}
+
+// filterExtLabelsFromMatchers change equality matchers which match external labels
+// to a matcher that looks for an empty label,
+// as that label should not be present in the storage.
+func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabels map[string]string) ([]*labels.Matcher, error) {
+	matchers, err := remote.FromLabelMatchers(pbMatchers)
+	if err != nil {
+		return nil, err
 	}
 
+	filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
+	for _, m := range matchers {
+		value := externalLabels[m.Name]
+		if m.Type == labels.MatchEqual && value == m.Value {
+			matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
+			if err != nil {
+				return nil, err
+			}
+			filteredMatchers = append(filteredMatchers, matcher)
+		} else {
+			filteredMatchers = append(filteredMatchers, m)
+		}
+	}
+
+	return filteredMatchers, nil
+}
+
+func (api *API) sampledRemoteRead(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest) {
 	resp := prompb.ReadResponse{
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
+	externalLabels := api.config().GlobalConfig.ExternalLabels.Map()
 	for i, query := range req.Queries {
-		from, through, matchers, selectParams, err := remote.FromQuery(query)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		querier, err := api.Queryable.Querier(r.Context(), from, through)
+		filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		defer querier.Close()
 
-		// Change equality matchers which match external labels
-		// to a matcher that looks for an empty label,
-		// as that label should not be present in the storage.
-		externalLabels := api.config().GlobalConfig.ExternalLabels.Map()
-		filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
-		for _, m := range matchers {
-			value := externalLabels[m.Name]
-			if m.Type == labels.MatchEqual && value == m.Value {
-				matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				filteredMatchers = append(filteredMatchers, matcher)
-			} else {
-				filteredMatchers = append(filteredMatchers, m)
+		querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer func() {
+			if err := querier.Close(); err != nil {
+				level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
+			}
+		}()
+
+		var selectParams *storage.SelectParams
+		if query.Hints != nil {
+			selectParams = &storage.SelectParams{
+				Start: query.Hints.StartMs,
+				End:   query.Hints.EndMs,
+				Step:  query.Hints.StepMs,
+				Func:  query.Hints.Func,
 			}
 		}
 
@@ -926,13 +970,89 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		})
 
 		for _, ts := range resp.Results[i].Timeseries {
-			ts.Labels = mergeLabels(ts.Labels, sortedExternalLabels)
+			ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
 		}
 	}
 
 	if err := remote.EncodeReadResponse(&resp, w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+}
+
+func (api *API) streamedChunkedRemoteRead(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest) {
+	externalLabels := api.config().GlobalConfig.ExternalLabels.Map()
+	for i, query := range req.Queries {
+		filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer func() {
+			if err := querier.Close(); err != nil {
+				level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
+			}
+		}()
+
+		var selectParams *storage.SelectParams
+		if query.Hints != nil {
+			selectParams = &storage.SelectParams{
+				Start: query.Hints.StartMs,
+				End:   query.Hints.EndMs,
+				Step:  query.Hints.StepMs,
+				Func:  query.Hints.Func,
+			}
+		}
+
+		// TODO(bwplotka): Change interface / find a way to select chunks.
+		set, _, err := querier.Select(selectParams, filteredMatchers...)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Add external labels back in, in sorted order.
+		sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
+		for name, value := range externalLabels {
+			sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
+				Name:  string(name),
+				Value: string(value),
+			})
+		}
+		sort.Slice(sortedExternalLabels, func(i, j int) bool {
+			return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
+		})
+
+		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+		// TODO(bwplotka): Should we use snappy? benchmark to see.
+		// w.Header().Set("Content-Encoding", "snappy")
+
+		f, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
+			return
+		}
+
+		if err := remote.StreamChunkedReadResponses(
+			remote.NewChunkedWriter(w, f),
+			int64(i),
+			set,
+			sortedExternalLabels,
+			api.remoteReadMaxChunksInFrame,
+		); err != nil {
+			if httpErr, ok := err.(remote.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.Status())
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 }
 
@@ -1071,33 +1191,6 @@ func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 		return tsdbLabels.Not(res)
 	}
 	panic("storage.convertMatcher: invalid matcher type")
-}
-
-// mergeLabels merges two sets of sorted proto labels, preferring those in
-// primary to those in secondary when there is an overlap.
-func mergeLabels(primary, secondary []prompb.Label) []prompb.Label {
-	result := make([]prompb.Label, 0, len(primary)+len(secondary))
-	i, j := 0, 0
-	for i < len(primary) && j < len(secondary) {
-		if primary[i].Name < secondary[j].Name {
-			result = append(result, primary[i])
-			i++
-		} else if primary[i].Name > secondary[j].Name {
-			result = append(result, secondary[j])
-			j++
-		} else {
-			result = append(result, primary[i])
-			i++
-			j++
-		}
-	}
-	for ; i < len(primary); i++ {
-		result = append(result, primary[i])
-	}
-	for ; j < len(secondary); j++ {
-		result = append(result, secondary[j])
-	}
-	return result
 }
 
 func (api *API) respond(w http.ResponseWriter, data interface{}, warnings storage.Warnings) {

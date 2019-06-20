@@ -24,10 +24,10 @@ import (
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/tsdb/chunkenc"
 )
 
 // decodeReadLimit is the maximum size of a read request body in bytes.
@@ -106,25 +106,6 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 	}, nil
 }
 
-// FromQuery unpacks a Query proto.
-func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, *storage.SelectParams, error) {
-	matchers, err := fromLabelMatchers(req.Matchers)
-	if err != nil {
-		return 0, 0, nil, nil, err
-	}
-	var selectParams *storage.SelectParams
-	if req.Hints != nil {
-		selectParams = &storage.SelectParams{
-			Start: req.Hints.StartMs,
-			End:   req.Hints.EndMs,
-			Step:  req.Hints.StepMs,
-			Func:  req.Hints.Func,
-		}
-	}
-
-	return req.StartTimestampMs, req.EndTimestampMs, matchers, selectParams, nil
-}
-
 // ToQueryResult builds a QueryResult proto.
 func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, error) {
 	numSamples := 0
@@ -181,6 +162,156 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 	return &concreteSeriesSet{
 		series: series,
 	}
+}
+
+// StreamChunkedReadResponses iteraties over series, build chunks and streams those to caller.
+// TODO(bwplotka): Encode only what's needed. Fetch the encoded series from blocks instead of rencoding everything.
+func StreamChunkedReadResponses(
+	stream io.Writer,
+	queryIndex int64,
+	ss storage.SeriesSet,
+	sortedExternalLabels []prompb.Label,
+	maxChunksInFrame int,
+) error {
+	var (
+		chks = make([]prompb.Chunk, 0, maxChunksInFrame)
+		err  error
+	)
+
+	for ss.Next() {
+		series := ss.At()
+		iter := series.Iterator()
+		lbls := MergeLabels(labelsToLabelsProto(series.Labels()), sortedExternalLabels)
+
+		for {
+			chks, err = encodeChunks(iter, chks, maxChunksInFrame)
+			if err != nil {
+				return err
+			}
+
+			if len(chks) == 0 {
+				break
+			}
+
+			b, err := proto.Marshal(&prompb.ChunkedReadResponse{
+				// TODO(bwplotka): Do we really need multiple?
+				ChunkedSeries: []*prompb.ChunkedSeries{
+					{
+						Labels: lbls,
+						Chunks: chks,
+					},
+				},
+				QueryIndex: queryIndex,
+			})
+			if err != nil {
+				return errors.Wrap(err, "marshal ChunkedReadResponse")
+			}
+
+			if _, err := stream.Write(b); err != nil {
+				return errors.Wrap(err, "write to stream")
+			}
+
+			chks = chks[:0]
+		}
+
+		if err := iter.Err(); err != nil {
+			return err
+		}
+	}
+	if err := ss.Err(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// encodeChunks expects iterator to be ready to use (aka iter.Next() done before invoking).
+func encodeChunks(iter storage.SeriesIterator, chks []prompb.Chunk, maxChunks int) ([]prompb.Chunk, error) {
+	const maxSamplesInChunk = 120
+
+	var (
+		chkMint int64
+		chkMaxt int64
+		chk     *chunkenc.XORChunk
+		app     chunkenc.Appender
+		err     error
+
+		numSamples = 0
+	)
+
+	for iter.Next() {
+		numSamples++
+
+		if chk == nil {
+			chk = chunkenc.NewXORChunk()
+			app, err = chk.Appender()
+			if err != nil {
+				return nil, err
+			}
+			chkMint, _ = iter.At()
+		}
+
+		app.Append(iter.At())
+		chkMaxt, _ = iter.At()
+
+		if chk.NumSamples() < maxSamplesInChunk {
+			continue
+		}
+
+		// Cut the chunk.
+		chks = append(chks, prompb.Chunk{
+			MinTimeMs: chkMint,
+			MaxTimeMs: chkMaxt,
+			Type:      prompb.Chunk_Encoding(chk.Encoding()),
+			Data:      chk.Bytes(),
+		})
+		chk = nil
+
+		if maxChunks >= len(chks) {
+			break
+		}
+	}
+	if iter.Err() != nil {
+		return nil, errors.Wrap(iter.Err(), "iter TSDB series")
+	}
+
+	if chk != nil {
+		// Cut the chunk if exists.
+		chks = append(chks, prompb.Chunk{
+			MinTimeMs: chkMint,
+			MaxTimeMs: chkMaxt,
+			Type:      prompb.Chunk_Encoding(chk.Encoding()),
+			Data:      chk.Bytes(),
+		})
+	}
+	return chks, nil
+}
+
+// MergeLabels merges two sets of sorted proto labels, preferring those in
+// primary to those in secondary when there is an overlap.
+func MergeLabels(primary, secondary []prompb.Label) []prompb.Label {
+	result := make([]prompb.Label, 0, len(primary)+len(secondary))
+	i, j := 0, 0
+	for i < len(primary) && j < len(secondary) {
+		if primary[i].Name < secondary[j].Name {
+			result = append(result, primary[i])
+			i++
+		} else if primary[i].Name > secondary[j].Name {
+			result = append(result, secondary[j])
+			j++
+		} else {
+			result = append(result, primary[i])
+			i++
+			j++
+		}
+	}
+	for ; i < len(primary); i++ {
+		result = append(result, primary[i])
+	}
+	for ; j < len(secondary); j++ {
+		result = append(result, secondary[j])
+	}
+	return result
 }
 
 type byLabel []storage.Series
@@ -322,7 +453,7 @@ func toLabelMatchers(matchers []*labels.Matcher) ([]*prompb.LabelMatcher, error)
 	return pbMatchers, nil
 }
 
-func fromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, error) {
+func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, error) {
 	result := make([]*labels.Matcher, 0, len(matchers))
 	for _, matcher := range matchers {
 		var mtype labels.MatchType

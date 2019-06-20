@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -381,13 +382,23 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			Results: make([]*prompb.QueryResult, len(req.Queries)),
 		}
 		for i, query := range req.Queries {
-			from, through, matchers, selectParams, err := remote.FromQuery(query)
+			matchers, err := remote.FromLabelMatchers(query.Matchers)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 
-			querier, err := s.Querier(r.Context(), from, through)
+			var selectParams *storage.SelectParams
+			if query.Hints != nil {
+				selectParams = &storage.SelectParams{
+					Start: query.Hints.StartMs,
+					End:   query.Hints.EndMs,
+					Step:  query.Hints.StepMs,
+					Func:  query.Hints.Func,
+				}
+			}
+
+			querier, err := s.Querier(r.Context(), query.StartTimestampMs, query.EndTimestampMs)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -916,19 +927,17 @@ func assertAPIResponse(t *testing.T, got interface{}, exp interface{}) {
 	}
 }
 
-func TestReadEndpoint(t *testing.T) {
+func TestSampledReadEndpoint(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
 			test_metric1{foo="bar",baz="qux"} 1
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
+
 	defer suite.Close()
 
-	if err := suite.Run(); err != nil {
-		t.Fatal(err)
-	}
+	err = suite.Run()
+	testutil.Ok(t, err)
 
 	api := &API{
 		Queryable:   suite.Storage(),
@@ -950,27 +959,22 @@ func TestReadEndpoint(t *testing.T) {
 
 	// Encode the request.
 	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
+
 	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
+
 	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
+
 	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
 	data, err := proto.Marshal(req)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
+
 	compressed := snappy.Encode(nil, data)
 	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
+
 	recorder := httptest.NewRecorder()
 	api.remoteRead(recorder, request)
 
@@ -978,28 +982,25 @@ func TestReadEndpoint(t *testing.T) {
 		t.Fatal(recorder.Code)
 	}
 
+	testutil.Equals(t, "application/x-protobuf", recorder.Result().Header.Get("Content-Type"))
+	testutil.Equals(t, "snappy", recorder.Result().Header.Get("Content-Encoding"))
+
 	// Decode the response.
 	compressed, err = ioutil.ReadAll(recorder.Result().Body)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
+
 	uncompressed, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 
 	var resp prompb.ReadResponse
 	err = proto.Unmarshal(uncompressed, &resp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 
 	if len(resp.Results) != 1 {
 		t.Fatalf("Expected 1 result, got %d", len(resp.Results))
 	}
 
-	result := resp.Results[0]
-	expected := &prompb.QueryResult{
+	testutil.Equals(t, &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
 			{
 				Labels: []prompb.Label{
@@ -1012,10 +1013,148 @@ func TestReadEndpoint(t *testing.T) {
 				Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
 			},
 		},
+	}, resp.Results[0])
+}
+
+// TODO(bwplotka): Extend it with more test cases.
+func TestStreamReadEndpoint(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar",baz="qux"} 1
+            test_metric1{foo="bar2",baz="qux"} 1
+            test_metric1{foo="bar3",baz="qux"} 1
+	`)
+	testutil.Ok(t, err)
+
+	defer suite.Close()
+
+	err = suite.Run()
+	testutil.Ok(t, err)
+
+	api := &API{
+		Queryable:   suite.Storage(),
+		QueryEngine: suite.QueryEngine(),
+		config: func() config.Config {
+			return config.Config{
+				GlobalConfig: config.GlobalConfig{
+					ExternalLabels: labels.Labels{
+						{Name: "baz", Value: "a"},
+						{Name: "b", Value: "c"},
+						{Name: "d", Value: "e"},
+					},
+				},
+			}
+		},
+		remoteReadSampleLimit: 1e6,
+		remoteReadGate:        gate.New(1),
 	}
-	if !reflect.DeepEqual(result, expected) {
-		t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
+
+	// Encode the request.
+	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+	testutil.Ok(t, err)
+
+	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
+	testutil.Ok(t, err)
+
+	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
+	testutil.Ok(t, err)
+
+	req := &prompb.ReadRequest{
+		Queries:               []*prompb.Query{query},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
 	}
+	data, err := proto.Marshal(req)
+	testutil.Ok(t, err)
+
+	compressed := snappy.Encode(nil, data)
+	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+	testutil.Ok(t, err)
+
+	recorder := httptest.NewRecorder()
+	api.remoteRead(recorder, request)
+
+	if recorder.Code/100 != 2 {
+		t.Fatal(recorder.Code)
+	}
+
+	testutil.Equals(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", recorder.Result().Header.Get("Content-Type"))
+	testutil.Equals(t, "", recorder.Result().Header.Get("Content-Encoding"))
+
+	var results []*prompb.ChunkedReadResponse
+	stream := remote.NewChunkedReader(recorder.Result().Body)
+	for {
+		res := &prompb.ChunkedReadResponse{}
+		err := stream.NextProto(res)
+		if err == io.EOF {
+			break
+		}
+		testutil.Ok(t, err)
+		results = append(results, res)
+	}
+
+	if len(results) != 3 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
+	}
+
+	testutil.Equals(t, []*prompb.ChunkedReadResponse{
+		{
+			ChunkedSeries: []*prompb.ChunkedSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric1"},
+						{Name: "b", Value: "c"},
+						{Name: "baz", Value: "qux"},
+						{Name: "d", Value: "e"},
+						{Name: "foo", Value: "bar"},
+					},
+					Chunks: []prompb.Chunk{
+						{
+							Type: prompb.Chunk_XOR,
+							Data: []byte("\000\001\000?\360\000\000\000\000\000\000\000"),
+						},
+					},
+				},
+			},
+		},
+		{
+			ChunkedSeries: []*prompb.ChunkedSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric1"},
+						{Name: "b", Value: "c"},
+						{Name: "baz", Value: "qux"},
+						{Name: "d", Value: "e"},
+						{Name: "foo", Value: "bar2"},
+					},
+					Chunks: []prompb.Chunk{
+						{
+							Type: prompb.Chunk_XOR,
+							Data: []byte("\000\001\000?\360\000\000\000\000\000\000\000"),
+						},
+					},
+				},
+			},
+		},
+		{
+			ChunkedSeries: []*prompb.ChunkedSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric1"},
+						{Name: "b", Value: "c"},
+						{Name: "baz", Value: "qux"},
+						{Name: "d", Value: "e"},
+						{Name: "foo", Value: "bar3"},
+					},
+					Chunks: []prompb.Chunk{
+						{
+							Type: prompb.Chunk_XOR,
+							Data: []byte("\000\001\000?\360\000\000\000\000\000\000\000"),
+						},
+					},
+				},
+			},
+		},
+	}, results)
 }
 
 type fakeDB struct {
