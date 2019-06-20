@@ -853,6 +853,11 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.ResponseType != prompb.ReadRequest_SAMPLES {
+		http.Error(w, fmt.Sprintf("%s response type is not implemented", req.ResponseType.String()), http.StatusNotImplemented)
+		return
+	}
+
 	resp := prompb.ReadResponse{
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
