@@ -856,6 +856,12 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Empty req.AcceptedResponseTypes means non streamed, raw samples response.
+	if len(req.AcceptedResponseTypes) > 0 {
+		http.Error(w, fmt.Sprintf("none of requested response types are implemented: %v", req.AcceptedResponseTypes), http.StatusNotImplemented)
+		return
+	}
+
 	resp := prompb.ReadResponse{
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
