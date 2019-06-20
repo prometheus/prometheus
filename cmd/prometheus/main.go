@@ -123,6 +123,10 @@ func main() {
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
 		},
+		web: web.Options{
+			Registerer: prometheus.DefaultRegisterer,
+			Gatherer:   prometheus.DefaultGatherer,
+		},
 		promlogConfig: promlog.Config{},
 	}
 
