@@ -66,7 +66,7 @@ type Metrics struct {
 	evalFailures        prometheus.Counter
 	evalTotal           prometheus.Counter
 	iterationDuration   prometheus.Summary
-	iterationsMissed    prometheus.Counter
+	iterationsMissed    *prometheus.CounterVec
 	iterationsScheduled prometheus.Counter
 	groupLastEvalTime   *prometheus.GaugeVec
 	groupLastDuration   *prometheus.GaugeVec
@@ -102,16 +102,19 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			Help:       "The duration of rule group evaluations.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		}),
-		iterationsMissed: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "rule_group_iterations_missed_total",
-			Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
-		}),
 		iterationsScheduled: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "rule_group_iterations_total",
 			Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
 		}),
+		iterationsMissed: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_group_iterations_missed_total",
+				Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
+			},
+			[]string{"rule_group"},
+		),
 		groupLastEvalTime: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -317,7 +320,7 @@ func (g *Group) run(ctx context.Context) {
 		case <-tick.C:
 			missed := (time.Since(evalTimestamp) / g.interval) - 1
 			if missed > 0 {
-				g.metrics.iterationsMissed.Add(float64(missed))
+				g.metrics.iterationsMissed.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
 				g.metrics.iterationsScheduled.Add(float64(missed))
 			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
@@ -339,7 +342,7 @@ func (g *Group) run(ctx context.Context) {
 			case <-tick.C:
 				missed := (time.Since(evalTimestamp) / g.interval) - 1
 				if missed > 0 {
-					g.metrics.iterationsMissed.Add(float64(missed))
+					g.metrics.iterationsMissed.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
 					g.metrics.iterationsScheduled.Add(float64(missed))
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
@@ -759,7 +762,7 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.Registerer.MustRegister(m)
 	}
 
-	o.Metrics.iterationsMissed.Inc()
+	o.Metrics.iterationsMissed.WithLabelValues("manager startup").Inc()
 	return m
 }
 
