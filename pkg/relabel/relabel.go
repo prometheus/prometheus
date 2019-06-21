@@ -46,6 +46,8 @@ const (
 	Keep Action = "keep"
 	// Drop drops targets for which the input does match the regex.
 	Drop Action = "drop"
+	// Take takes targets for which the input does match the regex.
+	Take Action = "take"
 	// HashMod sets a label to the modulus of a hash of labels.
 	HashMod Action = "hashmod"
 	// LabelMap copies labels to other labelnames based on a regex.
@@ -181,11 +183,24 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 // If a label set is dropped, nil is returned.
 // May return the input labelSet modified.
 func Process(labels labels.Labels, cfgs ...*Config) labels.Labels {
-	for _, cfg := range cfgs {
-		labels = relabel(labels, cfg)
-		if labels == nil {
+	// make sure config with take action at head of cfgs
+	notTakeIndex := 0
+	for i := 0; i < len(cfgs); i++ {
+		if cfgs[i].Action == Take {
+			cfgs[i], cfgs[notTakeIndex] = cfgs[notTakeIndex], cfgs[i]
+			notTakeIndex += 1
+		}
+	}
+
+	for k, cfg := range cfgs {
+		r := relabel(labels, cfg)
+		if r == nil {
+			if cfg.Action == Take && k < len(cfgs)-1 {
+				continue
+			}
 			return nil
 		}
+		labels = r
 	}
 	return labels
 }
@@ -205,6 +220,7 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 			return nil
 		}
 	case Keep:
+	case Take:
 		if !cfg.Regex.MatchString(val) {
 			return nil
 		}
