@@ -22,7 +22,7 @@
     "jsdom": "^9.6.0",
     "moment": "^2.24.0",
     "moment-timezone": "^0.5.23",
-    "npm": "^6.7.0",
+    "popper.js": "^1.14.3",
     "react": "^16.7.0",
     "react-dom": "^16.7.0",
     "react-resize-detector": "^3.4.0",
