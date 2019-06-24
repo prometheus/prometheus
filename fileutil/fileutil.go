@@ -129,7 +129,7 @@ func Rename(from, to string) error {
 // It is not atomic.
 func Replace(from, to string) error {
 	// Remove destination only if it is a dir otherwise leave it to os.Rename
-	// as it replaces the destination when it is file and is atomic.
+	// as it replaces the destination file and is atomic.
 	{
 		f, err := os.Stat(to)
 		if !os.IsNotExist(err) {
