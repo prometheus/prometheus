@@ -508,6 +508,30 @@ func analyzeBlock(b *tsdb.Block, limit int) {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
+		values, err := ir.LabelValues(n)
+		if err != nil {
+			exitWithError(err)
+		}
+		var cumulativeLength uint64
+
+		for i := 0; i < values.Len(); i++ {
+			value, _ := values.At(i)
+			if err != nil {
+				exitWithError(err)
+			}
+			for _, str := range value {
+				cumulativeLength += uint64(len(str))
+			}
+		}
+
+		postingInfos = append(postingInfos, postingInfo{n, cumulativeLength})
+	}
+
+	fmt.Printf("\nLabel names with highest cumulative label value length:\n")
+	printInfo(postingInfos)
+
+	postingInfos = postingInfos[:0]
+	for _, n := range allLabelNames {
 		lv, err := ir.LabelValues(n)
 		if err != nil {
 			exitWithError(err)

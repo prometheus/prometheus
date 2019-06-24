@@ -310,118 +310,124 @@ func allSegments(dir string) (io.ReadCloser, error) {
 
 func TestReaderFuzz(t *testing.T) {
 	for name, fn := range readerConstructors {
-		t.Run(name, func(t *testing.T) {
+		for _, compress := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
+				dir, err := ioutil.TempDir("", "wal_fuzz_live")
+				testutil.Ok(t, err)
+				defer func() {
+					testutil.Ok(t, os.RemoveAll(dir))
+				}()
+
+				w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
+				testutil.Ok(t, err)
+
+				// Buffering required as we're not reading concurrently.
+				input := make(chan []byte, fuzzLen)
+				err = generateRandomEntries(w, input)
+				testutil.Ok(t, err)
+				close(input)
+
+				err = w.Close()
+				testutil.Ok(t, err)
+
+				sr, err := allSegments(w.Dir())
+				testutil.Ok(t, err)
+				defer sr.Close()
+
+				reader := fn(sr)
+				for expected := range input {
+					testutil.Assert(t, reader.Next(), "expected record: %v", reader.Err())
+					testutil.Equals(t, expected, reader.Record(), "read wrong record")
+				}
+				testutil.Assert(t, !reader.Next(), "unexpected record")
+			})
+		}
+	}
+}
+
+func TestReaderFuzz_Live(t *testing.T) {
+	logger := testutil.NewLogger(t)
+	for _, compress := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "wal_fuzz_live")
 			testutil.Ok(t, err)
 			defer func() {
 				testutil.Ok(t, os.RemoveAll(dir))
 			}()
 
-			w, err := NewSize(nil, nil, dir, 128*pageSize)
+			w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
+			testutil.Ok(t, err)
+			defer w.Close()
+
+			// In the background, generate a stream of random records and write them
+			// to the WAL.
+			input := make(chan []byte, fuzzLen/10) // buffering required as we sometimes batch WAL writes.
+			done := make(chan struct{})
+			go func() {
+				err := generateRandomEntries(w, input)
+				testutil.Ok(t, err)
+				time.Sleep(100 * time.Millisecond)
+				close(done)
+			}()
+
+			// Tail the WAL and compare the results.
+			m, _, err := w.Segments()
 			testutil.Ok(t, err)
 
-			// Buffering required as we're not reading concurrently.
-			input := make(chan []byte, fuzzLen)
-			err = generateRandomEntries(w, input)
-			testutil.Ok(t, err)
-			close(input)
-
-			err = w.Close()
-			testutil.Ok(t, err)
-
-			sr, err := allSegments(w.Dir())
-			testutil.Ok(t, err)
-			defer sr.Close()
-
-			reader := fn(sr)
-			for expected := range input {
-				testutil.Assert(t, reader.Next(), "expected record: %v", reader.Err())
-				testutil.Equals(t, expected, reader.Record(), "read wrong record")
-			}
-			testutil.Assert(t, !reader.Next(), "unexpected record")
-		})
-	}
-}
-
-func TestReaderFuzz_Live(t *testing.T) {
-	logger := testutil.NewLogger(t)
-	dir, err := ioutil.TempDir("", "wal_fuzz_live")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
-
-	w, err := NewSize(nil, nil, dir, 128*pageSize)
-	testutil.Ok(t, err)
-	defer w.Close()
-
-	// In the background, generate a stream of random records and write them
-	// to the WAL.
-	input := make(chan []byte, fuzzLen/10) // buffering required as we sometimes batch WAL writes.
-	done := make(chan struct{})
-	go func() {
-		err := generateRandomEntries(w, input)
-		testutil.Ok(t, err)
-		time.Sleep(100 * time.Millisecond)
-		close(done)
-	}()
-
-	// Tail the WAL and compare the results.
-	m, _, err := w.Segments()
-	testutil.Ok(t, err)
-
-	seg, err := OpenReadSegment(SegmentName(dir, m))
-	testutil.Ok(t, err)
-	defer seg.Close()
-
-	r := NewLiveReader(logger, nil, seg)
-	segmentTicker := time.NewTicker(100 * time.Millisecond)
-	readTicker := time.NewTicker(10 * time.Millisecond)
-
-	readSegment := func(r *LiveReader) bool {
-		for r.Next() {
-			rec := r.Record()
-			expected, ok := <-input
-			testutil.Assert(t, ok, "unexpected record")
-			testutil.Equals(t, expected, rec, "record does not match expected")
-		}
-		testutil.Assert(t, r.Err() == io.EOF, "expected EOF, got: %v", r.Err())
-		return true
-	}
-
-outer:
-	for {
-		select {
-		case <-segmentTicker.C:
-			// check if new segments exist
-			_, last, err := w.Segments()
-			testutil.Ok(t, err)
-			if last <= seg.i {
-				continue
-			}
-
-			// read to end of segment.
-			readSegment(r)
-
-			fi, err := os.Stat(SegmentName(dir, seg.i))
-			testutil.Ok(t, err)
-			testutil.Assert(t, r.Offset() == fi.Size(), "expected to have read whole segment, but read %d of %d", r.Offset(), fi.Size())
-
-			seg, err = OpenReadSegment(SegmentName(dir, seg.i+1))
+			seg, err := OpenReadSegment(SegmentName(dir, m))
 			testutil.Ok(t, err)
 			defer seg.Close()
-			r = NewLiveReader(logger, nil, seg)
 
-		case <-readTicker.C:
-			readSegment(r)
+			r := NewLiveReader(logger, nil, seg)
+			segmentTicker := time.NewTicker(100 * time.Millisecond)
+			readTicker := time.NewTicker(10 * time.Millisecond)
 
-		case <-done:
-			readSegment(r)
-			break outer
-		}
+			readSegment := func(r *LiveReader) bool {
+				for r.Next() {
+					rec := r.Record()
+					expected, ok := <-input
+					testutil.Assert(t, ok, "unexpected record")
+					testutil.Equals(t, expected, rec, "record does not match expected")
+				}
+				testutil.Assert(t, r.Err() == io.EOF, "expected EOF, got: %v", r.Err())
+				return true
+			}
+
+		outer:
+			for {
+				select {
+				case <-segmentTicker.C:
+					// check if new segments exist
+					_, last, err := w.Segments()
+					testutil.Ok(t, err)
+					if last <= seg.i {
+						continue
+					}
+
+					// read to end of segment.
+					readSegment(r)
+
+					fi, err := os.Stat(SegmentName(dir, seg.i))
+					testutil.Ok(t, err)
+					testutil.Assert(t, r.Offset() == fi.Size(), "expected to have read whole segment, but read %d of %d", r.Offset(), fi.Size())
+
+					seg, err = OpenReadSegment(SegmentName(dir, seg.i+1))
+					testutil.Ok(t, err)
+					defer seg.Close()
+					r = NewLiveReader(logger, nil, seg)
+
+				case <-readTicker.C:
+					readSegment(r)
+
+				case <-done:
+					readSegment(r)
+					break outer
+				}
+			}
+
+			testutil.Assert(t, r.Err() == io.EOF, "expected EOF")
+		})
 	}
-
-	testutil.Assert(t, r.Err() == io.EOF, "expected EOF")
 }
 
 func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
@@ -434,7 +440,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 
-	w, err := NewSize(nil, nil, dir, pageSize)
+	w, err := NewSize(nil, nil, dir, pageSize, false)
 	testutil.Ok(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -478,7 +484,7 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 
-	w, err := NewSize(nil, nil, dir, pageSize*2)
+	w, err := NewSize(nil, nil, dir, pageSize*2, false)
 	testutil.Ok(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -525,7 +531,7 @@ func TestReaderData(t *testing.T) {
 
 	for name, fn := range readerConstructors {
 		t.Run(name, func(t *testing.T) {
-			w, err := New(nil, nil, dir)
+			w, err := New(nil, nil, dir, true)
 			testutil.Ok(t, err)
 
 			sr, err := allSegments(dir)

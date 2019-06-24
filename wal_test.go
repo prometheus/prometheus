@@ -459,7 +459,7 @@ func TestMigrateWAL_Empty(t *testing.T) {
 	wdir := path.Join(dir, "wal")
 
 	// Initialize empty WAL.
-	w, err := wal.New(nil, nil, wdir)
+	w, err := wal.New(nil, nil, wdir, false)
 	testutil.Ok(t, err)
 	testutil.Ok(t, w.Close())
 
@@ -506,7 +506,7 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 	// Perform migration.
 	testutil.Ok(t, MigrateWAL(nil, wdir))
 
-	w, err := wal.New(nil, nil, wdir)
+	w, err := wal.New(nil, nil, wdir, false)
 	testutil.Ok(t, err)
 
 	// We can properly write some new data after migration.

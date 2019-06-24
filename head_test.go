@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"fmt"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -96,70 +97,73 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 }
 
 func TestHead_ReadWAL(t *testing.T) {
-	entries := []interface{}{
-		[]RefSeries{
-			{Ref: 10, Labels: labels.FromStrings("a", "1")},
-			{Ref: 11, Labels: labels.FromStrings("a", "2")},
-			{Ref: 100, Labels: labels.FromStrings("a", "3")},
-		},
-		[]RefSample{
-			{Ref: 0, T: 99, V: 1},
-			{Ref: 10, T: 100, V: 2},
-			{Ref: 100, T: 100, V: 3},
-		},
-		[]RefSeries{
-			{Ref: 50, Labels: labels.FromStrings("a", "4")},
-			// This series has two refs pointing to it.
-			{Ref: 101, Labels: labels.FromStrings("a", "3")},
-		},
-		[]RefSample{
-			{Ref: 10, T: 101, V: 5},
-			{Ref: 50, T: 101, V: 6},
-			{Ref: 101, T: 101, V: 7},
-		},
-		[]Stone{
-			{ref: 0, intervals: []Interval{{Mint: 99, Maxt: 101}}},
-		},
+	for _, compress := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			entries := []interface{}{
+				[]RefSeries{
+					{Ref: 10, Labels: labels.FromStrings("a", "1")},
+					{Ref: 11, Labels: labels.FromStrings("a", "2")},
+					{Ref: 100, Labels: labels.FromStrings("a", "3")},
+				},
+				[]RefSample{
+					{Ref: 0, T: 99, V: 1},
+					{Ref: 10, T: 100, V: 2},
+					{Ref: 100, T: 100, V: 3},
+				},
+				[]RefSeries{
+					{Ref: 50, Labels: labels.FromStrings("a", "4")},
+					// This series has two refs pointing to it.
+					{Ref: 101, Labels: labels.FromStrings("a", "3")},
+				},
+				[]RefSample{
+					{Ref: 10, T: 101, V: 5},
+					{Ref: 50, T: 101, V: 6},
+					{Ref: 101, T: 101, V: 7},
+				},
+				[]Stone{
+					{ref: 0, intervals: []Interval{{Mint: 99, Maxt: 101}}},
+				},
+			}
+			dir, err := ioutil.TempDir("", "test_read_wal")
+			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
+
+			w, err := wal.New(nil, nil, dir, compress)
+			testutil.Ok(t, err)
+			defer w.Close()
+			populateTestWAL(t, w, entries)
+
+			head, err := NewHead(nil, nil, w, 1000)
+			testutil.Ok(t, err)
+
+			testutil.Ok(t, head.Init(math.MinInt64))
+			testutil.Equals(t, uint64(101), head.lastSeriesID)
+
+			s10 := head.series.getByID(10)
+			s11 := head.series.getByID(11)
+			s50 := head.series.getByID(50)
+			s100 := head.series.getByID(100)
+
+			testutil.Equals(t, labels.FromStrings("a", "1"), s10.lset)
+			testutil.Equals(t, (*memSeries)(nil), s11) // Series without samples should be garbage colected at head.Init().
+			testutil.Equals(t, labels.FromStrings("a", "4"), s50.lset)
+			testutil.Equals(t, labels.FromStrings("a", "3"), s100.lset)
+
+			expandChunk := func(c chunkenc.Iterator) (x []sample) {
+				for c.Next() {
+					t, v := c.At()
+					x = append(x, sample{t: t, v: v})
+				}
+				testutil.Ok(t, c.Err())
+				return x
+			}
+			testutil.Equals(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0)))
+			testutil.Equals(t, []sample{{101, 6}}, expandChunk(s50.iterator(0)))
+			testutil.Equals(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0)))
+		})
 	}
-	dir, err := ioutil.TempDir("", "test_read_wal")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
-
-	w, err := wal.New(nil, nil, dir)
-	testutil.Ok(t, err)
-	defer w.Close()
-	populateTestWAL(t, w, entries)
-
-	head, err := NewHead(nil, nil, w, 1000)
-	testutil.Ok(t, err)
-
-	testutil.Ok(t, head.Init(math.MinInt64))
-	testutil.Equals(t, uint64(101), head.lastSeriesID)
-
-	s10 := head.series.getByID(10)
-	s11 := head.series.getByID(11)
-	s50 := head.series.getByID(50)
-	s100 := head.series.getByID(100)
-
-	testutil.Equals(t, labels.FromStrings("a", "1"), s10.lset)
-	testutil.Equals(t, (*memSeries)(nil), s11) // Series without samples should be garbage colected at head.Init().
-	testutil.Equals(t, labels.FromStrings("a", "4"), s50.lset)
-	testutil.Equals(t, labels.FromStrings("a", "3"), s100.lset)
-
-	expandChunk := func(c chunkenc.Iterator) (x []sample) {
-		for c.Next() {
-			t, v := c.At()
-			x = append(x, sample{t: t, v: v})
-		}
-		testutil.Ok(t, c.Err())
-		return x
-	}
-
-	testutil.Equals(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0)))
-	testutil.Equals(t, []sample{{101, 6}}, expandChunk(s50.iterator(0)))
-	testutil.Equals(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0)))
 }
 
 func TestHead_WALMultiRef(t *testing.T) {
@@ -169,7 +173,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 
-	w, err := wal.New(nil, nil, dir)
+	w, err := wal.New(nil, nil, dir, false)
 	testutil.Ok(t, err)
 
 	head, err := NewHead(nil, nil, w, 1000)
@@ -193,7 +197,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	}
 	testutil.Ok(t, head.Close())
 
-	w, err = wal.New(nil, nil, dir)
+	w, err = wal.New(nil, nil, dir, false)
 	testutil.Ok(t, err)
 
 	head, err = NewHead(nil, nil, w, 1000)
@@ -319,36 +323,40 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
-	entries := []interface{}{
-		[]RefSeries{
-			{Ref: 10, Labels: labels.FromStrings("a", "1")},
-		},
-		[]RefSample{},
-		[]RefSeries{
-			{Ref: 50, Labels: labels.FromStrings("a", "2")},
-		},
-		[]RefSample{
-			{Ref: 50, T: 80, V: 1},
-			{Ref: 50, T: 90, V: 1},
-		},
+	for _, compress := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			entries := []interface{}{
+				[]RefSeries{
+					{Ref: 10, Labels: labels.FromStrings("a", "1")},
+				},
+				[]RefSample{},
+				[]RefSeries{
+					{Ref: 50, Labels: labels.FromStrings("a", "2")},
+				},
+				[]RefSample{
+					{Ref: 50, T: 80, V: 1},
+					{Ref: 50, T: 90, V: 1},
+				},
+			}
+			dir, err := ioutil.TempDir("", "test_delete_series")
+			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
+
+			w, err := wal.New(nil, nil, dir, compress)
+			testutil.Ok(t, err)
+			defer w.Close()
+			populateTestWAL(t, w, entries)
+
+			head, err := NewHead(nil, nil, w, 1000)
+			testutil.Ok(t, err)
+
+			testutil.Ok(t, head.Init(math.MinInt64))
+
+			testutil.Ok(t, head.Delete(0, 100, labels.NewEqualMatcher("a", "1")))
+		})
 	}
-	dir, err := ioutil.TempDir("", "test_delete_series")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
-
-	w, err := wal.New(nil, nil, dir)
-	testutil.Ok(t, err)
-	defer w.Close()
-	populateTestWAL(t, w, entries)
-
-	head, err := NewHead(nil, nil, w, 1000)
-	testutil.Ok(t, err)
-
-	testutil.Ok(t, head.Init(math.MinInt64))
-
-	testutil.Ok(t, head.Delete(0, 100, labels.NewEqualMatcher("a", "1")))
 }
 
 func TestHeadDeleteSimple(t *testing.T) {
@@ -388,129 +396,133 @@ func TestHeadDeleteSimple(t *testing.T) {
 		},
 	}
 
-Outer:
-	for _, c := range cases {
-		dir, err := ioutil.TempDir("", "test_wal_reload")
-		testutil.Ok(t, err)
-		defer func() {
-			testutil.Ok(t, os.RemoveAll(dir))
-		}()
-
-		w, err := wal.New(nil, nil, path.Join(dir, "wal"))
-		testutil.Ok(t, err)
-		defer w.Close()
-
-		head, err := NewHead(nil, nil, w, 1000)
-		testutil.Ok(t, err)
-		defer head.Close()
-
-		app := head.Appender()
-		for _, smpl := range smplsAll {
-			_, err = app.Add(labels.Labels{lblDefault}, smpl.t, smpl.v)
-			testutil.Ok(t, err)
-
-		}
-		testutil.Ok(t, app.Commit())
-
-		// Delete the ranges.
-		for _, r := range c.dranges {
-			testutil.Ok(t, head.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher(lblDefault.Name, lblDefault.Value)))
-		}
-
-		// Compare the samples for both heads - before and after the reload.
-		reloadedW, err := wal.New(nil, nil, w.Dir()) // Use a new wal to ensure deleted samples are gone even after a reload.
-		testutil.Ok(t, err)
-		defer reloadedW.Close()
-		reloadedHead, err := NewHead(nil, nil, reloadedW, 1000)
-		testutil.Ok(t, err)
-		defer reloadedHead.Close()
-		testutil.Ok(t, reloadedHead.Init(0))
-		for _, h := range []*Head{head, reloadedHead} {
-			indexr, err := h.Index()
-			testutil.Ok(t, err)
-			// Use an emptyTombstoneReader explicitly to get all the samples.
-			css, err := LookupChunkSeries(indexr, emptyTombstoneReader, labels.NewEqualMatcher(lblDefault.Name, lblDefault.Value))
-			testutil.Ok(t, err)
-
-			// Getting the actual samples.
-			actSamples := make([]sample, 0)
-			for css.Next() {
-				lblsAct, chkMetas, intv := css.At()
-				testutil.Equals(t, labels.Labels{lblDefault}, lblsAct)
-				testutil.Equals(t, 0, len(intv))
-
-				chunkr, err := h.Chunks()
+	for _, compress := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+		Outer:
+			for _, c := range cases {
+				dir, err := ioutil.TempDir("", "test_wal_reload")
 				testutil.Ok(t, err)
-				for _, meta := range chkMetas {
-					chk, err := chunkr.Chunk(meta.Ref)
+				defer func() {
+					testutil.Ok(t, os.RemoveAll(dir))
+				}()
+
+				w, err := wal.New(nil, nil, path.Join(dir, "wal"), compress)
+				testutil.Ok(t, err)
+				defer w.Close()
+
+				head, err := NewHead(nil, nil, w, 1000)
+				testutil.Ok(t, err)
+				defer head.Close()
+
+				app := head.Appender()
+				for _, smpl := range smplsAll {
+					_, err = app.Add(labels.Labels{lblDefault}, smpl.t, smpl.v)
 					testutil.Ok(t, err)
-					ii := chk.Iterator()
-					for ii.Next() {
-						t, v := ii.At()
-						actSamples = append(actSamples, sample{t: t, v: v})
+
+				}
+				testutil.Ok(t, app.Commit())
+
+				// Delete the ranges.
+				for _, r := range c.dranges {
+					testutil.Ok(t, head.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher(lblDefault.Name, lblDefault.Value)))
+				}
+
+				// Compare the samples for both heads - before and after the reload.
+				reloadedW, err := wal.New(nil, nil, w.Dir(), compress) // Use a new wal to ensure deleted samples are gone even after a reload.
+				testutil.Ok(t, err)
+				defer reloadedW.Close()
+				reloadedHead, err := NewHead(nil, nil, reloadedW, 1000)
+				testutil.Ok(t, err)
+				defer reloadedHead.Close()
+				testutil.Ok(t, reloadedHead.Init(0))
+				for _, h := range []*Head{head, reloadedHead} {
+					indexr, err := h.Index()
+					testutil.Ok(t, err)
+					// Use an emptyTombstoneReader explicitly to get all the samples.
+					css, err := LookupChunkSeries(indexr, emptyTombstoneReader, labels.NewEqualMatcher(lblDefault.Name, lblDefault.Value))
+					testutil.Ok(t, err)
+
+					// Getting the actual samples.
+					actSamples := make([]sample, 0)
+					for css.Next() {
+						lblsAct, chkMetas, intv := css.At()
+						testutil.Equals(t, labels.Labels{lblDefault}, lblsAct)
+						testutil.Equals(t, 0, len(intv))
+
+						chunkr, err := h.Chunks()
+						testutil.Ok(t, err)
+						for _, meta := range chkMetas {
+							chk, err := chunkr.Chunk(meta.Ref)
+							testutil.Ok(t, err)
+							ii := chk.Iterator()
+							for ii.Next() {
+								t, v := ii.At()
+								actSamples = append(actSamples, sample{t: t, v: v})
+							}
+						}
+					}
+
+					testutil.Ok(t, css.Err())
+					testutil.Equals(t, c.smplsExp, actSamples)
+				}
+
+				// Compare the query results for both heads - before and after the reload.
+				expSeriesSet := newMockSeriesSet([]Series{
+					newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
+						ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
+						for _, s := range c.smplsExp {
+							ss = append(ss, s)
+						}
+						return ss
+					}(),
+					),
+				})
+				for _, h := range []*Head{head, reloadedHead} {
+					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
+					testutil.Ok(t, err)
+					actSeriesSet, err := q.Select(labels.NewEqualMatcher(lblDefault.Name, lblDefault.Value))
+					testutil.Ok(t, err)
+
+					lns, err := q.LabelNames()
+					testutil.Ok(t, err)
+					lvs, err := q.LabelValues(lblDefault.Name)
+					testutil.Ok(t, err)
+					// When all samples are deleted we expect that no labels should exist either.
+					if len(c.smplsExp) == 0 {
+						testutil.Equals(t, 0, len(lns))
+						testutil.Equals(t, 0, len(lvs))
+						testutil.Assert(t, actSeriesSet.Next() == false, "")
+						testutil.Ok(t, h.Close())
+						continue
+					} else {
+						testutil.Equals(t, 1, len(lns))
+						testutil.Equals(t, 1, len(lvs))
+						testutil.Equals(t, lblDefault.Name, lns[0])
+						testutil.Equals(t, lblDefault.Value, lvs[0])
+					}
+
+					for {
+						eok, rok := expSeriesSet.Next(), actSeriesSet.Next()
+						testutil.Equals(t, eok, rok)
+
+						if !eok {
+							testutil.Ok(t, h.Close())
+							continue Outer
+						}
+						expSeries := expSeriesSet.At()
+						actSeries := actSeriesSet.At()
+
+						testutil.Equals(t, expSeries.Labels(), actSeries.Labels())
+
+						smplExp, errExp := expandSeriesIterator(expSeries.Iterator())
+						smplRes, errRes := expandSeriesIterator(actSeries.Iterator())
+
+						testutil.Equals(t, errExp, errRes)
+						testutil.Equals(t, smplExp, smplRes)
 					}
 				}
 			}
-
-			testutil.Ok(t, css.Err())
-			testutil.Equals(t, c.smplsExp, actSamples)
-		}
-
-		// Compare the query results for both heads - before and after the reload.
-		expSeriesSet := newMockSeriesSet([]Series{
-			newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
-				ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
-				for _, s := range c.smplsExp {
-					ss = append(ss, s)
-				}
-				return ss
-			}(),
-			),
 		})
-		for _, h := range []*Head{head, reloadedHead} {
-			q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
-			testutil.Ok(t, err)
-			actSeriesSet, err := q.Select(labels.NewEqualMatcher(lblDefault.Name, lblDefault.Value))
-			testutil.Ok(t, err)
-
-			lns, err := q.LabelNames()
-			testutil.Ok(t, err)
-			lvs, err := q.LabelValues(lblDefault.Name)
-			testutil.Ok(t, err)
-			// When all samples are deleted we expect that no labels should exist either.
-			if len(c.smplsExp) == 0 {
-				testutil.Equals(t, 0, len(lns))
-				testutil.Equals(t, 0, len(lvs))
-				testutil.Assert(t, actSeriesSet.Next() == false, "")
-				testutil.Ok(t, h.Close())
-				continue
-			} else {
-				testutil.Equals(t, 1, len(lns))
-				testutil.Equals(t, 1, len(lvs))
-				testutil.Equals(t, lblDefault.Name, lns[0])
-				testutil.Equals(t, lblDefault.Value, lvs[0])
-			}
-
-			for {
-				eok, rok := expSeriesSet.Next(), actSeriesSet.Next()
-				testutil.Equals(t, eok, rok)
-
-				if !eok {
-					testutil.Ok(t, h.Close())
-					continue Outer
-				}
-				expSeries := expSeriesSet.At()
-				actSeries := actSeriesSet.At()
-
-				testutil.Equals(t, expSeries.Labels(), actSeries.Labels())
-
-				smplExp, errExp := expandSeriesIterator(expSeries.Iterator())
-				smplRes, errRes := expandSeriesIterator(actSeries.Iterator())
-
-				testutil.Equals(t, errExp, errRes)
-				testutil.Equals(t, smplExp, smplRes)
-			}
-		}
 	}
 }
 
@@ -559,7 +571,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
-	wlog, err := wal.NewSize(nil, nil, dir, 32768)
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
 	testutil.Ok(t, err)
 
 	// Enough samples to cause a checkpoint.
@@ -1019,30 +1031,34 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 }
 
 func TestHead_LogRollback(t *testing.T) {
-	dir, err := ioutil.TempDir("", "wal_rollback")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	for _, compress := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			dir, err := ioutil.TempDir("", "wal_rollback")
+			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
-	w, err := wal.New(nil, nil, dir)
-	testutil.Ok(t, err)
-	defer w.Close()
-	h, err := NewHead(nil, nil, w, 1000)
-	testutil.Ok(t, err)
+			w, err := wal.New(nil, nil, dir, compress)
+			testutil.Ok(t, err)
+			defer w.Close()
+			h, err := NewHead(nil, nil, w, 1000)
+			testutil.Ok(t, err)
 
-	app := h.Appender()
-	_, err = app.Add(labels.FromStrings("a", "b"), 1, 2)
-	testutil.Ok(t, err)
+			app := h.Appender()
+			_, err = app.Add(labels.FromStrings("a", "b"), 1, 2)
+			testutil.Ok(t, err)
 
-	testutil.Ok(t, app.Rollback())
-	recs := readTestWAL(t, w.Dir())
+			testutil.Ok(t, app.Rollback())
+			recs := readTestWAL(t, w.Dir())
 
-	testutil.Equals(t, 1, len(recs))
+			testutil.Equals(t, 1, len(recs))
 
-	series, ok := recs[0].([]RefSeries)
-	testutil.Assert(t, ok, "expected series record but got %+v", recs[0])
-	testutil.Equals(t, []RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, series)
+			series, ok := recs[0].([]RefSeries)
+			testutil.Assert(t, ok, "expected series record but got %+v", recs[0])
+			testutil.Equals(t, []RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, series)
+		})
+	}
 }
 
 // TestWalRepair_DecodingError ensures that a repair is run for an error
@@ -1057,8 +1073,11 @@ func TestWalRepair_DecodingError(t *testing.T) {
 	}{
 		"invalid_record": {
 			func(rec []byte) []byte {
-				rec[0] = byte(RecordInvalid)
-				return rec
+				// Do not modify the base record because it is Logged multiple times.
+				res := make([]byte, len(rec))
+				copy(res, rec)
+				res[0] = byte(RecordInvalid)
+				return res
 			},
 			enc.Series([]RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, []byte{}),
 			9,
@@ -1089,65 +1108,66 @@ func TestWalRepair_DecodingError(t *testing.T) {
 			5,
 		},
 	} {
-		t.Run(name, func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "wal_repair")
-			testutil.Ok(t, err)
-			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
-			}()
-
-			// Fill the wal and corrupt it.
-			{
-				w, err := wal.New(nil, nil, filepath.Join(dir, "wal"))
-				testutil.Ok(t, err)
-
-				for i := 1; i <= test.totalRecs; i++ {
-					// At this point insert a corrupted record.
-					if i-1 == test.expRecs {
-						testutil.Ok(t, w.Log(test.corrFunc(test.rec)))
-						continue
-					}
-					testutil.Ok(t, w.Log(test.rec))
-				}
-
-				h, err := NewHead(nil, nil, w, 1)
-				testutil.Ok(t, err)
-				testutil.Equals(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
-				initErr := h.Init(math.MinInt64)
-
-				err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
-				_, corrErr := err.(*wal.CorruptionErr)
-				testutil.Assert(t, corrErr, "reading the wal didn't return corruption error")
-				testutil.Ok(t, w.Close())
-			}
-
-			// Open the db to trigger a repair.
-			{
-				db, err := Open(dir, nil, nil, DefaultOptions)
+		for _, compress := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
+				dir, err := ioutil.TempDir("", "wal_repair")
 				testutil.Ok(t, err)
 				defer func() {
-					testutil.Ok(t, db.Close())
+					testutil.Ok(t, os.RemoveAll(dir))
 				}()
-				testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
-			}
 
-			// Read the wal content after the repair.
-			{
-				sr, err := wal.NewSegmentsReader(filepath.Join(dir, "wal"))
-				testutil.Ok(t, err)
-				defer sr.Close()
-				r := wal.NewReader(sr)
+				// Fill the wal and corrupt it.
+				{
+					w, err := wal.New(nil, nil, filepath.Join(dir, "wal"), compress)
+					testutil.Ok(t, err)
 
-				var actRec int
-				for r.Next() {
-					actRec++
+					for i := 1; i <= test.totalRecs; i++ {
+						// At this point insert a corrupted record.
+						if i-1 == test.expRecs {
+							testutil.Ok(t, w.Log(test.corrFunc(test.rec)))
+							continue
+						}
+						testutil.Ok(t, w.Log(test.rec))
+					}
+
+					h, err := NewHead(nil, nil, w, 1)
+					testutil.Ok(t, err)
+					testutil.Equals(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
+					initErr := h.Init(math.MinInt64)
+
+					err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
+					_, corrErr := err.(*wal.CorruptionErr)
+					testutil.Assert(t, corrErr, "reading the wal didn't return corruption error")
+					testutil.Ok(t, w.Close())
 				}
-				testutil.Ok(t, r.Err())
-				testutil.Equals(t, test.expRecs, actRec, "Wrong number of intact records")
-			}
-		})
-	}
 
+				// Open the db to trigger a repair.
+				{
+					db, err := Open(dir, nil, nil, DefaultOptions)
+					testutil.Ok(t, err)
+					defer func() {
+						testutil.Ok(t, db.Close())
+					}()
+					testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+				}
+
+				// Read the wal content after the repair.
+				{
+					sr, err := wal.NewSegmentsReader(filepath.Join(dir, "wal"))
+					testutil.Ok(t, err)
+					defer sr.Close()
+					r := wal.NewReader(sr)
+
+					var actRec int
+					for r.Next() {
+						actRec++
+					}
+					testutil.Ok(t, r.Err())
+					testutil.Equals(t, test.expRecs, actRec, "Wrong number of intact records")
+				}
+			})
+		}
+	}
 }
 
 func TestNewWalSegmentOnTruncate(t *testing.T) {
@@ -1156,7 +1176,7 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
-	wlog, err := wal.NewSize(nil, nil, dir, 32768)
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
 	testutil.Ok(t, err)
 
 	h, err := NewHead(nil, nil, wlog, 1000)

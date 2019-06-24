@@ -120,7 +120,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			// then corrupt a given record in a given segment.
 			// As a result we want a repaired WAL with given intact records.
 			segSize := 3 * pageSize
-			w, err := NewSize(nil, nil, dir, segSize)
+			w, err := NewSize(nil, nil, dir, segSize, false)
 			testutil.Ok(t, err)
 
 			var records [][]byte
@@ -145,7 +145,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 
 			testutil.Ok(t, f.Close())
 
-			w, err = NewSize(nil, nil, dir, segSize)
+			w, err = NewSize(nil, nil, dir, segSize, false)
 			testutil.Ok(t, err)
 			defer w.Close()
 
@@ -223,7 +223,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 	// Produce a WAL with a two segments of 3 pages with 3 records each,
 	// so when we truncate the file we're guaranteed to split a record.
 	{
-		w, err := NewSize(logger, nil, dir, segmentSize)
+		w, err := NewSize(logger, nil, dir, segmentSize, false)
 		testutil.Ok(t, err)
 
 		for i := 0; i < 18; i++ {
@@ -294,7 +294,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		err = sr.Close()
 		testutil.Ok(t, err)
 
-		w, err := NewSize(logger, nil, dir, segmentSize)
+		w, err := NewSize(logger, nil, dir, segmentSize, false)
 		testutil.Ok(t, err)
 
 		err = w.Repair(corruptionErr)
@@ -341,7 +341,7 @@ func TestClose(t *testing.T) {
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
-	w, err := NewSize(nil, nil, dir, pageSize)
+	w, err := NewSize(nil, nil, dir, pageSize, false)
 	testutil.Ok(t, err)
 	testutil.Ok(t, w.Close())
 	testutil.NotOk(t, w.Close())
@@ -358,7 +358,7 @@ func TestSegmentMetric(t *testing.T) {
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
-	w, err := NewSize(nil, nil, dir, segmentSize)
+	w, err := NewSize(nil, nil, dir, segmentSize, false)
 	testutil.Ok(t, err)
 
 	initialSegment := client_testutil.ToFloat64(w.currentSegment)
@@ -376,56 +376,104 @@ func TestSegmentMetric(t *testing.T) {
 	testutil.Ok(t, w.Close())
 }
 
-func BenchmarkWAL_LogBatched(b *testing.B) {
-	dir, err := ioutil.TempDir("", "bench_logbatch")
-	testutil.Ok(b, err)
+func TestCompression(t *testing.T) {
+	boostrap := func(compressed bool) string {
+		const (
+			segmentSize = pageSize
+			recordSize  = (pageSize / 2) - recordHeaderSize
+			records     = 100
+		)
+
+		dirPath, err := ioutil.TempDir("", fmt.Sprintf("TestCompression_%t", compressed))
+		testutil.Ok(t, err)
+
+		w, err := NewSize(nil, nil, dirPath, segmentSize, compressed)
+		testutil.Ok(t, err)
+
+		buf := make([]byte, recordSize)
+		for i := 0; i < records; i++ {
+			testutil.Ok(t, w.Log(buf))
+		}
+		testutil.Ok(t, w.Close())
+
+		return dirPath
+	}
+
+	dirCompressed := boostrap(true)
 	defer func() {
-		testutil.Ok(b, os.RemoveAll(dir))
+		testutil.Ok(t, os.RemoveAll(dirCompressed))
+	}()
+	dirUnCompressed := boostrap(false)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dirUnCompressed))
 	}()
 
-	w, err := New(nil, nil, "testdir")
-	testutil.Ok(b, err)
-	defer w.Close()
+	uncompressedSize, err := testutil.DirSize(dirUnCompressed)
+	testutil.Ok(t, err)
+	compressedSize, err := testutil.DirSize(dirCompressed)
+	testutil.Ok(t, err)
 
-	var buf [2048]byte
-	var recs [][]byte
-	b.SetBytes(2048)
+	testutil.Assert(t, float64(uncompressedSize)*0.75 > float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
+}
 
-	for i := 0; i < b.N; i++ {
-		recs = append(recs, buf[:])
-		if len(recs) < 1000 {
-			continue
-		}
-		err := w.Log(recs...)
-		testutil.Ok(b, err)
-		recs = recs[:0]
+func BenchmarkWAL_LogBatched(b *testing.B) {
+	for _, compress := range []bool{true, false} {
+		b.Run(fmt.Sprintf("compress=%t", compress), func(b *testing.B) {
+			dir, err := ioutil.TempDir("", "bench_logbatch")
+			testutil.Ok(b, err)
+			defer func() {
+				testutil.Ok(b, os.RemoveAll(dir))
+			}()
+
+			w, err := New(nil, nil, dir, compress)
+			testutil.Ok(b, err)
+			defer w.Close()
+
+			var buf [2048]byte
+			var recs [][]byte
+			b.SetBytes(2048)
+
+			for i := 0; i < b.N; i++ {
+				recs = append(recs, buf[:])
+				if len(recs) < 1000 {
+					continue
+				}
+				err := w.Log(recs...)
+				testutil.Ok(b, err)
+				recs = recs[:0]
+			}
+			// Stop timer to not count fsync time on close.
+			// If it's counted batched vs. single benchmarks are very similar but
+			// do not show burst throughput well.
+			b.StopTimer()
+		})
 	}
-	// Stop timer to not count fsync time on close.
-	// If it's counted batched vs. single benchmarks are very similar but
-	// do not show burst throughput well.
-	b.StopTimer()
 }
 
 func BenchmarkWAL_Log(b *testing.B) {
-	dir, err := ioutil.TempDir("", "bench_logsingle")
-	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(dir))
-	}()
+	for _, compress := range []bool{true, false} {
+		b.Run(fmt.Sprintf("compress=%t", compress), func(b *testing.B) {
+			dir, err := ioutil.TempDir("", "bench_logsingle")
+			testutil.Ok(b, err)
+			defer func() {
+				testutil.Ok(b, os.RemoveAll(dir))
+			}()
 
-	w, err := New(nil, nil, "testdir")
-	testutil.Ok(b, err)
-	defer w.Close()
+			w, err := New(nil, nil, dir, compress)
+			testutil.Ok(b, err)
+			defer w.Close()
 
-	var buf [2048]byte
-	b.SetBytes(2048)
+			var buf [2048]byte
+			b.SetBytes(2048)
 
-	for i := 0; i < b.N; i++ {
-		err := w.Log(buf[:])
-		testutil.Ok(b, err)
+			for i := 0; i < b.N; i++ {
+				err := w.Log(buf[:])
+				testutil.Ok(b, err)
+			}
+			// Stop timer to not count fsync time on close.
+			// If it's counted batched vs. single benchmarks are very similar but
+			// do not show burst throughput well.
+			b.StopTimer()
+		})
 	}
-	// Stop timer to not count fsync time on close.
-	// If it's counted batched vs. single benchmarks are very similar but
-	// do not show burst throughput well.
-	b.StopTimer()
 }
