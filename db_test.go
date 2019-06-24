@@ -100,9 +100,6 @@ func TestDB_reloadOrder(t *testing.T) {
 
 	testutil.Ok(t, db.reload())
 	blocks := db.Blocks()
-	for _, b := range blocks {
-		b.meta.Stats.NumBytes = 0
-	}
 	testutil.Equals(t, 3, len(blocks))
 	testutil.Equals(t, metas[1].MinTime, blocks[0].Meta().MinTime)
 	testutil.Equals(t, metas[1].MaxTime, blocks[0].Meta().MaxTime)
@@ -1060,7 +1057,8 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Ok(t, db.reload())                                       // Reload the db to register the new db size.
 	testutil.Equals(t, len(blocks), len(db.Blocks()))                 // Ensure all blocks are registered.
 	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
-	actSize := dbDiskSize(db.Dir())
+	actSize, err := testutil.DirSize(db.Dir())
+	testutil.Ok(t, err)
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 	// Decrease the max bytes limit so that a delete is triggered.
@@ -1074,7 +1072,8 @@ func TestSizeRetention(t *testing.T) {
 	actBlocks := db.Blocks()
 	expSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
 	actRetentCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
-	actSize = dbDiskSize(db.Dir())
+	actSize, err = testutil.DirSize(db.Dir())
+	testutil.Ok(t, err)
 
 	testutil.Equals(t, 1, actRetentCount, "metric retention count mismatch")
 	testutil.Equals(t, actSize, expSize, "metric db size doesn't match actual disk size")
@@ -1083,20 +1082,6 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Equals(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime, "maxT mismatch of the first block")
 	testutil.Equals(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime, "maxT mismatch of the last block")
 
-}
-
-func dbDiskSize(dir string) int64 {
-	var statSize int64
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		// Include only index,tombstone and chunks.
-		if filepath.Dir(path) == chunkDir(filepath.Dir(filepath.Dir(path))) ||
-			info.Name() == indexFilename ||
-			info.Name() == tombstoneFilename {
-			statSize += info.Size()
-		}
-		return nil
-	})
-	return statSize
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {

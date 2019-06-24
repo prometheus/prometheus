@@ -629,7 +629,7 @@ func (db *DB) openBlocks() (blocks []*Block, corrupted map[ulid.ULID]error, err 
 
 	corrupted = make(map[ulid.ULID]error)
 	for _, dir := range dirs {
-		meta, err := readMetaFile(dir)
+		meta, _, err := readMetaFile(dir)
 		if err != nil {
 			level.Error(db.logger).Log("msg", "not a block dir", "dir", dir)
 			continue

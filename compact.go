@@ -178,7 +178,7 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 
 	var dms []dirMeta
 	for _, dir := range dirs {
-		meta, err := readMetaFile(dir)
+		meta, _, err := readMetaFile(dir)
 		if err != nil {
 			return nil, err
 		}
@@ -380,7 +380,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 	start := time.Now()
 
 	for _, d := range dirs {
-		meta, err := readMetaFile(d)
+		meta, _, err := readMetaFile(d)
 		if err != nil {
 			return uid, err
 		}
@@ -420,12 +420,14 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		if meta.Stats.NumSamples == 0 {
 			for _, b := range bs {
 				b.meta.Compaction.Deletable = true
-				if err = writeMetaFile(c.logger, b.dir, &b.meta); err != nil {
+				n, err := writeMetaFile(c.logger, b.dir, &b.meta)
+				if err != nil {
 					level.Error(c.logger).Log(
 						"msg", "Failed to write 'Deletable' to meta file after compaction",
 						"ulid", b.meta.ULID,
 					)
 				}
+				b.numBytesMeta = n
 			}
 			uid = ulid.ULID{}
 			level.Info(c.logger).Log(
@@ -600,12 +602,12 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		return nil
 	}
 
-	if err = writeMetaFile(c.logger, tmp, meta); err != nil {
+	if _, err = writeMetaFile(c.logger, tmp, meta); err != nil {
 		return errors.Wrap(err, "write merged meta")
 	}
 
 	// Create an empty tombstones file.
-	if err := writeTombstoneFile(c.logger, tmp, newMemTombstones()); err != nil {
+	if _, err := writeTombstoneFile(c.logger, tmp, newMemTombstones()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
 
