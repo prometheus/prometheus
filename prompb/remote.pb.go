@@ -26,13 +26,13 @@ const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 type ReadRequest_ResponseType int32
 
 const (
-	// Server will return ReadResponse with raw samples.
+	// Server will return a ReadResponse with raw samples.
 	//
 	// Response headers:
 	// Content-Type: "application/x-protobuf"
 	// Content-Encoding: "snappy"
 	ReadRequest_SAMPLES ReadRequest_ResponseType = 0
-	// Server will stream varint delimited ChunkedReadResponse message that contains XOR encoded chunks for single series.
+	// Server will stream a varint delimited ChunkedReadResponse message that contains XOR encoded chunks for a single series.
 	//
 	// Response headers:
 	// Content-Type: "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"
@@ -105,11 +105,11 @@ func (m *WriteRequest) GetTimeseries() []TimeSeries {
 	return nil
 }
 
-// ReadRequest represents remote read request.
+// ReadRequest represents a remote read request.
 type ReadRequest struct {
 	Queries []*Query `protobuf:"bytes,1,rep,name=queries,proto3" json:"queries,omitempty"`
-	// response_type allows negotiating content type of response.
-	// This does not guarantee the returned response. For servers that does not support this field, SAMPLES response type
+	// response_type allows negotiating the content type of response.
+	// This does not guarantee the returned response. For servers that do not support this field, SAMPLES response type
 	// is used.
 	ResponseType         ReadRequest_ResponseType `protobuf:"varint,2,opt,name=response_type,json=responseType,proto3,enum=prometheus.ReadRequest_ResponseType" json:"response_type,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}                 `json:"-"`
@@ -333,10 +333,12 @@ func (m *QueryResult) GetTimeseries() []*TimeSeries {
 }
 
 // ChunkedReadResponse is a response when response_type equals STREAMED_XOR_CHUNKS.
-// We strictly stream full series by series. Single frame can contain partion of the single series.
+// We strictly stream full series after series, optionally split by time. This means that a single frame can contain
+// partition of the single series, but once a new series is started to be streamed it means that no more chunks will
+// be sent for previous one.
 type ChunkedReadResponse struct {
 	ChunkedSeries []*ChunkedSeries `protobuf:"bytes,1,rep,name=chunked_series,json=chunkedSeries,proto3" json:"chunked_series,omitempty"`
-	// This is used when we have more than one ReadRequest.queries.
+	// query_index representsa an index of the query from ReadRequest.queries this results relates to.
 	QueryIndex           int64    `protobuf:"varint,2,opt,name=query_index,json=queryIndex,proto3" json:"query_index,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`

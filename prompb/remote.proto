@@ -23,27 +23,27 @@ message WriteRequest {
   repeated prometheus.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];
 }
 
-// ReadRequest represents remote read request.
+// ReadRequest represents a remote read request.
 message ReadRequest {
   repeated Query queries = 1;
 
   enum ResponseType {
-    // Server will return ReadResponse with raw samples.
+    // Server will return a ReadResponse with raw samples.
     //
     // Response headers:
     // Content-Type: "application/x-protobuf"
     // Content-Encoding: "snappy"
     SAMPLES = 0;
 
-    // Server will stream varint delimited ChunkedReadResponse message that contains XOR encoded chunks for single series.
+    // Server will stream a varint delimited ChunkedReadResponse message that contains XOR encoded chunks for a single series.
     //
     // Response headers:
     // Content-Type: "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"
     // Content-Encoding: ""
     STREAMED_XOR_CHUNKS = 1;
   }
-  // response_type allows negotiating content type of response.
-  // This does not guarantee the returned response. For servers that does not support this field, SAMPLES response type
+  // response_type allows negotiating the content type of response.
+  // This does not guarantee the returned response. For servers that do not support this field, SAMPLES response type
   // is used.
   ResponseType response_type = 2;
 }
@@ -67,10 +67,12 @@ message QueryResult {
 }
 
 // ChunkedReadResponse is a response when response_type equals STREAMED_XOR_CHUNKS.
-// We strictly stream full series by series. Single frame can contain partion of the single series.
+// We strictly stream full series after series, optionally split by time. This means that a single frame can contain
+// partition of the single series, but once a new series is started to be streamed it means that no more chunks will
+// be sent for previous one.
 message ChunkedReadResponse {
   repeated prometheus.ChunkedSeries chunked_series = 1;
 
-  // This is used when we have more than one ReadRequest.queries.
+  // query_index representsa an index of the query from ReadRequest.queries this results relates to.
   int64 query_index = 2;
 }
