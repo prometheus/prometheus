@@ -19,8 +19,8 @@ import (
 	"io"
 )
 
-// StreamWriter is an io.Writer wrapper that allows streaming by adding uvarint delimiter before each write in form of length of
-// the corresponded byte array.
+// StreamWriter is an io.Writer wrapper that allows streaming by adding uvarint delimiter before each write in a form
+// of length of the corresponded byte array.
 type StreamWriter struct {
 	wrapped io.Writer
 }
@@ -31,7 +31,7 @@ func NewStreamWriter(w io.Writer) *StreamWriter {
 }
 
 // Write writes given bytes to the stream. It adds uvarint delimiter before each message.
-// Returned bytes number are for sent bytes for given buffer, it does not include delimiter bytes.
+// Returned bytes number represents sent bytes for a given buffer. The number does not include delimiter bytes.
 func (w *StreamWriter) Write(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
@@ -68,7 +68,7 @@ func NewStreamReader(r io.Reader) *StreamReader {
 // there are no more records available. Returns io.ErrUnexpectedEOF if a short
 // record is found, with a length of n but fewer than n bytes of data.
 //
-// NOTE: The slice returned is valid only until a subsequent call to Next. It's a caller responsibility to copy the
+// NOTE: The slice returned is valid only until a subsequent call to Next. It's a caller's responsibility to copy the
 // returned slice if needed.
 func (r *StreamReader) Next() ([]byte, error) {
 	size, err := binary.ReadUvarint(r.b)
@@ -89,7 +89,7 @@ func (r *StreamReader) Next() ([]byte, error) {
 }
 
 // NextProto consumes the next available record by calling r.Next, and decodes
-// it into pb with proto.Unmarshal.
+// it into the protobuf with proto.Unmarshal.
 func (r *StreamReader) NextProto(pb proto.Message) error {
 	rec, err := r.Next()
 	if err != nil {
