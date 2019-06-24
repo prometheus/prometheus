@@ -429,7 +429,7 @@ func (m *ReadHints) GetEndMs() int64 {
 	return 0
 }
 
-// Chunk represents TSDB chunk.
+// Chunk represents a TSDB chunk.
 type Chunk struct {
 	MinTimeMs            int64          `protobuf:"varint,1,opt,name=min_time_ms,json=minTimeMs,proto3" json:"min_time_ms,omitempty"`
 	MaxTimeMs            int64          `protobuf:"varint,2,opt,name=max_time_ms,json=maxTimeMs,proto3" json:"max_time_ms,omitempty"`

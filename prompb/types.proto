@@ -58,7 +58,7 @@ message ReadHints {
   int64 end_ms = 4;   // End time in milliseconds.
 }
 
-// Chunk represents TSDB chunk.
+// Chunk represents a TSDB chunk.
 message Chunk {
   int64 min_time_ms = 1;
   int64 max_time_ms = 2;
