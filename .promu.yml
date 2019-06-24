@@ -42,13 +42,12 @@ crossbuild:
         - linux/arm
         - linux/arm64
         - freebsd/arm
+        - openbsd/arm
         # Temporarily deactivated as golang.org/x/sys does not have syscalls
         # implemented for that os/platform combination.
-        #- openbsd/arm
         #- linux/mips64
         #- linux/mips64le
         - netbsd/arm
         - linux/ppc64
         - linux/ppc64le
         - linux/s390x
-
