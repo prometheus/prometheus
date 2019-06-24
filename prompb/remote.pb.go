@@ -109,7 +109,7 @@ func (m *WriteRequest) GetTimeseries() []TimeSeries {
 type ReadRequest struct {
 	Queries []*Query `protobuf:"bytes,1,rep,name=queries,proto3" json:"queries,omitempty"`
 	// response_type allows negotiating the content type of response.
-	// This does not guarantee the returned response. For servers that do not support this field, SAMPLES response type
+	// This does not guarantee the returned response. For servers that do not support this field, the SAMPLES response type
 	// is used.
 	ResponseType         ReadRequest_ResponseType `protobuf:"varint,2,opt,name=response_type,json=responseType,proto3,enum=prometheus.ReadRequest_ResponseType" json:"response_type,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}                 `json:"-"`
