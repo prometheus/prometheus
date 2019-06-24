@@ -15,6 +15,10 @@ github.com/Azure/go-autorest/autorest/to
 github.com/Azure/go-autorest/autorest/validation
 github.com/Azure/go-autorest/tracing
 github.com/Azure/go-autorest/logger
+# github.com/PuerkitoBio/purell v1.1.0
+github.com/PuerkitoBio/purell
+# github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578
+github.com/PuerkitoBio/urlesc
 # github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc
 github.com/alecthomas/template
 github.com/alecthomas/template/parse
@@ -22,6 +26,8 @@ github.com/alecthomas/template/parse
 github.com/alecthomas/units
 # github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da
 github.com/armon/go-metrics
+# github.com/asaskevich/govalidator v0.0.0-20180720115003-f9ffefc3facf
+github.com/asaskevich/govalidator
 # github.com/aws/aws-sdk-go v1.15.24
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/credentials
@@ -75,6 +81,9 @@ github.com/dgrijalva/jwt-go
 github.com/evanphx/json-patch
 # github.com/ghodss/yaml v1.0.0
 github.com/ghodss/yaml
+# github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
+github.com/globalsign/mgo/bson
+github.com/globalsign/mgo/internal/json
 # github.com/go-ini/ini v1.25.4
 github.com/go-ini/ini
 # github.com/go-kit/kit v0.8.0
@@ -82,6 +91,27 @@ github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
 # github.com/go-logfmt/logfmt v0.4.0
 github.com/go-logfmt/logfmt
+# github.com/go-openapi/analysis v0.17.2
+github.com/go-openapi/analysis
+github.com/go-openapi/analysis/internal
+# github.com/go-openapi/errors v0.17.2
+github.com/go-openapi/errors
+# github.com/go-openapi/jsonpointer v0.17.2
+github.com/go-openapi/jsonpointer
+# github.com/go-openapi/jsonreference v0.17.2
+github.com/go-openapi/jsonreference
+# github.com/go-openapi/loads v0.17.2
+github.com/go-openapi/loads
+# github.com/go-openapi/runtime v0.18.0
+github.com/go-openapi/runtime
+# github.com/go-openapi/spec v0.17.2
+github.com/go-openapi/spec
+# github.com/go-openapi/strfmt v0.19.0
+github.com/go-openapi/strfmt
+# github.com/go-openapi/swag v0.17.2
+github.com/go-openapi/swag
+# github.com/go-openapi/validate v0.17.2
+github.com/go-openapi/validate
 # github.com/gogo/protobuf v1.2.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/gogoproto
@@ -189,6 +219,10 @@ github.com/json-iterator/go
 github.com/julienschmidt/httprouter
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 github.com/kr/logfmt
+# github.com/mailru/easyjson v0.0.0-20180823135443-60711f1a8329
+github.com/mailru/easyjson/jlexer
+github.com/mailru/easyjson/jwriter
+github.com/mailru/easyjson/buffer
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
 # github.com/miekg/dns v1.1.10
@@ -219,6 +253,8 @@ github.com/petermattis/goid
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
+# github.com/prometheus/alertmanager v0.17.0
+github.com/prometheus/alertmanager/api/v2/models
 # github.com/prometheus/client_golang v1.0.0
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/api
@@ -261,7 +297,7 @@ github.com/sasha-s/go-deadlock
 github.com/shurcooL/httpfs/filter
 github.com/shurcooL/httpfs/union
 github.com/shurcooL/httpfs/vfsutil
-# github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
+# github.com/shurcooL/vfsgen v0.0.0-20180825020608-02ddb050ef6b
 github.com/shurcooL/vfsgen
 # github.com/soheilhy/cmux v0.1.4
 github.com/soheilhy/cmux
@@ -318,11 +354,12 @@ golang.org/x/sync/semaphore
 # golang.org/x/sys v0.0.0-20190403152447-81d4e9dc473e
 golang.org/x/sys/windows
 golang.org/x/sys/unix
-# golang.org/x/text v0.3.0
+# golang.org/x/text v0.3.1-0.20180805044716-cb6730876b98
 golang.org/x/text/secure/bidirule
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
 golang.org/x/text/transform
+golang.org/x/text/width
 # golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2
 golang.org/x/time/rate
 # golang.org/x/tools v0.0.0-20190312170243-e65039ee4138

@@ -301,7 +301,7 @@ func (fs vfsgen۰FS) Open(path string) (http.File, error) {
 		}
 		return &vfsgen۰CompressedFile{
 			vfsgen۰CompressedFileInfo: f,
-			gr: gr,
+			gr:                        gr,
 		}, nil{{end}}{{if .HasFile}}
 	case *vfsgen۰FileInfo:
 		return &vfsgen۰File{
