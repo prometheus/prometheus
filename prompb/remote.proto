@@ -43,7 +43,7 @@ message ReadRequest {
     STREAMED_XOR_CHUNKS = 1;
   }
   // response_type allows negotiating the content type of response.
-  // This does not guarantee the returned response. For servers that do not support this field, SAMPLES response type
+  // This does not guarantee the returned response. For servers that do not support this field, the SAMPLES response type
   // is used.
   ResponseType response_type = 2;
 }
