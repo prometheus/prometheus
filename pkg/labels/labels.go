@@ -133,13 +133,13 @@ func (ls Labels) Hash() uint64 {
 // HashForLabels returns a hash value for the labels matching the provided names.
 func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
-	i, j, n1, n2 := 0, 0, len(names), len(ls)
-	for i < n1 {
-		j = sort.Search(n2, func(idx int) bool {
+	i, j, lsLen := 0, 0, len(ls)
+	for i < len(names) {
+		j = sort.Search(lsLen, func(idx int) bool {
 			return ls[idx].Name >= names[i]
 		})
 
-		if j < n2 && ls[j].Name == names[i] {
+		if j < lsLen && ls[j].Name == names[i] {
 			b = append(b, ls[j].Name...)
 			b = append(b, sep)
 			b = append(b, ls[j].Value...)
