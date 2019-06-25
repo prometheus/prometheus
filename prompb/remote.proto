@@ -42,10 +42,12 @@ message ReadRequest {
     // Content-Encoding: ""
     STREAMED_XOR_CHUNKS = 1;
   }
-  // response_type allows negotiating the content type of response.
-  // This does not guarantee the returned response. For servers that do not support this field, the SAMPLES response type
-  // is used.
-  ResponseType response_type = 2;
+
+  // accepted_response_types allows negotiating the content type of the response.
+  // Response types are taken from the list in the FIFO order. If no response type is implemented by server, error is returned.
+  // For servers that do not support this field, the SAMPLES response type is used strictly.
+  // If field is empty, the server should assume SAMPLES response type is accepte by the caller.
+  repeated ResponseType accepted_response_types = 2;
 }
 
 // ReadResponse is a response when response_type equals SAMPLES.
