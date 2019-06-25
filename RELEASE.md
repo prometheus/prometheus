@@ -80,14 +80,9 @@ $ git push --tags
 
 Signing a tag with a GPG key is appreciated, but in case you can't add a GPG key to your Github account using the following [procedure](https://help.github.com/articles/generating-a-gpg-key/), you can replace the `-s` flag by `-a` flag of the `git tag` command to only annotate the tag without signing.
 
-Once a tag is created, the release process through CircleCI will be triggered for this tag.
-You must create a Github Release using the UI for this tag, as otherwise CircleCI will not be able to upload tarballs for this tag. __Also, you must create the Github Release using a Github user that has granted access rights to CircleCI.__ If you did not or cannot grant those rights to your personal account, you can log in as `prombot` in an anonymous browser tab. (This will, however, prevent verified releases signed with your GPG key. For verified releases, the signing identity must be the same as the one creating the release.)
+Once a tag is created, the release process through CircleCI will be triggered for this tag and Circle CI will draft the GitHub release using the `prombot` account.
 
-Go to the releases page of the project, click on the _Draft a new release_ button and select the tag you just pushed. The title of the release is formatted `x.y.z / YYYY-MM-DD`. Add the relevant part of `CHANGELOG.md` as description. Click _Save draft_ rather than _Publish release_ at this time. (This will prevent the release being visible before it has got the binaries attached to it.)
-
-You can also create the tag and the Github release in one go through the Github UI by going to the releases page and then click on the `Draft a new release` button and enter your tag version.
-
-Now all you can do is to wait for tarballs to be uploaded to the Github release and Docker images to be pushed to the Docker Hub and Quay.io. Once that has happened, click _Publish release_, which will make the release publicly visible and create a GitHub notification.
+Now all you can do is to wait for tarballs to be uploaded to the Github release and the container images to be pushed to the Docker Hub and Quay.io. Once that has happened, click _Publish release_, which will make the release publicly visible and create a GitHub notification.
 
 ### Wrapping up
 
