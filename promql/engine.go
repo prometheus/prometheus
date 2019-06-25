@@ -1527,7 +1527,10 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	// of labels by names to speed up the operations below.
 	// Alternatively, inline the hashing and don't build new label sets.
 	if on {
-		return func(lset labels.Labels) uint64 { return lset.HashForLabels(names...) }
+		return func(lset labels.Labels) uint64 {
+			h, _ := lset.HashForLabels(make([]byte, 0, 1024), names...)
+			return h
+		}
 	}
 	return func(lset labels.Labels) uint64 { return lset.HashWithoutLabels(names...) }
 }
@@ -1723,7 +1726,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	}
 
 	lb := labels.NewBuilder(nil)
-
+	buf := make([]byte, 0, 1024)
 	for _, s := range vec {
 		metric := s.Metric
 
@@ -1739,7 +1742,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		if without {
 			groupingKey = metric.HashWithoutLabels(grouping...)
 		} else {
-			groupingKey = metric.HashForLabels(grouping...)
+			groupingKey, buf = metric.HashForLabels(buf, grouping...)
 		}
 
 		group, ok := result[groupingKey]

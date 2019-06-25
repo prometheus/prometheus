@@ -131,21 +131,23 @@ func (ls Labels) Hash() uint64 {
 }
 
 // HashForLabels returns a hash value for the labels matching the provided names.
-func (ls Labels) HashForLabels(names ...string) uint64 {
-	b := make([]byte, 0, 1024)
+func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
+	b = b[:0]
+	i, j, n1, n2 := 0, 0, len(names), len(ls)
+	for i < n1 {
+		j = sort.Search(n2, func(idx int) bool {
+			return ls[idx].Name >= names[i]
+		})
 
-	for _, v := range ls {
-		for _, n := range names {
-			if v.Name == n {
-				b = append(b, v.Name...)
-				b = append(b, sep)
-				b = append(b, v.Value...)
-				b = append(b, sep)
-				break
-			}
+		if j < n2 && ls[j].Name == names[i] {
+			b = append(b, ls[j].Name...)
+			b = append(b, sep)
+			b = append(b, ls[j].Value...)
+			b = append(b, sep)
 		}
+		i++
 	}
-	return xxhash.Sum64(b)
+	return xxhash.Sum64(b), b
 }
 
 // HashWithoutLabels returns a hash value for all labels except those matching
