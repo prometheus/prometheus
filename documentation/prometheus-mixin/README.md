@@ -3,16 +3,18 @@
 The Prometheus Mixin is a set of configurable, reusable, and extensible alerts
 and dashboards for Prometheus.
 
-To use them, you need to have `jsonnet` (v0.10+) and `jb` installed. If you
+To use them, you need to have `jsonnet` (v0.13+) and `jb` installed. If you
 have a working Go development environment, it's easiest to run the following:
 ```bash
 $ go get github.com/google/go-jsonnet/cmd/jsonnet
 $ go get github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
 ```
 
-_Note: The make targets `lint` and `fmt` currently don't work with the Go
-implementation of `jsonnet`. For the time being, you have to install the [C++
-version of jsonnet](https://github.com/google/jsonnet) if you want to use them._
+_Note: The make targets `lint` and `fmt` need the `jsonnetfmt` binary, which is
+currently not included in the Go implementation of `jsonnet`. For the time
+being, you have to install the [C++ version of
+jsonnetfmt](https://github.com/google/jsonnet) if you want to use `make lint`
+or `make fmt`._
 
 Next, install the dependencies by running the following command in this
 directory:
