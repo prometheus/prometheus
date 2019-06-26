@@ -680,9 +680,9 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 			}
 
 		case <-timer.C:
-			if len(pendingSamples) > 0 {
-				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending samples", "samples", len(pendingSamples), "shard", shardNum)
-				n := len(pendingSamples)
+			n := len(pendingSamples)
+			if n > 0 {
+				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending samples", "samples", n, "shard", shardNum)
 				s.sendSamples(ctx, pendingSamples, &buf)
 				pendingSamples = pendingSamples[:0]
 				s.qm.pendingSamplesMetric.Sub(float64(n))
