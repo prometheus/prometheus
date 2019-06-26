@@ -20,46 +20,55 @@
           {
             alert: 'PrometheusNotificationQueueRunningFull',
             expr: |||
-              predict_linear(prometheus_notifications_queue_length{%(prometheusSelector)s}[5m], 60 * 30)
+              (
+                predict_linear(prometheus_notifications_queue_length{%(prometheusSelector)s}[5m], 60 * 30)
               >
-              prometheus_notifications_queue_capacity{%(prometheusSelector)s}
+                prometheus_notifications_queue_capacity{%(prometheusSelector)s}
+              )
             ||| % $._config,
             'for': '15m',
             labels: {
               severity: 'warning',
             },
             annotations: {
-              message: "Prometheus' alert notification queue is running full for {{$labels.namespace}}/{{ $labels.pod}}",
+              message: "Prometheus' alert notification queue is running full for {{$labels.namespace}}/{{$labels.pod}}",
             },
           },
           {
             alert: 'PrometheusErrorSendingAlerts',
             expr: |||
-              100 * rate(prometheus_notifications_errors_total{%(prometheusSelector)s}[5m])
+              (
+                rate(prometheus_notifications_errors_total{%(prometheusSelector)s}[5m])
               /
-              rate(prometheus_notifications_sent_total{%(prometheusSelector)s}[5m]) > 1
+                rate(prometheus_notifications_sent_total{%(prometheusSelector)s}[5m]) > 1
+              )
+              * 100
             ||| % $._config,
             'for': '15m',
             labels: {
               severity: 'warning',
             },
             annotations: {
-              message: '{{ printf "%.1f" $value }}% errors while sending alerts from Prometheus {{$labels.namespace}}/{{ $labels.pod}} to Alertmanager {{$labels.Alertmanager}}',
+              message: '{{ printf "%.1f" $value }}% errors while sending alerts from Prometheus {{$labels.namespace}}/{{$labels.pod}} to Alertmanager {{$labels.Alertmanager}}',
             },
           },
           {
             alert: 'PrometheusErrorSendingAlerts',
             expr: |||
-              100 * rate(prometheus_notifications_errors_total{%(prometheusSelector)s}[5m])
+              (
+                rate(prometheus_notifications_errors_total{%(prometheusSelector)s}[5m])
               /
-              rate(prometheus_notifications_sent_total{%(prometheusSelector)s}[5m]) > 3
+                rate(prometheus_notifications_sent_total{%(prometheusSelector)s}[5m])
+              )
+              * 100
+              > 3
             ||| % $._config,
             'for': '15m',
             labels: {
               severity: 'critical',
             },
             annotations: {
-              message: '{{ printf "%.1f" $value }}% errors while sending alerts from Prometheus {{$labels.namespace}}/{{ $labels.pod}} to Alertmanager {{$labels.Alertmanager}}',
+              message: '{{ printf "%.1f" $value }}% errors while sending alerts from Prometheus {{$labels.namespace}}/{{$labels.pod}} to Alertmanager {{$labels.Alertmanager}}',
             },
           },
           {
@@ -72,7 +81,7 @@
               severity: 'warning',
             },
             annotations: {
-              message: 'Prometheus {{ $labels.namespace }}/{{ $labels.pod}} is not connected to any Alertmanagers',
+              message: 'Prometheus {{$labels.namespace}}/{{$labels.pod}} is not connected to any Alertmanagers',
             },
           },
           {
@@ -124,7 +133,7 @@
               severity: 'warning',
             },
             annotations: {
-              message: "Prometheus {{ $labels.namespace }}/{{ $labels.pod}} isn't ingesting samples.",
+              message: "Prometheus {{$labels.namespace }}/{{ $labels.pod}} isn't ingesting samples.",
             },
           },
           {
@@ -143,10 +152,17 @@
           {
             alert: 'PrometheusRemoteStorageFailures',
             expr: |||
-              (rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[1m]) * 100)
-                /
-              (rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[1m]) + rate(prometheus_remote_storage_succeeded_samples_total{%(prometheusSelector)s}[1m]))
-                > 1
+              (
+                rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[1m])
+              /
+                (
+                  rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[1m])
+                +
+                  rate(prometheus_remote_storage_succeeded_samples_total{%(prometheusSelector)s}[1m])
+                )
+              )
+              * 100
+              > 1
             ||| % $._config,
             'for': '15m',
             labels: {
@@ -159,10 +175,12 @@
           {
             alert: 'PrometheusRemoteWriteBehind',
             expr: |||
-              prometheus_remote_storage_highest_timestamp_in_seconds{%(prometheusSelector)s}
-                - on(job, instance) group_right
-              prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(prometheusSelector)s}
-                > 120
+              (
+                prometheus_remote_storage_highest_timestamp_in_seconds{%(prometheusSelector)s}
+              - on(job, instance) group_right
+                prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(prometheusSelector)s}
+              )
+              > 120
             ||| % $._config,
             'for': '15m',
             labels: {
