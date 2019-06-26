@@ -87,9 +87,9 @@
           {
             alert: 'PrometheusTSDBReloadsFailing',
             expr: |||
-              increase(prometheus_tsdb_reloads_failures_total{%(prometheusSelector)s}[2h]) > 0
+              increase(prometheus_tsdb_reloads_failures_total{%(prometheusSelector)s}[3h]) > 0
             ||| % $._config,
-            'for': '12h',
+            'for': '4h',
             labels: {
               severity: 'warning',
             },
@@ -100,9 +100,9 @@
           {
             alert: 'PrometheusTSDBCompactionsFailing',
             expr: |||
-              increase(prometheus_tsdb_compactions_failed_total{%(prometheusSelector)s}[2h]) > 0
+              increase(prometheus_tsdb_compactions_failed_total{%(prometheusSelector)s}[3h]) > 0
             ||| % $._config,
-            'for': '12h',
+            'for': '4h',
             labels: {
               severity: 'warning',
             },
@@ -113,7 +113,7 @@
           {
             alert: 'PrometheusTSDBWALCorruptions',
             expr: |||
-              tsdb_wal_corruptions_total{%(prometheusSelector)s} > 0
+              increase(tsdb_wal_corruptions_total{%(prometheusSelector)s}[3h]) > 0
             ||| % $._config,
             'for': '4h',
             labels: {
@@ -153,12 +153,12 @@
             alert: 'PrometheusRemoteStorageFailures',
             expr: |||
               (
-                rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[1m])
+                rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[5m])
               /
                 (
-                  rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[1m])
+                  rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[5m])
                 +
-                  rate(prometheus_remote_storage_succeeded_samples_total{%(prometheusSelector)s}[1m])
+                  rate(prometheus_remote_storage_succeeded_samples_total{%(prometheusSelector)s}[5m])
                 )
               )
               * 100
@@ -192,10 +192,10 @@
           },
           {
             alert: 'PrometheusRuleFailures',
-            'for': '15m',
             expr: |||
-              rate(prometheus_rule_evaluation_failures_total{%(prometheusSelector)s}[1m]) > 0
+              rate(prometheus_rule_evaluation_failures_total{%(prometheusSelector)s}[5m]) > 0
             ||| % $._config,
+            'for': '15m',
             labels: {
               severity: 'critical',
             },

@@ -7,7 +7,7 @@ local g = import 'grafana-builder/grafana.libsonnet';
       .addMultiTemplate('job', 'prometheus_build_info', 'job')
       .addMultiTemplate('instance', 'prometheus_build_info', 'instance')
       # Prometheus is quite commonly configured with honor_labels set to true;
-      # therefor job and instance is not the prometheus server in many queries!.
+      # therefore job and instance is not the prometheus server in many queries!
       .addRow(
         g.row('Prometheus Stats')
         .addPanel(
@@ -18,7 +18,7 @@ local g = import 'grafana-builder/grafana.libsonnet';
           ], {
             job: { alias: 'Job' },
             instance: { alias: 'Instance' },
-            verstion: { alias: 'Version' },
+            version: { alias: 'Version' },
             'Value #A': { alias: 'Count', type: 'hidden' },
             'Value #B': { alias: 'Uptime' },
           })
@@ -28,20 +28,20 @@ local g = import 'grafana-builder/grafana.libsonnet';
         g.row('Discovery')
         .addPanel(
           g.panel('Target Sync') +
-          g.queryPanel('sum(rate(prometheus_target_sync_length_seconds_sum{job=~"$job",instance=~"$instance"}[2m])) by (scrape_job) * 1e3', '{{scrape_job}}') +
+          g.queryPanel('sum(rate(prometheus_target_sync_length_seconds_sum{job=~"$job",instance=~"$instance"}[5m])) by (scrape_job) * 1e3', '{{scrape_job}}') +
           { yaxes: g.yaxes('ms') }
         )
         .addPanel(
           g.panel('Targets') +
-          g.queryPanel('count(up{})', 'Targets') +
+          g.queryPanel('sum(prometheus_sd_discovered_targets{job=~"$job",instance=~"$instance"})', 'Targets') +
           g.stack
         )
       )
       .addRow(
         g.row('Retrieval')
         .addPanel(
-          g.panel('Target Scrape Duration') +
-          g.queryPanel('1e3 * sum(scrape_duration_seconds) / count(scrape_duration_seconds)', 'Average') +
+          g.panel('Average Scrape Interval Duration') +
+          g.queryPanel('rate(prometheus_target_interval_length_seconds_sum{job=~"$job",instance=~"$instance"}[5m]) / rate(prometheus_target_interval_length_seconds_count{job=~"$job",instance=~"$instance"}[5m]) * 1e3', '{{interval}} configured') +
           { yaxes: g.yaxes('ms') }
         )
         .addPanel(
@@ -61,7 +61,7 @@ local g = import 'grafana-builder/grafana.libsonnet';
         )
         .addPanel(
           g.panel('Appended Samples') +
-          g.queryPanel('rate(prometheus_tsdb_head_samples_appended_total{job=~"$job",instance=~"$instance"}[1m])', '{{job}} {{instance}}') +
+          g.queryPanel('rate(prometheus_tsdb_head_samples_appended_total{job=~"$job",instance=~"$instance"}[5m])', '{{job}} {{instance}}') +
           g.stack
         )
       )
@@ -82,7 +82,7 @@ local g = import 'grafana-builder/grafana.libsonnet';
         g.row('Query')
         .addPanel(
           g.panel('Query Rate') +
-          g.queryPanel('rate(prometheus_engine_query_duration_seconds_count{job=~"$job",instance=~"$instance",slice="inner_eval"}[1m])', '{{job}} {{instance}}') +
+          g.queryPanel('rate(prometheus_engine_query_duration_seconds_count{job=~"$job",instance=~"$instance",slice="inner_eval"}[5m])', '{{job}} {{instance}}') +
           g.stack,
         )
         .addPanel(
