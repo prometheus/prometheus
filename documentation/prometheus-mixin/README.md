@@ -1,5 +1,8 @@
 # Prometheus Mixin
 
+_This is work in progress. We aim for it to become a good role model for alerts
+and dashboards eventually, but it is not quite there yet._
+
 The Prometheus Mixin is a set of configurable, reusable, and extensible alerts
 and dashboards for Prometheus.
 
