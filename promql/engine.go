@@ -1526,6 +1526,7 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	// TODO(fabxc): ensure names are sorted and then use that and sortedness
 	// of labels by names to speed up the operations below.
 	// Alternatively, inline the hashing and don't build new label sets.
+	sort.Strings(names)
 	if on {
 		return func(lset labels.Labels) uint64 {
 			h, _ := lset.HashForLabels(make([]byte, 0, 1024), names...)
@@ -1728,6 +1729,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		}
 	}
 
+	sort.Strings(grouping)
 	lb := labels.NewBuilder(nil)
 	buf := make([]byte, 0, 1024)
 	for _, s := range vec {

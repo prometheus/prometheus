@@ -131,50 +131,50 @@ func (ls Labels) Hash() uint64 {
 }
 
 // HashForLabels returns a hash value for the labels matching the provided names.
-// The provided names have to be unique.
+// 'names' have to be sorted in ascending order.
 func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
-	i, j, lsLen := 0, 0, len(ls)
-	for i < len(names) {
-		j = sort.Search(lsLen, func(idx int) bool {
-			return ls[idx].Name >= names[i]
-		})
-
-		if j < lsLen && ls[j].Name == names[i] {
-			b = append(b, ls[j].Name...)
+	i, j := 0, 0
+	for i < len(ls) && j < len(names) {
+		if names[j] < ls[i].Name {
+			j++
+		} else if ls[i].Name < names[j] {
+			i++
+		} else {
+			b = append(b, ls[i].Name...)
 			b = append(b, sep)
-			b = append(b, ls[j].Value...)
+			b = append(b, ls[i].Value...)
 			b = append(b, sep)
+			i++
+			j++
 		}
-		i++
 	}
 	return xxhash.Sum64(b), b
 }
 
 // HashWithoutLabels returns a hash value for all labels except those matching
 // the provided names.
+// 'names' have to be sorted in ascending order.
 func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
-	i, j, namesLen := 0, 0, len(names)
-Outer:
+	i, j := 0, 0
 	for i < len(ls) {
 		if ls[i].Name == MetricName {
 			i++
 			continue
 		}
-		j = 0
-		for j < namesLen {
-			if ls[i].Name == names[j] {
-				i++
-				continue Outer
-			}
+		if j == len(names) || ls[i].Name < names[j] {
+			b = append(b, ls[i].Name...)
+			b = append(b, sep)
+			b = append(b, ls[i].Value...)
+			b = append(b, sep)
+			i++
+		} else if names[j] < ls[i].Name {
+			j++
+		} else {
+			i++
 			j++
 		}
-		b = append(b, ls[i].Name...)
-		b = append(b, sep)
-		b = append(b, ls[i].Value...)
-		b = append(b, sep)
-		i++
 	}
 	return xxhash.Sum64(b), b
 }
