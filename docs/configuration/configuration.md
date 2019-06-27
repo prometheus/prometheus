@@ -439,8 +439,8 @@ See below for the configuration options for EC2 discovery:
 ```yaml
 # The information to access the EC2 API.
 
-# The AWS Region.
-region: <string>
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
 
 # Custom endpoint to be used.
 [ endpoint: <string> ]
