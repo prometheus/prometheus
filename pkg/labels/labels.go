@@ -131,6 +131,7 @@ func (ls Labels) Hash() uint64 {
 }
 
 // HashForLabels returns a hash value for the labels matching the provided names.
+// The provided names have to be unique.
 func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
 	i, j, lsLen := 0, 0, len(ls)
@@ -152,25 +153,30 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 
 // HashWithoutLabels returns a hash value for all labels except those matching
 // the provided names.
-func (ls Labels) HashWithoutLabels(names ...string) uint64 {
-	b := make([]byte, 0, 1024)
-
+func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
+	b = b[:0]
+	i, j, namesLen := 0, 0, len(names)
 Outer:
-	for _, v := range ls {
-		if v.Name == MetricName {
+	for i < len(ls) {
+		if ls[i].Name == MetricName {
+			i++
 			continue
 		}
-		for _, n := range names {
-			if v.Name == n {
+		j = 0
+		for j < namesLen {
+			if ls[i].Name == names[j] {
+				i++
 				continue Outer
 			}
+			j++
 		}
-		b = append(b, v.Name...)
+		b = append(b, ls[i].Name...)
 		b = append(b, sep)
-		b = append(b, v.Value...)
+		b = append(b, ls[i].Value...)
 		b = append(b, sep)
+		i++
 	}
-	return xxhash.Sum64(b)
+	return xxhash.Sum64(b), b
 }
 
 // Copy returns a copy of the labels.

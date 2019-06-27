@@ -1532,7 +1532,10 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 			return h
 		}
 	}
-	return func(lset labels.Labels) uint64 { return lset.HashWithoutLabels(names...) }
+	return func(lset labels.Labels) uint64 {
+		h, _ := lset.HashWithoutLabels(make([]byte, 0, 1024), names...)
+		return h
+	}
 }
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
@@ -1740,7 +1743,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			groupingKey uint64
 		)
 		if without {
-			groupingKey = metric.HashWithoutLabels(grouping...)
+			groupingKey, buf = metric.HashWithoutLabels(buf, grouping...)
 		} else {
 			groupingKey, buf = metric.HashForLabels(buf, grouping...)
 		}
