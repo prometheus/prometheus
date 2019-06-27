@@ -93,8 +93,106 @@ func TestLintMetricUnits(t *testing.T) {
 		in       string
 		problems []promlint.Problem
 	}{
+		// good cases.
 		{
 			name: "amperes",
+			in: `
+# HELP x_amperes Test metric.
+# TYPE x_amperes untyped
+x_amperes 10
+`,
+		},
+		{
+			name: "bytes",
+			in: `
+# HELP x_bytes Test metric.
+# TYPE x_bytes untyped
+x_bytes 10
+`,
+		},
+		{
+			name: "candela",
+			in: `
+# HELP x_candela Test metric.
+# TYPE x_candela untyped
+x_candela 10
+`,
+		},
+		{
+			name: "grams",
+			in: `
+# HELP x_grams Test metric.
+# TYPE x_grams untyped
+x_grams 10
+`,
+		},
+		{
+			name: "celsius",
+			in: `
+# HELP x_celsius Test metric.
+# TYPE x_celsius untyped
+x_celsius 10
+`,
+		},
+		{
+			name: "kelvin",
+			in: `
+# HELP x_kelvin Test metric.
+# TYPE x_kelvin untyped
+x_kelvin 10
+`,
+		},
+		{
+			name: "kelvins",
+			in: `
+# HELP x_kelvins Test metric.
+# TYPE x_kelvins untyped
+x_kelvins 10
+`,
+		},
+		{
+			name: "meters",
+			in: `
+# HELP x_meters Test metric.
+# TYPE x_meters untyped
+x_meters 10
+`,
+		},
+		{
+			name: "metres",
+			in: `
+# HELP x_metres Test metric.
+# TYPE x_metres untyped
+x_metres 10
+`,
+		},
+		{
+			name: "moles",
+			in: `
+# HELP x_moles Test metric.
+# TYPE x_moles untyped
+x_moles 10
+`,
+		},
+		{
+			name: "seconds",
+			in: `
+# HELP x_seconds Test metric.
+# TYPE x_seconds untyped
+x_seconds 10
+`,
+		},
+		{
+			name: "joules",
+			in: `
+# HELP x_joules Test metric.
+# TYPE x_joules untyped
+x_joules 10
+`,
+		},
+		// bad cases.
+		{
+			name: "milliamperes",
 			in: `
 # HELP x_milliamperes Test metric.
 # TYPE x_milliamperes untyped
@@ -106,7 +204,7 @@ x_milliamperes 10
 			}},
 		},
 		{
-			name: "bytes",
+			name: "gigabytes",
 			in: `
 # HELP x_gigabytes Test metric.
 # TYPE x_gigabytes untyped
@@ -118,7 +216,7 @@ x_gigabytes 10
 			}},
 		},
 		{
-			name: "candela",
+			name: "kilocandela",
 			in: `
 # HELP x_kilocandela Test metric.
 # TYPE x_kilocandela untyped
@@ -130,7 +228,7 @@ x_kilocandela 10
 			}},
 		},
 		{
-			name: "grams",
+			name: "kilograms",
 			in: `
 # HELP x_kilograms Test metric.
 # TYPE x_kilograms untyped
@@ -142,7 +240,7 @@ x_kilograms 10
 			}},
 		},
 		{
-			name: "kelvin",
+			name: "nanokelvin",
 			in: `
 # HELP x_nanokelvin Test metric.
 # TYPE x_nanokelvin untyped
@@ -154,19 +252,7 @@ x_nanokelvin 10
 			}},
 		},
 		{
-			name: "kelvins",
-			in: `
-# HELP x_nanokelvins Test metric.
-# TYPE x_nanokelvins untyped
-x_nanokelvins 10
-`,
-			problems: []promlint.Problem{{
-				Metric: "x_nanokelvins",
-				Text:   `use base unit "kelvins" instead of "nanokelvins"`,
-			}},
-		},
-		{
-			name: "meters",
+			name: "kilometers",
 			in: `
 # HELP x_kilometers Test metric.
 # TYPE x_kilometers untyped
@@ -178,19 +264,7 @@ x_kilometers 10
 			}},
 		},
 		{
-			name: "metres",
-			in: `
-# HELP x_kilometres Test metric.
-# TYPE x_kilometres untyped
-x_kilometres 10
-`,
-			problems: []promlint.Problem{{
-				Metric: "x_kilometres",
-				Text:   `use base unit "metres" instead of "kilometres"`,
-			}},
-		},
-		{
-			name: "moles",
+			name: "picomoles",
 			in: `
 # HELP x_picomoles Test metric.
 # TYPE x_picomoles untyped
@@ -202,7 +276,7 @@ x_picomoles 10
 			}},
 		},
 		{
-			name: "seconds",
+			name: "microseconds",
 			in: `
 # HELP x_microseconds Test metric.
 # TYPE x_microseconds untyped
@@ -214,12 +288,144 @@ x_microseconds 10
 			}},
 		},
 		{
-			name: "OK",
+			name: "minutes",
 			in: `
-# HELP thermometers_kelvin Test metric with name that looks like "meters".
-# TYPE thermometers_kelvin untyped
-thermometers_kelvin 0
+# HELP x_minutes Test metric.
+# TYPE x_minutes untyped
+x_minutes 10
 `,
+			problems: []promlint.Problem{{
+				Metric: "x_minutes",
+				Text:   `use base unit "seconds" instead of "minutes"`,
+			}},
+		},
+		{
+			name: "hours",
+			in: `
+# HELP x_hours Test metric.
+# TYPE x_hours untyped
+x_hours 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_hours",
+				Text:   `use base unit "seconds" instead of "hours"`,
+			}},
+		},
+		{
+			name: "days",
+			in: `
+# HELP x_days Test metric.
+# TYPE x_days untyped
+x_days 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_days",
+				Text:   `use base unit "seconds" instead of "days"`,
+			}},
+		},
+		{
+			name: "fahrenheit",
+			in: `
+# HELP thermometers_fahrenheit Test metric.
+# TYPE thermometers_fahrenheit untyped
+thermometers_fahrenheit 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "thermometers_fahrenheit",
+				Text:   `use base unit "celsius" instead of "fahrenheit"`,
+			}},
+		},
+		{
+			name: "rankine",
+			in: `
+# HELP thermometers_rankine Test metric.
+# TYPE thermometers_rankine untyped
+thermometers_rankine 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "thermometers_rankine",
+				Text:   `use base unit "kelvin" instead of "rankine"`,
+			}},
+		}, {
+			name: "inches",
+			in: `
+# HELP x_inches Test metric.
+# TYPE x_inches untyped
+x_inches 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_inches",
+				Text:   `use base unit "meters" instead of "inches"`,
+			}},
+		}, {
+			name: "yards",
+			in: `
+# HELP x_yards Test metric.
+# TYPE x_yards untyped
+x_yards 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_yards",
+				Text:   `use base unit "meters" instead of "yards"`,
+			}},
+		}, {
+			name: "miles",
+			in: `
+# HELP x_miles Test metric.
+# TYPE x_miles untyped
+x_miles 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_miles",
+				Text:   `use base unit "meters" instead of "miles"`,
+			}},
+		}, {
+			name: "bits",
+			in: `
+# HELP x_bits Test metric.
+# TYPE x_bits untyped
+x_bits 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_bits",
+				Text:   `use base unit "bytes" instead of "bits"`,
+			}},
+		},
+		{
+			name: "calories",
+			in: `
+# HELP x_calories Test metric.
+# TYPE x_calories untyped
+x_calories 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_calories",
+				Text:   `use base unit "joules" instead of "calories"`,
+			}},
+		},
+		{
+			name: "pounds",
+			in: `
+# HELP x_pounds Test metric.
+# TYPE x_pounds untyped
+x_pounds 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_pounds",
+				Text:   `use base unit "grams" instead of "pounds"`,
+			}},
+		},
+		{
+			name: "ounces",
+			in: `
+# HELP x_ounces Test metric.
+# TYPE x_ounces untyped
+x_ounces 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_ounces",
+				Text:   `use base unit "grams" instead of "ounces"`,
+			}},
 		},
 	}
 
@@ -567,6 +773,9 @@ func TestLintUnitAbbreviations(t *testing.T) {
 		genTest("request_duration_ns"),
 		genTest("request_duration_sec"),
 		genTest("request_sec_duration"),
+		genTest("request_duration_m"),
+		genTest("request_duration_h"),
+		genTest("request_duration_d"),
 	}
 	runTests(t, tests)
 }

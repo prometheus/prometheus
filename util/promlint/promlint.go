@@ -273,7 +273,7 @@ func lintUnitAbbreviations(mf dto.MetricFamily) []Problem {
 func metricUnits(m string) (unit string, base string, ok bool) {
 	ss := strings.Split(m, "_")
 
-	for _, u := range baseUnits {
+	for unit, base := range units {
 		// Also check for "no prefix".
 		for _, p := range append(unitPrefixes, "") {
 			for _, s := range ss {
@@ -282,8 +282,8 @@ func metricUnits(m string) (unit string, base string, ok bool) {
 				//
 				// As an example, "thermometers" should not match "meters", but
 				// "kilometers" should.
-				if s == p+u {
-					return p + u, u, true
+				if s == p+unit {
+					return p + unit, base, true
 				}
 			}
 		}
@@ -295,17 +295,41 @@ func metricUnits(m string) (unit string, base string, ok bool) {
 // Units and their possible prefixes recognized by this library.  More can be
 // added over time as needed.
 var (
-	baseUnits = []string{
-		"amperes",
-		"bytes",
-		"candela",
-		"grams",
-		"kelvin", // Both plural and non-plural form allowed.
-		"kelvins",
-		"meters", // Both American and international spelling permitted.
-		"metres",
-		"moles",
-		"seconds",
+	// map a unit to the appropriate base unit.
+	units = map[string]string{
+		// Base units.
+		"amperes": "amperes",
+		"bytes":   "bytes",
+		"candela": "candela",
+		"grams":   "grams",
+		"celsius": "celsius", // Allow both kelvin and celsius.
+		"kelvin":  "kelvin",  // Both plural and non-plural form allowed.
+		"kelvins": "kelvins",
+		"meters":  "meters", // Both American and international spelling permitted.
+		"metres":  "metres",
+		"moles":   "moles",
+		"seconds": "seconds",
+		"joules":  "joules",
+
+		// Non base units.
+		// Time.
+		"minutes": "seconds",
+		"hours":   "seconds",
+		"days":    "seconds",
+		// Temperature.
+		"fahrenheit": "celsius",
+		"rankine":    "kelvin",
+		// Length.
+		"inches": "meters",
+		"yards":  "meters",
+		"miles":  "meters",
+		// Bytes.
+		"bits": "bytes",
+		// Energy.
+		"calories": "joules",
+		// Weight.
+		"pounds": "grams",
+		"ounces": "grams",
 	}
 
 	unitPrefixes = []string{
@@ -342,5 +366,8 @@ var (
 		"gb",
 		"tb",
 		"pb",
+		"m",
+		"h",
+		"d",
 	}
 )
