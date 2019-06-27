@@ -14,7 +14,8 @@
               severity: 'critical',
             },
             annotations: {
-              message: 'Prometheus %(prometheusName)s failed to reload config, see container logs' % $._config,
+              summary: 'Failed Prometheus configuration reload.',
+              description: 'Prometheus %(prometheusName)s has failed to reload its configuration.' % $._config,
             },
           },
           {
@@ -31,31 +32,34 @@
               severity: 'warning',
             },
             annotations: {
-              message: "Prometheus's alert notification queue is running full for %(prometheusName)s" % $._config,
+              summary: 'Prometheus alert notification queue predicted to run full in less than 30m.',
+              description: 'Alert notification queue of Prometheus %(prometheusName)s is running full.' % $._config,
             },
           },
           {
-            alert: 'PrometheusErrorSendingAlerts',
+            alert: 'PrometheusErrorSendingAlertsToSomeAlertmanagers',
             expr: |||
               (
                 rate(prometheus_notifications_errors_total{%(prometheusSelector)s}[5m])
               /
-                rate(prometheus_notifications_sent_total{%(prometheusSelector)s}[5m]) > 1
+                rate(prometheus_notifications_sent_total{%(prometheusSelector)s}[5m])
               )
               * 100
+              > 1
             ||| % $._config,
             'for': '15m',
             labels: {
               severity: 'warning',
             },
             annotations: {
-              message: '{{ printf "%%.1f" $value }}%% errors while sending alerts from Prometheus %(prometheusName)s to Alertmanager {{$labels.Alertmanager}}' % $._config,
+              summary: 'Prometheus encounters more than 1% errors sending alerts to a specific Alertmanager.',
+              description: '{{ printf "%%.1f" $value }}%% errors while sending alerts from Prometheus %(prometheusName)s to Alertmanager {{$labels.alertmanager}}.' % $._config,
             },
           },
           {
-            alert: 'PrometheusErrorSendingAlerts',
+            alert: 'PrometheusErrorSendingAlertsToAnyAlertmanager',
             expr: |||
-              (
+              min without(alertmanager) (
                 rate(prometheus_notifications_errors_total{%(prometheusSelector)s}[5m])
               /
                 rate(prometheus_notifications_sent_total{%(prometheusSelector)s}[5m])
@@ -68,7 +72,8 @@
               severity: 'critical',
             },
             annotations: {
-              message: '{{ printf "%%.1f" $value }}%% errors while sending alerts from Prometheus %(prometheusName)s to Alertmanager {{$labels.Alertmanager}}' % $._config,
+              summary: 'Prometheus encounters more than 3% errors sending alerts to any Alertmanager.',
+              description: '{{ printf "%%.1f" $value }}%% minimum errors while sending alerts from Prometheus %(prometheusName)s to any Alertmanager.' % $._config,
             },
           },
           {
@@ -81,7 +86,8 @@
               severity: 'warning',
             },
             annotations: {
-              message: 'Prometheus %(prometheusName)s is not connected to any Alertmanagers' % $._config,
+              summary: 'Prometheus is not connected to any Alertmanagers.',
+              description: 'Prometheus %(prometheusName)s is not connected to any Alertmanagers.' % $._config,
             },
           },
           {
@@ -94,7 +100,8 @@
               severity: 'warning',
             },
             annotations: {
-              message: 'Prometheus %(prometheusName)s had {{$value | humanize}} reload failures over the last four hours.' % $._config,
+              summary: 'Prometheus has issues reloading blocks from disk.',
+              description: 'Prometheus %(prometheusName)s has detected {{$value | humanize}} reload failures over the last 3h.' % $._config,
             },
           },
           {
@@ -107,7 +114,8 @@
               severity: 'warning',
             },
             annotations: {
-              message: 'Prometheus %(prometheusName)s had {{$value | humanize}} compaction failures over the last four hours.' % $._config,
+              summary: 'Prometheus has issues compacting blocks.',
+              description: 'Prometheus %(prometheusName)s has detected {{$value | humanize}} compaction failures over the last 3h.' % $._config,
             },
           },
           {
@@ -120,7 +128,8 @@
               severity: 'warning',
             },
             annotations: {
-              message: 'Prometheus %(prometheusName)s has a corrupted write-ahead log (WAL).' % $._config,
+              summary: 'Prometheus is detecting WAL corruptions.',
+              description: 'Prometheus %(prometheusName)s has detected {{$value | humanize}} corruptions of the write-ahead log (WAL) over the last 3h.' % $._config,
             },
           },
           {
@@ -133,20 +142,36 @@
               severity: 'warning',
             },
             annotations: {
-              message: "Prometheus %(prometheusName)s isn't ingesting samples." % $._config,
+              summary: 'Prometheus is not ingesting samples.',
+              description: 'Prometheus %(prometheusName)s is not ingesting samples.' % $._config,
             },
           },
           {
-            alert: 'PrometheusTargetScrapesDuplicate',
+            alert: 'PrometheusDuplicateTimestamps',
             expr: |||
-              increase(prometheus_target_scrapes_sample_duplicate_timestamp_total{%(prometheusSelector)s}[5m]) > 0
+              rate(prometheus_target_scrapes_sample_duplicate_timestamp_total{%(prometheusSelector)s}[5m]) > 0
             ||| % $._config,
             'for': '10m',
             labels: {
               severity: 'warning',
             },
             annotations: {
-              message: 'Prometheus %(prometheusName)s has many samples rejected due to duplicate timestamps but different values' % $._config,
+              summary: 'Prometheus drops samples with duplicate timestamps.',
+              description: 'Prometheus %(prometheusName)s is dropping {{$value | humanize}} samples/s with different values but duplicated timestamp.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusOutOfOrderTimestamps',
+            expr: |||
+              rate(prometheus_target_scrapes_sample_out_of_order_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '10m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus drops samples with out-of-order timestamps.',
+              description: 'Prometheus %(prometheusName)s is dropping {{$value | humanize}} samples/s with timestamps arriving out of order.' % $._config,
             },
           },
           {
@@ -169,7 +194,8 @@
               severity: 'critical',
             },
             annotations: {
-              message: 'Prometheus %(prometheusName)s failed to send {{ printf "%%.1f" $value }}%% samples' % $._config,
+              summary: 'Prometheus fails to send samples to remote storage.',
+              description: 'Prometheus %(prometheusName)s failed to send {{ printf "%%.1f" $value }}%% of the samples to queue {{$labels.queue}}.' % $._config,
             },
           },
           {
@@ -187,20 +213,36 @@
               severity: 'critical',
             },
             annotations: {
-              message: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind.' % $._config,
+              summary: 'Prometheus remote write is behind.',
+              description: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind for queue {{$labels.queue}}.' % $._config,
             },
           },
           {
             alert: 'PrometheusRuleFailures',
             expr: |||
-              rate(prometheus_rule_evaluation_failures_total{%(prometheusSelector)s}[5m]) > 0
+              increase(prometheus_rule_evaluation_failures_total{%(prometheusSelector)s}[5m]) > 0
             ||| % $._config,
             'for': '15m',
             labels: {
               severity: 'critical',
             },
             annotations: {
-              message: 'Prometheus %(prometheusName)s failed to evaluate {{ printf "%%.1f" $value }} rules / s' % $._config,
+              summary: 'Prometheus fails to evaluate rules.',
+              description: 'Prometheus %(prometheusName)s has failed to evaluate {{ printf "%%.0f" $value }} rules in the last 5m.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusMissingRuleEvaluations',
+            expr: |||
+              increase(prometheus_rule_group_iterations_missed_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus misses rule evaluations due to slow rule group evaluation.',
+              description: 'Prometheus %(prometheusName)s has missed {{ printf "%%.0f" $value }} rule group evaluations in the last 5m.' % $._config,
             },
           },
         ],
