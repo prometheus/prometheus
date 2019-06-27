@@ -14,7 +14,7 @@
               severity: 'critical',
             },
             annotations: {
-              message: 'Prometheus failed to reload config, see container logs',
+              message: 'Prometheus %(prometheusName)s failed to reload config, see container logs' % $._config,
             },
           },
           {
@@ -31,7 +31,7 @@
               severity: 'warning',
             },
             annotations: {
-              message: "Prometheus' alert notification queue is running full for {{$labels.namespace}}/{{$labels.pod}}",
+              message: "Prometheus's alert notification queue is running full for %(prometheusName)s" % $._config,
             },
           },
           {
@@ -49,7 +49,7 @@
               severity: 'warning',
             },
             annotations: {
-              message: '{{ printf "%.1f" $value }}% errors while sending alerts from Prometheus {{$labels.namespace}}/{{$labels.pod}} to Alertmanager {{$labels.Alertmanager}}',
+              message: '{{ printf "%%.1f" $value }}%% errors while sending alerts from Prometheus %(prometheusName)s to Alertmanager {{$labels.Alertmanager}}' % $._config,
             },
           },
           {
@@ -68,7 +68,7 @@
               severity: 'critical',
             },
             annotations: {
-              message: '{{ printf "%.1f" $value }}% errors while sending alerts from Prometheus {{$labels.namespace}}/{{$labels.pod}} to Alertmanager {{$labels.Alertmanager}}',
+              message: '{{ printf "%%.1f" $value }}%% errors while sending alerts from Prometheus %(prometheusName)s to Alertmanager {{$labels.Alertmanager}}' % $._config,
             },
           },
           {
@@ -81,7 +81,7 @@
               severity: 'warning',
             },
             annotations: {
-              message: 'Prometheus {{$labels.namespace}}/{{$labels.pod}} is not connected to any Alertmanagers',
+              message: 'Prometheus %(prometheusName)s is not connected to any Alertmanagers' % $._config,
             },
           },
           {
@@ -94,7 +94,7 @@
               severity: 'warning',
             },
             annotations: {
-              message: '{{$labels.job}} at {{$labels.instance}} had {{$value | humanize}} reload failures over the last four hours.',
+              message: 'Prometheus %(prometheusName)s had {{$value | humanize}} reload failures over the last four hours.' % $._config,
             },
           },
           {
@@ -107,7 +107,7 @@
               severity: 'warning',
             },
             annotations: {
-              message: '{{$labels.job}} at {{$labels.instance}} had {{$value | humanize}} compaction failures over the last four hours.',
+              message: 'Prometheus %(prometheusName)s had {{$value | humanize}} compaction failures over the last four hours.' % $._config,
             },
           },
           {
@@ -120,7 +120,7 @@
               severity: 'warning',
             },
             annotations: {
-              message: '{{$labels.job}} at {{$labels.instance}} has a corrupted write-ahead log (WAL).',
+              message: 'Prometheus %(prometheusName)s has a corrupted write-ahead log (WAL).' % $._config,
             },
           },
           {
@@ -133,7 +133,7 @@
               severity: 'warning',
             },
             annotations: {
-              message: "Prometheus {{$labels.namespace }}/{{ $labels.pod}} isn't ingesting samples.",
+              message: "Prometheus %(prometheusName)s isn't ingesting samples." % $._config,
             },
           },
           {
@@ -146,7 +146,7 @@
               severity: 'warning',
             },
             annotations: {
-              message: '{{$labels.namespace}}/{{$labels.pod}} has many samples rejected due to duplicate timestamps but different values',
+              message: 'Prometheus %(prometheusName)s has many samples rejected due to duplicate timestamps but different values' % $._config,
             },
           },
           {
@@ -169,7 +169,7 @@
               severity: 'critical',
             },
             annotations: {
-              message: 'Prometheus failed to send {{ printf "%.1f" $value }}% samples',
+              message: 'Prometheus %(prometheusName)s failed to send {{ printf "%%.1f" $value }}%% samples' % $._config,
             },
           },
           {
@@ -187,7 +187,7 @@
               severity: 'critical',
             },
             annotations: {
-              message: 'Prometheus remote write is {{ printf "%.1f" $value }}s behind.',
+              message: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind.' % $._config,
             },
           },
           {
@@ -200,7 +200,7 @@
               severity: 'critical',
             },
             annotations: {
-              message: 'Prometheus failed to evaluate {{ printf "%.1f" $value }} rules / s',
+              message: 'Prometheus %(prometheusName)s failed to evaluate {{ printf "%%.1f" $value }} rules / s' % $._config,
             },
           },
         ],
