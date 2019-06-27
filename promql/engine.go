@@ -1523,9 +1523,6 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 // signatureFunc returns a function that calculates the signature for a metric
 // ignoring the provided labels. If on, then the given labels are only used instead.
 func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
-	// TODO(fabxc): ensure names are sorted and then use that and sortedness
-	// of labels by names to speed up the operations below.
-	// Alternatively, inline the hashing and don't build new label sets.
 	sort.Strings(names)
 	if on {
 		return func(lset labels.Labels) uint64 {

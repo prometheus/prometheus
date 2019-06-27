@@ -157,24 +157,18 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 // 'names' have to be sorted in ascending order.
 func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
-	i, j := 0, 0
-	for i < len(ls) {
-		if ls[i].Name == MetricName {
-			i++
+	j := 0
+	for i := range ls {
+		for j < len(names) && names[j] < ls[i].Name {
+			j++
+		}
+		if ls[i].Name == MetricName || (j < len(names) && ls[i].Name == names[j]) {
 			continue
 		}
-		if j == len(names) || ls[i].Name < names[j] {
-			b = append(b, ls[i].Name...)
-			b = append(b, sep)
-			b = append(b, ls[i].Value...)
-			b = append(b, sep)
-			i++
-		} else if names[j] < ls[i].Name {
-			j++
-		} else {
-			i++
-			j++
-		}
+		b = append(b, ls[i].Name...)
+		b = append(b, sep)
+		b = append(b, ls[i].Value...)
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b), b
 }
