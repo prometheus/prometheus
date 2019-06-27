@@ -418,6 +418,7 @@ func (w *WALWatcher) readSegment(r *wal.LiveReader, segmentNum int, tail bool) e
 		dec     tsdb.RecordDecoder
 		series  []tsdb.RefSeries
 		samples []tsdb.RefSample
+		send    []tsdb.RefSample
 	)
 
 	for r.Next() && !isClosed(w.quit) {
@@ -444,7 +445,6 @@ func (w *WALWatcher) readSegment(r *wal.LiveReader, segmentNum int, tail bool) e
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
-			var send []tsdb.RefSample
 			for _, s := range samples {
 				if s.T > w.startTime {
 					send = append(send, s)
@@ -453,6 +453,7 @@ func (w *WALWatcher) readSegment(r *wal.LiveReader, segmentNum int, tail bool) e
 			if len(send) > 0 {
 				// Blocks  until the sample is sent to all remote write endpoints or closed (because enqueue blocks).
 				w.writer.Append(send)
+				send = send[:0]
 			}
 
 		case tsdb.RecordTombstones:
