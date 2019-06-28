@@ -56,7 +56,7 @@
               severity: 'warning',
             },
             annotations: {
-              summary: 'Prometheus encounters more than 1% errors sending alerts to a specific Alertmanager.',
+              summary: 'Prometheus has encountered more than 1% errors sending alerts to a specific Alertmanager.',
               description: '{{ printf "%%.1f" $value }}%% errors while sending alerts from Prometheus %(prometheusName)s to Alertmanager {{$labels.alertmanager}}.' % $._config,
             },
           },
@@ -162,7 +162,7 @@
               severity: 'warning',
             },
             annotations: {
-              summary: 'Prometheus drops samples with duplicate timestamps.',
+              summary: 'Prometheus is dropping samples with duplicate timestamps.',
               description: 'Prometheus %(prometheusName)s is dropping {{$value | humanize}} samples/s with different values but duplicated timestamp.' % $._config,
             },
           },
@@ -235,7 +235,7 @@
               severity: 'critical',
             },
             annotations: {
-              summary: 'Prometheus fails to evaluate rules.',
+              summary: 'Prometheus is failing rule evaluations.',
               description: 'Prometheus %(prometheusName)s has failed to evaluate {{ printf "%%.0f" $value }} rules in the last 5m.' % $._config,
             },
           },
@@ -249,7 +249,7 @@
               severity: 'warning',
             },
             annotations: {
-              summary: 'Prometheus misses rule evaluations due to slow rule group evaluation.',
+              summary: 'Prometheus is missing rule evaluations due to slow rule group evaluation.',
               description: 'Prometheus %(prometheusName)s has missed {{ printf "%%.0f" $value }} rule group evaluations in the last 5m.' % $._config,
             },
           },
