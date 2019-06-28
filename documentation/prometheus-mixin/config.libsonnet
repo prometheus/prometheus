@@ -1,8 +1,9 @@
 {
   _config+:: {
-    // Selectors are inserted between {} in Prometheus queries.
+    // prometheusSelector is inserted as part of the label selector in
+    // PromQL queries to identify metrics collected from Prometheus
+    // servers.
     prometheusSelector: 'job="prometheus"',
-    alertmanagerSelector: 'job="alertmanager"',
 
     // prometheusName is inserted into annotations to name the Prometheus
     // instance affected by the alert.

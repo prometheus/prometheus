@@ -6,8 +6,6 @@ local g = import 'grafana-builder/grafana.libsonnet';
       g.dashboard('Prometheus')
       .addMultiTemplate('job', 'prometheus_build_info', 'job')
       .addMultiTemplate('instance', 'prometheus_build_info', 'instance')
-      # Prometheus is quite commonly configured with honor_labels set to true;
-      # therefore job and instance is not the prometheus server in many queries!
       .addRow(
         g.row('Prometheus Stats')
         .addPanel(
