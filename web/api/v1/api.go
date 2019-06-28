@@ -837,20 +837,6 @@ func (api *API) serveFlags(r *http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
 }
 
-func containsSamplesResponseType(accepted []prompb.ReadRequest_ResponseType) bool {
-	if len(accepted) == 0 {
-		// Default value is [SAMPLES]
-		return true
-	}
-
-	for _, resType := range accepted {
-		if resType == prompb.ReadRequest_SAMPLES {
-			return true
-		}
-	}
-	return false
-}
-
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	if err := api.remoteReadGate.Start(r.Context()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -867,7 +853,8 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok := containsSamplesResponseType(req.AcceptedResponseTypes); !ok {
+	// Empty req.AcceptedResponseTypes means non streamed, raw samples response.
+	if len(req.AcceptedResponseTypes) > 0 {
 		http.Error(w, fmt.Sprintf("none of requested response types are implemented: %v", req.AcceptedResponseTypes), http.StatusNotImplemented)
 		return
 	}
