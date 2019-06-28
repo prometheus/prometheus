@@ -28,25 +28,23 @@ message ReadRequest {
   repeated Query queries = 1;
 
   enum ResponseType {
-    // Server will return a ReadResponse with raw samples.
-    //
-    // Response headers:
-    // Content-Type: "application/x-protobuf"
-    // Content-Encoding: "snappy"
-    SAMPLES = 0;
-
     // Server will stream a varint delimited ChunkedReadResponse message that contains XOR encoded chunks for a single series.
     //
     // Response headers:
     // Content-Type: "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"
     // Content-Encoding: ""
-    STREAMED_XOR_CHUNKS = 1;
+    STREAMED_XOR_CHUNKS = 0;
   }
 
   // accepted_response_types allows negotiating the content type of the response.
-  // Response types are taken from the list in the FIFO order. If no response type is implemented by server, error is returned.
-  // For servers that do not support this field, the SAMPLES response type is used strictly.
-  // If field is empty, the server should assume SAMPLES response type is accepted by the caller.
+  //
+  // Response types are taken from the list in the FIFO order. If no response type in `accepted_response_types` is
+  // implemented by server, error is returned.
+  // For request that do not support `accepted_response_types` field the non streamed, raw samples response is used.
+  // In such case response headers are as follows:
+  //
+  // Content-Type: "application/x-protobuf"
+  // Content-Encoding: "snappy"
   repeated ResponseType accepted_response_types = 2;
 }
 
@@ -75,6 +73,6 @@ message QueryResult {
 message ChunkedReadResponse {
   repeated prometheus.ChunkedSeries chunked_series = 1;
 
-  // query_index representsa an index of the query from ReadRequest.queries this results relates to.
+  // query_index represents an index of the query from ReadRequest.queries this results relates to.
   int64 query_index = 2;
 }
