@@ -329,7 +329,7 @@ var (
 		"bits": "bytes",
 		// Energy.
 		"calories": "joules",
-		// Weight.
+		// Mass.
 		"pounds": "grams",
 		"ounces": "grams",
 	}
