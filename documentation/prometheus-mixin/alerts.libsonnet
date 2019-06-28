@@ -7,9 +7,11 @@
           {
             alert: 'PrometheusBadConfig',
             expr: |||
-              prometheus_config_last_reload_successful{%(prometheusSelector)s} == 0
+              # Without max_over_time, failed scrapes could create false negatives, see
+              # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
+              max_over_time(prometheus_config_last_reload_successful{%(prometheusSelector)s}[5m]) == 0
             ||| % $._config,
-            'for': '15m',
+            'for': '10m',
             labels: {
               severity: 'critical',
             },
@@ -21,10 +23,12 @@
           {
             alert: 'PrometheusNotificationQueueRunningFull',
             expr: |||
+              # Without min_over_time, failed scrapes could create false negatives, see
+              # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
               (
                 predict_linear(prometheus_notifications_queue_length{%(prometheusSelector)s}[5m], 60 * 30)
               >
-                prometheus_notifications_queue_capacity{%(prometheusSelector)s}
+                min_over_time(prometheus_notifications_queue_capacity{%(prometheusSelector)s}[5m])
               )
             ||| % $._config,
             'for': '15m',
@@ -79,7 +83,9 @@
           {
             alert: 'PrometheusNotConnectedToAlertmanagers',
             expr: |||
-              prometheus_notifications_alertmanagers_discovered{%(prometheusSelector)s} < 1
+              # Without max_over_time, failed scrapes could create false negatives, see
+              # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
+              max_over_time(prometheus_notifications_alertmanagers_discovered{%(prometheusSelector)s}[5m]) < 1
             ||| % $._config,
             'for': '10m',
             labels: {
@@ -201,10 +207,12 @@
           {
             alert: 'PrometheusRemoteWriteBehind',
             expr: |||
+              # Without max_over_time, failed scrapes could create false negatives, see
+              # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
               (
-                prometheus_remote_storage_highest_timestamp_in_seconds{%(prometheusSelector)s}
+                max_over_time(prometheus_remote_storage_highest_timestamp_in_seconds{%(prometheusSelector)s}[5m])
               - on(job, instance) group_right
-                prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(prometheusSelector)s}
+                max_over_time(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(prometheusSelector)s}[5m])
               )
               > 120
             ||| % $._config,
