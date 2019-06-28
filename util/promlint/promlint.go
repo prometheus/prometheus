@@ -301,24 +301,26 @@ var (
 		"amperes": "amperes",
 		"bytes":   "bytes",
 		"candela": "candela",
+		"celsius": "celsius", // Celsius is more common in practice than Kelvin.
 		"grams":   "grams",
-		"celsius": "celsius", // Allow both kelvin and celsius.
-		"kelvin":  "kelvin",  // Both plural and non-plural form allowed.
-		"kelvins": "kelvins",
+		"joules":  "joules",
 		"meters":  "meters", // Both American and international spelling permitted.
 		"metres":  "metres",
 		"moles":   "moles",
 		"seconds": "seconds",
-		"joules":  "joules",
+		"volts":   "volts",
 
 		// Non base units.
 		// Time.
 		"minutes": "seconds",
 		"hours":   "seconds",
 		"days":    "seconds",
+		"weeks":   "seconds",
 		// Temperature.
+		"kelvin":     "celsius",
+		"kelvins":    "celsius",
 		"fahrenheit": "celsius",
-		"rankine":    "kelvin",
+		"rankine":    "celsius",
 		// Length.
 		"inches": "meters",
 		"yards":  "meters",

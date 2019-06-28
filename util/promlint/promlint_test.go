@@ -135,22 +135,6 @@ x_celsius 10
 `,
 		},
 		{
-			name: "kelvin",
-			in: `
-# HELP x_kelvin Test metric.
-# TYPE x_kelvin untyped
-x_kelvin 10
-`,
-		},
-		{
-			name: "kelvins",
-			in: `
-# HELP x_kelvins Test metric.
-# TYPE x_kelvins untyped
-x_kelvins 10
-`,
-		},
-		{
 			name: "meters",
 			in: `
 # HELP x_meters Test metric.
@@ -240,15 +224,15 @@ x_kilograms 10
 			}},
 		},
 		{
-			name: "nanokelvin",
+			name: "nanocelsius",
 			in: `
-# HELP x_nanokelvin Test metric.
-# TYPE x_nanokelvin untyped
-x_nanokelvin 10
+# HELP x_nanocelsius Test metric.
+# TYPE x_nanocelsius untyped
+x_nanocelsius 10
 `,
 			problems: []promlint.Problem{{
-				Metric: "x_nanokelvin",
-				Text:   `use base unit "kelvin" instead of "nanokelvin"`,
+				Metric: "x_nanocelsius",
+				Text:   `use base unit "celsius" instead of "nanocelsius"`,
 			}},
 		},
 		{
@@ -324,6 +308,30 @@ x_days 10
 			}},
 		},
 		{
+			name: "kelvin",
+			in: `
+# HELP x_kelvin Test metric.
+# TYPE x_kelvin untyped
+x_kelvin 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_kelvin",
+				Text:   `use base unit "celsius" instead of "kelvin"`,
+			}},
+		},
+		{
+			name: "kelvins",
+			in: `
+# HELP x_kelvins Test metric.
+# TYPE x_kelvins untyped
+x_kelvins 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_kelvins",
+				Text:   `use base unit "celsius" instead of "kelvins"`,
+			}},
+		},
+		{
 			name: "fahrenheit",
 			in: `
 # HELP thermometers_fahrenheit Test metric.
@@ -344,7 +352,7 @@ thermometers_rankine 10
 `,
 			problems: []promlint.Problem{{
 				Metric: "thermometers_rankine",
-				Text:   `use base unit "kelvin" instead of "rankine"`,
+				Text:   `use base unit "celsius" instead of "rankine"`,
 			}},
 		}, {
 			name: "inches",
