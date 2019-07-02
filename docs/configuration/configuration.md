@@ -127,8 +127,11 @@ job_name: <job_name>
 # If honor_labels is set to "false", label conflicts are resolved by renaming
 # conflicting labels in the scraped data to "exported_<original-label>" (for
 # example "exported_instance", "exported_job") and then attaching server-side
-# labels. This is useful for use cases such as federation, where all labels
-# specified in the target should be preserved.
+# labels.
+#
+# Setting honor_labels to "true" is useful for use cases such as federation and
+# scraping the Pushgateway, where all labels specified in the target should be
+# preserved.
 #
 # Note that any globally configured "external_labels" are unaffected by this
 # setting. In communication with external systems, they are always applied only
