@@ -453,7 +453,10 @@ func (r blockIndexReader) LabelValues(names ...string) (index.StringTuples, erro
 
 func (r blockIndexReader) Postings(name, value string) (index.Postings, error) {
 	p, err := r.ir.Postings(name, value)
-	return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	if err != nil {
+		return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	}
+	return p, nil
 }
 
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
@@ -461,11 +464,10 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 }
 
 func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
-	return errors.Wrapf(
-		r.ir.Series(ref, lset, chks),
-		"block: %s",
-		r.b.Meta().ULID,
-	)
+	if err := r.ir.Series(ref, lset, chks); err != nil {
+		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	}
+	return nil
 }
 
 func (r blockIndexReader) LabelIndices() ([][]string, error) {
