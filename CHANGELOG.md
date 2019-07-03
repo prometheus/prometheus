@@ -5,7 +5,15 @@
  - [FEATURE] Provide option to compress WAL records using Snappy. [#609](https://github.com/prometheus/tsdb/pull/609)
  - [BUGFIX] Re-calculate block size when calling `block.Delete`.
  - [BUGFIX] Re-encode all head chunks at compaction that are open (being appended to) or outside the Maxt block range. This avoids writing out corrupt data. It happens when snapshotting with the head included.
+ - [BUGFIX] Improved handling of multiple refs for the same series in WAL reading.
+ - [BUGFIX] `prometheus_tsdb_compactions_failed_total` is now incremented on any compaction failure.
  - [CHANGE] The meta file `BlockStats` no longer holds size information. This is now dynamically calculated and kept in memory. It also includes the meta file size which was not included before.
+ - [CHANGE] Create new clean segment when starting the WAL.
+ - [CHANGE] Renamed metric from `prometheus_tsdb_wal_reader_corruption_errors` to `prometheus_tsdb_wal_reader_corruption_errors_total`
+ - [ENHANCEMENT] Improved atomicity of .tmp block replacement during compaction for usual case.
+ - [ENHANCEMENT] Improved postings intersection matching.
+ - [ENHANCEMENT] Reduced disk usage for WAL for small setups.
+ - [ENHANCEMENT] Optimize queries using regexp for set lookups.
 
 ## 0.8.0
 
