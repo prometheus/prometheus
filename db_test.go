@@ -489,6 +489,62 @@ func TestDB_Snapshot(t *testing.T) {
 	testutil.Equals(t, 1000.0, sum)
 }
 
+// TestDB_Snapshot_ChunksOutsideOfCompactedRange ensures that a snapshot removes chunks samples
+// that are outside the set block time range.
+// See https://github.com/prometheus/prometheus/issues/5105
+func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
+	db, delete := openTestDB(t, nil)
+	defer delete()
+
+	app := db.Appender()
+	mint := int64(1414141414000)
+	for i := 0; i < 1000; i++ {
+		_, err := app.Add(labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, app.Commit())
+	testutil.Ok(t, app.Rollback())
+
+	snap, err := ioutil.TempDir("", "snap")
+	testutil.Ok(t, err)
+
+	// Hackingly introduce "race", by having lower max time then maxTime in last chunk.
+	db.head.maxTime = db.head.maxTime - 10
+
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(snap))
+	}()
+	testutil.Ok(t, db.Snapshot(snap, true))
+	testutil.Ok(t, db.Close())
+
+	// Reopen DB from snapshot.
+	db, err = Open(snap, nil, nil, nil)
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, db.Close()) }()
+
+	querier, err := db.Querier(mint, mint+1000)
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, querier.Close()) }()
+
+	// Sum values.
+	seriesSet, err := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	testutil.Ok(t, err)
+
+	sum := 0.0
+	for seriesSet.Next() {
+		series := seriesSet.At().Iterator()
+		for series.Next() {
+			_, v := series.At()
+			sum += v
+		}
+		testutil.Ok(t, series.Err())
+	}
+	testutil.Ok(t, seriesSet.Err())
+
+	// Since we snapshotted with MaxTime - 10, so expect 10 less samples.
+	testutil.Equals(t, 1000.0-10, sum)
+}
+
 func TestDB_SnapshotWithDelete(t *testing.T) {
 	numSamples := int64(10)
 
@@ -930,7 +986,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 	// totalBlocks should be >=2 so we have enough blocks to trigger compaction failure.
 	totalBlocks := 2
 	for i := 0; i < totalBlocks; i++ {
-		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, 0, 0))
+		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, 0, 1))
 		block, err := OpenBlock(nil, blockDir, nil)
 		testutil.Ok(t, err)
 		// Add some some fake tombstones to trigger the compaction.
@@ -974,7 +1030,7 @@ func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int6
 		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
-	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 0)), nil)
+	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
 	testutil.Ok(c.t, err)
 	testutil.Ok(c.t, block.Close()) // Close block as we won't be using anywhere.
 	c.blocks = append(c.blocks, block)

@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"encoding/binary"
+
 	"errors"
 	"io/ioutil"
 	"math/rand"
@@ -56,7 +57,7 @@ func TestSetCompactionFailed(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(tmpdir))
 	}()
 
-	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 0))
+	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 1))
 	b, err := OpenBlock(nil, blockDir, nil)
 	testutil.Ok(t, err)
 	testutil.Equals(t, false, b.meta.Compaction.Failed)
@@ -133,7 +134,7 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Ok(t, os.RemoveAll(tmpdir))
 			}()
 
-			blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 0))
+			blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 1))
 			files, err := sequenceFiles(chunkDir(blockDir))
 			testutil.Ok(t, err)
 			testutil.Assert(t, len(files) > 0, "No chunk created.")
@@ -213,7 +214,9 @@ func createBlock(tb testing.TB, dir string, series []Series) string {
 
 	testutil.Ok(tb, os.MkdirAll(dir, 0777))
 
-	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime(), nil)
+	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
+	// Because of this block intervals are always +1 than the total samples it includes.
+	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime()+1, nil)
 	testutil.Ok(tb, err)
 	return filepath.Join(dir, ulid.String())
 }
@@ -265,7 +268,7 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []Series {
 			lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
 		}
 		samples := make([]tsdbutil.Sample, 0, maxt-mint+1)
-		for t := mint; t <= maxt; t++ {
+		for t := mint; t < maxt; t++ {
 			samples = append(samples, sample{t: t, v: rand.Float64()})
 		}
 		series[i] = newSeries(lbls, samples)

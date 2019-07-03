@@ -943,8 +943,20 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	if !withHead {
 		return nil
 	}
-	_, err := db.compactor.Write(dir, db.head, db.head.MinTime(), db.head.MaxTime(), nil)
-	return errors.Wrap(err, "snapshot head block")
+
+	mint := db.head.MinTime()
+	maxt := db.head.MaxTime()
+	head := &rangeHead{
+		head: db.head,
+		mint: mint,
+		maxt: maxt,
+	}
+	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
+	// Because of this block intervals are always +1 than the total samples it includes.
+	if _, err := db.compactor.Write(dir, head, mint, maxt+1, nil); err != nil {
+		return errors.Wrap(err, "snapshot head block")
+	}
+	return nil
 }
 
 // Querier returns a new querier over the data partition for the given time range.
