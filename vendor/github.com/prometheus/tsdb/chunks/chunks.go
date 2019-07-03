@@ -51,7 +51,9 @@ type Meta struct {
 	Ref   uint64
 	Chunk chunkenc.Chunk
 
-	MinTime, MaxTime int64 // time range the data covers
+	// Time range the data covers.
+	// When MaxTime == math.MaxInt64 the chunk is still open and being appended to.
+	MinTime, MaxTime int64
 }
 
 // writeHash writes the chunk encoding and raw data into the provided hash.
@@ -218,7 +220,7 @@ func MergeOverlappingChunks(chks []Meta) ([]Meta, error) {
 		// So never overlaps with newChks[last-1] or anything before that.
 		if c.MinTime > newChks[last].MaxTime {
 			newChks = append(newChks, c)
-			last += 1
+			last++
 			continue
 		}
 		nc := &newChks[last]

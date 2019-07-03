@@ -51,6 +51,7 @@ var DefaultOptions = &Options{
 	BlockRanges:            ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
 	NoLockfile:             false,
 	AllowOverlappingBlocks: false,
+	WALCompression:         false,
 }
 
 // Options of the DB storage.
@@ -80,6 +81,9 @@ type Options struct {
 	// Overlapping blocks are allowed if AllowOverlappingBlocks is true.
 	// This in-turn enables vertical compaction and vertical query merge.
 	AllowOverlappingBlocks bool
+
+	// WALCompression will turn on Snappy compression for records on the WAL.
+	WALCompression bool
 }
 
 // Appender allows appending a batch of data. It must be completed with a
@@ -147,6 +151,7 @@ type dbMetrics struct {
 	reloads              prometheus.Counter
 	reloadsFailed        prometheus.Counter
 	compactionsTriggered prometheus.Counter
+	compactionsFailed    prometheus.Counter
 	timeRetentionCount   prometheus.Counter
 	compactionsSkipped   prometheus.Counter
 	startTime            prometheus.GaugeFunc
@@ -191,6 +196,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_compactions_triggered_total",
 		Help: "Total number of triggered compactions for the partition.",
 	})
+	m.compactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_compactions_failed_total",
+		Help: "Total number of compactions that failed for the partition.",
+	})
 	m.timeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_time_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum time limit was exceeded.",
@@ -231,6 +240,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.reloadsFailed,
 			m.timeRetentionCount,
 			m.compactionsTriggered,
+			m.compactionsFailed,
 			m.startTime,
 			m.tombCleanTimer,
 			m.blocksBytes,
@@ -300,7 +310,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		if opts.WALSegmentSize > 0 {
 			segmentSize = opts.WALSegmentSize
 		}
-		wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize)
+		wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
 		if err != nil {
 			return nil, err
 		}
@@ -322,8 +332,12 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
 	}
 
-	if err := db.head.Init(minValidTime); err != nil {
-		return nil, errors.Wrap(err, "read WAL")
+	if initErr := db.head.Init(minValidTime); initErr != nil {
+		db.head.metrics.walCorruptionsTotal.Inc()
+		level.Warn(db.logger).Log("msg", "encountered WAL read error, attempting repair", "err", err)
+		if err := wlog.Repair(initErr); err != nil {
+			return nil, errors.Wrap(err, "repair corrupted WAL")
+		}
 	}
 
 	go db.run()
@@ -411,6 +425,11 @@ func (a dbAppender) Commit() error {
 func (db *DB) compact() (err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
+	defer func() {
+		if err != nil {
+			db.metrics.compactionsFailed.Inc()
+		}
+	}()
 	// Check whether we have pending head blocks that are ready to be persisted.
 	// They have the highest priority.
 	for {
@@ -610,7 +629,7 @@ func (db *DB) openBlocks() (blocks []*Block, corrupted map[ulid.ULID]error, err 
 
 	corrupted = make(map[ulid.ULID]error)
 	for _, dir := range dirs {
-		meta, err := readMetaFile(dir)
+		meta, _, err := readMetaFile(dir)
 		if err != nil {
 			level.Error(db.logger).Log("msg", "not a block dir", "dir", dir)
 			continue
@@ -924,8 +943,20 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	if !withHead {
 		return nil
 	}
-	_, err := db.compactor.Write(dir, db.head, db.head.MinTime(), db.head.MaxTime(), nil)
-	return errors.Wrap(err, "snapshot head block")
+
+	mint := db.head.MinTime()
+	maxt := db.head.MaxTime()
+	head := &rangeHead{
+		head: db.head,
+		mint: mint,
+		maxt: maxt,
+	}
+	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
+	// Because of this block intervals are always +1 than the total samples it includes.
+	if _, err := db.compactor.Write(dir, head, mint, maxt+1, nil); err != nil {
+		return errors.Wrap(err, "snapshot head block")
+	}
+	return nil
 }
 
 // Querier returns a new querier over the data partition for the given time range.

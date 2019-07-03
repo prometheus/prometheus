@@ -22,28 +22,46 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var (
-	readerCorruptionErrors = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_wal_reader_corruption_errors",
-		Help: "Errors encountered when reading the WAL.",
-	}, []string{"error"})
-)
+// liveReaderMetrics holds all metrics exposed by the LiveReader.
+type liveReaderMetrics struct {
+	readerCorruptionErrors *prometheus.CounterVec
+}
+
+// LiveReaderMetrics instatiates, registers and returns metrics to be injected
+// at LiveReader instantiation.
+func NewLiveReaderMetrics(reg prometheus.Registerer) *liveReaderMetrics {
+	m := &liveReaderMetrics{
+		readerCorruptionErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wal_reader_corruption_errors_total",
+			Help: "Errors encountered when reading the WAL.",
+		}, []string{"error"}),
+	}
+
+	if reg != nil {
+		reg.Register(m.readerCorruptionErrors)
+	}
+
+	return m
+}
 
 // NewLiveReader returns a new live reader.
-func NewLiveReader(logger log.Logger, r io.Reader) *LiveReader {
-	return &LiveReader{
-		logger: logger,
-		rdr:    r,
+func NewLiveReader(logger log.Logger, metrics *liveReaderMetrics, r io.Reader) *LiveReader {
+	lr := &LiveReader{
+		logger:  logger,
+		rdr:     r,
+		metrics: metrics,
 
 		// Until we understand how they come about, make readers permissive
 		// to records spanning pages.
 		permissive: true,
 	}
+
+	return lr
 }
 
 // LiveReader reads WAL records from an io.Reader. It allows reading of WALs
@@ -54,6 +72,7 @@ type LiveReader struct {
 	rdr        io.Reader
 	err        error
 	rec        []byte
+	snappyBuf  []byte
 	hdr        [recordHeaderSize]byte
 	buf        [pageSize]byte
 	readIndex  int   // Index in buf to start at for next read.
@@ -68,6 +87,8 @@ type LiveReader struct {
 	// does.  Until we track down why, set permissive to true to tolerate it.
 	// NB the non-ive Reader implementation allows for this.
 	permissive bool
+
+	metrics *liveReaderMetrics
 }
 
 // Err returns any errors encountered reading the WAL.  io.EOFs are not terminal
@@ -166,11 +187,18 @@ func (r *LiveReader) buildRecord() (bool, error) {
 			return false, nil
 		}
 
-		rt := recType(r.hdr[0])
+		rt := recTypeFromHeader(r.hdr[0])
 		if rt == recFirst || rt == recFull {
 			r.rec = r.rec[:0]
+			r.snappyBuf = r.snappyBuf[:0]
 		}
-		r.rec = append(r.rec, temp...)
+
+		compressed := r.hdr[0]&snappyMask != 0
+		if compressed {
+			r.snappyBuf = append(r.snappyBuf, temp...)
+		} else {
+			r.rec = append(r.rec, temp...)
+		}
 
 		if err := validateRecord(rt, r.index); err != nil {
 			r.index = 0
@@ -178,6 +206,16 @@ func (r *LiveReader) buildRecord() (bool, error) {
 		}
 		if rt == recLast || rt == recFull {
 			r.index = 0
+			if compressed && len(r.snappyBuf) > 0 {
+				// The snappy library uses `len` to calculate if we need a new buffer.
+				// In order to allocate as few buffers as possible make the length
+				// equal to the capacity.
+				r.rec = r.rec[:cap(r.rec)]
+				r.rec, err = snappy.Decode(r.rec, r.snappyBuf)
+				if err != nil {
+					return false, err
+				}
+			}
 			return true, nil
 		}
 		// Only increment i for non-zero records since we use it
@@ -258,7 +296,7 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 		if !r.permissive {
 			return nil, 0, fmt.Errorf("record would overflow current page: %d > %d", r.readIndex+recordHeaderSize+length, pageSize)
 		}
-		readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
+		r.metrics.readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
 		level.Warn(r.logger).Log("msg", "record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
 	}
 	if recordHeaderSize+length > pageSize {

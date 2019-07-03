@@ -207,6 +207,9 @@ func main() {
 	a.Flag("storage.tsdb.allow-overlapping-blocks", "[EXPERIMENTAL] Allow overlapping blocks, which in turn enables vertical compaction and vertical query merge.").
 		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
 
+	a.Flag("storage.tsdb.wal-compression", "Compress the tsdb WAL.").
+		Default("false").BoolVar(&cfg.tsdb.WALCompression)
+
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
@@ -671,6 +674,7 @@ func main() {
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
 					"AllowOverlappingBlocks", cfg.tsdb.AllowOverlappingBlocks,
+					"WALCompression", cfg.tsdb.WALCompression,
 				)
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)

@@ -65,8 +65,9 @@ func newWalMetrics(wal *SegmentWAL, r prometheus.Registerer) *walMetrics {
 	m := &walMetrics{}
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "prometheus_tsdb_wal_fsync_duration_seconds",
-		Help: "Duration of WAL fsync.",
+		Name:       "prometheus_tsdb_wal_fsync_duration_seconds",
+		Help:       "Duration of WAL fsync.",
+		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 	})
 	m.corruptions = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_wal_corruptions_total",
@@ -1245,7 +1246,7 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if err := os.RemoveAll(tmpdir); err != nil {
 		return errors.Wrap(err, "cleanup replacement dir")
 	}
-	repl, err := wal.New(logger, nil, tmpdir)
+	repl, err := wal.New(logger, nil, tmpdir, false)
 	if err != nil {
 		return errors.Wrap(err, "open new WAL")
 	}
