@@ -27,24 +27,38 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// liveReaderMetrics holds all metrics exposed by the LiveReader.
+type liveReaderMetrics struct {
+	readerCorruptionErrors *prometheus.CounterVec
+}
+
+// LiveReaderMetrics instatiates, registers and returns metrics to be injected
+// at LiveReader instantiation.
+func NewLiveReaderMetrics(reg prometheus.Registerer) *liveReaderMetrics {
+	m := &liveReaderMetrics{
+		readerCorruptionErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wal_reader_corruption_errors_total",
+			Help: "Errors encountered when reading the WAL.",
+		}, []string{"error"}),
+	}
+
+	if reg != nil {
+		reg.Register(m.readerCorruptionErrors)
+	}
+
+	return m
+}
+
 // NewLiveReader returns a new live reader.
-func NewLiveReader(logger log.Logger, reg prometheus.Registerer, r io.Reader) *LiveReader {
+func NewLiveReader(logger log.Logger, metrics *liveReaderMetrics, r io.Reader) *LiveReader {
 	lr := &LiveReader{
-		logger: logger,
-		rdr:    r,
+		logger:  logger,
+		rdr:     r,
+		metrics: metrics,
 
 		// Until we understand how they come about, make readers permissive
 		// to records spanning pages.
 		permissive: true,
-	}
-
-	lr.readerCorruptionErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_wal_reader_corruption_errors_total",
-		Help: "Errors encountered when reading the WAL.",
-	}, []string{"error"})
-
-	if reg != nil {
-		reg.MustRegister(lr.readerCorruptionErrors)
 	}
 
 	return lr
@@ -74,7 +88,7 @@ type LiveReader struct {
 	// NB the non-ive Reader implementation allows for this.
 	permissive bool
 
-	readerCorruptionErrors *prometheus.CounterVec
+	metrics *liveReaderMetrics
 }
 
 // Err returns any errors encountered reading the WAL.  io.EOFs are not terminal
@@ -282,7 +296,7 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 		if !r.permissive {
 			return nil, 0, fmt.Errorf("record would overflow current page: %d > %d", r.readIndex+recordHeaderSize+length, pageSize)
 		}
-		r.readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
+		r.metrics.readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
 		level.Warn(r.logger).Log("msg", "record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
 	}
 	if recordHeaderSize+length > pageSize {
