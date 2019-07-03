@@ -130,6 +130,9 @@ type Options struct {
 	// When true it disables the overlapping blocks check.
 	// This in-turn enables vertical compaction and vertical query merge.
 	AllowOverlappingBlocks bool
+
+	// When true records in the WAL will be compressed.
+	WALCompression bool
 }
 
 var (
@@ -195,6 +198,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 		BlockRanges:            rngs,
 		NoLockfile:             opts.NoLockfile,
 		AllowOverlappingBlocks: opts.AllowOverlappingBlocks,
+		WALCompression:         opts.WALCompression,
 	})
 	if err != nil {
 		return nil, err
