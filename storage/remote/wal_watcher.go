@@ -78,6 +78,7 @@ var (
 		},
 		[]string{queue},
 	)
+	liveReaderMetrics = wal.NewLiveReaderMetrics(prometheus.DefaultRegisterer)
 )
 
 func init() {
@@ -293,7 +294,7 @@ func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 	}
 	defer segment.Close()
 
-	reader := wal.NewLiveReader(w.logger, segment)
+	reader := wal.NewLiveReader(w.logger, liveReaderMetrics, segment)
 
 	readTicker := time.NewTicker(readPeriod)
 	defer readTicker.Stop()
@@ -509,7 +510,7 @@ func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 		}
 		defer sr.Close()
 
-		r := wal.NewLiveReader(w.logger, sr)
+		r := wal.NewLiveReader(w.logger, liveReaderMetrics, sr)
 		if err := w.readSegment(r, index, false); err != io.EOF && err != nil {
 			return errors.Wrap(err, "readSegment")
 		}

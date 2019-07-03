@@ -128,9 +128,19 @@ func Rename(from, to string) error {
 // Replace moves a file or directory to a new location and deletes any previous data.
 // It is not atomic.
 func Replace(from, to string) error {
-	if err := os.RemoveAll(to); err != nil {
-		return err
+	// Remove destination only if it is a dir otherwise leave it to os.Rename
+	// as it replaces the destination file and is atomic.
+	{
+		f, err := os.Stat(to)
+		if !os.IsNotExist(err) {
+			if err == nil && f.IsDir() {
+				if err := os.RemoveAll(to); err != nil {
+					return err
+				}
+			}
+		}
 	}
+
 	if err := os.Rename(from, to); err != nil {
 		return err
 	}

@@ -29,6 +29,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/tsdb/fileutil"
@@ -165,6 +166,8 @@ type WAL struct {
 	stopc       chan chan struct{}
 	actorc      chan func()
 	closed      bool // To allow calling Close() more than once without blocking.
+	compress    bool
+	snappyBuf   []byte
 
 	fsyncDuration   prometheus.Summary
 	pageFlushes     prometheus.Counter
@@ -175,13 +178,13 @@ type WAL struct {
 }
 
 // New returns a new WAL over the given directory.
-func New(logger log.Logger, reg prometheus.Registerer, dir string) (*WAL, error) {
-	return NewSize(logger, reg, dir, DefaultSegmentSize)
+func New(logger log.Logger, reg prometheus.Registerer, dir string, compress bool) (*WAL, error) {
+	return NewSize(logger, reg, dir, DefaultSegmentSize, compress)
 }
 
 // NewSize returns a new WAL over the given directory.
 // New segments are created with the specified size.
-func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int) (*WAL, error) {
+func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool) (*WAL, error) {
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
 	}
@@ -198,10 +201,12 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		page:        &page{},
 		actorc:      make(chan func(), 100),
 		stopc:       make(chan chan struct{}),
+		compress:    compress,
 	}
 	w.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "prometheus_tsdb_wal_fsync_duration_seconds",
-		Help: "Duration of WAL fsync.",
+		Name:       "prometheus_tsdb_wal_fsync_duration_seconds",
+		Help:       "Duration of WAL fsync.",
+		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 	})
 	w.pageFlushes = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_wal_page_flushes_total",
@@ -228,32 +233,33 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	}
 
 	_, j, err := w.Segments()
+	// Index of the Segment we want to open and write to.
+	writeSegmentIndex := 0
 	if err != nil {
 		return nil, errors.Wrap(err, "get segment range")
 	}
-	// Fresh dir, no segments yet.
-	if j == -1 {
-		segment, err := CreateSegment(w.dir, 0)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := w.setSegment(segment); err != nil {
-			return nil, err
-		}
-	} else {
-		segment, err := OpenWriteSegment(logger, w.dir, j)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := w.setSegment(segment); err != nil {
-			return nil, err
-		}
+	// If some segments already exist create one with a higher index than the last segment.
+	if j != -1 {
+		writeSegmentIndex = j + 1
 	}
+
+	segment, err := CreateSegment(w.dir, writeSegmentIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := w.setSegment(segment); err != nil {
+		return nil, err
+	}
+
 	go w.run()
 
 	return w, nil
+}
+
+// CompressionEnabled returns if compression is enabled on this WAL.
+func (w *WAL) CompressionEnabled() bool {
+	return w.compress
 }
 
 // Dir returns the directory of the WAL.
@@ -363,6 +369,9 @@ func (w *WAL) Repair(origErr error) error {
 	}
 	// We expect an error here from r.Err(), so nothing to handle.
 
+	// We need to pad to the end of the last page in the repaired segment
+	w.flushPage(true)
+
 	// We explicitly close even when there is a defer for Windows to be
 	// able to delete it. The defer is in place to close it in-case there
 	// are errors above.
@@ -372,12 +381,33 @@ func (w *WAL) Repair(origErr error) error {
 	if err := os.Remove(tmpfn); err != nil {
 		return errors.Wrap(err, "delete corrupted segment")
 	}
+
+	// Explicitly close the the segment we just repaired to avoid issues with Windows.
+	s.Close()
+
+	// We always want to start writing to a new Segment rather than an existing
+	// Segment, which is handled by NewSize, but earlier in Repair we're deleting
+	// all segments that come after the corrupted Segment. Recreate a new Segment here.
+	s, err = CreateSegment(w.dir, cerr.Segment+1)
+	if err != nil {
+		return err
+	}
+	if err := w.setSegment(s); err != nil {
+		return err
+	}
 	return nil
 }
 
 // SegmentName builds a segment name for the directory.
 func SegmentName(dir string, i int) string {
 	return filepath.Join(dir, fmt.Sprintf("%08d", i))
+}
+
+// NextSegment creates the next segment and closes the previous one.
+func (w *WAL) NextSegment() error {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	return w.nextSegment()
 }
 
 // nextSegment creates the next segment and closes the previous one.
@@ -455,6 +485,14 @@ func (w *WAL) flushPage(clear bool) error {
 	return nil
 }
 
+// First Byte of header format:
+// [ 4 bits unallocated] [1 bit snappy compression flag] [ 3 bit record type ]
+
+const (
+	snappyMask  = 1 << 3
+	recTypeMask = snappyMask - 1
+)
+
 type recType uint8
 
 const (
@@ -464,6 +502,10 @@ const (
 	recMiddle   recType = 3 // Middle fragments of a record.
 	recLast     recType = 4 // Final fragment of a record.
 )
+
+func recTypeFromHeader(header byte) recType {
+	return recType(header & recTypeMask)
+}
 
 func (t recType) String() string {
 	switch t {
@@ -525,6 +567,19 @@ func (w *WAL) log(rec []byte, final bool) error {
 		}
 	}
 
+	compressed := false
+	if w.compress && len(rec) > 0 {
+		// The snappy library uses `len` to calculate if we need a new buffer.
+		// In order to allocate as few buffers as possible make the length
+		// equal to the capacity.
+		w.snappyBuf = w.snappyBuf[:cap(w.snappyBuf)]
+		w.snappyBuf = snappy.Encode(w.snappyBuf, rec)
+		if len(w.snappyBuf) < len(rec) {
+			rec = w.snappyBuf
+			compressed = true
+		}
+	}
+
 	// Populate as many pages as necessary to fit the record.
 	// Be careful to always do one pass to ensure we write zero-length records.
 	for i := 0; i == 0 || len(rec) > 0; i++ {
@@ -547,6 +602,9 @@ func (w *WAL) log(rec []byte, final bool) error {
 			typ = recFirst
 		default:
 			typ = recMiddle
+		}
+		if compressed {
+			typ |= snappyMask
 		}
 
 		buf[0] = byte(typ)
@@ -710,7 +768,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 			segs = append(segs, s)
 		}
 	}
-	return newSegmentBufReader(segs...), nil
+	return NewSegmentBufReader(segs...), nil
 }
 
 // segmentBufReader is a buffered reader that reads in multiples of pages.
@@ -725,7 +783,7 @@ type segmentBufReader struct {
 	off  int // Offset of read data into current segment.
 }
 
-func newSegmentBufReader(segs ...*Segment) *segmentBufReader {
+func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	return &segmentBufReader{
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,

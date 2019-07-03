@@ -103,7 +103,7 @@ func TestTailSamples(t *testing.T) {
 	testutil.Ok(t, err)
 
 	enc := tsdb.RecordEncoder{}
-	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize)
+	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize, false)
 	testutil.Ok(t, err)
 
 	// Write to the initial segment then checkpoint.
@@ -145,7 +145,7 @@ func TestTailSamples(t *testing.T) {
 		testutil.Ok(t, err)
 		defer segment.Close()
 
-		reader := wal.NewLiveReader(nil, segment)
+		reader := wal.NewLiveReader(nil, liveReaderMetrics, segment)
 		// Use tail true so we can ensure we got the right number of samples.
 		watcher.readSegment(reader, i, true)
 	}
@@ -171,7 +171,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 	err = os.Mkdir(wdir, 0777)
 	testutil.Ok(t, err)
 
-	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize)
+	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize, false)
 	testutil.Ok(t, err)
 
 	var recs [][]byte
@@ -237,7 +237,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 	testutil.Ok(t, err)
 
 	enc := tsdb.RecordEncoder{}
-	w, err := wal.NewSize(nil, nil, wdir, segmentSize)
+	w, err := wal.NewSize(nil, nil, wdir, segmentSize, false)
 	testutil.Ok(t, err)
 
 	// Write to the initial segment then checkpoint.
@@ -319,7 +319,7 @@ func TestReadCheckpoint(t *testing.T) {
 	os.Create(wal.SegmentName(wdir, 30))
 
 	enc := tsdb.RecordEncoder{}
-	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize)
+	w, err := wal.NewSize(nil, nil, wdir, 128*pageSize, false)
 	testutil.Ok(t, err)
 
 	// Write to the initial segment then checkpoint.
@@ -381,7 +381,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 	testutil.Ok(t, err)
 
 	enc := tsdb.RecordEncoder{}
-	w, err := wal.NewSize(nil, nil, wdir, pageSize)
+	w, err := wal.NewSize(nil, nil, wdir, pageSize, false)
 	testutil.Ok(t, err)
 
 	// Write a bunch of data.
@@ -449,7 +449,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 	testutil.Ok(t, err)
 
 	enc := tsdb.RecordEncoder{}
-	w, err := wal.NewSize(nil, nil, wdir, segmentSize)
+	w, err := wal.NewSize(nil, nil, wdir, segmentSize, false)
 	testutil.Ok(t, err)
 
 	// Write to the initial segment, then checkpoint later.

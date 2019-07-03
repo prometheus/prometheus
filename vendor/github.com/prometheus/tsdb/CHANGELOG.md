@@ -1,7 +1,26 @@
-## master / unreleased
+## Master / unreleased
 
+## 0.9.1
+
+ - [CHANGE] LiveReader metrics are now injected rather than global.
+
+## 0.9.0
+
+ - [FEATURE] Provide option to compress WAL records using Snappy. [#609](https://github.com/prometheus/tsdb/pull/609)
+ - [BUGFIX] Re-calculate block size when calling `block.Delete`.
+ - [BUGFIX] Re-encode all head chunks at compaction that are open (being appended to) or outside the Maxt block range. This avoids writing out corrupt data. It happens when snapshotting with the head included.
+ - [BUGFIX] Improved handling of multiple refs for the same series in WAL reading.
+ - [BUGFIX] `prometheus_tsdb_compactions_failed_total` is now incremented on any compaction failure.
+ - [CHANGE] The meta file `BlockStats` no longer holds size information. This is now dynamically calculated and kept in memory. It also includes the meta file size which was not included before.
+ - [CHANGE] Create new clean segment when starting the WAL.
+ - [CHANGE] Renamed metric from `prometheus_tsdb_wal_reader_corruption_errors` to `prometheus_tsdb_wal_reader_corruption_errors_total`.
+ - [ENHANCEMENT] Improved atomicity of .tmp block replacement during compaction for usual case.
+ - [ENHANCEMENT] Improved postings intersection matching.
+ - [ENHANCEMENT] Reduced disk usage for WAL for small setups.
+ - [ENHANCEMENT] Optimize queries using regexp for set lookups.
 
 ## 0.8.0
+
  - [BUGFIX] Calling `Close` more than once on a querier returns an error instead of a panic.
  - [BUGFIX] Don't panic and recover nicely when running out of disk space.
  - [BUGFIX] Correctly handle empty labels.
@@ -11,9 +30,11 @@
  - [FEATURE]  Added `currentSegment` metric for the current WAL segment it is being written to.
 
 ## 0.7.1
+
  - [ENHANCEMENT] Reduce memory usage in mergedPostings.Seek
 
 ## 0.7.0
+
  - [CHANGE] tsdb now requires golang 1.12 or higher.
  - [REMOVED] `chunks.NewReader` is removed as it wasn't used anywhere.
  - [REMOVED] `FromData` is considered unused so was removed.
@@ -29,12 +50,15 @@
  - [ENHANCEMENT] PostListings and NotMatcher now public.
 
 ## 0.6.1
+
   - [BUGFIX] Update `last` after appending a non-overlapping chunk in `chunks.MergeOverlappingChunks`. [#539](https://github.com/prometheus/tsdb/pull/539)
 
 ## 0.6.0
+
   - [CHANGE] `AllowOverlappingBlock` is now `AllowOverlappingBlocks`.
 
 ## 0.5.0
+
  - [FEATURE] Time-ovelapping blocks are now allowed. [#370](https://github.com/prometheus/tsdb/pull/370)
    - Disabled by default and can be enabled via `AllowOverlappingBlock` option.
    - Added `MergeChunks` function in `chunkenc/xor.go` to merge 2 time-overlapping chunks.
@@ -50,6 +74,7 @@
  - [BUGFIX] LiveReader can get into an infinite loop on corrupt WALs.
 
 ## 0.4.0
+
  - [CHANGE] New `WALSegmentSize` option to override the `DefaultOptions.WALSegmentSize`. Added to allow using smaller wal files. For example using tmpfs on a RPI to minimise the SD card wear out from the constant WAL writes. As part of this change the `DefaultOptions.WALSegmentSize` constant was also exposed.
  - [CHANGE] Empty blocks are not written during compaction [#374](https://github.com/prometheus/tsdb/pull/374)
  - [FEATURE]  Size base retention through `Options.MaxBytes`.  As part of this change:
@@ -61,9 +86,11 @@
  - [FEATURE] Add new `LiveReader` to WAL pacakge. Added to allow live tailing of a WAL segment, used by Prometheus Remote Write after refactor. The main difference between the new reader and the existing `Reader` is that for `LiveReader` a call to `Next()` that returns false does not mean that there will never be more data to read.
 
 ## 0.3.1
+
  - [BUGFIX] Fixed most windows test and some actual bugs for unclosed file readers.
 
 ## 0.3.0
+
  - [CHANGE] `LastCheckpoint()` used to return just the segment name and now it returns the full relative path.
  - [CHANGE] `NewSegmentsRangeReader()` can now read over miltiple wal ranges by using the new `SegmentRange{}` struct.
  - [CHANGE] `CorruptionErr{}` now also exposes the Segment `Dir` which is added when displaying any errors.
