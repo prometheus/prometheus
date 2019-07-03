@@ -19,10 +19,19 @@ import (
 	"testing"
 )
 
+type mockedFlusher struct {
+	flushed int
+}
+
+func (f *mockedFlusher) Flush() {
+	f.flushed++
+}
+
 func TestStreamReaderCanReadWriter(t *testing.T) {
 	b := &bytes.Buffer{}
-	w := NewStreamWriter(b)
-	r := NewStreamReader(b)
+	f := &mockedFlusher{}
+	w := NewChunkedWriter(b, f)
+	r := NewChunkedReader(b)
 
 	msgs := [][]byte{
 		[]byte("test1"),
@@ -58,4 +67,6 @@ func TestStreamReaderCanReadWriter(t *testing.T) {
 	_, err = r.Next()
 	testutil.NotOk(t, err, "expected io.EOF")
 	testutil.Equals(t, io.EOF, err)
+
+	testutil.Equals(t, 5, f.flushed)
 }

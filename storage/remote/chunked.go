@@ -17,22 +17,25 @@ import (
 	"encoding/binary"
 	"github.com/gogo/protobuf/proto"
 	"io"
+	"net/http"
 )
 
-// StreamWriter is an io.Writer wrapper that allows streaming by adding uvarint delimiter before each write in a form
+// ChunkedWriter is an io.Writer wrapper that allows streaming by adding uvarint delimiter before each write in a form
 // of length of the corresponded byte array.
-type StreamWriter struct {
-	wrapped io.Writer
+type ChunkedWriter struct {
+	writer  io.Writer
+	flusher http.Flusher
 }
 
-// NewStreamWriter constructs a StreamWriter.
-func NewStreamWriter(w io.Writer) *StreamWriter {
-	return &StreamWriter{wrapped: w}
+// NewChunkedWriter constructs a ChunkedWriter.
+func NewChunkedWriter(w io.Writer, f http.Flusher) *ChunkedWriter {
+	return &ChunkedWriter{writer: w, flusher: f}
 }
 
 // Write writes given bytes to the stream. It adds uvarint delimiter before each message.
 // Returned bytes number represents sent bytes for a given buffer. The number does not include delimiter bytes.
-func (w *StreamWriter) Write(b []byte) (int, error) {
+// It does the flushing for you.
+func (w *ChunkedWriter) Write(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
@@ -40,28 +43,29 @@ func (w *StreamWriter) Write(b []byte) (int, error) {
 	var buf [binary.MaxVarintLen64]byte
 	v := binary.PutUvarint(buf[:], uint64(len(b)))
 
-	if _, err := w.wrapped.Write(buf[:v]); err != nil {
+	if _, err := w.writer.Write(buf[:v]); err != nil {
 		return 0, err
 	}
 
-	n, err := w.wrapped.Write(b)
+	n, err := w.writer.Write(b)
 	if err != nil {
 		return n, err
 	}
 
+	w.flusher.Flush()
 	return n, nil
 }
 
-// StreamReader is a buffered reader that expects uvarint delimiter before each message.
+// ChunkedReader is a buffered reader that expects uvarint delimiter before each message.
 // It will allocate as much as the biggest frame defined by delimiter (on top of bufio.Reader allocations).
-type StreamReader struct {
+type ChunkedReader struct {
 	b    *bufio.Reader
 	data []byte
 }
 
-// NewStreamReader constructs a StreamReader.
-func NewStreamReader(r io.Reader) *StreamReader {
-	return &StreamReader{b: bufio.NewReader(r)}
+// NewChunkedReader constructs a ChunkedReader.
+func NewChunkedReader(r io.Reader) *ChunkedReader {
+	return &ChunkedReader{b: bufio.NewReader(r)}
 }
 
 // Next returns the next length-delimited record from the input, or io.EOF if
@@ -70,7 +74,7 @@ func NewStreamReader(r io.Reader) *StreamReader {
 //
 // NOTE: The slice returned is valid only until a subsequent call to Next. It's a caller's responsibility to copy the
 // returned slice if needed.
-func (r *StreamReader) Next() ([]byte, error) {
+func (r *ChunkedReader) Next() ([]byte, error) {
 	size, err := binary.ReadUvarint(r.b)
 	if err != nil {
 		return nil, err
@@ -90,7 +94,7 @@ func (r *StreamReader) Next() ([]byte, error) {
 
 // NextProto consumes the next available record by calling r.Next, and decodes
 // it into the protobuf with proto.Unmarshal.
-func (r *StreamReader) NextProto(pb proto.Message) error {
+func (r *ChunkedReader) NextProto(pb proto.Message) error {
 	rec, err := r.Next()
 	if err != nil {
 		return err
