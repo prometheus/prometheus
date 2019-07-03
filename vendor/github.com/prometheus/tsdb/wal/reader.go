@@ -19,6 +19,7 @@ import (
 	"hash/crc32"
 	"io"
 
+	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 )
 
@@ -27,6 +28,7 @@ type Reader struct {
 	rdr       io.Reader
 	err       error
 	rec       []byte
+	snappyBuf []byte
 	buf       [pageSize]byte
 	total     int64   // Total bytes processed.
 	curRecTyp recType // Used for checking that the last record is not torn.
@@ -45,7 +47,7 @@ func (r *Reader) Next() bool {
 		// The last WAL segment record shouldn't be torn(should be full or last).
 		// The last record would be torn after a crash just before
 		// the last record part could be persisted to disk.
-		if recType(r.curRecTyp) == recFirst || recType(r.curRecTyp) == recMiddle {
+		if r.curRecTyp == recFirst || r.curRecTyp == recMiddle {
 			r.err = errors.New("last record is torn")
 		}
 		return false
@@ -61,6 +63,7 @@ func (r *Reader) next() (err error) {
 	buf := r.buf[recordHeaderSize:]
 
 	r.rec = r.rec[:0]
+	r.snappyBuf = r.snappyBuf[:0]
 
 	i := 0
 	for {
@@ -68,7 +71,8 @@ func (r *Reader) next() (err error) {
 			return errors.Wrap(err, "read first header byte")
 		}
 		r.total++
-		r.curRecTyp = recType(hdr[0])
+		r.curRecTyp = recTypeFromHeader(hdr[0])
+		compressed := hdr[0]&snappyMask != 0
 
 		// Gobble up zero bytes.
 		if r.curRecTyp == recPageTerm {
@@ -123,12 +127,25 @@ func (r *Reader) next() (err error) {
 		if c := crc32.Checksum(buf[:length], castagnoliTable); c != crc {
 			return errors.Errorf("unexpected checksum %x, expected %x", c, crc)
 		}
-		r.rec = append(r.rec, buf[:length]...)
+
+		if compressed {
+			r.snappyBuf = append(r.snappyBuf, buf[:length]...)
+		} else {
+			r.rec = append(r.rec, buf[:length]...)
+		}
 
 		if err := validateRecord(r.curRecTyp, i); err != nil {
 			return err
 		}
 		if r.curRecTyp == recLast || r.curRecTyp == recFull {
+			if compressed && len(r.snappyBuf) > 0 {
+				// The snappy library uses `len` to calculate if we need a new buffer.
+				// In order to allocate as few buffers as possible make the length
+				// equal to the capacity.
+				r.rec = r.rec[:cap(r.rec)]
+				r.rec, err = snappy.Decode(r.rec, r.snappyBuf)
+				return err
+			}
 			return nil
 		}
 
