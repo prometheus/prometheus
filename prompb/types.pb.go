@@ -503,7 +503,9 @@ func (m *Chunk) GetData() []byte {
 
 // ChunkedSeries represents single, encoded time series.
 type ChunkedSeries struct {
-	Labels               []Label  `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels"`
+	// labels should be sorted.
+	Labels []Label `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels"`
+	// chunks should be sorted should not overlap in time.
 	Chunks               []Chunk  `protobuf:"bytes,2,rep,name=chunks,proto3" json:"chunks"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`

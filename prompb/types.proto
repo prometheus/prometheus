@@ -74,6 +74,8 @@ message Chunk {
 
 // ChunkedSeries represents single, encoded time series.
 message ChunkedSeries {
+  // labels should be sorted.
   repeated Label labels = 1 [(gogoproto.nullable) = false];
+  // chunks should be sorted should not overlap in time.
   repeated Chunk chunks = 2 [(gogoproto.nullable) = false];
 }
