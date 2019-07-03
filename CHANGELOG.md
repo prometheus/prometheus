@@ -1,5 +1,9 @@
 ## Master / unreleased
 
+## 0.9.1
+
+ - [CHANGE] LiveReader metrics are now injected rather than global.
+
 ## 0.9.0
 
  - [FEATURE] Provide option to compress WAL records using Snappy. [#609](https://github.com/prometheus/tsdb/pull/609)
@@ -9,7 +13,7 @@
  - [BUGFIX] `prometheus_tsdb_compactions_failed_total` is now incremented on any compaction failure.
  - [CHANGE] The meta file `BlockStats` no longer holds size information. This is now dynamically calculated and kept in memory. It also includes the meta file size which was not included before.
  - [CHANGE] Create new clean segment when starting the WAL.
- - [CHANGE] Renamed metric from `prometheus_tsdb_wal_reader_corruption_errors` to `prometheus_tsdb_wal_reader_corruption_errors_total`
+ - [CHANGE] Renamed metric from `prometheus_tsdb_wal_reader_corruption_errors` to `prometheus_tsdb_wal_reader_corruption_errors_total`.
  - [ENHANCEMENT] Improved atomicity of .tmp block replacement during compaction for usual case.
  - [ENHANCEMENT] Improved postings intersection matching.
  - [ENHANCEMENT] Reduced disk usage for WAL for small setups.
