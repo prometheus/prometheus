@@ -88,9 +88,9 @@ Now all you can do is to wait for tarballs to be uploaded to the Github release 
 
 If the release has happened in the latest release branch, merge the changes into master.
 
-To update the docs, a PR needs to be created to `prometheus/docs`. See [this PR](https://github.com/prometheus/docs/pull/952/files) for inspiration.
+To update the docs, a PR needs to be created to `prometheus/docs`. See [this PR](https://github.com/prometheus/docs/pull/952/files) for inspiration (note: only actually merge this for final releases, not for pre-releases like a release candidate).
 
-Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration. 
+Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration.
 
 ### Pre-releases
 
@@ -99,4 +99,5 @@ The following changes to the above procedures apply:
 * In line with [Semantic Versioning](https://semver.org/), append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
 * Tick the _This is a pre-release_ box when drafting the release in the Github UI.
 * Still update `CHANGELOG.md`, but when you cut the final release later, merge all the changes from the pre-releases into the one final update.
+* Run the benchmark for 3 days using the `/benchmark x.y.z` command, `x.y.z` being the latest stable patch release of the previous minor release series.
 
