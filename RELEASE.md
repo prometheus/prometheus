@@ -88,9 +88,9 @@ Now all you can do is to wait for tarballs to be uploaded to the Github release 
 
 If the release has happened in the latest release branch, merge the changes into master.
 
-To update the docs, a PR needs to be created to `prometheus/docs`. See [this PR](https://github.com/prometheus/docs/pull/952/files) for inspiration.
+To update the docs, a PR needs to be created to `prometheus/docs`. See [this PR](https://github.com/prometheus/docs/pull/952/files) for inspiration (note: only actually merge this for final releases, not for pre-releases like a release candidate).
 
-Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration. 
+Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration.
 
 ### Pre-releases
 
