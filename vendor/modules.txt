@@ -246,7 +246,7 @@ github.com/mwitkow/go-conntrack
 github.com/oklog/run
 # github.com/oklog/ulid v1.3.1
 github.com/oklog/ulid
-# github.com/opentracing-contrib/go-stdlib v0.0.0-20170113013457-1de4cc2120e7
+# github.com/opentracing-contrib/go-stdlib v0.0.0-20190519235532-cf7a6c988dc9
 github.com/opentracing-contrib/go-stdlib/nethttp
 # github.com/opentracing/opentracing-go v1.0.2
 github.com/opentracing/opentracing-go
