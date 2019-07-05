@@ -164,7 +164,7 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 	}
 }
 
-// StreamChunkedReadResponses iteraties over series, build chunks and streams those to caller.
+// StreamChunkedReadResponses iterates over series, build chunks and streams those to caller.
 // TODO(bwplotka): Encode only what's needed. Fetch the encoded series from blocks instead of rencoding everything.
 func StreamChunkedReadResponses(
 	stream io.Writer,
@@ -184,7 +184,7 @@ func StreamChunkedReadResponses(
 		lbls := MergeLabels(labelsToLabelsProto(series.Labels()), sortedExternalLabels)
 
 		// TODO(bwplotka): We send each series in separate frame no matter what. Even if series has only one sample.
-		// I think we should pack strictly based on number chunks notnecessarilyy from the same series. Thoughts?
+		// I think we should pack strictly based on number chunks not necessarily from the same series. Thoughts?
 		for {
 			chks, err = encodeChunks(iter, chks, maxChunksInFrame)
 			if err != nil {
