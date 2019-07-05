@@ -183,6 +183,8 @@ func StreamChunkedReadResponses(
 		iter := series.Iterator()
 		lbls := MergeLabels(labelsToLabelsProto(series.Labels()), sortedExternalLabels)
 
+		// TODO(bwplotka): We send each series in separate frame no matter what. Even if series has only one sample.
+		// I think we should pack strictly based on number chunks notnecessarilyy from the same series. Thoughts?
 		for {
 			chks, err = encodeChunks(iter, chks, maxChunksInFrame)
 			if err != nil {
@@ -235,13 +237,9 @@ func encodeChunks(iter storage.SeriesIterator, chks []prompb.Chunk, maxChunks in
 		chk     *chunkenc.XORChunk
 		app     chunkenc.Appender
 		err     error
-
-		numSamples = 0
 	)
 
 	for iter.Next() {
-		numSamples++
-
 		if chk == nil {
 			chk = chunkenc.NewXORChunk()
 			app, err = chk.Appender()
@@ -267,7 +265,7 @@ func encodeChunks(iter storage.SeriesIterator, chks []prompb.Chunk, maxChunks in
 		})
 		chk = nil
 
-		if maxChunks >= len(chks) {
+		if len(chks) >= maxChunks {
 			break
 		}
 	}
