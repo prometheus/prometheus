@@ -213,7 +213,6 @@ func (m *Manager) TargetsAll() map[string][]*Target {
 	targets := make(map[string][]*Target, len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
 		targets[tset] = append(sp.ActiveTargets(), sp.DroppedTargets()...)
-
 	}
 	return targets
 }
@@ -223,10 +222,24 @@ func (m *Manager) TargetsActive() map[string][]*Target {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
+	var (
+		wg  sync.WaitGroup
+		mtx sync.Mutex
+	)
+
 	targets := make(map[string][]*Target, len(m.scrapePools))
+	wg.Add(len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
-		targets[tset] = sp.ActiveTargets()
+		// Running in parallel limits the blocking time of scrapePool to scrape
+		// interval when there's an update from SD.
+		go func(tset string, sp *scrapePool) {
+			mtx.Lock()
+			targets[tset] = sp.ActiveTargets()
+			mtx.Unlock()
+			wg.Done()
+		}(tset, sp)
 	}
+	wg.Wait()
 	return targets
 }
 
