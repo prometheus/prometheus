@@ -1331,6 +1331,14 @@ func TestParseTime(t *testing.T) {
 			input:  "1543578564.705",
 			result: time.Unix(1543578564, 705*1e6),
 		},
+		{
+			input:  minTime.Format(time.RFC3339Nano),
+			result: minTime,
+		},
+		{
+			input:  maxTime.Format(time.RFC3339Nano),
+			result: maxTime,
+		},
 	}
 
 	for _, test := range tests {

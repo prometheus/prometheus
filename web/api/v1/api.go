@@ -439,8 +439,11 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 }
 
 var (
-	minTime = time.Unix(math.MinInt64/1000+62135596801, 0)
-	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999)
+	minTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
+	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
+
+	minTimeFormatted = minTime.Format(time.RFC3339Nano)
+	maxTimeFormatted = maxTime.Format(time.RFC3339Nano)
 )
 
 func (api *API) series(r *http.Request) apiFuncResult {
@@ -1161,6 +1164,17 @@ func parseTime(s string) (time.Time, error) {
 	}
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil
+	}
+
+	// Stdlib's time parser can only handle 4 digit years. As a workaround until
+	// that is fixed we want to at least support our own boundary times.
+	// Context: https://github.com/prometheus/client_golang/issues/614
+	// Upstream issue: https://github.com/golang/go/issues/20555
+	switch s {
+	case minTimeFormatted:
+		return minTime, nil
+	case maxTimeFormatted:
+		return maxTime, nil
 	}
 	return time.Time{}, errors.Errorf("cannot parse %q to a valid timestamp", s)
 }
