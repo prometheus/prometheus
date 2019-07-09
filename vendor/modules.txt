@@ -69,10 +69,6 @@ github.com/census-instrumentation/opencensus-proto/gen-go/resource/v1
 github.com/census-instrumentation/opencensus-proto/gen-go/trace/v1
 # github.com/cespare/xxhash v1.1.0
 github.com/cespare/xxhash
-# github.com/cockroachdb/cockroach v0.0.0-20170608034007-84bc9597164f
-github.com/cockroachdb/cockroach/pkg/util/protoutil
-github.com/cockroachdb/cockroach/pkg/util/httputil
-github.com/cockroachdb/cockroach/pkg/util/syncutil
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/dgrijalva/jwt-go v3.2.0+incompatible
@@ -121,7 +117,6 @@ github.com/gogo/protobuf/sortkeys
 github.com/gogo/protobuf/protoc-gen-gogo/descriptor
 github.com/gogo/protobuf/vanity
 github.com/gogo/protobuf/vanity/command
-github.com/gogo/protobuf/jsonpb
 github.com/gogo/protobuf/plugin/compare
 github.com/gogo/protobuf/plugin/defaultcheck
 github.com/gogo/protobuf/plugin/description
@@ -247,8 +242,6 @@ github.com/opentracing-contrib/go-stdlib/nethttp
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/log
 github.com/opentracing/opentracing-go/ext
-# github.com/petermattis/goid v0.0.0-20170504144140-0ded85884ba5
-github.com/petermattis/goid
 # github.com/pkg/errors v0.8.1
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
@@ -291,8 +284,6 @@ github.com/prometheus/tsdb/goversion
 github.com/prometheus/tsdb/index
 # github.com/samuel/go-zookeeper v0.0.0-20161028232340-1d7be4effb13
 github.com/samuel/go-zookeeper/zk
-# github.com/sasha-s/go-deadlock v0.0.0-20161201235124-341000892f3d
-github.com/sasha-s/go-deadlock
 # github.com/shurcooL/httpfs v0.0.0-20171119174359-809beceb2371
 github.com/shurcooL/httpfs/filter
 github.com/shurcooL/httpfs/union
