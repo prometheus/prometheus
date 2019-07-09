@@ -119,6 +119,9 @@ func main() {
 		corsRegexString string
 
 		promlogConfig promlog.Config
+
+		activeQueryLogFilename string
+		activeQueryLogFileSize int
 	}{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
@@ -246,6 +249,12 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	a.Flag("active.queries.filepath", "File that will log active queries").
+		Default("queries.log").StringVar(&cfg.activeQueryLogFilename)
+
+	a.Flag("active.queries.filesize", "Filesize of active query log").
+		Default("20000").IntVar(&cfg.activeQueryLogFileSize)
+
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	_, err := a.Parse(os.Args[1:])
@@ -338,6 +347,11 @@ func main() {
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
+	queryLogger := promql.QueryLogger{}
+	if cfg.activeQueryLogFilename != "" {
+		queryLogger = promql.NewQueryLogger(cfg.activeQueryLogFilename, cfg.activeQueryLogFileSize, log.With(logger, "component", "queryLogger"))
+	}
+
 	var (
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
@@ -358,7 +372,9 @@ func main() {
 			MaxConcurrent: cfg.queryConcurrency,
 			MaxSamples:    cfg.queryMaxSamples,
 			Timeout:       time.Duration(cfg.queryTimeout),
+			QueryLogger:   queryLogger,
 		}
+
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{

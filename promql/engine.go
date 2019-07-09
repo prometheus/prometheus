@@ -176,7 +176,21 @@ func (q *query) Exec(ctx context.Context) *Result {
 		span.SetTag(queryTag, q.stmt.String())
 	}
 
+	// Log query in active log
+	queryCompleted := make(chan struct{})
+
+	go func() {
+		if q.ng.queryLogger.Ok {
+			q.ng.queryLogger.LogQuery(q.q, queryCompleted)
+		}
+	}()
+
+	// Exec query
 	res, warnings, err := q.ng.exec(ctx, q)
+
+	// Delete query from active log
+	close(queryCompleted)
+
 	return &Result{Err: err, Value: res, Warnings: warnings}
 }
 
@@ -206,6 +220,7 @@ type EngineOpts struct {
 	MaxConcurrent int
 	MaxSamples    int
 	Timeout       time.Duration
+	QueryLogger   QueryLogger
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -216,6 +231,7 @@ type Engine struct {
 	timeout            time.Duration
 	gate               *gate.Gate
 	maxSamplesPerQuery int
+	queryLogger        QueryLogger
 }
 
 // NewEngine returns a new engine.
@@ -282,12 +298,14 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.queryResultSort,
 		)
 	}
+
 	return &Engine{
 		gate:               gate.New(opts.MaxConcurrent),
 		timeout:            opts.Timeout,
 		logger:             opts.Logger,
 		metrics:            metrics,
 		maxSamplesPerQuery: opts.MaxSamples,
+		queryLogger:        opts.QueryLogger,
 	}
 }
 
