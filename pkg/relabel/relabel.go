@@ -54,6 +54,7 @@ const (
 	LabelDrop Action = "labeldrop"
 	// LabelKeep drops any label not matching the regex.
 	LabelKeep Action = "labelkeep"
+	Shard     Action = "shard"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -63,7 +64,7 @@ func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch act := Action(strings.ToLower(s)); act {
-	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep:
+	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep, Shard:
 		*a = act
 		return nil
 	}
@@ -88,6 +89,9 @@ type Config struct {
 	Replacement string `yaml:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
 	Action Action `yaml:"action,omitempty"`
+	// If Action is 'Shard' then prometheus pool unique id (from 0....n) is required
+	ID uint64 `yaml:"id,omitempty"`
+	//
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -246,6 +250,11 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 			if !cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
+		}
+	case Shard:
+		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
+		if cfg.ID != mod {
+			return nil
 		}
 	default:
 		panic(errors.Errorf("relabel: unknown relabel action type %q", cfg.Action))

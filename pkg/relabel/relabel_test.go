@@ -343,6 +343,30 @@ func TestRelabel(t *testing.T) {
 				"a": "some-name-value",
 			}),
 		},
+		{
+			input: labels.FromMap(map[string]string{
+				"hostname": "idx-012312412-nike.splunkcloud.com",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"hostname"},
+					Regex:        MustNewRegexp("(idx-012312412-)(.+)\\.splunkcloud\\.com"),
+					Action:       Replace,
+					Replacement:  "${2}",
+					TargetLabel:  "stack",
+				},
+				{
+					SourceLabels: model.LabelNames{"stack"},
+					Action:       Shard,
+					Modulus:      1,
+					ID:           0,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"hostname": "idx-012312412-nike.splunkcloud.com",
+				"stack":    "nike",
+			}),
+		},
 		{ // more complex real-life like usecase
 			input: labels.FromMap(map[string]string{
 				"__meta_sd_tags": "path:/secret,job:some-job,label:foo=bar",
