@@ -245,8 +245,8 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 	if err != nil {
 		return nil, err
 	}
-	ait := a.Iterator()
-	bit := b.Iterator()
+	ait := a.Iterator(nil)
+	bit := b.Iterator(nil)
 	aok, bok := ait.Next(), bit.Next()
 	for aok && bok {
 		at, av := ait.At()

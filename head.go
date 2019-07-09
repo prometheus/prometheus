@@ -1185,9 +1185,9 @@ type safeChunk struct {
 	cid int
 }
 
-func (c *safeChunk) Iterator() chunkenc.Iterator {
+func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 	c.s.Lock()
-	it := c.s.iterator(c.cid)
+	it := c.s.iterator(c.cid, reuseIter)
 	c.s.Unlock()
 	return it
 }
@@ -1739,7 +1739,7 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/a
 }
 
-func (s *memSeries) iterator(id int) chunkenc.Iterator {
+func (s *memSeries) iterator(id int, it chunkenc.Iterator) chunkenc.Iterator {
 	c := s.chunk(id)
 	// TODO(fabxc): Work around! A querier may have retrieved a pointer to a series' chunk,
 	// which got then garbage collected before it got accessed.
@@ -1749,17 +1749,23 @@ func (s *memSeries) iterator(id int) chunkenc.Iterator {
 	}
 
 	if id-s.firstChunkID < len(s.chunks)-1 {
-		return c.chunk.Iterator()
+		return c.chunk.Iterator(it)
 	}
 	// Serve the last 4 samples for the last chunk from the sample buffer
 	// as their compressed bytes may be mutated by added samples.
-	it := &memSafeIterator{
-		Iterator: c.chunk.Iterator(),
+	if msIter, ok := it.(*memSafeIterator); ok {
+		msIter.Iterator = c.chunk.Iterator(msIter.Iterator)
+		msIter.i = -1
+		msIter.total = c.chunk.NumSamples()
+		msIter.buf = s.sampleBuf
+		return msIter
+	}
+	return &memSafeIterator{
+		Iterator: c.chunk.Iterator(it),
 		i:        -1,
 		total:    c.chunk.NumSamples(),
 		buf:      s.sampleBuf,
 	}
-	return it
 }
 
 func (s *memSeries) head() *memChunk {

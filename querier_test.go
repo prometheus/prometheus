@@ -1270,7 +1270,7 @@ func TestDeletedIterator(t *testing.T) {
 
 	for _, c := range cases {
 		i := int64(-1)
-		it := &deletedIterator{it: chk.Iterator(), intervals: c.r[:]}
+		it := &deletedIterator{it: chk.Iterator(nil), intervals: c.r[:]}
 		ranges := c.r[:]
 		for it.Next() {
 			i++

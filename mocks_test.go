@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
@@ -40,10 +41,11 @@ func (m *mockIndexWriter) AddSeries(ref uint64, l labels.Labels, chunks ...chunk
 		i = len(m.series) - 1
 	}
 
+	var iter chunkenc.Iterator
 	for _, chk := range chunks {
 		samples := make([]sample, 0, chk.Chunk.NumSamples())
 
-		iter := chk.Chunk.Iterator()
+		iter = chk.Chunk.Iterator(iter)
 		for iter.Next() {
 			s := sample{}
 			s.t, s.v = iter.At()

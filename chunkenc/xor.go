@@ -77,7 +77,7 @@ func (c *XORChunk) NumSamples() int {
 
 // Appender implements the Chunk interface.
 func (c *XORChunk) Appender() (Appender, error) {
-	it := c.iterator()
+	it := c.iterator(nil)
 
 	// To get an appender we must know the state it would have if we had
 	// appended all existing data from scratch.
@@ -102,19 +102,25 @@ func (c *XORChunk) Appender() (Appender, error) {
 	return a, nil
 }
 
-func (c *XORChunk) iterator() *xorIterator {
+func (c *XORChunk) iterator(it Iterator) *xorIterator {
 	// Should iterators guarantee to act on a copy of the data so it doesn't lock append?
 	// When using striped locks to guard access to chunks, probably yes.
 	// Could only copy data if the chunk is not completed yet.
+	if xorIter, ok := it.(*xorIterator); ok {
+		xorIter.Reset(c.b.bytes())
+		return xorIter
+	}
 	return &xorIterator{
+		// The first 2 bytes contain chunk headers.
+		// We skip that for actual samples.
 		br:       newBReader(c.b.bytes()[2:]),
 		numTotal: binary.BigEndian.Uint16(c.b.bytes()),
 	}
 }
 
 // Iterator implements the Chunk interface.
-func (c *XORChunk) Iterator() Iterator {
-	return c.iterator()
+func (c *XORChunk) Iterator(it Iterator) Iterator {
+	return c.iterator(it)
 }
 
 type xorAppender struct {
@@ -241,6 +247,21 @@ func (it *xorIterator) At() (int64, float64) {
 
 func (it *xorIterator) Err() error {
 	return it.err
+}
+
+func (it *xorIterator) Reset(b []byte) {
+	// The first 2 bytes contain chunk headers.
+	// We skip that for actual samples.
+	it.br = newBReader(b[2:])
+	it.numTotal = binary.BigEndian.Uint16(b)
+
+	it.numRead = 0
+	it.t = 0
+	it.val = 0
+	it.leading = 0
+	it.trailing = 0
+	it.tDelta = 0
+	it.err = nil
 }
 
 func (it *xorIterator) Next() bool {

@@ -159,9 +159,9 @@ func TestHead_ReadWAL(t *testing.T) {
 				testutil.Ok(t, c.Err())
 				return x
 			}
-			testutil.Equals(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0)))
-			testutil.Equals(t, []sample{{101, 6}}, expandChunk(s50.iterator(0)))
-			testutil.Equals(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0)))
+			testutil.Equals(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil)))
+			testutil.Equals(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil)))
+			testutil.Equals(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0, nil)))
 		})
 	}
 }
@@ -313,11 +313,11 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 
 	// Validate that the series' sample buffer is applied correctly to the last chunk
 	// after truncation.
-	it1 := s.iterator(s.chunkID(len(s.chunks) - 1))
+	it1 := s.iterator(s.chunkID(len(s.chunks)-1), nil)
 	_, ok := it1.(*memSafeIterator)
 	testutil.Assert(t, ok == true, "")
 
-	it2 := s.iterator(s.chunkID(len(s.chunks) - 2))
+	it2 := s.iterator(s.chunkID(len(s.chunks)-2), nil)
 	_, ok = it2.(*memSafeIterator)
 	testutil.Assert(t, ok == false, "non-last chunk incorrectly wrapped with sample buffer")
 }
@@ -451,10 +451,11 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 						chunkr, err := h.Chunks()
 						testutil.Ok(t, err)
+						var ii chunkenc.Iterator
 						for _, meta := range chkMetas {
 							chk, err := chunkr.Chunk(meta.Ref)
 							testutil.Ok(t, err)
-							ii := chk.Iterator()
+							ii = chk.Iterator(ii)
 							for ii.Next() {
 								t, v := ii.At()
 								actSamples = append(actSamples, sample{t: t, v: v})

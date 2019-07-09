@@ -77,7 +77,7 @@ func testChunk(c Chunk) error {
 		// fmt.Println("appended", len(c.Bytes()), c.Bytes())
 	}
 
-	it := c.Iterator()
+	it := c.Iterator(nil)
 	var res []pair
 	for it.Next() {
 		ts, v := it.At()
@@ -133,9 +133,10 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 
 	res := make([]float64, 0, 1024)
 
+	var it Iterator
 	for i := 0; i < len(chunks); i++ {
 		c := chunks[i]
-		it := c.Iterator()
+		it := c.Iterator(it)
 
 		for it.Next() {
 			_, v := it.At()
