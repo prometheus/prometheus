@@ -14,12 +14,12 @@
       <label class="btn btn-primary">
         <input type="radio" name="targets" id="unhealthy-targets" autocomplete="off"> Unhealthy
       </label>
-      </br>
+      <br />
   </div>
 
-    {{range $job, $pool := .TargetPools}}
-    {{$healthy := numHealthy $pool}}
-    {{$total := len $pool}}
+    {{- range $job, $pool := .TargetPools}}
+    {{- $healthy := numHealthy $pool}}
+    {{- $total := len $pool}}
 
     <div class="table-container">
       <h2 class="job_header{{if lt $healthy $total}} danger{{end}}">
@@ -38,46 +38,36 @@
           </tr>
         </thead>
         <tbody>
-        {{range $pool}}
+        {{- range $pool}}
           <tr>
             <td class="endpoint">
               <a href="{{.URL | globalURL}}">{{.URL.Scheme}}://{{.URL.Host}}{{.URL.Path}}</a><br>
-              {{range $label, $values := .URL.Query }}
-                {{range $i, $value := $values}}
+              {{- range $label, $values := .URL.Query }}
+                {{- range $i, $value := $values}}
                   <span class="badge badge-primary">{{$label}}="{{$value}}"</span>
-                {{end}}
-              {{end}}
+                {{- end}}
+              {{- end}}
             </td>
             <td class="state">
-              <span class="alert alert-{{ .Health | targetHealthToClass }} state_indicator text-uppercase">
-                {{.Health}}
-              </span>
+              <span class="alert alert-{{ .Health | targetHealthToClass }} state_indicator text-uppercase">{{.Health}}</span>
             </td>
             <td class="labels">
               <span class="cursor-pointer" data-toggle="tooltip" title="" data-html=true data-original-title="<b>Before relabeling:</b>{{range $k, $v := .DiscoveredLabels.Map}}<br>{{$ev := $v | html}}{{$k}}=&quot;{{$ev}}&quot;{{end}}">
-                {{range $label, $value := .Labels.Map}}
+                {{- range $label, $value := .Labels.Map}}
                   <span class="badge badge-primary">{{$label}}="{{$value}}"</span>
-                {{else}}
+                {{- else -}}
                   <span class="badge badge-default">none</span>
-                {{end}}
+                {{- end}}
               </span>
             </td>
-            <td class="last-scrape">
-              {{if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}
-            </td>
-            <td class="scrape-duration">
-              {{humanizeDuration .LastScrapeDuration.Seconds}}
-            </td>
-            <td class="errors">
-              {{if .LastError}}
-              <span class="alert alert-danger state_indicator">{{.LastError}}</span>
-              {{end}}
-            </td>
+            <td class="last-scrape">{{- if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}</td>
+            <td class="scrape-duration">{{- humanizeDuration .LastScrapeDuration.Seconds}}</td>
+            <td class="errors">{{- if .LastError}}<span class="alert alert-danger state_indicator">{{.LastError}}</span>{{end}}</td>
           </tr>
-        {{end}}
+        {{- end}}
         </tbody>
       </table>
     </div>
-    {{ end }}
+    {{- end }}
   </div>
 {{end}}

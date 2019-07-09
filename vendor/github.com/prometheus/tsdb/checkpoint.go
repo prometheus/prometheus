@@ -135,7 +135,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 	if err := os.MkdirAll(cpdirtmp, 0777); err != nil {
 		return nil, errors.Wrap(err, "create checkpoint dir")
 	}
-	cp, err := wal.New(nil, nil, cpdirtmp)
+	cp, err := wal.New(nil, nil, cpdirtmp, w.CompressionEnabled())
 	if err != nil {
 		return nil, errors.Wrap(err, "open checkpoint")
 	}

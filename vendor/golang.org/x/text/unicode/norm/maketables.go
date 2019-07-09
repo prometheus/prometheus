@@ -261,7 +261,7 @@ func compactCCC() {
 
 // CompositionExclusions.txt has form:
 // 0958    # ...
-// See http://unicode.org/reports/tr44/ for full explanation
+// See https://unicode.org/reports/tr44/ for full explanation
 func loadCompositionExclusions() {
 	f := gen.OpenUCDFile("CompositionExclusions.txt")
 	defer f.Close()
@@ -857,7 +857,7 @@ func verifyComputed() {
 // DerivedNormalizationProps.txt has form:
 // 00C0..00C5    ; NFD_QC; N # ...
 // 0374          ; NFD_QC; N # ...
-// See http://unicode.org/reports/tr44/ for full explanation
+// See https://unicode.org/reports/tr44/ for full explanation
 func testDerived() {
 	f := gen.OpenUCDFile("DerivedNormalizationProps.txt")
 	defer f.Close()

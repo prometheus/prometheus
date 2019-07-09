@@ -84,7 +84,6 @@ type LeveledCompactor struct {
 type compactorMetrics struct {
 	ran               prometheus.Counter
 	populatingBlocks  prometheus.Gauge
-	failed            prometheus.Counter
 	overlappingBlocks prometheus.Counter
 	duration          prometheus.Histogram
 	chunkSize         prometheus.Histogram
@@ -102,10 +101,6 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m.populatingBlocks = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_compaction_populating_block",
 		Help: "Set to 1 when a block is currently being written to the disk.",
-	})
-	m.failed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_failed_total",
-		Help: "Total number of compactions that failed for the partition.",
 	})
 	m.overlappingBlocks = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_vertical_compactions_total",
@@ -136,7 +131,6 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 		r.MustRegister(
 			m.ran,
 			m.populatingBlocks,
-			m.failed,
 			m.overlappingBlocks,
 			m.duration,
 			m.chunkRange,
@@ -184,7 +178,7 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 
 	var dms []dirMeta
 	for _, dir := range dirs {
-		meta, err := readMetaFile(dir)
+		meta, _, err := readMetaFile(dir)
 		if err != nil {
 			return nil, err
 		}
@@ -386,7 +380,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 	start := time.Now()
 
 	for _, d := range dirs {
-		meta, err := readMetaFile(d)
+		meta, _, err := readMetaFile(d)
 		if err != nil {
 			return uid, err
 		}
@@ -426,12 +420,14 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		if meta.Stats.NumSamples == 0 {
 			for _, b := range bs {
 				b.meta.Compaction.Deletable = true
-				if err = writeMetaFile(c.logger, b.dir, &b.meta); err != nil {
+				n, err := writeMetaFile(c.logger, b.dir, &b.meta)
+				if err != nil {
 					level.Error(c.logger).Log(
 						"msg", "Failed to write 'Deletable' to meta file after compaction",
 						"ulid", b.meta.ULID,
 					)
 				}
+				b.numBytesMeta = n
 			}
 			uid = ulid.ULID{}
 			level.Info(c.logger).Log(
@@ -541,9 +537,6 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		if err := os.RemoveAll(tmp); err != nil {
 			level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
 		}
-		if err != nil {
-			c.metrics.failed.Inc()
-		}
 		c.metrics.ran.Inc()
 		c.metrics.duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
@@ -609,12 +602,12 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		return nil
 	}
 
-	if err = writeMetaFile(c.logger, tmp, meta); err != nil {
+	if _, err = writeMetaFile(c.logger, tmp, meta); err != nil {
 		return errors.Wrap(err, "write merged meta")
 	}
 
 	// Create an empty tombstones file.
-	if err := writeTombstoneFile(c.logger, tmp, newMemTombstones()); err != nil {
+	if _, err := writeTombstoneFile(c.logger, tmp, newMemTombstones()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
 
@@ -764,6 +757,21 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 
 		for i, chk := range chks {
+			// Re-encode head chunks that are still open (being appended to) or
+			// outside the compacted MaxTime range.
+			// The chunk.Bytes() method is not safe for open chunks hence the re-encoding.
+			// This happens when snapshotting the head block.
+			//
+			// Block time range is half-open: [meta.MinTime, meta.MaxTime) and
+			// chunks are closed hence the chk.MaxTime >= meta.MaxTime check.
+			//
+			// TODO think how to avoid the typecasting to verify when it is head block.
+			if _, isHeadChunk := chk.Chunk.(*safeChunk); isHeadChunk && chk.MaxTime >= meta.MaxTime {
+				dranges = append(dranges, Interval{Mint: meta.MaxTime, Maxt: math.MaxInt64})
+
+			} else
+			// Sanity check for disk blocks.
+			// chk.MaxTime == meta.MaxTime shouldn't happen as well, but will brake many users so not checking for that.
 			if chk.MinTime < meta.MinTime || chk.MaxTime > meta.MaxTime {
 				return errors.Errorf("found chunk with minTime: %d maxTime: %d outside of compacted minTime: %d maxTime: %d",
 					chk.MinTime, chk.MaxTime, meta.MinTime, meta.MaxTime)
@@ -781,12 +789,21 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 				}
 
 				it := &deletedIterator{it: chk.Chunk.Iterator(), intervals: dranges}
+
+				var (
+					t int64
+					v float64
+				)
 				for it.Next() {
-					ts, v := it.At()
-					app.Append(ts, v)
+					t, v = it.At()
+					app.Append(t, v)
+				}
+				if err := it.Err(); err != nil {
+					return errors.Wrap(err, "iterate chunk while re-encoding")
 				}
 
 				chks[i].Chunk = newChunk
+				chks[i].MaxTime = t
 			}
 		}
 

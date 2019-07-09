@@ -130,6 +130,9 @@ type Options struct {
 	// When true it disables the overlapping blocks check.
 	// This in-turn enables vertical compaction and vertical query merge.
 	AllowOverlappingBlocks bool
+
+	// When true records in the WAL will be compressed.
+	WALCompression bool
 }
 
 var (
@@ -195,6 +198,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 		BlockRanges:            rngs,
 		NoLockfile:             opts.NoLockfile,
 		AllowOverlappingBlocks: opts.AllowOverlappingBlocks,
+		WALCompression:         opts.WALCompression,
 	})
 	if err != nil {
 		return nil, err
@@ -253,9 +257,15 @@ func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storag
 	return seriesSet{set: set}, nil, nil
 }
 
-func (q querier) LabelValues(name string) ([]string, error) { return q.q.LabelValues(name) }
-func (q querier) LabelNames() ([]string, error)             { return q.q.LabelNames() }
-func (q querier) Close() error                              { return q.q.Close() }
+func (q querier) LabelValues(name string) ([]string, storage.Warnings, error) {
+	v, err := q.q.LabelValues(name)
+	return v, nil, err
+}
+func (q querier) LabelNames() ([]string, storage.Warnings, error) {
+	v, err := q.q.LabelNames()
+	return v, nil, err
+}
+func (q querier) Close() error { return q.q.Close() }
 
 type seriesSet struct {
 	set tsdb.SeriesSet

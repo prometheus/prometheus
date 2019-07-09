@@ -64,14 +64,26 @@ func decoderOfMapKey(ctx *ctx, typ reflect2.Type) ValDecoder {
 		return &numericMapKeyDecoder{decoderOfType(ctx, typ)}
 	default:
 		ptrType := reflect2.PtrTo(typ)
-		if ptrType.Implements(textMarshalerType) {
+		if ptrType.Implements(unmarshalerType) {
+			return &referenceDecoder{
+				&unmarshalerDecoder{
+					valType: ptrType,
+				},
+			}
+		}
+		if typ.Implements(unmarshalerType) {
+			return &unmarshalerDecoder{
+				valType: typ,
+			}
+		}
+		if ptrType.Implements(textUnmarshalerType) {
 			return &referenceDecoder{
 				&textUnmarshalerDecoder{
 					valType: ptrType,
 				},
 			}
 		}
-		if typ.Implements(textMarshalerType) {
+		if typ.Implements(textUnmarshalerType) {
 			return &textUnmarshalerDecoder{
 				valType: typ,
 			}

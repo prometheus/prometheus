@@ -15,6 +15,10 @@ github.com/Azure/go-autorest/autorest/to
 github.com/Azure/go-autorest/autorest/validation
 github.com/Azure/go-autorest/tracing
 github.com/Azure/go-autorest/logger
+# github.com/PuerkitoBio/purell v1.1.0
+github.com/PuerkitoBio/purell
+# github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578
+github.com/PuerkitoBio/urlesc
 # github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc
 github.com/alecthomas/template
 github.com/alecthomas/template/parse
@@ -22,6 +26,8 @@ github.com/alecthomas/template/parse
 github.com/alecthomas/units
 # github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da
 github.com/armon/go-metrics
+# github.com/asaskevich/govalidator v0.0.0-20180720115003-f9ffefc3facf
+github.com/asaskevich/govalidator
 # github.com/aws/aws-sdk-go v1.15.24
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/credentials
@@ -63,10 +69,6 @@ github.com/census-instrumentation/opencensus-proto/gen-go/resource/v1
 github.com/census-instrumentation/opencensus-proto/gen-go/trace/v1
 # github.com/cespare/xxhash v1.1.0
 github.com/cespare/xxhash
-# github.com/cockroachdb/cockroach v0.0.0-20170608034007-84bc9597164f
-github.com/cockroachdb/cockroach/pkg/util/protoutil
-github.com/cockroachdb/cockroach/pkg/util/httputil
-github.com/cockroachdb/cockroach/pkg/util/syncutil
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/dgrijalva/jwt-go v3.2.0+incompatible
@@ -75,6 +77,9 @@ github.com/dgrijalva/jwt-go
 github.com/evanphx/json-patch
 # github.com/ghodss/yaml v1.0.0
 github.com/ghodss/yaml
+# github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
+github.com/globalsign/mgo/bson
+github.com/globalsign/mgo/internal/json
 # github.com/go-ini/ini v1.25.4
 github.com/go-ini/ini
 # github.com/go-kit/kit v0.8.0
@@ -82,6 +87,27 @@ github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
 # github.com/go-logfmt/logfmt v0.4.0
 github.com/go-logfmt/logfmt
+# github.com/go-openapi/analysis v0.17.2
+github.com/go-openapi/analysis
+github.com/go-openapi/analysis/internal
+# github.com/go-openapi/errors v0.17.2
+github.com/go-openapi/errors
+# github.com/go-openapi/jsonpointer v0.17.2
+github.com/go-openapi/jsonpointer
+# github.com/go-openapi/jsonreference v0.17.2
+github.com/go-openapi/jsonreference
+# github.com/go-openapi/loads v0.17.2
+github.com/go-openapi/loads
+# github.com/go-openapi/runtime v0.18.0
+github.com/go-openapi/runtime
+# github.com/go-openapi/spec v0.17.2
+github.com/go-openapi/spec
+# github.com/go-openapi/strfmt v0.19.0
+github.com/go-openapi/strfmt
+# github.com/go-openapi/swag v0.17.2
+github.com/go-openapi/swag
+# github.com/go-openapi/validate v0.17.2
+github.com/go-openapi/validate
 # github.com/gogo/protobuf v1.2.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/gogoproto
@@ -91,7 +117,6 @@ github.com/gogo/protobuf/sortkeys
 github.com/gogo/protobuf/protoc-gen-gogo/descriptor
 github.com/gogo/protobuf/vanity
 github.com/gogo/protobuf/vanity/command
-github.com/gogo/protobuf/jsonpb
 github.com/gogo/protobuf/plugin/compare
 github.com/gogo/protobuf/plugin/defaultcheck
 github.com/gogo/protobuf/plugin/description
@@ -183,12 +208,16 @@ github.com/influxdata/influxdb/models
 github.com/influxdata/influxdb/pkg/escape
 # github.com/jmespath/go-jmespath v0.0.0-20160803190731-bd40a432e4c7
 github.com/jmespath/go-jmespath
-# github.com/json-iterator/go v1.1.5
+# github.com/json-iterator/go v1.1.6
 github.com/json-iterator/go
 # github.com/julienschmidt/httprouter v1.2.0
 github.com/julienschmidt/httprouter
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 github.com/kr/logfmt
+# github.com/mailru/easyjson v0.0.0-20180823135443-60711f1a8329
+github.com/mailru/easyjson/jlexer
+github.com/mailru/easyjson/jwriter
+github.com/mailru/easyjson/buffer
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
 # github.com/miekg/dns v1.1.10
@@ -213,13 +242,13 @@ github.com/opentracing-contrib/go-stdlib/nethttp
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/log
 github.com/opentracing/opentracing-go/ext
-# github.com/petermattis/goid v0.0.0-20170504144140-0ded85884ba5
-github.com/petermattis/goid
 # github.com/pkg/errors v0.8.1
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/client_golang v0.9.3
+# github.com/prometheus/alertmanager v0.17.0
+github.com/prometheus/alertmanager/api/v2/models
+# github.com/prometheus/client_golang v1.0.0
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
@@ -229,7 +258,7 @@ github.com/prometheus/client_golang/prometheus/internal
 github.com/prometheus/client_golang/prometheus/testutil
 # github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.4.0
+# github.com/prometheus/common v0.4.1
 github.com/prometheus/common/model
 github.com/prometheus/common/promlog
 github.com/prometheus/common/promlog/flag
@@ -239,10 +268,10 @@ github.com/prometheus/common/expfmt
 github.com/prometheus/common/route
 github.com/prometheus/common/server
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
-# github.com/prometheus/procfs v0.0.0-20190507164030-5867b95ac084
+# github.com/prometheus/procfs v0.0.2
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
-# github.com/prometheus/tsdb v0.8.0
+# github.com/prometheus/tsdb v0.9.1
 github.com/prometheus/tsdb
 github.com/prometheus/tsdb/fileutil
 github.com/prometheus/tsdb/labels
@@ -255,13 +284,11 @@ github.com/prometheus/tsdb/goversion
 github.com/prometheus/tsdb/index
 # github.com/samuel/go-zookeeper v0.0.0-20161028232340-1d7be4effb13
 github.com/samuel/go-zookeeper/zk
-# github.com/sasha-s/go-deadlock v0.0.0-20161201235124-341000892f3d
-github.com/sasha-s/go-deadlock
 # github.com/shurcooL/httpfs v0.0.0-20171119174359-809beceb2371
 github.com/shurcooL/httpfs/filter
 github.com/shurcooL/httpfs/union
 github.com/shurcooL/httpfs/vfsutil
-# github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
+# github.com/shurcooL/vfsgen v0.0.0-20180825020608-02ddb050ef6b
 github.com/shurcooL/vfsgen
 # github.com/soheilhy/cmux v0.1.4
 github.com/soheilhy/cmux
@@ -316,13 +343,14 @@ golang.org/x/oauth2/jwt
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
 # golang.org/x/sys v0.0.0-20190403152447-81d4e9dc473e
-golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/text v0.3.0
+golang.org/x/sys/unix
+# golang.org/x/text v0.3.1-0.20180805044716-cb6730876b98
 golang.org/x/text/secure/bidirule
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
 golang.org/x/text/transform
+golang.org/x/text/width
 # golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2
 golang.org/x/time/rate
 # golang.org/x/tools v0.0.0-20190312170243-e65039ee4138

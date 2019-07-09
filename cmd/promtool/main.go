@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -30,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -70,6 +72,7 @@ func main() {
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
 	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().String()
 	queryRangeExpr := queryRangeCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryRangeHeaders := queryRangeCmd.Flag("header", "Extra headers to send to server.").StringMap()
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
 	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
 	queryRangeStep := queryRangeCmd.Flag("step", "Query step size (duration).").Duration()
@@ -123,7 +126,7 @@ func main() {
 		os.Exit(QueryInstant(*queryServer, *queryExpr, p))
 
 	case queryRangeCmd.FullCommand():
-		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
+		os.Exit(QueryRange(*queryRangeServer, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
 
 	case querySeriesCmd.FullCommand():
 		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd, p))
@@ -143,7 +146,6 @@ func main() {
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(*testRulesFiles...))
 	}
-
 }
 
 // CheckConfig validates configuration files.
@@ -348,7 +350,7 @@ func QueryInstant(url, query string, p printer) int {
 	api := v1.NewAPI(c)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.Query(ctx, query, time.Now())
+	val, _, err := api.Query(ctx, query, time.Now()) // Ignoring warnings for now.
 	cancel()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
@@ -361,9 +363,18 @@ func QueryInstant(url, query string, p printer) int {
 }
 
 // QueryRange performs a range query against a Prometheus server.
-func QueryRange(url, query, start, end string, step time.Duration, p printer) int {
+func QueryRange(url string, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
 	config := api.Config{
 		Address: url,
+	}
+
+	if len(headers) > 0 {
+		config.RoundTripper = promhttp.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			for key, value := range headers {
+				req.Header.Add(key, value)
+			}
+			return http.DefaultTransport.RoundTrip(req)
+		})
 	}
 
 	// Create new client.
@@ -408,7 +419,7 @@ func QueryRange(url, query, start, end string, step time.Duration, p printer) in
 	api := v1.NewAPI(c)
 	r := v1.Range{Start: stime, End: etime, Step: step}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.QueryRange(ctx, query, r)
+	val, _, err := api.QueryRange(ctx, query, r) // Ignoring warnings for now.
 	cancel()
 
 	if err != nil {
@@ -462,7 +473,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.Series(ctx, matchers, stime, etime)
+	val, _, err := api.Series(ctx, matchers, stime, etime) // Ignoring warnings for now.
 	cancel()
 
 	if err != nil {
