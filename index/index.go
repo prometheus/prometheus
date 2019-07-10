@@ -123,10 +123,10 @@ type Writer struct {
 	buf2    encoding.Encbuf
 	uint32s []uint32
 
-	symbols       map[string]uint32 // symbol offsets
-	seriesOffsets map[uint64]uint64 // offsets of series
-	labelIndexes  []hashEntry       // label index offsets
-	postings      []hashEntry       // postings lists offsets
+	symbols       map[string]uint32     // symbol offsets
+	seriesOffsets map[uint64]uint64     // offsets of series
+	labelIndexes  []labelIndexHashEntry // label index offsets
+	postings      []postingsHashEntry   // postings lists offsets
 
 	// Hold last series to validate that clients insert new series in order.
 	lastSeries labels.Labels
@@ -271,11 +271,11 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 
 	case idxStageDone:
 		w.toc.LabelIndicesTable = w.pos
-		if err := w.writeOffsetTable(w.labelIndexes); err != nil {
+		if err := w.writeLabelIndexesOffsetTable(); err != nil {
 			return err
 		}
 		w.toc.PostingsTable = w.pos
-		if err := w.writeOffsetTable(w.postings); err != nil {
+		if err := w.writePostingsOffsetTable(); err != nil {
 			return err
 		}
 		if err := w.writeTOC(); err != nil {
@@ -420,7 +420,7 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 		return err
 	}
 
-	w.labelIndexes = append(w.labelIndexes, hashEntry{
+	w.labelIndexes = append(w.labelIndexes, labelIndexHashEntry{
 		keys:   names,
 		offset: w.pos,
 	})
@@ -447,16 +447,35 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 	return errors.Wrap(err, "write label index")
 }
 
-// writeOffsetTable writes a sequence of readable hash entries.
-func (w *Writer) writeOffsetTable(entries []hashEntry) error {
+// writeLabelIndexesOffsetTable writes the label indices offset table.
+func (w *Writer) writeLabelIndexesOffsetTable() error {
 	w.buf2.Reset()
-	w.buf2.PutBE32int(len(entries))
+	w.buf2.PutBE32int(len(w.labelIndexes))
 
-	for _, e := range entries {
+	for _, e := range w.labelIndexes {
 		w.buf2.PutUvarint(len(e.keys))
 		for _, k := range e.keys {
 			w.buf2.PutUvarintStr(k)
 		}
+		w.buf2.PutUvarint64(e.offset)
+	}
+
+	w.buf1.Reset()
+	w.buf1.PutBE32int(w.buf2.Len())
+	w.buf2.PutHash(w.crc32)
+
+	return w.write(w.buf1.Get(), w.buf2.Get())
+}
+
+// writePostingsOffsetTable writes the postings offset table.
+func (w *Writer) writePostingsOffsetTable() error {
+	w.buf2.Reset()
+	w.buf2.PutBE32int(len(w.postings))
+
+	for _, e := range w.postings {
+		w.buf2.PutUvarint(2)
+		w.buf2.PutUvarintStr(e.name)
+		w.buf2.PutUvarintStr(e.value)
 		w.buf2.PutUvarint64(e.offset)
 	}
 
@@ -494,8 +513,9 @@ func (w *Writer) WritePostings(name, value string, it Postings) error {
 		return err
 	}
 
-	w.postings = append(w.postings, hashEntry{
-		keys:   []string{name, value},
+	w.postings = append(w.postings, postingsHashEntry{
+		name:   name,
+		value:  value,
 		offset: w.pos,
 	})
 
@@ -542,9 +562,14 @@ func (s uint32slice) Len() int           { return len(s) }
 func (s uint32slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s uint32slice) Less(i, j int) bool { return s[i] < s[j] }
 
-type hashEntry struct {
+type labelIndexHashEntry struct {
 	keys   []string
 	offset uint64
+}
+
+type postingsHashEntry struct {
+	name, value string
+	offset      uint64
 }
 
 func (w *Writer) Close() error {
