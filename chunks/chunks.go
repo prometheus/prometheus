@@ -366,7 +366,7 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 	return b[start:end]
 }
 
-// Reader implements a SeriesReader for a serialized byte stream
+// Reader implements a ChunkReader for a serialized byte stream
 // of series data.
 type Reader struct {
 	bs   []ByteSlice // The underlying bytes holding the encoded series data.
