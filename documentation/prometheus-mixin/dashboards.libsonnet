@@ -1,7 +1,7 @@
 local g = import 'grafana-builder/grafana.libsonnet';
 
 {
-  dashboards+: {
+  grafanaDashboards+:: {
     'prometheus.json':
       g.dashboard('Prometheus')
       .addMultiTemplate('job', 'prometheus_build_info', 'job')
