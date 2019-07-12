@@ -57,8 +57,9 @@ type Meta struct {
 }
 
 // writeHash writes the chunk encoding and raw data into the provided hash.
-func (cm *Meta) writeHash(h hash.Hash) error {
-	if _, err := h.Write([]byte{byte(cm.Chunk.Encoding())}); err != nil {
+func (cm *Meta) writeHash(h hash.Hash, buf []byte) error {
+	buf = append(buf[:0], byte(cm.Chunk.Encoding()))
+	if _, err := h.Write(buf[:1]); err != nil {
 		return err
 	}
 	if _, err := h.Write(cm.Chunk.Bytes()); err != nil {
@@ -97,6 +98,7 @@ type Writer struct {
 	wbuf    *bufio.Writer
 	n       int64
 	crc32   hash.Hash
+	buf     [binary.MaxVarintLen32]byte
 
 	segmentSize int64
 }
@@ -299,22 +301,19 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		}
 	}
 
-	var (
-		b   = [binary.MaxVarintLen32]byte{}
-		seq = uint64(w.seq()) << 32
-	)
+	var seq = uint64(w.seq()) << 32
 	for i := range chks {
 		chk := &chks[i]
 
 		chk.Ref = seq | uint64(w.n)
 
-		n := binary.PutUvarint(b[:], uint64(len(chk.Chunk.Bytes())))
+		n := binary.PutUvarint(w.buf[:], uint64(len(chk.Chunk.Bytes())))
 
-		if err := w.write(b[:n]); err != nil {
+		if err := w.write(w.buf[:n]); err != nil {
 			return err
 		}
-		b[0] = byte(chk.Chunk.Encoding())
-		if err := w.write(b[:1]); err != nil {
+		w.buf[0] = byte(chk.Chunk.Encoding())
+		if err := w.write(w.buf[:1]); err != nil {
 			return err
 		}
 		if err := w.write(chk.Chunk.Bytes()); err != nil {
@@ -322,10 +321,10 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		}
 
 		w.crc32.Reset()
-		if err := chk.writeHash(w.crc32); err != nil {
+		if err := chk.writeHash(w.crc32, w.buf[:]); err != nil {
 			return err
 		}
-		if err := w.write(w.crc32.Sum(b[:0])); err != nil {
+		if err := w.write(w.crc32.Sum(w.buf[:0])); err != nil {
 			return err
 		}
 	}
