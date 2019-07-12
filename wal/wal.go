@@ -615,17 +615,21 @@ func (w *WAL) log(rec []byte, final bool) error {
 		copy(buf[recordHeaderSize:], part)
 		p.alloc += len(part) + recordHeaderSize
 
-		// By definition when a record is split it means its size is bigger than
-		// the page boundary so the current page would be full and needs to be flushed.
-		// On contrary if we wrote a full record, we can fit more records of the batch
-		// into the page before flushing it.
-		if final || typ != recFull || w.page.full() {
-			if err := w.flushPage(false); err != nil {
+		if w.page.full() {
+			if err := w.flushPage(true); err != nil {
 				return err
 			}
 		}
 		rec = rec[l:]
 	}
+
+	// If it's the final record of the batch and the page is not empty, flush it.
+	if final && w.page.alloc > 0 {
+		if err := w.flushPage(false); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
