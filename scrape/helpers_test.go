@@ -31,6 +31,12 @@ func (a nopAppender) AddFast(labels.Labels, uint64, int64, float64) error { retu
 func (a nopAppender) Commit() error                                       { return nil }
 func (a nopAppender) Rollback() error                                     { return nil }
 
+type sample struct {
+	metric labels.Labels
+	t      int64
+	v      float64
+}
+
 // collectResultAppender records all samples that were added through the appender.
 // It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {
