@@ -55,7 +55,7 @@ func (r *ewmaRate) tick() {
 
 	if r.init {
 		r.lastRate += r.alpha * (instantRate - r.lastRate)
-	} else {
+	} else if newEvents > 0 {
 		r.init = true
 		r.lastRate = instantRate
 	}
