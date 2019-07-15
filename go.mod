@@ -6,7 +6,7 @@ require (
 	github.com/Azure/go-autorest v11.2.8+incompatible
 	github.com/OneOfOne/xxhash v1.2.5 // indirect
 	github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf
-	github.com/aws/aws-sdk-go v1.15.24
+	github.com/aws/aws-sdk-go v1.20.20
 	github.com/cespare/xxhash v1.1.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/evanphx/json-patch v4.1.0+incompatible // indirect
@@ -26,7 +26,6 @@ require (
 	github.com/hashicorp/go-msgpack v0.5.4 // indirect
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
 	github.com/influxdata/influxdb v0.0.0-20170331210902-15e594fc09f1
-	github.com/jmespath/go-jmespath v0.0.0-20160803190731-bd40a432e4c7 // indirect
 	github.com/json-iterator/go v1.1.6
 	github.com/jtolds/gls v4.2.1+incompatible // indirect
 	github.com/miekg/dns v1.1.10

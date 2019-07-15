@@ -15,6 +15,7 @@ package config
 
 import (
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/discovery/cloudmap"
 
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
@@ -58,6 +59,8 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
+	// List of CloudMap service discovery configurations.
+	CloudMapSDConfigs []*cloudmap.SDConfig `yaml:"cloudmap_sd_configs,omitempty"`
 }
 
 // Validate validates the ServiceDiscoveryConfig.
@@ -80,6 +83,11 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.EC2SDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in ec2_sd_configs")
+		}
+	}
+	for _, cfg := range c.CloudMapSDConfigs {
+		if cfg == nil {
+			return errors.New("empty or null section in cloudmap_sd_configs")
 		}
 	}
 	for _, cfg := range c.FileSDConfigs {
