@@ -526,6 +526,7 @@ func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 
 func checkpointNum(dir string) (int, error) {
 	// Checkpoint dir names are in the format checkpoint.000001
+	// dir may contain a hidden directory, so only check the base directory
 	chunks := strings.Split(path.Base(dir), ".")
 	if len(chunks) != 2 {
 		return 0, errors.Errorf("invalid checkpoint dir string: %s", dir)
