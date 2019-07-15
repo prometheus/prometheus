@@ -1,5 +1,7 @@
 ## Master / unreleased
 
+ - [FEATURE] `chunckenc.Chunk.Iterator` method now takes a `chunckenc.Iterator` interface as an argument for reuse.
+
 ## 0.9.1
 
  - [CHANGE] LiveReader metrics are now injected rather than global.
@@ -18,6 +20,7 @@
  - [ENHANCEMENT] Improved postings intersection matching.
  - [ENHANCEMENT] Reduced disk usage for WAL for small setups.
  - [ENHANCEMENT] Optimize queries using regexp for set lookups.
+
 
 ## 0.8.0
 

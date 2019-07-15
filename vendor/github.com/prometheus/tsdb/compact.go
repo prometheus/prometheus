@@ -736,6 +736,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		return errors.Wrap(err, "add symbols")
 	}
 
+	delIter := &deletedIterator{}
 	for set.Next() {
 		select {
 		case <-c.ctx.Done():
@@ -788,17 +789,18 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 					return err
 				}
 
-				it := &deletedIterator{it: chk.Chunk.Iterator(), intervals: dranges}
+				delIter.it = chk.Chunk.Iterator(delIter.it)
+				delIter.intervals = dranges
 
 				var (
 					t int64
 					v float64
 				)
-				for it.Next() {
-					t, v = it.At()
+				for delIter.Next() {
+					t, v = delIter.At()
 					app.Append(t, v)
 				}
-				if err := it.Err(); err != nil {
+				if err := delIter.Err(); err != nil {
 					return errors.Wrap(err, "iterate chunk while re-encoding")
 				}
 
