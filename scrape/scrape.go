@@ -1023,28 +1023,6 @@ func (sl *scrapeLoop) stop() {
 	<-sl.stopped
 }
 
-type sample struct {
-	metric labels.Labels
-	t      int64
-	v      float64
-}
-
-//lint:ignore U1000 staticcheck falsely reports that samples is unused.
-type samples []sample
-
-func (s samples) Len() int      { return len(s) }
-func (s samples) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-
-func (s samples) Less(i, j int) bool {
-	d := labels.Compare(s[i].metric, s[j].metric)
-	if d < 0 {
-		return true
-	} else if d > 0 {
-		return false
-	}
-	return s[i].t < s[j].t
-}
-
 func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	var (
 		app            = sl.appender()
