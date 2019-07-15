@@ -234,7 +234,7 @@ func (w *WALWatcher) run() error {
 func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
 	refs, err := w.segments(w.walDir)
 	if err != nil {
-		return -1, nil
+		return -1, err
 	}
 
 	for _, r := range refs {
@@ -249,7 +249,7 @@ func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
 func (w *WALWatcher) firstAndLast() (int, int, error) {
 	refs, err := w.segments(w.walDir)
 	if err != nil {
-		return -1, -1, nil
+		return -1, -1, err
 	}
 
 	if len(refs) == 0 {
