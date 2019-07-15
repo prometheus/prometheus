@@ -33,7 +33,7 @@ const (
 // DefaultSDConfig is the default EC2 SD configuration.
 var DefaultSDConfig = SDConfig{
 	Port:            5000,
-	RefreshInterval: model.Duration(5 * time.Minute),
+	RefreshInterval: model.Duration(60 * time.Second),
 }
 
 // SDConfig is the configuration for EC2 based service discovery.
@@ -42,6 +42,17 @@ type SDConfig struct {
 	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
 	Port            int                `yaml:"port"`
 	Accounts		[]string		   `yaml:"accounts,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultSDConfig
+	type plain SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 
