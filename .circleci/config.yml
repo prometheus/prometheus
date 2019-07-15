@@ -18,10 +18,15 @@ jobs:
     steps:
     - prometheus/setup_environment
     - run:
-        command: make check_license style unused lint build check_assets
+        command: make
         environment:
           # Run garbage collection more aggresively to avoid getting OOMed during the lint phase.
           GOGC: "20"
+          # By default Go uses GOMAXPROCS but a Circle CI executor has many
+          # cores (> 30) while the CPU and RAM resources are throttled. If we
+          # don't limit this to the number of allocated cores, the job is
+          # likely to get OOMed and killed.
+          GOOPTS: "-p 2"
     - prometheus/check_proto
     - prometheus/store_artifact:
         file: prometheus
