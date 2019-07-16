@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"net"
+	"strings"
 
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/servicediscovery"
 
 	"github.com/go-kit/kit/log"
@@ -21,13 +22,14 @@ import (
 )
 
 const (
-	cloudmapLabel                = model.MetaLabelPrefix + "cloudmap_"
-	cloudmapLabelAZ              = cloudmapLabel + "availability_zone"
-	cloudmapLabelInstanceID      = cloudmapLabel + "instance_id"
-	cloudmapLabelInstanceState   = cloudmapLabel + "instance_state"
-	cloudmapLabelClusterName     = cloudmapLabel + "cluser_name"
-	cloudmapLabelPrivateDNS      = cloudmapLabel + "private_dns_name"
-	cloudmapLabelPrivateIP       = cloudmapLabel + "private_ip"
+	cloudMapLabel              = "" //model.MetaLabelPrefix + "cloudMap_"
+	cloudMapLabelAZ            = cloudMapLabel + "availability_zone"
+	cloudMapLabelInstanceID    = cloudMapLabel + "instance_id"
+	cloudMapLabelInstanceState = cloudMapLabel + "instance_state"
+	cloudMapLabelClusterName   = cloudMapLabel + "cluster_name"
+	cloudMapLabelPrivateDNS    = cloudMapLabel + "private_dns_name"
+	cloudMapLabelPrivateIP     = cloudMapLabel + "private_ip"
+	cloudMapLabelAccountId     = cloudMapLabel + "account_id"
 )
 
 // DefaultSDConfig is the default EC2 SD configuration.
@@ -56,7 +58,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 
-// Discovery periodically performs Cloudmap requests. It implements
+// Discovery periodically performs Cloud Map requests. It implements
 // the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
@@ -99,88 +101,86 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	// Create service client value configured for credentials from assumed role.
 	mapper := servicediscovery.New(sess, &aws.Config{Credentials: creds})
-
-
+	
 	namespaceFilter := "NAMESPACE_ID"
 
 	tg := &targetgroup.Group{
 		Source: "aws",
 	}
 
-	for {
+	// Page through the namespaces in the Cloud Map directory
+	err := mapper.ListNamespacesPages(&servicediscovery.ListNamespacesInput{},
+		func(namespaceOutputPage *servicediscovery.ListNamespacesOutput, isLastPageOfNamespaces bool) bool {
 
-		// List the namespaces in the cloud map directory
-		nsResponse, err := mapper.ListNamespaces(&servicediscovery.ListNamespacesInput{})
+			for _, namespace := range namespaceOutputPage.Namespaces {
 
-		if err != nil {
-			return nil, errors.Wrap(err, "could not list directory namespaces")
-		}
+				for {
+					// Build a filter to select any services in the given namespace
+					filter := servicediscovery.ServiceFilter { Name: &namespaceFilter, Values: []*string {namespace.Id} }
 
-		for _, namespace := range nsResponse.Namespaces {
+					err := mapper.ListServicesPages(&servicediscovery.ListServicesInput{Filters: []*servicediscovery.ServiceFilter{&filter}},
+						func(servicesOutputPage *servicediscovery.ListServicesOutput, isLastPageOfServices bool) bool {
 
-			for {
+							for _, service := range servicesOutputPage.Services {
 
-				// Build a filter to select any services in the given namespace
-				filter := servicediscovery.ServiceFilter { Name: &namespaceFilter, Values: []*string {namespace.Id} }
+								err := mapper.ListInstancesPages(&servicediscovery.ListInstancesInput{ServiceId: service.Id},
+									func(instancesOutputPage *servicediscovery.ListInstancesOutput, isLastPageOfInstances bool) bool {
 
-				svcResponse, err := mapper.ListServices(&servicediscovery.ListServicesInput{Filters: []*servicediscovery.ServiceFilter{&filter}})
+										for _, instance := range instancesOutputPage.Instances {
+											labels := model.LabelSet{
+												cloudMapLabelInstanceID: model.LabelValue(*instance.Id),
+											}
 
-				if err != nil {
-					return nil, errors.Wrap(err, "could not list namespace services")
-				}
+											labels[cloudMapLabelPrivateIP] = model.LabelValue(*instance.Attributes["AWS_INSTANCE_IPV4"])
 
-				for _, service := range svcResponse.Services {
+											//if inst.PrivateDnsName != nil {
+											//	labels[cloudMapLabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName) // Can be built from Service.Name + Namespace.Properties.HttpProperties.HttpName
+											//}
 
-					for {
+											addr := net.JoinHostPort(*instance.Attributes["AWS_INSTANCE_IPV4"], fmt.Sprintf("%d", d.port))
+											labels[model.AddressLabel] = model.LabelValue(addr)
+											labels[cloudMapLabelAZ] = model.LabelValue(*instance.Attributes["AVAILABILITY_ZONE"])
+											labels[cloudMapLabelInstanceState] = model.LabelValue(*instance.Attributes["AWS_INIT_HEALTH_STATUS"])
+											labels[cloudMapLabelClusterName] = model.LabelValue(*instance.Attributes["ECS_CLUSTER_NAME"])
+											labels[cloudMapLabelAccountId] = model.LabelValue(ParseAccountNumberFromArn(d.roleARN))
 
-						instResponse, err := mapper.ListInstances(&servicediscovery.ListInstancesInput{ServiceId: service.Id})
+											tg.Targets = append(tg.Targets, labels)
+										}
 
-						if err != nil {
-							return nil, errors.Wrap(err, "could not list service instances")
-						}
+										return !isLastPageOfInstances
+									})
 
-						for _, instance := range instResponse.Instances {
-
-							labels := model.LabelSet{
-								cloudmapLabelInstanceID: model.LabelValue(*instance.Id),
+								if err != nil {
+									fmt.Println("could not list service instances")
+									fmt.Println(err)
+									return false
+								}
 							}
 
-							labels[cloudmapLabelPrivateIP] = model.LabelValue(*instance.Attributes["AWS_INSTANCE_IPV4"])
+							return !isLastPageOfServices
+						})
 
-							//if inst.PrivateDnsName != nil {
-							//	labels[cloudmapLabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName) // Can be built from Service.Name + Namespace.Properties.HttpProperties.HttpName
-							//}
-
-							addr := net.JoinHostPort(*instance.Attributes["AWS_INSTANCE_IPV4"], fmt.Sprintf("%d", d.port))
-							labels[model.AddressLabel] = model.LabelValue(addr)
-
-							labels[cloudmapLabelAZ] = model.LabelValue(*instance.Attributes["AVAILABILITY_ZONE"])
-							labels[cloudmapLabelInstanceState] = model.LabelValue(*instance.Attributes["AWS_INIT_HEALTH_STATUS"])
-							labels[cloudmapLabelClusterName] = model.LabelValue(*instance.Attributes["ECS_CLUSTER_NAME"])
-
-
-							tg.Targets = append(tg.Targets, labels)
-
-						}
-
-						if instResponse.NextToken == nil {
-							break;
-						}
-
+					if err != nil {
+						fmt.Println("could not list namespace services, stopping")
+						fmt.Println(err)
+						return false
 					}
 				}
-
-				if svcResponse.NextToken == nil {
-					break;
-				}
 			}
-		}
 
-		if nsResponse.NextToken == nil {
-			break;
-		}
+			return !isLastPageOfNamespaces
+		})
+
+	if err != nil {
+		fmt.Println("could not list directory namespaces")
+		fmt.Println(err)
+		return nil, errors.Wrap(err, "could not list directory namespaces")
 	}
 
 	return []*targetgroup.Group{tg}, nil
+}
 
+func ParseAccountNumberFromArn(arn string) string {
+	arnParts := strings.Split(arn, ":")
+	return arnParts[4]
 }
