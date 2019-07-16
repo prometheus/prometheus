@@ -101,63 +101,84 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	mapper := servicediscovery.New(sess, &aws.Config{Credentials: creds})
 
 
-	// List the namespaces in the cloud map directory
-	nsResponse, err := mapper.ListNamespaces(&servicediscovery.ListNamespacesInput{})
-
-	if err != nil {
-		return nil, errors.Wrap(err, "could not list directory namespaces")
-	}
+	namespaceFilter := "NAMESPACE_ID"
 
 	tg := &targetgroup.Group{
 		Source: "aws",
 	}
 
-	namespaceFilter := "NAMESPACE_ID"
-	for _, namespace := range nsResponse.Namespaces {
+	for {
 
-		// Build a filter to select any services in the given namespace
-		filter := servicediscovery.ServiceFilter { Name: &namespaceFilter, Values: []*string {namespace.Id} }
-
-		svcResponse, err := mapper.ListServices(&servicediscovery.ListServicesInput{Filters: []*servicediscovery.ServiceFilter{&filter}})
+		// List the namespaces in the cloud map directory
+		nsResponse, err := mapper.ListNamespaces(&servicediscovery.ListNamespacesInput{})
 
 		if err != nil {
-			return nil, errors.Wrap(err, "could not list namespace services")
+			return nil, errors.Wrap(err, "could not list directory namespaces")
 		}
 
-		for _, service := range svcResponse.Services {
+		for _, namespace := range nsResponse.Namespaces {
 
-			instResponse, err := mapper.ListInstances(&servicediscovery.ListInstancesInput{ServiceId: service.Id})
+			for {
 
-			if err != nil {
-				return nil, errors.Wrap(err, "could not list service instances")
-			}
+				// Build a filter to select any services in the given namespace
+				filter := servicediscovery.ServiceFilter { Name: &namespaceFilter, Values: []*string {namespace.Id} }
 
-			for _, instance := range instResponse.Instances {
+				svcResponse, err := mapper.ListServices(&servicediscovery.ListServicesInput{Filters: []*servicediscovery.ServiceFilter{&filter}})
 
-				labels := model.LabelSet{
-					cloudmapLabelInstanceID: model.LabelValue(*instance.Id),
+				if err != nil {
+					return nil, errors.Wrap(err, "could not list namespace services")
 				}
 
-				labels[cloudmapLabelPrivateIP] = model.LabelValue(*instance.Attributes["AWS_INSTANCE_IPV4"])
+				for _, service := range svcResponse.Services {
 
-				//if inst.PrivateDnsName != nil {
-				//	labels[cloudmapLabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName) // Can be built from Service.Name + Namespace.Properties.HttpProperties.HttpName
-				//}
+					for {
 
-				addr := net.JoinHostPort(*instance.Attributes["AWS_INSTANCE_IPV4"], fmt.Sprintf("%d", d.port))
-				labels[model.AddressLabel] = model.LabelValue(addr)
+						instResponse, err := mapper.ListInstances(&servicediscovery.ListInstancesInput{ServiceId: service.Id})
 
-				labels[cloudmapLabelAZ] = model.LabelValue(*instance.Attributes["AVAILABILITY_ZONE"])
-				labels[cloudmapLabelInstanceState] = model.LabelValue(*instance.Attributes["AWS_INIT_HEALTH_STATUS"])
-				labels[cloudmapLabelClusterName] = model.LabelValue(*instance.Attributes["ECS_CLUSTER_NAME"])
+						if err != nil {
+							return nil, errors.Wrap(err, "could not list service instances")
+						}
+
+						for _, instance := range instResponse.Instances {
+
+							labels := model.LabelSet{
+								cloudmapLabelInstanceID: model.LabelValue(*instance.Id),
+							}
+
+							labels[cloudmapLabelPrivateIP] = model.LabelValue(*instance.Attributes["AWS_INSTANCE_IPV4"])
+
+							//if inst.PrivateDnsName != nil {
+							//	labels[cloudmapLabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName) // Can be built from Service.Name + Namespace.Properties.HttpProperties.HttpName
+							//}
+
+							addr := net.JoinHostPort(*instance.Attributes["AWS_INSTANCE_IPV4"], fmt.Sprintf("%d", d.port))
+							labels[model.AddressLabel] = model.LabelValue(addr)
+
+							labels[cloudmapLabelAZ] = model.LabelValue(*instance.Attributes["AVAILABILITY_ZONE"])
+							labels[cloudmapLabelInstanceState] = model.LabelValue(*instance.Attributes["AWS_INIT_HEALTH_STATUS"])
+							labels[cloudmapLabelClusterName] = model.LabelValue(*instance.Attributes["ECS_CLUSTER_NAME"])
 
 
-				tg.Targets = append(tg.Targets, labels)
+							tg.Targets = append(tg.Targets, labels)
 
+						}
+
+						if instResponse.NextToken == nil {
+							break;
+						}
+
+					}
+				}
+
+				if svcResponse.NextToken == nil {
+					break;
+				}
 			}
-
 		}
 
+		if nsResponse.NextToken == nil {
+			break;
+		}
 	}
 
 	return []*targetgroup.Group{tg}, nil
