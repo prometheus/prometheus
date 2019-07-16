@@ -739,16 +739,17 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 
 		ref, lset, chks, dranges := set.At() // The chunks here are not fully deleted.
+		// Skip the series with all deleted chunks.
+		if len(chks) == 0 {
+			set.RemoveLastRef()
+			continue
+		}
+
 		if overlapping {
 			// If blocks are overlapping, it is possible to have unsorted chunks.
 			sort.Slice(chks, func(i, j int) bool {
 				return chks[i].MinTime < chks[j].MinTime
 			})
-		}
-
-		// Skip the series with all deleted chunks.
-		if len(chks) == 0 {
-			continue
 		}
 
 		for i, chk := range chks {
@@ -814,7 +815,6 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		if err := chunkw.WriteChunks(mergedChks...); err != nil {
 			return errors.Wrap(err, "write chunks")
 		}
-
 		if err := indexw.AddSeries(ref, lset, mergedChks...); err != nil {
 			return errors.Wrap(err, "add series")
 		}
@@ -1100,6 +1100,8 @@ func (c *compactionMerger) Next() bool {
 	ref, lset, chks, intervals := c.sets[0].At()
 	idx := 0
 
+	// Find the labels with the lowest index when
+	// sorted in ascending order.
 	for i, s := range c.sets[1:] {
 		if !c.oks[1+i] {
 			continue
@@ -1111,6 +1113,9 @@ func (c *compactionMerger) Next() bool {
 		}
 	}
 
+	// Building the seriesMap and gathering the chunks
+	// from other index readers which have same labels as
+	// 'lset' described above.
 	c.l = append(c.l[:0], lset...)
 	c.c = append(c.c[:0], chks...)
 	c.seriesMap[idx][ref] = c.ref
@@ -1133,6 +1138,22 @@ func (c *compactionMerger) Next() bool {
 
 	c.ref++
 	return true
+}
+
+// After calling RemoveLastRef(), At() is only valid after calling
+// another Next().
+func (c *compactionMerger) RemoveLastRef() {
+	if c.ref == 0 || c.Err() != nil {
+		return
+	}
+	toRemoveRef := c.ref - 1
+	for key1 := range c.seriesMap {
+		for key2, rf := range c.seriesMap[key1] {
+			if rf == toRemoveRef {
+				delete(c.seriesMap[key1], key2)
+			}
+		}
+	}
 }
 
 func (c *compactionMerger) Err() error {
