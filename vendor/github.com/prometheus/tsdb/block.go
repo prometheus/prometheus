@@ -75,7 +75,9 @@ type IndexReader interface {
 	// The Postings here contain the offsets to the series inside the index.
 	// Found IDs are not strictly required to point to a valid Series, e.g. during
 	// background garbage collections.
-	Postings(name, value string) (index.Postings, error)
+	// 'reusePosts' is the Postings object that can be re-used instead of allocating
+	// a new object.
+	Postings(name, value string, reusePosts index.Postings) (index.Postings, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
@@ -143,6 +145,9 @@ type BlockReader interface {
 
 	// MaxTime returns the max time of the block.
 	MaxTime() int64
+
+	// NumSeries returns the total number of series in the block.
+	NumSeries() uint64
 }
 
 // Appendable defines an entity to which data can be appended.
@@ -451,8 +456,8 @@ func (r blockIndexReader) LabelValues(names ...string) (index.StringTuples, erro
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
-func (r blockIndexReader) Postings(name, value string) (index.Postings, error) {
-	p, err := r.ir.Postings(name, value)
+func (r blockIndexReader) Postings(name, value string, reusePosts index.Postings) (index.Postings, error) {
+	p, err := r.ir.Postings(name, value, reusePosts)
 	if err != nil {
 		return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
@@ -646,6 +651,11 @@ func (pb *Block) OverlapsClosedInterval(mint, maxt int64) bool {
 // LabelNames returns all the unique label names present in the Block in sorted order.
 func (pb *Block) LabelNames() ([]string, error) {
 	return pb.indexr.LabelNames()
+}
+
+// NumSeries returns number of series in the block.
+func (pb *Block) NumSeries() uint64 {
+	return pb.meta.Stats.NumSeries
 }
 
 func clampInterval(a, b, mint, maxt int64) (int64, int64) {

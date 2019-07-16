@@ -648,10 +648,12 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	var (
-		set         ChunkSeriesSet
-		allSymbols  = make(map[string]struct{}, 1<<16)
-		closers     = []io.Closer{}
-		overlapping bool
+		sets              = make([]ChunkSeriesSet, 0, len(blocks))
+		allSymbols        = make(map[string]struct{}, 1<<16)
+		closers           = []io.Closer{}
+		indexReaders      = make([]IndexReader, 0, len(blocks))
+		overlapping       bool
+		apkName, apkValue = index.AllPostingsKey()
 	)
 	defer func() {
 		var merr tsdb_errors.MultiError
@@ -686,6 +688,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			return errors.Wrapf(err, "open index reader for block %s", b)
 		}
 		closers = append(closers, indexr)
+		indexReaders = append(indexReaders, indexr)
 
 		chunkr, err := b.Chunks()
 		if err != nil {
@@ -707,30 +710,21 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			allSymbols[s] = struct{}{}
 		}
 
-		all, err := indexr.Postings(index.AllPostingsKey())
+		all, err := indexr.Postings(apkName, apkValue, nil)
 		if err != nil {
 			return err
 		}
 		all = indexr.SortedPostings(all)
 
-		s := newCompactionSeriesSet(indexr, chunkr, tombsr, all)
-
-		if i == 0 {
-			set = s
-			continue
-		}
-		set, err = newCompactionMerger(set, s)
-		if err != nil {
-			return err
-		}
+		sets = append(sets, newCompactionSeriesSet(indexr, chunkr, tombsr, all))
 	}
 
-	// We fully rebuild the postings list index from merged series.
-	var (
-		postings = index.NewMemPostings()
-		values   = map[string]stringset{}
-		i        = uint64(0)
-	)
+	set, err := newCompactionMerger(sets, blocks)
+	if err != nil {
+		return err
+	}
+
+	var values = map[string]stringset{}
 
 	if err := indexw.AddSymbols(allSymbols); err != nil {
 		return errors.Wrap(err, "add symbols")
@@ -744,7 +738,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		default:
 		}
 
-		lset, chks, dranges := set.At() // The chunks here are not fully deleted.
+		ref, lset, chks, dranges := set.At() // The chunks here are not fully deleted.
 		if overlapping {
 			// If blocks are overlapping, it is possible to have unsorted chunks.
 			sort.Slice(chks, func(i, j int) bool {
@@ -816,11 +810,12 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 				return errors.Wrap(err, "merge overlapping chunks")
 			}
 		}
+
 		if err := chunkw.WriteChunks(mergedChks...); err != nil {
 			return errors.Wrap(err, "write chunks")
 		}
 
-		if err := indexw.AddSeries(i, lset, mergedChks...); err != nil {
+		if err := indexw.AddSeries(ref, lset, mergedChks...); err != nil {
 			return errors.Wrap(err, "add series")
 		}
 
@@ -844,32 +839,145 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 			valset.set(l.Value)
 		}
-		postings.Add(i, lset)
-
-		i++
 	}
 	if set.Err() != nil {
 		return errors.Wrap(set.Err(), "iterate compaction set")
 	}
 
-	s := make([]string, 0, 256)
-	for n, v := range values {
-		s = s[:0]
+	if meta.Stats.NumSamples == 0 {
+		// No postings to write, exit early.
+		return nil
+	}
 
-		for x := range v {
-			s = append(s, x)
+	return c.writePostings(indexw, values, set.seriesMap, indexReaders)
+}
+
+// writePostings writes the postings into the index file.
+func (c *LeveledCompactor) writePostings(indexw IndexWriter, values map[string]stringset,
+	seriesMap []map[uint64]uint64, indexReaders []IndexReader) (err error) {
+	var (
+		maxNumValues      int
+		numLabelValues    int
+		names             = make([]string, 0, len(values)+1)
+		apkName, apkValue = index.AllPostingsKey()
+	)
+	for _, v := range values {
+		numLabelValues += len(v)
+		if len(v) > maxNumValues {
+			maxNumValues = len(v)
 		}
-		if err := indexw.WriteLabelIndex([]string{n}, s); err != nil {
+	}
+
+	labelValuesBuf := make([]string, 0, maxNumValues)
+	for n, v := range values {
+		labelValuesBuf = labelValuesBuf[:0]
+		names = append(names, n)
+
+		for val := range v {
+			labelValuesBuf = append(labelValuesBuf, val)
+		}
+		if err := indexw.WriteLabelIndex([]string{n}, labelValuesBuf); err != nil {
 			return errors.Wrap(err, "write label index")
 		}
 	}
+	names = append(names, apkName)
+	values[apkName] = stringset{apkValue: struct{}{}}
+	sort.Strings(names)
 
-	for _, l := range postings.SortedKeys() {
-		if err := indexw.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value)); err != nil {
-			return errors.Wrap(err, "write postings")
+	if idxw, ok := indexw.(*index.Writer); ok {
+		idxw.HintPostingsWriteCount(numLabelValues)
+	}
+
+	remapPostings := newRemappedPostings(seriesMap, 1e6)
+	var postBuf index.Postings
+	for _, n := range names {
+		labelValuesBuf = labelValuesBuf[:0]
+		for v := range values[n] {
+			labelValuesBuf = append(labelValuesBuf, v)
+		}
+		sort.Strings(labelValuesBuf)
+
+		for _, v := range labelValuesBuf {
+			remapPostings.clearPostings()
+			for i, ir := range indexReaders {
+				postBuf, err = ir.Postings(n, v, postBuf)
+				if err != nil {
+					return errors.Wrap(err, "read postings")
+				}
+				remapPostings.add(i, postBuf)
+			}
+
+			if err := indexw.WritePostings(n, v, remapPostings.get()); err != nil {
+				return errors.Wrap(err, "write postings")
+			}
 		}
 	}
+
 	return nil
+}
+
+// remappedPostings is useful in remapping set of postings
+// from given set of maps.
+type remappedPostings struct {
+	postingsMap []map[uint64]uint64
+	postingBuf  []uint64
+	listPost    *index.ListPostings
+}
+
+// newRemappedPostings returns remappedPostings.
+// 'postingsMap' is the slice of maps used for remapping.
+// 'postingSizeHint' is for preallocation of memory to reduce allocs later.
+func newRemappedPostings(postingsMap []map[uint64]uint64, postingSizeHint int) *remappedPostings {
+	return &remappedPostings{
+		postingsMap: postingsMap,
+		postingBuf:  make([]uint64, 0, postingSizeHint),
+		listPost:    index.NewListPostings(),
+	}
+}
+
+// add remaps the given postings with the map found
+// at the given index 'mapIdx'. The resultant postings
+// are added to the result buffer.
+func (rp *remappedPostings) add(mapIdx int, p index.Postings) {
+	pMap := rp.postingsMap[mapIdx]
+	idx, lastIdx := -1, -1
+	for p.Next() {
+		newVal, ok := pMap[p.At()]
+		if !ok {
+			continue
+		}
+		// idx is the index at which newVal exists or index at which we need to insert.
+		// 'p' consists postings in sorted order w.r.t. the series labels.
+		// Hence the mapped series will also be in ascending order including the postings.
+		// So we need not look at/before 'lastIdx' in 'postingBuf'.
+		for idx = lastIdx + 1; idx < len(rp.postingBuf); idx++ {
+			if rp.postingBuf[idx] >= newVal {
+				break
+			}
+		}
+		lastIdx = idx
+		if idx == len(rp.postingBuf) {
+			rp.postingBuf = append(rp.postingBuf, newVal)
+		} else if rp.postingBuf[idx] != newVal {
+			rp.postingBuf = append(rp.postingBuf[:idx], append([]uint64{newVal}, rp.postingBuf[idx:]...)...)
+		}
+	}
+}
+
+// get returns the remapped postings.
+// The returned postings becomes invalid after calling any other exposed
+// methods of RemappedPostings (Add, Get, ClearPostings). Hence postings
+// should be used right after calling 'Get'.
+// This is because of the shared buffer for memory optimizations.
+func (rp *remappedPostings) get() index.Postings {
+	rp.listPost.Reset(rp.postingBuf)
+	return rp.listPost
+}
+
+// clearPostings only clears the result postings
+// buffer and not the map.
+func (rp *remappedPostings) clearPostings() {
+	rp.postingBuf = rp.postingBuf[:0]
 }
 
 type compactionSeriesSet struct {
@@ -942,93 +1050,100 @@ func (c *compactionSeriesSet) Err() error {
 	return c.p.Err()
 }
 
-func (c *compactionSeriesSet) At() (labels.Labels, []chunks.Meta, Intervals) {
-	return c.l, c.c, c.intervals
+func (c *compactionSeriesSet) At() (uint64, labels.Labels, []chunks.Meta, Intervals) {
+	return c.p.At(), c.l, c.c, c.intervals
 }
 
 type compactionMerger struct {
-	a, b ChunkSeriesSet
+	sets      []ChunkSeriesSet
+	oks       []bool
+	seriesMap []map[uint64]uint64
 
-	aok, bok  bool
 	l         labels.Labels
 	c         []chunks.Meta
 	intervals Intervals
+	ref       uint64 // This is 1 based ref. Should return ref-1 for 0 based ref.
 }
 
-func newCompactionMerger(a, b ChunkSeriesSet) (*compactionMerger, error) {
+// newCompactionMerger returns a new compactionMerger.
+// i'th ChunkSeriesSet in 'sets' refer to i'th BlockReader in 'blocks'.
+// BlockReader is used to get number of series in each block for efficient
+// allocation of memory.
+func newCompactionMerger(sets []ChunkSeriesSet, blocks []BlockReader) (*compactionMerger, error) {
 	c := &compactionMerger{
-		a: a,
-		b: b,
+		sets: sets,
+		oks:  make([]bool, len(sets)),
 	}
-	// Initialize first elements of both sets as Next() needs
-	// one element look-ahead.
-	c.aok = c.a.Next()
-	c.bok = c.b.Next()
-
-	return c, c.Err()
-}
-
-func (c *compactionMerger) compare() int {
-	if !c.aok {
-		return 1
+	c.seriesMap = make([]map[uint64]uint64, len(sets))
+	for i := range c.seriesMap {
+		c.seriesMap[i] = make(map[uint64]uint64, blocks[i].NumSeries())
 	}
-	if !c.bok {
-		return -1
+	for i, s := range c.sets {
+		c.oks[i] = s.Next()
 	}
-	a, _, _ := c.a.At()
-	b, _, _ := c.b.At()
-	return labels.Compare(a, b)
+	return c, nil
 }
 
 func (c *compactionMerger) Next() bool {
-	if !c.aok && !c.bok || c.Err() != nil {
+	if c.Err() != nil {
 		return false
 	}
-	// While advancing child iterators the memory used for labels and chunks
-	// may be reused. When picking a series we have to store the result.
-	var lset labels.Labels
-	var chks []chunks.Meta
 
-	d := c.compare()
-	if d > 0 {
-		lset, chks, c.intervals = c.b.At()
-		c.l = append(c.l[:0], lset...)
-		c.c = append(c.c[:0], chks...)
-
-		c.bok = c.b.Next()
-	} else if d < 0 {
-		lset, chks, c.intervals = c.a.At()
-		c.l = append(c.l[:0], lset...)
-		c.c = append(c.c[:0], chks...)
-
-		c.aok = c.a.Next()
-	} else {
-		// Both sets contain the current series. Chain them into a single one.
-		l, ca, ra := c.a.At()
-		_, cb, rb := c.b.At()
-
-		for _, r := range rb {
-			ra = ra.add(r)
-		}
-
-		c.l = append(c.l[:0], l...)
-		c.c = append(append(c.c[:0], ca...), cb...)
-		c.intervals = ra
-
-		c.aok = c.a.Next()
-		c.bok = c.b.Next()
+	var nextExists bool
+	for _, ok := range c.oks {
+		nextExists = nextExists || ok
+	}
+	if !nextExists {
+		return false
 	}
 
+	ref, lset, chks, intervals := c.sets[0].At()
+	idx := 0
+
+	for i, s := range c.sets[1:] {
+		if !c.oks[1+i] {
+			continue
+		}
+		rf, lb, ch, itv := s.At()
+		if labels.Compare(lset, lb) > 0 {
+			ref, lset, chks, intervals = rf, lb, ch, itv
+			idx = i + 1
+		}
+	}
+
+	c.l = append(c.l[:0], lset...)
+	c.c = append(c.c[:0], chks...)
+	c.seriesMap[idx][ref] = c.ref
+	c.oks[idx] = c.sets[idx].Next()
+	for i, s := range c.sets[idx+1:] {
+		if !c.oks[idx+1+i] {
+			continue
+		}
+		rf, lb, ch, itv := s.At()
+		if labels.Compare(c.l, lb) == 0 {
+			c.seriesMap[idx+1+i][rf] = c.ref
+			c.c = append(c.c, ch...)
+			for _, r := range itv {
+				intervals.add(r)
+			}
+			c.oks[idx+1+i] = c.sets[idx+1+i].Next()
+		}
+	}
+	c.intervals = intervals
+
+	c.ref++
 	return true
 }
 
 func (c *compactionMerger) Err() error {
-	if c.a.Err() != nil {
-		return c.a.Err()
+	for _, s := range c.sets {
+		if s.Err() != nil {
+			return s.Err()
+		}
 	}
-	return c.b.Err()
+	return nil
 }
 
-func (c *compactionMerger) At() (labels.Labels, []chunks.Meta, Intervals) {
-	return c.l, c.c, c.intervals
+func (c *compactionMerger) At() (uint64, labels.Labels, []chunks.Meta, Intervals) {
+	return c.ref - 1, c.l, c.c, c.intervals
 }

@@ -379,7 +379,8 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 
 	// If there's nothing to subtract from, add in everything and remove the notIts later.
 	if len(its) == 0 && len(notIts) != 0 {
-		allPostings, err := ix.Postings(index.AllPostingsKey())
+		apkName, apkValue := index.AllPostingsKey()
+		allPostings, err := ix.Postings(apkName, apkValue, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -400,7 +401,7 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 
 	// Fast-path for equal matching.
 	if em, ok := m.(*labels.EqualMatcher); ok {
-		return ix.Postings(em.Name(), em.Value())
+		return ix.Postings(em.Name(), em.Value(), nil)
 	}
 
 	// Fast-path for set matching.
@@ -434,7 +435,7 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 	var rit []index.Postings
 
 	for _, v := range res {
-		it, err := ix.Postings(m.Name(), v)
+		it, err := ix.Postings(m.Name(), v, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -465,7 +466,7 @@ func inversePostingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings
 
 	var rit []index.Postings
 	for _, v := range res {
-		it, err := ix.Postings(m.Name(), v)
+		it, err := ix.Postings(m.Name(), v, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -479,7 +480,7 @@ func inversePostingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings
 func postingsForSetMatcher(ix IndexReader, name string, matches []string) (index.Postings, error) {
 	var its []index.Postings
 	for _, match := range matches {
-		if it, err := ix.Postings(name, match); err == nil {
+		if it, err := ix.Postings(name, match, nil); err == nil {
 			its = append(its, it)
 		} else {
 			return nil, err
@@ -670,7 +671,7 @@ func (s *mergedVerticalSeriesSet) Next() bool {
 // actual series itself.
 type ChunkSeriesSet interface {
 	Next() bool
-	At() (labels.Labels, []chunks.Meta, Intervals)
+	At() (uint64, labels.Labels, []chunks.Meta, Intervals)
 	Err() error
 }
 
@@ -704,8 +705,8 @@ func LookupChunkSeries(ir IndexReader, tr TombstoneReader, ms ...labels.Matcher)
 	}, nil
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []chunks.Meta, Intervals) {
-	return s.lset, s.chks, s.intervals
+func (s *baseChunkSeries) At() (uint64, labels.Labels, []chunks.Meta, Intervals) {
+	return s.p.At(), s.lset, s.chks, s.intervals
 }
 
 func (s *baseChunkSeries) Err() error { return s.err }
@@ -765,20 +766,21 @@ type populatedChunkSeries struct {
 	mint, maxt int64
 
 	err       error
+	ref       uint64
 	chks      []chunks.Meta
 	lset      labels.Labels
 	intervals Intervals
 }
 
-func (s *populatedChunkSeries) At() (labels.Labels, []chunks.Meta, Intervals) {
-	return s.lset, s.chks, s.intervals
+func (s *populatedChunkSeries) At() (uint64, labels.Labels, []chunks.Meta, Intervals) {
+	return s.ref, s.lset, s.chks, s.intervals
 }
 
 func (s *populatedChunkSeries) Err() error { return s.err }
 
 func (s *populatedChunkSeries) Next() bool {
 	for s.set.Next() {
-		lset, chks, dranges := s.set.At()
+		ref, lset, chks, dranges := s.set.At()
 
 		for len(chks) > 0 {
 			if chks[0].MaxTime >= s.mint {
@@ -814,6 +816,7 @@ func (s *populatedChunkSeries) Next() bool {
 			continue
 		}
 
+		s.ref = ref
 		s.lset = lset
 		s.chks = chks
 		s.intervals = dranges
@@ -837,7 +840,7 @@ type blockSeriesSet struct {
 
 func (s *blockSeriesSet) Next() bool {
 	for s.set.Next() {
-		lset, chunks, dranges := s.set.At()
+		_, lset, chunks, dranges := s.set.At()
 		s.cur = &chunkSeries{
 			labels: lset,
 			chunks: chunks,

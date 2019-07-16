@@ -64,6 +64,7 @@ type Head struct {
 	logger     log.Logger
 	appendPool sync.Pool
 	bytesPool  sync.Pool
+	numSeries  uint64
 
 	minTime, maxTime int64 // Current min and max of the samples included in the head.
 	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
@@ -502,7 +503,6 @@ func (h *Head) Init(minValidTime int64) error {
 		return nil
 	}
 
-	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
 	// Backfill the checkpoint first if it exists.
 	dir, startFrom, err := LastCheckpoint(h.wal.Dir())
 	if err != nil && err != ErrNotFound {
@@ -526,7 +526,6 @@ func (h *Head) Init(minValidTime int64) error {
 			return errors.Wrap(err, "backfill checkpoint")
 		}
 		startFrom++
-		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
 	}
 
 	// Find the last segment.
@@ -550,7 +549,6 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return err
 		}
-		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
 	}
 
 	return nil
@@ -699,6 +697,10 @@ func (h *rangeHead) MinTime() int64 {
 
 func (h *rangeHead) MaxTime() int64 {
 	return h.maxt
+}
+
+func (h *rangeHead) NumSeries() uint64 {
+	return h.head.NumSeries()
 }
 
 // initAppender is a helper to initialize the time bounds of the head
@@ -1028,6 +1030,8 @@ func (h *Head) gc() {
 	h.metrics.series.Sub(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
+	// Ref: https://golang.org/pkg/sync/atomic/#AddUint64
+	atomic.AddUint64(&h.numSeries, ^uint64(seriesRemoved-1))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted)
@@ -1112,6 +1116,11 @@ func (h *Head) MinTime() int64 {
 // MaxTime returns the highest timestamp seen in data of the head.
 func (h *Head) MaxTime() int64 {
 	return atomic.LoadInt64(&h.maxTime)
+}
+
+// NumSeries returns the number of active series in the head.
+func (h *Head) NumSeries() uint64 {
+	return atomic.LoadUint64(&h.numSeries)
 }
 
 // compactable returns whether the head has a compactable range.
@@ -1249,7 +1258,7 @@ func (h *headIndexReader) LabelNames() ([]string, error) {
 }
 
 // Postings returns the postings list iterator for the label pair.
-func (h *headIndexReader) Postings(name, value string) (index.Postings, error) {
+func (h *headIndexReader) Postings(name, value string, _ index.Postings) (index.Postings, error) {
 	return h.head.postings.Get(name, value), nil
 }
 
@@ -1278,7 +1287,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	for _, p := range series {
 		ep = append(ep, p.ref)
 	}
-	return index.NewListPostings(ep)
+	return index.NewListPostings(ep...)
 }
 
 // Series returns the series for the given reference.
@@ -1352,6 +1361,7 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 
 	h.metrics.series.Inc()
 	h.metrics.seriesCreated.Inc()
+	atomic.AddUint64(&h.numSeries, 1)
 
 	h.postings.Add(id, lset)
 

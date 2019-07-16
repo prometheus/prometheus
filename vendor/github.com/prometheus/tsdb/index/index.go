@@ -503,6 +503,15 @@ func (w *Writer) writeTOC() error {
 	return w.write(w.buf1.Get())
 }
 
+// HintPostingsWriteCount pre-allocates memory for w.postings
+// to reduce allocs.
+func (w *Writer) HintPostingsWriteCount(hint int) {
+	if hint <= 0 || cap(w.postings) >= hint {
+		return
+	}
+	w.postings = append(make([]postingsHashEntry, 0, hint), w.postings...)
+}
+
 func (w *Writer) WritePostings(name, value string, it Postings) error {
 	if err := w.ensureStage(idxStagePostings); err != nil {
 		return errors.Wrap(err, "ensure stage")
@@ -922,7 +931,8 @@ func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) err
 }
 
 // Postings returns a postings list for the given label pair.
-func (r *Reader) Postings(name, value string) (Postings, error) {
+// 'reusePosts' is used if it is a 'bigEndianPostings'.
+func (r *Reader) Postings(name, value string, reusePosts Postings) (Postings, error) {
 	e, ok := r.postings[name]
 	if !ok {
 		return EmptyPostings(), nil
@@ -935,7 +945,7 @@ func (r *Reader) Postings(name, value string) (Postings, error) {
 	if d.Err() != nil {
 		return nil, errors.Wrap(d.Err(), "get postings entry")
 	}
-	_, p, err := r.dec.Postings(d.Get())
+	_, p, err := r.dec.Postings(d.Get(), reusePosts)
 	if err != nil {
 		return nil, errors.Wrap(err, "decode postings")
 	}
@@ -1059,11 +1069,14 @@ type Decoder struct {
 }
 
 // Postings returns a postings list for b and its number of elements.
-func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
+func (dec *Decoder) Postings(b []byte, reusePosts Postings) (int, Postings, error) {
 	d := encoding.Decbuf{B: b}
 	n := d.Be32int()
-	l := d.Get()
-	return n, newBigEndianPostings(l), d.Err()
+	if bep, ok := reusePosts.(*BigEndianPostings); ok {
+		bep.Reset(d.Get())
+		return n, bep, d.Err()
+	}
+	return n, NewBigEndianPostings(d.Get()), d.Err()
 }
 
 // Series decodes a series entry from the given byte slice into lset and chks.
