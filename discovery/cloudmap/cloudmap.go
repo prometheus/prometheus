@@ -91,6 +91,8 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
+	fmt.Println(">>> Cloud Map Discovery " + time.Now().String())
+
 	// Initial credentials loaded from SDK's default credential chain. Such as the environment,
 	// shared credentials (~/.aws/credentials), or Instance Role. These credentials will be used
 	// to to make the STS Assume Role API, and therefore need the sts:AssumeRole IAM permission
@@ -101,7 +103,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	// Create service client value configured for credentials from assumed role.
 	mapper := servicediscovery.New(sess, &aws.Config{Credentials: creds})
-	
+
 	namespaceFilter := "NAMESPACE_ID"
 
 	tg := &targetgroup.Group{
@@ -114,57 +116,62 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 			for _, namespace := range namespaceOutputPage.Namespaces {
 
-				for {
-					// Build a filter to select any services in the given namespace
-					filter := servicediscovery.ServiceFilter { Name: &namespaceFilter, Values: []*string {namespace.Id} }
+				fmt.Println("Namespace name " + *namespace.Name)
 
-					err := mapper.ListServicesPages(&servicediscovery.ListServicesInput{Filters: []*servicediscovery.ServiceFilter{&filter}},
-						func(servicesOutputPage *servicediscovery.ListServicesOutput, isLastPageOfServices bool) bool {
+				// Build a filter to select any services in the given namespace
+				filter := servicediscovery.ServiceFilter { Name: &namespaceFilter, Values: []*string {namespace.Id} }
 
-							for _, service := range servicesOutputPage.Services {
+				err := mapper.ListServicesPages(&servicediscovery.ListServicesInput{Filters: []*servicediscovery.ServiceFilter{&filter}},
+					func(servicesOutputPage *servicediscovery.ListServicesOutput, isLastPageOfServices bool) bool {
 
-								err := mapper.ListInstancesPages(&servicediscovery.ListInstancesInput{ServiceId: service.Id},
-									func(instancesOutputPage *servicediscovery.ListInstancesOutput, isLastPageOfInstances bool) bool {
+						for _, service := range servicesOutputPage.Services {
 
-										for _, instance := range instancesOutputPage.Instances {
-											labels := model.LabelSet{
-												cloudMapLabelInstanceID: model.LabelValue(*instance.Id),
-											}
+							fmt.Println("Service name " + *service.Name)
 
-											labels[cloudMapLabelPrivateIP] = model.LabelValue(*instance.Attributes["AWS_INSTANCE_IPV4"])
+							err := mapper.ListInstancesPages(&servicediscovery.ListInstancesInput{ServiceId: service.Id},
+								func(instancesOutputPage *servicediscovery.ListInstancesOutput, isLastPageOfInstances bool) bool {
 
-											//if inst.PrivateDnsName != nil {
-											//	labels[cloudMapLabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName) // Can be built from Service.Name + Namespace.Properties.HttpProperties.HttpName
-											//}
+									for _, instance := range instancesOutputPage.Instances {
 
-											addr := net.JoinHostPort(*instance.Attributes["AWS_INSTANCE_IPV4"], fmt.Sprintf("%d", d.port))
-											labels[model.AddressLabel] = model.LabelValue(addr)
-											labels[cloudMapLabelAZ] = model.LabelValue(*instance.Attributes["AVAILABILITY_ZONE"])
-											labels[cloudMapLabelInstanceState] = model.LabelValue(*instance.Attributes["AWS_INIT_HEALTH_STATUS"])
-											labels[cloudMapLabelClusterName] = model.LabelValue(*instance.Attributes["ECS_CLUSTER_NAME"])
-											labels[cloudMapLabelAccountId] = model.LabelValue(ParseAccountNumberFromArn(d.roleARN))
+										fmt.Println("Instance name " + *instance.Id)
 
-											tg.Targets = append(tg.Targets, labels)
+										labels := model.LabelSet{
+											cloudMapLabelInstanceID: model.LabelValue(*instance.Id),
 										}
 
-										return !isLastPageOfInstances
-									})
+										labels[cloudMapLabelPrivateIP] = model.LabelValue(*instance.Attributes["AWS_INSTANCE_IPV4"])
 
-								if err != nil {
-									fmt.Println("could not list service instances")
-									fmt.Println(err)
-									return false
-								}
+										//if inst.PrivateDnsName != nil {
+										//	labels[cloudMapLabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName) // Can be built from Service.Name + Namespace.Properties.HttpProperties.HttpName
+										//}
+
+										addr := net.JoinHostPort(*instance.Attributes["AWS_INSTANCE_IPV4"], fmt.Sprintf("%d", d.port))
+										labels[model.AddressLabel] = model.LabelValue(addr)
+										labels[cloudMapLabelAZ] = model.LabelValue(*instance.Attributes["AVAILABILITY_ZONE"])
+										labels[cloudMapLabelInstanceState] = model.LabelValue(*instance.Attributes["AWS_INIT_HEALTH_STATUS"])
+										labels[cloudMapLabelClusterName] = model.LabelValue(*instance.Attributes["ECS_CLUSTER_NAME"])
+										labels[cloudMapLabelAccountId] = model.LabelValue(ParseAccountNumberFromArn(d.roleARN))
+
+										tg.Targets = append(tg.Targets, labels)
+									}
+
+									return !isLastPageOfInstances
+								})
+
+							if err != nil {
+								fmt.Println("could not list service instances")
+								fmt.Println(err)
+								return false
 							}
+						}
 
-							return !isLastPageOfServices
-						})
+						return !isLastPageOfServices
+					})
 
-					if err != nil {
-						fmt.Println("could not list namespace services, stopping")
-						fmt.Println(err)
-						return false
-					}
+				if err != nil {
+					fmt.Println("could not list namespace services, stopping")
+					fmt.Println(err)
+					return false
 				}
 			}
 
@@ -174,9 +181,11 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	if err != nil {
 		fmt.Println("could not list directory namespaces")
 		fmt.Println(err)
+		fmt.Println("<<< EXCEPTION Cloud Map Discovery " + time.Now().String())
 		return nil, errors.Wrap(err, "could not list directory namespaces")
 	}
 
+	fmt.Println("<<< Cloud Map Discovery " + time.Now().String())
 	return []*targetgroup.Group{tg}, nil
 }
 
