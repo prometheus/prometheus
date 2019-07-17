@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,9 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/index"
+	"github.com/prometheus/tsdb/labels"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -102,6 +106,16 @@ func main() {
 		"The unit test file.",
 	).Required().ExistingFiles()
 
+	obfuscateIndexCmd := app.Command("obfuscate_index", "Obfuscate index.")
+	obfuscateIndexInput := obfuscateIndexCmd.Arg(
+		"input",
+		"The input index file.",
+	).Required().ExistingFile()
+	obfuscateIndexOutput := obfuscateIndexCmd.Arg(
+		"output",
+		"The output index file.",
+	).Required().String()
+
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	var p printer
@@ -145,6 +159,10 @@ func main() {
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(*testRulesFiles...))
+
+	case obfuscateIndexCmd.FullCommand():
+		os.Exit(ObfuscateIndexFile(*obfuscateIndexInput, *obfuscateIndexOutput))
+
 	}
 }
 
@@ -640,4 +658,186 @@ func (j *jsonPrinter) printSeries(v []model.LabelSet) {
 func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
+}
+
+// ObfuscateIndexFile renames the symbols of the given index file
+// and re-writes the index file at given output path.
+func ObfuscateIndexFile(inputFilePath, outputFilePath string) int {
+	var (
+		labelsBuf         labels.Labels
+		chunksBuf         []chunks.Meta
+		err               error
+		apkName, apkValue = index.AllPostingsKey()
+		values            = map[string]map[string]struct{}{}
+	)
+
+	indexr, err := index.NewFileReader(inputFilePath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer indexr.Close()
+
+	// Rename the symbols.
+	originalSymbols, err := indexr.Symbols()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	originalSymbolsSlice := make([]string, 0, len(originalSymbols))
+	for s := range originalSymbols {
+		originalSymbolsSlice = append(originalSymbolsSlice, s)
+	}
+
+	sort.Strings(originalSymbolsSlice)
+
+	newSymbolsMap := make(map[string]string, len(originalSymbolsSlice))
+	allSymbols := make(map[string]struct{}, len(originalSymbolsSlice))
+
+	// As sorted original symbols are mapped to sorted new symbols,
+	// the series will be in the same sorted order as before.
+	// Hence we need not remap the postings.
+	for i, s := range originalSymbolsSlice {
+		newSymbol := fmt.Sprintf("s%09d", i)
+		if s == "" {
+			newSymbol = ""
+		}
+		newSymbolsMap[s] = newSymbol
+		allSymbols[newSymbol] = struct{}{}
+	}
+
+	indexw, err := index.NewWriter(outputFilePath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer indexw.Close()
+
+	// Write symbols.
+	if err := indexw.AddSymbols(allSymbols); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	// Write Series.
+	posts, err := indexr.Postings(apkName, apkValue)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	for posts.Next() {
+		p := posts.At()
+		labelsBuf = labelsBuf[:0]
+		chunksBuf = chunksBuf[:0]
+
+		if err := indexr.Series(p, &labelsBuf, &chunksBuf); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+
+		// Recording the original labels values which is needed
+		// to fetch and write the postings.
+		for _, l := range labelsBuf {
+			valset, ok := values[l.Name]
+			if !ok {
+				valset = map[string]struct{}{}
+				values[l.Name] = valset
+			}
+			valset[l.Value] = struct{}{}
+		}
+
+		// Rewriting the labels.
+		for i := range labelsBuf {
+			labelsBuf[i].Name = newSymbolsMap[labelsBuf[i].Name]
+			labelsBuf[i].Value = newSymbolsMap[labelsBuf[i].Value]
+		}
+
+		if err := indexw.AddSeries(p, labelsBuf, chunksBuf...); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+
+	// Write label indices and postings.
+	if err := writePostings(indexw, values, indexr, newSymbolsMap); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	return 0
+}
+
+// writePostings writes the postings into the index file.
+func writePostings(indexw *index.Writer, values map[string]map[string]struct{}, indexr *index.Reader, symbolMap map[string]string) (err error) {
+	var (
+		maxNumValues      int
+		numLabelValues    int
+		names             = make([]string, 0, len(values)+1)
+		apkName, apkValue = index.AllPostingsKey()
+	)
+	for _, v := range values {
+		numLabelValues += len(v)
+		if len(v) > maxNumValues {
+			maxNumValues = len(v)
+		}
+	}
+
+	labelValuesBuf := make([]string, 0, maxNumValues)
+	for n, v := range values {
+		labelValuesBuf = labelValuesBuf[:0]
+		names = append(names, n)
+
+		if mappedName, ok := symbolMap[n]; ok {
+			n = mappedName
+		} else {
+			return fmt.Errorf("Mapped symbol not found for name: %s", n)
+		}
+
+		for val := range v {
+			if mappedVal, ok := symbolMap[val]; ok {
+				labelValuesBuf = append(labelValuesBuf, mappedVal)
+			} else {
+				return fmt.Errorf("Mapped symbol not found for value: %s", val)
+			}
+		}
+		if err := indexw.WriteLabelIndex([]string{n}, labelValuesBuf); err != nil {
+			return err
+		}
+	}
+	names = append(names, apkName)
+	values[apkName] = map[string]struct{}{apkValue: struct{}{}}
+	sort.Strings(names)
+
+	for _, n := range names {
+		labelValuesBuf = labelValuesBuf[:0]
+		for v := range values[n] {
+			labelValuesBuf = append(labelValuesBuf, v)
+		}
+		sort.Strings(labelValuesBuf)
+
+		if mappedName, ok := symbolMap[n]; ok {
+			n = mappedName
+		} else {
+			return fmt.Errorf("Mapped symbol not found for name: %s", n)
+		}
+
+		for _, v := range labelValuesBuf {
+			posts, err := indexr.Postings(n, v)
+			if err != nil {
+				return err
+			}
+
+			if mappedVal, ok := symbolMap[v]; ok {
+				if err := indexw.WritePostings(n, mappedVal, posts); err != nil {
+					return err
+				}
+			} else {
+				return fmt.Errorf("Mapped symbol not found for value: %s", v)
+			}
+		}
+	}
+
+	return nil
 }
