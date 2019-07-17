@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/servicediscovery"
 
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -65,6 +66,7 @@ type Discovery struct {
 	interval time.Duration
 	roleARN  string
 	port     int
+	logger   log.Logger
 }
 
 func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
@@ -77,6 +79,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 		roleARN:  conf.RoleARN,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
+		logger:   logger,
 	}
 
 	d.Discovery = refresh.NewDiscovery(
@@ -91,7 +94,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
-	fmt.Println(">>> Cloud Map Discovery " + time.Now().String())
+	level.Debug(d.logger).Log("msg", "Cloud Map Discovery Refresh Started")
 
 	// Initial credentials loaded from SDK's default credential chain. Such as the environment,
 	// shared credentials (~/.aws/credentials), or Instance Role. These credentials will be used
@@ -116,7 +119,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 			for _, namespace := range namespaceOutputPage.Namespaces {
 
-				fmt.Println("Namespace name " + *namespace.Name)
+				level.Debug(d.logger).Log("msg", "Getting services for namespace " + *namespace.Name)
 
 				// Build a filter to select any services in the given namespace
 				filter := servicediscovery.ServiceFilter { Name: &namespaceFilter, Values: []*string {namespace.Id} }
@@ -126,14 +129,14 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 						for _, service := range servicesOutputPage.Services {
 
-							fmt.Println("Service name " + *service.Name)
+							level.Debug(d.logger).Log("namespace", *namespace.Name, "msg", "Getting instances for service " + *service.Name)
 
 							err := mapper.ListInstancesPages(&servicediscovery.ListInstancesInput{ServiceId: service.Id},
 								func(instancesOutputPage *servicediscovery.ListInstancesOutput, isLastPageOfInstances bool) bool {
 
 									for _, instance := range instancesOutputPage.Instances {
 
-										fmt.Println("Instance name " + *instance.Id)
+										level.Debug(d.logger).Log("namespace", *namespace.Name, "service", *service.Name, "msg", "Discovered instance " + *instance.Id)
 
 										labels := model.LabelSet{
 											cloudMapLabelInstanceID: model.LabelValue(*instance.Id),
@@ -181,11 +184,11 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	if err != nil {
 		fmt.Println("could not list directory namespaces")
 		fmt.Println(err)
-		fmt.Println("<<< EXCEPTION Cloud Map Discovery " + time.Now().String())
+		level.Debug(d.logger).Log("msg", "Cloud Map Discovery Refresh Finished With Exception")
 		return nil, errors.Wrap(err, "could not list directory namespaces")
 	}
 
-	fmt.Println("<<< Cloud Map Discovery " + time.Now().String())
+	level.Debug(d.logger).Log("msg", "Cloud Map Discovery Refresh Finished")
 	return []*targetgroup.Group{tg}, nil
 }
 
