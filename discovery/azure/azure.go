@@ -169,7 +169,12 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 			return azureClient{}, err
 		}
 
-		spt, err = adal.NewServicePrincipalTokenFromMSI(msiEndpoint, resourceManagerEndpoint)
+		// If the client ID is not empty, use it to specifies the identity for which the token is requested.
+		if cfg.ClientID != "" {
+			spt, err = adal.NewServicePrincipalTokenFromMSIWithUserAssignedID(msiEndpoint, resourceManagerEndpoint, cfg.ClientID)
+		} else {
+			spt, err = adal.NewServicePrincipalTokenFromMSI(msiEndpoint, resourceManagerEndpoint)
+		}
 		if err != nil {
 			return azureClient{}, err
 		}

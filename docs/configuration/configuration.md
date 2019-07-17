@@ -294,7 +294,7 @@ See below for the configuration options for Azure discovery:
 subscription_id: <string>
 # Optional tenant ID. Only required with authentication_method OAuth.
 [ tenant_id: <string> ]
-# Optional client ID. Only required with authentication_method OAuth.
+# Optional client ID. Required with authentication_method OAuth.
 [ client_id: <string> ]
 # Optional client secret. Only required with authentication_method OAuth.
 [ client_secret: <secret> ]
