@@ -131,6 +131,7 @@ func main() {
 	}
 
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server")
+	a.UsageWriter(os.Stdout)
 
 	a.Version(version.Print("prometheus"))
 
