@@ -45,7 +45,6 @@ type Adapter struct {
 	groups   map[string]*customSD
 	manager  *discovery.Manager
 	output   string
-	name     string
 	logger   log.Logger
 }
 
@@ -172,17 +171,16 @@ func (a *Adapter) Run() {
 }
 
 // NewAdapter creates a new instance of Adapter.
-func NewAdapter(ctx context.Context, file string, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
+func NewAdapter(ctx context.Context, file string, d discovery.Discoverer, logger log.Logger) *Adapter {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Adapter{
 		ctx:      ctx,
-		provider: discovery.NewProvider(name, d),
+		provider: discovery.NewProvider("sd-adapter", d),
 		groups:   make(map[string]*customSD),
 		manager:  discovery.NewManager(ctx, logger),
 		output:   file,
-		name:     name,
 		logger:   log.With(logger, "component", "sd-adapter"),
 	}
 }
