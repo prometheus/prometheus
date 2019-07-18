@@ -1,4 +1,4 @@
-// Copyright 2019 ScreenCloud Ltd
+// Copyright 2015 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"net"
+	"strings"
 
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/servicediscovery"
 
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -34,12 +36,13 @@ import (
 )
 
 const (
-	cloudmapLabel              = model.MetaLabelPrefix + "cloudmap_"
-	cloudmapLabelAZ            = cloudmapLabel + "availability_zone"
-	cloudmapLabelInstanceID    = cloudmapLabel + "instance_id"
-	cloudmapLabelInstanceState = cloudmapLabel + "instance_state"
-	cloudmapLabelClusterName   = cloudmapLabel + "cluser_name"
-	cloudmapLabelPrivateIP     = cloudmapLabel + "private_ip"
+	cloudMapLabel              = "" //model.MetaLabelPrefix + "cloudMap_"
+	cloudMapLabelAZ            = cloudMapLabel + "availability_zone"
+	cloudMapLabelInstanceID    = cloudMapLabel + "instance_id"
+	cloudMapLabelInstanceState = cloudMapLabel + "instance_state"
+	cloudMapLabelClusterName   = cloudMapLabel + "cluster_name"
+	cloudMapLabelPrivateIP     = cloudMapLabel + "private_ip"
+	cloudMapLabelAccountId     = cloudMapLabel + "account_id"
 )
 
 // DefaultSDConfig is the default EC2 SD configuration.
@@ -67,13 +70,14 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// Discovery periodically performs Cloudmap requests. It implements
+// Discovery periodically performs Cloud Map requests. It implements
 // the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
 	interval time.Duration
 	roleARN  string
 	port     int
+	logger   log.Logger
 }
 
 func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
@@ -86,6 +90,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 		roleARN:  conf.RoleARN,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
+		logger:   logger,
 	}
 
 	d.Discovery = refresh.NewDiscovery(
@@ -99,6 +104,8 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+
+	level.Debug(d.logger).Log("msg", "Cloud Map Discovery Refresh Started")
 
 	// Initial credentials loaded from SDK's default credential chain. Such as the environment,
 	// shared credentials (~/.aws/credentials), or Instance Role. These credentials will be used
@@ -117,79 +124,86 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		Source: "aws",
 	}
 
-	for {
+	// Page through the namespaces in the Cloud Map directory
+	err := mapper.ListNamespacesPages(&servicediscovery.ListNamespacesInput{},
+		func(namespaceOutputPage *servicediscovery.ListNamespacesOutput, isLastPageOfNamespaces bool) bool {
 
-		// List the namespaces in the cloud map directory
-		nsResponse, err := mapper.ListNamespaces(&servicediscovery.ListNamespacesInput{})
+			for _, namespace := range namespaceOutputPage.Namespaces {
 
-		if err != nil {
-			return nil, errors.Wrap(err, "could not list directory namespaces")
-		}
-
-		for _, namespace := range nsResponse.Namespaces {
-
-			for {
+				level.Debug(d.logger).Log("msg", "Getting services for namespace "+*namespace.Name)
 
 				// Build a filter to select any services in the given namespace
 				filter := servicediscovery.ServiceFilter{Name: &namespaceFilter, Values: []*string{namespace.Id}}
 
-				svcResponse, err := mapper.ListServices(&servicediscovery.ListServicesInput{Filters: []*servicediscovery.ServiceFilter{&filter}})
+				err := mapper.ListServicesPages(&servicediscovery.ListServicesInput{Filters: []*servicediscovery.ServiceFilter{&filter}},
+					func(servicesOutputPage *servicediscovery.ListServicesOutput, isLastPageOfServices bool) bool {
+
+						for _, service := range servicesOutputPage.Services {
+
+							level.Debug(d.logger).Log("namespace", *namespace.Name, "msg", "Getting instances for service "+*service.Name)
+
+							err := mapper.ListInstancesPages(&servicediscovery.ListInstancesInput{ServiceId: service.Id},
+								func(instancesOutputPage *servicediscovery.ListInstancesOutput, isLastPageOfInstances bool) bool {
+
+									for _, instance := range instancesOutputPage.Instances {
+
+										level.Debug(d.logger).Log("namespace", *namespace.Name, "service", *service.Name, "msg", "Discovered instance "+*instance.Id)
+
+										labels := model.LabelSet{
+											cloudMapLabelInstanceID: model.LabelValue(*instance.Id),
+										}
+
+										labels[cloudMapLabelPrivateIP] = model.LabelValue(*instance.Attributes["AWS_INSTANCE_IPV4"])
+
+										//if inst.PrivateDnsName != nil {
+										//	labels[cloudMapLabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName) // Can be built from Service.Name + Namespace.Properties.HttpProperties.HttpName
+										//}
+
+										addr := net.JoinHostPort(*instance.Attributes["AWS_INSTANCE_IPV4"], fmt.Sprintf("%d", d.port))
+										labels[model.AddressLabel] = model.LabelValue(addr)
+										labels[cloudMapLabelAZ] = model.LabelValue(*instance.Attributes["AVAILABILITY_ZONE"])
+										labels[cloudMapLabelInstanceState] = model.LabelValue(*instance.Attributes["AWS_INIT_HEALTH_STATUS"])
+										labels[cloudMapLabelClusterName] = model.LabelValue(*instance.Attributes["ECS_CLUSTER_NAME"])
+										labels[cloudMapLabelAccountId] = model.LabelValue(ParseAccountNumberFromArn(d.roleARN))
+
+										tg.Targets = append(tg.Targets, labels)
+									}
+
+									return !isLastPageOfInstances
+								})
+
+							if err != nil {
+								fmt.Println("could not list service instances")
+								fmt.Println(err)
+								return false
+							}
+						}
+
+						return !isLastPageOfServices
+					})
 
 				if err != nil {
-					return nil, errors.Wrap(err, "could not list namespace services")
-				}
-
-				for _, service := range svcResponse.Services {
-
-					for {
-
-						instResponse, err := mapper.ListInstances(&servicediscovery.ListInstancesInput{ServiceId: service.Id})
-
-						if err != nil {
-							return nil, errors.Wrap(err, "could not list service instances")
-						}
-
-						for _, instance := range instResponse.Instances {
-
-							labels := model.LabelSet{
-								cloudmapLabelInstanceID: model.LabelValue(*instance.Id),
-							}
-
-							labels[cloudmapLabelPrivateIP] = model.LabelValue(*instance.Attributes["AWS_INSTANCE_IPV4"])
-
-							//if inst.PrivateDnsName != nil {
-							//	labels[cloudmapLabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName) // Can be built from Service.Name + Namespace.Properties.HttpProperties.HttpName
-							//}
-
-							addr := net.JoinHostPort(*instance.Attributes["AWS_INSTANCE_IPV4"], fmt.Sprintf("%d", d.port))
-							labels[model.AddressLabel] = model.LabelValue(addr)
-
-							labels[cloudmapLabelAZ] = model.LabelValue(*instance.Attributes["AVAILABILITY_ZONE"])
-							labels[cloudmapLabelInstanceState] = model.LabelValue(*instance.Attributes["AWS_INIT_HEALTH_STATUS"])
-							labels[cloudmapLabelClusterName] = model.LabelValue(*instance.Attributes["ECS_CLUSTER_NAME"])
-
-							tg.Targets = append(tg.Targets, labels)
-
-						}
-
-						if instResponse.NextToken == nil {
-							break
-						}
-
-					}
-				}
-
-				if svcResponse.NextToken == nil {
-					break
+					fmt.Println("could not list namespace services, stopping")
+					fmt.Println(err)
+					return false
 				}
 			}
-		}
 
-		if nsResponse.NextToken == nil {
-			break
-		}
+			return !isLastPageOfNamespaces
+		})
+
+	if err != nil {
+		fmt.Println("could not list directory namespaces")
+		fmt.Println(err)
+		level.Debug(d.logger).Log("msg", "Cloud Map Discovery Refresh Finished With Exception")
+		return nil, errors.Wrap(err, "could not list directory namespaces")
 	}
 
+	level.Debug(d.logger).Log("msg", "Cloud Map Discovery Refresh Finished")
 	return []*targetgroup.Group{tg}, nil
+}
 
+func ParseAccountNumberFromArn(arn string) string {
+	arnParts := strings.Split(arn, ":")
+	return arnParts[4]
 }
