@@ -1,3 +1,16 @@
+// Copyright 2019 ScreenCloud Ltd
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package cloudmap
 
 import (
@@ -9,8 +22,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/servicediscovery"
 
 	"github.com/go-kit/kit/log"
@@ -21,13 +34,12 @@ import (
 )
 
 const (
-	cloudmapLabel                = model.MetaLabelPrefix + "cloudmap_"
-	cloudmapLabelAZ              = cloudmapLabel + "availability_zone"
-	cloudmapLabelInstanceID      = cloudmapLabel + "instance_id"
-	cloudmapLabelInstanceState   = cloudmapLabel + "instance_state"
-	cloudmapLabelClusterName     = cloudmapLabel + "cluser_name"
-	cloudmapLabelPrivateDNS      = cloudmapLabel + "private_dns_name"
-	cloudmapLabelPrivateIP       = cloudmapLabel + "private_ip"
+	cloudmapLabel              = model.MetaLabelPrefix + "cloudmap_"
+	cloudmapLabelAZ            = cloudmapLabel + "availability_zone"
+	cloudmapLabelInstanceID    = cloudmapLabel + "instance_id"
+	cloudmapLabelInstanceState = cloudmapLabel + "instance_state"
+	cloudmapLabelClusterName   = cloudmapLabel + "cluser_name"
+	cloudmapLabelPrivateIP     = cloudmapLabel + "private_ip"
 )
 
 // DefaultSDConfig is the default EC2 SD configuration.
@@ -38,10 +50,10 @@ var DefaultSDConfig = SDConfig{
 
 // SDConfig is the configuration for EC2 based service discovery.
 type SDConfig struct {
-	RoleARN         string             `yaml:"role_arn,omitempty"`
-	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
-	Port            int                `yaml:"port"`
-	Accounts		[]string		   `yaml:"accounts,omitempty"`
+	RoleARN         string         `yaml:"role_arn,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Port            int            `yaml:"port"`
+	Accounts        []string       `yaml:"accounts,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -54,7 +66,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	return nil
 }
-
 
 // Discovery periodically performs Cloudmap requests. It implements
 // the Discoverer interface.
@@ -100,7 +111,6 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	// Create service client value configured for credentials from assumed role.
 	mapper := servicediscovery.New(sess, &aws.Config{Credentials: creds})
 
-
 	namespaceFilter := "NAMESPACE_ID"
 
 	tg := &targetgroup.Group{
@@ -121,7 +131,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			for {
 
 				// Build a filter to select any services in the given namespace
-				filter := servicediscovery.ServiceFilter { Name: &namespaceFilter, Values: []*string {namespace.Id} }
+				filter := servicediscovery.ServiceFilter{Name: &namespaceFilter, Values: []*string{namespace.Id}}
 
 				svcResponse, err := mapper.ListServices(&servicediscovery.ListServicesInput{Filters: []*servicediscovery.ServiceFilter{&filter}})
 
@@ -158,26 +168,25 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 							labels[cloudmapLabelInstanceState] = model.LabelValue(*instance.Attributes["AWS_INIT_HEALTH_STATUS"])
 							labels[cloudmapLabelClusterName] = model.LabelValue(*instance.Attributes["ECS_CLUSTER_NAME"])
 
-
 							tg.Targets = append(tg.Targets, labels)
 
 						}
 
 						if instResponse.NextToken == nil {
-							break;
+							break
 						}
 
 					}
 				}
 
 				if svcResponse.NextToken == nil {
-					break;
+					break
 				}
 			}
 		}
 
 		if nsResponse.NextToken == nil {
-			break;
+			break
 		}
 	}
 
