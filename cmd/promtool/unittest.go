@@ -286,6 +286,9 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				for _, a := range testcase.ExpAlerts {
 					// User gives only the labels from alerting rule, which doesn't
 					// include this label (added by Prometheus during Eval).
+					if a.ExpLabels == nil {
+						a.ExpLabels = make(map[string]string)
+					}
 					a.ExpLabels[labels.AlertName] = testcase.Alertname
 
 					expAlerts = append(expAlerts, labelAndAnnotation{
