@@ -165,7 +165,7 @@ type Manager struct {
 	triggerSend chan struct{}
 }
 
-// Run starts the background processing
+// Run starts the background processing.
 func (m *Manager) Run() error {
 	go m.sender()
 	for range m.ctx.Done() {
@@ -207,7 +207,6 @@ func (m *Manager) ApplyConfig(providers []Provider) error {
 		}
 		m.startProvider(m.ctx, prov)
 	}
-
 	return nil
 }
 

@@ -145,15 +145,14 @@ func (a *Adapter) writeOutput() error {
 	return os.Rename(tmpfile.Name(), a.output)
 }
 
-func (a *Adapter) runCustomSD(ctx context.Context) {
-}
-
-// Run starts the custom service discovery implementation.
+// Run starts the custom service discovery implementation. It returns only when
+// the context is done.
 func (a *Adapter) Run() {
-	go a.manager.Run()
 	a.manager.ApplyConfig([]discovery.Provider{a.provider})
 
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for {
 			select {
 			case <-a.ctx.Done():
@@ -168,6 +167,9 @@ func (a *Adapter) Run() {
 			}
 		}
 	}()
+
+	a.manager.Run()
+	<-done
 }
 
 // NewAdapter creates a new instance of Adapter.
