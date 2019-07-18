@@ -7,12 +7,68 @@ go:
 
 go_import_path: github.com/prometheus/prometheus
 
+env:
+  global:
+    - APP=prometheus
+
 # This ensures that the local cache is filled before running the CI.
 # travis_retry retries the command 3 times if it fails as we've experienced
 # random issues on Travis.
 before_install:
 - travis_retry make deps
 
+stages:
+  - build_prometheus
+  - build_deploy_container_image
+  - version_container_image
+
+jobs:
+  include:
+    - stage: build_prometheus
+      before_install: true
+      install: skip
+      script:
+        - |
+          make check_license style unused test lint check_assets
+          git diff --exit-code
+    # Build API container image
+    - stage: build_deploy_container_image
+      if: (branch IN (dev, master) AND type != pull_request) OR (branch IN (dev, master) AND type = pull_request) AND tag IS blank
+      before_install: skip
+      install: skip
+      script:
+        - |
+          set -e
+          cd ${TRAVIS_BUILD_DIR}
+          docker build -t local-image .
+          if [[ ${TRAVIS_BRANCH} == dev ]] || [[ ${TRAVIS_BRANCH} == master ]] && [[ ${TRAVIS_PULL_REQUEST} == false ]]; then
+            docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
+            docker tag local-image screencloud/${APP}:${TRAVIS_BRANCH}_${TRAVIS_COMMIT::8}
+            docker push screencloud/${APP}:${TRAVIS_BRANCH}_${TRAVIS_COMMIT::8}
+          else
+            echo "Skipped"
+          fi
+          if [[ ${TRAVIS_BRANCH} == master ]] && [[ ${TRAVIS_PULL_REQUEST} == false ]]; then
+            npx semantic-release@15 --plugins "@semantic-release/github"
+          fi
+    # Deploy API container image
+    - stage: version_container_image
+      if: tag =~ /^v\d+\.\d+\.\d+$/ # means semantic-release pushed a tagged commit on new version release
+      install: skip
+      before_script: docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
+      script:
+        - |
+          set -e
+          docker pull screencloud/${APP}:master_${TRAVIS_COMMIT::8}
+          if [[ ${TRAVIS_TAG} == v*.*.* ]] && [[ ${TRAVIS_TAG} == ${TRAVIS_BRANCH} ]]; then
+            docker tag screencloud/${APP}:master_${TRAVIS_COMMIT::8} screencloud/${APP}:${TRAVIS_TAG}
+            docker push screencloud/${APP}:${TRAVIS_TAG}
+          else
+            echo "Skipped"
+
+
 script:
 - make check_license style unused test lint check_assets
 - git diff --exit-code
+
+
