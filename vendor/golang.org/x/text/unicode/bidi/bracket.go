@@ -246,7 +246,7 @@ func (p *bracketPairer) getStrongTypeN0(index int) Class {
 // assuming the given embedding direction.
 //
 // It returns ON if no strong type is found. If a single strong type is found,
-// it returns this this type. Otherwise it returns the embedding direction.
+// it returns this type. Otherwise it returns the embedding direction.
 //
 // TODO: use separate type for "strong" directionality.
 func (p *bracketPairer) classifyPairContent(loc bracketPair, dirEmbed Class) Class {
