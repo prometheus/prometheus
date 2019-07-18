@@ -31,6 +31,7 @@ jobs:
         - |
           make check_license style unused test lint check_assets
           git diff --exit-code
+          make build
     # Build API container image
     - stage: build_deploy_container_image
       if: (branch IN (dev, master) AND type != pull_request) OR (branch IN (dev, master) AND type = pull_request) AND tag IS blank
@@ -66,9 +67,5 @@ jobs:
           else
             echo "Skipped"
 
-
-script:
-- make check_license style unused test lint check_assets
-- git diff --exit-code
 
 
