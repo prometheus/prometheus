@@ -29,6 +29,7 @@ jobs:
       install: skip
       script:
         - |
+          make promu
           make all
           git diff --exit-code
     # Build API container image
