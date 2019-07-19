@@ -49,17 +49,17 @@ jobs:
     # Deploy API container image
     - stage: version_docker_image
       if: tag =~ /^v\d+\.\d+\.\d+$/ # means semantic-release pushed a tagged commit on new version release
-      install: skip
-      before_script: docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
       script:
         - |
           set -e
+          docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
           docker pull screencloud/${APP}:master_${TRAVIS_COMMIT::8}
           if [[ ${TRAVIS_TAG} == v*.*.* ]] && [[ ${TRAVIS_TAG} == ${TRAVIS_BRANCH} ]]; then
             docker tag screencloud/${APP}:master_${TRAVIS_COMMIT::8} screencloud/${APP}:${TRAVIS_TAG}
             docker push screencloud/${APP}:${TRAVIS_TAG}
           else
             echo "Skipped"
+          fi
 
 
 
