@@ -29,9 +29,8 @@ jobs:
       install: skip
       script:
         - |
-          make check_license style unused test lint check_assets
+          make all
           git diff --exit-code
-          make build
     # Build API container image
     - stage: build_deploy_container_image
       if: (branch IN (dev, master) AND type != pull_request) OR (branch IN (dev, master) AND type = pull_request) AND tag IS blank
@@ -41,7 +40,9 @@ jobs:
         - |
           set -e
           cd ${TRAVIS_BUILD_DIR}
-          docker build -t local-image .
+          GO111MODULE=on promu build --prefix .build/linux-amd64
+
+          docker build -t local-image -f ./Dockerfile --build-arg ARCH="amd64" --build-arg OS="linux" .
           if [[ ${TRAVIS_BRANCH} == dev ]] || [[ ${TRAVIS_BRANCH} == master ]] && [[ ${TRAVIS_PULL_REQUEST} == false ]]; then
             docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
             docker tag local-image screencloud/${APP}:${TRAVIS_BRANCH}_${TRAVIS_COMMIT::8}
