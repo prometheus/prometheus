@@ -1,3 +1,5 @@
+dist: xenial
+
 language: go
 
 # Whenever the Go version is updated here, .circleci/config.yml and .promu.yml
@@ -11,38 +13,28 @@ env:
   global:
     - APP=prometheus
 
-# This ensures that the local cache is filled before running the CI.
-# travis_retry retries the command 3 times if it fails as we've experienced
-# random issues on Travis.
-before_install:
-- travis_retry make deps
-
 stages:
-  - build_prometheus
-  - build_deploy_container_image
-  - version_container_image
+  - test_prometheus
+  - build_docker_image
+  - version_docker_image
 
 jobs:
   include:
-    - stage: build_prometheus
-      before_install: true
-      install: skip
+    - stage: test_prometheus
       script:
         - |
-          make promu
-          make all
+          set -e
+          make check_license style unused test lint check_assets
           git diff --exit-code
     # Build API container image
-    - stage: build_deploy_container_image
+    - stage: build_docker_image
       if: (branch IN (dev, master) AND type != pull_request) OR (branch IN (dev, master) AND type = pull_request) AND tag IS blank
-      before_install: skip
-      install: skip
       script:
         - |
           set -e
           cd ${TRAVIS_BUILD_DIR}
-          GO111MODULE=on promu build --prefix .build/linux-amd64
-
+          make promu
+          promu crossbuild -v
           docker build -t local-image -f ./Dockerfile --build-arg ARCH="amd64" --build-arg OS="linux" .
           if [[ ${TRAVIS_BRANCH} == dev ]] || [[ ${TRAVIS_BRANCH} == master ]] && [[ ${TRAVIS_PULL_REQUEST} == false ]]; then
             docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
