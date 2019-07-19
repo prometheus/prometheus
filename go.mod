@@ -24,7 +24,7 @@ require (
 	github.com/hashicorp/consul/api v1.1.0
 	github.com/hashicorp/go-msgpack v0.5.4 // indirect
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
-	github.com/influxdata/influxdb v0.0.0-20170331210902-15e594fc09f1
+	github.com/influxdata/influxdb v1.7.7
 	github.com/jmespath/go-jmespath v0.0.0-20160803190731-bd40a432e4c7 // indirect
 	github.com/json-iterator/go v1.1.6
 	github.com/jtolds/gls v4.2.1+incompatible // indirect
