@@ -430,6 +430,7 @@ func (m *ReadHints) GetEndMs() int64 {
 }
 
 // Chunk represents a TSDB chunk.
+// Time range [min, max] is inclusive.
 type Chunk struct {
 	MinTimeMs            int64          `protobuf:"varint,1,opt,name=min_time_ms,json=minTimeMs,proto3" json:"min_time_ms,omitempty"`
 	MaxTimeMs            int64          `protobuf:"varint,2,opt,name=max_time_ms,json=maxTimeMs,proto3" json:"max_time_ms,omitempty"`
@@ -503,9 +504,9 @@ func (m *Chunk) GetData() []byte {
 
 // ChunkedSeries represents single, encoded time series.
 type ChunkedSeries struct {
-	// labels should be sorted.
+	// Labels should be sorted.
 	Labels []Label `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels"`
-	// chunks should be sorted should not overlap in time.
+	// Chunks will be in start time order and may overlap.
 	Chunks               []Chunk  `protobuf:"bytes,2,rep,name=chunks,proto3" json:"chunks"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`

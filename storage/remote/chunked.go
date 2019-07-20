@@ -15,10 +15,16 @@ package remote
 import (
 	"bufio"
 	"encoding/binary"
-	"github.com/gogo/protobuf/proto"
 	"io"
 	"net/http"
+
+	"github.com/gogo/protobuf/proto"
+	"github.com/pkg/errors"
 )
+
+// DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
+// 50MB is the default. This is equivalent to ~100k full XOR chunks and average labelset.
+const DefaultChunkedReadLimit = 5e+7
 
 // ChunkedWriter is an io.Writer wrapper that allows streaming by adding uvarint delimiter before each write in a form
 // of length of the corresponded byte array.
@@ -59,13 +65,14 @@ func (w *ChunkedWriter) Write(b []byte) (int, error) {
 // ChunkedReader is a buffered reader that expects uvarint delimiter before each message.
 // It will allocate as much as the biggest frame defined by delimiter (on top of bufio.Reader allocations).
 type ChunkedReader struct {
-	b    *bufio.Reader
-	data []byte
+	b         *bufio.Reader
+	data      []byte
+	sizeLimit uint64
 }
 
 // NewChunkedReader constructs a ChunkedReader.
-func NewChunkedReader(r io.Reader) *ChunkedReader {
-	return &ChunkedReader{b: bufio.NewReader(r)}
+func NewChunkedReader(r io.Reader, sizeLimit uint64) *ChunkedReader {
+	return &ChunkedReader{b: bufio.NewReader(r), sizeLimit: sizeLimit}
 }
 
 // Next returns the next length-delimited record from the input, or io.EOF if
@@ -78,6 +85,10 @@ func (r *ChunkedReader) Next() ([]byte, error) {
 	size, err := binary.ReadUvarint(r.b)
 	if err != nil {
 		return nil, err
+	}
+
+	if size > r.sizeLimit {
+		return nil, errors.Errorf("chunkedReader: message size exceeded the limit %v bytes; got: %v bytes", r.sizeLimit, size)
 	}
 
 	if cap(r.data) < int(size) {

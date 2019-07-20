@@ -14,9 +14,10 @@ package remote
 
 import (
 	"bytes"
-	"github.com/prometheus/prometheus/util/testutil"
 	"io"
 	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type mockedFlusher struct {
@@ -27,11 +28,11 @@ func (f *mockedFlusher) Flush() {
 	f.flushed++
 }
 
-func TestStreamReaderCanReadWriter(t *testing.T) {
+func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 	b := &bytes.Buffer{}
 	f := &mockedFlusher{}
 	w := NewChunkedWriter(b, f)
-	r := NewChunkedReader(b)
+	r := NewChunkedReader(b, 20)
 
 	msgs := [][]byte{
 		[]byte("test1"),
@@ -69,4 +70,21 @@ func TestStreamReaderCanReadWriter(t *testing.T) {
 	testutil.Equals(t, io.EOF, err)
 
 	testutil.Equals(t, 5, f.flushed)
+}
+
+func TestChunkedReader_Overflow(t *testing.T) {
+	b := &bytes.Buffer{}
+	_, err := NewChunkedWriter(b, &mockedFlusher{}).Write([]byte("twelve bytes"))
+	testutil.Ok(t, err)
+
+	b2 := make([]byte, 12)
+	copy(b2, b.Bytes())
+
+	ret, err := NewChunkedReader(b, 12).Next()
+	testutil.Ok(t, err)
+	testutil.Equals(t, "twelve bytes", string(ret))
+
+	_, err = NewChunkedReader(bytes.NewReader(b2), 11).Next()
+	testutil.NotOk(t, err, "expect exceed limit error")
+	testutil.Equals(t, "chunkedReader: message size exceeded the limit 11 bytes; got: 12 bytes", err.Error())
 }

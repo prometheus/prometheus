@@ -843,20 +843,6 @@ func (api *API) serveFlags(r *http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
 }
 
-// negotiateResponseType returns first accepted response type that this server supports.
-func negotiateResponseType(accepted []prompb.ReadRequest_ResponseType) prompb.ReadRequest_ResponseType {
-	supported := map[prompb.ReadRequest_ResponseType]struct{}{
-		prompb.ReadRequest_STREAMED_XOR_CHUNKS: {},
-	}
-
-	for _, resType := range accepted {
-		if _, ok := supported[resType]; ok {
-			return resType
-		}
-	}
-	return -1
-}
-
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := api.remoteReadGate.Start(ctx); err != nil {
@@ -874,12 +860,86 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch negotiateResponseType(req.AcceptedResponseTypes) {
+	externalLabels := api.config().GlobalConfig.ExternalLabels.Map()
+
+	// Add external labels back in, in sorted order.
+	sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
+	for name, value := range externalLabels {
+		sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
+			Name:  string(name),
+			Value: string(value),
+		})
+	}
+	sort.Slice(sortedExternalLabels, func(i, j int) bool {
+		return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
+	})
+
+	switch remote.NegotiateResponseType(req.AcceptedResponseTypes) {
 	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
-		api.streamedChunkedRemoteRead(ctx, w, req)
+		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+		// TODO(bwplotka): Should we use snappy? benchmark to see.
+		// w.Header().Set("Content-Encoding", "snappy")
+
+		f, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
+			return
+		}
+		for i, query := range req.Queries {
+			err := api.remoteReadQuery(ctx, query, externalLabels, func(set storage.SeriesSet) error {
+
+				return remote.StreamChunkedReadResponses(
+					remote.NewChunkedWriter(w, f),
+					int64(i),
+					set,
+					sortedExternalLabels,
+					api.remoteReadMaxChunksInFrame,
+				)
+			})
+			if err != nil {
+				if httpErr, ok := err.(remote.HTTPError); ok {
+					http.Error(w, httpErr.Error(), httpErr.Status())
+					return
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
 	default:
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set("Content-Encoding", "snappy")
+
 		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
-		api.sampledRemoteRead(ctx, w, req)
+		resp := prompb.ReadResponse{
+			Results: make([]*prompb.QueryResult, len(req.Queries)),
+		}
+		for i, query := range req.Queries {
+			err := api.remoteReadQuery(ctx, query, externalLabels, func(set storage.SeriesSet) error {
+
+				resp.Results[i], err = remote.ToQueryResult(set, api.remoteReadSampleLimit)
+				if err != nil {
+					return err
+				}
+
+				for _, ts := range resp.Results[i].Timeseries {
+					ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
+				}
+				return nil
+			})
+			if err != nil {
+				if httpErr, ok := err.(remote.HTTPError); ok {
+					http.Error(w, httpErr.Error(), httpErr.Status())
+					return
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if err := remote.EncodeReadResponse(&resp, w); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 }
 
@@ -909,151 +969,38 @@ func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabe
 	return filteredMatchers, nil
 }
 
-func (api *API) sampledRemoteRead(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest) {
-	resp := prompb.ReadResponse{
-		Results: make([]*prompb.QueryResult, len(req.Queries)),
+func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, externalLabels map[string]string, seriesHandleFn func(set storage.SeriesSet) error) error {
+	filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
+	if err != nil {
+		return err
 	}
-	externalLabels := api.config().GlobalConfig.ExternalLabels.Map()
-	for i, query := range req.Queries {
-		filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 
-		querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer func() {
-			if err := querier.Close(); err != nil {
-				level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
-			}
-		}()
+	querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+	if err != nil {
+		return err
+	}
 
-		var selectParams *storage.SelectParams
-		if query.Hints != nil {
-			selectParams = &storage.SelectParams{
-				Start: query.Hints.StartMs,
-				End:   query.Hints.EndMs,
-				Step:  query.Hints.StepMs,
-				Func:  query.Hints.Func,
-			}
-		}
-
-		set, _, err := querier.Select(selectParams, filteredMatchers...)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		resp.Results[i], err = remote.ToQueryResult(set, api.remoteReadSampleLimit)
-		if err != nil {
-			if httpErr, ok := err.(remote.HTTPError); ok {
-				http.Error(w, httpErr.Error(), httpErr.Status())
-				return
-			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Add external labels back in, in sorted order.
-		sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
-		for name, value := range externalLabels {
-			sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
-				Name:  string(name),
-				Value: string(value),
-			})
-		}
-		sort.Slice(sortedExternalLabels, func(i, j int) bool {
-			return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
-		})
-
-		for _, ts := range resp.Results[i].Timeseries {
-			ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
+	var selectParams *storage.SelectParams
+	if query.Hints != nil {
+		selectParams = &storage.SelectParams{
+			Start: query.Hints.StartMs,
+			End:   query.Hints.EndMs,
+			Step:  query.Hints.StepMs,
+			Func:  query.Hints.Func,
 		}
 	}
 
-	if err := remote.EncodeReadResponse(&resp, w); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	defer func() {
+		if err := querier.Close(); err != nil {
+			level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
+		}
+	}()
+
+	set, _, err := querier.Select(selectParams, filteredMatchers...)
+	if err != nil {
+		return err
 	}
-}
-
-func (api *API) streamedChunkedRemoteRead(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest) {
-	externalLabels := api.config().GlobalConfig.ExternalLabels.Map()
-	for i, query := range req.Queries {
-		filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer func() {
-			if err := querier.Close(); err != nil {
-				level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
-			}
-		}()
-
-		var selectParams *storage.SelectParams
-		if query.Hints != nil {
-			selectParams = &storage.SelectParams{
-				Start: query.Hints.StartMs,
-				End:   query.Hints.EndMs,
-				Step:  query.Hints.StepMs,
-				Func:  query.Hints.Func,
-			}
-		}
-
-		// TODO(bwplotka): Change interface / find a way to select chunks.
-		set, _, err := querier.Select(selectParams, filteredMatchers...)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Add external labels back in, in sorted order.
-		sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
-		for name, value := range externalLabels {
-			sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
-				Name:  string(name),
-				Value: string(value),
-			})
-		}
-		sort.Slice(sortedExternalLabels, func(i, j int) bool {
-			return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
-		})
-
-		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
-		// TODO(bwplotka): Should we use snappy? benchmark to see.
-		// w.Header().Set("Content-Encoding", "snappy")
-
-		f, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
-			return
-		}
-
-		if err := remote.StreamChunkedReadResponses(
-			remote.NewChunkedWriter(w, f),
-			int64(i),
-			set,
-			sortedExternalLabels,
-			api.remoteReadMaxChunksInFrame,
-		); err != nil {
-			if httpErr, ok := err.(remote.HTTPError); ok {
-				http.Error(w, httpErr.Error(), httpErr.Status())
-				return
-			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
+	return seriesHandleFn(set)
 }
 
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {

@@ -59,6 +59,7 @@ message ReadHints {
 }
 
 // Chunk represents a TSDB chunk.
+// Time range [min, max] is inclusive.
 message Chunk {
   int64 min_time_ms = 1;
   int64 max_time_ms = 2;
@@ -74,8 +75,8 @@ message Chunk {
 
 // ChunkedSeries represents single, encoded time series.
 message ChunkedSeries {
-  // labels should be sorted.
+  // Labels should be sorted.
   repeated Label labels = 1 [(gogoproto.nullable) = false];
-  // chunks should be sorted should not overlap in time.
+  // Chunks will be in start time order and may overlap.
   repeated Chunk chunks = 2 [(gogoproto.nullable) = false];
 }

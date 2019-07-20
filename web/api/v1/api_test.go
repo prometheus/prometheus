@@ -1084,7 +1084,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	testutil.Equals(t, "", recorder.Result().Header.Get("Content-Encoding"))
 
 	var results []*prompb.ChunkedReadResponse
-	stream := remote.NewChunkedReader(recorder.Result().Body)
+	stream := remote.NewChunkedReader(recorder.Result().Body, remote.DefaultChunkedReadLimit)
 	for {
 		res := &prompb.ChunkedReadResponse{}
 		err := stream.NextProto(res)

@@ -73,9 +73,6 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 		return err
 	}
 
-	w.Header().Set("Content-Type", "application/x-protobuf")
-	w.Header().Set("Content-Encoding", "snappy")
-
 	compressed := snappy.Encode(nil, data)
 	_, err = w.Write(compressed)
 	return err
@@ -164,6 +161,20 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 	}
 }
 
+// NegotiateResponseType returns first accepted response type that this server supports.
+func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) prompb.ReadRequest_ResponseType {
+	supported := map[prompb.ReadRequest_ResponseType]struct{}{
+		prompb.ReadRequest_STREAMED_XOR_CHUNKS: {},
+	}
+
+	for _, resType := range accepted {
+		if _, ok := supported[resType]; ok {
+			return resType
+		}
+	}
+	return -1
+}
+
 // StreamChunkedReadResponses iterates over series, build chunks and streams those to caller.
 // TODO(bwplotka): Encode only what's needed. Fetch the encoded series from blocks instead of rencoding everything.
 func StreamChunkedReadResponses(
@@ -183,9 +194,9 @@ func StreamChunkedReadResponses(
 		iter := series.Iterator()
 		lbls := MergeLabels(labelsToLabelsProto(series.Labels()), sortedExternalLabels)
 
-		// TODO(bwplotka): We send each series in separate frame no matter what. Even if series has only one sample.
-		// I think we should pack strictly based on number chunks not necessarily from the same series. Thoughts?
+		// Send at most one series per frame; series may be split over multiple frames according to maxChunksInFrame"
 		for {
+			// TODO(bwplotka): Use ChunkIterator once available in TSDB instead of re-encoding: https://github.com/prometheus/tsdb/pull/665
 			chks, err = encodeChunks(iter, chks, maxChunksInFrame)
 			if err != nil {
 				return err
@@ -196,7 +207,6 @@ func StreamChunkedReadResponses(
 			}
 
 			b, err := proto.Marshal(&prompb.ChunkedReadResponse{
-				// TODO(bwplotka): Do we really need multiple?
 				ChunkedSeries: []*prompb.ChunkedSeries{
 					{
 						Labels: lbls,
