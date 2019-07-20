@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -151,14 +152,16 @@ func (f *credentialsFile) tokenSource(ctx context.Context, scopes []string) (oau
 // from Google Compute Engine (GCE)'s metadata server. It's only valid to use
 // this token source if your program is running on a GCE instance.
 // If no account is specified, "default" is used.
+// If no scopes are specified, a set of default scopes are automatically granted.
 // Further information about retrieving access tokens from the GCE metadata
 // server can be found at https://cloud.google.com/compute/docs/authentication.
-func ComputeTokenSource(account string) oauth2.TokenSource {
-	return oauth2.ReuseTokenSource(nil, computeSource{account: account})
+func ComputeTokenSource(account string, scope ...string) oauth2.TokenSource {
+	return oauth2.ReuseTokenSource(nil, computeSource{account: account, scopes: scope})
 }
 
 type computeSource struct {
 	account string
+	scopes  []string
 }
 
 func (cs computeSource) Token() (*oauth2.Token, error) {
@@ -169,7 +172,13 @@ func (cs computeSource) Token() (*oauth2.Token, error) {
 	if acct == "" {
 		acct = "default"
 	}
-	tokenJSON, err := metadata.Get("instance/service-accounts/" + acct + "/token")
+	tokenURI := "instance/service-accounts/" + acct + "/token"
+	if len(cs.scopes) > 0 {
+		v := url.Values{}
+		v.Set("scopes", strings.Join(cs.scopes, ","))
+		tokenURI = tokenURI + "?" + v.Encode()
+	}
+	tokenJSON, err := metadata.Get(tokenURI)
 	if err != nil {
 		return nil, err
 	}
