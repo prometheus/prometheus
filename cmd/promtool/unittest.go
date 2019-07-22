@@ -157,6 +157,7 @@ type testGroup struct {
 	InputSeries     []series         `yaml:"input_series"`
 	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
 	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
+	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
 }
 
 // test performs the unit tests.
@@ -177,8 +178,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		Logger:     log.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
-	// TODO(beorn7): Provide a way to pass in external labels.
-	groupsMap, ers := m.LoadGroups(tg.Interval, nil, ruleFiles...)
+	groupsMap, ers := m.LoadGroups(tg.Interval, tg.ExternalLabels, ruleFiles...)
 	if ers != nil {
 		return ers
 	}
@@ -286,6 +286,9 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				for _, a := range testcase.ExpAlerts {
 					// User gives only the labels from alerting rule, which doesn't
 					// include this label (added by Prometheus during Eval).
+					if a.ExpLabels == nil {
+						a.ExpLabels = make(map[string]string)
+					}
 					a.ExpLabels[labels.AlertName] = testcase.Alertname
 
 					expAlerts = append(expAlerts, labelAndAnnotation{

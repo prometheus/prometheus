@@ -63,14 +63,15 @@ func NewEqualMatcher(name, value string) Matcher {
 	return &EqualMatcher{name: name, value: value}
 }
 
-type regexpMatcher struct {
+type RegexpMatcher struct {
 	name string
 	re   *regexp.Regexp
 }
 
-func (m regexpMatcher) Name() string          { return m.name }
-func (m regexpMatcher) Matches(v string) bool { return m.re.MatchString(v) }
-func (m regexpMatcher) String() string        { return fmt.Sprintf("%s=~%q", m.name, m.re.String()) }
+func (m RegexpMatcher) Name() string          { return m.name }
+func (m RegexpMatcher) Matches(v string) bool { return m.re.MatchString(v) }
+func (m RegexpMatcher) String() string        { return fmt.Sprintf("%s=~%q", m.name, m.re.String()) }
+func (m RegexpMatcher) Value() string         { return m.re.String() }
 
 // NewRegexpMatcher returns a new matcher verifying that a value matches
 // the regular expression pattern.
@@ -79,7 +80,7 @@ func NewRegexpMatcher(name, pattern string) (Matcher, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &regexpMatcher{name: name, re: re}, nil
+	return &RegexpMatcher{name: name, re: re}, nil
 }
 
 // NewMustRegexpMatcher returns a new matcher verifying that a value matches
@@ -90,7 +91,7 @@ func NewMustRegexpMatcher(name, pattern string) Matcher {
 	if err != nil {
 		panic(err)
 	}
-	return &regexpMatcher{name: name, re: re}
+	return &RegexpMatcher{name: name, re: re}
 
 }
 

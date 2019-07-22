@@ -54,14 +54,15 @@ type TombstoneReader interface {
 	Close() error
 }
 
-func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) error {
+func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) (int64, error) {
 	path := filepath.Join(dir, tombstoneFilename)
 	tmp := path + ".tmp"
 	hash := newCRC32()
+	var size int
 
 	f, err := os.Create(tmp)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() {
 		if f != nil {
@@ -79,10 +80,11 @@ func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) error
 	// Write the meta.
 	buf.PutBE32(MagicTombstone)
 	buf.PutByte(tombstoneFormatV1)
-	_, err = f.Write(buf.Get())
+	n, err := f.Write(buf.Get())
 	if err != nil {
-		return err
+		return 0, err
 	}
+	size += n
 
 	mw := io.MultiWriter(f, hash)
 
@@ -94,32 +96,34 @@ func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) error
 			buf.PutVarint64(iv.Mint)
 			buf.PutVarint64(iv.Maxt)
 
-			_, err = mw.Write(buf.Get())
+			n, err = mw.Write(buf.Get())
 			if err != nil {
 				return err
 			}
+			size += n
 		}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("error writing tombstones: %v", err)
+		return 0, fmt.Errorf("error writing tombstones: %v", err)
 	}
 
-	_, err = f.Write(hash.Sum(nil))
+	n, err = f.Write(hash.Sum(nil))
 	if err != nil {
-		return err
+		return 0, err
 	}
+	size += n
 
 	var merr tsdb_errors.MultiError
 	if merr.Add(f.Sync()); merr.Err() != nil {
 		merr.Add(f.Close())
-		return merr.Err()
+		return 0, merr.Err()
 	}
 
 	if err = f.Close(); err != nil {
-		return err
+		return 0, err
 	}
 	f = nil
-	return fileutil.Replace(tmp, path)
+	return int64(size), fileutil.Replace(tmp, path)
 }
 
 // Stone holds the information on the posting and time-range
@@ -129,41 +133,37 @@ type Stone struct {
 	intervals Intervals
 }
 
-func readTombstones(dir string) (TombstoneReader, SizeReader, error) {
+func readTombstones(dir string) (TombstoneReader, int64, error) {
 	b, err := ioutil.ReadFile(filepath.Join(dir, tombstoneFilename))
 	if os.IsNotExist(err) {
-		return newMemTombstones(), nil, nil
+		return newMemTombstones(), 0, nil
 	} else if err != nil {
-		return nil, nil, err
-	}
-
-	sr := &TombstoneFile{
-		size: int64(len(b)),
+		return nil, 0, err
 	}
 
 	if len(b) < 5 {
-		return nil, sr, errors.Wrap(encoding.ErrInvalidSize, "tombstones header")
+		return nil, 0, errors.Wrap(encoding.ErrInvalidSize, "tombstones header")
 	}
 
 	d := &encoding.Decbuf{B: b[:len(b)-4]} // 4 for the checksum.
 	if mg := d.Be32(); mg != MagicTombstone {
-		return nil, sr, fmt.Errorf("invalid magic number %x", mg)
+		return nil, 0, fmt.Errorf("invalid magic number %x", mg)
 	}
 	if flag := d.Byte(); flag != tombstoneFormatV1 {
-		return nil, sr, fmt.Errorf("invalid tombstone format %x", flag)
+		return nil, 0, fmt.Errorf("invalid tombstone format %x", flag)
 	}
 
 	if d.Err() != nil {
-		return nil, sr, d.Err()
+		return nil, 0, d.Err()
 	}
 
 	// Verify checksum.
 	hash := newCRC32()
 	if _, err := hash.Write(d.Get()); err != nil {
-		return nil, sr, errors.Wrap(err, "write to hash")
+		return nil, 0, errors.Wrap(err, "write to hash")
 	}
 	if binary.BigEndian.Uint32(b[len(b)-4:]) != hash.Sum32() {
-		return nil, sr, errors.New("checksum did not match")
+		return nil, 0, errors.New("checksum did not match")
 	}
 
 	stonesMap := newMemTombstones()
@@ -173,13 +173,13 @@ func readTombstones(dir string) (TombstoneReader, SizeReader, error) {
 		mint := d.Varint64()
 		maxt := d.Varint64()
 		if d.Err() != nil {
-			return nil, sr, d.Err()
+			return nil, 0, d.Err()
 		}
 
 		stonesMap.addInterval(k, Interval{mint, maxt})
 	}
 
-	return stonesMap, sr, nil
+	return stonesMap, int64(len(b)), nil
 }
 
 type memTombstones struct {
@@ -228,16 +228,6 @@ func (t *memTombstones) addInterval(ref uint64, itvs ...Interval) {
 	for _, itv := range itvs {
 		t.intvlGroups[ref] = t.intvlGroups[ref].add(itv)
 	}
-}
-
-// TombstoneFile holds information about the tombstone file.
-type TombstoneFile struct {
-	size int64
-}
-
-// Size returns the tombstone file size.
-func (t *TombstoneFile) Size() int64 {
-	return t.size
 }
 
 func (*memTombstones) Close() error {

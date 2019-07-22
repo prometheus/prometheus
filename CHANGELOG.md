@@ -1,3 +1,37 @@
+## 2.11.1 / 2019-07-10
+
+* [BUGFIX] Fix potential panic when prometheus is watching multiple zookeeper paths. #5749
+
+## 2.11.0 / 2019-07-09
+
+* [CHANGE] Remove `max_retries` from queue_config (it has been unused since rewriting remote-write to utilize the write-ahead-log). #5649
+* [CHANGE] The meta file `BlockStats` no longer holds size information. This is now dynamically calculated and kept in memory. It also includes the meta file size which was not included before. tsdb#637
+* [CHANGE] Renamed metric from `prometheus_tsdb_wal_reader_corruption_errors` to `prometheus_tsdb_wal_reader_corruption_errors_total`. tsdb#622
+* [FEATURE] Add option to use Alertmanager API v2. #5482
+* [FEATURE] Added `humanizePercentage` function for templates. #5670
+* [FEATURE] Include InitContainers in Kubernetes Service Discovery. #5598
+* [FEATURE] Provide option to compress WAL records using Snappy. [#609](https://github.com/prometheus/tsdb/pull/609)
+* [ENHANCEMENT] Create new clean segment when starting the WAL. tsdb#608
+* [ENHANCEMENT] Reduce allocations in PromQL aggregations. #5641
+* [ENHANCEMENT] Add storage warnings to LabelValues and LabelNames API results. #5673
+* [ENHANCEMENT] Add prometheus_http_requests_total metric. #5640
+* [ENHANCEMENT] Enable openbsd/arm build. #5696
+* [ENHANCEMENT] Remote-write allocation improvements. #5614
+* [ENHANCEMENT] Query performance improvement: Efficient iteration and search in HashForLabels and HashWithoutLabels. #5707
+* [ENHANCEMENT] Allow injection of arbitrary headers in promtool. #4389
+* [ENHANCEMENT] Allow passing `external_labels` in alert unit tests groups. #5608
+* [ENHANCEMENT] Allows globs for rules when unit testing. #5595
+* [ENHANCEMENT] Improved postings intersection matching. tsdb#616
+* [ENHANCEMENT] Reduced disk usage for WAL for small setups. tsdb#605
+* [ENHANCEMENT] Optimize queries using regexp for set lookups. tsdb#602
+* [BUGFIX] resolve race condition in maxGauge. #5647
+* [BUGFIX] Fix ZooKeeper connection leak. #5675
+* [BUGFIX] Improved atomicity of .tmp block replacement during compaction for usual case. tsdb#636
+* [BUGFIX] Fix "unknown series references" after clean shutdown. tsdb#623
+* [BUGFIX] Re-calculate block size when calling `block.Delete`. tsdb#637
+* [BUGFIX] Fix unsafe snapshots with head block. tsdb#641
+* [BUGFIX] `prometheus_tsdb_compactions_failed_total` is now incremented on any compaction failure. tsdb#613
+
 ## 2.10.0 / 2019-05-25
 
 * [CHANGE/BUGFIX] API: Encode alert values as string to correctly represent Inf/NaN. #5582

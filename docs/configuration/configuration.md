@@ -127,8 +127,11 @@ job_name: <job_name>
 # If honor_labels is set to "false", label conflicts are resolved by renaming
 # conflicting labels in the scraped data to "exported_<original-label>" (for
 # example "exported_instance", "exported_job") and then attaching server-side
-# labels. This is useful for use cases such as federation, where all labels
-# specified in the target should be preserved.
+# labels.
+#
+# Setting honor_labels to "true" is useful for use cases such as federation and
+# scraping the Pushgateway, where all labels specified in the target should be
+# preserved.
 #
 # Note that any globally configured "external_labels" are unaffected by this
 # setting. In communication with external systems, they are always applied only
@@ -439,8 +442,8 @@ See below for the configuration options for EC2 discovery:
 ```yaml
 # The information to access the EC2 API.
 
-# The AWS Region.
-region: <string>
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
 
 # Custom endpoint to be used.
 [ endpoint: <string> ]
@@ -1125,8 +1128,8 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
 * `labelkeep`: Match `regex` against all label names. Any label that does not match will be
   removed from the set of labels.
 
-Care must be taken with `labeldrop` and `labelkeep` to ensure that metrics are still uniquely labeled
-once the labels are removed.
+Care must be taken with `labeldrop` and `labelkeep` to ensure that metrics are
+still uniquely labeled once the labels are removed.
 
 ### `<metric_relabel_configs>`
 
@@ -1147,8 +1150,9 @@ external labels send identical alerts.
 
 ### `<alertmanager_config>`
 
-An `alertmanager_config` section specifies Alertmanager instances the Prometheus server sends
-alerts to. It also provides parameters to configure how to communicate with these Alertmanagers.
+An `alertmanager_config` section specifies Alertmanager instances the Prometheus
+server sends alerts to. It also provides parameters to configure how to
+communicate with these Alertmanagers.
 
 Alertmanagers may be statically configured via the `static_configs` parameter or
 dynamically discovered using one of the supported service-discovery mechanisms.
@@ -1160,6 +1164,9 @@ through the `__alerts_path__` label.
 ```yaml
 # Per-target Alertmanager timeout when pushing alerts.
 [ timeout: <duration> | default = 10s ]
+
+# The api version of Alertmanager.
+[ api_version: <version> | default = v1 ]
 
 # Prefix for the HTTP path alerts are pushed to.
 [ path_prefix: <path> | default = / ]
@@ -1288,8 +1295,8 @@ tls_config:
 
 # Configures the queue used to write to remote storage.
 queue_config:
-  # Number of samples to buffer per shard before we start dropping them.
-  [ capacity: <int> | default = 10000 ]
+  # Number of samples to buffer per shard before we block reading of more samples from the WAL.
+  [ capacity: <int> | default = 10 ]
   # Maximum number of shards, i.e. amount of concurrency.
   [ max_shards: <int> | default = 1000 ]
   # Minimum number of shards, i.e. amount of concurrency.
@@ -1298,8 +1305,6 @@ queue_config:
   [ max_samples_per_send: <int> | default = 100]
   # Maximum time a sample will wait in buffer.
   [ batch_send_deadline: <duration> | default = 5s ]
-  # Maximum number of times to retry a batch on recoverable errors.
-  [ max_retries: <int> | default = 3 ]
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]
   # Maximum retry delay.

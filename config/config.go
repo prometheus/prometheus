@@ -92,8 +92,9 @@ var (
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
 	DefaultAlertmanagerConfig = AlertmanagerConfig{
-		Scheme:  "http",
-		Timeout: model.Duration(10 * time.Second),
+		Scheme:     "http",
+		Timeout:    model.Duration(10 * time.Second),
+		APIVersion: AlertmanagerAPIVersionV1,
 	}
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
@@ -116,8 +117,7 @@ var (
 		Capacity:          10,
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
-		// Max number of times to retry a batch on recoverable errors.
-		MaxRetries: 3,
+		// Backoff times for retrying a batch of samples on recoverable errors.
 		MinBackoff: model.Duration(30 * time.Millisecond),
 		MaxBackoff: model.Duration(100 * time.Millisecond),
 	}
@@ -454,6 +454,40 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	return nil
 }
 
+// AlertmanagerAPIVersion represents a version of the
+// github.com/prometheus/alertmanager/api, e.g. 'v1' or 'v2'.
+type AlertmanagerAPIVersion string
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*v = AlertmanagerAPIVersion("")
+	type plain AlertmanagerAPIVersion
+	if err := unmarshal((*plain)(v)); err != nil {
+		return err
+	}
+
+	for _, supportedVersion := range SupportedAlertmanagerAPIVersions {
+		if *v == supportedVersion {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
+}
+
+const (
+	// AlertmanagerAPIVersionV1 represents
+	// github.com/prometheus/alertmanager/api/v1.
+	AlertmanagerAPIVersionV1 AlertmanagerAPIVersion = "v1"
+	// AlertmanagerAPIVersionV2 represents
+	// github.com/prometheus/alertmanager/api/v2.
+	AlertmanagerAPIVersionV2 AlertmanagerAPIVersion = "v2"
+)
+
+var SupportedAlertmanagerAPIVersions = []AlertmanagerAPIVersion{
+	AlertmanagerAPIVersionV1, AlertmanagerAPIVersionV2,
+}
+
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
 type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
@@ -468,6 +502,9 @@ type AlertmanagerConfig struct {
 	PathPrefix string `yaml:"path_prefix,omitempty"`
 	// The timeout used when sending alerts.
 	Timeout model.Duration `yaml:"timeout,omitempty"`
+
+	// The api version of Alertmanager.
+	APIVersion AlertmanagerAPIVersion `yaml:"api_version"`
 
 	// List of Alertmanager relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
@@ -593,9 +630,6 @@ type QueueConfig struct {
 
 	// Maximum time sample will wait in buffer.
 	BatchSendDeadline model.Duration `yaml:"batch_send_deadline,omitempty"`
-
-	// Max number of times to retry a batch on recoverable errors.
-	MaxRetries int `yaml:"max_retries,omitempty"`
 
 	// On recoverable errors, backoff exponentially.
 	MinBackoff model.Duration `yaml:"min_backoff,omitempty"`

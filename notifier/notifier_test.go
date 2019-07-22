@@ -64,7 +64,7 @@ func TestPostPath(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		testutil.Equals(t, c.out, postPath(c.in))
+		testutil.Equals(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV1))
 	}
 }
 
@@ -165,15 +165,19 @@ func TestHandlerSendAll(t *testing.T) {
 
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+
+	am2Cfg := config.DefaultAlertmanagerConfig
+	am2Cfg.Timeout = model.Duration(time.Second)
+
 	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server1.URL },
 			},
 		},
-		cfg: &config.AlertmanagerConfig{
-			Timeout: model.Duration(time.Second),
-		},
+		cfg:    &am1Cfg,
 		client: authClient,
 	}
 
@@ -183,9 +187,7 @@ func TestHandlerSendAll(t *testing.T) {
 				urlf: func() string { return server2.URL },
 			},
 		},
-		cfg: &config.AlertmanagerConfig{
-			Timeout: model.Duration(time.Second),
-		},
+		cfg: &am2Cfg,
 	}
 
 	for i := range make([]struct{}, maxBatchSize) {
@@ -332,15 +334,16 @@ func TestHandlerQueueing(t *testing.T) {
 
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+
 	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server.URL },
 			},
 		},
-		cfg: &config.AlertmanagerConfig{
-			Timeout: model.Duration(time.Second),
-		},
+		cfg: &am1Cfg,
 	}
 
 	var alerts []*Alert
