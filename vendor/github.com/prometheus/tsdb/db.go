@@ -475,6 +475,7 @@ func (db *DB) compact() (err error) {
 		if err != nil {
 			return errors.Wrap(err, "persist head block")
 		}
+		level.Info(db.logger).Log("msg", "compaction: head compaction done, gc time", "mint", mint, "maxt", maxt-1)
 
 		runtime.GC()
 
