@@ -774,6 +774,8 @@ func writePostings(indexw *index.Writer, values map[string]map[string]struct{}, 
 	var (
 		maxNumValues      int
 		numLabelValues    int
+		mappedName        string
+		ok                bool
 		names             = make([]string, 0, len(values)+1)
 		apkName, apkValue = index.AllPostingsKey()
 	)
@@ -792,14 +794,14 @@ func writePostings(indexw *index.Writer, values map[string]map[string]struct{}, 
 		if mappedName, ok := symbolMap[n]; ok {
 			n = mappedName
 		} else {
-			return fmt.Errorf("Mapped symbol not found for name: %s", n)
+			return fmt.Errorf("mapped symbol not found for name: %s", n)
 		}
 
 		for val := range v {
 			if mappedVal, ok := symbolMap[val]; ok {
 				labelValuesBuf = append(labelValuesBuf, mappedVal)
 			} else {
-				return fmt.Errorf("Mapped symbol not found for value: %s", val)
+				return fmt.Errorf("mapped symbol not found for value: %s", val)
 			}
 		}
 		if err := indexw.WriteLabelIndex([]string{n}, labelValuesBuf); err != nil {
@@ -817,10 +819,9 @@ func writePostings(indexw *index.Writer, values map[string]map[string]struct{}, 
 		}
 		sort.Strings(labelValuesBuf)
 
-		if mappedName, ok := symbolMap[n]; ok {
-			n = mappedName
-		} else {
-			return fmt.Errorf("Mapped symbol not found for name: %s", n)
+		mappedName, ok = symbolMap[n]
+		if !ok {
+			return fmt.Errorf("mapped symbol not found for name: %s", n)
 		}
 
 		for _, v := range labelValuesBuf {
@@ -830,11 +831,11 @@ func writePostings(indexw *index.Writer, values map[string]map[string]struct{}, 
 			}
 
 			if mappedVal, ok := symbolMap[v]; ok {
-				if err := indexw.WritePostings(n, mappedVal, posts); err != nil {
+				if err := indexw.WritePostings(mappedName, mappedVal, posts); err != nil {
 					return err
 				}
 			} else {
-				return fmt.Errorf("Mapped symbol not found for value: %s", v)
+				return fmt.Errorf("mapped symbol not found for value: %s", v)
 			}
 		}
 	}
