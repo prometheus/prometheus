@@ -277,7 +277,7 @@ github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
 # github.com/prometheus/procfs v0.0.2
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
-# github.com/prometheus/tsdb v0.9.1
+# github.com/prometheus/tsdb v0.10.0
 github.com/prometheus/tsdb
 github.com/prometheus/tsdb/fileutil
 github.com/prometheus/tsdb/labels

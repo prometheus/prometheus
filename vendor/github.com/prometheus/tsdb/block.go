@@ -138,11 +138,8 @@ type BlockReader interface {
 	// Tombstones returns a TombstoneReader over the block's deleted data.
 	Tombstones() (TombstoneReader, error)
 
-	// MinTime returns the min time of the block.
-	MinTime() int64
-
-	// MaxTime returns the max time of the block.
-	MaxTime() int64
+	// Meta provides meta information about the block reader.
+	Meta() BlockMeta
 }
 
 // Appendable defines an entity to which data can be appended.
