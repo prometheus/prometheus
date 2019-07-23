@@ -25,24 +25,24 @@ import (
 	"time"
 )
 
-type QueryLogger struct {
+type ActiveQueryTracker struct {
 	mmapedFile   []byte
 	getNextIndex chan int
 	lastIndex    chan int
 	logger       log.Logger
-	Ok           bool
 }
 
 const (
-	entrySize int = 200
+	entrySize int = 1000
 )
 
 func parseBrokenJson(brokenJson []byte, logger log.Logger) (bool, string) {
 	queries := strings.TrimSpace(string(brokenJson))
 	queries = strings.Trim(queries, "\x00")
+	queries = strings.Trim(queries, " ")
 	queries = queries[:len(queries)-1] + "]"
 
-	// conditional because of implementation detail: len() = 1 implies file consisted of a single char: '['
+	// Conditional because of implementation detail: len() = 1 implies file consisted of a single char: '['.
 	if len(queries) == 1 {
 		return false, "[]"
 	}
@@ -104,37 +104,33 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) (error, []b
 	return err, fileAsBytes
 }
 
-func NewQueryLogger(filename string, filesize int, logger log.Logger) (queryLogger QueryLogger) {
+func NewActiveQueryTracker(maxQueries int, logger log.Logger) (activeQueryTracker ActiveQueryTracker) {
 	defer func() {
 		if r := recover(); r != nil {
-			queryLogger = QueryLogger{}
+			level.Error(logger).Log("msg", "Panic while creating ActiveQueryTracker", "err", r)
+			activeQueryTracker = ActiveQueryTracker{}
 		}
 	}()
 
+	filename, filesize := "queries.active", 1+maxQueries*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
-
-	if filesize < 1+entrySize {
-		level.Error(logger).Log("msg", "Filesize must be greater than entrysize.", "entrysize", entrySize)
-		return QueryLogger{}
-	}
 
 	err, fileAsBytes := getMMapedFile(filename, filesize, logger)
 	if err != nil {
-		return QueryLogger{}
+		return ActiveQueryTracker{}
 	}
 
 	copy(fileAsBytes, "[")
-	queryLogger = QueryLogger{
+	activeQueryTracker = ActiveQueryTracker{
 		mmapedFile:   fileAsBytes,
-		getNextIndex: make(chan int, (1<<16)-1),
-		lastIndex:    make(chan int),
+		getNextIndex: make(chan int, maxQueries),
+		lastIndex:    make(chan int, (filesize-1)/entrySize),
 		logger:       logger,
-		Ok:           true,
 	}
 
-	go queryLogger.generateLastIndex(filesize)
+	activeQueryTracker.generateIndices(filesize)
 
-	return queryLogger
+	return activeQueryTracker
 }
 
 type Entry struct {
@@ -149,9 +145,16 @@ func min(a, b int) int {
 	return b
 }
 
+func trimStringByBytes(str string, size int) string {
+	bytesStr := []byte(str)
+	return string(bytesStr[:min(len(bytesStr), size)])
+}
+
 func newJsonEntry(query string, timestamp int64, logger log.Logger) []byte {
-	// 35 bytes is the size of json entry for empty string. Including a comma for every entry, max query size is entrySize-36
-	entry := Entry{query[:min(len(query), entrySize-36)], timestamp}
+	// 35 bytes is the size of json entry for empty string.
+	// Including a comma for every entry, max query size is entrySize-36.
+	query = trimStringByBytes(query, entrySize-36)
+	entry := Entry{query, timestamp}
 	jsonEntry, err := json.Marshal(entry)
 
 	if err != nil {
@@ -161,7 +164,7 @@ func newJsonEntry(query string, timestamp int64, logger log.Logger) []byte {
 	return jsonEntry
 }
 
-// Adds an entry struct -- json object for each query indicating its timestamp and name -- to query log file
+// Adds an entry struct -- json object for each query indicating its timestamp and name -- to query log file.
 func addEntry(file []byte, i int, timestamp int64, query string, logger log.Logger) {
 	entry := newJsonEntry(query, timestamp, logger)
 	start := i
@@ -173,45 +176,33 @@ func addEntry(file []byte, i int, timestamp int64, query string, logger log.Logg
 	copy(file[end-1:], ",")
 }
 
-func (logger QueryLogger) generateLastIndex(maxSize int) {
+func (tracker ActiveQueryTracker) generateIndices(maxSize int) {
 	for i := 1; i <= maxSize-entrySize; i += entrySize {
-		logger.lastIndex <- i
+		tracker.lastIndex <- i
 	}
-	close(logger.lastIndex)
+	close(tracker.lastIndex)
 }
 
-func (logger QueryLogger) LogQuery(query string, queryCompleted <-chan struct{}) {
-	defer func() {
-		if r := recover(); r != nil {
-			level.Error(logger.logger).Log("msg", "Panicked while logging a query.", "query", query)
-		}
-	}()
-
-	insertIndex := logger.insert(query)
-	<-queryCompleted
-	logger.delete(insertIndex)
+func (tracker ActiveQueryTracker) Delete(insertIndex int) {
+	copy(tracker.mmapedFile[insertIndex:], strings.Repeat(" ", entrySize))
+	tracker.getNextIndex <- insertIndex
 }
 
-func (logger QueryLogger) delete(insertIndex int) {
-	copy(logger.mmapedFile[insertIndex:], strings.Repeat(" ", entrySize))
-	logger.getNextIndex <- insertIndex
-}
-
-func (logger QueryLogger) insert(query string) int {
+func (tracker ActiveQueryTracker) Insert(query string) int {
 	var insertIndex int
 	select {
-	case i := <-logger.getNextIndex:
+	case i := <-tracker.getNextIndex:
 		insertIndex = i
 	default:
-		i, channelOpen := <-logger.lastIndex
+		i, channelOpen := <-tracker.lastIndex
 		if !channelOpen {
-			i = <-logger.getNextIndex
+			i = <-tracker.getNextIndex
 		}
 		insertIndex = i
 	}
 
 	timestamp := time.Now().Unix()
 
-	addEntry(logger.mmapedFile, insertIndex, timestamp, query, logger.logger)
+	addEntry(tracker.mmapedFile, insertIndex, timestamp, query, tracker.logger)
 	return insertIndex
 }

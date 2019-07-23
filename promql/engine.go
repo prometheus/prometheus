@@ -176,20 +176,14 @@ func (q *query) Exec(ctx context.Context) *Result {
 		span.SetTag(queryTag, q.stmt.String())
 	}
 
-	// Log query in active log
-	queryCompleted := make(chan struct{})
+	// Log query in active log.
+	queryIndex := q.ng.activeQueryTracker.Insert(q.q)
 
-	go func() {
-		if q.ng.queryLogger.Ok {
-			q.ng.queryLogger.LogQuery(q.q, queryCompleted)
-		}
-	}()
-
-	// Exec query
+	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
 
-	// Delete query from active log
-	close(queryCompleted)
+	// Delete query from active log.
+	q.ng.activeQueryTracker.Delete(queryIndex)
 
 	return &Result{Err: err, Value: res, Warnings: warnings}
 }
@@ -215,12 +209,12 @@ func contextErr(err error, env string) error {
 
 // EngineOpts contains configuration options used when creating a new Engine.
 type EngineOpts struct {
-	Logger        log.Logger
-	Reg           prometheus.Registerer
-	MaxConcurrent int
-	MaxSamples    int
-	Timeout       time.Duration
-	QueryLogger   QueryLogger
+	Logger             log.Logger
+	Reg                prometheus.Registerer
+	MaxConcurrent      int
+	MaxSamples         int
+	Timeout            time.Duration
+	ActiveQueryTracker ActiveQueryTracker
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -231,7 +225,7 @@ type Engine struct {
 	timeout            time.Duration
 	gate               *gate.Gate
 	maxSamplesPerQuery int
-	queryLogger        QueryLogger
+	activeQueryTracker ActiveQueryTracker
 }
 
 // NewEngine returns a new engine.
@@ -305,7 +299,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		logger:             opts.Logger,
 		metrics:            metrics,
 		maxSamplesPerQuery: opts.MaxSamples,
-		queryLogger:        opts.QueryLogger,
+		activeQueryTracker: opts.ActiveQueryTracker,
 	}
 }
 

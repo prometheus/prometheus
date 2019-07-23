@@ -16,6 +16,8 @@ package promql
 import (
 	"context"
 	"fmt"
+	"github.com/go-kit/kit/log"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,12 +30,14 @@ import (
 func BenchmarkRangeQuery(b *testing.B) {
 	storage := testutil.NewStorage(b)
 	defer storage.Close()
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    50000000,
-		Timeout:       100 * time.Second,
+		Logger:             nil,
+		Reg:                nil,
+		MaxConcurrent:      10,
+		MaxSamples:         50000000,
+		Timeout:            100 * time.Second,
+		ActiveQueryTracker: NewActiveQueryTracker(10, logger),
 	}
 	engine := NewEngine(opts)
 

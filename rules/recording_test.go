@@ -15,6 +15,8 @@ package rules
 
 import (
 	"context"
+	"github.com/go-kit/kit/log"
+	"os"
 	"testing"
 	"time"
 
@@ -28,12 +30,14 @@ func TestRuleEval(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
 
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:             nil,
+		Reg:                nil,
+		MaxConcurrent:      10,
+		MaxSamples:         10,
+		Timeout:            10 * time.Second,
+		ActiveQueryTracker: promql.NewActiveQueryTracker(10, logger),
 	}
 
 	engine := promql.NewEngine(opts)

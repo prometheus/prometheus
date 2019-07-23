@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"os"
 	"regexp"
@@ -22,73 +21,72 @@ import (
 )
 
 func TestQueryLogging(t *testing.T) {
-	queryBytes := make([]byte, 1024)
-	queryLogger := QueryLogger{
-		lastIndex:    make(chan int),
-		mmapedFile:   queryBytes,
+	fileAsBytes := make([]byte, 4096)
+	queryLogger := ActiveQueryTracker{
+		lastIndex:    make(chan int, (4096-1)/entrySize),
+		mmapedFile:   fileAsBytes,
 		logger:       nil,
 		getNextIndex: make(chan int, 4),
-		Ok:           false,
 	}
 
-	go queryLogger.generateLastIndex(1024)
+	queryLogger.generateIndices(4096)
+	veryLongString := "MassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybe"
 	queries := []string{
 		"TestQuery",
-		"MassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybe",
+		veryLongString,
 		"",
 		"SpecialCharQuery{host=\"2132132\", id=123123}",
 	}
 
 	want := []string{
 		`^{"query":"TestQuery","timestamp":\d+}\s*,$`,
-		`^{"query":"MassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAre","timestamp":\d+}\s*,$`,
+		`^{"query":"` + trimStringByBytes(veryLongString, entrySize-36) + `","timestamp":\d+}\s*,$`,
 		`^{"query":"","timestamp":\d+}\s*,$`,
 		`^{"query":"SpecialCharQuery{host=\\"2132132\\", id=123123}","timestamp":\d+}\s*,$`,
 	}
 
-	// Check for inserts of queries
+	// Check for inserts of queries.
 	for i := 0; i < 4; i++ {
 		start := 1 + i*entrySize
 		end := start + entrySize
 
-		queryLogger.insert(queries[i])
+		queryLogger.Insert(queries[i])
 
-		have := string(queryBytes[start:end])
+		have := string(fileAsBytes[start:end])
 		if !regexp.MustCompile(want[i]).MatchString(have) {
 			t.Fatalf("Query not written correctly: %s.\nHave %s\nWant %s", queries[i], have, want[i])
 		}
 	}
 
-	// Check if all queries have been deleted
+	// Check if all queries have been deleted.
 	for i := 0; i < 4; i++ {
-		queryLogger.delete(1 + i*entrySize)
+		queryLogger.Delete(1 + i*entrySize)
 	}
-	if !regexp.MustCompile(`^\s+$`).Match(queryBytes[1 : 1+entrySize*4]) {
-		t.Fatalf("All queries not deleted properly. Have %s\nWant only white space", string(queryBytes[1:1+entrySize*4]))
+	if !regexp.MustCompile(`^\s+$`).Match(fileAsBytes[1 : 1+entrySize*4]) {
+		t.Fatalf("All queries not deleted properly. Have %s\nWant only white space", string(fileAsBytes[1:1+entrySize*4]))
 	}
 }
 
 func TestIndexReuse(t *testing.T) {
 	queryBytes := make([]byte, 1+3*entrySize)
-	queryLogger := QueryLogger{
+	queryLogger := ActiveQueryTracker{
 		lastIndex:    make(chan int),
 		mmapedFile:   queryBytes,
 		logger:       nil,
 		getNextIndex: make(chan int, 3),
-		Ok:           false,
 	}
 
-	go queryLogger.generateLastIndex(1 + 3*entrySize)
-	queryLogger.insert("TestQuery1")
-	queryLogger.insert("TestQuery2")
-	queryLogger.insert("TestQuery3")
+	go queryLogger.generateIndices(1 + 3*entrySize)
+	queryLogger.Insert("TestQuery1")
+	queryLogger.Insert("TestQuery2")
+	queryLogger.Insert("TestQuery3")
 
-	queryLogger.delete(1 + entrySize)
-	queryLogger.delete(1)
+	queryLogger.Delete(1 + entrySize)
+	queryLogger.Delete(1)
 	newQuery2 := "ThisShouldBeInsertedAtIndex2"
 	newQuery1 := "ThisShouldBeInsertedAtIndex1"
-	queryLogger.insert(newQuery2)
-	queryLogger.insert(newQuery1)
+	queryLogger.Insert(newQuery2)
+	queryLogger.Insert(newQuery1)
 
 	want := []string{
 		`^{"query":"ThisShouldBeInsertedAtIndex1","timestamp":\d+}\s*,$`,
@@ -139,67 +137,4 @@ func TestMMapFile(t *testing.T) {
 	if string(bytes[:2]) != string(fileAsBytes) {
 		t.Fatalf("Mmap failed")
 	}
-}
-
-func TestNewQueryLogger(t *testing.T) {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	queryLogger := NewQueryLogger("", 300, logger)
-
-	if queryLogger.Ok {
-		t.Fatalf("QueryLogger constructor not returning default inactive query logger when filename not specified")
-	}
-
-	file, err := ioutil.TempFile("", "newQueryLoggerTest")
-	if err != nil {
-		t.Fatalf("Couldn't create temp test file. %s", err)
-	}
-
-	filename := file.Name()
-	defer os.Remove(filename)
-
-	queryLogger = NewQueryLogger(filename, 0, logger)
-	if queryLogger.Ok {
-		t.Fatalf("QueryLogger constructor not returning default inactive query logger when filesize is 0")
-	}
-
-	queryLogger = NewQueryLogger(filename, -20, logger)
-	if queryLogger.Ok {
-		t.Fatalf("QueryLogger constructor not returning default inactive query logger when filesize is negative")
-	}
-
-	queryLogger = NewQueryLogger(filename, 35, logger)
-	if queryLogger.Ok {
-		t.Fatalf("QueryLogger constructor not returning default inactive query logger when filesize is less than 35")
-	}
-}
-
-func TestBadIndex(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("Didn't handle a panic while logging query.")
-		}
-	}()
-
-	file, err := ioutil.TempFile("", "badQueryLoggingTest")
-	if err != nil {
-		t.Fatalf("Couldn't create temp test file. %s", err)
-	}
-
-	filename := file.Name()
-	defer os.Remove(filename)
-
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	queryDone := make(chan struct{})
-	queryBytes := make([]byte, 201)
-	queryLogger := QueryLogger{
-		lastIndex:    make(chan int),
-		mmapedFile:   queryBytes,
-		logger:       logger,
-		getNextIndex: make(chan int, 4),
-		Ok:           false,
-	}
-
-	go func() { queryLogger.lastIndex <- 502 }()
-	go func() { queryDone <- struct{}{} }()
-	queryLogger.LogQuery("someQuery", queryDone)
 }
