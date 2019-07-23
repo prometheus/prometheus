@@ -1,4 +1,9 @@
-## Master / unreleased
+## master / unreleased
+
+ - [FEATURE] Added `DBReadOnly` to allow opening a database in read only mode.
+    - `DBReadOnly.Blocks()` exposes a slice of `BlockReader`s.
+    - `BlockReader` interface - removed MinTime/MaxTime methods and now exposes the full block meta via `Meta()`.
+
 
  - [FEATURE] `chunckenc.Chunk.Iterator` method now takes a `chunckenc.Iterator` interface as an argument for reuse.
 

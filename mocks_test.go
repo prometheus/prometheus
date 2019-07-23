@@ -75,5 +75,4 @@ type mockBReader struct {
 func (r *mockBReader) Index() (IndexReader, error)          { return r.ir, nil }
 func (r *mockBReader) Chunks() (ChunkReader, error)         { return r.cr, nil }
 func (r *mockBReader) Tombstones() (TombstoneReader, error) { return newMemTombstones(), nil }
-func (r *mockBReader) MinTime() int64                       { return r.mint }
-func (r *mockBReader) MaxTime() int64                       { return r.maxt }
+func (r *mockBReader) Meta() BlockMeta                      { return BlockMeta{MinTime: r.mint, MaxTime: r.maxt} }

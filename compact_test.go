@@ -458,8 +458,7 @@ type erringBReader struct{}
 func (erringBReader) Index() (IndexReader, error)          { return nil, errors.New("index") }
 func (erringBReader) Chunks() (ChunkReader, error)         { return nil, errors.New("chunks") }
 func (erringBReader) Tombstones() (TombstoneReader, error) { return nil, errors.New("tombstones") }
-func (erringBReader) MinTime() int64                       { return 0 }
-func (erringBReader) MaxTime() int64                       { return 0 }
+func (erringBReader) Meta() BlockMeta                      { return BlockMeta{} }
 
 type nopChunkWriter struct{}
 

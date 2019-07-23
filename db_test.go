@@ -1113,8 +1113,7 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Ok(t, db.reload())                                       // Reload the db to register the new db size.
 	testutil.Equals(t, len(blocks), len(db.Blocks()))                 // Ensure all blocks are registered.
 	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
-	actSize, err := testutil.DirSize(db.Dir())
-	testutil.Ok(t, err)
+	actSize := testutil.DirSize(t, db.Dir())
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 	// Decrease the max bytes limit so that a delete is triggered.
@@ -1128,8 +1127,7 @@ func TestSizeRetention(t *testing.T) {
 	actBlocks := db.Blocks()
 	expSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
 	actRetentCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
-	actSize, err = testutil.DirSize(db.Dir())
-	testutil.Ok(t, err)
+	actSize = testutil.DirSize(t, db.Dir())
 
 	testutil.Equals(t, 1, actRetentCount, "metric retention count mismatch")
 	testutil.Equals(t, actSize, expSize, "metric db size doesn't match actual disk size")
@@ -2231,4 +2229,109 @@ func TestBlockRanges(t *testing.T) {
 	if db.Blocks()[2].Meta().MaxTime > db.Blocks()[3].Meta().MinTime {
 		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
 	}
+}
+
+// TestDBReadOnly ensures that opening a DB in readonly mode doesn't modify any files on the disk.
+// It also checks that the API calls return equivalent results as a normal db.Open() mode.
+func TestDBReadOnly(t *testing.T) {
+	var (
+		dbDir          string
+		logger         = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+		expBlocks      []*Block
+		expSeries      map[string][]tsdbutil.Sample
+		expSeriesCount int
+		expDBHash      []byte
+		matchAll       = labels.NewEqualMatcher("", "")
+		err            error
+	)
+
+	// Boostrap the db.
+	{
+		dbDir, err = ioutil.TempDir("", "test")
+		testutil.Ok(t, err)
+
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(dbDir))
+		}()
+
+		dbBlocks := []*BlockMeta{
+			{MinTime: 10, MaxTime: 11},
+			{MinTime: 11, MaxTime: 12},
+			{MinTime: 12, MaxTime: 13},
+		}
+
+		for _, m := range dbBlocks {
+			createBlock(t, dbDir, genSeries(1, 1, m.MinTime, m.MaxTime))
+		}
+		expSeriesCount++
+	}
+
+	// Open a normal db to use for a comparison.
+	{
+		dbWritable, err := Open(dbDir, logger, nil, nil)
+		testutil.Ok(t, err)
+		dbWritable.DisableCompactions()
+
+		dbSizeBeforeAppend := testutil.DirSize(t, dbWritable.Dir())
+		app := dbWritable.Appender()
+		_, err = app.Add(labels.FromStrings("foo", "bar"), dbWritable.Head().MaxTime()+1, 0)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+		expSeriesCount++
+
+		expBlocks = dbWritable.Blocks()
+		expDbSize := testutil.DirSize(t, dbWritable.Dir())
+		testutil.Assert(t, expDbSize > dbSizeBeforeAppend, "db size didn't increase after an append")
+
+		q, err := dbWritable.Querier(math.MinInt64, math.MaxInt64)
+		testutil.Ok(t, err)
+		expSeries = query(t, q, matchAll)
+
+		testutil.Ok(t, dbWritable.Close()) // Close here to allow getting the dir hash for windows.
+		expDBHash = testutil.DirHash(t, dbWritable.Dir())
+	}
+
+	// Open a read only db and ensure that the API returns the same result as the normal DB.
+	{
+		dbReadOnly, err := OpenDBReadOnly(dbDir, logger)
+		testutil.Ok(t, err)
+		defer func() {
+			testutil.Ok(t, dbReadOnly.Close())
+		}()
+		blocks, err := dbReadOnly.Blocks()
+		testutil.Ok(t, err)
+		testutil.Equals(t, len(expBlocks), len(blocks))
+
+		for i, expBlock := range expBlocks {
+			testutil.Equals(t, expBlock.Meta(), blocks[i].Meta(), "block meta mismatch")
+		}
+
+		q, err := dbReadOnly.Querier(math.MinInt64, math.MaxInt64)
+		testutil.Ok(t, err)
+		readOnlySeries := query(t, q, matchAll)
+		readOnlyDBHash := testutil.DirHash(t, dbDir)
+
+		testutil.Equals(t, expSeriesCount, len(readOnlySeries), "total series mismatch")
+		testutil.Equals(t, expSeries, readOnlySeries, "series mismatch")
+		testutil.Equals(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
+	}
+}
+
+// TestDBReadOnlyClosing ensures that after closing the db
+// all api methods return an ErrClosed.
+func TestDBReadOnlyClosing(t *testing.T) {
+	dbDir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dbDir))
+	}()
+	db, err := OpenDBReadOnly(dbDir, log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)))
+	testutil.Ok(t, err)
+	testutil.Ok(t, db.Close())
+	testutil.Equals(t, db.Close(), ErrClosed)
+	_, err = db.Blocks()
+	testutil.Equals(t, err, ErrClosed)
+	_, err = db.Querier(0, 1)
+	testutil.Equals(t, err, ErrClosed)
 }
