@@ -86,7 +86,8 @@ https://github.com/samuel/go-zookeeper
 Copyright (c) 2013, Samuel Stauffer <samuel@descolada.com>
 See https://github.com/samuel/go-zookeeper/blob/master/LICENSE for license details.
 
-We also include code from a variety of npm packages. For details, see
-https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/package.json
-and
-https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/package-lock.json.
+We also include code from a variety of npm packages. For details, see:
+- https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/package.json
+- https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/package-lock.json
+- The individual package licenses as copied from the node_modules directory can be found in
+  web/ui/react-app/npm_licenses.tar.bz2.
