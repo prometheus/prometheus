@@ -12,6 +12,9 @@ go_import_path: github.com/prometheus/prometheus
 # random issues on Travis.
 before_install:
 - travis_retry make deps
+- . $HOME/.nvm/nvm.sh
+- nvm install stable
+- nvm use stable
 
 script:
 - make check_license style unused test lint check_assets
