@@ -502,11 +502,11 @@ func sequenceFiles(dir string) ([]string, error) {
 	return res, nil
 }
 
-func closeAll(cs []io.Closer) (err error) {
+func closeAll(cs []io.Closer) error {
+	var merr tsdb_errors.MultiError
+
 	for _, c := range cs {
-		if e := c.Close(); e != nil {
-			err = e
-		}
+		merr.Add(c.Close())
 	}
-	return err
+	return merr.Err()
 }

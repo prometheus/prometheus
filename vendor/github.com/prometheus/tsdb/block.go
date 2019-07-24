@@ -140,14 +140,8 @@ type BlockReader interface {
 	// Tombstones returns a TombstoneReader over the block's deleted data.
 	Tombstones() (TombstoneReader, error)
 
-	// MinTime returns the min time of the block.
-	MinTime() int64
-
-	// MaxTime returns the max time of the block.
-	MaxTime() int64
-
-	// NumSeries returns the total number of series in the block.
-	NumSeries() uint64
+	// Meta provides meta information about the block reader.
+	Meta() BlockMeta
 }
 
 // Appendable defines an entity to which data can be appended.
@@ -651,11 +645,6 @@ func (pb *Block) OverlapsClosedInterval(mint, maxt int64) bool {
 // LabelNames returns all the unique label names present in the Block in sorted order.
 func (pb *Block) LabelNames() ([]string, error) {
 	return pb.indexr.LabelNames()
-}
-
-// NumSeries returns number of series in the block.
-func (pb *Block) NumSeries() uint64 {
-	return pb.meta.Stats.NumSeries
 }
 
 func clampInterval(a, b, mint, maxt int64) (int64, int64) {

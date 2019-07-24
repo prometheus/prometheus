@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/tsdb/chunkenc"
@@ -85,7 +86,7 @@ type Head struct {
 
 type headMetrics struct {
 	activeAppenders         prometheus.Gauge
-	series                  prometheus.Gauge
+	series                  prometheus.GaugeFunc
 	seriesCreated           prometheus.Counter
 	seriesRemoved           prometheus.Counter
 	seriesNotFound          prometheus.Counter
@@ -113,9 +114,11 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "prometheus_tsdb_head_active_appenders",
 		Help: "Number of currently active appender transactions",
 	})
-	m.series = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.series = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_series",
 		Help: "Total number of series in the head block.",
+	}, func() float64 {
+		return float64(h.NumSeries())
 	})
 	m.seriesCreated = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_series_created_total",
@@ -503,6 +506,7 @@ func (h *Head) Init(minValidTime int64) error {
 		return nil
 	}
 
+	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
 	// Backfill the checkpoint first if it exists.
 	dir, startFrom, err := LastCheckpoint(h.wal.Dir())
 	if err != nil && err != ErrNotFound {
@@ -526,6 +530,7 @@ func (h *Head) Init(minValidTime int64) error {
 			return errors.Wrap(err, "backfill checkpoint")
 		}
 		startFrom++
+		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
 	}
 
 	// Find the last segment.
@@ -549,6 +554,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return err
 		}
+		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
 	}
 
 	return nil
@@ -701,6 +707,17 @@ func (h *rangeHead) MaxTime() int64 {
 
 func (h *rangeHead) NumSeries() uint64 {
 	return h.head.NumSeries()
+}
+
+func (h *rangeHead) Meta() BlockMeta {
+	return BlockMeta{
+		MinTime: h.MinTime(),
+		MaxTime: h.MaxTime(),
+		ULID:    h.head.Meta().ULID,
+		Stats: BlockStats{
+			NumSeries: h.NumSeries(),
+		},
+	}
 }
 
 // initAppender is a helper to initialize the time bounds of the head
@@ -1027,10 +1044,10 @@ func (h *Head) gc() {
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
-	h.metrics.series.Sub(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	// Ref: https://golang.org/pkg/sync/atomic/#AddUint64
+	// Using AddUint64 to substract series removed.
+	// See: https://golang.org/pkg/sync/atomic/#AddUint64.
 	atomic.AddUint64(&h.numSeries, ^uint64(seriesRemoved-1))
 
 	// Remove deleted series IDs from the postings lists.
@@ -1106,6 +1123,21 @@ func (h *Head) chunksRange(mint, maxt int64) *headChunkReader {
 		mint = hmin
 	}
 	return &headChunkReader{head: h, mint: mint, maxt: maxt}
+}
+
+// Meta returns meta information about the head.
+// The head is dynamic so will return dynamic results.
+func (h *Head) Meta() BlockMeta {
+	var id [16]byte
+	copy(id[:], "______head______")
+	return BlockMeta{
+		MinTime: h.MinTime(),
+		MaxTime: h.MaxTime(),
+		ULID:    ulid.ULID(id),
+		Stats: BlockStats{
+			NumSeries: h.NumSeries(),
+		},
+	}
 }
 
 // MinTime returns the lowest time bound on visible data in the head.
@@ -1359,7 +1391,6 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 		return s, false
 	}
 
-	h.metrics.series.Inc()
 	h.metrics.seriesCreated.Inc()
 	atomic.AddUint64(&h.numSeries, 1)
 
