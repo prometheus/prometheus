@@ -203,6 +203,48 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		stopc:       make(chan chan struct{}),
 		compress:    compress,
 	}
+	registerMetrics(reg, w)
+
+	_, j, err := w.Segments()
+	// Index of the Segment we want to open and write to.
+	writeSegmentIndex := 0
+	if err != nil {
+		return nil, errors.Wrap(err, "get segment range")
+	}
+	// If some segments already exist create one with a higher index than the last segment.
+	if j != -1 {
+		writeSegmentIndex = j + 1
+	}
+
+	segment, err := CreateSegment(w.dir, writeSegmentIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := w.setSegment(segment); err != nil {
+		return nil, err
+	}
+
+	go w.run()
+
+	return w, nil
+}
+
+// Open an existing WAL.
+func Open(logger log.Logger, reg prometheus.Registerer, dir string) (*WAL, error) {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+	w := &WAL{
+		dir:    dir,
+		logger: logger,
+	}
+
+	registerMetrics(reg, w)
+	return w, nil
+}
+
+func registerMetrics(reg prometheus.Registerer, w *WAL) {
 	w.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name:       "prometheus_tsdb_wal_fsync_duration_seconds",
 		Help:       "Duration of WAL fsync.",
@@ -231,30 +273,6 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	if reg != nil {
 		reg.MustRegister(w.fsyncDuration, w.pageFlushes, w.pageCompletions, w.truncateFail, w.truncateTotal, w.currentSegment)
 	}
-
-	_, j, err := w.Segments()
-	// Index of the Segment we want to open and write to.
-	writeSegmentIndex := 0
-	if err != nil {
-		return nil, errors.Wrap(err, "get segment range")
-	}
-	// If some segments already exist create one with a higher index than the last segment.
-	if j != -1 {
-		writeSegmentIndex = j + 1
-	}
-
-	segment, err := CreateSegment(w.dir, writeSegmentIndex)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := w.setSegment(segment); err != nil {
-		return nil, err
-	}
-
-	go w.run()
-
-	return w, nil
 }
 
 // CompressionEnabled returns if compression is enabled on this WAL.
@@ -302,7 +320,6 @@ func (w *WAL) Repair(origErr error) error {
 	if cerr.Segment < 0 {
 		return errors.New("corruption error does not specify position")
 	}
-
 	level.Warn(w.logger).Log("msg", "starting corruption repair",
 		"segment", cerr.Segment, "offset", cerr.Offset)
 
@@ -487,7 +504,6 @@ func (w *WAL) flushPage(clear bool) error {
 
 // First Byte of header format:
 // [ 4 bits unallocated] [1 bit snappy compression flag] [ 3 bit record type ]
-
 const (
 	snappyMask  = 1 << 3
 	recTypeMask = snappyMask - 1

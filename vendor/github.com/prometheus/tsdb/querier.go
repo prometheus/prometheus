@@ -1060,8 +1060,9 @@ func (it *verticalMergeSeriesIterator) Err() error {
 type chunkSeriesIterator struct {
 	chunks []chunks.Meta
 
-	i   int
-	cur chunkenc.Iterator
+	i          int
+	cur        chunkenc.Iterator
+	bufDelIter *deletedIterator
 
 	maxt, mint int64
 
@@ -1069,21 +1070,32 @@ type chunkSeriesIterator struct {
 }
 
 func newChunkSeriesIterator(cs []chunks.Meta, dranges Intervals, mint, maxt int64) *chunkSeriesIterator {
-	it := cs[0].Chunk.Iterator()
-
-	if len(dranges) > 0 {
-		it = &deletedIterator{it: it, intervals: dranges}
-	}
-	return &chunkSeriesIterator{
+	csi := &chunkSeriesIterator{
 		chunks: cs,
 		i:      0,
-		cur:    it,
 
 		mint: mint,
 		maxt: maxt,
 
 		intervals: dranges,
 	}
+	csi.resetCurIterator()
+
+	return csi
+}
+
+func (it *chunkSeriesIterator) resetCurIterator() {
+	if len(it.intervals) == 0 {
+		it.cur = it.chunks[it.i].Chunk.Iterator(it.cur)
+		return
+	}
+	if it.bufDelIter == nil {
+		it.bufDelIter = &deletedIterator{
+			intervals: it.intervals,
+		}
+	}
+	it.bufDelIter.it = it.chunks[it.i].Chunk.Iterator(it.bufDelIter.it)
+	it.cur = it.bufDelIter
 }
 
 func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
@@ -1102,10 +1114,7 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 		}
 	}
 
-	it.cur = it.chunks[it.i].Chunk.Iterator()
-	if len(it.intervals) > 0 {
-		it.cur = &deletedIterator{it: it.cur, intervals: it.intervals}
-	}
+	it.resetCurIterator()
 
 	for it.cur.Next() {
 		t0, _ := it.cur.At()
@@ -1145,10 +1154,7 @@ func (it *chunkSeriesIterator) Next() bool {
 	}
 
 	it.i++
-	it.cur = it.chunks[it.i].Chunk.Iterator()
-	if len(it.intervals) > 0 {
-		it.cur = &deletedIterator{it: it.cur, intervals: it.intervals}
-	}
+	it.resetCurIterator()
 
 	return it.Next()
 }

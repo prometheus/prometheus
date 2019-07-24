@@ -44,7 +44,10 @@ type Chunk interface {
 	Bytes() []byte
 	Encoding() Encoding
 	Appender() (Appender, error)
-	Iterator() Iterator
+	// The iterator passed as argument is for re-use.
+	// Depending on implementation, the iterator can
+	// be re-used or a new iterator can be allocated.
+	Iterator(Iterator) Iterator
 	NumSamples() int
 }
 

@@ -1,4 +1,11 @@
-## Master / unreleased
+## master / unreleased
+
+## 0.10.0
+
+ - [FEATURE] Added `DBReadOnly` to allow opening a database in read only mode.
+    - `DBReadOnly.Blocks()` exposes a slice of `BlockReader`s.
+    - `BlockReader` interface - removed MinTime/MaxTime methods and now exposes the full block meta via `Meta()`.
+ - [FEATURE] `chunckenc.Chunk.Iterator` method now takes a `chunckenc.Iterator` interface as an argument for reuse.
 
 ## 0.9.1
 
@@ -18,6 +25,7 @@
  - [ENHANCEMENT] Improved postings intersection matching.
  - [ENHANCEMENT] Reduced disk usage for WAL for small setups.
  - [ENHANCEMENT] Optimize queries using regexp for set lookups.
+
 
 ## 0.8.0
 

@@ -662,7 +662,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}()
 	c.metrics.populatingBlocks.Set(1)
 
-	globalMaxt := blocks[0].MaxTime()
+	globalMaxt := blocks[0].Meta().MaxTime
 	for i, b := range blocks {
 		select {
 		case <-c.ctx.Done():
@@ -671,13 +671,13 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 
 		if !overlapping {
-			if i > 0 && b.MinTime() < globalMaxt {
+			if i > 0 && b.Meta().MinTime < globalMaxt {
 				c.metrics.overlappingBlocks.Inc()
 				overlapping = true
 				level.Warn(c.logger).Log("msg", "found overlapping blocks during compaction", "ulid", meta.ULID)
 			}
-			if b.MaxTime() > globalMaxt {
-				globalMaxt = b.MaxTime()
+			if b.Meta().MaxTime > globalMaxt {
+				globalMaxt = b.Meta().MaxTime
 			}
 		}
 
@@ -736,6 +736,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		return errors.Wrap(err, "add symbols")
 	}
 
+	delIter := &deletedIterator{}
 	for set.Next() {
 		select {
 		case <-c.ctx.Done():
@@ -788,17 +789,18 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 					return err
 				}
 
-				it := &deletedIterator{it: chk.Chunk.Iterator(), intervals: dranges}
+				delIter.it = chk.Chunk.Iterator(delIter.it)
+				delIter.intervals = dranges
 
 				var (
 					t int64
 					v float64
 				)
-				for it.Next() {
-					t, v = it.At()
+				for delIter.Next() {
+					t, v = delIter.At()
 					app.Append(t, v)
 				}
-				if err := it.Err(); err != nil {
+				if err := delIter.Err(); err != nil {
 					return errors.Wrap(err, "iterate chunk while re-encoding")
 				}
 
