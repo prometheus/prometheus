@@ -1115,7 +1115,12 @@ func (c *compactionMerger) Next() bool {
 		}
 
 		var nextExists bool
-		for _, ok := range c.oks {
+		idx := -1
+		for i, ok := range c.oks {
+			if idx < 0 && ok {
+				// Index of the first set which still has series.
+				idx = i
+			}
 			nextExists = nextExists || ok
 		}
 		if !nextExists {
@@ -1123,13 +1128,12 @@ func (c *compactionMerger) Next() bool {
 		}
 		c.c = c.c[:0]
 
-		ref, lset, chks, intervals := c.sets[0].At()
-		idx := 0
+		ref, lset, chks, intervals := c.sets[idx].At()
 
 		// Find the labels with the lowest index when
 		// sorted in ascending order.
-		for i, s := range c.sets[1:] {
-			if !c.oks[1+i] {
+		for i, s := range c.sets[idx+1:] {
+			if !c.oks[idx+1+i] {
 				continue
 			}
 			rf, lb, ch, itv := s.At()
