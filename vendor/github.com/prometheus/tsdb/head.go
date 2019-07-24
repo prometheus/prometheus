@@ -1125,6 +1125,11 @@ func (h *Head) chunksRange(mint, maxt int64) *headChunkReader {
 	return &headChunkReader{head: h, mint: mint, maxt: maxt}
 }
 
+// NumSeries returns the number of active series in the head.
+func (h *Head) NumSeries() uint64 {
+	return atomic.LoadUint64(&h.numSeries)
+}
+
 // Meta returns meta information about the head.
 // The head is dynamic so will return dynamic results.
 func (h *Head) Meta() BlockMeta {
@@ -1148,11 +1153,6 @@ func (h *Head) MinTime() int64 {
 // MaxTime returns the highest timestamp seen in data of the head.
 func (h *Head) MaxTime() int64 {
 	return atomic.LoadInt64(&h.maxTime)
-}
-
-// NumSeries returns the number of active series in the head.
-func (h *Head) NumSeries() uint64 {
-	return atomic.LoadUint64(&h.numSeries)
 }
 
 // compactable returns whether the head has a compactable range.

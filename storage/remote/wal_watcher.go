@@ -234,7 +234,7 @@ func (w *WALWatcher) run() error {
 func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
 	refs, err := w.segments(w.walDir)
 	if err != nil {
-		return -1, nil
+		return -1, err
 	}
 
 	for _, r := range refs {
@@ -249,7 +249,7 @@ func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
 func (w *WALWatcher) firstAndLast() (int, int, error) {
 	refs, err := w.segments(w.walDir)
 	if err != nil {
-		return -1, -1, nil
+		return -1, -1, err
 	}
 
 	if len(refs) == 0 {
@@ -526,7 +526,8 @@ func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 
 func checkpointNum(dir string) (int, error) {
 	// Checkpoint dir names are in the format checkpoint.000001
-	chunks := strings.Split(dir, ".")
+	// dir may contain a hidden directory, so only check the base directory
+	chunks := strings.Split(path.Base(dir), ".")
 	if len(chunks) != 2 {
 		return 0, errors.Errorf("invalid checkpoint dir string: %s", dir)
 	}
