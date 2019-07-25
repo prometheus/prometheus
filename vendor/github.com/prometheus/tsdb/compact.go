@@ -1079,6 +1079,8 @@ func newCompactionMerger(sets []ChunkSeriesSet, blocks []BlockReader) (*compacti
 	return c, nil
 }
 
+// Next returns true if there exists a series with >0 chunks.
+// It skips all the empty series.
 func (c *compactionMerger) Next() bool {
 	c.c = c.c[:0]
 	for len(c.c) == 0 {
@@ -1116,27 +1118,42 @@ func (c *compactionMerger) Next() bool {
 			}
 		}
 
-		// Building the seriesMap and gathering the chunks
-		// from other index readers which have same labels as
-		// 'lset' described above.
+		// Gathering the chunks from other index readers which have same
+		// labels as 'lset' described above.
 		c.l = append(c.l[:0], lset...)
 		c.c = append(c.c[:0], chks...)
-		c.seriesMap[idx][ref] = c.ref
-		c.oks[idx] = c.sets[idx].Next()
 		for i, s := range c.sets[idx+1:] {
 			if !c.oks[idx+1+i] {
 				continue
 			}
-			rf, lb, ch, itv := s.At()
+			_, lb, ch, itv := s.At()
 			if labels.Compare(c.l, lb) == 0 {
-				c.seriesMap[idx+1+i][rf] = c.ref
 				c.c = append(c.c, ch...)
 				for _, r := range itv {
 					intervals.add(r)
 				}
+			}
+		}
+
+		// Building the seriesMap and moving forward individual iterators.
+		if len(c.c) > 0 {
+			// Update the maps only if the series has chunks. Else it would turn
+			// out to be an entry for a series which doesn't exist.
+			c.seriesMap[idx][ref] = c.ref
+		}
+		c.oks[idx] = c.sets[idx].Next()
+		for i, s := range c.sets[idx+1:] {
+			rf, lb, _, _ := s.At()
+			if labels.Compare(c.l, lb) == 0 {
+				if len(c.c) > 0 {
+					// Update the maps only if the series has chunks. Else it would turn
+					// out to be an entry for a series which doesn't exist.
+					c.seriesMap[idx+1+i][rf] = c.ref
+				}
 				c.oks[idx+1+i] = c.sets[idx+1+i].Next()
 			}
 		}
+
 		c.intervals = intervals
 	}
 
