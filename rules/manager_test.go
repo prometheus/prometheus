@@ -16,7 +16,6 @@ package rules
 import (
 	"context"
 	"math"
-	"os"
 	"sort"
 	"testing"
 	"time"
@@ -495,14 +494,12 @@ func TestForStateRestore(t *testing.T) {
 func TestStaleness(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	engineOpts := promql.EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      10,
-		MaxSamples:         10,
-		Timeout:            10 * time.Second,
-		ActiveQueryTracker: promql.NewActiveQueryTracker(10, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
 	}
 	engine := promql.NewEngine(engineOpts)
 	opts := &ManagerOptions{
@@ -639,14 +636,12 @@ func TestUpdate(t *testing.T) {
 	}
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := promql.EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      10,
-		MaxSamples:         10,
-		Timeout:            10 * time.Second,
-		ActiveQueryTracker: promql.NewActiveQueryTracker(10, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
@@ -680,14 +675,12 @@ func TestUpdate(t *testing.T) {
 func TestNotify(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	engineOpts := promql.EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      10,
-		MaxSamples:         10,
-		Timeout:            10 * time.Second,
-		ActiveQueryTracker: promql.NewActiveQueryTracker(10, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
 	}
 	engine := promql.NewEngine(engineOpts)
 	var lastNotified []*Alert

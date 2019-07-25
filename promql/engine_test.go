@@ -15,7 +15,6 @@ package promql
 
 import (
 	"context"
-	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -29,14 +28,12 @@ import (
 )
 
 func TestQueryConcurrency(t *testing.T) {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      10,
-		MaxSamples:         10,
-		Timeout:            100 * time.Second,
-		ActiveQueryTracker: NewActiveQueryTracker(10, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       100 * time.Second,
 	}
 
 	engine := NewEngine(opts)
@@ -90,14 +87,12 @@ func TestQueryConcurrency(t *testing.T) {
 }
 
 func TestQueryTimeout(t *testing.T) {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      20,
-		MaxSamples:         10,
-		Timeout:            5 * time.Millisecond,
-		ActiveQueryTracker: NewActiveQueryTracker(20, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 20,
+		MaxSamples:    10,
+		Timeout:       5 * time.Millisecond,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -118,14 +113,12 @@ func TestQueryTimeout(t *testing.T) {
 }
 
 func TestQueryCancel(t *testing.T) {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      10,
-		MaxSamples:         10,
-		Timeout:            10 * time.Second,
-		ActiveQueryTracker: NewActiveQueryTracker(20, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -194,14 +187,12 @@ func (errSeriesSet) At() storage.Series { return nil }
 func (e errSeriesSet) Err() error       { return e.err }
 
 func TestQueryError(t *testing.T) {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      10,
-		MaxSamples:         10,
-		Timeout:            10 * time.Second,
-		ActiveQueryTracker: NewActiveQueryTracker(20, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
 	}
 	engine := NewEngine(opts)
 	errStorage := ErrStorage{errors.New("storage error")}
@@ -258,14 +249,12 @@ func (*paramCheckerQuerier) LabelNames() ([]string, storage.Warnings, error) { r
 func (*paramCheckerQuerier) Close() error                                    { return nil }
 
 func TestParamsSetCorrectly(t *testing.T) {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      10,
-		MaxSamples:         10,
-		Timeout:            10 * time.Second,
-		ActiveQueryTracker: NewActiveQueryTracker(20, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
 	}
 
 	// Set the lookback to be smaller and reset at the end.
@@ -401,14 +390,12 @@ func TestParamsSetCorrectly(t *testing.T) {
 }
 
 func TestEngineShutdown(t *testing.T) {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      10,
-		MaxSamples:         10,
-		Timeout:            10 * time.Second,
-		ActiveQueryTracker: NewActiveQueryTracker(20, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())

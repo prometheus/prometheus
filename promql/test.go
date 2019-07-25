@@ -16,10 +16,8 @@ package promql
 import (
 	"context"
 	"fmt"
-	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"math"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -83,8 +81,6 @@ func newTestFromFile(t testutil.T, filename string) (*Test, error) {
 
 // QueryEngine returns the test's query engine.
 func (t *Test) QueryEngine() *Engine {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	t.queryEngine.activeQueryTracker = NewActiveQueryTracker(20, logger)
 	return t.queryEngine
 }
 
@@ -515,14 +511,12 @@ func (t *Test) clear() {
 	}
 	t.storage = testutil.NewStorage(t)
 
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      20,
-		MaxSamples:         10000,
-		Timeout:            100 * time.Second,
-		ActiveQueryTracker: NewActiveQueryTracker(20, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 20,
+		MaxSamples:    10000,
+		Timeout:       100 * time.Second,
 	}
 
 	t.queryEngine = NewEngine(opts)
@@ -631,14 +625,12 @@ func (ll *LazyLoader) clear() {
 	}
 	ll.storage = testutil.NewStorage(ll)
 
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      20,
-		MaxSamples:         10000,
-		Timeout:            100 * time.Second,
-		ActiveQueryTracker: NewActiveQueryTracker(20, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 20,
+		MaxSamples:    10000,
+		Timeout:       100 * time.Second,
 	}
 
 	ll.queryEngine = NewEngine(opts)

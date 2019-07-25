@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright 2019 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,7 +23,6 @@ import (
 func TestQueryLogging(t *testing.T) {
 	fileAsBytes := make([]byte, 4096)
 	queryLogger := ActiveQueryTracker{
-		lastIndex:    make(chan int, (4096-1)/entrySize),
 		mmapedFile:   fileAsBytes,
 		logger:       nil,
 		getNextIndex: make(chan int, 4),
@@ -70,13 +69,12 @@ func TestQueryLogging(t *testing.T) {
 func TestIndexReuse(t *testing.T) {
 	queryBytes := make([]byte, 1+3*entrySize)
 	queryLogger := ActiveQueryTracker{
-		lastIndex:    make(chan int),
 		mmapedFile:   queryBytes,
 		logger:       nil,
 		getNextIndex: make(chan int, 3),
 	}
 
-	go queryLogger.generateIndices(1 + 3*entrySize)
+	queryLogger.generateIndices(1 + 3*entrySize)
 	queryLogger.Insert("TestQuery1")
 	queryLogger.Insert("TestQuery2")
 	queryLogger.Insert("TestQuery3")

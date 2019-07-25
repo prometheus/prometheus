@@ -15,8 +15,6 @@ package promql
 
 import (
 	"context"
-	"github.com/go-kit/kit/log"
-	"os"
 	"testing"
 	"time"
 
@@ -31,14 +29,12 @@ func TestDeriv(t *testing.T) {
 	// so we test it by hand.
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	opts := EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      10,
-		MaxSamples:         10000,
-		Timeout:            10 * time.Second,
-		ActiveQueryTracker: NewActiveQueryTracker(10, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10000,
+		Timeout:       10 * time.Second,
 	}
 	engine := NewEngine(opts)
 

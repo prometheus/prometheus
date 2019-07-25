@@ -168,14 +168,12 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	storage := testutil.NewStorage(m.testing)
 	defer storage.Close()
 
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	engineOpts := promql.EngineOpts{
-		Logger:             nil,
-		Reg:                nil,
-		MaxConcurrent:      10,
-		MaxSamples:         10,
-		Timeout:            100 * time.Second,
-		ActiveQueryTracker: promql.NewActiveQueryTracker(10, logger),
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       100 * time.Second,
 	}
 
 	engine := promql.NewEngine(engineOpts)

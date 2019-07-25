@@ -73,6 +73,8 @@ github.com/cespare/xxhash
 github.com/davecgh/go-spew/spew
 # github.com/dgrijalva/jwt-go v3.2.0+incompatible
 github.com/dgrijalva/jwt-go
+# github.com/edsrzf/mmap-go v1.0.0
+github.com/edsrzf/mmap-go
 # github.com/evanphx/json-patch v4.1.0+incompatible
 github.com/evanphx/json-patch
 # github.com/ghodss/yaml v1.0.0

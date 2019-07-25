@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go v1.15.24
 	github.com/cespare/xxhash v1.1.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
+	github.com/edsrzf/mmap-go v1.0.0
 	github.com/evanphx/json-patch v4.1.0+incompatible // indirect
 	github.com/go-kit/kit v0.8.0
 	github.com/go-logfmt/logfmt v0.4.0
