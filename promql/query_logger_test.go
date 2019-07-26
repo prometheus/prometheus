@@ -38,10 +38,10 @@ func TestQueryLogging(t *testing.T) {
 	}
 
 	want := []string{
-		`^{"query":"TestQuery","timestamp_sec":\d+}\s*,$`,
-		`^{"query":"` + trimStringByBytes(veryLongString, entrySize-40) + `","timestamp_sec":\d+}\s*,$`,
-		`^{"query":"","timestamp_sec":\d+}\s*,$`,
-		`^{"query":"SpecialCharQuery{host=\\"2132132\\", id=123123}","timestamp_sec":\d+}\s*,$`,
+		`^{"query":"TestQuery","timestamp_sec":\d+}\x00*,$`,
+		`^{"query":"` + trimStringByBytes(veryLongString, entrySize-40) + `","timestamp_sec":\d+}\x00*,$`,
+		`^{"query":"","timestamp_sec":\d+}\x00*,$`,
+		`^{"query":"SpecialCharQuery{host=\\"2132132\\", id=123123}","timestamp_sec":\d+}\x00*,$`,
 	}
 
 	// Check for inserts of queries.
@@ -61,8 +61,8 @@ func TestQueryLogging(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		queryLogger.Delete(1 + i*entrySize)
 	}
-	if !regexp.MustCompile(`^\s+$`).Match(fileAsBytes[1 : 1+entrySize*4]) {
-		t.Fatalf("All queries not deleted properly. Have %s\nWant only white space", string(fileAsBytes[1:1+entrySize*4]))
+	if !regexp.MustCompile(`^\x00+$`).Match(fileAsBytes[1 : 1+entrySize*4]) {
+		t.Fatalf("All queries not deleted properly. Have %s\nWant only null bytes \\x00", string(fileAsBytes[1:1+entrySize*4]))
 	}
 }
 
@@ -87,9 +87,9 @@ func TestIndexReuse(t *testing.T) {
 	queryLogger.Insert(newQuery1)
 
 	want := []string{
-		`^{"query":"ThisShouldBeInsertedAtIndex1","timestamp_sec":\d+}\s*,$`,
-		`^{"query":"ThisShouldBeInsertedAtIndex2","timestamp_sec":\d+}\s*,$`,
-		`^{"query":"TestQuery3","timestamp_sec":\d+}\s*,$`,
+		`^{"query":"ThisShouldBeInsertedAtIndex1","timestamp_sec":\d+}\x00*,$`,
+		`^{"query":"ThisShouldBeInsertedAtIndex2","timestamp_sec":\d+}\x00*,$`,
+		`^{"query":"TestQuery3","timestamp_sec":\d+}\x00*,$`,
 	}
 
 	// Check all bytes and verify new query was inserted at index 2

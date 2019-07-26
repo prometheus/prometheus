@@ -30,14 +30,17 @@ type ActiveQueryTracker struct {
 	logger       log.Logger
 }
 
+type Entry struct {
+	Query     string `json:"query"`
+	Timestamp int64  `json:"timestamp_sec"`
+}
+
 const (
 	entrySize int = 1000
 )
 
 func parseBrokenJson(brokenJson []byte, logger log.Logger) (bool, string) {
-	queries := strings.TrimSpace(string(brokenJson))
-	queries = strings.Trim(queries, "\x00")
-	queries = strings.Trim(queries, " ")
+	queries := strings.ReplaceAll(string(brokenJson), "\x00", "")
 	queries = queries[:len(queries)-1] + "]"
 
 	// Conditional because of implementation detail: len() = 1 implies file consisted of a single char: '['.
@@ -45,7 +48,7 @@ func parseBrokenJson(brokenJson []byte, logger log.Logger) (bool, string) {
 		return false, "[]"
 	}
 
-	return true, strings.Replace(queries, ` `, "", -1)
+	return true, queries
 }
 
 func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
@@ -115,11 +118,6 @@ func NewActiveQueryTracker(maxQueries int, logger log.Logger) *ActiveQueryTracke
 	return &activeQueryTracker
 }
 
-type Entry struct {
-	Query     string `json:"query"`
-	Timestamp int64  `json:"timestamp_sec"`
-}
-
 func trimStringByBytes(str string, size int) string {
 	bytesStr := []byte(str)
 
@@ -147,8 +145,6 @@ func _newJsonEntry(query string, timestamp int64, logger log.Logger) []byte {
 }
 
 func newJsonEntry(query string, logger log.Logger) []byte {
-	// 35 bytes is the size of json entry for empty string.
-	// Including a comma for every entry, max query size is entrySize-36.
 	timestamp := time.Now().Unix()
 	minEntryJson := _newJsonEntry("", timestamp, logger)
 
@@ -165,17 +161,16 @@ func (tracker ActiveQueryTracker) generateIndices(maxSize int) {
 }
 
 func (tracker ActiveQueryTracker) Delete(insertIndex int) {
-	copy(tracker.mmapedFile[insertIndex:], strings.Repeat(" ", entrySize))
+	copy(tracker.mmapedFile[insertIndex:], strings.Repeat("\x00", entrySize))
 	tracker.getNextIndex <- insertIndex
 }
 
 func (tracker ActiveQueryTracker) Insert(query string) int {
 	i, fileBytes := <-tracker.getNextIndex, tracker.mmapedFile
 	entry := newJsonEntry(query, tracker.logger)
-	start, blankStart, end := i, i+len(entry), i+entrySize
+	start, end := i, i+entrySize
 
 	copy(fileBytes[start:], entry)
-	copy(fileBytes[blankStart:end], strings.Repeat(" ", end-blankStart))
 	copy(fileBytes[end-1:], ",")
 
 	return i
