@@ -541,10 +541,12 @@ func (db *DB) run() {
 			default:
 			}
 		case <-db.compactc:
+			level.Info(db.logger).Log("msg", "compaction event triggered")
 			db.metrics.compactionsTriggered.Inc()
 
 			db.autoCompactMtx.Lock()
 			if db.autoCompact {
+				level.Info(db.logger).Log("msg", "attempting compaction")
 				if err := db.compact(); err != nil {
 					level.Error(db.logger).Log("msg", "compaction failed", "err", err)
 					backoff = exponential(backoff, 1*time.Second, 1*time.Minute)
@@ -552,6 +554,7 @@ func (db *DB) run() {
 					backoff = 0
 				}
 			} else {
+				level.Info(db.logger).Log("msg", "compaction skipped")
 				db.metrics.compactionsSkipped.Inc()
 			}
 			db.autoCompactMtx.Unlock()
@@ -595,11 +598,15 @@ func (a dbAppender) Commit() error {
 // Old blocks are only deleted on reload based on the new block's parent information.
 // See DB.reload documentation for further information.
 func (db *DB) compact() (err error) {
+	level.Info(db.logger).Log("msg", "compaction has been triggered")
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 	defer func() {
 		if err != nil {
+			level.Info(db.logger).Log("msg", "compaction has failed", "err", err)
 			db.metrics.compactionsFailed.Inc()
+		} else {
+			level.Info(db.logger).Log("msg", "compaction did not error out")
 		}
 	}()
 	// Check whether we have pending head blocks that are ready to be persisted.
@@ -607,10 +614,17 @@ func (db *DB) compact() (err error) {
 	for {
 		select {
 		case <-db.stopc:
+			level.Info(db.logger).Log("msg", "compaction: stopped because of db.stopc")
 			return nil
 		default:
 		}
 		if !db.head.compactable() {
+			level.Info(db.logger).Log(
+				"msg", "compaction: head is not compactable",
+				"mint", db.head.MinTime(),
+				"maxt", db.head.MaxTime(),
+				"chunkrange3by2", db.head.chunkRange/2*3,
+			)
 			break
 		}
 		mint := db.head.MinTime()
@@ -628,13 +642,16 @@ func (db *DB) compact() (err error) {
 			// from the block interval here.
 			maxt: maxt - 1,
 		}
+		level.Info(db.logger).Log("msg", "compaction: attempting head compaction", "mint", mint, "maxt", maxt-1)
 		uid, err := db.compactor.Write(db.dir, head, mint, maxt, nil)
 		if err != nil {
 			return errors.Wrap(err, "persist head block")
 		}
+		level.Info(db.logger).Log("msg", "compaction: head compaction done, gc time", "mint", mint, "maxt", maxt-1)
 
 		runtime.GC()
 
+		level.Info(db.logger).Log("msg", "compaction: attempting reload after head compaction", "uid", uid.String())
 		if err := db.reload(); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
 				return errors.Wrapf(err, "delete persisted head block after failed db reload:%s", uid)
@@ -642,6 +659,7 @@ func (db *DB) compact() (err error) {
 			return errors.Wrap(err, "reload blocks")
 		}
 		if (uid == ulid.ULID{}) {
+			level.Info(db.logger).Log("msg", "compaction: resulted in empty block")
 			// Compaction resulted in an empty block.
 			// Head truncating during db.reload() depends on the persisted blocks and
 			// in this case no new block will be persisted so manually truncate the head.
@@ -659,21 +677,26 @@ func (db *DB) compact() (err error) {
 			return errors.Wrap(err, "plan compaction")
 		}
 		if len(plan) == 0 {
+			level.Info(db.logger).Log("msg", "compaction: plan was empty")
 			break
 		}
+		level.Info(db.logger).Log("msg", "compaction: received plan", "plan", plan)
 
 		select {
 		case <-db.stopc:
+			level.Info(db.logger).Log("msg", "compaction: stopped because of db.stopc (2)")
 			return nil
 		default:
 		}
 
+		level.Info(db.logger).Log("msg", "compaction: attempting for on-disk blocks", "plan", plan)
 		uid, err := db.compactor.Compact(db.dir, plan, db.blocks)
 		if err != nil {
 			return errors.Wrapf(err, "compact %s", plan)
 		}
 		runtime.GC()
 
+		level.Info(db.logger).Log("msg", "compaction: reload after compaction of on-disk blocks", "plan", plan)
 		if err := db.reload(); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
 				return errors.Wrapf(err, "delete compacted block after failed db reload:%s", uid)

@@ -379,6 +379,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 	)
 	start := time.Now()
 
+	level.Info(c.logger).Log("msg", "reading all dirs", "dirs", dirs)
 	for _, d := range dirs {
 		meta, _, err := readMetaFile(d)
 		if err != nil {
@@ -415,6 +416,13 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 	uid = ulid.MustNew(ulid.Now(), entropy)
 
 	meta := compactBlockMetas(uid, metas...)
+	level.Info(c.logger).Log(
+		"msg", "attempting to compact blocks",
+		"mint", meta.MinTime,
+		"maxt", meta.MaxTime,
+		"ulid", meta.ULID,
+		"sources", uids,
+	)
 	err = c.write(dest, meta, blocks...)
 	if err == nil {
 		if meta.Stats.NumSamples == 0 {
@@ -450,6 +458,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		return uid, nil
 	}
 
+	level.Info(c.logger).Log("msg", "error in compacting on-disk blocks", "err", err)
 	var merr tsdb_errors.MultiError
 	merr.Add(err)
 	if err != context.Canceled {
@@ -483,6 +492,12 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		}
 	}
 
+	level.Info(c.logger).Log(
+		"msg", "attempting to write block",
+		"mint", meta.MinTime,
+		"maxt", meta.MaxTime,
+		"ulid", meta.ULID,
+	)
 	err := c.write(dest, meta, b)
 	if err != nil {
 		return uid, err
@@ -541,10 +556,12 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		c.metrics.duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
+	level.Info(c.logger).Log("msg", "removing old tmp directory")
 	if err = os.RemoveAll(tmp); err != nil {
 		return err
 	}
 
+	level.Info(c.logger).Log("msg", "creating new tmp directory")
 	if err = os.MkdirAll(tmp, 0777); err != nil {
 		return err
 	}
@@ -574,12 +591,14 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 	closers = append(closers, indexw)
 
+	level.Info(c.logger).Log("msg", "going inside populateBlock")
 	if err := c.populateBlock(blocks, meta, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
 	}
 
 	select {
 	case <-c.ctx.Done():
+		level.Info(c.logger).Log("msg", "ctx done")
 		return c.ctx.Err()
 	default:
 	}
@@ -594,19 +613,23 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 	closers = closers[:0] // Avoid closing the writers twice in the defer.
 	if merr.Err() != nil {
+		level.Info(c.logger).Log("msg", "closers errors")
 		return merr.Err()
 	}
 
 	// Populated block is empty, so exit early.
 	if meta.Stats.NumSamples == 0 {
+		level.Info(c.logger).Log("msg", "0 samples")
 		return nil
 	}
 
+	level.Info(c.logger).Log("msg", "writing meta files")
 	if _, err = writeMetaFile(c.logger, tmp, meta); err != nil {
 		return errors.Wrap(err, "write merged meta")
 	}
 
 	// Create an empty tombstones file.
+	level.Info(c.logger).Log("msg", "writing tombstones")
 	if _, err := writeTombstoneFile(c.logger, tmp, newMemTombstones()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
@@ -621,6 +644,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		}
 	}()
 
+	level.Info(c.logger).Log("msg", "syncing temporary directory")
 	if err := df.Sync(); err != nil {
 		return errors.Wrap(err, "sync temporary dir file")
 	}
@@ -665,6 +689,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	c.metrics.populatingBlocks.Set(1)
 
 	globalMaxt := blocks[0].Meta().MaxTime
+	level.Info(c.logger).Log("msg", "creating readers from all the blocks")
 	for i, b := range blocks {
 		select {
 		case <-c.ctx.Done():
@@ -726,20 +751,25 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	var values = map[string]stringset{}
 
+	level.Info(c.logger).Log("msg", "adding symbols")
 	if err := indexw.AddSymbols(allSymbols); err != nil {
 		return errors.Wrap(err, "add symbols")
 	}
 
 	delIter := &deletedIterator{}
+	var iterCount uint64
+	level.Info(c.logger).Log("msg", "iterating all the series")
 	for set.Next() {
 		select {
 		case <-c.ctx.Done():
 			return c.ctx.Err()
 		default:
 		}
-
+		iterCount++
 		ref, lset, chks, dranges := set.At() // The chunks here are not fully deleted.
-
+		if iterCount%1000000 == 0 {
+			level.Info(c.logger).Log("msg", "ref count checkpoint", "iter", iterCount, "ref", ref)
+		}
 		if overlapping {
 			// If blocks are overlapping, it is possible to have unsorted chunks.
 			sort.Slice(chks, func(i, j int) bool {
@@ -841,9 +871,12 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	if meta.Stats.NumSamples == 0 {
 		// No postings to write, exit early.
+		level.Info(c.logger).Log("msg", "0 samples, not entering writePostings")
 		return nil
 	}
 
+	level.Info(c.logger).Log("msg", "iterated all series in compactionMerger")
+	level.Info(c.logger).Log("msg", "entering writePostings")
 	return c.writePostings(indexw, values, set.seriesMap, indexReaders)
 }
 
@@ -883,6 +916,7 @@ func (c *LeveledCompactor) writePostings(indexw IndexWriter, values map[string]s
 		idxw.HintPostingsWriteCount(numLabelValues)
 	}
 
+	level.Info(c.logger).Log("msg", "starting to write remapped postings", "totalNames", len(names))
 	remapPostings := newRemappedPostings(seriesMap, 1e6)
 	var postBuf index.Postings
 	for _, n := range names {
@@ -891,6 +925,7 @@ func (c *LeveledCompactor) writePostings(indexw IndexWriter, values map[string]s
 			labelValuesBuf = append(labelValuesBuf, v)
 		}
 		sort.Strings(labelValuesBuf)
+		level.Info(c.logger).Log("msg", "writing remapped postings", "name", n, "totalValues", len(labelValuesBuf))
 
 		for _, v := range labelValuesBuf {
 			remapPostings.clearPostings()
@@ -902,12 +937,14 @@ func (c *LeveledCompactor) writePostings(indexw IndexWriter, values map[string]s
 				remapPostings.add(i, postBuf)
 			}
 
+			// level.Info(c.logger).Log("msg", "writing postings", "name", n, "value", v)
 			if err := indexw.WritePostings(n, v, remapPostings.get()); err != nil {
 				return errors.Wrap(err, "write postings")
 			}
 		}
 	}
 
+	level.Info(c.logger).Log("msg", "exiting writePostings")
 	return nil
 }
 

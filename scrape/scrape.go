@@ -924,7 +924,7 @@ mainLoop:
 				sl.lastScrapeSize = len(b)
 			}
 		} else {
-			level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr.Error())
+			// level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr.Error())
 			if errc != nil {
 				errc <- scrapeErr
 			}
@@ -1082,17 +1082,17 @@ loop:
 				ok = false
 			case storage.ErrOutOfOrderSample:
 				numOutOfOrder++
-				level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
+				// level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
 				targetScrapeSampleOutOfOrder.Inc()
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
 				numDuplicates++
-				level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
+				// level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
 				targetScrapeSampleDuplicate.Inc()
 				continue
 			case storage.ErrOutOfBounds:
 				numOutOfBounds++
-				level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
+				// level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
 				targetScrapeSampleOutOfBounds.Inc()
 				continue
 			case errSampleLimit:
@@ -1128,19 +1128,19 @@ loop:
 			case storage.ErrOutOfOrderSample:
 				err = nil
 				numOutOfOrder++
-				level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
+				// level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
 				targetScrapeSampleOutOfOrder.Inc()
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
 				err = nil
 				numDuplicates++
-				level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
+				// level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
 				targetScrapeSampleDuplicate.Inc()
 				continue
 			case storage.ErrOutOfBounds:
 				err = nil
 				numOutOfBounds++
-				level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
+				// level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
 				targetScrapeSampleOutOfBounds.Inc()
 				continue
 			case errSampleLimit:
@@ -1148,7 +1148,7 @@ loop:
 				added++
 				continue
 			default:
-				level.Debug(sl.l).Log("msg", "unexpected error", "series", string(met), "err", err)
+				// level.Debug(sl.l).Log("msg", "unexpected error", "series", string(met), "err", err)
 				break loop
 			}
 			if tp == nil {
