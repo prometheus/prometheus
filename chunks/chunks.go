@@ -295,7 +295,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	}
 	newsz := w.n + maxLen
 
-	if w.wbuf == nil || w.n > w.segmentSize || newsz > w.segmentSize && maxLen <= w.segmentSize {
+	if w.wbuf == nil || newsz > w.segmentSize && maxLen <= w.segmentSize {
 		if err := w.cut(); err != nil {
 			return err
 		}
