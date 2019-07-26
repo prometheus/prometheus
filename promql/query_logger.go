@@ -14,9 +14,7 @@
 package promql
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
 	"github.com/edsrzf/mmap-go"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -47,15 +45,7 @@ func parseBrokenJson(brokenJson []byte, logger log.Logger) (bool, string) {
 		return false, "[]"
 	}
 
-	var out bytes.Buffer
-	err := json.Indent(&out, []byte(queries), "", "\t")
-
-	if err != nil {
-		level.Warn(logger).Log("msg", "Error parsing json", "err", err)
-		return false, "[]"
-	}
-
-	return true, out.String()
+	return true, strings.Replace(queries, ` `, "", -1)
 }
 
 func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
@@ -77,8 +67,7 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 		if !queriesExist {
 			return
 		}
-		level.Info(logger).Log("msg", "These queries didn't finish in prometheus' last run:")
-		fmt.Println(queries)
+		level.Info(logger).Log("msg", "These queries didn't finish in prometheus' last run:", "queries", queries)
 	}
 }
 
