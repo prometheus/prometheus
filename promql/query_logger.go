@@ -23,6 +23,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type ActiveQueryTracker struct {
@@ -127,26 +128,24 @@ func NewActiveQueryTracker(maxQueries int, logger log.Logger) *ActiveQueryTracke
 
 type Entry struct {
 	Query     string `json:"query"`
-	Timestamp int64  `json:"timestamp"`
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	Timestamp int64  `json:"timestamp_sec"`
 }
 
 func trimStringByBytes(str string, size int) string {
 	bytesStr := []byte(str)
-	return string(bytesStr[:min(len(bytesStr), size)])
+
+	trimIndex := len(bytesStr)
+	if size < len(bytesStr) {
+		for !utf8.RuneStart(bytesStr[size]) {
+			size -= 1
+		}
+		trimIndex = size
+	}
+
+	return string(bytesStr[:trimIndex])
 }
 
-func newJsonEntry(query string, logger log.Logger) []byte {
-	// 35 bytes is the size of json entry for empty string.
-	// Including a comma for every entry, max query size is entrySize-36.
-	timestamp := time.Now().Unix()
-	query = trimStringByBytes(query, entrySize-36)
+func _newJsonEntry(query string, timestamp int64, logger log.Logger) []byte {
 	entry := Entry{query, timestamp}
 	jsonEntry, err := json.Marshal(entry)
 
@@ -154,6 +153,19 @@ func newJsonEntry(query string, logger log.Logger) []byte {
 		level.Error(logger).Log("msg", "Cannot create json of query", "query", query)
 		return []byte{}
 	}
+
+	return jsonEntry
+}
+
+func newJsonEntry(query string, logger log.Logger) []byte {
+	// 35 bytes is the size of json entry for empty string.
+	// Including a comma for every entry, max query size is entrySize-36.
+	timestamp := time.Now().Unix()
+	minEntryJson := _newJsonEntry("", timestamp, logger)
+
+	query = trimStringByBytes(query, entrySize-(len(minEntryJson)+1))
+	jsonEntry := _newJsonEntry(query, timestamp, logger)
+
 	return jsonEntry
 }
 

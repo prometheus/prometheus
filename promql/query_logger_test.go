@@ -38,10 +38,10 @@ func TestQueryLogging(t *testing.T) {
 	}
 
 	want := []string{
-		`^{"query":"TestQuery","timestamp":\d+}\s*,$`,
-		`^{"query":"` + trimStringByBytes(veryLongString, entrySize-36) + `","timestamp":\d+}\s*,$`,
-		`^{"query":"","timestamp":\d+}\s*,$`,
-		`^{"query":"SpecialCharQuery{host=\\"2132132\\", id=123123}","timestamp":\d+}\s*,$`,
+		`^{"query":"TestQuery","timestamp_sec":\d+}\s*,$`,
+		`^{"query":"` + trimStringByBytes(veryLongString, entrySize-40) + `","timestamp_sec":\d+}\s*,$`,
+		`^{"query":"","timestamp_sec":\d+}\s*,$`,
+		`^{"query":"SpecialCharQuery{host=\\"2132132\\", id=123123}","timestamp_sec":\d+}\s*,$`,
 	}
 
 	// Check for inserts of queries.
@@ -87,9 +87,9 @@ func TestIndexReuse(t *testing.T) {
 	queryLogger.Insert(newQuery1)
 
 	want := []string{
-		`^{"query":"ThisShouldBeInsertedAtIndex1","timestamp":\d+}\s*,$`,
-		`^{"query":"ThisShouldBeInsertedAtIndex2","timestamp":\d+}\s*,$`,
-		`^{"query":"TestQuery3","timestamp":\d+}\s*,$`,
+		`^{"query":"ThisShouldBeInsertedAtIndex1","timestamp_sec":\d+}\s*,$`,
+		`^{"query":"ThisShouldBeInsertedAtIndex2","timestamp_sec":\d+}\s*,$`,
+		`^{"query":"TestQuery3","timestamp_sec":\d+}\s*,$`,
 	}
 
 	// Check all bytes and verify new query was inserted at index 2
