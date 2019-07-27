@@ -157,6 +157,7 @@ type dbMetrics struct {
 	startTime            prometheus.GaugeFunc
 	tombCleanTimer       prometheus.Histogram
 	blocksBytes          prometheus.Gauge
+	maxBytes             prometheus.Gauge
 	sizeRetentionCount   prometheus.Counter
 }
 
@@ -227,6 +228,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_storage_blocks_bytes",
 		Help: "The number of bytes that are currently used for local storage by all blocks.",
 	})
+	m.maxBytes = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_retention_limit_bytes",
+		Help: "Max number of bytes to be retained in the tsdb blocks, configured 0 means disabled",
+	})
 	m.sizeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_size_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
@@ -244,6 +249,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.startTime,
 			m.tombCleanTimer,
 			m.blocksBytes,
+			m.maxBytes,
 			m.sizeRetentionCount,
 		)
 	}
@@ -453,6 +459,12 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		chunkPool:   chunkenc.NewPool(),
 	}
 	db.metrics = newDBMetrics(db, r)
+
+	maxBytes := opts.MaxBytes
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	db.metrics.maxBytes.Set(float64(maxBytes))
 
 	if !opts.NoLockfile {
 		absdir, err := filepath.Abs(dir)

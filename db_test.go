@@ -1138,6 +1138,30 @@ func TestSizeRetention(t *testing.T) {
 
 }
 
+func TestSizeRetentionMetric(t *testing.T) {
+	cases := []struct {
+		maxBytes    int64
+		expMaxBytes int64
+	}{
+		{maxBytes: 1000, expMaxBytes: 1000},
+		{maxBytes: 0, expMaxBytes: 0},
+		{maxBytes: -1000, expMaxBytes: 0},
+	}
+
+	for _, c := range cases {
+		db, delete := openTestDB(t, &Options{
+			BlockRanges: []int64{100},
+			MaxBytes:    c.maxBytes,
+		})
+
+		actMaxBytes := int64(prom_testutil.ToFloat64(db.metrics.maxBytes))
+		testutil.Equals(t, actMaxBytes, c.expMaxBytes, "metric retention limit bytes mismatch")
+
+		testutil.Ok(t, db.Close())
+		delete()
+	}
+}
+
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 	db, delete := openTestDB(t, nil)
 	defer func() {
