@@ -757,6 +757,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	delIter := &deletedIterator{}
+	totalSeries := 0
 	var iterCount uint64
 	level.Info(c.logger).Log("msg", "iterating all the series")
 	for set.Next() {
@@ -843,6 +844,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		if err := indexw.AddSeries(ref, lset, mergedChks...); err != nil {
 			return errors.Wrap(err, "add series")
 		}
+		totalSeries++
 
 		meta.Stats.NumChunks += uint64(len(mergedChks))
 		meta.Stats.NumSeries++
@@ -877,11 +879,11 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	level.Info(c.logger).Log("msg", "iterated all series in compactionMerger")
 	level.Info(c.logger).Log("msg", "entering writePostings")
-	return c.writePostings(indexw, values, set.seriesMap, indexReaders)
+	return c.writePostings(indexw, totalSeries, values, set.seriesMap, indexReaders)
 }
 
 // writePostings writes the postings into the index file.
-func (c *LeveledCompactor) writePostings(indexw IndexWriter, values map[string]stringset,
+func (c *LeveledCompactor) writePostings(indexw IndexWriter, totalSeries int, values map[string]stringset,
 	seriesMap []map[uint64]uint64, indexReaders []IndexReader) (err error) {
 	var (
 		maxNumValues      int
@@ -917,7 +919,7 @@ func (c *LeveledCompactor) writePostings(indexw IndexWriter, values map[string]s
 	}
 
 	level.Info(c.logger).Log("msg", "starting to write remapped postings", "totalNames", len(names))
-	remapPostings := newRemappedPostings(seriesMap, 1e6)
+	remapPostings := newRemappedPostings(seriesMap, totalSeries)
 	var postBuf index.Postings
 	for _, n := range names {
 		labelValuesBuf = labelValuesBuf[:0]
