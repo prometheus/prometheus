@@ -644,6 +644,8 @@ func (tml *Tokenmandatorylabel) Size() uint32 {
 //sys	DuplicateTokenEx(existingToken Token, desiredAccess uint32, tokenAttributes *SecurityAttributes, impersonationLevel uint32, tokenType uint32, newToken *Token) (err error) = advapi32.DuplicateTokenEx
 //sys	GetUserProfileDirectory(t Token, dir *uint16, dirLen *uint32) (err error) = userenv.GetUserProfileDirectoryW
 //sys	getSystemDirectory(dir *uint16, dirLen uint32) (len uint32, err error) = kernel32.GetSystemDirectoryW
+//sys	getWindowsDirectory(dir *uint16, dirLen uint32) (len uint32, err error) = kernel32.GetWindowsDirectoryW
+//sys	getSystemWindowsDirectory(dir *uint16, dirLen uint32) (len uint32, err error) = kernel32.GetSystemWindowsDirectoryW
 
 // An access token contains the security information for a logon session.
 // The system creates an access token when a user logs on, and every
@@ -785,13 +787,49 @@ func (token Token) GetLinkedToken() (Token, error) {
 	return linkedToken, nil
 }
 
-// GetSystemDirectory retrieves path to current location of the system
-// directory, which is typically, though not always, C:\Windows\System32.
+// GetSystemDirectory retrieves the path to current location of the system
+// directory, which is typically, though not always, `C:\Windows\System32`.
 func GetSystemDirectory() (string, error) {
 	n := uint32(MAX_PATH)
 	for {
 		b := make([]uint16, n)
 		l, e := getSystemDirectory(&b[0], n)
+		if e != nil {
+			return "", e
+		}
+		if l <= n {
+			return UTF16ToString(b[:l]), nil
+		}
+		n = l
+	}
+}
+
+// GetWindowsDirectory retrieves the path to current location of the Windows
+// directory, which is typically, though not always, `C:\Windows`. This may
+// be a private user directory in the case that the application is running
+// under a terminal server.
+func GetWindowsDirectory() (string, error) {
+	n := uint32(MAX_PATH)
+	for {
+		b := make([]uint16, n)
+		l, e := getWindowsDirectory(&b[0], n)
+		if e != nil {
+			return "", e
+		}
+		if l <= n {
+			return UTF16ToString(b[:l]), nil
+		}
+		n = l
+	}
+}
+
+// GetSystemWindowsDirectory retrieves the path to current location of the
+// Windows directory, which is typically, though not always, `C:\Windows`.
+func GetSystemWindowsDirectory() (string, error) {
+	n := uint32(MAX_PATH)
+	for {
+		b := make([]uint16, n)
+		l, e := getSystemWindowsDirectory(&b[0], n)
 		if e != nil {
 			return "", e
 		}
