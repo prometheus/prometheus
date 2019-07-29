@@ -162,21 +162,27 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 }
 
 // NegotiateResponseType returns first accepted response type that this server supports.
-func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) prompb.ReadRequest_ResponseType {
+// On the empty accepted list we assume that the SAMPLED response type was requested. This is to maintain backward compatibility.
+func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.ReadRequest_ResponseType, error) {
+	if len(accepted) == 0 {
+		accepted = []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLED}
+	}
+
 	supported := map[prompb.ReadRequest_ResponseType]struct{}{
+		prompb.ReadRequest_SAMPLED:             {},
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS: {},
 	}
 
 	for _, resType := range accepted {
 		if _, ok := supported[resType]; ok {
-			return resType
+			return resType, nil
 		}
 	}
-	return -1
+	return 0, errors.Errorf("server does not support any of the requested response types: %v; supported: %v", accepted, supported)
 }
 
 // StreamChunkedReadResponses iterates over series, build chunks and streams those to caller.
-// TODO(bwplotka): Encode only what's needed. Fetch the encoded series from blocks instead of rencoding everything.
+// TODO(bwplotka): Encode only what's needed. Fetch the encoded series from blocks instead of re-encoding everything.
 func StreamChunkedReadResponses(
 	stream io.Writer,
 	queryIndex int64,
@@ -194,7 +200,7 @@ func StreamChunkedReadResponses(
 		iter := series.Iterator()
 		lbls := MergeLabels(labelsToLabelsProto(series.Labels()), sortedExternalLabels)
 
-		// Send at most one series per frame; series may be split over multiple frames according to maxChunksInFrame"
+		// Send at most one series per frame; series may be split over multiple frames according to maxChunksInFrame.
 		for {
 			// TODO(bwplotka): Use ChunkIterator once available in TSDB instead of re-encoding: https://github.com/prometheus/tsdb/pull/665
 			chks, err = encodeChunks(iter, chks, maxChunksInFrame)

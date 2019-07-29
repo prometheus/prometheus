@@ -212,3 +212,27 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 	errMessage := errSeries.Err().Error()
 	testutil.Assert(t, errMessage == "duplicate label with name: foo", fmt.Sprintf("Expected error to be from duplicate label, but got: %s", errMessage))
 }
+
+func TestNegotiateResponseType(t *testing.T) {
+	r, err := NegotiateResponseType([]prompb.ReadRequest_ResponseType{
+		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
+		prompb.ReadRequest_SAMPLED,
+	})
+	testutil.Ok(t, err)
+	testutil.Equals(t, prompb.ReadRequest_STREAMED_XOR_CHUNKS, r)
+
+	r, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{
+		prompb.ReadRequest_SAMPLED,
+		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
+	})
+	testutil.Ok(t, err)
+	testutil.Equals(t, prompb.ReadRequest_SAMPLED, r)
+
+	r, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{})
+	testutil.Ok(t, err)
+	testutil.Equals(t, prompb.ReadRequest_SAMPLED, r)
+
+	r, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{20})
+	testutil.NotOk(t, err, "expected error due to not supported requested response types")
+	testutil.Equals(t, "server does not support any of the requested response types: [20]; supported: map[SAMPLED:{} STREAMED_XOR_CHUNKS:{}]", err.Error())
+}

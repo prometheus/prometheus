@@ -874,7 +874,13 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
 	})
 
-	switch remote.NegotiateResponseType(req.AcceptedResponseTypes) {
+	responseType, err := remote.NegotiateResponseType(req.AcceptedResponseTypes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	switch responseType {
 	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
 		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
 		// TODO(bwplotka): Should we use snappy? benchmark to see.
