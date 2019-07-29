@@ -169,7 +169,7 @@ func (w *WALWatcher) Stop() {
 func (w *WALWatcher) loop() {
 	defer close(w.done)
 
-	// We may encourter failures processing the WAL; we should wait and retry.
+	// We may encounter failures processing the WAL; we should wait and retry.
 	for !isClosed(w.quit) {
 		w.startTime = timestamp.FromTime(time.Now())
 		if err := w.run(); err != nil {
