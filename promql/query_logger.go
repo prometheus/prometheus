@@ -109,7 +109,7 @@ func NewActiveQueryTracker(maxQueries int, logger log.Logger) *ActiveQueryTracke
 	copy(fileAsBytes, "[")
 	activeQueryTracker := ActiveQueryTracker{
 		mmapedFile:   fileAsBytes,
-		getNextIndex: make(chan int, maxQueries+(filesize-1)/entrySize),
+		getNextIndex: make(chan int, maxQueries),
 		logger:       logger,
 	}
 
