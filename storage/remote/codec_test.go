@@ -221,18 +221,18 @@ func TestNegotiateResponseType(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, prompb.ReadRequest_STREAMED_XOR_CHUNKS, r)
 
-	r, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{
+	r2, err := NegotiateResponseType([]prompb.ReadRequest_ResponseType{
 		prompb.ReadRequest_SAMPLED,
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
 	})
 	testutil.Ok(t, err)
-	testutil.Equals(t, prompb.ReadRequest_SAMPLED, r)
+	testutil.Equals(t, prompb.ReadRequest_SAMPLED, r2)
 
-	r, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{})
+	r3, err := NegotiateResponseType([]prompb.ReadRequest_ResponseType{})
 	testutil.Ok(t, err)
-	testutil.Equals(t, prompb.ReadRequest_SAMPLED, r)
+	testutil.Equals(t, prompb.ReadRequest_SAMPLED, r3)
 
-	r, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{20})
+	_, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{20})
 	testutil.NotOk(t, err, "expected error due to not supported requested response types")
 	testutil.Equals(t, "server does not support any of the requested response types: [20]; supported: map[SAMPLED:{} STREAMED_XOR_CHUNKS:{}]", err.Error())
 }
