@@ -274,9 +274,15 @@ func TestEndpoints(t *testing.T) {
 		}
 
 		al := promlog.AllowedLevel{}
-		al.Set("debug")
+		if err := al.Set("debug"); err != nil {
+			t.Fatal(err)
+		}
+
 		af := promlog.AllowedFormat{}
-		al.Set("logfmt")
+		if err := af.Set("logfmt"); err != nil {
+			t.Fatal(err)
+		}
+
 		promlogConfig := promlog.Config{
 			Level:  &al,
 			Format: &af,
