@@ -379,7 +379,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 	)
 	start := time.Now()
 
-	level.Info(c.logger).Log("msg", "reading all dirs", "dirs", dirs)
+	level.Info(c.logger).Log("msg", "reading all dirs", "dirs", fmt.Sprintf("%v", dirs))
 	for _, d := range dirs {
 		meta, _, err := readMetaFile(d)
 		if err != nil {
@@ -421,7 +421,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		"mint", meta.MinTime,
 		"maxt", meta.MaxTime,
 		"ulid", meta.ULID,
-		"sources", uids,
+		"sources", fmt.Sprintf("%v", uids),
 	)
 	err = c.write(dest, meta, blocks...)
 	if err == nil {

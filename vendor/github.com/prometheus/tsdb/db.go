@@ -680,7 +680,7 @@ func (db *DB) compact() (err error) {
 			level.Info(db.logger).Log("msg", "compaction: plan was empty")
 			break
 		}
-		level.Info(db.logger).Log("msg", "compaction: received plan", "plan", plan)
+		level.Info(db.logger).Log("msg", "compaction: received plan", "plan", fmt.Sprintf("%v", plan))
 
 		select {
 		case <-db.stopc:
@@ -689,14 +689,14 @@ func (db *DB) compact() (err error) {
 		default:
 		}
 
-		level.Info(db.logger).Log("msg", "compaction: attempting for on-disk blocks", "plan", plan)
+		level.Info(db.logger).Log("msg", "compaction: attempting for on-disk blocks", "plan", fmt.Sprintf("%v", plan))
 		uid, err := db.compactor.Compact(db.dir, plan, db.blocks)
 		if err != nil {
 			return errors.Wrapf(err, "compact %s", plan)
 		}
 		runtime.GC()
 
-		level.Info(db.logger).Log("msg", "compaction: reload after compaction of on-disk blocks", "plan", plan)
+		level.Info(db.logger).Log("msg", "compaction: reload after compaction of on-disk blocks", "plan", fmt.Sprintf("%v", plan))
 		if err := db.reload(); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
 				return errors.Wrapf(err, "delete compacted block after failed db reload:%s", uid)
