@@ -46,7 +46,7 @@ const defaultFlushDeadline = 1 * time.Minute
 func TestSampleDelivery(t *testing.T) {
 	// Let's create an even number of send batches so we don't run into the
 	// batch timeout case.
-	n := config.DefaultQueueConfig.Capacity * 2
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
 	samples, series := createTimeseries(n)
 
 	c := NewTestStorageClient()

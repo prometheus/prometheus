@@ -111,10 +111,10 @@ var (
 		MinShards:         1,
 		MaxSamplesPerSend: 100,
 
-		// Each shard will have a max of 10 samples pending in it's channel, plus the pending
-		// samples that have been enqueued. Theoretically we should only ever have about 110 samples
-		// per shard pending. At 1000 shards that's 110k.
-		Capacity:          10,
+		// Each shard will have a max of 500 samples pending in it's channel, plus the pending
+		// samples that have been enqueued. Theoretically we should only ever have about 600 samples
+		// per shard pending. At 1000 shards that's 600k.
+		Capacity:          500,
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
 		// Backoff times for retrying a batch of samples on recoverable errors.
@@ -616,7 +616,8 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 // QueueConfig is the configuration for the queue used to write to remote
 // storage.
 type QueueConfig struct {
-	// Number of samples to buffer per shard before we start dropping them.
+	// Number of samples to buffer per shard before we block. Defaults to
+	// MaxSamplesPerSend.
 	Capacity int `yaml:"capacity,omitempty"`
 
 	// Max number of shards, i.e. amount of concurrency.
