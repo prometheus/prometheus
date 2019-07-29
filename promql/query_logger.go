@@ -98,7 +98,7 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) (error, []b
 }
 
 func NewActiveQueryTracker(maxQueries int, logger log.Logger) *ActiveQueryTracker {
-	filename, filesize := "queries.active", 1+maxQueries*entrySize
+	filename, filesize := "data/queries.active", 1+maxQueries*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
 
 	err, fileAsBytes := getMMapedFile(filename, filesize, logger)
