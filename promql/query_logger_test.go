@@ -28,7 +28,7 @@ func TestQueryLogging(t *testing.T) {
 		getNextIndex: make(chan int, 4),
 	}
 
-	queryLogger.generateIndices(4096)
+	queryLogger.generateIndices(4)
 	veryLongString := "MassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybe"
 	queries := []string{
 		"TestQuery",
@@ -74,7 +74,7 @@ func TestIndexReuse(t *testing.T) {
 		getNextIndex: make(chan int, 3),
 	}
 
-	queryLogger.generateIndices(1 + 3*entrySize)
+	queryLogger.generateIndices(3)
 	queryLogger.Insert("TestQuery1")
 	queryLogger.Insert("TestQuery2")
 	queryLogger.Insert("TestQuery3")

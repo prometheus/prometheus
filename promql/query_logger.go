@@ -113,7 +113,7 @@ func NewActiveQueryTracker(maxQueries int, logger log.Logger) *ActiveQueryTracke
 		logger:       logger,
 	}
 
-	activeQueryTracker.generateIndices(filesize)
+	activeQueryTracker.generateIndices(maxQueries)
 
 	return &activeQueryTracker
 }
@@ -154,9 +154,9 @@ func newJsonEntry(query string, logger log.Logger) []byte {
 	return jsonEntry
 }
 
-func (tracker ActiveQueryTracker) generateIndices(maxSize int) {
-	for i := 1; i <= maxSize-entrySize; i += entrySize {
-		tracker.getNextIndex <- i
+func (tracker ActiveQueryTracker) generateIndices(maxQueries int) {
+	for i := 0; i < maxQueries; i++ {
+		tracker.getNextIndex <- 1 + (i * entrySize)
 	}
 }
 
