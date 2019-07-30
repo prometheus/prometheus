@@ -188,11 +188,12 @@ func StreamChunkedReadResponses(
 	queryIndex int64,
 	ss storage.SeriesSet,
 	sortedExternalLabels []prompb.Label,
-	maxChunksInFrame int,
+	maxBytesInFrame int,
 ) error {
 	var (
-		chks = make([]prompb.Chunk, 0, maxChunksInFrame)
-		err  error
+		chks     []prompb.Chunk
+		err      error
+		lblsSize int
 	)
 
 	for ss.Next() {
@@ -200,10 +201,15 @@ func StreamChunkedReadResponses(
 		iter := series.Iterator()
 		lbls := MergeLabels(labelsToLabelsProto(series.Labels()), sortedExternalLabels)
 
-		// Send at most one series per frame; series may be split over multiple frames according to maxChunksInFrame.
+		lblsSize = 0
+		for _, lbl := range lbls {
+			lblsSize += lbl.Size()
+		}
+
+		// Send at most one series per frame; series may be split over multiple frames according to maxBytesInFrame.
 		for {
 			// TODO(bwplotka): Use ChunkIterator once available in TSDB instead of re-encoding: https://github.com/prometheus/tsdb/pull/665
-			chks, err = encodeChunks(iter, chks, maxChunksInFrame)
+			chks, err = encodeChunks(iter, chks, maxBytesInFrame-lblsSize)
 			if err != nil {
 				return err
 			}
@@ -244,7 +250,7 @@ func StreamChunkedReadResponses(
 }
 
 // encodeChunks expects iterator to be ready to use (aka iter.Next() called before invoking).
-func encodeChunks(iter storage.SeriesIterator, chks []prompb.Chunk, maxChunks int) ([]prompb.Chunk, error) {
+func encodeChunks(iter storage.SeriesIterator, chks []prompb.Chunk, frameBytesLeft int) ([]prompb.Chunk, error) {
 	const maxSamplesInChunk = 120
 
 	var (
@@ -280,8 +286,10 @@ func encodeChunks(iter storage.SeriesIterator, chks []prompb.Chunk, maxChunks in
 			Data:      chk.Bytes(),
 		})
 		chk = nil
+		frameBytesLeft -= chks[len(chks)-1].Size()
 
-		if len(chks) >= maxChunks {
+		// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
+		if frameBytesLeft <= 0 {
 			break
 		}
 	}

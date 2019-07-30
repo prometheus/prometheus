@@ -1017,13 +1017,13 @@ func TestSampledReadEndpoint(t *testing.T) {
 }
 
 func TestStreamReadEndpoint(t *testing.T) {
-	// 3 series.
-	// First with one sample. We expect 1 frame with 1 chunk.
+	// 3 series each series.
+	// First with 119 samples. We expect 1 frame with 1 chunk.
 	// Second with 121 samples, We expect 1 frame with 2 chunks.
-	// Third with 241 samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series.
+	// Third with 241 samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
 	suite, err := promql.NewTest(t, `
 		load 1m
-			test_metric1{foo="bar",baz="qux"} 1
+			test_metric1{foo="bar1",baz="qux"} 0+100x119
             test_metric1{foo="bar2",baz="qux"} 0+100x120
             test_metric1{foo="bar3",baz="qux"} 0+100x240
 	`)
@@ -1047,9 +1047,10 @@ func TestStreamReadEndpoint(t *testing.T) {
 				},
 			}
 		},
-		remoteReadSampleLimit:      1e6,
-		remoteReadGate:             gate.New(1),
-		remoteReadMaxChunksInFrame: 2,
+		remoteReadSampleLimit: 1e6,
+		remoteReadGate:        gate.New(1),
+		// Labelset has 57 bytes. Full chunk in test data has roughly 240 bytes. This allows us to have at max 2 chunks in this test.
+		remoteReadMaxBytesInFrame: 57 + 480,
 	}
 
 	// Encode the request.
@@ -1108,12 +1109,13 @@ func TestStreamReadEndpoint(t *testing.T) {
 						{Name: "b", Value: "c"},
 						{Name: "baz", Value: "qux"},
 						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar"},
+						{Name: "foo", Value: "bar1"},
 					},
 					Chunks: []prompb.Chunk{
 						{
-							Type: prompb.Chunk_XOR,
-							Data: []byte("\000\001\000?\360\000\000\000\000\000\000\000"),
+							Type:      prompb.Chunk_XOR,
+							MaxTimeMs: 7140000,
+							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
 						},
 					},
 				},

@@ -147,13 +147,13 @@ type API struct {
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 
-	db                         func() TSDBAdmin
-	enableAdmin                bool
-	logger                     log.Logger
-	remoteReadSampleLimit      int
-	remoteReadMaxChunksInFrame int
-	remoteReadGate             *gate.Gate
-	CORSOrigin                 *regexp.Regexp
+	db                        func() TSDBAdmin
+	enableAdmin               bool
+	logger                    log.Logger
+	remoteReadSampleLimit     int
+	remoteReadMaxBytesInFrame int
+	remoteReadGate            *gate.Gate
+	CORSOrigin                *regexp.Regexp
 }
 
 func init() {
@@ -176,7 +176,7 @@ func NewAPI(
 	rr rulesRetriever,
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
-	remoteReadMaxChunksInFrame int,
+	remoteReadMaxBytesInFrame int,
 	CORSOrigin *regexp.Regexp,
 ) *API {
 	return &API{
@@ -185,18 +185,18 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                        time.Now,
-		config:                     configFunc,
-		flagsMap:                   flagsMap,
-		ready:                      readyFunc,
-		db:                         db,
-		enableAdmin:                enableAdmin,
-		rulesRetriever:             rr,
-		remoteReadSampleLimit:      remoteReadSampleLimit,
-		remoteReadGate:             gate.New(remoteReadConcurrencyLimit),
-		remoteReadMaxChunksInFrame: remoteReadMaxChunksInFrame,
-		logger:                     logger,
-		CORSOrigin:                 CORSOrigin,
+		now:                       time.Now,
+		config:                    configFunc,
+		flagsMap:                  flagsMap,
+		ready:                     readyFunc,
+		db:                        db,
+		enableAdmin:               enableAdmin,
+		rulesRetriever:            rr,
+		remoteReadSampleLimit:     remoteReadSampleLimit,
+		remoteReadGate:            gate.New(remoteReadConcurrencyLimit),
+		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
+		logger:                    logger,
+		CORSOrigin:                CORSOrigin,
 	}
 }
 
@@ -896,7 +896,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 					int64(i),
 					set,
 					sortedExternalLabels,
-					api.remoteReadMaxChunksInFrame,
+					api.remoteReadMaxBytesInFrame,
 				)
 			})
 			if err != nil {
