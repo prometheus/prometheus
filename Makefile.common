@@ -31,6 +31,9 @@ FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 GOOPTS       ?=
 GOHOSTOS     ?= $(shell $(GO) env GOHOSTOS)
 GOHOSTARCH   ?= $(shell $(GO) env GOHOSTARCH)
+GOPROXY      ?= https://proxy.golang.org/
+
+export GOPROXY
 
 GO_VERSION        ?= $(shell $(GO) version)
 GO_VERSION_NUMBER ?= $(word 3, $(GO_VERSION))
