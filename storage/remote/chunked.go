@@ -55,7 +55,7 @@ func NewChunkedWriter(w io.Writer, f http.Flusher) *ChunkedWriter {
 // Each frame includes:
 //
 // 1. uvarint for the size of the data frame.
-// 2. uvarint for the Castagnoli polynomial CRC-32 checksum of the data frame.
+// 2. big-endian uint32 for the Castagnoli polynomial CRC-32 checksum of the data frame.
 // 3. n bytes where n is given in the first uvarint.
 //
 // Write returns number of sent bytes for a given buffer. The number does not include delimiter and checksum bytes.
@@ -75,8 +75,7 @@ func (w *ChunkedWriter) Write(b []byte) (int, error) {
 		return 0, err
 	}
 
-	v = binary.PutUvarint(buf[:], uint64(w.crc32.Sum32()))
-	if _, err := w.writer.Write(buf[:v]); err != nil {
+	if err := binary.Write(w.writer, binary.BigEndian, w.crc32.Sum32()); err != nil {
 		return 0, err
 	}
 
@@ -107,7 +106,7 @@ func NewChunkedReader(r io.Reader, sizeLimit uint64) *ChunkedReader {
 // Next returns the next length-delimited record from the input, or io.EOF if
 // there are no more records available. Returns io.ErrUnexpectedEOF if a short
 // record is found, with a length of n but fewer than n bytes of data.
-// Next also verifies the CRC32 checksum.
+// Next also verifies the given checksum with Castagnoli polynomial CRC-32 checksum.
 //
 // NOTE: The slice returned is valid only until a subsequent call to Next. It's a caller's responsibility to copy the
 // returned slice if needed.
@@ -127,8 +126,8 @@ func (r *ChunkedReader) Next() ([]byte, error) {
 		r.data = r.data[:size]
 	}
 
-	crc32, err := binary.ReadUvarint(r.b)
-	if err != nil {
+	var crc32 uint32
+	if err := binary.Read(r.b, binary.BigEndian, &crc32); err != nil {
 		return nil, err
 	}
 
@@ -137,7 +136,7 @@ func (r *ChunkedReader) Next() ([]byte, error) {
 		return nil, err
 	}
 
-	if uint64(r.crc32.Sum32()) != crc32 {
+	if r.crc32.Sum32() != crc32 {
 		return nil, errors.New("chunkedReader: corrupted frame; checksum mismatch")
 	}
 	return r.data, nil

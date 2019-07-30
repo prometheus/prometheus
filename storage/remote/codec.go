@@ -162,14 +162,14 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 }
 
 // NegotiateResponseType returns first accepted response type that this server supports.
-// On the empty accepted list we assume that the SAMPLED response type was requested. This is to maintain backward compatibility.
+// On the empty accepted list we assume that the SAMPLES response type was requested. This is to maintain backward compatibility.
 func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.ReadRequest_ResponseType, error) {
 	if len(accepted) == 0 {
-		accepted = []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLED}
+		accepted = []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLES}
 	}
 
 	supported := map[prompb.ReadRequest_ResponseType]struct{}{
-		prompb.ReadRequest_SAMPLED:             {},
+		prompb.ReadRequest_SAMPLES:             {},
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS: {},
 	}
 
@@ -243,7 +243,7 @@ func StreamChunkedReadResponses(
 	return nil
 }
 
-// encodeChunks expects iterator to be ready to use (aka iter.Next() done before invoking).
+// encodeChunks expects iterator to be ready to use (aka iter.Next() called before invoking).
 func encodeChunks(iter storage.SeriesIterator, chks []prompb.Chunk, maxChunks int) ([]prompb.Chunk, error) {
 	const maxSamplesInChunk = 120
 

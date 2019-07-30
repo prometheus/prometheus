@@ -34,8 +34,9 @@ message ReadRequest {
     // Response headers:
     // Content-Type: "application/x-protobuf"
     // Content-Encoding: "snappy"
-    SAMPLED = 0;
-    // Server will stream a varint delimited ChunkedReadResponse message that contains XOR encoded chunks for a single series.
+    SAMPLES = 0;
+    // Server will stream a delimited ChunkedReadResponse message that contains XOR encoded chunks for a single series.
+    // Each message is following varint size and fixed size bigendian uint32 for CRC32 Castagnoli checksum.
     //
     // Response headers:
     // Content-Type: "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"
@@ -47,7 +48,7 @@ message ReadRequest {
   //
   // Response types are taken from the list in the FIFO order. If no response type in `accepted_response_types` is
   // implemented by server, error is returned.
-  // For request that do not support `accepted_response_types` field the SAMPLED response type will be used.
+  // For request that do not support `accepted_response_types` field the SAMPLES response type will be used.
   repeated ResponseType accepted_response_types = 2;
 }
 

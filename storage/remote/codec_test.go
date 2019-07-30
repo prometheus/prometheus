@@ -216,23 +216,23 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 func TestNegotiateResponseType(t *testing.T) {
 	r, err := NegotiateResponseType([]prompb.ReadRequest_ResponseType{
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
-		prompb.ReadRequest_SAMPLED,
+		prompb.ReadRequest_SAMPLES,
 	})
 	testutil.Ok(t, err)
 	testutil.Equals(t, prompb.ReadRequest_STREAMED_XOR_CHUNKS, r)
 
 	r2, err := NegotiateResponseType([]prompb.ReadRequest_ResponseType{
-		prompb.ReadRequest_SAMPLED,
+		prompb.ReadRequest_SAMPLES,
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
 	})
 	testutil.Ok(t, err)
-	testutil.Equals(t, prompb.ReadRequest_SAMPLED, r2)
+	testutil.Equals(t, prompb.ReadRequest_SAMPLES, r2)
 
 	r3, err := NegotiateResponseType([]prompb.ReadRequest_ResponseType{})
 	testutil.Ok(t, err)
-	testutil.Equals(t, prompb.ReadRequest_SAMPLED, r3)
+	testutil.Equals(t, prompb.ReadRequest_SAMPLES, r3)
 
 	_, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{20})
 	testutil.NotOk(t, err, "expected error due to not supported requested response types")
-	testutil.Equals(t, "server does not support any of the requested response types: [20]; supported: map[SAMPLED:{} STREAMED_XOR_CHUNKS:{}]", err.Error())
+	testutil.Equals(t, "server does not support any of the requested response types: [20]; supported: map[SAMPLES:{} STREAMED_XOR_CHUNKS:{}]", err.Error())
 }

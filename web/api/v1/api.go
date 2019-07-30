@@ -862,7 +862,6 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 
 	externalLabels := api.config().GlobalConfig.ExternalLabels.Map()
 
-	// Add external labels back in, in sorted order.
 	sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
 	for name, value := range externalLabels {
 		sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
@@ -883,8 +882,6 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	switch responseType {
 	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
 		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
-		// TODO(bwplotka): Should we use snappy? benchmark to see.
-		// w.Header().Set("Content-Encoding", "snappy")
 
 		f, ok := w.(http.Flusher)
 		if !ok {
