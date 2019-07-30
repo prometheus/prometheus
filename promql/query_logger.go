@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -97,8 +98,13 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) (error, []b
 	return err, fileAsBytes
 }
 
-func NewActiveQueryTracker(maxQueries int, logger log.Logger) *ActiveQueryTracker {
-	filename, filesize := "data/queries.active", 1+maxQueries*entrySize
+func NewActiveQueryTracker(localStoragePath string, maxQueries int, logger log.Logger) *ActiveQueryTracker {
+	err := os.MkdirAll(localStoragePath, 0777)
+	if err != nil {
+		level.Error(logger).Log("msg", "Failed to create directory for logging active queries")
+	}
+
+	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxQueries*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
 
 	err, fileAsBytes := getMMapedFile(filename, filesize, logger)
