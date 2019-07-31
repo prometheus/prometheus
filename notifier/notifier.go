@@ -39,7 +39,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
-	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -545,16 +544,16 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 	return numSuccess > 0
 }
 
-func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
-	openAPIAlerts := models.PostableAlerts{}
+func alertsToOpenAPIAlerts(alerts []*Alert) PostableAlerts {
+	openAPIAlerts := PostableAlerts{}
 	for _, a := range alerts {
 		start := strfmt.DateTime(a.StartsAt)
 		end := strfmt.DateTime(a.EndsAt)
-		openAPIAlerts = append(openAPIAlerts, &models.PostableAlert{
+		openAPIAlerts = append(openAPIAlerts, &PostableAlert{
 			Annotations: labelsToOpenAPILabelSet(a.Annotations),
 			EndsAt:      end,
 			StartsAt:    start,
-			Alert: models.Alert{
+			ModelAlert: ModelAlert{
 				GeneratorURL: strfmt.URI(a.GeneratorURL),
 				Labels:       labelsToOpenAPILabelSet(a.Labels),
 			},
@@ -564,8 +563,8 @@ func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
 	return openAPIAlerts
 }
 
-func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) models.LabelSet {
-	apiLabelSet := models.LabelSet{}
+func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) LabelSet {
+	apiLabelSet := LabelSet{}
 	for _, label := range modelLabelSet {
 		apiLabelSet[label.Name] = string(label.Value)
 	}
@@ -764,4 +763,46 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 		res = append(res, alertmanagerLabels{lset})
 	}
 	return res, droppedAlertManagers, nil
+}
+
+// Below are the models copied from "github.com/prometheus/alertmanager/api/v2/models"
+// which are used in this file.
+
+// PostableAlerts postable alerts
+// swagger:model postableAlerts
+type PostableAlerts []*PostableAlert
+
+// PostableAlert postable alert
+// swagger:model postableAlert
+type PostableAlert struct {
+
+	// annotations
+	Annotations LabelSet `json:"annotations,omitempty"`
+
+	// ends at
+	// Format: date-time
+	EndsAt strfmt.DateTime `json:"endsAt,omitempty"`
+
+	// starts at
+	// Format: date-time
+	StartsAt strfmt.DateTime `json:"startsAt,omitempty"`
+
+	ModelAlert
+}
+
+// LabelSet label set
+// swagger:model labelSet
+type LabelSet map[string]string
+
+// ModelAlert alert
+// swagger:model alert
+type ModelAlert struct {
+
+	// generator URL
+	// Format: uri
+	GeneratorURL strfmt.URI `json:"generatorURL,omitempty"`
+
+	// labels
+	// Required: true
+	Labels LabelSet `json:"labels"`
 }

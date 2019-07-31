@@ -15,10 +15,6 @@ github.com/Azure/go-autorest/autorest/to
 github.com/Azure/go-autorest/autorest/validation
 github.com/Azure/go-autorest/tracing
 github.com/Azure/go-autorest/logger
-# github.com/PuerkitoBio/purell v1.1.0
-github.com/PuerkitoBio/purell
-# github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578
-github.com/PuerkitoBio/urlesc
 # github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc
 github.com/alecthomas/template
 github.com/alecthomas/template/parse
@@ -91,27 +87,10 @@ github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
 # github.com/go-logfmt/logfmt v0.4.0
 github.com/go-logfmt/logfmt
-# github.com/go-openapi/analysis v0.17.2
-github.com/go-openapi/analysis
-github.com/go-openapi/analysis/internal
 # github.com/go-openapi/errors v0.17.2
 github.com/go-openapi/errors
-# github.com/go-openapi/jsonpointer v0.17.2
-github.com/go-openapi/jsonpointer
-# github.com/go-openapi/jsonreference v0.17.2
-github.com/go-openapi/jsonreference
-# github.com/go-openapi/loads v0.17.2
-github.com/go-openapi/loads
-# github.com/go-openapi/runtime v0.18.0
-github.com/go-openapi/runtime
-# github.com/go-openapi/spec v0.17.2
-github.com/go-openapi/spec
 # github.com/go-openapi/strfmt v0.19.0
 github.com/go-openapi/strfmt
-# github.com/go-openapi/swag v0.17.2
-github.com/go-openapi/swag
-# github.com/go-openapi/validate v0.17.2
-github.com/go-openapi/validate
 # github.com/gogo/protobuf v1.2.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/gogoproto
@@ -253,8 +232,6 @@ github.com/petermattis/goid
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/alertmanager v0.17.0
-github.com/prometheus/alertmanager/api/v2/models
 # github.com/prometheus/client_golang v1.0.0
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/api
@@ -359,7 +336,6 @@ golang.org/x/text/secure/bidirule
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
 golang.org/x/text/transform
-golang.org/x/text/width
 # golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2
 golang.org/x/time/rate
 # golang.org/x/tools v0.0.0-20190312170243-e65039ee4138
