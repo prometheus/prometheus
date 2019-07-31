@@ -353,12 +353,14 @@ func main() {
 		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 
 		opts = promql.EngineOpts{
-			Logger:        log.With(logger, "component", "query engine"),
-			Reg:           prometheus.DefaultRegisterer,
-			MaxConcurrent: cfg.queryConcurrency,
-			MaxSamples:    cfg.queryMaxSamples,
-			Timeout:       time.Duration(cfg.queryTimeout),
+			Logger:             log.With(logger, "component", "query engine"),
+			Reg:                prometheus.DefaultRegisterer,
+			MaxConcurrent:      cfg.queryConcurrency,
+			MaxSamples:         cfg.queryMaxSamples,
+			Timeout:            time.Duration(cfg.queryTimeout),
+			ActiveQueryTracker: promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
 		}
+
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
@@ -406,7 +408,7 @@ func main() {
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 
-	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager
+	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager.
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
 	// Monitor outgoing connections on default transport with conntrack.

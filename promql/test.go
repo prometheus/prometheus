@@ -438,7 +438,7 @@ func (t *Test) exec(tc testCommand) error {
 		}
 
 	case *evalCmd:
-		q, err := t.queryEngine.NewInstantQuery(t.storage, cmd.expr, cmd.start)
+		q, err := t.QueryEngine().NewInstantQuery(t.storage, cmd.expr, cmd.start)
 		if err != nil {
 			return err
 		}
