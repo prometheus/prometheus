@@ -378,7 +378,6 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		uids   []string
 	)
 	start := time.Now()
-
 	level.Info(c.logger).Log("msg", "reading all dirs", "dirs", fmt.Sprintf("%v", dirs))
 	for _, d := range dirs {
 		meta, _, err := readMetaFile(d)
@@ -556,12 +555,10 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		c.metrics.duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
-	level.Info(c.logger).Log("msg", "removing old tmp directory")
 	if err = os.RemoveAll(tmp); err != nil {
 		return err
 	}
 
-	level.Info(c.logger).Log("msg", "creating new tmp directory")
 	if err = os.MkdirAll(tmp, 0777); err != nil {
 		return err
 	}
@@ -590,7 +587,6 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		return errors.Wrap(err, "open index writer")
 	}
 	closers = append(closers, indexw)
-
 	level.Info(c.logger).Log("msg", "going inside populateBlock")
 	if err := c.populateBlock(blocks, meta, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
@@ -598,7 +594,6 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 
 	select {
 	case <-c.ctx.Done():
-		level.Info(c.logger).Log("msg", "ctx done")
 		return c.ctx.Err()
 	default:
 	}
@@ -613,7 +608,6 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 	closers = closers[:0] // Avoid closing the writers twice in the defer.
 	if merr.Err() != nil {
-		level.Info(c.logger).Log("msg", "closers errors")
 		return merr.Err()
 	}
 
@@ -623,13 +617,11 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		return nil
 	}
 
-	level.Info(c.logger).Log("msg", "writing meta files")
 	if _, err = writeMetaFile(c.logger, tmp, meta); err != nil {
 		return errors.Wrap(err, "write merged meta")
 	}
 
 	// Create an empty tombstones file.
-	level.Info(c.logger).Log("msg", "writing tombstones")
 	if _, err := writeTombstoneFile(c.logger, tmp, newMemTombstones()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
@@ -644,7 +636,6 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		}
 	}()
 
-	level.Info(c.logger).Log("msg", "syncing temporary directory")
 	if err := df.Sync(); err != nil {
 		return errors.Wrap(err, "sync temporary dir file")
 	}
@@ -687,9 +678,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		c.metrics.populatingBlocks.Set(0)
 	}()
 	c.metrics.populatingBlocks.Set(1)
-
-	globalMaxt := blocks[0].Meta().MaxTime
 	level.Info(c.logger).Log("msg", "creating readers from all the blocks")
+	globalMaxt := blocks[0].Meta().MaxTime
 	for i, b := range blocks {
 		select {
 		case <-c.ctx.Done():
@@ -750,7 +740,6 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	var values = map[string]stringset{}
-
 	level.Info(c.logger).Log("msg", "adding symbols")
 	if err := indexw.AddSymbols(allSymbols); err != nil {
 		return errors.Wrap(err, "add symbols")
@@ -766,11 +755,12 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			return c.ctx.Err()
 		default:
 		}
-		iterCount++
 		ref, lset, chks, dranges := set.At() // The chunks here are not fully deleted.
+		iterCount++
 		if iterCount%1000000 == 0 {
 			level.Info(c.logger).Log("msg", "ref count checkpoint", "iter", iterCount, "ref", ref)
 		}
+
 		if overlapping {
 			// If blocks are overlapping, it is possible to have unsorted chunks.
 			sort.Slice(chks, func(i, j int) bool {
@@ -873,10 +863,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	if meta.Stats.NumSamples == 0 {
 		// No postings to write, exit early.
-		level.Info(c.logger).Log("msg", "0 samples, not entering writePostings")
 		return nil
 	}
-
 	level.Info(c.logger).Log("msg", "iterated all series in compactionMerger")
 	level.Info(c.logger).Log("msg", "entering writePostings")
 	return c.writePostings(indexw, totalSeries, values, set.seriesMap, indexReaders)
@@ -917,9 +905,8 @@ func (c *LeveledCompactor) writePostings(indexw IndexWriter, totalSeries int, va
 	if idxw, ok := indexw.(*index.Writer); ok {
 		idxw.HintPostingsWriteCount(numLabelValues)
 	}
-
 	level.Info(c.logger).Log("msg", "starting to write remapped postings", "totalNames", len(names))
-	remapPostings := newRemappedPostings(seriesMap, totalSeries)
+	remapPostings := newRemappedPostings(seriesMap, indexReaders, totalSeries)
 	var postBuf index.Postings
 	for _, n := range names {
 		labelValuesBuf = labelValuesBuf[:0]
@@ -928,24 +915,16 @@ func (c *LeveledCompactor) writePostings(indexw IndexWriter, totalSeries int, va
 		}
 		sort.Strings(labelValuesBuf)
 		level.Info(c.logger).Log("msg", "writing remapped postings", "name", n, "totalValues", len(labelValuesBuf))
-
 		for _, v := range labelValuesBuf {
-			remapPostings.clearPostings()
-			for i, ir := range indexReaders {
-				postBuf, err = ir.Postings(n, v, postBuf)
-				if err != nil {
-					return errors.Wrap(err, "read postings")
-				}
-				remapPostings.add(i, postBuf)
+			postBuf, err = remapPostings.get(n, v)
+			if err != nil {
+				return errors.Wrap(err, "remapping postings")
 			}
-
-			// level.Info(c.logger).Log("msg", "writing postings", "name", n, "value", v)
-			if err := indexw.WritePostings(n, v, remapPostings.get()); err != nil {
+			if err := indexw.WritePostings(n, v, postBuf); err != nil {
 				return errors.Wrap(err, "write postings")
 			}
 		}
 	}
-
 	level.Info(c.logger).Log("msg", "exiting writePostings")
 	return nil
 }
@@ -954,18 +933,30 @@ func (c *LeveledCompactor) writePostings(indexw IndexWriter, totalSeries int, va
 // from given set of maps.
 type remappedPostings struct {
 	postingsMap []map[uint64]uint64
-	postingBuf  []uint64
 	listPost    *index.ListPostings
+	irs         []IndexReader
+
+	postObj                               index.Postings
+	postingLists                          [3][]uint64
+	currBufIdx, appendBufIdx, mergeBufIdx int
 }
 
 // newRemappedPostings returns remappedPostings.
 // 'postingsMap' is the slice of maps used for remapping.
 // 'postingSizeHint' is for preallocation of memory to reduce allocs later.
-func newRemappedPostings(postingsMap []map[uint64]uint64, postingSizeHint int) *remappedPostings {
+func newRemappedPostings(postingsMap []map[uint64]uint64, irs []IndexReader, postingSizeHint int) *remappedPostings {
 	return &remappedPostings{
 		postingsMap: postingsMap,
-		postingBuf:  make([]uint64, 0, postingSizeHint),
-		listPost:    index.NewListPostings(),
+		irs:         irs,
+		postingLists: [3][]uint64{
+			make([]uint64, 0, postingSizeHint),
+			make([]uint64, 0, postingSizeHint),
+			make([]uint64, 0, postingSizeHint),
+		},
+		listPost:     index.NewListPostings(),
+		currBufIdx:   0,
+		appendBufIdx: 1,
+		mergeBufIdx:  2,
 	}
 }
 
@@ -974,44 +965,72 @@ func newRemappedPostings(postingsMap []map[uint64]uint64, postingSizeHint int) *
 // are added to the result buffer.
 func (rp *remappedPostings) add(mapIdx int, p index.Postings) {
 	pMap := rp.postingsMap[mapIdx]
-	idx, lastIdx := -1, -1
+
+	currBuf := rp.postingLists[rp.currBufIdx]
+	appendBuf := rp.postingLists[rp.appendBufIdx][:0]
+	mergeBuf := rp.postingLists[rp.mergeBufIdx][:0]
+
 	for p.Next() {
 		newVal, ok := pMap[p.At()]
 		if !ok {
 			continue
 		}
-		// idx is the index at which newVal exists or index at which we need to insert.
-		// 'p' consists postings in sorted order w.r.t. the series labels.
-		// Hence the mapped series will also be in ascending order including the postings.
-		// So we need not look at/before 'lastIdx' in 'postingBuf'.
-		for idx = lastIdx + 1; idx < len(rp.postingBuf); idx++ {
-			if rp.postingBuf[idx] >= newVal {
-				break
+		appendBuf = append(appendBuf, newVal)
+	}
+
+	if mapIdx == 0 {
+		rp.postingLists[rp.currBufIdx] = appendBuf
+		rp.postingLists[rp.appendBufIdx] = currBuf
+	} else {
+		i, j := 0, 0
+		for i < len(currBuf) && j < len(appendBuf) {
+			if currBuf[i] < appendBuf[j] {
+				mergeBuf = append(mergeBuf, currBuf[i])
+				i++
+			} else if appendBuf[j] < currBuf[i] {
+				mergeBuf = append(mergeBuf, appendBuf[j])
+				j++
+			} else {
+				mergeBuf = append(mergeBuf, currBuf[i])
+				i++
+				j++
 			}
 		}
-		lastIdx = idx
-		if idx == len(rp.postingBuf) {
-			rp.postingBuf = append(rp.postingBuf, newVal)
-		} else if rp.postingBuf[idx] != newVal {
-			rp.postingBuf = append(rp.postingBuf[:idx], append([]uint64{newVal}, rp.postingBuf[idx:]...)...)
+		for i < len(currBuf) {
+			mergeBuf = append(mergeBuf, currBuf[i])
+			i++
 		}
+		for j < len(appendBuf) {
+			mergeBuf = append(mergeBuf, appendBuf[j])
+			j++
+		}
+
+		rp.postingLists[rp.currBufIdx] = mergeBuf
+		rp.postingLists[rp.mergeBufIdx] = currBuf
 	}
 }
 
-// get returns the remapped postings.
-// The returned postings becomes invalid after calling any other exposed
-// methods of RemappedPostings (Add, Get, ClearPostings). Hence postings
-// should be used right after calling 'Get'.
-// This is because of the shared buffer for memory optimizations.
-func (rp *remappedPostings) get() index.Postings {
-	rp.listPost.Reset(rp.postingBuf)
-	return rp.listPost
+// get returns the remapped postings for the given label name.
+func (rp *remappedPostings) get(name, value string) (index.Postings, error) {
+	rp.clearPostings()
+	var err error
+	for i, ir := range rp.irs {
+		rp.postObj, err = ir.Postings(name, value, rp.postObj)
+		if err != nil {
+			return nil, errors.Wrap(err, "read postings")
+		}
+		rp.add(i, rp.postObj)
+	}
+	rp.listPost.Reset(rp.postingLists[rp.currBufIdx])
+	return rp.listPost, nil
 }
 
 // clearPostings only clears the result postings
 // buffer and not the map.
 func (rp *remappedPostings) clearPostings() {
-	rp.postingBuf = rp.postingBuf[:0]
+	rp.postingLists[0] = rp.postingLists[0][:0]
+	rp.postingLists[1] = rp.postingLists[1][:0]
+	rp.postingLists[2] = rp.postingLists[2][:0]
 }
 
 type compactionSeriesSet struct {
