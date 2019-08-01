@@ -16,6 +16,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -23,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -64,7 +66,7 @@ func main() {
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
-	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
+	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json", "csv", "csvnoheader")
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
 	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
 	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
@@ -110,6 +112,10 @@ func main() {
 		p = &jsonPrinter{}
 	case "promql":
 		p = &promqlPrinter{}
+	case "csv":
+		p = &csvPrinter{true}
+	case "csvnoheader":
+		p = &csvPrinter{}
 	}
 
 	switch parsedCmd {
@@ -640,4 +646,106 @@ func (j *jsonPrinter) printSeries(v []model.LabelSet) {
 func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
+}
+
+type csvPrinter struct {
+	printHeader bool
+}
+
+func (c *csvPrinter) MarshallCSV(v model.Value) (s [][]string) {
+	s = [][]string{}
+	switch v := v.(type) {
+	case *model.String:
+		if c.printHeader {
+			s = append(s, []string{"Timestamp", "Value"})
+		}
+		row := []string{v.Timestamp.String(), v.Value}
+		s = append(s, row)
+	case *model.Scalar:
+		if c.printHeader {
+			s = append(s, []string{"Timestamp", "Value"})
+		}
+		row := []string{v.Timestamp.String(), v.Value.String()}
+		s = append(s, row)
+	case model.Vector:
+		if c.printHeader {
+			firstRow := []string{"Metric", "Value (@" + v[0].Timestamp.String() + ")"}
+			s = append(s, firstRow)
+		}
+		for _, i := range v {
+			row := []string{i.Metric.String(), i.Value.String()}
+			s = append(s, row)
+		}
+	case model.Matrix:
+		if c.printHeader {
+			firstRow := []string{"Metric", "Timestamps"}
+			s = append(s, firstRow)
+			secondRow := []string{"", "Values"}
+			s = append(s, secondRow)
+		}
+		for _, i := range v {
+			row := []string{i.Metric.String()}
+			for _, j := range i.Values {
+				row = append(row, j.Timestamp.String())
+			}
+			s = append(s, row)
+			row = []string{""}
+			for _, j := range i.Values {
+				row = append(row, j.Value.String())
+			}
+			s = append(s, row)
+
+		}
+	default:
+		fmt.Println(reflect.TypeOf(v).Name())
+	}
+	return
+}
+
+func (c *csvPrinter) printValue(v model.Value) {
+	//nolint:errcheck
+	w := csv.NewWriter(os.Stdout)
+	w.Write([]string{"foo"})
+	w.WriteAll(c.MarshallCSV(v))
+	w.Flush()
+}
+
+func (c *csvPrinter) marshallSeries(v []model.LabelSet) (s [][]string) {
+	if c.printHeader {
+		s = append(s, []string{"Label", "Value"})
+	}
+
+	for _, i := range v {
+		row := []string{}
+		for label, value := range i {
+			row = append(row, string(label)+"="+string(value))
+		}
+		s = append(s, row)
+	}
+
+	return s
+}
+
+func (c *csvPrinter) printSeries(v []model.LabelSet) {
+	//nolint:errcheck
+	w := csv.NewWriter(os.Stdout)
+	w.WriteAll(c.marshallSeries(v))
+	w.Flush()
+}
+
+func (c *csvPrinter) marshallLabelValues(v model.LabelValues) (s [][]string) {
+	if c.printHeader {
+		s = append(s, []string{"Values"})
+	}
+	for _, value := range v {
+		s = append(s, []string{string(value)})
+	}
+	return
+}
+
+func (c *csvPrinter) printLabelValues(v model.LabelValues) {
+	//nolint:errcheck
+	w := csv.NewWriter(os.Stdout)
+	w.WriteAll(c.marshallLabelValues(v))
+	w.Flush()
 }
