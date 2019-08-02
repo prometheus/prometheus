@@ -50,7 +50,7 @@ type Target struct {
 	discoveredLabels labels.Labels
 	// Any labels that are added to this target and its metrics.
 	labels labels.Labels
-	// Additional URL parmeters that are part of the target URL.
+	// Additional URL parameters that are part of the target URL.
 	params url.Values
 
 	mtx                sync.RWMutex
