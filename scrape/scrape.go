@@ -1099,7 +1099,6 @@ loop:
 				// Keep on parsing output if we hit the limit, so we report the correct
 				// total number of samples scraped.
 				sampleLimitErr = err
-				added++
 				continue
 			default:
 				break loop
@@ -1145,7 +1144,6 @@ loop:
 				continue
 			case errSampleLimit:
 				sampleLimitErr = err
-				added++
 				continue
 			default:
 				level.Debug(sl.l).Log("msg", "unexpected error", "series", string(met), "err", err)
