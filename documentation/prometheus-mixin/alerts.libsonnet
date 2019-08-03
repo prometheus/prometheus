@@ -226,6 +226,27 @@
             },
           },
           {
+            alert: 'PrometheusRemoteWriteDesiredShards',
+            expr: |||
+              # Without max_over_time, failed scrapes could create false negatives, see
+              # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
+              (
+                max_over_time(prometheus_remote_storage_shards_desired{%(prometheusSelector)s}[5m])
+              > on(job, instance) group_right
+                max_over_time(prometheus_remote_storage_shards_max{%(prometheusSelector)s}[5m])
+              )
+              == 1
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus remote write desired shards calculation wants to run more than configured max shards.',
+              description: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind for queue {{$labels.queue}}.' % $._config,
+            },
+          },
+          {
             alert: 'PrometheusRuleFailures',
             expr: |||
               increase(prometheus_rule_evaluation_failures_total{%(prometheusSelector)s}[5m]) > 0
