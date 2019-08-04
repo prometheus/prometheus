@@ -167,7 +167,8 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
-		labels := labelProtosToLabels(ts.Labels)
+		uniqueProtoLabels := uniqueLabelNameProtos(ts.Labels)
+		labels := labelProtosToLabels(uniqueProtoLabels)
 		if err := validateLabelsAndMetricName(labels); err != nil {
 			return errSeriesSet{err: err}
 		}
@@ -350,6 +351,21 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 	}
 	return metric
+}
+
+// uniqueLabelNameProtos creates a []prompb.Label with duplicate label names removed
+func uniqueLabelNameProtos(labelPairs []prompb.Label) []prompb.Label {
+	uniqueLabelMap := make(map[string]prompb.Label, len(labelPairs))
+	for _, labelPair := range labelPairs {
+		uniqueLabelMap[labelPair.Name] = labelPair
+	}
+	result := make([]prompb.Label, len(uniqueLabelMap))
+	i := 0
+	for _, labelPair := range uniqueLabelMap {
+		result[i] = labelPair
+		i++
+	}
+	return result
 }
 
 func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
