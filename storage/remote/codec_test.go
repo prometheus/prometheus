@@ -86,6 +86,22 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			expectedErr: "Invalid metric name: @invalid_name",
 			shouldPass:  false,
 		},
+		{
+			input: labels.FromStrings(
+				"__name__", "name1",
+				"__name__", "name2",
+			),
+			expectedErr: "Duplicate label with name: __name__",
+			shouldPass:  false,
+		},
+		{
+			input: labels.FromStrings(
+				"label1", "name",
+				"label2", "name",
+			),
+			expectedErr: "",
+			shouldPass:  true,
+		},
 	}
 
 	for _, test := range tests {
@@ -148,38 +164,6 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 	require.Equal(t, lbls, gotLabels)
 }
 
-func TestDuplicateLabelsSimple(t *testing.T) {
-	labels := []prompb.Label{
-		prompb.Label{Name: "foo", Value: "bar"},
-		prompb.Label{Name: "foo", Value: "notbar"},
-	}
-	uniqueLabels := uniqueLabelNameProtos(labels)
-
-	testutil.Assert(t, len(uniqueLabels) == 1, fmt.Sprintf("Expected len(uniqueLabels) to be 1 but got %d instead", len(uniqueLabels)))
-	testutil.Assert(t, uniqueLabels[0].Name == "foo", "uniqueLabels has wrong label name")
-}
-
-func TestDuplicateLabelsDoNothing(t *testing.T) {
-	label1 := prompb.Label{Name: "foo", Value: "bar"}
-	label2 := prompb.Label{Name: "abc", Value: "def"}
-	labels := []prompb.Label{
-		label1,
-		label2,
-	}
-	uniqueLabels := uniqueLabelNameProtos(labels)
-
-	testutil.Assert(t, len(uniqueLabels) == 2, fmt.Sprintf("Expected len(uniqueLabels) to be 2 but got %d instead", len(uniqueLabels)))
-
-	numMatched := 0
-	for i := range labels {
-		if (labels[i].Name == label1.Name && labels[i].Value == label1.Value) || (labels[i].Name == label2.Name && labels[i].Value == label2.Value) {
-			numMatched++
-		}
-	}
-
-	testutil.Assert(t, numMatched == 2, "Expected labels to not be changed when there is no duplicate")
-}
-
 func TestFromQueryResultWithDuplicates(t *testing.T) {
 	ts1 := prompb.TimeSeries{
 		Labels: []prompb.Label{
@@ -199,7 +183,9 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 
 	series := FromQueryResult(&res)
 
-	testutil.Assert(t, series.Next(), "Expected there to be at least 1 series, but got none instead")
-	testutil.Assert(t, len(series.At().Labels()) == 1, "Expected 1 label in series, but got %d instead")
-	testutil.Assert(t, series.At().Labels()[0].Name == "foo", "Expected label value and name to not change")
+	errSeries, isErrSeriesSet := series.(errSeriesSet)
+
+	testutil.Assert(t, isErrSeriesSet, "Expected resulting series to be an errSeriesSet")
+	errMessage := errSeries.Err().Error()
+	testutil.Assert(t, errMessage == "duplicate label with name: foo", fmt.Sprintf("Expected error to be from duplicate label, but got: %s", errMessage))
 }

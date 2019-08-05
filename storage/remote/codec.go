@@ -167,8 +167,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
-		uniqueProtoLabels := uniqueLabelNameProtos(ts.Labels)
-		labels := labelProtosToLabels(uniqueProtoLabels)
+		labels := labelProtosToLabels(ts.Labels)
 		if err := validateLabelsAndMetricName(labels); err != nil {
 			return errSeriesSet{err: err}
 		}
@@ -278,8 +277,10 @@ func (c *concreteSeriesIterator) Err() error {
 	return nil
 }
 
-// validateLabelsAndMetricName validates the label names/values and metric names returned from remote read.
+// validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
+// also making sure that there are no labels with duplicate names
 func validateLabelsAndMetricName(ls labels.Labels) error {
+	existingLabelNames := make(map[string]bool, len(ls))
 	for _, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return errors.Errorf("invalid metric name: %v", l.Value)
@@ -290,6 +291,10 @@ func validateLabelsAndMetricName(ls labels.Labels) error {
 		if !model.LabelValue(l.Value).IsValid() {
 			return errors.Errorf("invalid label value: %v", l.Value)
 		}
+		if _, there := existingLabelNames[l.Name]; there {
+			return errors.Errorf("duplicate label with name: %v", l.Name)
+		}
+		existingLabelNames[l.Name] = true
 	}
 	return nil
 }
@@ -351,21 +356,6 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 	}
 	return metric
-}
-
-// uniqueLabelNameProtos creates a []prompb.Label with duplicate label names removed
-func uniqueLabelNameProtos(labelPairs []prompb.Label) []prompb.Label {
-	uniqueLabelMap := make(map[string]prompb.Label, len(labelPairs))
-	for _, labelPair := range labelPairs {
-		uniqueLabelMap[labelPair.Name] = labelPair
-	}
-	result := make([]prompb.Label, len(uniqueLabelMap))
-	i := 0
-	for _, labelPair := range uniqueLabelMap {
-		result[i] = labelPair
-		i++
-	}
-	return result
 }
 
 func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
