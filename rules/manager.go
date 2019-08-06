@@ -287,25 +287,13 @@ func (g *Group) run(ctx context.Context) {
 		return
 	}
 
-	iter := func() {
-		g.metrics.iterationsScheduled.Inc()
-
-		start := time.Now()
-		g.Eval(ctx, evalTimestamp)
-		timeSinceStart := time.Since(start)
-
-		g.metrics.iterationDuration.Observe(timeSinceStart.Seconds())
-		g.setEvaluationDuration(timeSinceStart)
-		g.setEvaluationTimestamp(start)
-	}
-
 	// The assumption here is that since the ticker was started after having
 	// waited for `evalTimestamp` to pass, the ticks will trigger soon
 	// after each `evalTimestamp + N * g.interval` occurrence.
 	tick := time.NewTicker(g.interval)
 	defer tick.Stop()
 
-	iter()
+	g.Eval(ctx, evalTimestamp)
 	if g.shouldRestore {
 		// If we have to restore, we wait for another Eval to finish.
 		// The reason behind this is, during first eval (or before it)
@@ -321,7 +309,7 @@ func (g *Group) run(ctx context.Context) {
 				g.metrics.iterationsScheduled.Add(float64(missed))
 			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-			iter()
+			g.Eval(ctx, evalTimestamp)
 		}
 
 		g.RestoreForState(time.Now())
@@ -343,7 +331,7 @@ func (g *Group) run(ctx context.Context) {
 					g.metrics.iterationsScheduled.Add(float64(missed))
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-				iter()
+				g.Eval(ctx, evalTimestamp)
 			}
 		}
 	}
@@ -484,6 +472,18 @@ func (g *Group) CopyState(from *Group) {
 
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
+	g.metrics.iterationsScheduled.Inc()
+
+	start := time.Now()
+	g.eval(ctx, ts)
+	timeSinceStart := time.Since(start)
+
+	g.metrics.iterationDuration.Observe(timeSinceStart.Seconds())
+	g.setEvaluationDuration(timeSinceStart)
+	g.setEvaluationTimestamp(start)
+}
+
+func (g *Group) eval(ctx context.Context, ts time.Time) {
 	for i, rule := range g.rules {
 		select {
 		case <-g.done:
