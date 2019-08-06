@@ -14,6 +14,7 @@
 package file
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -21,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log/level"
+	"github.com/go-logfmt/logfmt"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -39,16 +42,32 @@ func TestFileSD(t *testing.T) {
 	testFileSD(t, "invalid_nil", ".yml", false)
 }
 
+type testLogger struct {
+	*testing.T
+}
+
+func (t *testLogger) Log(keyvals ...interface{}) error {
+	b := &bytes.Buffer{}
+	enc := logfmt.NewEncoder(b)
+	if err := enc.EncodeKeyvals(keyvals...); err != nil {
+		t.Logf("failed to encode keyvals: %v", err)
+		return err
+	}
+	t.Logf(b.String())
+	return nil
+}
+
 func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	t.Helper()
-	// As interval refreshing is more of a fallback, we only want to test
-	// whether file watches work as expected.
-	var conf SDConfig
-	conf.Files = []string{filepath.Join(testDir, "_*"+ext)}
-	conf.RefreshInterval = model.Duration(1 * time.Hour)
-
 	var (
-		fsd         = NewDiscovery(&conf, nil)
+		fsd = NewDiscovery(
+			&SDConfig{
+				Files: []string{filepath.Join(testDir, "_*"+ext)},
+				// Setting a high refresh interval to make sure that the test only relies on file watches.
+				RefreshInterval: model.Duration(1 * time.Hour),
+			},
+			level.NewFilter(&testLogger{t}, level.AllowDebug()),
+		)
 		ch          = make(chan []*targetgroup.Group)
 		ctx, cancel = context.WithCancel(context.Background())
 	)
@@ -98,7 +117,7 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	<-drainReady
 	newf.WriteString(" ") // One last meaningless write to trigger fsnotify and a new loop of the discovery service.
 
-	timeout := time.After(15 * time.Second)
+	timeout := time.After(5 * time.Second)
 retry:
 	for {
 		select {
@@ -111,7 +130,7 @@ retry:
 			}
 		case tgs := <-ch:
 			if !expect {
-				t.Fatalf("Unexpected target groups %s, we expected a failure here.", tgs)
+				t.Fatalf("Unexpected target groups %#v, we expected a failure here.", tgs)
 			}
 
 			if len(tgs) != 2 {

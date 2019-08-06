@@ -18,6 +18,11 @@ jobs:
     steps:
     - prometheus/setup_environment
     - run:
+        command: go test -v -mod=vendor -count 10 -p 2 ./discovery/file/.
+        environment:
+          GOGC: "20"
+          GO111MODULE: "on"
+    - run:
         command: make
         environment:
           # Run garbage collection more aggresively to avoid getting OOMed during the lint phase.

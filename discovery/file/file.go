@@ -325,6 +325,9 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 			ref[p] = d.lastRefresh[p]
 			continue
 		}
+		for _, tgroup := range tgroups {
+			level.Debug(d.logger).Log("tgroup", tgroup)
+		}
 		select {
 		case ch <- tgroups:
 		case <-ctx.Done():
@@ -336,15 +339,16 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 	// Send empty updates for sources that disappeared.
 	for f, n := range d.lastRefresh {
 		m, ok := ref[f]
-		if !ok || n > m {
-			level.Debug(d.logger).Log("msg", "file_sd refresh found file that should be removed", "file", f)
-			d.deleteTimestamp(f)
-			for i := m; i < n; i++ {
-				select {
-				case ch <- []*targetgroup.Group{{Source: fileSource(f, i)}}:
-				case <-ctx.Done():
-					return
-				}
+		if ok && n <= m {
+			continue
+		}
+		level.Debug(d.logger).Log("msg", "file_sd refresh found file that should be removed", "file", f)
+		d.deleteTimestamp(f)
+		for i := m; i < n; i++ {
+			select {
+			case ch <- []*targetgroup.Group{{Source: fileSource(f, i)}}:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}
