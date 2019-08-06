@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/google/pprof/profile"
+	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -66,7 +67,7 @@ func main() {
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
-	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json", "csv", "csvnoheader")
+	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json", "csv", "csvnoheader", "table")
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
 	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
 	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
@@ -116,6 +117,8 @@ func main() {
 		p = &csvPrinter{true}
 	case "csvnoheader":
 		p = &csvPrinter{}
+	case "table":
+		p = &tablePrinter{&csvPrinter{true}}
 	}
 
 	switch parsedCmd {
@@ -652,7 +655,7 @@ type csvPrinter struct {
 	printHeader bool
 }
 
-func (c *csvPrinter) MarshallCSV(v model.Value) (s [][]string) {
+func (c *csvPrinter) marshalValue(v model.Value) (s [][]string) {
 	s = [][]string{}
 	switch v := v.(type) {
 	case *model.String:
@@ -705,21 +708,17 @@ func (c *csvPrinter) MarshallCSV(v model.Value) (s [][]string) {
 func (c *csvPrinter) printValue(v model.Value) {
 	//nolint:errcheck
 	w := csv.NewWriter(os.Stdout)
-	w.Write([]string{"foo"})
-	w.WriteAll(c.MarshallCSV(v))
+	w.WriteAll(c.marshalValue(v))
 	w.Flush()
 }
 
 func (c *csvPrinter) marshallSeries(v []model.LabelSet) (s [][]string) {
 	if c.printHeader {
-		s = append(s, []string{"Label", "Value"})
+		s = append(s, []string{"Series"})
 	}
 
 	for _, i := range v {
-		row := []string{}
-		for label, value := range i {
-			row = append(row, string(label)+"="+string(value))
-		}
+		row := []string{i.String()}
 		s = append(s, row)
 	}
 
@@ -748,4 +747,31 @@ func (c *csvPrinter) printLabelValues(v model.LabelValues) {
 	w := csv.NewWriter(os.Stdout)
 	w.WriteAll(c.marshallLabelValues(v))
 	w.Flush()
+}
+
+type tablePrinter struct {
+	*csvPrinter
+}
+
+func (t *tablePrinter) printValue(v model.Value) {
+	//nolint:errcheck
+	w := tablewriter.NewWriter(os.Stdout)
+	w.AppendBulk(t.marshalValue(v))
+	w.Render()
+}
+
+func (t *tablePrinter) printSeries(v []model.LabelSet) {
+
+	//nolint:errcheck
+	w := tablewriter.NewWriter(os.Stdout)
+	w.SetRowLine(true)
+	w.AppendBulk(t.marshallSeries(v))
+	w.Render()
+}
+
+func (t *tablePrinter) printLabelValues(v model.LabelValues) {
+	//nolint:errcheck
+	w := tablewriter.NewWriter(os.Stdout)
+	w.AppendBulk(t.marshallLabelValues(v))
+	w.Render()
 }

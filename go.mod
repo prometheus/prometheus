@@ -30,9 +30,11 @@ require (
 	github.com/jmespath/go-jmespath v0.0.0-20160803190731-bd40a432e4c7 // indirect
 	github.com/json-iterator/go v1.1.6
 	github.com/jtolds/gls v4.2.1+incompatible // indirect
+	github.com/mattn/go-runewidth v0.0.4 // indirect
 	github.com/miekg/dns v1.1.10
 	github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223
 	github.com/oklog/run v1.0.0
+	github.com/olekukonko/tablewriter v0.0.1
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20170113013457-1de4cc2120e7
 	github.com/opentracing/opentracing-go v1.0.2
 	github.com/pkg/errors v0.8.1
