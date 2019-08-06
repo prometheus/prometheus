@@ -40,6 +40,7 @@ func TestFileSD(t *testing.T) {
 }
 
 func testFileSD(t *testing.T, prefix, ext string, expect bool) {
+	t.Helper()
 	// As interval refreshing is more of a fallback, we only want to test
 	// whether file watches work as expected.
 	var conf SDConfig
