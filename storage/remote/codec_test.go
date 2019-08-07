@@ -55,7 +55,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 				"__name__", "name",
 				"@labelName", "labelValue",
 			),
-			expectedErr: "Invalid label name: @labelName",
+			expectedErr: "invalid label name: @labelName",
 			shouldPass:  false,
 			description: "label name with @",
 		},
@@ -64,7 +64,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 				"__name__", "name",
 				"123labelName", "labelValue",
 			),
-			expectedErr: "Invalid label name: 123labelName",
+			expectedErr: "invalid label name: 123labelName",
 			shouldPass:  false,
 			description: "label name starts with numbers",
 		},
@@ -73,7 +73,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 				"__name__", "name",
 				"", "labelValue",
 			),
-			expectedErr: "Invalid label name: ",
+			expectedErr: "invalid label name: ",
 			shouldPass:  false,
 			description: "label name is empty string",
 		},
@@ -82,7 +82,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 				"__name__", "name",
 				"labelName", string([]byte{0xff}),
 			),
-			expectedErr: "Invalid label value: " + string([]byte{0xff}),
+			expectedErr: "invalid label value: " + string([]byte{0xff}),
 			shouldPass:  false,
 			description: "label value is 0xff",
 		},
@@ -90,7 +90,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			input: labels.FromStrings(
 				"__name__", "@invalid_name",
 			),
-			expectedErr: "Invalid metric name: @invalid_name",
+			expectedErr: "invalid metric name: @invalid_name",
 			shouldPass:  false,
 			description: "metric name starts with @",
 		},
@@ -99,7 +99,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 				"__name__", "name1",
 				"__name__", "name2",
 			),
-			expectedErr: "Duplicate label with name: __name__",
+			expectedErr: "duplicate label with name: __name__",
 			shouldPass:  false,
 			description: "duplicate label names",
 		},
@@ -117,7 +117,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 				"", "name",
 				"label2", "name",
 			),
-			expectedErr: "Invalid label name: ",
+			expectedErr: "invalid label name: ",
 			shouldPass:  false,
 			description: "don't report as duplicate label name",
 		},
@@ -126,11 +126,15 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
 			err := validateLabelsAndMetricName(test.input)
-			if test.shouldPass != (err == nil) {
+			if err == nil {
+				if !test.shouldPass {
+					t.Fatalf("Test should fail, but passed instead.")
+				}
+			} else {
 				if test.shouldPass {
 					t.Fatalf("Test should pass, got unexpected error: %v", err)
-				} else {
-					t.Fatalf("Test should fail, unexpected error, got: %v, expected: %v", err, test.expectedErr)
+				} else if err.Error() != test.expectedErr {
+					t.Fatalf("Test should fail with: %s got unexpected error instead: %v", test.expectedErr, err)
 				}
 			}
 		})
