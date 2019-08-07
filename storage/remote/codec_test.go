@@ -84,7 +84,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			),
 			expectedErr: "invalid label value: " + string([]byte{0xff}),
 			shouldPass:  false,
-			description: "label value is 0xff",
+			description: "label value is an invalid UTF-8 value",
 		},
 		{
 			input: labels.FromStrings(
