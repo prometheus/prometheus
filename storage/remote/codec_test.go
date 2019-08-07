@@ -112,6 +112,15 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			shouldPass:  true,
 			description: "duplicate label values",
 		},
+		{
+			input: labels.FromStrings(
+				"", "name",
+				"label2", "name",
+			),
+			expectedErr: "Invalid label name: ",
+			shouldPass:  false,
+			description: "don't report as duplicate label name",
+		},
 	}
 
 	for _, test := range tests {

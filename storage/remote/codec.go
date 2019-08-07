@@ -280,7 +280,7 @@ func (c *concreteSeriesIterator) Err() error {
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
 // also making sure that there are no labels with duplicate names
 func validateLabelsAndMetricName(ls labels.Labels) error {
-	existingLabelNames := make(map[string]bool, len(ls))
+	var prevLabelName string
 	for _, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return errors.Errorf("invalid metric name: %v", l.Value)
@@ -291,10 +291,10 @@ func validateLabelsAndMetricName(ls labels.Labels) error {
 		if !model.LabelValue(l.Value).IsValid() {
 			return errors.Errorf("invalid label value: %v", l.Value)
 		}
-		if _, there := existingLabelNames[l.Name]; there {
+		if l.Name == prevLabelName {
 			return errors.Errorf("duplicate label with name: %v", l.Name)
 		}
-		existingLabelNames[l.Name] = true
+		prevLabelName = l.Name
 	}
 	return nil
 }
