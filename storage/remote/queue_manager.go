@@ -166,7 +166,7 @@ type QueueManager struct {
 	client         StorageClient
 	watcher        *WALWatcher
 
-	seriesLabels         map[uint64][]prompb.Label
+	seriesLabels         map[uint64]labels.Labels
 	seriesSegmentIndexes map[uint64]int
 	droppedSeries        map[uint64]struct{}
 
@@ -208,7 +208,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 		relabelConfigs: relabelConfigs,
 		client:         client,
 
-		seriesLabels:         make(map[uint64][]prompb.Label),
+		seriesLabels:         make(map[uint64]labels.Labels),
 		seriesSegmentIndexes: make(map[uint64]int),
 		droppedSeries:        make(map[uint64]struct{}),
 
@@ -252,7 +252,7 @@ outer:
 			}
 
 			ts := prompb.TimeSeries{
-				Labels: lbls,
+				Labels: labelsToLabelsProto(lbls),
 				Samples: []prompb.Sample{
 					{
 						Value:     float64(sample.V),
@@ -325,7 +325,7 @@ func (t *QueueManager) Stop() {
 
 	// On shutdown, release the strings in the labels from the intern pool.
 	for _, labels := range t.seriesLabels {
-		release(labels)
+		releaseLabels(labels)
 	}
 	// Delete metrics so we don't have alerts for queues that are gone.
 	name := t.client.Name()
@@ -345,21 +345,21 @@ func (t *QueueManager) Stop() {
 func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 	for _, s := range series {
 		ls := processExternalLabels(s.Labels, t.externalLabels)
-		rl := relabel.Process(ls, t.relabelConfigs...)
-		if len(rl) == 0 {
+		lbls := relabel.Process(ls, t.relabelConfigs...)
+		if len(lbls) == 0 {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
 		t.seriesSegmentIndexes[s.Ref] = index
-		labels := labelsToLabelsProto(rl)
+		internLabels(lbls)
 
 		// We should not ever be replacing a series labels in the map, but just
 		// in case we do we need to ensure we do not leak the replaced interned
 		// strings.
 		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			release(orig)
+			releaseLabels(orig)
 		}
-		t.seriesLabels[s.Ref] = labels
+		t.seriesLabels[s.Ref] = lbls
 	}
 }
 
@@ -372,13 +372,20 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			release(t.seriesLabels[k])
+			releaseLabels(t.seriesLabels[k])
 			delete(t.seriesLabels, k)
 		}
 	}
 }
 
-func release(ls []prompb.Label) {
+func internLabels(lbls labels.Labels) {
+	for i, l := range lbls {
+		lbls[i].Name = interner.intern(l.Name)
+		lbls[i].Value = interner.intern(l.Value)
+	}
+}
+
+func releaseLabels(ls labels.Labels) {
 	for _, l := range ls {
 		interner.release(l.Name)
 		interner.release(l.Value)
