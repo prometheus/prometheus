@@ -706,8 +706,8 @@ func (c *csvPrinter) marshalValue(v model.Value) (s [][]string) {
 }
 
 func (c *csvPrinter) printValue(v model.Value) {
-	//nolint:errcheck
 	w := csv.NewWriter(os.Stdout)
+	//nolint:errcheck
 	w.WriteAll(c.marshalValue(v))
 	w.Flush()
 }
@@ -726,8 +726,8 @@ func (c *csvPrinter) marshallSeries(v []model.LabelSet) (s [][]string) {
 }
 
 func (c *csvPrinter) printSeries(v []model.LabelSet) {
-	//nolint:errcheck
 	w := csv.NewWriter(os.Stdout)
+	//nolint:errcheck
 	w.WriteAll(c.marshallSeries(v))
 	w.Flush()
 }
@@ -743,8 +743,8 @@ func (c *csvPrinter) marshallLabelValues(v model.LabelValues) (s [][]string) {
 }
 
 func (c *csvPrinter) printLabelValues(v model.LabelValues) {
-	//nolint:errcheck
 	w := csv.NewWriter(os.Stdout)
+	//nolint:errcheck
 	w.WriteAll(c.marshallLabelValues(v))
 	w.Flush()
 }
@@ -754,24 +754,24 @@ type tablePrinter struct {
 }
 
 func (t *tablePrinter) printValue(v model.Value) {
-	//nolint:errcheck
 	w := tablewriter.NewWriter(os.Stdout)
+	//nolint:errcheck
 	w.AppendBulk(t.marshalValue(v))
 	w.Render()
 }
 
 func (t *tablePrinter) printSeries(v []model.LabelSet) {
 
-	//nolint:errcheck
 	w := tablewriter.NewWriter(os.Stdout)
 	w.SetRowLine(true)
+	//nolint:errcheck
 	w.AppendBulk(t.marshallSeries(v))
 	w.Render()
 }
 
 func (t *tablePrinter) printLabelValues(v model.LabelValues) {
-	//nolint:errcheck
 	w := tablewriter.NewWriter(os.Stdout)
+	//nolint:errcheck
 	w.AppendBulk(t.marshallLabelValues(v))
 	w.Render()
 }
