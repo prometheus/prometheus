@@ -203,7 +203,7 @@ github.com/hashicorp/consul/api
 github.com/hashicorp/go-cleanhttp
 # github.com/hashicorp/go-immutable-radix v1.0.0
 github.com/hashicorp/go-immutable-radix
-# github.com/hashicorp/go-rootcerts v1.0.0
+# github.com/hashicorp/go-rootcerts v1.0.1
 github.com/hashicorp/go-rootcerts
 # github.com/hashicorp/golang-lru v0.5.1
 github.com/hashicorp/golang-lru
@@ -226,11 +226,13 @@ github.com/kr/logfmt
 github.com/mailru/easyjson/jlexer
 github.com/mailru/easyjson/jwriter
 github.com/mailru/easyjson/buffer
+# github.com/mattn/go-runewidth v0.0.4
+github.com/mattn/go-runewidth
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
 # github.com/miekg/dns v1.1.10
 github.com/miekg/dns
-# github.com/mitchellh/go-homedir v1.0.0
+# github.com/mitchellh/go-homedir v1.1.0
 github.com/mitchellh/go-homedir
 # github.com/mitchellh/mapstructure v1.1.2
 github.com/mitchellh/mapstructure
@@ -244,6 +246,8 @@ github.com/mwitkow/go-conntrack
 github.com/oklog/run
 # github.com/oklog/ulid v1.3.1
 github.com/oklog/ulid
+# github.com/olekukonko/tablewriter v0.0.1
+github.com/olekukonko/tablewriter
 # github.com/opentracing-contrib/go-stdlib v0.0.0-20170113013457-1de4cc2120e7
 github.com/opentracing-contrib/go-stdlib/nethttp
 # github.com/opentracing/opentracing-go v1.0.2

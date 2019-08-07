@@ -1,3 +1,5 @@
 module github.com/hashicorp/go-rootcerts
 
-require github.com/mitchellh/go-homedir v1.0.0
+go 1.12
+
+require github.com/mitchellh/go-homedir v1.1.0
