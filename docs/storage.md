@@ -42,11 +42,16 @@ The directory structure of a Prometheus server's data directory will look someth
     └── checkpoint.000001
 ```
 
-The initial two-hour blocks are eventually compacted into longer blocks in the background.
 
 Note that a limitation of the local storage is that it is not clustered or replicated. Thus, it is not arbitrarily scalable or durable in the face of disk or node outages and should thus be treated as more of an ephemeral sliding window of recent data. However, if your durability requirements are not strict, you may still succeed in storing up to years of data in the local storage.
 
 For further details on file format, see [TSDB format](https://github.com/prometheus/tsdb/blob/master/docs/format/README.md).
+
+## Compaction
+
+The initial two-hour blocks are eventually compacted into longer blocks in the background.
+
+Compaction will create larger blocks up to 10% of the rention time, or 21 days, whichever is smaller.
 
 ## Operational aspects
 
@@ -69,6 +74,8 @@ To tune the rate of ingested samples per second, you can either reduce the numbe
 If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. Non POSIX compliant filesystems are not supported by Prometheus's local storage, corruptions may happen, without possibility to recover. NFS is only potentially POSIX, most implementations are not. You can try removing individual block directories to resolve the problem, this means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
 
 If both time and size retention policies are specified, whichever policy triggers first will be used at that instant.
+
+Expired block cleanup happens on a background schedule. It may take up to two hours remove expired blocks. Expired blocks must be fully expired before they are cleaned up.
 
 ## Remote storage integrations
 
