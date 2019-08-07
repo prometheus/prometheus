@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
@@ -28,6 +30,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		input       labels.Labels
 		expectedErr string
 		shouldPass  bool
+		description string
 	}{
 		{
 			input: labels.FromStrings(
@@ -36,6 +39,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			),
 			expectedErr: "",
 			shouldPass:  true,
+			description: "regular labels",
 		},
 		{
 			input: labels.FromStrings(
@@ -44,57 +48,96 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			),
 			expectedErr: "",
 			shouldPass:  true,
+			description: "label name with _",
 		},
 		{
 			input: labels.FromStrings(
 				"__name__", "name",
 				"@labelName", "labelValue",
 			),
-			expectedErr: "Invalid label name: @labelName",
+			expectedErr: "invalid label name: @labelName",
 			shouldPass:  false,
+			description: "label name with @",
 		},
 		{
 			input: labels.FromStrings(
 				"__name__", "name",
 				"123labelName", "labelValue",
 			),
-			expectedErr: "Invalid label name: 123labelName",
+			expectedErr: "invalid label name: 123labelName",
 			shouldPass:  false,
+			description: "label name starts with numbers",
 		},
 		{
 			input: labels.FromStrings(
 				"__name__", "name",
 				"", "labelValue",
 			),
-			expectedErr: "Invalid label name: ",
+			expectedErr: "invalid label name: ",
 			shouldPass:  false,
+			description: "label name is empty string",
 		},
 		{
 			input: labels.FromStrings(
 				"__name__", "name",
 				"labelName", string([]byte{0xff}),
 			),
-			expectedErr: "Invalid label value: " + string([]byte{0xff}),
+			expectedErr: "invalid label value: " + string([]byte{0xff}),
 			shouldPass:  false,
+			description: "label value is an invalid UTF-8 value",
 		},
 		{
 			input: labels.FromStrings(
 				"__name__", "@invalid_name",
 			),
-			expectedErr: "Invalid metric name: @invalid_name",
+			expectedErr: "invalid metric name: @invalid_name",
 			shouldPass:  false,
+			description: "metric name starts with @",
+		},
+		{
+			input: labels.FromStrings(
+				"__name__", "name1",
+				"__name__", "name2",
+			),
+			expectedErr: "duplicate label with name: __name__",
+			shouldPass:  false,
+			description: "duplicate label names",
+		},
+		{
+			input: labels.FromStrings(
+				"label1", "name",
+				"label2", "name",
+			),
+			expectedErr: "",
+			shouldPass:  true,
+			description: "duplicate label values",
+		},
+		{
+			input: labels.FromStrings(
+				"", "name",
+				"label2", "name",
+			),
+			expectedErr: "invalid label name: ",
+			shouldPass:  false,
+			description: "don't report as duplicate label name",
 		},
 	}
 
 	for _, test := range tests {
-		err := validateLabelsAndMetricName(test.input)
-		if test.shouldPass != (err == nil) {
-			if test.shouldPass {
-				t.Fatalf("Test should pass, got unexpected error: %v", err)
+		t.Run(test.description, func(t *testing.T) {
+			err := validateLabelsAndMetricName(test.input)
+			if err == nil {
+				if !test.shouldPass {
+					t.Fatalf("Test should fail, but passed instead.")
+				}
 			} else {
-				t.Fatalf("Test should fail, unexpected error, got: %v, expected: %v", err, test.expectedErr)
+				if test.shouldPass {
+					t.Fatalf("Test should pass, got unexpected error: %v", err)
+				} else if err.Error() != test.expectedErr {
+					t.Fatalf("Test should fail with: %s got unexpected error instead: %v", test.expectedErr, err)
+				}
 			}
-		}
+		})
 	}
 }
 
@@ -144,4 +187,30 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 
 	gotLabels = cs.Labels()
 	require.Equal(t, lbls, gotLabels)
+}
+
+func TestFromQueryResultWithDuplicates(t *testing.T) {
+	ts1 := prompb.TimeSeries{
+		Labels: []prompb.Label{
+			prompb.Label{Name: "foo", Value: "bar"},
+			prompb.Label{Name: "foo", Value: "def"},
+		},
+		Samples: []prompb.Sample{
+			prompb.Sample{Value: 0.0, Timestamp: 0},
+		},
+	}
+
+	res := prompb.QueryResult{
+		Timeseries: []*prompb.TimeSeries{
+			&ts1,
+		},
+	}
+
+	series := FromQueryResult(&res)
+
+	errSeries, isErrSeriesSet := series.(errSeriesSet)
+
+	testutil.Assert(t, isErrSeriesSet, "Expected resulting series to be an errSeriesSet")
+	errMessage := errSeries.Err().Error()
+	testutil.Assert(t, errMessage == "duplicate label with name: foo", fmt.Sprintf("Expected error to be from duplicate label, but got: %s", errMessage))
 }
