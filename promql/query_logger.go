@@ -91,7 +91,7 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) (error, []b
 
 	fileAsBytes, err := mmap.Map(file, mmap.RDWR, 0)
 	if err != nil {
-		level.Error(logger).Log("msg", "Failed to mmap", "file", filename, "Attemped size", filesize, "err", err)
+		level.Error(logger).Log("msg", "Failed to mmap", "file", filename, "Attempted size", filesize, "err", err)
 		return err, []byte{}
 	}
 
