@@ -88,11 +88,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 		lb.Set(labels.MetricName, rule.name)
 
 		for _, l := range rule.labels {
-			if l.Value == "" {
-				lb.Del(l.Name)
-			} else {
-				lb.Set(l.Name, l.Value)
-			}
+			lb.Set(l.Name, l.Value)
 		}
 
 		sample.Metric = lb.Labels()
