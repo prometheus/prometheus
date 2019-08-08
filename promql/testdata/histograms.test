@@ -169,11 +169,11 @@ eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
 
 # Buckets with different representations of the same upper bound.
 eval instant at 50m histogram_quantile(0.5, rate(mixed_bucket[5m]))
-	{instance="ins1", job="job1"} 0.15
+	{instance="ins1", job="job1"} 0.14
 	{instance="ins2", job="job1"} NaN
 
 eval instant at 50m histogram_quantile(0.75, rate(mixed_bucket[5m]))
-	{instance="ins1", job="job1"} 0.2
+	{instance="ins1", job="job1"} 0.16999999999999998
 	{instance="ins2", job="job1"} NaN
 
 eval instant at 50m histogram_quantile(1, rate(mixed_bucket[5m]))

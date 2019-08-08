@@ -115,7 +115,27 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 func coalesceBuckets(buckets buckets) buckets {
 	last := buckets[0]
 	i := 0
+	var next float64
 	for _, b := range buckets[1:] {
+		// use next count if current count is smaller than previous one which means data loss
+		if b.count < last.count {
+			if next >= last.count {
+				b.count = next
+			} else {
+				for j := 1; ; j++ {
+					if i+j > len(buckets)-1 {
+						next = last.count
+						b.count = next
+						break
+					}
+					if buckets[i+j].count >= last.count {
+						next = buckets[i+j].count
+						b.count = next
+						break
+					}
+				}
+			}
+		}
 		if b.upperBound == last.upperBound {
 			last.count += b.count
 		} else {
