@@ -21,11 +21,12 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRuleEval(t *testing.T) {
-	storage := testutil.NewStorage(t)
+	storage := teststorage.New(t)
 	defer storage.Close()
 
 	opts := promql.EngineOpts{

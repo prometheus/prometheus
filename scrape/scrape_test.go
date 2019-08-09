@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -663,7 +664,7 @@ test_metric 1
 
 func TestScrapeLoopSeriesAdded(t *testing.T) {
 	// Need a full storage for correct Add/AddFast semantics.
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	app, err := s.Appender()
@@ -818,7 +819,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 }
 
 func TestScrapeLoopCache(t *testing.T) {
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	sapp, err := s.Appender()
@@ -897,7 +898,7 @@ func TestScrapeLoopCache(t *testing.T) {
 }
 
 func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	sapp, err := s.Appender()
@@ -1106,7 +1107,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	// This is a regression test for the scrape loop cache not properly maintaining
 	// IDs when the string representation of a metric changes across a scrape. Thus
 	// we use a real storage appender here.
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	app, err := s.Appender()
@@ -1546,7 +1547,7 @@ func (ts *testScraper) scrape(ctx context.Context, w io.Writer) (string, error) 
 }
 
 func TestScrapeLoop_RespectTimestamps(t *testing.T) {
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	app, err := s.Appender()
@@ -1583,7 +1584,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 }
 
 func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	app, err := s.Appender()
