@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -27,7 +28,7 @@ func TestDeriv(t *testing.T) {
 	// https://github.com/prometheus/prometheus/issues/2674#issuecomment-315439393
 	// This requires more precision than the usual test system offers,
 	// so we test it by hand.
-	storage := testutil.NewStorage(t)
+	storage := teststorage.New(t)
 	defer storage.Close()
 	opts := EngineOpts{
 		Logger:        nil,

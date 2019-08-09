@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -165,7 +166,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	var ar rulesRetrieverMock
 	arules := ar.AlertingRules()
-	storage := testutil.NewStorage(m.testing)
+	storage := teststorage.New(m.testing)
 	defer storage.Close()
 
 	engineOpts := promql.EngineOpts{

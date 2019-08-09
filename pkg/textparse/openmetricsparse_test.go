@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestOpenMetricsParse(t *testing.T) {
@@ -187,7 +187,7 @@ testmetric{label="\"bar\""} 1`
 		if err == io.EOF {
 			break
 		}
-		require.NoError(t, err)
+		testutil.Ok(t, err)
 
 		switch et {
 		case EntrySeries:
@@ -195,34 +195,34 @@ testmetric{label="\"bar\""} 1`
 
 			p.Metric(&res)
 
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].t, ts)
-			require.Equal(t, exp[i].v, v)
-			require.Equal(t, exp[i].lset, res)
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].t, ts)
+			testutil.Equals(t, exp[i].v, v)
+			testutil.Equals(t, exp[i].lset, res)
 			res = res[:0]
 
 		case EntryType:
 			m, typ := p.Type()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].typ, typ)
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].typ, typ)
 
 		case EntryHelp:
 			m, h := p.Help()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].help, string(h))
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].help, string(h))
 
 		case EntryUnit:
 			m, u := p.Unit()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].unit, string(u))
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].unit, string(u))
 
 		case EntryComment:
-			require.Equal(t, exp[i].comment, string(p.Comment()))
+			testutil.Equals(t, exp[i].comment, string(p.Comment()))
 		}
 
 		i++
 	}
-	require.Equal(t, len(exp), i)
+	testutil.Equals(t, len(exp), i)
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {
@@ -378,8 +378,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		require.NotNil(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		testutil.Equals(t, c.err, err.Error(), "test %d", i)
 	}
 }
 
@@ -430,11 +429,10 @@ func TestOMNullByteHandling(t *testing.T) {
 		}
 
 		if c.err == "" {
-			require.Equal(t, io.EOF, err, "test %d", i)
+			testutil.Equals(t, io.EOF, err, "test %d", i)
 			continue
 		}
 
-		require.Error(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		testutil.Equals(t, c.err, err.Error(), "test %d", i)
 	}
 }

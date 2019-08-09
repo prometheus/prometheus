@@ -30,7 +30,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/stretchr/testify/require"
 
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -220,7 +219,7 @@ func TestReshard(t *testing.T) {
 	go func() {
 		for i := 0; i < len(samples); i += config.DefaultQueueConfig.Capacity {
 			sent := m.Append(samples[i : i+config.DefaultQueueConfig.Capacity])
-			require.True(t, sent)
+			testutil.Assert(t, sent, "samples not sent")
 			time.Sleep(100 * time.Millisecond)
 		}
 	}()
@@ -522,6 +521,6 @@ func TestProcessExternalLabels(t *testing.T) {
 			expected:       labels.Labels{{Name: "a", Value: "b"}},
 		},
 	} {
-		require.Equal(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
+		testutil.Equals(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
 	}
 }

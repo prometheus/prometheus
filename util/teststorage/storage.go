@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package testutil
+package teststorage
 
 import (
 	"io/ioutil"
@@ -21,11 +21,12 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/tsdb"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
-// NewStorage returns a new storage for testing purposes
+// New returns a new storage for testing purposes
 // that removes all associated files on closing.
-func NewStorage(t T) storage.Storage {
+func New(t testutil.T) storage.Storage {
 	dir, err := ioutil.TempDir("", "test_storage")
 	if err != nil {
 		t.Fatalf("Opening test dir failed: %s", err)
