@@ -236,3 +236,60 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 
 	testutil.Equals(t, result, filteredRes)
 }
+
+func TestAlertingRuleEvaluationTimestampInTemplate(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 85 70 70
+	`)
+	testutil.Ok(t, err)
+	defer suite.Close()
+
+	err = suite.Run()
+	testutil.Ok(t, err)
+
+	expr, err := promql.ParseExpr(`http_requests < 100`)
+	testutil.Ok(t, err)
+
+	ruleWithTimestamp := NewAlertingRule(
+		"TimestampExists",
+		expr,
+		time.Minute,
+		labels.FromStrings("templated_label", "EvaluationTimestamp {{ .EvaluationTimestamp }}"),
+		nil, nil, true, log.NewNopLogger(),
+	)
+	result := promql.Vector{
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "TimestampExists",
+				"alertstate", "pending",
+				"instance", "0",
+				"job", "app-server",
+				"templated_label", "EvaluationTimestamp 2019-08-09 12:15:00 +0000 UTC",
+			),
+			Point: promql.Point{V: 1},
+		},
+	}
+
+	evalTime := time.Unix(0, 0)
+	result[0].Point.T = timestamp.FromTime(evalTime)
+
+	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
+	ruleWithTimestamp.SetEvaluationTimestamp(time.Date(2019, 8, 9, 12, 15, 0, 0, time.UTC))
+	res, err := ruleWithTimestamp.Eval(
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+	)
+	testutil.Ok(t, err)
+	for _, smpl := range res {
+		smplName := smpl.Metric.Get("__name__")
+		if smplName == "ALERTS" {
+			filteredRes = append(filteredRes, smpl)
+		} else {
+			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+			testutil.Equals(t, smplName, "ALERTS_FOR_STATE")
+		}
+	}
+
+	testutil.Equals(t, result, filteredRes)
+}

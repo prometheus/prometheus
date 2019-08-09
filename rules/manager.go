@@ -507,14 +507,15 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		func(i int, rule Rule) {
 			sp, ctx := opentracing.StartSpanFromContext(ctx, "rule")
 			sp.SetTag("name", rule.Name())
+			now := time.Now()
+			rule.SetEvaluationTimestamp(now)
 			defer func(t time.Time) {
 				sp.Finish()
 
 				since := time.Since(t)
 				g.metrics.evalDuration.Observe(since.Seconds())
 				rule.SetEvaluationDuration(since)
-				rule.SetEvaluationTimestamp(t)
-			}(time.Now())
+			}(now)
 
 			g.metrics.evalTotal.Inc()
 

@@ -318,7 +318,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			l[lbl.Name] = lbl.Value
 		}
 
-		tmplData := template.AlertTemplateData(l, r.externalLabels, smpl.V)
+		tmplData := template.AlertTemplateData(l, r.externalLabels, smpl.V, r.evaluationTimestamp)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
 		defs := []string{
