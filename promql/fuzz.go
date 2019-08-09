@@ -32,7 +32,7 @@ import "github.com/prometheus/prometheus/pkg/textparse"
 //
 // Further input samples should go in the folders fuzz-data/ParseMetric/corpus.
 //
-// Repeat for ParseMetricSeletion, ParseExpr and ParseStmt.
+// Repeat for ParseMetricSelection, ParseExpr and ParseStmt.
 
 // Tuning which value is returned from Fuzz*-functions has a strong influence
 // on how quick the fuzzer converges on "interesting" cases. At least try
