@@ -36,7 +36,7 @@ import (
 //
 // Further input samples should go in the folders fuzz-data/ParseMetric/corpus.
 //
-// Repeat for FuzzParseMetricSelector, FuzzParseOpenMetric and FuzzParseExpr.
+// Repeat for FuzzParseOpenMetric, FuzzParseMetricSelector and FuzzParseExpr.
 
 // Tuning which value is returned from Fuzz*-functions has a strong influence
 // on how quick the fuzzer converges on "interesting" cases. At least try
