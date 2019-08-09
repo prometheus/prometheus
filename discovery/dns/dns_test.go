@@ -23,9 +23,9 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/miekg/dns"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestDNS(t *testing.T) {
@@ -173,8 +173,8 @@ func TestDNS(t *testing.T) {
 			sd.lookupFn = tc.lookup
 
 			tgs, err := sd.refresh(context.Background())
-			require.NoError(t, err)
-			require.Equal(t, tc.expected, tgs)
+			testutil.Ok(t, err)
+			testutil.Equals(t, tc.expected, tgs)
 		})
 	}
 }
