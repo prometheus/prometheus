@@ -32,7 +32,6 @@ import (
 	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -1428,8 +1427,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected scrape error: %s", err)
 	}
-	require.Equal(t, "text/plain; version=0.0.4", contentType)
-	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+	testutil.Equals(t, "text/plain; version=0.0.4", contentType)
+	testutil.Equals(t, "metric_a 1\nmetric_b 2\n", buf.String())
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {

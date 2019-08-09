@@ -252,8 +252,6 @@ github.com/opentracing/opentracing-go/log
 github.com/opentracing/opentracing-go/ext
 # github.com/pkg/errors v0.8.1
 github.com/pkg/errors
-# github.com/pmezard/go-difflib v1.0.0
-github.com/pmezard/go-difflib/difflib
 # github.com/prometheus/alertmanager v0.17.0
 github.com/prometheus/alertmanager/api/v2/models
 # github.com/prometheus/client_golang v1.0.0
@@ -300,9 +298,6 @@ github.com/shurcooL/httpfs/vfsutil
 github.com/shurcooL/vfsgen
 # github.com/soheilhy/cmux v0.1.4
 github.com/soheilhy/cmux
-# github.com/stretchr/testify v1.3.0
-github.com/stretchr/testify/assert
-github.com/stretchr/testify/require
 # go.opencensus.io v0.20.2
 go.opencensus.io/plugin/ochttp
 go.opencensus.io/plugin/ochttp/propagation/tracecontext

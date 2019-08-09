@@ -17,8 +17,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -180,13 +178,13 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 	}
 
 	gotLabels := cs.Labels()
-	require.Equal(t, lbls, gotLabels)
+	testutil.Equals(t, lbls, gotLabels)
 
 	gotLabels[0].Value = "foo"
 	gotLabels[1].Value = "bar"
 
 	gotLabels = cs.Labels()
-	require.Equal(t, lbls, gotLabels)
+	testutil.Equals(t, lbls, gotLabels)
 }
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {

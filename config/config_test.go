@@ -25,7 +25,6 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery/azure"
@@ -662,7 +661,7 @@ func TestLoadConfig(t *testing.T) {
 	testutil.Ok(t, err)
 
 	expectedConf.original = c.original
-	assert.Equal(t, expectedConf, c)
+	testutil.Equals(t, expectedConf, c)
 }
 
 // YAML marshaling must not reveal authentication credentials.
