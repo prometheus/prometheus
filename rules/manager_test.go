@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -492,7 +493,7 @@ func TestForStateRestore(t *testing.T) {
 }
 
 func TestStaleness(t *testing.T) {
-	storage := testutil.NewStorage(t)
+	storage := teststorage.New(t)
 	defer storage.Close()
 	engineOpts := promql.EngineOpts{
 		Logger:        nil,
@@ -633,7 +634,7 @@ func TestCopyState(t *testing.T) {
 }
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
-	storage := testutil.NewStorage(t)
+	storage := teststorage.New(t)
 	defer storage.Close()
 	oldGroup := &Group{
 		rules: []Rule{
@@ -679,7 +680,7 @@ func TestUpdate(t *testing.T) {
 	expected := map[string]labels.Labels{
 		"test": labels.FromStrings("name", "value"),
 	}
-	storage := testutil.NewStorage(t)
+	storage := teststorage.New(t)
 	defer storage.Close()
 	opts := promql.EngineOpts{
 		Logger:        nil,
@@ -718,7 +719,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestNotify(t *testing.T) {
-	storage := testutil.NewStorage(t)
+	storage := teststorage.New(t)
 	defer storage.Close()
 	engineOpts := promql.EngineOpts{
 		Logger:        nil,

@@ -20,11 +20,12 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage/tsdb"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMetrics(t *testing.T) {
-	db := testutil.NewStorage(t)
+	db := teststorage.New(t)
 	defer db.Close()
 
 	metrics := &dto.Metric{}
