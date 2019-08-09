@@ -71,7 +71,7 @@ func fuzzParseMetricWithContentType(in []byte, contentType string) int {
 
 // Fuzz the metric parser.
 //
-// Note that his is not the parser for the text-based exposition-format; that
+// Note that this is not the parser for the text-based exposition-format; that
 // lives in github.com/prometheus/client_golang/text.
 func FuzzParseMetric(in []byte) int {
 	return fuzzParseMetricWithContentType(in, "")
