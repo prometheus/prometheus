@@ -36,7 +36,7 @@ import (
 //
 // Further input samples should go in the folders fuzz-data/ParseMetric/corpus.
 //
-// Repeat for ParseMetricSelection, ParseExpr and ParseStmt.
+// Repeat for FuzzParseMetricSelector, FuzzParseOpenMetric and FuzzParseExpr.
 
 // Tuning which value is returned from Fuzz*-functions has a strong influence
 // on how quick the fuzzer converges on "interesting" cases. At least try
@@ -49,12 +49,8 @@ const (
 	fuzzDiscard     = -1
 )
 
-// Fuzz the metric parser.
-//
-// Note that his is not the parser for the text-based exposition-format; that
-// lives in github.com/prometheus/client_golang/text.
-func FuzzParseMetric(in []byte) int {
-	p := textparse.New(in, "")
+func fuzzParseMetricWithContentType(in []byte, contentType string) int {
+	p := textparse.New(in, contentType)
 	var err error
 	for {
 		_, err = p.Next()
@@ -71,6 +67,18 @@ func FuzzParseMetric(in []byte) int {
 	}
 
 	return fuzzMeh
+}
+
+// Fuzz the metric parser.
+//
+// Note that his is not the parser for the text-based exposition-format; that
+// lives in github.com/prometheus/client_golang/text.
+func FuzzParseMetric(in []byte) int {
+	return fuzzParseMetricWithContentType(in, "")
+}
+
+func FuzzParseOpenMetric(in []byte) int {
+	return fuzzParseMetricWithContentType(in, "application/openmetrics-text")
 }
 
 // Fuzz the metric selector parser.
