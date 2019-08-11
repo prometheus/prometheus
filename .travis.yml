@@ -1,5 +1,7 @@
 language: go
-
+dist: bionic
+services:
+  - docker
 # Whenever the Go version is updated here, .circleci/config.yml and .promu.yml
 # should also be updated.
 go:
@@ -17,3 +19,9 @@ before_install:
 script:
 - make check_license style unused test lint check_assets
 - git diff --exit-code
+- ./fuzzit.sh
+
+env:
+  global:
+    # This is FUZZIT_API_KEY environment variable
+    secure: DhQmBKuIbrkwoTDSCW5zVDrtq5YBWdJooyfPxJB5Ms1hYoiiJg+8d9BMcdEtT+n+KxXGd1vAjSwIdPILqIUBM1aw3f8W9926kSuuK2N+ObcuvtDYYgx76VdVqRoEbgE8chrbVV3QxH8YfdzcUwGSZmzpHUdL/7JZbSugKr6oZN8=
