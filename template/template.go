@@ -230,7 +230,7 @@ func NewTemplateExpander(
 					if minutes != 0 {
 						return fmt.Sprintf("%s%dm %ds", sign, minutes, seconds)
 					}
-					// For seconds, we display 4 significant digts.
+					// For seconds, we display 4 significant digits.
 					return fmt.Sprintf("%s%.4gs", sign, v)
 				}
 				prefix := ""
