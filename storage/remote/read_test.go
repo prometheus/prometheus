@@ -133,12 +133,12 @@ func TestSeriesSetFilter(t *testing.T) {
 			toRemove: labels.Labels{{Name: "foo", Value: "bar"}},
 			in: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
-					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b")), Samples: []prompb.Sample{}},
+					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b"), nil), Samples: []prompb.Sample{}},
 				},
 			},
 			expected: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
-					{Labels: labelsToLabelsProto(labels.FromStrings("a", "b")), Samples: []prompb.Sample{}},
+					{Labels: labelsToLabelsProto(labels.FromStrings("a", "b"), nil), Samples: []prompb.Sample{}},
 				},
 			},
 		},

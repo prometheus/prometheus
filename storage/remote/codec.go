@@ -131,7 +131,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		}
 
 		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
-			Labels:  labelsToLabelsProto(series.Labels()),
+			Labels:  labelsToLabelsProto(series.Labels(), nil),
 			Samples: samples,
 		})
 	}
@@ -192,6 +192,7 @@ func StreamChunkedReadResponses(
 ) error {
 	var (
 		chks     []prompb.Chunk
+		lbls     []prompb.Label
 		err      error
 		lblsSize int
 	)
@@ -199,7 +200,7 @@ func StreamChunkedReadResponses(
 	for ss.Next() {
 		series := ss.At()
 		iter := series.Iterator()
-		lbls := MergeLabels(labelsToLabelsProto(series.Labels()), sortedExternalLabels)
+		lbls = MergeLabels(labelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
 
 		lblsSize = 0
 		for _, lbl := range lbls {
@@ -522,8 +523,13 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	return result
 }
 
-func labelsToLabelsProto(labels labels.Labels) []prompb.Label {
-	result := make([]prompb.Label, 0, len(labels))
+// labelsToLabelsProto transforms labels into prompb labels. The buffer slice
+// will be used to avoid allocations if it is big enough to store the labels.
+func labelsToLabelsProto(labels labels.Labels, buf []prompb.Label) []prompb.Label {
+	result := buf[:0]
+	if cap(buf) < len(labels) {
+		result = make([]prompb.Label, 0, len(labels))
+	}
 	for _, l := range labels {
 		result = append(result, prompb.Label{
 			Name:  l.Name,
