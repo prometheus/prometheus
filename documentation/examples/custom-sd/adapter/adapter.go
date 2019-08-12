@@ -18,16 +18,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"reflect"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 )
 
 type customSD struct {
@@ -101,7 +99,7 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 func (a *Adapter) refreshTargetGroups(allTargetGroups map[string][]*targetgroup.Group) {
 	tempGroups := generateTargetGroups(allTargetGroups)
 
-	if !reflect.DeepEqual(a.groups, tempGroups) {
+	if !deepEqualDisorder(a.groups, tempGroups) {
 		a.groups = tempGroups
 		err := a.writeOutput()
 		if err != nil {
@@ -109,6 +107,56 @@ func (a *Adapter) refreshTargetGroups(allTargetGroups map[string][]*targetgroup.
 		}
 	}
 }
+
+func deepEqualDisorder(x, y map[string]*customSD) bool {
+	if (x == nil) || (y == nil) {
+		return false
+	}
+	if len(x) != len(y) {
+		return false
+	}
+	if len(x) == 0 {
+		return false
+	}
+	for k, xv := range x {
+		yv, ok := y[k]
+		if !ok {
+			return false
+		}
+		isValueEqual := deepEqualGroupTarget(xv.Targets, yv.Targets)
+		if !isValueEqual {
+			return false
+		}
+	}
+	return true
+}
+
+func deepEqualGroupTarget(a, b []string) bool {
+	if (a == nil) != (b == nil) {
+		return false
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	for _, av := range a {
+
+		isEqual := false
+		for _, bv := range b {
+			if av == bv {
+				isEqual = true
+				break
+			}
+		}
+		if isEqual == false {
+			return isEqual
+		}
+
+	}
+
+	return true
+}
+
+
 
 // Writes JSON formatted targets to output file.
 func (a *Adapter) writeOutput() error {
