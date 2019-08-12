@@ -125,20 +125,6 @@
             },
           },
           {
-            alert: 'PrometheusTSDBWALCorruptions',
-            expr: |||
-              increase(tsdb_wal_corruptions_total{%(prometheusSelector)s}[3h]) > 0
-            ||| % $._config,
-            'for': '4h',
-            labels: {
-              severity: 'warning',
-            },
-            annotations: {
-              summary: 'Prometheus is detecting WAL corruptions.',
-              description: 'Prometheus %(prometheusName)s has detected {{$value | humanize}} corruptions of the write-ahead log (WAL) over the last 3h.' % $._config,
-            },
-          },
-          {
             alert: 'PrometheusNotIngestingSamples',
             expr: |||
               rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m]) <= 0
