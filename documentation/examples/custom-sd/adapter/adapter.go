@@ -152,11 +152,8 @@ func deepEqualGroupTarget(a, b []string) bool {
 		}
 
 	}
-
 	return true
 }
-
-
 
 // Writes JSON formatted targets to output file.
 func (a *Adapter) writeOutput() error {
