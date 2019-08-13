@@ -25,6 +25,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/tsdb/fileutil"
+
 	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -1114,8 +1116,9 @@ func TestSizeRetention(t *testing.T) {
 	// Test that registered size matches the actual disk size.
 	testutil.Ok(t, db.reload())                                       // Reload the db to register the new db size.
 	testutil.Equals(t, len(blocks), len(db.Blocks()))                 // Ensure all blocks are registered.
-	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
-	actSize := testutil.DirSize(t, db.Dir())
+	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
+	actSize, err := fileutil.DirSize(db.Dir())
+	testutil.Ok(t, err)
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 	// Decrease the max bytes limit so that a delete is triggered.
@@ -1129,7 +1132,8 @@ func TestSizeRetention(t *testing.T) {
 	actBlocks := db.Blocks()
 	expSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
 	actRetentCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
-	actSize = testutil.DirSize(t, db.Dir())
+	actSize, err = fileutil.DirSize(db.Dir())
+	testutil.Ok(t, err)
 
 	testutil.Equals(t, 1, actRetentCount, "metric retention count mismatch")
 	testutil.Equals(t, actSize, expSize, "metric db size doesn't match actual disk size")
@@ -2298,7 +2302,8 @@ func TestDBReadOnly(t *testing.T) {
 		testutil.Ok(t, err)
 		dbWritable.DisableCompactions()
 
-		dbSizeBeforeAppend := testutil.DirSize(t, dbWritable.Dir())
+		dbSizeBeforeAppend, err := fileutil.DirSize(dbWritable.Dir())
+		testutil.Ok(t, err)
 		app := dbWritable.Appender()
 		_, err = app.Add(labels.FromStrings("foo", "bar"), dbWritable.Head().MaxTime()+1, 0)
 		testutil.Ok(t, err)
@@ -2306,7 +2311,8 @@ func TestDBReadOnly(t *testing.T) {
 		expSeriesCount++
 
 		expBlocks = dbWritable.Blocks()
-		expDbSize := testutil.DirSize(t, dbWritable.Dir())
+		expDbSize, err := fileutil.DirSize(dbWritable.Dir())
+		testutil.Ok(t, err)
 		testutil.Assert(t, expDbSize > dbSizeBeforeAppend, "db size didn't increase after an append")
 
 		q, err := dbWritable.Querier(math.MinInt64, math.MaxInt64)

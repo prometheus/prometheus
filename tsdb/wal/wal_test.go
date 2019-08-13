@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/prometheus/prometheus/tsdb/fileutil"
+
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -408,8 +410,10 @@ func TestCompression(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dirUnCompressed))
 	}()
 
-	uncompressedSize := testutil.DirSize(t, dirUnCompressed)
-	compressedSize := testutil.DirSize(t, dirCompressed)
+	uncompressedSize, err := fileutil.DirSize(dirUnCompressed)
+	testutil.Ok(t, err)
+	compressedSize, err := fileutil.DirSize(dirCompressed)
+	testutil.Ok(t, err)
 
 	testutil.Assert(t, float64(uncompressedSize)*0.75 > float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
 }
