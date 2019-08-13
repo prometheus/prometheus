@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go v1.15.24
 	github.com/cespare/xxhash v1.1.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
+	github.com/dgryski/go-sip13 v0.0.0-20181026042036-e10d5fee7954
 	github.com/edsrzf/mmap-go v1.0.0
 	github.com/evanphx/json-patch v4.1.0+incompatible // indirect
 	github.com/go-kit/kit v0.8.0
@@ -32,6 +33,7 @@ require (
 	github.com/miekg/dns v1.1.10
 	github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223
 	github.com/oklog/run v1.0.0
+	github.com/oklog/ulid v1.3.1
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20170113013457-1de4cc2120e7
 	github.com/opentracing/opentracing-go v1.0.2
 	github.com/pkg/errors v0.8.1
@@ -39,7 +41,6 @@ require (
 	github.com/prometheus/client_golang v1.0.0
 	github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90
 	github.com/prometheus/common v0.4.1
-	github.com/prometheus/tsdb v0.10.0
 	github.com/samuel/go-zookeeper v0.0.0-20161028232340-1d7be4effb13
 	github.com/shurcooL/httpfs v0.0.0-20171119174359-809beceb2371
 	github.com/shurcooL/vfsgen v0.0.0-20180825020608-02ddb050ef6b
@@ -50,7 +51,8 @@ require (
 	golang.org/x/crypto v0.0.0-20190325154230-a5d413f7728c // indirect
 	golang.org/x/net v0.0.0-20190403144856-b630fd6fe46b
 	golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a
-	golang.org/x/sys v0.0.0-20190403152447-81d4e9dc473e // indirect
+	golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6
+	golang.org/x/sys v0.0.0-20190403152447-81d4e9dc473e
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2
 	golang.org/x/tools v0.0.0-20190312170243-e65039ee4138
 	google.golang.org/api v0.3.2

@@ -22,10 +22,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
-	"github.com/prometheus/tsdb"
-	"github.com/prometheus/tsdb/labels"
-	"github.com/prometheus/tsdb/wal"
 )
 
 var defaultRetryInterval = 100 * time.Millisecond
@@ -112,7 +112,7 @@ func TestTailSamples(t *testing.T) {
 			for i := 0; i < seriesCount; i++ {
 				ref := i + 100
 				series := enc.Series([]tsdb.RefSeries{
-					tsdb.RefSeries{
+					{
 						Ref:    uint64(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
@@ -122,7 +122,7 @@ func TestTailSamples(t *testing.T) {
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]tsdb.RefSample{
-						tsdb.RefSample{
+						{
 							Ref: uint64(inner),
 							T:   int64(now.UnixNano()) + 1,
 							V:   float64(i),
@@ -186,7 +186,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 
 			for i := 0; i < seriesCount; i++ {
 				series := enc.Series([]tsdb.RefSeries{
-					tsdb.RefSeries{
+					{
 						Ref:    uint64(i),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
@@ -194,7 +194,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				recs = append(recs, series)
 				for j := 0; j < samplesCount; j++ {
 					sample := enc.Samples([]tsdb.RefSample{
-						tsdb.RefSample{
+						{
 							Ref: uint64(j),
 							T:   int64(i),
 							V:   float64(i),
@@ -254,7 +254,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			for i := 0; i < seriesCount; i++ {
 				ref := i + 100
 				series := enc.Series([]tsdb.RefSeries{
-					tsdb.RefSeries{
+					{
 						Ref:    uint64(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
@@ -264,7 +264,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]tsdb.RefSample{
-						tsdb.RefSample{
+						{
 							Ref: uint64(inner),
 							T:   int64(i),
 							V:   float64(i),
@@ -280,7 +280,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			// Write more records after checkpointing.
 			for i := 0; i < seriesCount; i++ {
 				series := enc.Series([]tsdb.RefSeries{
-					tsdb.RefSeries{
+					{
 						Ref:    uint64(i),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
@@ -289,7 +289,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 				for j := 0; j < samplesCount; j++ {
 					sample := enc.Samples([]tsdb.RefSample{
-						tsdb.RefSample{
+						{
 							Ref: uint64(j),
 							T:   int64(i),
 							V:   float64(i),
@@ -340,7 +340,7 @@ func TestReadCheckpoint(t *testing.T) {
 			for i := 0; i < seriesCount; i++ {
 				ref := i + 100
 				series := enc.Series([]tsdb.RefSeries{
-					tsdb.RefSeries{
+					{
 						Ref:    uint64(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
@@ -350,7 +350,7 @@ func TestReadCheckpoint(t *testing.T) {
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]tsdb.RefSample{
-						tsdb.RefSample{
+						{
 							Ref: uint64(inner),
 							T:   int64(i),
 							V:   float64(i),
@@ -407,7 +407,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 				for j := 0; j < seriesCount; j++ {
 					ref := j + (i * 100)
 					series := enc.Series([]tsdb.RefSeries{
-						tsdb.RefSeries{
+						{
 							Ref:    uint64(ref),
 							Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", j)}},
 						},
@@ -417,7 +417,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 					for k := 0; k < samplesCount; k++ {
 						inner := rand.Intn(ref + 1)
 						sample := enc.Samples([]tsdb.RefSample{
-							tsdb.RefSample{
+							{
 								Ref: uint64(inner),
 								T:   int64(i),
 								V:   float64(i),
@@ -485,7 +485,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			for i := 0; i < seriesCount; i++ {
 				ref := i + 100
 				series := enc.Series([]tsdb.RefSeries{
-					tsdb.RefSeries{
+					{
 						Ref:    uint64(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
@@ -495,7 +495,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]tsdb.RefSample{
-						tsdb.RefSample{
+						{
 							Ref: uint64(inner),
 							T:   int64(i),
 							V:   float64(i),

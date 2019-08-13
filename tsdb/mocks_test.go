@@ -14,10 +14,10 @@
 package tsdb
 
 import (
-	"github.com/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/tsdb/chunks"
-	"github.com/prometheus/tsdb/index"
-	"github.com/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/labels"
 )
 
 type mockIndexWriter struct {

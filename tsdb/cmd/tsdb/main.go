@@ -32,10 +32,10 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/tsdb"
-	"github.com/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/tsdb/errors"
-	"github.com/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/labels"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -206,7 +206,9 @@ func (b *writeBenchmark) run() error {
 	var total uint64
 
 	dur, err := measureTime("ingestScrapes", func() error {
-		b.startProfiling()
+		if err := b.startProfiling(); err != nil {
+			return err
+		}
 		total, err = b.ingestScrapes(labels, 3000)
 		if err != nil {
 			return err
@@ -559,7 +561,7 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 		var cumulativeLength uint64
 
 		for i := 0; i < values.Len(); i++ {
-			value, _ := values.At(i)
+			value, err := values.At(i)
 			if err != nil {
 				return err
 			}

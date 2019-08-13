@@ -30,8 +30,8 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	tsdb_errors "github.com/prometheus/tsdb/errors"
-	"github.com/prometheus/tsdb/testutil"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/testutil"
 )
 
 type reader interface {

@@ -32,7 +32,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
 const (
@@ -387,7 +387,9 @@ func (w *WAL) Repair(origErr error) error {
 	// We expect an error here from r.Err(), so nothing to handle.
 
 	// We need to pad to the end of the last page in the repaired segment
-	w.flushPage(true)
+	if err := w.flushPage(true); err != nil {
+		return errors.Wrap(err, "flush page in repair")
+	}
 
 	// We explicitly close even when there is a defer for Windows to be
 	// able to delete it. The defer is in place to close it in-case there

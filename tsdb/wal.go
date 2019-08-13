@@ -31,10 +31,10 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/tsdb/encoding"
-	"github.com/prometheus/tsdb/fileutil"
-	"github.com/prometheus/tsdb/labels"
-	"github.com/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/encoding"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
 // WALEntryType indicates what data a WAL entry contains.
@@ -392,10 +392,14 @@ func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 	if err := csf.Truncate(off); err != nil {
 		return err
 	}
-	csf.Sync()
-	csf.Close()
+	if err := csf.Sync(); err != nil {
+		return nil
+	}
+	if err := csf.Close(); err != nil {
+		return nil
+	}
 
-	candidates[0].Close() // need close before remove on platform windows
+	_ = candidates[0].Close() // need close before remove on platform windows
 	if err := fileutil.Replace(csf.Name(), candidates[0].Name()); err != nil {
 		return errors.Wrap(err, "rename compaction segment")
 	}
@@ -416,7 +420,9 @@ func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 		return err
 	}
 	// We don't need it to be open.
-	csf.Close()
+	if err := csf.Close(); err != nil {
+		return err
+	}
 
 	w.mtx.Lock()
 	w.files = append([]*segmentFile{csf}, w.files[len(candidates):]...)

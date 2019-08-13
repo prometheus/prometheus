@@ -18,11 +18,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/prometheus/tsdb/chunks"
-	"github.com/prometheus/tsdb/fileutil"
-	"github.com/prometheus/tsdb/index"
-	"github.com/prometheus/tsdb/labels"
-	"github.com/prometheus/tsdb/testutil"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/testutil"
 )
 
 func TestRepairBadIndexVersion(t *testing.T) {
@@ -117,8 +117,8 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 	testutil.Ok(t, p.Err())
 	testutil.Equals(t, []labels.Labels{
-		{{"a", "1"}, {"b", "1"}},
-		{{"a", "2"}, {"b", "1"}},
+		{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+		{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}},
 	}, res)
 
 	meta, _, err := readMetaFile(tmpDbDir)

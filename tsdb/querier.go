@@ -20,11 +20,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/tsdb/errors"
-	"github.com/prometheus/tsdb/index"
-	"github.com/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/labels"
 )
 
 // Querier provides querying access over time series data of a fixed
@@ -287,7 +287,7 @@ func findSetMatches(pattern string) []string {
 		return nil
 	}
 	escaped := false
-	sets := []*strings.Builder{&strings.Builder{}}
+	sets := []*strings.Builder{{}}
 	for i := 4; i < len(pattern)-2; i++ {
 		if escaped {
 			switch {

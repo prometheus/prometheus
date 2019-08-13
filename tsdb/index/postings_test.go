@@ -20,7 +20,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prometheus/tsdb/testutil"
+	"github.com/prometheus/prometheus/tsdb/testutil"
 )
 
 func TestMemPostings_addFor(t *testing.T) {

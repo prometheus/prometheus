@@ -25,12 +25,12 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/tsdb/chunks"
-	"github.com/prometheus/tsdb/index"
-	"github.com/prometheus/tsdb/labels"
-	"github.com/prometheus/tsdb/testutil"
-	"github.com/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/testutil"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 type mockSeriesSet struct {
@@ -461,9 +461,9 @@ func TestBlockQuerierDelete(t *testing.T) {
 			},
 		},
 		tombstones: &memTombstones{intvlGroups: map[uint64]Intervals{
-			1: Intervals{{1, 3}},
-			2: Intervals{{1, 3}, {6, 10}},
-			3: Intervals{{6, 10}},
+			1: {{1, 3}},
+			2: {{1, 3}, {6, 10}},
+			3: {{6, 10}},
 		}},
 		queries: []query{
 			{
@@ -578,7 +578,7 @@ func TestBaseChunkSeries(t *testing.T) {
 		{
 			series: []refdSeries{
 				{
-					lset: labels.New([]labels.Label{{"a", "a"}}...),
+					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}}...),
 					chunks: []chunks.Meta{
 						{Ref: 29}, {Ref: 45}, {Ref: 245}, {Ref: 123}, {Ref: 4232}, {Ref: 5344},
 						{Ref: 121},
@@ -586,19 +586,19 @@ func TestBaseChunkSeries(t *testing.T) {
 					ref: 12,
 				},
 				{
-					lset: labels.New([]labels.Label{{"a", "a"}, {"b", "b"}}...),
+					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
 					chunks: []chunks.Meta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
-					lset:   labels.New([]labels.Label{{"b", "c"}}...),
+					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
 					chunks: []chunks.Meta{{Ref: 8282}},
 					ref:    1,
 				},
 				{
-					lset: labels.New([]labels.Label{{"b", "b"}}...),
+					lset: labels.New([]labels.Label{{Name: "b", Value: "b"}}...),
 					chunks: []chunks.Meta{
 						{Ref: 829}, {Ref: 239}, {Ref: 2349}, {Ref: 659}, {Ref: 269},
 					},
@@ -611,14 +611,14 @@ func TestBaseChunkSeries(t *testing.T) {
 		{
 			series: []refdSeries{
 				{
-					lset: labels.New([]labels.Label{{"a", "a"}, {"b", "b"}}...),
+					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
 					chunks: []chunks.Meta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
-					lset:   labels.New([]labels.Label{{"b", "c"}}...),
+					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
 					chunks: []chunks.Meta{{Ref: 8282}},
 					ref:    3,
 				},
@@ -1044,7 +1044,7 @@ func TestSeriesIterator(t *testing.T) {
 	})
 }
 
-// Regression for: https://github.com/prometheus/tsdb/pull/97
+// Regression for: https://github.com/prometheus/prometheus/tsdb/pull/97
 func TestChunkSeriesIterator_DoubleSeek(t *testing.T) {
 	chkMetas := []chunks.Meta{
 		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{}),
@@ -1094,7 +1094,7 @@ func TestChunkSeriesIterator_NextWithMinTime(t *testing.T) {
 }
 
 func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
-	lbls := []labels.Labels{labels.New(labels.Label{"a", "b"})}
+	lbls := []labels.Labels{labels.New(labels.Label{Name: "a", Value: "b"})}
 	chunkMetas := [][]chunks.Meta{
 		{
 			{MinTime: 1, MaxTime: 2, Ref: 1},
@@ -2109,27 +2109,27 @@ func TestClose(t *testing.T) {
 
 func BenchmarkQueries(b *testing.B) {
 	cases := map[string]labels.Selector{
-		"Eq Matcher: Expansion - 1": labels.Selector{
+		"Eq Matcher: Expansion - 1": {
 			labels.NewEqualMatcher("la", "va"),
 		},
-		"Eq Matcher: Expansion - 2": labels.Selector{
+		"Eq Matcher: Expansion - 2": {
 			labels.NewEqualMatcher("la", "va"),
 			labels.NewEqualMatcher("lb", "vb"),
 		},
 
-		"Eq Matcher: Expansion - 3": labels.Selector{
+		"Eq Matcher: Expansion - 3": {
 			labels.NewEqualMatcher("la", "va"),
 			labels.NewEqualMatcher("lb", "vb"),
 			labels.NewEqualMatcher("lc", "vc"),
 		},
-		"Regex Matcher: Expansion - 1": labels.Selector{
+		"Regex Matcher: Expansion - 1": {
 			labels.NewMustRegexpMatcher("la", ".*va"),
 		},
-		"Regex Matcher: Expansion - 2": labels.Selector{
+		"Regex Matcher: Expansion - 2": {
 			labels.NewMustRegexpMatcher("la", ".*va"),
 			labels.NewMustRegexpMatcher("lb", ".*vb"),
 		},
-		"Regex Matcher: Expansion - 3": labels.Selector{
+		"Regex Matcher: Expansion - 3": {
 			labels.NewMustRegexpMatcher("la", ".*va"),
 			labels.NewMustRegexpMatcher("lb", ".*vb"),
 			labels.NewMustRegexpMatcher("lc", ".*vc"),

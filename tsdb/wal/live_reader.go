@@ -32,7 +32,7 @@ type liveReaderMetrics struct {
 	readerCorruptionErrors *prometheus.CounterVec
 }
 
-// LiveReaderMetrics instatiates, registers and returns metrics to be injected
+// NewLiveReaderMetrics instatiates, registers and returns metrics to be injected
 // at LiveReader instantiation.
 func NewLiveReaderMetrics(reg prometheus.Registerer) *liveReaderMetrics {
 	m := &liveReaderMetrics{
@@ -43,7 +43,8 @@ func NewLiveReaderMetrics(reg prometheus.Registerer) *liveReaderMetrics {
 	}
 
 	if reg != nil {
-		reg.Register(m.readerCorruptionErrors)
+		// TODO(codesome): log error.
+		_ = reg.Register(m.readerCorruptionErrors)
 	}
 
 	return m
