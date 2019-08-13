@@ -1,0 +1,20 @@
+dist: trusty
+language: go
+os:
+  - windows
+  - linux
+  - osx
+
+go:
+  - 1.12.x
+
+go_import_path: github.com/prometheus/tsdb
+
+before_install:
+  - if [[ "$TRAVIS_OS_NAME" == "windows" ]]; then choco install make; fi
+
+install:
+  - make deps
+
+script:
+  - if [[ "$TRAVIS_OS_NAME" == "windows" ]]; then make test; else make all; fi
