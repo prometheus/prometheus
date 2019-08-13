@@ -83,3 +83,6 @@ require (
 )
 
 replace github.com/golang/lint => golang.org/x/lint v0.0.0-20190409202823-959b441ac422
+
+// v1.1.7 introduced a bug around marshaling Point values. Check again later if tests pass with a newer version.
+replace github.com/json-iterator/go => github.com/json-iterator/go v1.1.6

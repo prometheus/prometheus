@@ -16,7 +16,7 @@ func Unmarshal(data []byte, v interface{}) error {
 	return ConfigDefault.Unmarshal(data, v)
 }
 
-// UnmarshalFromString is a convenient method to read from string instead of []byte
+// UnmarshalFromString convenient method to read from string instead of []byte
 func UnmarshalFromString(str string, v interface{}) error {
 	return ConfigDefault.UnmarshalFromString(str, v)
 }
