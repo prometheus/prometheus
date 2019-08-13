@@ -32,6 +32,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -632,7 +633,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 
 		// Find how much of the record we can fit into the page.
 		var (
-			l    = min(len(rec), (pageSize-p.alloc)-recordHeaderSize)
+			l    = value.MinInt64(int64(len(rec)), int64((pageSize-p.alloc)-recordHeaderSize))
 			part = rec[:l]
 			buf  = p.buf[p.alloc:]
 			typ  recType

@@ -103,3 +103,57 @@ Note that on the read path, Prometheus only fetches raw series data for a set of
 ### Existing integrations
 
 To learn more about existing integrations with remote storage systems, see the [Integrations documentation](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
+
+## Database management
+
+### Import old metrics from file
+
+The command-line tool `tsdb` contains an `import` command. The goal of this tool is not for a regular backfilling, don't forget prometheus is a pull based system by assumed choice.
+You can use it to restore another prometheus partial dump, or any metrics exported from any system. The only supported input format is [OpenMetrics](https://openmetrics.io/) which is the same as Prometheus exporters exposition.
+You are free to export/convert your existing data to this format, into one time-sorted text file. The file MUST end with the line string `# EOF`.
+
+Sample file `rrd_exported_data.txt` (`[metric]{[labels]} [number value] [timestamp ms]`):
+```
+collectd_df_complex{host="myserver.fqdn.com",df="var-log",dimension="free"} 5.8093906125e+10 1582226100000
+collectd_varnish_derive{host="myserver.fqdn.com",varnish="request_rate",dimension="MAIN.client_req"} 2.3021666667e+01 1582226100000
+collectd_df_complex{host="myserver.fqdn.com",df="var-log",dimension="free"} 5.8093906125e+10 1582226100000
+collectd_load{host="myserver.fqdn.com",type="midterm"} 0.0155 1582226100000
+collectd_varnish_derive{host="myserver.fqdn.com",varnish="request_rate",dimension="MAIN.client_req"} 2.3021666667e+01 1582226100000
+collectd_load{host="myserver.fqdn.com",type="midterm"} 1.5500000000e-02 1582226100000
+collectd_varnish_derive{host="myserver.fqdn.com",varnish="request_rate",dimension="MAIN.cache_hit"} 3.8054166667e+01 1582226100000
+collectd_df_complex{host="myserver.fqdn.com",df="var-log",dimension="free"} 5.8093906125e+10 1582226100000
+collectd_varnish_derive{host="myserver.fqdn.com",varnish="request_rate",dimension="MAIN.s_pipe"} 0 1582226100000
+collectd_varnish_derive{host="myserver.fqdn.com",varnish="request_rate",dimension="MAIN.cache_hit"} 3.8054166667e+01 1582226100000
+collectd_load{host="myserver.fqdn.com",type="shortterm"} 1.1000000000e-02 1582226100000
+collectd_varnish_derive{host="myserver.fqdn.com",varnish="request_rate",dimension="MAIN.client_req"} 2.3021666667e+01 1582226100000
+collectd_load{host="myserver.fqdn.com",type="shortterm"} 1.1000000000e-02 1582226100000
+collectd_load{host="myserver.fqdn.com",type="shortterm"} 1.1000000000e-02 1582226100000
+collectd_load{host="myserver.fqdn.com",type="longterm"} 2.5500000000e-02 1582226100000
+collectd_varnish_derive{host="myserver.fqdn.com",varnish="request_rate",dimension="MAIN.s_pipe"} 0 1582226100000
+collectd_load{host="myserver.fqdn.com"type="longterm"} 2.5500000000e-02 1582226100000
+collectd_varnish_derive{host="myserver.fqdn.com",varnish="request_rate",dimension="MAIN.cache_hit"} 3.8054166667e+01 1582226100000
+collectd_load{host="myserver.fqdn.com",type="midterm"} 1.5500000000e-02 1582226100000
+# EOF
+```
+
+Note, `[number value]` can be mixed as normal or scientific number as per your preference. You are free to put custom labels on each metric, don't forget that "relabelling rules" defined in prometheus will not be applied on them! You should produce the final labels on your import file.
+
+This format is simple to produce, but not optimized or compressed, so it's normal if your data file is huge.
+
+Before starting the import process, please verify if there is an overlap between the data you are importing, and what already exists in TSDB.
+If there is an overlap, you will need to shut down TSDB, and restart it with `--storage.tsdb.allow-overlapping-blocks`, else you do not need to shut down TSDB.
+However, it is recommended you do so anyway.
+Do not forget the `--storage.tsdb.retention.time=X` flag, if you not want to lose any imported data points.
+
+An example import command is: `tsdb import rrd_exported_data.txt /var/lib/prometheus/ --max-samples-in-mem=10000`
+
+You can increase `max-sample-in-mem` to speed up the process, but the value 10000 seems a good balance.
+This tool will create all Prometheus blocks (see [On-disk layout][On-disk layout] above), in a temporary workspace. By default temp workspace is /tmp/ according to the $TMPDIR env var, so you can change it if you have disk space issues (`TMPDIR=/new/path tsdb import [...]`) !
+
+### Prometheus TSDB imports feedback
+
+Example of a 19G OpenMetrics file, with ~20k timeseries and 200M data points (samples) on 2y period. Globally resolution is very very low in this example.
+Import will take around 2h and uncompacted new TSDB blocks will be around 2.1G for 7600 blocks. When prometheus scan them, it starts automatically compacting them in the background. Once compaction is completed (~30min), TSDB blocks will be around 970M for 80 blocks (without loss of data points).
+
+The size, and number of blocks depends on timeseries numbers and metrics resolution, but it gives you an order of sizes.
+

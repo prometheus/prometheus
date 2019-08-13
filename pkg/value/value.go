@@ -32,3 +32,19 @@ const (
 func IsStaleNaN(v float64) bool {
 	return math.Float64bits(v) == StaleNaN
 }
+
+// MinInt64 returns the minimum value between two int64 values.
+func MinInt64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// MaxInt64 returns the maximum value between two int64 values.
+func MaxInt64(a, b int64) int64 {
+	if b < a {
+		return a
+	}
+	return b
+}
