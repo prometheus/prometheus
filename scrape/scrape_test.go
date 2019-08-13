@@ -85,7 +85,7 @@ func TestDroppedTargetsList(t *testing.T) {
 			},
 		}
 		sp, _                  = newScrapePool(cfg, app, 0, nil)
-		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __metrics_path__=\"\", __scheme__=\"\", job=\"dropMe\"}"
+		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
 	sp.Sync(tgs)

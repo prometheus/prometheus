@@ -449,17 +449,13 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		}
 	} else {
 		for _, l := range target.Labels() {
-			lv := lset.Get(l.Name)
-			if lv != "" {
-				lb.Set(model.ExportedLabelPrefix+l.Name, lv)
-			}
+			// existingValue will be empty if l.Name doesn't exist.
+			existingValue := lset.Get(l.Name)
+			// Because setting a label with an empty value is a no-op,
+			// this will only create the prefixed label if necessary.
+			lb.Set(model.ExportedLabelPrefix+l.Name, existingValue)
+			// It is now safe to set the target label.
 			lb.Set(l.Name, l.Value)
-		}
-	}
-
-	for _, l := range lb.Labels() {
-		if l.Value == "" {
-			lb.Del(l.Name)
 		}
 	}
 
@@ -476,10 +472,7 @@ func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels 
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range target.Labels() {
-		lv := lset.Get(l.Name)
-		if lv != "" {
-			lb.Set(model.ExportedLabelPrefix+l.Name, lv)
-		}
+		lb.Set(model.ExportedLabelPrefix+l.Name, lset.Get(l.Name))
 		lb.Set(l.Name, l.Value)
 	}
 
