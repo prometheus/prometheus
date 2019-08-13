@@ -66,7 +66,7 @@ func TestDNS(t *testing.T) {
 					nil
 			},
 			expected: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "web.example.com.",
 					Targets: []model.LabelSet{
 						{"__address__": "192.0.2.2:80", "__meta_dns_name": "web.example.com."},
@@ -91,7 +91,7 @@ func TestDNS(t *testing.T) {
 					nil
 			},
 			expected: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "web.example.com.",
 					Targets: []model.LabelSet{
 						{"__address__": "[::1]:80", "__meta_dns_name": "web.example.com."},
@@ -115,7 +115,7 @@ func TestDNS(t *testing.T) {
 					nil
 			},
 			expected: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "_mysql._tcp.db.example.com.",
 					Targets: []model.LabelSet{
 						{"__address__": "db1.example.com:3306", "__meta_dns_name": "_mysql._tcp.db.example.com."},
@@ -140,7 +140,7 @@ func TestDNS(t *testing.T) {
 					nil
 			},
 			expected: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "_mysql._tcp.db.example.com.",
 					Targets: []model.LabelSet{
 						{"__address__": "db1.example.com:3306", "__meta_dns_name": "_mysql._tcp.db.example.com."},
@@ -158,7 +158,7 @@ func TestDNS(t *testing.T) {
 				return &dns.Msg{}, nil
 			},
 			expected: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "_mysql._tcp.db.example.com.",
 				},
 			},

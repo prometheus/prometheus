@@ -34,8 +34,8 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage/tsdb"
+	libtsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
-	libtsdb "github.com/prometheus/tsdb"
 )
 
 func TestMain(m *testing.M) {

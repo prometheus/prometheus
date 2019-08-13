@@ -36,9 +36,9 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/tsdb"
+	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/util/testutil"
-	"github.com/prometheus/tsdb"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -264,7 +264,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 
 	for i := 1; i < 1000; i++ {
 		m.StoreSeries([]tsdb.RefSeries{
-			tsdb.RefSeries{
+			{
 				Ref: uint64(i),
 				Labels: tsdbLabels.Labels{
 					tsdbLabels.Label{
