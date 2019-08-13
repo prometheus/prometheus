@@ -51,9 +51,13 @@ func (e ValidationError) Error() string {
 	} else {
 		return "token is invalid"
 	}
+	return e.Inner.Error()
 }
 
 // No errors
 func (e *ValidationError) valid() bool {
-	return e.Errors == 0
+	if e.Errors > 0 {
+		return false
+	}
+	return true
 }

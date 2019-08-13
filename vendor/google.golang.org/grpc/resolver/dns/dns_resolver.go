@@ -47,6 +47,8 @@ const (
 	defaultFreq       = time.Minute * 30
 	defaultDNSSvrPort = "53"
 	golang            = "GO"
+	// txtPrefix is the prefix string to be prepended to the host name for txt record lookup.
+	txtPrefix = "_grpc_config."
 	// In DNS, service config is encoded in a TXT record via the mechanism
 	// described in RFC-1464 using the attribute name grpc_config.
 	txtAttribute = "grpc_config="
@@ -64,6 +66,9 @@ var (
 
 var (
 	defaultResolver netResolver = net.DefaultResolver
+	// To prevent excessive re-resolution, we enforce a rate limit on DNS
+	// resolution requests.
+	minDNSResRate = 30 * time.Second
 )
 
 var customAuthorityDialler = func(authority string) func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -239,7 +244,13 @@ func (d *dnsResolver) watcher() {
 			return
 		case <-d.t.C:
 		case <-d.rn:
+			if !d.t.Stop() {
+				// Before resetting a timer, it should be stopped to prevent racing with
+				// reads on it's channel.
+				<-d.t.C
+			}
 		}
+
 		result, sc := d.lookup()
 		// Next lookup should happen within an interval defined by d.freq. It may be
 		// more often due to exponential retry on empty address list.
@@ -252,6 +263,16 @@ func (d *dnsResolver) watcher() {
 		}
 		d.cc.NewServiceConfig(sc)
 		d.cc.NewAddress(result)
+
+		// Sleep to prevent excessive re-resolutions. Incoming resolution requests
+		// will be queued in d.rn.
+		t := time.NewTimer(minDNSResRate)
+		select {
+		case <-t.C:
+		case <-d.ctx.Done():
+			t.Stop()
+			return
+		}
 	}
 }
 
@@ -282,7 +303,7 @@ func (d *dnsResolver) lookupSRV() []resolver.Address {
 }
 
 func (d *dnsResolver) lookupTXT() string {
-	ss, err := d.resolver.LookupTXT(d.ctx, d.host)
+	ss, err := d.resolver.LookupTXT(d.ctx, txtPrefix+d.host)
 	if err != nil {
 		grpclog.Infof("grpc: failed dns TXT record lookup due to %v.\n", err)
 		return ""

@@ -2,7 +2,7 @@
 
 package sip13
 
-//go:generate python -m peachpy.x86_64 sip13.py -S -o sip13_amd64.s -mabi=goasm
+//go:generate go run asm.go -out sip13_amd64.s
 //go:noescape
 
 func Sum64(k0, k1 uint64, p []byte) uint64

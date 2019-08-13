@@ -141,8 +141,8 @@ func (k *DNSKEY) KeyTag() uint16 {
 	switch k.Algorithm {
 	case RSAMD5:
 		// Look at the bottom two bytes of the modules, which the last
-		// item in the pubkey. We could do this faster by looking directly
-		// at the base64 values. But I'm lazy.
+		// item in the pubkey.
+		// This algorithm has been deprecated, but keep this key-tag calculation.
 		modulus, _ := fromBase64([]byte(k.PublicKey))
 		if len(modulus) > 1 {
 			x := binary.BigEndian.Uint16(modulus[len(modulus)-2:])
@@ -318,6 +318,9 @@ func (rr *RRSIG) Sign(k crypto.Signer, rrset []RR) error {
 		}
 
 		rr.Signature = toBase64(signature)
+	case RSAMD5, DSA, DSANSEC3SHA1:
+		// See RFC 6944.
+		return ErrAlg
 	default:
 		h := hash.New()
 		h.Write(signdata)

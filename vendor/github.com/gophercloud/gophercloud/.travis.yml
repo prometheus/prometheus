@@ -9,6 +9,7 @@ install:
 go:
 - "1.10"
 - "1.11"
+- "1.12"
 - "tip"
 env:
   global:

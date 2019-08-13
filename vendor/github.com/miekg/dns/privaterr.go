@@ -68,7 +68,7 @@ func (r *PrivateRR) unpack(msg []byte, off int) (int, error) {
 	return off, err
 }
 
-func (r *PrivateRR) parse(c *zlexer, origin, file string) *ParseError {
+func (r *PrivateRR) parse(c *zlexer, origin string) *ParseError {
 	var l lex
 	text := make([]string, 0, 2) // could be 0..N elements, median is probably 1
 Fetch:
@@ -85,7 +85,7 @@ Fetch:
 
 	err := r.Data.Parse(text)
 	if err != nil {
-		return &ParseError{file, err.Error(), l}
+		return &ParseError{"", err.Error(), l}
 	}
 
 	return nil

@@ -247,6 +247,20 @@ func (p Proc) MountStats() ([]*Mount, error) {
 	return parseMountStats(f)
 }
 
+// MountInfo retrieves mount information for mount points in a
+// process's namespace.
+// It supplies information missing in `/proc/self/mounts` and
+// fixes various other problems with that file too.
+func (p Proc) MountInfo() ([]*MountInfo, error) {
+	f, err := os.Open(p.path("mountinfo"))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	return parseMountInfo(f)
+}
+
 func (p Proc) fileDescriptors() ([]string, error) {
 	d, err := os.Open(p.path("fd"))
 	if err != nil {

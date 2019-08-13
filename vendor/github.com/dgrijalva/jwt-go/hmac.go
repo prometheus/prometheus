@@ -7,7 +7,6 @@ import (
 )
 
 // Implements the HMAC-SHA family of signing methods signing methods
-// Expects key type of []byte for both signing and validation
 type SigningMethodHMAC struct {
 	Name string
 	Hash crypto.Hash
@@ -91,5 +90,5 @@ func (m *SigningMethodHMAC) Sign(signingString string, key interface{}) (string,
 		return EncodeSegment(hasher.Sum(nil)), nil
 	}
 
-	return "", ErrInvalidKeyType
+	return "", ErrInvalidKey
 }

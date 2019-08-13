@@ -73,10 +73,10 @@ func getType(v *View) metricdata.Type {
 	}
 }
 
-func getLableKeys(v *View) []string {
-	labelKeys := []string{}
+func getLabelKeys(v *View) []metricdata.LabelKey {
+	labelKeys := []metricdata.LabelKey{}
 	for _, k := range v.TagKeys {
-		labelKeys = append(labelKeys, k.Name())
+		labelKeys = append(labelKeys, metricdata.LabelKey{Key: k.Name()})
 	}
 	return labelKeys
 }
@@ -87,14 +87,23 @@ func viewToMetricDescriptor(v *View) *metricdata.Descriptor {
 		Description: v.Description,
 		Unit:        getUnit(v.Measure.Unit()),
 		Type:        getType(v),
-		LabelKeys:   getLableKeys(v),
+		LabelKeys:   getLabelKeys(v),
 	}
 }
 
-func toLabelValues(row *Row) []metricdata.LabelValue {
+func toLabelValues(row *Row, expectedKeys []metricdata.LabelKey) []metricdata.LabelValue {
 	labelValues := []metricdata.LabelValue{}
+	tagMap := make(map[string]string)
 	for _, tag := range row.Tags {
-		labelValues = append(labelValues, metricdata.NewLabelValue(tag.Value))
+		tagMap[tag.Key.Name()] = tag.Value
+	}
+
+	for _, key := range expectedKeys {
+		if val, ok := tagMap[key.Key]; ok {
+			labelValues = append(labelValues, metricdata.NewLabelValue(val))
+		} else {
+			labelValues = append(labelValues, metricdata.LabelValue{})
+		}
 	}
 	return labelValues
 }
@@ -102,7 +111,7 @@ func toLabelValues(row *Row) []metricdata.LabelValue {
 func rowToTimeseries(v *viewInternal, row *Row, now time.Time, startTime time.Time) *metricdata.TimeSeries {
 	return &metricdata.TimeSeries{
 		Points:      []metricdata.Point{row.Data.toPoint(v.metricDescriptor.Type, now)},
-		LabelValues: toLabelValues(row),
+		LabelValues: toLabelValues(row, v.metricDescriptor.LabelKeys),
 		StartTime:   startTime,
 	}
 }
