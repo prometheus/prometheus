@@ -20,6 +20,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/testutil"
 )
 
@@ -714,6 +715,847 @@ func TestBigEndian(t *testing.T) {
 			testutil.Equals(t, v.found, bep.Seek(uint64(v.seek)))
 			testutil.Equals(t, uint64(v.val), bep.At())
 			testutil.Assert(t, bep.Err() == nil, "")
+		}
+	})
+}
+
+func TestPrefixCompressedPostings(t *testing.T) {
+	num := 1000
+	// mock a list as postings
+	ls := make([]uint64, num)
+	ls[0] = 2
+	for i := 1; i < num; i++ {
+		ls[i] = ls[i-1] + uint64(rand.Int31n(25)) + 2
+	}
+
+	buf := encoding.Encbuf{}
+	writePrefixCompressedPostings(&buf, ls)
+
+	t.Run("Iteration", func(t *testing.T) {
+		rbp := newPrefixCompressedPostings(buf.Get())
+		for i := 0; i < num; i++ {
+			testutil.Assert(t, rbp.Next() == true, "")
+			testutil.Equals(t, uint64(ls[i]), rbp.At())
+		}
+
+		testutil.Assert(t, rbp.Next() == false, "")
+		testutil.Assert(t, rbp.Err() == nil, "")
+	})
+
+	t.Run("Seek", func(t *testing.T) {
+		table := []struct {
+			seek  uint64
+			val   uint64
+			found bool
+		}{
+			{
+				ls[0] - 1, ls[0], true,
+			},
+			{
+				ls[4], ls[4], true,
+			},
+			{
+				ls[500] - 1, ls[500], true,
+			},
+			{
+				ls[600] + 1, ls[601], true,
+			},
+			{
+				ls[600] + 1, ls[601], true,
+			},
+			{
+				ls[600] + 1, ls[601], true,
+			},
+			{
+				ls[0], ls[601], true,
+			},
+			{
+				ls[600], ls[601], true,
+			},
+			{
+				ls[999], ls[999], true,
+			},
+			{
+				ls[999] + 10, ls[999], false,
+			},
+		}
+
+		rbp := newPrefixCompressedPostings(buf.Get())
+
+		for _, v := range table {
+			testutil.Equals(t, v.found, rbp.Seek(uint64(v.seek)))
+			testutil.Equals(t, uint64(v.val), rbp.At())
+			testutil.Assert(t, rbp.Err() == nil, "")
+		}
+	})
+}
+
+func BenchmarkPostingsOneBlock(b *testing.B) {
+	num := 1000
+	ls1 := make([]uint32, num) // Block with key 0.
+	ls2 := make([]uint32, num) // Block with key > 0.
+	ls1[0] = 2
+	ls2[0] = 655360
+	for i := 1; i < num; i++ {
+		ls1[i] = ls1[i-1] + uint32(rand.Int31n(10)) + 2
+		ls2[i] = ls2[i-1] + uint32(rand.Int31n(10)) + 2
+	}
+
+	// bigEndianPostings for ls1.
+	bufBE1 := make([]byte, num*4)
+	for i := 0; i < num; i++ {
+		b := bufBE1[i*4 : i*4+4]
+		binary.BigEndian.PutUint32(b, ls1[i])
+	}
+
+	// prefixCompressedPostings for ls1.
+	bufPCP1 := encoding.Encbuf{}
+	temp := make([]uint64, len(ls1))
+	for i, x := range ls1 {
+		temp[i] = uint64(x)
+	}
+	writePrefixCompressedPostings(&bufPCP1, temp)
+
+	// bigEndianPostings for ls2.
+	bufBE2 := make([]byte, num*4)
+	for i := 0; i < num; i++ {
+		b := bufBE2[i*4 : i*4+4]
+		binary.BigEndian.PutUint32(b, ls2[i])
+	}
+
+	// prefixCompressedPostings for ls2.
+	bufPCP2 := encoding.Encbuf{}
+	for i, x := range ls2 {
+		temp[i] = uint64(x)
+	}
+	writePrefixCompressedPostings(&bufPCP2, temp)
+
+	table1 := []struct {
+		seek  uint32
+		val   uint32
+		found bool
+	}{
+		{
+			ls1[0] - 1, ls1[0], true,
+		},
+		{
+			ls1[50], ls1[50], true,
+		},
+		{
+			ls1[100], ls1[100], true,
+		},
+		{
+			ls1[150] + 1, ls1[151], true,
+		},
+		{
+			ls1[200], ls1[200], true,
+		},
+		{
+			ls1[250], ls1[250], true,
+		},
+		{
+			ls1[300] + 1, ls1[301], true,
+		},
+		{
+			ls1[350], ls1[350], true,
+		},
+		{
+			ls1[400], ls1[400], true,
+		},
+		{
+			ls1[450] + 1, ls1[451], true,
+		},
+		{
+			ls1[500], ls1[500], true,
+		},
+		{
+			ls1[550], ls1[550], true,
+		},
+		{
+			ls1[600] + 1, ls1[601], true,
+		},
+		{
+			ls1[650], ls1[650], true,
+		},
+		{
+			ls1[700], ls1[700], true,
+		},
+		{
+			ls1[750] + 1, ls1[751], true,
+		},
+		{
+			ls1[800], ls1[800], true,
+		},
+		{
+			ls1[850], ls1[850], true,
+		},
+		{
+			ls1[900] + 1, ls1[901], true,
+		},
+		{
+			ls1[950], ls1[950], true,
+		},
+		{
+			ls1[999], ls1[999], true,
+		},
+		{
+			ls1[999] + 10, ls1[999], false,
+		},
+	}
+
+	table2 := []struct {
+		seek  uint32
+		val   uint32
+		found bool
+	}{
+		{
+			ls2[0] - 1, ls2[0], true,
+		},
+		{
+			ls2[50], ls2[50], true,
+		},
+		{
+			ls2[100], ls2[100], true,
+		},
+		{
+			ls2[150] + 1, ls2[151], true,
+		},
+		{
+			ls2[200], ls2[200], true,
+		},
+		{
+			ls2[250], ls2[250], true,
+		},
+		{
+			ls2[300] + 1, ls2[301], true,
+		},
+		{
+			ls2[350], ls2[350], true,
+		},
+		{
+			ls2[400], ls2[400], true,
+		},
+		{
+			ls2[450] + 1, ls2[451], true,
+		},
+		{
+			ls2[500], ls2[500], true,
+		},
+		{
+			ls2[550], ls2[550], true,
+		},
+		{
+			ls2[600] + 1, ls2[601], true,
+		},
+		{
+			ls2[650], ls2[650], true,
+		},
+		{
+			ls2[700], ls2[700], true,
+		},
+		{
+			ls2[750] + 1, ls2[751], true,
+		},
+		{
+			ls2[800], ls2[800], true,
+		},
+		{
+			ls2[850], ls2[850], true,
+		},
+		{
+			ls2[900] + 1, ls2[901], true,
+		},
+		{
+			ls2[950], ls2[950], true,
+		},
+		{
+			ls2[999], ls2[999], true,
+		},
+		{
+			ls2[999] + 10, ls2[999], false,
+		},
+	}
+
+	b.Run("bigEndianIteration_one_block_key=0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			bep := newBigEndianPostings(bufBE1)
+
+			for i := 0; i < num; i++ {
+				testutil.Assert(bench, bep.Next() == true, "")
+				testutil.Equals(bench, uint64(ls1[i]), bep.At())
+			}
+			testutil.Assert(bench, bep.Next() == false, "")
+			testutil.Assert(bench, bep.Err() == nil, "")
+		}
+	})
+	b.Run("prefixCompressedPostingsIteration_one_block_key=0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			rbm := newPrefixCompressedPostings(bufPCP1.Get())
+
+			for i := 0; i < num; i++ {
+				testutil.Assert(bench, rbm.Next() == true, "")
+				testutil.Equals(bench, uint64(ls1[i]), rbm.At())
+			}
+			testutil.Assert(bench, rbm.Next() == false, "")
+			testutil.Assert(bench, rbm.Err() == nil, "")
+		}
+	})
+
+	b.Run("bigEndianSeek_one_block_key=0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			bep := newBigEndianPostings(bufBE1)
+
+			for _, v := range table1 {
+				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
+				testutil.Equals(bench, uint64(v.val), bep.At())
+				testutil.Assert(bench, bep.Err() == nil, "")
+			}
+		}
+	})
+	b.Run("prefixCompressedPostingsSeek_one_block_key=0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			rbm := newPrefixCompressedPostings(bufPCP1.Get())
+
+			for _, v := range table1 {
+				testutil.Equals(bench, v.found, rbm.Seek(uint64(v.seek)))
+				testutil.Equals(bench, uint64(v.val), rbm.At())
+				testutil.Assert(bench, rbm.Err() == nil, "")
+			}
+		}
+	})
+
+	b.Run("bigEndianIteration_one_block_key>0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			bep := newBigEndianPostings(bufBE2)
+
+			for i := 0; i < num; i++ {
+				testutil.Assert(bench, bep.Next() == true, "")
+				testutil.Equals(bench, uint64(ls2[i]), bep.At())
+			}
+			testutil.Assert(bench, bep.Next() == false, "")
+			testutil.Assert(bench, bep.Err() == nil, "")
+		}
+	})
+	b.Run("prefixCompressedPostingsIteration_one_block_key>0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			rbm := newPrefixCompressedPostings(bufPCP2.Get())
+
+			for i := 0; i < num; i++ {
+				testutil.Assert(bench, rbm.Next() == true, "")
+				testutil.Equals(bench, uint64(ls2[i]), rbm.At())
+			}
+			testutil.Assert(bench, rbm.Next() == false, "")
+			testutil.Assert(bench, rbm.Err() == nil, "")
+		}
+	})
+
+	b.Run("bigEndianSeek_one_block_key>0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			bep := newBigEndianPostings(bufBE2)
+
+			for _, v := range table2 {
+				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
+				testutil.Equals(bench, uint64(v.val), bep.At())
+				testutil.Assert(bench, bep.Err() == nil, "")
+			}
+		}
+	})
+	b.Run("prefixCompressedPostingsSeek_one_block_key>0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			rbm := newPrefixCompressedPostings(bufPCP2.Get())
+
+			for _, v := range table2 {
+				testutil.Equals(bench, v.found, rbm.Seek(uint64(v.seek)))
+				testutil.Equals(bench, uint64(v.val), rbm.At())
+				testutil.Assert(bench, rbm.Err() == nil, "")
+			}
+		}
+	})
+}
+
+func BenchmarkPostingsManyBlocks(b *testing.B) {
+	num := 100000
+	ls1 := make([]uint32, num) // Block with key 0.
+	ls2 := make([]uint32, num) // Block with key > 0.
+	ls1[0] = 2
+	ls2[0] = 655360
+	for i := 1; i < num; i++ {
+		ls1[i] = ls1[i-1] + uint32(rand.Int31n(25)) + 2
+		ls2[i] = ls2[i-1] + uint32(rand.Int31n(25)) + 2
+	}
+
+	// bigEndianPostings for ls1.
+	bufBE1 := make([]byte, num*4)
+	for i := 0; i < num; i++ {
+		b := bufBE1[i*4 : i*4+4]
+		binary.BigEndian.PutUint32(b, ls1[i])
+	}
+
+	// prefixCompressedPostings for ls1.
+	bufPCP1 := encoding.Encbuf{}
+	temp := make([]uint64, len(ls1))
+	for i, x := range ls1 {
+		temp[i] = uint64(x)
+	}
+	writePrefixCompressedPostings(&bufPCP1, temp)
+
+	// bigEndianPostings for ls2.
+	bufBE2 := make([]byte, num*4)
+	for i := 0; i < num; i++ {
+		b := bufBE2[i*4 : i*4+4]
+		binary.BigEndian.PutUint32(b, ls2[i])
+	}
+
+	// prefixCompressedPostings for ls2.
+	bufPCP2 := encoding.Encbuf{}
+	for i, x := range ls2 {
+		temp[i] = uint64(x)
+	}
+	writePrefixCompressedPostings(&bufPCP2, temp)
+
+	table1 := []struct {
+		seek  uint32
+		val   uint32
+		found bool
+	}{
+		{
+			ls1[0] - 1, ls1[0], true,
+		},
+		{
+			ls1[1000], ls1[1000], true,
+		},
+		{
+			ls1[1001], ls1[1001], true,
+		},
+		{
+			ls1[2000] + 1, ls1[2001], true,
+		},
+		{
+			ls1[3000], ls1[3000], true,
+		},
+		{
+			ls1[3001], ls1[3001], true,
+		},
+		{
+			ls1[4000] + 1, ls1[4001], true,
+		},
+		{
+			ls1[5000], ls1[5000], true,
+		},
+		{
+			ls1[5001], ls1[5001], true,
+		},
+		{
+			ls1[6000] + 1, ls1[6001], true,
+		},
+		{
+			ls1[10000], ls1[10000], true,
+		},
+		{
+			ls1[10001], ls1[10001], true,
+		},
+		{
+			ls1[20000] + 1, ls1[20001], true,
+		},
+		{
+			ls1[30000], ls1[30000], true,
+		},
+		{
+			ls1[30001], ls1[30001], true,
+		},
+		{
+			ls1[40000] + 1, ls1[40001], true,
+		},
+		{
+			ls1[50000], ls1[50000], true,
+		},
+		{
+			ls1[50001], ls1[50001], true,
+		},
+		{
+			ls1[60000] + 1, ls1[60001], true,
+		},
+		{
+			ls1[70000], ls1[70000], true,
+		},
+		{
+			ls1[70001], ls1[70001], true,
+		},
+		{
+			ls1[80000] + 1, ls1[80001], true,
+		},
+		{
+			ls1[99999], ls1[99999], true,
+		},
+		{
+			ls1[99999] + 10, ls1[99999], false,
+		},
+	}
+
+	table2 := []struct {
+		seek  uint32
+		val   uint32
+		found bool
+	}{
+		{
+			ls2[0] - 1, ls2[0], true,
+		},
+		{
+			ls2[1000], ls2[1000], true,
+		},
+		{
+			ls2[1001], ls2[1001], true,
+		},
+		{
+			ls2[2000] + 1, ls2[2001], true,
+		},
+		{
+			ls2[3000], ls2[3000], true,
+		},
+		{
+			ls2[3001], ls2[3001], true,
+		},
+		{
+			ls2[4000] + 1, ls2[4001], true,
+		},
+		{
+			ls2[5000], ls2[5000], true,
+		},
+		{
+			ls2[5001], ls2[5001], true,
+		},
+		{
+			ls2[6000] + 1, ls2[6001], true,
+		},
+		{
+			ls2[10000], ls2[10000], true,
+		},
+		{
+			ls2[10001], ls2[10001], true,
+		},
+		{
+			ls2[20000] + 1, ls2[20001], true,
+		},
+		{
+			ls2[30000], ls2[30000], true,
+		},
+		{
+			ls2[30001], ls2[30001], true,
+		},
+		{
+			ls2[40000] + 1, ls2[40001], true,
+		},
+		{
+			ls2[50000], ls2[50000], true,
+		},
+		{
+			ls2[50001], ls2[50001], true,
+		},
+		{
+			ls2[60000] + 1, ls2[60001], true,
+		},
+		{
+			ls2[70000], ls2[70000], true,
+		},
+		{
+			ls2[70001], ls2[70001], true,
+		},
+		{
+			ls2[80000] + 1, ls2[80001], true,
+		},
+		{
+			ls2[99999], ls2[99999], true,
+		},
+		{
+			ls2[99999] + 10, ls2[99999], false,
+		},
+	}
+
+	b.Run("bigEndianIteration_many_blocks_key=0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			bep := newBigEndianPostings(bufBE1)
+
+			for i := 0; i < num; i++ {
+				testutil.Assert(bench, bep.Next() == true, "")
+				testutil.Equals(bench, uint64(ls1[i]), bep.At())
+			}
+			testutil.Assert(bench, bep.Next() == false, "")
+			testutil.Assert(bench, bep.Err() == nil, "")
+		}
+	})
+	b.Run("prefixCompressedPostingsIteration_many_blocks_key=0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			rbm := newPrefixCompressedPostings(bufPCP1.Get())
+
+			for i := 0; i < num; i++ {
+				testutil.Assert(bench, rbm.Next() == true, "")
+				testutil.Equals(bench, uint64(ls1[i]), rbm.At())
+			}
+			testutil.Assert(bench, rbm.Next() == false, "")
+			testutil.Assert(bench, rbm.Err() == nil, "")
+		}
+	})
+
+	b.Run("bigEndianSeek_many_blocks_key=0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			bep := newBigEndianPostings(bufBE1)
+
+			for _, v := range table1 {
+				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
+				testutil.Equals(bench, uint64(v.val), bep.At())
+				testutil.Assert(bench, bep.Err() == nil, "")
+			}
+		}
+	})
+	b.Run("prefixCompressedPostingsSeek_many_blocks_key=0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			rbm := newPrefixCompressedPostings(bufPCP1.Get())
+
+			for _, v := range table1 {
+				testutil.Equals(bench, v.found, rbm.Seek(uint64(v.seek)))
+				testutil.Equals(bench, uint64(v.val), rbm.At())
+				testutil.Assert(bench, rbm.Err() == nil, "")
+			}
+		}
+	})
+
+	b.Run("bigEndianIteration_many_blocks_key>0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			bep := newBigEndianPostings(bufBE2)
+
+			for i := 0; i < num; i++ {
+				testutil.Assert(bench, bep.Next() == true, "")
+				testutil.Equals(bench, uint64(ls2[i]), bep.At())
+			}
+			testutil.Assert(bench, bep.Next() == false, "")
+			testutil.Assert(bench, bep.Err() == nil, "")
+		}
+	})
+	b.Run("prefixCompressedPostingsIteration_many_blocks_key>0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			rbm := newPrefixCompressedPostings(bufPCP2.Get())
+
+			for i := 0; i < num; i++ {
+				testutil.Assert(bench, rbm.Next() == true, "")
+				testutil.Equals(bench, uint64(ls2[i]), rbm.At())
+			}
+			testutil.Assert(bench, rbm.Next() == false, "")
+			testutil.Assert(bench, rbm.Err() == nil, "")
+		}
+	})
+
+	b.Run("bigEndianSeek_many_blocks_key>0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			bep := newBigEndianPostings(bufBE2)
+
+			for _, v := range table2 {
+				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
+				testutil.Equals(bench, uint64(v.val), bep.At())
+				testutil.Assert(bench, bep.Err() == nil, "")
+			}
+		}
+	})
+	b.Run("prefixCompressedPostingsSeek_many_blocks_key>0", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			rbm := newPrefixCompressedPostings(bufPCP2.Get())
+
+			for _, v := range table2 {
+				testutil.Equals(bench, v.found, rbm.Seek(uint64(v.seek)))
+				testutil.Equals(bench, uint64(v.val), rbm.At())
+				testutil.Assert(bench, rbm.Err() == nil, "")
+			}
+		}
+	})
+}
+
+func BenchmarkPostings(b *testing.B) {
+	num := 100000
+	// mock a list as postings
+	ls := make([]uint32, num)
+	ls[0] = 2
+	for i := 1; i < num; i++ {
+		ls[i] = ls[i-1] + uint32(rand.Int31n(25)) + 2
+	}
+
+	// bigEndianPostings.
+	bufBE := make([]byte, num*4)
+	for i := 0; i < num; i++ {
+		b := bufBE[i*4 : i*4+4]
+		binary.BigEndian.PutUint32(b, ls[i])
+	}
+
+	// prefixCompressedPostings.
+	bufPCP := encoding.Encbuf{}
+	temp := make([]uint64, 0, len(ls))
+	for _, x := range ls {
+		temp = append(temp, uint64(x))
+	}
+	writePrefixCompressedPostings(&bufPCP, temp)
+
+	table := []struct {
+		seek  uint32
+		val   uint32
+		found bool
+	}{
+		{
+			ls[0] - 1, ls[0], true,
+		},
+		{
+			ls[1000], ls[1000], true,
+		},
+		{
+			ls[1001], ls[1001], true,
+		},
+		{
+			ls[2000] + 1, ls[2001], true,
+		},
+		{
+			ls[3000], ls[3000], true,
+		},
+		{
+			ls[3001], ls[3001], true,
+		},
+		{
+			ls[4000] + 1, ls[4001], true,
+		},
+		{
+			ls[5000], ls[5000], true,
+		},
+		{
+			ls[5001], ls[5001], true,
+		},
+		{
+			ls[6000] + 1, ls[6001], true,
+		},
+		{
+			ls[10000], ls[10000], true,
+		},
+		{
+			ls[10001], ls[10001], true,
+		},
+		{
+			ls[20000] + 1, ls[20001], true,
+		},
+		{
+			ls[30000], ls[30000], true,
+		},
+		{
+			ls[30001], ls[30001], true,
+		},
+		{
+			ls[40000] + 1, ls[40001], true,
+		},
+		{
+			ls[50000], ls[50000], true,
+		},
+		{
+			ls[50001], ls[50001], true,
+		},
+		{
+			ls[60000] + 1, ls[60001], true,
+		},
+		{
+			ls[70000], ls[70000], true,
+		},
+		{
+			ls[70001], ls[70001], true,
+		},
+		{
+			ls[80000] + 1, ls[80001], true,
+		},
+		{
+			ls[99999], ls[99999], true,
+		},
+		{
+			ls[99999] + 10, ls[99999], false,
+		},
+	}
+
+	b.Run("bigEndianIteration", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			bep := newBigEndianPostings(bufBE)
+
+			for i := 0; i < num; i++ {
+				testutil.Assert(bench, bep.Next() == true, "")
+				testutil.Equals(bench, uint64(ls[i]), bep.At())
+			}
+			testutil.Assert(bench, bep.Next() == false, "")
+			testutil.Assert(bench, bep.Err() == nil, "")
+		}
+	})
+	b.Run("prefixCompressedPostingsIteration", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			rbm := newPrefixCompressedPostings(bufPCP.Get())
+
+			for i := 0; i < num; i++ {
+				testutil.Assert(bench, rbm.Next() == true, "")
+				testutil.Equals(bench, uint64(ls[i]), rbm.At())
+			}
+			testutil.Assert(bench, rbm.Next() == false, "")
+			testutil.Assert(bench, rbm.Err() == nil, "")
+		}
+	})
+
+	b.Run("bigEndianSeek", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			bep := newBigEndianPostings(bufBE)
+
+			for _, v := range table {
+				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
+				testutil.Equals(bench, uint64(v.val), bep.At())
+				testutil.Assert(bench, bep.Err() == nil, "")
+			}
+		}
+	})
+	b.Run("prefixCompressedPostingsSeek", func(bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for j := 0; j < bench.N; j++ {
+			rbm := newPrefixCompressedPostings(bufPCP.Get())
+
+			for _, v := range table {
+				testutil.Equals(bench, v.found, rbm.Seek(uint64(v.seek)))
+				testutil.Equals(bench, uint64(v.val), rbm.At())
+				testutil.Assert(bench, rbm.Err() == nil, "")
+			}
 		}
 	})
 }

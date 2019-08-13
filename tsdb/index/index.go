@@ -44,6 +44,8 @@ const (
 	FormatV1 = 1
 	// FormatV2 represents 2 version of index.
 	FormatV2 = 2
+	// FormatV3 represents 3 version of index (using PrefixCompressedPostings for postings).
+	FormatV3 = 3
 
 	labelNameSeperator = "\xff"
 
@@ -121,7 +123,7 @@ type Writer struct {
 	// Reusable memory.
 	buf1    encoding.Encbuf
 	buf2    encoding.Encbuf
-	uint32s []uint32
+	uint64s []uint64
 
 	symbols       map[string]uint32     // symbol offsets
 	seriesOffsets map[uint64]uint64     // offsets of series
@@ -205,7 +207,7 @@ func NewWriter(fn string) (*Writer, error) {
 		// Reusable memory.
 		buf1:    encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 		buf2:    encoding.Encbuf{B: make([]byte, 0, 1<<22)},
-		uint32s: make([]uint32, 0, 1<<15),
+		uint64s: make([]uint64, 0, 1<<15),
 
 		// Caches.
 		symbols:       make(map[string]uint32, 1<<13),
@@ -290,7 +292,7 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 func (w *Writer) writeMeta() error {
 	w.buf1.Reset()
 	w.buf1.PutBE32(MagicIndex)
-	w.buf1.PutByte(FormatV2)
+	w.buf1.PutByte(FormatV3)
 
 	return w.write(w.buf1.Get())
 }
@@ -522,30 +524,25 @@ func (w *Writer) WritePostings(name, value string, it Postings) error {
 	// Order of the references in the postings list does not imply order
 	// of the series references within the persisted block they are mapped to.
 	// We have to sort the new references again.
-	refs := w.uint32s[:0]
+	refs := w.uint64s[:0]
 
 	for it.Next() {
 		offset, ok := w.seriesOffsets[it.At()]
 		if !ok {
 			return errors.Errorf("%p series for reference %d not found", w, it.At())
 		}
-		if offset > (1<<32)-1 {
-			return errors.Errorf("series offset %d exceeds 4 bytes", offset)
-		}
-		refs = append(refs, uint32(offset))
+		refs = append(refs, offset)
 	}
 	if err := it.Err(); err != nil {
 		return err
 	}
-	sort.Sort(uint32slice(refs))
+	sort.Sort(uint64slice(refs))
 
 	w.buf2.Reset()
 	w.buf2.PutBE32int(len(refs))
 
-	for _, r := range refs {
-		w.buf2.PutBE32(r)
-	}
-	w.uint32s = refs
+	writePrefixCompressedPostings(&w.buf2, refs)
+	w.uint64s = refs
 
 	w.buf1.Reset()
 	w.buf1.PutBE32int(w.buf2.Len())
@@ -556,11 +553,11 @@ func (w *Writer) WritePostings(name, value string, it Postings) error {
 	return errors.Wrap(err, "write postings")
 }
 
-type uint32slice []uint32
+type uint64slice []uint64
 
-func (s uint32slice) Len() int           { return len(s) }
-func (s uint32slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s uint32slice) Less(i, j int) bool { return s[i] < s[j] }
+func (s uint64slice) Len() int           { return len(s) }
+func (s uint64slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s uint64slice) Less(i, j int) bool { return s[i] < s[j] }
 
 type labelIndexHashEntry struct {
 	keys   []string
@@ -678,7 +675,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 	r.version = int(r.b.Range(4, 5)[0])
 
-	if r.version != FormatV1 && r.version != FormatV2 {
+	if r.version != FormatV1 && r.version != FormatV2 && r.version != FormatV3 {
 		return nil, errors.Errorf("unknown index file version %d", r.version)
 	}
 
@@ -782,14 +779,14 @@ func ReadSymbols(bs ByteSlice, version int, off int) ([]string, map[uint32]strin
 		symbolSlice []string
 		symbols     = map[uint32]string{}
 	)
-	if version == FormatV2 {
+	if version == FormatV2 || version == FormatV3 {
 		symbolSlice = make([]string, 0, cnt)
 	}
 
 	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
 		s := d.UvarintStr()
 
-		if version == FormatV2 {
+		if version == FormatV2 || version == FormatV3 {
 			symbolSlice = append(symbolSlice, s)
 		} else {
 			symbols[nextPos] = s
@@ -911,7 +908,7 @@ func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) err
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
-	if r.version == FormatV2 {
+	if r.version == FormatV2 || r.version == FormatV3 {
 		offset = id * 16
 	}
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
@@ -935,7 +932,7 @@ func (r *Reader) Postings(name, value string) (Postings, error) {
 	if d.Err() != nil {
 		return nil, errors.Wrap(d.Err(), "get postings entry")
 	}
-	_, p, err := r.dec.Postings(d.Get())
+	_, p, err := r.dec.Postings(d.Get(), r.version)
 	if err != nil {
 		return nil, errors.Wrap(err, "decode postings")
 	}
@@ -1059,11 +1056,20 @@ type Decoder struct {
 }
 
 // Postings returns a postings list for b and its number of elements.
-func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
+func (dec *Decoder) Postings(b []byte, version int) (int, Postings, error) {
 	d := encoding.Decbuf{B: b}
 	n := d.Be32int()
+	if n == 0 {
+		return n, EmptyPostings(), d.Err()
+	}
 	l := d.Get()
-	return n, newBigEndianPostings(l), d.Err()
+	if version == FormatV3 {
+		return n, newPrefixCompressedPostings(l), d.Err()
+	} else if version == FormatV1 || version == FormatV2 {
+		return n, newBigEndianPostings(l), d.Err()
+	} else {
+		return n, EmptyPostings(), d.Err()
+	}
 }
 
 // Series decodes a series entry from the given byte slice into lset and chks.
