@@ -54,7 +54,7 @@ func (rr *TSIG) String() string {
 	return s
 }
 
-func (rr *TSIG) parse(c *zlexer, origin, file string) *ParseError {
+func (rr *TSIG) parse(c *zlexer, origin string) *ParseError {
 	panic("dns: internal error: parse should never be called on TSIG")
 }
 

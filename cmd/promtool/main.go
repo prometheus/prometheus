@@ -501,7 +501,8 @@ func QueryLabels(url *url.URL, name string, p printer) int {
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.LabelValues(ctx, name)
+	// TODO: Show warnings (second return value) somehow? See https://github.com/prometheus/prometheus/issues/5885
+	val, _, err := api.LabelValues(ctx, name)
 	cancel()
 
 	if err != nil {

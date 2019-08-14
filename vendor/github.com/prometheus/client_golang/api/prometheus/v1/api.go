@@ -229,9 +229,9 @@ type API interface {
 	// Flags returns the flag values that Prometheus was launched with.
 	Flags(ctx context.Context) (FlagsResult, error)
 	// LabelNames returns all the unique label names present in the block in sorted order.
-	LabelNames(ctx context.Context) ([]string, error)
+	LabelNames(ctx context.Context) ([]string, api.Warnings, error)
 	// LabelValues performs a query for the values of the given label.
-	LabelValues(ctx context.Context, label string) (model.LabelValues, error)
+	LabelValues(ctx context.Context, label string) (model.LabelValues, api.Warnings, error)
 	// Query performs a query for the given time.
 	Query(ctx context.Context, query string, ts time.Time) (model.Value, api.Warnings, error)
 	// QueryRange performs a query for the given range.
@@ -594,8 +594,8 @@ func (h *httpAPI) DeleteSeries(ctx context.Context, matches []string, startTime 
 		q.Add("match[]", m)
 	}
 
-	q.Set("start", startTime.Format(time.RFC3339Nano))
-	q.Set("end", endTime.Format(time.RFC3339Nano))
+	q.Set("start", formatTime(startTime))
+	q.Set("end", formatTime(endTime))
 
 	u.RawQuery = q.Encode()
 
@@ -625,32 +625,32 @@ func (h *httpAPI) Flags(ctx context.Context) (FlagsResult, error) {
 	return res, json.Unmarshal(body, &res)
 }
 
-func (h *httpAPI) LabelNames(ctx context.Context) ([]string, error) {
+func (h *httpAPI) LabelNames(ctx context.Context) ([]string, api.Warnings, error) {
 	u := h.client.URL(epLabels, nil)
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	_, body, _, err := h.client.Do(ctx, req)
+	_, body, w, err := h.client.Do(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, w, err
 	}
 	var labelNames []string
-	return labelNames, json.Unmarshal(body, &labelNames)
+	return labelNames, w, json.Unmarshal(body, &labelNames)
 }
 
-func (h *httpAPI) LabelValues(ctx context.Context, label string) (model.LabelValues, error) {
+func (h *httpAPI) LabelValues(ctx context.Context, label string) (model.LabelValues, api.Warnings, error) {
 	u := h.client.URL(epLabelValues, map[string]string{"name": label})
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	_, body, _, err := h.client.Do(ctx, req)
+	_, body, w, err := h.client.Do(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, w, err
 	}
 	var labelValues model.LabelValues
-	return labelValues, json.Unmarshal(body, &labelValues)
+	return labelValues, w, json.Unmarshal(body, &labelValues)
 }
 
 func (h *httpAPI) Query(ctx context.Context, query string, ts time.Time) (model.Value, api.Warnings, error) {
@@ -659,7 +659,7 @@ func (h *httpAPI) Query(ctx context.Context, query string, ts time.Time) (model.
 
 	q.Set("query", query)
 	if !ts.IsZero() {
-		q.Set("time", ts.Format(time.RFC3339Nano))
+		q.Set("time", formatTime(ts))
 	}
 
 	_, body, warnings, err := api.DoGetFallback(h.client, ctx, u, q)
@@ -675,16 +675,10 @@ func (h *httpAPI) QueryRange(ctx context.Context, query string, r Range) (model.
 	u := h.client.URL(epQueryRange, nil)
 	q := u.Query()
 
-	var (
-		start = r.Start.Format(time.RFC3339Nano)
-		end   = r.End.Format(time.RFC3339Nano)
-		step  = strconv.FormatFloat(r.Step.Seconds(), 'f', 3, 64)
-	)
-
 	q.Set("query", query)
-	q.Set("start", start)
-	q.Set("end", end)
-	q.Set("step", step)
+	q.Set("start", formatTime(r.Start))
+	q.Set("end", formatTime(r.End))
+	q.Set("step", strconv.FormatFloat(r.Step.Seconds(), 'f', -1, 64))
 
 	_, body, warnings, err := api.DoGetFallback(h.client, ctx, u, q)
 	if err != nil {
@@ -704,8 +698,8 @@ func (h *httpAPI) Series(ctx context.Context, matches []string, startTime time.T
 		q.Add("match[]", m)
 	}
 
-	q.Set("start", startTime.Format(time.RFC3339Nano))
-	q.Set("end", endTime.Format(time.RFC3339Nano))
+	q.Set("start", formatTime(startTime))
+	q.Set("end", formatTime(endTime))
 
 	u.RawQuery = q.Encode()
 
@@ -876,4 +870,8 @@ func (c apiClient) Do(ctx context.Context, req *http.Request) (*http.Response, [
 
 	return resp, []byte(result.Data), warnings, err
 
+}
+
+func formatTime(t time.Time) string {
+	return strconv.FormatFloat(float64(t.Unix())+float64(t.Nanosecond())/1e9, 'f', -1, 64)
 }

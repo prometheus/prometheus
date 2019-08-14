@@ -36,7 +36,14 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/internal"
 )
+
+func init() {
+	internal.StatusRawProto = statusRawProto
+}
+
+func statusRawProto(s *Status) *spb.Status { return s.s }
 
 // statusError is an alias of a status proto.  It implements error and Status,
 // and a nil statusError should never be returned by this package.
