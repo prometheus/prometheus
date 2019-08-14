@@ -1,3 +1,27 @@
+## 2.12.0-rc.0
+
+* [FEATURE] Add PromQL query logging. #5794
+* [FEATURE] Enable and provide binaries for `mips64` / `mips64le` architectures. #5792
+* [ENHANCEMENT] Mark deleted rule's series as stale on next evaluation. #5759
+* [ENHANCEMENT] Check for duplicate label names in remote read. #5829
+* [ENHANCEMENT] Add more details about retention to storage docs. #5842
+* [ENHANCEMENT] Improve responsiveness of targets web UI and API endpoint. #5740
+* [ENHANCEMENT] Improve remote write desired shards calculation. #5763
+* [ENHANCEMENT] Flush TSDB pages more precisely. tsdb#660
+* [ENHANCEMENT] Add `prometheus_tsdb_retention_limit_bytes` metric. tsdb#667
+* [ENHANCEMENT] Add logging during TSDB WAL replay on startup. tsdb#662
+* [ENHANCEMENT] Improve TSDB memory usage. tsdb#653, tsdb#643, tsdb#654, tsdb#642, tsdb#627
+* [BUGFIX] Fix JavaScript error when showing warning about out-of-sync server time. #5833
+* [BUGFIX] Fix example command lines for starting `remote_write_adapter` in docs. #5830
+* [BUGFIX] Correct function name in remote write queue log message. #5852
+* [BUGFIX] Fix spelling of PromQL query logger field name. #5843
+* [BUGFIX] Remove documentation reference to non-existent `kubernetes_sd` meta label. #5821
+* [BUGFIX] Fix `promtool test rules` panic when providing empty `exp_labels`. #5774
+* [BUGFIX] Only check last directory when discovering checkpoint number. #5756
+* [BUGFIX] Fix error propagation in WAL watcher helper functions. #5741
+* [BUGFIX] Fix Grafana references in Prometheus jsonnet mixin examples. #5753
+* [BUGFIX] Correctly handle empty labels from alert templates. #5845
+
 ## 2.11.1 / 2019-07-10
 
 * [BUGFIX] Fix potential panic when prometheus is watching multiple zookeeper paths. #5749
@@ -14,7 +38,7 @@
 * [ENHANCEMENT] Create new clean segment when starting the WAL. tsdb#608
 * [ENHANCEMENT] Reduce allocations in PromQL aggregations. #5641
 * [ENHANCEMENT] Add storage warnings to LabelValues and LabelNames API results. #5673
-* [ENHANCEMENT] Add prometheus_http_requests_total metric. #5640
+* [ENHANCEMENT] Add `prometheus_http_requests_total` metric. #5640
 * [ENHANCEMENT] Enable openbsd/arm build. #5696
 * [ENHANCEMENT] Remote-write allocation improvements. #5614
 * [ENHANCEMENT] Query performance improvement: Efficient iteration and search in HashForLabels and HashWithoutLabels. #5707
