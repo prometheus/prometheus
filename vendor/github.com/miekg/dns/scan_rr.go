@@ -7,55 +7,21 @@ import (
 	"strings"
 )
 
-// Parse the rdata of each rrtype.
-// All data from the channel c is either zString or zBlank.
-// After the rdata there may come a zBlank and then a zNewline
-// or immediately a zNewline. If this is not the case we flag
-// an *ParseError: garbage after rdata.
-func setRR(h RR_Header, c *zlexer, o, f string) (RR, *ParseError) {
-	var rr RR
-	if newFn, ok := TypeToRR[h.Rrtype]; ok && canParseAsRR(h.Rrtype) {
-		rr = newFn()
-		*rr.Header() = h
-	} else {
-		rr = &RFC3597{Hdr: h}
-	}
-
-	err := rr.parse(c, o, f)
-	if err != nil {
-		return nil, err
-	}
-
-	return rr, nil
-}
-
-// canParseAsRR returns true if the record type can be parsed as a
-// concrete RR. It blacklists certain record types that must be parsed
-// according to RFC 3597 because they lack a presentation format.
-func canParseAsRR(rrtype uint16) bool {
-	switch rrtype {
-	case TypeANY, TypeNULL, TypeOPT, TypeTSIG:
-		return false
-	default:
-		return true
-	}
-}
-
 // A remainder of the rdata with embedded spaces, return the parsed string (sans the spaces)
 // or an error
-func endingToString(c *zlexer, errstr, f string) (string, *ParseError) {
+func endingToString(c *zlexer, errstr string) (string, *ParseError) {
 	var s string
 	l, _ := c.Next() // zString
 	for l.value != zNewline && l.value != zEOF {
 		if l.err {
-			return s, &ParseError{f, errstr, l}
+			return s, &ParseError{"", errstr, l}
 		}
 		switch l.value {
 		case zString:
 			s += l.token
 		case zBlank: // Ok
 		default:
-			return "", &ParseError{f, errstr, l}
+			return "", &ParseError{"", errstr, l}
 		}
 		l, _ = c.Next()
 	}
@@ -65,11 +31,11 @@ func endingToString(c *zlexer, errstr, f string) (string, *ParseError) {
 
 // A remainder of the rdata with embedded spaces, split on unquoted whitespace
 // and return the parsed string slice or an error
-func endingToTxtSlice(c *zlexer, errstr, f string) ([]string, *ParseError) {
+func endingToTxtSlice(c *zlexer, errstr string) ([]string, *ParseError) {
 	// Get the remaining data until we see a zNewline
 	l, _ := c.Next()
 	if l.err {
-		return nil, &ParseError{f, errstr, l}
+		return nil, &ParseError{"", errstr, l}
 	}
 
 	// Build the slice
@@ -78,7 +44,7 @@ func endingToTxtSlice(c *zlexer, errstr, f string) ([]string, *ParseError) {
 	empty := false
 	for l.value != zNewline && l.value != zEOF {
 		if l.err {
-			return nil, &ParseError{f, errstr, l}
+			return nil, &ParseError{"", errstr, l}
 		}
 		switch l.value {
 		case zString:
@@ -105,7 +71,7 @@ func endingToTxtSlice(c *zlexer, errstr, f string) ([]string, *ParseError) {
 		case zBlank:
 			if quote {
 				// zBlank can only be seen in between txt parts.
-				return nil, &ParseError{f, errstr, l}
+				return nil, &ParseError{"", errstr, l}
 			}
 		case zQuote:
 			if empty && quote {
@@ -114,24 +80,20 @@ func endingToTxtSlice(c *zlexer, errstr, f string) ([]string, *ParseError) {
 			quote = !quote
 			empty = true
 		default:
-			return nil, &ParseError{f, errstr, l}
+			return nil, &ParseError{"", errstr, l}
 		}
 		l, _ = c.Next()
 	}
 
 	if quote {
-		return nil, &ParseError{f, errstr, l}
+		return nil, &ParseError{"", errstr, l}
 	}
 
 	return s, nil
 }
 
-func (rr *A) parse(c *zlexer, o, f string) *ParseError {
+func (rr *A) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	rr.A = net.ParseIP(l.token)
 	// IPv4 addresses cannot include ":".
 	// We do this rather than use net.IP's To4() because
@@ -139,82 +101,58 @@ func (rr *A) parse(c *zlexer, o, f string) *ParseError {
 	// IPv4.
 	isIPv4 := !strings.Contains(l.token, ":")
 	if rr.A == nil || !isIPv4 || l.err {
-		return &ParseError{f, "bad A A", l}
+		return &ParseError{"", "bad A A", l}
 	}
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *AAAA) parse(c *zlexer, o, f string) *ParseError {
+func (rr *AAAA) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	rr.AAAA = net.ParseIP(l.token)
 	// IPv6 addresses must include ":", and IPv4
 	// addresses cannot include ":".
 	isIPv6 := strings.Contains(l.token, ":")
 	if rr.AAAA == nil || !isIPv6 || l.err {
-		return &ParseError{f, "bad AAAA AAAA", l}
+		return &ParseError{"", "bad AAAA AAAA", l}
 	}
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *NS) parse(c *zlexer, o, f string) *ParseError {
+func (rr *NS) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Ns = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad NS Ns", l}
+		return &ParseError{"", "bad NS Ns", l}
 	}
 	rr.Ns = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *PTR) parse(c *zlexer, o, f string) *ParseError {
+func (rr *PTR) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Ptr = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad PTR Ptr", l}
+		return &ParseError{"", "bad PTR Ptr", l}
 	}
 	rr.Ptr = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *NSAPPTR) parse(c *zlexer, o, f string) *ParseError {
+func (rr *NSAPPTR) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Ptr = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad NSAP-PTR Ptr", l}
+		return &ParseError{"", "bad NSAP-PTR Ptr", l}
 	}
 	rr.Ptr = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *RP) parse(c *zlexer, o, f string) *ParseError {
+func (rr *RP) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Mbox = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	mbox, mboxOk := toAbsoluteName(l.token, o)
 	if l.err || !mboxOk {
-		return &ParseError{f, "bad RP Mbox", l}
+		return &ParseError{"", "bad RP Mbox", l}
 	}
 	rr.Mbox = mbox
 
@@ -224,60 +162,45 @@ func (rr *RP) parse(c *zlexer, o, f string) *ParseError {
 
 	txt, txtOk := toAbsoluteName(l.token, o)
 	if l.err || !txtOk {
-		return &ParseError{f, "bad RP Txt", l}
+		return &ParseError{"", "bad RP Txt", l}
 	}
 	rr.Txt = txt
 
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *MR) parse(c *zlexer, o, f string) *ParseError {
+func (rr *MR) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Mr = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad MR Mr", l}
+		return &ParseError{"", "bad MR Mr", l}
 	}
 	rr.Mr = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *MB) parse(c *zlexer, o, f string) *ParseError {
+func (rr *MB) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Mb = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad MB Mb", l}
+		return &ParseError{"", "bad MB Mb", l}
 	}
 	rr.Mb = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *MG) parse(c *zlexer, o, f string) *ParseError {
+func (rr *MG) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Mg = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad MG Mg", l}
+		return &ParseError{"", "bad MG Mg", l}
 	}
 	rr.Mg = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *HINFO) parse(c *zlexer, o, f string) *ParseError {
-	chunks, e := endingToTxtSlice(c, "bad HINFO Fields", f)
+func (rr *HINFO) parse(c *zlexer, o string) *ParseError {
+	chunks, e := endingToTxtSlice(c, "bad HINFO Fields")
 	if e != nil {
 		return e
 	}
@@ -299,16 +222,11 @@ func (rr *HINFO) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *MINFO) parse(c *zlexer, o, f string) *ParseError {
+func (rr *MINFO) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Rmail = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	rmail, rmailOk := toAbsoluteName(l.token, o)
 	if l.err || !rmailOk {
-		return &ParseError{f, "bad MINFO Rmail", l}
+		return &ParseError{"", "bad MINFO Rmail", l}
 	}
 	rr.Rmail = rmail
 
@@ -318,52 +236,38 @@ func (rr *MINFO) parse(c *zlexer, o, f string) *ParseError {
 
 	email, emailOk := toAbsoluteName(l.token, o)
 	if l.err || !emailOk {
-		return &ParseError{f, "bad MINFO Email", l}
+		return &ParseError{"", "bad MINFO Email", l}
 	}
 	rr.Email = email
 
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *MF) parse(c *zlexer, o, f string) *ParseError {
+func (rr *MF) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Mf = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad MF Mf", l}
+		return &ParseError{"", "bad MF Mf", l}
 	}
 	rr.Mf = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *MD) parse(c *zlexer, o, f string) *ParseError {
+func (rr *MD) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Md = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad MD Md", l}
+		return &ParseError{"", "bad MD Md", l}
 	}
 	rr.Md = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *MX) parse(c *zlexer, o, f string) *ParseError {
+func (rr *MX) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad MX Pref", l}
+		return &ParseError{"", "bad MX Pref", l}
 	}
 	rr.Preference = uint16(i)
 
@@ -373,22 +277,18 @@ func (rr *MX) parse(c *zlexer, o, f string) *ParseError {
 
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad MX Mx", l}
+		return &ParseError{"", "bad MX Mx", l}
 	}
 	rr.Mx = name
 
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *RT) parse(c *zlexer, o, f string) *ParseError {
+func (rr *RT) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil {
-		return &ParseError{f, "bad RT Preference", l}
+		return &ParseError{"", "bad RT Preference", l}
 	}
 	rr.Preference = uint16(i)
 
@@ -398,22 +298,18 @@ func (rr *RT) parse(c *zlexer, o, f string) *ParseError {
 
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad RT Host", l}
+		return &ParseError{"", "bad RT Host", l}
 	}
 	rr.Host = name
 
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *AFSDB) parse(c *zlexer, o, f string) *ParseError {
+func (rr *AFSDB) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad AFSDB Subtype", l}
+		return &ParseError{"", "bad AFSDB Subtype", l}
 	}
 	rr.Subtype = uint16(i)
 
@@ -423,34 +319,26 @@ func (rr *AFSDB) parse(c *zlexer, o, f string) *ParseError {
 
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad AFSDB Hostname", l}
+		return &ParseError{"", "bad AFSDB Hostname", l}
 	}
 	rr.Hostname = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *X25) parse(c *zlexer, o, f string) *ParseError {
+func (rr *X25) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	if l.err {
-		return &ParseError{f, "bad X25 PSDNAddress", l}
+		return &ParseError{"", "bad X25 PSDNAddress", l}
 	}
 	rr.PSDNAddress = l.token
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *KX) parse(c *zlexer, o, f string) *ParseError {
+func (rr *KX) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad KX Pref", l}
+		return &ParseError{"", "bad KX Pref", l}
 	}
 	rr.Preference = uint16(i)
 
@@ -460,52 +348,37 @@ func (rr *KX) parse(c *zlexer, o, f string) *ParseError {
 
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad KX Exchanger", l}
+		return &ParseError{"", "bad KX Exchanger", l}
 	}
 	rr.Exchanger = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *CNAME) parse(c *zlexer, o, f string) *ParseError {
+func (rr *CNAME) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Target = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad CNAME Target", l}
+		return &ParseError{"", "bad CNAME Target", l}
 	}
 	rr.Target = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *DNAME) parse(c *zlexer, o, f string) *ParseError {
+func (rr *DNAME) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Target = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad DNAME Target", l}
+		return &ParseError{"", "bad DNAME Target", l}
 	}
 	rr.Target = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *SOA) parse(c *zlexer, o, f string) *ParseError {
+func (rr *SOA) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.Ns = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	ns, nsOk := toAbsoluteName(l.token, o)
 	if l.err || !nsOk {
-		return &ParseError{f, "bad SOA Ns", l}
+		return &ParseError{"", "bad SOA Ns", l}
 	}
 	rr.Ns = ns
 
@@ -515,7 +388,7 @@ func (rr *SOA) parse(c *zlexer, o, f string) *ParseError {
 
 	mbox, mboxOk := toAbsoluteName(l.token, o)
 	if l.err || !mboxOk {
-		return &ParseError{f, "bad SOA Mbox", l}
+		return &ParseError{"", "bad SOA Mbox", l}
 	}
 	rr.Mbox = mbox
 
@@ -528,16 +401,16 @@ func (rr *SOA) parse(c *zlexer, o, f string) *ParseError {
 	for i := 0; i < 5; i++ {
 		l, _ = c.Next()
 		if l.err {
-			return &ParseError{f, "bad SOA zone parameter", l}
+			return &ParseError{"", "bad SOA zone parameter", l}
 		}
 		if j, e := strconv.ParseUint(l.token, 10, 32); e != nil {
 			if i == 0 {
 				// Serial must be a number
-				return &ParseError{f, "bad SOA zone parameter", l}
+				return &ParseError{"", "bad SOA zone parameter", l}
 			}
 			// We allow other fields to be unitful duration strings
 			if v, ok = stringToTTL(l.token); !ok {
-				return &ParseError{f, "bad SOA zone parameter", l}
+				return &ParseError{"", "bad SOA zone parameter", l}
 
 			}
 		} else {
@@ -560,18 +433,14 @@ func (rr *SOA) parse(c *zlexer, o, f string) *ParseError {
 			rr.Minttl = v
 		}
 	}
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *SRV) parse(c *zlexer, o, f string) *ParseError {
+func (rr *SRV) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad SRV Priority", l}
+		return &ParseError{"", "bad SRV Priority", l}
 	}
 	rr.Priority = uint16(i)
 
@@ -579,7 +448,7 @@ func (rr *SRV) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next() // zString
 	i, e = strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad SRV Weight", l}
+		return &ParseError{"", "bad SRV Weight", l}
 	}
 	rr.Weight = uint16(i)
 
@@ -587,7 +456,7 @@ func (rr *SRV) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next() // zString
 	i, e = strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad SRV Port", l}
+		return &ParseError{"", "bad SRV Port", l}
 	}
 	rr.Port = uint16(i)
 
@@ -597,21 +466,17 @@ func (rr *SRV) parse(c *zlexer, o, f string) *ParseError {
 
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad SRV Target", l}
+		return &ParseError{"", "bad SRV Target", l}
 	}
 	rr.Target = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *NAPTR) parse(c *zlexer, o, f string) *ParseError {
+func (rr *NAPTR) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad NAPTR Order", l}
+		return &ParseError{"", "bad NAPTR Order", l}
 	}
 	rr.Order = uint16(i)
 
@@ -619,7 +484,7 @@ func (rr *NAPTR) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next() // zString
 	i, e = strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad NAPTR Preference", l}
+		return &ParseError{"", "bad NAPTR Preference", l}
 	}
 	rr.Preference = uint16(i)
 
@@ -627,57 +492,57 @@ func (rr *NAPTR) parse(c *zlexer, o, f string) *ParseError {
 	c.Next()        // zBlank
 	l, _ = c.Next() // _QUOTE
 	if l.value != zQuote {
-		return &ParseError{f, "bad NAPTR Flags", l}
+		return &ParseError{"", "bad NAPTR Flags", l}
 	}
 	l, _ = c.Next() // Either String or Quote
 	if l.value == zString {
 		rr.Flags = l.token
 		l, _ = c.Next() // _QUOTE
 		if l.value != zQuote {
-			return &ParseError{f, "bad NAPTR Flags", l}
+			return &ParseError{"", "bad NAPTR Flags", l}
 		}
 	} else if l.value == zQuote {
 		rr.Flags = ""
 	} else {
-		return &ParseError{f, "bad NAPTR Flags", l}
+		return &ParseError{"", "bad NAPTR Flags", l}
 	}
 
 	// Service
 	c.Next()        // zBlank
 	l, _ = c.Next() // _QUOTE
 	if l.value != zQuote {
-		return &ParseError{f, "bad NAPTR Service", l}
+		return &ParseError{"", "bad NAPTR Service", l}
 	}
 	l, _ = c.Next() // Either String or Quote
 	if l.value == zString {
 		rr.Service = l.token
 		l, _ = c.Next() // _QUOTE
 		if l.value != zQuote {
-			return &ParseError{f, "bad NAPTR Service", l}
+			return &ParseError{"", "bad NAPTR Service", l}
 		}
 	} else if l.value == zQuote {
 		rr.Service = ""
 	} else {
-		return &ParseError{f, "bad NAPTR Service", l}
+		return &ParseError{"", "bad NAPTR Service", l}
 	}
 
 	// Regexp
 	c.Next()        // zBlank
 	l, _ = c.Next() // _QUOTE
 	if l.value != zQuote {
-		return &ParseError{f, "bad NAPTR Regexp", l}
+		return &ParseError{"", "bad NAPTR Regexp", l}
 	}
 	l, _ = c.Next() // Either String or Quote
 	if l.value == zString {
 		rr.Regexp = l.token
 		l, _ = c.Next() // _QUOTE
 		if l.value != zQuote {
-			return &ParseError{f, "bad NAPTR Regexp", l}
+			return &ParseError{"", "bad NAPTR Regexp", l}
 		}
 	} else if l.value == zQuote {
 		rr.Regexp = ""
 	} else {
-		return &ParseError{f, "bad NAPTR Regexp", l}
+		return &ParseError{"", "bad NAPTR Regexp", l}
 	}
 
 	// After quote no space??
@@ -687,22 +552,17 @@ func (rr *NAPTR) parse(c *zlexer, o, f string) *ParseError {
 
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad NAPTR Replacement", l}
+		return &ParseError{"", "bad NAPTR Replacement", l}
 	}
 	rr.Replacement = name
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *TALINK) parse(c *zlexer, o, f string) *ParseError {
+func (rr *TALINK) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.PreviousName = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	previousName, previousNameOk := toAbsoluteName(l.token, o)
 	if l.err || !previousNameOk {
-		return &ParseError{f, "bad TALINK PreviousName", l}
+		return &ParseError{"", "bad TALINK PreviousName", l}
 	}
 	rr.PreviousName = previousName
 
@@ -712,14 +572,14 @@ func (rr *TALINK) parse(c *zlexer, o, f string) *ParseError {
 
 	nextName, nextNameOk := toAbsoluteName(l.token, o)
 	if l.err || !nextNameOk {
-		return &ParseError{f, "bad TALINK NextName", l}
+		return &ParseError{"", "bad TALINK NextName", l}
 	}
 	rr.NextName = nextName
 
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *LOC) parse(c *zlexer, o, f string) *ParseError {
+func (rr *LOC) parse(c *zlexer, o string) *ParseError {
 	// Non zero defaults for LOC record, see RFC 1876, Section 3.
 	rr.HorizPre = 165 // 10000
 	rr.VertPre = 162  // 10
@@ -728,12 +588,9 @@ func (rr *LOC) parse(c *zlexer, o, f string) *ParseError {
 
 	// North
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
 	i, e := strconv.ParseUint(l.token, 10, 32)
 	if e != nil || l.err {
-		return &ParseError{f, "bad LOC Latitude", l}
+		return &ParseError{"", "bad LOC Latitude", l}
 	}
 	rr.Latitude = 1000 * 60 * 60 * uint32(i)
 
@@ -745,14 +602,14 @@ func (rr *LOC) parse(c *zlexer, o, f string) *ParseError {
 	}
 	i, e = strconv.ParseUint(l.token, 10, 32)
 	if e != nil || l.err {
-		return &ParseError{f, "bad LOC Latitude minutes", l}
+		return &ParseError{"", "bad LOC Latitude minutes", l}
 	}
 	rr.Latitude += 1000 * 60 * uint32(i)
 
 	c.Next() // zBlank
 	l, _ = c.Next()
 	if i, e := strconv.ParseFloat(l.token, 32); e != nil || l.err {
-		return &ParseError{f, "bad LOC Latitude seconds", l}
+		return &ParseError{"", "bad LOC Latitude seconds", l}
 	} else {
 		rr.Latitude += uint32(1000 * i)
 	}
@@ -763,14 +620,14 @@ func (rr *LOC) parse(c *zlexer, o, f string) *ParseError {
 		goto East
 	}
 	// If still alive, flag an error
-	return &ParseError{f, "bad LOC Latitude North/South", l}
+	return &ParseError{"", "bad LOC Latitude North/South", l}
 
 East:
 	// East
 	c.Next() // zBlank
 	l, _ = c.Next()
 	if i, e := strconv.ParseUint(l.token, 10, 32); e != nil || l.err {
-		return &ParseError{f, "bad LOC Longitude", l}
+		return &ParseError{"", "bad LOC Longitude", l}
 	} else {
 		rr.Longitude = 1000 * 60 * 60 * uint32(i)
 	}
@@ -781,14 +638,14 @@ East:
 		goto Altitude
 	}
 	if i, e := strconv.ParseUint(l.token, 10, 32); e != nil || l.err {
-		return &ParseError{f, "bad LOC Longitude minutes", l}
+		return &ParseError{"", "bad LOC Longitude minutes", l}
 	} else {
 		rr.Longitude += 1000 * 60 * uint32(i)
 	}
 	c.Next() // zBlank
 	l, _ = c.Next()
 	if i, e := strconv.ParseFloat(l.token, 32); e != nil || l.err {
-		return &ParseError{f, "bad LOC Longitude seconds", l}
+		return &ParseError{"", "bad LOC Longitude seconds", l}
 	} else {
 		rr.Longitude += uint32(1000 * i)
 	}
@@ -799,19 +656,19 @@ East:
 		goto Altitude
 	}
 	// If still alive, flag an error
-	return &ParseError{f, "bad LOC Longitude East/West", l}
+	return &ParseError{"", "bad LOC Longitude East/West", l}
 
 Altitude:
 	c.Next() // zBlank
 	l, _ = c.Next()
 	if len(l.token) == 0 || l.err {
-		return &ParseError{f, "bad LOC Altitude", l}
+		return &ParseError{"", "bad LOC Altitude", l}
 	}
 	if l.token[len(l.token)-1] == 'M' || l.token[len(l.token)-1] == 'm' {
 		l.token = l.token[0 : len(l.token)-1]
 	}
 	if i, e := strconv.ParseFloat(l.token, 32); e != nil {
-		return &ParseError{f, "bad LOC Altitude", l}
+		return &ParseError{"", "bad LOC Altitude", l}
 	} else {
 		rr.Altitude = uint32(i*100.0 + 10000000.0 + 0.5)
 	}
@@ -826,19 +683,19 @@ Altitude:
 			case 0: // Size
 				e, m, ok := stringToCm(l.token)
 				if !ok {
-					return &ParseError{f, "bad LOC Size", l}
+					return &ParseError{"", "bad LOC Size", l}
 				}
 				rr.Size = e&0x0f | m<<4&0xf0
 			case 1: // HorizPre
 				e, m, ok := stringToCm(l.token)
 				if !ok {
-					return &ParseError{f, "bad LOC HorizPre", l}
+					return &ParseError{"", "bad LOC HorizPre", l}
 				}
 				rr.HorizPre = e&0x0f | m<<4&0xf0
 			case 2: // VertPre
 				e, m, ok := stringToCm(l.token)
 				if !ok {
-					return &ParseError{f, "bad LOC VertPre", l}
+					return &ParseError{"", "bad LOC VertPre", l}
 				}
 				rr.VertPre = e&0x0f | m<<4&0xf0
 			}
@@ -846,30 +703,26 @@ Altitude:
 		case zBlank:
 			// Ok
 		default:
-			return &ParseError{f, "bad LOC Size, HorizPre or VertPre", l}
+			return &ParseError{"", "bad LOC Size, HorizPre or VertPre", l}
 		}
 		l, _ = c.Next()
 	}
 	return nil
 }
 
-func (rr *HIP) parse(c *zlexer, o, f string) *ParseError {
+func (rr *HIP) parse(c *zlexer, o string) *ParseError {
 	// HitLength is not represented
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad HIP PublicKeyAlgorithm", l}
+		return &ParseError{"", "bad HIP PublicKeyAlgorithm", l}
 	}
 	rr.PublicKeyAlgorithm = uint8(i)
 
 	c.Next()        // zBlank
 	l, _ = c.Next() // zString
 	if len(l.token) == 0 || l.err {
-		return &ParseError{f, "bad HIP Hit", l}
+		return &ParseError{"", "bad HIP Hit", l}
 	}
 	rr.Hit = l.token // This can not contain spaces, see RFC 5205 Section 6.
 	rr.HitLength = uint8(len(rr.Hit)) / 2
@@ -877,7 +730,7 @@ func (rr *HIP) parse(c *zlexer, o, f string) *ParseError {
 	c.Next()        // zBlank
 	l, _ = c.Next() // zString
 	if len(l.token) == 0 || l.err {
-		return &ParseError{f, "bad HIP PublicKey", l}
+		return &ParseError{"", "bad HIP PublicKey", l}
 	}
 	rr.PublicKey = l.token // This cannot contain spaces
 	rr.PublicKeyLength = uint16(base64.StdEncoding.DecodedLen(len(rr.PublicKey)))
@@ -890,13 +743,13 @@ func (rr *HIP) parse(c *zlexer, o, f string) *ParseError {
 		case zString:
 			name, nameOk := toAbsoluteName(l.token, o)
 			if l.err || !nameOk {
-				return &ParseError{f, "bad HIP RendezvousServers", l}
+				return &ParseError{"", "bad HIP RendezvousServers", l}
 			}
 			xs = append(xs, name)
 		case zBlank:
 			// Ok
 		default:
-			return &ParseError{f, "bad HIP RendezvousServers", l}
+			return &ParseError{"", "bad HIP RendezvousServers", l}
 		}
 		l, _ = c.Next()
 	}
@@ -905,16 +758,12 @@ func (rr *HIP) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *CERT) parse(c *zlexer, o, f string) *ParseError {
+func (rr *CERT) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	if v, ok := StringToCertType[l.token]; ok {
 		rr.Type = v
 	} else if i, e := strconv.ParseUint(l.token, 10, 16); e != nil {
-		return &ParseError{f, "bad CERT Type", l}
+		return &ParseError{"", "bad CERT Type", l}
 	} else {
 		rr.Type = uint16(i)
 	}
@@ -922,7 +771,7 @@ func (rr *CERT) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next() // zString
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad CERT KeyTag", l}
+		return &ParseError{"", "bad CERT KeyTag", l}
 	}
 	rr.KeyTag = uint16(i)
 	c.Next()        // zBlank
@@ -930,11 +779,11 @@ func (rr *CERT) parse(c *zlexer, o, f string) *ParseError {
 	if v, ok := StringToAlgorithm[l.token]; ok {
 		rr.Algorithm = v
 	} else if i, e := strconv.ParseUint(l.token, 10, 8); e != nil {
-		return &ParseError{f, "bad CERT Algorithm", l}
+		return &ParseError{"", "bad CERT Algorithm", l}
 	} else {
 		rr.Algorithm = uint8(i)
 	}
-	s, e1 := endingToString(c, "bad CERT Certificate", f)
+	s, e1 := endingToString(c, "bad CERT Certificate")
 	if e1 != nil {
 		return e1
 	}
@@ -942,8 +791,8 @@ func (rr *CERT) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *OPENPGPKEY) parse(c *zlexer, o, f string) *ParseError {
-	s, e := endingToString(c, "bad OPENPGPKEY PublicKey", f)
+func (rr *OPENPGPKEY) parse(c *zlexer, o string) *ParseError {
+	s, e := endingToString(c, "bad OPENPGPKEY PublicKey")
 	if e != nil {
 		return e
 	}
@@ -951,15 +800,12 @@ func (rr *OPENPGPKEY) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *CSYNC) parse(c *zlexer, o, f string) *ParseError {
+func (rr *CSYNC) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
 	j, e := strconv.ParseUint(l.token, 10, 32)
 	if e != nil {
 		// Serial must be a number
-		return &ParseError{f, "bad CSYNC serial", l}
+		return &ParseError{"", "bad CSYNC serial", l}
 	}
 	rr.Serial = uint32(j)
 
@@ -969,7 +815,7 @@ func (rr *CSYNC) parse(c *zlexer, o, f string) *ParseError {
 	j, e = strconv.ParseUint(l.token, 10, 16)
 	if e != nil {
 		// Serial must be a number
-		return &ParseError{f, "bad CSYNC flags", l}
+		return &ParseError{"", "bad CSYNC flags", l}
 	}
 	rr.Flags = uint16(j)
 
@@ -987,38 +833,34 @@ func (rr *CSYNC) parse(c *zlexer, o, f string) *ParseError {
 			tokenUpper := strings.ToUpper(l.token)
 			if k, ok = StringToType[tokenUpper]; !ok {
 				if k, ok = typeToInt(l.token); !ok {
-					return &ParseError{f, "bad CSYNC TypeBitMap", l}
+					return &ParseError{"", "bad CSYNC TypeBitMap", l}
 				}
 			}
 			rr.TypeBitMap = append(rr.TypeBitMap, k)
 		default:
-			return &ParseError{f, "bad CSYNC TypeBitMap", l}
+			return &ParseError{"", "bad CSYNC TypeBitMap", l}
 		}
 		l, _ = c.Next()
 	}
 	return nil
 }
 
-func (rr *SIG) parse(c *zlexer, o, f string) *ParseError {
-	return rr.RRSIG.parse(c, o, f)
+func (rr *SIG) parse(c *zlexer, o string) *ParseError {
+	return rr.RRSIG.parse(c, o)
 }
 
-func (rr *RRSIG) parse(c *zlexer, o, f string) *ParseError {
+func (rr *RRSIG) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	tokenUpper := strings.ToUpper(l.token)
 	if t, ok := StringToType[tokenUpper]; !ok {
 		if strings.HasPrefix(tokenUpper, "TYPE") {
 			t, ok = typeToInt(l.token)
 			if !ok {
-				return &ParseError{f, "bad RRSIG Typecovered", l}
+				return &ParseError{"", "bad RRSIG Typecovered", l}
 			}
 			rr.TypeCovered = t
 		} else {
-			return &ParseError{f, "bad RRSIG Typecovered", l}
+			return &ParseError{"", "bad RRSIG Typecovered", l}
 		}
 	} else {
 		rr.TypeCovered = t
@@ -1028,7 +870,7 @@ func (rr *RRSIG) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next()
 	i, err := strconv.ParseUint(l.token, 10, 8)
 	if err != nil || l.err {
-		return &ParseError{f, "bad RRSIG Algorithm", l}
+		return &ParseError{"", "bad RRSIG Algorithm", l}
 	}
 	rr.Algorithm = uint8(i)
 
@@ -1036,7 +878,7 @@ func (rr *RRSIG) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next()
 	i, err = strconv.ParseUint(l.token, 10, 8)
 	if err != nil || l.err {
-		return &ParseError{f, "bad RRSIG Labels", l}
+		return &ParseError{"", "bad RRSIG Labels", l}
 	}
 	rr.Labels = uint8(i)
 
@@ -1044,7 +886,7 @@ func (rr *RRSIG) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next()
 	i, err = strconv.ParseUint(l.token, 10, 32)
 	if err != nil || l.err {
-		return &ParseError{f, "bad RRSIG OrigTtl", l}
+		return &ParseError{"", "bad RRSIG OrigTtl", l}
 	}
 	rr.OrigTtl = uint32(i)
 
@@ -1056,7 +898,7 @@ func (rr *RRSIG) parse(c *zlexer, o, f string) *ParseError {
 			// TODO(miek): error out on > MAX_UINT32, same below
 			rr.Expiration = uint32(i)
 		} else {
-			return &ParseError{f, "bad RRSIG Expiration", l}
+			return &ParseError{"", "bad RRSIG Expiration", l}
 		}
 	} else {
 		rr.Expiration = i
@@ -1068,7 +910,7 @@ func (rr *RRSIG) parse(c *zlexer, o, f string) *ParseError {
 		if i, err := strconv.ParseInt(l.token, 10, 64); err == nil {
 			rr.Inception = uint32(i)
 		} else {
-			return &ParseError{f, "bad RRSIG Inception", l}
+			return &ParseError{"", "bad RRSIG Inception", l}
 		}
 	} else {
 		rr.Inception = i
@@ -1078,7 +920,7 @@ func (rr *RRSIG) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next()
 	i, err = strconv.ParseUint(l.token, 10, 16)
 	if err != nil || l.err {
-		return &ParseError{f, "bad RRSIG KeyTag", l}
+		return &ParseError{"", "bad RRSIG KeyTag", l}
 	}
 	rr.KeyTag = uint16(i)
 
@@ -1087,11 +929,11 @@ func (rr *RRSIG) parse(c *zlexer, o, f string) *ParseError {
 	rr.SignerName = l.token
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad RRSIG SignerName", l}
+		return &ParseError{"", "bad RRSIG SignerName", l}
 	}
 	rr.SignerName = name
 
-	s, e := endingToString(c, "bad RRSIG Signature", f)
+	s, e := endingToString(c, "bad RRSIG Signature")
 	if e != nil {
 		return e
 	}
@@ -1100,16 +942,11 @@ func (rr *RRSIG) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *NSEC) parse(c *zlexer, o, f string) *ParseError {
+func (rr *NSEC) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	rr.NextDomain = l.token
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad NSEC NextDomain", l}
+		return &ParseError{"", "bad NSEC NextDomain", l}
 	}
 	rr.NextDomain = name
 
@@ -1127,47 +964,43 @@ func (rr *NSEC) parse(c *zlexer, o, f string) *ParseError {
 			tokenUpper := strings.ToUpper(l.token)
 			if k, ok = StringToType[tokenUpper]; !ok {
 				if k, ok = typeToInt(l.token); !ok {
-					return &ParseError{f, "bad NSEC TypeBitMap", l}
+					return &ParseError{"", "bad NSEC TypeBitMap", l}
 				}
 			}
 			rr.TypeBitMap = append(rr.TypeBitMap, k)
 		default:
-			return &ParseError{f, "bad NSEC TypeBitMap", l}
+			return &ParseError{"", "bad NSEC TypeBitMap", l}
 		}
 		l, _ = c.Next()
 	}
 	return nil
 }
 
-func (rr *NSEC3) parse(c *zlexer, o, f string) *ParseError {
+func (rr *NSEC3) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad NSEC3 Hash", l}
+		return &ParseError{"", "bad NSEC3 Hash", l}
 	}
 	rr.Hash = uint8(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad NSEC3 Flags", l}
+		return &ParseError{"", "bad NSEC3 Flags", l}
 	}
 	rr.Flags = uint8(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad NSEC3 Iterations", l}
+		return &ParseError{"", "bad NSEC3 Iterations", l}
 	}
 	rr.Iterations = uint16(i)
 	c.Next()
 	l, _ = c.Next()
 	if len(l.token) == 0 || l.err {
-		return &ParseError{f, "bad NSEC3 Salt", l}
+		return &ParseError{"", "bad NSEC3 Salt", l}
 	}
 	if l.token != "-" {
 		rr.SaltLength = uint8(len(l.token)) / 2
@@ -1177,7 +1010,7 @@ func (rr *NSEC3) parse(c *zlexer, o, f string) *ParseError {
 	c.Next()
 	l, _ = c.Next()
 	if len(l.token) == 0 || l.err {
-		return &ParseError{f, "bad NSEC3 NextDomain", l}
+		return &ParseError{"", "bad NSEC3 NextDomain", l}
 	}
 	rr.HashLength = 20 // Fix for NSEC3 (sha1 160 bits)
 	rr.NextDomain = l.token
@@ -1196,41 +1029,37 @@ func (rr *NSEC3) parse(c *zlexer, o, f string) *ParseError {
 			tokenUpper := strings.ToUpper(l.token)
 			if k, ok = StringToType[tokenUpper]; !ok {
 				if k, ok = typeToInt(l.token); !ok {
-					return &ParseError{f, "bad NSEC3 TypeBitMap", l}
+					return &ParseError{"", "bad NSEC3 TypeBitMap", l}
 				}
 			}
 			rr.TypeBitMap = append(rr.TypeBitMap, k)
 		default:
-			return &ParseError{f, "bad NSEC3 TypeBitMap", l}
+			return &ParseError{"", "bad NSEC3 TypeBitMap", l}
 		}
 		l, _ = c.Next()
 	}
 	return nil
 }
 
-func (rr *NSEC3PARAM) parse(c *zlexer, o, f string) *ParseError {
+func (rr *NSEC3PARAM) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad NSEC3PARAM Hash", l}
+		return &ParseError{"", "bad NSEC3PARAM Hash", l}
 	}
 	rr.Hash = uint8(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad NSEC3PARAM Flags", l}
+		return &ParseError{"", "bad NSEC3PARAM Flags", l}
 	}
 	rr.Flags = uint8(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad NSEC3PARAM Iterations", l}
+		return &ParseError{"", "bad NSEC3PARAM Iterations", l}
 	}
 	rr.Iterations = uint16(i)
 	c.Next()
@@ -1239,17 +1068,13 @@ func (rr *NSEC3PARAM) parse(c *zlexer, o, f string) *ParseError {
 		rr.SaltLength = uint8(len(l.token))
 		rr.Salt = l.token
 	}
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *EUI48) parse(c *zlexer, o, f string) *ParseError {
+func (rr *EUI48) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	if len(l.token) != 17 || l.err {
-		return &ParseError{f, "bad EUI48 Address", l}
+		return &ParseError{"", "bad EUI48 Address", l}
 	}
 	addr := make([]byte, 12)
 	dash := 0
@@ -1258,7 +1083,7 @@ func (rr *EUI48) parse(c *zlexer, o, f string) *ParseError {
 		addr[i+1] = l.token[i+1+dash]
 		dash++
 		if l.token[i+1+dash] != '-' {
-			return &ParseError{f, "bad EUI48 Address", l}
+			return &ParseError{"", "bad EUI48 Address", l}
 		}
 	}
 	addr[10] = l.token[15]
@@ -1266,20 +1091,16 @@ func (rr *EUI48) parse(c *zlexer, o, f string) *ParseError {
 
 	i, e := strconv.ParseUint(string(addr), 16, 48)
 	if e != nil {
-		return &ParseError{f, "bad EUI48 Address", l}
+		return &ParseError{"", "bad EUI48 Address", l}
 	}
 	rr.Address = i
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *EUI64) parse(c *zlexer, o, f string) *ParseError {
+func (rr *EUI64) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	if len(l.token) != 23 || l.err {
-		return &ParseError{f, "bad EUI64 Address", l}
+		return &ParseError{"", "bad EUI64 Address", l}
 	}
 	addr := make([]byte, 16)
 	dash := 0
@@ -1288,7 +1109,7 @@ func (rr *EUI64) parse(c *zlexer, o, f string) *ParseError {
 		addr[i+1] = l.token[i+1+dash]
 		dash++
 		if l.token[i+1+dash] != '-' {
-			return &ParseError{f, "bad EUI64 Address", l}
+			return &ParseError{"", "bad EUI64 Address", l}
 		}
 	}
 	addr[14] = l.token[21]
@@ -1296,32 +1117,28 @@ func (rr *EUI64) parse(c *zlexer, o, f string) *ParseError {
 
 	i, e := strconv.ParseUint(string(addr), 16, 64)
 	if e != nil {
-		return &ParseError{f, "bad EUI68 Address", l}
+		return &ParseError{"", "bad EUI68 Address", l}
 	}
 	rr.Address = i
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *SSHFP) parse(c *zlexer, o, f string) *ParseError {
+func (rr *SSHFP) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad SSHFP Algorithm", l}
+		return &ParseError{"", "bad SSHFP Algorithm", l}
 	}
 	rr.Algorithm = uint8(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad SSHFP Type", l}
+		return &ParseError{"", "bad SSHFP Type", l}
 	}
 	rr.Type = uint8(i)
 	c.Next() // zBlank
-	s, e1 := endingToString(c, "bad SSHFP Fingerprint", f)
+	s, e1 := endingToString(c, "bad SSHFP Fingerprint")
 	if e1 != nil {
 		return e1
 	}
@@ -1329,32 +1146,28 @@ func (rr *SSHFP) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *DNSKEY) parseDNSKEY(c *zlexer, o, f, typ string) *ParseError {
+func (rr *DNSKEY) parseDNSKEY(c *zlexer, o, typ string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad " + typ + " Flags", l}
+		return &ParseError{"", "bad " + typ + " Flags", l}
 	}
 	rr.Flags = uint16(i)
 	c.Next()        // zBlank
 	l, _ = c.Next() // zString
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad " + typ + " Protocol", l}
+		return &ParseError{"", "bad " + typ + " Protocol", l}
 	}
 	rr.Protocol = uint8(i)
 	c.Next()        // zBlank
 	l, _ = c.Next() // zString
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad " + typ + " Algorithm", l}
+		return &ParseError{"", "bad " + typ + " Algorithm", l}
 	}
 	rr.Algorithm = uint8(i)
-	s, e1 := endingToString(c, "bad "+typ+" PublicKey", f)
+	s, e1 := endingToString(c, "bad "+typ+" PublicKey")
 	if e1 != nil {
 		return e1
 	}
@@ -1362,44 +1175,40 @@ func (rr *DNSKEY) parseDNSKEY(c *zlexer, o, f, typ string) *ParseError {
 	return nil
 }
 
-func (rr *DNSKEY) parse(c *zlexer, o, f string) *ParseError {
-	return rr.parseDNSKEY(c, o, f, "DNSKEY")
+func (rr *DNSKEY) parse(c *zlexer, o string) *ParseError {
+	return rr.parseDNSKEY(c, o, "DNSKEY")
 }
 
-func (rr *KEY) parse(c *zlexer, o, f string) *ParseError {
-	return rr.parseDNSKEY(c, o, f, "KEY")
+func (rr *KEY) parse(c *zlexer, o string) *ParseError {
+	return rr.parseDNSKEY(c, o, "KEY")
 }
 
-func (rr *CDNSKEY) parse(c *zlexer, o, f string) *ParseError {
-	return rr.parseDNSKEY(c, o, f, "CDNSKEY")
+func (rr *CDNSKEY) parse(c *zlexer, o string) *ParseError {
+	return rr.parseDNSKEY(c, o, "CDNSKEY")
 }
 
-func (rr *RKEY) parse(c *zlexer, o, f string) *ParseError {
+func (rr *RKEY) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad RKEY Flags", l}
+		return &ParseError{"", "bad RKEY Flags", l}
 	}
 	rr.Flags = uint16(i)
 	c.Next()        // zBlank
 	l, _ = c.Next() // zString
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad RKEY Protocol", l}
+		return &ParseError{"", "bad RKEY Protocol", l}
 	}
 	rr.Protocol = uint8(i)
 	c.Next()        // zBlank
 	l, _ = c.Next() // zString
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad RKEY Algorithm", l}
+		return &ParseError{"", "bad RKEY Algorithm", l}
 	}
 	rr.Algorithm = uint8(i)
-	s, e1 := endingToString(c, "bad RKEY PublicKey", f)
+	s, e1 := endingToString(c, "bad RKEY PublicKey")
 	if e1 != nil {
 		return e1
 	}
@@ -1407,8 +1216,8 @@ func (rr *RKEY) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *EID) parse(c *zlexer, o, f string) *ParseError {
-	s, e := endingToString(c, "bad EID Endpoint", f)
+func (rr *EID) parse(c *zlexer, o string) *ParseError {
+	s, e := endingToString(c, "bad EID Endpoint")
 	if e != nil {
 		return e
 	}
@@ -1416,8 +1225,8 @@ func (rr *EID) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *NIMLOC) parse(c *zlexer, o, f string) *ParseError {
-	s, e := endingToString(c, "bad NIMLOC Locator", f)
+func (rr *NIMLOC) parse(c *zlexer, o string) *ParseError {
+	s, e := endingToString(c, "bad NIMLOC Locator")
 	if e != nil {
 		return e
 	}
@@ -1425,43 +1234,35 @@ func (rr *NIMLOC) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *GPOS) parse(c *zlexer, o, f string) *ParseError {
+func (rr *GPOS) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	_, e := strconv.ParseFloat(l.token, 64)
 	if e != nil || l.err {
-		return &ParseError{f, "bad GPOS Longitude", l}
+		return &ParseError{"", "bad GPOS Longitude", l}
 	}
 	rr.Longitude = l.token
 	c.Next() // zBlank
 	l, _ = c.Next()
 	_, e = strconv.ParseFloat(l.token, 64)
 	if e != nil || l.err {
-		return &ParseError{f, "bad GPOS Latitude", l}
+		return &ParseError{"", "bad GPOS Latitude", l}
 	}
 	rr.Latitude = l.token
 	c.Next() // zBlank
 	l, _ = c.Next()
 	_, e = strconv.ParseFloat(l.token, 64)
 	if e != nil || l.err {
-		return &ParseError{f, "bad GPOS Altitude", l}
+		return &ParseError{"", "bad GPOS Altitude", l}
 	}
 	rr.Altitude = l.token
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *DS) parseDS(c *zlexer, o, f, typ string) *ParseError {
+func (rr *DS) parseDS(c *zlexer, o, typ string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad " + typ + " KeyTag", l}
+		return &ParseError{"", "bad " + typ + " KeyTag", l}
 	}
 	rr.KeyTag = uint16(i)
 	c.Next() // zBlank
@@ -1470,7 +1271,7 @@ func (rr *DS) parseDS(c *zlexer, o, f, typ string) *ParseError {
 		tokenUpper := strings.ToUpper(l.token)
 		i, ok := StringToAlgorithm[tokenUpper]
 		if !ok || l.err {
-			return &ParseError{f, "bad " + typ + " Algorithm", l}
+			return &ParseError{"", "bad " + typ + " Algorithm", l}
 		}
 		rr.Algorithm = i
 	} else {
@@ -1480,10 +1281,10 @@ func (rr *DS) parseDS(c *zlexer, o, f, typ string) *ParseError {
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad " + typ + " DigestType", l}
+		return &ParseError{"", "bad " + typ + " DigestType", l}
 	}
 	rr.DigestType = uint8(i)
-	s, e1 := endingToString(c, "bad "+typ+" Digest", f)
+	s, e1 := endingToString(c, "bad "+typ+" Digest")
 	if e1 != nil {
 		return e1
 	}
@@ -1491,27 +1292,23 @@ func (rr *DS) parseDS(c *zlexer, o, f, typ string) *ParseError {
 	return nil
 }
 
-func (rr *DS) parse(c *zlexer, o, f string) *ParseError {
-	return rr.parseDS(c, o, f, "DS")
+func (rr *DS) parse(c *zlexer, o string) *ParseError {
+	return rr.parseDS(c, o, "DS")
 }
 
-func (rr *DLV) parse(c *zlexer, o, f string) *ParseError {
-	return rr.parseDS(c, o, f, "DLV")
+func (rr *DLV) parse(c *zlexer, o string) *ParseError {
+	return rr.parseDS(c, o, "DLV")
 }
 
-func (rr *CDS) parse(c *zlexer, o, f string) *ParseError {
-	return rr.parseDS(c, o, f, "CDS")
+func (rr *CDS) parse(c *zlexer, o string) *ParseError {
+	return rr.parseDS(c, o, "CDS")
 }
 
-func (rr *TA) parse(c *zlexer, o, f string) *ParseError {
+func (rr *TA) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad TA KeyTag", l}
+		return &ParseError{"", "bad TA KeyTag", l}
 	}
 	rr.KeyTag = uint16(i)
 	c.Next() // zBlank
@@ -1520,7 +1317,7 @@ func (rr *TA) parse(c *zlexer, o, f string) *ParseError {
 		tokenUpper := strings.ToUpper(l.token)
 		i, ok := StringToAlgorithm[tokenUpper]
 		if !ok || l.err {
-			return &ParseError{f, "bad TA Algorithm", l}
+			return &ParseError{"", "bad TA Algorithm", l}
 		}
 		rr.Algorithm = i
 	} else {
@@ -1530,10 +1327,10 @@ func (rr *TA) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad TA DigestType", l}
+		return &ParseError{"", "bad TA DigestType", l}
 	}
 	rr.DigestType = uint8(i)
-	s, err := endingToString(c, "bad TA Digest", f)
+	s, err := endingToString(c, "bad TA Digest")
 	if err != nil {
 		return err
 	}
@@ -1541,33 +1338,29 @@ func (rr *TA) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *TLSA) parse(c *zlexer, o, f string) *ParseError {
+func (rr *TLSA) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad TLSA Usage", l}
+		return &ParseError{"", "bad TLSA Usage", l}
 	}
 	rr.Usage = uint8(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad TLSA Selector", l}
+		return &ParseError{"", "bad TLSA Selector", l}
 	}
 	rr.Selector = uint8(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad TLSA MatchingType", l}
+		return &ParseError{"", "bad TLSA MatchingType", l}
 	}
 	rr.MatchingType = uint8(i)
 	// So this needs be e2 (i.e. different than e), because...??t
-	s, e2 := endingToString(c, "bad TLSA Certificate", f)
+	s, e2 := endingToString(c, "bad TLSA Certificate")
 	if e2 != nil {
 		return e2
 	}
@@ -1575,33 +1368,29 @@ func (rr *TLSA) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *SMIMEA) parse(c *zlexer, o, f string) *ParseError {
+func (rr *SMIMEA) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad SMIMEA Usage", l}
+		return &ParseError{"", "bad SMIMEA Usage", l}
 	}
 	rr.Usage = uint8(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad SMIMEA Selector", l}
+		return &ParseError{"", "bad SMIMEA Selector", l}
 	}
 	rr.Selector = uint8(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 8)
 	if e != nil || l.err {
-		return &ParseError{f, "bad SMIMEA MatchingType", l}
+		return &ParseError{"", "bad SMIMEA MatchingType", l}
 	}
 	rr.MatchingType = uint8(i)
 	// So this needs be e2 (i.e. different than e), because...??t
-	s, e2 := endingToString(c, "bad SMIMEA Certificate", f)
+	s, e2 := endingToString(c, "bad SMIMEA Certificate")
 	if e2 != nil {
 		return e2
 	}
@@ -1609,32 +1398,32 @@ func (rr *SMIMEA) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *RFC3597) parse(c *zlexer, o, f string) *ParseError {
+func (rr *RFC3597) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
 	if l.token != "\\#" {
-		return &ParseError{f, "bad RFC3597 Rdata", l}
+		return &ParseError{"", "bad RFC3597 Rdata", l}
 	}
 
 	c.Next() // zBlank
 	l, _ = c.Next()
 	rdlength, e := strconv.Atoi(l.token)
 	if e != nil || l.err {
-		return &ParseError{f, "bad RFC3597 Rdata ", l}
+		return &ParseError{"", "bad RFC3597 Rdata ", l}
 	}
 
-	s, e1 := endingToString(c, "bad RFC3597 Rdata", f)
+	s, e1 := endingToString(c, "bad RFC3597 Rdata")
 	if e1 != nil {
 		return e1
 	}
 	if rdlength*2 != len(s) {
-		return &ParseError{f, "bad RFC3597 Rdata", l}
+		return &ParseError{"", "bad RFC3597 Rdata", l}
 	}
 	rr.Rdata = s
 	return nil
 }
 
-func (rr *SPF) parse(c *zlexer, o, f string) *ParseError {
-	s, e := endingToTxtSlice(c, "bad SPF Txt", f)
+func (rr *SPF) parse(c *zlexer, o string) *ParseError {
+	s, e := endingToTxtSlice(c, "bad SPF Txt")
 	if e != nil {
 		return e
 	}
@@ -1642,8 +1431,8 @@ func (rr *SPF) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *AVC) parse(c *zlexer, o, f string) *ParseError {
-	s, e := endingToTxtSlice(c, "bad AVC Txt", f)
+func (rr *AVC) parse(c *zlexer, o string) *ParseError {
+	s, e := endingToTxtSlice(c, "bad AVC Txt")
 	if e != nil {
 		return e
 	}
@@ -1651,9 +1440,9 @@ func (rr *AVC) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *TXT) parse(c *zlexer, o, f string) *ParseError {
+func (rr *TXT) parse(c *zlexer, o string) *ParseError {
 	// no zBlank reading here, because all this rdata is TXT
-	s, e := endingToTxtSlice(c, "bad TXT Txt", f)
+	s, e := endingToTxtSlice(c, "bad TXT Txt")
 	if e != nil {
 		return e
 	}
@@ -1662,8 +1451,8 @@ func (rr *TXT) parse(c *zlexer, o, f string) *ParseError {
 }
 
 // identical to setTXT
-func (rr *NINFO) parse(c *zlexer, o, f string) *ParseError {
-	s, e := endingToTxtSlice(c, "bad NINFO ZSData", f)
+func (rr *NINFO) parse(c *zlexer, o string) *ParseError {
+	s, e := endingToTxtSlice(c, "bad NINFO ZSData")
 	if e != nil {
 		return e
 	}
@@ -1671,40 +1460,36 @@ func (rr *NINFO) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *URI) parse(c *zlexer, o, f string) *ParseError {
+func (rr *URI) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad URI Priority", l}
+		return &ParseError{"", "bad URI Priority", l}
 	}
 	rr.Priority = uint16(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	i, e = strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad URI Weight", l}
+		return &ParseError{"", "bad URI Weight", l}
 	}
 	rr.Weight = uint16(i)
 
 	c.Next() // zBlank
-	s, err := endingToTxtSlice(c, "bad URI Target", f)
+	s, err := endingToTxtSlice(c, "bad URI Target")
 	if err != nil {
 		return err
 	}
 	if len(s) != 1 {
-		return &ParseError{f, "bad URI Target", l}
+		return &ParseError{"", "bad URI Target", l}
 	}
 	rr.Target = s[0]
 	return nil
 }
 
-func (rr *DHCID) parse(c *zlexer, o, f string) *ParseError {
+func (rr *DHCID) parse(c *zlexer, o string) *ParseError {
 	// awesome record to parse!
-	s, e := endingToString(c, "bad DHCID Digest", f)
+	s, e := endingToString(c, "bad DHCID Digest")
 	if e != nil {
 		return e
 	}
@@ -1712,15 +1497,11 @@ func (rr *DHCID) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *NID) parse(c *zlexer, o, f string) *ParseError {
+func (rr *NID) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad NID Preference", l}
+		return &ParseError{"", "bad NID Preference", l}
 	}
 	rr.Preference = uint16(i)
 	c.Next()        // zBlank
@@ -1730,38 +1511,30 @@ func (rr *NID) parse(c *zlexer, o, f string) *ParseError {
 		return err
 	}
 	rr.NodeID = u
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *L32) parse(c *zlexer, o, f string) *ParseError {
+func (rr *L32) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad L32 Preference", l}
+		return &ParseError{"", "bad L32 Preference", l}
 	}
 	rr.Preference = uint16(i)
 	c.Next()        // zBlank
 	l, _ = c.Next() // zString
 	rr.Locator32 = net.ParseIP(l.token)
 	if rr.Locator32 == nil || l.err {
-		return &ParseError{f, "bad L32 Locator", l}
+		return &ParseError{"", "bad L32 Locator", l}
 	}
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *LP) parse(c *zlexer, o, f string) *ParseError {
+func (rr *LP) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad LP Preference", l}
+		return &ParseError{"", "bad LP Preference", l}
 	}
 	rr.Preference = uint16(i)
 
@@ -1770,22 +1543,18 @@ func (rr *LP) parse(c *zlexer, o, f string) *ParseError {
 	rr.Fqdn = l.token
 	name, nameOk := toAbsoluteName(l.token, o)
 	if l.err || !nameOk {
-		return &ParseError{f, "bad LP Fqdn", l}
+		return &ParseError{"", "bad LP Fqdn", l}
 	}
 	rr.Fqdn = name
 
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *L64) parse(c *zlexer, o, f string) *ParseError {
+func (rr *L64) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad L64 Preference", l}
+		return &ParseError{"", "bad L64 Preference", l}
 	}
 	rr.Preference = uint16(i)
 	c.Next()        // zBlank
@@ -1795,39 +1564,31 @@ func (rr *L64) parse(c *zlexer, o, f string) *ParseError {
 		return err
 	}
 	rr.Locator64 = u
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *UID) parse(c *zlexer, o, f string) *ParseError {
+func (rr *UID) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 32)
 	if e != nil || l.err {
-		return &ParseError{f, "bad UID Uid", l}
+		return &ParseError{"", "bad UID Uid", l}
 	}
 	rr.Uid = uint32(i)
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *GID) parse(c *zlexer, o, f string) *ParseError {
+func (rr *GID) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 32)
 	if e != nil || l.err {
-		return &ParseError{f, "bad GID Gid", l}
+		return &ParseError{"", "bad GID Gid", l}
 	}
 	rr.Gid = uint32(i)
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *UINFO) parse(c *zlexer, o, f string) *ParseError {
-	s, e := endingToTxtSlice(c, "bad UINFO Uinfo", f)
+func (rr *UINFO) parse(c *zlexer, o string) *ParseError {
+	s, e := endingToTxtSlice(c, "bad UINFO Uinfo")
 	if e != nil {
 		return e
 	}
@@ -1838,15 +1599,11 @@ func (rr *UINFO) parse(c *zlexer, o, f string) *ParseError {
 	return nil
 }
 
-func (rr *PX) parse(c *zlexer, o, f string) *ParseError {
+func (rr *PX) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return slurpRemainder(c, f)
-	}
-
 	i, e := strconv.ParseUint(l.token, 10, 16)
 	if e != nil || l.err {
-		return &ParseError{f, "bad PX Preference", l}
+		return &ParseError{"", "bad PX Preference", l}
 	}
 	rr.Preference = uint16(i)
 
@@ -1855,7 +1612,7 @@ func (rr *PX) parse(c *zlexer, o, f string) *ParseError {
 	rr.Map822 = l.token
 	map822, map822Ok := toAbsoluteName(l.token, o)
 	if l.err || !map822Ok {
-		return &ParseError{f, "bad PX Map822", l}
+		return &ParseError{"", "bad PX Map822", l}
 	}
 	rr.Map822 = map822
 
@@ -1864,50 +1621,46 @@ func (rr *PX) parse(c *zlexer, o, f string) *ParseError {
 	rr.Mapx400 = l.token
 	mapx400, mapx400Ok := toAbsoluteName(l.token, o)
 	if l.err || !mapx400Ok {
-		return &ParseError{f, "bad PX Mapx400", l}
+		return &ParseError{"", "bad PX Mapx400", l}
 	}
 	rr.Mapx400 = mapx400
 
-	return slurpRemainder(c, f)
+	return slurpRemainder(c)
 }
 
-func (rr *CAA) parse(c *zlexer, o, f string) *ParseError {
+func (rr *CAA) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
-	if len(l.token) == 0 { // dynamic update rr.
-		return nil
-	}
-
 	i, err := strconv.ParseUint(l.token, 10, 8)
 	if err != nil || l.err {
-		return &ParseError{f, "bad CAA Flag", l}
+		return &ParseError{"", "bad CAA Flag", l}
 	}
 	rr.Flag = uint8(i)
 
 	c.Next()        // zBlank
 	l, _ = c.Next() // zString
 	if l.value != zString {
-		return &ParseError{f, "bad CAA Tag", l}
+		return &ParseError{"", "bad CAA Tag", l}
 	}
 	rr.Tag = l.token
 
 	c.Next() // zBlank
-	s, e := endingToTxtSlice(c, "bad CAA Value", f)
+	s, e := endingToTxtSlice(c, "bad CAA Value")
 	if e != nil {
 		return e
 	}
 	if len(s) != 1 {
-		return &ParseError{f, "bad CAA Value", l}
+		return &ParseError{"", "bad CAA Value", l}
 	}
 	rr.Value = s[0]
 	return nil
 }
 
-func (rr *TKEY) parse(c *zlexer, o, f string) *ParseError {
+func (rr *TKEY) parse(c *zlexer, o string) *ParseError {
 	l, _ := c.Next()
 
 	// Algorithm
 	if l.value != zString {
-		return &ParseError{f, "bad TKEY algorithm", l}
+		return &ParseError{"", "bad TKEY algorithm", l}
 	}
 	rr.Algorithm = l.token
 	c.Next() // zBlank
@@ -1916,13 +1669,13 @@ func (rr *TKEY) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next()
 	i, err := strconv.ParseUint(l.token, 10, 8)
 	if err != nil || l.err {
-		return &ParseError{f, "bad TKEY key length", l}
+		return &ParseError{"", "bad TKEY key length", l}
 	}
 	rr.KeySize = uint16(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	if l.value != zString {
-		return &ParseError{f, "bad TKEY key", l}
+		return &ParseError{"", "bad TKEY key", l}
 	}
 	rr.Key = l.token
 	c.Next() // zBlank
@@ -1931,13 +1684,13 @@ func (rr *TKEY) parse(c *zlexer, o, f string) *ParseError {
 	l, _ = c.Next()
 	i, err = strconv.ParseUint(l.token, 10, 8)
 	if err != nil || l.err {
-		return &ParseError{f, "bad TKEY otherdata length", l}
+		return &ParseError{"", "bad TKEY otherdata length", l}
 	}
 	rr.OtherLen = uint16(i)
 	c.Next() // zBlank
 	l, _ = c.Next()
 	if l.value != zString {
-		return &ParseError{f, "bad TKEY otherday", l}
+		return &ParseError{"", "bad TKEY otherday", l}
 	}
 	rr.OtherData = l.token
 

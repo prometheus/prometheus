@@ -124,6 +124,12 @@ func (h *Handler) startTrace(w http.ResponseWriter, r *http.Request) (*http.Requ
 		}
 	}
 	span.AddAttributes(requestAttrs(r)...)
+	if r.Body == nil {
+		// TODO: Handle cases where ContentLength is not set.
+	} else if r.ContentLength > 0 {
+		span.AddMessageReceiveEvent(0, /* TODO: messageID */
+			int64(r.ContentLength), -1)
+	}
 	return r.WithContext(ctx), span.End
 }
 
@@ -201,6 +207,9 @@ func (t *trackingResponseWriter) Header() http.Header {
 func (t *trackingResponseWriter) Write(data []byte) (int, error) {
 	n, err := t.writer.Write(data)
 	t.respSize += int64(n)
+	// Add message event for request bytes sent.
+	span := trace.FromContext(t.ctx)
+	span.AddMessageSendEvent(0 /* TODO: messageID */, int64(n), -1)
 	return n, err
 }
 

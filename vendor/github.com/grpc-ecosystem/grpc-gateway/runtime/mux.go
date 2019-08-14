@@ -16,6 +16,14 @@ import (
 // A HandlerFunc handles a specific pair of path pattern and HTTP method.
 type HandlerFunc func(w http.ResponseWriter, r *http.Request, pathParams map[string]string)
 
+// ErrUnknownURI is the error supplied to a custom ProtoErrorHandlerFunc when
+// a request is received with a URI path that does not match any registered
+// service method.
+//
+// Since gRPC servers return an "Unimplemented" code for requests with an
+// unrecognized URI path, this error also has a gRPC "Unimplemented" code.
+var ErrUnknownURI = status.Error(codes.Unimplemented, http.StatusText(http.StatusNotImplemented))
+
 // ServeMux is a request multiplexer for grpc-gateway.
 // It matches http requests to patterns and invokes the corresponding handler.
 type ServeMux struct {
@@ -26,8 +34,10 @@ type ServeMux struct {
 	incomingHeaderMatcher     HeaderMatcherFunc
 	outgoingHeaderMatcher     HeaderMatcherFunc
 	metadataAnnotators        []func(context.Context, *http.Request) metadata.MD
+	streamErrorHandler        StreamErrorHandlerFunc
 	protoErrorHandler         ProtoErrorHandlerFunc
 	disablePathLengthFallback bool
+	lastMatchWins             bool
 }
 
 // ServeMuxOption is an option that can be given to a ServeMux on construction.
@@ -110,12 +120,36 @@ func WithDisablePathLengthFallback() ServeMuxOption {
 	}
 }
 
+// WithStreamErrorHandler returns a ServeMuxOption that will use the given custom stream
+// error handler, which allows for customizing the error trailer for server-streaming
+// calls.
+//
+// For stream errors that occur before any response has been written, the mux's
+// ProtoErrorHandler will be invoked. However, once data has been written, the errors must
+// be handled differently: they must be included in the response body. The response body's
+// final message will include the error details returned by the stream error handler.
+func WithStreamErrorHandler(fn StreamErrorHandlerFunc) ServeMuxOption {
+	return func(serveMux *ServeMux) {
+		serveMux.streamErrorHandler = fn
+	}
+}
+
+// WithLastMatchWins returns a ServeMuxOption that will enable "last
+// match wins" behavior, where if multiple path patterns match a
+// request path, the last one defined in the .proto file will be used.
+func WithLastMatchWins() ServeMuxOption {
+	return func(serveMux *ServeMux) {
+		serveMux.lastMatchWins = true
+	}
+}
+
 // NewServeMux returns a new ServeMux whose internal mapping is empty.
 func NewServeMux(opts ...ServeMuxOption) *ServeMux {
 	serveMux := &ServeMux{
 		handlers:               make(map[string][]handler),
 		forwardResponseOptions: make([]func(context.Context, http.ResponseWriter, proto.Message) error, 0),
 		marshalers:             makeMarshalerMIMERegistry(),
+		streamErrorHandler:     DefaultHTTPStreamErrorHandler,
 	}
 
 	for _, opt := range opts {
@@ -149,7 +183,11 @@ func NewServeMux(opts ...ServeMuxOption) *ServeMux {
 
 // Handle associates "h" to the pair of HTTP method and path pattern.
 func (s *ServeMux) Handle(meth string, pat Pattern, h HandlerFunc) {
-	s.handlers[meth] = append(s.handlers[meth], handler{pat: pat, h: h})
+	if s.lastMatchWins {
+		s.handlers[meth] = append([]handler{handler{pat: pat, h: h}}, s.handlers[meth]...)
+	} else {
+		s.handlers[meth] = append(s.handlers[meth], handler{pat: pat, h: h})
+	}
 }
 
 // ServeHTTP dispatches the request to the first handler whose pattern matches to r.Method and r.Path.
@@ -174,8 +212,7 @@ func (s *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if idx := strings.LastIndex(components[l-1], ":"); idx == 0 {
 		if s.protoErrorHandler != nil {
 			_, outboundMarshaler := MarshalerForRequest(s, r)
-			sterr := status.Error(codes.Unimplemented, http.StatusText(http.StatusNotImplemented))
-			s.protoErrorHandler(ctx, s, outboundMarshaler, w, r, sterr)
+			s.protoErrorHandler(ctx, s, outboundMarshaler, w, r, ErrUnknownURI)
 		} else {
 			OtherErrorHandler(w, r, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		}
@@ -235,8 +272,7 @@ func (s *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			if s.protoErrorHandler != nil {
 				_, outboundMarshaler := MarshalerForRequest(s, r)
-				sterr := status.Error(codes.Unimplemented, http.StatusText(http.StatusMethodNotAllowed))
-				s.protoErrorHandler(ctx, s, outboundMarshaler, w, r, sterr)
+				s.protoErrorHandler(ctx, s, outboundMarshaler, w, r, ErrUnknownURI)
 			} else {
 				OtherErrorHandler(w, r, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 			}
@@ -246,8 +282,7 @@ func (s *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if s.protoErrorHandler != nil {
 		_, outboundMarshaler := MarshalerForRequest(s, r)
-		sterr := status.Error(codes.Unimplemented, http.StatusText(http.StatusNotImplemented))
-		s.protoErrorHandler(ctx, s, outboundMarshaler, w, r, sterr)
+		s.protoErrorHandler(ctx, s, outboundMarshaler, w, r, ErrUnknownURI)
 	} else {
 		OtherErrorHandler(w, r, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 	}

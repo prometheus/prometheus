@@ -14,7 +14,6 @@ var (
 )
 
 // Implements the ECDSA family of signing methods signing methods
-// Expects *ecdsa.PrivateKey for signing and *ecdsa.PublicKey for verification
 type SigningMethodECDSA struct {
 	Name      string
 	Hash      crypto.Hash

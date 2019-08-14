@@ -38,7 +38,7 @@ func TestQueryRange(t *testing.T) {
 		t.Errorf("unexpected value %s for query", actual)
 	}
 	actual = form.Get("step")
-	if actual != "1.000" {
+	if actual != "1" {
 		t.Errorf("unexpected value %s for step", actual)
 	}
 	if exitCode > 0 {
@@ -56,7 +56,7 @@ func TestQueryRange(t *testing.T) {
 		t.Errorf("unexpected value %s for query", actual)
 	}
 	actual = form.Get("step")
-	if actual != "0.010" {
+	if actual != "0.01" {
 		t.Errorf("unexpected value %s for step", actual)
 	}
 	if exitCode > 0 {

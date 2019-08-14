@@ -88,7 +88,7 @@ func (rr *OPT) len(off int, compression map[string]struct{}) int {
 	return l
 }
 
-func (rr *OPT) parse(c *zlexer, origin, file string) *ParseError {
+func (rr *OPT) parse(c *zlexer, origin string) *ParseError {
 	panic("dns: internal error: parse should never be called on OPT")
 }
 

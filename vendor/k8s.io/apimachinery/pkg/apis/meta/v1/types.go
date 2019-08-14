@@ -61,6 +61,10 @@ type ListMeta struct {
 	// selfLink is a URL representing this object.
 	// Populated by the system.
 	// Read-only.
+	//
+	// DEPRECATED
+	// Kubernetes will stop propagating this field in 1.20 release and the field is planned
+	// to be removed in 1.21 release.
 	// +optional
 	SelfLink string `json:"selfLink,omitempty" protobuf:"bytes,1,opt,name=selfLink"`
 
@@ -148,6 +152,10 @@ type ObjectMeta struct {
 	// SelfLink is a URL representing this object.
 	// Populated by the system.
 	// Read-only.
+	//
+	// DEPRECATED
+	// Kubernetes will stop propagating this field in 1.20 release and the field is planned
+	// to be removed in 1.21 release.
 	// +optional
 	SelfLink string `json:"selfLink,omitempty" protobuf:"bytes,4,opt,name=selfLink"`
 
@@ -241,19 +249,6 @@ type ObjectMeta struct {
 	// +patchStrategy=merge
 	OwnerReferences []OwnerReference `json:"ownerReferences,omitempty" patchStrategy:"merge" patchMergeKey:"uid" protobuf:"bytes,13,rep,name=ownerReferences"`
 
-	// An initializer is a controller which enforces some system invariant at object creation time.
-	// This field is a list of initializers that have not yet acted on this object. If nil or empty,
-	// this object has been completely initialized. Otherwise, the object is considered uninitialized
-	// and is hidden (in list/watch and get calls) from clients that haven't explicitly asked to
-	// observe uninitialized objects.
-	//
-	// When an object is created, the system will populate this list with the current set of initializers.
-	// Only privileged users may set or modify this list. Once it is empty, it may not be modified further
-	// by any user.
-	//
-	// DEPRECATED - initializers are an alpha field and will be removed in v1.15.
-	Initializers *Initializers `json:"initializers,omitempty" protobuf:"bytes,16,opt,name=initializers"`
-
 	// Must be empty before the object is deleted from the registry. Each entry
 	// is an identifier for the responsible component that will remove the entry
 	// from the list. If the deletionTimestamp of the object is non-nil, entries
@@ -280,26 +275,6 @@ type ObjectMeta struct {
 	//
 	// +optional
 	ManagedFields []ManagedFieldsEntry `json:"managedFields,omitempty" protobuf:"bytes,17,rep,name=managedFields"`
-}
-
-// Initializers tracks the progress of initialization.
-type Initializers struct {
-	// Pending is a list of initializers that must execute in order before this object is visible.
-	// When the last pending initializer is removed, and no failing result is set, the initializers
-	// struct will be set to nil and the object is considered as initialized and visible to all
-	// clients.
-	// +patchMergeKey=name
-	// +patchStrategy=merge
-	Pending []Initializer `json:"pending" protobuf:"bytes,1,rep,name=pending" patchStrategy:"merge" patchMergeKey:"name"`
-	// If result is set with the Failure field, the object will be persisted to storage and then deleted,
-	// ensuring that other clients can observe the deletion.
-	Result *Status `json:"result,omitempty" protobuf:"bytes,2,opt,name=result"`
-}
-
-// Initializer is information about an initializer that has not yet completed.
-type Initializer struct {
-	// name of the process that is responsible for initializing this object.
-	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
 }
 
 const (
@@ -373,7 +348,7 @@ type ListOptions struct {
 	// If the feature gate WatchBookmarks is not enabled in apiserver,
 	// this field is ignored.
 	//
-	// This field is alpha and can be changed or removed without notice.
+	// This field is beta.
 	//
 	// +optional
 	AllowWatchBookmarks bool `json:"allowWatchBookmarks,omitempty" protobuf:"varint,9,opt,name=allowWatchBookmarks"`
@@ -1142,20 +1117,22 @@ const (
 )
 
 // Fields stores a set of fields in a data structure like a Trie.
-// To understand how this is used, see: https://github.com/kubernetes-sigs/structured-merge-diff
+//
+// Each key is either a '.' representing the field itself, and will always map to an empty set,
+// or a string representing a sub-field or item. The string will follow one of these four formats:
+// 'f:<name>', where <name> is the name of a field in a struct, or key in a map
+// 'v:<value>', where <value> is the exact json formatted value of a list item
+// 'i:<index>', where <index> is position of a item in a list
+// 'k:<keys>', where <keys> is a map of  a list item's key fields to their unique values
+// If a key maps to an empty Fields value, the field that key represents is part of the set.
+//
+// The exact format is defined in sigs.k8s.io/structured-merge-diff
+// +protobuf.options.marshal=false
+// +protobuf.as=ProtoFields
+// +protobuf.options.(gogoproto.goproto_stringer)=false
 type Fields struct {
-	// Map stores a set of fields in a data structure like a Trie.
-	//
-	// Each key is either a '.' representing the field itself, and will always map to an empty set,
-	// or a string representing a sub-field or item. The string will follow one of these four formats:
-	// 'f:<name>', where <name> is the name of a field in a struct, or key in a map
-	// 'v:<value>', where <value> is the exact json formatted value of a list item
-	// 'i:<index>', where <index> is position of a item in a list
-	// 'k:<keys>', where <keys> is a map of  a list item's key fields to their unique values
-	// If a key maps to an empty Fields value, the field that key represents is part of the set.
-	//
-	// The exact format is defined in k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager/internal
-	Map map[string]Fields `json:",inline" protobuf:"bytes,1,rep,name=map"`
+	// Raw is the underlying serialization of this object.
+	Raw []byte `json:"-" protobuf:"-"`
 }
 
 // TODO: Table does not generate to protobuf because of the interface{} - fix protobuf

@@ -482,6 +482,7 @@ func New() *Generator {
 	g.Request = new(plugin.CodeGeneratorRequest)
 	g.Response = new(plugin.CodeGeneratorResponse)
 	g.writtenImports = make(map[string]bool)
+	g.addedImports = make(map[GoImportPath]bool)
 	return g
 }
 
@@ -3147,7 +3148,7 @@ func (g *Generator) generateCommonMethods(mc *msgCtx) {
 		gogoproto.IsUnsafeMarshaler(g.file.FileDescriptorProto, mc.message.DescriptorProto) {
 		if gogoproto.IsStableMarshaler(g.file.FileDescriptorProto, mc.message.DescriptorProto) {
 			g.P("b = b[:cap(b)]")
-			g.P("n, err := m.MarshalTo(b)")
+			g.P("n, err := m.MarshalToSizedBuffer(b)")
 			g.P("if err != nil {")
 			g.In()
 			g.P("return nil, err")
@@ -3161,7 +3162,7 @@ func (g *Generator) generateCommonMethods(mc *msgCtx) {
 			g.P("} else {")
 			g.In()
 			g.P("b = b[:cap(b)]")
-			g.P("n, err := m.MarshalTo(b)")
+			g.P("n, err := m.MarshalToSizedBuffer(b)")
 			g.P("if err != nil {")
 			g.In()
 			g.P("return nil, err")
@@ -3302,13 +3303,13 @@ func (g *Generator) generateMessage(message *Descriptor) {
 			// when we've computed any disambiguation.
 
 			dname := "is" + goTypeName + "_" + fname
-			tag := `protobuf_oneof:"` + odp.GetName() + `"`
+			oneOftag := `protobuf_oneof:"` + odp.GetName() + `"`
 			of := oneofField{
 				fieldCommon: fieldCommon{
 					goName:     fname,
 					getterName: gname,
 					goType:     dname,
-					tags:       tag,
+					tags:       oneOftag,
 					protoName:  odp.GetName(),
 					fullPath:   oneofFullPath,
 					protoField: field,

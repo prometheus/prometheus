@@ -15,6 +15,12 @@ message Swagger {
   string swagger = 1;
   Info info = 2;
   string host = 3;
+  // `base_path` is the common prefix path used on all API endpoints (ie. /api, /v1, etc.). By adding this,
+  // it allows you to remove this portion from the path endpoints in your Swagger file making them easier
+  // to read. Note that using `base_path` does not change the endpoint paths that are generated in the resulting 
+  // Swagger file. If you wish to use `base_path` with relatively generated Swagger paths, the 
+  // `base_path` prefix must be manually removed from your `google.api.http` paths and your code changed to 
+  // serve the API from the `base_path`.
   string base_path = 4;
   enum SwaggerScheme {
     UNKNOWN = 0;

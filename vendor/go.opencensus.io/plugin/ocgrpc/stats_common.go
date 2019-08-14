@@ -22,9 +22,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opencensus.io/metric/metricdata"
 	ocstats "go.opencensus.io/stats"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/tag"
+	"go.opencensus.io/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/stats"
@@ -141,27 +143,31 @@ func handleRPCEnd(ctx context.Context, s *stats.End) {
 	}
 
 	latencyMillis := float64(elapsedTime) / float64(time.Millisecond)
+	attachments := getSpanCtxAttachment(ctx)
 	if s.Client {
-		ocstats.RecordWithTags(ctx,
-			[]tag.Mutator{
+		ocstats.RecordWithOptions(ctx,
+			ocstats.WithTags(
 				tag.Upsert(KeyClientMethod, methodName(d.method)),
-				tag.Upsert(KeyClientStatus, st),
-			},
-			ClientSentBytesPerRPC.M(atomic.LoadInt64(&d.sentBytes)),
-			ClientSentMessagesPerRPC.M(atomic.LoadInt64(&d.sentCount)),
-			ClientReceivedMessagesPerRPC.M(atomic.LoadInt64(&d.recvCount)),
-			ClientReceivedBytesPerRPC.M(atomic.LoadInt64(&d.recvBytes)),
-			ClientRoundtripLatency.M(latencyMillis))
+				tag.Upsert(KeyClientStatus, st)),
+			ocstats.WithAttachments(attachments),
+			ocstats.WithMeasurements(
+				ClientSentBytesPerRPC.M(atomic.LoadInt64(&d.sentBytes)),
+				ClientSentMessagesPerRPC.M(atomic.LoadInt64(&d.sentCount)),
+				ClientReceivedMessagesPerRPC.M(atomic.LoadInt64(&d.recvCount)),
+				ClientReceivedBytesPerRPC.M(atomic.LoadInt64(&d.recvBytes)),
+				ClientRoundtripLatency.M(latencyMillis)))
 	} else {
-		ocstats.RecordWithTags(ctx,
-			[]tag.Mutator{
+		ocstats.RecordWithOptions(ctx,
+			ocstats.WithTags(
 				tag.Upsert(KeyServerStatus, st),
-			},
-			ServerSentBytesPerRPC.M(atomic.LoadInt64(&d.sentBytes)),
-			ServerSentMessagesPerRPC.M(atomic.LoadInt64(&d.sentCount)),
-			ServerReceivedMessagesPerRPC.M(atomic.LoadInt64(&d.recvCount)),
-			ServerReceivedBytesPerRPC.M(atomic.LoadInt64(&d.recvBytes)),
-			ServerLatency.M(latencyMillis))
+			),
+			ocstats.WithAttachments(attachments),
+			ocstats.WithMeasurements(
+				ServerSentBytesPerRPC.M(atomic.LoadInt64(&d.sentBytes)),
+				ServerSentMessagesPerRPC.M(atomic.LoadInt64(&d.sentCount)),
+				ServerReceivedMessagesPerRPC.M(atomic.LoadInt64(&d.recvCount)),
+				ServerReceivedBytesPerRPC.M(atomic.LoadInt64(&d.recvBytes)),
+				ServerLatency.M(latencyMillis)))
 	}
 }
 
@@ -205,4 +211,17 @@ func statusCodeToString(s *status.Status) string {
 	default:
 		return "CODE_" + strconv.FormatInt(int64(c), 10)
 	}
+}
+
+func getSpanCtxAttachment(ctx context.Context) metricdata.Attachments {
+	attachments := map[string]interface{}{}
+	span := trace.FromContext(ctx)
+	if span == nil {
+		return attachments
+	}
+	spanCtx := span.SpanContext()
+	if spanCtx.IsSampled() {
+		attachments[metricdata.AttachmentKeySpanContext] = spanCtx
+	}
+	return attachments
 }

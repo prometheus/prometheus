@@ -1366,7 +1366,7 @@ func isProtoPathMatches(paths []int32, outerPaths []int32, typeName string, type
 	}
 
 	if typeName == "Method" {
-		if paths[0] != serviceProtoPath || paths[1] != typeIndex || paths[2] != methodProtoPath {
+		if paths[0] != serviceProtoPath || paths[2] != methodProtoPath {
 			return false
 		}
 		paths = paths[2:]

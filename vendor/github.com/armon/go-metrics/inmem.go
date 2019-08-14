@@ -255,11 +255,11 @@ func (i *InmemSink) Data() []*IntervalMetrics {
 	}
 	copyCurrent.Counters = make(map[string]SampledValue, len(current.Counters))
 	for k, v := range current.Counters {
-		copyCurrent.Counters[k] = v
+		copyCurrent.Counters[k] = v.deepCopy()
 	}
 	copyCurrent.Samples = make(map[string]SampledValue, len(current.Samples))
 	for k, v := range current.Samples {
-		copyCurrent.Samples[k] = v
+		copyCurrent.Samples[k] = v.deepCopy()
 	}
 	current.RUnlock()
 

@@ -48,7 +48,7 @@ func (x Swagger_SwaggerScheme) String() string {
 	return proto.EnumName(Swagger_SwaggerScheme_name, int32(x))
 }
 func (Swagger_SwaggerScheme) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{0, 0}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{0, 0}
 }
 
 type JSONSchema_JSONSchemaSimpleTypes int32
@@ -89,7 +89,7 @@ func (x JSONSchema_JSONSchemaSimpleTypes) String() string {
 	return proto.EnumName(JSONSchema_JSONSchemaSimpleTypes_name, int32(x))
 }
 func (JSONSchema_JSONSchemaSimpleTypes) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{8, 0}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{8, 0}
 }
 
 // Required. The type of the security scheme. Valid values are "basic",
@@ -120,7 +120,7 @@ func (x SecurityScheme_Type) String() string {
 	return proto.EnumName(SecurityScheme_Type_name, int32(x))
 }
 func (SecurityScheme_Type) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{11, 0}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{11, 0}
 }
 
 // Required. The location of the API key. Valid values are "query" or "header".
@@ -147,7 +147,7 @@ func (x SecurityScheme_In) String() string {
 	return proto.EnumName(SecurityScheme_In_name, int32(x))
 }
 func (SecurityScheme_In) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{11, 1}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{11, 1}
 }
 
 // Required. The flow used by the OAuth2 security scheme. Valid values are
@@ -181,7 +181,7 @@ func (x SecurityScheme_Flow) String() string {
 	return proto.EnumName(SecurityScheme_Flow_name, int32(x))
 }
 func (SecurityScheme_Flow) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{11, 2}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{11, 2}
 }
 
 // `Swagger` is a representation of OpenAPI v2 specification's Swagger object.
@@ -190,9 +190,15 @@ func (SecurityScheme_Flow) EnumDescriptor() ([]byte, []int) {
 //
 // TODO(ivucica): document fields
 type Swagger struct {
-	Swagger              string                  `protobuf:"bytes,1,opt,name=swagger,proto3" json:"swagger,omitempty"`
-	Info                 *Info                   `protobuf:"bytes,2,opt,name=info,proto3" json:"info,omitempty"`
-	Host                 string                  `protobuf:"bytes,3,opt,name=host,proto3" json:"host,omitempty"`
+	Swagger string `protobuf:"bytes,1,opt,name=swagger,proto3" json:"swagger,omitempty"`
+	Info    *Info  `protobuf:"bytes,2,opt,name=info,proto3" json:"info,omitempty"`
+	Host    string `protobuf:"bytes,3,opt,name=host,proto3" json:"host,omitempty"`
+	// `base_path` is the common prefix path used on all API endpoints (ie. /api, /v1, etc.). By adding this,
+	// it allows you to remove this portion from the path endpoints in your Swagger file making them easier
+	// to read. Note that using `base_path` does not change the endpoint paths that are generated in the resulting
+	// Swagger file. If you wish to use `base_path` with relatively generated Swagger paths, the
+	// `base_path` prefix must be manually removed from your `google.api.http` paths and your code changed to
+	// serve the API from the `base_path`.
 	BasePath             string                  `protobuf:"bytes,4,opt,name=base_path,json=basePath,proto3" json:"base_path,omitempty"`
 	Schemes              []Swagger_SwaggerScheme `protobuf:"varint,5,rep,packed,name=schemes,proto3,enum=grpc.gateway.protoc_gen_swagger.options.Swagger_SwaggerScheme" json:"schemes,omitempty"`
 	Consumes             []string                `protobuf:"bytes,6,rep,name=consumes,proto3" json:"consumes,omitempty"`
@@ -210,7 +216,7 @@ func (m *Swagger) Reset()         { *m = Swagger{} }
 func (m *Swagger) String() string { return proto.CompactTextString(m) }
 func (*Swagger) ProtoMessage()    {}
 func (*Swagger) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{0}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{0}
 }
 func (m *Swagger) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Swagger.Unmarshal(m, b)
@@ -333,7 +339,7 @@ func (m *Operation) Reset()         { *m = Operation{} }
 func (m *Operation) String() string { return proto.CompactTextString(m) }
 func (*Operation) ProtoMessage()    {}
 func (*Operation) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{1}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{1}
 }
 func (m *Operation) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Operation.Unmarshal(m, b)
@@ -450,7 +456,7 @@ func (m *Response) Reset()         { *m = Response{} }
 func (m *Response) String() string { return proto.CompactTextString(m) }
 func (*Response) ProtoMessage()    {}
 func (*Response) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{2}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{2}
 }
 func (m *Response) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Response.Unmarshal(m, b)
@@ -505,7 +511,7 @@ func (m *Info) Reset()         { *m = Info{} }
 func (m *Info) String() string { return proto.CompactTextString(m) }
 func (*Info) ProtoMessage()    {}
 func (*Info) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{3}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{3}
 }
 func (m *Info) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Info.Unmarshal(m, b)
@@ -585,7 +591,7 @@ func (m *Contact) Reset()         { *m = Contact{} }
 func (m *Contact) String() string { return proto.CompactTextString(m) }
 func (*Contact) ProtoMessage()    {}
 func (*Contact) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{4}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{4}
 }
 func (m *Contact) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Contact.Unmarshal(m, b)
@@ -644,7 +650,7 @@ func (m *License) Reset()         { *m = License{} }
 func (m *License) String() string { return proto.CompactTextString(m) }
 func (*License) ProtoMessage()    {}
 func (*License) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{5}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{5}
 }
 func (m *License) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_License.Unmarshal(m, b)
@@ -696,7 +702,7 @@ func (m *ExternalDocumentation) Reset()         { *m = ExternalDocumentation{} }
 func (m *ExternalDocumentation) String() string { return proto.CompactTextString(m) }
 func (*ExternalDocumentation) ProtoMessage()    {}
 func (*ExternalDocumentation) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{6}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{6}
 }
 func (m *ExternalDocumentation) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_ExternalDocumentation.Unmarshal(m, b)
@@ -750,7 +756,7 @@ func (m *Schema) Reset()         { *m = Schema{} }
 func (m *Schema) String() string { return proto.CompactTextString(m) }
 func (*Schema) ProtoMessage()    {}
 func (*Schema) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{7}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{7}
 }
 func (m *Schema) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Schema.Unmarshal(m, b)
@@ -854,7 +860,7 @@ func (m *JSONSchema) Reset()         { *m = JSONSchema{} }
 func (m *JSONSchema) String() string { return proto.CompactTextString(m) }
 func (*JSONSchema) ProtoMessage()    {}
 func (*JSONSchema) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{8}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{8}
 }
 func (m *JSONSchema) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_JSONSchema.Unmarshal(m, b)
@@ -1040,7 +1046,7 @@ func (m *Tag) Reset()         { *m = Tag{} }
 func (m *Tag) String() string { return proto.CompactTextString(m) }
 func (*Tag) ProtoMessage()    {}
 func (*Tag) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{9}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{9}
 }
 func (m *Tag) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Tag.Unmarshal(m, b)
@@ -1094,7 +1100,7 @@ func (m *SecurityDefinitions) Reset()         { *m = SecurityDefinitions{} }
 func (m *SecurityDefinitions) String() string { return proto.CompactTextString(m) }
 func (*SecurityDefinitions) ProtoMessage()    {}
 func (*SecurityDefinitions) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{10}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{10}
 }
 func (m *SecurityDefinitions) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SecurityDefinitions.Unmarshal(m, b)
@@ -1172,7 +1178,7 @@ func (m *SecurityScheme) Reset()         { *m = SecurityScheme{} }
 func (m *SecurityScheme) String() string { return proto.CompactTextString(m) }
 func (*SecurityScheme) ProtoMessage()    {}
 func (*SecurityScheme) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{11}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{11}
 }
 func (m *SecurityScheme) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SecurityScheme.Unmarshal(m, b)
@@ -1274,7 +1280,7 @@ func (m *SecurityRequirement) Reset()         { *m = SecurityRequirement{} }
 func (m *SecurityRequirement) String() string { return proto.CompactTextString(m) }
 func (*SecurityRequirement) ProtoMessage()    {}
 func (*SecurityRequirement) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{12}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{12}
 }
 func (m *SecurityRequirement) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SecurityRequirement.Unmarshal(m, b)
@@ -1319,7 +1325,7 @@ func (m *SecurityRequirement_SecurityRequirementValue) String() string {
 }
 func (*SecurityRequirement_SecurityRequirementValue) ProtoMessage() {}
 func (*SecurityRequirement_SecurityRequirementValue) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{12, 0}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{12, 0}
 }
 func (m *SecurityRequirement_SecurityRequirementValue) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SecurityRequirement_SecurityRequirementValue.Unmarshal(m, b)
@@ -1364,7 +1370,7 @@ func (m *Scopes) Reset()         { *m = Scopes{} }
 func (m *Scopes) String() string { return proto.CompactTextString(m) }
 func (*Scopes) ProtoMessage()    {}
 func (*Scopes) Descriptor() ([]byte, []int) {
-	return fileDescriptor_openapiv2_29cfb415de848cf5, []int{13}
+	return fileDescriptor_openapiv2_78431ddfac00899a, []int{13}
 }
 func (m *Scopes) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Scopes.Unmarshal(m, b)
@@ -1420,10 +1426,10 @@ func init() {
 }
 
 func init() {
-	proto.RegisterFile("protoc-gen-swagger/options/openapiv2.proto", fileDescriptor_openapiv2_29cfb415de848cf5)
+	proto.RegisterFile("protoc-gen-swagger/options/openapiv2.proto", fileDescriptor_openapiv2_78431ddfac00899a)
 }
 
-var fileDescriptor_openapiv2_29cfb415de848cf5 = []byte{
+var fileDescriptor_openapiv2_78431ddfac00899a = []byte{
 	// 1777 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x58, 0xdd, 0x73, 0xdb, 0xc6,
 	0x11, 0x0f, 0x48, 0x90, 0x04, 0x97, 0x22, 0x73, 0x3e, 0xcb, 0x2d, 0xa2, 0xc4, 0xae, 0xc2, 0xa6,

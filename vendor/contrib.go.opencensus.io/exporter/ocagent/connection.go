@@ -18,15 +18,27 @@ import (
 	"math/rand"
 	"sync/atomic"
 	"time"
+	"unsafe"
 )
 
-const (
-	sDisconnected int32 = 5 + iota
-	sConnected
-)
+func (ae *Exporter) lastConnectError() error {
+	errPtr := (*error)(atomic.LoadPointer(&ae.lastConnectErrPtr))
+	if errPtr == nil {
+		return nil
+	}
+	return *errPtr
+}
 
-func (ae *Exporter) setStateDisconnected() {
-	atomic.StoreInt32(&ae.connectionState, sDisconnected)
+func (ae *Exporter) saveLastConnectError(err error) {
+	var errPtr *error
+	if err != nil {
+		errPtr = &err
+	}
+	atomic.StorePointer(&ae.lastConnectErrPtr, unsafe.Pointer(errPtr))
+}
+
+func (ae *Exporter) setStateDisconnected(err error) {
+	ae.saveLastConnectError(err)
 	select {
 	case ae.disconnectedCh <- true:
 	default:
@@ -34,11 +46,11 @@ func (ae *Exporter) setStateDisconnected() {
 }
 
 func (ae *Exporter) setStateConnected() {
-	atomic.StoreInt32(&ae.connectionState, sConnected)
+	ae.saveLastConnectError(nil)
 }
 
 func (ae *Exporter) connected() bool {
-	return atomic.LoadInt32(&ae.connectionState) == sConnected
+	return ae.lastConnectError() == nil
 }
 
 const defaultConnReattemptPeriod = 10 * time.Second
@@ -77,14 +89,18 @@ func (ae *Exporter) indefiniteBackgroundConnection() error {
 		if err := ae.connect(); err == nil {
 			ae.setStateConnected()
 		} else {
-			ae.setStateDisconnected()
+			ae.setStateDisconnected(err)
 		}
 
 		// Apply some jitter to avoid lockstep retrials of other
 		// agent-exporters. Lockstep retrials could result in an
 		// innocent DDOS, by clogging the machine's resources and network.
 		jitter := time.Duration(rng.Int63n(maxJitter))
-		<-time.After(connReattemptPeriod + jitter)
+		select {
+		case <-ae.stopCh:
+			return errStopped
+		case <-time.After(connReattemptPeriod + jitter):
+		}
 	}
 }
 

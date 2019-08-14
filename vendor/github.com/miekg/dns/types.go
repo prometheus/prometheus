@@ -238,7 +238,7 @@ type ANY struct {
 
 func (rr *ANY) String() string { return rr.Hdr.String() }
 
-func (rr *ANY) parse(c *zlexer, origin, file string) *ParseError {
+func (rr *ANY) parse(c *zlexer, origin string) *ParseError {
 	panic("dns: internal error: parse should never be called on ANY")
 }
 
@@ -253,7 +253,7 @@ func (rr *NULL) String() string {
 	return ";" + rr.Hdr.String() + rr.Data
 }
 
-func (rr *NULL) parse(c *zlexer, origin, file string) *ParseError {
+func (rr *NULL) parse(c *zlexer, origin string) *ParseError {
 	panic("dns: internal error: parse should never be called on NULL")
 }
 
@@ -854,22 +854,7 @@ func (rr *NSEC) String() string {
 func (rr *NSEC) len(off int, compression map[string]struct{}) int {
 	l := rr.Hdr.len(off, compression)
 	l += domainNameLen(rr.NextDomain, off+l, compression, false)
-	var lastwindow, lastlength uint16
-	for _, t := range rr.TypeBitMap {
-		window := t / 256
-		length := (t-window*256)/8 + 1
-		if window > lastwindow && lastlength != 0 { // New window, jump to the new offset
-			l += int(lastlength) + 2
-			lastlength = 0
-		}
-		if window < lastwindow || length < lastlength {
-			// packDataNsec would return Error{err: "nsec bits out of order"} here, but
-			// when computing the length, we want do be liberal.
-			continue
-		}
-		lastwindow, lastlength = window, length
-	}
-	l += int(lastlength) + 2
+	l += typeBitMapLen(rr.TypeBitMap)
 	return l
 }
 
@@ -1028,14 +1013,7 @@ func (rr *NSEC3) String() string {
 func (rr *NSEC3) len(off int, compression map[string]struct{}) int {
 	l := rr.Hdr.len(off, compression)
 	l += 6 + len(rr.Salt)/2 + 1 + len(rr.NextDomain) + 1
-	lastwindow := uint32(2 ^ 32 + 1)
-	for _, t := range rr.TypeBitMap {
-		window := t / 256
-		if uint32(window) != lastwindow {
-			l += 1 + 32
-		}
-		lastwindow = uint32(window)
-	}
+	l += typeBitMapLen(rr.TypeBitMap)
 	return l
 }
 
@@ -1352,14 +1330,7 @@ func (rr *CSYNC) String() string {
 func (rr *CSYNC) len(off int, compression map[string]struct{}) int {
 	l := rr.Hdr.len(off, compression)
 	l += 4 + 2
-	lastwindow := uint32(2 ^ 32 + 1)
-	for _, t := range rr.TypeBitMap {
-		window := t / 256
-		if uint32(window) != lastwindow {
-			l += 1 + 32
-		}
-		lastwindow = uint32(window)
-	}
+	l += typeBitMapLen(rr.TypeBitMap)
 	return l
 }
 
