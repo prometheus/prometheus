@@ -738,7 +738,7 @@ func (s *baseChunkSeries) Next() bool {
 
 		if len(s.intervals) > 0 {
 			// Only those chunks that are not entirely deleted.
-			chks := make([]chunks.Meta, 0, len(s.chks))
+			chks := s.chks[:0]
 			for _, chk := range s.chks {
 				if !(Interval{chk.MinTime, chk.MaxTime}.isSubrange(s.intervals)) {
 					chks = append(chks, chk)

@@ -1441,7 +1441,7 @@ func (m seriesHashmap) set(hash uint64, s *memSeries) {
 }
 
 func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
-	var rem []*memSeries
+	rem := m[hash][:0]
 	for _, s := range m[hash] {
 		if !s.lset.Equals(lset) {
 			rem = append(rem, s)
