@@ -31,7 +31,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/tsdb/testutil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type reader interface {

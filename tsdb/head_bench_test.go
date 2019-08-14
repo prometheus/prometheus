@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/tsdb/labels"
-	"github.com/prometheus/prometheus/tsdb/testutil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {

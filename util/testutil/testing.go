@@ -52,10 +52,11 @@ func Ok(tb TB, err error) {
 }
 
 // NotOk fails the test if an err is nil.
-func NotOk(tb TB, err error, format string, a ...interface{}) {
+func NotOk(tb TB, err error, a ...interface{}) {
 	tb.Helper()
 	if err == nil {
 		if len(a) != 0 {
+			format := a[0].(string)
 			tb.Fatalf("\033[31m"+format+": expected error, got none\033[39m", a...)
 		}
 		tb.Fatalf("\033[31mexpected error, got none\033[39m")
@@ -76,7 +77,7 @@ func formatMessage(msgAndArgs []interface{}) string {
 	}
 
 	if msg, ok := msgAndArgs[0].(string); ok {
-		return fmt.Sprintf("\nmsg: "+msg, msgAndArgs[1:]...)
+		return fmt.Sprintf("\n\nmsg: "+msg, msgAndArgs[1:]...)
 	}
 	return ""
 }
