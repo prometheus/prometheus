@@ -9,7 +9,7 @@
 * [ENHANCEMENT] Add logging during TSDB WAL replay on startup. tsdb#662
 * [ENHANCEMENT] Improve TSDB memory usage. tsdb#653, tsdb#643, tsdb#654, tsdb#642, tsdb#627
 * [BUGFIX] Check for duplicate label names in remote read. #5829
-* [BUGFIX] Mark deleted rule's series as stale on next evaluation. #5759
+* [BUGFIX] Mark deleted rules' series as stale on next evaluation. #5759
 * [BUGFIX] Fix JavaScript error when showing warning about out-of-sync server time. #5833
 * [BUGFIX] Fix `promtool test rules` panic when providing empty `exp_labels`. #5774
 * [BUGFIX] Only check last directory when discovering checkpoint number. #5756
