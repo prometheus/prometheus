@@ -34,7 +34,7 @@ require (
 	github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223
 	github.com/oklog/run v1.0.0
 	github.com/oklog/ulid v1.3.1
-	github.com/opentracing-contrib/go-stdlib v0.0.0-20170113013457-1de4cc2120e7
+	github.com/opentracing-contrib/go-stdlib v0.0.0-20190519235532-cf7a6c988dc9
 	github.com/opentracing/opentracing-go v1.0.2
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/alertmanager v0.17.0

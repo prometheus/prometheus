@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 // decodeReadLimit is the maximum size of a read request body in bytes.
@@ -208,7 +208,7 @@ func StreamChunkedReadResponses(
 
 		// Send at most one series per frame; series may be split over multiple frames according to maxBytesInFrame.
 		for {
-			// TODO(bwplotka): Use ChunkIterator once available in TSDB instead of re-encoding: https://github.com/prometheus/tsdb/pull/665
+			// TODO(bwplotka): Use ChunkIterator once available in TSDB instead of re-encoding: https://github.com/prometheus/prometheus/pull/5882
 			chks, err = encodeChunks(iter, chks, maxBytesInFrame-lblsSize)
 			if err != nil {
 				return err
