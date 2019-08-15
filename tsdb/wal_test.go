@@ -29,8 +29,8 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/labels"
-	"github.com/prometheus/prometheus/tsdb/testutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestSegmentWAL_cut(t *testing.T) {
