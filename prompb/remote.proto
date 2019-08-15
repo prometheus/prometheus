@@ -48,7 +48,7 @@ message ReadRequest {
   //
   // Response types are taken from the list in the FIFO order. If no response type in `accepted_response_types` is
   // implemented by server, error is returned.
-  // For request that do not support `accepted_response_types` field the SAMPLES response type will be used.
+  // For request that do not contain `accepted_response_types` field the SAMPLES response type will be used.
   repeated ResponseType accepted_response_types = 2;
 }
 

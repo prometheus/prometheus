@@ -114,7 +114,7 @@ type ReadRequest struct {
 	//
 	// Response types are taken from the list in the FIFO order. If no response type in `accepted_response_types` is
 	// implemented by server, error is returned.
-	// For request that do not support `accepted_response_types` field the SAMPLES response type will be used.
+	// For request that do not contain `accepted_response_types` field the SAMPLES response type will be used.
 	AcceptedResponseTypes []ReadRequest_ResponseType `protobuf:"varint,2,rep,packed,name=accepted_response_types,json=acceptedResponseTypes,proto3,enum=prometheus.ReadRequest_ResponseType" json:"accepted_response_types,omitempty"`
 	XXX_NoUnkeyedLiteral  struct{}                   `json:"-"`
 	XXX_unrecognized      []byte                     `json:"-"`
