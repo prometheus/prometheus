@@ -897,7 +897,7 @@ func TestBadStaticConfigsJSON(t *testing.T) {
 	testutil.Ok(t, err)
 	var tg targetgroup.Group
 	err = json.Unmarshal(content, &tg)
-	testutil.NotOk(t, err, "")
+	testutil.NotOk(t, err)
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
@@ -905,7 +905,7 @@ func TestBadStaticConfigsYML(t *testing.T) {
 	testutil.Ok(t, err)
 	var tg targetgroup.Group
 	err = yaml.UnmarshalStrict(content, &tg)
-	testutil.NotOk(t, err, "")
+	testutil.NotOk(t, err)
 }
 
 func TestEmptyConfig(t *testing.T) {

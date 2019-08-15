@@ -85,7 +85,7 @@ func TestTritonSDNew(t *testing.T) {
 
 func TestTritonSDNewBadConfig(t *testing.T) {
 	td, err := newTritonDiscovery(badconf)
-	testutil.NotOk(t, err, "")
+	testutil.NotOk(t, err)
 	testutil.Assert(t, td == nil, "")
 }
 
@@ -140,7 +140,7 @@ func TestTritonSDRefreshNoServer(t *testing.T) {
 	)
 
 	_, err := td.refresh(context.Background())
-	testutil.NotOk(t, err, "")
+	testutil.NotOk(t, err)
 	testutil.Equals(t, strings.Contains(err.Error(), "an error occurred when requesting targets from the discovery endpoint"), true)
 }
 
@@ -152,7 +152,7 @@ func TestTritonSDRefreshCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := td.refresh(ctx)
-	testutil.NotOk(t, err, "")
+	testutil.NotOk(t, err)
 	testutil.Equals(t, strings.Contains(err.Error(), context.Canceled.Error()), true)
 }
 

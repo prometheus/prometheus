@@ -257,7 +257,7 @@ func TestPromParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		testutil.NotOk(t, err, "")
+		testutil.NotOk(t, err)
 		testutil.Equals(t, c.err, err.Error(), "test %d", i)
 	}
 }
@@ -313,7 +313,7 @@ func TestPromNullByteHandling(t *testing.T) {
 			continue
 		}
 
-		testutil.NotOk(t, err, "")
+		testutil.NotOk(t, err)
 		testutil.Equals(t, c.err, err.Error(), "test %d", i)
 	}
 }
