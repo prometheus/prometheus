@@ -570,7 +570,7 @@ region: <string>
 
 # Whether the service discovery should list all instances for all projects.
 # It is only relevant for the 'instance' role and usually requires admin permissions.
-[ all_tenants: <boolean> | default: false ]
+[ all_tenants: <boolean> | default = false ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
@@ -855,7 +855,7 @@ namespaces:
 Where `<role>` must be `endpoints`, `service`, `pod`, `node`, or
 `ingress`.
 
-See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
+See [this example Prometheus configuration file](../examples/prometheus-kubernetes.yml)
 for a detailed example of configuring Prometheus for Kubernetes.
 
 You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
@@ -929,7 +929,7 @@ tls_config:
 By default every app listed in Marathon will be scraped by Prometheus. If not all
 of your services provide Prometheus metrics, you can use a Marathon label and
 Prometheus relabeling to control which instances will actually be scraped.
-See [the Prometheus marathon-sd configuration file](/documentation/examples/prometheus-marathon.yml)
+See [the Prometheus marathon-sd configuration file](../examples/prometheus-marathon.yml)
 for a practical example on how to set up your Marathon app and your Prometheus
 configuration.
 
@@ -1255,7 +1255,7 @@ relabel_configs:
 to the remote endpoint. Write relabeling is applied after external labels. This
 could be used to limit which samples are sent.
 
-There is a [small demo](/documentation/examples/remote_storage) of how to use
+There is a [small demo](../examples/remote_storage) of how to use
 this functionality.
 
 ```yaml

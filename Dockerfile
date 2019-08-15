@@ -5,11 +5,11 @@ LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com
 
 ARG ARCH="amd64"
 ARG OS="linux"
-COPY .build/${OS}-${ARCH}/prometheus        /bin/prometheus
-COPY .build/${OS}-${ARCH}/promtool          /bin/promtool
-COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
-COPY console_libraries/                     /usr/share/prometheus/console_libraries/
-COPY consoles/                              /usr/share/prometheus/consoles/
+COPY .build/${OS}-${ARCH}/prometheus /bin/prometheus
+COPY .build/${OS}-${ARCH}/promtool   /bin/promtool
+COPY docs/examples/prometheus.yml    /etc/prometheus/prometheus.yml
+COPY console_libraries/              /usr/share/prometheus/console_libraries/
+COPY consoles/                       /usr/share/prometheus/consoles/
 
 RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles/ /etc/prometheus/
 RUN mkdir -p /prometheus && \

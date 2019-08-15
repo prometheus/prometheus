@@ -5,7 +5,7 @@ as a `file_sd` file. This will allow you to pass your targets to Prometheus for 
 to use a static config.
 
 # Example
-This directory (`documentation/examples/custom-sd`) contains an example custom service discovery implementation
+This directory (`docs/examples/custom-sd`) contains an example custom service discovery implementation
 as well as a file_sd adapter usage. `adapter-usage` contains the `Discoverer` implementation for a basic Consul
 service discovery mechanism. It simply queries Consul for all it's known services (except Consul itself), 
 and sends them along with all the other service data as labels as a TargetGroup.

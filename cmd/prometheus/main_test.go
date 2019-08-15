@@ -32,7 +32,7 @@ import (
 )
 
 var promPath string
-var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
+var promConfig = filepath.Join("..", "..", "docs", "examples", "prometheus.yml")
 var promData = filepath.Join(os.TempDir(), "data")
 
 func TestMain(m *testing.M) {

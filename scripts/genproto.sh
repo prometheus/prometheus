@@ -45,9 +45,9 @@ for dir in ${DIRS}; do
 			-I="${PROM_PATH}" \
 			-I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
 			--grpc-gateway_out=logtostderr=true:. \
-			--swagger_out=logtostderr=true:../documentation/dev/api/ \
+			--swagger_out=logtostderr=true:../docs/dev/api/ \
 			rpc.proto
-		mv ../documentation/dev/api/rpc.swagger.json ../documentation/dev/api/swagger.json
+		mv ../docs/dev/api/rpc.swagger.json ../docs/dev/api/swagger.json
 
 		sed -i.bak -E 's/import _ \"github.com\/gogo\/protobuf\/gogoproto\"//g' -- *.pb.go
 		sed -i.bak -E 's/import _ \"google\/protobuf\"//g' -- *.pb.go

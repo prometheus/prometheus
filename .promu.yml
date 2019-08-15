@@ -21,7 +21,7 @@ tarball:
     files:
         - consoles
         - console_libraries
-        - documentation/examples/prometheus.yml
+        - docs/examples/prometheus.yml
         - LICENSE
         - NOTICE
 crossbuild:
