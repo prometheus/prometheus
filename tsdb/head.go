@@ -773,7 +773,7 @@ func (h *Head) Appender() Appender {
 func (h *Head) appender() *headAppender {
 	return &headAppender{
 		head: h,
-		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
+		// Set the minimum valid time to whichever is greater the head min valid time or the compaction window.
 		// This ensures that no samples will be added within the compaction window to avoid races.
 		minValidTime: max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2),
 		mint:         math.MaxInt64,
@@ -1046,7 +1046,7 @@ func (h *Head) gc() {
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	// Using AddUint64 to substract series removed.
+	// Using AddUint64 to subtract series removed.
 	// See: https://golang.org/pkg/sync/atomic/#AddUint64.
 	atomic.AddUint64(&h.numSeries, ^uint64(seriesRemoved-1))
 
@@ -1180,7 +1180,7 @@ func (h *headChunkReader) Close() error {
 }
 
 // packChunkID packs a seriesID and a chunkID within it into a global 8 byte ID.
-// It panicks if the seriesID exceeds 5 bytes or the chunk ID 3 bytes.
+// It panics if the seriesID exceeds 5 bytes or the chunk ID 3 bytes.
 func packChunkID(seriesID, chunkID uint64) uint64 {
 	if seriesID > (1<<40)-1 {
 		panic("series ID exceeds 5 bytes")
