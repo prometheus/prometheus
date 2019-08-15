@@ -6,6 +6,7 @@ require (
 	github.com/Azure/go-autorest v11.2.8+incompatible
 	github.com/OneOfOne/xxhash v1.2.5 // indirect
 	github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf
+	github.com/aliyun/alibaba-cloud-sdk-go v0.0.0-20190815064209-a314889ae184
 	github.com/aws/aws-sdk-go v1.15.24
 	github.com/cespare/xxhash v1.1.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect

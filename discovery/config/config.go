@@ -15,6 +15,7 @@ package config
 
 import (
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/discovery/ecs"
 
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
@@ -58,6 +59,8 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
+	// List of Alibaba ECS service discovery configurations.
+	AliyunSDConfigs []*ecs.SDConfig `yaml:"aliyun_sd_configs,omitempty"`
 }
 
 // Validate validates the ServiceDiscoveryConfig.
