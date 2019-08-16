@@ -20,6 +20,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -811,4 +812,34 @@ func TestWithoutPostings(t *testing.T) {
 			testutil.Equals(t, expected, res)
 		})
 	}
+}
+
+func TestMemPostings_Delete(t *testing.T) {
+	p := NewMemPostings()
+	p.Add(1, labels.FromStrings("lbl1", "a"))
+	p.Add(2, labels.FromStrings("lbl1", "b"))
+	p.Add(3, labels.FromStrings("lbl2", "a"))
+
+	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	p.Delete(map[uint64]struct{}{
+		2: struct{}{},
+	})
+	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+
+	// Make sure postings gotten before the delete have the old data when
+	// iterated over.
+	expanded, err := ExpandPostings(before)
+	testutil.Ok(t, err)
+	testutil.Equals(t, []uint64{1, 2, 3}, expanded)
+
+	// Make sure postings gotten after the delete have the new data when
+	// iterated over.
+	expanded, err = ExpandPostings(after)
+	testutil.Ok(t, err)
+	testutil.Equals(t, []uint64{1, 3}, expanded)
+
+	deleted := p.Get("lbl1", "b")
+	expanded, err = ExpandPostings(deleted)
+	testutil.Ok(t, err)
+	testutil.Assert(t, 0 == len(expanded), "expected empty postings, got %v", expanded)
 }
