@@ -27,14 +27,14 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/storage/tsdb"
-	libtsdb "github.com/prometheus/prometheus/tsdb"
+	storagetsdb "github.com/prometheus/prometheus/storage/tsdb"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -98,7 +98,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Ok(t, err)
 
 	defer os.RemoveAll(dbDir)
-	db, err := libtsdb.Open(dbDir, nil, nil, nil)
+	db, err := tsdb.Open(dbDir, nil, nil, nil)
 
 	testutil.Ok(t, err)
 
@@ -107,14 +107,14 @@ func TestReadyAndHealthy(t *testing.T) {
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
-		Storage:        &tsdb.ReadyStorage{},
+		Storage:        &storagetsdb.ReadyStorage{},
 		QueryEngine:    nil,
 		ScrapeManager:  &scrape.Manager{},
 		RuleManager:    &rules.Manager{},
 		Notifier:       nil,
 		RoutePrefix:    "/",
 		EnableAdminAPI: true,
-		TSDB:           func() *libtsdb.DB { return db },
+		TSDB:           func() *tsdb.DB { return db },
 		ExternalURL: &url.URL{
 			Scheme: "http",
 			Host:   "localhost:9090",
@@ -289,7 +289,7 @@ func TestRoutePrefix(t *testing.T) {
 
 	defer os.RemoveAll(dbDir)
 
-	db, err := libtsdb.Open(dbDir, nil, nil, nil)
+	db, err := tsdb.Open(dbDir, nil, nil, nil)
 
 	testutil.Ok(t, err)
 
@@ -298,14 +298,14 @@ func TestRoutePrefix(t *testing.T) {
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
-		Storage:        &tsdb.ReadyStorage{},
+		Storage:        &storagetsdb.ReadyStorage{},
 		QueryEngine:    nil,
 		ScrapeManager:  nil,
 		RuleManager:    nil,
 		Notifier:       nil,
 		RoutePrefix:    "/prometheus",
 		EnableAdminAPI: true,
-		TSDB:           func() *libtsdb.DB { return db },
+		TSDB:           func() *tsdb.DB { return db },
 	}
 
 	opts.Flags = map[string]string{}
@@ -426,13 +426,13 @@ func TestHTTPMetrics(t *testing.T) {
 	code := getReady()
 	testutil.Equals(t, http.StatusServiceUnavailable, code)
 	counter := handler.metrics.requestCounter
-	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
+	testutil.Equals(t, 1, int(promtestutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 
 	handler.Ready()
 	for range [2]int{} {
 		code = getReady()
 		testutil.Equals(t, http.StatusOK, code)
 	}
-	testutil.Equals(t, 2, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
-	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
+	testutil.Equals(t, 2, int(promtestutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
+	testutil.Equals(t, 1, int(promtestutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 }

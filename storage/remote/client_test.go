@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	config_util "github.com/prometheus/common/config"
+	commonconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/util/testutil"
@@ -67,7 +67,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		}
 
 		c, err := NewClient(0, &ClientConfig{
-			URL:     &config_util.URL{URL: serverURL},
+			URL:     &commonconfig.URL{URL: serverURL},
 			Timeout: model.Duration(time.Second),
 		})
 		if err != nil {

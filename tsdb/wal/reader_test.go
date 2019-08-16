@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	tsdberrors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -278,7 +278,7 @@ func (m *multiReadCloser) Read(p []byte) (n int, err error) {
 	return m.reader.Read(p)
 }
 func (m *multiReadCloser) Close() error {
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 	for _, closer := range m.closers {
 		merr.Add(closer.Close())
 	}

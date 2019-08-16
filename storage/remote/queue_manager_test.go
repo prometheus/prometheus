@@ -31,7 +31,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 
-	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -277,7 +277,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 		m.SeriesReset(1)
 	}
 
-	metric := client_testutil.ToFloat64(noReferenceReleases)
+	metric := promtestutil.ToFloat64(noReferenceReleases)
 	testutil.Assert(t, metric == 0, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
 }
 

@@ -34,11 +34,11 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
-	config_util "github.com/prometheus/common/config"
+	commonconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
-	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
+	tsdblabels "github.com/prometheus/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -301,7 +301,7 @@ func TestEndpoints(t *testing.T) {
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{
 				{
-					URL:           &config_util.URL{URL: u},
+					URL:           &commonconfig.URL{URL: u},
 					RemoteTimeout: model.Duration(1 * time.Second),
 					ReadRecent:    true,
 				},
@@ -1024,7 +1024,7 @@ type fakeDB struct {
 }
 
 func (f *fakeDB) CleanTombstones() error                                  { return f.err }
-func (f *fakeDB) Delete(mint, maxt int64, ms ...tsdbLabels.Matcher) error { return f.err }
+func (f *fakeDB) Delete(mint, maxt int64, ms ...tsdblabels.Matcher) error { return f.err }
 func (f *fakeDB) Dir() string {
 	dir, _ := ioutil.TempDir("", "fakeDB")
 	f.closer = func() {

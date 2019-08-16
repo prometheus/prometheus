@@ -26,7 +26,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	tsdberrors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -113,7 +113,7 @@ func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) (int6
 	}
 	size += n
 
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 	if merr.Add(f.Sync()); merr.Err() != nil {
 		merr.Add(f.Close())
 		return 0, merr.Err()

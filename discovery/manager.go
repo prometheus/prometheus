@@ -24,7 +24,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
-	sd_config "github.com/prometheus/prometheus/discovery/config"
+	sdconfig "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
 	"github.com/prometheus/prometheus/discovery/azure"
@@ -181,7 +181,7 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 }
 
 // ApplyConfig removes all running discovery providers and starts new ones using the provided config.
-func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) error {
+func (m *Manager) ApplyConfig(cfg map[string]sdconfig.ServiceDiscoveryConfig) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -317,7 +317,7 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	return tSets
 }
 
-func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
+func (m *Manager) registerProviders(cfg sdconfig.ServiceDiscoveryConfig, setName string) {
 	var added bool
 	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
 		t := reflect.TypeOf(cfg).String()

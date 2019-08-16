@@ -22,7 +22,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	tsdberrors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/labels"
 )
@@ -136,7 +136,7 @@ func (q *querier) sel(qs []Querier, ms []labels.Matcher) (SeriesSet, error) {
 }
 
 func (q *querier) Close() error {
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 
 	for _, bq := range q.blocks {
 		merr.Add(bq.Close())
@@ -259,7 +259,7 @@ func (q *blockQuerier) Close() error {
 		return errors.New("block querier already closed")
 	}
 
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 	merr.Add(q.index.Close())
 	merr.Add(q.chunks.Close())
 	merr.Add(q.tombstones.Close())

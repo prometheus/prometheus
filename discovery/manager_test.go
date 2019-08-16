@@ -27,7 +27,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
+	sdconfig "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"gopkg.in/yaml.v2"
 )
@@ -765,7 +765,7 @@ scrape_configs:
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
+	c := make(map[string]sdconfig.ServiceDiscoveryConfig)
 	for _, v := range cfg.ScrapeConfigs {
 		c[v.JobName] = v.ServiceDiscoveryConfig
 	}
@@ -784,7 +784,7 @@ scrape_configs:
 	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sTwo: %s", err)
 	}
-	c = make(map[string]sd_config.ServiceDiscoveryConfig)
+	c = make(map[string]sdconfig.ServiceDiscoveryConfig)
 	for _, v := range cfg.ScrapeConfigs {
 		c[v.JobName] = v.ServiceDiscoveryConfig
 	}
@@ -816,7 +816,7 @@ scrape_configs:
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
+	c := make(map[string]sdconfig.ServiceDiscoveryConfig)
 	for _, v := range cfg.ScrapeConfigs {
 		c[v.JobName] = v.ServiceDiscoveryConfig
 	}
@@ -833,7 +833,7 @@ scrape_configs:
 	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sTwo: %s", err)
 	}
-	c = make(map[string]sd_config.ServiceDiscoveryConfig)
+	c = make(map[string]sdconfig.ServiceDiscoveryConfig)
 	for _, v := range cfg.ScrapeConfigs {
 		c[v.JobName] = v.ServiceDiscoveryConfig
 	}
@@ -895,7 +895,7 @@ scrape_configs:
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
+	c := make(map[string]sdconfig.ServiceDiscoveryConfig)
 	for _, v := range cfg.ScrapeConfigs {
 		c[v.JobName] = v.ServiceDiscoveryConfig
 	}
@@ -934,7 +934,7 @@ scrape_configs:
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
+	c := make(map[string]sdconfig.ServiceDiscoveryConfig)
 	for _, v := range processedConfig.ScrapeConfigs {
 		c[v.JobName] = v.ServiceDiscoveryConfig
 	}

@@ -28,7 +28,7 @@ import (
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	config_util "github.com/prometheus/common/config"
+	commonconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -95,13 +95,13 @@ var (
 
 // SDConfig is the configuration for Consul service discovery.
 type SDConfig struct {
-	Server       string             `yaml:"server,omitempty"`
-	Token        config_util.Secret `yaml:"token,omitempty"`
-	Datacenter   string             `yaml:"datacenter,omitempty"`
-	TagSeparator string             `yaml:"tag_separator,omitempty"`
-	Scheme       string             `yaml:"scheme,omitempty"`
-	Username     string             `yaml:"username,omitempty"`
-	Password     config_util.Secret `yaml:"password,omitempty"`
+	Server       string              `yaml:"server,omitempty"`
+	Token        commonconfig.Secret `yaml:"token,omitempty"`
+	Datacenter   string              `yaml:"datacenter,omitempty"`
+	TagSeparator string              `yaml:"tag_separator,omitempty"`
+	Scheme       string              `yaml:"scheme,omitempty"`
+	Username     string              `yaml:"username,omitempty"`
+	Password     commonconfig.Secret `yaml:"password,omitempty"`
 
 	// See https://www.consul.io/docs/internals/consensus.html#consistency-modes,
 	// stale reads are a lot cheaper and are a necessity if you have >5k targets.
@@ -121,7 +121,7 @@ type SDConfig struct {
 	// Desired node metadata.
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
 
-	TLSConfig config_util.TLSConfig `yaml:"tls_config,omitempty"`
+	TLSConfig commonconfig.TLSConfig `yaml:"tls_config,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -168,7 +168,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	tls, err := config_util.NewTLSConfig(&conf.TLSConfig)
+	tls, err := commonconfig.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
 	}

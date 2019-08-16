@@ -48,10 +48,10 @@ import (
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
+	sdconfig "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/relabel"
-	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
+	promruntime "github.com/prometheus/prometheus/pkg/runtime"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -328,9 +328,9 @@ func main() {
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
-	level.Info(logger).Log("host_details", prom_runtime.Uname())
-	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
-	level.Info(logger).Log("vm_limits", prom_runtime.VmLimits())
+	level.Info(logger).Log("host_details", promruntime.Uname())
+	level.Info(logger).Log("fd_limits", promruntime.FdLimits())
+	level.Info(logger).Log("vm_limits", promruntime.VmLimits())
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
@@ -423,7 +423,7 @@ func main() {
 		// they need to read the most updated config when receiving the new targets list.
 		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
-			c := make(map[string]sd_config.ServiceDiscoveryConfig)
+			c := make(map[string]sdconfig.ServiceDiscoveryConfig)
 			for _, v := range cfg.ScrapeConfigs {
 				c[v.JobName] = v.ServiceDiscoveryConfig
 			}
@@ -431,7 +431,7 @@ func main() {
 		},
 		notifierManager.ApplyConfig,
 		func(cfg *config.Config) error {
-			c := make(map[string]sd_config.ServiceDiscoveryConfig)
+			c := make(map[string]sdconfig.ServiceDiscoveryConfig)
 			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
 				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config hash as the identifier.
 				b, err := json.Marshal(v)
@@ -666,7 +666,7 @@ func main() {
 				if err != nil {
 					return errors.Wrapf(err, "opening storage failed")
 				}
-				level.Info(logger).Log("fs_type", prom_runtime.Statfs(cfg.localStoragePath))
+				level.Info(logger).Log("fs_type", promruntime.Statfs(cfg.localStoragePath))
 				level.Info(logger).Log("msg", "TSDB started")
 				level.Debug(logger).Log("msg", "TSDB options",
 					"MinBlockDuration", cfg.tsdb.MinBlockDuration,

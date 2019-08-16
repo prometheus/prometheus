@@ -24,8 +24,8 @@ import (
 	"strings"
 	"time"
 
-	html_template "html/template"
-	text_template "text/template"
+	htmltemplate "html/template"
+	texttemplate "text/template"
 
 	"github.com/pkg/errors"
 
@@ -103,7 +103,7 @@ type Expander struct {
 	text    string
 	name    string
 	data    interface{}
-	funcMap text_template.FuncMap
+	funcMap texttemplate.FuncMap
 }
 
 // NewTemplateExpander returns a template expander ready to use.
@@ -120,7 +120,7 @@ func NewTemplateExpander(
 		text: text,
 		name: name,
 		data: data,
-		funcMap: text_template.FuncMap{
+		funcMap: texttemplate.FuncMap{
 			"query": func(q string) (queryResult, error) {
 				return query(ctx, q, timestamp.Time(), queryFunc)
 			},
@@ -150,8 +150,8 @@ func NewTemplateExpander(
 				re := regexp.MustCompile(pattern)
 				return re.ReplaceAllString(text, repl)
 			},
-			"safeHtml": func(text string) html_template.HTML {
-				return html_template.HTML(text)
+			"safeHtml": func(text string) htmltemplate.HTML {
+				return htmltemplate.HTML(text)
 			},
 			"match":     regexp.MatchString,
 			"title":     strings.Title,
@@ -278,7 +278,7 @@ func AlertTemplateData(labels map[string]string, externalLabels map[string]strin
 
 // Funcs adds the functions in fm to the Expander's function map.
 // Existing functions will be overwritten in case of conflict.
-func (te Expander) Funcs(fm text_template.FuncMap) {
+func (te Expander) Funcs(fm texttemplate.FuncMap) {
 	for k, v := range fm {
 		te.funcMap[k] = v
 	}
@@ -303,7 +303,7 @@ func (te Expander) Expand() (result string, resultErr error) {
 
 	templateTextExpansionTotal.Inc()
 
-	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
+	tmpl, err := texttemplate.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
 	if err != nil {
 		return "", errors.Wrapf(err, "error parsing template %v", te.name)
 	}
@@ -327,13 +327,13 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 		}
 	}()
 
-	tmpl := html_template.New(te.name).Funcs(html_template.FuncMap(te.funcMap))
+	tmpl := htmltemplate.New(te.name).Funcs(htmltemplate.FuncMap(te.funcMap))
 	tmpl.Option("missingkey=zero")
-	tmpl.Funcs(html_template.FuncMap{
-		"tmpl": func(name string, data interface{}) (html_template.HTML, error) {
+	tmpl.Funcs(htmltemplate.FuncMap{
+		"tmpl": func(name string, data interface{}) (htmltemplate.HTML, error) {
 			var buffer bytes.Buffer
 			err := tmpl.ExecuteTemplate(&buffer, name, data)
-			return html_template.HTML(buffer.String()), err
+			return htmltemplate.HTML(buffer.String()), err
 		},
 	})
 	tmpl, err := tmpl.Parse(te.text)
@@ -356,7 +356,7 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 
 // ParseTest parses the templates and returns the error if any.
 func (te Expander) ParseTest() error {
-	_, err := text_template.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
+	_, err := texttemplate.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
 	if err != nil {
 		return err
 	}

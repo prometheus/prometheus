@@ -28,7 +28,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	tsdberrors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/labels"
@@ -243,7 +243,7 @@ func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error
 		return 0, err
 	}
 
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 	n, err := f.Write(jsonMeta)
 	if err != nil {
 		merr.Add(err)
@@ -297,7 +297,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	var closers []io.Closer
 	defer func() {
 		if err != nil {
-			var merr tsdb_errors.MultiError
+			var merr tsdberrors.MultiError
 			merr.Add(err)
 			merr.Add(closeAll(closers))
 			err = merr.Err()
@@ -350,7 +350,7 @@ func (pb *Block) Close() error {
 
 	pb.pendingReaders.Wait()
 
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 
 	merr.Add(pb.chunkr.Close())
 	merr.Add(pb.indexr.Close())

@@ -29,7 +29,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/labels"
@@ -1082,7 +1082,7 @@ func TestTimeRetention(t *testing.T) {
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
 
-	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "metric retention count mismatch")
+	testutil.Equals(t, 1, int(promtestutil.ToFloat64(db.metrics.timeRetentionCount)), "metric retention count mismatch")
 	testutil.Equals(t, len(expBlocks), len(actBlocks))
 	testutil.Equals(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime)
 	testutil.Equals(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime)
@@ -1110,9 +1110,9 @@ func TestSizeRetention(t *testing.T) {
 	}
 
 	// Test that registered size matches the actual disk size.
-	testutil.Ok(t, db.reload())                                       // Reload the db to register the new db size.
-	testutil.Equals(t, len(blocks), len(db.Blocks()))                 // Ensure all blocks are registered.
-	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
+	testutil.Ok(t, db.reload())                                      // Reload the db to register the new db size.
+	testutil.Equals(t, len(blocks), len(db.Blocks()))                // Ensure all blocks are registered.
+	expSize := int64(promtestutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
 	actSize := testutil.DirSize(t, db.Dir())
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
 
@@ -1125,8 +1125,8 @@ func TestSizeRetention(t *testing.T) {
 
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
-	expSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
-	actRetentCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
+	expSize = int64(promtestutil.ToFloat64(db.metrics.blocksBytes))
+	actRetentCount := int(promtestutil.ToFloat64(db.metrics.sizeRetentionCount))
 	actSize = testutil.DirSize(t, db.Dir())
 
 	testutil.Equals(t, 1, actRetentCount, "metric retention count mismatch")
@@ -1154,7 +1154,7 @@ func TestSizeRetentionMetric(t *testing.T) {
 			MaxBytes:    c.maxBytes,
 		})
 
-		actMaxBytes := int64(prom_testutil.ToFloat64(db.metrics.maxBytes))
+		actMaxBytes := int64(promtestutil.ToFloat64(db.metrics.maxBytes))
 		testutil.Equals(t, actMaxBytes, c.expMaxBytes, "metric retention limit bytes mismatch")
 
 		testutil.Ok(t, db.Close())
@@ -1543,7 +1543,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		testutil.Equals(t, int64(6000), db.head.MinTime())
 		testutil.Equals(t, int64(15000), db.head.MaxTime())
 		// Check that old series has been GCed.
-		testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.series))
+		testutil.Equals(t, 1.0, promtestutil.ToFloat64(db.head.metrics.series))
 	})
 }
 
@@ -1567,7 +1567,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
 		testutil.Equals(t, 0, len(actBlocks))
-		testutil.Equals(t, 0, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "no compaction should be triggered here")
+		testutil.Equals(t, 0, int(promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "no compaction should be triggered here")
 	})
 
 	t.Run("Test no blocks after deleting all samples from head.", func(t *testing.T) {
@@ -1581,7 +1581,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, app.Commit())
 		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
 		testutil.Ok(t, db.compact())
-		testutil.Equals(t, 1, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		testutil.Equals(t, 1, int(promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 
 		actBlocks, err := blockDirs(db.Dir())
 		testutil.Ok(t, err)
@@ -1603,7 +1603,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, app.Commit())
 
 		testutil.Ok(t, db.compact())
-		testutil.Equals(t, 2, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		testutil.Equals(t, 2, int(promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 		actBlocks, err = blockDirs(db.Dir())
 		testutil.Ok(t, err)
 		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
@@ -1624,7 +1624,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, app.Commit())
 		testutil.Ok(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
 		testutil.Ok(t, db.compact())
-		testutil.Equals(t, 3, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		testutil.Equals(t, 3, int(promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 		testutil.Equals(t, oldBlocks, db.Blocks())
 	})
 
@@ -1643,7 +1643,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Equals(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
 		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
 		testutil.Ok(t, db.compact())
-		testutil.Equals(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here once for each block that have tombstones")
+		testutil.Equals(t, 5, int(promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here once for each block that have tombstones")
 
 		actBlocks, err := blockDirs(db.Dir())
 		testutil.Ok(t, err)
@@ -2137,12 +2137,12 @@ func TestVerticalCompaction(t *testing.T) {
 
 			// Vertical compaction.
 			lc := db.compactor.(*LeveledCompactor)
-			testutil.Equals(t, 0, int(prom_testutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count should be still 0 here")
+			testutil.Equals(t, 0, int(promtestutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count should be still 0 here")
 			err = db.compact()
 			testutil.Ok(t, err)
 			testutil.Equals(t, c.expBlockNum, len(db.Blocks()), "Wrong number of blocks [after compact]")
 
-			testutil.Equals(t, c.expOverlappingBlocks, int(prom_testutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count mismatch")
+			testutil.Equals(t, c.expOverlappingBlocks, int(promtestutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count mismatch")
 
 			// Query test after merging the overlapping blocks.
 			querier, err = db.Querier(0, 100)

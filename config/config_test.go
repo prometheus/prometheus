@@ -23,12 +23,12 @@ import (
 	"testing"
 	"time"
 
-	config_util "github.com/prometheus/common/config"
+	configutil "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery/azure"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
+	sdconfig "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
@@ -44,12 +44,12 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func mustParseURL(u string) *config_util.URL {
+func mustParseURL(u string) *configutil.URL {
 	parsed, err := url.Parse(u)
 	if err != nil {
 		panic(err)
 	}
-	return &config_util.URL{URL: parsed}
+	return &configutil.URL{URL: parsed}
 }
 
 var expectedConf = &Config{
@@ -88,8 +88,8 @@ var expectedConf = &Config{
 			URL:           mustParseURL("http://remote2/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
 			QueueConfig:   DefaultQueueConfig,
-			HTTPClientConfig: config_util.HTTPClientConfig{
-				TLSConfig: config_util.TLSConfig{
+			HTTPClientConfig: configutil.HTTPClientConfig{
+				TLSConfig: configutil.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
@@ -108,8 +108,8 @@ var expectedConf = &Config{
 			RemoteTimeout:    model.Duration(1 * time.Minute),
 			ReadRecent:       false,
 			RequiredMatchers: model.LabelSet{"job": "special"},
-			HTTPClientConfig: config_util.HTTPClientConfig{
-				TLSConfig: config_util.TLSConfig{
+			HTTPClientConfig: configutil.HTTPClientConfig{
+				TLSConfig: configutil.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
@@ -129,11 +129,11 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			HTTPClientConfig: config_util.HTTPClientConfig{
+			HTTPClientConfig: configutil.HTTPClientConfig{
 				BearerTokenFile: filepath.FromSlash("testdata/valid_token_file"),
 			},
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				StaticConfigs: []*targetgroup.Group{
 					{
 						Targets: []model.LabelSet{
@@ -199,8 +199,8 @@ var expectedConf = &Config{
 			ScrapeTimeout:   model.Duration(5 * time.Second),
 			SampleLimit:     1000,
 
-			HTTPClientConfig: config_util.HTTPClientConfig{
-				BasicAuth: &config_util.BasicAuth{
+			HTTPClientConfig: configutil.HTTPClientConfig{
+				BasicAuth: &configutil.BasicAuth{
 					Username: "admin_name",
 					Password: "multiline\nmysecret\ntest",
 				},
@@ -208,7 +208,7 @@ var expectedConf = &Config{
 			MetricsPath: "/my_path",
 			Scheme:      "https",
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				DNSSDConfigs: []*dns.SDConfig{
 					{
 						Names: []string{
@@ -291,7 +291,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				ConsulSDConfigs: []*consul.SDConfig{
 					{
 						Server:          "localhost:1234",
@@ -303,7 +303,7 @@ var expectedConf = &Config{
 						Scheme:          "https",
 						RefreshInterval: consul.DefaultSDConfig.RefreshInterval,
 						AllowStale:      true,
-						TLSConfig: config_util.TLSConfig{
+						TLSConfig: configutil.TLSConfig{
 							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
 							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
 							CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
@@ -334,8 +334,8 @@ var expectedConf = &Config{
 			MetricsPath: "/metrics",
 			Scheme:      "http",
 
-			HTTPClientConfig: config_util.HTTPClientConfig{
-				TLSConfig: config_util.TLSConfig{
+			HTTPClientConfig: configutil.HTTPClientConfig{
+				TLSConfig: configutil.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
@@ -353,17 +353,17 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				KubernetesSDConfigs: []*kubernetes.SDConfig{
 					{
 						APIServer: kubernetesSDHostURL(),
 						Role:      kubernetes.RoleEndpoint,
-						HTTPClientConfig: config_util.HTTPClientConfig{
-							BasicAuth: &config_util.BasicAuth{
+						HTTPClientConfig: configutil.HTTPClientConfig{
+							BasicAuth: &configutil.BasicAuth{
 								Username: "myusername",
 								Password: "mysecret",
 							},
-							TLSConfig: config_util.TLSConfig{
+							TLSConfig: configutil.TLSConfig{
 								CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 								KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 							},
@@ -382,14 +382,14 @@ var expectedConf = &Config{
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
-			HTTPClientConfig: config_util.HTTPClientConfig{
-				BasicAuth: &config_util.BasicAuth{
+			HTTPClientConfig: configutil.HTTPClientConfig{
+				BasicAuth: &configutil.BasicAuth{
 					Username:     "myusername",
 					PasswordFile: filepath.FromSlash("testdata/valid_password_file"),
 				},
 			},
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				KubernetesSDConfigs: []*kubernetes.SDConfig{
 					{
 						APIServer: kubernetesSDHostURL(),
@@ -413,16 +413,16 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				MarathonSDConfigs: []*marathon.SDConfig{
 					{
 						Servers: []string{
 							"https://marathon.example.com:443",
 						},
 						RefreshInterval: model.Duration(30 * time.Second),
-						AuthToken:       config_util.Secret("mysecret"),
-						HTTPClientConfig: config_util.HTTPClientConfig{
-							TLSConfig: config_util.TLSConfig{
+						AuthToken:       configutil.Secret("mysecret"),
+						HTTPClientConfig: configutil.HTTPClientConfig{
+							TLSConfig: configutil.TLSConfig{
 								CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 								KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 							},
@@ -441,7 +441,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				EC2SDConfigs: []*ec2.SDConfig{
 					{
 						Region:          "us-east-1",
@@ -474,7 +474,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				AzureSDConfigs: []*azure.SDConfig{
 					{
 						Environment:          "AzurePublicCloud",
@@ -499,7 +499,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				NerveSDConfigs: []*zookeeper.NerveSDConfig{
 					{
 						Servers: []string{"localhost"},
@@ -519,7 +519,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				StaticConfigs: []*targetgroup.Group{
 					{
 						Targets: []model.LabelSet{
@@ -540,7 +540,7 @@ var expectedConf = &Config{
 			MetricsPath: "/federate",
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				StaticConfigs: []*targetgroup.Group{
 					{
 						Targets: []model.LabelSet{
@@ -561,7 +561,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				StaticConfigs: []*targetgroup.Group{
 					{
 						Targets: []model.LabelSet{
@@ -582,7 +582,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				TritonSDConfigs: []*triton.SDConfig{
 					{
 
@@ -592,7 +592,7 @@ var expectedConf = &Config{
 						Port:            9163,
 						RefreshInterval: model.Duration(60 * time.Second),
 						Version:         1,
-						TLSConfig: config_util.TLSConfig{
+						TLSConfig: configutil.TLSConfig{
 							CertFile: "testdata/valid_cert_file",
 							KeyFile:  "testdata/valid_key_file",
 						},
@@ -610,14 +610,14 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+			ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 				OpenstackSDConfigs: []*openstack.SDConfig{
 					{
 						Role:            "instance",
 						Region:          "RegionOne",
 						Port:            80,
 						RefreshInterval: model.Duration(60 * time.Second),
-						TLSConfig: config_util.TLSConfig{
+						TLSConfig: configutil.TLSConfig{
 							CAFile:   "testdata/valid_ca_file",
 							CertFile: "testdata/valid_cert_file",
 							KeyFile:  "testdata/valid_key_file",
@@ -633,7 +633,7 @@ var expectedConf = &Config{
 				Scheme:     "https",
 				Timeout:    model.Duration(10 * time.Second),
 				APIVersion: AlertmanagerAPIVersionV1,
-				ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				ServiceDiscoveryConfig: sdconfig.ServiceDiscoveryConfig{
 					StaticConfigs: []*targetgroup.Group{
 						{
 							Targets: []model.LabelSet{
@@ -923,7 +923,7 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	testutil.Equals(t, exp, *c)
 }
 
-func kubernetesSDHostURL() config_util.URL {
+func kubernetesSDHostURL() configutil.URL {
 	tURL, _ := url.Parse("https://localhost:1234")
-	return config_util.URL{URL: tURL}
+	return configutil.URL{URL: tURL}
 }

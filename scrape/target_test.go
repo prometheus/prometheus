@@ -28,7 +28,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	config_util "github.com/prometheus/common/config"
+	commonconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -148,10 +148,10 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := config_util.HTTPClientConfig{
+	cfg := commonconfig.HTTPClientConfig{
 		BearerToken: "1234",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := commonconfig.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,10 +175,10 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := config_util.HTTPClientConfig{
+	cfg := commonconfig.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := commonconfig.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,13 +201,13 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := config_util.HTTPClientConfig{
-		BasicAuth: &config_util.BasicAuth{
+	cfg := commonconfig.HTTPClientConfig{
+		BasicAuth: &commonconfig.BasicAuth{
 			Username: "user",
 			Password: "password123",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := commonconfig.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,12 +230,12 @@ func TestNewHTTPCACert(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := config_util.HTTPClientConfig{
-		TLSConfig: config_util.TLSConfig{
+	cfg := commonconfig.HTTPClientConfig{
+		TLSConfig: commonconfig.TLSConfig{
 			CAFile: caCertPath,
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := commonconfig.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,14 +262,14 @@ func TestNewHTTPClientCert(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := config_util.HTTPClientConfig{
-		TLSConfig: config_util.TLSConfig{
+	cfg := commonconfig.HTTPClientConfig{
+		TLSConfig: commonconfig.TLSConfig{
 			CAFile:   caCertPath,
 			CertFile: "testdata/client.cer",
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := commonconfig.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,13 +292,13 @@ func TestNewHTTPWithServerName(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := config_util.HTTPClientConfig{
-		TLSConfig: config_util.TLSConfig{
+	cfg := commonconfig.HTTPClientConfig{
+		TLSConfig: commonconfig.TLSConfig{
 			CAFile:     caCertPath,
 			ServerName: "prometheus.rocks",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := commonconfig.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,13 +321,13 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := config_util.HTTPClientConfig{
-		TLSConfig: config_util.TLSConfig{
+	cfg := commonconfig.HTTPClientConfig{
+		TLSConfig: commonconfig.TLSConfig{
 			CAFile:     caCertPath,
 			ServerName: "badname",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := commonconfig.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,14 +359,14 @@ func newTLSConfig(certName string, t *testing.T) *tls.Config {
 }
 
 func TestNewClientWithBadTLSConfig(t *testing.T) {
-	cfg := config_util.HTTPClientConfig{
-		TLSConfig: config_util.TLSConfig{
+	cfg := commonconfig.HTTPClientConfig{
+		TLSConfig: commonconfig.TLSConfig{
 			CAFile:   "testdata/nonexistent_ca.cer",
 			CertFile: "testdata/nonexistent_client.cer",
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := config_util.NewClientFromConfig(cfg, "test", false)
+	_, err := commonconfig.NewClientFromConfig(cfg, "test", false)
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}

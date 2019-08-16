@@ -23,11 +23,11 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	config_util "github.com/prometheus/common/config"
+	commonconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v2"
 
-	sd_config "github.com/prometheus/prometheus/discovery/config"
+	sdconfig "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 )
@@ -156,19 +156,19 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 		cfg.RuleFiles[i] = join(rf)
 	}
 
-	tlsPaths := func(cfg *config_util.TLSConfig) {
+	tlsPaths := func(cfg *commonconfig.TLSConfig) {
 		cfg.CAFile = join(cfg.CAFile)
 		cfg.CertFile = join(cfg.CertFile)
 		cfg.KeyFile = join(cfg.KeyFile)
 	}
-	clientPaths := func(scfg *config_util.HTTPClientConfig) {
+	clientPaths := func(scfg *commonconfig.HTTPClientConfig) {
 		if scfg.BasicAuth != nil {
 			scfg.BasicAuth.PasswordFile = join(scfg.BasicAuth.PasswordFile)
 		}
 		scfg.BearerTokenFile = join(scfg.BearerTokenFile)
 		tlsPaths(&scfg.TLSConfig)
 	}
-	sdPaths := func(cfg *sd_config.ServiceDiscoveryConfig) {
+	sdPaths := func(cfg *sdconfig.ServiceDiscoveryConfig) {
 		for _, kcfg := range cfg.KubernetesSDConfigs {
 			clientPaths(&kcfg.HTTPClientConfig)
 		}
@@ -364,8 +364,8 @@ type ScrapeConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
-	ServiceDiscoveryConfig sd_config.ServiceDiscoveryConfig `yaml:",inline"`
-	HTTPClientConfig       config_util.HTTPClientConfig     `yaml:",inline"`
+	ServiceDiscoveryConfig sdconfig.ServiceDiscoveryConfig `yaml:",inline"`
+	HTTPClientConfig       commonconfig.HTTPClientConfig   `yaml:",inline"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
@@ -493,8 +493,8 @@ type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
-	ServiceDiscoveryConfig sd_config.ServiceDiscoveryConfig `yaml:",inline"`
-	HTTPClientConfig       config_util.HTTPClientConfig     `yaml:",inline"`
+	ServiceDiscoveryConfig sdconfig.ServiceDiscoveryConfig `yaml:",inline"`
+	HTTPClientConfig       commonconfig.HTTPClientConfig   `yaml:",inline"`
 
 	// The URL scheme to use when talking to Alertmanagers.
 	Scheme string `yaml:"scheme,omitempty"`
@@ -569,8 +569,8 @@ func CheckTargetAddress(address model.LabelValue) error {
 
 // ClientCert contains client cert credentials.
 type ClientCert struct {
-	Cert string             `yaml:"cert"`
-	Key  config_util.Secret `yaml:"key"`
+	Cert string              `yaml:"cert"`
+	Key  commonconfig.Secret `yaml:"key"`
 }
 
 // FileSDConfig is the configuration for file based discovery.
@@ -581,14 +581,14 @@ type FileSDConfig struct {
 
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
-	URL                 *config_util.URL  `yaml:"url"`
+	URL                 *commonconfig.URL `yaml:"url"`
 	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
 	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
-	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
-	QueueConfig      QueueConfig                  `yaml:"queue_config,omitempty"`
+	HTTPClientConfig commonconfig.HTTPClientConfig `yaml:",inline"`
+	QueueConfig      QueueConfig                   `yaml:"queue_config,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -639,12 +639,12 @@ type QueueConfig struct {
 
 // RemoteReadConfig is the configuration for reading from remote storage.
 type RemoteReadConfig struct {
-	URL           *config_util.URL `yaml:"url"`
-	RemoteTimeout model.Duration   `yaml:"remote_timeout,omitempty"`
-	ReadRecent    bool             `yaml:"read_recent,omitempty"`
+	URL           *commonconfig.URL `yaml:"url"`
+	RemoteTimeout model.Duration    `yaml:"remote_timeout,omitempty"`
+	ReadRecent    bool              `yaml:"read_recent,omitempty"`
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
-	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
+	HTTPClientConfig commonconfig.HTTPClientConfig `yaml:",inline"`
 
 	// RequiredMatchers is an optional list of equality matchers which have to
 	// be present in a selector to query the remote read endpoint.

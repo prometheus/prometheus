@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	config_util "github.com/prometheus/common/config"
+	commonconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
@@ -247,7 +247,7 @@ func checkConfig(filename string) ([]string, error) {
 	return ruleFiles, nil
 }
 
-func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
+func checkTLSConfig(tlsConfig commonconfig.TLSConfig) error {
 	if err := checkFileExists(tlsConfig.CertFile); err != nil {
 		return errors.Wrapf(err, "error checking client cert file %q", tlsConfig.CertFile)
 	}

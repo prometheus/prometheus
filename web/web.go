@@ -34,7 +34,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	template_text "text/template"
+	texttemplate "text/template"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -45,7 +45,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	io_prometheus_client "github.com/prometheus/client_model/go"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
@@ -60,11 +60,11 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
-	prometheus_tsdb "github.com/prometheus/prometheus/storage/tsdb"
+	storagetsdb "github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
-	api_v1 "github.com/prometheus/prometheus/web/api/v1"
-	api_v2 "github.com/prometheus/prometheus/web/api/v2"
+	apiv1 "github.com/prometheus/prometheus/web/api/v1"
+	apiv2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
@@ -162,7 +162,7 @@ type Handler struct {
 	storage       storage.Storage
 	notifier      *notifier.Manager
 
-	apiV1 *api_v1.API
+	apiV1 *apiv1.API
 
 	router      *route.Router
 	quitCh      chan struct{}
@@ -204,7 +204,7 @@ type PrometheusVersion struct {
 type Options struct {
 	Context       context.Context
 	TSDB          func() *tsdb.DB
-	TSDBCfg       prometheus_tsdb.Options
+	TSDBCfg       storagetsdb.Options
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
 	ScrapeManager *scrape.Manager
@@ -275,7 +275,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		ready: 0,
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
+	h.apiV1 = apiv1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -283,7 +283,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		},
 		o.Flags,
 		h.testReady,
-		func() api_v1.TSDBAdmin {
+		func() apiv1.TSDBAdmin {
 			return h.options.TSDB()
 		},
 		h.options.EnableAdminAPI,
@@ -465,7 +465,7 @@ func (h *Handler) Run(ctx context.Context) error {
 		httpl   = m.Match(cmux.HTTP1Fast())
 		grpcSrv = grpc.NewServer()
 	)
-	av2 := api_v2.New(
+	av2 := apiv2.New(
 		h.options.TSDB,
 		h.options.EnableAdminAPI,
 	)
@@ -692,7 +692,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "status.html", status)
 }
 
-func toFloat64(f *io_prometheus_client.MetricFamily) float64 {
+func toFloat64(f *dto.MetricFamily) float64 {
 	m := *f.Metric[0]
 	if m.Gauge != nil {
 		return m.Gauge.GetValue()
@@ -814,8 +814,8 @@ func (h *Handler) consolesPath() string {
 	return ""
 }
 
-func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
-	return template_text.FuncMap{
+func tmplFuncs(consolesPath string, opts *Options) texttemplate.FuncMap {
+	return texttemplate.FuncMap{
 		"since": func(t time.Time) time.Duration {
 			return time.Since(t) / time.Millisecond * time.Millisecond
 		},

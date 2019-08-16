@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	html_template "html/template"
+	htmltemplate "html/template"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -213,7 +213,7 @@ type Rule interface {
 	GetEvaluationTimestamp() time.Time
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
-	HTMLSnippet(pathPrefix string) html_template.HTML
+	HTMLSnippet(pathPrefix string) htmltemplate.HTML
 }
 
 // Group is a set of rules that have a logical relation.

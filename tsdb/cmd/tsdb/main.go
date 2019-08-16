@@ -34,7 +34,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	tsdberrors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/labels"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
@@ -70,7 +70,7 @@ func execute() (err error) {
 	)
 
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 
 	switch kingpin.MustParse(cli.Parse(os.Args[1:])) {
 	case benchWriteCmd.FullCommand():
@@ -624,7 +624,7 @@ func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
 		return err
 	}
 	defer func() {
-		var merr tsdb_errors.MultiError
+		var merr tsdberrors.MultiError
 		merr.Add(err)
 		merr.Add(q.Close())
 		err = merr.Err()

@@ -26,7 +26,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/labels"
@@ -288,7 +288,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		},
 		`Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
 		We need to actually look on max time instead.
-		
+
 		With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
 		block overlaps`: {
 			metas: []dirMeta{
@@ -889,13 +889,13 @@ func TestDisableAutoCompactions(t *testing.T) {
 	}
 
 	for x := 0; x < 10; x++ {
-		if prom_testutil.ToFloat64(db.metrics.compactionsSkipped) > 0.0 {
+		if promtestutil.ToFloat64(db.metrics.compactionsSkipped) > 0.0 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	testutil.Assert(t, prom_testutil.ToFloat64(db.metrics.compactionsSkipped) > 0.0, "No compaction was skipped after the set timeout.")
+	testutil.Assert(t, promtestutil.ToFloat64(db.metrics.compactionsSkipped) > 0.0, "No compaction was skipped after the set timeout.")
 	testutil.Equals(t, 0, len(db.blocks))
 
 	// Enable the compaction, trigger it and check that the block is persisted.
@@ -941,15 +941,15 @@ func TestCancelCompactions(t *testing.T) {
 		db, err := Open(tmpdir, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
 		testutil.Ok(t, err)
 		testutil.Equals(t, 3, len(db.Blocks()), "initial block count mismatch")
-		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
+		testutil.Equals(t, 0.0, promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
 		var start time.Time
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
+		for promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
 			time.Sleep(3 * time.Millisecond)
 		}
 		start = time.Now()
 
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran) != 1 {
+		for promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran) != 1 {
 			time.Sleep(3 * time.Millisecond)
 		}
 		timeCompactionUninterrupted = time.Since(start)
@@ -961,11 +961,11 @@ func TestCancelCompactions(t *testing.T) {
 		db, err := Open(tmpdirCopy, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
 		testutil.Ok(t, err)
 		testutil.Equals(t, 3, len(db.Blocks()), "initial block count mismatch")
-		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
+		testutil.Equals(t, 0.0, promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
 		dbClosed := make(chan struct{})
 
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
+		for promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
 			time.Sleep(3 * time.Millisecond)
 		}
 		go func() {
@@ -1039,17 +1039,17 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			testutil.Equals(t, expBlocks, len(actBlocks)-1) // -1 to exclude the corrupted block.
 			testutil.Ok(t, os.RemoveAll(lastBlockIndex))    // Corrupt the block by removing the index file.
 
-			testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "initial 'failed db reload' count metrics mismatch")
-			testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial `compactions` count metric mismatch")
-			testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "initial `compactions failed` count metric mismatch")
+			testutil.Equals(t, 0.0, promtestutil.ToFloat64(db.metrics.reloadsFailed), "initial 'failed db reload' count metrics mismatch")
+			testutil.Equals(t, 0.0, promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial `compactions` count metric mismatch")
+			testutil.Equals(t, 0.0, promtestutil.ToFloat64(db.metrics.compactionsFailed), "initial `compactions failed` count metric mismatch")
 
 			// Do the compaction and check the metrics.
 			// Compaction should succeed, but the reload should fail and
 			// the new block created from the compaction should be deleted.
 			testutil.NotOk(t, db.compact())
-			testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "'failed db reload' count metrics mismatch")
-			testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "`compaction` count metric mismatch")
-			testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "`compactions failed` count metric mismatch")
+			testutil.Equals(t, 1.0, promtestutil.ToFloat64(db.metrics.reloadsFailed), "'failed db reload' count metrics mismatch")
+			testutil.Equals(t, 1.0, promtestutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "`compaction` count metric mismatch")
+			testutil.Equals(t, 1.0, promtestutil.ToFloat64(db.metrics.compactionsFailed), "`compactions failed` count metric mismatch")
 
 			actBlocks, err = blockDirs(db.Dir())
 			testutil.Ok(t, err)

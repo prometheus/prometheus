@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -361,7 +361,7 @@ func TestSegmentMetric(t *testing.T) {
 	w, err := NewSize(nil, nil, dir, segmentSize, false)
 	testutil.Ok(t, err)
 
-	initialSegment := client_testutil.ToFloat64(w.currentSegment)
+	initialSegment := promtestutil.ToFloat64(w.currentSegment)
 
 	// Write 3 records, each of which is half the segment size, meaning we should rotate to the next segment.
 	for i := 0; i < 3; i++ {
@@ -372,7 +372,7 @@ func TestSegmentMetric(t *testing.T) {
 		err = w.Log(buf)
 		testutil.Ok(t, err)
 	}
-	testutil.Assert(t, client_testutil.ToFloat64(w.currentSegment) == initialSegment+1, "segment metric did not increment after segment rotation")
+	testutil.Assert(t, promtestutil.ToFloat64(w.currentSegment) == initialSegment+1, "segment metric did not increment after segment rotation")
 	testutil.Ok(t, w.Close())
 }
 

@@ -30,7 +30,7 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
-	config_util "github.com/prometheus/common/config"
+	commonconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -156,8 +156,8 @@ func TestHandlerSendAll(t *testing.T) {
 
 	h := NewManager(&Options{}, nil)
 
-	authClient, _ := config_util.NewClientFromConfig(config_util.HTTPClientConfig{
-		BasicAuth: &config_util.BasicAuth{
+	authClient, _ := commonconfig.NewClientFromConfig(commonconfig.HTTPClientConfig{
+		BasicAuth: &commonconfig.BasicAuth{
 			Username: "prometheus",
 			Password: "testing_password",
 		},

@@ -25,7 +25,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -1133,7 +1133,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 
 					h, err := NewHead(nil, nil, w, 1)
 					testutil.Ok(t, err)
-					testutil.Equals(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
+					testutil.Equals(t, 0.0, promtestutil.ToFloat64(h.metrics.walCorruptionsTotal))
 					initErr := h.Init(math.MinInt64)
 
 					err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
@@ -1149,7 +1149,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 					defer func() {
 						testutil.Ok(t, db.Close())
 					}()
-					testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+					testutil.Equals(t, 1.0, promtestutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
 				}
 
 				// Read the wal content after the repair.

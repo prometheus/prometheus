@@ -35,7 +35,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	tsdberrors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion"
 	"github.com/prometheus/prometheus/tsdb/labels"
@@ -420,7 +420,7 @@ func (db *DBReadOnly) Close() error {
 	}
 	close(db.closed)
 
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 
 	for _, b := range db.closers {
 		merr.Add(b.Close())
@@ -1074,7 +1074,7 @@ func (db *DB) Close() error {
 		g.Go(pb.Close)
 	}
 
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 
 	merr.Add(g.Wait())
 
@@ -1315,7 +1315,7 @@ func nextSequenceFile(dir string) (string, int, error) {
 }
 
 func closeAll(cs []io.Closer) error {
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 
 	for _, c := range cs {
 		merr.Add(c.Close())

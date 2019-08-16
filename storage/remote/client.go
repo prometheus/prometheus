@@ -26,7 +26,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
-	config_util "github.com/prometheus/common/config"
+	commonconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
@@ -40,21 +40,21 @@ var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
 	index   int // Used to differentiate clients in metrics.
-	url     *config_util.URL
+	url     *commonconfig.URL
 	client  *http.Client
 	timeout time.Duration
 }
 
 // ClientConfig configures a Client.
 type ClientConfig struct {
-	URL              *config_util.URL
+	URL              *commonconfig.URL
 	Timeout          model.Duration
-	HTTPClientConfig config_util.HTTPClientConfig
+	HTTPClientConfig commonconfig.HTTPClientConfig
 }
 
 // NewClient creates a new Client.
 func NewClient(index int, conf *ClientConfig) (*Client, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage", false)
+	httpClient, err := commonconfig.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage", false)
 	if err != nil {
 		return nil, err
 	}

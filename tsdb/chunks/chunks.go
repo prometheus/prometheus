@@ -27,7 +27,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	tsdberrors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -411,7 +411,7 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 	var (
 		bs   []ByteSlice
 		cs   []io.Closer
-		merr tsdb_errors.MultiError
+		merr tsdberrors.MultiError
 	)
 	for _, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
@@ -503,7 +503,7 @@ func sequenceFiles(dir string) ([]string, error) {
 }
 
 func closeAll(cs []io.Closer) error {
-	var merr tsdb_errors.MultiError
+	var merr tsdberrors.MultiError
 
 	for _, c := range cs {
 		merr.Add(c.Close())
