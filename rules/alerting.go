@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	html_template "html/template"
+	htmlTemplate "html/template"
 
 	yaml "gopkg.in/yaml.v2"
 
@@ -503,7 +503,7 @@ func (r *AlertingRule) String() string {
 // HTMLSnippet returns an HTML snippet representing this alerting rule. The
 // resulting snippet is expected to be presented in a <pre> element, so that
 // line breaks and other returned whitespace is respected.
-func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
+func (r *AlertingRule) HTMLSnippet(pathPrefix string) htmlTemplate.HTML {
 	alertMetric := model.Metric{
 		model.MetricNameLabel: alertMetricName,
 		alertNameLabel:        model.LabelValue(r.name),
@@ -511,17 +511,17 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 
 	labelsMap := make(map[string]string, len(r.labels))
 	for _, l := range r.labels {
-		labelsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
+		labelsMap[l.Name] = htmlTemplate.HTMLEscapeString(l.Value)
 	}
 
 	annotationsMap := make(map[string]string, len(r.annotations))
 	for _, l := range r.annotations {
-		annotationsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
+		annotationsMap[l.Name] = htmlTemplate.HTMLEscapeString(l.Value)
 	}
 
 	ar := rulefmt.Rule{
 		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
-		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
+		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), htmlTemplate.HTMLEscapeString(r.vector.String())),
 		For:         model.Duration(r.holdDuration),
 		Labels:      labelsMap,
 		Annotations: annotationsMap,
@@ -529,9 +529,9 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 
 	byt, err := yaml.Marshal(ar)
 	if err != nil {
-		return html_template.HTML(fmt.Sprintf("error marshaling alerting rule: %q", html_template.HTMLEscapeString(err.Error())))
+		return htmlTemplate.HTML(fmt.Sprintf("error marshaling alerting rule: %q", htmlTemplate.HTMLEscapeString(err.Error())))
 	}
-	return html_template.HTML(byt)
+	return htmlTemplate.HTML(byt)
 }
 
 // HoldDuration returns the holdDuration of the alerting rule.
