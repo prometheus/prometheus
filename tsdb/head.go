@@ -57,6 +57,13 @@ var (
 	emptyTombstoneReader = newMemTombstones()
 )
 
+const (
+	// Based on Gorilla white papers this offers near-optimal compression ratio
+	// so anything bigger that this has diminishing returns and increases
+	// the time range within which we have to decompress all samples.
+	samplesPerChunk = 120
+)
+
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
 	chunkRange int64
@@ -1733,11 +1740,6 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 
 // append adds the sample (t, v) to the series.
 func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
-	// Based on Gorilla white papers this offers near-optimal compression ratio
-	// so anything bigger that this has diminishing returns and increases
-	// the time range within which we have to decompress all samples.
-	const samplesPerChunk = 120
-
 	c := s.head()
 
 	if c == nil {
