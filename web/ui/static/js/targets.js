@@ -21,12 +21,16 @@ function showUnhealthy(_, container) {
 }
 
 function init() {
-  if (!localStorage.selectedTab || localStorage.selectedTab == "all-targets"){
-    $("#all-targets").parent().addClass("active");
+  if (document.URL.includes('targets')) {
+    if (!localStorage.selectedTab || localStorage.selectedTab == "all-targets"){
+      $("#all-targets").parent().addClass("active");
+      $(".table-container").each(showAll);
+    } else if (localStorage.selectedTab == "unhealthy-targets") {
+      $("#unhealthy-targets").parent().addClass("active");
+      $(".table-container").each(showUnhealthy);
+    }
+  } else {
     $(".table-container").each(showAll);
-  } else if (localStorage.selectedTab == "unhealthy-targets") {
-    $("#unhealthy-targets").parent().addClass("active");
-    $(".table-container").each(showUnhealthy);
   }
 
   $("button.targets").click(function () {
