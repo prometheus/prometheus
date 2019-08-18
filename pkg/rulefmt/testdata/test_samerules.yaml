@@ -23,7 +23,7 @@ groups:
       abc: edf
       uvw: xyz
 
-  - alert: HighErrors2
+  - alert: HighErrors
     expr: | 
       sum without(instance) (rate(errors_total[5m]))
       / 
@@ -37,7 +37,7 @@ groups:
 - name: my-another-name
   interval: 30s   # defaults to global interval
   rules:
-  - alert: HighErrors3
+  - alert: HighErrors
     expr: | 
       sum without(instance) (rate(errors_total[5m]))
       / 
@@ -52,7 +52,7 @@ groups:
       / 
       sum without(instance) (rate(requests_total[5m]))
 
-  - alert: HighErrors4
+  - alert: HighErrors
     expr: | 
       sum without(instance) (rate(errors_total[5m]))
       / 

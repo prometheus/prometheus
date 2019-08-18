@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"strings"
 	"time"
+	"fmt"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -61,16 +62,35 @@ func (g *RuleGroups) Validate() (errs []error) {
 			)
 		}
 
+		getRuleName := func (r Rule) (string, string) {
+			var ruleName,ruleType string
+			if r.Alert != "" {
+				ruleName = r.Alert
+				ruleType = "Alertrule"
+			} else {
+				ruleName = r.Record
+				ruleType = "Recordrule" 
+			}
+			return ruleName, ruleType
+		}
+
 		set[g.Name] = struct{}{}
+		groupRules := make(map[string]Rule)
 
 		for i, r := range g.Rules {
+			ruleName, ruleType := getRuleName(r)
+			if _, ok := groupRules[ruleName]; ok {
+				errs = append(errs, &Error{
+					Group:    g.Name,
+					Rule:     i,
+					RuleName: ruleName,
+					Err:      errors.New(fmt.Sprintf(
+						"%s %s is repeated more than one time in %s group", 
+						ruleType, ruleName, g.Name)),
+				})
+			}
+			groupRules[ruleName] = r
 			for _, err := range r.Validate() {
-				var ruleName string
-				if r.Alert != "" {
-					ruleName = r.Alert
-				} else {
-					ruleName = r.Record
-				}
 				errs = append(errs, &Error{
 					Group:    g.Name,
 					Rule:     i,

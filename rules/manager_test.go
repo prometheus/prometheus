@@ -718,6 +718,33 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
+func TestUpdateSameRule(t *testing.T) {
+	files := []string{"fixtures/samerules.yaml"}
+	storage := teststorage.New(t)
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	ruleManager.Run()
+	defer ruleManager.Stop()
+
+	err := ruleManager.Update(10*time.Second, files, nil)
+	testutil.NotOk(t, err)
+	testutil.Assert(t, len(ruleManager.groups) == 0, "expected -empty rule groups")
+}
+
 func TestNotify(t *testing.T) {
 	storage := teststorage.New(t)
 	defer storage.Close()

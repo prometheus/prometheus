@@ -30,6 +30,19 @@ func TestParseFileSuccess(t *testing.T) {
 	}
 }
 
+func TestParseFileSameRulesInGroupFailure(t *testing.T) {
+	errorCount := 0
+	if _, errs := ParseFile("testdata/test)samerules.yaml"); len(errs) > 0 {
+		for _, err := range errs {
+			if (err.Error() != `group "my-group-name", rule 2, "HighErrors": Alertrule HighErrors is repeated more than one time in my-group-name group` &&
+			err.Error() != `group "my-another-name", rule 2, "HighErrors": Alertrule HighErrors is repeated more than one time in my-another-name group`) {
+				errorCount++
+			}
+		}
+	} 
+	testutil.Assert(t, errorCount > 0, "Same rules should not be allowed")
+}
+
 func TestParseFileFailure(t *testing.T) {
 	table := []struct {
 		filename string

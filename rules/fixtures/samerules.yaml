@@ -1,0 +1,15 @@
+---
+groups:
+  - name: "test"
+    interval: "1s"
+    rules:
+      - record: test_metric
+        expr: "0"
+        labels:
+            label: "value"
+      - record: "test_metric"
+        expr: "1"
+      - record: "result"
+        expr: "max(test_metric) by (label)"
+        labels:
+            label: "value"
