@@ -32,7 +32,7 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 	b := &bytes.Buffer{}
 	f := &mockedFlusher{}
 	w := NewChunkedWriter(b, f)
-	r := NewChunkedReader(b, 20)
+	r := NewChunkedReader(b, 20, nil)
 
 	msgs := [][]byte{
 		[]byte("test1"),
@@ -80,11 +80,11 @@ func TestChunkedReader_Overflow(t *testing.T) {
 	b2 := make([]byte, 12)
 	copy(b2, b.Bytes())
 
-	ret, err := NewChunkedReader(b, 12).Next()
+	ret, err := NewChunkedReader(b, 12, nil).Next()
 	testutil.Ok(t, err)
 	testutil.Equals(t, "twelve bytes", string(ret))
 
-	_, err = NewChunkedReader(bytes.NewReader(b2), 11).Next()
+	_, err = NewChunkedReader(bytes.NewReader(b2), 11, nil).Next()
 	testutil.NotOk(t, err, "expect exceed limit error")
 	testutil.Equals(t, "chunkedReader: message size exceeded the limit 11 bytes; got: 12 bytes", err.Error())
 }
@@ -100,7 +100,7 @@ func TestChunkedReader_CorruptedFrame(t *testing.T) {
 	bs := b.Bytes()
 	bs[9] = 1 // Malform the frame by changing one byte.
 
-	_, err = NewChunkedReader(bytes.NewReader(bs), 20).Next()
+	_, err = NewChunkedReader(bytes.NewReader(bs), 20, nil).Next()
 	testutil.NotOk(t, err, "expected malformed frame")
 	testutil.Equals(t, "chunkedReader: corrupted frame; checksum mismatch", err.Error())
 }

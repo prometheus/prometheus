@@ -343,7 +343,7 @@ func (m *QueryResult) GetTimeseries() []*TimeSeries {
 // be sent for previous one.
 type ChunkedReadResponse struct {
 	ChunkedSeries []*ChunkedSeries `protobuf:"bytes,1,rep,name=chunked_series,json=chunkedSeries,proto3" json:"chunked_series,omitempty"`
-	// query_index represents an index of the query from ReadRequest.queries this results relates to.
+	// query_index represents an index of the query from ReadRequest.queries these chunks relates to.
 	QueryIndex           int64    `protobuf:"varint,2,opt,name=query_index,json=queryIndex,proto3" json:"query_index,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`

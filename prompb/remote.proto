@@ -77,6 +77,6 @@ message QueryResult {
 message ChunkedReadResponse {
   repeated prometheus.ChunkedSeries chunked_series = 1;
 
-  // query_index represents an index of the query from ReadRequest.queries this results relates to.
+  // query_index represents an index of the query from ReadRequest.queries these chunks relates to.
   int64 query_index = 2;
 }

@@ -181,7 +181,7 @@ func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.R
 	return 0, errors.Errorf("server does not support any of the requested response types: %v; supported: %v", accepted, supported)
 }
 
-// StreamChunkedReadResponses iterates over series, build chunks and streams those to caller.
+// StreamChunkedReadResponses iterates over series, builds chunks and streams those to the caller.
 // TODO(bwplotka): Encode only what's needed. Fetch the encoded series from blocks instead of re-encoding everything.
 func StreamChunkedReadResponses(
 	stream io.Writer,
@@ -475,6 +475,7 @@ func toLabelMatchers(matchers []*labels.Matcher) ([]*prompb.LabelMatcher, error)
 	return pbMatchers, nil
 }
 
+// FromLabelMatchers parses protobuf label matchers to Prometheus label matchers.
 func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, error) {
 	result := make([]*labels.Matcher, 0, len(matchers))
 	for _, matcher := range matchers {

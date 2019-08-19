@@ -1018,7 +1018,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 
 func TestStreamReadEndpoint(t *testing.T) {
 	// 3 series each series.
-	// First with 119 samples. We expect 1 frame with 1 chunk.
+	// First with 120 samples. We expect 1 frame with 1 chunk.
 	// Second with 121 samples, We expect 1 frame with 2 chunks.
 	// Third with 241 samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
 	suite, err := promql.NewTest(t, `
@@ -1085,7 +1085,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	testutil.Equals(t, "", recorder.Result().Header.Get("Content-Encoding"))
 
 	var results []*prompb.ChunkedReadResponse
-	stream := remote.NewChunkedReader(recorder.Result().Body, remote.DefaultChunkedReadLimit)
+	stream := remote.NewChunkedReader(recorder.Result().Body, remote.DefaultChunkedReadLimit, nil)
 	for {
 		res := &prompb.ChunkedReadResponse{}
 		err := stream.NextProto(res)

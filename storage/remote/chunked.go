@@ -56,7 +56,7 @@ func NewChunkedWriter(w io.Writer, f http.Flusher) *ChunkedWriter {
 //
 // 1. uvarint for the size of the data frame.
 // 2. big-endian uint32 for the Castagnoli polynomial CRC-32 checksum of the data frame.
-// 3. n bytes where n is given in the first uvarint.
+// 3. the bytes of the given data.
 //
 // Write returns number of sent bytes for a given buffer. The number does not include delimiter and checksum bytes.
 func (w *ChunkedWriter) Write(b []byte) (int, error) {
@@ -99,8 +99,9 @@ type ChunkedReader struct {
 }
 
 // NewChunkedReader constructs a ChunkedReader.
-func NewChunkedReader(r io.Reader, sizeLimit uint64) *ChunkedReader {
-	return &ChunkedReader{b: bufio.NewReader(r), sizeLimit: sizeLimit, crc32: crc32.New(castagnoliTable)}
+// It allows passing data slice for byte slice reuse, which will be increased to needed size if smaller.
+func NewChunkedReader(r io.Reader, sizeLimit uint64, data []byte) *ChunkedReader {
+	return &ChunkedReader{b: bufio.NewReader(r), sizeLimit: sizeLimit, data: data, crc32: crc32.New(castagnoliTable)}
 }
 
 // Next returns the next length-delimited record from the input, or io.EOF if
