@@ -3,6 +3,7 @@ package ecs
 import (
 	"context"
 	"fmt"
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
@@ -50,6 +51,9 @@ type SDConfig struct {
 	PublicKeyId       string `yaml:"public_key_id,omitempty"`
 	PrivateKey        string `yaml:"private_key,omitempty"`
 	SessionExpiration int    `yaml:"session_expiration,omitempty"`
+
+	// query ecs limit, default is 100.
+	Limit int `yaml:"limit,omitempty"`
 }
 
 type Discovery struct {
@@ -57,6 +61,7 @@ type Discovery struct {
 	logger log.Logger
 	ecsCfg *SDConfig
 	port   int
+	limit  int
 }
 
 // NewDiscovery returns a new ECSDiscovery which periodically refreshes its targets.
@@ -67,6 +72,7 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 	d := &Discovery{
 		ecsCfg: cfg,
 		port:   cfg.Port,
+		limit:  cfg.Limit,
 		logger: logger,
 	}
 	d.Discovery = refresh.NewDiscovery(
@@ -84,6 +90,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
 	describeInstancesRequest.RegionId = "cn-hangzhou"
+
+	if d.limit == 0 {
+		d.limit = 100
+	}
+	describeInstancesRequest.PageNumber = requests.NewInteger(1)
+	describeInstancesRequest.PageSize = requests.NewInteger(d.limit)
 
 	client, clientErr := getEcsClient(d.ecsCfg)
 	if clientErr != nil {
@@ -167,31 +179,31 @@ func getEcsClient(config *SDConfig) (client *ecs_pop.Client, err error) {
 		client, clientErr := ecs_pop.NewClientWithRamRoleArn(config.RegionId, config.AccessKey, config.AccessKeySecret, config.RoleArn, config.RoleSessionName)
 		return client, clientErr
 	}
-	
+
 	// NewClientWithStsToken
 	if config.StsToken != "" && config.AccessKey != "" && config.AccessKeySecret != "" {
 		client, clientErr := ecs_pop.NewClientWithStsToken(config.RegionId, config.AccessKey, config.AccessKeySecret, config.StsToken)
 		return client, clientErr
 	}
-	
+
 	// NewClientWithAccessKey
 	if config.AccessKey != "" && config.AccessKeySecret != "" {
 		client, clientErr := ecs_pop.NewClientWithAccessKey(config.RegionId, config.AccessKey, config.AccessKeySecret)
 		return client, clientErr
 	}
-	
+
 	// NewClientWithEcsRamRole
 	if config.RoleName != "" {
 		client, clientErr := ecs_pop.NewClientWithEcsRamRole(config.RegionId, config.RoleName)
 		return client, clientErr
 	}
-	
+
 	// NewClientWithRsaKeyPair
 	if config.PublicKeyId != "" && config.PrivateKey != "" && config.SessionExpiration != 0 {
 		client, clientErr := ecs_pop.NewClientWithRsaKeyPair(config.RegionId, config.PublicKeyId, config.PrivateKey, config.SessionExpiration)
 		return client, clientErr
 	}
-	
+
 	return nil, errors.New("Aliyun ECS service discovery cant init client, need auth config.")
-	
+
 }
