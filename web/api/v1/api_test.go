@@ -1017,7 +1017,6 @@ func TestSampledReadEndpoint(t *testing.T) {
 }
 
 func TestStreamReadEndpoint(t *testing.T) {
-	// 3 series each series.
 	// First with 120 samples. We expect 1 frame with 1 chunk.
 	// Second with 121 samples, We expect 1 frame with 2 chunks.
 	// Third with 241 samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
