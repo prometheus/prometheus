@@ -1,4 +1,4 @@
-## 2.12.0-rc.0 / 2019-08-14
+## 2.12.0 / 2019-08-17
 
 * [FEATURE] Track currently active PromQL queries in a log file. #5794
 * [FEATURE] Enable and provide binaries for `mips64` / `mips64le` architectures. #5792
