@@ -82,7 +82,7 @@ func ruleUnitTest(filename string) []error {
 	mint := time.Unix(0, 0)
 	maxd := unitTestInp.maxEvalTime()
 	maxt := mint.Add(maxd)
-	// Rounding off to nearest Eval time (> maxt).
+	// Rounding off to the nearest Eval time (> maxt).
 	maxt = maxt.Add(unitTestInp.EvaluationInterval / 2).Round(unitTestInp.EvaluationInterval)
 
 	// Giving number for groups mentioned in the file for ordering.

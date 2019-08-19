@@ -179,7 +179,7 @@ eval instant at 50m round(-1 * (1 + 0.005 * http_requests{group="production",job
 	{group="production", instance="0", job="api-server"} -1
 	{group="production", instance="1", job="api-server"} -2
 
-# Round should accept the number to round nearest to.
+# Round should accept the number to round the nearest to.
 eval instant at 50m round(0.0005 * http_requests{group="production",job="api-server"}, 0.1)
 	{group="production", instance="0", job="api-server"} 0.1
 	{group="production", instance="1", job="api-server"} 0.1
