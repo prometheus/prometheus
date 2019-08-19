@@ -946,6 +946,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 			return config.Config{
 				GlobalConfig: config.GlobalConfig{
 					ExternalLabels: labels.Labels{
+						// We expect external labels to be added, with the source labels honored.
 						{Name: "baz", Value: "a"},
 						{Name: "b", Value: "c"},
 						{Name: "d", Value: "e"},
@@ -1039,6 +1040,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 			return config.Config{
 				GlobalConfig: config.GlobalConfig{
 					ExternalLabels: labels.Labels{
+						// We expect external labels to be added, with the source labels honored.
 						{Name: "baz", Value: "a"},
 						{Name: "b", Value: "c"},
 						{Name: "d", Value: "e"},
