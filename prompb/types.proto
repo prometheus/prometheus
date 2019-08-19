@@ -23,6 +23,7 @@ message Sample {
   int64 timestamp = 2;
 }
 
+// TimeSeries represents samples and labels for a single time series.
 message TimeSeries {
   repeated Label labels   = 1 [(gogoproto.nullable) = false];
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
@@ -55,4 +56,27 @@ message ReadHints {
   string func = 2;    // String representation of surrounding function or aggregation.
   int64 start_ms = 3; // Start time in milliseconds.
   int64 end_ms = 4;   // End time in milliseconds.
+}
+
+// Chunk represents a TSDB chunk.
+// Time range [min, max] is inclusive.
+message Chunk {
+  int64 min_time_ms = 1;
+  int64 max_time_ms = 2;
+
+  // We require this to match chunkenc.Encoding.
+  enum Encoding {
+    UNKNOWN = 0;
+    XOR     = 1;
+  }
+  Encoding type  = 3;
+  bytes data     = 4;
+}
+
+// ChunkedSeries represents single, encoded time series.
+message ChunkedSeries {
+  // Labels should be sorted.
+  repeated Label labels = 1 [(gogoproto.nullable) = false];
+  // Chunks will be in start time order and may overlap.
+  repeated Chunk chunks = 2 [(gogoproto.nullable) = false];
 }
