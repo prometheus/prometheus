@@ -433,7 +433,7 @@ func main() {
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
 			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
-				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config hash as the identifier.
+				// AlertmanagerConfigs doesn't hold a unique identifier so we use the config hash as the identifier.
 				b, err := json.Marshal(v)
 				if err != nil {
 					return err
