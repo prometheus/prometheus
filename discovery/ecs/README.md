@@ -16,7 +16,7 @@ scrape_configs:
   scheme: https
   aliyun_sd_configs:
     - port:  8888                                 # 服务发现后的prometheus抓取采集点port
-      user_id: <aliyun userId>                    # Aliyun 用户身份表示id userId
+      user_id: <aliyun userId>                    # Aliyun 用户身份表示id userId, 填写会为discovery target带上__meta_ecs_user_id的label，可不填写
       refresh_interval: 30s
       region_id: cn-hangzhou                      # 设置获取ECS的regionId
       access_key: <aliyun ak>                     # Aliyun 鉴权字段 AK

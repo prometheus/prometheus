@@ -29,6 +29,7 @@ const (
 	ecsLabelStatus      = ecsLabel + "status"
 	ecsLabelZoneId      = ecsLabel + "zone_id"
 	ecsLabelNetworkType = ecsLabel + "network_type"
+	ecsLabelUserId 		= ecsLabel + "user_id"
 	ecsLabelTag         = ecsLabel + "tag_"
 )
 
@@ -121,6 +122,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			ecsLabelStatus:      model.LabelValue(instance.Status),
 			ecsLabelZoneId:      model.LabelValue(instance.ZoneId),
 			ecsLabelNetworkType: model.LabelValue(instance.InstanceNetworkType),
+		}
+
+		if d.ecsCfg.UserId != "" {
+			labels[ecsLabelUserId] = model.LabelValue(d.ecsCfg.UserId)
 		}
 
 		// check classic public ip
