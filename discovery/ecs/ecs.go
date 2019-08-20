@@ -11,6 +11,8 @@ import (
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"net"
+	"os"
+	"strconv"
 	"time"
 
 	ecs_pop "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
@@ -29,7 +31,7 @@ const (
 	ecsLabelStatus      = ecsLabel + "status"
 	ecsLabelZoneId      = ecsLabel + "zone_id"
 	ecsLabelNetworkType = ecsLabel + "network_type"
-	ecsLabelUserId 		= ecsLabel + "user_id"
+	ecsLabelUserId      = ecsLabel + "user_id"
 	ecsLabelTag         = ecsLabel + "tag_"
 )
 
@@ -38,20 +40,20 @@ type SDConfig struct {
 	Port            int            `yaml:"port"`
 	UserId          string         `yaml:"user_id,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-	RegionId        string         `yaml:"region_id,omitempty"`
+	RegionId        string         `yaml:"region_id,omitempty"` 	// env set PROMETHEUS_DS_ECS_REGION_ID
 
 	// Alibaba ECS Auth Args
 	// https://github.com/aliyun/alibaba-cloud-sdk-go/blob/master/docs/2-Client-EN.md
-	AccessKey         string `yaml:"access_key,omitempty"`
-	AccessKeySecret   string `yaml:"access_key_secret,omitempty"`
-	StsToken          string `yaml:"sts_token,omitempty"`
-	RoleArn           string `yaml:"role_arn,omitempty"`
-	RoleSessionName   string `yaml:"role_session_name,omitempty"`
-	Policy            string `yaml:"policy,omitempty"`
-	RoleName          string `yaml:"role_name,omitempty"`
-	PublicKeyId       string `yaml:"public_key_id,omitempty"`
-	PrivateKey        string `yaml:"private_key,omitempty"`
-	SessionExpiration int    `yaml:"session_expiration,omitempty"`
+	AccessKey         string `yaml:"access_key,omitempty"`         	// env set PROMETHEUS_DS_ECS_AK
+	AccessKeySecret   string `yaml:"access_key_secret,omitempty"`  	// env set PROMETHEUS_DS_ECS_SK
+	StsToken          string `yaml:"sts_token,omitempty"`          	// env set PROMETHEUS_DS_ECS_STS_TOKEN
+	RoleArn           string `yaml:"role_arn,omitempty"`           	// env set PROMETHEUS_DS_ECS_ROLE_ARN
+	RoleSessionName   string `yaml:"role_session_name,omitempty"`  	// env set PROMETHEUS_DS_ECS_ROLE_SESSION_NAME
+	Policy            string `yaml:"policy,omitempty"`             	// env set PROMETHEUS_DS_ECS_POLICY
+	RoleName          string `yaml:"role_name,omitempty"`          	// env set PROMETHEUS_DS_ECS_ROLE_NAME
+	PublicKeyId       string `yaml:"public_key_id,omitempty"`      	// env set PROMETHEUS_DS_ECS_PUBLIC_KEY_ID
+	PrivateKey        string `yaml:"private_key,omitempty"`        	// env set PROMETHEUS_DS_ECS_PRIVATE_KEY
+	SessionExpiration int    `yaml:"session_expiration,omitempty"` 	// env set PROMETHEUS_DS_ECS_SESSION_EXPIRATION
 
 	// query ecs limit, default is 100.
 	Limit int `yaml:"limit,omitempty"`
@@ -111,7 +113,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	level.Debug(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(describeInstancesResponse.Instances.Instance))
 
 	tg := &targetgroup.Group{
-		Source: d.ecsCfg.RegionId,
+		Source: getConfigRegionId(d.ecsCfg.RegionId),
 	}
 
 	for _, instance := range describeInstancesResponse.Instances.Instance {
@@ -169,46 +171,161 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 func getEcsClient(config *SDConfig) (client *ecs_pop.Client, err error) {
 
-	if config.RegionId == "" {
+	if getConfigRegionId(config.RegionId) == "" {
 		return nil, errors.New("Aliyun ECS service discovery config need regionId.")
 	}
 
+	// 1. ACS
+	// get all RoleName for check
+	//metaData := metadata.NewMetaData(nil)
+	//var allRoleName metadata.ResultList
+	//allRoleNameErr := metaData.New().Resource("ram/security-credentials/").Do(&allRoleName)
+	//if allRoleNameErr == nil {
+	//	roleName, roleNameErr := metaData.RoleName()
+	//	if roleNameErr == nil {
+	//		roleAuth, roleAuthErr := metaData.RamRoleToken(roleName)
+	//		if roleAuthErr == nil {
+	//			client := ecs_pop.Client{}
+	//			clientConfig := client.InitClientConfig()
+	//			clientConfig.Debug = true
+	//			clientErr := client.InitWithStsToken(getConfigRegionId(config.RegionId), roleAuth.AccessKeyId, roleAuth.AccessKeySecret, roleAuth.SecurityToken)
+	//			if clientErr == nil {
+	//				return &client, nil
+	//			}
+	//		}
+	//	}
+	//}
+
+
+	// 2. Args
+
 	// NewClientWithRamRoleArnAndPolicy
-	if config.Policy != "" && config.AccessKey != "" && config.AccessKeySecret != "" && config.RoleArn != "" && config.RoleSessionName != "" {
-		client, clientErr := ecs_pop.NewClientWithRamRoleArnAndPolicy(config.RegionId, config.AccessKey, config.AccessKeySecret, config.RoleArn, config.RoleSessionName, config.Policy)
+	if getConfigArgPolicy(config.Policy) != "" && getConfigArgAk(config.AccessKey) != "" && getConfigArgSk(config.AccessKeySecret) != "" && getConfigArgRoleArn(config.RoleArn) != "" && getConfigArgRoleSessionName(config.RoleSessionName) != "" {
+		client, clientErr := ecs_pop.NewClientWithRamRoleArnAndPolicy(getConfigRegionId(config.RegionId), getConfigArgAk(config.AccessKey), getConfigArgSk(config.AccessKeySecret), getConfigArgRoleArn(config.RoleArn), getConfigArgRoleSessionName(config.RoleSessionName), getConfigArgPolicy(config.Policy))
 		return client, clientErr
 	}
 
 	// NewClientWithRamRoleArn
-	if config.RoleSessionName != "" && config.AccessKey != "" && config.AccessKeySecret != "" && config.RoleArn != "" {
-		client, clientErr := ecs_pop.NewClientWithRamRoleArn(config.RegionId, config.AccessKey, config.AccessKeySecret, config.RoleArn, config.RoleSessionName)
+	if getConfigArgRoleSessionName(config.RoleSessionName) != "" && getConfigArgAk(config.AccessKey) != "" && getConfigArgSk(config.AccessKeySecret) != "" && getConfigArgRoleArn(config.RoleArn) != "" {
+		client, clientErr := ecs_pop.NewClientWithRamRoleArn(getConfigRegionId(config.RegionId), getConfigArgAk(config.AccessKey), getConfigArgSk(config.AccessKeySecret), getConfigArgRoleArn(config.RoleArn), getConfigArgRoleSessionName(config.RoleSessionName))
 		return client, clientErr
 	}
 
 	// NewClientWithStsToken
-	if config.StsToken != "" && config.AccessKey != "" && config.AccessKeySecret != "" {
-		client, clientErr := ecs_pop.NewClientWithStsToken(config.RegionId, config.AccessKey, config.AccessKeySecret, config.StsToken)
+	if getConfigArgStsToken(config.StsToken) != "" && getConfigArgAk(config.AccessKey) != "" && getConfigArgSk(config.AccessKeySecret) != "" {
+		client, clientErr := ecs_pop.NewClientWithStsToken(getConfigRegionId(config.RegionId), getConfigArgAk(config.AccessKey), getConfigArgSk(config.AccessKeySecret), getConfigArgStsToken(config.StsToken))
 		return client, clientErr
 	}
 
 	// NewClientWithAccessKey
-	if config.AccessKey != "" && config.AccessKeySecret != "" {
-		client, clientErr := ecs_pop.NewClientWithAccessKey(config.RegionId, config.AccessKey, config.AccessKeySecret)
+	if getConfigArgAk(config.AccessKey) != "" && getConfigArgSk(config.AccessKeySecret) != "" {
+		client, clientErr := ecs_pop.NewClientWithAccessKey(getConfigRegionId(config.RegionId), getConfigArgAk(config.AccessKey), getConfigArgSk(config.AccessKeySecret))
 		return client, clientErr
 	}
 
 	// NewClientWithEcsRamRole
 	if config.RoleName != "" {
-		client, clientErr := ecs_pop.NewClientWithEcsRamRole(config.RegionId, config.RoleName)
+		client, clientErr := ecs_pop.NewClientWithEcsRamRole(getConfigRegionId(config.RegionId), getConfigArgRoleName(config.RoleName))
 		return client, clientErr
 	}
 
 	// NewClientWithRsaKeyPair
 	if config.PublicKeyId != "" && config.PrivateKey != "" && config.SessionExpiration != 0 {
-		client, clientErr := ecs_pop.NewClientWithRsaKeyPair(config.RegionId, config.PublicKeyId, config.PrivateKey, config.SessionExpiration)
+		client, clientErr := ecs_pop.NewClientWithRsaKeyPair(getConfigRegionId(config.RegionId), getConfigArgPublicKeyId(config.PublicKeyId), getConfigArgPrivateKey(config.PrivateKey), getConfigArgSessionExpiration(config.SessionExpiration))
 		return client, clientErr
 	}
 
 	return nil, errors.New("Aliyun ECS service discovery cant init client, need auth config.")
 
+}
+
+func getConfigArgAk(ak string) string {
+	akEnv := os.Getenv("PROMETHEUS_DS_ECS_AK")
+	if akEnv != "" {
+		return akEnv
+	}
+	return ak
+}
+
+func getConfigArgSk(sk string) string {
+	skEnv := os.Getenv("PROMETHEUS_DS_ECS_SK")
+	if skEnv != "" {
+		return skEnv
+	}
+	return sk
+}
+
+func getConfigArgStsToken(stsToken string) string {
+	stsEnv := os.Getenv("PROMETHEUS_DS_ECS_STS_TOKEN")
+	if stsEnv != "" {
+		return stsEnv
+	}
+	return stsToken
+}
+
+func getConfigArgRoleArn(roleArn string) string {
+	roleArnEnv := os.Getenv("PROMETHEUS_DS_ECS_ROLE_ARN")
+	if roleArnEnv != "" {
+		return roleArnEnv
+	}
+	return roleArn
+}
+
+func getConfigArgRoleSessionName(roleSessionName string) string {
+	roleSessionNameEnv := os.Getenv("PROMETHEUS_DS_ECS_ROLE_SESSION_NAME")
+	if roleSessionNameEnv != "" {
+		return roleSessionNameEnv
+	}
+	return roleSessionName
+}
+
+func getConfigArgPolicy(policy string) string {
+	policyEnv := os.Getenv("PROMETHEUS_DS_ECS_POLICY")
+	if policyEnv != "" {
+		return policyEnv
+	}
+	return policy
+}
+
+func getConfigArgRoleName(roleName string) string {
+	roleNameEnv := os.Getenv("PROMETHEUS_DS_ECS_ROLE_NAME")
+	if roleNameEnv != "" {
+		return roleNameEnv
+	}
+	return roleName
+}
+
+func getConfigArgPublicKeyId(publicKeyId string) string {
+	publicKeyIdEnv := os.Getenv("PROMETHEUS_DS_ECS_PUBLIC_KEY_ID")
+	if publicKeyIdEnv != "" {
+		return publicKeyIdEnv
+	}
+	return publicKeyId
+}
+
+func getConfigArgPrivateKey(privateKey string) string {
+	privateKeyEnv := os.Getenv("PROMETHEUS_DS_ECS_PRIVATE_KEY")
+	if privateKeyEnv != "" {
+		return privateKeyEnv
+	}
+	return privateKey
+}
+
+func getConfigArgSessionExpiration(sessionExpiration int) int {
+	sessionExpirationEnv := os.Getenv("PROMETHEUS_DS_ECS_SESSION_EXPIRATION")
+	if sessionExpirationEnv != "" {
+		sessionExpirationEnvInt, err := strconv.Atoi(sessionExpirationEnv)
+		if err != nil {
+			return sessionExpirationEnvInt
+		}
+	}
+	return sessionExpiration
+}
+
+func getConfigRegionId(regionId string) string {
+	regionIdEnv := os.Getenv("PROMETHEUS_DS_ECS_REGION_ID")
+	if regionIdEnv != "" {
+		return regionIdEnv
+	}
+	return regionId
 }

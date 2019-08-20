@@ -1,0 +1,12 @@
+version: 2
+jobs:
+  build:
+    docker:
+    - image: circleci/golang:1.8
+    working_directory: /go/src/github.com/denverdino/aliyungo
+    steps:
+    - checkout
+    - run: go get -t -d -v ./...
+    - run: go test -run=nope ./...
+    - run: go vet ./...
+
