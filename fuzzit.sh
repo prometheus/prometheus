@@ -17,20 +17,14 @@ FUZZ_FUNCTIONS=("FuzzParseMetric" "FuzzParseOpenMetric" "FuzzParseMetricSelector
 for ((i=0;i<${#TARGETS[@]};++i));
 do
     go-fuzz-build -libfuzzer -func ${FUZZ_FUNCTIONS[i]} -o ${TARGETS[i]}.a ./promql
-    clang -fsanitize=fuzzer ${TARGETS[i]}.a -o ${TARGETS[i]}
+    clang-9 -fsanitize=fuzzer ${TARGETS[i]}.a -o ${TARGETS[i]}
 done
 
 # Install fuzzit CLI
 wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.29/fuzzit_Linux_x86_64
 chmod a+x fuzzit
 
-# Upload fuzz target for long fuzz testing on fuzzit.dev server or run locally for regression on PRs
-if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then
-	TYPE=fuzzing
-else
-	TYPE=local-regression
-fi
 for TARGET in "${TARGETS[@]}"
 do
-    ./fuzzit create job --type $TYPE prometheus/${TARGET} ${TARGET}
+    ./fuzzit create job --type $1 prometheus/${TARGET} ${TARGET}
 done
