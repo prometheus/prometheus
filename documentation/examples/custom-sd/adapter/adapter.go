@@ -26,6 +26,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 )
 
 type customSD struct {
@@ -74,7 +76,7 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 					newTargets = append(newTargets, string(target))
 				}
 			}
-
+			sort.Strings(newTargets[:])
 			for name, value := range group.Labels {
 				newLabels[string(name)] = string(value)
 			}
@@ -99,60 +101,13 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 func (a *Adapter) refreshTargetGroups(allTargetGroups map[string][]*targetgroup.Group) {
 	tempGroups := generateTargetGroups(allTargetGroups)
 
-	if !deepEqualDisorder(a.groups, tempGroups) {
+	if !reflect.DeepEqual(a.groups, tempGroups) {
 		a.groups = tempGroups
 		err := a.writeOutput()
 		if err != nil {
 			level.Error(log.With(a.logger, "component", "sd-adapter")).Log("err", err)
 		}
 	}
-}
-
-func deepEqualDisorder(x, y map[string]*customSD) bool {
-	if (x == nil) || (y == nil) {
-		return false
-	}
-	if len(x) != len(y) {
-		return false
-	}
-	if len(x) == 0 {
-		return false
-	}
-	for k, xv := range x {
-		yv, ok := y[k]
-		if !ok {
-			return false
-		}
-		isValueEqual := deepEqualGroupTarget(xv.Targets, yv.Targets)
-		if !isValueEqual {
-			return false
-		}
-	}
-	return true
-}
-
-func deepEqualGroupTarget(a, b []string) bool {
-	if (a == nil) != (b == nil) {
-		return false
-	}
-	if len(a) != len(b) {
-		return false
-	}
-	for _, av := range a {
-
-		isEqual := false
-		for _, bv := range b {
-			if av == bv {
-				isEqual = true
-				break
-			}
-		}
-		if isEqual == false {
-			return isEqual
-		}
-
-	}
-	return true
 }
 
 // Writes JSON formatted targets to output file.
