@@ -14,6 +14,7 @@
 package adapter
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -174,10 +175,10 @@ func TestGenerateTargetGroups(t *testing.T) {
 						Source: "alibaba",
 						Targets: []model.LabelSet{
 							{
-								model.AddressLabel: "192.168.1.44",
+								model.AddressLabel: "192.168.1.55",
 							},
 							{
-								model.AddressLabel: "192.168.1.55",
+								model.AddressLabel: "192.168.1.44",
 							},
 						},
 						Labels: model.LabelSet{
@@ -198,8 +199,8 @@ func TestGenerateTargetGroups(t *testing.T) {
 				},
 				"cart:alibaba:1112e97a13b159fa": {
 					Targets: []string{
-						"192.168.1.55",
 						"192.168.1.44",
+						"192.168.1.55",
 					},
 					Labels: map[string]string{
 						"__meta_test_label": "label_test_1",
@@ -212,7 +213,7 @@ func TestGenerateTargetGroups(t *testing.T) {
 	for _, testCase := range testCases {
 		result := generateTargetGroups(testCase.targetGroup)
 
-		if !deepEqualDisorder(result, testCase.expectedCustomSD) {
+		if !reflect.DeepEqual(result, testCase.expectedCustomSD) {
 			t.Errorf("%q failed\ngot: %#v\nexpected: %v",
 				testCase.title,
 				result,
