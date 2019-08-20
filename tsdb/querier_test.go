@@ -461,9 +461,9 @@ func TestBlockQuerierDelete(t *testing.T) {
 			},
 		},
 		tombstones: &memTombstones{intvlGroups: map[uint64]Intervals{
-			1: {{1, 3}},
-			2: {{1, 3}, {6, 10}},
-			3: {{6, 10}},
+			1: Intervals{{1, 3}},
+			2: Intervals{{1, 3}, {6, 10}},
+			3: Intervals{{6, 10}},
 		}},
 		queries: []query{
 			{
@@ -578,7 +578,7 @@ func TestBaseChunkSeries(t *testing.T) {
 		{
 			series: []refdSeries{
 				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}}...),
+					lset: labels.New([]labels.Label{{"a", "a"}}...),
 					chunks: []chunks.Meta{
 						{Ref: 29}, {Ref: 45}, {Ref: 245}, {Ref: 123}, {Ref: 4232}, {Ref: 5344},
 						{Ref: 121},
@@ -586,19 +586,19 @@ func TestBaseChunkSeries(t *testing.T) {
 					ref: 12,
 				},
 				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
+					lset: labels.New([]labels.Label{{"a", "a"}, {"b", "b"}}...),
 					chunks: []chunks.Meta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
-					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
+					lset:   labels.New([]labels.Label{{"b", "c"}}...),
 					chunks: []chunks.Meta{{Ref: 8282}},
 					ref:    1,
 				},
 				{
-					lset: labels.New([]labels.Label{{Name: "b", Value: "b"}}...),
+					lset: labels.New([]labels.Label{{"b", "b"}}...),
 					chunks: []chunks.Meta{
 						{Ref: 829}, {Ref: 239}, {Ref: 2349}, {Ref: 659}, {Ref: 269},
 					},
@@ -611,14 +611,14 @@ func TestBaseChunkSeries(t *testing.T) {
 		{
 			series: []refdSeries{
 				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
+					lset: labels.New([]labels.Label{{"a", "a"}, {"b", "b"}}...),
 					chunks: []chunks.Meta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
-					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
+					lset:   labels.New([]labels.Label{{"b", "c"}}...),
 					chunks: []chunks.Meta{{Ref: 8282}},
 					ref:    3,
 				},
@@ -1044,7 +1044,7 @@ func TestSeriesIterator(t *testing.T) {
 	})
 }
 
-// Regression for: https://github.com/prometheus/prometheus/tsdb/pull/97
+// Regression for: https://github.com/prometheus/tsdb/pull/97
 func TestChunkSeriesIterator_DoubleSeek(t *testing.T) {
 	chkMetas := []chunks.Meta{
 		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{}),
@@ -1094,7 +1094,7 @@ func TestChunkSeriesIterator_NextWithMinTime(t *testing.T) {
 }
 
 func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
-	lbls := []labels.Labels{labels.New(labels.Label{Name: "a", Value: "b"})}
+	lbls := []labels.Labels{labels.New(labels.Label{"a", "b"})}
 	chunkMetas := [][]chunks.Meta{
 		{
 			{MinTime: 1, MaxTime: 2, Ref: 1},
@@ -1428,56 +1428,6 @@ func (m mockIndex) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-type mockSeries struct {
-	labels   func() labels.Labels
-	iterator func() SeriesIterator
-}
-
-func newSeries(l map[string]string, s []tsdbutil.Sample) Series {
-	return &mockSeries{
-		labels:   func() labels.Labels { return labels.FromMap(l) },
-		iterator: func() SeriesIterator { return newListSeriesIterator(s) },
-	}
-}
-func (m *mockSeries) Labels() labels.Labels    { return m.labels() }
-func (m *mockSeries) Iterator() SeriesIterator { return m.iterator() }
-
-type listSeriesIterator struct {
-	list []tsdbutil.Sample
-	idx  int
-}
-
-func newListSeriesIterator(list []tsdbutil.Sample) *listSeriesIterator {
-	return &listSeriesIterator{list: list, idx: -1}
-}
-
-func (it *listSeriesIterator) At() (int64, float64) {
-	s := it.list[it.idx]
-	return s.T(), s.V()
-}
-
-func (it *listSeriesIterator) Next() bool {
-	it.idx++
-	return it.idx < len(it.list)
-}
-
-func (it *listSeriesIterator) Seek(t int64) bool {
-	if it.idx == -1 {
-		it.idx = 0
-	}
-	// Do binary search between current position and end.
-	it.idx = sort.Search(len(it.list)-it.idx, func(i int) bool {
-		s := it.list[i+it.idx]
-		return s.T() >= t
-	})
-
-	return it.idx < len(it.list)
-}
-
-func (it *listSeriesIterator) Err() error {
-	return nil
-}
-
 func BenchmarkQueryIterator(b *testing.B) {
 	cases := []struct {
 		numBlocks                   int
@@ -1516,14 +1466,14 @@ func BenchmarkQueryIterator(b *testing.B) {
 					mint := i*int64(c.numSamplesPerSeriesPerBlock) - offset
 					maxt := mint + int64(c.numSamplesPerSeriesPerBlock) - 1
 					if len(prefilledLabels) == 0 {
-						generatedSeries = genSeries(c.numSeries, 10, mint, maxt)
+						generatedSeries = GenSeries(c.numSeries, 10, mint, maxt)
 						for _, s := range generatedSeries {
 							prefilledLabels = append(prefilledLabels, s.Labels().Map())
 						}
 					} else {
 						generatedSeries = populateSeries(prefilledLabels, mint, maxt)
 					}
-					block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil)
+					block, err := OpenBlock(nil, CreateBlock(b, dir, generatedSeries), nil)
 					testutil.Ok(b, err)
 					blocks = append(blocks, block)
 					defer block.Close()
@@ -1590,14 +1540,14 @@ func BenchmarkQuerySeek(b *testing.B) {
 					mint := i*int64(c.numSamplesPerSeriesPerBlock) - offset
 					maxt := mint + int64(c.numSamplesPerSeriesPerBlock) - 1
 					if len(prefilledLabels) == 0 {
-						generatedSeries = genSeries(c.numSeries, 10, mint, maxt)
+						generatedSeries = GenSeries(c.numSeries, 10, mint, maxt)
 						for _, s := range generatedSeries {
 							prefilledLabels = append(prefilledLabels, s.Labels().Map())
 						}
 					} else {
 						generatedSeries = populateSeries(prefilledLabels, mint, maxt)
 					}
-					block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil)
+					block, err := OpenBlock(nil, CreateBlock(b, dir, generatedSeries), nil)
 					testutil.Ok(b, err)
 					blocks = append(blocks, block)
 					defer block.Close()
@@ -1735,14 +1685,14 @@ func BenchmarkSetMatcher(b *testing.B) {
 			mint := i * int64(c.numSamplesPerSeriesPerBlock)
 			maxt := mint + int64(c.numSamplesPerSeriesPerBlock) - 1
 			if len(prefilledLabels) == 0 {
-				generatedSeries = genSeries(c.numSeries, 10, mint, maxt)
+				generatedSeries = GenSeries(c.numSeries, 10, mint, maxt)
 				for _, s := range generatedSeries {
 					prefilledLabels = append(prefilledLabels, s.Labels().Map())
 				}
 			} else {
 				generatedSeries = populateSeries(prefilledLabels, mint, maxt)
 			}
-			block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil)
+			block, err := OpenBlock(nil, CreateBlock(b, dir, generatedSeries), nil)
 			testutil.Ok(b, err)
 			blocks = append(blocks, block)
 			defer block.Close()
@@ -2090,8 +2040,8 @@ func TestClose(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 
-	createBlock(t, dir, genSeries(1, 1, 0, 10))
-	createBlock(t, dir, genSeries(1, 1, 10, 20))
+	CreateBlock(t, dir, GenSeries(1, 1, 0, 10))
+	CreateBlock(t, dir, GenSeries(1, 1, 10, 20))
 
 	db, err := Open(dir, nil, nil, DefaultOptions)
 	if err != nil {
@@ -2109,27 +2059,27 @@ func TestClose(t *testing.T) {
 
 func BenchmarkQueries(b *testing.B) {
 	cases := map[string]labels.Selector{
-		"Eq Matcher: Expansion - 1": {
+		"Eq Matcher: Expansion - 1": labels.Selector{
 			labels.NewEqualMatcher("la", "va"),
 		},
-		"Eq Matcher: Expansion - 2": {
+		"Eq Matcher: Expansion - 2": labels.Selector{
 			labels.NewEqualMatcher("la", "va"),
 			labels.NewEqualMatcher("lb", "vb"),
 		},
 
-		"Eq Matcher: Expansion - 3": {
+		"Eq Matcher: Expansion - 3": labels.Selector{
 			labels.NewEqualMatcher("la", "va"),
 			labels.NewEqualMatcher("lb", "vb"),
 			labels.NewEqualMatcher("lc", "vc"),
 		},
-		"Regex Matcher: Expansion - 1": {
+		"Regex Matcher: Expansion - 1": labels.Selector{
 			labels.NewMustRegexpMatcher("la", ".*va"),
 		},
-		"Regex Matcher: Expansion - 2": {
+		"Regex Matcher: Expansion - 2": labels.Selector{
 			labels.NewMustRegexpMatcher("la", ".*va"),
 			labels.NewMustRegexpMatcher("lb", ".*vb"),
 		},
-		"Regex Matcher: Expansion - 3": {
+		"Regex Matcher: Expansion - 3": labels.Selector{
 			labels.NewMustRegexpMatcher("la", ".*va"),
 			labels.NewMustRegexpMatcher("lb", ".*vb"),
 			labels.NewMustRegexpMatcher("lc", ".*vc"),
@@ -2155,7 +2105,7 @@ func BenchmarkQueries(b *testing.B) {
 					testutil.Ok(b, os.RemoveAll(dir))
 				}()
 
-				series := genSeries(nSeries, 5, 1, int64(nSamples))
+				series := GenSeries(nSeries, 5, 1, int64(nSamples))
 
 				// Add some common labels to make the matchers select these series.
 				{
@@ -2181,7 +2131,7 @@ func BenchmarkQueries(b *testing.B) {
 
 				qs := []Querier{}
 				for x := 0; x <= 10; x++ {
-					block, err := OpenBlock(nil, createBlock(b, dir, series), nil)
+					block, err := OpenBlock(nil, CreateBlock(b, dir, series), nil)
 					testutil.Ok(b, err)
 					q, err := NewBlockQuerier(block, 1, int64(nSamples))
 					testutil.Ok(b, err)

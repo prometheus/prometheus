@@ -288,7 +288,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		},
 		`Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
 		We need to actually look on max time instead.
-		
+
 		With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
 		block overlaps`: {
 			metas: []dirMeta{
@@ -651,7 +651,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			expErr:         errors.New("found chunk with minTime: 10 maxTime: 30 outside of compacted minTime: 0 maxTime: 20"),
 		},
 		{
-			// Introduced by https://github.com/prometheus/prometheus/tsdb/issues/347.
+			// Introduced by https://github.com/prometheus/tsdb/issues/347.
 			title: "Populate from single block containing extra chunk",
 			inputSeriesSamples: [][]seriesSamples{
 				{
@@ -691,7 +691,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			},
 		},
 		{
-			// Introduced by https://github.com/prometheus/prometheus/tsdb/pull/539.
+			// Introduced by https://github.com/prometheus/tsdb/pull/539.
 			title: "Populate from three blocks that the last two are overlapping.",
 			inputSeriesSamples: [][]seriesSamples{
 				{
@@ -837,7 +837,7 @@ func BenchmarkCompaction(b *testing.B) {
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
-				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil)
+				block, err := OpenBlock(nil, CreateBlock(b, dir, GenSeries(nSeries, 10, r[0], r[1])), nil)
 				testutil.Ok(b, err)
 				blocks = append(blocks, block)
 				defer func() {
@@ -923,9 +923,9 @@ func TestCancelCompactions(t *testing.T) {
 	}()
 
 	// Create some blocks to fall within the compaction range.
-	createBlock(t, tmpdir, genSeries(10, 10000, 0, 1000))
-	createBlock(t, tmpdir, genSeries(10, 10000, 1000, 2000))
-	createBlock(t, tmpdir, genSeries(1, 1, 2000, 2001)) // The most recent block is ignored so can be e small one.
+	CreateBlock(t, tmpdir, GenSeries(10, 10000, 0, 1000))
+	CreateBlock(t, tmpdir, GenSeries(10, 10000, 1000, 2000))
+	CreateBlock(t, tmpdir, GenSeries(1, 1, 2000, 2001)) // The most recent block is ignored so can be e small one.
 
 	// Copy the db so we have an exact copy to compare compaction times.
 	tmpdirCopy := tmpdir + "Copy"
@@ -1009,7 +1009,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 				{MinTime: 150, MaxTime: 200},
 			}
 			for _, m := range blocks {
-				createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
+				CreateBlock(t, db.Dir(), GenSeries(1, 1, m.MinTime, m.MaxTime))
 			}
 			testutil.Ok(t, db.reload())
 			testutil.Equals(t, len(blocks), len(db.Blocks()), "unexpected block count after a reload")
@@ -1032,7 +1032,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			expBlocks := bootStrap(db)
 
 			// Create a block that will trigger the reload to fail.
-			blockPath := createBlock(t, db.Dir(), genSeries(1, 1, 200, 300))
+			blockPath := CreateBlock(t, db.Dir(), GenSeries(1, 1, 200, 300))
 			lastBlockIndex := path.Join(blockPath, indexFilename)
 			actBlocks, err := blockDirs(db.Dir())
 			testutil.Ok(t, err)

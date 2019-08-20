@@ -95,7 +95,7 @@ func TestDB_reloadOrder(t *testing.T) {
 		{MinTime: 100, MaxTime: 110},
 	}
 	for _, m := range metas {
-		createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
+		CreateBlock(t, db.Dir(), GenSeries(1, 1, m.MinTime, m.MaxTime))
 	}
 
 	testutil.Ok(t, db.reload())
@@ -229,7 +229,7 @@ func TestAppendEmptyLabelsIgnored(t *testing.T) {
 	testutil.Ok(t, err)
 
 	// Construct labels manually so there is an empty label.
-	ref2, err := app1.Add(labels.Labels{labels.Label{Name: "a", Value: "b"}, labels.Label{Name: "c", Value: ""}}, 124, 0)
+	ref2, err := app1.Add(labels.Labels{labels.Label{"a", "b"}, labels.Label{"c", ""}}, 124, 0)
 	testutil.Ok(t, err)
 
 	// Should be the same series.
@@ -281,7 +281,7 @@ Outer:
 		smpls := make([]float64, numSamples)
 		for i := int64(0); i < numSamples; i++ {
 			smpls[i] = rand.Float64()
-			app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+			app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
 		}
 
 		testutil.Ok(t, app.Commit())
@@ -405,9 +405,9 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 
 	// Append AmendedValue.
 	app := db.Appender()
-	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
+	_, err := app.Add(labels.Labels{{"a", "b"}}, 0, 1)
 	testutil.Ok(t, err)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 2)
+	_, err = app.Add(labels.Labels{{"a", "b"}}, 0, 2)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
@@ -418,14 +418,14 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	ssMap := query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{
-		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}},
+		labels.New(labels.Label{"a", "b"}).String(): {sample{0, 1}},
 	}, ssMap)
 
 	// Append Out of Order Value.
 	app = db.Appender()
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 10, 3)
+	_, err = app.Add(labels.Labels{{"a", "b"}}, 10, 3)
 	testutil.Ok(t, err)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 7, 5)
+	_, err = app.Add(labels.Labels{{"a", "b"}}, 7, 5)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
@@ -435,7 +435,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	ssMap = query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{
-		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}, sample{10, 3}},
+		labels.New(labels.Label{"a", "b"}).String(): {sample{0, 1}, sample{10, 3}},
 	}, ssMap)
 }
 
@@ -556,7 +556,7 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
-		app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
 	}
 
 	testutil.Ok(t, app.Commit())
@@ -645,44 +645,44 @@ func TestDB_e2e(t *testing.T) {
 	// Create 8 series with 1000 data-points of different ranges and run queries.
 	lbls := [][]labels.Label{
 		{
-			{Name: "a", Value: "b"},
-			{Name: "instance", Value: "localhost:9090"},
-			{Name: "job", Value: "prometheus"},
+			{"a", "b"},
+			{"instance", "localhost:9090"},
+			{"job", "prometheus"},
 		},
 		{
-			{Name: "a", Value: "b"},
-			{Name: "instance", Value: "127.0.0.1:9090"},
-			{Name: "job", Value: "prometheus"},
+			{"a", "b"},
+			{"instance", "127.0.0.1:9090"},
+			{"job", "prometheus"},
 		},
 		{
-			{Name: "a", Value: "b"},
-			{Name: "instance", Value: "127.0.0.1:9090"},
-			{Name: "job", Value: "prom-k8s"},
+			{"a", "b"},
+			{"instance", "127.0.0.1:9090"},
+			{"job", "prom-k8s"},
 		},
 		{
-			{Name: "a", Value: "b"},
-			{Name: "instance", Value: "localhost:9090"},
-			{Name: "job", Value: "prom-k8s"},
+			{"a", "b"},
+			{"instance", "localhost:9090"},
+			{"job", "prom-k8s"},
 		},
 		{
-			{Name: "a", Value: "c"},
-			{Name: "instance", Value: "localhost:9090"},
-			{Name: "job", Value: "prometheus"},
+			{"a", "c"},
+			{"instance", "localhost:9090"},
+			{"job", "prometheus"},
 		},
 		{
-			{Name: "a", Value: "c"},
-			{Name: "instance", Value: "127.0.0.1:9090"},
-			{Name: "job", Value: "prometheus"},
+			{"a", "c"},
+			{"instance", "127.0.0.1:9090"},
+			{"job", "prometheus"},
 		},
 		{
-			{Name: "a", Value: "c"},
-			{Name: "instance", Value: "127.0.0.1:9090"},
-			{Name: "job", Value: "prom-k8s"},
+			{"a", "c"},
+			{"instance", "127.0.0.1:9090"},
+			{"job", "prom-k8s"},
 		},
 		{
-			{Name: "a", Value: "c"},
-			{Name: "instance", Value: "localhost:9090"},
-			{Name: "job", Value: "prom-k8s"},
+			{"a", "c"},
+			{"instance", "localhost:9090"},
+			{"job", "prom-k8s"},
 		},
 	}
 
@@ -883,7 +883,7 @@ func TestTombstoneClean(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
-		app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
 	}
 
 	testutil.Ok(t, app.Commit())
@@ -986,7 +986,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 	// totalBlocks should be >=2 so we have enough blocks to trigger compaction failure.
 	totalBlocks := 2
 	for i := 0; i < totalBlocks; i++ {
-		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, 0, 1))
+		blockDir := CreateBlock(t, db.Dir(), GenSeries(1, 1, 0, 1))
 		block, err := OpenBlock(nil, blockDir, nil)
 		testutil.Ok(t, err)
 		// Add some some fake tombstones to trigger the compaction.
@@ -1030,7 +1030,7 @@ func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int6
 		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
-	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
+	block, err := OpenBlock(nil, CreateBlock(c.t, dest, GenSeries(1, 1, 0, 1)), nil)
 	testutil.Ok(c.t, err)
 	testutil.Ok(c.t, block.Close()) // Close block as we won't be using anywhere.
 	c.blocks = append(c.blocks, block)
@@ -1070,7 +1070,7 @@ func TestTimeRetention(t *testing.T) {
 	}
 
 	for _, m := range blocks {
-		createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
+		CreateBlock(t, db.Dir(), GenSeries(10, 10, m.MinTime, m.MaxTime))
 	}
 
 	testutil.Ok(t, db.reload())                       // Reload the db to register the new blocks.
@@ -1106,7 +1106,7 @@ func TestSizeRetention(t *testing.T) {
 	}
 
 	for _, m := range blocks {
-		createBlock(t, db.Dir(), genSeries(100, 10, m.MinTime, m.MaxTime))
+		CreateBlock(t, db.Dir(), GenSeries(100, 10, m.MinTime, m.MaxTime))
 	}
 
 	// Test that registered size matches the actual disk size.
@@ -1339,7 +1339,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	}, OverlappingBlocks(nc1))
 }
 
-// Regression test for https://github.com/prometheus/prometheus/tsdb/issues/347
+// Regression test for https://github.com/prometheus/tsdb/issues/347
 func TestChunkAtBlockBoundary(t *testing.T) {
 	db, delete := openTestDB(t, nil)
 	defer func() {
@@ -1498,7 +1498,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 			testutil.Ok(t, os.RemoveAll(dir))
 		}()
 
-		createBlock(t, dir, genSeries(1, 1, 1000, 2000))
+		CreateBlock(t, dir, GenSeries(1, 1, 1000, 2000))
 
 		db, err := Open(dir, nil, nil, nil)
 		testutil.Ok(t, err)
@@ -1514,7 +1514,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 			testutil.Ok(t, os.RemoveAll(dir))
 		}()
 
-		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
+		CreateBlock(t, dir, GenSeries(1, 1, 1000, 6000))
 
 		testutil.Ok(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
@@ -1635,7 +1635,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 			{MinTime: currentTime + 100, MaxTime: currentTime + 100 + db.opts.BlockRanges[0]},
 		}
 		for _, m := range blocks {
-			createBlock(t, db.Dir(), genSeries(2, 2, m.MinTime, m.MaxTime))
+			CreateBlock(t, db.Dir(), GenSeries(2, 2, m.MinTime, m.MaxTime))
 		}
 
 		oldBlocks := db.Blocks()
@@ -1666,26 +1666,26 @@ func TestDB_LabelNames(t *testing.T) {
 	}{
 		{
 			sampleLabels1: [][2]string{
-				{"name1", "1"},
-				{"name3", "3"},
-				{"name2", "2"},
+				[2]string{"name1", "1"},
+				[2]string{"name3", "3"},
+				[2]string{"name2", "2"},
 			},
 			sampleLabels2: [][2]string{
-				{"name4", "4"},
-				{"name1", "1"},
+				[2]string{"name4", "4"},
+				[2]string{"name1", "1"},
 			},
 			exp1: []string{"name1", "name2", "name3"},
 			exp2: []string{"name1", "name2", "name3", "name4"},
 		},
 		{
 			sampleLabels1: [][2]string{
-				{"name2", "2"},
-				{"name1", "1"},
-				{"name2", "2"},
+				[2]string{"name2", "2"},
+				[2]string{"name1", "1"},
+				[2]string{"name2", "2"},
 			},
 			sampleLabels2: [][2]string{
-				{"name6", "6"},
-				{"name0", "0"},
+				[2]string{"name6", "6"},
+				[2]string{"name0", "0"},
 			},
 			exp1: []string{"name1", "name2"},
 			exp2: []string{"name0", "name1", "name2", "name6"},
@@ -1802,13 +1802,13 @@ func TestVerticalCompaction(t *testing.T) {
 		//        |----------------|
 		{
 			blockSeries: [][]Series{
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
 						sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 99},
@@ -1830,14 +1830,14 @@ func TestVerticalCompaction(t *testing.T) {
 		//        |----------------|
 		{
 			blockSeries: [][]Series{
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
 						sample{11, 0}, sample{13, 0}, sample{17, 0},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
 						sample{8, 99}, sample{9, 99}, sample{10, 99},
@@ -1859,20 +1859,20 @@ func TestVerticalCompaction(t *testing.T) {
 		//                           |--------------------|
 		{
 			blockSeries: [][]Series{
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
 						sample{11, 0}, sample{13, 0}, sample{17, 0},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
 						sample{8, 99}, sample{9, 99},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{14, 59}, sample{15, 59}, sample{17, 59}, sample{20, 59},
 						sample{21, 59}, sample{22, 59},
@@ -1895,19 +1895,19 @@ func TestVerticalCompaction(t *testing.T) {
 		//               |----------------|
 		{
 			blockSeries: [][]Series{
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{8, 0}, sample{9, 0},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{14, 59}, sample{15, 59}, sample{17, 59}, sample{20, 59},
 						sample{21, 59}, sample{22, 59},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{5, 99}, sample{6, 99}, sample{7, 99}, sample{8, 99},
 						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
@@ -1931,7 +1931,7 @@ func TestVerticalCompaction(t *testing.T) {
 		//      |-------------------------|
 		{
 			blockSeries: [][]Series{
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{8, 0}, sample{9, 0}, sample{10, 0},
@@ -1939,13 +1939,13 @@ func TestVerticalCompaction(t *testing.T) {
 						sample{20, 0}, sample{22, 0},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{7, 59}, sample{8, 59}, sample{9, 59}, sample{10, 59},
 						sample{11, 59},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{8, 99},
 						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
@@ -1969,7 +1969,7 @@ func TestVerticalCompaction(t *testing.T) {
 		//      |-------------------------|
 		{
 			blockSeries: [][]Series{
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{8, 0}, sample{9, 0}, sample{10, 0},
@@ -1989,7 +1989,7 @@ func TestVerticalCompaction(t *testing.T) {
 						sample{20, 0}, sample{22, 0},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"__name__": "a"}, []tsdbutil.Sample{
 						sample{7, 59}, sample{8, 59}, sample{9, 59}, sample{10, 59},
 						sample{11, 59},
@@ -2007,7 +2007,7 @@ func TestVerticalCompaction(t *testing.T) {
 						sample{11, 59},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{8, 99},
 						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
@@ -2066,26 +2066,26 @@ func TestVerticalCompaction(t *testing.T) {
 		//                                                  |----------------|
 		{
 			blockSeries: [][]Series{
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
 						sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 99},
 						sample{12, 99}, sample{13, 99}, sample{14, 99},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{20, 0}, sample{21, 0}, sample{22, 0}, sample{24, 0},
 						sample{25, 0}, sample{27, 0}, sample{28, 0}, sample{29, 0},
 					}),
 				},
-				{
+				[]Series{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{23, 99}, sample{25, 99}, sample{26, 99}, sample{27, 99},
 						sample{28, 99}, sample{29, 99}, sample{30, 99}, sample{31, 99},
@@ -2117,7 +2117,7 @@ func TestVerticalCompaction(t *testing.T) {
 			}()
 
 			for _, series := range c.blockSeries {
-				createBlock(t, tmpdir, series)
+				CreateBlock(t, tmpdir, series)
 			}
 			opts := *DefaultOptions
 			opts.AllowOverlappingBlocks = true
@@ -2177,7 +2177,7 @@ func TestBlockRanges(t *testing.T) {
 	// Test that the compactor doesn't create overlapping blocks
 	// when a non standard block already exists.
 	firstBlockMaxT := int64(3)
-	createBlock(t, dir, genSeries(1, 1, 0, firstBlockMaxT))
+	CreateBlock(t, dir, GenSeries(1, 1, 0, firstBlockMaxT))
 	db, err := Open(dir, logger, nil, DefaultOptions)
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
@@ -2186,7 +2186,7 @@ func TestBlockRanges(t *testing.T) {
 		os.RemoveAll(dir)
 	}()
 	app := db.Appender()
-	lbl := labels.Labels{{Name: "a", Value: "b"}}
+	lbl := labels.Labels{{"a", "b"}}
 	_, err = app.Add(lbl, firstBlockMaxT-1, rand.Float64())
 	if err == nil {
 		t.Fatalf("appending a sample with a timestamp covered by a previous block shouldn't be possible")
@@ -2227,7 +2227,7 @@ func TestBlockRanges(t *testing.T) {
 	testutil.Ok(t, db.Close())
 
 	thirdBlockMaxt := secondBlockMaxt + 2
-	createBlock(t, dir, genSeries(1, 1, secondBlockMaxt+1, thirdBlockMaxt))
+	CreateBlock(t, dir, GenSeries(1, 1, secondBlockMaxt+1, thirdBlockMaxt))
 
 	db, err = Open(dir, logger, nil, DefaultOptions)
 	if err != nil {
@@ -2285,7 +2285,7 @@ func TestDBReadOnly(t *testing.T) {
 		}
 
 		for _, m := range dbBlocks {
-			createBlock(t, dbDir, genSeries(1, 1, m.MinTime, m.MaxTime))
+			CreateBlock(t, dbDir, GenSeries(1, 1, m.MinTime, m.MaxTime))
 		}
 		expSeriesCount++
 	}
