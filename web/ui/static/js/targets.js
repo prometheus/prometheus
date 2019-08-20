@@ -21,8 +21,8 @@ function showUnhealthy(_, container) {
 }
 
 function init() {
-  if (document.URL.includes('targets')) {
-    if (!localStorage.selectedTab || localStorage.selectedTab == "all-targets"){
+  if ($("#unhealthy-targets").length) {
+    if (!localStorage.selectedTab || localStorage.selectedTab == "all-targets") {
       $("#all-targets").parent().addClass("active");
       $(".table-container").each(showAll);
     } else if (localStorage.selectedTab == "unhealthy-targets") {
