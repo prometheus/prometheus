@@ -33,7 +33,7 @@ function init() {
     $(".table-container").each(showAll);
   }
 
-  $("button.targets").click(function () {
+  $("button.targets").click(function() {
     const tableTitle = $(this).closest("h2").find("a").attr("id");
 
     if ($(this).hasClass("collapsed-table")) {
