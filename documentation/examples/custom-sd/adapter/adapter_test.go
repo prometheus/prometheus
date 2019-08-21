@@ -194,7 +194,7 @@ func TestGenerateTargetGroups(t *testing.T) {
 						"192.168.1.33",
 					},
 					Labels: map[string]string{
-						"__meta_test_label": "label_test_1",
+						"__meta_test_label": "label_test_2",
 					},
 				},
 				"cart:alibaba:1112e97a13b159fa": {
@@ -203,7 +203,7 @@ func TestGenerateTargetGroups(t *testing.T) {
 						"192.168.1.55",
 					},
 					Labels: map[string]string{
-						"__meta_test_label": "label_test_1",
+						"__meta_test_label": "label_test_2",
 					},
 				},
 			},
