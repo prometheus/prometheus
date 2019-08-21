@@ -205,15 +205,16 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	}
 	registerMetrics(reg, w)
 
-	_, j, err := w.Segments()
-	// Index of the Segment we want to open and write to.
-	writeSegmentIndex := 0
+	_, last, err := w.Segments()
 	if err != nil {
 		return nil, errors.Wrap(err, "get segment range")
 	}
+
+	// Index of the Segment we want to open and write to.
+	writeSegmentIndex := 0
 	// If some segments already exist create one with a higher index than the last segment.
-	if j != -1 {
-		writeSegmentIndex = j + 1
+	if last != -1 {
+		writeSegmentIndex = last + 1
 	}
 
 	segment, err := CreateSegment(w.dir, writeSegmentIndex)
