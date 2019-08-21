@@ -18,16 +18,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 type customSD struct {
@@ -76,7 +76,7 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 					newTargets = append(newTargets, string(target))
 				}
 			}
-			sort.Strings(newTargets[:])
+			sort.Strings(newTargets)
 			for name, value := range group.Labels {
 				newLabels[string(name)] = string(value)
 			}
