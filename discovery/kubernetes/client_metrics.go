@@ -37,7 +37,7 @@ var (
 			Name:      "http_request_total",
 			Help:      "Total number of HTTP requests to the Kubernetes API by status code.",
 		},
-		[]string{"status_code"},
+		[]string{"status_code", "method", "host"},
 	)
 	clientGoRequestLatencyMetricVec = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -46,7 +46,7 @@ var (
 			Help:       "Summary of latencies for HTTP requests to the Kubernetes API by endpoint.",
 			Objectives: map[float64]float64{},
 		},
-		[]string{"endpoint"},
+		[]string{"verb", "endpoint"},
 	)
 
 	// Definition of metrics for client-go cache metrics provider.
@@ -183,10 +183,10 @@ func (f *clientGoRequestMetricAdapter) Register(registerer prometheus.Registerer
 	)
 }
 func (clientGoRequestMetricAdapter) Increment(code string, method string, host string) {
-	clientGoRequestResultMetricVec.WithLabelValues(code).Inc()
+	clientGoRequestResultMetricVec.WithLabelValues(code, method, host).Inc()
 }
 func (clientGoRequestMetricAdapter) Observe(verb string, u url.URL, latency time.Duration) {
-	clientGoRequestLatencyMetricVec.WithLabelValues(u.EscapedPath()).Observe(latency.Seconds())
+	clientGoRequestLatencyMetricVec.WithLabelValues(verb, u.EscapedPath()).Observe(latency.Seconds())
 }
 
 // Definition of client-go cache metrics provider definition
