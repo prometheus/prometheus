@@ -420,6 +420,14 @@ func TestOMNullByteHandling(t *testing.T) {
 			input: "a\x00{b=\"ddd\"} 1",
 			err:   "expected value after metric, got \"MNAME\"",
 		},
+		{
+			input: "#",
+			err:   "\"INVALID\" \" \" is not a valid start token",
+		},
+		{
+			input: "# H",
+			err:   "\"INVALID\" \" \" is not a valid start token",
+		},
 	}
 
 	for i, c := range cases {
