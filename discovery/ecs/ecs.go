@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	"github.com/denverdino/aliyungo/metadata"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
@@ -33,6 +34,8 @@ const (
 	ecsLabelNetworkType = ecsLabel + "network_type"
 	ecsLabelUserId      = ecsLabel + "user_id"
 	ecsLabelTag         = ecsLabel + "tag_"
+
+	MAX_PAGE_LIMIT = 100 						// it's limited by ecs describeInstances API
 )
 
 // SDConfig is the configuration for Azure based service discovery.
@@ -40,20 +43,20 @@ type SDConfig struct {
 	Port            int            `yaml:"port"`
 	UserId          string         `yaml:"user_id,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-	RegionId        string         `yaml:"region_id,omitempty"` 	// env set PROMETHEUS_DS_ECS_REGION_ID
+	RegionId        string         `yaml:"region_id,omitempty"` // env set PROMETHEUS_DS_ECS_REGION_ID
 
 	// Alibaba ECS Auth Args
 	// https://github.com/aliyun/alibaba-cloud-sdk-go/blob/master/docs/2-Client-EN.md
-	AccessKey         string `yaml:"access_key,omitempty"`         	// env set PROMETHEUS_DS_ECS_AK
-	AccessKeySecret   string `yaml:"access_key_secret,omitempty"`  	// env set PROMETHEUS_DS_ECS_SK
-	StsToken          string `yaml:"sts_token,omitempty"`          	// env set PROMETHEUS_DS_ECS_STS_TOKEN
-	RoleArn           string `yaml:"role_arn,omitempty"`           	// env set PROMETHEUS_DS_ECS_ROLE_ARN
-	RoleSessionName   string `yaml:"role_session_name,omitempty"`  	// env set PROMETHEUS_DS_ECS_ROLE_SESSION_NAME
-	Policy            string `yaml:"policy,omitempty"`             	// env set PROMETHEUS_DS_ECS_POLICY
-	RoleName          string `yaml:"role_name,omitempty"`          	// env set PROMETHEUS_DS_ECS_ROLE_NAME
-	PublicKeyId       string `yaml:"public_key_id,omitempty"`      	// env set PROMETHEUS_DS_ECS_PUBLIC_KEY_ID
-	PrivateKey        string `yaml:"private_key,omitempty"`        	// env set PROMETHEUS_DS_ECS_PRIVATE_KEY
-	SessionExpiration int    `yaml:"session_expiration,omitempty"` 	// env set PROMETHEUS_DS_ECS_SESSION_EXPIRATION
+	AccessKey         string `yaml:"access_key,omitempty"`         // env set PROMETHEUS_DS_ECS_AK
+	AccessKeySecret   string `yaml:"access_key_secret,omitempty"`  // env set PROMETHEUS_DS_ECS_SK
+	StsToken          string `yaml:"sts_token,omitempty"`          // env set PROMETHEUS_DS_ECS_STS_TOKEN
+	RoleArn           string `yaml:"role_arn,omitempty"`           // env set PROMETHEUS_DS_ECS_ROLE_ARN
+	RoleSessionName   string `yaml:"role_session_name,omitempty"`  // env set PROMETHEUS_DS_ECS_ROLE_SESSION_NAME
+	Policy            string `yaml:"policy,omitempty"`             // env set PROMETHEUS_DS_ECS_POLICY
+	RoleName          string `yaml:"role_name,omitempty"`          // env set PROMETHEUS_DS_ECS_ROLE_NAME
+	PublicKeyId       string `yaml:"public_key_id,omitempty"`      // env set PROMETHEUS_DS_ECS_PUBLIC_KEY_ID
+	PrivateKey        string `yaml:"private_key,omitempty"`        // env set PROMETHEUS_DS_ECS_PRIVATE_KEY
+	SessionExpiration int    `yaml:"session_expiration,omitempty"` // env set PROMETHEUS_DS_ECS_SESSION_EXPIRATION
 
 	// query ecs limit, default is 100.
 	Limit int `yaml:"limit,omitempty"`
@@ -94,11 +97,18 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
 	describeInstancesRequest.RegionId = "cn-hangzhou"
 
-	if d.limit == 0 {
-		d.limit = 100
+	// 分页查询
+	var pageLimit = MAX_PAGE_LIMIT
+	var currentLimit = d.limit
+	var currentTotalCount = 0
+	var totalCount = 0
+	if d.limit <= 0 || d.limit > MAX_PAGE_LIMIT {
+		pageLimit = MAX_PAGE_LIMIT
+	} else {
+		pageLimit = d.limit
 	}
 	describeInstancesRequest.PageNumber = requests.NewInteger(1)
-	describeInstancesRequest.PageSize = requests.NewInteger(d.limit)
+	describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
 
 	client, clientErr := getEcsClient(d.ecsCfg)
 	if clientErr != nil {
@@ -110,13 +120,46 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
 	}
 
-	level.Debug(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(describeInstancesResponse.Instances.Instance))
+	// first query to get TotalCount
+	instances := describeInstancesResponse.Instances.Instance
+	currentTotalCount = len(describeInstancesResponse.Instances.Instance)
+	totalCount = describeInstancesResponse.TotalCount
+	if d.limit <= 0 {
+		currentLimit = totalCount
+	}
+
+	// multi page query
+	if currentTotalCount < currentLimit {
+
+		for pageIndex := 2; currentTotalCount < currentLimit; pageIndex++ {
+			if (currentLimit - currentTotalCount) < MAX_PAGE_LIMIT {
+				pageLimit = currentLimit - currentTotalCount
+			}
+			describeInstancesRequest.PageNumber = requests.NewInteger(pageIndex)
+			describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
+			describeInstancesResponse, responseErr := client.DescribeInstances(describeInstancesRequest)
+			if responseErr != nil {
+				return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
+			}
+			for _, instance := range describeInstancesResponse.Instances.Instance {
+				instances = append(instances, instance)
+			}
+
+			if describeInstancesResponse.PageSize == 0 {
+				break
+			}
+			currentTotalCount += len(describeInstancesResponse.Instances.Instance)
+		}
+
+	}
+
+	level.Debug(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(instances))
 
 	tg := &targetgroup.Group{
 		Source: getConfigRegionId(d.ecsCfg.RegionId),
 	}
 
-	for _, instance := range describeInstancesResponse.Instances.Instance {
+	for _, instance := range instances {
 
 		labels := model.LabelSet{
 			ecsLabelInstanceId:  model.LabelValue(instance.InstanceId),
@@ -175,29 +218,7 @@ func getEcsClient(config *SDConfig) (client *ecs_pop.Client, err error) {
 		return nil, errors.New("Aliyun ECS service discovery config need regionId.")
 	}
 
-	// 1. ACS
-	// get all RoleName for check
-	//metaData := metadata.NewMetaData(nil)
-	//var allRoleName metadata.ResultList
-	//allRoleNameErr := metaData.New().Resource("ram/security-credentials/").Do(&allRoleName)
-	//if allRoleNameErr == nil {
-	//	roleName, roleNameErr := metaData.RoleName()
-	//	if roleNameErr == nil {
-	//		roleAuth, roleAuthErr := metaData.RamRoleToken(roleName)
-	//		if roleAuthErr == nil {
-	//			client := ecs_pop.Client{}
-	//			clientConfig := client.InitClientConfig()
-	//			clientConfig.Debug = true
-	//			clientErr := client.InitWithStsToken(getConfigRegionId(config.RegionId), roleAuth.AccessKeyId, roleAuth.AccessKeySecret, roleAuth.SecurityToken)
-	//			if clientErr == nil {
-	//				return &client, nil
-	//			}
-	//		}
-	//	}
-	//}
-
-
-	// 2. Args
+	// 1. Args
 
 	// NewClientWithRamRoleArnAndPolicy
 	if getConfigArgPolicy(config.Policy) != "" && getConfigArgAk(config.AccessKey) != "" && getConfigArgSk(config.AccessKeySecret) != "" && getConfigArgRoleArn(config.RoleArn) != "" && getConfigArgRoleSessionName(config.RoleSessionName) != "" {
@@ -233,6 +254,28 @@ func getEcsClient(config *SDConfig) (client *ecs_pop.Client, err error) {
 	if config.PublicKeyId != "" && config.PrivateKey != "" && config.SessionExpiration != 0 {
 		client, clientErr := ecs_pop.NewClientWithRsaKeyPair(getConfigRegionId(config.RegionId), getConfigArgPublicKeyId(config.PublicKeyId), getConfigArgPrivateKey(config.PrivateKey), getConfigArgSessionExpiration(config.SessionExpiration))
 		return client, clientErr
+	}
+
+	// 2. ACS
+	//get all RoleName for check
+
+	metaData := metadata.NewMetaData(nil)
+	var allRoleName metadata.ResultList
+	allRoleNameErr := metaData.New().Resource("ram/security-credentials/").Do(&allRoleName)
+	if allRoleNameErr == nil {
+		roleName, roleNameErr := metaData.RoleName()
+		if roleNameErr == nil {
+			roleAuth, roleAuthErr := metaData.RamRoleToken(roleName)
+			if roleAuthErr == nil {
+				client := ecs_pop.Client{}
+				clientConfig := client.InitClientConfig()
+				clientConfig.Debug = true
+				clientErr := client.InitWithStsToken(getConfigRegionId(config.RegionId), roleAuth.AccessKeyId, roleAuth.AccessKeySecret, roleAuth.SecurityToken)
+				if clientErr == nil {
+					return &client, nil
+				}
+			}
+		}
 	}
 
 	return nil, errors.New("Aliyun ECS service discovery cant init client, need auth config.")

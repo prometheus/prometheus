@@ -21,7 +21,7 @@ scrape_configs:
       region_id: cn-hangzhou                      # 设置获取ECS的regionId
       access_key: <aliyun ak>                     # Aliyun 鉴权字段 AK
       access_key_secret: <aliyun sk>              # Aliyun 鉴权字段 SK
-      limit: 40                                   # 从接口取到的最大实例个数限制，default is 100
+#      limit: 40                                  # 从接口取到的最大实例个数限制，不填为获取所有ecs实例
 
 # relabel为可选配置，用于手动筛选实例
   relabel_configs:
