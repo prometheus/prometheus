@@ -44,7 +44,10 @@ func (l *openMetricsLexer) buf() []byte {
 }
 
 func (l *openMetricsLexer) cur() byte {
-	return l.b[l.i]
+	if l.i < len(l.b) {
+		return l.b[l.i]
+	}
+	return byte(' ')
 }
 
 // next advances the openMetricsLexer to the next character.
