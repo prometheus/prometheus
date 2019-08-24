@@ -113,7 +113,7 @@ func TestMMapFile(t *testing.T) {
 	filename := file.Name()
 	defer os.Remove(filename)
 
-	err, fileAsBytes := getMMapedFile(filename, 2, nil)
+	fileAsBytes, err := getMMapedFile(filename, 2, nil)
 
 	if err != nil {
 		t.Fatalf("Couldn't create test mmaped file")
