@@ -137,9 +137,11 @@ func (r *Rule) Validate() (errs []error) {
 		}
 	}
 
-	for k := range r.Annotations {
-		if !model.LabelName(k).IsValid() {
-			errs = append(errs, errors.Errorf("invalid annotation name: %s", k))
+	if r.Alert != "" {
+		for k := range r.Annotations {
+			if !model.LabelName(k).IsValid() {
+				errs = append(errs, errors.Errorf("invalid annotation name: %s", k))
+			}
 		}
 	}
 
