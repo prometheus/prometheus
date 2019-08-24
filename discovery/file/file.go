@@ -367,6 +367,10 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 		return nil, err
 	}
 
+	if len(content) == 0 {
+		return nil, errors.New("empty file")
+	}
+
 	info, err := fd.Stat()
 	if err != nil {
 		return nil, err
