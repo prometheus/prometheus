@@ -170,9 +170,11 @@ func Encode(m *Map) []byte {
 	}
 	eg.writeByte(byte(tagsVersionID))
 	for k, v := range m.m {
-		eg.writeByte(byte(keyTypeString))
-		eg.writeStringWithVarintLen(k.name)
-		eg.writeBytesWithVarintLen([]byte(v))
+		if v.m.ttl.ttl == valueTTLUnlimitedPropagation {
+			eg.writeByte(byte(keyTypeString))
+			eg.writeStringWithVarintLen(k.name)
+			eg.writeBytesWithVarintLen([]byte(v.value))
+		}
 	}
 	return eg.bytes()
 }
@@ -190,7 +192,7 @@ func Decode(bytes []byte) (*Map, error) {
 
 // DecodeEach decodes the given serialized tag map, calling handler for each
 // tag key and value decoded.
-func DecodeEach(bytes []byte, fn func(key Key, val string)) error {
+func DecodeEach(bytes []byte, fn func(key Key, val string, md metadatas)) error {
 	eg := &encoderGRPC{
 		buf: bytes,
 	}
@@ -228,7 +230,7 @@ func DecodeEach(bytes []byte, fn func(key Key, val string)) error {
 		if !checkValue(val) {
 			return errInvalidValue
 		}
-		fn(key, val)
+		fn(key, val, createMetadatas(WithTTL(TTLUnlimitedPropagation)))
 		if err != nil {
 			return err
 		}

@@ -92,8 +92,9 @@ var (
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
 	DefaultAlertmanagerConfig = AlertmanagerConfig{
-		Scheme:  "http",
-		Timeout: model.Duration(10 * time.Second),
+		Scheme:     "http",
+		Timeout:    model.Duration(10 * time.Second),
+		APIVersion: AlertmanagerAPIVersionV1,
 	}
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
@@ -110,10 +111,10 @@ var (
 		MinShards:         1,
 		MaxSamplesPerSend: 100,
 
-		// Each shard will have a max of 10 samples pending in it's channel, plus the pending
-		// samples that have been enqueued. Theoretically we should only ever have about 110 samples
-		// per shard pending. At 1000 shards that's 110k.
-		Capacity:          10,
+		// Each shard will have a max of 500 samples pending in it's channel, plus the pending
+		// samples that have been enqueued. Theoretically we should only ever have about 600 samples
+		// per shard pending. At 1000 shards that's 600k.
+		Capacity:          500,
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
 		// Backoff times for retrying a batch of samples on recoverable errors.
@@ -453,6 +454,40 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	return nil
 }
 
+// AlertmanagerAPIVersion represents a version of the
+// github.com/prometheus/alertmanager/api, e.g. 'v1' or 'v2'.
+type AlertmanagerAPIVersion string
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*v = AlertmanagerAPIVersion("")
+	type plain AlertmanagerAPIVersion
+	if err := unmarshal((*plain)(v)); err != nil {
+		return err
+	}
+
+	for _, supportedVersion := range SupportedAlertmanagerAPIVersions {
+		if *v == supportedVersion {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
+}
+
+const (
+	// AlertmanagerAPIVersionV1 represents
+	// github.com/prometheus/alertmanager/api/v1.
+	AlertmanagerAPIVersionV1 AlertmanagerAPIVersion = "v1"
+	// AlertmanagerAPIVersionV2 represents
+	// github.com/prometheus/alertmanager/api/v2.
+	AlertmanagerAPIVersionV2 AlertmanagerAPIVersion = "v2"
+)
+
+var SupportedAlertmanagerAPIVersions = []AlertmanagerAPIVersion{
+	AlertmanagerAPIVersionV1, AlertmanagerAPIVersionV2,
+}
+
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
 type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
@@ -467,6 +502,9 @@ type AlertmanagerConfig struct {
 	PathPrefix string `yaml:"path_prefix,omitempty"`
 	// The timeout used when sending alerts.
 	Timeout model.Duration `yaml:"timeout,omitempty"`
+
+	// The api version of Alertmanager.
+	APIVersion AlertmanagerAPIVersion `yaml:"api_version"`
 
 	// List of Alertmanager relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
@@ -578,7 +616,8 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 // QueueConfig is the configuration for the queue used to write to remote
 // storage.
 type QueueConfig struct {
-	// Number of samples to buffer per shard before we start dropping them.
+	// Number of samples to buffer per shard before we block. Defaults to
+	// MaxSamplesPerSend.
 	Capacity int `yaml:"capacity,omitempty"`
 
 	// Max number of shards, i.e. amount of concurrency.

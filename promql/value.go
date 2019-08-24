@@ -158,7 +158,7 @@ func (vec Vector) ContainsSameLabelset() bool {
 	return false
 }
 
-// Matrix is a slice of Seriess that implements sort.Interface and
+// Matrix is a slice of Series that implements sort.Interface and
 // has a String method.
 type Matrix []Series
 

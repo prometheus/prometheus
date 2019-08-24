@@ -1,14 +1,24 @@
 package runtime
 
 import (
+	"context"
 	"io"
 	"net/http"
 
-	"context"
+	"github.com/golang/protobuf/ptypes/any"
+	"github.com/grpc-ecosystem/grpc-gateway/internal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/status"
 )
+
+// StreamErrorHandlerFunc accepts an error as a gRPC error generated via status package and translates it into a
+// a proto struct used to represent error at the end of a stream.
+type StreamErrorHandlerFunc func(context.Context, error) *StreamError
+
+// StreamError is the payload for the final message in a server stream in the event that the server returns an
+// error after a response message has already been sent.
+type StreamError internal.StreamError
 
 // ProtoErrorHandlerFunc handles the error as a gRPC error generated via status package and replies to the request.
 type ProtoErrorHandlerFunc func(context.Context, *ServeMux, Marshaler, http.ResponseWriter, *http.Request, error)
@@ -35,7 +45,7 @@ func DefaultHTTPProtoErrorHandler(ctx context.Context, mux *ServeMux, marshaler 
 
 	contentType := marshaler.ContentType()
 	// Check marshaler on run time in order to keep backwards compatability
-	// An interface param needs to be added to the ContentType() function on 
+	// An interface param needs to be added to the ContentType() function on
 	// the Marshal interface to be able to remove this check
 	if httpBodyMarshaler, ok := marshaler.(*HTTPBodyMarshaler); ok {
 		pb := s.Proto()
@@ -67,4 +77,30 @@ func DefaultHTTPProtoErrorHandler(ctx context.Context, mux *ServeMux, marshaler 
 	}
 
 	handleForwardResponseTrailer(w, md)
+}
+
+// DefaultHTTPStreamErrorHandler converts the given err into a *StreamError via
+// default logic.
+//
+// It extracts the gRPC status from err if possible. The fields of the status are
+// used to populate the returned StreamError, and the HTTP status code is derived
+// from the gRPC code via HTTPStatusFromCode. If the given err does not contain a
+// gRPC status, an "Unknown" gRPC code is used and "Internal Server Error" HTTP code.
+func DefaultHTTPStreamErrorHandler(_ context.Context, err error) *StreamError {
+	grpcCode := codes.Unknown
+	grpcMessage := err.Error()
+	var grpcDetails []*any.Any
+	if s, ok := status.FromError(err); ok {
+		grpcCode = s.Code()
+		grpcMessage = s.Message()
+		grpcDetails = s.Proto().GetDetails()
+	}
+	httpCode := HTTPStatusFromCode(grpcCode)
+	return &StreamError{
+		GrpcCode:   int32(grpcCode),
+		HttpCode:   int32(httpCode),
+		Message:    grpcMessage,
+		HttpStatus: http.StatusText(httpCode),
+		Details:    grpcDetails,
+	}
 }

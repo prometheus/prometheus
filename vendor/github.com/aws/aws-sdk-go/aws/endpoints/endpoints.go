@@ -35,7 +35,7 @@ type Options struct {
 	//
 	// If resolving an endpoint on the partition list the provided region will
 	// be used to determine which partition's domain name pattern to the service
-	// endpoint ID with. If both the service and region are unkonwn and resolving
+	// endpoint ID with. If both the service and region are unknown and resolving
 	// the endpoint on partition list an UnknownEndpointError error will be returned.
 	//
 	// If resolving and endpoint on a partition specific resolver that partition's
@@ -170,9 +170,12 @@ func PartitionForRegion(ps []Partition, regionID string) (Partition, bool) {
 // A Partition provides the ability to enumerate the partition's regions
 // and services.
 type Partition struct {
-	id string
-	p  *partition
+	id, dnsSuffix string
+	p             *partition
 }
+
+// DNSSuffix returns the base domain name of the partition.
+func (p Partition) DNSSuffix() string { return p.dnsSuffix }
 
 // ID returns the identifier of the partition.
 func (p Partition) ID() string { return p.id }

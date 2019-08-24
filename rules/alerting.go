@@ -290,7 +290,7 @@ func (r *AlertingRule) SetRestored(restored bool) {
 }
 
 // resolvedRetention is the duration for which a resolved alert instance
-// is kept in memory state and consequentally repeatedly sent to the AlertManager.
+// is kept in memory state and consequently repeatedly sent to the AlertManager.
 const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires

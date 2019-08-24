@@ -79,7 +79,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 	}
 
 	cases := []testcase{
-		testcase{
+		{
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -88,7 +88,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			serviceTags: []string{""},
 			shouldWatch: false,
 		},
-		testcase{
+		{
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -97,7 +97,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			serviceTags: []string{"http", "v1"},
 			shouldWatch: true,
 		},
-		testcase{
+		{
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -106,7 +106,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			serviceTags: []string{""},
 			shouldWatch: false,
 		},
-		testcase{
+		{
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -115,7 +115,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			serviceTags: []string{"http, v1"},
 			shouldWatch: false,
 		},
-		testcase{
+		{
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -124,7 +124,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			serviceTags: []string{"http", "v1", "foo"},
 			shouldWatch: true,
 		},
-		testcase{
+		{
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1", "foo"},
@@ -133,7 +133,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			serviceTags: []string{"http", "v1", "foo"},
 			shouldWatch: true,
 		},
-		testcase{
+		{
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -214,7 +214,7 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 			time.Sleep(5 * time.Second)
 			response = ServicesTestAnswer
 		default:
-			t.Errorf("Unhandeld consul call: %s", r.URL)
+			t.Errorf("Unhandled consul call: %s", r.URL)
 		}
 		w.Header().Add("X-Consul-Index", "1")
 		w.Write([]byte(response))

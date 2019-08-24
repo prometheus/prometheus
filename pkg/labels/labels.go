@@ -131,44 +131,46 @@ func (ls Labels) Hash() uint64 {
 }
 
 // HashForLabels returns a hash value for the labels matching the provided names.
-func (ls Labels) HashForLabels(names ...string) uint64 {
-	b := make([]byte, 0, 1024)
-
-	for _, v := range ls {
-		for _, n := range names {
-			if v.Name == n {
-				b = append(b, v.Name...)
-				b = append(b, sep)
-				b = append(b, v.Value...)
-				b = append(b, sep)
-				break
-			}
+// 'names' have to be sorted in ascending order.
+func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
+	b = b[:0]
+	i, j := 0, 0
+	for i < len(ls) && j < len(names) {
+		if names[j] < ls[i].Name {
+			j++
+		} else if ls[i].Name < names[j] {
+			i++
+		} else {
+			b = append(b, ls[i].Name...)
+			b = append(b, sep)
+			b = append(b, ls[i].Value...)
+			b = append(b, sep)
+			i++
+			j++
 		}
 	}
-	return xxhash.Sum64(b)
+	return xxhash.Sum64(b), b
 }
 
 // HashWithoutLabels returns a hash value for all labels except those matching
 // the provided names.
-func (ls Labels) HashWithoutLabels(names ...string) uint64 {
-	b := make([]byte, 0, 1024)
-
-Outer:
-	for _, v := range ls {
-		if v.Name == MetricName {
+// 'names' have to be sorted in ascending order.
+func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
+	b = b[:0]
+	j := 0
+	for i := range ls {
+		for j < len(names) && names[j] < ls[i].Name {
+			j++
+		}
+		if ls[i].Name == MetricName || (j < len(names) && ls[i].Name == names[j]) {
 			continue
 		}
-		for _, n := range names {
-			if v.Name == n {
-				continue Outer
-			}
-		}
-		b = append(b, v.Name...)
+		b = append(b, ls[i].Name...)
 		b = append(b, sep)
-		b = append(b, v.Value...)
+		b = append(b, ls[i].Value...)
 		b = append(b, sep)
 	}
-	return xxhash.Sum64(b)
+	return xxhash.Sum64(b), b
 }
 
 // Copy returns a copy of the labels.
@@ -283,20 +285,26 @@ type Builder struct {
 	add  []Label
 }
 
-// NewBuilder returns a new LabelsBuilder
+// NewBuilder returns a new LabelsBuilder.
 func NewBuilder(base Labels) *Builder {
-	return &Builder{
-		base: base,
-		del:  make([]string, 0, 5),
-		add:  make([]Label, 0, 5),
+	b := &Builder{
+		del: make([]string, 0, 5),
+		add: make([]Label, 0, 5),
 	}
+	b.Reset(base)
+	return b
 }
 
-// Reset clears all current state for the builder
+// Reset clears all current state for the builder.
 func (b *Builder) Reset(base Labels) {
 	b.base = base
 	b.del = b.del[:0]
 	b.add = b.add[:0]
+	for _, l := range b.base {
+		if l.Value == "" {
+			b.del = append(b.del, l.Name)
+		}
+	}
 }
 
 // Del deletes the label of the given name.
@@ -314,6 +322,10 @@ func (b *Builder) Del(ns ...string) *Builder {
 
 // Set the name/value pair as a label.
 func (b *Builder) Set(n, v string) *Builder {
+	if v == "" {
+		// Empty labels are the same as missing labels.
+		return b.Del(n)
+	}
 	for i, a := range b.add {
 		if a.Name == n {
 			b.add[i].Value = v

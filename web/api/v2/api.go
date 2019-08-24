@@ -24,11 +24,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/pkg/errors"
-	"github.com/prometheus/tsdb"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb"
+	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -65,7 +64,7 @@ func (api *API) RegisterGRPC(srv *grpc.Server) {
 
 // HTTPHandler returns an HTTP handler for a REST API gateway to the given grpc address.
 func (api *API) HTTPHandler(ctx context.Context, grpcAddr string) (http.Handler, error) {
-	enc := new(protoutil.JSONPb)
+	enc := new(runtime.JSONPb)
 	mux := runtime.NewServeMux(runtime.WithMarshalerOption(enc.ContentType(), enc))
 
 	opts := []grpc.DialOption{

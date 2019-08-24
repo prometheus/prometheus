@@ -22,9 +22,9 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var testExpr = []struct {
@@ -1763,8 +1763,8 @@ func TestParseSeries(t *testing.T) {
 			}
 		}
 
-		require.Equal(t, test.expectedMetric, metric)
-		require.Equal(t, test.expectedValues, vals)
+		testutil.Equals(t, test.expectedMetric, metric)
+		testutil.Equals(t, test.expectedValues, vals)
 
 		if !reflect.DeepEqual(vals, test.expectedValues) || !reflect.DeepEqual(metric, test.expectedMetric) {
 			t.Errorf("error in input: \n\n%s\n", test.input)

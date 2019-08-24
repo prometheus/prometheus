@@ -67,6 +67,10 @@ type Registry struct {
 	// If false, the default behavior is to concat the last 2 elements of the FQN if they are unique, otherwise concat
 	// all the elements of the FQN without any separator
 	useFQNForSwaggerName bool
+
+	// allowColonFinalSegments determines whether colons are permitted
+	// in the final segment of a path.
+	allowColonFinalSegments bool
 }
 
 type repeatedFieldSeparator struct {
@@ -420,6 +424,16 @@ func (r *Registry) GetUseJSONNamesForFields() bool {
 // SetUseFQNForSwaggerName sets useFQNForSwaggerName
 func (r *Registry) SetUseFQNForSwaggerName(use bool) {
 	r.useFQNForSwaggerName = use
+}
+
+// GetAllowColonFinalSegments returns allowColonFinalSegments
+func (r *Registry) GetAllowColonFinalSegments() bool {
+	return r.allowColonFinalSegments
+}
+
+// SetAllowColonFinalSegments sets allowColonFinalSegments
+func (r *Registry) SetAllowColonFinalSegments(use bool) {
+	r.allowColonFinalSegments = use
 }
 
 // GetUseFQNForSwaggerName returns useFQNForSwaggerName

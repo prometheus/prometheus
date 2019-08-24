@@ -18,8 +18,8 @@ package ocgrpc
 import (
 	"time"
 
+	"context"
 	"go.opencensus.io/tag"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/stats"
 )

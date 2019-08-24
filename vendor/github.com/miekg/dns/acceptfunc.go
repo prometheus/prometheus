@@ -19,9 +19,10 @@ var DefaultMsgAcceptFunc MsgAcceptFunc = defaultMsgAcceptFunc
 type MsgAcceptAction int
 
 const (
-	MsgAccept MsgAcceptAction = iota // Accept the message
-	MsgReject                        // Reject the message with a RcodeFormatError
-	MsgIgnore                        // Ignore the error and send nothing back.
+	MsgAccept         MsgAcceptAction = iota // Accept the message
+	MsgReject                                // Reject the message with a RcodeFormatError
+	MsgIgnore                                // Ignore the error and send nothing back.
+	MsgRejectNotImplemented                        // Reject the message with a RcodeNotImplemented
 )
 
 func defaultMsgAcceptFunc(dh Header) MsgAcceptAction {
@@ -32,12 +33,9 @@ func defaultMsgAcceptFunc(dh Header) MsgAcceptAction {
 	// Don't allow dynamic updates, because then the sections can contain a whole bunch of RRs.
 	opcode := int(dh.Bits>>11) & 0xF
 	if opcode != OpcodeQuery && opcode != OpcodeNotify {
-		return MsgReject
+		return MsgRejectNotImplemented
 	}
 
-	if isZero := dh.Bits&_Z != 0; isZero {
-		return MsgReject
-	}
 	if dh.Qdcount != 1 {
 		return MsgReject
 	}

@@ -23,6 +23,7 @@
 package testutil
 
 import (
+	"fmt"
 	"reflect"
 )
 
@@ -51,10 +52,11 @@ func Ok(tb TB, err error) {
 }
 
 // NotOk fails the test if an err is nil.
-func NotOk(tb TB, err error, format string, a ...interface{}) {
+func NotOk(tb TB, err error, a ...interface{}) {
 	tb.Helper()
 	if err == nil {
 		if len(a) != 0 {
+			format := a[0].(string)
 			tb.Fatalf("\033[31m"+format+": expected error, got none\033[39m", a...)
 		}
 		tb.Fatalf("\033[31mexpected error, got none\033[39m")
@@ -62,9 +64,20 @@ func NotOk(tb TB, err error, format string, a ...interface{}) {
 }
 
 // Equals fails the test if exp is not equal to act.
-func Equals(tb TB, exp, act interface{}) {
+func Equals(tb TB, exp, act interface{}, msgAndArgs ...interface{}) {
 	tb.Helper()
 	if !reflect.DeepEqual(exp, act) {
-		tb.Fatalf("\033[31m\nexp: %#v\n\ngot: %#v\033[39m\n", exp, act)
+		tb.Fatalf("\033[31m%s\n\nexp: %#v\n\ngot: %#v%s\033[39m\n", formatMessage(msgAndArgs), exp, act)
 	}
+}
+
+func formatMessage(msgAndArgs []interface{}) string {
+	if len(msgAndArgs) == 0 {
+		return ""
+	}
+
+	if msg, ok := msgAndArgs[0].(string); ok {
+		return fmt.Sprintf("\n\nmsg: "+msg, msgAndArgs[1:]...)
+	}
+	return ""
 }

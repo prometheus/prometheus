@@ -32,7 +32,6 @@ import (
 	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -42,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -85,7 +85,7 @@ func TestDroppedTargetsList(t *testing.T) {
 			},
 		}
 		sp, _                  = newScrapePool(cfg, app, 0, nil)
-		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __metrics_path__=\"\", __scheme__=\"\", job=\"dropMe\"}"
+		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
 	sp.Sync(tgs)
@@ -663,7 +663,7 @@ test_metric 1
 
 func TestScrapeLoopSeriesAdded(t *testing.T) {
 	// Need a full storage for correct Add/AddFast semantics.
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	app, err := s.Appender()
@@ -818,7 +818,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 }
 
 func TestScrapeLoopCache(t *testing.T) {
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	sapp, err := s.Appender()
@@ -897,7 +897,7 @@ func TestScrapeLoopCache(t *testing.T) {
 }
 
 func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	sapp, err := s.Appender()
@@ -1106,7 +1106,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	// This is a regression test for the scrape loop cache not properly maintaining
 	// IDs when the string representation of a metric changes across a scrape. Thus
 	// we use a real storage appender here.
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	app, err := s.Appender()
@@ -1427,8 +1427,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected scrape error: %s", err)
 	}
-	require.Equal(t, "text/plain; version=0.0.4", contentType)
-	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+	testutil.Equals(t, "text/plain; version=0.0.4", contentType)
+	testutil.Equals(t, "metric_a 1\nmetric_b 2\n", buf.String())
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
@@ -1546,7 +1546,7 @@ func (ts *testScraper) scrape(ctx context.Context, w io.Writer) (string, error) 
 }
 
 func TestScrapeLoop_RespectTimestamps(t *testing.T) {
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	app, err := s.Appender()
@@ -1583,7 +1583,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 }
 
 func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
-	s := testutil.NewStorage(t)
+	s := teststorage.New(t)
 	defer s.Close()
 
 	app, err := s.Appender()

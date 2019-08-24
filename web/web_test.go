@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/prometheus/prometheus/config"
@@ -33,8 +34,8 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage/tsdb"
+	libtsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
-	libtsdb "github.com/prometheus/tsdb"
 )
 
 func TestMain(m *testing.M) {
@@ -119,7 +120,8 @@ func TestReadyAndHealthy(t *testing.T) {
 			Host:   "localhost:9090",
 			Path:   "/",
 		},
-		Version: &PrometheusVersion{},
+		Version:  &PrometheusVersion{},
+		Gatherer: prometheus.DefaultGatherer,
 	}
 
 	opts.Flags = map[string]string{}
@@ -423,13 +425,14 @@ func TestHTTPMetrics(t *testing.T) {
 
 	code := getReady()
 	testutil.Equals(t, http.StatusServiceUnavailable, code)
-	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(requestCounter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
+	counter := handler.metrics.requestCounter
+	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 
 	handler.Ready()
 	for range [2]int{} {
 		code = getReady()
 		testutil.Equals(t, http.StatusOK, code)
 	}
-	testutil.Equals(t, 2, int(prom_testutil.ToFloat64(requestCounter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
-	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(requestCounter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
+	testutil.Equals(t, 2, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
+	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 }

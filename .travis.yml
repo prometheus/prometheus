@@ -12,6 +12,7 @@ go_import_path: github.com/prometheus/prometheus
 # random issues on Travis.
 before_install:
 - travis_retry make deps
+- if [[ "$TRAVIS_OS_NAME" == "windows" ]]; then choco install make; fi
 
 script:
 - make check_license style unused test lint check_assets

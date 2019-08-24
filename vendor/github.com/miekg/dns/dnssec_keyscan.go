@@ -3,7 +3,6 @@ package dns
 import (
 	"bufio"
 	"crypto"
-	"crypto/dsa"
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"io"
@@ -44,19 +43,8 @@ func (k *DNSKEY) ReadPrivateKey(q io.Reader, file string) (crypto.PrivateKey, er
 		return nil, ErrPrivKey
 	}
 	switch uint8(algo) {
-	case DSA:
-		priv, err := readPrivateKeyDSA(m)
-		if err != nil {
-			return nil, err
-		}
-		pub := k.publicKeyDSA()
-		if pub == nil {
-			return nil, ErrKey
-		}
-		priv.PublicKey = *pub
-		return priv, nil
-	case RSAMD5:
-		fallthrough
+	case RSAMD5, DSA, DSANSEC3SHA1:
+		return nil, ErrAlg
 	case RSASHA1:
 		fallthrough
 	case RSASHA1NSEC3SHA1:
@@ -124,24 +112,6 @@ func readPrivateKeyRSA(m map[string]string) (*rsa.PrivateKey, error) {
 			// not used in Go (yet)
 		case "created", "publish", "activate":
 			// not used in Go (yet)
-		}
-	}
-	return p, nil
-}
-
-func readPrivateKeyDSA(m map[string]string) (*dsa.PrivateKey, error) {
-	p := new(dsa.PrivateKey)
-	p.X = new(big.Int)
-	for k, v := range m {
-		switch k {
-		case "private_value(x)":
-			v1, err := fromBase64([]byte(v))
-			if err != nil {
-				return nil, err
-			}
-			p.X.SetBytes(v1)
-		case "created", "publish", "activate":
-			/* not used in Go (yet) */
 		}
 	}
 	return p, nil

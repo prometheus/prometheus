@@ -30,16 +30,15 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/stretchr/testify/require"
 
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/tsdb"
+	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/util/testutil"
-	"github.com/prometheus/tsdb"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -47,7 +46,7 @@ const defaultFlushDeadline = 1 * time.Minute
 func TestSampleDelivery(t *testing.T) {
 	// Let's create an even number of send batches so we don't run into the
 	// batch timeout case.
-	n := config.DefaultQueueConfig.Capacity * 2
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
 	samples, series := createTimeseries(n)
 
 	c := NewTestStorageClient()
@@ -220,7 +219,7 @@ func TestReshard(t *testing.T) {
 	go func() {
 		for i := 0; i < len(samples); i += config.DefaultQueueConfig.Capacity {
 			sent := m.Append(samples[i : i+config.DefaultQueueConfig.Capacity])
-			require.True(t, sent)
+			testutil.Assert(t, sent, "samples not sent")
 			time.Sleep(100 * time.Millisecond)
 		}
 	}()
@@ -260,22 +259,12 @@ func TestReshardRaceWithStop(t *testing.T) {
 
 func TestReleaseNoninternedString(t *testing.T) {
 	c := NewTestStorageClient()
-	var m *QueueManager
-	h := sync.Mutex{}
-
-	h.Lock()
-
-	m = NewQueueManager(nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
+	m := NewQueueManager(nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
 	m.Start()
-	go func() {
-		for {
-			m.SeriesReset(1)
-		}
-	}()
 
 	for i := 1; i < 1000; i++ {
 		m.StoreSeries([]tsdb.RefSeries{
-			tsdb.RefSeries{
+			{
 				Ref: uint64(i),
 				Labels: tsdbLabels.Labels{
 					tsdbLabels.Label{
@@ -285,6 +274,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 				},
 			},
 		}, 0)
+		m.SeriesReset(1)
 	}
 
 	metric := client_testutil.ToFloat64(noReferenceReleases)
@@ -323,6 +313,7 @@ type TestStorageClient struct {
 	expectedSamples map[string][]prompb.Sample
 	wg              sync.WaitGroup
 	mtx             sync.Mutex
+	buf             []byte
 }
 
 func NewTestStorageClient() *TestStorageClient {
@@ -349,21 +340,36 @@ func (c *TestStorageClient) expectSamples(ss []tsdb.RefSample, series []tsdb.Ref
 	c.wg.Add(len(ss))
 }
 
-func (c *TestStorageClient) waitForExpectedSamples(t *testing.T) {
+func (c *TestStorageClient) waitForExpectedSamples(tb testing.TB) {
 	c.wg.Wait()
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	for ts, expectedSamples := range c.expectedSamples {
 		if !reflect.DeepEqual(expectedSamples, c.receivedSamples[ts]) {
-			t.Fatalf("%s: Expected %v, got %v", ts, expectedSamples, c.receivedSamples[ts])
+			tb.Fatalf("%s: Expected %v, got %v", ts, expectedSamples, c.receivedSamples[ts])
 		}
 	}
+}
+
+func (c *TestStorageClient) expectSampleCount(ss []tsdb.RefSample) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	c.wg.Add(len(ss))
+}
+
+func (c *TestStorageClient) waitForExpectedSampleCount() {
+	c.wg.Wait()
 }
 
 func (c *TestStorageClient) Store(_ context.Context, req []byte) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
-	reqBuf, err := snappy.Decode(nil, req)
+	// nil buffers are ok for snappy, ignore cast error.
+	if c.buf != nil {
+		c.buf = c.buf[:cap(c.buf)]
+	}
+	reqBuf, err := snappy.Decode(c.buf, req)
+	c.buf = reqBuf
 	if err != nil {
 		return err
 	}
@@ -419,6 +425,39 @@ func (c *TestBlockingStorageClient) NumCalls() uint64 {
 
 func (c *TestBlockingStorageClient) Name() string {
 	return "testblockingstorageclient"
+}
+
+func BenchmarkSampleDelivery(b *testing.B) {
+	// Let's create an even number of send batches so we don't run into the
+	// batch timeout case.
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * 10
+	samples, series := createTimeseries(n)
+
+	c := NewTestStorageClient()
+
+	cfg := config.DefaultQueueConfig
+	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+	cfg.MaxShards = 1
+
+	dir, err := ioutil.TempDir("", "BenchmarkSampleDelivery")
+	testutil.Ok(b, err)
+	defer os.RemoveAll(dir)
+
+	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
+	m.StoreSeries(series, 0)
+
+	// These should be received by the client.
+	m.Start()
+	defer m.Stop()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.expectSampleCount(samples)
+		m.Append(samples)
+		c.waitForExpectedSampleCount()
+	}
+	// Do not include shutdown
+	b.StopTimer()
 }
 
 func BenchmarkStartup(b *testing.B) {
@@ -482,6 +521,6 @@ func TestProcessExternalLabels(t *testing.T) {
 			expected:       labels.Labels{{Name: "a", Value: "b"}},
 		},
 	} {
-		require.Equal(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
+		testutil.Equals(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
 	}
 }

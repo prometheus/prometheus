@@ -177,8 +177,10 @@ type clientGoRequestMetricAdapter struct{}
 
 func (f *clientGoRequestMetricAdapter) Register(registerer prometheus.Registerer) {
 	metrics.Register(f, f)
-	registerer.MustRegister(clientGoRequestResultMetricVec)
-	registerer.MustRegister(clientGoRequestLatencyMetricVec)
+	registerer.MustRegister(
+		clientGoRequestResultMetricVec,
+		clientGoRequestLatencyMetricVec,
+	)
 }
 func (clientGoRequestMetricAdapter) Increment(code string, method string, host string) {
 	clientGoRequestResultMetricVec.WithLabelValues(code).Inc()
@@ -192,15 +194,16 @@ type clientGoCacheMetricsProvider struct{}
 
 func (f *clientGoCacheMetricsProvider) Register(registerer prometheus.Registerer) {
 	cache.SetReflectorMetricsProvider(f)
-	registerer.MustRegister(clientGoCacheWatchesDurationMetric)
-	registerer.MustRegister(clientGoCacheWatchesCountMetric)
-	registerer.MustRegister(clientGoCacheListDurationMetric)
-	registerer.MustRegister(clientGoCacheListTotalMetric)
-	registerer.MustRegister(clientGoCacheLastResourceVersionMetric)
-	registerer.MustRegister(clientGoCacheShortWatchesCountMetric)
-	registerer.MustRegister(clientGoCacheItemsInWatchesCountMetric)
-	registerer.MustRegister(clientGoCacheItemsInListCountMetric)
-
+	registerer.MustRegister(
+		clientGoCacheWatchesDurationMetric,
+		clientGoCacheWatchesCountMetric,
+		clientGoCacheListDurationMetric,
+		clientGoCacheListTotalMetric,
+		clientGoCacheLastResourceVersionMetric,
+		clientGoCacheShortWatchesCountMetric,
+		clientGoCacheItemsInWatchesCountMetric,
+		clientGoCacheItemsInListCountMetric,
+	)
 }
 func (clientGoCacheMetricsProvider) NewListsMetric(name string) cache.CounterMetric {
 	return clientGoCacheListTotalMetric
@@ -232,12 +235,14 @@ type clientGoWorkqueueMetricsProvider struct{}
 
 func (f *clientGoWorkqueueMetricsProvider) Register(registerer prometheus.Registerer) {
 	workqueue.SetProvider(f)
-	registerer.MustRegister(clientGoWorkqueueDepthMetricVec)
-	registerer.MustRegister(clientGoWorkqueueAddsMetricVec)
-	registerer.MustRegister(clientGoWorkqueueLatencyMetricVec)
-	registerer.MustRegister(clientGoWorkqueueWorkDurationMetricVec)
-	registerer.MustRegister(clientGoWorkqueueUnfinishedWorkSecondsMetricVec)
-	registerer.MustRegister(clientGoWorkqueueLongestRunningProcessorMetricVec)
+	registerer.MustRegister(
+		clientGoWorkqueueDepthMetricVec,
+		clientGoWorkqueueAddsMetricVec,
+		clientGoWorkqueueLatencyMetricVec,
+		clientGoWorkqueueWorkDurationMetricVec,
+		clientGoWorkqueueUnfinishedWorkSecondsMetricVec,
+		clientGoWorkqueueLongestRunningProcessorMetricVec,
+	)
 }
 
 func (f *clientGoWorkqueueMetricsProvider) NewDepthMetric(name string) workqueue.GaugeMetric {

@@ -584,9 +584,9 @@ func (p *plugin) Generate(file *generator.FileDescriptor) {
 						p.GenerateField(file, message, field)
 					} else {
 						if loopLevels[fieldIndex] > 0 {
-							p.P(`if r.Intn(10) == 0 {`)
+							p.P(`if r.Intn(5) == 0 {`)
 						} else {
-							p.P(`if r.Intn(10) != 0 {`)
+							p.P(`if r.Intn(5) != 0 {`)
 						}
 						p.In()
 						p.GenerateField(file, message, field)

@@ -196,9 +196,11 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 
 // nodeAddresses returns the provided node's address, based on the priority:
 // 1. NodeInternalIP
-// 2. NodeExternalIP
-// 3. NodeLegacyHostIP
-// 3. NodeHostName
+// 2. NodeInternalDNS
+// 3. NodeExternalIP
+// 4. NodeExternalDNS
+// 5. NodeLegacyHostIP
+// 6. NodeHostName
 //
 // Derived from k8s.io/kubernetes/pkg/util/node/node.go
 func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, error) {
@@ -210,7 +212,13 @@ func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, 
 	if addresses, ok := m[apiv1.NodeInternalIP]; ok {
 		return addresses[0], m, nil
 	}
+	if addresses, ok := m[apiv1.NodeInternalDNS]; ok {
+		return addresses[0], m, nil
+	}
 	if addresses, ok := m[apiv1.NodeExternalIP]; ok {
+		return addresses[0], m, nil
+	}
+	if addresses, ok := m[apiv1.NodeExternalDNS]; ok {
 		return addresses[0], m, nil
 	}
 	if addresses, ok := m[apiv1.NodeAddressType(NodeLegacyHostIP)]; ok {

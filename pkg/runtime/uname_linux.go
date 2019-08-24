@@ -14,22 +14,24 @@
 package runtime
 
 import (
-	"syscall"
+	"bytes"
+
+	"golang.org/x/sys/unix"
 )
 
 // Uname returns the uname of the host machine.
 func Uname() string {
-	buf := syscall.Utsname{}
-	err := syscall.Uname(&buf)
+	buf := unix.Utsname{}
+	err := unix.Uname(&buf)
 	if err != nil {
-		panic("syscall.Uname failed: " + err.Error())
+		panic("unix.Uname failed: " + err.Error())
 	}
 
-	str := "(" + charsToString(buf.Sysname[:])
-	str += " " + charsToString(buf.Release[:])
-	str += " " + charsToString(buf.Version[:])
-	str += " " + charsToString(buf.Machine[:])
-	str += " " + charsToString(buf.Nodename[:])
-	str += " " + charsToString(buf.Domainname[:]) + ")"
+	str := "(" + string(buf.Sysname[:bytes.IndexByte(buf.Sysname[:], 0)])
+	str += " " + string(buf.Release[:bytes.IndexByte(buf.Release[:], 0)])
+	str += " " + string(buf.Version[:bytes.IndexByte(buf.Version[:], 0)])
+	str += " " + string(buf.Machine[:bytes.IndexByte(buf.Machine[:], 0)])
+	str += " " + string(buf.Nodename[:bytes.IndexByte(buf.Nodename[:], 0)])
+	str += " " + string(buf.Domainname[:bytes.IndexByte(buf.Domainname[:], 0)]) + ")"
 	return str
 }

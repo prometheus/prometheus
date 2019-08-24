@@ -120,6 +120,14 @@ func (bp *pickerWrapper) pick(ctx context.Context, failfast bool, opts balancer.
 			bp.mu.Unlock()
 			select {
 			case <-ctx.Done():
+				if connectionErr := bp.connectionError(); connectionErr != nil {
+					switch ctx.Err() {
+					case context.DeadlineExceeded:
+						return nil, nil, status.Errorf(codes.DeadlineExceeded, "latest connection error: %v", connectionErr)
+					case context.Canceled:
+						return nil, nil, status.Errorf(codes.Canceled, "latest connection error: %v", connectionErr)
+					}
+				}
 				return nil, nil, ctx.Err()
 			case <-ch:
 			}
@@ -164,6 +172,11 @@ func (bp *pickerWrapper) pick(ctx context.Context, failfast bool, opts balancer.
 				return t, doneChannelzWrapper(acw, done), nil
 			}
 			return t, done, nil
+		}
+		if done != nil {
+			// Calling done with nil error, no bytes sent and no bytes received.
+			// DoneInfo with default value works.
+			done(balancer.DoneInfo{})
 		}
 		grpclog.Infof("blockingPicker: the picked transport is not ready, loop back to repick")
 		// If ok == false, ac.state is not READY.

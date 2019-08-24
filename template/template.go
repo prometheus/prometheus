@@ -219,7 +219,7 @@ func NewTemplateExpander(
 					seconds := int64(v) % 60
 					minutes := (int64(v) / 60) % 60
 					hours := (int64(v) / 60 / 60) % 24
-					days := (int64(v) / 60 / 60 / 24)
+					days := int64(v) / 60 / 60 / 24
 					// For days to minutes, we display seconds as an integer.
 					if days != 0 {
 						return fmt.Sprintf("%s%dd %dh %dm %ds", sign, days, hours, minutes, seconds)
@@ -230,7 +230,7 @@ func NewTemplateExpander(
 					if minutes != 0 {
 						return fmt.Sprintf("%s%dm %ds", sign, minutes, seconds)
 					}
-					// For seconds, we display 4 significant digts.
+					// For seconds, we display 4 significant digits.
 					return fmt.Sprintf("%s%.4gs", sign, v)
 				}
 				prefix := ""
