@@ -15,14 +15,15 @@ package promql
 
 import (
 	"encoding/json"
-	"github.com/edsrzf/mmap-go"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/edsrzf/mmap-go"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 )
 
 type ActiveQueryTracker struct {
@@ -130,7 +131,7 @@ func trimStringByBytes(str string, size int) string {
 	trimIndex := len(bytesStr)
 	if size < len(bytesStr) {
 		for !utf8.RuneStart(bytesStr[size]) {
-			size -= 1
+			size--
 		}
 		trimIndex = size
 	}
