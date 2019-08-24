@@ -15,14 +15,15 @@ package promql
 
 import (
 	"encoding/json"
-	"github.com/edsrzf/mmap-go"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/edsrzf/mmap-go"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 )
 
 type ActiveQueryTracker struct {
@@ -75,27 +76,27 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 	}
 }
 
-func getMMapedFile(filename string, filesize int, logger log.Logger) (error, []byte) {
+func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, error) {
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 	if err != nil {
 		level.Error(logger).Log("msg", "Error opening query log file", "file", filename, "err", err)
-		return err, []byte{}
+		return nil, err
 	}
 
 	err = file.Truncate(int64(filesize))
 	if err != nil {
 		level.Error(logger).Log("msg", "Error setting filesize.", "filesize", filesize, "err", err)
-		return err, []byte{}
+		return nil, err
 	}
 
 	fileAsBytes, err := mmap.Map(file, mmap.RDWR, 0)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to mmap", "file", filename, "Attempted size", filesize, "err", err)
-		return err, []byte{}
+		return nil, err
 	}
 
-	return err, fileAsBytes
+	return fileAsBytes, err
 }
 
 func NewActiveQueryTracker(localStoragePath string, maxQueries int, logger log.Logger) *ActiveQueryTracker {
@@ -107,7 +108,7 @@ func NewActiveQueryTracker(localStoragePath string, maxQueries int, logger log.L
 	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxQueries*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
 
-	err, fileAsBytes := getMMapedFile(filename, filesize, logger)
+	fileAsBytes, err := getMMapedFile(filename, filesize, logger)
 	if err != nil {
 		panic("Unable to create mmap-ed active query log")
 	}
