@@ -34,7 +34,7 @@ var (
 	repeatedPathParamSeparator = flag.String("repeated_path_param_separator", "csv", "configures how repeated fields should be split. Allowed values are `csv`, `pipes`, `ssv` and `tsv`.")
 	allowPatchFeature          = flag.Bool("allow_patch_feature", true, "determines whether to use PATCH feature involving update masks (using google.protobuf.FieldMask).")
 	allowColonFinalSegments    = flag.Bool("allow_colon_final_segments", false, "determines whether colons are permitted in the final segment of a path")
-	versionFlag                = flag.Bool("version", false, "print the current verison")
+	versionFlag                = flag.Bool("version", false, "print the current version")
 )
 
 // Variables set by goreleaser at build time

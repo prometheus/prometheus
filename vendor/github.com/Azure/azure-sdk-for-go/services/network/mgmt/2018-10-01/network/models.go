@@ -7404,7 +7404,7 @@ func (cni *ContainerNetworkInterface) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
-// ContainerNetworkInterfaceConfiguration container network interface configruation child resource.
+// ContainerNetworkInterfaceConfiguration container network interface configurations child resource.
 type ContainerNetworkInterfaceConfiguration struct {
 	// ContainerNetworkInterfaceConfigurationPropertiesFormat - Container network interface configuration properties.
 	*ContainerNetworkInterfaceConfigurationPropertiesFormat `json:"properties,omitempty"`
@@ -14337,9 +14337,9 @@ func (icp *IPConfigurationProfile) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
-// IPConfigurationProfilePropertiesFormat IP configruation profile properties.
+// IPConfigurationProfilePropertiesFormat IP configurations profile properties.
 type IPConfigurationProfilePropertiesFormat struct {
-	// Subnet - The reference of the subnet resource to create a contatainer network interface ip configruation.
+	// Subnet - The reference of the subnet resource to create a contatainer network interface ip configurations.
 	Subnet *Subnet `json:"subnet,omitempty"`
 	// ProvisioningState - The provisioning state of the resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`

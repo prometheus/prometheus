@@ -5619,7 +5619,7 @@ func (c *EC2) CreateSnapshotsRequest(input *CreateSnapshotsInput) (req *request.
 // Creates crash-consistent snapshots of multiple EBS volumes and stores the
 // data in S3. Volumes are chosen by specifying an instance. Any attached volumes
 // will produce one snapshot each that is crash-consistent across the instance.
-// Boot volumes can be excluded by changing the paramaters.
+// Boot volumes can be excluded by changing the parameters.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about

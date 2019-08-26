@@ -238,7 +238,7 @@ func (p Pager) AllPages() (Page, error) {
 	page := reflect.New(pageType)
 	// Set the page body to be the concatenated pages.
 	page.Elem().FieldByName("Body").Set(body)
-	// Set any additional headers that were pass along. The `objectstorage` pacakge,
+	// Set any additional headers that were pass along. The `objectstorage` package,
 	// for example, passes a Content-Type header.
 	h := make(http.Header)
 	for k, v := range p.Headers {
