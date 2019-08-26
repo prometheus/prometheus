@@ -1,0 +1,19 @@
+on: issue_comment
+name: Benchmark
+jobs:
+  commentMonitor:
+    runs-on: ubuntu-latest
+    steps:
+    - name: commentMonitor
+      uses: docker://prombench/comment-monitor:latest
+      env:
+        COMMENT_TEMPLATE: 'The benchmark has started. We are comparing this PR agains
+          branch {{ index . "BRANCH" }}. You can run the same tests with command: `go
+          test -bench {{ index . "REGEX" }} -benchmem -race -v ./...` [Github Actions logs](https://github.com/{{ index . "GITHUB_REPOSITORY" }}/commit/{{ index . "GITHUB_SHA" }}/checks)'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        args: '"^/funcbench ?(?P<BRANCH>[^ B\.]+)? ?(?P<REGEX>\.|Bench.*|[^ ]+)? ?(?P<RACE>-no-race)?.*$" --no-verify-user'
+    - name: benchmark
+      uses: docker://prombench/funcbench:latest
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
