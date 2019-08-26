@@ -35,7 +35,7 @@ const (
 	ecsLabelUserId      = ecsLabel + "user_id"
 	ecsLabelTag         = ecsLabel + "tag_"
 
-	MAX_PAGE_LIMIT = 100 						// it's limited by ecs describeInstances API
+	MAX_PAGE_LIMIT = 100 // it's limited by ecs describeInstances API
 )
 
 // SDConfig is the configuration for Azure based service discovery.
@@ -44,6 +44,7 @@ type SDConfig struct {
 	UserId          string         `yaml:"user_id,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	RegionId        string         `yaml:"region_id,omitempty"` // env set PROMETHEUS_DS_ECS_REGION_ID
+	TagFilters         []*TagFilter      `yaml:"tag_filters"`
 
 	// Alibaba ECS Auth Args
 	// https://github.com/aliyun/alibaba-cloud-sdk-go/blob/master/docs/2-Client-EN.md
@@ -60,6 +61,12 @@ type SDConfig struct {
 
 	// query ecs limit, default is 100.
 	Limit int `yaml:"limit,omitempty"`
+}
+
+// Filter is the configuration tags for filtering ECS instances.
+type TagFilter struct {
+	Key   string `yaml:"key"`
+	Value string `yaml:"value"`
 }
 
 type Discovery struct {
@@ -96,6 +103,14 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
 	describeInstancesRequest.RegionId = "cn-hangzhou"
+
+	// tag filters
+	var tagsFilters []ecs_pop.DescribeInstancesTag
+	for _, tagFilter := range d.ecsCfg.TagFilters {
+		tag := ecs_pop.DescribeInstancesTag{Key: tagFilter.Key, Value: tagFilter.Value}
+		tagsFilters = append(tagsFilters, tag)
+	}
+	describeInstancesRequest.Tag = &tagsFilters
 
 	// 分页查询
 	var pageLimit = MAX_PAGE_LIMIT
