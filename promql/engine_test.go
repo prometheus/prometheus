@@ -176,6 +176,7 @@ func (q *errQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.
 func (*errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) { return nil, nil, nil }
 func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)             { return nil, nil, nil }
 func (*errQuerier) Close() error                                                { return nil }
+func (*errQuerier) FailOnError() bool                                           { return true }
 
 // errSeriesSet implements storage.SeriesSet which always returns error.
 type errSeriesSet struct {
@@ -247,6 +248,7 @@ func (*paramCheckerQuerier) LabelValues(name string) ([]string, storage.Warnings
 }
 func (*paramCheckerQuerier) LabelNames() ([]string, storage.Warnings, error) { return nil, nil, nil }
 func (*paramCheckerQuerier) Close() error                                    { return nil }
+func (*paramCheckerQuerier) FailOnError() bool                               { return true }
 
 func TestParamsSetCorrectly(t *testing.T) {
 	opts := EngineOpts{

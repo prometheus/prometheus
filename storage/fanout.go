@@ -240,7 +240,7 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 		if err != nil {
 			q.failedQueriers[querier] = struct{}{}
 			// If the error source isn't the primary querier, return the error as a warning and continue.
-			if querier != q.primaryQuerier {
+			if !querier.FailOnError() {
 				warnings = append(warnings, err)
 				continue
 			} else {
@@ -250,6 +250,10 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 		seriesSets = append(seriesSets, set)
 	}
 	return NewMergeSeriesSet(seriesSets, q), warnings, nil
+}
+
+func (q *mergeQuerier) FailOnError() bool {
+	return true
 }
 
 // LabelValues returns all potential values for a label name.
@@ -265,7 +269,7 @@ func (q *mergeQuerier) LabelValues(name string) ([]string, Warnings, error) {
 		if err != nil {
 			q.failedQueriers[querier] = struct{}{}
 			// If the error source isn't the primary querier, return the error as a warning and continue.
-			if querier != q.primaryQuerier {
+			if !querier.FailOnError() {
 				warnings = append(warnings, err)
 				continue
 			} else {
@@ -333,7 +337,7 @@ func (q *mergeQuerier) LabelNames() ([]string, Warnings, error) {
 
 		if err != nil {
 			// If the error source isn't the primary querier, return the error as a warning and continue.
-			if b != q.primaryQuerier {
+			if !b.FailOnError() {
 				warnings = append(warnings, err)
 				continue
 			} else {

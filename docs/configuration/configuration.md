@@ -1356,6 +1356,11 @@ basic_auth:
 tls_config:
   [ <tls_config> ]
 
+# By default any query errors that occur that aren't from the primary data source (the local tsdb)
+# are returned as a list of warnings and the query continues. If `fail_on_error` is set to `true`
+# for remote reader we will stop query and return error instead query continue.
+[ fail_on_error: <boolean> | default = false ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
 ```

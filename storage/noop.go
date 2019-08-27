@@ -30,6 +30,10 @@ func (noopQuerier) Select(*SelectParams, ...*labels.Matcher) (SeriesSet, Warning
 	return NoopSeriesSet(), nil, nil
 }
 
+func (noopQuerier) FailOnError() bool {
+	return false
+}
+
 func (noopQuerier) LabelValues(name string) ([]string, Warnings, error) {
 	return nil, nil, nil
 }

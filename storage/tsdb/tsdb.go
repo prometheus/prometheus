@@ -244,6 +244,10 @@ type querier struct {
 	q tsdb.Querier
 }
 
+func (q querier) FailOnError() bool {
+	return true
+}
+
 func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	ms := make([]tsdbLabels.Matcher, 0, len(oms))
 

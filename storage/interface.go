@@ -60,6 +60,8 @@ type Querier interface {
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	LabelNames() ([]string, Warnings, error)
 
+	FailOnError() bool
+
 	// Close releases the resources of the Querier.
 	Close() error
 }

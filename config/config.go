@@ -642,6 +642,7 @@ type RemoteReadConfig struct {
 	URL           *config_util.URL `yaml:"url"`
 	RemoteTimeout model.Duration   `yaml:"remote_timeout,omitempty"`
 	ReadRecent    bool             `yaml:"read_recent,omitempty"`
+	FailOnError   bool             `yaml:"fail_on_error,omitempty"`
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`

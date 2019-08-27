@@ -72,6 +72,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		c, err := NewClient(i, &ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
+			FailOnError:      rrConf.FailOnError,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
 		})
 		if err != nil {

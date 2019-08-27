@@ -56,6 +56,10 @@ type querier struct {
 	client     *Client
 }
 
+func (q *querier) FailOnError() bool {
+	return q.client.failOnError
+}
+
 // Select implements storage.Querier and uses the given matchers to read series
 // sets from the Client.
 func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
