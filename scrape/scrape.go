@@ -892,7 +892,7 @@ mainLoop:
 
 		var (
 			start             = time.Now()
-			scrapeCtx, cancel = context.WithTimeout(sl.parentCtx, timeout)
+			scrapeCtx, cancel = context.WithTimeout(sl.ctx, timeout)
 		)
 
 		// Only record after the first scrape.
