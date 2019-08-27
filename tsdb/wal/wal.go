@@ -402,7 +402,7 @@ func (w *WAL) Repair(origErr error) error {
 		return errors.Wrap(err, "delete corrupted segment")
 	}
 
-	// Explicitly close the the segment we just repaired to avoid issues with Windows.
+	// Explicitly close the segment we just repaired to avoid issues with Windows.
 	s.Close()
 
 	// We always want to start writing to a new Segment rather than an existing
