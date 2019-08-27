@@ -567,7 +567,7 @@ func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
 func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) models.LabelSet {
 	apiLabelSet := models.LabelSet{}
 	for _, label := range modelLabelSet {
-		apiLabelSet[label.Name] = string(label.Value)
+		apiLabelSet[label.Name] = label.Value
 	}
 
 	return apiLabelSet
