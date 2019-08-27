@@ -1297,7 +1297,7 @@ queue_config:
   # Number of samples to buffer per shard before we block reading of more
   # samples from the WAL. It is recommended to have enough capacity in each
   # shard to buffer several requests to keep throughput up while processing
-  # occassional slow remote requests.
+  # occasional slow remote requests.
   [ capacity: <int> | default = 500 ]
   # Maximum number of shards, i.e. amount of concurrency.
   [ max_shards: <int> | default = 1000 ]
