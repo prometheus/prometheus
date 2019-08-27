@@ -1046,7 +1046,7 @@ func (h *Head) gc() {
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	// Using AddUint64 to substract series removed.
+	// Using AddUint64 to subtract series removed.
 	// See: https://golang.org/pkg/sync/atomic/#AddUint64.
 	atomic.AddUint64(&h.numSeries, ^uint64(seriesRemoved-1))
 
