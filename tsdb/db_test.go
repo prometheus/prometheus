@@ -1112,7 +1112,7 @@ func TestSizeRetention(t *testing.T) {
 	// Test that registered size matches the actual disk size.
 	testutil.Ok(t, db.reload())                                       // Reload the db to register the new db size.
 	testutil.Equals(t, len(blocks), len(db.Blocks()))                 // Ensure all blocks are registered.
-	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
+	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	actSize := testutil.DirSize(t, db.Dir())
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
 

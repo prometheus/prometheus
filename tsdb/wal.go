@@ -280,7 +280,7 @@ func (w *SegmentWAL) truncate(err error, file int, lastOffset int64) error {
 	return err
 }
 
-// Reader returns a new reader over the the write ahead log data.
+// Reader returns a new reader over the write ahead log data.
 // It must be completely consumed before writing to the WAL.
 func (w *SegmentWAL) Reader() WALReader {
 	return &repairingWALReader{

@@ -78,7 +78,7 @@
  - [ENHANCEMENT] When closing the db any running compaction will be cancelled so it doesn't block.
    - `NewLeveledCompactor` takes a context.
  - [CHANGE] `prometheus_tsdb_storage_blocks_bytes_total` is now `prometheus_tsdb_storage_blocks_bytes`.
- - [BUGFIX] Improved Postings Merge performance. Fixes a regression from the the previous release.
+ - [BUGFIX] Improved Postings Merge performance. Fixes a regression from the previous release.
  - [BUGFIX] LiveReader can get into an infinite loop on corrupt WALs.
 
 ## 0.4.0

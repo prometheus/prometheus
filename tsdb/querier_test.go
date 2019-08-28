@@ -570,7 +570,7 @@ func TestBaseChunkSeries(t *testing.T) {
 
 	cases := []struct {
 		series []refdSeries
-		// Postings should be in the sorted order of the the series
+		// Postings should be in the sorted order of the series
 		postings []uint64
 
 		expIdxs []int
