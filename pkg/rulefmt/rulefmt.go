@@ -113,7 +113,7 @@ func (r *Rule) Validate() (errs []error) {
 	if r.Expr == "" {
 		errs = append(errs, errors.Errorf("field 'expr' must be set in rule"))
 	} else if _, err := promql.ParseExpr(r.Expr); err != nil {
-		errs = append(errs, errors.Errorf("could not parse expression: %s", err))
+		errs = append(errs, errors.Wrap(err, "could not parse expression"))
 	}
 	if r.Record != "" {
 		if len(r.Annotations) > 0 {
@@ -143,8 +143,7 @@ func (r *Rule) Validate() (errs []error) {
 		}
 	}
 
-	errs = append(errs, testTemplateParsing(r)...)
-	return errs
+	return append(errs, testTemplateParsing(r)...)
 }
 
 // testTemplateParsing checks if the templates used in labels and annotations
@@ -176,18 +175,18 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 	}
 
 	// Parsing Labels.
-	for _, val := range rl.Labels {
+	for k, val := range rl.Labels {
 		err := parseTest(val)
 		if err != nil {
-			errs = append(errs, errors.Errorf("msg=%s", err.Error()))
+			errs = append(errs, errors.Wrapf(err, "label %q", k))
 		}
 	}
 
 	// Parsing Annotations.
-	for _, val := range rl.Annotations {
+	for k, val := range rl.Annotations {
 		err := parseTest(val)
 		if err != nil {
-			errs = append(errs, errors.Errorf("msg=%s", err.Error()))
+			errs = append(errs, errors.Wrapf(err, "annotation %q", k))
 		}
 	}
 
@@ -207,7 +206,11 @@ func Parse(content []byte) (*RuleGroups, []error) {
 func ParseFile(file string) (*RuleGroups, []error) {
 	b, err := ioutil.ReadFile(file)
 	if err != nil {
-		return nil, []error{err}
+		return nil, []error{errors.Wrap(err, file)}
 	}
-	return Parse(b)
+	rgs, errs := Parse(b)
+	for i := range errs {
+		errs[i] = errors.Wrap(errs[i], file)
+	}
+	return rgs, errs
 }

@@ -15,18 +15,17 @@ package rules
 
 import (
 	"context"
-	"errors"
+	html_template "html/template"
 	"math"
 	"net/url"
 	"sort"
 	"sync"
 	"time"
 
-	html_template "html/template"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
@@ -898,7 +897,7 @@ func (m *Manager) LoadGroups(
 			for _, r := range rg.Rules {
 				expr, err := promql.ParseExpr(r.Expr)
 				if err != nil {
-					return nil, []error{err}
+					return nil, []error{errors.Wrap(err, fn)}
 				}
 
 				if r.Alert != "" {
