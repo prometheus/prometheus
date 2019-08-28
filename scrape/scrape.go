@@ -601,8 +601,8 @@ type scrapeLoop struct {
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
+	parentCtx context.Context
 	ctx       context.Context
-	scrapeCtx context.Context
 	cancel    func()
 	stopped   chan struct{}
 }
@@ -857,10 +857,10 @@ func newScrapeLoop(ctx context.Context,
 		stopped:             make(chan struct{}),
 		jitterSeed:          jitterSeed,
 		l:                   l,
-		ctx:                 ctx,
+		parentCtx:           ctx,
 		honorTimestamps:     honorTimestamps,
 	}
-	sl.scrapeCtx, sl.cancel = context.WithCancel(ctx)
+	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
 	return sl
 }
@@ -869,7 +869,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 	select {
 	case <-time.After(sl.scraper.offset(interval, sl.jitterSeed)):
 		// Continue after a scraping offset.
-	case <-sl.scrapeCtx.Done():
+	case <-sl.ctx.Done():
 		close(sl.stopped)
 		return
 	}
@@ -882,10 +882,10 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 mainLoop:
 	for {
 		select {
-		case <-sl.ctx.Done():
+		case <-sl.parentCtx.Done():
 			close(sl.stopped)
 			return
-		case <-sl.scrapeCtx.Done():
+		case <-sl.ctx.Done():
 			break mainLoop
 		default:
 		}
@@ -947,10 +947,10 @@ mainLoop:
 		last = start
 
 		select {
-		case <-sl.ctx.Done():
+		case <-sl.parentCtx.Done():
 			close(sl.stopped)
 			return
-		case <-sl.scrapeCtx.Done():
+		case <-sl.ctx.Done():
 			break mainLoop
 		case <-ticker.C:
 		}
@@ -977,7 +977,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Wait for when the next scrape would have been, record its timestamp.
 	var staleTime time.Time
 	select {
-	case <-sl.ctx.Done():
+	case <-sl.parentCtx.Done():
 		return
 	case <-ticker.C:
 		staleTime = time.Now()
@@ -986,14 +986,14 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Wait for when the next scrape would have been, if the target was recreated
 	// samples should have been ingested by now.
 	select {
-	case <-sl.ctx.Done():
+	case <-sl.parentCtx.Done():
 		return
 	case <-ticker.C:
 	}
 
 	// Wait for an extra 10% of the interval, just to be safe.
 	select {
-	case <-sl.ctx.Done():
+	case <-sl.parentCtx.Done():
 		return
 	case <-time.After(interval / 10):
 	}
