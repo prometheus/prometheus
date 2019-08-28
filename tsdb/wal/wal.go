@@ -64,6 +64,22 @@ func (p *page) full() bool {
 	return pageSize-p.alloc < recordHeaderSize
 }
 
+func (p *page) bufalloc() []byte {
+	return p.buf[p.flushed:p.alloc]
+}
+
+func (p *page) bufremaining() []byte {
+	return p.buf[p.alloc:]
+}
+
+func (p *page) reset() {
+	for i := range p.buf {
+		p.buf[i] = 0
+	}
+	p.alloc = 0
+	p.flushed = 0
+}
+
 // Segment represents a segment file.
 type Segment struct {
 	*os.File
@@ -486,7 +502,7 @@ func (w *WAL) flushPage(clear bool) error {
 	if clear {
 		p.alloc = pageSize // Write till end of page.
 	}
-	n, err := w.segment.Write(p.buf[p.flushed:p.alloc])
+	n, err := w.segment.Write(p.bufalloc())
 	if err != nil {
 		return err
 	}
@@ -494,11 +510,7 @@ func (w *WAL) flushPage(clear bool) error {
 
 	// We flushed an entire page, prepare a new one.
 	if clear {
-		for i := range p.buf {
-			p.buf[i] = 0
-		}
-		p.alloc = 0
-		p.flushed = 0
+		p.reset()
 		w.donePages++
 		w.pageCompletions.Inc()
 	}
@@ -608,7 +620,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 		var (
 			l    = min(len(rec), (pageSize-p.alloc)-recordHeaderSize)
 			part = rec[:l]
-			buf  = p.buf[p.alloc:]
+			buf  = p.bufremaining()
 			typ  recType
 		)
 
