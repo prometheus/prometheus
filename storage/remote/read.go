@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -70,7 +71,7 @@ func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (
 
 	res, err := q.client.Read(q.ctx, query)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("remote_read: %v", err)
 	}
 
 	return FromQueryResult(res), nil, nil
