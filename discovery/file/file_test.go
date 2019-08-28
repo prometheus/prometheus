@@ -61,7 +61,7 @@ func newTestRunner(t *testing.T) *testRunner {
 	}
 }
 
-// copyFile copies atomically a file to the runner's directory.
+// copyFile atomically copies a file to the runner's directory.
 func (t *testRunner) copyFile(src, dst string) string {
 	t.Helper()
 
@@ -139,7 +139,7 @@ func (t *testRunner) run(files ...string) {
 			&SDConfig{
 				Files: files,
 				// Setting a high refresh interval to make sure that the tests only
-				// relies on file watches.
+				// rely on file watches.
 				RefreshInterval: model.Duration(1 * time.Hour),
 			},
 			nil,
