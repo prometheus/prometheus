@@ -125,7 +125,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	describeInstancesRequest.PageNumber = requests.NewInteger(1)
 	describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
 
-	client, clientErr := getEcsClient(d.ecsCfg)
+	client, clientErr := getEcsClient(d.ecsCfg, d.logger)
 	if clientErr != nil {
 		return nil, errors.Wrap(clientErr, "could not create alibaba ecs client.")
 	}
@@ -227,7 +227,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	return []*targetgroup.Group{tg}, nil
 }
 
-func getEcsClient(config *SDConfig) (client *ecs_pop.Client, err error) {
+func getEcsClient(config *SDConfig, logger log.Logger) (client *ecs_pop.Client, err error) {
+
+	level.Debug(logger).Log("msg", "Start to get Ecs Client.")
 
 	if getConfigRegionId(config.RegionId) == "" {
 		return nil, errors.New("Aliyun ECS service discovery config need regionId.")
@@ -271,6 +273,8 @@ func getEcsClient(config *SDConfig) (client *ecs_pop.Client, err error) {
 		return client, clientErr
 	}
 
+	level.Info(logger).Log("msg", "Start to get Ecs Client from ram.")
+
 	// 2. ACS
 	//get all RoleName for check
 
@@ -288,9 +292,17 @@ func getEcsClient(config *SDConfig) (client *ecs_pop.Client, err error) {
 				clientErr := client.InitWithStsToken(getConfigRegionId(config.RegionId), roleAuth.AccessKeyId, roleAuth.AccessKeySecret, roleAuth.SecurityToken)
 				if clientErr == nil {
 					return &client, nil
+				} else {
+					level.Error(logger).Log("msg", "Get ECS Client from ram clientErr. err: ", clientErr)
 				}
+			} else {
+				level.Error(logger).Log("msg", "Get ECS Client from ram roleAuthErr. err: ", roleAuthErr)
 			}
+		} else {
+			level.Error(logger).Log("msg", "Get ECS Client from ram roleNameErr. err: ", roleNameErr)
 		}
+	} else {
+		level.Error(logger).Log("msg", "Get ECS Client from ram allRoleNameErr. err: ", allRoleNameErr)
 	}
 
 	return nil, errors.New("Aliyun ECS service discovery cant init client, need auth config.")
