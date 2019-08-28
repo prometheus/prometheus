@@ -163,8 +163,11 @@ func CheckConfig(files ...string) int {
 		fmt.Println()
 
 		for _, rf := range ruleFiles {
-			if n, err := checkRules(rf); err != nil {
-				fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			if n, errs := checkRules(rf); len(errs) > 0 {
+				fmt.Fprintln(os.Stderr, "  FAILED:")
+				for _, err := range errs {
+					fmt.Fprintln(os.Stderr, "    ", err)
+				}
 				failed = true
 			} else {
 				fmt.Printf("  SUCCESS: %d rules found\n", n)
