@@ -513,6 +513,10 @@ Prometheus.Graph.prototype.submitQuery = function() {
           return;
         }
 
+        if ("warnings" in json && json.warnings.length > 0) {
+          self.showWarning(json.warnings.join('<br>'));
+        }
+
         queryHistory.handleHistory(self);
         success(json.data, textStatus);
       },
