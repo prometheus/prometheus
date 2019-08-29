@@ -64,14 +64,6 @@ func (p *page) full() bool {
 	return pageSize-p.alloc < recordHeaderSize
 }
 
-func (p *page) bufalloc() []byte {
-	return p.buf[p.flushed:p.alloc]
-}
-
-func (p *page) bufremaining() []byte {
-	return p.buf[p.alloc:]
-}
-
 func (p *page) reset() {
 	for i := range p.buf {
 		p.buf[i] = 0
@@ -502,7 +494,7 @@ func (w *WAL) flushPage(clear bool) error {
 	if clear {
 		p.alloc = pageSize // Write till end of page.
 	}
-	n, err := w.segment.Write(p.bufalloc())
+	n, err := w.segment.Write(p.buf[p.flushed:p.alloc])
 	if err != nil {
 		return err
 	}
@@ -620,7 +612,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 		var (
 			l    = min(len(rec), (pageSize-p.alloc)-recordHeaderSize)
 			part = rec[:l]
-			buf  = p.bufremaining()
+			buf  = p.buf[p.alloc:]
 			typ  recType
 		)
 
