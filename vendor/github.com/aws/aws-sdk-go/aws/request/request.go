@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -64,6 +63,15 @@ type Request struct {
 	SignedHeaderVals       http.Header
 	LastSignedAt           time.Time
 	DisableFollowRedirects bool
+
+	// Additional API error codes that should be retried. IsErrorRetryable
+	// will consider these codes in addition to its built in cases.
+	RetryErrorCodes []string
+
+	// Additional API error codes that should be retried with throttle backoff
+	// delay. IsErrorThrottle will consider these codes in addition to its
+	// built in cases.
+	ThrottleErrorCodes []string
 
 	// A value greater than 0 instructs the request to be signed as Presigned URL
 	// You should not set this field directly. Instead use Request's
@@ -498,21 +506,17 @@ func (r *Request) Send() error {
 
 		if err := r.sendRequest(); err == nil {
 			return nil
-		} else if !shouldRetryError(r.Error) {
+		}
+		r.Handlers.Retry.Run(r)
+		r.Handlers.AfterRetry.Run(r)
+
+		if r.Error != nil || !aws.BoolValue(r.Retryable) {
+			return r.Error
+		}
+
+		if err := r.prepareRetry(); err != nil {
+			r.Error = err
 			return err
-		} else {
-			r.Handlers.Retry.Run(r)
-			r.Handlers.AfterRetry.Run(r)
-
-			if r.Error != nil || !aws.BoolValue(r.Retryable) {
-				return r.Error
-			}
-
-			if err := r.prepareRetry(); err != nil {
-				r.Error = err
-				return err
-			}
-			continue
 		}
 	}
 }
@@ -594,51 +598,6 @@ func AddToUserAgent(r *Request, s string) {
 		s = curUA + " " + s
 	}
 	r.HTTPRequest.Header.Set("User-Agent", s)
-}
-
-type temporary interface {
-	Temporary() bool
-}
-
-func shouldRetryError(origErr error) bool {
-	switch err := origErr.(type) {
-	case awserr.Error:
-		if err.Code() == CanceledErrorCode {
-			return false
-		}
-		return shouldRetryError(err.OrigErr())
-	case *url.Error:
-		if strings.Contains(err.Error(), "connection refused") {
-			// Refused connections should be retried as the service may not yet
-			// be running on the port. Go TCP dial considers refused
-			// connections as not temporary.
-			return true
-		}
-		// *url.Error only implements Temporary after golang 1.6 but since
-		// url.Error only wraps the error:
-		return shouldRetryError(err.Err)
-	case temporary:
-		if netErr, ok := err.(*net.OpError); ok && netErr.Op == "dial" {
-			return true
-		}
-		// If the error is temporary, we want to allow continuation of the
-		// retry process
-		return err.Temporary() || isErrConnectionReset(origErr)
-	case nil:
-		// `awserr.Error.OrigErr()` can be nil, meaning there was an error but
-		// because we don't know the cause, it is marked as retryable. See
-		// TestRequest4xxUnretryable for an example.
-		return true
-	default:
-		switch err.Error() {
-		case "net/http: request canceled",
-			"net/http: request canceled while waiting for connection":
-			// known 1.5 error case when an http request is cancelled
-			return false
-		}
-		// here we don't know the error; so we allow a retry.
-		return true
-	}
 }
 
 // SanitizeHostForHeader removes default port from host and updates request.Host

@@ -152,18 +152,19 @@ type EC2IAMInfo struct {
 // An EC2InstanceIdentityDocument provides the shape for unmarshaling
 // an instance identity document
 type EC2InstanceIdentityDocument struct {
-	DevpayProductCodes []string  `json:"devpayProductCodes"`
-	AvailabilityZone   string    `json:"availabilityZone"`
-	PrivateIP          string    `json:"privateIp"`
-	Version            string    `json:"version"`
-	Region             string    `json:"region"`
-	InstanceID         string    `json:"instanceId"`
-	BillingProducts    []string  `json:"billingProducts"`
-	InstanceType       string    `json:"instanceType"`
-	AccountID          string    `json:"accountId"`
-	PendingTime        time.Time `json:"pendingTime"`
-	ImageID            string    `json:"imageId"`
-	KernelID           string    `json:"kernelId"`
-	RamdiskID          string    `json:"ramdiskId"`
-	Architecture       string    `json:"architecture"`
+	DevpayProductCodes      []string  `json:"devpayProductCodes"`
+	MarketplaceProductCodes []string  `json:"marketplaceProductCodes"`
+	AvailabilityZone        string    `json:"availabilityZone"`
+	PrivateIP               string    `json:"privateIp"`
+	Version                 string    `json:"version"`
+	Region                  string    `json:"region"`
+	InstanceID              string    `json:"instanceId"`
+	BillingProducts         []string  `json:"billingProducts"`
+	InstanceType            string    `json:"instanceType"`
+	AccountID               string    `json:"accountId"`
+	PendingTime             time.Time `json:"pendingTime"`
+	ImageID                 string    `json:"imageId"`
+	KernelID                string    `json:"kernelId"`
+	RamdiskID               string    `json:"ramdiskId"`
+	Architecture            string    `json:"architecture"`
 }

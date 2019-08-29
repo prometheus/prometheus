@@ -98,8 +98,8 @@ func NewProviderClient(cfg aws.Config, handlers request.Handlers, endpoint strin
 	return p
 }
 
-// NewCredentialsClient returns a Credentials wrapper for retrieving credentials
-// from an arbitrary endpoint concurrently. The client will request the
+// NewCredentialsClient returns a pointer to a new Credentials object
+// wrapping the endpoint credentials Provider.
 func NewCredentialsClient(cfg aws.Config, handlers request.Handlers, endpoint string, options ...func(*Provider)) *credentials.Credentials {
 	return credentials.NewCredentials(NewProviderClient(cfg, handlers, endpoint, options...))
 }
