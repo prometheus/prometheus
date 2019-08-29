@@ -1061,11 +1061,17 @@ func TestStreamReadEndpoint(t *testing.T) {
 	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
 	testutil.Ok(t, err)
 
-	query, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
+	matcher3, err := labels.NewMatcher(labels.MatchEqual, "foo", "bar1")
+	testutil.Ok(t, err)
+
+	query1, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
+	testutil.Ok(t, err)
+
+	query2, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectParams{Step: 0, Func: "avg"})
 	testutil.Ok(t, err)
 
 	req := &prompb.ReadRequest{
-		Queries:               []*prompb.Query{query},
+		Queries:               []*prompb.Query{query1, query2},
 		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
 	}
 	data, err := proto.Marshal(req)
@@ -1097,8 +1103,8 @@ func TestStreamReadEndpoint(t *testing.T) {
 		results = append(results, res)
 	}
 
-	if len(results) != 4 {
-		t.Fatalf("Expected 4 result, got %d", len(results))
+	if len(results) != 5 {
+		t.Fatalf("Expected 5 result, got %d", len(results))
 	}
 
 	testutil.Equals(t, []*prompb.ChunkedReadResponse{
@@ -1194,6 +1200,27 @@ func TestStreamReadEndpoint(t *testing.T) {
 					},
 				},
 			},
+		},
+		{
+			ChunkedSeries: []*prompb.ChunkedSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric1"},
+						{Name: "b", Value: "c"},
+						{Name: "baz", Value: "qux"},
+						{Name: "d", Value: "e"},
+						{Name: "foo", Value: "bar1"},
+					},
+					Chunks: []prompb.Chunk{
+						{
+							Type:      prompb.Chunk_XOR,
+							MaxTimeMs: 7140000,
+							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
+						},
+					},
+				},
+			},
+			QueryIndex: 1,
 		},
 	}, results)
 }
