@@ -64,6 +64,14 @@ func (p *page) full() bool {
 	return pageSize-p.alloc < recordHeaderSize
 }
 
+func (p *page) reset() {
+	for i := range p.buf {
+		p.buf[i] = 0
+	}
+	p.alloc = 0
+	p.flushed = 0
+}
+
 // Segment represents a segment file.
 type Segment struct {
 	*os.File
@@ -494,11 +502,7 @@ func (w *WAL) flushPage(clear bool) error {
 
 	// We flushed an entire page, prepare a new one.
 	if clear {
-		for i := range p.buf {
-			p.buf[i] = 0
-		}
-		p.alloc = 0
-		p.flushed = 0
+		p.reset()
 		w.donePages++
 		w.pageCompletions.Inc()
 	}
