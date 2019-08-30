@@ -34,7 +34,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 )
 
-const maxErrMsgLen = 256
+const MaxErrMsgLen = 256
 
 var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -68,8 +68,12 @@ func NewClient(index int, conf *ClientConfig) (*Client, error) {
 	}, nil
 }
 
-type recoverableError struct {
-	error
+type RecoverableError struct {
+	Err error
+}
+
+func (r RecoverableError) Error() string {
+	return r.Err.Error()
 }
 
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
@@ -94,7 +98,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	if err != nil {
 		// Errors from client.Do are from (for example) network errors, so are
 		// recoverable.
-		return recoverableError{err}
+		return RecoverableError{err}
 	}
 	defer func() {
 		io.Copy(ioutil.Discard, httpResp.Body)
@@ -102,7 +106,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	}()
 
 	if httpResp.StatusCode/100 != 2 {
-		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, maxErrMsgLen))
+		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, MaxErrMsgLen))
 		line := ""
 		if scanner.Scan() {
 			line = scanner.Text()
@@ -110,7 +114,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		err = errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 	}
 	if httpResp.StatusCode/100 == 5 {
-		return recoverableError{err}
+		return RecoverableError{err}
 	}
 	return err
 }

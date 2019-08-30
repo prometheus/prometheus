@@ -751,7 +751,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return nil
 		}
 
-		if _, ok := err.(recoverableError); !ok {
+		if _, ok := err.(RecoverableError); !ok {
 			return err
 		}
 		s.qm.retriedSamplesTotal.Add(float64(len(samples)))
