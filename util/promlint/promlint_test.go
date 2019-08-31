@@ -111,14 +111,6 @@ x_bytes 10
 `,
 		},
 		{
-			name: "candela",
-			in: `
-# HELP x_candela Test metric.
-# TYPE x_candela untyped
-x_candela 10
-`,
-		},
-		{
 			name: "grams",
 			in: `
 # HELP x_grams Test metric.
@@ -200,18 +192,6 @@ x_gigabytes 10
 			}},
 		},
 		{
-			name: "kilocandela",
-			in: `
-# HELP x_kilocandela Test metric.
-# TYPE x_kilocandela untyped
-x_kilocandela 10
-`,
-			problems: []promlint.Problem{{
-				Metric: "x_kilocandela",
-				Text:   `use base unit "candela" instead of "kilocandela"`,
-			}},
-		},
-		{
 			name: "kilograms",
 			in: `
 # HELP x_kilograms Test metric.
@@ -248,15 +228,15 @@ x_kilometers 10
 			}},
 		},
 		{
-			name: "picomoles",
+			name: "picometers",
 			in: `
-# HELP x_picomoles Test metric.
-# TYPE x_picomoles untyped
-x_picomoles 10
+# HELP x_picometers Test metric.
+# TYPE x_picometers untyped
+x_picometers 10
 `,
 			problems: []promlint.Problem{{
-				Metric: "x_picomoles",
-				Text:   `use base unit "moles" instead of "picomoles"`,
+				Metric: "x_picometers",
+				Text:   `use base unit "meters" instead of "picometers"`,
 			}},
 		},
 		{

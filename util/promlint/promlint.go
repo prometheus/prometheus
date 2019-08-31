@@ -300,13 +300,11 @@ var (
 		// Base units.
 		"amperes": "amperes",
 		"bytes":   "bytes",
-		"candela": "candela",
 		"celsius": "celsius", // Celsius is more common in practice than Kelvin.
 		"grams":   "grams",
 		"joules":  "joules",
 		"meters":  "meters", // Both American and international spelling permitted.
 		"metres":  "metres",
-		"moles":   "moles",
 		"seconds": "seconds",
 		"volts":   "volts",
 
