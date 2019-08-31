@@ -57,6 +57,7 @@ type swaggerObject struct {
 	Produces            []string                            `json:"produces"`
 	Paths               swaggerPathsObject                  `json:"paths"`
 	Definitions         swaggerDefinitionsObject            `json:"definitions"`
+	StreamDefinitions   swaggerDefinitionsObject            `json:"x-stream-definitions,omitempty"`
 	SecurityDefinitions swaggerSecurityDefinitionsObject    `json:"securityDefinitions,omitempty"`
 	Security            []swaggerSecurityRequirementObject  `json:"security,omitempty"`
 	ExternalDocs        *swaggerExternalDocumentationObject `json:"externalDocs,omitempty"`
@@ -133,9 +134,10 @@ type swaggerParameterObject struct {
 // core part of schema, which is common to itemsObject and schemaObject.
 // http://swagger.io/specification/#itemsObject
 type schemaCore struct {
-	Type   string `json:"type,omitempty"`
-	Format string `json:"format,omitempty"`
-	Ref    string `json:"$ref,omitempty"`
+	Type    string          `json:"type,omitempty"`
+	Format  string          `json:"format,omitempty"`
+	Ref     string          `json:"$ref,omitempty"`
+	Example json.RawMessage `json:"example,omitempty"`
 
 	Items *swaggerItemsObject `json:"items,omitempty"`
 
@@ -147,13 +149,6 @@ type schemaCore struct {
 }
 
 type swaggerItemsObject schemaCore
-
-func (o *swaggerItemsObject) getType() string {
-	if o == nil {
-		return ""
-	}
-	return o.Type
-}
 
 // http://swagger.io/specification/#responsesObject
 type swaggerResponsesObject map[string]swaggerResponseObject
@@ -207,6 +202,7 @@ type swaggerSchemaObject struct {
 
 	ExternalDocs *swaggerExternalDocumentationObject `json:"externalDocs,omitempty"`
 
+	ReadOnly         bool     `json:"readOnly,omitempty"`
 	MultipleOf       float64  `json:"multipleOf,omitempty"`
 	Maximum          float64  `json:"maximum,omitempty"`
 	ExclusiveMaximum bool     `json:"exclusiveMaximum,omitempty"`

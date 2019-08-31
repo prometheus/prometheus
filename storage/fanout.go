@@ -253,16 +253,28 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 }
 
 // LabelValues returns all potential values for a label name.
-func (q *mergeQuerier) LabelValues(name string) ([]string, error) {
+func (q *mergeQuerier) LabelValues(name string) ([]string, Warnings, error) {
 	var results [][]string
+	var warnings Warnings
 	for _, querier := range q.queriers {
-		values, err := querier.LabelValues(name)
+		values, wrn, err := querier.LabelValues(name)
+
+		if wrn != nil {
+			warnings = append(warnings, wrn...)
+		}
 		if err != nil {
-			return nil, err
+			q.failedQueriers[querier] = struct{}{}
+			// If the error source isn't the primary querier, return the error as a warning and continue.
+			if querier != q.primaryQuerier {
+				warnings = append(warnings, err)
+				continue
+			} else {
+				return nil, nil, err
+			}
 		}
 		results = append(results, values)
 	}
-	return mergeStringSlices(results), nil
+	return mergeStringSlices(results), warnings, nil
 }
 
 func (q *mergeQuerier) IsFailedSet(set SeriesSet) bool {
@@ -310,13 +322,25 @@ func mergeTwoStringSlices(a, b []string) []string {
 }
 
 // LabelNames returns all the unique label names present in the block in sorted order.
-func (q *mergeQuerier) LabelNames() ([]string, error) {
+func (q *mergeQuerier) LabelNames() ([]string, Warnings, error) {
 	labelNamesMap := make(map[string]struct{})
+	var warnings Warnings
 	for _, b := range q.queriers {
-		names, err := b.LabelNames()
-		if err != nil {
-			return nil, errors.Wrap(err, "LabelNames() from Querier")
+		names, wrn, err := b.LabelNames()
+		if wrn != nil {
+			warnings = append(warnings, wrn...)
 		}
+
+		if err != nil {
+			// If the error source isn't the primary querier, return the error as a warning and continue.
+			if b != q.primaryQuerier {
+				warnings = append(warnings, err)
+				continue
+			} else {
+				return nil, nil, errors.Wrap(err, "LabelNames() from Querier")
+			}
+		}
+
 		for _, name := range names {
 			labelNamesMap[name] = struct{}{}
 		}
@@ -328,7 +352,7 @@ func (q *mergeQuerier) LabelNames() ([]string, error) {
 	}
 	sort.Strings(labelNames)
 
-	return labelNames, nil
+	return labelNames, warnings, nil
 }
 
 // Close releases the resources of the Querier.

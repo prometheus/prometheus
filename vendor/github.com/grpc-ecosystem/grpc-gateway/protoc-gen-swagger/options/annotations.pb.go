@@ -73,10 +73,10 @@ func init() {
 }
 
 func init() {
-	proto.RegisterFile("protoc-gen-swagger/options/annotations.proto", fileDescriptor_annotations_24d91a1b8877b604)
+	proto.RegisterFile("protoc-gen-swagger/options/annotations.proto", fileDescriptor_annotations_8378bd63c2853a5a)
 }
 
-var fileDescriptor_annotations_24d91a1b8877b604 = []byte{
+var fileDescriptor_annotations_8378bd63c2853a5a = []byte{
 	// 346 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x92, 0x4f, 0x4f, 0xea, 0x40,
 	0x14, 0xc5, 0xc3, 0xe6, 0xe5, 0xa5, 0xef, 0xa9, 0x58, 0x37, 0x86, 0xf8, 0x87, 0x9d, 0xc6, 0xc0,

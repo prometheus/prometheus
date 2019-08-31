@@ -3,16 +3,16 @@
 
 package types
 
-import proto "github.com/gogo/protobuf/proto"
-import fmt "fmt"
-import math "math"
-
-import bytes "bytes"
-
-import strings "strings"
-import reflect "reflect"
-
-import io "io"
+import (
+	bytes "bytes"
+	fmt "fmt"
+	proto "github.com/gogo/protobuf/proto"
+	io "io"
+	math "math"
+	math_bits "math/bits"
+	reflect "reflect"
+	strings "strings"
+)
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
@@ -79,7 +79,7 @@ type Api struct {
 func (m *Api) Reset()      { *m = Api{} }
 func (*Api) ProtoMessage() {}
 func (*Api) Descriptor() ([]byte, []int) {
-	return fileDescriptor_api_a4406062c749da1f, []int{0}
+	return fileDescriptor_a2ec32096296c143, []int{0}
 }
 func (m *Api) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -89,15 +89,15 @@ func (m *Api) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return xxx_messageInfo_Api.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
 		return b[:n], nil
 	}
 }
-func (dst *Api) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Api.Merge(dst, src)
+func (m *Api) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Api.Merge(m, src)
 }
 func (m *Api) XXX_Size() int {
 	return m.Size()
@@ -185,7 +185,7 @@ type Method struct {
 func (m *Method) Reset()      { *m = Method{} }
 func (*Method) ProtoMessage() {}
 func (*Method) Descriptor() ([]byte, []int) {
-	return fileDescriptor_api_a4406062c749da1f, []int{1}
+	return fileDescriptor_a2ec32096296c143, []int{1}
 }
 func (m *Method) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -195,15 +195,15 @@ func (m *Method) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return xxx_messageInfo_Method.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
 		return b[:n], nil
 	}
 }
-func (dst *Method) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Method.Merge(dst, src)
+func (m *Method) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Method.Merge(m, src)
 }
 func (m *Method) XXX_Size() int {
 	return m.Size()
@@ -359,7 +359,7 @@ type Mixin struct {
 func (m *Mixin) Reset()      { *m = Mixin{} }
 func (*Mixin) ProtoMessage() {}
 func (*Mixin) Descriptor() ([]byte, []int) {
-	return fileDescriptor_api_a4406062c749da1f, []int{2}
+	return fileDescriptor_a2ec32096296c143, []int{2}
 }
 func (m *Mixin) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -369,15 +369,15 @@ func (m *Mixin) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return xxx_messageInfo_Mixin.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
 		return b[:n], nil
 	}
 }
-func (dst *Mixin) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Mixin.Merge(dst, src)
+func (m *Mixin) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Mixin.Merge(m, src)
 }
 func (m *Mixin) XXX_Size() int {
 	return m.Size()
@@ -410,6 +410,43 @@ func init() {
 	proto.RegisterType((*Method)(nil), "google.protobuf.Method")
 	proto.RegisterType((*Mixin)(nil), "google.protobuf.Mixin")
 }
+
+func init() { proto.RegisterFile("google/protobuf/api.proto", fileDescriptor_a2ec32096296c143) }
+
+var fileDescriptor_a2ec32096296c143 = []byte{
+	// 467 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x91, 0x31, 0x6f, 0x13, 0x31,
+	0x14, 0xc7, 0xeb, 0xbb, 0xe4, 0x52, 0x5c, 0x91, 0x82, 0x91, 0xc0, 0x64, 0xb0, 0x4e, 0x15, 0xc3,
+	0x09, 0xc4, 0x45, 0x94, 0x4f, 0xd0, 0x20, 0xd4, 0x01, 0x21, 0xa2, 0x0b, 0x08, 0x89, 0x25, 0x4a,
+	0x83, 0x09, 0x96, 0xee, 0x6c, 0x63, 0x3b, 0x90, 0x4c, 0xf0, 0x59, 0x98, 0x10, 0x23, 0xdf, 0x80,
+	0xad, 0x23, 0x23, 0x23, 0xb9, 0x2e, 0x8c, 0x1d, 0x19, 0x91, 0x7d, 0xe7, 0xa6, 0x5c, 0x83, 0x04,
+	0x9b, 0xdf, 0xfb, 0xff, 0xfc, 0xf7, 0x7b, 0x7f, 0xc3, 0x9b, 0x33, 0x21, 0x66, 0x39, 0xed, 0x4b,
+	0x25, 0x8c, 0x38, 0x9a, 0xbf, 0xea, 0x4f, 0x24, 0x4b, 0x5d, 0x81, 0x76, 0x2b, 0x29, 0xf5, 0x52,
+	0xef, 0x56, 0x93, 0xd5, 0x62, 0xae, 0xa6, 0x74, 0x3c, 0x15, 0xdc, 0xd0, 0x85, 0xa9, 0xc0, 0x5e,
+	0xaf, 0x49, 0x99, 0xa5, 0xac, 0x4d, 0xf6, 0xbe, 0x06, 0x30, 0x3c, 0x90, 0x0c, 0x21, 0xd8, 0xe2,
+	0x93, 0x82, 0x62, 0x10, 0x83, 0xe4, 0x52, 0xe6, 0xce, 0xe8, 0x1e, 0xec, 0x14, 0xd4, 0xbc, 0x16,
+	0x2f, 0x35, 0x0e, 0xe2, 0x30, 0xd9, 0xd9, 0xbf, 0x91, 0x36, 0x06, 0x48, 0x1f, 0x3b, 0x3d, 0xf3,
+	0x9c, 0xbd, 0x22, 0xa4, 0x61, 0x82, 0x6b, 0x1c, 0xfe, 0xe5, 0xca, 0x13, 0xa7, 0x67, 0x9e, 0x43,
+	0x18, 0x76, 0xde, 0x52, 0xa5, 0x99, 0xe0, 0xb8, 0xe5, 0x1e, 0xf7, 0x25, 0x7a, 0x08, 0xbb, 0x7f,
+	0xee, 0x83, 0xdb, 0x31, 0x48, 0x76, 0xf6, 0xc9, 0x05, 0xcf, 0x91, 0xc3, 0x1e, 0x54, 0x54, 0x76,
+	0x59, 0x9f, 0x2f, 0x51, 0x0a, 0xa3, 0x82, 0x2d, 0x18, 0xd7, 0x38, 0x72, 0x23, 0x5d, 0xbf, 0xb8,
+	0x85, 0x95, 0xb3, 0x9a, 0x42, 0x7d, 0x18, 0xe9, 0x25, 0x37, 0x93, 0x05, 0xee, 0xc4, 0x20, 0xe9,
+	0x6e, 0x58, 0x61, 0xe4, 0xe4, 0xac, 0xc6, 0xf6, 0xbe, 0x04, 0x30, 0xaa, 0x82, 0xd8, 0x18, 0x63,
+	0x02, 0xaf, 0x28, 0xfa, 0x66, 0x4e, 0xb5, 0x19, 0xdb, 0xe0, 0xc7, 0x73, 0x95, 0xe3, 0xc0, 0xe9,
+	0xdd, 0xba, 0xff, 0x74, 0x29, 0xe9, 0x33, 0x95, 0xa3, 0x3b, 0xf0, 0xaa, 0x27, 0xb5, 0x51, 0x74,
+	0x52, 0x30, 0x3e, 0xc3, 0x61, 0x0c, 0x92, 0xed, 0xcc, 0x5b, 0x8c, 0x7c, 0x1f, 0xdd, 0xb6, 0xb0,
+	0x96, 0x82, 0x6b, 0xba, 0xf6, 0xad, 0x12, 0xdc, 0xf5, 0x82, 0x37, 0xbe, 0x0b, 0xd1, 0x19, 0xbb,
+	0x76, 0x6e, 0x3b, 0xe7, 0x33, 0x97, 0xb5, 0xf5, 0xb9, 0x5f, 0x8c, 0xfe, 0xf1, 0x17, 0xff, 0x3b,
+	0xb4, 0x3e, 0x6c, 0xbb, 0xd8, 0x37, 0x46, 0x86, 0x60, 0x4b, 0x09, 0x61, 0xea, 0x98, 0xdc, 0x79,
+	0xf0, 0xfe, 0xfb, 0x8a, 0x6c, 0x9d, 0xae, 0x08, 0xf8, 0xb5, 0x22, 0xe0, 0x43, 0x49, 0xc0, 0xa7,
+	0x92, 0x80, 0xe3, 0x92, 0x80, 0x6f, 0x25, 0x01, 0x3f, 0x4a, 0x02, 0x7e, 0x96, 0x64, 0xeb, 0xd4,
+	0xf6, 0x4f, 0x08, 0x38, 0x3e, 0x21, 0x00, 0x5e, 0x9b, 0x8a, 0xa2, 0x39, 0xc6, 0x60, 0xfb, 0x40,
+	0xb2, 0xa1, 0x2d, 0x86, 0xe0, 0x45, 0xdb, 0xe6, 0xa6, 0x3f, 0x06, 0xe1, 0xe1, 0x70, 0xf0, 0x39,
+	0x20, 0x87, 0x15, 0x3a, 0xf4, 0x13, 0x3f, 0xa7, 0x79, 0xfe, 0x88, 0x8b, 0x77, 0xdc, 0xc6, 0xa8,
+	0x8f, 0x22, 0xe7, 0x71, 0xff, 0x77, 0x00, 0x00, 0x00, 0xff, 0xff, 0x2b, 0x64, 0x40, 0x40, 0xa1,
+	0x03, 0x00, 0x00,
+}
+
 func (this *Api) Compare(that interface{}) int {
 	if that == nil {
 		if this == nil {
@@ -826,7 +863,7 @@ func valueToGoStringApi(v interface{}, typ string) string {
 func (m *Api) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -834,83 +871,99 @@ func (m *Api) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *Api) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Api) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if len(m.Name) > 0 {
-		dAtA[i] = 0xa
-		i++
-		i = encodeVarintApi(dAtA, i, uint64(len(m.Name)))
-		i += copy(dAtA[i:], m.Name)
-	}
-	if len(m.Methods) > 0 {
-		for _, msg := range m.Methods {
-			dAtA[i] = 0x12
-			i++
-			i = encodeVarintApi(dAtA, i, uint64(msg.Size()))
-			n, err := msg.MarshalTo(dAtA[i:])
-			if err != nil {
-				return 0, err
-			}
-			i += n
-		}
-	}
-	if len(m.Options) > 0 {
-		for _, msg := range m.Options {
-			dAtA[i] = 0x1a
-			i++
-			i = encodeVarintApi(dAtA, i, uint64(msg.Size()))
-			n, err := msg.MarshalTo(dAtA[i:])
-			if err != nil {
-				return 0, err
-			}
-			i += n
-		}
-	}
-	if len(m.Version) > 0 {
-		dAtA[i] = 0x22
-		i++
-		i = encodeVarintApi(dAtA, i, uint64(len(m.Version)))
-		i += copy(dAtA[i:], m.Version)
-	}
-	if m.SourceContext != nil {
-		dAtA[i] = 0x2a
-		i++
-		i = encodeVarintApi(dAtA, i, uint64(m.SourceContext.Size()))
-		n1, err := m.SourceContext.MarshalTo(dAtA[i:])
-		if err != nil {
-			return 0, err
-		}
-		i += n1
-	}
-	if len(m.Mixins) > 0 {
-		for _, msg := range m.Mixins {
-			dAtA[i] = 0x32
-			i++
-			i = encodeVarintApi(dAtA, i, uint64(msg.Size()))
-			n, err := msg.MarshalTo(dAtA[i:])
-			if err != nil {
-				return 0, err
-			}
-			i += n
-		}
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	if m.Syntax != 0 {
-		dAtA[i] = 0x38
-		i++
 		i = encodeVarintApi(dAtA, i, uint64(m.Syntax))
+		i--
+		dAtA[i] = 0x38
 	}
-	if m.XXX_unrecognized != nil {
-		i += copy(dAtA[i:], m.XXX_unrecognized)
+	if len(m.Mixins) > 0 {
+		for iNdEx := len(m.Mixins) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Mixins[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintApi(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x32
+		}
 	}
-	return i, nil
+	if m.SourceContext != nil {
+		{
+			size, err := m.SourceContext.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintApi(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x2a
+	}
+	if len(m.Version) > 0 {
+		i -= len(m.Version)
+		copy(dAtA[i:], m.Version)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.Version)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.Options) > 0 {
+		for iNdEx := len(m.Options) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Options[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintApi(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if len(m.Methods) > 0 {
+		for iNdEx := len(m.Methods) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Methods[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintApi(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.Name) > 0 {
+		i -= len(m.Name)
+		copy(dAtA[i:], m.Name)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
 }
 
 func (m *Method) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -918,75 +971,86 @@ func (m *Method) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *Method) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Method) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if len(m.Name) > 0 {
-		dAtA[i] = 0xa
-		i++
-		i = encodeVarintApi(dAtA, i, uint64(len(m.Name)))
-		i += copy(dAtA[i:], m.Name)
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
 	}
-	if len(m.RequestTypeUrl) > 0 {
-		dAtA[i] = 0x12
-		i++
-		i = encodeVarintApi(dAtA, i, uint64(len(m.RequestTypeUrl)))
-		i += copy(dAtA[i:], m.RequestTypeUrl)
+	if m.Syntax != 0 {
+		i = encodeVarintApi(dAtA, i, uint64(m.Syntax))
+		i--
+		dAtA[i] = 0x38
 	}
-	if m.RequestStreaming {
-		dAtA[i] = 0x18
-		i++
-		if m.RequestStreaming {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
+	if len(m.Options) > 0 {
+		for iNdEx := len(m.Options) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Options[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintApi(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x32
 		}
-		i++
-	}
-	if len(m.ResponseTypeUrl) > 0 {
-		dAtA[i] = 0x22
-		i++
-		i = encodeVarintApi(dAtA, i, uint64(len(m.ResponseTypeUrl)))
-		i += copy(dAtA[i:], m.ResponseTypeUrl)
 	}
 	if m.ResponseStreaming {
-		dAtA[i] = 0x28
-		i++
+		i--
 		if m.ResponseStreaming {
 			dAtA[i] = 1
 		} else {
 			dAtA[i] = 0
 		}
-		i++
+		i--
+		dAtA[i] = 0x28
 	}
-	if len(m.Options) > 0 {
-		for _, msg := range m.Options {
-			dAtA[i] = 0x32
-			i++
-			i = encodeVarintApi(dAtA, i, uint64(msg.Size()))
-			n, err := msg.MarshalTo(dAtA[i:])
-			if err != nil {
-				return 0, err
-			}
-			i += n
+	if len(m.ResponseTypeUrl) > 0 {
+		i -= len(m.ResponseTypeUrl)
+		copy(dAtA[i:], m.ResponseTypeUrl)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.ResponseTypeUrl)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if m.RequestStreaming {
+		i--
+		if m.RequestStreaming {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
 		}
+		i--
+		dAtA[i] = 0x18
 	}
-	if m.Syntax != 0 {
-		dAtA[i] = 0x38
-		i++
-		i = encodeVarintApi(dAtA, i, uint64(m.Syntax))
+	if len(m.RequestTypeUrl) > 0 {
+		i -= len(m.RequestTypeUrl)
+		copy(dAtA[i:], m.RequestTypeUrl)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.RequestTypeUrl)))
+		i--
+		dAtA[i] = 0x12
 	}
-	if m.XXX_unrecognized != nil {
-		i += copy(dAtA[i:], m.XXX_unrecognized)
+	if len(m.Name) > 0 {
+		i -= len(m.Name)
+		copy(dAtA[i:], m.Name)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0xa
 	}
-	return i, nil
+	return len(dAtA) - i, nil
 }
 
 func (m *Mixin) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -994,48 +1058,58 @@ func (m *Mixin) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *Mixin) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Mixin) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if len(m.Name) > 0 {
-		dAtA[i] = 0xa
-		i++
-		i = encodeVarintApi(dAtA, i, uint64(len(m.Name)))
-		i += copy(dAtA[i:], m.Name)
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	if len(m.Root) > 0 {
-		dAtA[i] = 0x12
-		i++
+		i -= len(m.Root)
+		copy(dAtA[i:], m.Root)
 		i = encodeVarintApi(dAtA, i, uint64(len(m.Root)))
-		i += copy(dAtA[i:], m.Root)
+		i--
+		dAtA[i] = 0x12
 	}
-	if m.XXX_unrecognized != nil {
-		i += copy(dAtA[i:], m.XXX_unrecognized)
+	if len(m.Name) > 0 {
+		i -= len(m.Name)
+		copy(dAtA[i:], m.Name)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0xa
 	}
-	return i, nil
+	return len(dAtA) - i, nil
 }
 
 func encodeVarintApi(dAtA []byte, offset int, v uint64) int {
+	offset -= sovApi(v)
+	base := offset
 	for v >= 1<<7 {
 		dAtA[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
 	dAtA[offset] = uint8(v)
-	return offset + 1
+	return base
 }
 func NewPopulatedApi(r randyApi, easy bool) *Api {
 	this := &Api{}
 	this.Name = string(randStringApi(r))
-	if r.Intn(10) != 0 {
+	if r.Intn(5) != 0 {
 		v1 := r.Intn(5)
 		this.Methods = make([]*Method, v1)
 		for i := 0; i < v1; i++ {
 			this.Methods[i] = NewPopulatedMethod(r, easy)
 		}
 	}
-	if r.Intn(10) != 0 {
+	if r.Intn(5) != 0 {
 		v2 := r.Intn(5)
 		this.Options = make([]*Option, v2)
 		for i := 0; i < v2; i++ {
@@ -1043,10 +1117,10 @@ func NewPopulatedApi(r randyApi, easy bool) *Api {
 		}
 	}
 	this.Version = string(randStringApi(r))
-	if r.Intn(10) != 0 {
+	if r.Intn(5) != 0 {
 		this.SourceContext = NewPopulatedSourceContext(r, easy)
 	}
-	if r.Intn(10) != 0 {
+	if r.Intn(5) != 0 {
 		v3 := r.Intn(5)
 		this.Mixins = make([]*Mixin, v3)
 		for i := 0; i < v3; i++ {
@@ -1067,7 +1141,7 @@ func NewPopulatedMethod(r randyApi, easy bool) *Method {
 	this.RequestStreaming = bool(bool(r.Intn(2) == 0))
 	this.ResponseTypeUrl = string(randStringApi(r))
 	this.ResponseStreaming = bool(bool(r.Intn(2) == 0))
-	if r.Intn(10) != 0 {
+	if r.Intn(5) != 0 {
 		v4 := r.Intn(5)
 		this.Options = make([]*Option, v4)
 		for i := 0; i < v4; i++ {
@@ -1268,14 +1342,7 @@ func (m *Mixin) Size() (n int) {
 }
 
 func sovApi(x uint64) (n int) {
-	for {
-		n++
-		x >>= 7
-		if x == 0 {
-			break
-		}
-	}
-	return n
+	return (math_bits.Len64(x|1) + 6) / 7
 }
 func sozApi(x uint64) (n int) {
 	return sovApi(uint64((x << 1) ^ uint64((int64(x) >> 63))))
@@ -1284,13 +1351,28 @@ func (this *Api) String() string {
 	if this == nil {
 		return "nil"
 	}
+	repeatedStringForMethods := "[]*Method{"
+	for _, f := range this.Methods {
+		repeatedStringForMethods += strings.Replace(f.String(), "Method", "Method", 1) + ","
+	}
+	repeatedStringForMethods += "}"
+	repeatedStringForOptions := "[]*Option{"
+	for _, f := range this.Options {
+		repeatedStringForOptions += strings.Replace(fmt.Sprintf("%v", f), "Option", "Option", 1) + ","
+	}
+	repeatedStringForOptions += "}"
+	repeatedStringForMixins := "[]*Mixin{"
+	for _, f := range this.Mixins {
+		repeatedStringForMixins += strings.Replace(f.String(), "Mixin", "Mixin", 1) + ","
+	}
+	repeatedStringForMixins += "}"
 	s := strings.Join([]string{`&Api{`,
 		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
-		`Methods:` + strings.Replace(fmt.Sprintf("%v", this.Methods), "Method", "Method", 1) + `,`,
-		`Options:` + strings.Replace(fmt.Sprintf("%v", this.Options), "Option", "Option", 1) + `,`,
+		`Methods:` + repeatedStringForMethods + `,`,
+		`Options:` + repeatedStringForOptions + `,`,
 		`Version:` + fmt.Sprintf("%v", this.Version) + `,`,
 		`SourceContext:` + strings.Replace(fmt.Sprintf("%v", this.SourceContext), "SourceContext", "SourceContext", 1) + `,`,
-		`Mixins:` + strings.Replace(fmt.Sprintf("%v", this.Mixins), "Mixin", "Mixin", 1) + `,`,
+		`Mixins:` + repeatedStringForMixins + `,`,
 		`Syntax:` + fmt.Sprintf("%v", this.Syntax) + `,`,
 		`XXX_unrecognized:` + fmt.Sprintf("%v", this.XXX_unrecognized) + `,`,
 		`}`,
@@ -1301,13 +1383,18 @@ func (this *Method) String() string {
 	if this == nil {
 		return "nil"
 	}
+	repeatedStringForOptions := "[]*Option{"
+	for _, f := range this.Options {
+		repeatedStringForOptions += strings.Replace(fmt.Sprintf("%v", f), "Option", "Option", 1) + ","
+	}
+	repeatedStringForOptions += "}"
 	s := strings.Join([]string{`&Method{`,
 		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
 		`RequestTypeUrl:` + fmt.Sprintf("%v", this.RequestTypeUrl) + `,`,
 		`RequestStreaming:` + fmt.Sprintf("%v", this.RequestStreaming) + `,`,
 		`ResponseTypeUrl:` + fmt.Sprintf("%v", this.ResponseTypeUrl) + `,`,
 		`ResponseStreaming:` + fmt.Sprintf("%v", this.ResponseStreaming) + `,`,
-		`Options:` + strings.Replace(fmt.Sprintf("%v", this.Options), "Option", "Option", 1) + `,`,
+		`Options:` + repeatedStringForOptions + `,`,
 		`Syntax:` + fmt.Sprintf("%v", this.Syntax) + `,`,
 		`XXX_unrecognized:` + fmt.Sprintf("%v", this.XXX_unrecognized) + `,`,
 		`}`,
@@ -1349,7 +1436,7 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 			}
 			b := dAtA[iNdEx]
 			iNdEx++
-			wire |= (uint64(b) & 0x7F) << shift
+			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
 				break
 			}
@@ -1377,7 +1464,7 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
+				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1387,6 +1474,9 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1406,7 +1496,7 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= (int(b) & 0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1415,6 +1505,9 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1437,7 +1530,7 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= (int(b) & 0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1446,6 +1539,9 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1468,7 +1564,7 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
+				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1478,6 +1574,9 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1497,7 +1596,7 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= (int(b) & 0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1506,6 +1605,9 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1530,7 +1632,7 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= (int(b) & 0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1539,6 +1641,9 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1561,7 +1666,7 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.Syntax |= (Syntax(b) & 0x7F) << shift
+				m.Syntax |= Syntax(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1573,6 +1678,9 @@ func (m *Api) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			if skippy < 0 {
+				return ErrInvalidLengthApi
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthApi
 			}
 			if (iNdEx + skippy) > l {
@@ -1603,7 +1711,7 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 			}
 			b := dAtA[iNdEx]
 			iNdEx++
-			wire |= (uint64(b) & 0x7F) << shift
+			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
 				break
 			}
@@ -1631,7 +1739,7 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
+				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1641,6 +1749,9 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1660,7 +1771,7 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
+				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1670,6 +1781,9 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1689,7 +1803,7 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				v |= (int(b) & 0x7F) << shift
+				v |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1709,7 +1823,7 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
+				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1719,6 +1833,9 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1738,7 +1855,7 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				v |= (int(b) & 0x7F) << shift
+				v |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1758,7 +1875,7 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= (int(b) & 0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1767,6 +1884,9 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1789,7 +1909,7 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.Syntax |= (Syntax(b) & 0x7F) << shift
+				m.Syntax |= Syntax(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1801,6 +1921,9 @@ func (m *Method) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			if skippy < 0 {
+				return ErrInvalidLengthApi
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthApi
 			}
 			if (iNdEx + skippy) > l {
@@ -1831,7 +1954,7 @@ func (m *Mixin) Unmarshal(dAtA []byte) error {
 			}
 			b := dAtA[iNdEx]
 			iNdEx++
-			wire |= (uint64(b) & 0x7F) << shift
+			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
 				break
 			}
@@ -1859,7 +1982,7 @@ func (m *Mixin) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
+				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1869,6 +1992,9 @@ func (m *Mixin) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1888,7 +2014,7 @@ func (m *Mixin) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
+				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1898,6 +2024,9 @@ func (m *Mixin) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthApi
 			}
 			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1910,6 +2039,9 @@ func (m *Mixin) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			if skippy < 0 {
+				return ErrInvalidLengthApi
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthApi
 			}
 			if (iNdEx + skippy) > l {
@@ -1979,8 +2111,11 @@ func skipApi(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
-			iNdEx += length
 			if length < 0 {
+				return 0, ErrInvalidLengthApi
+			}
+			iNdEx += length
+			if iNdEx < 0 {
 				return 0, ErrInvalidLengthApi
 			}
 			return iNdEx, nil
@@ -2011,6 +2146,9 @@ func skipApi(dAtA []byte) (n int, err error) {
 					return 0, err
 				}
 				iNdEx = start + next
+				if iNdEx < 0 {
+					return 0, ErrInvalidLengthApi
+				}
 			}
 			return iNdEx, nil
 		case 4:
@@ -2029,39 +2167,3 @@ var (
 	ErrInvalidLengthApi = fmt.Errorf("proto: negative length found during unmarshaling")
 	ErrIntOverflowApi   = fmt.Errorf("proto: integer overflow")
 )
-
-func init() { proto.RegisterFile("google/protobuf/api.proto", fileDescriptor_api_a4406062c749da1f) }
-
-var fileDescriptor_api_a4406062c749da1f = []byte{
-	// 467 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x91, 0x31, 0x6f, 0x13, 0x31,
-	0x14, 0xc7, 0xeb, 0xbb, 0xe4, 0x52, 0x5c, 0x91, 0x82, 0x91, 0xc0, 0x64, 0xb0, 0x4e, 0x15, 0xc3,
-	0x09, 0xc4, 0x45, 0x94, 0x4f, 0xd0, 0x20, 0xd4, 0x01, 0x21, 0xa2, 0x0b, 0x08, 0x89, 0x25, 0x4a,
-	0x83, 0x09, 0x96, 0xee, 0x6c, 0x63, 0x3b, 0x90, 0x4c, 0xf0, 0x59, 0x98, 0x10, 0x23, 0xdf, 0x80,
-	0xad, 0x23, 0x23, 0x23, 0xb9, 0x2e, 0x8c, 0x1d, 0x19, 0x91, 0x7d, 0xe7, 0xa6, 0x5c, 0x83, 0x04,
-	0x9b, 0xdf, 0xfb, 0xff, 0xfc, 0xf7, 0x7b, 0x7f, 0xc3, 0x9b, 0x33, 0x21, 0x66, 0x39, 0xed, 0x4b,
-	0x25, 0x8c, 0x38, 0x9a, 0xbf, 0xea, 0x4f, 0x24, 0x4b, 0x5d, 0x81, 0x76, 0x2b, 0x29, 0xf5, 0x52,
-	0xef, 0x56, 0x93, 0xd5, 0x62, 0xae, 0xa6, 0x74, 0x3c, 0x15, 0xdc, 0xd0, 0x85, 0xa9, 0xc0, 0x5e,
-	0xaf, 0x49, 0x99, 0xa5, 0xac, 0x4d, 0xf6, 0xbe, 0x06, 0x30, 0x3c, 0x90, 0x0c, 0x21, 0xd8, 0xe2,
-	0x93, 0x82, 0x62, 0x10, 0x83, 0xe4, 0x52, 0xe6, 0xce, 0xe8, 0x1e, 0xec, 0x14, 0xd4, 0xbc, 0x16,
-	0x2f, 0x35, 0x0e, 0xe2, 0x30, 0xd9, 0xd9, 0xbf, 0x91, 0x36, 0x06, 0x48, 0x1f, 0x3b, 0x3d, 0xf3,
-	0x9c, 0xbd, 0x22, 0xa4, 0x61, 0x82, 0x6b, 0x1c, 0xfe, 0xe5, 0xca, 0x13, 0xa7, 0x67, 0x9e, 0x43,
-	0x18, 0x76, 0xde, 0x52, 0xa5, 0x99, 0xe0, 0xb8, 0xe5, 0x1e, 0xf7, 0x25, 0x7a, 0x08, 0xbb, 0x7f,
-	0xee, 0x83, 0xdb, 0x31, 0x48, 0x76, 0xf6, 0xc9, 0x05, 0xcf, 0x91, 0xc3, 0x1e, 0x54, 0x54, 0x76,
-	0x59, 0x9f, 0x2f, 0x51, 0x0a, 0xa3, 0x82, 0x2d, 0x18, 0xd7, 0x38, 0x72, 0x23, 0x5d, 0xbf, 0xb8,
-	0x85, 0x95, 0xb3, 0x9a, 0x42, 0x7d, 0x18, 0xe9, 0x25, 0x37, 0x93, 0x05, 0xee, 0xc4, 0x20, 0xe9,
-	0x6e, 0x58, 0x61, 0xe4, 0xe4, 0xac, 0xc6, 0xf6, 0xbe, 0x04, 0x30, 0xaa, 0x82, 0xd8, 0x18, 0x63,
-	0x02, 0xaf, 0x28, 0xfa, 0x66, 0x4e, 0xb5, 0x19, 0xdb, 0xe0, 0xc7, 0x73, 0x95, 0xe3, 0xc0, 0xe9,
-	0xdd, 0xba, 0xff, 0x74, 0x29, 0xe9, 0x33, 0x95, 0xa3, 0x3b, 0xf0, 0xaa, 0x27, 0xb5, 0x51, 0x74,
-	0x52, 0x30, 0x3e, 0xc3, 0x61, 0x0c, 0x92, 0xed, 0xcc, 0x5b, 0x8c, 0x7c, 0x1f, 0xdd, 0xb6, 0xb0,
-	0x96, 0x82, 0x6b, 0xba, 0xf6, 0xad, 0x12, 0xdc, 0xf5, 0x82, 0x37, 0xbe, 0x0b, 0xd1, 0x19, 0xbb,
-	0x76, 0x6e, 0x3b, 0xe7, 0x33, 0x97, 0xb5, 0xf5, 0xb9, 0x5f, 0x8c, 0xfe, 0xf1, 0x17, 0xff, 0x3b,
-	0xb4, 0x3e, 0x6c, 0xbb, 0xd8, 0x37, 0x46, 0x86, 0x60, 0x4b, 0x09, 0x61, 0xea, 0x98, 0xdc, 0x79,
-	0xf0, 0xfe, 0xfb, 0x8a, 0x6c, 0x9d, 0xae, 0x08, 0xf8, 0xb5, 0x22, 0xe0, 0x43, 0x49, 0xc0, 0xa7,
-	0x92, 0x80, 0xe3, 0x92, 0x80, 0x6f, 0x25, 0x01, 0x3f, 0x4a, 0x02, 0x7e, 0x96, 0x64, 0xeb, 0xd4,
-	0xf6, 0x4f, 0x08, 0x38, 0x3e, 0x21, 0x00, 0x5e, 0x9b, 0x8a, 0xa2, 0x39, 0xc6, 0x60, 0xfb, 0x40,
-	0xb2, 0xa1, 0x2d, 0x86, 0xe0, 0x45, 0xdb, 0xe6, 0xa6, 0x3f, 0x06, 0xe1, 0xe1, 0x70, 0xf0, 0x39,
-	0x20, 0x87, 0x15, 0x3a, 0xf4, 0x13, 0x3f, 0xa7, 0x79, 0xfe, 0x88, 0x8b, 0x77, 0xdc, 0xc6, 0xa8,
-	0x8f, 0x22, 0xe7, 0x71, 0xff, 0x77, 0x00, 0x00, 0x00, 0xff, 0xff, 0x2b, 0x64, 0x40, 0x40, 0xa1,
-	0x03, 0x00, 0x00,
-}

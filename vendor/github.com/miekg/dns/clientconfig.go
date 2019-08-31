@@ -68,14 +68,10 @@ func ClientConfigFromReader(resolvconf io.Reader) (*ClientConfig, error) {
 			}
 
 		case "search": // set search path to given servers
-			c.Search = make([]string, len(f)-1)
-			for i := 0; i < len(c.Search); i++ {
-				c.Search[i] = f[i+1]
-			}
+			c.Search = append([]string(nil), f[1:]...)
 
 		case "options": // magic options
-			for i := 1; i < len(f); i++ {
-				s := f[i]
+			for _, s := range f[1:] {
 				switch {
 				case len(s) >= 6 && s[:6] == "ndots:":
 					n, _ := strconv.Atoi(s[6:])
@@ -91,7 +87,7 @@ func ClientConfigFromReader(resolvconf io.Reader) (*ClientConfig, error) {
 						n = 1
 					}
 					c.Timeout = n
-				case len(s) >= 8 && s[:9] == "attempts:":
+				case len(s) >= 9 && s[:9] == "attempts:":
 					n, _ := strconv.Atoi(s[9:])
 					if n < 1 {
 						n = 1

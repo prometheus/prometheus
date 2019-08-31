@@ -1,5 +1,5 @@
 .navbar {
-  margin-bottom: 0;
+  margin-bottom: 20px;
 }
 
 div.prom_lhs_menu {
@@ -8,6 +8,13 @@ div.prom_lhs_menu {
   background: #222;
   min-height: 100%;
   overflow: auto;
+  width: auto;
+  margin-left: -40px;
+  margin-top: 55px;
+  height: 100%;
+}
+.prom_lhs_menu_nav {
+  padding-right: 0;
 }
 .prom_lhs_menu ul {
   list-style: none;
@@ -17,6 +24,7 @@ div.prom_lhs_menu {
 .prom_lhs_menu li {
   padding-right: 1ex;
   padding-left: 1ex;
+  font-size: 0.9rem;
 }
 .prom_lhs_menu a,
 .prom_lhs_menu li {
@@ -25,6 +33,8 @@ div.prom_lhs_menu {
 }
 .prom_lhs_menu a {
   text-decoration: none;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .prom_lhs_menu_selected a {
   pointer-events: none;
@@ -42,6 +52,7 @@ li.prom_lhs_menu_selected {
   float: right;
   margin-left: 1ex;
   height: 100%;
+  padding-top: 55px;
 }
 .prom_console_rhs table {
   margin-top: 1ex;
@@ -57,6 +68,7 @@ li.prom_lhs_menu_selected {
 .prom_console_content {
   overflow: visible;
   margin-bottom: 32px;  /* Space for time control. */
+  padding-top: 70px;   /* Space for navbar */
 }
 
 a.prom_query_drilldown {
@@ -67,6 +79,13 @@ a.prom_query_drilldown:hover, a.prom_query_drilldown:active {
   text-decoration: underline;
 }
 
+#samplesGraph {
+  width: 100%;
+}
+
+.prom_content_div {
+  width: 80%;
+}
 
 .prom_graph_table {
 }
@@ -148,6 +167,7 @@ a.prom_graph_link {
   font-size: 0.8em;
   border-radius: 0;
   height: 29px;
+  border-color: #ccc;
 }
 
 .prom_graph_timecontrol_group .input {

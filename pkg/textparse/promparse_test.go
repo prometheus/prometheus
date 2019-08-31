@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPromParse(t *testing.T) {
@@ -37,6 +37,7 @@ go_gc_duration_seconds{quantile="0.8", a="b"} 8.3835e-05
 go_gc_duration_seconds{ quantile="0.9", a="b"} 8.3835e-05
 # Hrandom comment starting with prefix of HELP
 #
+wind_speed{A="2",c="3"} 12345
 # comment with escaped \n newline
 # comment with escaped \ escape character
 # HELP nohelp1
@@ -97,6 +98,10 @@ testmetric{label="\"bar\""} 1`
 			comment: "# Hrandom comment starting with prefix of HELP",
 		}, {
 			comment: "#",
+		}, {
+			m:    `wind_speed{A="2",c="3"}`,
+			v:    12345,
+			lset: labels.FromStrings("A", "2", "__name__", "wind_speed", "c", "3"),
 		}, {
 			comment: "# comment with escaped \\n newline",
 		}, {
@@ -174,7 +179,7 @@ testmetric{label="\"bar\""} 1`
 		if err == io.EOF {
 			break
 		}
-		require.NoError(t, err)
+		testutil.Ok(t, err)
 
 		switch et {
 		case EntrySeries:
@@ -182,29 +187,29 @@ testmetric{label="\"bar\""} 1`
 
 			p.Metric(&res)
 
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].t, ts)
-			require.Equal(t, exp[i].v, v)
-			require.Equal(t, exp[i].lset, res)
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].t, ts)
+			testutil.Equals(t, exp[i].v, v)
+			testutil.Equals(t, exp[i].lset, res)
 			res = res[:0]
 
 		case EntryType:
 			m, typ := p.Type()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].typ, typ)
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].typ, typ)
 
 		case EntryHelp:
 			m, h := p.Help()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].help, string(h))
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].help, string(h))
 
 		case EntryComment:
-			require.Equal(t, exp[i].comment, string(p.Comment()))
+			testutil.Equals(t, exp[i].comment, string(p.Comment()))
 		}
 
 		i++
 	}
-	require.Equal(t, len(exp), i)
+	testutil.Equals(t, len(exp), i)
 }
 
 func TestPromParseErrors(t *testing.T) {
@@ -252,8 +257,8 @@ func TestPromParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		require.NotNil(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		testutil.NotOk(t, err)
+		testutil.Equals(t, c.err, err.Error(), "test %d", i)
 	}
 }
 
@@ -304,12 +309,12 @@ func TestPromNullByteHandling(t *testing.T) {
 		}
 
 		if c.err == "" {
-			require.Equal(t, io.EOF, err, "test %d", i)
+			testutil.Equals(t, io.EOF, err, "test %d", i)
 			continue
 		}
 
-		require.Error(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		testutil.NotOk(t, err)
+		testutil.Equals(t, c.err, err.Error(), "test %d", i)
 	}
 }
 
@@ -322,14 +327,13 @@ func BenchmarkParse(b *testing.B) {
 		"prometheus":  NewPromParser,
 		"openmetrics": NewOpenMetricsParser,
 	} {
-
 		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
 			f, err := os.Open(fn)
-			require.NoError(b, err)
+			testutil.Ok(b, err)
 			defer f.Close()
 
 			buf, err := ioutil.ReadAll(f)
-			require.NoError(b, err)
+			testutil.Ok(b, err)
 
 			b.Run(parserName+"/no-decode-metric/"+fn, func(b *testing.B) {
 				total := 0
@@ -459,18 +463,18 @@ func BenchmarkGzip(b *testing.B) {
 	for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
 		b.Run(fn, func(b *testing.B) {
 			f, err := os.Open(fn)
-			require.NoError(b, err)
+			testutil.Ok(b, err)
 			defer f.Close()
 
 			var buf bytes.Buffer
 			gw := gzip.NewWriter(&buf)
 
 			n, err := io.Copy(gw, f)
-			require.NoError(b, err)
-			require.NoError(b, gw.Close())
+			testutil.Ok(b, err)
+			testutil.Ok(b, gw.Close())
 
 			gbuf, err := ioutil.ReadAll(&buf)
-			require.NoError(b, err)
+			testutil.Ok(b, err)
 
 			k := b.N / promtestdataSampleCount
 
@@ -482,11 +486,11 @@ func BenchmarkGzip(b *testing.B) {
 
 			for i := 0; i < k; i++ {
 				gr, err := gzip.NewReader(bytes.NewReader(gbuf))
-				require.NoError(b, err)
+				testutil.Ok(b, err)
 
 				d, err := ioutil.ReadAll(gr)
-				require.NoError(b, err)
-				require.NoError(b, gr.Close())
+				testutil.Ok(b, err)
+				testutil.Ok(b, gr.Close())
 
 				total += len(d)
 			}

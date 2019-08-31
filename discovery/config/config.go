@@ -14,7 +14,7 @@
 package config
 
 import (
-	"fmt"
+	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
@@ -64,62 +64,62 @@ type ServiceDiscoveryConfig struct {
 func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.AzureSDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in azure_sd_configs")
+			return errors.New("empty or null section in azure_sd_configs")
 		}
 	}
 	for _, cfg := range c.ConsulSDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in consul_sd_configs")
+			return errors.New("empty or null section in consul_sd_configs")
 		}
 	}
 	for _, cfg := range c.DNSSDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in dns_sd_configs")
+			return errors.New("empty or null section in dns_sd_configs")
 		}
 	}
 	for _, cfg := range c.EC2SDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in ec2_sd_configs")
+			return errors.New("empty or null section in ec2_sd_configs")
 		}
 	}
 	for _, cfg := range c.FileSDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in file_sd_configs")
+			return errors.New("empty or null section in file_sd_configs")
 		}
 	}
 	for _, cfg := range c.GCESDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in gce_sd_configs")
+			return errors.New("empty or null section in gce_sd_configs")
 		}
 	}
 	for _, cfg := range c.KubernetesSDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in kubernetes_sd_configs")
+			return errors.New("empty or null section in kubernetes_sd_configs")
 		}
 	}
 	for _, cfg := range c.MarathonSDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in marathon_sd_configs")
+			return errors.New("empty or null section in marathon_sd_configs")
 		}
 	}
 	for _, cfg := range c.NerveSDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in nerve_sd_configs")
+			return errors.New("empty or null section in nerve_sd_configs")
 		}
 	}
 	for _, cfg := range c.OpenstackSDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in openstack_sd_configs")
+			return errors.New("empty or null section in openstack_sd_configs")
 		}
 	}
 	for _, cfg := range c.ServersetSDConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in serverset_sd_configs")
+			return errors.New("empty or null section in serverset_sd_configs")
 		}
 	}
 	for _, cfg := range c.StaticConfigs {
 		if cfg == nil {
-			return fmt.Errorf("empty or null section in static_configs")
+			return errors.New("empty or null section in static_configs")
 		}
 	}
 	return nil

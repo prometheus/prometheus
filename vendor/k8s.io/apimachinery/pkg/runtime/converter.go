@@ -94,7 +94,7 @@ func parseBool(key string) bool {
 	}
 	value, err := strconv.ParseBool(key)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't parse '%s' as bool for unstructured mismatch detection", key))
+		utilruntime.HandleError(fmt.Errorf("couldn't parse '%s' as bool for unstructured mismatch detection", key))
 	}
 	return value
 }
@@ -746,7 +746,7 @@ func isZero(v reflect.Value) bool {
 func structToUnstructured(sv, dv reflect.Value) error {
 	st, dt := sv.Type(), dv.Type()
 	if dt.Kind() == reflect.Interface && dv.NumMethod() == 0 {
-		dv.Set(reflect.MakeMap(mapStringInterfaceType))
+		dv.Set(reflect.MakeMapWithSize(mapStringInterfaceType, st.NumField()))
 		dv = dv.Elem()
 		dt = dv.Type()
 	}

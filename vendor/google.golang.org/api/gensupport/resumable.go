@@ -5,6 +5,7 @@
 package gensupport
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,8 +13,19 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
+	gax "github.com/googleapis/gax-go/v2"
 )
+
+// Backoff is an interface around gax.Backoff's Pause method, allowing tests to provide their
+// own implementation.
+type Backoff interface {
+	Pause() time.Duration
+}
+
+// This is declared as a global variable so that tests can overwrite it.
+var backoff = func() Backoff {
+	return &gax.Backoff{Initial: 100 * time.Millisecond}
+}
 
 const (
 	// statusTooManyRequests is returned by the storage API if the
@@ -40,9 +52,6 @@ type ResumableUpload struct {
 
 	// Callback is an optional function that will be periodically called with the cumulative number of bytes uploaded.
 	Callback func(int64)
-
-	// If not specified, a default exponential backoff strategy will be used.
-	Backoff BackoffStrategy
 }
 
 // Progress returns the number of bytes uploaded at this point.
@@ -158,10 +167,24 @@ func contextDone(ctx context.Context) bool {
 // Exactly one of resp or err will be nil.  If resp is non-nil, the caller must call resp.Body.Close.
 func (rx *ResumableUpload) Upload(ctx context.Context) (resp *http.Response, err error) {
 	var pause time.Duration
-	backoff := rx.Backoff
-	if backoff == nil {
-		backoff = DefaultBackoffStrategy()
+
+	var shouldRetry = func(status int, err error) bool {
+		if 500 <= status && status <= 599 {
+			return true
+		}
+		if status == statusTooManyRequests {
+			return true
+		}
+		if err == io.ErrUnexpectedEOF {
+			return true
+		}
+		if err, ok := err.(interface{ Temporary() bool }); ok {
+			return err.Temporary()
+		}
+		return false
 	}
+
+	bo := backoff()
 
 	for {
 		// Ensure that we return in the case of cancelled context, even if pause is 0.
@@ -183,21 +206,17 @@ func (rx *ResumableUpload) Upload(ctx context.Context) (resp *http.Response, err
 
 		// Check if we should retry the request.
 		if shouldRetry(status, err) {
-			var retry bool
-			pause, retry = backoff.Pause()
-			if retry {
-				if resp != nil && resp.Body != nil {
-					resp.Body.Close()
-				}
-				continue
+			pause = bo.Pause()
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
 			}
+			continue
 		}
 
 		// If the chunk was uploaded successfully, but there's still
 		// more to go, upload the next chunk without any delay.
 		if statusResumeIncomplete(resp) {
 			pause = 0
-			backoff.Reset()
 			resp.Body.Close()
 			continue
 		}

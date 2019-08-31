@@ -47,6 +47,7 @@ func TestTargetLabels(t *testing.T) {
 
 func TestTargetOffset(t *testing.T) {
 	interval := 10 * time.Second
+	jitter := uint64(0)
 
 	offsets := make([]time.Duration, 10000)
 
@@ -55,7 +56,7 @@ func TestTargetOffset(t *testing.T) {
 		target := newTestTarget("example.com:80", 0, labels.FromStrings(
 			"label", fmt.Sprintf("%d", i),
 		))
-		offsets[i] = target.offset(interval)
+		offsets[i] = target.offset(interval, jitter)
 	}
 
 	// Put the offsets into buckets and validate that they are all
@@ -74,7 +75,7 @@ func TestTargetOffset(t *testing.T) {
 
 	t.Log(buckets)
 
-	// Calculate whether the the number of targets per bucket
+	// Calculate whether the number of targets per bucket
 	// does not differ more than a given tolerance.
 	avg := len(offsets) / len(buckets)
 	tolerance := 0.15
@@ -150,7 +151,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerToken: "1234",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +178,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +207,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 			Password: "password123",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +235,7 @@ func TestNewHTTPCACert(t *testing.T) {
 			CAFile: caCertPath,
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +269,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +298,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 			ServerName: "prometheus.rocks",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +327,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 			ServerName: "badname",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +366,7 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := config_util.NewClientFromConfig(cfg, "test")
+	_, err := config_util.NewClientFromConfig(cfg, "test", false)
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}

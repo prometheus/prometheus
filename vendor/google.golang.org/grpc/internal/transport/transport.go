@@ -22,6 +22,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -39,10 +40,32 @@ import (
 	"google.golang.org/grpc/tap"
 )
 
+type bufferPool struct {
+	pool sync.Pool
+}
+
+func newBufferPool() *bufferPool {
+	return &bufferPool{
+		pool: sync.Pool{
+			New: func() interface{} {
+				return new(bytes.Buffer)
+			},
+		},
+	}
+}
+
+func (p *bufferPool) get() *bytes.Buffer {
+	return p.pool.Get().(*bytes.Buffer)
+}
+
+func (p *bufferPool) put(b *bytes.Buffer) {
+	p.pool.Put(b)
+}
+
 // recvMsg represents the received msg from the transport. All transport
 // protocol specific info has been removed.
 type recvMsg struct {
-	data []byte
+	buffer *bytes.Buffer
 	// nil: received some data
 	// io.EOF: stream is completed. data is nil.
 	// other non-nil error: transport failure. data is nil.
@@ -110,15 +133,16 @@ func (b *recvBuffer) get() <-chan recvMsg {
 	return b.c
 }
 
-//
 // recvBufferReader implements io.Reader interface to read the data from
 // recvBuffer.
 type recvBufferReader struct {
-	ctx     context.Context
-	ctxDone <-chan struct{} // cache of ctx.Done() (for performance).
-	recv    *recvBuffer
-	last    []byte // Stores the remaining data in the previous calls.
-	err     error
+	closeStream func(error) // Closes the client transport stream with the given error and nil trailer metadata.
+	ctx         context.Context
+	ctxDone     <-chan struct{} // cache of ctx.Done() (for performance).
+	recv        *recvBuffer
+	last        *bytes.Buffer // Stores the remaining data in the previous calls.
+	err         error
+	freeBuffer  func(*bytes.Buffer)
 }
 
 // Read reads the next len(p) bytes from last. If last is drained, it tries to
@@ -128,29 +152,59 @@ func (r *recvBufferReader) Read(p []byte) (n int, err error) {
 	if r.err != nil {
 		return 0, r.err
 	}
-	n, r.err = r.read(p)
+	if r.last != nil {
+		// Read remaining data left in last call.
+		copied, _ := r.last.Read(p)
+		if r.last.Len() == 0 {
+			r.freeBuffer(r.last)
+			r.last = nil
+		}
+		return copied, nil
+	}
+	if r.closeStream != nil {
+		n, r.err = r.readClient(p)
+	} else {
+		n, r.err = r.read(p)
+	}
 	return n, r.err
 }
 
 func (r *recvBufferReader) read(p []byte) (n int, err error) {
-	if r.last != nil && len(r.last) > 0 {
-		// Read remaining data left in last call.
-		copied := copy(p, r.last)
-		r.last = r.last[copied:]
-		return copied, nil
-	}
 	select {
 	case <-r.ctxDone:
 		return 0, ContextErr(r.ctx.Err())
 	case m := <-r.recv.get():
-		r.recv.load()
-		if m.err != nil {
-			return 0, m.err
-		}
-		copied := copy(p, m.data)
-		r.last = m.data[copied:]
-		return copied, nil
+		return r.readAdditional(m, p)
 	}
+}
+
+func (r *recvBufferReader) readClient(p []byte) (n int, err error) {
+	// If the context is canceled, then closes the stream with nil metadata.
+	// closeStream writes its error parameter to r.recv as a recvMsg.
+	// r.readAdditional acts on that message and returns the necessary error.
+	select {
+	case <-r.ctxDone:
+		r.closeStream(ContextErr(r.ctx.Err()))
+		m := <-r.recv.get()
+		return r.readAdditional(m, p)
+	case m := <-r.recv.get():
+		return r.readAdditional(m, p)
+	}
+}
+
+func (r *recvBufferReader) readAdditional(m recvMsg, p []byte) (n int, err error) {
+	r.recv.load()
+	if m.err != nil {
+		return 0, m.err
+	}
+	copied, _ := m.buffer.Read(p)
+	if m.buffer.Len() == 0 {
+		r.freeBuffer(m.buffer)
+		r.last = nil
+	} else {
+		r.last = m.buffer
+	}
+	return copied, nil
 }
 
 type streamState uint32
@@ -182,8 +236,8 @@ type Stream struct {
 	// is used to adjust flow control, if needed.
 	requestRead func(int)
 
-	headerChan chan struct{} // closed to indicate the end of header metadata.
-	headerDone uint32        // set when headerChan is closed. Used to avoid closing headerChan multiple times.
+	headerChan       chan struct{} // closed to indicate the end of header metadata.
+	headerChanClosed uint32        // set when headerChan is closed. Used to avoid closing headerChan multiple times.
 
 	// hdrMu protects header and trailer metadata on the server-side.
 	hdrMu sync.Mutex
@@ -305,8 +359,7 @@ func (s *Stream) TrailersOnly() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// if !headerDone, some other connection error occurred.
-	return s.noHeaders && atomic.LoadUint32(&s.headerDone) == 1, nil
+	return s.noHeaders, nil
 }
 
 // Trailer returns the cached trailer metedata. Note that if it is not called
@@ -511,8 +564,8 @@ type TargetInfo struct {
 
 // NewClientTransport establishes the transport with the required ConnectOptions
 // and returns it to the caller.
-func NewClientTransport(connectCtx, ctx context.Context, target TargetInfo, opts ConnectOptions, onSuccess func(), onGoAway func(GoAwayReason), onClose func()) (ClientTransport, error) {
-	return newHTTP2Client(connectCtx, ctx, target, opts, onSuccess, onGoAway, onClose)
+func NewClientTransport(connectCtx, ctx context.Context, target TargetInfo, opts ConnectOptions, onPrefaceReceipt func(), onGoAway func(GoAwayReason), onClose func()) (ClientTransport, error) {
+	return newHTTP2Client(connectCtx, ctx, target, opts, onPrefaceReceipt, onGoAway, onClose)
 }
 
 // Options provides additional hints and information for message
@@ -557,9 +610,12 @@ type ClientTransport interface {
 	// is called only once.
 	Close() error
 
-	// GracefulClose starts to tear down the transport. It stops accepting
-	// new RPCs and wait the completion of the pending RPCs.
-	GracefulClose() error
+	// GracefulClose starts to tear down the transport: the transport will stop
+	// accepting new RPCs and NewStream will return error. Once all streams are
+	// finished, the transport will close.
+	//
+	// It does not block.
+	GracefulClose()
 
 	// Write sends the data for the given stream. A nil stream indicates
 	// the write is to be performed on the transport as a whole.
@@ -588,6 +644,9 @@ type ClientTransport interface {
 
 	// GetGoAwayReason returns the reason why GoAway frame was received.
 	GetGoAwayReason() GoAwayReason
+
+	// RemoteAddr returns the remote network address.
+	RemoteAddr() net.Addr
 
 	// IncrMsgSent increments the number of message sent through this transport.
 	IncrMsgSent()

@@ -17,7 +17,7 @@ Prometheus uses GitHub to manage reviews of pull requests.
   Comments](https://code.google.com/p/go-wiki/wiki/CodeReviewComments)
   and the _Formatting and style_ section of Peter Bourgon's [Go: Best
   Practices for Production
-  Environments](http://peter.bourgon.org/go-in-production/#formatting-and-style).
+  Environments](https://peter.bourgon.org/go-in-production/#formatting-and-style).
 
 * Be sure to sign off on the [DCO](https://github.com/probot/dco#how-it-works)
 
@@ -40,6 +40,8 @@ go build ./cmd/prometheus/
 make test         # Make sure all the tests pass before you commit and push :)
 ```
 
+We use [`golangci-lint`](https://github.com/golangci/golangci-lint) for linting the code. If it reports an issue and you think that the warning needs to be disregarded or is a false-positive, you can add a special comment `//nolint:linter1[,linter2,...]` before the offending line. Use this sparingly though, fixing the code to comply with the linter's recommendation is in general the preferred course of action.
+
 All our issues are regularly tagged so that you can also filter down the issues involving the components you want to work on. For our labeling policy refer [the wiki page](https://github.com/prometheus/prometheus/wiki/Label-Names-and-Descriptions).
 
 ## Pull Request Checklist
@@ -54,7 +56,7 @@ All our issues are regularly tagged so that you can also filter down the issues 
 
 ## Dependency management
 
-The Prometheus project uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages. This requires a working Go environment with version 1.11 or greater installed.
+The Prometheus project uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages. This requires a working Go environment with version 1.12 or greater installed.
 
 All dependencies are vendored in the `vendor/` directory.
 

@@ -20,32 +20,38 @@ The block for currently incoming samples is kept in memory and not fully persist
 The directory structure of a Prometheus server's data directory will look something like this:
 
 ```
-./data/01BKGV7JBM69T2G1BGBGM6KB12
-./data/01BKGV7JBM69T2G1BGBGM6KB12/meta.json
-./data/01BKGTZQ1SYQJTR4PB43C8PD98
-./data/01BKGTZQ1SYQJTR4PB43C8PD98/meta.json
-./data/01BKGTZQ1SYQJTR4PB43C8PD98/index
-./data/01BKGTZQ1SYQJTR4PB43C8PD98/chunks
-./data/01BKGTZQ1SYQJTR4PB43C8PD98/chunks/000001
-./data/01BKGTZQ1SYQJTR4PB43C8PD98/tombstones
-./data/01BKGTZQ1HHWHV8FBJXW1Y3W0K
-./data/01BKGTZQ1HHWHV8FBJXW1Y3W0K/meta.json
-./data/01BKGV7JC0RY8A6MACW02A2PJD
-./data/01BKGV7JC0RY8A6MACW02A2PJD/meta.json
-./data/01BKGV7JC0RY8A6MACW02A2PJD/index
-./data/01BKGV7JC0RY8A6MACW02A2PJD/chunks
-./data/01BKGV7JC0RY8A6MACW02A2PJD/chunks/000001
-./data/01BKGV7JC0RY8A6MACW02A2PJD/tombstones
-./data/wal/00000000
-./data/wal/00000001
-./data/wal/00000002
+./data
+├── 01BKGV7JBM69T2G1BGBGM6KB12
+│   └── meta.json
+├── 01BKGTZQ1SYQJTR4PB43C8PD98
+│   ├── chunks
+│   │   └── 000001
+│   ├── tombstones
+│   ├── index
+│   └── meta.json
+├── 01BKGTZQ1HHWHV8FBJXW1Y3W0K
+│   └── meta.json
+├── 01BKGV7JC0RY8A6MACW02A2PJD
+│   ├── chunks
+│   │   └── 000001
+│   ├── tombstones
+│   ├── index
+│   └── meta.json
+└── wal
+    ├── 00000002
+    └── checkpoint.000001
 ```
 
-The initial two-hour blocks are eventually compacted into longer blocks in the background.
 
 Note that a limitation of the local storage is that it is not clustered or replicated. Thus, it is not arbitrarily scalable or durable in the face of disk or node outages and should thus be treated as more of an ephemeral sliding window of recent data. However, if your durability requirements are not strict, you may still succeed in storing up to years of data in the local storage.
 
-For further details on file format, see [TSDB format](https://github.com/prometheus/tsdb/blob/master/docs/format/README.md).
+For further details on file format, see [TSDB format](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/README.md).
+
+## Compaction
+
+The initial two-hour blocks are eventually compacted into longer blocks in the background.
+
+Compaction will create larger blocks up to 10% of the rention time, or 21 days, whichever is smaller.
 
 ## Operational aspects
 
@@ -55,6 +61,7 @@ Prometheus has several flags that allow configuring the local storage. The most 
 * `--storage.tsdb.retention.time`: This determines when to remove old data. Defaults to `15d`. Overrides `storage.tsdb.retention` if this flag is set to anything other than default.
 * `--storage.tsdb.retention.size`: [EXPERIMENTAL] This determines the maximum number of bytes that storage blocks can use (note that this does not include the WAL size, which can be substantial). The oldest data will be removed first. Defaults to `0` or disabled. This flag is experimental and can be changed in future releases. Units supported: KB, MB, GB, PB. Ex: "512MB"
 * `--storage.tsdb.retention`: This flag has been deprecated in favour of `storage.tsdb.retention.time`.
+* `--storage.tsdb.wal-compression`: This flag enables compression of the write-ahead log (WAL). Depending on your data, you can expect the WAL size to be halved with little extra cpu load. Note that if you enable this flag and subsequently downgrade Prometheus to a version below 2.11.0 you will need to delete your WAL as it will be unreadable.
 
 On average, Prometheus uses only around 1-2 bytes per sample. Thus, to plan the capacity of a Prometheus server, you can use the rough formula:
 
@@ -64,9 +71,11 @@ needed_disk_space = retention_time_seconds * ingested_samples_per_second * bytes
 
 To tune the rate of ingested samples per second, you can either reduce the number of time series you scrape (fewer targets or fewer series per target), or you can increase the scrape interval. However, reducing the number of series is likely more effective, due to compression of samples within a series.
 
-If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. However, you can also try removing individual block directories to resolve the problem. This means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
+If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. Non POSIX compliant filesystems are not supported by Prometheus's local storage, corruptions may happen, without possibility to recover. NFS is only potentially POSIX, most implementations are not. You can try removing individual block directories to resolve the problem, this means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
 
 If both time and size retention policies are specified, whichever policy triggers first will be used at that instant.
+
+Expired block cleanup happens on a background schedule. It may take up to two hours remove expired blocks. Expired blocks must be fully expired before they are cleaned up.
 
 ## Remote storage integrations
 

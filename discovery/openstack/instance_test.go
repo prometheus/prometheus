@@ -14,7 +14,9 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -40,7 +42,7 @@ func (s *OpenstackSDInstanceTestSuite) SetupTest(t *testing.T) {
 	s.Mock.HandleAuthSuccessfully()
 }
 
-func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (Discovery, error) {
+func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (refresher, error) {
 	conf := SDConfig{
 		IdentityEndpoint: s.Mock.Endpoint(),
 		Password:         "test",
@@ -50,7 +52,7 @@ func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (Discovery, error)
 		Role:             "instance",
 		AllTenants:       true,
 	}
-	return NewDiscovery(&conf, nil)
+	return newRefresher(&conf, nil)
 }
 
 func TestOpenstackSDInstanceRefresh(t *testing.T) {
@@ -61,9 +63,13 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 	instance, err := mock.openstackAuthSuccess()
 	testutil.Ok(t, err)
 
-	tg, err := instance.refresh()
+	ctx := context.Background()
+	tgs, err := instance.refresh(ctx)
 
 	testutil.Ok(t, err)
+	testutil.Equals(t, 1, len(tgs))
+
+	tg := tgs[0]
 	testutil.Assert(t, tg != nil, "")
 	testutil.Assert(t, tg.Targets != nil, "")
 	testutil.Equals(t, 4, len(tg.Targets))
@@ -78,6 +84,8 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.32"),
 			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.2"),
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
+			"__meta_openstack_project_id":      model.LabelValue("fcad67a6189847c4aecfa3c81a05783b"),
+			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
 		},
 		{
 			"__address__":                      model.LabelValue("10.0.0.31:0"),
@@ -87,6 +95,8 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_instance_name":   model.LabelValue("derp"),
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.31"),
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
+			"__meta_openstack_project_id":      model.LabelValue("fcad67a6189847c4aecfa3c81a05783b"),
+			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
 		},
 		{
 			"__address__":                      model.LabelValue("10.0.0.33:0"),
@@ -97,6 +107,8 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.33"),
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
 			"__meta_openstack_tag_env":         model.LabelValue("prod"),
+			"__meta_openstack_project_id":      model.LabelValue("fcad67a6189847c4aecfa3c81a05783b"),
+			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
 		},
 		{
 			"__address__":                      model.LabelValue("10.0.0.34:0"),
@@ -108,12 +120,28 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_address_pool":    model.LabelValue("private"),
 			"__meta_openstack_tag_env":         model.LabelValue("prod"),
 			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.4"),
+			"__meta_openstack_project_id":      model.LabelValue("fcad67a6189847c4aecfa3c81a05783b"),
+			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
 			testutil.Equals(t, lbls, tg.Targets[i])
 		})
 	}
+
+	mock.TearDownSuite()
+}
+
+func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
+	mock := &OpenstackSDHypervisorTestSuite{}
+	mock.SetupTest(t)
+
+	hypervisor, _ := mock.openstackAuthSuccess()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := hypervisor.refresh(ctx)
+	testutil.NotOk(t, err)
+	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
 
 	mock.TearDownSuite()
 }

@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -76,7 +77,7 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 					newTargets = append(newTargets, string(target))
 				}
 			}
-
+			sort.Strings(newTargets)
 			for name, value := range group.Labels {
 				newLabels[string(name)] = string(value)
 			}

@@ -13,10 +13,7 @@
 
 package unix
 
-import (
-	"syscall"
-	"unsafe"
-)
+import "unsafe"
 
 /*
  * Wrapped
@@ -230,7 +227,7 @@ func anyToSockaddr(fd int, rsa *RawSockaddrAny) (Sockaddr, error) {
 
 		// Some versions of AIX have a bug in getsockname (see IV78655).
 		// We can't rely on sa.Len being set correctly.
-		n := SizeofSockaddrUnix - 3 // substract leading Family, Len, terminating NUL.
+		n := SizeofSockaddrUnix - 3 // subtract leading Family, Len, terminating NUL.
 		for i := 0; i < n; i++ {
 			if pp.Path[i] == 0 {
 				n = i
@@ -271,13 +268,36 @@ func Gettimeofday(tv *Timeval) (err error) {
 	return
 }
 
+func Sendfile(outfd int, infd int, offset *int64, count int) (written int, err error) {
+	if raceenabled {
+		raceReleaseMerge(unsafe.Pointer(&ioSync))
+	}
+	return sendfile(outfd, infd, offset, count)
+}
+
 // TODO
 func sendfile(outfd int, infd int, offset *int64, count int) (written int, err error) {
 	return -1, ENOSYS
 }
 
+func direntIno(buf []byte) (uint64, bool) {
+	return readInt(buf, unsafe.Offsetof(Dirent{}.Ino), unsafe.Sizeof(Dirent{}.Ino))
+}
+
+func direntReclen(buf []byte) (uint64, bool) {
+	return readInt(buf, unsafe.Offsetof(Dirent{}.Reclen), unsafe.Sizeof(Dirent{}.Reclen))
+}
+
+func direntNamlen(buf []byte) (uint64, bool) {
+	reclen, ok := direntReclen(buf)
+	if !ok {
+		return 0, false
+	}
+	return reclen - uint64(unsafe.Offsetof(Dirent{}.Name)), true
+}
+
 //sys	getdirent(fd int, buf []byte) (n int, err error)
-func ReadDirent(fd int, buf []byte) (n int, err error) {
+func Getdents(fd int, buf []byte) (n int, err error) {
 	return getdirent(fd, buf)
 }
 
@@ -385,10 +405,6 @@ func IoctlGetTermios(fd int, req uint) (*Termios, error) {
 
 //sys	fcntl(fd int, cmd int, arg int) (val int, err error)
 
-func Flock(fd int, how int) (err error) {
-	return syscall.Flock(fd, how)
-}
-
 /*
  * Direct access
  */
@@ -444,8 +460,6 @@ func Flock(fd int, how int) (err error) {
 //sysnb	Times(tms *Tms) (ticks uintptr, err error)
 //sysnb	Umask(mask int) (oldmask int)
 //sysnb	Uname(buf *Utsname) (err error)
-//TODO umount
-// //sys	Unmount(target string, flags int) (err error) = umount
 //sys   Unlink(path string) (err error)
 //sys   Unlinkat(dirfd int, path string, flags int) (err error)
 //sys	Ustat(dev int, ubuf *Ustat_t) (err error)
@@ -456,8 +470,8 @@ func Flock(fd int, how int) (err error) {
 //sys	Dup2(oldfd int, newfd int) (err error)
 //sys	Fadvise(fd int, offset int64, length int64, advice int) (err error) = posix_fadvise64
 //sys	Fchown(fd int, uid int, gid int) (err error)
-//sys	Fstat(fd int, stat *Stat_t) (err error)
-//sys	Fstatat(dirfd int, path string, stat *Stat_t, flags int) (err error) = fstatat
+//sys	fstat(fd int, stat *Stat_t) (err error)
+//sys	fstatat(dirfd int, path string, stat *Stat_t, flags int) (err error) = fstatat
 //sys	Fstatfs(fd int, buf *Statfs_t) (err error)
 //sys	Ftruncate(fd int, length int64) (err error)
 //sysnb	Getegid() (egid int)
@@ -466,18 +480,17 @@ func Flock(fd int, how int) (err error) {
 //sysnb	Getuid() (uid int)
 //sys	Lchown(path string, uid int, gid int) (err error)
 //sys	Listen(s int, n int) (err error)
-//sys	Lstat(path string, stat *Stat_t) (err error)
+//sys	lstat(path string, stat *Stat_t) (err error)
 //sys	Pause() (err error)
 //sys	Pread(fd int, p []byte, offset int64) (n int, err error) = pread64
 //sys	Pwrite(fd int, p []byte, offset int64) (n int, err error) = pwrite64
-//TODO Select
-// //sys	Select(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timeval) (n int, err error)
+//sys	Select(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timeval) (n int, err error)
 //sys	Pselect(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timespec, sigmask *Sigset_t) (n int, err error)
 //sysnb	Setregid(rgid int, egid int) (err error)
 //sysnb	Setreuid(ruid int, euid int) (err error)
 //sys	Shutdown(fd int, how int) (err error)
 //sys	Splice(rfd int, roff *int64, wfd int, woff *int64, len int, flags int) (n int64, err error)
-//sys	Stat(path string, stat *Stat_t) (err error)
+//sys	stat(path string, statptr *Stat_t) (err error)
 //sys	Statfs(path string, buf *Statfs_t) (err error)
 //sys	Truncate(path string, length int64) (err error)
 
@@ -493,8 +506,10 @@ func Flock(fd int, how int) (err error) {
 //sysnb	getsockname(fd int, rsa *RawSockaddrAny, addrlen *_Socklen) (err error)
 //sys	recvfrom(fd int, p []byte, flags int, from *RawSockaddrAny, fromlen *_Socklen) (n int, err error)
 //sys	sendto(s int, buf []byte, flags int, to unsafe.Pointer, addrlen _Socklen) (err error)
-//sys	recvmsg(s int, msg *Msghdr, flags int) (n int, err error)
-//sys	sendmsg(s int, msg *Msghdr, flags int) (n int, err error)
+
+// In order to use msghdr structure with Control, Controllen, nrecvmsg and nsendmsg must be used.
+//sys	recvmsg(s int, msg *Msghdr, flags int) (n int, err error) = nrecvmsg
+//sys	sendmsg(s int, msg *Msghdr, flags int) (n int, err error) = nsendmsg
 
 //sys	munmap(addr uintptr, length uintptr) (err error)
 
@@ -545,3 +560,14 @@ func Poll(fds []PollFd, timeout int) (n int, err error) {
 //sys	gettimeofday(tv *Timeval, tzp *Timezone) (err error)
 //sysnb	Time(t *Time_t) (tt Time_t, err error)
 //sys	Utime(path string, buf *Utimbuf) (err error)
+
+//sys	Getsystemcfg(label int) (n uint64)
+
+//sys	umount(target string) (err error)
+func Unmount(target string, flags int) (err error) {
+	if flags != 0 {
+		// AIX doesn't have any flags for umount.
+		return ENOSYS
+	}
+	return umount(target)
+}

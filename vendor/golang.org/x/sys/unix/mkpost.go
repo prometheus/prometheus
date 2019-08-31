@@ -28,10 +28,10 @@ func main() {
 	if goarch == "" {
 		goarch = os.Getenv("GOARCH")
 	}
-	// Check that we are using the new build system if we should be.
-	if goos == "linux" && goarch != "sparc64" {
+	// Check that we are using the Docker-based build system if we should be.
+	if goos == "linux" {
 		if os.Getenv("GOLANG_SYS_BUILD") != "docker" {
-			os.Stderr.WriteString("In the new build system, mkpost should not be called directly.\n")
+			os.Stderr.WriteString("In the Docker-based build system, mkpost should not be called directly.\n")
 			os.Stderr.WriteString("See README.md\n")
 			os.Exit(1)
 		}
@@ -42,9 +42,20 @@ func main() {
 		log.Fatal(err)
 	}
 
+	if goos == "aix" {
+		// Replace type of Atim, Mtim and Ctim by Timespec in Stat_t
+		// to avoid having both StTimespec and Timespec.
+		sttimespec := regexp.MustCompile(`_Ctype_struct_st_timespec`)
+		b = sttimespec.ReplaceAll(b, []byte("Timespec"))
+	}
+
 	// Intentionally export __val fields in Fsid and Sigset_t
-	valRegex := regexp.MustCompile(`type (Fsid|Sigset_t) struct {(\s+)X__val(\s+\S+\s+)}`)
-	b = valRegex.ReplaceAll(b, []byte("type $1 struct {${2}Val$3}"))
+	valRegex := regexp.MustCompile(`type (Fsid|Sigset_t) struct {(\s+)X__(bits|val)(\s+\S+\s+)}`)
+	b = valRegex.ReplaceAll(b, []byte("type $1 struct {${2}Val$4}"))
+
+	// Intentionally export __fds_bits field in FdSet
+	fdSetRegex := regexp.MustCompile(`type (FdSet) struct {(\s+)X__fds_bits(\s+\S+\s+)}`)
+	b = fdSetRegex.ReplaceAll(b, []byte("type $1 struct {${2}Bits$3}"))
 
 	// If we have empty Ptrace structs, we should delete them. Only s390x emits
 	// nonempty Ptrace structs.
@@ -91,6 +102,15 @@ func main() {
 // +build %s,%s`, goarch, goos)
 	cgoCommandRegex := regexp.MustCompile(`(cgo -godefs .*)`)
 	b = cgoCommandRegex.ReplaceAll(b, []byte(replacement))
+
+	// Rename Stat_t time fields
+	if goos == "freebsd" && goarch == "386" {
+		// Hide Stat_t.[AMCB]tim_ext fields
+		renameStatTimeExtFieldsRegex := regexp.MustCompile(`[AMCB]tim_ext`)
+		b = renameStatTimeExtFieldsRegex.ReplaceAll(b, []byte("_"))
+	}
+	renameStatTimeFieldsRegex := regexp.MustCompile(`([AMCB])(?:irth)?time?(?:spec)?\s+(Timespec|StTimespec)`)
+	b = renameStatTimeFieldsRegex.ReplaceAll(b, []byte("${1}tim ${2}"))
 
 	// gofmt
 	b, err = format.Source(b)

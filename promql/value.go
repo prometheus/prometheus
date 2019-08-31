@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -156,7 +158,7 @@ func (vec Vector) ContainsSameLabelset() bool {
 	return false
 }
 
-// Matrix is a slice of Seriess that implements sort.Interface and
+// Matrix is a slice of Series that implements sort.Interface and
 // has a String method.
 type Matrix []Series
 
@@ -215,7 +217,7 @@ func (r *Result) Vector() (Vector, error) {
 	}
 	v, ok := r.Value.(Vector)
 	if !ok {
-		return nil, fmt.Errorf("query result is not a Vector")
+		return nil, errors.New("query result is not a Vector")
 	}
 	return v, nil
 }
@@ -228,7 +230,7 @@ func (r *Result) Matrix() (Matrix, error) {
 	}
 	v, ok := r.Value.(Matrix)
 	if !ok {
-		return nil, fmt.Errorf("query result is not a range Vector")
+		return nil, errors.New("query result is not a range Vector")
 	}
 	return v, nil
 }
@@ -241,7 +243,7 @@ func (r *Result) Scalar() (Scalar, error) {
 	}
 	v, ok := r.Value.(Scalar)
 	if !ok {
-		return Scalar{}, fmt.Errorf("query result is not a Scalar")
+		return Scalar{}, errors.New("query result is not a Scalar")
 	}
 	return v, nil
 }

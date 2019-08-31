@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -66,7 +67,7 @@ func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		*a = act
 		return nil
 	}
-	return fmt.Errorf("unknown relabel action %q", s)
+	return errors.Errorf("unknown relabel action %q", s)
 }
 
 // Config is the configuration for relabeling of target label sets.
@@ -100,19 +101,19 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		c.Regex = MustNewRegexp("")
 	}
 	if c.Modulus == 0 && c.Action == HashMod {
-		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
+		return errors.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
 	if (c.Action == Replace || c.Action == HashMod) && c.TargetLabel == "" {
-		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
+		return errors.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
 	if c.Action == Replace && !relabelTarget.MatchString(c.TargetLabel) {
-		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
+		return errors.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 	if c.Action == LabelMap && !relabelTarget.MatchString(c.Replacement) {
-		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
+		return errors.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
 	}
 	if c.Action == HashMod && !model.LabelName(c.TargetLabel).IsValid() {
-		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
+		return errors.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 
 	if c.Action == LabelDrop || c.Action == LabelKeep {
@@ -121,7 +122,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			c.Modulus != DefaultRelabelConfig.Modulus ||
 			c.Separator != DefaultRelabelConfig.Separator ||
 			c.Replacement != DefaultRelabelConfig.Replacement {
-			return fmt.Errorf("%s action requires only 'regex', and no other fields", c.Action)
+			return errors.Errorf("%s action requires only 'regex', and no other fields", c.Action)
 		}
 	}
 
@@ -247,7 +248,7 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 			}
 		}
 	default:
-		panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
+		panic(errors.Errorf("relabel: unknown relabel action type %q", cfg.Action))
 	}
 
 	return lb.Labels()

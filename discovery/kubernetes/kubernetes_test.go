@@ -16,7 +16,6 @@ package kubernetes
 import (
 	"context"
 	"encoding/json"
-	"sync"
 	"testing"
 	"time"
 
@@ -24,72 +23,21 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
-	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 )
 
-type watcherFactory struct {
-	sync.RWMutex
-	watchers map[schema.GroupVersionResource]*watch.FakeWatcher
-}
-
-func (wf *watcherFactory) watchFor(gvr schema.GroupVersionResource) *watch.FakeWatcher {
-	wf.Lock()
-	defer wf.Unlock()
-
-	var fakewatch *watch.FakeWatcher
-	fakewatch, ok := wf.watchers[gvr]
-	if !ok {
-		fakewatch = watch.NewFakeWithChanSize(128, true)
-		wf.watchers[gvr] = fakewatch
-	}
-	return fakewatch
-}
-
-func (wf *watcherFactory) Nodes() *watch.FakeWatcher {
-	return wf.watchFor(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"})
-}
-
-func (wf *watcherFactory) Ingresses() *watch.FakeWatcher {
-	return wf.watchFor(schema.GroupVersionResource{Group: "extensions", Version: "v1beta1", Resource: "ingresses"})
-}
-
-func (wf *watcherFactory) Endpoints() *watch.FakeWatcher {
-	return wf.watchFor(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "endpoints"})
-}
-
-func (wf *watcherFactory) Services() *watch.FakeWatcher {
-	return wf.watchFor(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "services"})
-}
-
-func (wf *watcherFactory) Pods() *watch.FakeWatcher {
-	return wf.watchFor(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"})
-}
-
 // makeDiscovery creates a kubernetes.Discovery instance for testing.
-func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime.Object) (*Discovery, kubernetes.Interface, *watcherFactory) {
+func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
 	clientset := fake.NewSimpleClientset(objects...)
-	// Current client-go we are using does not support push event on
-	// Add/Update/Create, so we need to emit event manually.
-	// See https://github.com/kubernetes/kubernetes/issues/54075.
-	// TODO update client-go thChanSizeand related packages to kubernetes-1.10.0+
-	wf := &watcherFactory{
-		watchers: make(map[schema.GroupVersionResource]*watch.FakeWatcher),
-	}
-	clientset.PrependWatchReactor("*", func(action k8stesting.Action) (handled bool, ret watch.Interface, err error) {
-		gvr := action.GetResource()
-		return true, wf.watchFor(gvr), nil
-	})
+
 	return &Discovery{
 		client:             clientset,
 		logger:             log.NewNopLogger(),
 		role:               role,
 		namespaceDiscovery: &nsDiscovery,
-	}, clientset, wf
+	}, clientset
 }
 
 type k8sDiscoveryTest struct {
@@ -106,6 +54,7 @@ type k8sDiscoveryTest struct {
 }
 
 func (d k8sDiscoveryTest) Run(t *testing.T) {
+	t.Helper()
 	ch := make(chan []*targetgroup.Group)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -176,6 +125,7 @@ Loop:
 }
 
 func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Group) {
+	t.Helper()
 	b1, err := json.Marshal(expected)
 	if err != nil {
 		panic(err)

@@ -60,6 +60,30 @@ func IsDevAppServer() bool {
 	return internal.IsDevAppServer()
 }
 
+// IsStandard reports whether the App Engine app is running in the standard
+// environment. This includes both the first generation runtimes (<= Go 1.9)
+// and the second generation runtimes (>= Go 1.11).
+func IsStandard() bool {
+	return internal.IsStandard()
+}
+
+// IsFlex reports whether the App Engine app is running in the flexible environment.
+func IsFlex() bool {
+	return internal.IsFlex()
+}
+
+// IsAppEngine reports whether the App Engine app is running on App Engine, in either
+// the standard or flexible environment.
+func IsAppEngine() bool {
+	return internal.IsAppEngine()
+}
+
+// IsSecondGen reports whether the App Engine app is running on the second generation
+// runtimes (>= Go 1.11).
+func IsSecondGen() bool {
+	return internal.IsSecondGen()
+}
+
 // NewContext returns a context for an in-flight HTTP request.
 // This function is cheap.
 func NewContext(req *http.Request) context.Context {
@@ -72,8 +96,6 @@ func NewContext(req *http.Request) context.Context {
 func WithContext(parent context.Context, req *http.Request) context.Context {
 	return internal.WithContext(parent, req)
 }
-
-// TODO(dsymonds): Add a Call function here? Otherwise other packages can't access internal.Call.
 
 // BlobKey is a key for a blobstore blob.
 //

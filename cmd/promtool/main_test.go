@@ -17,43 +17,46 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 	"time"
 )
 
 func TestQueryRange(t *testing.T) {
-	s, getURL := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
+	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
 	defer s.Close()
 
 	p := &promqlPrinter{}
-	exitCode := QueryRange(s.URL, "up", "0", "300", 0, p)
+	exitCode := QueryRange(s.URL, map[string]string{}, "up", "0", "300", 0, p)
 	expectedPath := "/api/v1/query_range"
-	if getURL().Path != expectedPath {
-		t.Errorf("unexpected URL path %s (wanted %s)", getURL().Path, expectedPath)
+	gotPath := getRequest().URL.Path
+	if gotPath != expectedPath {
+		t.Errorf("unexpected URL path %s (wanted %s)", gotPath, expectedPath)
 	}
-	actual := getURL().Query().Get("query")
+	form := getRequest().Form
+	actual := form.Get("query")
 	if actual != "up" {
 		t.Errorf("unexpected value %s for query", actual)
 	}
-	actual = getURL().Query().Get("step")
-	if actual != "1.000" {
+	actual = form.Get("step")
+	if actual != "1" {
 		t.Errorf("unexpected value %s for step", actual)
 	}
 	if exitCode > 0 {
 		t.Error()
 	}
 
-	exitCode = QueryRange(s.URL, "up", "0", "300", 10*time.Millisecond, p)
-	if getURL().Path != expectedPath {
-		t.Errorf("unexpected URL path %s (wanted %s)", getURL().Path, expectedPath)
+	exitCode = QueryRange(s.URL, map[string]string{}, "up", "0", "300", 10*time.Millisecond, p)
+	gotPath = getRequest().URL.Path
+	if gotPath != expectedPath {
+		t.Errorf("unexpected URL path %s (wanted %s)", gotPath, expectedPath)
 	}
-	actual = getURL().Query().Get("query")
+	form = getRequest().Form
+	actual = form.Get("query")
 	if actual != "up" {
 		t.Errorf("unexpected value %s for query", actual)
 	}
-	actual = getURL().Query().Get("step")
-	if actual != "0.010" {
+	actual = form.Get("step")
+	if actual != "0.01" {
 		t.Errorf("unexpected value %s for step", actual)
 	}
 	if exitCode > 0 {
@@ -61,16 +64,17 @@ func TestQueryRange(t *testing.T) {
 	}
 }
 
-func mockServer(code int, body string) (*httptest.Server, func() *url.URL) {
-	var u *url.URL
+func mockServer(code int, body string) (*httptest.Server, func() *http.Request) {
+	var req *http.Request
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u = r.URL
+		r.ParseForm()
+		req = r
 		w.WriteHeader(code)
 		fmt.Fprintln(w, body)
 	}))
 
-	f := func() *url.URL {
-		return u
+	f := func() *http.Request {
+		return req
 	}
 	return server, f
 }

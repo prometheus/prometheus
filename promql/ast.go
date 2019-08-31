@@ -14,8 +14,9 @@
 package promql
 
 import (
-	"fmt"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -260,6 +261,11 @@ func Walk(v Visitor, node Node, path []Node) error {
 			}
 		}
 	case *AggregateExpr:
+		if n.Param != nil {
+			if err := Walk(v, n.Param, path); err != nil {
+				return err
+			}
+		}
 		if err := Walk(v, n.Expr, path); err != nil {
 			return err
 		}
@@ -296,7 +302,7 @@ func Walk(v Visitor, node Node, path []Node) error {
 		// nothing to do
 
 	default:
-		panic(fmt.Errorf("promql.Walk: unhandled node type %T", node))
+		panic(errors.Errorf("promql.Walk: unhandled node type %T", node))
 	}
 
 	_, err = v.Visit(nil, nil)
@@ -317,5 +323,6 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
 // for all the non-nil children of node, recursively.
 func Inspect(node Node, f inspector) {
+	//nolint: errcheck
 	Walk(inspector(f), node, nil)
 }

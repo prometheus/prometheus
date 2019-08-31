@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/samuel/go-zookeeper/zk"
 
@@ -58,14 +59,14 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 	if len(c.Servers) == 0 {
-		return fmt.Errorf("serverset SD config must contain at least one Zookeeper server")
+		return errors.New("serverset SD config must contain at least one Zookeeper server")
 	}
 	if len(c.Paths) == 0 {
-		return fmt.Errorf("serverset SD config must contain at least one path")
+		return errors.New("serverset SD config must contain at least one path")
 	}
 	for _, path := range c.Paths {
 		if !strings.HasPrefix(path, "/") {
-			return fmt.Errorf("serverset SD config paths must begin with '/': %s", path)
+			return errors.Errorf("serverset SD config paths must begin with '/': %s", path)
 		}
 	}
 	return nil
@@ -87,14 +88,14 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.Servers) == 0 {
-		return fmt.Errorf("nerve SD config must contain at least one Zookeeper server")
+		return errors.New("nerve SD config must contain at least one Zookeeper server")
 	}
 	if len(c.Paths) == 0 {
-		return fmt.Errorf("nerve SD config must contain at least one path")
+		return errors.New("nerve SD config must contain at least one path")
 	}
 	for _, path := range c.Paths {
 		if !strings.HasPrefix(path, "/") {
-			return fmt.Errorf("nerve SD config paths must begin with '/': %s", path)
+			return errors.Errorf("nerve SD config paths must begin with '/': %s", path)
 		}
 	}
 	return nil
@@ -107,8 +108,9 @@ type Discovery struct {
 
 	sources map[string]*targetgroup.Group
 
-	updates    chan treecache.ZookeeperTreeCacheEvent
-	treeCaches []*treecache.ZookeeperTreeCache
+	updates     chan treecache.ZookeeperTreeCacheEvent
+	pathUpdates []chan treecache.ZookeeperTreeCacheEvent
+	treeCaches  []*treecache.ZookeeperTreeCache
 
 	parse  func(data []byte, path string) (model.LabelSet, error)
 	logger log.Logger
@@ -154,7 +156,9 @@ func NewDiscovery(
 		logger:  logger,
 	}
 	for _, path := range paths {
-		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(conn, path, updates, logger))
+		pathUpdate := make(chan treecache.ZookeeperTreeCacheEvent)
+		sd.pathUpdates = append(sd.pathUpdates, pathUpdate)
+		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(conn, path, pathUpdate, logger))
 	}
 	return sd, nil
 }
@@ -165,11 +169,25 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		for _, tc := range d.treeCaches {
 			tc.Stop()
 		}
-		// Drain event channel in case the treecache leaks goroutines otherwise.
-		for range d.updates {
+		for _, pathUpdate := range d.pathUpdates {
+			// Drain event channel in case the treecache leaks goroutines otherwise.
+			for range pathUpdate {
+			}
 		}
 		d.conn.Close()
 	}()
+
+	for _, pathUpdate := range d.pathUpdates {
+		go func(update chan treecache.ZookeeperTreeCacheEvent) {
+			for event := range update {
+				select {
+				case d.updates <- event:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}(pathUpdate)
+	}
 
 	for {
 		select {
@@ -223,7 +241,7 @@ func parseServersetMember(data []byte, path string) (model.LabelSet, error) {
 	member := serversetMember{}
 
 	if err := json.Unmarshal(data, &member); err != nil {
-		return nil, fmt.Errorf("error unmarshaling serverset member %q: %s", path, err)
+		return nil, errors.Wrapf(err, "error unmarshaling serverset member %q", path)
 	}
 
 	labels := model.LabelSet{}
@@ -265,7 +283,7 @@ func parseNerveMember(data []byte, path string) (model.LabelSet, error) {
 	member := nerveMember{}
 	err := json.Unmarshal(data, &member)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling nerve member %q: %s", path, err)
+		return nil, errors.Wrapf(err, "error unmarshaling nerve member %q", path)
 	}
 
 	labels := model.LabelSet{}

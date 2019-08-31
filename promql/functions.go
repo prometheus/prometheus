@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"fmt"
 	"math"
 	"regexp"
 	"sort"
@@ -22,7 +21,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -232,10 +233,10 @@ func funcHoltWinters(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
 
 	// Sanity check the input.
 	if sf <= 0 || sf >= 1 {
-		panic(fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf))
+		panic(errors.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf))
 	}
 	if tf <= 0 || tf >= 1 {
-		panic(fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf))
+		panic(errors.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf))
 	}
 
 	var l int
@@ -730,10 +731,10 @@ func funcLabelReplace(vals []Value, args Expressions, enh *EvalNodeHelper) Vecto
 		var err error
 		enh.regex, err = regexp.Compile("^(?:" + regexStr + ")$")
 		if err != nil {
-			panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
+			panic(errors.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 		}
 		if !model.LabelNameRE.MatchString(dst) {
-			panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
+			panic(errors.Errorf("invalid destination label name in label_replace(): %s", dst))
 		}
 		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
 	}
@@ -795,13 +796,13 @@ func funcLabelJoin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	for i := 3; i < len(args); i++ {
 		src := args[i].(*StringLiteral).Val
 		if !model.LabelName(src).IsValid() {
-			panic(fmt.Errorf("invalid source label name in label_join(): %s", src))
+			panic(errors.Errorf("invalid source label name in label_join(): %s", src))
 		}
 		srcLabels[i-3] = src
 	}
 
 	if !model.LabelName(dst).IsValid() {
-		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
+		panic(errors.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
 	srcVals := make([]string, len(srcLabels))

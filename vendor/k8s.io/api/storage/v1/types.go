@@ -166,7 +166,14 @@ type VolumeAttachmentSource struct {
 	// +optional
 	PersistentVolumeName *string `json:"persistentVolumeName,omitempty" protobuf:"bytes,1,opt,name=persistentVolumeName"`
 
-	// Placeholder for *VolumeSource to accommodate inline volumes in pods.
+	// inlineVolumeSpec contains all the information necessary to attach
+	// a persistent volume defined by a pod's inline VolumeSource. This field
+	// is populated only for the CSIMigration feature. It contains
+	// translated fields from a pod's inline VolumeSource to a
+	// PersistentVolumeSpec. This field is alpha-level and is only
+	// honored by servers that enabled the CSIMigration feature.
+	// +optional
+	InlineVolumeSpec *v1.PersistentVolumeSpec `json:"inlineVolumeSpec,omitempty" protobuf:"bytes,2,opt,name=inlineVolumeSpec"`
 }
 
 // VolumeAttachmentStatus is the status of a VolumeAttachment request.
@@ -204,7 +211,7 @@ type VolumeError struct {
 	Time metav1.Time `json:"time,omitempty" protobuf:"bytes,1,opt,name=time"`
 
 	// String detailing the error encountered during Attach or Detach operation.
-	// This string maybe logged, so it should not contain sensitive
+	// This string may be logged, so it should not contain sensitive
 	// information.
 	// +optional
 	Message string `json:"message,omitempty" protobuf:"bytes,2,opt,name=message"`

@@ -5,17 +5,29 @@
   branch = "master"
   name = "golang.org/x/crypto"
   packages = ["ed25519","ed25519/internal/edwards25519"]
-  revision = "b080dc9a8c480b08e698fb1219160d598526310f"
+  revision = "20be4c3c3ed52bfccdb2d59a412ee1a936d175a7"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/net"
   packages = ["bpf","internal/iana","internal/socket","ipv4","ipv6"]
-  revision = "894f8ed5849b15b810ae41e9590a0d05395bba27"
+  revision = "60506f45cf65977eb3a9c6e30f995f54a721c271"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/sync"
+  packages = ["errgroup"]
+  revision = "112230192c580c3556b8cee6403af37a4fc5f28c"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/sys"
+  packages = ["unix","windows"]
+  revision = "4c4f7f33c9ed00de01c4c741d2177abfcfe19307"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "c4abc38abaeeeeb9be92455c9c02cae32841122b8982aaa067ef25bb8e86ff9d"
+  inputs-digest = "fc70ece982d3660454fe1b9ccd5c91162a1cc080b58ad82aa065ad4a2ec93ce9"
   solver-name = "gps-cdcl"
   solver-version = 1

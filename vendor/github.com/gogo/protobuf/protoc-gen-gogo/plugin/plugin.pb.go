@@ -3,10 +3,12 @@
 
 package plugin_go
 
-import proto "github.com/gogo/protobuf/proto"
-import fmt "fmt"
-import math "math"
-import descriptor "github.com/gogo/protobuf/protoc-gen-gogo/descriptor"
+import (
+	fmt "fmt"
+	proto "github.com/gogo/protobuf/proto"
+	descriptor "github.com/gogo/protobuf/protoc-gen-gogo/descriptor"
+	math "math"
+)
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
@@ -36,7 +38,7 @@ func (m *Version) Reset()         { *m = Version{} }
 func (m *Version) String() string { return proto.CompactTextString(m) }
 func (*Version) ProtoMessage()    {}
 func (*Version) Descriptor() ([]byte, []int) {
-	return fileDescriptor_plugin_ac234f81c61f07b3, []int{0}
+	return fileDescriptor_22a625af4bc1cc87, []int{0}
 }
 func (m *Version) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Version.Unmarshal(m, b)
@@ -44,8 +46,8 @@ func (m *Version) XXX_Unmarshal(b []byte) error {
 func (m *Version) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_Version.Marshal(b, m, deterministic)
 }
-func (dst *Version) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Version.Merge(dst, src)
+func (m *Version) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Version.Merge(m, src)
 }
 func (m *Version) XXX_Size() int {
 	return xxx_messageInfo_Version.Size(m)
@@ -118,7 +120,7 @@ func (m *CodeGeneratorRequest) Reset()         { *m = CodeGeneratorRequest{} }
 func (m *CodeGeneratorRequest) String() string { return proto.CompactTextString(m) }
 func (*CodeGeneratorRequest) ProtoMessage()    {}
 func (*CodeGeneratorRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_plugin_ac234f81c61f07b3, []int{1}
+	return fileDescriptor_22a625af4bc1cc87, []int{1}
 }
 func (m *CodeGeneratorRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_CodeGeneratorRequest.Unmarshal(m, b)
@@ -126,8 +128,8 @@ func (m *CodeGeneratorRequest) XXX_Unmarshal(b []byte) error {
 func (m *CodeGeneratorRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_CodeGeneratorRequest.Marshal(b, m, deterministic)
 }
-func (dst *CodeGeneratorRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_CodeGeneratorRequest.Merge(dst, src)
+func (m *CodeGeneratorRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CodeGeneratorRequest.Merge(m, src)
 }
 func (m *CodeGeneratorRequest) XXX_Size() int {
 	return xxx_messageInfo_CodeGeneratorRequest.Size(m)
@@ -187,7 +189,7 @@ func (m *CodeGeneratorResponse) Reset()         { *m = CodeGeneratorResponse{} }
 func (m *CodeGeneratorResponse) String() string { return proto.CompactTextString(m) }
 func (*CodeGeneratorResponse) ProtoMessage()    {}
 func (*CodeGeneratorResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_plugin_ac234f81c61f07b3, []int{2}
+	return fileDescriptor_22a625af4bc1cc87, []int{2}
 }
 func (m *CodeGeneratorResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_CodeGeneratorResponse.Unmarshal(m, b)
@@ -195,8 +197,8 @@ func (m *CodeGeneratorResponse) XXX_Unmarshal(b []byte) error {
 func (m *CodeGeneratorResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_CodeGeneratorResponse.Marshal(b, m, deterministic)
 }
-func (dst *CodeGeneratorResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_CodeGeneratorResponse.Merge(dst, src)
+func (m *CodeGeneratorResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CodeGeneratorResponse.Merge(m, src)
 }
 func (m *CodeGeneratorResponse) XXX_Size() int {
 	return xxx_messageInfo_CodeGeneratorResponse.Size(m)
@@ -284,7 +286,7 @@ func (m *CodeGeneratorResponse_File) Reset()         { *m = CodeGeneratorRespons
 func (m *CodeGeneratorResponse_File) String() string { return proto.CompactTextString(m) }
 func (*CodeGeneratorResponse_File) ProtoMessage()    {}
 func (*CodeGeneratorResponse_File) Descriptor() ([]byte, []int) {
-	return fileDescriptor_plugin_ac234f81c61f07b3, []int{2, 0}
+	return fileDescriptor_22a625af4bc1cc87, []int{2, 0}
 }
 func (m *CodeGeneratorResponse_File) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_CodeGeneratorResponse_File.Unmarshal(m, b)
@@ -292,8 +294,8 @@ func (m *CodeGeneratorResponse_File) XXX_Unmarshal(b []byte) error {
 func (m *CodeGeneratorResponse_File) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return xxx_messageInfo_CodeGeneratorResponse_File.Marshal(b, m, deterministic)
 }
-func (dst *CodeGeneratorResponse_File) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_CodeGeneratorResponse_File.Merge(dst, src)
+func (m *CodeGeneratorResponse_File) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CodeGeneratorResponse_File.Merge(m, src)
 }
 func (m *CodeGeneratorResponse_File) XXX_Size() int {
 	return xxx_messageInfo_CodeGeneratorResponse_File.Size(m)
@@ -332,9 +334,9 @@ func init() {
 	proto.RegisterType((*CodeGeneratorResponse_File)(nil), "google.protobuf.compiler.CodeGeneratorResponse.File")
 }
 
-func init() { proto.RegisterFile("plugin.proto", fileDescriptor_plugin_ac234f81c61f07b3) }
+func init() { proto.RegisterFile("plugin.proto", fileDescriptor_22a625af4bc1cc87) }
 
-var fileDescriptor_plugin_ac234f81c61f07b3 = []byte{
+var fileDescriptor_22a625af4bc1cc87 = []byte{
 	// 383 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x74, 0x92, 0xcd, 0x6a, 0xd5, 0x40,
 	0x14, 0xc7, 0x89, 0x37, 0xb5, 0xe4, 0xb4, 0x34, 0x65, 0xa8, 0x32, 0x94, 0x2e, 0xe2, 0x45, 0x30,

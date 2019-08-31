@@ -10,6 +10,8 @@ h2.danger a {
 
 div#showTargets .btn {
     border-radius: 0px;
+    margin-top: 10px;
+    margin-bottom: 15px;
 }
 
 .table-container button.targets {

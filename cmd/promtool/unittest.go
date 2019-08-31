@@ -18,13 +18,16 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -67,6 +70,9 @@ func ruleUnitTest(filename string) []error {
 	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
 		return []error{err}
 	}
+	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {
+		return []error{err}
+	}
 
 	if unitTestInp.EvaluationInterval == 0 {
 		unitTestInp.EvaluationInterval = 1 * time.Minute
@@ -84,7 +90,7 @@ func ruleUnitTest(filename string) []error {
 	groupOrderMap := make(map[string]int)
 	for i, gn := range unitTestInp.GroupEvalOrder {
 		if _, ok := groupOrderMap[gn]; ok {
-			return []error{fmt.Errorf("group name repeated in evaluation order: %s", gn)}
+			return []error{errors.Errorf("group name repeated in evaluation order: %s", gn)}
 		}
 		groupOrderMap[gn] = i
 	}
@@ -124,12 +130,34 @@ func (utf *unitTestFile) maxEvalTime() time.Duration {
 	return maxd
 }
 
+// resolveAndGlobFilepaths joins all relative paths in a configuration
+// with a given base directory and replaces all globs with matching files.
+func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
+	for i, rf := range utf.RuleFiles {
+		if rf != "" && !filepath.IsAbs(rf) {
+			utf.RuleFiles[i] = filepath.Join(baseDir, rf)
+		}
+	}
+
+	var globbedFiles []string
+	for _, rf := range utf.RuleFiles {
+		m, err := filepath.Glob(rf)
+		if err != nil {
+			return err
+		}
+		globbedFiles = append(globbedFiles, m...)
+	}
+	utf.RuleFiles = globbedFiles
+	return nil
+}
+
 // testGroup is a group of input series and tests associated with it.
 type testGroup struct {
 	Interval        time.Duration    `yaml:"interval"`
 	InputSeries     []series         `yaml:"input_series"`
 	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
 	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
+	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
 }
 
 // test performs the unit tests.
@@ -147,10 +175,10 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		Appendable: suite.Storage(),
 		Context:    context.Background(),
 		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
-		Logger:     &dummyLogger{},
+		Logger:     log.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
-	groupsMap, ers := m.LoadGroups(tg.Interval, ruleFiles...)
+	groupsMap, ers := m.LoadGroups(tg.Interval, tg.ExternalLabels, ruleFiles...)
 	if ers != nil {
 		return ers
 	}
@@ -197,6 +225,12 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 			}
 			for _, g := range groups {
 				g.Eval(suite.Context(), ts)
+				for _, r := range g.Rules() {
+					if r.LastError() != nil {
+						errs = append(errs, errors.Errorf("    rule: %s, time: %s, err: %v",
+							r.Name(), ts.Sub(time.Unix(0, 0)), r.LastError()))
+					}
+				}
 			}
 		})
 		if len(errs) > 0 {
@@ -252,6 +286,9 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				for _, a := range testcase.ExpAlerts {
 					// User gives only the labels from alerting rule, which doesn't
 					// include this label (added by Prometheus during Eval).
+					if a.ExpLabels == nil {
+						a.ExpLabels = make(map[string]string)
+					}
 					a.ExpLabels[labels.AlertName] = testcase.Alertname
 
 					expAlerts = append(expAlerts, labelAndAnnotation{
@@ -261,14 +298,14 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				}
 
 				if gotAlerts.Len() != expAlerts.Len() {
-					errs = append(errs, fmt.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
 						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
 				} else {
 					sort.Sort(gotAlerts)
 					sort.Sort(expAlerts)
 
 					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						errs = append(errs, fmt.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
 							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
 					}
 				}
@@ -284,7 +321,7 @@ Outer:
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(testCase.EvalTime),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {
-			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
+			errs = append(errs, errors.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
 				testCase.EvalTime.String(), err.Error()))
 			continue
 		}
@@ -301,7 +338,7 @@ Outer:
 		for _, s := range testCase.ExpSamples {
 			lb, err := promql.ParseMetric(s.Labels)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
+				errs = append(errs, errors.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
 					testCase.EvalTime.String(), err.Error()))
 				continue Outer
 			}
@@ -318,7 +355,7 @@ Outer:
 			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
 		})
 		if !reflect.DeepEqual(expSamples, gotSamples) {
-			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, \n        exp:%#v, \n        got:%#v", testCase.Expr,
+			errs = append(errs, errors.Errorf("    expr:'%s', time:%s, \n        exp:%#v, \n        got:%#v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
 		}
 	}
@@ -397,7 +434,7 @@ func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, q
 			Metric: labels.Labels{},
 		}}, nil
 	default:
-		return nil, fmt.Errorf("rule result is not a vector or scalar")
+		return nil, errors.New("rule result is not a vector or scalar")
 	}
 }
 
@@ -481,10 +518,4 @@ func parsedSamplesString(pss []parsedSample) string {
 
 func (ps *parsedSample) String() string {
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
-}
-
-type dummyLogger struct{}
-
-func (l *dummyLogger) Log(keyvals ...interface{}) error {
-	return nil
 }

@@ -34,13 +34,9 @@ const (
 type RequireHandshakeSetting int
 
 const (
-	// RequireHandshakeHybrid (default, deprecated) indicates to wait for
-	// handshake before considering a connection ready, but wait before
-	// considering successful.
-	RequireHandshakeHybrid RequireHandshakeSetting = iota
-	// RequireHandshakeOn (default after the 1.17 release) indicates to wait
-	// for handshake before considering a connection ready/successful.
-	RequireHandshakeOn
+	// RequireHandshakeOn indicates to wait for handshake before considering a
+	// connection ready/successful.
+	RequireHandshakeOn RequireHandshakeSetting = iota
 	// RequireHandshakeOff indicates to not wait for handshake before
 	// considering a connection ready/successful.
 	RequireHandshakeOff
@@ -53,17 +49,16 @@ var (
 	// environment variable.
 	//
 	// Will be removed after the 1.18 release.
-	RequireHandshake RequireHandshakeSetting
+	RequireHandshake = RequireHandshakeOn
 )
 
 func init() {
 	switch strings.ToLower(os.Getenv(requireHandshakeStr)) {
 	case "on":
+		fallthrough
+	default:
 		RequireHandshake = RequireHandshakeOn
 	case "off":
 		RequireHandshake = RequireHandshakeOff
-	case "hybrid":
-		// Will be removed after the 1.17 release.
-		RequireHandshake = RequireHandshakeHybrid
 	}
 }

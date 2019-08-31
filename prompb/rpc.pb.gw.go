@@ -9,13 +9,13 @@ It translates gRPC into RESTful JSON APIs.
 package prompb
 
 import (
+	"context"
 	"io"
 	"net/http"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/grpc-ecosystem/grpc-gateway/utilities"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/grpclog"
@@ -36,7 +36,10 @@ func request_Admin_TSDBSnapshot_0(ctx context.Context, marshaler runtime.Marshal
 	var protoReq TSDBSnapshotRequest
 	var metadata runtime.ServerMetadata
 
-	if err := runtime.PopulateQueryParameters(&protoReq, req.URL.Query(), filter_Admin_TSDBSnapshot_0); err != nil {
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_Admin_TSDBSnapshot_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 
@@ -173,11 +176,11 @@ func RegisterAdminHandlerClient(ctx context.Context, mux *runtime.ServeMux, clie
 }
 
 var (
-	pattern_Admin_TSDBSnapshot_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v2", "admin", "tsdb", "snapshot"}, ""))
+	pattern_Admin_TSDBSnapshot_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v2", "admin", "tsdb", "snapshot"}, "", runtime.AssumeColonVerbOpt(true)))
 
-	pattern_Admin_TSDBCleanTombstones_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v2", "admin", "tsdb", "clean_tombstones"}, ""))
+	pattern_Admin_TSDBCleanTombstones_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v2", "admin", "tsdb", "clean_tombstones"}, "", runtime.AssumeColonVerbOpt(true)))
 
-	pattern_Admin_DeleteSeries_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v2", "admin", "tsdb", "delete_series"}, ""))
+	pattern_Admin_DeleteSeries_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v2", "admin", "tsdb", "delete_series"}, "", runtime.AssumeColonVerbOpt(true)))
 )
 
 var (

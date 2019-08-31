@@ -253,8 +253,8 @@ func (o PeerCallOption) after(c *callInfo) {
 	}
 }
 
-// FailFast configures the action to take when an RPC is attempted on broken
-// connections or unreachable servers.  If failFast is true, the RPC will fail
+// WaitForReady configures the action to take when an RPC is attempted on broken
+// connections or unreachable servers. If waitForReady is false, the RPC will fail
 // immediately. Otherwise, the RPC client will block the call until a
 // connection is available (or the call is canceled or times out) and will
 // retry the call if it fails due to a transient error.  gRPC will not retry if
@@ -262,7 +262,14 @@ func (o PeerCallOption) after(c *callInfo) {
 // the data.  Please refer to
 // https://github.com/grpc/grpc/blob/master/doc/wait-for-ready.md.
 //
-// By default, RPCs are "Fail Fast".
+// By default, RPCs don't "wait for ready".
+func WaitForReady(waitForReady bool) CallOption {
+	return FailFastCallOption{FailFast: !waitForReady}
+}
+
+// FailFast is the opposite of WaitForReady.
+//
+// Deprecated: use WaitForReady.
 func FailFast(failFast bool) CallOption {
 	return FailFastCallOption{FailFast: failFast}
 }
@@ -363,13 +370,13 @@ func (o CompressorCallOption) after(c *callInfo) {}
 // https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md#requests for
 // more details.
 //
-// If CallCustomCodec is not also used, the content-subtype will be used to
-// look up the Codec to use in the registry controlled by RegisterCodec. See
-// the documentation on RegisterCodec for details on registration. The lookup
-// of content-subtype is case-insensitive. If no such Codec is found, the call
+// If ForceCodec is not also used, the content-subtype will be used to look up
+// the Codec to use in the registry controlled by RegisterCodec. See the
+// documentation on RegisterCodec for details on registration. The lookup of
+// content-subtype is case-insensitive. If no such Codec is found, the call
 // will result in an error with code codes.Internal.
 //
-// If CallCustomCodec is also used, that Codec will be used for all request and
+// If ForceCodec is also used, that Codec will be used for all request and
 // response messages, with the content-subtype set to the given contentSubtype
 // here for requests.
 func CallContentSubtype(contentSubtype string) CallOption {
@@ -389,7 +396,7 @@ func (o ContentSubtypeCallOption) before(c *callInfo) error {
 }
 func (o ContentSubtypeCallOption) after(c *callInfo) {}
 
-// CallCustomCodec returns a CallOption that will set the given Codec to be
+// ForceCodec returns a CallOption that will set the given Codec to be
 // used for all request and response messages for a call. The result of calling
 // String() will be used as the content-subtype in a case-insensitive manner.
 //
@@ -401,12 +408,37 @@ func (o ContentSubtypeCallOption) after(c *callInfo) {}
 //
 // This function is provided for advanced users; prefer to use only
 // CallContentSubtype to select a registered codec instead.
+//
+// This is an EXPERIMENTAL API.
+func ForceCodec(codec encoding.Codec) CallOption {
+	return ForceCodecCallOption{Codec: codec}
+}
+
+// ForceCodecCallOption is a CallOption that indicates the codec used for
+// marshaling messages.
+//
+// This is an EXPERIMENTAL API.
+type ForceCodecCallOption struct {
+	Codec encoding.Codec
+}
+
+func (o ForceCodecCallOption) before(c *callInfo) error {
+	c.codec = o.Codec
+	return nil
+}
+func (o ForceCodecCallOption) after(c *callInfo) {}
+
+// CallCustomCodec behaves like ForceCodec, but accepts a grpc.Codec instead of
+// an encoding.Codec.
+//
+// Deprecated: use ForceCodec instead.
 func CallCustomCodec(codec Codec) CallOption {
 	return CustomCodecCallOption{Codec: codec}
 }
 
 // CustomCodecCallOption is a CallOption that indicates the codec used for
 // marshaling messages.
+//
 // This is an EXPERIMENTAL API.
 type CustomCodecCallOption struct {
 	Codec Codec
@@ -629,7 +661,9 @@ func recvAndDecompress(p *parser, s *transport.Stream, dc Decompressor, maxRecei
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "grpc: failed to decompress the received message %v", err)
 			}
-			d, err = ioutil.ReadAll(dcReader)
+			// Read from LimitReader with limit max+1. So if the underlying
+			// reader is over limit, the result will be bigger than max.
+			d, err = ioutil.ReadAll(io.LimitReader(dcReader, int64(maxReceiveMessageSize)+1))
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "grpc: failed to decompress the received message %v", err)
 			}
@@ -660,14 +694,34 @@ func recv(p *parser, c baseCodec, s *transport.Stream, dc Decompressor, m interf
 	return nil
 }
 
+// Information about RPC
 type rpcInfo struct {
-	failfast bool
+	failfast      bool
+	preloaderInfo *compressorInfo
+}
+
+// Information about Preloader
+// Responsible for storing codec, and compressors
+// If stream (s) has  context s.Context which stores rpcInfo that has non nil
+// pointers to codec, and compressors, then we can use preparedMsg for Async message prep
+// and reuse marshalled bytes
+type compressorInfo struct {
+	codec baseCodec
+	cp    Compressor
+	comp  encoding.Compressor
 }
 
 type rpcInfoContextKey struct{}
 
-func newContextWithRPCInfo(ctx context.Context, failfast bool) context.Context {
-	return context.WithValue(ctx, rpcInfoContextKey{}, &rpcInfo{failfast: failfast})
+func newContextWithRPCInfo(ctx context.Context, failfast bool, codec baseCodec, cp Compressor, comp encoding.Compressor) context.Context {
+	return context.WithValue(ctx, rpcInfoContextKey{}, &rpcInfo{
+		failfast: failfast,
+		preloaderInfo: &compressorInfo{
+			codec: codec,
+			cp:    cp,
+			comp:  comp,
+		},
+	})
 }
 
 func rpcInfoFromContext(ctx context.Context) (s *rpcInfo, ok bool) {
@@ -678,23 +732,17 @@ func rpcInfoFromContext(ctx context.Context) (s *rpcInfo, ok bool) {
 // Code returns the error code for err if it was produced by the rpc system.
 // Otherwise, it returns codes.Unknown.
 //
-// Deprecated: use status.FromError and Code method instead.
+// Deprecated: use status.Code instead.
 func Code(err error) codes.Code {
-	if s, ok := status.FromError(err); ok {
-		return s.Code()
-	}
-	return codes.Unknown
+	return status.Code(err)
 }
 
 // ErrorDesc returns the error description of err if it was produced by the rpc system.
 // Otherwise, it returns err.Error() or empty string when err is nil.
 //
-// Deprecated: use status.FromError and Message method instead.
+// Deprecated: use status.Convert and Message method instead.
 func ErrorDesc(err error) string {
-	if s, ok := status.FromError(err); ok {
-		return s.Message()
-	}
-	return err.Error()
+	return status.Convert(err).Message()
 }
 
 // Errorf returns an error containing an error code and a description;

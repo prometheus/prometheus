@@ -3,21 +3,19 @@
 
 package types
 
-import proto "github.com/gogo/protobuf/proto"
-import fmt "fmt"
-import math "math"
-
-import strconv "strconv"
-
-import bytes "bytes"
-
-import strings "strings"
-import reflect "reflect"
-import github_com_gogo_protobuf_sortkeys "github.com/gogo/protobuf/sortkeys"
-
-import encoding_binary "encoding/binary"
-
-import io "io"
+import (
+	bytes "bytes"
+	encoding_binary "encoding/binary"
+	fmt "fmt"
+	proto "github.com/gogo/protobuf/proto"
+	github_com_gogo_protobuf_sortkeys "github.com/gogo/protobuf/sortkeys"
+	io "io"
+	math "math"
+	math_bits "math/bits"
+	reflect "reflect"
+	strconv "strconv"
+	strings "strings"
+)
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
@@ -44,13 +42,15 @@ const (
 var NullValue_name = map[int32]string{
 	0: "NULL_VALUE",
 }
+
 var NullValue_value = map[string]int32{
 	"NULL_VALUE": 0,
 }
 
 func (NullValue) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_struct_7f9d36853146434f, []int{0}
+	return fileDescriptor_df322afd6c9fb402, []int{0}
 }
+
 func (NullValue) XXX_WellKnownType() string { return "NullValue" }
 
 // `Struct` represents a structured data value, consisting of fields
@@ -72,7 +72,7 @@ type Struct struct {
 func (m *Struct) Reset()      { *m = Struct{} }
 func (*Struct) ProtoMessage() {}
 func (*Struct) Descriptor() ([]byte, []int) {
-	return fileDescriptor_struct_7f9d36853146434f, []int{0}
+	return fileDescriptor_df322afd6c9fb402, []int{0}
 }
 func (*Struct) XXX_WellKnownType() string { return "Struct" }
 func (m *Struct) XXX_Unmarshal(b []byte) error {
@@ -83,15 +83,15 @@ func (m *Struct) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return xxx_messageInfo_Struct.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
 		return b[:n], nil
 	}
 }
-func (dst *Struct) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Struct.Merge(dst, src)
+func (m *Struct) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Struct.Merge(m, src)
 }
 func (m *Struct) XXX_Size() int {
 	return m.Size()
@@ -138,7 +138,7 @@ type Value struct {
 func (m *Value) Reset()      { *m = Value{} }
 func (*Value) ProtoMessage() {}
 func (*Value) Descriptor() ([]byte, []int) {
-	return fileDescriptor_struct_7f9d36853146434f, []int{1}
+	return fileDescriptor_df322afd6c9fb402, []int{1}
 }
 func (*Value) XXX_WellKnownType() string { return "Value" }
 func (m *Value) XXX_Unmarshal(b []byte) error {
@@ -149,15 +149,15 @@ func (m *Value) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return xxx_messageInfo_Value.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
 		return b[:n], nil
 	}
 }
-func (dst *Value) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Value.Merge(dst, src)
+func (m *Value) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Value.Merge(m, src)
 }
 func (m *Value) XXX_Size() int {
 	return m.Size()
@@ -403,7 +403,7 @@ type ListValue struct {
 func (m *ListValue) Reset()      { *m = ListValue{} }
 func (*ListValue) ProtoMessage() {}
 func (*ListValue) Descriptor() ([]byte, []int) {
-	return fileDescriptor_struct_7f9d36853146434f, []int{2}
+	return fileDescriptor_df322afd6c9fb402, []int{2}
 }
 func (*ListValue) XXX_WellKnownType() string { return "ListValue" }
 func (m *ListValue) XXX_Unmarshal(b []byte) error {
@@ -414,15 +414,15 @@ func (m *ListValue) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return xxx_messageInfo_ListValue.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
 		return b[:n], nil
 	}
 }
-func (dst *ListValue) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_ListValue.Merge(dst, src)
+func (m *ListValue) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ListValue.Merge(m, src)
 }
 func (m *ListValue) XXX_Size() int {
 	return m.Size()
@@ -444,12 +444,47 @@ func (*ListValue) XXX_MessageName() string {
 	return "google.protobuf.ListValue"
 }
 func init() {
+	proto.RegisterEnum("google.protobuf.NullValue", NullValue_name, NullValue_value)
 	proto.RegisterType((*Struct)(nil), "google.protobuf.Struct")
 	proto.RegisterMapType((map[string]*Value)(nil), "google.protobuf.Struct.FieldsEntry")
 	proto.RegisterType((*Value)(nil), "google.protobuf.Value")
 	proto.RegisterType((*ListValue)(nil), "google.protobuf.ListValue")
-	proto.RegisterEnum("google.protobuf.NullValue", NullValue_name, NullValue_value)
 }
+
+func init() { proto.RegisterFile("google/protobuf/struct.proto", fileDescriptor_df322afd6c9fb402) }
+
+var fileDescriptor_df322afd6c9fb402 = []byte{
+	// 439 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x74, 0x91, 0xc1, 0x6b, 0xd4, 0x40,
+	0x14, 0xc6, 0xf3, 0xb2, 0xdd, 0xe0, 0xbe, 0x48, 0x2d, 0x23, 0xe8, 0x52, 0x65, 0x5c, 0xb6, 0x97,
+	0x45, 0x24, 0x85, 0xf5, 0x22, 0xae, 0x17, 0x17, 0x6a, 0x0b, 0x86, 0x12, 0xa3, 0xad, 0xe0, 0x65,
+	0x31, 0x69, 0xba, 0x84, 0x4e, 0x67, 0x4a, 0x32, 0xa3, 0xec, 0x4d, 0xff, 0x0b, 0xcf, 0x9e, 0xc4,
+	0xa3, 0x7f, 0x85, 0x47, 0x8f, 0x1e, 0xdd, 0x78, 0xf1, 0xd8, 0x63, 0x8f, 0x32, 0x33, 0x49, 0x94,
+	0x2e, 0xbd, 0xe5, 0x7d, 0xf3, 0x7b, 0xdf, 0x7b, 0xdf, 0x0b, 0xde, 0x9d, 0x0b, 0x31, 0x67, 0xd9,
+	0xf6, 0x59, 0x21, 0xa4, 0x48, 0xd4, 0xf1, 0x76, 0x29, 0x0b, 0x95, 0xca, 0xc0, 0xd4, 0xe4, 0x86,
+	0x7d, 0x0d, 0x9a, 0xd7, 0xe1, 0x27, 0x40, 0xef, 0xa5, 0x21, 0xc8, 0x04, 0xbd, 0xe3, 0x3c, 0x63,
+	0x47, 0x65, 0x1f, 0x06, 0x9d, 0x91, 0x3f, 0xde, 0x0a, 0x2e, 0xc1, 0x81, 0x05, 0x83, 0x67, 0x86,
+	0xda, 0xe1, 0xb2, 0x58, 0xc4, 0x75, 0xcb, 0xe6, 0x0b, 0xf4, 0xff, 0x93, 0xc9, 0x06, 0x76, 0x4e,
+	0xb2, 0x45, 0x1f, 0x06, 0x30, 0xea, 0xc5, 0xfa, 0x93, 0x3c, 0xc0, 0xee, 0xbb, 0xb7, 0x4c, 0x65,
+	0x7d, 0x77, 0x00, 0x23, 0x7f, 0x7c, 0x6b, 0xc5, 0xfc, 0x50, 0xbf, 0xc6, 0x16, 0x7a, 0xec, 0x3e,
+	0x82, 0xe1, 0x37, 0x17, 0xbb, 0x46, 0x24, 0x13, 0x44, 0xae, 0x18, 0x9b, 0x59, 0x03, 0x6d, 0xba,
+	0x3e, 0xde, 0x5c, 0x31, 0xd8, 0x57, 0x8c, 0x19, 0x7e, 0xcf, 0x89, 0x7b, 0xbc, 0x29, 0xc8, 0x16,
+	0x5e, 0xe7, 0xea, 0x34, 0xc9, 0x8a, 0xd9, 0xbf, 0xf9, 0xb0, 0xe7, 0xc4, 0xbe, 0x55, 0x5b, 0xa8,
+	0x94, 0x45, 0xce, 0xe7, 0x35, 0xd4, 0xd1, 0x8b, 0x6b, 0xc8, 0xaa, 0x16, 0xba, 0x87, 0x98, 0x08,
+	0xd1, 0xac, 0xb1, 0x36, 0x80, 0xd1, 0x35, 0x3d, 0x4a, 0x6b, 0x16, 0x78, 0x62, 0x5c, 0x54, 0x2a,
+	0x6b, 0xa4, 0x6b, 0xa2, 0xde, 0xbe, 0xe2, 0x8e, 0xb5, 0xbd, 0x4a, 0x65, 0x9b, 0x92, 0xe5, 0x65,
+	0xd3, 0xeb, 0x99, 0xde, 0xd5, 0x94, 0x61, 0x5e, 0xca, 0x36, 0x25, 0x6b, 0x8a, 0xa9, 0x87, 0x6b,
+	0x27, 0x39, 0x3f, 0x1a, 0x4e, 0xb0, 0xd7, 0x12, 0x24, 0x40, 0xcf, 0x98, 0x35, 0x7f, 0xf4, 0xaa,
+	0xa3, 0xd7, 0xd4, 0xfd, 0x3b, 0xd8, 0x6b, 0x8f, 0x48, 0xd6, 0x11, 0xf7, 0x0f, 0xc2, 0x70, 0x76,
+	0xf8, 0x34, 0x3c, 0xd8, 0xd9, 0x70, 0xa6, 0x1f, 0xe1, 0xe7, 0x92, 0x3a, 0xe7, 0x4b, 0x0a, 0x17,
+	0x4b, 0x0a, 0x1f, 0x2a, 0x0a, 0x5f, 0x2a, 0x0a, 0xdf, 0x2b, 0x0a, 0x3f, 0x2a, 0x0a, 0xbf, 0x2a,
+	0x0a, 0x7f, 0x2a, 0xea, 0x9c, 0x6b, 0xed, 0x37, 0x05, 0xbc, 0x99, 0x8a, 0xd3, 0xcb, 0xe3, 0xa6,
+	0xbe, 0x4d, 0x1e, 0xe9, 0x3a, 0x82, 0x37, 0x5d, 0xb9, 0x38, 0xcb, 0xca, 0x0b, 0x80, 0xcf, 0x6e,
+	0x67, 0x37, 0x9a, 0x7e, 0x75, 0xe9, 0xae, 0x6d, 0x88, 0x9a, 0xfd, 0x5e, 0x67, 0x8c, 0x3d, 0xe7,
+	0xe2, 0x3d, 0x7f, 0xa5, 0xc9, 0xc4, 0x33, 0x4e, 0x0f, 0xff, 0x06, 0x00, 0x00, 0xff, 0xff, 0xad,
+	0x84, 0x08, 0xae, 0xe5, 0x02, 0x00, 0x00,
+}
+
 func (x NullValue) String() string {
 	s, ok := NullValue_name[int32(x)]
 	if ok {
@@ -812,7 +847,7 @@ func valueToGoStringStruct(v interface{}, typ string) string {
 func (m *Struct) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -820,48 +855,52 @@ func (m *Struct) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *Struct) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Struct) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	if len(m.Fields) > 0 {
 		for k := range m.Fields {
-			dAtA[i] = 0xa
-			i++
 			v := m.Fields[k]
-			msgSize := 0
+			baseI := i
 			if v != nil {
-				msgSize = v.Size()
-				msgSize += 1 + sovStruct(uint64(msgSize))
-			}
-			mapSize := 1 + len(k) + sovStruct(uint64(len(k))) + msgSize
-			i = encodeVarintStruct(dAtA, i, uint64(mapSize))
-			dAtA[i] = 0xa
-			i++
-			i = encodeVarintStruct(dAtA, i, uint64(len(k)))
-			i += copy(dAtA[i:], k)
-			if v != nil {
-				dAtA[i] = 0x12
-				i++
-				i = encodeVarintStruct(dAtA, i, uint64(v.Size()))
-				n1, err := v.MarshalTo(dAtA[i:])
-				if err != nil {
-					return 0, err
+				{
+					size, err := v.MarshalToSizedBuffer(dAtA[:i])
+					if err != nil {
+						return 0, err
+					}
+					i -= size
+					i = encodeVarintStruct(dAtA, i, uint64(size))
 				}
-				i += n1
+				i--
+				dAtA[i] = 0x12
 			}
+			i -= len(k)
+			copy(dAtA[i:], k)
+			i = encodeVarintStruct(dAtA, i, uint64(len(k)))
+			i--
+			dAtA[i] = 0xa
+			i = encodeVarintStruct(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0xa
 		}
 	}
-	if m.XXX_unrecognized != nil {
-		i += copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	return i, nil
+	return len(dAtA) - i, nil
 }
 
 func (m *Value) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -869,90 +908,127 @@ func (m *Value) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *Value) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Value) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if m.Kind != nil {
-		nn2, err := m.Kind.MarshalTo(dAtA[i:])
-		if err != nil {
-			return 0, err
-		}
-		i += nn2
-	}
 	if m.XXX_unrecognized != nil {
-		i += copy(dAtA[i:], m.XXX_unrecognized)
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
 	}
-	return i, nil
+	if m.Kind != nil {
+		{
+			size := m.Kind.Size()
+			i -= size
+			if _, err := m.Kind.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
 }
 
 func (m *Value_NullValue) MarshalTo(dAtA []byte) (int, error) {
-	i := 0
-	dAtA[i] = 0x8
-	i++
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *Value_NullValue) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	i = encodeVarintStruct(dAtA, i, uint64(m.NullValue))
-	return i, nil
+	i--
+	dAtA[i] = 0x8
+	return len(dAtA) - i, nil
 }
 func (m *Value_NumberValue) MarshalTo(dAtA []byte) (int, error) {
-	i := 0
-	dAtA[i] = 0x11
-	i++
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *Value_NumberValue) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= 8
 	encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.NumberValue))))
-	i += 8
-	return i, nil
+	i--
+	dAtA[i] = 0x11
+	return len(dAtA) - i, nil
 }
 func (m *Value_StringValue) MarshalTo(dAtA []byte) (int, error) {
-	i := 0
-	dAtA[i] = 0x1a
-	i++
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *Value_StringValue) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= len(m.StringValue)
+	copy(dAtA[i:], m.StringValue)
 	i = encodeVarintStruct(dAtA, i, uint64(len(m.StringValue)))
-	i += copy(dAtA[i:], m.StringValue)
-	return i, nil
+	i--
+	dAtA[i] = 0x1a
+	return len(dAtA) - i, nil
 }
 func (m *Value_BoolValue) MarshalTo(dAtA []byte) (int, error) {
-	i := 0
-	dAtA[i] = 0x20
-	i++
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *Value_BoolValue) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i--
 	if m.BoolValue {
 		dAtA[i] = 1
 	} else {
 		dAtA[i] = 0
 	}
-	i++
-	return i, nil
+	i--
+	dAtA[i] = 0x20
+	return len(dAtA) - i, nil
 }
 func (m *Value_StructValue) MarshalTo(dAtA []byte) (int, error) {
-	i := 0
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *Value_StructValue) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	if m.StructValue != nil {
-		dAtA[i] = 0x2a
-		i++
-		i = encodeVarintStruct(dAtA, i, uint64(m.StructValue.Size()))
-		n3, err := m.StructValue.MarshalTo(dAtA[i:])
-		if err != nil {
-			return 0, err
+		{
+			size, err := m.StructValue.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintStruct(dAtA, i, uint64(size))
 		}
-		i += n3
+		i--
+		dAtA[i] = 0x2a
 	}
-	return i, nil
+	return len(dAtA) - i, nil
 }
 func (m *Value_ListValue) MarshalTo(dAtA []byte) (int, error) {
-	i := 0
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *Value_ListValue) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	if m.ListValue != nil {
-		dAtA[i] = 0x32
-		i++
-		i = encodeVarintStruct(dAtA, i, uint64(m.ListValue.Size()))
-		n4, err := m.ListValue.MarshalTo(dAtA[i:])
-		if err != nil {
-			return 0, err
+		{
+			size, err := m.ListValue.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintStruct(dAtA, i, uint64(size))
 		}
-		i += n4
+		i--
+		dAtA[i] = 0x32
 	}
-	return i, nil
+	return len(dAtA) - i, nil
 }
 func (m *ListValue) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -960,40 +1036,50 @@ func (m *ListValue) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *ListValue) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ListValue) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	if len(m.Values) > 0 {
-		for _, msg := range m.Values {
-			dAtA[i] = 0xa
-			i++
-			i = encodeVarintStruct(dAtA, i, uint64(msg.Size()))
-			n, err := msg.MarshalTo(dAtA[i:])
-			if err != nil {
-				return 0, err
+		for iNdEx := len(m.Values) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Values[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintStruct(dAtA, i, uint64(size))
 			}
-			i += n
+			i--
+			dAtA[i] = 0xa
 		}
 	}
-	if m.XXX_unrecognized != nil {
-		i += copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	return i, nil
+	return len(dAtA) - i, nil
 }
 
 func encodeVarintStruct(dAtA []byte, offset int, v uint64) int {
+	offset -= sovStruct(v)
+	base := offset
 	for v >= 1<<7 {
 		dAtA[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
 	dAtA[offset] = uint8(v)
-	return offset + 1
+	return base
 }
 func NewPopulatedStruct(r randyStruct, easy bool) *Struct {
 	this := &Struct{}
-	if r.Intn(10) == 0 {
+	if r.Intn(5) == 0 {
 		v1 := r.Intn(10)
 		this.Fields = make(map[string]*Value)
 		for i := 0; i < v1; i++ {
@@ -1064,7 +1150,7 @@ func NewPopulatedValue_ListValue(r randyStruct, easy bool) *Value_ListValue {
 }
 func NewPopulatedListValue(r randyStruct, easy bool) *ListValue {
 	this := &ListValue{}
-	if r.Intn(10) == 0 {
+	if r.Intn(5) == 0 {
 		v2 := r.Intn(5)
 		this.Values = make([]*Value, v2)
 		for i := 0; i < v2; i++ {
@@ -1269,14 +1355,7 @@ func (m *ListValue) Size() (n int) {
 }
 
 func sovStruct(x uint64) (n int) {
-	for {
-		n++
-		x >>= 7
-		if x == 0 {
-			break
-		}
-	}
-	return n
+	return (math_bits.Len64(x|1) + 6) / 7
 }
 func sozStruct(x uint64) (n int) {
 	return sovStruct(uint64((x << 1) ^ uint64((int64(x) >> 63))))
@@ -1377,8 +1456,13 @@ func (this *ListValue) String() string {
 	if this == nil {
 		return "nil"
 	}
+	repeatedStringForValues := "[]*Value{"
+	for _, f := range this.Values {
+		repeatedStringForValues += strings.Replace(f.String(), "Value", "Value", 1) + ","
+	}
+	repeatedStringForValues += "}"
 	s := strings.Join([]string{`&ListValue{`,
-		`Values:` + strings.Replace(fmt.Sprintf("%v", this.Values), "Value", "Value", 1) + `,`,
+		`Values:` + repeatedStringForValues + `,`,
 		`XXX_unrecognized:` + fmt.Sprintf("%v", this.XXX_unrecognized) + `,`,
 		`}`,
 	}, "")
@@ -1407,7 +1491,7 @@ func (m *Struct) Unmarshal(dAtA []byte) error {
 			}
 			b := dAtA[iNdEx]
 			iNdEx++
-			wire |= (uint64(b) & 0x7F) << shift
+			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
 				break
 			}
@@ -1435,7 +1519,7 @@ func (m *Struct) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= (int(b) & 0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1444,6 +1528,9 @@ func (m *Struct) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthStruct
 			}
 			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthStruct
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1464,7 +1551,7 @@ func (m *Struct) Unmarshal(dAtA []byte) error {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					wire |= (uint64(b) & 0x7F) << shift
+					wire |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
@@ -1481,7 +1568,7 @@ func (m *Struct) Unmarshal(dAtA []byte) error {
 						}
 						b := dAtA[iNdEx]
 						iNdEx++
-						stringLenmapkey |= (uint64(b) & 0x7F) << shift
+						stringLenmapkey |= uint64(b&0x7F) << shift
 						if b < 0x80 {
 							break
 						}
@@ -1491,6 +1578,9 @@ func (m *Struct) Unmarshal(dAtA []byte) error {
 						return ErrInvalidLengthStruct
 					}
 					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey < 0 {
+						return ErrInvalidLengthStruct
+					}
 					if postStringIndexmapkey > l {
 						return io.ErrUnexpectedEOF
 					}
@@ -1507,7 +1597,7 @@ func (m *Struct) Unmarshal(dAtA []byte) error {
 						}
 						b := dAtA[iNdEx]
 						iNdEx++
-						mapmsglen |= (int(b) & 0x7F) << shift
+						mapmsglen |= int(b&0x7F) << shift
 						if b < 0x80 {
 							break
 						}
@@ -1516,7 +1606,7 @@ func (m *Struct) Unmarshal(dAtA []byte) error {
 						return ErrInvalidLengthStruct
 					}
 					postmsgIndex := iNdEx + mapmsglen
-					if mapmsglen < 0 {
+					if postmsgIndex < 0 {
 						return ErrInvalidLengthStruct
 					}
 					if postmsgIndex > l {
@@ -1553,6 +1643,9 @@ func (m *Struct) Unmarshal(dAtA []byte) error {
 			if skippy < 0 {
 				return ErrInvalidLengthStruct
 			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthStruct
+			}
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1581,7 +1674,7 @@ func (m *Value) Unmarshal(dAtA []byte) error {
 			}
 			b := dAtA[iNdEx]
 			iNdEx++
-			wire |= (uint64(b) & 0x7F) << shift
+			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
 				break
 			}
@@ -1609,7 +1702,7 @@ func (m *Value) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				v |= (NullValue(b) & 0x7F) << shift
+				v |= NullValue(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1640,7 +1733,7 @@ func (m *Value) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
+				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1650,6 +1743,9 @@ func (m *Value) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthStruct
 			}
 			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthStruct
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1669,7 +1765,7 @@ func (m *Value) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				v |= (int(b) & 0x7F) << shift
+				v |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1690,7 +1786,7 @@ func (m *Value) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= (int(b) & 0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1699,6 +1795,9 @@ func (m *Value) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthStruct
 			}
 			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthStruct
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1722,7 +1821,7 @@ func (m *Value) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= (int(b) & 0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1731,6 +1830,9 @@ func (m *Value) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthStruct
 			}
 			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthStruct
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1747,6 +1849,9 @@ func (m *Value) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			if skippy < 0 {
+				return ErrInvalidLengthStruct
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthStruct
 			}
 			if (iNdEx + skippy) > l {
@@ -1777,7 +1882,7 @@ func (m *ListValue) Unmarshal(dAtA []byte) error {
 			}
 			b := dAtA[iNdEx]
 			iNdEx++
-			wire |= (uint64(b) & 0x7F) << shift
+			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
 				break
 			}
@@ -1805,7 +1910,7 @@ func (m *ListValue) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= (int(b) & 0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1814,6 +1919,9 @@ func (m *ListValue) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthStruct
 			}
 			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthStruct
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -1829,6 +1937,9 @@ func (m *ListValue) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			if skippy < 0 {
+				return ErrInvalidLengthStruct
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthStruct
 			}
 			if (iNdEx + skippy) > l {
@@ -1898,8 +2009,11 @@ func skipStruct(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
-			iNdEx += length
 			if length < 0 {
+				return 0, ErrInvalidLengthStruct
+			}
+			iNdEx += length
+			if iNdEx < 0 {
 				return 0, ErrInvalidLengthStruct
 			}
 			return iNdEx, nil
@@ -1930,6 +2044,9 @@ func skipStruct(dAtA []byte) (n int, err error) {
 					return 0, err
 				}
 				iNdEx = start + next
+				if iNdEx < 0 {
+					return 0, ErrInvalidLengthStruct
+				}
 			}
 			return iNdEx, nil
 		case 4:
@@ -1948,39 +2065,3 @@ var (
 	ErrInvalidLengthStruct = fmt.Errorf("proto: negative length found during unmarshaling")
 	ErrIntOverflowStruct   = fmt.Errorf("proto: integer overflow")
 )
-
-func init() {
-	proto.RegisterFile("google/protobuf/struct.proto", fileDescriptor_struct_7f9d36853146434f)
-}
-
-var fileDescriptor_struct_7f9d36853146434f = []byte{
-	// 439 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x74, 0x91, 0xc1, 0x6b, 0xd4, 0x40,
-	0x14, 0xc6, 0xf3, 0xb2, 0xdd, 0xe0, 0xbe, 0x48, 0x2d, 0x23, 0xe8, 0x52, 0x65, 0x5c, 0xb6, 0x97,
-	0x45, 0x24, 0x85, 0xf5, 0x22, 0xae, 0x17, 0x17, 0x6a, 0x0b, 0x86, 0x12, 0xa3, 0xad, 0xe0, 0x65,
-	0x31, 0x69, 0xba, 0x84, 0x4e, 0x67, 0x4a, 0x32, 0xa3, 0xec, 0x4d, 0xff, 0x0b, 0xcf, 0x9e, 0xc4,
-	0xa3, 0x7f, 0x85, 0x47, 0x8f, 0x1e, 0xdd, 0x78, 0xf1, 0xd8, 0x63, 0x8f, 0x32, 0x33, 0x49, 0x94,
-	0x2e, 0xbd, 0xe5, 0x7d, 0xf3, 0x7b, 0xdf, 0x7b, 0xdf, 0x0b, 0xde, 0x9d, 0x0b, 0x31, 0x67, 0xd9,
-	0xf6, 0x59, 0x21, 0xa4, 0x48, 0xd4, 0xf1, 0x76, 0x29, 0x0b, 0x95, 0xca, 0xc0, 0xd4, 0xe4, 0x86,
-	0x7d, 0x0d, 0x9a, 0xd7, 0xe1, 0x27, 0x40, 0xef, 0xa5, 0x21, 0xc8, 0x04, 0xbd, 0xe3, 0x3c, 0x63,
-	0x47, 0x65, 0x1f, 0x06, 0x9d, 0x91, 0x3f, 0xde, 0x0a, 0x2e, 0xc1, 0x81, 0x05, 0x83, 0x67, 0x86,
-	0xda, 0xe1, 0xb2, 0x58, 0xc4, 0x75, 0xcb, 0xe6, 0x0b, 0xf4, 0xff, 0x93, 0xc9, 0x06, 0x76, 0x4e,
-	0xb2, 0x45, 0x1f, 0x06, 0x30, 0xea, 0xc5, 0xfa, 0x93, 0x3c, 0xc0, 0xee, 0xbb, 0xb7, 0x4c, 0x65,
-	0x7d, 0x77, 0x00, 0x23, 0x7f, 0x7c, 0x6b, 0xc5, 0xfc, 0x50, 0xbf, 0xc6, 0x16, 0x7a, 0xec, 0x3e,
-	0x82, 0xe1, 0x37, 0x17, 0xbb, 0x46, 0x24, 0x13, 0x44, 0xae, 0x18, 0x9b, 0x59, 0x03, 0x6d, 0xba,
-	0x3e, 0xde, 0x5c, 0x31, 0xd8, 0x57, 0x8c, 0x19, 0x7e, 0xcf, 0x89, 0x7b, 0xbc, 0x29, 0xc8, 0x16,
-	0x5e, 0xe7, 0xea, 0x34, 0xc9, 0x8a, 0xd9, 0xbf, 0xf9, 0xb0, 0xe7, 0xc4, 0xbe, 0x55, 0x5b, 0xa8,
-	0x94, 0x45, 0xce, 0xe7, 0x35, 0xd4, 0xd1, 0x8b, 0x6b, 0xc8, 0xaa, 0x16, 0xba, 0x87, 0x98, 0x08,
-	0xd1, 0xac, 0xb1, 0x36, 0x80, 0xd1, 0x35, 0x3d, 0x4a, 0x6b, 0x16, 0x78, 0x62, 0x5c, 0x54, 0x2a,
-	0x6b, 0xa4, 0x6b, 0xa2, 0xde, 0xbe, 0xe2, 0x8e, 0xb5, 0xbd, 0x4a, 0x65, 0x9b, 0x92, 0xe5, 0x65,
-	0xd3, 0xeb, 0x99, 0xde, 0xd5, 0x94, 0x61, 0x5e, 0xca, 0x36, 0x25, 0x6b, 0x8a, 0xa9, 0x87, 0x6b,
-	0x27, 0x39, 0x3f, 0x1a, 0x4e, 0xb0, 0xd7, 0x12, 0x24, 0x40, 0xcf, 0x98, 0x35, 0x7f, 0xf4, 0xaa,
-	0xa3, 0xd7, 0xd4, 0xfd, 0x3b, 0xd8, 0x6b, 0x8f, 0x48, 0xd6, 0x11, 0xf7, 0x0f, 0xc2, 0x70, 0x76,
-	0xf8, 0x34, 0x3c, 0xd8, 0xd9, 0x70, 0xa6, 0x1f, 0xe1, 0xe7, 0x92, 0x3a, 0xe7, 0x4b, 0x0a, 0x17,
-	0x4b, 0x0a, 0x1f, 0x2a, 0x0a, 0x5f, 0x2a, 0x0a, 0xdf, 0x2b, 0x0a, 0x3f, 0x2a, 0x0a, 0xbf, 0x2a,
-	0x0a, 0x7f, 0x2a, 0xea, 0x9c, 0x6b, 0xed, 0x37, 0x05, 0xbc, 0x99, 0x8a, 0xd3, 0xcb, 0xe3, 0xa6,
-	0xbe, 0x4d, 0x1e, 0xe9, 0x3a, 0x82, 0x37, 0x5d, 0xb9, 0x38, 0xcb, 0xca, 0x0b, 0x80, 0xcf, 0x6e,
-	0x67, 0x37, 0x9a, 0x7e, 0x75, 0xe9, 0xae, 0x6d, 0x88, 0x9a, 0xfd, 0x5e, 0x67, 0x8c, 0x3d, 0xe7,
-	0xe2, 0x3d, 0x7f, 0xa5, 0xc9, 0xc4, 0x33, 0x4e, 0x0f, 0xff, 0x06, 0x00, 0x00, 0xff, 0xff, 0xad,
-	0x84, 0x08, 0xae, 0xe5, 0x02, 0x00, 0x00,
-}

@@ -209,7 +209,7 @@
 // LeaveSourceSpecificGroup for the operation known as "include" mode,
 //
 //	ssmgroup := net.UDPAddr{IP: net.IPv4(232, 7, 8, 9)}
-//	ssmsource := net.UDPAddr{IP: net.IPv4(192, 168, 0, 1)})
+//	ssmsource := net.UDPAddr{IP: net.IPv4(192, 168, 0, 1)}
 //	if err := p.JoinSourceSpecificGroup(en0, &ssmgroup, &ssmsource); err != nil {
 //		// error handling
 //	}

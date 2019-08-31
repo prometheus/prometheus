@@ -21,14 +21,16 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/pkg/errors"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
-	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -53,7 +55,7 @@ type ClientConfig struct {
 
 // NewClient creates a new Client.
 func NewClient(index int, conf *ClientConfig) (*Client, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage")
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage", false)
 	if err != nil {
 		return nil, err
 	}
@@ -70,15 +72,10 @@ type recoverableError struct {
 	error
 }
 
-// Store sends a batch of samples to the HTTP endpoint.
-func (c *Client) Store(ctx context.Context, req *prompb.WriteRequest) error {
-	data, err := proto.Marshal(req)
-	if err != nil {
-		return err
-	}
-
-	compressed := snappy.Encode(nil, data)
-	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(compressed))
+// Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
+// and encoded bytes from codec.go.
+func (c *Client) Store(ctx context.Context, req []byte) error {
+	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(req))
 	if err != nil {
 		// Errors from NewRequest are from unparseable URLs, so are not
 		// recoverable.
@@ -99,7 +96,10 @@ func (c *Client) Store(ctx context.Context, req *prompb.WriteRequest) error {
 		// recoverable.
 		return recoverableError{err}
 	}
-	defer httpResp.Body.Close()
+	defer func() {
+		io.Copy(ioutil.Discard, httpResp.Body)
+		httpResp.Body.Close()
+	}()
 
 	if httpResp.StatusCode/100 != 2 {
 		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, maxErrMsgLen))
@@ -107,7 +107,7 @@ func (c *Client) Store(ctx context.Context, req *prompb.WriteRequest) error {
 		if scanner.Scan() {
 			line = scanner.Text()
 		}
-		err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
+		err = errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 	}
 	if httpResp.StatusCode/100 == 5 {
 		return recoverableError{err}
@@ -131,13 +131,13 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 	data, err := proto.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("unable to marshal read request: %v", err)
+		return nil, errors.Wrapf(err, "unable to marshal read request")
 	}
 
 	compressed := snappy.Encode(nil, data)
 	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(compressed))
 	if err != nil {
-		return nil, fmt.Errorf("unable to create request: %v", err)
+		return nil, errors.Wrap(err, "unable to create request")
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Add("Accept-Encoding", "snappy")
@@ -150,31 +150,35 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 
 	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("error sending request: %v", err)
+		return nil, errors.Wrap(err, "error sending request")
 	}
-	defer httpResp.Body.Close()
-	if httpResp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("server returned HTTP status %s", httpResp.Status)
-	}
+	defer func() {
+		io.Copy(ioutil.Discard, httpResp.Body)
+		httpResp.Body.Close()
+	}()
 
 	compressed, err = ioutil.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
+		return nil, errors.Wrap(err, fmt.Sprintf("error reading response. HTTP status code: %s", httpResp.Status))
+	}
+
+	if httpResp.StatusCode/100 != 2 {
+		return nil, errors.Errorf("remote server %s returned HTTP status %s: %s", c.url.String(), httpResp.Status, strings.TrimSpace(string(compressed)))
 	}
 
 	uncompressed, err := snappy.Decode(nil, compressed)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
+		return nil, errors.Wrap(err, "error reading response")
 	}
 
 	var resp prompb.ReadResponse
 	err = proto.Unmarshal(uncompressed, &resp)
 	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response body: %v", err)
+		return nil, errors.Wrap(err, "unable to unmarshal response body")
 	}
 
 	if len(resp.Results) != len(req.Queries) {
-		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
+		return nil, errors.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
 
 	return resp.Results[0], nil

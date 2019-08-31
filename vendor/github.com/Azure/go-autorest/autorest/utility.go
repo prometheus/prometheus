@@ -157,7 +157,7 @@ func AsStringSlice(s interface{}) ([]string, error) {
 }
 
 // String method converts interface v to string. If interface is a list, it
-// joins list elements using the seperator. Note that only sep[0] will be used for
+// joins list elements using the separator. Note that only sep[0] will be used for
 // joining if any separator is specified.
 func String(v interface{}, sep ...string) string {
 	if len(sep) == 0 {
@@ -218,9 +218,10 @@ func IsTokenRefreshError(err error) bool {
 	return false
 }
 
-// IsTemporaryNetworkError returns true if the specified error is a temporary network error.
+// IsTemporaryNetworkError returns true if the specified error is a temporary network error or false
+// if it's not.  If the error doesn't implement the net.Error interface the return value is true.
 func IsTemporaryNetworkError(err error) bool {
-	if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
+	if netErr, ok := err.(net.Error); !ok || (ok && netErr.Temporary()) {
 		return true
 	}
 	return false

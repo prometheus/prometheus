@@ -15,17 +15,18 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strconv"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 // Endpoints discovers new endpoint targets.
@@ -178,7 +179,7 @@ func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
 		return endpoints, nil
 	}
 
-	return nil, fmt.Errorf("received unexpected object: %v", o)
+	return nil, errors.Errorf("received unexpected object: %v", o)
 }
 
 func endpointsSource(ep *apiv1.Endpoints) string {
@@ -191,6 +192,8 @@ func endpointsSourceFromNamespaceAndName(namespace, name string) string {
 
 const (
 	endpointsNameLabel             = metaLabelPrefix + "endpoints_name"
+	endpointNodeName               = metaLabelPrefix + "endpoint_node_name"
+	endpointHostname               = metaLabelPrefix + "endpoint_hostname"
 	endpointReadyLabel             = metaLabelPrefix + "endpoint_ready"
 	endpointPortNameLabel          = metaLabelPrefix + "endpoint_port_name"
 	endpointPortProtocolLabel      = metaLabelPrefix + "endpoint_port_protocol"
@@ -227,6 +230,13 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		if addr.TargetRef != nil {
 			target[model.LabelName(endpointAddressTargetKindLabel)] = lv(addr.TargetRef.Kind)
 			target[model.LabelName(endpointAddressTargetNameLabel)] = lv(addr.TargetRef.Name)
+		}
+
+		if addr.NodeName != nil {
+			target[model.LabelName(endpointNodeName)] = lv(*addr.NodeName)
+		}
+		if addr.Hostname != "" {
+			target[model.LabelName(endpointHostname)] = lv(addr.Hostname)
 		}
 
 		pod := e.resolvePodRef(addr.TargetRef)
@@ -324,11 +334,12 @@ func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	p.Name = ref.Name
 
 	obj, exists, err := e.podStore.Get(p)
-	if err != nil || !exists {
-		return nil
-	}
 	if err != nil {
 		level.Error(e.logger).Log("msg", "resolving pod ref failed", "err", err)
+		return nil
+	}
+	if !exists {
+		return nil
 	}
 	return obj.(*apiv1.Pod)
 }
@@ -339,11 +350,12 @@ func (e *Endpoints) addServiceLabels(ns, name string, tg *targetgroup.Group) {
 	svc.Name = name
 
 	obj, exists, err := e.serviceStore.Get(svc)
-	if !exists || err != nil {
-		return
-	}
 	if err != nil {
 		level.Error(e.logger).Log("msg", "retrieving service failed", "err", err)
+		return
+	}
+	if !exists {
+		return
 	}
 	svc = obj.(*apiv1.Service)
 

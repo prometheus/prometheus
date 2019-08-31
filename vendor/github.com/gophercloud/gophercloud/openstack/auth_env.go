@@ -13,15 +13,19 @@ AuthOptionsFromEnv fills out an identity.AuthOptions structure with the
 settings found on the various OpenStack OS_* environment variables.
 
 The following variables provide sources of truth: OS_AUTH_URL, OS_USERNAME,
-OS_PASSWORD, OS_TENANT_ID, and OS_TENANT_NAME.
+OS_PASSWORD and OS_PROJECT_ID.
 
 Of these, OS_USERNAME, OS_PASSWORD, and OS_AUTH_URL must have settings,
-or an error will result.  OS_TENANT_ID, OS_TENANT_NAME, OS_PROJECT_ID, and
-OS_PROJECT_NAME are optional.
+or an error will result.  OS_PROJECT_ID, is optional.
 
-OS_TENANT_ID and OS_TENANT_NAME are mutually exclusive to OS_PROJECT_ID and
-OS_PROJECT_NAME. If OS_PROJECT_ID and OS_PROJECT_NAME are set, they will
-still be referred as "tenant" in Gophercloud.
+OS_TENANT_ID and OS_TENANT_NAME are deprecated forms of OS_PROJECT_ID and
+OS_PROJECT_NAME and the latter are expected against a v3 auth api.
+
+If OS_PROJECT_ID and OS_PROJECT_NAME are set, they will still be referred
+as "tenant" in Gophercloud.
+
+If OS_PROJECT_NAME is set, it requires OS_PROJECT_ID to be set as well to
+handle projects not on the default domain.
 
 To use this function, first set the OS_* environment variables (for example,
 by sourcing an `openrc` file), then:
@@ -59,11 +63,14 @@ func AuthOptionsFromEnv() (gophercloud.AuthOptions, error) {
 		return nilOptions, err
 	}
 
-	if username == "" && userID == "" {
-		err := gophercloud.ErrMissingAnyoneOfEnvironmentVariables{
-			EnvironmentVariables: []string{"OS_USERNAME", "OS_USERID"},
+	if userID == "" && username == "" {
+		// Empty username and userID could be ignored, when applicationCredentialID and applicationCredentialSecret are set
+		if applicationCredentialID == "" && applicationCredentialSecret == "" {
+			err := gophercloud.ErrMissingAnyoneOfEnvironmentVariables{
+				EnvironmentVariables: []string{"OS_USERID", "OS_USERNAME"},
+			}
+			return nilOptions, err
 		}
-		return nilOptions, err
 	}
 
 	if password == "" && applicationCredentialID == "" && applicationCredentialName == "" {
@@ -78,6 +85,26 @@ func AuthOptionsFromEnv() (gophercloud.AuthOptions, error) {
 			EnvironmentVariable: "OS_APPLICATION_CREDENTIAL_SECRET",
 		}
 		return nilOptions, err
+	}
+
+	if domainID == "" && domainName == "" && tenantID == "" && tenantName != "" {
+		err := gophercloud.ErrMissingEnvironmentVariable{
+			EnvironmentVariable: "OS_PROJECT_ID",
+		}
+		return nilOptions, err
+	}
+
+	if applicationCredentialID == "" && applicationCredentialName != "" && applicationCredentialSecret != "" {
+		if userID == "" && username == "" {
+			return nilOptions, gophercloud.ErrMissingAnyoneOfEnvironmentVariables{
+				EnvironmentVariables: []string{"OS_USERID", "OS_USERNAME"},
+			}
+		}
+		if username != "" && domainID == "" && domainName == "" {
+			return nilOptions, gophercloud.ErrMissingAnyoneOfEnvironmentVariables{
+				EnvironmentVariables: []string{"OS_DOMAIN_ID", "OS_DOMAIN_NAME"},
+			}
+		}
 	}
 
 	ao := gophercloud.AuthOptions{

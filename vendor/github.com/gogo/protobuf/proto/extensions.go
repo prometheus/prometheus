@@ -527,6 +527,7 @@ func ExtensionDescs(pb Message) ([]*ExtensionDesc, error) {
 // SetExtension sets the specified extension of pb to the specified value.
 func SetExtension(pb Message, extension *ExtensionDesc, value interface{}) error {
 	if epb, ok := pb.(extensionsBytes); ok {
+		ClearExtension(pb, extension)
 		newb, err := encodeExtension(extension, value)
 		if err != nil {
 			return err
@@ -544,7 +545,7 @@ func SetExtension(pb Message, extension *ExtensionDesc, value interface{}) error
 	}
 	typ := reflect.TypeOf(extension.ExtensionType)
 	if typ != reflect.TypeOf(value) {
-		return errors.New("proto: bad extension value type")
+		return fmt.Errorf("proto: bad extension value type. got: %T, want: %T", value, extension.ExtensionType)
 	}
 	// nil extension values need to be caught early, because the
 	// encoder can't distinguish an ErrNil due to a nil extension

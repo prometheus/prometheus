@@ -18,15 +18,15 @@ You can use `promtool` to test your rules.
 ## Test file format
 
 ```yaml
-# This is a list of rule files to consider for testing.
+# This is a list of rule files to consider for testing. Globs are supported.
 rule_files:
   [ - <file_name> ]
 
 # optional, default = 1m
 evaluation_interval: <duration>
 
-# The order in which group names are listed below will be the order of evaluation of 
-# rule groups (at a given evaluation time). The order is guaranteed only for the groups mentioned below. 
+# The order in which group names are listed below will be the order of evaluation of
+# rule groups (at a given evaluation time). The order is guaranteed only for the groups mentioned below.
 # All the groups need not be mentioned below.
 group_eval_order:
   [ - <group_name> ]
@@ -53,19 +53,23 @@ alert_rule_test:
 # Unit tests PromQL expressions.
 promql_expr_test:
   [ - <promql_test_case> ]
+
+# External labels accessible to the alert template.
+external_labels:
+  [ <labelname>: <string> ... ]
 ```
 
 ### `<series>`
 
 ```yaml
 # This follows the usual series notation '<metric name>{<label name>=<label value>, ...}'
-# Examples: 
+# Examples:
 #      series_name{label1="value1", label2="value2"}
 #      go_goroutines{job="prometheus", instance="localhost:9090"}
 series: <string>
 
 # This uses expanding notation.
-# Expanding notation: 
+# Expanding notation:
 #     'a+bxc' becomes 'a a+b a+(2*b) a+(3*b) … a+(c*b)'
 #     'a-bxc' becomes 'a a-b a-(2*b) a-(3*b) … a-(c*b)'
 # Examples:
@@ -85,8 +89,8 @@ eval_time: <duration>
 # Name of the alert to be tested.
 alertname: <string>
 
-# List of expected alerts which are firing under the given alertname at 
-# given evaluation time. If you want to test if an alerting rule should 
+# List of expected alerts which are firing under the given alertname at
+# given evaluation time. If you want to test if an alerting rule should
 # not be firing, then you can mention the above fields and leave 'exp_alerts' empty.
 exp_alerts:
   [ - <alert> ]
@@ -95,8 +99,8 @@ exp_alerts:
 ### `<alert>`
 
 ``` yaml
-# These are the expanded labels and annotations of the expected alert. 
-# Note: labels also include the labels of the sample associated with the 
+# These are the expanded labels and annotations of the expected alert.
+# Note: labels also include the labels of the sample associated with the
 # alert (same as what you see in `/alerts`, without series `__name__` and `alertname`)
 exp_labels:
   [ <labelname>: <string> ]
@@ -122,7 +126,7 @@ exp_samples:
 
 ```yaml
 # Labels of the sample in usual series notation '<metric name>{<label name>=<label value>, ...}'
-# Examples: 
+# Examples:
 #      series_name{label1="value1", label2="value2"}
 #      go_goroutines{job="prometheus", instance="localhost:9090"}
 labels: <string>
@@ -131,7 +135,7 @@ labels: <string>
 value: <number>
 ```
 
-## Example 
+## Example
 
 This is an example input file for unit testing which passes the test. `test.yml` is the test file which follows the syntax above and `alerts.yml` contains the alerting rules.
 
@@ -140,7 +144,7 @@ With `alerts.yml` in the same directory, run `./promtool test rules test.yml`.
 ### `test.yml`
 
 ```yaml
-# This is the main input for unit testing. 
+# This is the main input for unit testing.
 # Only this file is passed as command line argument.
 
 rule_files:

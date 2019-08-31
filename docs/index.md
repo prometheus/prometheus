@@ -2,12 +2,12 @@
 # todo: internal
 ---
 
-# Prometheus 2.0
+# Prometheus
 
 Welcome to the documentation of the Prometheus server.
 
 The documentation is available alongside all the project documentation at
-[prometheus.io](https://prometheus.io/docs/prometheus/2.0/).
+[prometheus.io](https://prometheus.io/docs/prometheus/latest/).
 
 ## Content
 

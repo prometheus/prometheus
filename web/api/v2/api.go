@@ -24,17 +24,13 @@ import (
 	"path/filepath"
 	"time"
 
-	old_ctx "golang.org/x/net/context"
-
+	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/tsdb"
+	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
-	"github.com/grpc-ecosystem/grpc-gateway/runtime"
-	"github.com/pkg/errors"
-	"github.com/prometheus/tsdb"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	pb "github.com/prometheus/prometheus/prompb"
@@ -68,13 +64,13 @@ func (api *API) RegisterGRPC(srv *grpc.Server) {
 
 // HTTPHandler returns an HTTP handler for a REST API gateway to the given grpc address.
 func (api *API) HTTPHandler(ctx context.Context, grpcAddr string) (http.Handler, error) {
-	enc := new(protoutil.JSONPb)
+	enc := new(runtime.JSONPb)
 	mux := runtime.NewServeMux(runtime.WithMarshalerOption(enc.ContentType(), enc))
 
 	opts := []grpc.DialOption{
 		grpc.WithInsecure(),
 		// Replace the default dialer that connects through proxy when HTTP_PROXY is set.
-		grpc.WithDialer(func(addr string, _ time.Duration) (net.Conn, error) {
+		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 		}),
 	}
@@ -101,7 +97,7 @@ func extractTimeRange(min, max *time.Time) (mint, maxt time.Time, err error) {
 		maxt = *max
 	}
 	if mint.After(maxt) {
-		return mint, maxt, errors.Errorf("min time must be before max time")
+		return mint, maxt, errors.Errorf("min time must be before or equal to max time")
 	}
 	return mint, maxt, nil
 }
@@ -111,24 +107,29 @@ var (
 	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999)
 )
 
+var (
+	errAdminDisabled = status.Error(codes.Unavailable, "Admin APIs are disabled")
+	errTSDBNotReady  = status.Error(codes.Unavailable, "TSDB not ready")
+)
+
 // AdminDisabled implements the administration interface that informs
 // that the API endpoints are disabled.
 type AdminDisabled struct {
 }
 
 // TSDBSnapshot implements pb.AdminServer.
-func (s *AdminDisabled) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
-	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
+func (s *AdminDisabled) TSDBSnapshot(_ context.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
+	return nil, errAdminDisabled
 }
 
 // TSDBCleanTombstones implements pb.AdminServer.
-func (s *AdminDisabled) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
-	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
+func (s *AdminDisabled) TSDBCleanTombstones(_ context.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
+	return nil, errAdminDisabled
 }
 
 // DeleteSeries implements pb.AdminServer.
-func (s *AdminDisabled) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
-	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
+func (s *AdminDisabled) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
+	return nil, errAdminDisabled
 }
 
 // Admin provides an administration interface to Prometheus.
@@ -144,10 +145,10 @@ func NewAdmin(db func() *tsdb.DB) *Admin {
 }
 
 // TSDBSnapshot implements pb.AdminServer.
-func (s *Admin) TSDBSnapshot(_ old_ctx.Context, req *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
+func (s *Admin) TSDBSnapshot(_ context.Context, req *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
 	db := s.db()
 	if db == nil {
-		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
+		return nil, errTSDBNotReady
 	}
 	var (
 		snapdir = filepath.Join(db.Dir(), "snapshots")
@@ -166,10 +167,10 @@ func (s *Admin) TSDBSnapshot(_ old_ctx.Context, req *pb.TSDBSnapshotRequest) (*p
 }
 
 // TSDBCleanTombstones implements pb.AdminServer.
-func (s *Admin) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
+func (s *Admin) TSDBCleanTombstones(_ context.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
 	db := s.db()
 	if db == nil {
-		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
+		return nil, errTSDBNotReady
 	}
 
 	if err := db.CleanTombstones(); err != nil {
@@ -180,7 +181,7 @@ func (s *Admin) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstones
 }
 
 // DeleteSeries implements pb.AdminServer.
-func (s *Admin) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
+func (s *Admin) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
 	mint, maxt, err := extractTimeRange(r.MinTime, r.MaxTime)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -215,7 +216,7 @@ func (s *Admin) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.
 	}
 	db := s.db()
 	if db == nil {
-		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
+		return nil, errTSDBNotReady
 	}
 	if err := db.Delete(timestamp.FromTime(mint), timestamp.FromTime(maxt), matchers...); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())

@@ -107,6 +107,10 @@ func (uc *udpclient) Query(q Query) (*Response, error) {
 	return nil, fmt.Errorf("Querying via UDP is not supported")
 }
 
+func (uc *udpclient) QueryAsChunk(q Query) (*ChunkedResponse, error) {
+	return nil, fmt.Errorf("Querying via UDP is not supported")
+}
+
 func (uc *udpclient) Ping(timeout time.Duration) (time.Duration, string, error) {
 	return 0, "", nil
 }

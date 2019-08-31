@@ -25,13 +25,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/pkg/errors"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -55,23 +55,11 @@ const (
 	subnetSeparator         = ","
 )
 
-var (
-	ec2SDRefreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_ec2_refresh_failures_total",
-			Help: "The number of EC2-SD scrape failures.",
-		})
-	ec2SDRefreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_ec2_refresh_duration_seconds",
-			Help: "The duration of a EC2-SD refresh in seconds.",
-		})
-	// DefaultSDConfig is the default EC2 SD configuration.
-	DefaultSDConfig = SDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(60 * time.Second),
-	}
-)
+// DefaultSDConfig is the default EC2 SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:            80,
+	RefreshInterval: model.Duration(60 * time.Second),
+}
 
 // Filter is the configuration for filtering EC2 instances.
 type Filter struct {
@@ -108,33 +96,28 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		metadata := ec2metadata.New(sess)
 		region, err := metadata.Region()
 		if err != nil {
-			return fmt.Errorf("EC2 SD configuration requires a region")
+			return errors.New("EC2 SD configuration requires a region")
 		}
 		c.Region = region
 	}
 	for _, f := range c.Filters {
 		if len(f.Values) == 0 {
-			return fmt.Errorf("EC2 SD configuration filter values cannot be empty")
+			return errors.New("EC2 SD configuration filter values cannot be empty")
 		}
 	}
 	return nil
 }
 
-func init() {
-	prometheus.MustRegister(ec2SDRefreshFailuresCount)
-	prometheus.MustRegister(ec2SDRefreshDuration)
-}
-
 // Discovery periodically performs EC2-SD requests. It implements
 // the Discoverer interface.
 type Discovery struct {
+	*refresh.Discovery
 	aws      *aws.Config
 	interval time.Duration
 	profile  string
 	roleARN  string
 	port     int
 	filters  []*Filter
-	logger   log.Logger
 }
 
 // NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
@@ -146,7 +129,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	return &Discovery{
+	d := &Discovery{
 		aws: &aws.Config{
 			Endpoint:    &conf.Endpoint,
 			Region:      &conf.Region,
@@ -157,62 +140,23 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 		filters:  conf.Filters,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
-		logger:   logger,
 	}
+	d.Discovery = refresh.NewDiscovery(
+		logger,
+		"ec2",
+		time.Duration(conf.RefreshInterval),
+		d.refresh,
+	)
+	return d
 }
 
-// Run implements the Discoverer interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
-	// Get an initial set right away.
-	tg, err := d.refresh()
-	if err != nil {
-		level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
-	} else {
-		select {
-		case ch <- []*targetgroup.Group{tg}:
-		case <-ctx.Done():
-			return
-		}
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			tg, err := d.refresh()
-			if err != nil {
-				level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
-				continue
-			}
-
-			select {
-			case ch <- []*targetgroup.Group{tg}:
-			case <-ctx.Done():
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
-	t0 := time.Now()
-	defer func() {
-		ec2SDRefreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			ec2SDRefreshFailuresCount.Inc()
-		}
-	}()
-
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
 		Config:  *d.aws,
 		Profile: d.profile,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not create aws session: %s", err)
+		return nil, errors.Wrap(err, "could not create aws session")
 	}
 
 	var ec2s *ec2.EC2
@@ -222,7 +166,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	} else {
 		ec2s = ec2.New(sess)
 	}
-	tg = &targetgroup.Group{
+	tg := &targetgroup.Group{
 		Source: *d.aws.Region,
 	}
 
@@ -236,7 +180,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 	input := &ec2.DescribeInstancesInput{Filters: filters}
 
-	if err = ec2s.DescribeInstancesPages(input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
+	if err = ec2s.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {
@@ -304,7 +248,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		}
 		return true
 	}); err != nil {
-		return nil, fmt.Errorf("could not describe instances: %s", err)
+		return nil, errors.Wrap(err, "could not describe instances")
 	}
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }

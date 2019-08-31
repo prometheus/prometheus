@@ -14,7 +14,6 @@
 package scrape
 
 import (
-	"errors"
 	"fmt"
 	"hash/fnv"
 	"net"
@@ -23,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -50,7 +50,7 @@ type Target struct {
 	discoveredLabels labels.Labels
 	// Any labels that are added to this target and its metrics.
 	labels labels.Labels
-	// Additional URL parmeters that are part of the target URL.
+	// Additional URL parameters that are part of the target URL.
 	params url.Values
 
 	mtx                sync.RWMutex
@@ -118,19 +118,23 @@ func (t *Target) setMetadataStore(s metricMetadataStore) {
 // hash returns an identifying hash for the target.
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
+	//nolint: errcheck
 	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
+	//nolint: errcheck
 	h.Write([]byte(t.URL().String()))
 
 	return h.Sum64()
 }
 
 // offset returns the time until the next scrape cycle for the target.
-func (t *Target) offset(interval time.Duration) time.Duration {
+// It includes the global server jitterSeed for scrapes from multiple Prometheus to try to be at different times.
+func (t *Target) offset(interval time.Duration, jitterSeed uint64) time.Duration {
 	now := time.Now().UnixNano()
 
+	// Base is a pinned to absolute time, no matter how often offset is called.
 	var (
 		base   = int64(interval) - now%int64(interval)
-		offset = t.hash() % uint64(interval)
+		offset = (t.hash() ^ jitterSeed) % uint64(interval)
 		next   = base + int64(offset)
 	)
 
@@ -343,7 +347,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		return nil, preRelabelLabels, nil
 	}
 	if v := lset.Get(model.AddressLabel); v == "" {
-		return nil, nil, fmt.Errorf("no address")
+		return nil, nil, errors.New("no address")
 	}
 
 	lb = labels.NewBuilder(lset)
@@ -370,7 +374,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		case "https":
 			addr = addr + ":443"
 		default:
-			return nil, nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
+			return nil, nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
 		}
 		lb.Set(model.AddressLabel, addr)
 	}
@@ -396,7 +400,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	for _, l := range res {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {
-			return nil, nil, fmt.Errorf("invalid label value for %q: %q", l.Name, l.Value)
+			return nil, nil, errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
 		}
 	}
 	return res, preRelabelLabels, nil
@@ -422,7 +426,7 @@ func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 
 		lbls, origLabels, err := populateLabels(lset, cfg)
 		if err != nil {
-			return nil, fmt.Errorf("instance %d in group %s: %s", i, tg, err)
+			return nil, errors.Wrapf(err, "instance %d in group %s", i, tg)
 		}
 		if lbls != nil || origLabels != nil {
 			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))

@@ -81,6 +81,9 @@ func TestExprString(t *testing.T) {
 		{
 			in: `a[5m] offset 1m`,
 		},
+		{
+			in: `{__name__="a"}`,
+		},
 	}
 
 	for _, test := range inputs {

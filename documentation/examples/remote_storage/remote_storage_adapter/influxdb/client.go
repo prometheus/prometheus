@@ -22,11 +22,12 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	influx "github.com/influxdata/influxdb/client/v2"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/prompb"
 
-	influx "github.com/influxdata/influxdb/client/v2"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 // Client allows sending batches of Prometheus samples to InfluxDB.
@@ -125,7 +126,7 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 			return nil, err
 		}
 		if resp.Err != "" {
-			return nil, fmt.Errorf(resp.Err)
+			return nil, errors.New(resp.Err)
 		}
 
 		if err = mergeResult(labelsToSeries, resp.Results); err != nil {
@@ -158,7 +159,7 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 				from = fmt.Sprintf("FROM %q./^%s$/", c.retentionPolicy, escapeSlashes(m.Value))
 			default:
 				// TODO: Figure out how to support these efficiently.
-				return "", fmt.Errorf("non-equal or regex-non-equal matchers are not supported on the metric name yet")
+				return "", errors.New("non-equal or regex-non-equal matchers are not supported on the metric name yet")
 			}
 			continue
 		}
@@ -173,7 +174,7 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 		case prompb.LabelMatcher_NRE:
 			matchers = append(matchers, fmt.Sprintf("%q !~ /^%s$/", m.Name, escapeSlashes(m.Value)))
 		default:
-			return "", fmt.Errorf("unknown match type %v", m.Type)
+			return "", errors.Errorf("unknown match type %v", m.Type)
 		}
 	}
 	matchers = append(matchers, fmt.Sprintf("time >= %vms", q.StartTimestampMs))
@@ -214,7 +215,7 @@ func mergeResult(labelsToSeries map[string]*prompb.TimeSeries, results []influx.
 }
 
 func concatLabels(labels map[string]string) string {
-	// 0xff cannot cannot occur in valid UTF-8 sequences, so use it
+	// 0xff cannot occur in valid UTF-8 sequences, so use it
 	// as a separator here.
 	separator := "\xff"
 	pairs := make([]string, 0, len(labels))
@@ -252,27 +253,27 @@ func valuesToSamples(values [][]interface{}) ([]prompb.Sample, error) {
 	samples := make([]prompb.Sample, 0, len(values))
 	for _, v := range values {
 		if len(v) != 2 {
-			return nil, fmt.Errorf("bad sample tuple length, expected [<timestamp>, <value>], got %v", v)
+			return nil, errors.Errorf("bad sample tuple length, expected [<timestamp>, <value>], got %v", v)
 		}
 
 		jsonTimestamp, ok := v[0].(json.Number)
 		if !ok {
-			return nil, fmt.Errorf("bad timestamp: %v", v[0])
+			return nil, errors.Errorf("bad timestamp: %v", v[0])
 		}
 
 		jsonValue, ok := v[1].(json.Number)
 		if !ok {
-			return nil, fmt.Errorf("bad sample value: %v", v[1])
+			return nil, errors.Errorf("bad sample value: %v", v[1])
 		}
 
 		timestamp, err := jsonTimestamp.Int64()
 		if err != nil {
-			return nil, fmt.Errorf("unable to convert sample timestamp to int64: %v", err)
+			return nil, errors.Wrap(err, "unable to convert sample timestamp to int64")
 		}
 
 		value, err := jsonValue.Float64()
 		if err != nil {
-			return nil, fmt.Errorf("unable to convert sample value to float64: %v", err)
+			return nil, errors.Wrap(err, "unable to convert sample value to float64")
 		}
 
 		samples = append(samples, prompb.Sample{

@@ -19,6 +19,9 @@ remote_write:
       regex:         expensive.*
       action:        drop
   - url: http://remote2/push
+    tls_config:
+      cert_file: valid_cert_file
+      key_file: valid_key_file
 
 remote_read:
   - url: http://remote1/read
@@ -27,6 +30,9 @@ remote_read:
     read_recent: false
     required_matchers:
       job: special
+    tls_config:
+      cert_file: valid_cert_file
+      key_file: valid_key_file
 
 scrape_configs:
 - job_name: prometheus
@@ -122,7 +128,7 @@ scrape_configs:
   - server: 'localhost:1234'
     token: mysecret
     services: ['nginx', 'cache', 'mysql']
-    tag: "canary"
+    tags: ["canary", "v1"]
     node_meta:
       rack: "123"
     allow_stale: true
@@ -153,6 +159,9 @@ scrape_configs:
   kubernetes_sd_configs:
   - role: endpoints
     api_server: 'https://localhost:1234'
+    tls_config:
+      cert_file: valid_cert_file
+      key_file: valid_key_file
 
     basic_auth:
       username: 'myusername'
@@ -166,6 +175,11 @@ scrape_configs:
     namespaces:
       names:
         - default
+
+  basic_auth:
+    username: 'myusername'
+    password_file: valid_password_file
+
 
 - job_name: service-marathon
   marathon_sd_configs:
@@ -216,6 +230,13 @@ scrape_configs:
     - targets:
       - localhost:9090
 
+- job_name: badfederation
+  honor_timestamps: false
+  metrics_path: /federate
+  static_configs:
+    - targets:
+      - localhost:9090
+
 - job_name: 測試
   metrics_path: /metrics
   static_configs:
@@ -231,8 +252,8 @@ scrape_configs:
     refresh_interval: 1m
     version: 1
     tls_config:
-      cert_file: testdata/valid_cert_file
-      key_file: testdata/valid_key_file
+      cert_file: valid_cert_file
+      key_file: valid_key_file
 
 - job_name: service-openstack
   openstack_sd_configs:

@@ -17,14 +17,14 @@
 package textparse
 
 import (
-	"errors"
-	"fmt"
 	"io"
 	"math"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -44,7 +44,10 @@ func (l *openMetricsLexer) buf() []byte {
 }
 
 func (l *openMetricsLexer) cur() byte {
-	return l.b[l.i]
+	if l.i < len(l.b) {
+		return l.b[l.i]
+	}
+	return byte(' ')
 }
 
 // next advances the openMetricsLexer to the next character.
@@ -185,7 +188,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 	switch t := p.nextToken(); t {
 	case tEofWord:
 		if t := p.nextToken(); t != tEOF {
-			return EntryInvalid, fmt.Errorf("unexpected data after # EOF")
+			return EntryInvalid, errors.New("unexpected data after # EOF")
 		}
 		return EntryInvalid, io.EOF
 	case tEOF:
@@ -227,11 +230,11 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			case "unknown":
 				p.mtype = MetricTypeUnknown
 			default:
-				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
+				return EntryInvalid, errors.Errorf("invalid metric type %q", s)
 			}
 		case tHelp:
 			if !utf8.Valid(p.text) {
-				return EntryInvalid, fmt.Errorf("help text is not a valid utf8 string")
+				return EntryInvalid, errors.New("help text is not a valid utf8 string")
 			}
 		}
 		switch t {
@@ -244,7 +247,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			u := yoloString(p.text)
 			if len(u) > 0 {
 				if !strings.HasSuffix(m, u) || len(m) < len(u)+1 || p.l.b[p.offsets[1]-len(u)-1] != '_' {
-					return EntryInvalid, fmt.Errorf("unit not a suffix of metric %q", m)
+					return EntryInvalid, errors.Errorf("unit not a suffix of metric %q", m)
 				}
 			}
 			return EntryUnit, nil
@@ -293,7 +296,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		return EntrySeries, nil
 
 	default:
-		err = fmt.Errorf("%q %q is not a valid start token", t, string(p.l.cur()))
+		err = errors.Errorf("%q %q is not a valid start token", t, string(p.l.cur()))
 	}
 	return EntryInvalid, err
 }
@@ -336,7 +339,7 @@ func (p *OpenMetricsParser) parseLVals() error {
 			return parseError("expected label value", t)
 		}
 		if !utf8.Valid(p.l.buf()) {
-			return fmt.Errorf("invalid UTF-8 label value")
+			return errors.New("invalid UTF-8 label value")
 		}
 
 		// The openMetricsLexer ensures the value string is quoted. Strip first

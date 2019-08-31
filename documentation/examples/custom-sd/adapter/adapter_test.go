@@ -151,6 +151,63 @@ func TestGenerateTargetGroups(t *testing.T) {
 				},
 			},
 		},
+		{
+			title: "Disordered Ips in Alibaba's application management system",
+			targetGroup: map[string][]*targetgroup.Group{
+				"cart": {
+					{
+						Source: "alibaba",
+						Targets: []model.LabelSet{
+							{
+								model.AddressLabel: "192.168.1.55",
+							},
+							{
+								model.AddressLabel: "192.168.1.44",
+							},
+						},
+						Labels: model.LabelSet{
+							model.LabelName("__meta_test_label"): model.LabelValue("label_test_1"),
+						},
+					},
+				},
+				"buy": {
+					{
+						Source: "alibaba",
+						Targets: []model.LabelSet{
+							{
+								model.AddressLabel: "192.168.1.22",
+							},
+							{
+								model.AddressLabel: "192.168.1.33",
+							},
+						},
+						Labels: model.LabelSet{
+							model.LabelName("__meta_test_label"): model.LabelValue("label_test_1"),
+						},
+					},
+				},
+			},
+			expectedCustomSD: map[string]*customSD{
+				"buy:alibaba:21c0d97a1e27e6fe": {
+					Targets: []string{
+						"192.168.1.22",
+						"192.168.1.33",
+					},
+					Labels: map[string]string{
+						"__meta_test_label": "label_test_1",
+					},
+				},
+				"cart:alibaba:1112e97a13b159fa": {
+					Targets: []string{
+						"192.168.1.44",
+						"192.168.1.55",
+					},
+					Labels: map[string]string{
+						"__meta_test_label": "label_test_1",
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range testCases {

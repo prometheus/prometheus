@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 // +build !appengine
-// +build go1.7
 
 package internal
 
@@ -45,6 +44,7 @@ var (
 	curNamespaceHeader = http.CanonicalHeaderKey("X-AppEngine-Current-Namespace")
 	userIPHeader       = http.CanonicalHeaderKey("X-AppEngine-User-IP")
 	remoteAddrHeader   = http.CanonicalHeaderKey("X-AppEngine-Remote-Addr")
+	devRequestIdHeader = http.CanonicalHeaderKey("X-Appengine-Dev-Request-Id")
 
 	// Outgoing headers.
 	apiEndpointHeader      = http.CanonicalHeaderKey("X-Google-RPC-Service-Endpoint")
@@ -130,7 +130,13 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 		flushes++
 	}
 	c.pendingLogs.Unlock()
-	go c.flushLog(false)
+	flushed := make(chan struct{})
+	go func() {
+		defer close(flushed)
+		// Force a log flush, because with very short requests we
+		// may not ever flush logs.
+		c.flushLog(true)
+	}()
 	w.Header().Set(logFlushHeader, strconv.Itoa(flushes))
 
 	// Avoid nil Write call if c.Write is never called.
@@ -140,6 +146,9 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 	if c.outBody != nil {
 		w.Write(c.outBody)
 	}
+	// Wait for the last flush to complete before returning,
+	// otherwise the security ticket will not be valid.
+	<-flushed
 }
 
 func executeRequestSafely(c *context, r *http.Request) {
@@ -486,6 +495,9 @@ func Call(ctx netcontext.Context, service, method string, in, out proto.Message)
 	if ticket == "" {
 		ticket = DefaultTicket()
 	}
+	if dri := c.req.Header.Get(devRequestIdHeader); IsDevAppServer() && dri != "" {
+		ticket = dri
+	}
 	req := &remotepb.Request{
 		ServiceName: &service,
 		Method:      &method,
@@ -571,7 +583,10 @@ func logf(c *context, level int64, format string, args ...interface{}) {
 		Level:         &level,
 		Message:       &s,
 	})
-	log.Print(logLevelName[level] + ": " + s)
+	// Only duplicate log to stderr if not running on App Engine second generation
+	if !IsSecondGen() {
+		log.Print(logLevelName[level] + ": " + s)
+	}
 }
 
 // flushLog attempts to flush any pending logs to the appserver.

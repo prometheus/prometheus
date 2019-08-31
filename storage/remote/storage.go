@@ -19,9 +19,12 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -32,27 +35,26 @@ type startTimeCallback func() (int64, error)
 // storage.Storage.
 type Storage struct {
 	logger log.Logger
-	mtx    sync.RWMutex
+	mtx    sync.Mutex
 
-	// For writes
-	queues []*QueueManager
+	rws *WriteStorage
 
 	// For reads
 	queryables             []storage.Queryable
 	localStartTimeCallback startTimeCallback
-	flushDeadline          time.Duration
 }
 
 // NewStorage returns a remote.Storage.
-func NewStorage(l log.Logger, stCallback startTimeCallback, flushDeadline time.Duration) *Storage {
+func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration) *Storage {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &Storage{
-		logger:                 l,
+	s := &Storage{
+		logger:                 logging.Dedupe(l, 1*time.Minute),
 		localStartTimeCallback: stCallback,
-		flushDeadline:          flushDeadline,
+		rws:                    NewWriteStorage(l, walDir, flushDeadline),
 	}
+	return s
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -60,42 +62,12 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	// Update write queues
-
-	newQueues := []*QueueManager{}
-	// TODO: we should only stop & recreate queues which have changes,
-	// as this can be quite disruptive.
-	for i, rwConf := range conf.RemoteWriteConfigs {
-		c, err := NewClient(i, &ClientConfig{
-			URL:              rwConf.URL,
-			Timeout:          rwConf.RemoteTimeout,
-			HTTPClientConfig: rwConf.HTTPClientConfig,
-		})
-		if err != nil {
-			return err
-		}
-		newQueues = append(newQueues, NewQueueManager(
-			s.logger,
-			rwConf.QueueConfig,
-			conf.GlobalConfig.ExternalLabels,
-			rwConf.WriteRelabelConfigs,
-			c,
-			s.flushDeadline,
-		))
-	}
-
-	for _, q := range s.queues {
-		q.Stop()
-	}
-
-	s.queues = newQueues
-	for _, q := range s.queues {
-		q.Start()
+	if err := s.rws.ApplyConfig(conf); err != nil {
+		return err
 	}
 
 	// Update read clients
-
-	s.queryables = make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
+	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
 	for i, rrConf := range conf.RemoteReadConfigs {
 		c, err := NewClient(i, &ClientConfig{
 			URL:              rrConf.URL,
@@ -114,8 +86,9 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if !rrConf.ReadRecent {
 			q = PreferLocalStorageFilter(q, s.localStartTimeCallback)
 		}
-		s.queryables = append(s.queryables, q)
+		queryables = append(queryables, q)
 	}
+	s.queryables = queryables
 
 	return nil
 }
@@ -143,16 +116,16 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 	return storage.NewMergeQuerier(nil, queriers), nil
 }
 
+// Appender implements storage.Storage.
+func (s *Storage) Appender() (storage.Appender, error) {
+	return s.rws.Appender()
+}
+
 // Close the background processing of the storage queues.
 func (s *Storage) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
-
-	for _, q := range s.queues {
-		q.Stop()
-	}
-
-	return nil
+	return s.rws.Close()
 }
 
 func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {

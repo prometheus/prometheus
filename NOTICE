@@ -2,13 +2,13 @@ The Prometheus systems and service monitoring server
 Copyright 2012-2015 The Prometheus Authors
 
 This product includes software developed at
-SoundCloud Ltd. (http://soundcloud.com/).
+SoundCloud Ltd. (https://soundcloud.com/).
 
 
 The following components are included in this product:
 
 Bootstrap
-http://getbootstrap.com
+https://getbootstrap.com
 Copyright 2011-2014 Twitter, Inc.
 Licensed under the MIT License
 
@@ -52,7 +52,7 @@ Copyright jQuery Foundation and other contributors
 Licensed under the MIT License
 
 Protocol Buffers for Go with Gadgets
-http://github.com/gogo/protobuf/
+https://github.com/gogo/protobuf/
 Copyright (c) 2013, The GoGo Authors.
 See source code for license details.
 
@@ -67,7 +67,7 @@ Copyright 2013 Matt T. Proud
 Licensed under the Apache License, Version 2.0
 
 DNS library in Go
-http://miek.nl/posts/2014/Aug/16/go-dns-package/
+https://miek.nl/2014/august/16/go-dns-package/
 Copyright 2009 The Go Authors, 2011 Miek Gieben
 See https://github.com/miekg/dns/blob/master/LICENSE for license details.
 

@@ -19,7 +19,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -28,8 +28,8 @@ func makeMultiPortService() *v1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "testservice",
 			Namespace:   "default",
-			Labels:      map[string]string{"testlabel": "testvalue"},
-			Annotations: map[string]string{"testannotation": "testannotationvalue"},
+			Labels:      map[string]string{"test-label": "testvalue"},
+			Annotations: map[string]string{"test-annotation": "testannotationvalue"},
 		},
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{
@@ -95,17 +95,15 @@ func makeExternalService() *v1.Service {
 }
 
 func TestServiceDiscoveryAdd(t *testing.T) {
-	n, c, w := makeDiscovery(RoleService, NamespaceDiscovery{})
+	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			obj := makeService()
 			c.CoreV1().Services(obj.Namespace).Create(obj)
-			w.Services().Add(obj)
 			obj = makeExternalService()
 			c.CoreV1().Services(obj.Namespace).Create(obj)
-			w.Services().Add(obj)
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -144,14 +142,13 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 }
 
 func TestServiceDiscoveryDelete(t *testing.T) {
-	n, c, w := makeDiscovery(RoleService, NamespaceDiscovery{}, makeService())
+	n, c := makeDiscovery(RoleService, NamespaceDiscovery{}, makeService())
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			obj := makeService()
 			c.CoreV1().Services(obj.Namespace).Delete(obj.Name, &metav1.DeleteOptions{})
-			w.Services().Delete(obj)
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -163,14 +160,13 @@ func TestServiceDiscoveryDelete(t *testing.T) {
 }
 
 func TestServiceDiscoveryUpdate(t *testing.T) {
-	n, c, w := makeDiscovery(RoleService, NamespaceDiscovery{}, makeService())
+	n, c := makeDiscovery(RoleService, NamespaceDiscovery{}, makeService())
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			obj := makeMultiPortService()
 			c.CoreV1().Services(obj.Namespace).Update(obj)
-			w.Services().Modify(obj)
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -190,10 +186,12 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_service_name":                      "testservice",
-					"__meta_kubernetes_namespace":                         "default",
-					"__meta_kubernetes_service_label_testlabel":           "testvalue",
-					"__meta_kubernetes_service_annotation_testannotation": "testannotationvalue",
+					"__meta_kubernetes_service_name":                              "testservice",
+					"__meta_kubernetes_namespace":                                 "default",
+					"__meta_kubernetes_service_label_test_label":                  "testvalue",
+					"__meta_kubernetes_service_labelpresent_test_label":           "true",
+					"__meta_kubernetes_service_annotation_test_annotation":        "testannotationvalue",
+					"__meta_kubernetes_service_annotationpresent_test_annotation": "true",
 				},
 				Source: "svc/default/testservice",
 			},
@@ -202,7 +200,7 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 }
 
 func TestServiceDiscoveryNamespaces(t *testing.T) {
-	n, c, w := makeDiscovery(RoleService, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
+	n, c := makeDiscovery(RoleService, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
 
 	k8sDiscoveryTest{
 		discovery: n,
@@ -211,7 +209,6 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 				obj := makeService()
 				obj.Namespace = ns
 				c.CoreV1().Services(obj.Namespace).Create(obj)
-				w.Services().Add(obj)
 			}
 		},
 		expectedMaxItems: 2,

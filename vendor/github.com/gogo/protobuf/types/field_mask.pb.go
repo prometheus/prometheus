@@ -3,16 +3,16 @@
 
 package types
 
-import proto "github.com/gogo/protobuf/proto"
-import fmt "fmt"
-import math "math"
-
-import bytes "bytes"
-
-import strings "strings"
-import reflect "reflect"
-
-import io "io"
+import (
+	bytes "bytes"
+	fmt "fmt"
+	proto "github.com/gogo/protobuf/proto"
+	io "io"
+	math "math"
+	math_bits "math/bits"
+	reflect "reflect"
+	strings "strings"
+)
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
@@ -93,57 +93,49 @@ const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 // describe the updated values, the API ignores the values of all
 // fields not covered by the mask.
 //
-// If a repeated field is specified for an update operation, the existing
-// repeated values in the target resource will be overwritten by the new values.
-// Note that a repeated field is only allowed in the last position of a `paths`
-// string.
+// If a repeated field is specified for an update operation, new values will
+// be appended to the existing repeated field in the target resource. Note that
+// a repeated field is only allowed in the last position of a `paths` string.
 //
 // If a sub-message is specified in the last position of the field mask for an
-// update operation, then the existing sub-message in the target resource is
-// overwritten. Given the target message:
+// update operation, then new value will be merged into the existing sub-message
+// in the target resource.
+//
+// For example, given the target message:
 //
 //     f {
 //       b {
-//         d : 1
-//         x : 2
+//         d: 1
+//         x: 2
 //       }
-//       c : 1
+//       c: [1]
 //     }
 //
 // And an update message:
 //
 //     f {
 //       b {
-//         d : 10
+//         d: 10
 //       }
+//       c: [2]
 //     }
 //
 // then if the field mask is:
 //
-//  paths: "f.b"
+//  paths: ["f.b", "f.c"]
 //
 // then the result will be:
 //
 //     f {
 //       b {
-//         d : 10
+//         d: 10
+//         x: 2
 //       }
-//       c : 1
+//       c: [1, 2]
 //     }
 //
-// However, if the update mask was:
-//
-//  paths: "f.b.d"
-//
-// then the result would be:
-//
-//     f {
-//       b {
-//         d : 10
-//         x : 2
-//       }
-//       c : 1
-//     }
+// An implementation may provide options to override this default behavior for
+// repeated and message fields.
 //
 // In order to reset a field's value to the default, the field must
 // be in the mask and set to the default value in the provided resource.
@@ -229,8 +221,8 @@ const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 //
 // ## Field Mask Verification
 //
-// The implementation of the all the API methods, which have any FieldMask type
-// field in the request, should verify the included field paths, and return
+// The implementation of any API method which has a FieldMask type field in the
+// request should verify the included field paths, and return an
 // `INVALID_ARGUMENT` error if any path is duplicated or unmappable.
 type FieldMask struct {
 	// The set of field mask paths.
@@ -243,7 +235,7 @@ type FieldMask struct {
 func (m *FieldMask) Reset()      { *m = FieldMask{} }
 func (*FieldMask) ProtoMessage() {}
 func (*FieldMask) Descriptor() ([]byte, []int) {
-	return fileDescriptor_field_mask_f1676d06eb3d88ba, []int{0}
+	return fileDescriptor_5158202634f0da48, []int{0}
 }
 func (m *FieldMask) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -253,15 +245,15 @@ func (m *FieldMask) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return xxx_messageInfo_FieldMask.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
 		return b[:n], nil
 	}
 }
-func (dst *FieldMask) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_FieldMask.Merge(dst, src)
+func (m *FieldMask) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_FieldMask.Merge(m, src)
 }
 func (m *FieldMask) XXX_Size() int {
 	return m.Size()
@@ -285,6 +277,26 @@ func (*FieldMask) XXX_MessageName() string {
 func init() {
 	proto.RegisterType((*FieldMask)(nil), "google.protobuf.FieldMask")
 }
+
+func init() { proto.RegisterFile("google/protobuf/field_mask.proto", fileDescriptor_5158202634f0da48) }
+
+var fileDescriptor_5158202634f0da48 = []byte{
+	// 203 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x52, 0x48, 0xcf, 0xcf, 0x4f,
+	0xcf, 0x49, 0xd5, 0x2f, 0x28, 0xca, 0x2f, 0xc9, 0x4f, 0x2a, 0x4d, 0xd3, 0x4f, 0xcb, 0x4c, 0xcd,
+	0x49, 0x89, 0xcf, 0x4d, 0x2c, 0xce, 0xd6, 0x03, 0x8b, 0x09, 0xf1, 0x43, 0x54, 0xe8, 0xc1, 0x54,
+	0x28, 0x29, 0x72, 0x71, 0xba, 0x81, 0x14, 0xf9, 0x26, 0x16, 0x67, 0x0b, 0x89, 0x70, 0xb1, 0x16,
+	0x24, 0x96, 0x64, 0x14, 0x4b, 0x30, 0x2a, 0x30, 0x6b, 0x70, 0x06, 0x41, 0x38, 0x4e, 0x1d, 0x8c,
+	0x37, 0x1e, 0xca, 0x31, 0x7c, 0x78, 0x28, 0xc7, 0xf8, 0xe3, 0xa1, 0x1c, 0x63, 0xc3, 0x23, 0x39,
+	0xc6, 0x15, 0x8f, 0xe4, 0x18, 0x4f, 0x3c, 0x92, 0x63, 0xbc, 0xf0, 0x48, 0x8e, 0xf1, 0xc1, 0x23,
+	0x39, 0xc6, 0x17, 0x8f, 0xe4, 0x18, 0x3e, 0x80, 0xc4, 0x1f, 0xcb, 0x31, 0x9e, 0x78, 0x2c, 0xc7,
+	0xc8, 0x25, 0x9c, 0x9c, 0x9f, 0xab, 0x87, 0x66, 0x95, 0x13, 0x1f, 0xdc, 0xa2, 0x00, 0x90, 0x50,
+	0x00, 0x63, 0x14, 0x6b, 0x49, 0x65, 0x41, 0x6a, 0xf1, 0x0f, 0x46, 0xc6, 0x45, 0x4c, 0xcc, 0xee,
+	0x01, 0x4e, 0xab, 0x98, 0xe4, 0xdc, 0x21, 0x7a, 0x02, 0xa0, 0x7a, 0xf4, 0xc2, 0x53, 0x73, 0x72,
+	0xbc, 0xf3, 0xf2, 0xcb, 0xf3, 0x42, 0x40, 0x2a, 0x93, 0xd8, 0xc0, 0x86, 0x19, 0x03, 0x02, 0x00,
+	0x00, 0xff, 0xff, 0x43, 0xa0, 0x83, 0xd0, 0xe9, 0x00, 0x00, 0x00,
+}
+
 func (this *FieldMask) Compare(that interface{}) int {
 	if that == nil {
 		if this == nil {
@@ -385,7 +397,7 @@ func valueToGoStringFieldMask(v interface{}, typ string) string {
 func (m *FieldMask) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -393,39 +405,41 @@ func (m *FieldMask) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *FieldMask) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *FieldMask) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	if len(m.Paths) > 0 {
-		for _, s := range m.Paths {
+		for iNdEx := len(m.Paths) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Paths[iNdEx])
+			copy(dAtA[i:], m.Paths[iNdEx])
+			i = encodeVarintFieldMask(dAtA, i, uint64(len(m.Paths[iNdEx])))
+			i--
 			dAtA[i] = 0xa
-			i++
-			l = len(s)
-			for l >= 1<<7 {
-				dAtA[i] = uint8(uint64(l)&0x7f | 0x80)
-				l >>= 7
-				i++
-			}
-			dAtA[i] = uint8(l)
-			i++
-			i += copy(dAtA[i:], s)
 		}
 	}
-	if m.XXX_unrecognized != nil {
-		i += copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	return i, nil
+	return len(dAtA) - i, nil
 }
 
 func encodeVarintFieldMask(dAtA []byte, offset int, v uint64) int {
+	offset -= sovFieldMask(v)
+	base := offset
 	for v >= 1<<7 {
 		dAtA[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
 	dAtA[offset] = uint8(v)
-	return offset + 1
+	return base
 }
 func NewPopulatedFieldMask(r randyFieldMask, easy bool) *FieldMask {
 	this := &FieldMask{}
@@ -531,14 +545,7 @@ func (m *FieldMask) Size() (n int) {
 }
 
 func sovFieldMask(x uint64) (n int) {
-	for {
-		n++
-		x >>= 7
-		if x == 0 {
-			break
-		}
-	}
-	return n
+	return (math_bits.Len64(x|1) + 6) / 7
 }
 func sozFieldMask(x uint64) (n int) {
 	return sovFieldMask(uint64((x << 1) ^ uint64((int64(x) >> 63))))
@@ -577,7 +584,7 @@ func (m *FieldMask) Unmarshal(dAtA []byte) error {
 			}
 			b := dAtA[iNdEx]
 			iNdEx++
-			wire |= (uint64(b) & 0x7F) << shift
+			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
 				break
 			}
@@ -605,7 +612,7 @@ func (m *FieldMask) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
+				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -615,6 +622,9 @@ func (m *FieldMask) Unmarshal(dAtA []byte) error {
 				return ErrInvalidLengthFieldMask
 			}
 			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthFieldMask
+			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
@@ -627,6 +637,9 @@ func (m *FieldMask) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			if skippy < 0 {
+				return ErrInvalidLengthFieldMask
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthFieldMask
 			}
 			if (iNdEx + skippy) > l {
@@ -696,8 +709,11 @@ func skipFieldMask(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
-			iNdEx += length
 			if length < 0 {
+				return 0, ErrInvalidLengthFieldMask
+			}
+			iNdEx += length
+			if iNdEx < 0 {
 				return 0, ErrInvalidLengthFieldMask
 			}
 			return iNdEx, nil
@@ -728,6 +744,9 @@ func skipFieldMask(dAtA []byte) (n int, err error) {
 					return 0, err
 				}
 				iNdEx = start + next
+				if iNdEx < 0 {
+					return 0, ErrInvalidLengthFieldMask
+				}
 			}
 			return iNdEx, nil
 		case 4:
@@ -746,24 +765,3 @@ var (
 	ErrInvalidLengthFieldMask = fmt.Errorf("proto: negative length found during unmarshaling")
 	ErrIntOverflowFieldMask   = fmt.Errorf("proto: integer overflow")
 )
-
-func init() {
-	proto.RegisterFile("google/protobuf/field_mask.proto", fileDescriptor_field_mask_f1676d06eb3d88ba)
-}
-
-var fileDescriptor_field_mask_f1676d06eb3d88ba = []byte{
-	// 200 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x52, 0x48, 0xcf, 0xcf, 0x4f,
-	0xcf, 0x49, 0xd5, 0x2f, 0x28, 0xca, 0x2f, 0xc9, 0x4f, 0x2a, 0x4d, 0xd3, 0x4f, 0xcb, 0x4c, 0xcd,
-	0x49, 0x89, 0xcf, 0x4d, 0x2c, 0xce, 0xd6, 0x03, 0x8b, 0x09, 0xf1, 0x43, 0x54, 0xe8, 0xc1, 0x54,
-	0x28, 0x29, 0x72, 0x71, 0xba, 0x81, 0x14, 0xf9, 0x26, 0x16, 0x67, 0x0b, 0x89, 0x70, 0xb1, 0x16,
-	0x24, 0x96, 0x64, 0x14, 0x4b, 0x30, 0x2a, 0x30, 0x6b, 0x70, 0x06, 0x41, 0x38, 0x4e, 0xad, 0x8c,
-	0x37, 0x1e, 0xca, 0x31, 0x7c, 0x78, 0x28, 0xc7, 0xf8, 0xe3, 0xa1, 0x1c, 0x63, 0xc3, 0x23, 0x39,
-	0xc6, 0x15, 0x8f, 0xe4, 0x18, 0x4f, 0x3c, 0x92, 0x63, 0xbc, 0xf0, 0x48, 0x8e, 0xf1, 0xc1, 0x23,
-	0x39, 0xc6, 0x17, 0x8f, 0xe4, 0x18, 0x3e, 0x80, 0xc4, 0x1f, 0xcb, 0x31, 0x9e, 0x78, 0x2c, 0xc7,
-	0xc8, 0x25, 0x9c, 0x9c, 0x9f, 0xab, 0x87, 0x66, 0x95, 0x13, 0x1f, 0xdc, 0xa2, 0x00, 0x90, 0x50,
-	0x00, 0x63, 0x14, 0x6b, 0x49, 0x65, 0x41, 0x6a, 0xf1, 0x22, 0x26, 0x66, 0xf7, 0x00, 0xa7, 0x55,
-	0x4c, 0x72, 0xee, 0x10, 0x0d, 0x01, 0x50, 0x0d, 0x7a, 0xe1, 0xa9, 0x39, 0x39, 0xde, 0x79, 0xf9,
-	0xe5, 0x79, 0x21, 0x20, 0x65, 0x49, 0x6c, 0x60, 0x93, 0x8c, 0x01, 0x01, 0x00, 0x00, 0xff, 0xff,
-	0xcf, 0xae, 0x5b, 0xec, 0xe6, 0x00, 0x00, 0x00,
-}
