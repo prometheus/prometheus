@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -2329,8 +2330,8 @@ func TestDBReadOnly(t *testing.T) {
 		for i, expBlock := range expBlocks {
 			testutil.Equals(t, expBlock.Meta(), blocks[i].Meta(), "block meta mismatch")
 		}
-
-		q, err := dbReadOnly.Querier(math.MinInt64, math.MaxInt64)
+		ctx := context.Background()
+		q, err := dbReadOnly.Querier(ctx, math.MinInt64, math.MaxInt64)
 		testutil.Ok(t, err)
 		readOnlySeries := query(t, q, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
@@ -2356,6 +2357,7 @@ func TestDBReadOnlyClosing(t *testing.T) {
 	testutil.Equals(t, db.Close(), ErrClosed)
 	_, err = db.Blocks()
 	testutil.Equals(t, err, ErrClosed)
-	_, err = db.Querier(0, 1)
+	ctx := context.Background()
+	_, err = db.Querier(ctx, 0, 1)
 	testutil.Equals(t, err, ErrClosed)
 }

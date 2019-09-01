@@ -270,7 +270,7 @@ type DBReadOnly struct {
 }
 
 // Queryable implements a layer for context cancelations over the Querier.
-// Cancelation of any query would lead to rollback and close
+// Cancellation of any read request would lead to closing of the db
 type Queryable interface {
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
