@@ -269,6 +269,12 @@ type DBReadOnly struct {
 	closed  chan struct{}
 }
 
+// Queryable implements a layer for context cancelations over the Querier.
+// Cancelation of any query would lead to rollback and close
+type Queryable interface {
+	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
+}
+
 // OpenDBReadOnly opens DB in the given directory for read only operations.
 func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
 	if _, err := os.Stat(dir); err != nil {
@@ -288,68 +294,75 @@ func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
 
 // Querier loads the wal and returns a new querier over the data partition for the given time range.
 // Current implementation doesn't support multiple Queriers.
-func (db *DBReadOnly) Querier(mint, maxt int64) (Querier, error) {
+func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
 	select {
-	case <-db.closed:
-		return nil, ErrClosed
-	default:
-	}
-	blocksReaders, err := db.Blocks()
-	if err != nil {
-		return nil, err
-	}
-	blocks := make([]*Block, len(blocksReaders))
-	for i, b := range blocksReaders {
-		b, ok := b.(*Block)
-		if !ok {
-			return nil, errors.New("unable to convert a read only block to a normal block")
+	case <-ctx.Done():
+		db.Close()
+		return nil, errors.New("err opening db dir")
+	case <-time.After(2 * time.Second):
+		select {
+		case <-db.closed:
+			return nil, ErrClosed
+		default:
 		}
-		blocks[i] = b
-	}
-
-	head, err := NewHead(nil, db.logger, nil, 1)
-	if err != nil {
-		return nil, err
-	}
-	maxBlockTime := int64(math.MinInt64)
-	if len(blocks) > 0 {
-		maxBlockTime = blocks[len(blocks)-1].Meta().MaxTime
-	}
-
-	// Also add the WAL if the current blocks don't cover the requestes time range.
-	if maxBlockTime <= maxt {
-		w, err := wal.Open(db.logger, nil, filepath.Join(db.dir, "wal"))
+		blocksReaders, err := db.Blocks()
 		if err != nil {
 			return nil, err
 		}
-		head, err = NewHead(nil, db.logger, w, 1)
+		blocks := make([]*Block, len(blocksReaders))
+		for i, b := range blocksReaders {
+			b, ok := b.(*Block)
+			if !ok {
+				return nil, errors.New("unable to convert a read only block to a normal block")
+			}
+			blocks[i] = b
+		}
+
+		head, err := NewHead(nil, db.logger, nil, 1)
 		if err != nil {
 			return nil, err
 		}
-		// Set the min valid time for the ingested wal samples
-		// to be no lower than the maxt of the last block.
-		if err := head.Init(maxBlockTime); err != nil {
-			return nil, errors.Wrap(err, "read WAL")
+		maxBlockTime := int64(math.MinInt64)
+		if len(blocks) > 0 {
+			maxBlockTime = blocks[len(blocks)-1].Meta().MaxTime
 		}
-		// Set the wal to nil to disable all wal operations.
-		// This is mainly to avoid blocking when closing the head.
-		head.wal = nil
 
-		db.closers = append(db.closers, head)
+		// Also add the WAL if the current blocks don't cover the requestes time range.
+		if maxBlockTime <= maxt {
+			w, err := wal.Open(db.logger, nil, filepath.Join(db.dir, "wal"))
+			if err != nil {
+				return nil, err
+			}
+			head, err = NewHead(nil, db.logger, w, 1)
+			if err != nil {
+				return nil, err
+			}
+			// Set the min valid time for the ingested wal samples
+			// to be no lower than the maxt of the last block.
+			if err := head.Init(maxBlockTime); err != nil {
+				return nil, errors.Wrap(err, "read WAL")
+			}
+			// Set the wal to nil to disable all wal operations.
+			// This is mainly to avoid blocking when closing the head.
+			head.wal = nil
+
+			db.closers = append(db.closers, head)
+		}
+
+		// TODO: Refactor so that it is possible to obtain a Querier without initializing a writable DB instance.
+		// Option 1: refactor DB to have the Querier implementation using the DBReadOnly.Querier implementation not the opposite.
+		// Option 2: refactor Querier to use another independent func which
+		// can than be used by a read only and writable db instances without any code duplication.
+		dbWritable := &DB{
+			dir:    db.dir,
+			logger: db.logger,
+			blocks: blocks,
+			head:   head,
+		}
+
+		return dbWritable.Querier(mint, maxt)
 	}
 
-	// TODO: Refactor so that it is possible to obtain a Querier without initializing a writable DB instance.
-	// Option 1: refactor DB to have the Querier implementation using the DBReadOnly.Querier implementation not the opposite.
-	// Option 2: refactor Querier to use another independent func which
-	// can than be used by a read only and writable db instances without any code duplication.
-	dbWritable := &DB{
-		dir:    db.dir,
-		logger: db.logger,
-		blocks: blocks,
-		head:   head,
-	}
-
-	return dbWritable.Querier(mint, maxt)
 }
 
 // Blocks returns a slice of block readers for persisted blocks.

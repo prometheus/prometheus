@@ -15,6 +15,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -126,16 +127,20 @@ func execute() (err error) {
 		}
 		return analyzeBlock(block, *analyzeLimit)
 	case dumpCmd.FullCommand():
+		ctx := context.Background()
+		ctx, cancelQuery := context.WithCancel(ctx)
 		db, err := tsdb.OpenDBReadOnly(*dumpPath, nil)
 		if err != nil {
+			cancelQuery()
 			return err
 		}
 		defer func() {
 			merr.Add(err)
 			merr.Add(db.Close())
 			err = merr.Err()
+			cancelQuery()
 		}()
-		return dumpSamples(db, *dumpMinTime, *dumpMaxTime)
+		return dumpSamples(ctx, db, *dumpMinTime, *dumpMaxTime)
 	}
 	return nil
 }
@@ -617,9 +622,9 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 	return nil
 }
 
-func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
+func dumpSamples(ctx context.Context, db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
 
-	q, err := db.Querier(mint, maxt)
+	q, err := db.Querier(ctx, mint, maxt)
 	if err != nil {
 		return err
 	}
