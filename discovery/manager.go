@@ -191,6 +191,9 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 		}
 	}
 	m.cancelDiscoverers()
+	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
+	m.providers = nil
+	m.discoverCancel = nil
 	for name, scfg := range cfg {
 		m.registerProviders(scfg, name)
 		discoveredTargets.WithLabelValues(m.name, name).Set(0)
@@ -280,9 +283,6 @@ func (m *Manager) cancelDiscoverers() {
 	for _, c := range m.discoverCancel {
 		c()
 	}
-	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
-	m.providers = nil
-	m.discoverCancel = nil
 }
 
 func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
