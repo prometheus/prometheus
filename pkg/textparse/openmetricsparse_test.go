@@ -370,6 +370,22 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			input: "empty_label_name{=\"\"} 0",
 			err:   "expected label name or left brace, got \"EQUAL\"",
 		},
+		{
+			input: "foo 1_2\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0x1p-3\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0x1P-3\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0 1_2\n",
+			err:   "unsupported character in float",
+		},
 	}
 
 	for i, c := range cases {
