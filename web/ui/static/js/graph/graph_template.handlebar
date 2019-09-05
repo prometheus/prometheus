@@ -27,6 +27,11 @@
                     refresh.
               -->
             <div class="form-row">
+              <div class="col-lg-12 text-right">
+                    <a name="remove" href="#">Remove Graph</a>
+              </div>
+            </div>
+            <div class="form-row">
               <div class="col-lg-12">
                 <div class="list-group" role="tabpanel">
                   <ul class="nav nav-tabs" role="tablist">
@@ -153,11 +158,6 @@
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="col-lg-12 text-right">
-                    <a name="remove" href="#">Remove Graph</a>
               </div>
             </div>
           </form>
