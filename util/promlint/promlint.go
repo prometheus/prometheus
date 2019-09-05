@@ -17,6 +17,7 @@ package promlint
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -101,6 +102,10 @@ func lint(mf dto.MetricFamily) []Problem {
 		lintMetricUnits,
 		lintCounter,
 		lintHistogramSummaryReserved,
+		lintMetricTypeInName,
+		lintReservedChars,
+		lintCamelCase,
+		lintUnitAbbreviations,
 	}
 
 	var problems []Problem
@@ -205,12 +210,70 @@ func lintHistogramSummaryReserved(mf dto.MetricFamily) []Problem {
 	return problems
 }
 
+// lintMetricTypeInName detects when metric types are included in the metric name.
+func lintMetricTypeInName(mf dto.MetricFamily) []Problem {
+	var problems problems
+	n := strings.ToLower(mf.GetName())
+
+	for i, t := range dto.MetricType_name {
+		if i == int32(dto.MetricType_UNTYPED) {
+			continue
+		}
+
+		typename := strings.ToLower(t)
+		if strings.Contains(n, "_"+typename+"_") || strings.HasSuffix(n, "_"+typename) {
+			problems.Add(mf, fmt.Sprintf(`metric name should not include type '%s'`, typename))
+		}
+	}
+	return problems
+}
+
+// lintReservedChars detects colons in metric names.
+func lintReservedChars(mf dto.MetricFamily) []Problem {
+	var problems problems
+	if strings.Contains(mf.GetName(), ":") {
+		problems.Add(mf, "metric names should not contain ':'")
+	}
+	return problems
+}
+
+var camelCase = regexp.MustCompile(`[a-z][A-Z]`)
+
+// lintCamelCase detects metric names and label names written in camelCase.
+func lintCamelCase(mf dto.MetricFamily) []Problem {
+	var problems problems
+	if camelCase.FindString(mf.GetName()) != "" {
+		problems.Add(mf, "metric names should be written in 'snake_case' not 'camelCase'")
+	}
+
+	for _, m := range mf.GetMetric() {
+		for _, l := range m.GetLabel() {
+			if camelCase.FindString(l.GetName()) != "" {
+				problems.Add(mf, "label names should be written in 'snake_case' not 'camelCase'")
+			}
+		}
+	}
+	return problems
+}
+
+// lintUnitAbbreviations detects abbreviated units in the metric name.
+func lintUnitAbbreviations(mf dto.MetricFamily) []Problem {
+	var problems problems
+	n := strings.ToLower(mf.GetName())
+	for _, s := range unitAbbreviations {
+		if strings.Contains(n, "_"+s+"_") || strings.HasSuffix(n, "_"+s) {
+			problems.Add(mf, "metric names should not contain abbreviated units")
+		}
+	}
+	return problems
+}
+
 // metricUnits attempts to detect known unit types used as part of a metric name,
 // e.g. "foo_bytes_total" or "bar_baz_milligrams".
 func metricUnits(m string) (unit string, base string, ok bool) {
 	ss := strings.Split(m, "_")
 
-	for _, u := range baseUnits {
+	for unit, base := range units {
 		// Also check for "no prefix".
 		for _, p := range append(unitPrefixes, "") {
 			for _, s := range ss {
@@ -219,8 +282,8 @@ func metricUnits(m string) (unit string, base string, ok bool) {
 				//
 				// As an example, "thermometers" should not match "meters", but
 				// "kilometers" should.
-				if s == p+u {
-					return p + u, u, true
+				if s == p+unit {
+					return p + unit, base, true
 				}
 			}
 		}
@@ -232,17 +295,41 @@ func metricUnits(m string) (unit string, base string, ok bool) {
 // Units and their possible prefixes recognized by this library.  More can be
 // added over time as needed.
 var (
-	baseUnits = []string{
-		"amperes",
-		"bytes",
-		"candela",
-		"grams",
-		"kelvin", // Both plural and non-plural form allowed.
-		"kelvins",
-		"meters", // Both American and international spelling permitted.
-		"metres",
-		"moles",
-		"seconds",
+	// map a unit to the appropriate base unit.
+	units = map[string]string{
+		// Base units.
+		"amperes": "amperes",
+		"bytes":   "bytes",
+		"celsius": "celsius", // Celsius is more common in practice than Kelvin.
+		"grams":   "grams",
+		"joules":  "joules",
+		"meters":  "meters", // Both American and international spelling permitted.
+		"metres":  "metres",
+		"seconds": "seconds",
+		"volts":   "volts",
+
+		// Non base units.
+		// Time.
+		"minutes": "seconds",
+		"hours":   "seconds",
+		"days":    "seconds",
+		"weeks":   "seconds",
+		// Temperature.
+		"kelvin":     "celsius",
+		"kelvins":    "celsius",
+		"fahrenheit": "celsius",
+		"rankine":    "celsius",
+		// Length.
+		"inches": "meters",
+		"yards":  "meters",
+		"miles":  "meters",
+		// Bytes.
+		"bits": "bytes",
+		// Energy.
+		"calories": "joules",
+		// Mass.
+		"pounds": "grams",
+		"ounces": "grams",
 	}
 
 	unitPrefixes = []string{
@@ -264,5 +351,23 @@ var (
 		"tebi",
 		"peta",
 		"pebi",
+	}
+
+	// Common abbreviations that we'd like to discourage.
+	unitAbbreviations = []string{
+		"s",
+		"ms",
+		"us",
+		"ns",
+		"sec",
+		"b",
+		"kb",
+		"mb",
+		"gb",
+		"tb",
+		"pb",
+		"m",
+		"h",
+		"d",
 	}
 )
