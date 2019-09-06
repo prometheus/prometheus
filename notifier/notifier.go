@@ -594,7 +594,7 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 		return errors.Errorf("bad response status %s", resp.Status)
 	}
 
-	return err
+	return nil
 }
 
 // Stop shuts down the notification handler.
