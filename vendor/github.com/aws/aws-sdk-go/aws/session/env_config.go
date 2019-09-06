@@ -99,10 +99,10 @@ type envConfig struct {
 	CustomCABundle string
 
 	csmEnabled  string
-	CSMEnabled  bool
+	CSMEnabled  *bool
 	CSMPort     string
-	CSMClientID string
 	CSMHost     string
+	CSMClientID string
 
 	// Enables endpoint discovery via environment variables.
 	//
@@ -230,7 +230,11 @@ func envConfigLoad(enableSharedConfig bool) envConfig {
 	setFromEnvVal(&cfg.CSMHost, csmHostEnvKey)
 	setFromEnvVal(&cfg.CSMPort, csmPortEnvKey)
 	setFromEnvVal(&cfg.CSMClientID, csmClientIDEnvKey)
-	cfg.CSMEnabled = len(cfg.csmEnabled) > 0
+
+	if len(cfg.csmEnabled) != 0 {
+		v, _ := strconv.ParseBool(cfg.csmEnabled)
+		cfg.CSMEnabled = &v
+	}
 
 	regionKeys := regionEnvKeys
 	profileKeys := profileEnvKeys
