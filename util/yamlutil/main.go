@@ -19,8 +19,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// NewStrictDecoder returs yaml.Decoder with knownFields set to true
-func NewStrictDecoder(content []byte) *yaml.Decoder {
+// NewDecoder returs yaml.Decoder with knownFields set to true
+func NewDecoder(content []byte) *yaml.Decoder {
 	r := bytes.NewReader([]byte(content))
 	d := yaml.NewDecoder(r)
 	d.KnownFields(true)
@@ -48,7 +48,7 @@ func Marshal(in interface{}) (*bytes.Buffer, error) {
 
 // Unmarshal decodes the yaml document.
 func Unmarshal(in []byte, out interface{}) (err error) {
-	d := NewStrictDecoder(in)
+	d := NewDecoder(in)
 	err = d.Decode(out)
 	if err != nil {
 		return err
