@@ -19,7 +19,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// NewDecoder returs yaml.Decoder with knownFields set to true
+// NewDecoder returs yaml.Decoder with knownFields set to true.
 func NewDecoder(content []byte) *yaml.Decoder {
 	r := bytes.NewReader([]byte(content))
 	d := yaml.NewDecoder(r)
@@ -27,7 +27,7 @@ func NewDecoder(content []byte) *yaml.Decoder {
 	return d
 }
 
-// NewEncoder returns a new yaml.Encoder with indent set to 2
+// NewEncoder returns a new yaml.Encoder with indent set to 2.
 func NewEncoder() (*yaml.Encoder, *bytes.Buffer) {
 	var buf bytes.Buffer
 	e := yaml.NewEncoder(&buf)
