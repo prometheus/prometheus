@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
@@ -756,7 +756,7 @@ scrape_configs:
    - targets: ["foo:9090"]
    - targets: ["bar:9090"]
 `
-	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
+	if err := yamlutil.Unmarshal([]byte(sOne), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -781,7 +781,7 @@ scrape_configs:
    static_configs:
    - targets: ["foo:9090"]
 `
-	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
+	if err := yamlutil.Unmarshal([]byte(sTwo), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sTwo: %s", err)
 	}
 	c = make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -807,7 +807,7 @@ scrape_configs:
    static_configs:
    - targets: ["foo:9090"]
 `
-	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
+	if err := yamlutil.Unmarshal([]byte(sOne), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -830,7 +830,7 @@ scrape_configs:
  - job_name: 'prometheus'
    static_configs:
 `
-	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
+	if err := yamlutil.Unmarshal([]byte(sTwo), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sTwo: %s", err)
 	}
 	c = make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -886,7 +886,7 @@ scrape_configs:
    - files: ["%s"]
 `
 	sOne = fmt.Sprintf(sOne, tmpFile2, tmpFile2)
-	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
+	if err := yamlutil.Unmarshal([]byte(sOne), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -919,13 +919,13 @@ scrape_configs:
    - targets: ["baz:9090"]
 `
 	originalConfig := &config.Config{}
-	if err := yaml.UnmarshalStrict([]byte(cfgText), originalConfig); err != nil {
+	if err := yamlutil.Unmarshal([]byte(cfgText), originalConfig); err != nil {
 		t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
 	}
 	origScrpCfg := originalConfig.ScrapeConfigs[0]
 
 	processedConfig := &config.Config{}
-	if err := yaml.UnmarshalStrict([]byte(cfgText), processedConfig); err != nil {
+	if err := yamlutil.Unmarshal([]byte(cfgText), processedConfig); err != nil {
 		t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

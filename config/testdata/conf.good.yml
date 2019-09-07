@@ -69,7 +69,7 @@ scrape_configs:
     target_label:  cde
   - replacement:   static
     target_label:  abc
-  - regex:
+  - regex: ""
     replacement:   static
     target_label:  abc
 

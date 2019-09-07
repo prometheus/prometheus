@@ -25,7 +25,7 @@ import (
 	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/util/yamlutil"
 
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -43,12 +43,13 @@ func Load(s string) (*Config, error) {
 	// never called. We thus have to set the DefaultConfig at the entry
 	// point as well.
 	*cfg = DefaultConfig
-
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
-	if err != nil {
-		return nil, err
+	if s != "" {
+		err := yamlutil.Unmarshal([]byte(s), cfg)
+		if err != nil {
+			return nil, err
+		}
+		cfg.original = s
 	}
-	cfg.original = s
 	return cfg, nil
 }
 
@@ -209,11 +210,11 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 }
 
 func (c Config) String() string {
-	b, err := yaml.Marshal(c)
+	buf, err := yamlutil.Marshal(c)
 	if err != nil {
 		return fmt.Sprintf("<error creating config string: %s>", err)
 	}
-	return string(b)
+	return buf.String()
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

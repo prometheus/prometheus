@@ -30,7 +30,7 @@ import (
 	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/util/yamlutil"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -464,7 +464,7 @@ alerting:
   alertmanagers:
   - static_configs:
 `
-	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
+	if err := yamlutil.Unmarshal([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
 
@@ -519,7 +519,7 @@ alerting:
         regex: 'alertmanager:9093'
         action: drop
 `
-	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
+	if err := yamlutil.Unmarshal([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
 

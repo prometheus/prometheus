@@ -27,7 +27,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	yaml "gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/util/yamlutil"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -67,7 +67,7 @@ func ruleUnitTest(filename string) []error {
 	}
 
 	var unitTestInp unitTestFile
-	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
+	if err := yamlutil.Unmarshal(b, &unitTestInp); err != nil {
 		return []error{err}
 	}
 	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {

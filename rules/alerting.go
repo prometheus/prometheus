@@ -23,7 +23,7 @@ import (
 
 	html_template "html/template"
 
-	yaml "gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/util/yamlutil"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -491,13 +491,12 @@ func (r *AlertingRule) String() string {
 		Labels:      r.labels.Map(),
 		Annotations: r.annotations.Map(),
 	}
-
-	byt, err := yaml.Marshal(ar)
+	buf, err := yamlutil.Marshal(ar)
 	if err != nil {
 		return fmt.Sprintf("error marshaling alerting rule: %s", err.Error())
 	}
 
-	return string(byt)
+	return buf.String()
 }
 
 // HTMLSnippet returns an HTML snippet representing this alerting rule. The
@@ -527,11 +526,11 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		Annotations: annotationsMap,
 	}
 
-	byt, err := yaml.Marshal(ar)
+	buf, err := yamlutil.Marshal(ar)
 	if err != nil {
 		return html_template.HTML(fmt.Sprintf("error marshaling alerting rule: %q", html_template.HTMLEscapeString(err.Error())))
 	}
-	return html_template.HTML(byt)
+	return html_template.HTML(buf.String())
 }
 
 // HoldDuration returns the holdDuration of the alerting rule.

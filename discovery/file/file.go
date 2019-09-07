@@ -30,8 +30,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/util/yamlutil"
 	fsnotify "gopkg.in/fsnotify/fsnotify.v1"
-	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -380,7 +380,7 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 	case ".yml", ".yaml":
-		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
+		if err := yamlutil.Unmarshal(content, &targetGroups); err != nil {
 			return nil, err
 		}
 	default:

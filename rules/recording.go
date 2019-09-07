@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	yaml "gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/util/yamlutil"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -105,12 +105,12 @@ func (rule *RecordingRule) String() string {
 		Labels: rule.labels.Map(),
 	}
 
-	byt, err := yaml.Marshal(r)
+	buf, err := yamlutil.Marshal(r)
 	if err != nil {
 		return fmt.Sprintf("error marshaling recording rule: %q", err.Error())
 	}
 
-	return string(byt)
+	return buf.String()
 }
 
 // SetEvaluationDuration updates evaluationDuration to the time in seconds it took to evaluate the rule on its last evaluation.
@@ -183,10 +183,10 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 		Labels: labels,
 	}
 
-	byt, err := yaml.Marshal(r)
+	buf, err := yamlutil.Marshal(r)
 	if err != nil {
 		return template.HTML(fmt.Sprintf("error marshaling recording rule: %q", template.HTMLEscapeString(err.Error())))
 	}
 
-	return template.HTML(byt)
+	return template.HTML(buf.String())
 }

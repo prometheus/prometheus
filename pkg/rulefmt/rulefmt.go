@@ -21,7 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/util/yamlutil"
 
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -196,7 +196,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 // Parse parses and validates a set of rules.
 func Parse(content []byte) (*RuleGroups, []error) {
 	var groups RuleGroups
-	if err := yaml.UnmarshalStrict(content, &groups); err != nil {
+	if err := yamlutil.Unmarshal(content, &groups); err != nil {
 		return nil, []error{err}
 	}
 	return &groups, groups.Validate()

@@ -21,7 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/util/yamlutil"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -226,7 +226,7 @@ func loadConfiguration(t *testing.T, c string) *config.Config {
 	t.Helper()
 
 	cfg := &config.Config{}
-	if err := yaml.UnmarshalStrict([]byte(c), cfg); err != nil {
+	if err := yamlutil.Unmarshal([]byte(c), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
 	return cfg
@@ -379,7 +379,7 @@ global:
 `
 
 		cfg := &config.Config{}
-		if err := yaml.UnmarshalStrict([]byte(cfgText), cfg); err != nil {
+		if err := yamlutil.Unmarshal([]byte(cfgText), cfg); err != nil {
 			t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
 		}
 
