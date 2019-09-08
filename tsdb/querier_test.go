@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"bufio"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -22,6 +23,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -558,6 +560,139 @@ Outer:
 			testutil.Equals(t, smplExp, smplRes)
 		}
 	}
+}
+
+// Refer to pr/5884.
+func BenchmarkPostingsWithBlockQuerier(b *testing.B) {
+	// Read labels from testdata/20kseries.json.
+	f, err := os.Open("testdata/20kseries.json")
+	testutil.Ok(b, err)
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	var mets []map[string]string
+	labelCount := make(map[string]map[string]int)
+	i := 0
+	for scanner.Scan() && i < 10000 {
+		m := make(map[string]string)
+
+		r := strings.NewReplacer("\"", "", "{", "", "}", "")
+		s := r.Replace(scanner.Text())
+
+		labelChunks := strings.Split(s, ",")
+		for _, labelChunk := range labelChunks {
+			split := strings.Split(labelChunk, ":")
+			m[split[0]] = split[1]
+			if m1, ok := labelCount[split[0]]; ok {
+				if _, ok = m1[split[1]]; ok {
+					m1[split[1]] += 1
+				} else {
+					m1[split[1]] = 1
+				}
+			} else {
+				labelCount[split[0]] = make(map[string]int)
+				labelCount[split[0]][split[1]] = 1
+			}
+		}
+		mets = append(mets, m)
+		i++
+	}
+
+	// Sort the counts of the label.
+	type labelCountTuple struct {
+		name  string
+		value string
+		count int
+	}
+	tupleArrs := []labelCountTuple{}
+	for k, m1 := range labelCount {
+		for v, c := range m1 {
+			tupleArrs = append(tupleArrs, labelCountTuple{name: k, value: v, count: c})
+		}
+	}
+	sort.Slice(tupleArrs, func (i, j int) bool {
+		return tupleArrs[i].count < tupleArrs[j].count
+	})
+
+	// Create block with the labels, each timeseries contains one sample.
+	tmpdir, err := ioutil.TempDir("", "benchmark_postings")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(tmpdir))
+	}()
+	blkDir := createBlock(b, tmpdir, populateSeries(mets, 0, 0))
+
+	// Open the block and create block querier.
+	blk, err := OpenBlock(nil, blkDir, nil)
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, blk.Close())
+	}()
+
+	q, err := NewBlockQuerier(blk, 0, 1)
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, q.Close())
+	}()
+
+	b.Run("Next", func (bench *testing.B) {
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			ss, err := q.Select(labels.NewEqualMatcher("", ""))
+			testutil.Ok(b, err)
+			for ss.Next() {}
+		}
+	})
+	b.Run("Seek2Postings", func (bench *testing.B) {
+		m1 := labels.NewEqualMatcher(tupleArrs[0].name, tupleArrs[0].value)
+		m2 := labels.NewEqualMatcher(tupleArrs[1].name, tupleArrs[1].value)
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			ss, err := q.Select(m1, m2)
+			testutil.Ok(b, err)
+			for ss.Next() {}
+		}
+	})
+	b.Run("Seek5Postings", func (bench *testing.B) {
+		matchers := make([]labels.Matcher, 5)
+		for i := 0; i < 5; i++ {
+			matchers[i] = labels.NewEqualMatcher(tupleArrs[i].name, tupleArrs[i].value)
+		}
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			ss, err := q.Select(matchers...)
+			testutil.Ok(b, err)
+			for ss.Next() {}
+		}
+	})
+	b.Run("Seek10Postings", func (bench *testing.B) {
+		matchers := make([]labels.Matcher, 10)
+		for i := 0; i < 10; i++ {
+			matchers[i] = labels.NewEqualMatcher(tupleArrs[i].name, tupleArrs[i].value)
+		}
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			ss, err := q.Select(matchers...)
+			testutil.Ok(b, err)
+			for ss.Next() {}
+		}
+	})
+	b.Run("Seek20Postings", func (bench *testing.B) {
+		matchers := make([]labels.Matcher, 20)
+		for i := 0; i < 20; i++ {
+			matchers[i] = labels.NewEqualMatcher(tupleArrs[i].name, tupleArrs[i].value)
+		}
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			ss, err := q.Select(matchers...)
+			testutil.Ok(b, err)
+			for ss.Next() {}
+		}
+	})
 }
 
 func TestBaseChunkSeries(t *testing.T) {
