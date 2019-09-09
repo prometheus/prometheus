@@ -201,6 +201,7 @@ type BlockMetaCompaction struct {
 
 const indexFilename = "index"
 const metaFilename = "meta.json"
+const metaVersion1 = 1
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 
@@ -214,7 +215,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, 0, err
 	}
-	if m.Version != 1 {
+	if m.Version != metaVersion1 {
 		return nil, 0, errors.Errorf("unexpected meta file version %d", m.Version)
 	}
 
@@ -222,7 +223,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 }
 
 func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error) {
-	meta.Version = 1
+	meta.Version = metaVersion1
 
 	// Make any changes to the file appear atomic.
 	path := filepath.Join(dir, metaFilename)
