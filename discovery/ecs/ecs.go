@@ -102,7 +102,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	defer level.Debug(d.logger).Log("msg", "ECS discovery completed")
 
 	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
-	describeInstancesRequest.RegionId = "cn-hangzhou"
+	describeInstancesRequest.RegionId = getConfigRegionId(d.ecsCfg.RegionId)
 
 	// tag filters
 	var tagsFilters []ecs_pop.DescribeInstancesTag
@@ -126,11 +126,17 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
 
 	client, clientErr := getEcsClient(d.ecsCfg, d.logger)
+
+	level.Debug(d.logger).Log("msg", "Start to get Ecs Client from ram7.", "client: ", client)
+
 	if clientErr != nil {
 		return nil, errors.Wrap(clientErr, "could not create alibaba ecs client.")
 	}
 
 	describeInstancesResponse, responseErr := client.DescribeInstances(describeInstancesRequest)
+
+	level.Debug(d.logger).Log("msg", "Start to get Ecs Client from ram8.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse)
+
 	if responseErr != nil {
 		return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
 	}
@@ -273,7 +279,7 @@ func getEcsClient(config *SDConfig, logger log.Logger) (client *ecs_pop.Client, 
 		return client, clientErr
 	}
 
-	level.Info(logger).Log("msg", "Start to get Ecs Client from ram.")
+	level.Debug(logger).Log("msg", "Start to get Ecs Client from ram.")
 
 	// 2. ACS
 	//get all RoleName for check
@@ -281,32 +287,43 @@ func getEcsClient(config *SDConfig, logger log.Logger) (client *ecs_pop.Client, 
 	metaData := metadata.NewMetaData(nil)
 	var allRoleName metadata.ResultList
 	allRoleNameErr := metaData.New().Resource("ram/security-credentials/").Do(&allRoleName)
-	if allRoleNameErr == nil {
+	if allRoleNameErr != nil {
+		level.Error(logger).Log("msg", "Get ECS Client from ram allRoleNameErr.", "err: ", allRoleNameErr)
+		return nil, errors.New("Aliyun ECS service discovery cant init client, need auth config.")
+	} else {
 		roleName, roleNameErr := metaData.RoleName()
-		if roleNameErr == nil {
+
+		level.Debug(logger).Log("msg", "Start to get Ecs Client from ram2.")
+
+		if roleNameErr != nil {
+			level.Error(logger).Log("msg", "Get ECS Client from ram roleNameErr.", "err: ", roleNameErr)
+			return nil, errors.New("Aliyun ECS service discovery cant init client, need auth config.")
+		} else {
 			roleAuth, roleAuthErr := metaData.RamRoleToken(roleName)
-			if roleAuthErr == nil {
+
+			level.Debug(logger).Log("msg", "Start to get Ecs Client from ram3.")
+
+			if roleAuthErr != nil {
+				level.Error(logger).Log("msg", "Get ECS Client from ram roleAuthErr.", "err: ", roleAuthErr)
+				return nil, errors.New("Aliyun ECS service discovery cant init client, need auth config.")
+			} else {
 				client := ecs_pop.Client{}
 				clientConfig := client.InitClientConfig()
 				clientConfig.Debug = true
 				clientErr := client.InitWithStsToken(getConfigRegionId(config.RegionId), roleAuth.AccessKeyId, roleAuth.AccessKeySecret, roleAuth.SecurityToken)
-				if clientErr == nil {
-					return &client, nil
+
+				level.Debug(logger).Log("msg", "Start to get Ecs Client from ram4.")
+
+				if clientErr != nil {
+					level.Error(logger).Log("msg", "Get ECS Client from ram clientErr.", "err: ", clientErr)
+					return nil, errors.New("Aliyun ECS service discovery cant init client, need auth config.")
 				} else {
-					level.Error(logger).Log("msg", "Get ECS Client from ram clientErr. err: ", clientErr)
+					return &client, nil
 				}
-			} else {
-				level.Error(logger).Log("msg", "Get ECS Client from ram roleAuthErr. err: ", roleAuthErr)
 			}
-		} else {
-			level.Error(logger).Log("msg", "Get ECS Client from ram roleNameErr. err: ", roleNameErr)
 		}
-	} else {
-		level.Error(logger).Log("msg", "Get ECS Client from ram allRoleNameErr. err: ", allRoleNameErr)
 	}
-
 	return nil, errors.New("Aliyun ECS service discovery cant init client, need auth config.")
-
 }
 
 func getConfigArgAk(ak string) string {
