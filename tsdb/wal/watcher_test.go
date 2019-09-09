@@ -10,7 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package remote
+package wal
 
 import (
 	"fmt"
@@ -22,9 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/labels"
-	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -105,7 +103,7 @@ func TestTailSamples(t *testing.T) {
 			testutil.Ok(t, err)
 
 			enc := tsdb.RecordEncoder{}
-			w, err := wal.NewSize(nil, nil, wdir, 128*pageSize, compress)
+			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
 
 			// Write to the initial segment then checkpoint.
@@ -137,17 +135,17 @@ func TestTailSamples(t *testing.T) {
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWALWatcher(nil, "", wt, dir)
+			watcher := NewWatcher(nil, "", wt, dir)
 			watcher.startTime = now.UnixNano()
 
 			// Set the Watcher's metrics so they're not nil pointers.
 			watcher.setMetrics()
 			for i := first; i <= last; i++ {
-				segment, err := wal.OpenReadSegment(wal.SegmentName(watcher.walDir, i))
+				segment, err := OpenReadSegment(SegmentName(watcher.walDir, i))
 				testutil.Ok(t, err)
 				defer segment.Close()
 
-				reader := wal.NewLiveReader(nil, liveReaderMetrics, segment)
+				reader := NewLiveReader(nil, liveReaderMetrics, segment)
 				// Use tail true so we can ensure we got the right number of samples.
 				watcher.readSegment(reader, i, true)
 			}
@@ -177,7 +175,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
 
-			w, err := wal.NewSize(nil, nil, wdir, 128*pageSize, compress)
+			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
 
 			var recs [][]byte
@@ -247,7 +245,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			testutil.Ok(t, err)
 
 			enc := tsdb.RecordEncoder{}
-			w, err := wal.NewSize(nil, nil, wdir, segmentSize, compress)
+			w, err := NewSize(nil, nil, wdir, segmentSize, compress)
 			testutil.Ok(t, err)
 
 			// Write to the initial segment then checkpoint.
@@ -330,10 +328,10 @@ func TestReadCheckpoint(t *testing.T) {
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
 
-			os.Create(wal.SegmentName(wdir, 30))
+			os.Create(SegmentName(wdir, 30))
 
 			enc := tsdb.RecordEncoder{}
-			w, err := wal.NewSize(nil, nil, wdir, 128*pageSize, compress)
+			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
 
 			// Write to the initial segment then checkpoint.
@@ -399,7 +397,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			testutil.Ok(t, err)
 
 			enc := tsdb.RecordEncoder{}
-			w, err := wal.NewSize(nil, nil, wdir, pageSize, compress)
+			w, err := NewSize(nil, nil, wdir, pageSize, compress)
 			testutil.Ok(t, err)
 
 			// Write a bunch of data.
@@ -433,7 +431,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			err = os.Mkdir(checkpointDir, 0777)
 			testutil.Ok(t, err)
 			for i := 0; i <= 4; i++ {
-				err := os.Rename(wal.SegmentName(dir+"/wal", i), wal.SegmentName(checkpointDir, i))
+				err := os.Rename(SegmentName(dir+"/wal", i), SegmentName(checkpointDir, i))
 				testutil.Ok(t, err)
 			}
 
@@ -478,7 +476,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			testutil.Ok(t, err)
 
 			enc := tsdb.RecordEncoder{}
-			w, err := wal.NewSize(nil, nil, wdir, segmentSize, tc.compress)
+			w, err := NewSize(nil, nil, wdir, segmentSize, tc.compress)
 			testutil.Ok(t, err)
 
 			// Write to the initial segment, then checkpoint later.

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package tombstones
 
 import (
 	"io/ioutil"
@@ -33,7 +33,7 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 
 	ref := uint64(0)
 
-	stones := newMemTombstones()
+	stones := NewMemTombstones()
 	// Generate the tombstones.
 	for i := 0; i < 100; i++ {
 		ref += uint64(rand.Int31n(10)) + 1
@@ -41,16 +41,16 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 		dranges := make(Intervals, 0, numRanges)
 		mint := rand.Int63n(time.Now().UnixNano())
 		for j := 0; j < numRanges; j++ {
-			dranges = dranges.add(Interval{mint, mint + rand.Int63n(1000)})
+			dranges = dranges.Add(Interval{mint, mint + rand.Int63n(1000)})
 			mint += rand.Int63n(1000) + 1
 		}
-		stones.addInterval(ref, dranges...)
+		stones.AddInterval(ref, dranges...)
 	}
 
-	_, err := writeTombstoneFile(log.NewNopLogger(), tmpdir, stones)
+	_, err := WriteTombstoneFile(log.NewNopLogger(), tmpdir, stones)
 	testutil.Ok(t, err)
 
-	restr, _, err := readTombstones(tmpdir)
+	restr, _, err := ReadTombstones(tmpdir)
 	testutil.Ok(t, err)
 
 	// Compare the two readers.
@@ -122,20 +122,20 @@ func TestAddingNewIntervals(t *testing.T) {
 
 	for _, c := range cases {
 
-		testutil.Equals(t, c.exp, c.exist.add(c.new))
+		testutil.Equals(t, c.exp, c.exist.Add(c.new))
 	}
 }
 
 // TestMemTombstonesConcurrency to make sure they are safe to access from different goroutines.
 func TestMemTombstonesConcurrency(t *testing.T) {
-	tomb := newMemTombstones()
+	tomb := NewMemTombstones()
 	totalRuns := 100
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		for x := 0; x < totalRuns; x++ {
-			tomb.addInterval(uint64(x), Interval{int64(x), int64(x)})
+			tomb.AddInterval(uint64(x), Interval{int64(x), int64(x)})
 		}
 		wg.Done()
 	}()
