@@ -15,6 +15,7 @@ package web
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -229,6 +230,10 @@ type Options struct {
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
 	RemoteReadBytesInFrame     int
+
+	TlsEnabled  bool
+	TlsKeyPath  string
+	TlsCertPath string
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -449,7 +454,20 @@ func (h *Handler) Reload() <-chan chan error {
 func (h *Handler) Run(ctx context.Context) error {
 	level.Info(h.logger).Log("msg", "Start listening for connections", "address", h.options.ListenAddress)
 
-	listener, err := net.Listen("tcp", h.options.ListenAddress)
+	var (
+		listener net.Listener
+		cert     tls.Certificate
+		err      error
+	)
+	if h.options.TlsEnabled {
+		cert, err = tls.LoadX509KeyPair(h.options.TlsCertPath, h.options.TlsKeyPath)
+		if err != nil {
+			return err
+		}
+		listener, err = tls.Listen("tcp", h.options.ListenAddress, &tls.Config{Certificates: []tls.Certificate{cert}})
+	} else {
+		listener, err = net.Listen("tcp", h.options.ListenAddress)
+	}
 	if err != nil {
 		return err
 	}

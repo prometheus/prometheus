@@ -178,6 +178,15 @@ func main() {
 	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Example: 'https?://(domain1|domain2)\.com'`).
 		Default(".*").StringVar(&cfg.corsRegexString)
 
+	a.Flag("web.tls.enabled", "Enable TLS.").
+		Default("false").BoolVar(&cfg.web.TlsEnabled)
+
+	a.Flag("web.tls.key", "Path to the server key.").
+		Default("").StringVar(&cfg.web.TlsKeyPath)
+
+	a.Flag("web.tls.cert", "Path to the server certificate.").
+		Default("").StringVar(&cfg.web.TlsCertPath)
+
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 

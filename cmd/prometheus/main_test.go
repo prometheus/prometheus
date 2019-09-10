@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"net/http"
@@ -65,12 +66,12 @@ func TestMain(m *testing.M) {
 }
 
 // As soon as prometheus starts responding to http request should be able to accept Interrupt signals for a graceful shutdown.
-func TestStartupInterrupt(t *testing.T) {
+func testStartupInterrupt(t *testing.T, url string, args []string) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
 
-	prom := exec.Command(promPath, "--config.file="+promConfig, "--storage.tsdb.path="+promData)
+	prom := exec.Command(promPath, args...)
 	err := prom.Start()
 	if err != nil {
 		t.Errorf("execution error: %v", err)
@@ -88,7 +89,7 @@ func TestStartupInterrupt(t *testing.T) {
 Loop:
 	for x := 0; x < 10; x++ {
 		// error=nil means prometheus has started so can send the interrupt signal and wait for the grace shutdown.
-		if _, err := http.Get("http://localhost:9090/graph"); err == nil {
+		if _, err := http.Get(url); err == nil {
 			startedOk = true
 			prom.Process.Signal(os.Interrupt)
 			select {
@@ -110,6 +111,33 @@ Loop:
 	} else if stoppedErr != nil && stoppedErr.Error() != "signal: interrupt" { // TODO - find a better way to detect when the process didn't exit as expected!
 		t.Errorf("prometheus exited with an unexpected error:%v", stoppedErr)
 	}
+}
+
+func TestStartupInterrupt(t *testing.T) {
+	args := []string{
+		"--config.file=" + promConfig,
+		"--storage.tsdb.path=" + promData,
+	}
+
+	testStartupInterrupt(t, "http://localhost:9090/graph", args)
+}
+
+// As soon as prometheus starts responding to http request should be able to accept Interrupt signals for a graceful shutdown.
+func TestStartupInterruptTls(t *testing.T) {
+	keyPath := filepath.Join("data", "tls", "server.key")
+	certPath := filepath.Join("data", "tls", "server.crt")
+	args := []string{
+		"--config.file=" + promConfig,
+		"--storage.tsdb.path=" + promData,
+		"--web.tls.enabled",
+		"--web.tls.key=" + keyPath,
+		"--web.tls.cert=" + certPath,
+		"--web.listen-address=localhost:9443"}
+
+	// allow self signed certs
+	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+
+	testStartupInterrupt(t, "https://localhost:9443/graph", args)
 }
 
 func TestComputeExternalURL(t *testing.T) {
