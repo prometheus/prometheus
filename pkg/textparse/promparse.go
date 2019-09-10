@@ -153,7 +153,7 @@ type PromParser struct {
 	offsets []int
 }
 
-// New returns a new parser of the byte slice.
+// NewPromParser returns a new parser of the byte slice.
 func NewPromParser(b []byte) Parser {
 	return &PromParser{l: &promlexer{b: append(b, '\n')}}
 }
