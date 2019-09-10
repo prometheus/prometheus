@@ -120,10 +120,10 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 	}
 
 	if reg != nil {
-		reg.Register(m.recordsRead)
-		reg.Register(m.recordDecodeFails)
-		reg.Register(m.samplesSentPreTailing)
-		reg.Register(m.currentSegment)
+		_ = reg.Register(m.recordsRead)
+		_ = reg.Register(m.recordDecodeFails)
+		_ = reg.Register(m.samplesSentPreTailing)
+		_ = reg.Register(m.currentSegment)
 	}
 
 	return m

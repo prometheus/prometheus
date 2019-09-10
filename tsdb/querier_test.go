@@ -462,9 +462,9 @@ func TestBlockQuerierDelete(t *testing.T) {
 			},
 		},
 		tombstones: tombstones.NewTestMemTombstones([]tombstones.Intervals{
-			tombstones.Intervals{{1, 3}},
-			tombstones.Intervals{{1, 3}, {6, 10}},
-			tombstones.Intervals{{6, 10}},
+			tombstones.Intervals{{Mint: 1, Maxt: 3}},
+			tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 6, Maxt: 10}},
+			tombstones.Intervals{{Mint: 6, Maxt: 10}},
 		}),
 		queries: []query{
 			{
@@ -1258,16 +1258,16 @@ func TestDeletedIterator(t *testing.T) {
 	cases := []struct {
 		r tombstones.Intervals
 	}{
-		{r: tombstones.Intervals{{1, 20}}},
-		{r: tombstones.Intervals{{1, 10}, {12, 20}, {21, 23}, {25, 30}}},
-		{r: tombstones.Intervals{{1, 10}, {12, 20}, {20, 30}}},
-		{r: tombstones.Intervals{{1, 10}, {12, 23}, {25, 30}}},
-		{r: tombstones.Intervals{{1, 23}, {12, 20}, {25, 30}}},
-		{r: tombstones.Intervals{{1, 23}, {12, 20}, {25, 3000}}},
-		{r: tombstones.Intervals{{0, 2000}}},
-		{r: tombstones.Intervals{{500, 2000}}},
-		{r: tombstones.Intervals{{0, 200}}},
-		{r: tombstones.Intervals{{1000, 20000}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 20}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 10}, {Mint: 12, Maxt: 20}, {Mint: 21, Maxt: 23}, {Mint: 25, Maxt: 30}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 10}, {Mint: 12, Maxt: 20}, {Mint: 20, Maxt: 30}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 10}, {Mint: 12, Maxt: 23}, {Mint: 25, Maxt: 30}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 23}, {Mint: 12, Maxt: 20}, {Mint: 25, Maxt: 30}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 23}, {Mint: 12, Maxt: 20}, {Mint: 25, Maxt: 3000}}},
+		{r: tombstones.Intervals{{Mint: 0, Maxt: 2000}}},
+		{r: tombstones.Intervals{{Mint: 500, Maxt: 2000}}},
+		{r: tombstones.Intervals{{Mint: 0, Maxt: 200}}},
+		{r: tombstones.Intervals{{Mint: 1000, Maxt: 20000}}},
 	}
 
 	for _, c := range cases {

@@ -377,23 +377,23 @@ func TestHeadDeleteSimple(t *testing.T) {
 		smplsExp []sample
 	}{
 		{
-			dranges:  tombstones.Intervals{{0, 3}},
+			dranges:  tombstones.Intervals{{Mint: 0, Maxt: 3}},
 			smplsExp: buildSmpls([]int64{4, 5, 6, 7, 8, 9}),
 		},
 		{
-			dranges:  tombstones.Intervals{{1, 3}},
+			dranges:  tombstones.Intervals{{Mint: 1, Maxt: 3}},
 			smplsExp: buildSmpls([]int64{0, 4, 5, 6, 7, 8, 9}),
 		},
 		{
-			dranges:  tombstones.Intervals{{1, 3}, {4, 7}},
+			dranges:  tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 7}},
 			smplsExp: buildSmpls([]int64{0, 8, 9}),
 		},
 		{
-			dranges:  tombstones.Intervals{{1, 3}, {4, 700}},
+			dranges:  tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 700}},
 			smplsExp: buildSmpls([]int64{0}),
 		},
 		{ // This case is to ensure that labels and symbols are deleted.
-			dranges:  tombstones.Intervals{{0, 9}},
+			dranges:  tombstones.Intervals{{Mint: 0, Maxt: 9}},
 			smplsExp: buildSmpls([]int64{}),
 		},
 	}
@@ -698,14 +698,14 @@ func TestDelete_e2e(t *testing.T) {
 	}{
 		{
 			ms:     []labels.Matcher{labels.NewEqualMatcher("a", "b")},
-			drange: tombstones.Intervals{{300, 500}, {600, 670}},
+			drange: tombstones.Intervals{{Mint: 300, Maxt: 500}, {Mint: 600, Maxt: 670}},
 		},
 		{
 			ms: []labels.Matcher{
 				labels.NewEqualMatcher("a", "b"),
 				labels.NewEqualMatcher("job", "prom-k8s"),
 			},
-			drange: tombstones.Intervals{{300, 500}, {100, 670}},
+			drange: tombstones.Intervals{{Mint: 300, Maxt: 500}, {Mint: 100, Maxt: 670}},
 		},
 		{
 			ms: []labels.Matcher{
@@ -713,7 +713,7 @@ func TestDelete_e2e(t *testing.T) {
 				labels.NewEqualMatcher("instance", "localhost:9090"),
 				labels.NewEqualMatcher("job", "prometheus"),
 			},
-			drange: tombstones.Intervals{{300, 400}, {100, 6700}},
+			drange: tombstones.Intervals{{Mint: 300, Maxt: 400}, {Mint: 100, Maxt: 6700}},
 		},
 		// TODO: Add Regexp Matchers.
 	}

@@ -243,7 +243,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 			for j := 0; j < i*20; j++ {
 				ts := rand.Int63()
-				stones = append(stones, tombstones.Stone{Ref: rand.Uint64(), Intervals: tombstones.Intervals{{ts, ts + rand.Int63n(10000)}}})
+				stones = append(stones, tombstones.Stone{Ref: rand.Uint64(), Intervals: tombstones.Intervals{{Mint: ts, Maxt: ts + rand.Int63n(10000)}}})
 			}
 
 			lbls := series[i : i+stepSize]
@@ -500,7 +500,7 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 		{Ref: 4, T: 300, V: 400},
 	}))
 	testutil.Ok(t, oldWAL.LogDeletes([]tombstones.Stone{
-		{Ref: 1, Intervals: []tombstones.Interval{{100, 200}}},
+		{Ref: 1, Intervals: []tombstones.Interval{{Mint: 100, Maxt: 200}}},
 	}))
 
 	testutil.Ok(t, oldWAL.Close())
@@ -559,7 +559,7 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 			{Ref: 200, Labels: labels.FromStrings("xyz", "def", "foo", "bar")},
 		},
 		[]record.RefSample{{Ref: 3, T: 100, V: 200}, {Ref: 4, T: 300, V: 400}},
-		[]tombstones.Stone{{Ref: 1, Intervals: []tombstones.Interval{{100, 200}}}},
+		[]tombstones.Stone{{Ref: 1, Intervals: []tombstones.Interval{{Mint: 100, Maxt: 200}}}},
 		[]record.RefSample{{Ref: 500, T: 1, V: 1}},
 	}, res)
 

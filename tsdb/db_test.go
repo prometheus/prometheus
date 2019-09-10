@@ -249,23 +249,23 @@ func TestDeleteSimple(t *testing.T) {
 		remaint   []int64
 	}{
 		{
-			Intervals: tombstones.Intervals{{0, 3}},
+			Intervals: tombstones.Intervals{{Mint: 0, Maxt: 3}},
 			remaint:   []int64{4, 5, 6, 7, 8, 9},
 		},
 		{
-			Intervals: tombstones.Intervals{{1, 3}},
+			Intervals: tombstones.Intervals{{Mint: 1, Maxt: 3}},
 			remaint:   []int64{0, 4, 5, 6, 7, 8, 9},
 		},
 		{
-			Intervals: tombstones.Intervals{{1, 3}, {4, 7}},
+			Intervals: tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 7}},
 			remaint:   []int64{0, 8, 9},
 		},
 		{
-			Intervals: tombstones.Intervals{{1, 3}, {4, 700}},
+			Intervals: tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 700}},
 			remaint:   []int64{0},
 		},
 		{ // This case is to ensure that labels and symbols are deleted.
-			Intervals: tombstones.Intervals{{0, 9}},
+			Intervals: tombstones.Intervals{{Mint: 0, Maxt: 9}},
 			remaint:   []int64{},
 		},
 	}
@@ -567,7 +567,7 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 		remaint   []int64
 	}{
 		{
-			intervals: tombstones.Intervals{{1, 3}, {4, 7}},
+			intervals: tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 7}},
 			remaint:   []int64{0, 8, 9},
 		},
 	}
@@ -894,7 +894,7 @@ func TestTombstoneClean(t *testing.T) {
 		remaint   []int64
 	}{
 		{
-			intervals: tombstones.Intervals{{1, 3}, {4, 7}},
+			intervals: tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 7}},
 			remaint:   []int64{0, 8, 9},
 		},
 	}
@@ -993,7 +993,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 		testutil.Ok(t, err)
 		// Add some some fake tombstones to trigger the compaction.
 		tomb := tombstones.NewMemTombstones()
-		tomb.AddInterval(0, tombstones.Interval{0, 1})
+		tomb.AddInterval(0, tombstones.Interval{Mint: 0, Maxt: 1})
 		block.tombstones = tomb
 
 		db.blocks = append(db.blocks, block)

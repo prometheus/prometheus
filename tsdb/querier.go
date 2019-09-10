@@ -742,7 +742,7 @@ func (s *baseChunkSeries) Next() bool {
 			// Only those chunks that are not entirely deleted.
 			chks := make([]chunks.Meta, 0, len(s.chks))
 			for _, chk := range s.chks {
-				if !(tombstones.Interval{chk.MinTime, chk.MaxTime}.IsSubrange(s.intervals)) {
+				if !(tombstones.Interval{Mint: chk.MinTime, Maxt: chk.MaxTime}.IsSubrange(s.intervals)) {
 					chks = append(chks, chk)
 				}
 			}
