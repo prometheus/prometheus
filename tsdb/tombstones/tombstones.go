@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
-const Filename = "tombstones"
+const TombstonesFilename = "tombstones"
 
 const (
 	// MagicTombstone is 4 bytes at the head of a tombstone file.
@@ -72,7 +72,7 @@ type Reader interface {
 }
 
 func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
-	path := filepath.Join(dir, Filename)
+	path := filepath.Join(dir, TombstonesFilename)
 	tmp := path + ".tmp"
 	hash := newCRC32()
 	var size int
@@ -151,7 +151,7 @@ type Stone struct {
 }
 
 func ReadTombstones(dir string) (Reader, int64, error) {
-	b, err := ioutil.ReadFile(filepath.Join(dir, Filename))
+	b, err := ioutil.ReadFile(filepath.Join(dir, TombstonesFilename))
 	if os.IsNotExist(err) {
 		return NewMemTombstones(), 0, nil
 	} else if err != nil {
@@ -204,10 +204,20 @@ type memTombstones struct {
 	mtx         sync.RWMutex
 }
 
-// NewMemTombstones creates new in memory TombstoneReader
+// NewMemTombstones creates new in memory Tombstone Reader
 // that allows adding new intervals.
 func NewMemTombstones() *memTombstones {
 	return &memTombstones{intvlGroups: make(map[uint64]Intervals)}
+}
+
+func NewTestMemTombstones(intervals []Intervals) *memTombstones {
+	ret := NewMemTombstones()
+	for i, intervalsGroup := range intervals {
+		for _, interval := range intervalsGroup {
+			ret.AddInterval(uint64(i+1), interval)
+		}
+	}
+	return ret
 }
 
 func (t *memTombstones) Get(ref uint64) (Intervals, error) {
@@ -243,6 +253,7 @@ func (t *memTombstones) AddInterval(ref uint64, itvs ...Interval) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	for _, itv := range itvs {
+		fmt.Println("adding interval to ref: ", ref)
 		t.intvlGroups[ref] = t.intvlGroups[ref].Add(itv)
 	}
 }

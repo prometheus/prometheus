@@ -536,7 +536,7 @@ Outer:
 			if chk.OverlapsClosedInterval(mint, maxt) {
 				// Delete only until the current values and not beyond.
 				tmin, tmax := clampInterval(mint, maxt, chks[0].MinTime, chks[len(chks)-1].MaxTime)
-				stones.AddInterval(p.At(), tombstones.Interval{tmin, tmax})
+				stones.AddInterval(p.At(), tombstones.Interval{Mint: tmin, Maxt: tmax})
 				continue Outer
 			}
 		}
@@ -611,7 +611,7 @@ func (pb *Block) Snapshot(dir string) error {
 	for _, fname := range []string{
 		metaFilename,
 		indexFilename,
-		tombstones.Filename,
+		tombstones.TombstonesFilename,
 	} {
 		if err := os.Link(filepath.Join(pb.dir, fname), filepath.Join(blockDir, fname)); err != nil {
 			return errors.Wrapf(err, "create snapshot %s", fname)

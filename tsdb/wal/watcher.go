@@ -65,7 +65,7 @@ type Watcher struct {
 	metrics        *WatcherMetrics
 	readerMetrics  *liveReaderMetrics
 
-	startTime int64
+	StartTime int64
 
 	recordsReadMetric       *prometheus.CounterVec
 	recordDecodeFailsMetric prometheus.Counter
@@ -76,7 +76,7 @@ type Watcher struct {
 	done chan struct{}
 
 	// For testing, stop when we hit this segment.
-	maxSegment int
+	MaxSegment int
 }
 
 func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
@@ -120,10 +120,10 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 	}
 
 	if reg != nil {
-		reg.MustRegister(m.recordsRead)
-		reg.MustRegister(m.recordDecodeFails)
-		reg.MustRegister(m.samplesSentPreTailing)
-		reg.MustRegister(m.currentSegment)
+		reg.Register(m.recordsRead)
+		reg.Register(m.recordDecodeFails)
+		reg.Register(m.samplesSentPreTailing)
+		reg.Register(m.currentSegment)
 	}
 
 	return m
@@ -144,7 +144,7 @@ func NewWatcher(reg prometheus.Registerer, metrics *WatcherMetrics, logger log.L
 		quit:          make(chan struct{}),
 		done:          make(chan struct{}),
 
-		maxSegment: -1,
+		MaxSegment: -1,
 	}
 }
 
@@ -152,10 +152,12 @@ func (w *Watcher) setMetrics() {
 	// Setup the WAL Watchers metrics. We do this here rather than in the
 	// constructor because of the ordering of creating Queue Managers's,
 	// stopping them, and then starting new ones in storage/remote/storage.go ApplyConfig.
-	w.recordsReadMetric = w.metrics.recordsRead.MustCurryWith(prometheus.Labels{consumer: w.name})
-	w.recordDecodeFailsMetric = w.metrics.recordDecodeFails.WithLabelValues(w.name)
-	w.samplesSentPreTailing = w.metrics.samplesSentPreTailing.WithLabelValues(w.name)
-	w.currentSegmentMetric = w.metrics.currentSegment.WithLabelValues(w.name)
+	if w.metrics != nil {
+		w.recordsReadMetric = w.metrics.recordsRead.MustCurryWith(prometheus.Labels{consumer: w.name})
+		w.recordDecodeFailsMetric = w.metrics.recordDecodeFails.WithLabelValues(w.name)
+		w.samplesSentPreTailing = w.metrics.samplesSentPreTailing.WithLabelValues(w.name)
+		w.currentSegmentMetric = w.metrics.currentSegment.WithLabelValues(w.name)
+	}
 }
 
 // Start the Watcher.
@@ -186,8 +188,8 @@ func (w *Watcher) loop() {
 
 	// We may encounter failures processing the WAL; we should wait and retry.
 	for !isClosed(w.quit) {
-		w.startTime = timestamp.FromTime(time.Now())
-		if err := w.run(); err != nil {
+		w.StartTime = timestamp.FromTime(time.Now())
+		if err := w.Run(); err != nil {
 			level.Error(w.logger).Log("msg", "error tailing WAL", "err", err)
 		}
 
@@ -199,7 +201,9 @@ func (w *Watcher) loop() {
 	}
 }
 
-func (w *Watcher) run() error {
+// Run the watcher, which will tail the WAL until the quit channel is closed
+// or an error case is hit.
+func (w *Watcher) Run() error {
 	_, lastSegment, err := w.firstAndLast()
 	if err != nil {
 		return errors.Wrap(err, "wal.Segments")
@@ -235,7 +239,7 @@ func (w *Watcher) run() error {
 		}
 
 		// For testing: stop when you hit a specific segment.
-		if currentSegment == w.maxSegment {
+		if currentSegment == w.MaxSegment {
 			return nil
 		}
 
@@ -462,7 +466,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				return err
 			}
 			for _, s := range samples {
-				if s.T > w.startTime {
+				if s.T > w.StartTime {
 					send = append(send, s)
 				}
 			}

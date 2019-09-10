@@ -47,7 +47,7 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 		stones.AddInterval(ref, dranges...)
 	}
 
-	_, err := WriteTombstoneFile(log.NewNopLogger(), tmpdir, stones)
+	_, err := WriteFile(log.NewNopLogger(), tmpdir, stones)
 	testutil.Ok(t, err)
 
 	restr, _, err := ReadTombstones(tmpdir)

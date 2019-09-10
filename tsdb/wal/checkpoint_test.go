@@ -185,7 +185,7 @@ func TestCheckpoint(t *testing.T) {
 				}
 			}
 			testutil.Ok(t, r.Err())
-			testutil.Equals(t, []record.Series{
+			testutil.Equals(t, []record.RefSeries{
 				{Ref: 0, Labels: labels.FromStrings("a", "b", "c", "0")},
 				{Ref: 2, Labels: labels.FromStrings("a", "b", "c", "2")},
 				{Ref: 4, Labels: labels.FromStrings("a", "b", "c", "4")},

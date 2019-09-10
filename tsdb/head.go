@@ -512,8 +512,6 @@ func (h *Head) Init(minValidTime int64) error {
 	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
 	// Backfill the checkpoint first if it exists.
 	dir, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
-	// We need to compare err to record.ErrNotFound as that's what
-	// wal.LastCheckpoint would return, not tsdb.ErrNotFound.
 	if err != nil && err != record.ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
 	}
@@ -936,7 +934,6 @@ func (a *headAppender) Commit() error {
 
 	total := len(a.samples)
 	var series *memSeries
-
 	for i, s := range a.samples {
 		series = a.sampleSeries[i]
 		series.Lock()
@@ -1003,7 +1000,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		if h.wal != nil {
 			stones = append(stones, tombstones.Stone{p.At(), tombstones.Intervals{{t0, t1}}})
 		}
-		if err := h.chunkRewrite(p.At(), tombstones.Intervals{{t0, t1}}); err != nil {
+		if err := h.chunkRewrite(p.At(), tombstones.Intervals{{Mint: t0, Maxt: t1}}); err != nil {
 			return errors.Wrap(err, "delete samples")
 		}
 		dirty = true

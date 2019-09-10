@@ -29,6 +29,8 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -95,10 +97,10 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	w.segmentSize = 10000
 
 	for i := 0; i < numMetrics; i += batch {
-		var rs []RefSeries
+		var rs []record.RefSeries
 
 		for j, s := range series[i : i+batch] {
-			rs = append(rs, RefSeries{Labels: s, Ref: uint64(i+j) + 1})
+			rs = append(rs, record.RefSeries{Labels: s, Ref: uint64(i+j) + 1})
 		}
 		err := w.LogSeries(rs)
 		testutil.Ok(t, err)
@@ -125,11 +127,11 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	err = w.Truncate(1000, keepf)
 	testutil.Ok(t, err)
 
-	var expected []RefSeries
+	var expected []record.RefSeries
 
 	for i := 1; i <= numMetrics; i++ {
 		if i%2 == 1 || uint64(i) >= boundarySeries {
-			expected = append(expected, RefSeries{Ref: uint64(i), Labels: series[i-1]})
+			expected = append(expected, record.RefSeries{Ref: uint64(i), Labels: series[i-1]})
 		}
 	}
 
@@ -143,10 +145,10 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	w, err = OpenSegmentWAL(dir, nil, 0, nil)
 	testutil.Ok(t, err)
 
-	var readSeries []RefSeries
+	var readSeries []record.RefSeries
 	r := w.Reader()
 
-	testutil.Ok(t, r.Read(func(s []RefSeries) {
+	testutil.Ok(t, r.Read(func(s []record.RefSeries) {
 		readSeries = append(readSeries, s...)
 	}, nil, nil))
 
@@ -172,9 +174,9 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	}()
 
 	var (
-		recordedSeries  [][]RefSeries
-		recordedSamples [][]RefSample
-		recordedDeletes [][]Stone
+		recordedSeries  [][]record.RefSeries
+		recordedSamples [][]record.RefSample
+		recordedDeletes [][]tombstones.Stone
 	)
 	var totalSamples int
 
@@ -190,29 +192,29 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 		r := w.Reader()
 
 		var (
-			resultSeries  [][]RefSeries
-			resultSamples [][]RefSample
-			resultDeletes [][]Stone
+			resultSeries  [][]record.RefSeries
+			resultSamples [][]record.RefSample
+			resultDeletes [][]tombstones.Stone
 		)
 
-		serf := func(series []RefSeries) {
+		serf := func(series []record.RefSeries) {
 			if len(series) > 0 {
-				clsets := make([]RefSeries, len(series))
+				clsets := make([]record.RefSeries, len(series))
 				copy(clsets, series)
 				resultSeries = append(resultSeries, clsets)
 			}
 		}
-		smplf := func(smpls []RefSample) {
+		smplf := func(smpls []record.RefSample) {
 			if len(smpls) > 0 {
-				csmpls := make([]RefSample, len(smpls))
+				csmpls := make([]record.RefSample, len(smpls))
 				copy(csmpls, smpls)
 				resultSamples = append(resultSamples, csmpls)
 			}
 		}
 
-		delf := func(stones []Stone) {
+		delf := func(stones []tombstones.Stone) {
 			if len(stones) > 0 {
-				cst := make([]Stone, len(stones))
+				cst := make([]tombstones.Stone, len(stones))
 				copy(cst, stones)
 				resultDeletes = append(resultDeletes, cst)
 			}
@@ -228,11 +230,11 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 		// Insert in batches and generate different amounts of samples for each.
 		for i := 0; i < len(series); i += stepSize {
-			var samples []RefSample
-			var stones []Stone
+			var samples []record.RefSample
+			var stones []tombstones.Stone
 
 			for j := 0; j < i*10; j++ {
-				samples = append(samples, RefSample{
+				samples = append(samples, record.RefSample{
 					Ref: uint64(j % 10000),
 					T:   int64(j * 2),
 					V:   rand.Float64(),
@@ -241,13 +243,13 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 			for j := 0; j < i*20; j++ {
 				ts := rand.Int63()
-				stones = append(stones, Stone{rand.Uint64(), Intervals{{ts, ts + rand.Int63n(10000)}}})
+				stones = append(stones, tombstones.Stone{Ref: rand.Uint64(), Intervals: tombstones.Intervals{{ts, ts + rand.Int63n(10000)}}})
 			}
 
 			lbls := series[i : i+stepSize]
-			series := make([]RefSeries, 0, len(series))
+			series := make([]record.RefSeries, 0, len(series))
 			for j, l := range lbls {
-				series = append(series, RefSeries{
+				series = append(series, record.RefSeries{
 					Ref:    uint64(i + j),
 					Labels: l,
 				})
@@ -382,8 +384,8 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			w, err := OpenSegmentWAL(dir, nil, 0, nil)
 			testutil.Ok(t, err)
 
-			testutil.Ok(t, w.LogSamples([]RefSample{{T: 1, V: 2}}))
-			testutil.Ok(t, w.LogSamples([]RefSample{{T: 2, V: 3}}))
+			testutil.Ok(t, w.LogSamples([]record.RefSample{{T: 1, V: 2}}))
+			testutil.Ok(t, w.LogSamples([]record.RefSample{{T: 2, V: 3}}))
 
 			testutil.Ok(t, w.cut())
 
@@ -392,8 +394,8 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			// Hopefully cut will complete by 2 seconds.
 			time.Sleep(2 * time.Second)
 
-			testutil.Ok(t, w.LogSamples([]RefSample{{T: 3, V: 4}}))
-			testutil.Ok(t, w.LogSamples([]RefSample{{T: 5, V: 6}}))
+			testutil.Ok(t, w.LogSamples([]record.RefSample{{T: 3, V: 4}}))
+			testutil.Ok(t, w.LogSamples([]record.RefSample{{T: 5, V: 6}}))
 
 			testutil.Ok(t, w.Close())
 
@@ -414,24 +416,24 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			r := w2.Reader()
 
-			serf := func(l []RefSeries) {
+			serf := func(l []record.RefSeries) {
 				testutil.Equals(t, 0, len(l))
 			}
 
 			// Weird hack to check order of reads.
 			i := 0
-			samplf := func(s []RefSample) {
+			samplf := func(s []record.RefSample) {
 				if i == 0 {
-					testutil.Equals(t, []RefSample{{T: 1, V: 2}}, s)
+					testutil.Equals(t, []record.RefSample{{T: 1, V: 2}}, s)
 					i++
 				} else {
-					testutil.Equals(t, []RefSample{{T: 99, V: 100}}, s)
+					testutil.Equals(t, []record.RefSample{{T: 99, V: 100}}, s)
 				}
 			}
 
 			testutil.Ok(t, r.Read(serf, samplf, nil))
 
-			testutil.Ok(t, w2.LogSamples([]RefSample{{T: 99, V: 100}}))
+			testutil.Ok(t, w2.LogSamples([]record.RefSample{{T: 99, V: 100}}))
 			testutil.Ok(t, w2.Close())
 
 			// We should see the first valid entry and the new one, everything after
@@ -482,23 +484,23 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 	testutil.Ok(t, err)
 
 	// Write some data.
-	testutil.Ok(t, oldWAL.LogSeries([]RefSeries{
+	testutil.Ok(t, oldWAL.LogSeries([]record.RefSeries{
 		{Ref: 100, Labels: labels.FromStrings("abc", "def", "123", "456")},
 		{Ref: 1, Labels: labels.FromStrings("abc", "def2", "1234", "4567")},
 	}))
-	testutil.Ok(t, oldWAL.LogSamples([]RefSample{
+	testutil.Ok(t, oldWAL.LogSamples([]record.RefSample{
 		{Ref: 1, T: 100, V: 200},
 		{Ref: 2, T: 300, V: 400},
 	}))
-	testutil.Ok(t, oldWAL.LogSeries([]RefSeries{
+	testutil.Ok(t, oldWAL.LogSeries([]record.RefSeries{
 		{Ref: 200, Labels: labels.FromStrings("xyz", "def", "foo", "bar")},
 	}))
-	testutil.Ok(t, oldWAL.LogSamples([]RefSample{
+	testutil.Ok(t, oldWAL.LogSamples([]record.RefSample{
 		{Ref: 3, T: 100, V: 200},
 		{Ref: 4, T: 300, V: 400},
 	}))
-	testutil.Ok(t, oldWAL.LogDeletes([]Stone{
-		{ref: 1, intervals: []Interval{{100, 200}}},
+	testutil.Ok(t, oldWAL.LogDeletes([]tombstones.Stone{
+		{Ref: 1, Intervals: []tombstones.Interval{{100, 200}}},
 	}))
 
 	testutil.Ok(t, oldWAL.Close())
@@ -510,8 +512,8 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 	testutil.Ok(t, err)
 
 	// We can properly write some new data after migration.
-	var enc RecordEncoder
-	testutil.Ok(t, w.Log(enc.Samples([]RefSample{
+	var enc record.Encoder
+	testutil.Ok(t, w.Log(enc.Samples([]record.RefSample{
 		{Ref: 500, T: 1, V: 1},
 	}, nil)))
 
@@ -523,21 +525,21 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 
 	r := wal.NewReader(sr)
 	var res []interface{}
-	var dec RecordDecoder
+	var dec record.Decoder
 
 	for r.Next() {
 		rec := r.Record()
 
 		switch dec.Type(rec) {
-		case RecordSeries:
+		case record.Series:
 			s, err := dec.Series(rec, nil)
 			testutil.Ok(t, err)
 			res = append(res, s)
-		case RecordSamples:
+		case record.Samples:
 			s, err := dec.Samples(rec, nil)
 			testutil.Ok(t, err)
 			res = append(res, s)
-		case RecordTombstones:
+		case record.Tombstones:
 			s, err := dec.Tombstones(rec, nil)
 			testutil.Ok(t, err)
 			res = append(res, s)
@@ -548,17 +550,17 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 	testutil.Ok(t, r.Err())
 
 	testutil.Equals(t, []interface{}{
-		[]RefSeries{
+		[]record.RefSeries{
 			{Ref: 100, Labels: labels.FromStrings("abc", "def", "123", "456")},
 			{Ref: 1, Labels: labels.FromStrings("abc", "def2", "1234", "4567")},
 		},
-		[]RefSample{{Ref: 1, T: 100, V: 200}, {Ref: 2, T: 300, V: 400}},
-		[]RefSeries{
+		[]record.RefSample{{Ref: 1, T: 100, V: 200}, {Ref: 2, T: 300, V: 400}},
+		[]record.RefSeries{
 			{Ref: 200, Labels: labels.FromStrings("xyz", "def", "foo", "bar")},
 		},
-		[]RefSample{{Ref: 3, T: 100, V: 200}, {Ref: 4, T: 300, V: 400}},
-		[]Stone{{ref: 1, intervals: []Interval{{100, 200}}}},
-		[]RefSample{{Ref: 500, T: 1, V: 1}},
+		[]record.RefSample{{Ref: 3, T: 100, V: 200}, {Ref: 4, T: 300, V: 400}},
+		[]tombstones.Stone{{Ref: 1, Intervals: []tombstones.Interval{{100, 200}}}},
+		[]record.RefSample{{Ref: 500, T: 1, V: 1}},
 	}, res)
 
 	// Migrating an already migrated WAL shouldn't do anything.

@@ -915,7 +915,7 @@ func (c *compactionSeriesSet) Next() bool {
 	if len(c.intervals) > 0 {
 		chks := make([]chunks.Meta, 0, len(c.c))
 		for _, chk := range c.c {
-			if !(tombstones.Interval{chk.MinTime, chk.MaxTime}.IsSubrange(c.intervals)) {
+			if !(tombstones.Interval{Mint: chk.MinTime, Maxt: chk.MaxTime}.IsSubrange(c.intervals)) {
 				chks = append(chks, chk)
 			}
 		}

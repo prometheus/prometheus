@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -368,7 +369,7 @@ Outer:
 		querier := &blockQuerier{
 			index:      ir,
 			chunks:     cr,
-			tombstones: newMemTombstones(),
+			tombstones: tombstones.NewMemTombstones(),
 
 			mint: c.mint,
 			maxt: c.maxt,
@@ -415,7 +416,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 	cases := struct {
 		data []seriesSamples
 
-		tombstones TombstoneReader
+		tombstones tombstones.Reader
 		queries    []query
 	}{
 		data: []seriesSamples{
@@ -460,11 +461,11 @@ func TestBlockQuerierDelete(t *testing.T) {
 				},
 			},
 		},
-		tombstones: &memTombstones{intvlGroups: map[uint64]Intervals{
-			1: {{1, 3}},
-			2: {{1, 3}, {6, 10}},
-			3: {{6, 10}},
-		}},
+		tombstones: tombstones.NewTestMemTombstones([]tombstones.Intervals{
+			tombstones.Intervals{{1, 3}},
+			tombstones.Intervals{{1, 3}, {6, 10}},
+			tombstones.Intervals{{6, 10}},
+		}),
 		queries: []query{
 			{
 				mint: 2,
@@ -524,6 +525,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 		},
 	}
 
+	fmt.Println("tombstones", cases.tombstones)
 Outer:
 	for _, c := range cases.queries {
 		ir, cr, _, _ := createIdxChkReaders(t, cases.data)
@@ -637,7 +639,7 @@ func TestBaseChunkSeries(t *testing.T) {
 		bcs := &baseChunkSeries{
 			p:          index.NewListPostings(tc.postings),
 			index:      mi,
-			tombstones: newMemTombstones(),
+			tombstones: tombstones.NewMemTombstones(),
 		}
 
 		i := 0
@@ -1159,7 +1161,7 @@ func (m *mockChunkSeriesSet) Next() bool {
 	return m.i < len(m.l)
 }
 
-func (m *mockChunkSeriesSet) At() (labels.Labels, []chunks.Meta, Intervals) {
+func (m *mockChunkSeriesSet) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
 	return m.l[m.i], m.cm[m.i], nil
 }
 
@@ -1254,18 +1256,18 @@ func TestDeletedIterator(t *testing.T) {
 	}
 
 	cases := []struct {
-		r Intervals
+		r tombstones.Intervals
 	}{
-		{r: Intervals{{1, 20}}},
-		{r: Intervals{{1, 10}, {12, 20}, {21, 23}, {25, 30}}},
-		{r: Intervals{{1, 10}, {12, 20}, {20, 30}}},
-		{r: Intervals{{1, 10}, {12, 23}, {25, 30}}},
-		{r: Intervals{{1, 23}, {12, 20}, {25, 30}}},
-		{r: Intervals{{1, 23}, {12, 20}, {25, 3000}}},
-		{r: Intervals{{0, 2000}}},
-		{r: Intervals{{500, 2000}}},
-		{r: Intervals{{0, 200}}},
-		{r: Intervals{{1000, 20000}}},
+		{r: tombstones.Intervals{{1, 20}}},
+		{r: tombstones.Intervals{{1, 10}, {12, 20}, {21, 23}, {25, 30}}},
+		{r: tombstones.Intervals{{1, 10}, {12, 20}, {20, 30}}},
+		{r: tombstones.Intervals{{1, 10}, {12, 23}, {25, 30}}},
+		{r: tombstones.Intervals{{1, 23}, {12, 20}, {25, 30}}},
+		{r: tombstones.Intervals{{1, 23}, {12, 20}, {25, 3000}}},
+		{r: tombstones.Intervals{{0, 2000}}},
+		{r: tombstones.Intervals{{500, 2000}}},
+		{r: tombstones.Intervals{{0, 200}}},
+		{r: tombstones.Intervals{{1000, 20000}}},
 	}
 
 	for _, c := range cases {
@@ -1275,7 +1277,7 @@ func TestDeletedIterator(t *testing.T) {
 		for it.Next() {
 			i++
 			for _, tr := range ranges {
-				if tr.inBounds(i) {
+				if tr.InBounds(i) {
 					i = tr.Maxt + 1
 					ranges = ranges[1:]
 				}
@@ -1290,7 +1292,7 @@ func TestDeletedIterator(t *testing.T) {
 		// There has been an extra call to Next().
 		i++
 		for _, tr := range ranges {
-			if tr.inBounds(i) {
+			if tr.InBounds(i) {
 				i = tr.Maxt + 1
 				ranges = ranges[1:]
 			}

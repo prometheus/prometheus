@@ -33,6 +33,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -243,27 +245,27 @@ func TestDeleteSimple(t *testing.T) {
 	numSamples := int64(10)
 
 	cases := []struct {
-		intervals Intervals
+		Intervals tombstones.Intervals
 		remaint   []int64
 	}{
 		{
-			intervals: Intervals{{0, 3}},
+			Intervals: tombstones.Intervals{{0, 3}},
 			remaint:   []int64{4, 5, 6, 7, 8, 9},
 		},
 		{
-			intervals: Intervals{{1, 3}},
+			Intervals: tombstones.Intervals{{1, 3}},
 			remaint:   []int64{0, 4, 5, 6, 7, 8, 9},
 		},
 		{
-			intervals: Intervals{{1, 3}, {4, 7}},
+			Intervals: tombstones.Intervals{{1, 3}, {4, 7}},
 			remaint:   []int64{0, 8, 9},
 		},
 		{
-			intervals: Intervals{{1, 3}, {4, 700}},
+			Intervals: tombstones.Intervals{{1, 3}, {4, 700}},
 			remaint:   []int64{0},
 		},
 		{ // This case is to ensure that labels and symbols are deleted.
-			intervals: Intervals{{0, 9}},
+			Intervals: tombstones.Intervals{{0, 9}},
 			remaint:   []int64{},
 		},
 	}
@@ -288,7 +290,7 @@ Outer:
 
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
-		for _, r := range c.intervals {
+		for _, r := range c.Intervals {
 			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
 		}
 
@@ -561,11 +563,11 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 
 	testutil.Ok(t, app.Commit())
 	cases := []struct {
-		intervals Intervals
+		intervals tombstones.Intervals
 		remaint   []int64
 	}{
 		{
-			intervals: Intervals{{1, 3}, {4, 7}},
+			intervals: tombstones.Intervals{{1, 3}, {4, 7}},
 			remaint:   []int64{0, 8, 9},
 		},
 	}
@@ -888,11 +890,11 @@ func TestTombstoneClean(t *testing.T) {
 
 	testutil.Ok(t, app.Commit())
 	cases := []struct {
-		intervals Intervals
+		intervals tombstones.Intervals
 		remaint   []int64
 	}{
 		{
-			intervals: Intervals{{1, 3}, {4, 7}},
+			intervals: tombstones.Intervals{{1, 3}, {4, 7}},
 			remaint:   []int64{0, 8, 9},
 		},
 	}
@@ -964,7 +966,7 @@ func TestTombstoneClean(t *testing.T) {
 		}
 
 		for _, b := range db.Blocks() {
-			testutil.Equals(t, newMemTombstones(), b.tombstones)
+			testutil.Equals(t, tombstones.NewMemTombstones(), b.tombstones)
 		}
 	}
 }
@@ -990,8 +992,8 @@ func TestTombstoneCleanFail(t *testing.T) {
 		block, err := OpenBlock(nil, blockDir, nil)
 		testutil.Ok(t, err)
 		// Add some some fake tombstones to trigger the compaction.
-		tomb := newMemTombstones()
-		tomb.addInterval(0, Interval{0, 1})
+		tomb := tombstones.NewMemTombstones()
+		tomb.AddInterval(0, tombstones.Interval{0, 1})
 		block.tombstones = tomb
 
 		db.blocks = append(db.blocks, block)
@@ -1470,13 +1472,13 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
 		testutil.Ok(t, err)
 
-		var enc RecordEncoder
+		var enc record.Encoder
 		err = w.Log(
-			enc.Series([]RefSeries{
+			enc.Series([]record.RefSeries{
 				{Ref: 123, Labels: labels.FromStrings("a", "1")},
 				{Ref: 124, Labels: labels.FromStrings("a", "2")},
 			}, nil),
-			enc.Samples([]RefSample{
+			enc.Samples([]record.RefSample{
 				{Ref: 123, T: 5000, V: 1},
 				{Ref: 124, T: 15000, V: 1},
 			}, nil),
@@ -1520,13 +1522,13 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
 		testutil.Ok(t, err)
 
-		var enc RecordEncoder
+		var enc record.Encoder
 		err = w.Log(
-			enc.Series([]RefSeries{
+			enc.Series([]record.RefSeries{
 				{Ref: 123, Labels: labels.FromStrings("a", "1")},
 				{Ref: 124, Labels: labels.FromStrings("a", "2")},
 			}, nil),
-			enc.Samples([]RefSample{
+			enc.Samples([]record.RefSample{
 				{Ref: 123, T: 5000, V: 1},
 				{Ref: 124, T: 15000, V: 1},
 			}, nil),
