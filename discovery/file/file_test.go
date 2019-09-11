@@ -14,6 +14,7 @@
 package file
 
 import (
+	"fmt"
 	"context"
 	"io"
 	"os"
@@ -40,6 +41,10 @@ func TestFileSD(t *testing.T) {
 }
 
 func testFileSD(t *testing.T, prefix, ext string, expect bool) {
+	failWithFile := func(format string, args ...interface{}) {
+		t.Fatalf(fmt.Sprintf("Test file: %s%s. %s.",prefix, ext, format), args...)
+	}
+
 	// As interval refreshing is more of a fallback, we only want to test
 	// whether file watches work as expected.
 	var conf SDConfig
@@ -57,7 +62,7 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	case <-time.After(25 * time.Millisecond):
 		// Expected.
 	case tgs := <-ch:
-		t.Fatalf("Unexpected target groups in file discovery: %s", tgs)
+		failWithFile("Unexpected target groups in file discovery: %s", tgs)
 	}
 
 	// To avoid empty group struct sent from the discovery caused by invalid fsnotify updates,
@@ -103,14 +108,14 @@ retry:
 		select {
 		case <-timeout:
 			if expect {
-				t.Fatalf("Expected new target group but got none")
+				failWithFile("Expected new target group but got none")
 			} else {
 				// Invalid type fsd should always break down.
 				break retry
 			}
 		case tgs := <-ch:
 			if !expect {
-				t.Fatalf("Unexpected target groups %s, we expected a failure here.", tgs)
+				failWithFile("Unexpected target groups %s, we expected a failure here.", tgs)
 			}
 
 			if len(tgs) != 2 {
@@ -119,15 +124,15 @@ retry:
 			tg := tgs[0]
 
 			if _, ok := tg.Labels["foo"]; !ok {
-				t.Fatalf("Label not parsed")
+				failWithFile("Label not parsed")
 			}
 			if tg.String() != filepath.Join(testDir, "_test_"+prefix+ext+":0") {
-				t.Fatalf("Unexpected target group %s", tg)
+				failWithFile("Unexpected target group %s", tg)
 			}
 
 			tg = tgs[1]
 			if tg.String() != filepath.Join(testDir, "_test_"+prefix+ext+":1") {
-				t.Fatalf("Unexpected target groups %s", tg)
+				failWithFile("Unexpected target groups %s", tg)
 			}
 			break retry
 		}
@@ -145,7 +150,7 @@ retry:
 				// Below we will change the file to a bad syntax. Previously extracted target
 				// groups must not be deleted via sending an empty target group.
 				if len(tgs[0].Targets) == 0 {
-					t.Errorf("Unexpected empty target groups received: %s", tgs)
+					failWithFile("Unexpected empty target groups received: %s", tgs)
 				}
 			case <-time.After(500 * time.Millisecond):
 				close(drained)
