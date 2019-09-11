@@ -21,7 +21,7 @@ do
 done
 
 # Install fuzzit CLI
-wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.29/fuzzit_Linux_x86_64
+wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.45/fuzzit_Linux_x86_64
 chmod a+x fuzzit
 
 for TARGET in "${TARGETS[@]}"
