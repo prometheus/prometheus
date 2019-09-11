@@ -738,7 +738,7 @@ Prometheus.Graph.prototype.updateGraph = function() {
         }
       });
     });
-    var offset = 0.1 * (min === max ? max : Math.abs(max-min))
+    var offset = 0.1 * (min === max ? max : Math.abs(max-min));
     self.rickshawGraph.max = max + offset;
     self.rickshawGraph.min = min - offset;
   }
