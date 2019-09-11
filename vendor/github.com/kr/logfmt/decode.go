@@ -61,7 +61,7 @@ func Unmarshal(data []byte, v interface{}) (err error) {
 }
 
 // StructHandler unmarshals logfmt into a struct. It matches incoming keys to
-// the the struct's fields (either the struct field name or its tag, preferring
+// the struct's fields (either the struct field name or its tag, preferring
 // an exact match but also accepting a case-insensitive match.
 //
 // Field types supported by StructHandler are:

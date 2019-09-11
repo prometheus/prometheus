@@ -93,7 +93,7 @@ func Unregister(views ...*View) {
 	<-req.done
 }
 
-// RetrieveData gets a snapshot of the data collected for the the view registered
+// RetrieveData gets a snapshot of the data collected for the view registered
 // with the given name. It is intended for testing only.
 func RetrieveData(viewName string) ([]*Row, error) {
 	req := &retrieveDataReq{

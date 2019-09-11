@@ -621,7 +621,7 @@ There are four included templates: `kingpin.DefaultUsageTemplate` is the default
 `kingpin.SeparateOptionalFlagsUsageTemplate` looks like the default template, but splits required
 and optional command flags into separate lists, and `kingpin.ManPageTemplate` is used to generate man pages.
 
-See the above templates for examples of usage, and the the function [UsageForContextWithTemplate()](https://github.com/alecthomas/kingpin/blob/master/usage.go#L198) method for details on the context.
+See the above templates for examples of usage, and the function [UsageForContextWithTemplate()](https://github.com/alecthomas/kingpin/blob/master/usage.go#L198) method for details on the context.
 
 #### Default help template
 
