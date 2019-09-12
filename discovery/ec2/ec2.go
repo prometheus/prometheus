@@ -52,6 +52,7 @@ const (
 	ec2LabelSubnetID        = ec2Label + "subnet_id"
 	ec2LabelTag             = ec2Label + "tag_"
 	ec2LabelVPCID           = ec2Label + "vpc_id"
+	ec2LabelLifecycle       = ec2Label + "lifecycle"
 	subnetSeparator         = ","
 )
 
@@ -234,6 +235,13 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 						subnetSeparator +
 							strings.Join(subnets, subnetSeparator) +
 							subnetSeparator)
+				}
+
+				//Only if the istance is a spot one, InstanceLifecycle parameter is shown on the output ec2 description
+				if inst.InstanceLifecycle != nil {
+					labels[ec2LabelLifecycle] = model.LabelValue(*inst.InstanceLifecycle)
+				} else {
+					labels[ec2LabelLifecycle] = "normal"
 				}
 
 				for _, t := range inst.Tags {
