@@ -286,6 +286,49 @@ func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
 	}, nil
 }
 
+// FlushWAL creates a new block containing all data that's currently in the memory buffer/WAL.
+// Samples that are in existing blocks will not be written to the new block.
+// Note that if the read only database is running concurrently with a
+// writable database then writing the WAL to the database directory can race.
+func (db *DBReadOnly) FlushWAL(dir string) error {
+	blockReaders, err := db.Blocks()
+	if err != nil {
+		return errors.Wrap(err, "read blocks")
+	}
+	maxBlockTime := int64(math.MinInt64)
+	if len(blockReaders) > 0 {
+		maxBlockTime = blockReaders[len(blockReaders)-1].Meta().MaxTime
+	}
+	w, err := wal.Open(db.logger, nil, filepath.Join(db.dir, "wal"))
+	if err != nil {
+		return err
+	}
+	head, err := NewHead(nil, db.logger, w, 1)
+	if err != nil {
+		return err
+	}
+	// Set the min valid time for the ingested wal samples
+	// to be no lower than the maxt of the last block.
+	if err := head.Init(maxBlockTime); err != nil {
+		return errors.Wrap(err, "read WAL")
+	}
+	mint := head.MinTime()
+	maxt := head.MaxTime()
+	rh := &rangeHead{
+		head: head,
+		mint: mint,
+		maxt: maxt,
+	}
+	compactor, err := NewLeveledCompactor(context.Background(), nil, db.logger, DefaultOptions.BlockRanges, chunkenc.NewPool())
+	if err != nil {
+		return errors.Wrap(err, "create leveled compactor")
+	}
+	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
+	// Because of this block intervals are always +1 than the total samples it includes.
+	_, err = compactor.Write(dir, rh, mint, maxt+1, nil)
+	return errors.Wrap(err, "writing WAL")
+}
+
 // Querier loads the wal and returns a new querier over the data partition for the given time range.
 // Current implementation doesn't support multiple Queriers.
 func (db *DBReadOnly) Querier(mint, maxt int64) (Querier, error) {
@@ -294,12 +337,12 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (Querier, error) {
 		return nil, ErrClosed
 	default:
 	}
-	blocksReaders, err := db.Blocks()
+	blockReaders, err := db.Blocks()
 	if err != nil {
 		return nil, err
 	}
-	blocks := make([]*Block, len(blocksReaders))
-	for i, b := range blocksReaders {
+	blocks := make([]*Block, len(blockReaders))
+	for i, b := range blockReaders {
 		b, ok := b.(*Block)
 		if !ok {
 			return nil, errors.New("unable to convert a read only block to a normal block")
@@ -380,7 +423,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 	}
 
 	if len(loadable) == 0 {
-		return nil, errors.New("no blocks found")
+		return nil, nil
 	}
 
 	sort.Slice(loadable, func(i, j int) bool {
