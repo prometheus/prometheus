@@ -56,7 +56,7 @@ All our issues are regularly tagged so that you can also filter down the issues 
 
 ## Dependency management
 
-The Prometheus project uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages. This requires a working Go environment with version 1.12 or greater installed.
+The Prometheus project uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages. This requires a working Go environment with version 1.13 or greater installed.
 
 All dependencies are vendored in the `vendor/` directory.
 
