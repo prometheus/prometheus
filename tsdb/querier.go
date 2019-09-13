@@ -328,6 +328,7 @@ func findSetMatches(pattern string) []string {
 func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, error) {
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
+	// Optimization for case like {l=~".", l!="1"}.
 	labelMustBeSet := make(map[string]bool, len(ms))
 	for _, m := range ms {
 		if !m.Matches("") {
@@ -336,9 +337,9 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 	}
 
 	for _, m := range ms {
-		matchesEmpty := m.Matches("")
-		if labelMustBeSet[m.Name()] || !matchesEmpty {
+		if labelMustBeSet[m.Name()] {
 			// If this matcher must be non-empty, we can be smarter.
+			matchesEmpty := m.Matches("")
 			nm, isNot := m.(*labels.NotMatcher)
 			if isNot && matchesEmpty { // l!="foo"
 				// If the label can't be empty and is a Not and the inner matcher
@@ -444,7 +445,7 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 	return index.Merge(rit...), nil
 }
 
-// inversePostingsForMatcher eeturns the postings for the series with the label name set but not matching the matcher.
+// inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
 func inversePostingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
 	tpls, err := ix.LabelValues(m.Name())
 	if err != nil {
