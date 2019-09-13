@@ -2359,3 +2359,76 @@ func TestDBReadOnlyClosing(t *testing.T) {
 	_, err = db.Querier(0, 1)
 	testutil.Equals(t, err, ErrClosed)
 }
+
+func TestDBReadOnly_FlushWAL(t *testing.T) {
+	var (
+		dbDir  string
+		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+		err    error
+		maxt   int
+	)
+
+	// Boostrap the db.
+	{
+		dbDir, err = ioutil.TempDir("", "test")
+		testutil.Ok(t, err)
+
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(dbDir))
+		}()
+
+		// Append data to the WAL.
+		db, err := Open(dbDir, logger, nil, nil)
+		testutil.Ok(t, err)
+		db.DisableCompactions()
+		app := db.Appender()
+		maxt = 1000
+		for i := 0; i < maxt; i++ {
+			_, err := app.Add(labels.FromStrings(defaultLabelName, "flush"), int64(i), 1.0)
+			testutil.Ok(t, err)
+		}
+		testutil.Ok(t, app.Commit())
+		defer func() { testutil.Ok(t, db.Close()) }()
+	}
+
+	// Flush WAL.
+	db, err := OpenDBReadOnly(dbDir, logger)
+	testutil.Ok(t, err)
+
+	flush, err := ioutil.TempDir("", "flush")
+	testutil.Ok(t, err)
+
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(flush))
+	}()
+	testutil.Ok(t, db.FlushWAL(flush))
+	testutil.Ok(t, db.Close())
+
+	// Reopen the DB from the flushed WAL block.
+	db, err = OpenDBReadOnly(flush, logger)
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, db.Close()) }()
+	blocks, err := db.Blocks()
+	testutil.Ok(t, err)
+	testutil.Equals(t, len(blocks), 1)
+
+	querier, err := db.Querier(0, int64(maxt)-1)
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, querier.Close()) }()
+
+	// Sum the values.
+	seriesSet, err := querier.Select(labels.NewEqualMatcher(defaultLabelName, "flush"))
+	testutil.Ok(t, err)
+
+	sum := 0.0
+	for seriesSet.Next() {
+		series := seriesSet.At().Iterator()
+		for series.Next() {
+			_, v := series.At()
+			sum += v
+		}
+		testutil.Ok(t, series.Err())
+	}
+	testutil.Ok(t, seriesSet.Err())
+	testutil.Equals(t, 1000.0, sum)
+}
