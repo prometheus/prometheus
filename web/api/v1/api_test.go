@@ -224,21 +224,12 @@ func TestEndpoints(t *testing.T) {
 			test_metric1{foo="boo"} 1+0x100
 			test_metric2{foo="boo"} 1+0x100
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	defer suite.Close()
 
-	if err := suite.Run(); err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, suite.Run())
 
 	now := time.Now()
-
-	var algr rulesRetrieverMock
-	algr.testing = t
-	algr.AlertingRules()
-	algr.RuleGroups()
 
 	t.Run("local", func(t *testing.T) {
 		var algr rulesRetrieverMock
@@ -271,19 +262,13 @@ func TestEndpoints(t *testing.T) {
 		defer server.Close()
 
 		u, err := url.Parse(server.URL)
-		if err != nil {
-			t.Fatal(err)
-		}
+		testutil.Ok(t, err)
 
 		al := promlog.AllowedLevel{}
-		if err := al.Set("debug"); err != nil {
-			t.Fatal(err)
-		}
+		testutil.Ok(t, al.Set("debug"))
 
 		af := promlog.AllowedFormat{}
-		if err := af.Set("logfmt"); err != nil {
-			t.Fatal(err)
-		}
+		testutil.Ok(t, af.Set("logfmt"))
 
 		promlogConfig := promlog.Config{
 			Level:  &al,
@@ -294,7 +279,6 @@ func TestEndpoints(t *testing.T) {
 		testutil.Ok(t, err)
 		defer os.RemoveAll(dbDir)
 
-		testutil.Ok(t, err)
 		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
 		}, dbDir, 1*time.Second)
@@ -308,9 +292,7 @@ func TestEndpoints(t *testing.T) {
 				},
 			},
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		testutil.Ok(t, err)
 
 		var algr rulesRetrieverMock
 		algr.testing = t
