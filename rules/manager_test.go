@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
-
 )
 
 func TestAlertingRule(t *testing.T) {
@@ -700,7 +699,6 @@ func TestUpdate(t *testing.T) {
 	})
 	ruleManager.Run()
 	defer ruleManager.Stop()
-
 
 	groups, errs := ruleManager.LoadGroups(time.Duration(10*time.Second), nil, files...)
 	if errs != nil {
