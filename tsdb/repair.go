@@ -55,7 +55,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		if err != nil {
 			return wrapErr(err, d)
 		}
-		if meta.Version == 1 {
+		if meta.Version == metaVersion1 {
 			level.Info(logger).Log(
 				"msg", "found healthy block",
 				"mint", meta.MinTime,
@@ -108,7 +108,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 			return wrapErr(err, d)
 		}
 		// Reset version of meta.json to 1.
-		meta.Version = 1
+		meta.Version = metaVersion1
 		if _, err := writeMetaFile(logger, d, meta); err != nil {
 			return wrapErr(err, d)
 		}
@@ -126,7 +126,7 @@ func readBogusMetaFile(dir string) (*BlockMeta, error) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, err
 	}
-	if m.Version != 1 && m.Version != 2 {
+	if m.Version != metaVersion1 && m.Version != 2 {
 		return nil, errors.Errorf("unexpected meta file version %d", m.Version)
 	}
 	return &m, nil

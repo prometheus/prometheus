@@ -87,7 +87,7 @@ type OpenMetricsParser struct {
 	offsets []int
 }
 
-// New returns a new parser of the byte slice.
+// NewOpenMetricsParser returns a new parser of the byte slice.
 func NewOpenMetricsParser(b []byte) Parser {
 	return &OpenMetricsParser{l: &openMetricsLexer{b: b}}
 }
