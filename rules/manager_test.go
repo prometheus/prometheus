@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
+
 )
 
 func TestAlertingRule(t *testing.T) {
@@ -700,7 +701,16 @@ func TestUpdate(t *testing.T) {
 	ruleManager.Run()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files, nil)
+
+	groups, errs := ruleManager.LoadGroups(time.Duration(10*time.Second), nil, files...)
+	if errs != nil {
+		for _, e := range errs {
+			t.Log("msg", "loading groups failed", "err", e)
+		}
+		t.Fatal("error loading rules, previous rule set restored")
+	}
+
+	err := ruleManager.Update(groups)
 	testutil.Ok(t, err)
 	testutil.Assert(t, len(ruleManager.groups) > 0, "expected non-empty rule groups")
 	for _, g := range ruleManager.groups {
@@ -709,7 +719,14 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 
-	err = ruleManager.Update(10*time.Second, files, nil)
+	groups, errs = ruleManager.LoadGroups(time.Duration(10*time.Second), nil, files...)
+	if errs != nil {
+		for _, e := range errs {
+			t.Log("msg", "loading groups failed", "err", e)
+		}
+		t.Fatal("error loading rules, previous rule set restored")
+	}
+	err = ruleManager.Update(groups)
 	testutil.Ok(t, err)
 	for _, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {

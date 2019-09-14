@@ -819,20 +819,12 @@ func (m *Manager) Stop() {
 
 	level.Info(m.logger).Log("msg", "Rule manager stopped")
 }
-
+//map[string]*Group
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels) error {
+func (m *Manager) Update(groups map[string]*Group) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-
-	groups, errs := m.LoadGroups(interval, externalLabels, files...)
-	if errs != nil {
-		for _, e := range errs {
-			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
-		}
-		return errors.New("error loading rules, previous rule set restored")
-	}
 	m.restored = true
 
 	var wg sync.WaitGroup

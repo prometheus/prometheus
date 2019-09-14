@@ -456,11 +456,14 @@ func main() {
 				}
 				files = append(files, fs...)
 			}
-			return ruleManager.Update(
-				time.Duration(cfg.GlobalConfig.EvaluationInterval),
-				files,
-				cfg.GlobalConfig.ExternalLabels,
-			)
+			groups, errs := ruleManager.LoadGroups(time.Duration(cfg.GlobalConfig.EvaluationInterval), cfg.GlobalConfig.ExternalLabels, files...)
+			if errs != nil {
+				for _, e := range errs {
+					level.Error(logger).Log("msg", "loading groups failed", "err", e)
+				}
+				return errors.New("error loading rules, previous rule set restored")
+			}
+			return ruleManager.Update(groups)
 		},
 	}
 
