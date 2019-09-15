@@ -375,10 +375,10 @@ type ScrapeConfig struct {
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
 
 	// Ctx is the context that will be used to make all http scrape requests.
-	Ctx context.Context `-`
+	Ctx context.Context `yaml:"-"`
 	// WrapTransport will be invoked for custom HTTP behavior after the underlying
 	// transport is initialized.
-	WrapTransport func(rt http.RoundTripper) http.RoundTripper `-`
+	WrapTransport func(rt http.RoundTripper) http.RoundTripper `yaml:"-"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
