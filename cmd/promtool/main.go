@@ -314,7 +314,6 @@ func checkRules(filename string) (int, []error) {
 
 func checkDuplicateLabels(r []rulefmt.RuleGroup) int {
 	duplicateLabels := 0
-	
 	for _, rule := range r {
 		var stackLabels []map[string]string
 		for _, props := range rule.Rules {
