@@ -14,8 +14,10 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -371,6 +373,12 @@ type ScrapeConfig struct {
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
+
+	// Ctx is the context that will be used to make all http scrape requests.
+	Ctx context.Context `-`
+	// WrapTransport will be invoked for custom HTTP behavior after the underlying
+	// transport is initialized.
+	WrapTransport func(rt http.RoundTripper) http.RoundTripper `-`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

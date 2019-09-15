@@ -188,15 +188,23 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 		logger = log.NewNopLogger()
 	}
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, false)
+	rt, err := config_util.NewRoundTripperFromConfig(cfg.HTTPClientConfig, cfg.JobName, false)
 	if err != nil {
 		targetScrapePoolsFailed.Inc()
 		return nil, errors.Wrap(err, "error creating HTTP client")
 	}
+	if cfg.WrapTransport != nil {
+		rt = cfg.WrapTransport(rt)
+	}
+	client := &http.Client{Transport: rt}
 
 	buffers := pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 
-	ctx, cancel := context.WithCancel(context.Background())
+	oCtx := context.Background()
+	if cfg.Ctx != nil {
+		oCtx = cfg.Ctx
+	}
+	ctx, cancel := context.WithCancel(oCtx)
 	sp := &scrapePool{
 		cancel:        cancel,
 		appendable:    app,
