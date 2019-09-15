@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -303,7 +304,28 @@ func checkRules(filename string) (int, []error) {
 		numRules += len(rg.Rules)
 	}
 
+	duplicateLabels := checkDuplicateLabels(rgs.Groups)
+	if duplicateLabels != 0 {
+		fmt.Printf("%d duplicate label(s) found. Might cause inconsistency while recording expressions.\n", duplicateLabels)
+	}
+
 	return numRules, nil
+}
+
+func checkDuplicateLabels(r []rulefmt.RuleGroup) int {
+	duplicateLabels := 0
+	for _, rule := range r {
+		var stackLabels []map[string]string
+		for _, props := range rule.Rules {
+			for _, labels :=range stackLabels {
+				if reflect.DeepEqual(labels, props.Labels) {
+					duplicateLabels++
+				}
+			}
+			stackLabels = append(stackLabels, props.Labels)
+		}
+	}
+	return duplicateLabels
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
