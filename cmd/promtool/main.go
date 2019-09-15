@@ -317,7 +317,7 @@ func checkDuplicateLabels(r []rulefmt.RuleGroup) int {
 	for _, rule := range r {
 		var stackLabels []map[string]string
 		for _, props := range rule.Rules {
-			for _, labels :=range stackLabels {
+			for _, labels := range stackLabels {
 				if reflect.DeepEqual(labels, props.Labels) {
 					duplicateLabels++
 				}
