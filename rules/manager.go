@@ -820,7 +820,6 @@ func (m *Manager) Stop() {
 	level.Info(m.logger).Log("msg", "Rule manager stopped")
 }
 
-//map[string]*Group
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
 func (m *Manager) Update(groups map[string]*Group) error {
