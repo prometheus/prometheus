@@ -94,4 +94,4 @@ the following third-party contributions:
 
 ### SaltStack
 
-* [bechtoldt/saltstack-prometheus-formula](https://github.com/bechtoldt/saltstack-prometheus-formula)
+* [saltstack-formulas/prometheus-formula](https://github.com/saltstack-formulas/prometheus-formula)
