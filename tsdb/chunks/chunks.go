@@ -15,6 +15,7 @@ package chunks
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"hash"
@@ -368,14 +369,16 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // Reader implements a ChunkReader for a serialized byte stream
 // of series data.
 type Reader struct {
-	bs   []ByteSlice // The underlying bytes holding the encoded series data.
-	cs   []io.Closer // Closers for resources behind the byte slices.
-	size int64       // The total size of bytes in the reader.
-	pool chunkenc.Pool
+	bs    []ByteSlice // The underlying bytes holding the encoded series data.
+	cs    []io.Closer // Closers for resources behind the byte slices.
+	size  int64       // The total size of bytes in the reader.
+	pool  chunkenc.Pool
+	crc32 hash.Hash
+	buf   [binary.MaxVarintLen32]byte
 }
 
 func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
-	cr := Reader{pool: pool, bs: bs, cs: cs}
+	cr := Reader{pool: pool, bs: bs, cs: cs, crc32: newCRC32()}
 	var totalSize int64
 
 	for i, b := range cr.bs {
@@ -453,18 +456,37 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	}
 	chkS := s.bs[sgmSeq]
 
-	if sgmOffset >= chkS.Len() {
-		return nil, errors.Errorf("offset %d beyond data size %d", sgmOffset, chkS.Len())
+	if sgmOffset+binary.MaxVarintLen32 > chkS.Len() {
+		return nil, errors.Errorf("offset %d beyond data size %d", sgmOffset+binary.MaxVarintLen32, chkS.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
 	chk := chkS.Range(sgmOffset, sgmOffset+binary.MaxVarintLen32)
-
 	chkLen, n := binary.Uvarint(chk)
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
-	chk = chkS.Range(sgmOffset+n, sgmOffset+n+1+int(chkLen))
+
+	// sgmEnd is the end of crc32 checksum.
+	sgmEnd := sgmOffset +
+		n + // The size of chunk-length varint in bytes
+		1 + // The size of chunk encoding in bytes
+		int(chkLen) + // The length of chunk in bytes
+		crc32.Size // The size of a CRC-32 checksum in bytes
+
+	if sgmEnd > chkS.Len() {
+		return nil, errors.Errorf("offset %d beyond data size %d", sgmEnd, chkS.Len())
+	}
+
+	chk = chkS.Range(sgmOffset+n, sgmEnd-crc32.Size)
+	sum := chkS.Range(sgmEnd-crc32.Size, sgmEnd)
+	s.crc32.Reset()
+	if _, err := s.crc32.Write(chk); err != nil {
+		return nil, err
+	}
+	if s := s.crc32.Sum(s.buf[:0]); !bytes.Equal(s, sum) {
+		return nil, errors.Errorf("unexpected checksum %x, expected %x", s, sum)
+	}
 
 	return s.pool.Get(chunkenc.Encoding(chk[0]), chk[1:1+chkLen])
 }
