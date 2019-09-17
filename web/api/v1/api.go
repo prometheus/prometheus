@@ -1266,10 +1266,23 @@ func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	}
 	stream.WriteMore()
 	stream.WriteRaw(`"`)
-	stream.WriteFloat64(p.V)
+
+	// Taken from https://github.com/json-iterator/go/blob/master/stream_float.go#L71 as a workaround
+	// to https://github.com/json-iterator/go/issues/365 (jsoniter, to follow json standard, doesn't allow inf/nan).
+	buf := stream.Buffer()
+	abs := math.Abs(p.V)
+	fmt := byte('f')
+	// Note: Must use float32 comparisons for underlying float32 value to get precise cutoffs right.
+	if abs != 0 {
+		if abs < 1e-6 || abs >= 1e21 {
+			fmt = 'e'
+		}
+	}
+	buf = strconv.AppendFloat(buf, p.V, fmt, -1, 64)
+	stream.SetBuffer(buf)
+
 	stream.WriteRaw(`"`)
 	stream.WriteArrayEnd()
-
 }
 
 func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
