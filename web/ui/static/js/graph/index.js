@@ -237,7 +237,7 @@ Prometheus.Graph.prototype.checkTimeDrift = function() {
         method: "GET",
         url: PATH_PREFIX + "/api/v1/query?query=time()",
         dataType: "json",
-            success: function(json, textStatus) {
+        success: function(json, textStatus) {
             if (json.status !== "success") {
                 self.showError("Error querying time.");
                 return;
