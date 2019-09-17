@@ -304,72 +304,40 @@ func checkRules(filename string) (int, []error) {
 		numRules += len(rg.Rules)
 	}
 
-	showWarning := false
-	dLabels, dMetrics, nLabels, nMetrics := checkDuplicates(rgs.Groups)
-	if dLabels != 0 {
-		showWarning = true
-		fmt.Printf("%d duplicate label(s) found.\n", dLabels)
-		for _, n := range nLabels {
-			fmt.Println(n)
+	dRules := checkDuplicates(rgs.Groups)
+	if len(dRules) != 0 {
+		fmt.Printf("%d duplicate rules(s) found.\n", len(dRules))
+		for _, n := range dRules {
+			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
+			for i, l := range n.label {
+				fmt.Printf("\t%s: %s\n", i, l)
+			}
 		}
-	}
-	if dMetrics != 0 {
-		showWarning = true
-		fmt.Printf("%d duplicate metric(s) found.\n", dMetrics)
-		for _, n := range nMetrics {
-			fmt.Println(n)
-		}
-	}
-	if showWarning {
 		fmt.Println("Might cause inconsistency while recording expressions.")
 	}
 
 	return numRules, nil
 }
 
-func checkDuplicates(r []rulefmt.RuleGroup) (int, int, []string, []string) {
-	duplicateLabels, duplicateMetrics := 0, 0
-	labelNames, metricName := []string{}, []string{}
-	for _, rule := range r {
-		var stackLabels []map[string]string
-		var stackMetrics []string
-		for _, props := range rule.Rules {
-			for _, labels := range stackLabels {
-				if reflect.DeepEqual(labels, props.Labels) {
-					duplicateLabels++
-					found := false
-					for _, inst := range labelNames {
-						if inst == labels["label"] {
-							found = true
-							break
-						}
-					}
-					if !found {
-						labelNames = append(labelNames, labels["label"])
-					}
-				}
-			}
-			stackLabels = append(stackLabels, props.Labels)
+type duplicateRules struct {
+	metric string
+	label  map[string]string
+}
 
-			for _, mname := range stackMetrics {
-				if reflect.DeepEqual(mname, props.Record) {
-					duplicateMetrics++
-					found := false
-					for _, inst := range metricName {
-						if inst == mname {
-							found = true
-							break
-						}
-					}
-					if !found {
-						metricName = append(metricName, mname)
-					}
+func checkDuplicates(r []rulefmt.RuleGroup) []duplicateRules {
+	var stack, stackDuplicates []duplicateRules
+
+	for _, rule := range r {
+		for _, props := range rule.Rules {
+			for _, inst := range stack {
+				if reflect.DeepEqual(inst, duplicateRules{metric: props.Record, label: props.Labels}) {
+					stackDuplicates = append(stackDuplicates, duplicateRules{metric: props.Record, label: props.Labels})
 				}
 			}
-			stackMetrics = append(stackMetrics, props.Record)
+			stack = append(stack, duplicateRules{metric: props.Record, label: props.Labels})
 		}
 	}
-	return duplicateLabels, duplicateMetrics, labelNames, metricName
+	return stackDuplicates
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
