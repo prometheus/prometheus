@@ -327,10 +327,10 @@ type duplicateRules struct {
 func checkDuplicates(r []rulefmt.RuleGroup) []duplicateRules {
 	var stack, stackDuplicates []duplicateRules
 
-	for _, rule := range r {
-		for _, props := range rule.Rules {
-			for _, inst := range stack {
-				if reflect.DeepEqual(inst, duplicateRules{metric: props.Record, label: props.Labels}) {
+	for rindex := range r {
+		for _, props := range r[rindex].Rules {
+			for i := range stack {
+				if reflect.DeepEqual(stack[i], duplicateRules{metric: props.Record, label: props.Labels}) {
 					stackDuplicates = append(stackDuplicates, duplicateRules{metric: props.Record, label: props.Labels})
 				}
 			}
