@@ -62,7 +62,13 @@ func newTestRunner(t *testing.T) *testRunner {
 }
 
 // copyFile atomically copies a file to the runner's directory.
-func (t *testRunner) copyFile(src, dst string) string {
+func (t *testRunner) copyFile(src string) string {
+	t.Helper()
+	return t.copyFileTo(src, filepath.Base(src))
+}
+
+// copyFileTo atomically copies a file with a different name to the runner's directory.
+func (t *testRunner) copyFileTo(src string, name string) string {
 	t.Helper()
 
 	newf, err := ioutil.TempFile(t.dir, "")
@@ -75,7 +81,7 @@ func (t *testRunner) copyFile(src, dst string) string {
 	testutil.Ok(t, err)
 	testutil.Ok(t, f.Close())
 
-	dst = filepath.Join(t.dir, filepath.Base(dst))
+	dst := filepath.Join(t.dir, name)
 	err = os.Rename(newf.Name(), dst)
 	testutil.Ok(t, err)
 
@@ -304,7 +310,7 @@ func TestInitialUpdate(t *testing.T) {
 			t.Parallel()
 
 			runner := newTestRunner(t)
-			sdFile := runner.copyFile(tc, filepath.Base(tc))
+			sdFile := runner.copyFile(tc)
 
 			runner.run("*" + filepath.Ext(tc))
 			defer runner.stop()
@@ -326,7 +332,7 @@ func TestInvalidFile(t *testing.T) {
 
 			now := time.Now()
 			runner := newTestRunner(t)
-			runner.copyFile(tc, filepath.Base(tc))
+			runner.copyFile(tc)
 
 			runner.run("*" + filepath.Ext(tc))
 			defer runner.stop()
@@ -344,7 +350,7 @@ func TestNoopFileUpdate(t *testing.T) {
 	t.Parallel()
 
 	runner := newTestRunner(t)
-	sdFile := runner.copyFile("fixtures/valid.yml", "valid.yml")
+	sdFile := runner.copyFile("fixtures/valid.yml")
 
 	runner.run("*.yml")
 	defer runner.stop()
@@ -354,7 +360,7 @@ func TestNoopFileUpdate(t *testing.T) {
 
 	// Verify that we receive an update with the same target groups.
 	ref := runner.lastReceive()
-	runner.copyFile("fixtures/valid3.yml", "valid.yml")
+	runner.copyFileTo("fixtures/valid3.yml", "valid.yml")
 	runner.requireUpdate(ref, validTg(sdFile))
 }
 
@@ -362,7 +368,7 @@ func TestFileUpdate(t *testing.T) {
 	t.Parallel()
 
 	runner := newTestRunner(t)
-	sdFile := runner.copyFile("fixtures/valid.yml", "valid.yml")
+	sdFile := runner.copyFile("fixtures/valid.yml")
 
 	runner.run("*.yml")
 	defer runner.stop()
@@ -372,7 +378,7 @@ func TestFileUpdate(t *testing.T) {
 
 	// Verify that we receive an update with the new target groups.
 	ref := runner.lastReceive()
-	runner.copyFile("fixtures/valid2.yml", "valid.yml")
+	runner.copyFileTo("fixtures/valid2.yml", "valid.yml")
 	runner.requireUpdate(ref, valid2Tg(sdFile))
 }
 
@@ -380,7 +386,7 @@ func TestInvalidFileUpdate(t *testing.T) {
 	t.Parallel()
 
 	runner := newTestRunner(t)
-	sdFile := runner.copyFile("fixtures/valid.yml", "valid.yml")
+	sdFile := runner.copyFile("fixtures/valid.yml")
 
 	runner.run("*.yml")
 	defer runner.stop()
@@ -402,7 +408,7 @@ func TestUpdateFileWithPartialWrites(t *testing.T) {
 	t.Parallel()
 
 	runner := newTestRunner(t)
-	sdFile := runner.copyFile("fixtures/valid.yml", "valid.yml")
+	sdFile := runner.copyFile("fixtures/valid.yml")
 
 	runner.run("*.yml")
 	defer runner.stop()
@@ -446,7 +452,7 @@ func TestRemoveFile(t *testing.T) {
 	t.Parallel()
 
 	runner := newTestRunner(t)
-	sdFile := runner.copyFile("fixtures/valid.yml", "valid.yml")
+	sdFile := runner.copyFile("fixtures/valid.yml")
 
 	runner.run("*.yml")
 	defer runner.stop()
