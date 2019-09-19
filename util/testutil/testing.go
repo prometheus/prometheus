@@ -67,7 +67,7 @@ func NotOk(tb TB, err error, a ...interface{}) {
 func Equals(tb TB, exp, act interface{}, msgAndArgs ...interface{}) {
 	tb.Helper()
 	if !reflect.DeepEqual(exp, act) {
-		tb.Fatalf("\033[31m%s\n\nexp: %#v\n\ngot: %#v%s\033[39m\n", formatMessage(msgAndArgs), exp, act)
+		tb.Fatalf("\033[31m%s\n\nexp: %#v\n\ngot: %#v\033[39m\n", formatMessage(msgAndArgs), exp, act)
 	}
 }
 
