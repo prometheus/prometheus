@@ -38,10 +38,11 @@ const (
 	// MagicChunks is 4 bytes at the head of a series file.
 	MagicChunks = 0x85BD40DD
 	// MagicChunksSize is the size in bytes of MagicChunks.
-	MagicChunksSize         = 4
-	chunksFormatV1          = 1
-	ChunksFormatVersionSize = 1
-	segmentHeaderSize       = 8
+	MagicChunksSize          = 4
+	chunksFormatV1           = 1
+	ChunksFormatVersionSize  = 1
+	segmentHeaderPaddingSize = 3
+	segmentHeaderSize        = MagicChunksSize + ChunksFormatVersionSize + segmentHeaderPaddingSize
 )
 
 // Chunk fields constants.
