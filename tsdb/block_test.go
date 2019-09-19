@@ -130,7 +130,16 @@ func TestCorruptedChunk(t *testing.T) {
 			errors.New("invalid chunk format version 0"),
 			nil,
 		},
-		"chunk too short": {
+		"chunk not enough bytes to read the chunk length": {
+			func(f *os.File) {
+				// Truncate one byte after the segment header.
+				err := f.Truncate(chunks.SegmentHeaderSize + 1)
+				testutil.Ok(t, err)
+			},
+			nil,
+			errors.New("segment doesn't include enough bytes to read the chunk size data field - required:21, available:9"),
+		},
+		"chunk not enough bytes to read the data": {
 			func(f *os.File) {
 				fi, err := f.Stat()
 				testutil.Ok(t, err)

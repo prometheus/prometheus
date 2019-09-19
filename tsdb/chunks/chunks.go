@@ -42,7 +42,7 @@ const (
 	chunksFormatV1           = 1
 	ChunksFormatVersionSize  = 1
 	segmentHeaderPaddingSize = 3
-	segmentHeaderSize        = MagicChunksSize + ChunksFormatVersionSize + segmentHeaderPaddingSize
+	SegmentHeaderSize        = MagicChunksSize + ChunksFormatVersionSize + segmentHeaderPaddingSize
 )
 
 // Chunk fields constants.
@@ -56,7 +56,7 @@ const (
 type Meta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
-	// When it is a reference it is the segment offset at which starts the chunk data.
+	// When it is a reference it is the segment offset at which the chunk bytes start.
 	// Generally, only one of them is set.
 	Ref   uint64
 	Chunk chunkenc.Chunk
@@ -190,7 +190,7 @@ func (w *Writer) cut() error {
 	}
 
 	// Write header metadata for new file.
-	metab := make([]byte, segmentHeaderSize)
+	metab := make([]byte, SegmentHeaderSize)
 	binary.BigEndian.PutUint32(metab[:MagicChunksSize], MagicChunks)
 	metab[4] = chunksFormatV1
 
@@ -204,7 +204,7 @@ func (w *Writer) cut() error {
 	} else {
 		w.wbuf = bufio.NewWriterSize(f, 8*1024*1024)
 	}
-	w.n = segmentHeaderSize
+	w.n = SegmentHeaderSize
 
 	return nil
 }
@@ -305,7 +305,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 
 		// Each segment contains: a header + many chunks.
 		// Each chunk contains: data length + encoding + the data itself + crc32
-		reqSpace := int64(segmentHeaderSize) // The segment header.
+		reqSpace := int64(SegmentHeaderSize) // The segment header.
 		for _, c := range chks {
 			reqSpace += maxChunkLengthFieldSize     // The data length is a variable length field so use the maximum possible value.
 			reqSpace += chunkEncodingSize           // The chunk encoding.
@@ -335,7 +335,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		// the data starts for this chunk.
 		//
 		// The upper 4 bytes are for the segment index and
-		// The lower 4 bytes are for the file offset where to start reading this chunk.
+		// The lower 4 bytes are for the segment offset where to start reading this chunk.
 		chk.Ref = seq | uint64(w.n)
 
 		n := binary.PutUvarint(w.buf[:], uint64(len(chk.Chunk.Bytes())))
@@ -414,7 +414,7 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 	var totalSize int64
 
 	for i, b := range cr.bs {
-		if b.Len() < segmentHeaderSize {
+		if b.Len() < SegmentHeaderSize {
 			return nil, errors.Wrapf(errInvalidSize, "invalid segment header in segment %d", i)
 		}
 		// Verify magic number.
@@ -494,8 +494,8 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 
 	chkBytes := s.bs[sgmIndex]
 
-	if sgmChunkOffset+maxChunkLengthFieldSize > chkBytes.Len()-segmentHeaderSize {
-		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - offset:%v, total segment bytes:%v", sgmChunkOffset, chkBytes.Len())
+	if sgmChunkOffset+maxChunkLengthFieldSize > chkBytes.Len()-SegmentHeaderSize {
+		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", sgmChunkOffset+maxChunkLengthFieldSize+SegmentHeaderSize, chkBytes.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
