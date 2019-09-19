@@ -15,6 +15,7 @@ package chunks
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"hash"
@@ -31,22 +32,30 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
+// Segment header fields constants.
 const (
+
 	// MagicChunks is 4 bytes at the head of a series file.
 	MagicChunks = 0x85BD40DD
 	// MagicChunksSize is the size in bytes of MagicChunks.
-	MagicChunksSize = 4
-
+	MagicChunksSize         = 4
 	chunksFormatV1          = 1
 	ChunksFormatVersionSize = 1
+	segmentHeaderSize       = 8
+)
 
-	chunkHeaderSize = MagicChunksSize + ChunksFormatVersionSize
+// Chunk fields constants.
+const (
+	// The data length is a variable length field so use the maximum possible value.
+	maxChunkLengthFieldSize = binary.MaxVarintLen32
+	chunkEncodingSize       = 1
 )
 
 // Meta holds information about a chunk of data.
 type Meta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
+	// When it is a reference it is the segment offset at which starts the chunk data.
 	// Generally, only one of them is set.
 	Ref   uint64
 	Chunk chunkenc.Chunk
@@ -180,7 +189,7 @@ func (w *Writer) cut() error {
 	}
 
 	// Write header metadata for new file.
-	metab := make([]byte, 8)
+	metab := make([]byte, segmentHeaderSize)
 	binary.BigEndian.PutUint32(metab[:MagicChunksSize], MagicChunks)
 	metab[4] = chunksFormatV1
 
@@ -194,7 +203,7 @@ func (w *Writer) cut() error {
 	} else {
 		w.wbuf = bufio.NewWriterSize(f, 8*1024*1024)
 	}
-	w.n = 8
+	w.n = segmentHeaderSize
 
 	return nil
 }
@@ -285,17 +294,33 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 }
 
 func (w *Writer) WriteChunks(chks ...Meta) error {
-	// Calculate maximum space we need and cut a new segment in case
-	// we don't fit into the current one.
-	maxLen := int64(binary.MaxVarintLen32) // The number of chunks.
-	for _, c := range chks {
-		maxLen += binary.MaxVarintLen32 + 1 // The number of bytes in the chunk and its encoding.
-		maxLen += int64(len(c.Chunk.Bytes()))
-		maxLen += 4 // The 4 bytes of crc32
-	}
-	newsz := w.n + maxLen
+	cutChunk := false
+	// First chunk so no need for other checks.
+	if w.wbuf == nil {
+		cutChunk = true
+	} else {
+		// Calculate maximum required space and cut a new segment when
+		// the chunks won't fit in the current segment.
 
-	if w.wbuf == nil || newsz > w.segmentSize && maxLen <= w.segmentSize {
+		// Each segment contains: a header + many chunks.
+		// Each chunk contains: data length + encoding + the data itself + crc32
+		reqSpace := int64(segmentHeaderSize) // The segment header.
+		for _, c := range chks {
+			reqSpace += maxChunkLengthFieldSize     // The data length is a variable length field so use the maximum possible value.
+			reqSpace += chunkEncodingSize           // The chunk encoding.
+			reqSpace += int64(len(c.Chunk.Bytes())) // The data itself.
+			reqSpace += crc32.Size                  // The 4 bytes of crc32
+		}
+
+		if reqSpace > w.segmentSize {
+			return errors.New("total chunks size larger than the segment size")
+		}
+		if w.n+reqSpace > w.segmentSize {
+			cutChunk = true
+		}
+	}
+
+	if cutChunk {
 		if err := w.cut(); err != nil {
 			return err
 		}
@@ -305,6 +330,11 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	for i := range chks {
 		chk := &chks[i]
 
+		// The reference is set to the segment index and the offset where
+		// the data starts for this chunk.
+		//
+		// The upper 4 bytes are for the segment index and
+		// The lower 4 bytes are for the file offset where to start reading this chunk.
 		chk.Ref = seq | uint64(w.n)
 
 		n := binary.PutUvarint(w.buf[:], uint64(len(chk.Chunk.Bytes())))
@@ -368,19 +398,23 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // Reader implements a ChunkReader for a serialized byte stream
 // of series data.
 type Reader struct {
-	bs   []ByteSlice // The underlying bytes holding the encoded series data.
-	cs   []io.Closer // Closers for resources behind the byte slices.
-	size int64       // The total size of bytes in the reader.
-	pool chunkenc.Pool
+	// The underlying bytes holding the encoded series data.
+	// Each slice hold the date for a different segment.
+	bs    []ByteSlice
+	cs    []io.Closer // Closers for resources behind the byte slices.
+	size  int64       // The total size of bytes in the reader.
+	pool  chunkenc.Pool
+	crc32 hash.Hash
+	buf   [binary.MaxVarintLen32]byte
 }
 
 func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
-	cr := Reader{pool: pool, bs: bs, cs: cs}
+	cr := Reader{pool: pool, bs: bs, cs: cs, crc32: newCRC32()}
 	var totalSize int64
 
 	for i, b := range cr.bs {
-		if b.Len() < chunkHeaderSize {
-			return nil, errors.Wrapf(errInvalidSize, "invalid chunk header in segment %d", i)
+		if b.Len() < segmentHeaderSize {
+			return nil, errors.Wrapf(errInvalidSize, "invalid segment header in segment %d", i)
 		}
 		// Verify magic number.
 		if m := binary.BigEndian.Uint32(b.Range(0, MagicChunksSize)); m != MagicChunks {
@@ -445,28 +479,50 @@ func (s *Reader) Size() int64 {
 // Chunk returns a chunk from a given reference.
 func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	var (
-		sgmSeq    = int(ref >> 32)
-		sgmOffset = int((ref << 32) >> 32)
+		// Get the upper 4 bytes.
+		// These contain the segment index.
+		sgmIndex = int(ref >> 32)
+		// Get the lower 4 bytes.
+		// These contain the segment offset where the data for this chunk starts.
+		sgmChunkOffset = int((ref << 32) >> 32)
 	)
-	if sgmSeq >= len(s.bs) {
-		return nil, errors.Errorf("reference sequence %d out of range", sgmSeq)
-	}
-	chkS := s.bs[sgmSeq]
 
-	if sgmOffset >= chkS.Len() {
-		return nil, errors.Errorf("offset %d beyond data size %d", sgmOffset, chkS.Len())
+	if sgmIndex >= len(s.bs) {
+		return nil, errors.Errorf("segment index %d out of range", sgmIndex)
+	}
+
+	chkBytes := s.bs[sgmIndex]
+
+	if sgmChunkOffset+maxChunkLengthFieldSize > chkBytes.Len()-segmentHeaderSize {
+		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - offset:%v, total segment bytes:%v", sgmChunkOffset, chkBytes.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
-	chk := chkS.Range(sgmOffset, sgmOffset+binary.MaxVarintLen32)
-
-	chkLen, n := binary.Uvarint(chk)
+	c := chkBytes.Range(sgmChunkOffset, sgmChunkOffset+binary.MaxVarintLen32)
+	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
-	chk = chkS.Range(sgmOffset+n, sgmOffset+n+1+int(chkLen))
 
-	return s.pool.Get(chunkenc.Encoding(chk[0]), chk[1:1+chkLen])
+	chkStartOffset := sgmChunkOffset + n
+	chkEndOffset := chkStartOffset + chunkEncodingSize + int(chkDataLen) + crc32.Size
+	chkEndDataOffset := chkEndOffset - crc32.Size
+
+	if chkEndOffset > chkBytes.Len() {
+		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEndOffset, chkBytes.Len())
+	}
+
+	chkData := chkBytes.Range(chkStartOffset, chkEndDataOffset)
+	sum := chkBytes.Range(chkEndDataOffset, chkEndOffset)
+	s.crc32.Reset()
+	if _, err := s.crc32.Write(chkData); err != nil {
+		return nil, err
+	}
+	if s := s.crc32.Sum(s.buf[:0]); !bytes.Equal(s, sum) {
+		return nil, errors.Errorf("unexpected checksum %x, expected %x", s, sum)
+	}
+
+	return s.pool.Get(chunkenc.Encoding(chkData[0]), chkData[chunkEncodingSize:])
 }
 
 func nextSequenceFile(dir string) (string, int, error) {

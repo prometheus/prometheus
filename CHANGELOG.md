@@ -1,3 +1,7 @@
+## Unreleased
+
+* [BUGFIX] Fix tsdb panic when querying corrupted chunks. #5991
+
 ## 2.12.0 / 2019-08-17
 
 * [FEATURE] Track currently active PromQL queries in a log file. #5794
