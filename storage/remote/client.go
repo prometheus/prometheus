@@ -40,7 +40,7 @@ var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	index   int // Used to differentiate clients in metrics.
+	hash    string // Used to differentiate clients in metrics.
 	url     *config_util.URL
 	client  *http.Client
 	timeout time.Duration
@@ -54,14 +54,14 @@ type ClientConfig struct {
 }
 
 // NewClient creates a new Client.
-func NewClient(index int, conf *ClientConfig) (*Client, error) {
+func NewClient(hash string, conf *ClientConfig) (*Client, error) {
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage", false)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Client{
-		index:   index,
+		hash:    hash,
 		url:     conf.URL,
 		client:  httpClient,
 		timeout: time.Duration(conf.Timeout),
@@ -117,7 +117,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 
 // Name identifies the client.
 func (c Client) Name() string {
-	return fmt.Sprintf("%d:%s", c.index, c.url)
+	return fmt.Sprintf("%s:%s", c.hash, c.url)
 }
 
 // Read reads from a remote endpoint.

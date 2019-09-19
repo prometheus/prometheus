@@ -58,14 +58,17 @@ func TestUpdateExternalLabels(t *testing.T) {
 			&config.DefaultRemoteWriteConfig,
 		},
 	}
+	hash, err := toHash(conf.RemoteWriteConfigs[0])
+	testutil.Ok(t, err)
+
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 1, len(s.queues))
-	testutil.Equals(t, labels.Labels(nil), s.queues[0].externalLabels)
+	testutil.Equals(t, labels.Labels(nil), s.queues[hash].externalLabels)
 
 	conf.GlobalConfig.ExternalLabels = externalLabels
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 1, len(s.queues))
-	testutil.Equals(t, externalLabels, s.queues[0].externalLabels)
+	testutil.Equals(t, externalLabels, s.queues[hash].externalLabels)
 
 	err = s.Close()
 	testutil.Ok(t, err)
@@ -84,13 +87,16 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 			&config.DefaultRemoteWriteConfig,
 		},
 	}
-	s.ApplyConfig(conf)
-	testutil.Equals(t, 1, len(s.queues))
-	queue := s.queues[0]
+	hash, err := toHash(conf.RemoteWriteConfigs[0])
+	testutil.Ok(t, err)
 
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 1, len(s.queues))
-	testutil.Assert(t, queue == s.queues[0], "Queue pointer should have remained the same")
+
+	s.ApplyConfig(conf)
+	testutil.Equals(t, 1, len(s.queues))
+	_, hashExists := s.queues[hash]
+	testutil.Assert(t, hashExists, "Queue pointer should have remained the same")
 
 	err = s.Close()
 	testutil.Ok(t, err)
@@ -122,7 +128,12 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	}
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 3, len(s.queues))
-	q := s.queues[1]
+
+	c0Hash, err := toHash(c0)
+	testutil.Ok(t, err)
+	c1Hash, err := toHash(c1)
+	testutil.Ok(t, err)
+	// q := s.queues[1]
 
 	// Update c0 and c2.
 	c0.RemoteTimeout = model.Duration(40 * time.Second)
@@ -134,7 +145,8 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 3, len(s.queues))
 
-	testutil.Assert(t, q == s.queues[1], "Pointer of unchanged queue should have remained the same")
+	_, hashExists := s.queues[c1Hash]
+	testutil.Assert(t, hashExists, "Pointer of unchanged queue should have remained the same")
 
 	// Delete c0.
 	conf = &config.Config{
@@ -144,7 +156,8 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 2, len(s.queues))
 
-	testutil.Assert(t, q != s.queues[1], "If the index changed, the queue should be stopped and recreated.")
+	_, hashExists = s.queues[c0Hash]
+	testutil.Assert(t, !hashExists, "If the index changed, the queue should be stopped and recreated.")
 
 	err = s.Close()
 	testutil.Ok(t, err)

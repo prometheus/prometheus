@@ -14,6 +14,9 @@
 package remote
 
 import (
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -537,4 +540,14 @@ func labelsToLabelsProto(labels labels.Labels, buf []prompb.Label) []prompb.Labe
 		})
 	}
 	return result
+}
+
+// Used for hashing configs and diff'ing hashes in ApplyConfig.
+func toHash(data interface{}) (string, error) {
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	hash := md5.Sum(bytes)
+	return hex.EncodeToString(hash[:]), nil
 }

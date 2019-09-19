@@ -14,8 +14,6 @@
 package remote
 
 import (
-	"crypto/md5"
-	"encoding/json"
 	"sync"
 	"time"
 
@@ -50,11 +48,10 @@ type WriteStorage struct {
 	logger log.Logger
 	mtx    sync.Mutex
 
-	configHash        [16]byte
-	externalLabelHash [16]byte
+	configHash        string
+	externalLabelHash string
 	walDir            string
-	queues            []*QueueManager
-	hashes            [][16]byte
+	queues            map[string]*QueueManager
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
 }
@@ -65,6 +62,7 @@ func NewWriteStorage(logger log.Logger, walDir string, flushDeadline time.Durati
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
+		queues:        make(map[string]*QueueManager),
 		logger:        logger,
 		flushDeadline: flushDeadline,
 		samplesIn:     newEWMARate(ewmaWeight, shardUpdateDuration),
@@ -88,20 +86,17 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
 
-	// Remote write queues only need to change if the remote write config or
-	// external labels change. Hash these together and only reload if the hash
-	// changes.
-	cfgBytes, err := json.Marshal(conf.RemoteWriteConfigs)
+	configHash, err := toHash(conf.RemoteWriteConfigs)
 	if err != nil {
 		return err
 	}
-	externalLabelBytes, err := json.Marshal(conf.GlobalConfig.ExternalLabels)
+	externalLabelHash, err := toHash(conf.GlobalConfig.ExternalLabels)
 	if err != nil {
 		return err
 	}
 
-	configHash := md5.Sum(cfgBytes)
-	externalLabelHash := md5.Sum(externalLabelBytes)
+	// Remote write queues only need to change if the remote write config or
+	// external labels change.
 	externalLabelUnchanged := externalLabelHash == rws.externalLabelHash
 	if configHash == rws.configHash && externalLabelUnchanged {
 		level.Debug(rws.logger).Log("msg", "remote write config has not changed, no need to restart QueueManagers")
@@ -111,28 +106,23 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	rws.configHash = configHash
 	rws.externalLabelHash = externalLabelHash
 
-	// Update write queues
-	newQueues := []*QueueManager{}
-	newHashes := [][16]byte{}
-	newClientIndexes := []int{}
-	for i, rwConf := range conf.RemoteWriteConfigs {
-		b, err := json.Marshal(rwConf)
+	newQueues := make(map[string]*QueueManager)
+	newHashes := []string{}
+	for _, rwConf := range conf.RemoteWriteConfigs {
+		hash, err := toHash(rwConf)
 		if err != nil {
 			return err
 		}
 
-		// Use RemoteWriteConfigs and its index to get hash. So if its index changed,
-		// the corresponding queue should also be restarted.
-		hash := md5.Sum(b)
-		if i < len(rws.queues) && rws.hashes[i] == hash && externalLabelUnchanged {
-			// The RemoteWriteConfig and index both not changed, keep the queue.
-			newQueues = append(newQueues, rws.queues[i])
-			newHashes = append(newHashes, hash)
-			rws.queues[i] = nil
+		// If the hash exists in the current queues map, we only need
+		// to restart queue if the external labels have changed.
+		if queue, ok := rws.queues[hash]; ok && externalLabelUnchanged {
+			newQueues[hash] = queue
+			delete(rws.queues, hash)
 			continue
 		}
-		// Otherwise create a new queue.
-		c, err := NewClient(i, &ClientConfig{
+
+		c, err := NewClient(hash, &ClientConfig{
 			URL:              rwConf.URL,
 			Timeout:          rwConf.RemoteTimeout,
 			HTTPClientConfig: rwConf.HTTPClientConfig,
@@ -140,7 +130,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
-		newQueues = append(newQueues, NewQueueManager(
+		newQueues[hash] = NewQueueManager(
 			prometheus.DefaultRegisterer,
 			rws.logger,
 			rws.walDir,
@@ -150,24 +140,22 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.WriteRelabelConfigs,
 			c,
 			rws.flushDeadline,
-		))
+		)
+		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
-		newClientIndexes = append(newClientIndexes, i)
 	}
 
+	// Anything remaining in rws.queues is a queue who's config has
+	// changed or was removed from the overall remote write config.
 	for _, q := range rws.queues {
-		// A nil queue means that queue has been reused.
-		if q != nil {
-			q.Stop()
-		}
+		q.Stop()
 	}
 
-	for _, index := range newClientIndexes {
-		newQueues[index].Start()
+	for _, hash := range newHashes {
+		newQueues[hash].Start()
 	}
 
 	rws.queues = newQueues
-	rws.hashes = newHashes
 
 	return nil
 }

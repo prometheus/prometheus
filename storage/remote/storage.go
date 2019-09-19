@@ -68,8 +68,13 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 
 	// Update read clients
 	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
-	for i, rrConf := range conf.RemoteReadConfigs {
-		c, err := NewClient(i, &ClientConfig{
+	for _, rrConf := range conf.RemoteReadConfigs {
+		hash, err := toHash(rrConf)
+		if err != nil {
+			return nil
+		}
+
+		c, err := NewClient(hash, &ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
