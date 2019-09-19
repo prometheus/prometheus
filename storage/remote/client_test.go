@@ -65,11 +65,15 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-
-		c, err := NewClient(0, &ClientConfig{
+		conf := &ClientConfig{
 			URL:     &config_util.URL{URL: serverURL},
 			Timeout: model.Duration(time.Second),
-		})
+		}
+		hash, err := toHash(conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := NewClient(hash, conf)
 		if err != nil {
 			t.Fatal(err)
 		}
