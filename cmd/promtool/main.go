@@ -319,25 +319,32 @@ func checkRules(filename string) (int, []error) {
 	return numRules, nil
 }
 
-type duplicateRules struct {
+type compareRuleType struct {
 	metric string
 	label  map[string]string
 }
 
-func checkDuplicates(r []rulefmt.RuleGroup) []duplicateRules {
-	var stack, stackDuplicates []duplicateRules
+func checkDuplicates(r []rulefmt.RuleGroup) []compareRuleType {
+	var duplicates []compareRuleType
 
 	for rindex := range r {
-		for _, props := range r[rindex].Rules {
-			for i := range stack {
-				if reflect.DeepEqual(stack[i], duplicateRules{metric: props.Record, label: props.Labels}) {
-					stackDuplicates = append(stackDuplicates, duplicateRules{metric: props.Record, label: props.Labels})
+		for index, props := range r[rindex].Rules {
+			inst := compareRuleType{
+				metric: props.Record,
+				label:  props.Labels,
+			}
+			for i := 0; i < index; i++ {
+				t := compareRuleType{
+					metric: r[rindex].Rules[i].Record,
+					label:  r[rindex].Rules[i].Labels,
+				}
+				if reflect.DeepEqual(t, inst) {
+					duplicates = append(duplicates, t)
 				}
 			}
-			stack = append(stack, duplicateRules{metric: props.Record, label: props.Labels})
 		}
 	}
-	return stackDuplicates
+	return duplicates
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
