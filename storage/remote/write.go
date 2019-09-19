@@ -141,6 +141,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 		newQueues = append(newQueues, NewQueueManager(
+			prometheus.DefaultRegisterer,
 			rws.logger,
 			rws.walDir,
 			rws.samplesIn,

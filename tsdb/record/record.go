@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package record
 
 import (
 	"math"
@@ -21,45 +21,64 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
-// RecordType represents the data type of a record.
-type RecordType uint8
+// Type represents the data type of a record.
+type Type uint8
 
 const (
-	// RecordInvalid is returned for unrecognised WAL record types.
-	RecordInvalid RecordType = 255
-	// RecordSeries is used to match WAL records of type Series.
-	RecordSeries RecordType = 1
-	// RecordSamples is used to match WAL records of type Samples.
-	RecordSamples RecordType = 2
-	// RecordTombstones is used to match WAL records of type Tombstones.
-	RecordTombstones RecordType = 3
+	// Invalid is returned for unrecognised WAL record types.
+	Invalid Type = 255
+	// Series is used to match WAL records of type Series.
+	Series Type = 1
+	// Samples is used to match WAL records of type Samples.
+	Samples Type = 2
+	// Tombstones is used to match WAL records of type Tombstones.
+	Tombstones Type = 3
 )
 
-// RecordDecoder decodes series, sample, and tombstone records.
+var (
+	// ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
+	ErrNotFound = errors.New("not found")
+)
+
+// RefSeries is the series labels with the series ID.
+type RefSeries struct {
+	Ref    uint64
+	Labels labels.Labels
+}
+
+// RefSample is a timestamp/value pair associated with a reference to a series.
+type RefSample struct {
+	Ref uint64
+	T   int64
+	V   float64
+}
+
+// Decoder decodes series, sample, and tombstone records.
 // The zero value is ready to use.
-type RecordDecoder struct {
+type Decoder struct {
 }
 
 // Type returns the type of the record.
-// Return RecordInvalid if no valid record type is found.
-func (d *RecordDecoder) Type(rec []byte) RecordType {
+// Returns RecordInvalid if no valid record type is found.
+func (d *Decoder) Type(rec []byte) Type {
 	if len(rec) < 1 {
-		return RecordInvalid
+		return Invalid
 	}
-	switch t := RecordType(rec[0]); t {
-	case RecordSeries, RecordSamples, RecordTombstones:
+	switch t := Type(rec[0]); t {
+	case Series, Samples, Tombstones:
 		return t
 	}
-	return RecordInvalid
+	return Invalid
 }
 
 // Series appends series in rec to the given slice.
-func (d *RecordDecoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
+func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 	dec := encoding.Decbuf{B: rec}
 
-	if RecordType(dec.Byte()) != RecordSeries {
+	if Type(dec.Byte()) != Series {
 		return nil, errors.New("invalid record type")
 	}
 	for len(dec.B) > 0 && dec.Err() == nil {
@@ -88,10 +107,10 @@ func (d *RecordDecoder) Series(rec []byte, series []RefSeries) ([]RefSeries, err
 }
 
 // Samples appends samples in rec to the given slice.
-func (d *RecordDecoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) {
+func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) {
 	dec := encoding.Decbuf{B: rec}
 
-	if RecordType(dec.Byte()) != RecordSamples {
+	if Type(dec.Byte()) != Samples {
 		return nil, errors.New("invalid record type")
 	}
 	if dec.Len() == 0 {
@@ -123,16 +142,16 @@ func (d *RecordDecoder) Samples(rec []byte, samples []RefSample) ([]RefSample, e
 }
 
 // Tombstones appends tombstones in rec to the given slice.
-func (d *RecordDecoder) Tombstones(rec []byte, tstones []Stone) ([]Stone, error) {
+func (d *Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombstones.Stone, error) {
 	dec := encoding.Decbuf{B: rec}
 
-	if RecordType(dec.Byte()) != RecordTombstones {
+	if Type(dec.Byte()) != Tombstones {
 		return nil, errors.New("invalid record type")
 	}
 	for dec.Len() > 0 && dec.Err() == nil {
-		tstones = append(tstones, Stone{
-			ref: dec.Be64(),
-			intervals: Intervals{
+		tstones = append(tstones, tombstones.Stone{
+			Ref: dec.Be64(),
+			Intervals: tombstones.Intervals{
 				{Mint: dec.Varint64(), Maxt: dec.Varint64()},
 			},
 		})
@@ -146,15 +165,15 @@ func (d *RecordDecoder) Tombstones(rec []byte, tstones []Stone) ([]Stone, error)
 	return tstones, nil
 }
 
-// RecordEncoder encodes series, sample, and tombstones records.
+// Encoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
-type RecordEncoder struct {
+type Encoder struct {
 }
 
 // Series appends the encoded series to b and returns the resulting slice.
-func (e *RecordEncoder) Series(series []RefSeries, b []byte) []byte {
+func (e *Encoder) Series(series []RefSeries, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
-	buf.PutByte(byte(RecordSeries))
+	buf.PutByte(byte(Series))
 
 	for _, s := range series {
 		buf.PutBE64(s.Ref)
@@ -169,9 +188,9 @@ func (e *RecordEncoder) Series(series []RefSeries, b []byte) []byte {
 }
 
 // Samples appends the encoded samples to b and returns the resulting slice.
-func (e *RecordEncoder) Samples(samples []RefSample, b []byte) []byte {
+func (e *Encoder) Samples(samples []RefSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
-	buf.PutByte(byte(RecordSamples))
+	buf.PutByte(byte(Samples))
 
 	if len(samples) == 0 {
 		return buf.Get()
@@ -193,13 +212,13 @@ func (e *RecordEncoder) Samples(samples []RefSample, b []byte) []byte {
 }
 
 // Tombstones appends the encoded tombstones to b and returns the resulting slice.
-func (e *RecordEncoder) Tombstones(tstones []Stone, b []byte) []byte {
+func (e *Encoder) Tombstones(tstones []tombstones.Stone, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
-	buf.PutByte(byte(RecordTombstones))
+	buf.PutByte(byte(Tombstones))
 
 	for _, s := range tstones {
-		for _, iv := range s.intervals {
-			buf.PutBE64(s.ref)
+		for _, iv := range s.Intervals {
+			buf.PutBE64(s.Ref)
 			buf.PutVarint64(iv.Mint)
 			buf.PutVarint64(iv.Maxt)
 		}

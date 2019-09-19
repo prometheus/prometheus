@@ -33,6 +33,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
@@ -54,7 +56,7 @@ var (
 
 	// emptyTombstoneReader is a no-op Tombstone Reader.
 	// This is used by head to satisfy the Tombstones() function call.
-	emptyTombstoneReader = newMemTombstones()
+	emptyTombstoneReader = tombstones.NewMemTombstones()
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -64,6 +66,7 @@ type Head struct {
 	wal        *wal.WAL
 	logger     log.Logger
 	appendPool sync.Pool
+	seriesPool sync.Pool
 	bytesPool  sync.Pool
 	numSeries  uint64
 
@@ -256,7 +259,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 // Samples before the mint timestamp are discarded.
 func (h *Head) processWALSamples(
 	minValidTime int64,
-	input <-chan []RefSample, output chan<- []RefSample,
+	input <-chan []record.RefSample, output chan<- []record.RefSample,
 ) (unknownRefs uint64) {
 	defer close(output)
 
@@ -331,8 +334,8 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		wg           sync.WaitGroup
 		multiRefLock sync.Mutex
 		n            = runtime.GOMAXPROCS(0)
-		inputs       = make([]chan []RefSample, n)
-		outputs      = make([]chan []RefSample, n)
+		inputs       = make([]chan []record.RefSample, n)
+		outputs      = make([]chan []record.RefSample, n)
 	)
 	wg.Add(n)
 
@@ -349,10 +352,10 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 	}()
 
 	for i := 0; i < n; i++ {
-		outputs[i] = make(chan []RefSample, 300)
-		inputs[i] = make(chan []RefSample, 300)
+		outputs[i] = make(chan []record.RefSample, 300)
+		inputs[i] = make(chan []record.RefSample, 300)
 
-		go func(input <-chan []RefSample, output chan<- []RefSample) {
+		go func(input <-chan []record.RefSample, output chan<- []record.RefSample) {
 			unknown := h.processWALSamples(h.minValidTime, input, output)
 			atomic.AddUint64(&unknownRefs, unknown)
 			wg.Done()
@@ -360,11 +363,11 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 	}
 
 	var (
-		dec       RecordDecoder
-		series    []RefSeries
-		samples   []RefSample
-		tstones   []Stone
-		allStones = newMemTombstones()
+		dec       record.Decoder
+		series    []record.RefSeries
+		samples   []record.RefSample
+		tstones   []tombstones.Stone
+		allStones = tombstones.NewMemTombstones()
 	)
 	defer func() {
 		if err := allStones.Close(); err != nil {
@@ -376,7 +379,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		rec := r.Record()
 
 		switch dec.Type(rec) {
-		case RecordSeries:
+		case record.Series:
 			series, err = dec.Series(rec, series)
 			if err != nil {
 				return &wal.CorruptionErr{
@@ -399,7 +402,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 					h.lastSeriesID = s.Ref
 				}
 			}
-		case RecordSamples:
+		case record.Samples:
 			samples, err = dec.Samples(rec, samples)
 			s := samples
 			if err != nil {
@@ -418,9 +421,9 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 				if len(samples) < m {
 					m = len(samples)
 				}
-				shards := make([][]RefSample, n)
+				shards := make([][]record.RefSample, n)
 				for i := 0; i < n; i++ {
-					var buf []RefSample
+					var buf []record.RefSample
 					select {
 					case buf = <-outputs[i]:
 					default:
@@ -440,7 +443,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 				samples = samples[m:]
 			}
 			samples = s // Keep whole slice for reuse.
-		case RecordTombstones:
+		case record.Tombstones:
 			tstones, err = dec.Tombstones(rec, tstones)
 			if err != nil {
 				return &wal.CorruptionErr{
@@ -450,15 +453,15 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 				}
 			}
 			for _, s := range tstones {
-				for _, itv := range s.intervals {
+				for _, itv := range s.Intervals {
 					if itv.Maxt < h.minValidTime {
 						continue
 					}
-					if m := h.series.getByID(s.ref); m == nil {
+					if m := h.series.getByID(s.Ref); m == nil {
 						unknownRefs++
 						continue
 					}
-					allStones.addInterval(s.ref, itv)
+					allStones.AddInterval(s.Ref, itv)
 				}
 			}
 		default:
@@ -482,7 +485,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		return errors.Wrap(r.Err(), "read records")
 	}
 
-	if err := allStones.Iter(func(ref uint64, dranges Intervals) error {
+	if err := allStones.Iter(func(ref uint64, dranges tombstones.Intervals) error {
 		return h.chunkRewrite(ref, dranges)
 	}); err != nil {
 		return errors.Wrap(r.Err(), "deleting samples from tombstones")
@@ -508,8 +511,8 @@ func (h *Head) Init(minValidTime int64) error {
 
 	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
 	// Backfill the checkpoint first if it exists.
-	dir, startFrom, err := LastCheckpoint(h.wal.Dir())
-	if err != nil && err != ErrNotFound {
+	dir, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
+	if err != nil && err != record.ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
 	}
 	multiRef := map[uint64]uint64{}
@@ -629,7 +632,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return ok
 	}
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = Checkpoint(h.wal, first, last, keep, mint); err != nil {
+	if _, err = wal.Checkpoint(h.wal, first, last, keep, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		return errors.Wrap(err, "create checkpoint")
 	}
@@ -651,7 +654,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 	h.deletedMtx.Unlock()
 
 	h.metrics.checkpointDeleteTotal.Inc()
-	if err := DeleteCheckpoints(h.wal.Dir(), last); err != nil {
+	if err := wal.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond
 		// occupying disk space.
 		// They will just be ignored since a higher checkpoint exists.
@@ -693,7 +696,7 @@ func (h *rangeHead) Chunks() (ChunkReader, error) {
 	return h.head.chunksRange(h.mint, h.maxt), nil
 }
 
-func (h *rangeHead) Tombstones() (TombstoneReader, error) {
+func (h *rangeHead) Tombstones() (tombstones.Reader, error) {
 	return emptyTombstoneReader, nil
 }
 
@@ -779,6 +782,7 @@ func (h *Head) appender() *headAppender {
 		mint:         math.MaxInt64,
 		maxt:         math.MinInt64,
 		samples:      h.getAppendBuffer(),
+		sampleSeries: h.getSeriesBuffer(),
 	}
 }
 
@@ -789,17 +793,30 @@ func max(a, b int64) int64 {
 	return b
 }
 
-func (h *Head) getAppendBuffer() []RefSample {
+func (h *Head) getAppendBuffer() []record.RefSample {
 	b := h.appendPool.Get()
 	if b == nil {
-		return make([]RefSample, 0, 512)
+		return make([]record.RefSample, 0, 512)
 	}
-	return b.([]RefSample)
+	return b.([]record.RefSample)
 }
 
-func (h *Head) putAppendBuffer(b []RefSample) {
+func (h *Head) putAppendBuffer(b []record.RefSample) {
 	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.appendPool.Put(b[:0])
+}
+
+func (h *Head) getSeriesBuffer() []*memSeries {
+	b := h.seriesPool.Get()
+	if b == nil {
+		return make([]*memSeries, 0, 512)
+	}
+	return b.([]*memSeries)
+}
+
+func (h *Head) putSeriesBuffer(b []*memSeries) {
+	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+	h.seriesPool.Put(b[:0])
 }
 
 func (h *Head) getBytesBuffer() []byte {
@@ -820,8 +837,9 @@ type headAppender struct {
 	minValidTime int64 // No samples below this timestamp are allowed.
 	mint, maxt   int64
 
-	series  []RefSeries
-	samples []RefSample
+	series       []record.RefSeries
+	samples      []record.RefSample
+	sampleSeries []*memSeries
 }
 
 func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
@@ -834,7 +852,7 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 
 	s, created := a.head.getOrCreate(lset.Hash(), lset)
 	if created {
-		a.series = append(a.series, RefSeries{
+		a.series = append(a.series, record.RefSeries{
 			Ref:    s.ref,
 			Labels: lset,
 		})
@@ -866,12 +884,12 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		a.maxt = t
 	}
 
-	a.samples = append(a.samples, RefSample{
-		Ref:    ref,
-		T:      t,
-		V:      v,
-		series: s,
+	a.samples = append(a.samples, record.RefSample{
+		Ref: ref,
+		T:   t,
+		V:   v,
 	})
+	a.sampleSeries = append(a.sampleSeries, s)
 	return nil
 }
 
@@ -884,7 +902,7 @@ func (a *headAppender) log() error {
 	defer func() { a.head.putBytesBuffer(buf) }()
 
 	var rec []byte
-	var enc RecordEncoder
+	var enc record.Encoder
 
 	if len(a.series) > 0 {
 		rec = enc.Series(a.series, buf)
@@ -908,18 +926,20 @@ func (a *headAppender) log() error {
 func (a *headAppender) Commit() error {
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.putAppendBuffer(a.samples)
+	defer a.head.putSeriesBuffer(a.sampleSeries)
 
 	if err := a.log(); err != nil {
 		return errors.Wrap(err, "write to WAL")
 	}
 
 	total := len(a.samples)
-
-	for _, s := range a.samples {
-		s.series.Lock()
-		ok, chunkCreated := s.series.append(s.T, s.V)
-		s.series.pendingCommit = false
-		s.series.Unlock()
+	var series *memSeries
+	for i, s := range a.samples {
+		series = a.sampleSeries[i]
+		series.Lock()
+		ok, chunkCreated := series.append(s.T, s.V)
+		series.pendingCommit = false
+		series.Unlock()
 
 		if !ok {
 			total--
@@ -938,10 +958,12 @@ func (a *headAppender) Commit() error {
 
 func (a *headAppender) Rollback() error {
 	a.head.metrics.activeAppenders.Dec()
-	for _, s := range a.samples {
-		s.series.Lock()
-		s.series.pendingCommit = false
-		s.series.Unlock()
+	var series *memSeries
+	for i := range a.samples {
+		series = a.sampleSeries[i]
+		series.Lock()
+		series.pendingCommit = false
+		series.Unlock()
 	}
 	a.head.putAppendBuffer(a.samples)
 
@@ -964,7 +986,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		return errors.Wrap(err, "select series")
 	}
 
-	var stones []Stone
+	var stones []tombstones.Stone
 	dirty := false
 	for p.Next() {
 		series := h.series.getByID(p.At())
@@ -976,9 +998,9 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		// Delete only until the current values and not beyond.
 		t0, t1 = clampInterval(mint, maxt, t0, t1)
 		if h.wal != nil {
-			stones = append(stones, Stone{p.At(), Intervals{{t0, t1}}})
+			stones = append(stones, tombstones.Stone{Ref: p.At(), Intervals: tombstones.Intervals{{Mint: t0, Maxt: t1}}})
 		}
-		if err := h.chunkRewrite(p.At(), Intervals{{t0, t1}}); err != nil {
+		if err := h.chunkRewrite(p.At(), tombstones.Intervals{{Mint: t0, Maxt: t1}}); err != nil {
 			return errors.Wrap(err, "delete samples")
 		}
 		dirty = true
@@ -986,7 +1008,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	if p.Err() != nil {
 		return p.Err()
 	}
-	var enc RecordEncoder
+	var enc record.Encoder
 	if h.wal != nil {
 		// Although we don't store the stones in the head
 		// we need to write them to the WAL to mark these as deleted
@@ -1005,7 +1027,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 // chunkRewrite re-writes the chunks which overlaps with deleted ranges
 // and removes the samples in the deleted ranges.
 // Chunks is deleted if no samples are left at the end.
-func (h *Head) chunkRewrite(ref uint64, dranges Intervals) (err error) {
+func (h *Head) chunkRewrite(ref uint64, dranges tombstones.Intervals) (err error) {
 	if len(dranges) == 0 {
 		return nil
 	}
@@ -1097,7 +1119,7 @@ func (h *Head) gc() {
 }
 
 // Tombstones returns a new reader over the head's tombstones
-func (h *Head) Tombstones() (TombstoneReader, error) {
+func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return emptyTombstoneReader, nil
 }
 

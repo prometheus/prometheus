@@ -10,7 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package remote
+package wal
 
 import (
 	"fmt"
@@ -22,14 +22,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/labels"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var defaultRetryInterval = 100 * time.Millisecond
 var defaultRetries = 100
+var wMetrics = NewWatcherMetrics(prometheus.DefaultRegisterer)
 
 // retry executes f() n times at each interval until it returns true.
 func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
@@ -51,12 +52,12 @@ type writeToMock struct {
 	seriesSegmentIndexes map[uint64]int
 }
 
-func (wtm *writeToMock) Append(s []tsdb.RefSample) bool {
+func (wtm *writeToMock) Append(s []record.RefSample) bool {
 	wtm.samplesAppended += len(s)
 	return true
 }
 
-func (wtm *writeToMock) StoreSeries(series []tsdb.RefSeries, index int) {
+func (wtm *writeToMock) StoreSeries(series []record.RefSeries, index int) {
 	wtm.seriesLock.Lock()
 	defer wtm.seriesLock.Unlock()
 	for _, s := range series {
@@ -104,14 +105,14 @@ func TestTailSamples(t *testing.T) {
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
 
-			enc := tsdb.RecordEncoder{}
-			w, err := wal.NewSize(nil, nil, wdir, 128*pageSize, compress)
+			enc := record.Encoder{}
+			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
 				ref := i + 100
-				series := enc.Series([]tsdb.RefSeries{
+				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    uint64(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
@@ -121,7 +122,7 @@ func TestTailSamples(t *testing.T) {
 
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
-					sample := enc.Samples([]tsdb.RefSample{
+					sample := enc.Samples([]record.RefSample{
 						{
 							Ref: uint64(inner),
 							T:   int64(now.UnixNano()) + 1,
@@ -137,17 +138,17 @@ func TestTailSamples(t *testing.T) {
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWALWatcher(nil, "", wt, dir)
-			watcher.startTime = now.UnixNano()
+			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
+			watcher.StartTime = now.UnixNano()
 
 			// Set the Watcher's metrics so they're not nil pointers.
 			watcher.setMetrics()
 			for i := first; i <= last; i++ {
-				segment, err := wal.OpenReadSegment(wal.SegmentName(watcher.walDir, i))
+				segment, err := OpenReadSegment(SegmentName(watcher.walDir, i))
 				testutil.Ok(t, err)
 				defer segment.Close()
 
-				reader := wal.NewLiveReader(nil, liveReaderMetrics, segment)
+				reader := NewLiveReader(nil, NewLiveReaderMetrics(prometheus.DefaultRegisterer), segment)
 				// Use tail true so we can ensure we got the right number of samples.
 				watcher.readSegment(reader, i, true)
 			}
@@ -177,15 +178,15 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
 
-			w, err := wal.NewSize(nil, nil, wdir, 128*pageSize, compress)
+			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
 
 			var recs [][]byte
 
-			enc := tsdb.RecordEncoder{}
+			enc := record.Encoder{}
 
 			for i := 0; i < seriesCount; i++ {
-				series := enc.Series([]tsdb.RefSeries{
+				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    uint64(i),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
@@ -193,7 +194,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				}, nil)
 				recs = append(recs, series)
 				for j := 0; j < samplesCount; j++ {
-					sample := enc.Samples([]tsdb.RefSample{
+					sample := enc.Samples([]record.RefSample{
 						{
 							Ref: uint64(j),
 							T:   int64(i),
@@ -216,7 +217,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWALWatcher(nil, "", wt, dir)
+			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
 			go watcher.Start()
 
 			expected := seriesCount
@@ -246,14 +247,14 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
 
-			enc := tsdb.RecordEncoder{}
-			w, err := wal.NewSize(nil, nil, wdir, segmentSize, compress)
+			enc := record.Encoder{}
+			w, err := NewSize(nil, nil, wdir, segmentSize, compress)
 			testutil.Ok(t, err)
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
 				ref := i + 100
-				series := enc.Series([]tsdb.RefSeries{
+				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    uint64(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
@@ -263,7 +264,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
-					sample := enc.Samples([]tsdb.RefSample{
+					sample := enc.Samples([]record.RefSample{
 						{
 							Ref: uint64(inner),
 							T:   int64(i),
@@ -274,12 +275,12 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			tsdb.Checkpoint(w, 0, 1, func(x uint64) bool { return true }, 0)
+			Checkpoint(w, 0, 1, func(x uint64) bool { return true }, 0)
 			w.Truncate(1)
 
 			// Write more records after checkpointing.
 			for i := 0; i < seriesCount; i++ {
-				series := enc.Series([]tsdb.RefSeries{
+				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    uint64(i),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
@@ -288,7 +289,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				testutil.Ok(t, w.Log(series))
 
 				for j := 0; j < samplesCount; j++ {
-					sample := enc.Samples([]tsdb.RefSample{
+					sample := enc.Samples([]record.RefSample{
 						{
 							Ref: uint64(j),
 							T:   int64(i),
@@ -302,7 +303,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			_, _, err = w.Segments()
 			testutil.Ok(t, err)
 			wt := newWriteToMock()
-			watcher := NewWALWatcher(nil, "", wt, dir)
+			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
 			go watcher.Start()
 
 			expected := seriesCount * 2
@@ -330,16 +331,16 @@ func TestReadCheckpoint(t *testing.T) {
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
 
-			os.Create(wal.SegmentName(wdir, 30))
+			os.Create(SegmentName(wdir, 30))
 
-			enc := tsdb.RecordEncoder{}
-			w, err := wal.NewSize(nil, nil, wdir, 128*pageSize, compress)
+			enc := record.Encoder{}
+			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
 				ref := i + 100
-				series := enc.Series([]tsdb.RefSeries{
+				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    uint64(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
@@ -349,7 +350,7 @@ func TestReadCheckpoint(t *testing.T) {
 
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
-					sample := enc.Samples([]tsdb.RefSample{
+					sample := enc.Samples([]record.RefSample{
 						{
 							Ref: uint64(inner),
 							T:   int64(i),
@@ -359,7 +360,7 @@ func TestReadCheckpoint(t *testing.T) {
 					testutil.Ok(t, w.Log(sample))
 				}
 			}
-			tsdb.Checkpoint(w, 30, 31, func(x uint64) bool { return true }, 0)
+			Checkpoint(w, 30, 31, func(x uint64) bool { return true }, 0)
 			w.Truncate(32)
 
 			// Start read after checkpoint, no more data written.
@@ -367,8 +368,7 @@ func TestReadCheckpoint(t *testing.T) {
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWALWatcher(nil, "", wt, dir)
-			// watcher.
+			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
 			go watcher.Start()
 
 			expectedSeries := seriesCount
@@ -398,15 +398,15 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
 
-			enc := tsdb.RecordEncoder{}
-			w, err := wal.NewSize(nil, nil, wdir, pageSize, compress)
+			enc := record.Encoder{}
+			w, err := NewSize(nil, nil, wdir, pageSize, compress)
 			testutil.Ok(t, err)
 
 			// Write a bunch of data.
 			for i := 0; i < segments; i++ {
 				for j := 0; j < seriesCount; j++ {
 					ref := j + (i * 100)
-					series := enc.Series([]tsdb.RefSeries{
+					series := enc.Series([]record.RefSeries{
 						{
 							Ref:    uint64(ref),
 							Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", j)}},
@@ -416,7 +416,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 
 					for k := 0; k < samplesCount; k++ {
 						inner := rand.Intn(ref + 1)
-						sample := enc.Samples([]tsdb.RefSample{
+						sample := enc.Samples([]record.RefSample{
 							{
 								Ref: uint64(inner),
 								T:   int64(i),
@@ -433,18 +433,18 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			err = os.Mkdir(checkpointDir, 0777)
 			testutil.Ok(t, err)
 			for i := 0; i <= 4; i++ {
-				err := os.Rename(wal.SegmentName(dir+"/wal", i), wal.SegmentName(checkpointDir, i))
+				err := os.Rename(SegmentName(dir+"/wal", i), SegmentName(checkpointDir, i))
 				testutil.Ok(t, err)
 			}
 
 			wt := newWriteToMock()
-			watcher := NewWALWatcher(nil, "", wt, dir)
-			watcher.maxSegment = -1
+			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
+			watcher.MaxSegment = -1
 
 			// Set the Watcher's metrics so they're not nil pointers.
 			watcher.setMetrics()
 
-			lastCheckpoint, _, err := tsdb.LastCheckpoint(watcher.walDir)
+			lastCheckpoint, _, err := LastCheckpoint(watcher.walDir)
 			testutil.Ok(t, err)
 
 			err = watcher.readCheckpoint(lastCheckpoint)
@@ -477,14 +477,14 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
 
-			enc := tsdb.RecordEncoder{}
-			w, err := wal.NewSize(nil, nil, wdir, segmentSize, tc.compress)
+			enc := record.Encoder{}
+			w, err := NewSize(nil, nil, wdir, segmentSize, tc.compress)
 			testutil.Ok(t, err)
 
 			// Write to the initial segment, then checkpoint later.
 			for i := 0; i < seriesCount; i++ {
 				ref := i + 100
-				series := enc.Series([]tsdb.RefSeries{
+				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    uint64(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
@@ -494,7 +494,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
-					sample := enc.Samples([]tsdb.RefSample{
+					sample := enc.Samples([]record.RefSample{
 						{
 							Ref: uint64(inner),
 							T:   int64(i),
@@ -509,8 +509,8 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWALWatcher(nil, "", wt, dir)
-			watcher.maxSegment = -1
+			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
+			watcher.MaxSegment = -1
 			go watcher.Start()
 
 			expected := seriesCount
@@ -519,13 +519,13 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			})
 			testutil.Equals(t, seriesCount, wt.checkNumLabels())
 
-			_, err = tsdb.Checkpoint(w, 2, 4, func(x uint64) bool { return true }, 0)
+			_, err = Checkpoint(w, 2, 4, func(x uint64) bool { return true }, 0)
 			testutil.Ok(t, err)
 
 			err = w.Truncate(5)
 			testutil.Ok(t, err)
 
-			_, cpi, err := tsdb.LastCheckpoint(path.Join(dir, "wal"))
+			_, cpi, err := LastCheckpoint(path.Join(dir, "wal"))
 			testutil.Ok(t, err)
 			err = watcher.garbageCollectSeries(cpi + 1)
 			testutil.Ok(t, err)

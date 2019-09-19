@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package wal
 
 import (
 	"fmt"
@@ -27,7 +27,8 @@ import (
 	"github.com/pkg/errors"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
 // CheckpointStats returns stats about a created checkpoint.
@@ -63,7 +64,7 @@ func LastCheckpoint(dir string) (string, int, error) {
 		}
 		return filepath.Join(dir, fi.Name()), idx, nil
 	}
-	return "", 0, ErrNotFound
+	return "", 0, record.ErrNotFound
 }
 
 // DeleteCheckpoints deletes all checkpoints in a directory below a given index.
@@ -99,15 +100,15 @@ const checkpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
+func Checkpoint(w *WAL, from, to int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
 	{
 
-		var sgmRange []wal.SegmentRange
+		var sgmRange []SegmentRange
 		dir, idx, err := LastCheckpoint(w.Dir())
-		if err != nil && err != ErrNotFound {
+		if err != nil && err != record.ErrNotFound {
 			return nil, errors.Wrap(err, "find last checkpoint")
 		}
 		last := idx + 1
@@ -118,11 +119,11 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 			// Ignore WAL files below the checkpoint. They shouldn't exist to begin with.
 			from = last
 
-			sgmRange = append(sgmRange, wal.SegmentRange{Dir: dir, Last: math.MaxInt32})
+			sgmRange = append(sgmRange, SegmentRange{Dir: dir, Last: math.MaxInt32})
 		}
 
-		sgmRange = append(sgmRange, wal.SegmentRange{Dir: w.Dir(), First: from, Last: to})
-		sgmReader, err = wal.NewSegmentsRangeReader(sgmRange...)
+		sgmRange = append(sgmRange, SegmentRange{Dir: w.Dir(), First: from, Last: to})
+		sgmReader, err = NewSegmentsRangeReader(sgmRange...)
 		if err != nil {
 			return nil, errors.Wrap(err, "create segment reader")
 		}
@@ -135,7 +136,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 	if err := os.MkdirAll(cpdirtmp, 0777); err != nil {
 		return nil, errors.Wrap(err, "create checkpoint dir")
 	}
-	cp, err := wal.New(nil, nil, cpdirtmp, w.CompressionEnabled())
+	cp, err := New(nil, nil, cpdirtmp, w.CompressionEnabled())
 	if err != nil {
 		return nil, errors.Wrap(err, "open checkpoint")
 	}
@@ -146,14 +147,14 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 		os.RemoveAll(cpdirtmp)
 	}()
 
-	r := wal.NewReader(sgmReader)
+	r := NewReader(sgmReader)
 
 	var (
-		series  []RefSeries
-		samples []RefSample
-		tstones []Stone
-		dec     RecordDecoder
-		enc     RecordEncoder
+		series  []record.RefSeries
+		samples []record.RefSample
+		tstones []tombstones.Stone
+		dec     record.Decoder
+		enc     record.Encoder
 		buf     []byte
 		recs    [][]byte
 	)
@@ -167,7 +168,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 		rec := r.Record()
 
 		switch dec.Type(rec) {
-		case RecordSeries:
+		case record.Series:
 			series, err = dec.Series(rec, series)
 			if err != nil {
 				return nil, errors.Wrap(err, "decode series")
@@ -185,7 +186,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 			stats.TotalSeries += len(series)
 			stats.DroppedSeries += len(series) - len(repl)
 
-		case RecordSamples:
+		case record.Samples:
 			samples, err = dec.Samples(rec, samples)
 			if err != nil {
 				return nil, errors.Wrap(err, "decode samples")
@@ -203,7 +204,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 			stats.TotalSamples += len(samples)
 			stats.DroppedSamples += len(samples) - len(repl)
 
-		case RecordTombstones:
+		case record.Tombstones:
 			tstones, err = dec.Tombstones(rec, tstones)
 			if err != nil {
 				return nil, errors.Wrap(err, "decode deletes")
@@ -211,7 +212,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 			// Drop irrelevant tombstones in place.
 			repl := tstones[:0]
 			for _, s := range tstones {
-				for _, iv := range s.intervals {
+				for _, iv := range s.Intervals {
 					if iv.Maxt >= mint {
 						repl = append(repl, s)
 						break

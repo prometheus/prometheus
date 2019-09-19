@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package record
 
 import (
 	"testing"
@@ -20,12 +20,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRecord_EncodeDecode(t *testing.T) {
-	var enc RecordEncoder
-	var dec RecordDecoder
+	var enc Encoder
+	var dec Decoder
 
 	series := []RefSeries{
 		{
@@ -54,31 +55,31 @@ func TestRecord_EncodeDecode(t *testing.T) {
 
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
-	tstones := []Stone{
-		{ref: 123, intervals: Intervals{
+	tstones := []tombstones.Stone{
+		{Ref: 123, Intervals: tombstones.Intervals{
 			{Mint: -1000, Maxt: 1231231},
 			{Mint: 5000, Maxt: 0},
 		}},
-		{ref: 13, intervals: Intervals{
+		{Ref: 13, Intervals: tombstones.Intervals{
 			{Mint: -1000, Maxt: -11},
 			{Mint: 5000, Maxt: 1000},
 		}},
 	}
 	decTstones, err := dec.Tombstones(enc.Tombstones(tstones, nil), nil)
 	testutil.Ok(t, err)
-	testutil.Equals(t, []Stone{
-		{ref: 123, intervals: Intervals{{Mint: -1000, Maxt: 1231231}}},
-		{ref: 123, intervals: Intervals{{Mint: 5000, Maxt: 0}}},
-		{ref: 13, intervals: Intervals{{Mint: -1000, Maxt: -11}}},
-		{ref: 13, intervals: Intervals{{Mint: 5000, Maxt: 1000}}},
+	testutil.Equals(t, []tombstones.Stone{
+		{Ref: 123, Intervals: tombstones.Intervals{{Mint: -1000, Maxt: 1231231}}},
+		{Ref: 123, Intervals: tombstones.Intervals{{Mint: 5000, Maxt: 0}}},
+		{Ref: 13, Intervals: tombstones.Intervals{{Mint: -1000, Maxt: -11}}},
+		{Ref: 13, Intervals: tombstones.Intervals{{Mint: 5000, Maxt: 1000}}},
 	}, decTstones)
 }
 
 // TestRecord_Corruputed ensures that corrupted records return the correct error.
 // Bugfix check for pull/521 and pull/523.
 func TestRecord_Corruputed(t *testing.T) {
-	var enc RecordEncoder
-	var dec RecordDecoder
+	var enc Encoder
+	var dec Decoder
 
 	t.Run("Test corrupted series record", func(t *testing.T) {
 		series := []RefSeries{
@@ -104,8 +105,8 @@ func TestRecord_Corruputed(t *testing.T) {
 	})
 
 	t.Run("Test corrupted tombstone record", func(t *testing.T) {
-		tstones := []Stone{
-			{ref: 123, intervals: Intervals{
+		tstones := []tombstones.Stone{
+			{Ref: 123, Intervals: tombstones.Intervals{
 				{Mint: -1000, Maxt: 1231231},
 				{Mint: 5000, Maxt: 0},
 			}},

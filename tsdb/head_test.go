@@ -30,6 +30,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -51,14 +53,14 @@ func BenchmarkCreateSeries(b *testing.B) {
 }
 
 func populateTestWAL(t testing.TB, w *wal.WAL, recs []interface{}) {
-	var enc RecordEncoder
+	var enc record.Encoder
 	for _, r := range recs {
 		switch v := r.(type) {
-		case []RefSeries:
+		case []record.RefSeries:
 			testutil.Ok(t, w.Log(enc.Series(v, nil)))
-		case []RefSample:
+		case []record.RefSample:
 			testutil.Ok(t, w.Log(enc.Samples(v, nil)))
-		case []Stone:
+		case []tombstones.Stone:
 			testutil.Ok(t, w.Log(enc.Tombstones(v, nil)))
 		}
 	}
@@ -69,22 +71,22 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 	testutil.Ok(t, err)
 	defer sr.Close()
 
-	var dec RecordDecoder
+	var dec record.Decoder
 	r := wal.NewReader(sr)
 
 	for r.Next() {
 		rec := r.Record()
 
 		switch dec.Type(rec) {
-		case RecordSeries:
+		case record.Series:
 			series, err := dec.Series(rec, nil)
 			testutil.Ok(t, err)
 			recs = append(recs, series)
-		case RecordSamples:
+		case record.Samples:
 			samples, err := dec.Samples(rec, nil)
 			testutil.Ok(t, err)
 			recs = append(recs, samples)
-		case RecordTombstones:
+		case record.Tombstones:
 			tstones, err := dec.Tombstones(rec, nil)
 			testutil.Ok(t, err)
 			recs = append(recs, tstones)
@@ -100,28 +102,28 @@ func TestHead_ReadWAL(t *testing.T) {
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			entries := []interface{}{
-				[]RefSeries{
+				[]record.RefSeries{
 					{Ref: 10, Labels: labels.FromStrings("a", "1")},
 					{Ref: 11, Labels: labels.FromStrings("a", "2")},
 					{Ref: 100, Labels: labels.FromStrings("a", "3")},
 				},
-				[]RefSample{
+				[]record.RefSample{
 					{Ref: 0, T: 99, V: 1},
 					{Ref: 10, T: 100, V: 2},
 					{Ref: 100, T: 100, V: 3},
 				},
-				[]RefSeries{
+				[]record.RefSeries{
 					{Ref: 50, Labels: labels.FromStrings("a", "4")},
 					// This series has two refs pointing to it.
 					{Ref: 101, Labels: labels.FromStrings("a", "3")},
 				},
-				[]RefSample{
+				[]record.RefSample{
 					{Ref: 10, T: 101, V: 5},
 					{Ref: 50, T: 101, V: 6},
 					{Ref: 101, T: 101, V: 7},
 				},
-				[]Stone{
-					{ref: 0, intervals: []Interval{{Mint: 99, Maxt: 101}}},
+				[]tombstones.Stone{
+					{Ref: 0, Intervals: []tombstones.Interval{{Mint: 99, Maxt: 101}}},
 				},
 			}
 			dir, err := ioutil.TempDir("", "test_read_wal")
@@ -326,14 +328,14 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			entries := []interface{}{
-				[]RefSeries{
+				[]record.RefSeries{
 					{Ref: 10, Labels: labels.FromStrings("a", "1")},
 				},
-				[]RefSample{},
-				[]RefSeries{
+				[]record.RefSample{},
+				[]record.RefSeries{
 					{Ref: 50, Labels: labels.FromStrings("a", "2")},
 				},
-				[]RefSample{
+				[]record.RefSample{
 					{Ref: 50, T: 80, V: 1},
 					{Ref: 50, T: 90, V: 1},
 				},
@@ -371,27 +373,27 @@ func TestHeadDeleteSimple(t *testing.T) {
 	lblDefault := labels.Label{Name: "a", Value: "b"}
 
 	cases := []struct {
-		dranges  Intervals
+		dranges  tombstones.Intervals
 		smplsExp []sample
 	}{
 		{
-			dranges:  Intervals{{0, 3}},
+			dranges:  tombstones.Intervals{{Mint: 0, Maxt: 3}},
 			smplsExp: buildSmpls([]int64{4, 5, 6, 7, 8, 9}),
 		},
 		{
-			dranges:  Intervals{{1, 3}},
+			dranges:  tombstones.Intervals{{Mint: 1, Maxt: 3}},
 			smplsExp: buildSmpls([]int64{0, 4, 5, 6, 7, 8, 9}),
 		},
 		{
-			dranges:  Intervals{{1, 3}, {4, 7}},
+			dranges:  tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 7}},
 			smplsExp: buildSmpls([]int64{0, 8, 9}),
 		},
 		{
-			dranges:  Intervals{{1, 3}, {4, 700}},
+			dranges:  tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 700}},
 			smplsExp: buildSmpls([]int64{0}),
 		},
 		{ // This case is to ensure that labels and symbols are deleted.
-			dranges:  Intervals{{0, 9}},
+			dranges:  tombstones.Intervals{{Mint: 0, Maxt: 9}},
 			smplsExp: buildSmpls([]int64{}),
 		},
 	}
@@ -591,7 +593,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	testutil.Ok(t, hb.Close())
 
 	// Confirm there's been a checkpoint.
-	cdir, _, err := LastCheckpoint(dir)
+	cdir, _, err := wal.LastCheckpoint(dir)
 	testutil.Ok(t, err)
 	// Read in checkpoint and WAL.
 	recs := readTestWAL(t, cdir)
@@ -600,11 +602,11 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	var series, samples, stones int
 	for _, rec := range recs {
 		switch rec.(type) {
-		case []RefSeries:
+		case []record.RefSeries:
 			series++
-		case []RefSample:
+		case []record.RefSample:
 			samples++
-		case []Stone:
+		case []tombstones.Stone:
 			stones++
 		default:
 			t.Fatalf("unknown record type")
@@ -692,18 +694,18 @@ func TestDelete_e2e(t *testing.T) {
 	// Delete a time-range from each-selector.
 	dels := []struct {
 		ms     []labels.Matcher
-		drange Intervals
+		drange tombstones.Intervals
 	}{
 		{
 			ms:     []labels.Matcher{labels.NewEqualMatcher("a", "b")},
-			drange: Intervals{{300, 500}, {600, 670}},
+			drange: tombstones.Intervals{{Mint: 300, Maxt: 500}, {Mint: 600, Maxt: 670}},
 		},
 		{
 			ms: []labels.Matcher{
 				labels.NewEqualMatcher("a", "b"),
 				labels.NewEqualMatcher("job", "prom-k8s"),
 			},
-			drange: Intervals{{300, 500}, {100, 670}},
+			drange: tombstones.Intervals{{Mint: 300, Maxt: 500}, {Mint: 100, Maxt: 670}},
 		},
 		{
 			ms: []labels.Matcher{
@@ -711,7 +713,7 @@ func TestDelete_e2e(t *testing.T) {
 				labels.NewEqualMatcher("instance", "localhost:9090"),
 				labels.NewEqualMatcher("job", "prometheus"),
 			},
-			drange: Intervals{{300, 400}, {100, 6700}},
+			drange: tombstones.Intervals{{Mint: 300, Maxt: 400}, {Mint: 100, Maxt: 6700}},
 		},
 		// TODO: Add Regexp Matchers.
 	}
@@ -794,12 +796,12 @@ func boundedSamples(full []tsdbutil.Sample, mint, maxt int64) []tsdbutil.Sample 
 	return full
 }
 
-func deletedSamples(full []tsdbutil.Sample, dranges Intervals) []tsdbutil.Sample {
+func deletedSamples(full []tsdbutil.Sample, dranges tombstones.Intervals) []tsdbutil.Sample {
 	ds := make([]tsdbutil.Sample, 0, len(full))
 Outer:
 	for _, s := range full {
 		for _, r := range dranges {
-			if r.inBounds(s.T()) {
+			if r.InBounds(s.T()) {
 				continue Outer
 			}
 		}
@@ -1055,9 +1057,9 @@ func TestHead_LogRollback(t *testing.T) {
 
 			testutil.Equals(t, 1, len(recs))
 
-			series, ok := recs[0].([]RefSeries)
+			series, ok := recs[0].([]record.RefSeries)
 			testutil.Assert(t, ok, "expected series record but got %+v", recs[0])
-			testutil.Equals(t, []RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, series)
+			testutil.Equals(t, []record.RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, series)
 		})
 	}
 }
@@ -1065,7 +1067,7 @@ func TestHead_LogRollback(t *testing.T) {
 // TestWalRepair_DecodingError ensures that a repair is run for an error
 // when decoding a record.
 func TestWalRepair_DecodingError(t *testing.T) {
-	var enc RecordEncoder
+	var enc record.Encoder
 	for name, test := range map[string]struct {
 		corrFunc  func(rec []byte) []byte // Func that applies the corruption to a record.
 		rec       []byte
@@ -1077,10 +1079,10 @@ func TestWalRepair_DecodingError(t *testing.T) {
 				// Do not modify the base record because it is Logged multiple times.
 				res := make([]byte, len(rec))
 				copy(res, rec)
-				res[0] = byte(RecordInvalid)
+				res[0] = byte(record.Invalid)
 				return res
 			},
-			enc.Series([]RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, []byte{}),
+			enc.Series([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, []byte{}),
 			9,
 			5,
 		},
@@ -1088,7 +1090,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 			func(rec []byte) []byte {
 				return rec[:3]
 			},
-			enc.Series([]RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, []byte{}),
+			enc.Series([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, []byte{}),
 			9,
 			5,
 		},
@@ -1096,7 +1098,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 			func(rec []byte) []byte {
 				return rec[:3]
 			},
-			enc.Samples([]RefSample{{Ref: 0, T: 99, V: 1}}, []byte{}),
+			enc.Samples([]record.RefSample{{Ref: 0, T: 99, V: 1}}, []byte{}),
 			9,
 			5,
 		},
@@ -1104,7 +1106,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 			func(rec []byte) []byte {
 				return rec[:3]
 			},
-			enc.Tombstones([]Stone{{ref: 1, intervals: Intervals{}}}, []byte{}),
+			enc.Tombstones([]tombstones.Stone{{Ref: 1, Intervals: tombstones.Intervals{}}}, []byte{}),
 			9,
 			5,
 		},
