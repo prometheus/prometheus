@@ -22,10 +22,11 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/miekg/dns"
+	"gopkg.in/yaml.v2"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
-	"gopkg.in/yaml.v2"
 )
 
 func TestDNS(t *testing.T) {
@@ -103,6 +104,7 @@ func TestDNS(t *testing.T) {
 			name: "SRV record query",
 			config: SDConfig{
 				Names:           []string{"_mysql._tcp.db.example.com."},
+				Type:            "SRV",
 				RefreshInterval: model.Duration(time.Minute),
 			},
 			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
@@ -180,7 +182,6 @@ func TestDNS(t *testing.T) {
 }
 
 func TestSDConfigUnmarshalYAML(t *testing.T) {
-
 	marshal := func(c SDConfig) []byte {
 		d, err := yaml.Marshal(c)
 		if err != nil {
