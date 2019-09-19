@@ -103,6 +103,7 @@ func TestDNS(t *testing.T) {
 			name: "SRV record query",
 			config: SDConfig{
 				Names:           []string{"_mysql._tcp.db.example.com."},
+				Type:            "SRV",
 				RefreshInterval: model.Duration(time.Minute),
 			},
 			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
