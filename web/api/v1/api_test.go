@@ -254,13 +254,7 @@ func TestEndpoints(t *testing.T) {
 		testEndpoints(t, api, true)
 	})
 
-	// Run all the API tests against a API that is wired to forward queries via
-	// the remote read client to a test server, which in turn sends them to the
-	// data from the test suite.
-	t.Run("remote", func(t *testing.T) {
-		server := setupRemote(suite.Storage())
-		defer server.Close()
-
+	testRemoteEndpoint := func(t *testing.T, server *httptest.Server) {
 		u, err := url.Parse(server.URL)
 		testutil.Ok(t, err)
 
@@ -314,6 +308,24 @@ func TestEndpoints(t *testing.T) {
 		}
 
 		testEndpoints(t, api, false)
+	}
+
+	// Run all the API tests against a API that is wired to forward queries via
+	// the remote read client to a test server, which in turn sends them to the
+	// data from the test suite.
+	t.Run("remote", func(t *testing.T) {
+		server := setupRemote(suite.Storage())
+		defer server.Close()
+
+		testRemoteEndpoint(t, server)
+	})
+
+	// Almost same with remote case, but the remote test server support streaming type response.
+	t.Run("remote_streaming", func(t *testing.T) {
+		server := setupRemoteStreaming(suite.Storage(), suite.QueryEngine())
+		defer server.Close()
+
+		testRemoteEndpoint(t, server)
 	})
 
 }
@@ -351,6 +363,23 @@ func TestLabelNames(t *testing.T) {
 		assertAPIError(t, res.err, "")
 		assertAPIResponse(t, res.data, []string{"__name__", "baz", "foo", "foo1", "foo2", "xyz"})
 	}
+}
+
+func setupRemoteStreaming(s storage.Storage, q *promql.Engine) *httptest.Server {
+	api := &API{
+		Queryable:   s,
+		QueryEngine: q,
+		config: func() config.Config {
+			return config.Config{}
+		},
+		remoteReadSampleLimit: 1e6,
+		remoteReadGate:        gate.New(1),
+		// Labelset has 57 bytes. Full chunk in test data has roughly 240 bytes. This allows us to have at max 2 chunks in this test.
+		remoteReadMaxBytesInFrame: 57 + 480,
+	}
+	handler := http.HandlerFunc(api.remoteRead)
+
+	return httptest.NewServer(handler)
 }
 
 func setupRemote(s storage.Storage) *httptest.Server {
@@ -399,6 +428,8 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			}
 		}
 
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set("Content-Encoding", "snappy")
 		if err := remote.EncodeReadResponse(&resp, w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

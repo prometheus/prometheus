@@ -15,10 +15,18 @@ package remote
 
 import (
 	"context"
-	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"strings"
+
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -69,12 +77,62 @@ func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (
 	remoteReadGauge.Inc()
 	defer remoteReadGauge.Dec()
 
-	res, err := q.client.Read(q.ctx, query)
+	ctx, cancel := context.WithTimeout(q.ctx, q.client.timeout)
+	defer cancel()
+
+	res, err := q.client.StartRead(ctx, query)
 	if err != nil {
-		return nil, nil, fmt.Errorf("remote_read: %v", err)
+		return nil, nil, errors.Errorf("remote_read: %v", err)
 	}
 
-	return FromQueryResult(res), nil, nil
+	contentType := res.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/x-protobuf") {
+		return q.handleSampledResponse(res)
+	}
+
+	if !strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse") {
+		return nil, nil, errors.Errorf("not supported remote read content type: %s", contentType)
+	}
+	return q.handleStreamedResponse(res)
+}
+
+func (q *querier) handleSampledResponse(httpResp *http.Response) (storage.SeriesSet, storage.Warnings, error) {
+	defer func() {
+		io.Copy(ioutil.Discard, httpResp.Body)
+		httpResp.Body.Close()
+	}()
+
+	compressed, err := ioutil.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, nil, errors.Errorf("error reading response: %v", err)
+	}
+
+	uncompressed, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, nil, errors.Errorf("error decoding response: %v", err)
+	}
+
+	var resp prompb.ReadResponse
+	err = proto.Unmarshal(uncompressed, &resp)
+	if err != nil {
+		return nil, nil, errors.Errorf("unable to unmarshal response body: %v", err)
+	}
+
+	if len(resp.Results) != 1 {
+		return nil, nil, errors.Errorf("responses: want 1, got %d", len(resp.Results))
+	}
+
+	return FromQueryResult(resp.Results[0]), nil, nil
+}
+
+func (q *querier) handleStreamedResponse(httpResp *http.Response) (storage.SeriesSet, storage.Warnings, error) {
+	stream := NewChunkedReader(httpResp.Body, DefaultChunkedReadLimit, nil)
+	return &chunkSeriesSet{
+		stream: stream,
+		maxt:   q.maxt,
+		mint:   q.mint,
+		closer: httpResp.Body,
+	}, nil, nil
 }
 
 // LabelValues implements storage.Querier and is a noop.

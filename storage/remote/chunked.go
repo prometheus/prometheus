@@ -152,3 +152,9 @@ func (r *ChunkedReader) NextProto(pb proto.Message) error {
 	}
 	return proto.Unmarshal(rec, pb)
 }
+
+// AtProto consumes current available record and decodes it into the protobuf with
+// proto.Unmarshal.
+func (r *ChunkedReader) AtProto(pb proto.Message) error {
+	return proto.Unmarshal(r.data, pb)
+}

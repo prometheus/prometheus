@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -360,6 +361,16 @@ func (e errSeriesSet) Err() error {
 	return e.err
 }
 
+// errSeriesIterator implements storage.SeriesIterator, just returning an error.
+type errSeriesIterator struct {
+	err error
+}
+
+func (it *errSeriesIterator) Seek(int64) bool      { return false }
+func (it *errSeriesIterator) Next() bool           { return false }
+func (it *errSeriesIterator) At() (int64, float64) { return 0, 0 }
+func (it *errSeriesIterator) Err() error           { return it.err }
+
 // concreteSeriesSet implements storage.SeriesSet.
 type concreteSeriesSet struct {
 	cur    int
@@ -429,6 +440,248 @@ func (c *concreteSeriesIterator) Next() bool {
 // Err implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Err() error {
 	return nil
+}
+
+// chunkSeriesSet implements storage.SeriesSet.
+type chunkSeriesSet struct {
+	stream    *ChunkedReader
+	initiated bool
+	done      bool
+	err       error
+
+	mint, maxt int64
+
+	lastSeries string
+	currLset   []prompb.Label
+	currChunks []prompb.Chunk
+
+	closer io.Closer
+}
+
+func (c *chunkSeriesSet) Next() bool {
+	var (
+		err error
+		tmp []string
+	)
+
+	defer func() {
+		if err != nil {
+			c.closer.Close()
+			c.done = true
+			if err != io.EOF {
+				c.err = err
+			}
+		}
+	}()
+
+	res := &prompb.ChunkedReadResponse{}
+	if !c.initiated {
+		c.initiated = true
+		err := c.stream.NextProto(res)
+		if err == io.EOF {
+			return false
+		}
+		if err != nil {
+			return false
+		}
+
+		if len(res.ChunkedSeries) == 0 {
+			err = errors.Errorf("length of ChunkedSeries in ChunkedReadResponse should not be 0")
+		}
+		if err != nil {
+			return false
+		}
+
+		for _, l := range res.ChunkedSeries[0].Labels {
+			tmp = append(tmp, l.String())
+		}
+		currSeries := strings.Join(tmp, ";")
+		c.lastSeries = currSeries
+		c.currLset = res.ChunkedSeries[0].Labels
+	}
+
+	if c.done {
+		return false
+	}
+
+	c.currChunks = c.currChunks[:0]
+
+	for {
+		err = c.stream.AtProto(res)
+		if err != nil {
+			return false
+		}
+
+		if len(res.ChunkedSeries) == 0 {
+			err = errors.Errorf("length of ChunkedSeries in ChunkedReadResponse should not be 0")
+		}
+		if err != nil {
+			return false
+		}
+
+		tmp = tmp[:0]
+		for _, l := range res.ChunkedSeries[0].Labels {
+			tmp = append(tmp, l.String())
+		}
+		currSeries := strings.Join(tmp, ";")
+		if currSeries != c.lastSeries {
+			c.lastSeries = currSeries
+			c.currLset = res.ChunkedSeries[0].Labels
+			break
+		}
+
+		for _, series := range res.ChunkedSeries {
+			c.currChunks = append(c.currChunks, series.Chunks...)
+		}
+
+		_, err = c.stream.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (c *chunkSeriesSet) At() storage.Series {
+	if !c.initiated || c.err != nil {
+		return nil
+	}
+
+	return &chunkSeries{
+		labels: c.currLset,
+		chunks: c.currChunks,
+		mint:   c.mint,
+		maxt:   c.maxt,
+	}
+}
+
+func (c *chunkSeriesSet) Err() error {
+	return c.err
+}
+
+// chunkSeries implements storage.Series.
+type chunkSeries struct {
+	labels     []prompb.Label
+	chunks     []prompb.Chunk
+	mint, maxt int64
+}
+
+func (c *chunkSeries) Labels() labels.Labels {
+	return labelProtosToLabels(c.labels)
+}
+
+func (c *chunkSeries) Iterator() storage.SeriesIterator {
+	sit := newChunkSeriesIterator(c.chunks)
+	return newBoundedSeriesIterator(sit, c.mint, c.maxt)
+}
+
+// chunkSeriesIterator implements storage.SeriesIterator.
+type chunkSeriesIterator struct {
+	cur    int
+	chunks []chunkenc.Iterator
+}
+
+func newChunkSeriesIterator(chunks []prompb.Chunk) storage.SeriesIterator {
+	chks := []chunkenc.Iterator{}
+	for _, chunk := range chunks {
+		chk, err := chunkenc.FromData(chunkenc.Encoding(chunk.Type), chunk.Data)
+		if err != nil {
+			return &errSeriesIterator{err}
+		}
+		chks = append(chks, chk.Iterator(nil))
+	}
+	return &chunkSeriesIterator{chunks: chks}
+}
+
+func (it *chunkSeriesIterator) Seek(t int64) bool {
+	// We generally expect the chunks already to be cut donw
+	// to the range we are interested in. There's not much to be gained from
+	// hoping across chunks so we just call next until we reach t.
+	for {
+		ct, _ := it.At()
+		if ct >= t {
+			return true
+		}
+		if !it.Next() {
+			return false
+		}
+	}
+}
+
+func (it *chunkSeriesIterator) At() (int64, float64) {
+	return it.chunks[it.cur].At()
+}
+
+func (it *chunkSeriesIterator) Next() bool {
+	lastT, _ := it.At()
+
+	if it.chunks[it.cur].Next() {
+		return true
+	}
+	if it.Err() != nil {
+		return false
+	}
+	if it.cur >= len(it.chunks)-1 {
+		return false
+	}
+	// Chunks are guaranteed to be ordered but not generally guaranteed to not overlap.
+	// We must ensure to skip any overlapping range between adjacent chunks.
+	it.cur++
+	return it.Seek(lastT + 1)
+}
+
+func (it *chunkSeriesIterator) Err() error {
+	return it.chunks[it.cur].Err()
+}
+
+// boundedSeriesIterator wraps a series iterator and ensures that it only emits
+// samples within a fixed time range.
+type boundedSeriesIterator struct {
+	it         storage.SeriesIterator
+	mint, maxt int64
+}
+
+func newBoundedSeriesIterator(it storage.SeriesIterator, mint, maxt int64) *boundedSeriesIterator {
+	return &boundedSeriesIterator{it: it, mint: mint, maxt: maxt}
+}
+
+func (it *boundedSeriesIterator) Seek(t int64) bool {
+	if t > it.maxt {
+		return false
+	}
+	if t < it.mint {
+		t = it.mint
+	}
+	return it.it.Seek(t)
+}
+
+func (it *boundedSeriesIterator) At() (t int64, v float64) {
+	return it.it.At()
+}
+
+func (it *boundedSeriesIterator) Next() bool {
+	if !it.it.Next() {
+		return false
+	}
+	t, _ := it.it.At()
+
+	// Advance the iterator if we are before the valid interval.
+	if t < it.mint {
+		if !it.Seek(it.mint) {
+			return false
+		}
+		t, _ = it.it.At()
+	}
+	// Once we passed the valid interval, there is no going back.
+	return t <= it.maxt
+}
+
+func (it *boundedSeriesIterator) Err() error {
+	return it.it.Err()
 }
 
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,

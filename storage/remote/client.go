@@ -121,12 +121,16 @@ func (c Client) Name() string {
 }
 
 // Read reads from a remote endpoint.
-func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+func (c *Client) StartRead(ctx context.Context, query *prompb.Query) (*http.Response, error) {
 	req := &prompb.ReadRequest{
 		// TODO: Support batching multiple queries into one read request,
 		// as the protobuf interface allows for it.
 		Queries: []*prompb.Query{
 			query,
+		},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{
+			prompb.ReadRequest_STREAMED_XOR_CHUNKS,
+			prompb.ReadRequest_SAMPLES,
 		},
 	}
 	data, err := proto.Marshal(req)
@@ -145,41 +149,16 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	httpReq.Header.Set("User-Agent", userAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
-
-	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
+	httpResp, err := c.client.Do(httpReq)
 	if err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
-	defer func() {
-		io.Copy(ioutil.Discard, httpResp.Body)
-		httpResp.Body.Close()
-	}()
-
-	compressed, err = ioutil.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("error reading response. HTTP status code: %s", httpResp.Status))
-	}
 
 	if httpResp.StatusCode/100 != 2 {
+		io.Copy(ioutil.Discard, httpResp.Body)
+		httpResp.Body.Close()
 		return nil, errors.Errorf("remote server %s returned HTTP status %s: %s", c.url.String(), httpResp.Status, strings.TrimSpace(string(compressed)))
 	}
 
-	uncompressed, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		return nil, errors.Wrap(err, "error reading response")
-	}
-
-	var resp prompb.ReadResponse
-	err = proto.Unmarshal(uncompressed, &resp)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to unmarshal response body")
-	}
-
-	if len(resp.Results) != len(req.Queries) {
-		return nil, errors.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
-	}
-
-	return resp.Results[0], nil
+	return httpResp, nil
 }
