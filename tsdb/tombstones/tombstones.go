@@ -11,11 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package tombstones
 
 import (
 	"encoding/binary"
 	"fmt"
+	"hash"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"os"
@@ -30,7 +32,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
-const tombstoneFilename = "tombstones"
+const TombstonesFilename = "tombstones"
 
 const (
 	// MagicTombstone is 4 bytes at the head of a tombstone file.
@@ -39,8 +41,23 @@ const (
 	tombstoneFormatV1 = 1
 )
 
-// TombstoneReader gives access to tombstone intervals by series reference.
-type TombstoneReader interface {
+// The table gets initialized with sync.Once but may still cause a race
+// with any other use of the crc32 package anywhere. Thus we initialize it
+// before.
+var castagnoliTable *crc32.Table
+
+func init() {
+	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
+}
+
+// newCRC32 initializes a CRC32 hash with a preconfigured polynomial, so the
+// polynomial may be easily changed in one location at a later time, if necessary.
+func newCRC32() hash.Hash32 {
+	return crc32.New(castagnoliTable)
+}
+
+// Reader gives access to tombstone intervals by series reference.
+type Reader interface {
 	// Get returns deletion intervals for the series with the given reference.
 	Get(ref uint64) (Intervals, error)
 
@@ -54,8 +71,8 @@ type TombstoneReader interface {
 	Close() error
 }
 
-func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) (int64, error) {
-	path := filepath.Join(dir, tombstoneFilename)
+func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
+	path := filepath.Join(dir, TombstonesFilename)
 	tmp := path + ".tmp"
 	hash := newCRC32()
 	var size int
@@ -129,14 +146,14 @@ func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) (int6
 // Stone holds the information on the posting and time-range
 // that is deleted.
 type Stone struct {
-	ref       uint64
-	intervals Intervals
+	Ref       uint64
+	Intervals Intervals
 }
 
-func readTombstones(dir string) (TombstoneReader, int64, error) {
-	b, err := ioutil.ReadFile(filepath.Join(dir, tombstoneFilename))
+func ReadTombstones(dir string) (Reader, int64, error) {
+	b, err := ioutil.ReadFile(filepath.Join(dir, TombstonesFilename))
 	if os.IsNotExist(err) {
-		return newMemTombstones(), 0, nil
+		return NewMemTombstones(), 0, nil
 	} else if err != nil {
 		return nil, 0, err
 	}
@@ -166,7 +183,7 @@ func readTombstones(dir string) (TombstoneReader, int64, error) {
 		return nil, 0, errors.New("checksum did not match")
 	}
 
-	stonesMap := newMemTombstones()
+	stonesMap := NewMemTombstones()
 
 	for d.Len() > 0 {
 		k := d.Uvarint64()
@@ -176,7 +193,7 @@ func readTombstones(dir string) (TombstoneReader, int64, error) {
 			return nil, 0, d.Err()
 		}
 
-		stonesMap.addInterval(k, Interval{mint, maxt})
+		stonesMap.AddInterval(k, Interval{mint, maxt})
 	}
 
 	return stonesMap, int64(len(b)), nil
@@ -187,10 +204,20 @@ type memTombstones struct {
 	mtx         sync.RWMutex
 }
 
-// newMemTombstones creates new in memory TombstoneReader
+// NewMemTombstones creates new in memory Tombstone Reader
 // that allows adding new intervals.
-func newMemTombstones() *memTombstones {
+func NewMemTombstones() *memTombstones {
 	return &memTombstones{intvlGroups: make(map[uint64]Intervals)}
+}
+
+func NewTestMemTombstones(intervals []Intervals) *memTombstones {
+	ret := NewMemTombstones()
+	for i, intervalsGroup := range intervals {
+		for _, interval := range intervalsGroup {
+			ret.AddInterval(uint64(i+1), interval)
+		}
+	}
+	return ret
 }
 
 func (t *memTombstones) Get(ref uint64) (Intervals, error) {
@@ -221,12 +248,13 @@ func (t *memTombstones) Total() uint64 {
 	return total
 }
 
-// addInterval to an existing memTombstones
-func (t *memTombstones) addInterval(ref uint64, itvs ...Interval) {
+// AddInterval to an existing memTombstones.
+func (t *memTombstones) AddInterval(ref uint64, itvs ...Interval) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	for _, itv := range itvs {
-		t.intvlGroups[ref] = t.intvlGroups[ref].add(itv)
+		fmt.Println("adding interval to ref: ", ref)
+		t.intvlGroups[ref] = t.intvlGroups[ref].Add(itv)
 	}
 }
 
@@ -239,13 +267,13 @@ type Interval struct {
 	Mint, Maxt int64
 }
 
-func (tr Interval) inBounds(t int64) bool {
+func (tr Interval) InBounds(t int64) bool {
 	return t >= tr.Mint && t <= tr.Maxt
 }
 
-func (tr Interval) isSubrange(dranges Intervals) bool {
+func (tr Interval) IsSubrange(dranges Intervals) bool {
 	for _, r := range dranges {
-		if r.inBounds(tr.Mint) && r.inBounds(tr.Maxt) {
+		if r.InBounds(tr.Mint) && r.InBounds(tr.Maxt) {
 			return true
 		}
 	}
@@ -256,12 +284,12 @@ func (tr Interval) isSubrange(dranges Intervals) bool {
 // Intervals represents	a set of increasing and non-overlapping time-intervals.
 type Intervals []Interval
 
-// add the new time-range to the existing ones.
+// Add the new time-range to the existing ones.
 // The existing ones must be sorted.
-func (itvs Intervals) add(n Interval) Intervals {
+func (itvs Intervals) Add(n Interval) Intervals {
 	for i, r := range itvs {
 		// TODO(gouthamve): Make this codepath easier to digest.
-		if r.inBounds(n.Mint-1) || r.inBounds(n.Mint) {
+		if r.InBounds(n.Mint-1) || r.InBounds(n.Mint) {
 			if n.Maxt > r.Maxt {
 				itvs[i].Maxt = n.Maxt
 			}
@@ -282,7 +310,7 @@ func (itvs Intervals) add(n Interval) Intervals {
 			return itvs
 		}
 
-		if r.inBounds(n.Maxt+1) || r.inBounds(n.Maxt) {
+		if r.InBounds(n.Maxt+1) || r.InBounds(n.Maxt) {
 			if n.Mint < r.Maxt {
 				itvs[i].Mint = n.Mint
 			}

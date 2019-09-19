@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
 // ExponentialBlockRanges returns the time ranges based on the stepSize.
@@ -607,7 +608,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 
 	// Create an empty tombstones file.
-	if _, err := writeTombstoneFile(c.logger, tmp, newMemTombstones()); err != nil {
+	if _, err := tombstones.WriteFile(c.logger, tmp, tombstones.NewMemTombstones()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
 
@@ -768,7 +769,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			//
 			// TODO think how to avoid the typecasting to verify when it is head block.
 			if _, isHeadChunk := chk.Chunk.(*safeChunk); isHeadChunk && chk.MaxTime >= meta.MaxTime {
-				dranges = append(dranges, Interval{Mint: meta.MaxTime, Maxt: math.MaxInt64})
+				dranges = append(dranges, tombstones.Interval{Mint: meta.MaxTime, Maxt: math.MaxInt64})
 
 			} else
 			// Sanity check for disk blocks.
@@ -876,15 +877,15 @@ type compactionSeriesSet struct {
 	p          index.Postings
 	index      IndexReader
 	chunks     ChunkReader
-	tombstones TombstoneReader
+	tombstones tombstones.Reader
 
 	l         labels.Labels
 	c         []chunks.Meta
-	intervals Intervals
+	intervals tombstones.Intervals
 	err       error
 }
 
-func newCompactionSeriesSet(i IndexReader, c ChunkReader, t TombstoneReader, p index.Postings) *compactionSeriesSet {
+func newCompactionSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings) *compactionSeriesSet {
 	return &compactionSeriesSet{
 		index:      i,
 		chunks:     c,
@@ -914,7 +915,7 @@ func (c *compactionSeriesSet) Next() bool {
 	if len(c.intervals) > 0 {
 		chks := make([]chunks.Meta, 0, len(c.c))
 		for _, chk := range c.c {
-			if !(Interval{chk.MinTime, chk.MaxTime}.isSubrange(c.intervals)) {
+			if !(tombstones.Interval{Mint: chk.MinTime, Maxt: chk.MaxTime}.IsSubrange(c.intervals)) {
 				chks = append(chks, chk)
 			}
 		}
@@ -942,7 +943,7 @@ func (c *compactionSeriesSet) Err() error {
 	return c.p.Err()
 }
 
-func (c *compactionSeriesSet) At() (labels.Labels, []chunks.Meta, Intervals) {
+func (c *compactionSeriesSet) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
 	return c.l, c.c, c.intervals
 }
 
@@ -952,7 +953,7 @@ type compactionMerger struct {
 	aok, bok  bool
 	l         labels.Labels
 	c         []chunks.Meta
-	intervals Intervals
+	intervals tombstones.Intervals
 }
 
 func newCompactionMerger(a, b ChunkSeriesSet) (*compactionMerger, error) {
@@ -1008,7 +1009,7 @@ func (c *compactionMerger) Next() bool {
 		_, cb, rb := c.b.At()
 
 		for _, r := range rb {
-			ra = ra.add(r)
+			ra = ra.Add(r)
 		}
 
 		c.l = append(c.l[:0], l...)
@@ -1029,6 +1030,6 @@ func (c *compactionMerger) Err() error {
 	return c.b.Err()
 }
 
-func (c *compactionMerger) At() (labels.Labels, []chunks.Meta, Intervals) {
+func (c *compactionMerger) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
 	return c.l, c.c, c.intervals
 }

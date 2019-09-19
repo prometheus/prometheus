@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -455,10 +456,10 @@ func metaRange(name string, mint, maxt int64, stats *BlockStats) dirMeta {
 
 type erringBReader struct{}
 
-func (erringBReader) Index() (IndexReader, error)          { return nil, errors.New("index") }
-func (erringBReader) Chunks() (ChunkReader, error)         { return nil, errors.New("chunks") }
-func (erringBReader) Tombstones() (TombstoneReader, error) { return nil, errors.New("tombstones") }
-func (erringBReader) Meta() BlockMeta                      { return BlockMeta{} }
+func (erringBReader) Index() (IndexReader, error)            { return nil, errors.New("index") }
+func (erringBReader) Chunks() (ChunkReader, error)           { return nil, errors.New("chunks") }
+func (erringBReader) Tombstones() (tombstones.Reader, error) { return nil, errors.New("tombstones") }
+func (erringBReader) Meta() BlockMeta                        { return BlockMeta{} }
 
 type nopChunkWriter struct{}
 
