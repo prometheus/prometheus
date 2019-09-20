@@ -1,6 +1,6 @@
 ## Unreleased
 
-* [BUGFIX] Fix tsdb panic when querying corrupted chunks. #5991
+* [BUGFIX] Fix tsdb panic when querying corrupted chunks. #6040
 
 ## 2.12.0 / 2019-08-17
 

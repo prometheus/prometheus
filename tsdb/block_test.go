@@ -137,7 +137,7 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Ok(t, err)
 			},
 			nil,
-			errors.New("segment doesn't include enough bytes to read the chunk size data field - required:21, available:9"),
+			errors.New("segment doesn't include enough bytes to read the chunk size data field - required:13, available:9"),
 		},
 		"chunk not enough bytes to read the data": {
 			func(f *os.File) {

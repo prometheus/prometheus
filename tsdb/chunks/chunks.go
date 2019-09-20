@@ -485,45 +485,47 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		sgmIndex = int(ref >> 32)
 		// Get the lower 4 bytes.
 		// These contain the segment offset where the data for this chunk starts.
-		sgmChunkOffset = int((ref << 32) >> 32)
+		sgmChunkStart = int((ref << 32) >> 32)
 	)
 
 	if sgmIndex >= len(s.bs) {
 		return nil, errors.Errorf("segment index %d out of range", sgmIndex)
 	}
 
-	chkBytes := s.bs[sgmIndex]
+	sgmBytes := s.bs[sgmIndex]
 
-	if sgmChunkOffset+maxChunkLengthFieldSize > chkBytes.Len()-SegmentHeaderSize {
-		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", sgmChunkOffset+maxChunkLengthFieldSize+SegmentHeaderSize, chkBytes.Len())
+	if sgmChunkStart+maxChunkLengthFieldSize > sgmBytes.Len() {
+		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", sgmChunkStart+maxChunkLengthFieldSize, sgmBytes.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
-	c := chkBytes.Range(sgmChunkOffset, sgmChunkOffset+binary.MaxVarintLen32)
+	c := sgmBytes.Range(sgmChunkStart, sgmChunkStart+maxChunkLengthFieldSize)
 	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
 
-	chkStartOffset := sgmChunkOffset + n
-	chkEndOffset := chkStartOffset + chunkEncodingSize + int(chkDataLen) + crc32.Size
-	chkEndDataOffset := chkEndOffset - crc32.Size
+	chkEncStart := sgmChunkStart + n
+	chkEnd := chkEncStart + chunkEncodingSize + int(chkDataLen) + crc32.Size
+	chkDataStart := chkEncStart + chunkEncodingSize
+	chkDataEnd := chkEnd - crc32.Size
 
-	if chkEndOffset > chkBytes.Len() {
-		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEndOffset, chkBytes.Len())
+	if chkEnd > sgmBytes.Len() {
+		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEnd, sgmBytes.Len())
 	}
 
-	chkData := chkBytes.Range(chkStartOffset, chkEndDataOffset)
-	sum := chkBytes.Range(chkEndDataOffset, chkEndOffset)
+	sum := sgmBytes.Range(chkEnd-crc32.Size, chkEnd)
 	s.crc32.Reset()
-	if _, err := s.crc32.Write(chkData); err != nil {
+	if _, err := s.crc32.Write(sgmBytes.Range(chkEncStart, chkDataEnd)); err != nil {
 		return nil, err
 	}
 	if s := s.crc32.Sum(s.buf[:0]); !bytes.Equal(s, sum) {
 		return nil, errors.Errorf("unexpected checksum %x, expected %x", s, sum)
 	}
 
-	return s.pool.Get(chunkenc.Encoding(chkData[0]), chkData[chunkEncodingSize:])
+	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
+	chkEnc := sgmBytes.Range(chkEncStart, chkEncStart+chunkEncodingSize)[0]
+	return s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
 }
 
 func nextSequenceFile(dir string) (string, int, error) {
