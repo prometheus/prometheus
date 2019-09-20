@@ -74,7 +74,15 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			return nil
 		}
 
-		c, err := NewClient(hash, &ClientConfig{
+		// Set the queue name to the config hash if the user has not set
+		// a name in their remote write config so we can still differentiate
+		// between queues that have the same remote write endpoint.
+		name := string(hash[:6])
+		if rrConf.JobName != "" {
+			name = rrConf.JobName
+		}
+
+		c, err := NewClient(name, &ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,

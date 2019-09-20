@@ -825,6 +825,12 @@ var expectedErrors = []struct {
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
+	}, {
+		filename: "remote_write_dup.bad.yml",
+		errMsg:   `found multiple remote write configs with job name "queue1"`,
+	}, {
+		filename: "remote_read_dup.bad.yml",
+		errMsg:   `found multiple remote read configs with job name "queue1"`,
 	},
 	{
 		filename: "ec2_filters_empty_values.bad.yml",
