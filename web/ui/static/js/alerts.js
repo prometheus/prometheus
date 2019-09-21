@@ -26,6 +26,47 @@ function init() {
         targetEl.removeClass('is-checked');
     }
   });
+
+  function displayAlerts(alertState, shouldDisplay) {
+      $("#alertsTable > tbody > tr").each(function(_, container) {
+          if($(container).hasClass(alertState)) {
+              if(shouldDisplay) {
+                  $(container).show();
+              } else {
+                  $(container).hide();
+              }
+          }
+      });
+  }
+
+  if(localStorage.hideInactiveAlerts === "true") {
+      $("#inactiveAlerts").parent().removeClass("active");
+      displayAlerts("alert-success", false);
+  }
+  if(localStorage.hideActiveAlerts === "true") {
+      $("#activeAlerts").parent().removeClass("active");
+      displayAlerts("alert-warning", false);
+  }
+  if(localStorage.hideFiringAlerts === "true") {
+      $("#firingAlerts").parent().removeClass("active");
+      displayAlerts("alert-danger", false);
+  }
+
+  $("#alertFilters :input").change(function() {
+        const target = $(this).attr("id");
+        var isActive = $(this).parent().hasClass("active");
+        if (target === "inactiveAlerts") {
+            localStorage.setItem("hideInactiveAlerts", isActive);
+            displayAlerts("alert-success", !isActive);
+        } else if (target === "activeAlerts") {
+            localStorage.setItem("hideActiveAlerts", isActive);
+            displayAlerts("alert-warning", !isActive);
+        } else if (target === "firingAlerts") {
+            localStorage.setItem("hideFiringAlerts", isActive);
+            displayAlerts("alert-danger", !isActive);
+        }
+  });
+
 }
 
 $(init);
