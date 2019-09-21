@@ -28,14 +28,8 @@ function init() {
   });
 
   function displayAlerts(alertState, shouldDisplay) {
-      $("#alertsTable > tbody > tr").each(function(_, container) {
-          if($(container).hasClass(alertState)) {
-              if(shouldDisplay) {
-                  $(container).show();
-              } else {
-                  $(container).hide();
-              }
-          }
+      $("#alertsTable > tbody > tr." + alertState).each(function(_, container) {
+          $(container).toggle(shouldDisplay);
       });
   }
 
