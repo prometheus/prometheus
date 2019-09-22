@@ -47,8 +47,7 @@ func (r *ewmaRate) rate() float64 {
 
 // tick assumes to be called every r.interval.
 func (r *ewmaRate) tick() {
-	newEvents := atomic.LoadInt64(&r.newEvents)
-	atomic.AddInt64(&r.newEvents, -newEvents)
+	newEvents := atomic.SwapInt64(&r.newEvents, 0)
 	instantRate := float64(newEvents) / r.interval.Seconds()
 
 	r.mutex.Lock()
@@ -56,7 +55,7 @@ func (r *ewmaRate) tick() {
 
 	if r.init {
 		r.lastRate += r.alpha * (instantRate - r.lastRate)
-	} else {
+	} else if newEvents > 0 {
 		r.init = true
 		r.lastRate = instantRate
 	}

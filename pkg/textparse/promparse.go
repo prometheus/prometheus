@@ -153,7 +153,7 @@ type PromParser struct {
 	offsets []int
 }
 
-// New returns a new parser of the byte slice.
+// NewPromParser returns a new parser of the byte slice.
 func NewPromParser(b []byte) Parser {
 	return &PromParser{l: &promlexer{b: append(b, '\n')}}
 }
@@ -332,7 +332,7 @@ func (p *PromParser) Next() (Entry, error) {
 		if t2 != tValue {
 			return EntryInvalid, parseError("expected value after metric", t)
 		}
-		if p.val, err = strconv.ParseFloat(yoloString(p.l.buf()), 64); err != nil {
+		if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
 			return EntryInvalid, err
 		}
 		// Ensure canonical NaN value.
@@ -408,4 +408,12 @@ var helpReplacer = strings.NewReplacer(
 
 func yoloString(b []byte) string {
 	return *((*string)(unsafe.Pointer(&b)))
+}
+
+func parseFloat(s string) (float64, error) {
+	// Keep to pre-Go 1.13 float formats.
+	if strings.ContainsAny(s, "pP_") {
+		return 0, fmt.Errorf("unsupported character in float")
+	}
+	return strconv.ParseFloat(s, 64)
 }

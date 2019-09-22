@@ -21,15 +21,19 @@ function showUnhealthy(_, container) {
 }
 
 function init() {
-  if (!localStorage.selectedTab || localStorage.selectedTab == "all-targets"){
-    $("#all-targets").parent().addClass("active");
+  if ($("#unhealthy-targets").length) {
+    if (!localStorage.selectedTab || localStorage.selectedTab == "all-targets") {
+      $("#all-targets").parent().addClass("active");
+      $(".table-container").each(showAll);
+    } else if (localStorage.selectedTab == "unhealthy-targets") {
+      $("#unhealthy-targets").parent().addClass("active");
+      $(".table-container").each(showUnhealthy);
+    }
+  } else {
     $(".table-container").each(showAll);
-  } else if (localStorage.selectedTab == "unhealthy-targets") {
-    $("#unhealthy-targets").parent().addClass("active");
-    $(".table-container").each(showUnhealthy);
   }
 
-  $("button.targets").click(function () {
+  $("button.targets").click(function() {
     const tableTitle = $(this).closest("h2").find("a").attr("id");
 
     if ($(this).hasClass("collapsed-table")) {

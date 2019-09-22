@@ -443,6 +443,11 @@ func (client *ProviderClient) Request(method, url string, options *RequestOpts) 
 			if error408er, ok := errType.(Err408er); ok {
 				err = error408er.Error408(respErr)
 			}
+		case http.StatusConflict:
+			err = ErrDefault409{respErr}
+			if error409er, ok := errType.(Err409er); ok {
+				err = error409er.Error409(respErr)
+			}
 		case 429:
 			err = ErrDefault429{respErr}
 			if error429er, ok := errType.(Err429er); ok {

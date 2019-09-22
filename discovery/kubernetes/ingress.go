@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
-// Ingress implements discovery of Kubernetes ingresss.
+// Ingress implements discovery of Kubernetes ingress.
 type Ingress struct {
 	logger   log.Logger
 	informer cache.SharedInformer

@@ -567,7 +567,7 @@ func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
 func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) models.LabelSet {
 	apiLabelSet := models.LabelSet{}
 	for _, label := range modelLabelSet {
-		apiLabelSet[label.Name] = string(label.Value)
+		apiLabelSet[label.Name] = label.Value
 	}
 
 	return apiLabelSet
@@ -594,7 +594,7 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 		return errors.Errorf("bad response status %s", resp.Status)
 	}
 
-	return err
+	return nil
 }
 
 // Stop shuts down the notification handler.
@@ -635,7 +635,7 @@ type alertmanagerSet struct {
 }
 
 func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager", false)
 	if err != nil {
 		return nil, err
 	}

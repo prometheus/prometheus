@@ -6,11 +6,11 @@ package conntrack
 import (
 	"fmt"
 	"net"
-
 	"sync"
-
-	"golang.org/x/net/trace"
 	"time"
+
+	"github.com/jpillora/backoff"
+	"golang.org/x/net/trace"
 )
 
 const (
@@ -22,6 +22,7 @@ type listenerOpts struct {
 	monitoring   bool
 	tracing      bool
 	tcpKeepAlive time.Duration
+	retryBackoff *backoff.Backoff
 }
 
 type listenerOpt func(*listenerOpts)
@@ -44,6 +45,14 @@ func TrackWithoutMonitoring() listenerOpt {
 func TrackWithTracing() listenerOpt {
 	return func(opts *listenerOpts) {
 		opts.tracing = true
+	}
+}
+
+// TrackWithRetries enables retrying of temporary Accept() errors, with the given backoff between attempts.
+// Concurrent accept calls that receive temporary errors have independent backoff scaling.
+func TrackWithRetries(b backoff.Backoff) listenerOpt {
+	return func(opts *listenerOpts) {
+		opts.retryBackoff = &b
 	}
 }
 
@@ -83,7 +92,20 @@ func NewListener(inner net.Listener, optFuncs ...listenerOpt) net.Listener {
 
 func (ct *connTrackListener) Accept() (net.Conn, error) {
 	// TODO(mwitkow): Add monitoring of failed accept.
-	conn, err := ct.Listener.Accept()
+	var (
+		conn net.Conn
+		err  error
+	)
+	for attempt := 0; ; attempt++ {
+		conn, err = ct.Listener.Accept()
+		if err == nil || ct.opts.retryBackoff == nil {
+			break
+		}
+		if t, ok := err.(interface{ Temporary() bool }); !ok || !t.Temporary() {
+			break
+		}
+		time.Sleep(ct.opts.retryBackoff.ForAttempt(float64(attempt)))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +124,6 @@ type serverConnTracker struct {
 }
 
 func newServerConnTracker(inner net.Conn, opts *listenerOpts) net.Conn {
-
 	tracker := &serverConnTracker{
 		Conn: inner,
 		opts: opts,

@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -163,8 +164,11 @@ func CheckConfig(files ...string) int {
 		fmt.Println()
 
 		for _, rf := range ruleFiles {
-			if n, err := checkRules(rf); err != nil {
-				fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			if n, errs := checkRules(rf); len(errs) > 0 {
+				fmt.Fprintln(os.Stderr, "  FAILED:")
+				for _, err := range errs {
+					fmt.Fprintln(os.Stderr, "    ", err)
+				}
 				failed = true
 			} else {
 				fmt.Printf("  SUCCESS: %d rules found\n", n)
@@ -300,7 +304,47 @@ func checkRules(filename string) (int, []error) {
 		numRules += len(rg.Rules)
 	}
 
+	dRules := checkDuplicates(rgs.Groups)
+	if len(dRules) != 0 {
+		fmt.Printf("%d duplicate rules(s) found.\n", len(dRules))
+		for _, n := range dRules {
+			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
+			for i, l := range n.label {
+				fmt.Printf("\t%s: %s\n", i, l)
+			}
+		}
+		fmt.Println("Might cause inconsistency while recording expressions.")
+	}
+
 	return numRules, nil
+}
+
+type compareRuleType struct {
+	metric string
+	label  map[string]string
+}
+
+func checkDuplicates(r []rulefmt.RuleGroup) []compareRuleType {
+	var duplicates []compareRuleType
+
+	for rindex := range r {
+		for index, props := range r[rindex].Rules {
+			inst := compareRuleType{
+				metric: props.Record,
+				label:  props.Labels,
+			}
+			for i := 0; i < index; i++ {
+				t := compareRuleType{
+					metric: r[rindex].Rules[i].Record,
+					label:  r[rindex].Rules[i].Labels,
+				}
+				if reflect.DeepEqual(t, inst) {
+					duplicates = append(duplicates, t)
+				}
+			}
+		}
+	}
+	return duplicates
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
@@ -501,8 +545,12 @@ func QueryLabels(url *url.URL, name string, p printer) int {
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.LabelValues(ctx, name)
+	val, warn, err := api.LabelValues(ctx, name)
 	cancel()
+
+	for _, v := range warn {
+		fmt.Fprintln(os.Stderr, "query warning:", v)
+	}
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)

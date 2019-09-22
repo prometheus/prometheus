@@ -17,7 +17,9 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -89,6 +91,60 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 1, len(s.queues))
 	testutil.Assert(t, queue == s.queues[0], "Queue pointer should have remained the same")
+
+	err = s.Close()
+	testutil.Ok(t, err)
+}
+
+func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsPartialUpdate")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	s := NewWriteStorage(nil, dir, defaultFlushDeadline)
+
+	c0 := &config.RemoteWriteConfig{
+		RemoteTimeout: model.Duration(10 * time.Second),
+		QueueConfig:   config.DefaultQueueConfig,
+	}
+	c1 := &config.RemoteWriteConfig{
+		RemoteTimeout: model.Duration(20 * time.Second),
+		QueueConfig:   config.DefaultQueueConfig,
+	}
+	c2 := &config.RemoteWriteConfig{
+		RemoteTimeout: model.Duration(30 * time.Second),
+		QueueConfig:   config.DefaultQueueConfig,
+	}
+
+	conf := &config.Config{
+		GlobalConfig:       config.GlobalConfig{},
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{c0, c1, c2},
+	}
+	s.ApplyConfig(conf)
+	testutil.Equals(t, 3, len(s.queues))
+	q := s.queues[1]
+
+	// Update c0 and c2.
+	c0.RemoteTimeout = model.Duration(40 * time.Second)
+	c2.RemoteTimeout = model.Duration(50 * time.Second)
+	conf = &config.Config{
+		GlobalConfig:       config.GlobalConfig{},
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{c0, c1, c2},
+	}
+	s.ApplyConfig(conf)
+	testutil.Equals(t, 3, len(s.queues))
+
+	testutil.Assert(t, q == s.queues[1], "Pointer of unchanged queue should have remained the same")
+
+	// Delete c0.
+	conf = &config.Config{
+		GlobalConfig:       config.GlobalConfig{},
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{c1, c2},
+	}
+	s.ApplyConfig(conf)
+	testutil.Equals(t, 2, len(s.queues))
+
+	testutil.Assert(t, q != s.queues[1], "If the index changed, the queue should be stopped and recreated.")
 
 	err = s.Close()
 	testutil.Ok(t, err)

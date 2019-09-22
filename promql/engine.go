@@ -176,7 +176,19 @@ func (q *query) Exec(ctx context.Context) *Result {
 		span.SetTag(queryTag, q.stmt.String())
 	}
 
+	// Log query in active log.
+	var queryIndex int
+	if q.ng.activeQueryTracker != nil {
+		queryIndex = q.ng.activeQueryTracker.Insert(q.q)
+	}
+
+	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
+
+	// Delete query from active log.
+	if q.ng.activeQueryTracker != nil {
+		q.ng.activeQueryTracker.Delete(queryIndex)
+	}
 	return &Result{Err: err, Value: res, Warnings: warnings}
 }
 
@@ -201,11 +213,12 @@ func contextErr(err error, env string) error {
 
 // EngineOpts contains configuration options used when creating a new Engine.
 type EngineOpts struct {
-	Logger        log.Logger
-	Reg           prometheus.Registerer
-	MaxConcurrent int
-	MaxSamples    int
-	Timeout       time.Duration
+	Logger             log.Logger
+	Reg                prometheus.Registerer
+	MaxConcurrent      int
+	MaxSamples         int
+	Timeout            time.Duration
+	ActiveQueryTracker *ActiveQueryTracker
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -216,6 +229,7 @@ type Engine struct {
 	timeout            time.Duration
 	gate               *gate.Gate
 	maxSamplesPerQuery int
+	activeQueryTracker *ActiveQueryTracker
 }
 
 // NewEngine returns a new engine.
@@ -282,12 +296,14 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.queryResultSort,
 		)
 	}
+
 	return &Engine{
 		gate:               gate.New(opts.MaxConcurrent),
 		timeout:            opts.Timeout,
 		logger:             opts.Logger,
 		metrics:            metrics,
 		maxSamplesPerQuery: opts.MaxSamples,
+		activeQueryTracker: opts.ActiveQueryTracker,
 	}
 }
 
@@ -558,7 +574,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		// We need to make sure we select the timerange selected by the subquery.
 		// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
-		// we can optimise it by separating out the range and offsets, and substracting the offsets
+		// we can optimise it by separating out the range and offsets, and subtracting the offsets
 		// from end also.
 		subqOffset := ng.cumulativeSubqueryOffset(path)
 		offsetMilliseconds := durationMilliseconds(subqOffset)

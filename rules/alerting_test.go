@@ -49,8 +49,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer suite.Close()
 
-	err = suite.Run()
-	testutil.Ok(t, err)
+	testutil.Ok(t, suite.Run())
 
 	expr, err := promql.ParseExpr(`http_requests < 100`)
 	testutil.Ok(t, err)
@@ -152,8 +151,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer suite.Close()
 
-	err = suite.Run()
-	testutil.Ok(t, err)
+	testutil.Ok(t, suite.Run())
 
 	expr, err := promql.ParseExpr(`http_requests < 100`)
 	testutil.Ok(t, err)
@@ -234,5 +232,60 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		}
 	}
 
+	testutil.Equals(t, result, filteredRes)
+}
+
+func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 85 70 70
+	`)
+	testutil.Ok(t, err)
+	defer suite.Close()
+
+	testutil.Ok(t, suite.Run())
+
+	expr, err := promql.ParseExpr(`http_requests < 100`)
+	testutil.Ok(t, err)
+
+	rule := NewAlertingRule(
+		"EmptyLabel",
+		expr,
+		time.Minute,
+		labels.FromStrings("empty_label", ""),
+		nil,
+		nil,
+		true, log.NewNopLogger(),
+	)
+	result := promql.Vector{
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "EmptyLabel",
+				"alertstate", "pending",
+				"instance", "0",
+				"job", "app-server",
+			),
+			Point: promql.Point{V: 1},
+		},
+	}
+
+	evalTime := time.Unix(0, 0)
+	result[0].Point.T = timestamp.FromTime(evalTime)
+
+	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
+	res, err := rule.Eval(
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+	)
+	testutil.Ok(t, err)
+	for _, smpl := range res {
+		smplName := smpl.Metric.Get("__name__")
+		if smplName == "ALERTS" {
+			filteredRes = append(filteredRes, smpl)
+		} else {
+			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+			testutil.Equals(t, smplName, "ALERTS_FOR_STATE")
+		}
+	}
 	testutil.Equals(t, result, filteredRes)
 }

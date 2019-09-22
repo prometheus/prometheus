@@ -24,10 +24,10 @@ import (
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 // decodeReadLimit is the maximum size of a read request body in bytes.
@@ -73,9 +73,6 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 		return err
 	}
 
-	w.Header().Set("Content-Type", "application/x-protobuf")
-	w.Header().Set("Content-Encoding", "snappy")
-
 	compressed := snappy.Encode(nil, data)
 	_, err = w.Write(compressed)
 	return err
@@ -106,25 +103,6 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 	}, nil
 }
 
-// FromQuery unpacks a Query proto.
-func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, *storage.SelectParams, error) {
-	matchers, err := fromLabelMatchers(req.Matchers)
-	if err != nil {
-		return 0, 0, nil, nil, err
-	}
-	var selectParams *storage.SelectParams
-	if req.Hints != nil {
-		selectParams = &storage.SelectParams{
-			Start: req.Hints.StartMs,
-			End:   req.Hints.EndMs,
-			Step:  req.Hints.StepMs,
-			Func:  req.Hints.Func,
-		}
-	}
-
-	return req.StartTimestampMs, req.EndTimestampMs, matchers, selectParams, nil
-}
-
 // ToQueryResult builds a QueryResult proto.
 func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, error) {
 	numSamples := 0
@@ -153,7 +131,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		}
 
 		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
-			Labels:  labelsToLabelsProto(series.Labels()),
+			Labels:  labelsToLabelsProto(series.Labels(), nil),
 			Samples: samples,
 		})
 	}
@@ -181,6 +159,182 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 	return &concreteSeriesSet{
 		series: series,
 	}
+}
+
+// NegotiateResponseType returns first accepted response type that this server supports.
+// On the empty accepted list we assume that the SAMPLES response type was requested. This is to maintain backward compatibility.
+func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.ReadRequest_ResponseType, error) {
+	if len(accepted) == 0 {
+		accepted = []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLES}
+	}
+
+	supported := map[prompb.ReadRequest_ResponseType]struct{}{
+		prompb.ReadRequest_SAMPLES:             {},
+		prompb.ReadRequest_STREAMED_XOR_CHUNKS: {},
+	}
+
+	for _, resType := range accepted {
+		if _, ok := supported[resType]; ok {
+			return resType, nil
+		}
+	}
+	return 0, errors.Errorf("server does not support any of the requested response types: %v; supported: %v", accepted, supported)
+}
+
+// StreamChunkedReadResponses iterates over series, builds chunks and streams those to the caller.
+// TODO(bwplotka): Encode only what's needed. Fetch the encoded series from blocks instead of re-encoding everything.
+func StreamChunkedReadResponses(
+	stream io.Writer,
+	queryIndex int64,
+	ss storage.SeriesSet,
+	sortedExternalLabels []prompb.Label,
+	maxBytesInFrame int,
+) error {
+	var (
+		chks     []prompb.Chunk
+		lbls     []prompb.Label
+		err      error
+		lblsSize int
+	)
+
+	for ss.Next() {
+		series := ss.At()
+		iter := series.Iterator()
+		lbls = MergeLabels(labelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
+
+		lblsSize = 0
+		for _, lbl := range lbls {
+			lblsSize += lbl.Size()
+		}
+
+		// Send at most one series per frame; series may be split over multiple frames according to maxBytesInFrame.
+		for {
+			// TODO(bwplotka): Use ChunkIterator once available in TSDB instead of re-encoding: https://github.com/prometheus/prometheus/pull/5882
+			chks, err = encodeChunks(iter, chks, maxBytesInFrame-lblsSize)
+			if err != nil {
+				return err
+			}
+
+			if len(chks) == 0 {
+				break
+			}
+
+			b, err := proto.Marshal(&prompb.ChunkedReadResponse{
+				ChunkedSeries: []*prompb.ChunkedSeries{
+					{
+						Labels: lbls,
+						Chunks: chks,
+					},
+				},
+				QueryIndex: queryIndex,
+			})
+			if err != nil {
+				return errors.Wrap(err, "marshal ChunkedReadResponse")
+			}
+
+			if _, err := stream.Write(b); err != nil {
+				return errors.Wrap(err, "write to stream")
+			}
+
+			chks = chks[:0]
+		}
+
+		if err := iter.Err(); err != nil {
+			return err
+		}
+	}
+	if err := ss.Err(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// encodeChunks expects iterator to be ready to use (aka iter.Next() called before invoking).
+func encodeChunks(iter storage.SeriesIterator, chks []prompb.Chunk, frameBytesLeft int) ([]prompb.Chunk, error) {
+	const maxSamplesInChunk = 120
+
+	var (
+		chkMint int64
+		chkMaxt int64
+		chk     *chunkenc.XORChunk
+		app     chunkenc.Appender
+		err     error
+	)
+
+	for iter.Next() {
+		if chk == nil {
+			chk = chunkenc.NewXORChunk()
+			app, err = chk.Appender()
+			if err != nil {
+				return nil, err
+			}
+			chkMint, _ = iter.At()
+		}
+
+		app.Append(iter.At())
+		chkMaxt, _ = iter.At()
+
+		if chk.NumSamples() < maxSamplesInChunk {
+			continue
+		}
+
+		// Cut the chunk.
+		chks = append(chks, prompb.Chunk{
+			MinTimeMs: chkMint,
+			MaxTimeMs: chkMaxt,
+			Type:      prompb.Chunk_Encoding(chk.Encoding()),
+			Data:      chk.Bytes(),
+		})
+		chk = nil
+		frameBytesLeft -= chks[len(chks)-1].Size()
+
+		// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
+		if frameBytesLeft <= 0 {
+			break
+		}
+	}
+	if iter.Err() != nil {
+		return nil, errors.Wrap(iter.Err(), "iter TSDB series")
+	}
+
+	if chk != nil {
+		// Cut the chunk if exists.
+		chks = append(chks, prompb.Chunk{
+			MinTimeMs: chkMint,
+			MaxTimeMs: chkMaxt,
+			Type:      prompb.Chunk_Encoding(chk.Encoding()),
+			Data:      chk.Bytes(),
+		})
+	}
+	return chks, nil
+}
+
+// MergeLabels merges two sets of sorted proto labels, preferring those in
+// primary to those in secondary when there is an overlap.
+func MergeLabels(primary, secondary []prompb.Label) []prompb.Label {
+	result := make([]prompb.Label, 0, len(primary)+len(secondary))
+	i, j := 0, 0
+	for i < len(primary) && j < len(secondary) {
+		if primary[i].Name < secondary[j].Name {
+			result = append(result, primary[i])
+			i++
+		} else if primary[i].Name > secondary[j].Name {
+			result = append(result, secondary[j])
+			j++
+		} else {
+			result = append(result, primary[i])
+			i++
+			j++
+		}
+	}
+	for ; i < len(primary); i++ {
+		result = append(result, primary[i])
+	}
+	for ; j < len(secondary); j++ {
+		result = append(result, secondary[j])
+	}
+	return result
 }
 
 type byLabel []storage.Series
@@ -277,9 +431,10 @@ func (c *concreteSeriesIterator) Err() error {
 	return nil
 }
 
-// validateLabelsAndMetricName validates the label names/values and metric names returned from remote read.
+// validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
+// also making sure that there are no labels with duplicate names
 func validateLabelsAndMetricName(ls labels.Labels) error {
-	for _, l := range ls {
+	for i, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return errors.Errorf("invalid metric name: %v", l.Value)
 		}
@@ -288,6 +443,9 @@ func validateLabelsAndMetricName(ls labels.Labels) error {
 		}
 		if !model.LabelValue(l.Value).IsValid() {
 			return errors.Errorf("invalid label value: %v", l.Value)
+		}
+		if i > 0 && l.Name == ls[i-1].Name {
+			return errors.Errorf("duplicate label with name: %v", l.Name)
 		}
 	}
 	return nil
@@ -318,7 +476,8 @@ func toLabelMatchers(matchers []*labels.Matcher) ([]*prompb.LabelMatcher, error)
 	return pbMatchers, nil
 }
 
-func fromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, error) {
+// FromLabelMatchers parses protobuf label matchers to Prometheus label matchers.
+func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, error) {
 	result := make([]*labels.Matcher, 0, len(matchers))
 	for _, matcher := range matchers {
 		var mtype labels.MatchType
@@ -364,12 +523,17 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	return result
 }
 
-func labelsToLabelsProto(labels labels.Labels) []prompb.Label {
-	result := make([]prompb.Label, 0, len(labels))
+// labelsToLabelsProto transforms labels into prompb labels. The buffer slice
+// will be used to avoid allocations if it is big enough to store the labels.
+func labelsToLabelsProto(labels labels.Labels, buf []prompb.Label) []prompb.Label {
+	result := buf[:0]
+	if cap(buf) < len(labels) {
+		result = make([]prompb.Label, 0, len(labels))
+	}
 	for _, l := range labels {
 		result = append(result, prompb.Label{
-			Name:  interner.intern(l.Name),
-			Value: interner.intern(l.Value),
+			Name:  l.Name,
+			Value: l.Value,
 		})
 	}
 	return result

@@ -125,20 +125,6 @@
             },
           },
           {
-            alert: 'PrometheusTSDBWALCorruptions',
-            expr: |||
-              increase(tsdb_wal_corruptions_total{%(prometheusSelector)s}[3h]) > 0
-            ||| % $._config,
-            'for': '4h',
-            labels: {
-              severity: 'warning',
-            },
-            annotations: {
-              summary: 'Prometheus is detecting WAL corruptions.',
-              description: 'Prometheus %(prometheusName)s has detected {{$value | humanize}} corruptions of the write-ahead log (WAL) over the last 3h.' % $._config,
-            },
-          },
-          {
             alert: 'PrometheusNotIngestingSamples',
             expr: |||
               rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m]) <= 0
@@ -223,6 +209,26 @@
             annotations: {
               summary: 'Prometheus remote write is behind.',
               description: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind for queue {{$labels.queue}}.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusRemoteWriteDesiredShards',
+            expr: |||
+              # Without max_over_time, failed scrapes could create false negatives, see
+              # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
+              (
+                max_over_time(prometheus_remote_storage_shards_desired{%(prometheusSelector)s}[5m])
+              > on(job, instance) group_right
+                max_over_time(prometheus_remote_storage_shards_max{%(prometheusSelector)s}[5m])
+              )
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus remote write desired shards calculation wants to run more than configured max shards.',
+              description: 'Prometheus %(prometheusName)s remote write desired shards calculation wants to run {{ printf $value }} shards, which is more than the max of {{ printf `prometheus_remote_storage_shards_max{instance="%%s",%(prometheusSelector)s}` $labels.instance | query | first | value }}.' % $._config,
             },
           },
           {

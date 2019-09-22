@@ -49,7 +49,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
-	"github.com/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/soheilhy/cmux"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
@@ -228,6 +228,7 @@ type Options struct {
 	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
+	RemoteReadBytesInFrame     int
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -291,6 +292,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.ruleManager,
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
+		h.options.RemoteReadBytesInFrame,
 		h.options.CORSOrigin,
 	)
 

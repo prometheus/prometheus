@@ -3,7 +3,7 @@ language: go
 # Whenever the Go version is updated here, .circleci/config.yml and .promu.yml
 # should also be updated.
 go:
-- 1.12.x
+- 1.13.x
 
 go_import_path: github.com/prometheus/prometheus
 
@@ -15,6 +15,7 @@ before_install:
 - . $HOME/.nvm/nvm.sh
 - nvm install stable
 - nvm use stable
+- if [[ "$TRAVIS_OS_NAME" == "windows" ]]; then choco install make; fi
 
 script:
 - make check_license style unused test lint check_assets

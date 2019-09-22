@@ -22,11 +22,11 @@ import (
 
 // Descriptor holds metadata about a metric.
 type Descriptor struct {
-	Name        string   // full name of the metric
-	Description string   // human-readable description
-	Unit        Unit     // units for the measure
-	Type        Type     // type of measure
-	LabelKeys   []string // label keys
+	Name        string     // full name of the metric
+	Description string     // human-readable description
+	Unit        Unit       // units for the measure
+	Type        Type       // type of measure
+	LabelKeys   []LabelKey // label keys
 }
 
 // Metric represents a quantity measured against a resource with different

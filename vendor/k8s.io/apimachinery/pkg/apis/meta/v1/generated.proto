@@ -213,20 +213,25 @@ message ExportOptions {
 }
 
 // Fields stores a set of fields in a data structure like a Trie.
-// To understand how this is used, see: https://github.com/kubernetes-sigs/structured-merge-diff
+//
+// Each key is either a '.' representing the field itself, and will always map to an empty set,
+// or a string representing a sub-field or item. The string will follow one of these four formats:
+// 'f:<name>', where <name> is the name of a field in a struct, or key in a map
+// 'v:<value>', where <value> is the exact json formatted value of a list item
+// 'i:<index>', where <index> is position of a item in a list
+// 'k:<keys>', where <keys> is a map of  a list item's key fields to their unique values
+// If a key maps to an empty Fields value, the field that key represents is part of the set.
+//
+// The exact format is defined in sigs.k8s.io/structured-merge-diff
+// +protobuf.options.marshal=false
+// +protobuf.as=ProtoFields
+// +protobuf.options.(gogoproto.goproto_stringer)=false
 message Fields {
-  // Map stores a set of fields in a data structure like a Trie.
-  //
-  // Each key is either a '.' representing the field itself, and will always map to an empty set,
-  // or a string representing a sub-field or item. The string will follow one of these four formats:
-  // 'f:<name>', where <name> is the name of a field in a struct, or key in a map
-  // 'v:<value>', where <value> is the exact json formatted value of a list item
-  // 'i:<index>', where <index> is position of a item in a list
-  // 'k:<keys>', where <keys> is a map of  a list item's key fields to their unique values
-  // If a key maps to an empty Fields value, the field that key represents is part of the set.
-  //
-  // The exact format is defined in k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager/internal
+  // Map is the representation used in the alpha version of this API
   map<string, Fields> map = 1;
+
+  // Raw is the underlying serialization of this object.
+  optional bytes raw = 2;
 }
 
 // GetOptions is the standard query options to the standard REST get call.
@@ -302,27 +307,6 @@ message GroupVersionResource {
   optional string resource = 3;
 }
 
-// Initializer is information about an initializer that has not yet completed.
-message Initializer {
-  // name of the process that is responsible for initializing this object.
-  optional string name = 1;
-}
-
-// Initializers tracks the progress of initialization.
-message Initializers {
-  // Pending is a list of initializers that must execute in order before this object is visible.
-  // When the last pending initializer is removed, and no failing result is set, the initializers
-  // struct will be set to nil and the object is considered as initialized and visible to all
-  // clients.
-  // +patchMergeKey=name
-  // +patchStrategy=merge
-  repeated Initializer pending = 1;
-
-  // If result is set with the Failure field, the object will be persisted to storage and then deleted,
-  // ensuring that other clients can observe the deletion.
-  optional Status result = 2;
-}
-
 // A label selector is a label query over a set of resources. The result of matchLabels and
 // matchExpressions are ANDed. An empty label selector matches all objects. A null
 // label selector matches no objects.
@@ -375,6 +359,10 @@ message ListMeta {
   // selfLink is a URL representing this object.
   // Populated by the system.
   // Read-only.
+  //
+  // DEPRECATED
+  // Kubernetes will stop propagating this field in 1.20 release and the field is planned
+  // to be removed in 1.21 release.
   // +optional
   optional string selfLink = 1;
 
@@ -438,7 +426,7 @@ message ListOptions {
   // If the feature gate WatchBookmarks is not enabled in apiserver,
   // this field is ignored.
   //
-  // This field is alpha and can be changed or removed without notice.
+  // This field is beta.
   //
   // +optional
   optional bool allowWatchBookmarks = 9;
@@ -579,6 +567,10 @@ message ObjectMeta {
   // SelfLink is a URL representing this object.
   // Populated by the system.
   // Read-only.
+  //
+  // DEPRECATED
+  // Kubernetes will stop propagating this field in 1.20 release and the field is planned
+  // to be removed in 1.21 release.
   // +optional
   optional string selfLink = 4;
 
@@ -671,19 +663,6 @@ message ObjectMeta {
   // +patchMergeKey=uid
   // +patchStrategy=merge
   repeated OwnerReference ownerReferences = 13;
-
-  // An initializer is a controller which enforces some system invariant at object creation time.
-  // This field is a list of initializers that have not yet acted on this object. If nil or empty,
-  // this object has been completely initialized. Otherwise, the object is considered uninitialized
-  // and is hidden (in list/watch and get calls) from clients that haven't explicitly asked to
-  // observe uninitialized objects.
-  //
-  // When an object is created, the system will populate this list with the current set of initializers.
-  // Only privileged users may set or modify this list. Once it is empty, it may not be modified further
-  // by any user.
-  //
-  // DEPRECATED - initializers are an alpha field and will be removed in v1.15.
-  optional Initializers initializers = 16;
 
   // Must be empty before the object is deleted from the registry. Each entry
   // is an identifier for the responsible component that will remove the entry
@@ -809,6 +788,17 @@ message Preconditions {
   // Specifies the target ResourceVersion
   // +optional
   optional string resourceVersion = 2;
+}
+
+// ProtoFields is a struct that is equivalent to Fields, but intended for
+// protobuf marshalling/unmarshalling. It is generated into a serialization
+// that matches Fields. Do not use in Go structs.
+message ProtoFields {
+  // Map is the representation used in the alpha version of this API
+  map<string, Fields> map = 1;
+
+  // Raw is the underlying serialization of this object.
+  optional bytes raw = 2;
 }
 
 // RootPaths lists the paths available at root.

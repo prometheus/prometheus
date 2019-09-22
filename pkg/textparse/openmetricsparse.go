@@ -20,7 +20,6 @@ import (
 	"io"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -44,7 +43,10 @@ func (l *openMetricsLexer) buf() []byte {
 }
 
 func (l *openMetricsLexer) cur() byte {
-	return l.b[l.i]
+	if l.i < len(l.b) {
+		return l.b[l.i]
+	}
+	return byte(' ')
 }
 
 // next advances the openMetricsLexer to the next character.
@@ -85,7 +87,7 @@ type OpenMetricsParser struct {
 	offsets []int
 }
 
-// New returns a new parser of the byte slice.
+// NewOpenMetricsParser returns a new parser of the byte slice.
 func NewOpenMetricsParser(b []byte) Parser {
 	return &OpenMetricsParser{l: &openMetricsLexer{b: b}}
 }
@@ -265,7 +267,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		if t2 != tValue {
 			return EntryInvalid, parseError("expected value after metric", t)
 		}
-		if p.val, err = strconv.ParseFloat(yoloString(p.l.buf()[1:]), 64); err != nil {
+		if p.val, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
 			return EntryInvalid, err
 		}
 		// Ensure canonical NaN value.
@@ -280,7 +282,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			p.hasTS = true
 			var ts float64
 			// A float is enough to hold what we need for millisecond resolution.
-			if ts, err = strconv.ParseFloat(yoloString(p.l.buf()[1:]), 64); err != nil {
+			if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
 				return EntryInvalid, err
 			}
 			p.ts = int64(ts * 1000)

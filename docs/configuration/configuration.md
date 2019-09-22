@@ -738,7 +738,6 @@ Available meta labels:
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
 * `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
-* `__meta_kubernetes_service_port_number`: Number of the service port for the target.
 * `__meta_kubernetes_service_port_protocol`: Protocol of the service port for the target.
 
 #### `pod`
@@ -1295,8 +1294,11 @@ tls_config:
 
 # Configures the queue used to write to remote storage.
 queue_config:
-  # Number of samples to buffer per shard before we block reading of more samples from the WAL.
-  [ capacity: <int> | default = 10 ]
+  # Number of samples to buffer per shard before we block reading of more
+  # samples from the WAL. It is recommended to have enough capacity in each
+  # shard to buffer several requests to keep throughput up while processing
+  # occasional slow remote requests.
+  [ capacity: <int> | default = 500 ]
   # Maximum number of shards, i.e. amount of concurrency.
   [ max_shards: <int> | default = 1000 ]
   # Minimum number of shards, i.e. amount of concurrency.

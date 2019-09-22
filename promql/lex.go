@@ -66,7 +66,7 @@ func (i ItemType) isAggregatorWithParam() bool {
 // Returns false otherwise.
 func (i ItemType) isKeyword() bool { return i > keywordsStart && i < keywordsEnd }
 
-// isCompairsonOperator returns true if the item corresponds to a comparison operator.
+// isComparisonOperator returns true if the item corresponds to a comparison operator.
 // Returns false otherwise.
 func (i ItemType) isComparisonOperator() bool {
 	switch i {

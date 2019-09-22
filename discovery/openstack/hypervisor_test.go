@@ -92,7 +92,7 @@ func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := hypervisor.refresh(ctx)
-	testutil.NotOk(t, err, "")
+	testutil.NotOk(t, err)
 	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
 
 	mock.TearDownSuite()
