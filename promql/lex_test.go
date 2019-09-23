@@ -688,7 +688,7 @@ func TestLexer(t *testing.T) {
 					t.Fatalf("unexpected lexing error at position %d: %s", lastItem.pos, lastItem)
 				}
 
-				eofItem := item{ItemEOF, Pos(len(test.input)), ""}
+				eofItem := item{ItemEOF, Offset(len(test.input)), ""}
 				testutil.Equals(t, lastItem, eofItem, "%d: input %q", i, test.input)
 
 				out = out[:len(out)-1]

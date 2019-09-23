@@ -71,7 +71,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 
 	m = p.metric()
 	if p.peek().typ != ItemEOF {
-		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
+		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastOffset:])
 	}
 	return m, nil
 }
@@ -88,7 +88,7 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	}
 	vs := p.VectorSelector(name)
 	if p.peek().typ != ItemEOF {
-		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
+		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastOffset:])
 	}
 	return vs.LabelMatchers, nil
 }
@@ -107,7 +107,7 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 
 	for p.peek().typ != ItemEOF {
 		if expr != nil {
-			p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
+			p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastOffset:])
 		}
 		expr = p.expr()
 	}

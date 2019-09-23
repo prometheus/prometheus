@@ -15,6 +15,7 @@ package promql
 
 import (
 	"fmt"
+	"go/token"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -23,7 +24,7 @@ import (
 // item represents a token or text string returned from the scanner.
 type item struct {
 	typ ItemType // The type of this item.
-	pos Pos      // The starting position, in bytes, of this item in the input string.
+	pos Offset   // The starting position, in bytes, of this item in the input string.
 	val string   // The value of this item.
 }
 
@@ -312,18 +313,19 @@ const eof = -1
 // stateFn represents the state of the scanner as a function that returns the next state.
 type stateFn func(*lexer) stateFn
 
-// Pos is the position in a string.
-type Pos int
+// Offset is the position in a string.
+type Offset int
 
 // lexer holds the state of the scanner.
 type lexer struct {
-	input   string    // The string being scanned.
-	state   stateFn   // The next lexing function to enter.
-	pos     Pos       // Current position in the input.
-	start   Pos       // Start position of this item.
-	width   Pos       // Width of last rune read from input.
-	lastPos Pos       // Position of most recent item returned by nextItem.
-	items   chan item // Channel of scanned items.
+	file       *token.File // source file
+	input      string      // The string being scanned.
+	state      stateFn     // The next lexing function to enter.
+	offset     Offset      // Current position in the input.
+	itemOffset Offset      // Start position of this item.
+	width      Offset      // Width of last rune read from input.
+	lastOffset Offset      // Position of most recent item returned by nextItem.
+	items      chan item   // Channel of scanned items.
 
 	parenDepth  int  // Nesting depth of ( ) exprs.
 	braceOpen   bool // Whether a { is opened.
@@ -338,13 +340,13 @@ type lexer struct {
 
 // next returns the next rune in the input.
 func (l *lexer) next() rune {
-	if int(l.pos) >= len(l.input) {
+	if int(l.offset) >= len(l.input) {
 		l.width = 0
 		return eof
 	}
-	r, w := utf8.DecodeRuneInString(l.input[l.pos:])
-	l.width = Pos(w)
-	l.pos += l.width
+	r, w := utf8.DecodeRuneInString(l.input[l.offset:])
+	l.width = Offset(w)
+	l.offset += l.width
 	return r
 }
 
@@ -357,18 +359,18 @@ func (l *lexer) peek() rune {
 
 // backup steps back one rune. Can only be called once per call of next.
 func (l *lexer) backup() {
-	l.pos -= l.width
+	l.offset -= l.width
 }
 
 // emit passes an item back to the client.
 func (l *lexer) emit(t ItemType) {
-	l.items <- item{t, l.start, l.input[l.start:l.pos]}
-	l.start = l.pos
+	l.items <- item{t, l.itemOffset, l.input[l.itemOffset:l.offset]}
+	l.itemOffset = l.offset
 }
 
 // ignore skips over the pending input before this point.
 func (l *lexer) ignore() {
-	l.start = l.pos
+	l.itemOffset = l.offset
 }
 
 // accept consumes the next rune if it's from the valid set.
@@ -388,40 +390,68 @@ func (l *lexer) acceptRun(valid string) {
 	l.backup()
 }
 
+// Pos reports the position we're on, based on the position of
+// the previous item returned by nextItem. Doing it this way
+// means we don't have to worry about peek double counting.
+// The Position is encoded as an integer, using the token package
+// from the go compiler
+// If you aren't working on the parser internals, you probably want
+// to use Postion instead
+func (l *lexer) Pos() token.Pos {
+	return l.file.Pos(int(l.lastOffset))
+}
+
+// Pos reports the position we're on, based on the position of
+// the previous item returned by nextItem. Doing it this way
+// means we don't have to worry about peek double counting.
+func (l *lexer) Position() token.Position {
+	return l.file.PositionFor(l.Pos(), false)
+}
+
+// Deprecated: Use Position instead
 // lineNumber reports which line we're on, based on the position of
 // the previous item returned by nextItem. Doing it this way
 // means we don't have to worry about peek double counting.
 func (l *lexer) lineNumber() int {
-	return 1 + strings.Count(l.input[:l.lastPos], "\n")
+	return l.Position().Line
 }
 
+// Deprecated: Use Position instead
 // linePosition reports at which character in the current line
 // we are on.
 func (l *lexer) linePosition() int {
-	lb := strings.LastIndex(l.input[:l.lastPos], "\n")
-	if lb == -1 {
-		return 1 + int(l.lastPos)
-	}
-	return 1 + int(l.lastPos) - lb
+	return l.Position().Column
 }
 
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.nextItem.
 func (l *lexer) errorf(format string, args ...interface{}) stateFn {
-	l.items <- item{ItemError, l.start, fmt.Sprintf(format, args...)}
+	l.items <- item{ItemError, l.itemOffset, fmt.Sprintf(format, args...)}
 	return nil
 }
 
 // nextItem returns the next item from the input.
 func (l *lexer) nextItem() item {
 	item := <-l.items
-	l.lastPos = item.pos
+	l.lastOffset = item.pos
 	return item
 }
 
 // lex creates a new scanner for the input string.
 func lex(input string) *lexer {
+	// Create a File with empty name.
+	// TODO: not generate a new File set every time as
+	// this is expensive
+	fileSet := token.NewFileSet()
+	file := fileSet.AddFile("", -1, len(input))
+	return lexFile(input, file)
+}
+
+// lex creates a new scanner for the input string.
+// It also takes a file Argument for position handling
+func lexFile(input string, file *token.File) *lexer {
 	l := &lexer{
+		file:  file,
 		input: input,
 		items: make(chan item),
 	}
@@ -452,7 +482,7 @@ func lexStatements(l *lexer) stateFn {
 	if l.braceOpen {
 		return lexInsideBraces
 	}
-	if strings.HasPrefix(l.input[l.pos:], lineComment) {
+	if strings.HasPrefix(l.input[l.offset:], lineComment) {
 		return lexLineComment
 	}
 
@@ -568,7 +598,7 @@ func lexStatements(l *lexer) stateFn {
 // lexInsideBraces scans the inside of a vector selector. Keywords are ignored and
 // scanned as identifiers.
 func lexInsideBraces(l *lexer) stateFn {
-	if strings.HasPrefix(l.input[l.pos:], lineComment) {
+	if strings.HasPrefix(l.input[l.offset:], lineComment) {
 		return lexLineComment
 	}
 
@@ -762,7 +792,7 @@ func lexSpace(l *lexer) stateFn {
 
 // lexLineComment scans a line comment. Left comment marker is known to be present.
 func lexLineComment(l *lexer) stateFn {
-	l.pos += Pos(len(lineComment))
+	l.offset += Offset(len(lineComment))
 	for r := l.next(); !isEndOfLine(r) && r != eof; {
 		r = l.next()
 	}
@@ -778,19 +808,19 @@ func lexDuration(l *lexer) stateFn {
 	// Next two chars must be a valid unit and a non-alphanumeric.
 	if l.accept("smhdwy") {
 		if isAlphaNumeric(l.next()) {
-			return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
+			return l.errorf("bad duration syntax: %q", l.input[l.itemOffset:l.offset])
 		}
 		l.backup()
 		l.emit(ItemDuration)
 		return lexStatements
 	}
-	return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
+	return l.errorf("bad duration syntax: %q", l.input[l.itemOffset:l.offset])
 }
 
 // lexNumber scans a number: decimal, hex, oct or float.
 func lexNumber(l *lexer) stateFn {
 	if !l.scanNumber() {
-		return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
+		return l.errorf("bad number syntax: %q", l.input[l.itemOffset:l.offset])
 	}
 	l.emit(ItemNumber)
 	return lexStatements
@@ -805,13 +835,13 @@ func lexNumberOrDuration(l *lexer) stateFn {
 	// Next two chars must be a valid unit and a non-alphanumeric.
 	if l.accept("smhdwy") {
 		if isAlphaNumeric(l.next()) {
-			return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
+			return l.errorf("bad number or duration syntax: %q", l.input[l.itemOffset:l.offset])
 		}
 		l.backup()
 		l.emit(ItemDuration)
 		return lexStatements
 	}
-	return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
+	return l.errorf("bad number or duration syntax: %q", l.input[l.itemOffset:l.offset])
 }
 
 // scanNumber scans numbers of different formats. The scanned item is
@@ -860,7 +890,7 @@ Loop:
 			// absorb.
 		default:
 			l.backup()
-			word := l.input[l.start:l.pos]
+			word := l.input[l.itemOffset:l.offset]
 			if kw, ok := key[strings.ToLower(word)]; ok {
 				l.emit(kw)
 			} else if !strings.Contains(word, ":") {
