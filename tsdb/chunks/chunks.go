@@ -313,8 +313,10 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 			reqSpace += crc32.Size                  // The 4 bytes of crc32
 		}
 
+		// Cutting a segment will not help here as
+		// this chunk will not fit even in a new segment.
 		if reqSpace > w.segmentSize {
-			return errors.New("total chunks size larger than the segment size")
+			return errors.New("chunks size larger than a full segment file")
 		}
 		if w.n+reqSpace > w.segmentSize {
 			cutChunk = true
