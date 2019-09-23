@@ -78,8 +78,8 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		// a name in their remote write config so we can still differentiate
 		// between queues that have the same remote write endpoint.
 		name := string(hash[:6])
-		if rrConf.JobName != "" {
-			name = rrConf.JobName
+		if rrConf.Name != "" {
+			name = rrConf.Name
 		}
 
 		c, err := NewClient(name, &ClientConfig{
