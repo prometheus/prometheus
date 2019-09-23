@@ -15,12 +15,12 @@ package promql
 
 import (
 	"fmt"
+	"go/token"
 	"math"
 	"os"
 	"runtime"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -41,15 +41,12 @@ type parser struct {
 // If the parsing input was a single line, line will be 0 and omitted
 // from the error string.
 type ParseErr struct {
-	Line, Pos int
-	Err       error
+	Position token.Position
+	Err      error
 }
 
 func (e *ParseErr) Error() string {
-	if e.Line == 0 {
-		return fmt.Sprintf("parse error at char %d: %s", e.Pos, e.Err)
-	}
-	return fmt.Sprintf("parse error at line %d, char %d: %s", e.Line, e.Pos, e.Err)
+	return fmt.Sprintf("parse error at %s: %s", e.Position.String(), e.Err)
 }
 
 // ParseExpr returns the expression parsed from the input.
@@ -290,12 +287,8 @@ func (p *parser) errorf(format string, args ...interface{}) {
 // error terminates processing.
 func (p *parser) error(err error) {
 	perr := &ParseErr{
-		Line: p.lex.lineNumber(),
-		Pos:  p.lex.linePosition(),
-		Err:  err,
-	}
-	if strings.Count(strings.TrimSpace(p.lex.input), "\n") == 0 {
-		perr.Line = 0
+		Position: p.lex.Position(),
+		Err:      err,
 	}
 	panic(perr)
 }

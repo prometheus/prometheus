@@ -16,6 +16,7 @@ package promql
 import (
 	"context"
 	"fmt"
+	"go/token"
 	"io/ioutil"
 	"math"
 	"regexp"
@@ -102,8 +103,13 @@ func (t *Test) Storage() storage.Storage {
 
 func raise(line int, format string, v ...interface{}) error {
 	return &ParseErr{
-		Line: line + 1,
-		Err:  errors.Errorf(format, v...),
+		Position: token.Position{
+			Filename: "",
+			Offset:   0,
+			Line:     line + 1,
+			Column:   0,
+		},
+		Err: errors.Errorf(format, v...),
 	}
 }
 
@@ -128,7 +134,7 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 		metric, vals, err := parseSeriesDesc(defLine)
 		if err != nil {
 			if perr, ok := err.(*ParseErr); ok {
-				perr.Line = i + 1
+				perr.Position.Line = i + 1
 			}
 			return i, nil, err
 		}
@@ -150,8 +156,8 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	_, err := ParseExpr(expr)
 	if err != nil {
 		if perr, ok := err.(*ParseErr); ok {
-			perr.Line = i + 1
-			perr.Pos += strings.Index(lines[i], expr)
+			perr.Position.Line = i + 1
+			perr.Position.Column += strings.Index(lines[i], expr)
 		}
 		return i, nil, err
 	}
@@ -184,7 +190,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		metric, vals, err := parseSeriesDesc(defLine)
 		if err != nil {
 			if perr, ok := err.(*ParseErr); ok {
-				perr.Line = i + 1
+				perr.Position.Line = i + 1
 			}
 			return i, nil, err
 		}

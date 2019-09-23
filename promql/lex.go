@@ -23,9 +23,9 @@ import (
 
 // item represents a token or text string returned from the scanner.
 type item struct {
-	typ ItemType // The type of this item.
-	pos Offset   // The starting position, in bytes, of this item in the input string.
-	val string   // The value of this item.
+	typ ItemType  // The type of this item.
+	pos PosOffset // The starting position, in bytes, of this item in the input string.
+	val string    // The value of this item.
 }
 
 // String returns a descriptive string for the item.
@@ -313,18 +313,18 @@ const eof = -1
 // stateFn represents the state of the scanner as a function that returns the next state.
 type stateFn func(*lexer) stateFn
 
-// Offset is the position in a string.
-type Offset int
+// PosOffset is the position in a string.
+type PosOffset int
 
 // lexer holds the state of the scanner.
 type lexer struct {
 	file       *token.File // source file
 	input      string      // The string being scanned.
 	state      stateFn     // The next lexing function to enter.
-	offset     Offset      // Current position in the input.
-	itemOffset Offset      // Start position of this item.
-	width      Offset      // Width of last rune read from input.
-	lastOffset Offset      // Position of most recent item returned by nextItem.
+	offset     PosOffset   // Current position in the input.
+	itemOffset PosOffset   // Start position of this item.
+	width      PosOffset   // Width of last rune read from input.
+	lastOffset PosOffset   // Position of most recent item returned by nextItem.
 	items      chan item   // Channel of scanned items.
 
 	parenDepth  int  // Nesting depth of ( ) exprs.
@@ -345,7 +345,7 @@ func (l *lexer) next() rune {
 		return eof
 	}
 	r, w := utf8.DecodeRuneInString(l.input[l.offset:])
-	l.width = Offset(w)
+	l.width = PosOffset(w)
 	l.offset += l.width
 	return r
 }
@@ -792,7 +792,7 @@ func lexSpace(l *lexer) stateFn {
 
 // lexLineComment scans a line comment. Left comment marker is known to be present.
 func lexLineComment(l *lexer) stateFn {
-	l.offset += Offset(len(lineComment))
+	l.offset += PosOffset(len(lineComment))
 	for r := l.next(); !isEndOfLine(r) && r != eof; {
 		r = l.next()
 	}
