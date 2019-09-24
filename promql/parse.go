@@ -575,10 +575,10 @@ func (p *parser) primaryExpr() Expr {
 	switch t := p.next(); {
 	case t.typ == ItemNumber:
 		f := p.number(t.val)
-		return &NumberLiteral{f}
+		return &NumberLiteral{token.NoPos, token.NoPos, f}
 
 	case t.typ == ItemString:
-		return &StringLiteral{p.unquoteString(t.val)}
+		return &StringLiteral{token.NoPos, token.NoPos, p.unquoteString(t.val)}
 
 	case t.typ == ItemLeftBrace:
 		// Metric selector without metric name.
@@ -707,7 +707,8 @@ func (p *parser) call(name string) *Call {
 	// Might be call without args.
 	if p.peek().typ == ItemRightParen {
 		p.next() // Consume.
-		return &Call{fn, nil}
+		// FIXME
+		return &Call{token.NoPos, token.NoPos, token.NoPos, fn, nil}
 	}
 
 	var args []Expr
@@ -930,8 +931,6 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 	// For expressions the type is determined by their Type function.
 	// Lists do not have a type but are not invalid either.
 	switch n := node.(type) {
-	case Expressions:
-		typ = ValueTypeNone
 	case Expr:
 		typ = n.Type()
 	default:
@@ -947,13 +946,6 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 			p.errorf("evaluation statement must have a valid expression type but got %s", documentedType(ty))
 		}
 
-	case Expressions:
-		for _, e := range n {
-			ty := p.checkType(e)
-			if ty == ValueTypeNone {
-				p.errorf("expression must have a valid expression type but got %s", documentedType(ty))
-			}
-		}
 	case *AggregateExpr:
 		if !n.Op.isAggregator() {
 			p.errorf("aggregation operator expected in aggregation expression but got %q", n.Op)
@@ -1018,6 +1010,13 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 				i = len(n.Func.ArgTypes) - 1
 			}
 			p.expectType(arg, n.Func.ArgTypes[i], fmt.Sprintf("call to function %q", n.Func.Name))
+		}
+		// FIXME
+		for _, e := range n.Args {
+			ty := p.checkType(e)
+			if ty == ValueTypeNone {
+				p.errorf("expression must have a valid expression type but got %s", documentedType(ty))
+			}
 		}
 
 	case *ParenExpr:

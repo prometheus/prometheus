@@ -42,10 +42,6 @@ func tree(node Node, level string) string {
 	case *EvalStmt:
 		t += tree(n.Expr, level)
 
-	case Expressions:
-		for _, e := range n {
-			t += tree(e, level)
-		}
 	case *AggregateExpr:
 		t += tree(n.Expr, level)
 
@@ -54,7 +50,9 @@ func tree(node Node, level string) string {
 		t += tree(n.RHS, level)
 
 	case *Call:
-		t += tree(n.Args, level)
+		for _, e := range n.Args {
+			t += tree(e, level)
+		}
 
 	case *ParenExpr:
 		t += tree(n.Expr, level)
@@ -76,17 +74,6 @@ func tree(node Node, level string) string {
 
 func (node *EvalStmt) String() string {
 	return "EVAL " + node.Expr.String()
-}
-
-func (es Expressions) String() (s string) {
-	if len(es) == 0 {
-		return ""
-	}
-	for _, e := range es {
-		s += e.String()
-		s += ", "
-	}
-	return s[:len(s)-2]
 }
 
 func (node *AggregateExpr) String() string {
@@ -137,7 +124,14 @@ func (node *BinaryExpr) String() string {
 }
 
 func (node *Call) String() string {
-	return fmt.Sprintf("%s(%s)", node.Func.Name, node.Args)
+	args := ""
+	for _, e := range node.Args {
+		args += e.String()
+		args += ", "
+	}
+	args = args[:len(args)-2]
+
+	return fmt.Sprintf("%s(%s)", node.Func.Name, args)
 }
 
 func (node *MatrixSelector) String() string {

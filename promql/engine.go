@@ -17,6 +17,7 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"go/token"
 	"math"
 	"regexp"
 	"runtime"
@@ -357,6 +358,10 @@ type testStmt func(context.Context) error
 
 func (testStmt) String() string { return "test statement" }
 func (testStmt) stmt()          {}
+
+// FIXME
+func (testStmt) Pos() token.Pos    { return token.NoPos }
+func (testStmt) EndPos() token.Pos { return token.NoPos }
 
 func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 	qry := &query{

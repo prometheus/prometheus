@@ -16,6 +16,8 @@ package promql
 import (
 	"time"
 
+	"go/token"
+
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -39,6 +41,8 @@ type Node interface {
 	// String representation of the node that returns the given node when parsed
 	// as part of a valid query.
 	String() string
+	Pos() token.Pos    // position of first character belonging to the node
+	EndPos() token.Pos // position of first character immediately after the node
 }
 
 // Statement is a generic interface for all statements.
@@ -51,14 +55,24 @@ type Statement interface {
 
 // EvalStmt holds an expression and information on the range it should
 // be evaluated on.
+// TODO split into an Expr and an RangeExpr
 type EvalStmt struct {
-	Expr Expr // Expression to be evaluated.
+	Expr   Expr // Expression to be evaluated.
+	endPos token.Pos
 
 	// The time boundaries for the evaluation. If Start equals End an instant
 	// is evaluated.
 	Start, End time.Time
 	// Time between two evaluated instants for the range [Start:End].
 	Interval time.Duration
+}
+
+func (e *EvalStmt) Pos() token.Pos {
+	return e.Expr.Pos()
+}
+
+func (e *EvalStmt) EndPos() token.Pos {
+	return e.endPos
 }
 
 func (*EvalStmt) stmt() {}
@@ -74,16 +88,22 @@ type Expr interface {
 	expr()
 }
 
-// Expressions is a list of expression nodes that implements Node.
-type Expressions []Expr
-
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
+	pos      token.Pos
+	endPos   token.Pos
 	Op       ItemType // The used aggregation operation.
 	Expr     Expr     // The Vector expression over which is aggregated.
 	Param    Expr     // Parameter used by some aggregators.
 	Grouping []string // The labels by which to group the Vector.
 	Without  bool     // Whether to drop the given labels rather than keep them.
+}
+
+func (e *AggregateExpr) Pos() token.Pos {
+	return e.pos
+}
+func (e *AggregateExpr) EndPos() token.Pos {
+	return e.endPos
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -99,14 +119,33 @@ type BinaryExpr struct {
 	ReturnBool bool
 }
 
+func (e *BinaryExpr) Pos() token.Pos {
+	return e.LHS.Pos()
+}
+func (e *BinaryExpr) EndPos() token.Pos {
+	return e.RHS.EndPos()
+}
+
 // Call represents a function call.
 type Call struct {
-	Func *Function   // The function that was called.
-	Args Expressions // Arguments used in the call.
+	pos    token.Pos
+	LParen token.Pos
+	RParen token.Pos
+	Func   *Function // The function that was called.
+	Args   []Expr    // Arguments used in the call.
+}
+
+func (e *Call) Pos() token.Pos {
+	return e.pos
+}
+func (e *Call) EndPos() token.Pos {
+	return e.RParen + 1
 }
 
 // MatrixSelector represents a Matrix selection.
 type MatrixSelector struct {
+	pos           token.Pos
+	endPos        token.Pos
 	Name          string
 	Range         time.Duration
 	Offset        time.Duration
@@ -117,39 +156,94 @@ type MatrixSelector struct {
 	series              []storage.Series
 }
 
+func (e *MatrixSelector) Pos() token.Pos {
+	return e.pos
+}
+func (e *MatrixSelector) EndPos() token.Pos {
+	return e.endPos
+}
+
 // SubqueryExpr represents a subquery.
 type SubqueryExpr struct {
 	Expr   Expr
+	endPos token.Pos
 	Range  time.Duration
 	Offset time.Duration
 	Step   time.Duration
 }
 
+func (e *SubqueryExpr) Pos() token.Pos {
+	return e.Expr.Pos()
+}
+func (e *SubqueryExpr) EndPos() token.Pos {
+	return e.endPos
+}
+
 // NumberLiteral represents a number.
 type NumberLiteral struct {
-	Val float64
+	pos    token.Pos
+	endPos token.Pos
+	Val    float64
+}
+
+func (e *NumberLiteral) Pos() token.Pos {
+	return e.pos
+}
+func (e *NumberLiteral) EndPos() token.Pos {
+	return e.endPos
 }
 
 // ParenExpr wraps an expression so it cannot be disassembled as a consequence
 // of operator precedence.
 type ParenExpr struct {
-	Expr Expr
+	LParen token.Pos
+	RParen token.Pos
+	Expr   Expr
+}
+
+func (e *ParenExpr) Pos() token.Pos {
+	return e.LParen
+}
+
+func (e *ParenExpr) EndPos() token.Pos {
+	return e.RParen + 1
 }
 
 // StringLiteral represents a string.
 type StringLiteral struct {
-	Val string
+	LQuote token.Pos
+	RQuote token.Pos
+	Val    string
+}
+
+func (e *StringLiteral) Pos() token.Pos {
+	return e.LQuote
+}
+
+func (e *StringLiteral) EndPos() token.Pos {
+	return e.RQuote + 1
 }
 
 // UnaryExpr represents a unary operation on another expression.
 // Currently unary operations are only supported for Scalars.
 type UnaryExpr struct {
+	pos  token.Pos
 	Op   ItemType
 	Expr Expr
 }
 
+func (e *UnaryExpr) Pos() token.Pos {
+	return e.pos
+}
+
+func (e *UnaryExpr) EndPos() token.Pos {
+	return e.Expr.EndPos()
+}
+
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
+	pos           token.Pos
+	endPos        token.Pos
 	Name          string
 	Offset        time.Duration
 	LabelMatchers []*labels.Matcher
@@ -159,6 +253,12 @@ type VectorSelector struct {
 	series              []storage.Series
 }
 
+func (e *VectorSelector) Pos() token.Pos {
+	return e.pos
+}
+func (e *VectorSelector) EndPos() token.Pos {
+	return e.endPos
+}
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
 func (e *Call) Type() ValueType           { return e.Func.ReturnType }
 func (e *MatrixSelector) Type() ValueType { return ValueTypeMatrix }
@@ -254,12 +354,6 @@ func Walk(v Visitor, node Node, path []Node) error {
 			return err
 		}
 
-	case Expressions:
-		for _, e := range n {
-			if err := Walk(v, e, path); err != nil {
-				return err
-			}
-		}
 	case *AggregateExpr:
 		if n.Param != nil {
 			if err := Walk(v, n.Param, path); err != nil {
@@ -279,8 +373,10 @@ func Walk(v Visitor, node Node, path []Node) error {
 		}
 
 	case *Call:
-		if err := Walk(v, n.Args, path); err != nil {
-			return err
+		for _, e := range n.Args {
+			if err := Walk(v, e, path); err != nil {
+				return err
+			}
 		}
 
 	case *SubqueryExpr:
