@@ -46,7 +46,7 @@ type ParseErr struct {
 }
 
 func (e *ParseErr) Error() string {
-	return fmt.Sprintf("parse error at %s: %s", e.Position.String(), e.Err)
+	return fmt.Sprintf("%s: parse error: %s", e.Position.String(), e.Err)
 }
 
 // ParseExpr returns the expression parsed from the input.
