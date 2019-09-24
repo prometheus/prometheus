@@ -25,11 +25,13 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
+	"github.com/prometheus/prometheus/discovery/consul"
+	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"gopkg.in/yaml.v2"
 )
@@ -749,27 +751,33 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 }
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
-	cfg := &config.Config{}
-
-	sOne := `
-scrape_configs:
- - job_name: 'prometheus'
-   static_configs:
-   - targets: ["foo:9090"]
-   - targets: ["bar:9090"]
-`
-	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sOne: %s", err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfg.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c := map[string]sd_config.ServiceDiscoveryConfig{
+		"prometheus": sd_config.ServiceDiscoveryConfig{
+			StaticConfigs: []*targetgroup.Group{
+				&targetgroup.Group{
+					Source: "0",
+					Targets: []model.LabelSet{
+						model.LabelSet{
+							model.AddressLabel: model.LabelValue("foo:9090"),
+						},
+					},
+				},
+				&targetgroup.Group{
+					Source: "1",
+					Targets: []model.LabelSet{
+						model.LabelSet{
+							model.AddressLabel: model.LabelValue("bar:9090"),
+						},
+					},
+				},
+			},
+		},
 	}
 	discoveryManager.ApplyConfig(c)
 
@@ -777,18 +785,17 @@ scrape_configs:
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", true)
 
-	sTwo := `
-scrape_configs:
- - job_name: 'prometheus'
-   static_configs:
-   - targets: ["foo:9090"]
-`
-	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sTwo: %s", err)
-	}
-	c = make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfg.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c["prometheus"] = sd_config.ServiceDiscoveryConfig{
+		StaticConfigs: []*targetgroup.Group{
+			&targetgroup.Group{
+				Source: "0",
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						model.AddressLabel: model.LabelValue("foo:9090"),
+					},
+				},
+			},
+		},
 	}
 	discoveryManager.ApplyConfig(c)
 
@@ -801,43 +808,33 @@ scrape_configs:
 // removing all targets from the static_configs sends an update with empty targetGroups.
 // This is required to signal the receiver that this target set has no current targets.
 func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
-	cfg := &config.Config{}
-
-	sOne := `
-scrape_configs:
- - job_name: 'prometheus'
-   static_configs:
-   - targets: ["foo:9090"]
-`
-	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sOne: %s", err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfg.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c := map[string]sd_config.ServiceDiscoveryConfig{
+		"prometheus": sd_config.ServiceDiscoveryConfig{
+			StaticConfigs: []*targetgroup.Group{
+				&targetgroup.Group{
+					Source: "0",
+					Targets: []model.LabelSet{
+						model.LabelSet{
+							model.AddressLabel: model.LabelValue("foo:9090"),
+						},
+					},
+				},
+			},
+		},
 	}
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
 
-	sTwo := `
-scrape_configs:
- - job_name: 'prometheus'
-   static_configs:
-`
-	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sTwo: %s", err)
-	}
-	c = make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfg.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c["prometheus"] = sd_config.ServiceDiscoveryConfig{
+		StaticConfigs: []*targetgroup.Group{},
 	}
 	discoveryManager.ApplyConfig(c)
 
@@ -876,30 +873,33 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	}
 	defer os.Remove(tmpFile2)
 
-	cfg := &config.Config{}
-
-	sOne := `
-scrape_configs:
- - job_name: 'prometheus'
-   file_sd_configs:
-   - files: ["%s"]
- - job_name: 'prometheus2'
-   file_sd_configs:
-   - files: ["%s"]
-`
-	sOne = fmt.Sprintf(sOne, tmpFile2, tmpFile2)
-	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sOne: %s", err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, nil)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfg.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c := map[string]sd_config.ServiceDiscoveryConfig{
+		"prometheus": sd_config.ServiceDiscoveryConfig{
+			FileSDConfigs: []*file.SDConfig{
+				&file.SDConfig{
+					Files: []string{
+						tmpFile2,
+					},
+					RefreshInterval: file.DefaultSDConfig.RefreshInterval,
+				},
+			},
+		},
+		"prometheus2": sd_config.ServiceDiscoveryConfig{
+			FileSDConfigs: []*file.SDConfig{
+				&file.SDConfig{
+					Files: []string{
+						tmpFile2,
+					},
+					RefreshInterval: file.DefaultSDConfig.RefreshInterval,
+				},
+			},
+		},
 	}
 	discoveryManager.ApplyConfig(c)
 
@@ -924,7 +924,6 @@ scrape_configs:
 	if err := yaml.UnmarshalStrict([]byte(cfgText), originalConfig); err != nil {
 		t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
 	}
-	origScrpCfg := originalConfig.ScrapeConfigs[0]
 
 	processedConfig := &config.Config{}
 	if err := yaml.UnmarshalStrict([]byte(cfgText), processedConfig); err != nil {
@@ -936,100 +935,76 @@ scrape_configs:
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range processedConfig.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c := map[string]sd_config.ServiceDiscoveryConfig{
+		"prometheus": processedConfig.ScrapeConfigs[0].ServiceDiscoveryConfig,
 	}
 	discoveryManager.ApplyConfig(c)
 	<-discoveryManager.SyncCh()
 
+	origSdcfg := originalConfig.ScrapeConfigs[0].ServiceDiscoveryConfig
 	for _, sdcfg := range c {
-		if !reflect.DeepEqual(origScrpCfg.ServiceDiscoveryConfig.StaticConfigs, sdcfg.StaticConfigs) {
+		if !reflect.DeepEqual(origSdcfg.StaticConfigs, sdcfg.StaticConfigs) {
 			t.Fatalf("discovery manager modified static config \n  expected: %v\n  got: %v\n",
-				origScrpCfg.ServiceDiscoveryConfig.StaticConfigs, sdcfg.StaticConfigs)
+				origSdcfg.StaticConfigs, sdcfg.StaticConfigs)
 		}
 	}
 }
 
 func TestGaugeFailedConfigs(t *testing.T) {
-	var (
-		fcGauge prometheus.Gauge
-		err     error
-	)
-
-	cfgOneText := `
-scrape_configs:
-- job_name: prometheus
-  consul_sd_configs:
-  - server: "foo:8500"
-    tls_config:
-      cert_file: "/tmp/non_existent"
-  - server: "bar:8500"
-    tls_config:
-      cert_file: "/tmp/non_existent"
-  - server: "foo2:8500"
-    tls_config:
-      cert_file: "/tmp/non_existent"
-`
-	cfgOne := &config.Config{}
-
-	err = yaml.UnmarshalStrict([]byte(cfgOneText), cfgOne)
-	if err != nil {
-		t.Fatalf("Unable to load YAML config cfgOne: %s", err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfgOne.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c := map[string]sd_config.ServiceDiscoveryConfig{
+		"prometheus": sd_config.ServiceDiscoveryConfig{
+			ConsulSDConfigs: []*consul.SDConfig{
+				&consul.SDConfig{
+					Server: "foo:8500",
+					TLSConfig: common_config.TLSConfig{
+						CertFile: "/tmp/non_existent",
+					},
+				},
+				&consul.SDConfig{
+					Server: "bar:8500",
+					TLSConfig: common_config.TLSConfig{
+						CertFile: "/tmp/non_existent",
+					},
+				},
+				&consul.SDConfig{
+					Server: "foo2:8500",
+					TLSConfig: common_config.TLSConfig{
+						CertFile: "/tmp/non_existent",
+					},
+				},
+			},
+		},
 	}
-
 	discoveryManager.ApplyConfig(c)
 	<-discoveryManager.SyncCh()
 
-	metricOne := &dto.Metric{}
-	fcGauge, err = failedConfigs.GetMetricWithLabelValues(discoveryManager.name)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fcGauge.Write(metricOne)
-
-	failedCount := metricOne.GetGauge().GetValue()
+	failedCount := testutil.ToFloat64(failedConfigs)
 	if failedCount != 3 {
 		t.Fatalf("Expected to have 3 failed configs, got: %v", failedCount)
 	}
 
-	cfgTwoText := `
-scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-    - targets: ["foo:9090"]
-`
-	cfgTwo := &config.Config{}
-	if err := yaml.UnmarshalStrict([]byte(cfgTwoText), cfgTwo); err != nil {
-		t.Fatalf("Unable to load YAML config cfgTwo: %s", err)
+	c["prometheus"] = sd_config.ServiceDiscoveryConfig{
+		StaticConfigs: []*targetgroup.Group{
+			&targetgroup.Group{
+				Source: "0",
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						model.AddressLabel: "foo:9090",
+					},
+				},
+			},
+		},
 	}
-	c = make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfgTwo.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
-	}
-
 	discoveryManager.ApplyConfig(c)
 	<-discoveryManager.SyncCh()
 
-	metricTwo := &dto.Metric{}
-	fcGauge, err = failedConfigs.GetMetricWithLabelValues(discoveryManager.name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fcGauge.Write(metricTwo)
-
-	failedCount = metricTwo.GetGauge().GetValue()
+	failedCount = testutil.ToFloat64(failedConfigs)
 	if failedCount != 0 {
 		t.Fatalf("Expected to get no failed config, got: %v", failedCount)
 	}
