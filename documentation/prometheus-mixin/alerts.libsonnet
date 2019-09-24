@@ -149,7 +149,7 @@
             },
             annotations: {
               summary: 'Prometheus is dropping samples with duplicate timestamps.',
-              description: 'Prometheus %(prometheusName)s is dropping {{$value | humanize}} samples/s with different values but duplicated timestamp.' % $._config,
+              description: 'Prometheus %(prometheusName)s is dropping {{ printf "%%.4g" $value  }} samples/s with different values but duplicated timestamp.' % $._config,
             },
           },
           {
@@ -163,7 +163,7 @@
             },
             annotations: {
               summary: 'Prometheus drops samples with out-of-order timestamps.',
-              description: 'Prometheus %(prometheusName)s is dropping {{$value | humanize}} samples/s with timestamps arriving out of order.' % $._config,
+              description: 'Prometheus %(prometheusName)s is dropping {{ printf "%%.4g" $value  }} samples/s with timestamps arriving out of order.' % $._config,
             },
           },
           {
