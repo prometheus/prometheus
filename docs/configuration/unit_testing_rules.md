@@ -50,7 +50,7 @@ input_series:
 alert_rule_test:
   [ - <alert_test_case> ]
 
-# Unit tests PromQL expressions.
+# Unit tests for PromQL expressions.
 promql_expr_test:
   [ - <promql_test_case> ]
 
@@ -114,7 +114,7 @@ exp_annotations:
 # Expression to evaluate
 expr: <string>
 
-# It's the time elapsed from time=0s when the alerts have to be checked.
+# It's the time elapsed from time=0s when the expression has to be evaluated.
 eval_time: <duration>
 
 # Expected samples at the given evaluation time.
@@ -131,7 +131,7 @@ exp_samples:
 #      go_goroutines{job="prometheus", instance="localhost:9090"}
 labels: <string>
 
-# The expected value of the promql expression.
+# The expected value of the PromQL expression.
 value: <number>
 ```
 
