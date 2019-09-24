@@ -1,3 +1,22 @@
+## 2.13.0-rc.0 / 2019-09-25
+
+* [CHANGE] Metrics: Change prometheus_sd_configs_failed_total to Gauge #5254
+* [CHANGE] Service discovery: add new node address types for kubernetes. #5902
+* [CHANGE] Metrics format: update parsing to disallow new Go 1.13 float formats. #5984
+* [ENHANCEMENT] Remote read: use remote read streaming to reduce memory usage. #5703
+* [ENHANCEMENT] Docs: fix spelling mistakes and other small changes . #5952, #6051
+* [ENHANCEMENT] GUI: show warnings if query have returned some warnings. #5964
+* [ENHANCEMENT] Reduce memory usage: cache labels.Labels to Identify Series in Remote Write. #5849
+* [ENHANCEMENT] Metrics: added metrics for remote write max/min/desired shards to queue manager. #5787
+* [ENHANCEMENT] Promtool: show the warnings during label query. #5924
+* [ENHANCEMENT] Promtool: improve error messages when parsing bad rules. #5965
+* [ENHANCEMENT] Promtool: more promlint rules. #5515
+* [ENHANCEMENT] Promtool: fix recording inconsistency due to duplicate labels. #6026
+* [BUGFIX] GUI: fixes service-discovery view when accessed from unhealthy targets. #5915
+* [BUGFIX] Service discovery example: when ip out of order, reflect.deepEqual can not correctly identify whether there is a change. #5856
+* [BUGFIX] Metrics format: OpenMetrics parser crashes on short input. #5939
+* [BUGFIX] GUI: avoid truncated Y-axis values. #6014
+
 ## 2.12.0 / 2019-08-17
 
 * [FEATURE] Track currently active PromQL queries in a log file. #5794
