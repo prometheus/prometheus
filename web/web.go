@@ -346,7 +346,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	} else {
 		forbiddenAPINotEnabled := func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte("Lifecycle APIs are not enabled"))
+			w.Write([]byte("Lifecycle API is not enabled."))
 		}
 		router.Post("/-/quit", forbiddenAPINotEnabled)
 		router.Put("/-/quit", forbiddenAPINotEnabled)
