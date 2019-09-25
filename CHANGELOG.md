@@ -1,7 +1,7 @@
 ## 2.13.0-rc.0 / 2019-09-25
 
 * [CHANGE] Metrics: renamed prometheus_sd_configs_failed_total to prometheus_sd_failed_configs and changed to Gauge #5254
-* [CHANGE] Service discovery: add new node address types for kubernetes. #5902
+* [ENHANCEMENT] Service discovery: add new node address types for kubernetes. #5902
 * [ENHANCEMENT] UI: show warnings if query have returned some warnings. #5964
 * [ENHANCEMENT] Remote write: reduce memory usage of the series cache. #5849
 * [ENHANCEMENT] Remote read: use remote read streaming to reduce memory usage. #5703
