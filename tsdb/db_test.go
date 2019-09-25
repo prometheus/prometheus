@@ -100,7 +100,7 @@ func TestDB_reloadOrder(t *testing.T) {
 		createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
 	}
 
-	testutil.Ok(t, db.reload())
+	testutil.Ok(t, db.reload(false))
 	blocks := db.Blocks()
 	testutil.Equals(t, 3, len(blocks))
 	testutil.Equals(t, metas[1].MinTime, blocks[0].Meta().MinTime)
@@ -1075,11 +1075,11 @@ func TestTimeRetention(t *testing.T) {
 		createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
 	}
 
-	testutil.Ok(t, db.reload())                       // Reload the db to register the new blocks.
+	testutil.Ok(t, db.reload(false))                  // Reload the db to register the new blocks.
 	testutil.Equals(t, len(blocks), len(db.Blocks())) // Ensure all blocks are registered.
 
 	db.opts.RetentionDuration = uint64(blocks[2].MaxTime - blocks[1].MinTime)
-	testutil.Ok(t, db.reload())
+	testutil.Ok(t, db.reload(false))
 
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
@@ -1112,7 +1112,7 @@ func TestSizeRetention(t *testing.T) {
 	}
 
 	// Test that registered size matches the actual disk size.
-	testutil.Ok(t, db.reload())                                       // Reload the db to register the new db size.
+	testutil.Ok(t, db.reload(false))                                  // Reload the db to register the new db size.
 	testutil.Equals(t, len(blocks), len(db.Blocks()))                 // Ensure all blocks are registered.
 	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	actSize := testutil.DirSize(t, db.Dir())
@@ -1122,8 +1122,8 @@ func TestSizeRetention(t *testing.T) {
 	// Check total size, total count and check that the oldest block was deleted.
 	firstBlockSize := db.Blocks()[0].Size()
 	sizeLimit := actSize - firstBlockSize
-	db.opts.MaxBytes = sizeLimit // Set the new db size limit one block smaller that the actual size.
-	testutil.Ok(t, db.reload())  // Reload the db to register the new db size.
+	db.opts.MaxBytes = sizeLimit     // Set the new db size limit one block smaller that the actual size.
+	testutil.Ok(t, db.reload(false)) // Reload the db to register the new db size.
 
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
@@ -1641,7 +1641,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		}
 
 		oldBlocks := db.Blocks()
-		testutil.Ok(t, db.reload())                                      // Reload the db to register the new blocks.
+		testutil.Ok(t, db.reload(false))                                 // Reload the db to register the new blocks.
 		testutil.Equals(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
 		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
 		testutil.Ok(t, db.compact())

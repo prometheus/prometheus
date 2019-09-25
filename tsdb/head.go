@@ -84,8 +84,10 @@ type Head struct {
 	deletedMtx sync.Mutex
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
-	quit chan struct{}
-	wg   sync.WaitGroup
+	quit          chan struct{}
+	chanClosed    bool
+	wg            sync.WaitGroup
+	chunkpointMtx sync.Mutex
 
 	postings *index.MemPostings // postings lists for terms
 }
@@ -514,39 +516,14 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
-	// Backfill the checkpoint first if it exists.
-	dir, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
-	if err != nil && err != record.ErrNotFound {
-		return errors.Wrap(err, "find last checkpoint")
-	}
 	multiRef := map[uint64]uint64{}
-	if err == nil {
-		sr, err := wal.NewSegmentsReader(dir)
-		if err != nil {
-			return errors.Wrap(err, "open checkpoint")
-		}
-		defer func() {
-			if err := sr.Close(); err != nil {
-				level.Warn(h.logger).Log("msg", "error while closing the wal segments reader", "err", err)
-			}
-		}()
-
-		// A corrupted checkpoint is a hard error for now and requires user
-		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wal.NewReader(sr), multiRef); err != nil {
-			return errors.Wrap(err, "backfill checkpoint")
-		}
-		startFrom++
-		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
-	}
 
 	// Find the last segment.
-	_, last, err := h.wal.Segments()
+	startFrom, last, err := h.wal.Segments()
 	if err != nil {
 		return errors.Wrap(err, "finding WAL segments")
 	}
 
-	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
 		s, err := wal.OpenReadSegment(wal.SegmentName(h.wal.Dir(), i))
 		if err != nil {
@@ -568,18 +545,13 @@ func (h *Head) Init(minValidTime int64) error {
 	go func() {
 		defer h.wg.Done()
 
-		tick := time.NewTicker(2 * time.Minute)
+		tick := time.NewTicker(100 * time.Minute)
 		for {
 			select {
 			case <-tick.C:
-				level.Info(h.logger).Log("msg", "starting to create a chunkpoint")
-				start := time.Now()
-				stats, err := Chunkpoint(h)
-				if err != nil {
-					level.Error(h.logger).Log("msg", "chunkpoint failed", "err", err, "duration", time.Since(start))
-					continue
-				}
-				level.Info(h.logger).Log("msg", "chunkpoint complete", "series", stats.TotalSeries, "duration", time.Since(start))
+				// TODO: if chunkpoint was created very recently by the truncation of WAL
+				// then skip this stage.
+				h.performChunkpoint()
 			case <-h.quit:
 				return
 			}
@@ -590,7 +562,7 @@ func (h *Head) Init(minValidTime int64) error {
 }
 
 // Truncate removes old data before mint from the head.
-func (h *Head) Truncate(mint int64) (err error) {
+func (h *Head) Truncate(mint int64, createCheckpoint bool) (err error) {
 	defer func() {
 		if err != nil {
 			h.metrics.headTruncateFail.Inc()
@@ -625,44 +597,42 @@ func (h *Head) Truncate(mint int64) (err error) {
 	if h.wal == nil {
 		return nil
 	}
-	start = time.Now()
 
-	first, last, err := h.wal.Segments()
-	if err != nil {
-		return errors.Wrap(err, "get segment range")
-	}
 	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
 	// needed.
 	err = h.wal.NextSegment()
 	if err != nil {
 		return errors.Wrap(err, "next segment")
 	}
-	last-- // Never consider last segment for checkpoint.
-	if last < 0 {
-		return nil // no segments yet.
-	}
-	// The lower third of segments should contain mostly obsolete samples.
-	// If we have less than three segments, it's not worth checkpointing yet.
-	last = first + (last-first)/3
-	if last <= first {
+
+	if !createCheckpoint {
 		return nil
 	}
 
-	keep := func(id uint64) bool {
-		if h.series.getByID(id) != nil {
-			return true
-		}
-		h.deletedMtx.Lock()
-		_, ok := h.deleted[id]
-		h.deletedMtx.Unlock()
-		return ok
+	return h.performChunkpoint()
+}
+
+func (h *Head) performChunkpoint() error {
+	h.chunkpointMtx.Lock()
+	defer h.chunkpointMtx.Unlock()
+
+	level.Info(h.logger).Log("msg", "creating a chunkpoint")
+	start := time.Now()
+	first, last, err := h.wal.Segments()
+	if err != nil {
+		return errors.Wrap(err, "get segment range")
 	}
+
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wal.Checkpoint(h.wal, first, last, keep, mint); err != nil {
+	stats, err := h.Chunkpoint()
+	if err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		return errors.Wrap(err, "create checkpoint")
 	}
-	if err := h.wal.Truncate(last + 1); err != nil {
+
+	// The last segment would still be active, so only truncate the segments
+	// before that.
+	if err := h.wal.Truncate(last - 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
 		// Leftover segments will just be ignored in the future if there's a checkpoint
 		// that supersedes them.
@@ -679,18 +649,9 @@ func (h *Head) Truncate(mint int64) (err error) {
 	}
 	h.deletedMtx.Unlock()
 
-	h.metrics.checkpointDeleteTotal.Inc()
-	if err := wal.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
-		// Leftover old checkpoints do not cause problems down the line beyond
-		// occupying disk space.
-		// They will just be ignored since a higher checkpoint exists.
-		level.Error(h.logger).Log("msg", "delete old checkpoints", "err", err)
-		h.metrics.checkpointDeleteFail.Inc()
-	}
 	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
 
-	level.Info(h.logger).Log("msg", "WAL checkpoint complete",
-		"first", first, "last", last, "duration", time.Since(start))
+	level.Info(h.logger).Log("msg", "chunkpoint complete", "series", stats.TotalSeries, "duration", time.Since(start))
 
 	return nil
 }
@@ -1212,7 +1173,10 @@ func (h *Head) compactable() bool {
 
 // Close flushes the WAL and closes the head.
 func (h *Head) Close() error {
-	close(h.quit)
+	if h.quit != nil && !h.chanClosed {
+		close(h.quit)
+		h.chanClosed = true
+	}
 	h.wg.Wait()
 	if h.wal == nil {
 		return nil

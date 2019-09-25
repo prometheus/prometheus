@@ -187,7 +187,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
-	testutil.Ok(t, head.Truncate(200))
+	testutil.Ok(t, head.Truncate(200, true))
 
 	app = head.Appender()
 	ref2, err := app.Add(labels.FromStrings("foo", "bar"), 300, 2)
@@ -242,9 +242,9 @@ func TestHead_Truncate(t *testing.T) {
 	s4.chunks = []*memChunk{}
 
 	// Truncation need not be aligned.
-	testutil.Ok(t, h.Truncate(1))
+	testutil.Ok(t, h.Truncate(1, true))
 
-	testutil.Ok(t, h.Truncate(2000))
+	testutil.Ok(t, h.Truncate(2000, true))
 
 	testutil.Equals(t, []*memChunk{
 		{minTime: 2000, maxTime: 2999},
@@ -589,11 +589,11 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 		testutil.Ok(t, app.Commit())
 	}
 	testutil.Ok(t, hb.Delete(0, int64(numSamples), labels.NewEqualMatcher("a", "b")))
-	testutil.Ok(t, hb.Truncate(1))
+	testutil.Ok(t, hb.Truncate(1, true))
 	testutil.Ok(t, hb.Close())
 
 	// Confirm there's been a checkpoint.
-	cdir, _, err := wal.LastCheckpoint(dir)
+	cdir, _, err := LastChunkpoint(dir)
 	testutil.Ok(t, err)
 	// Read in checkpoint and WAL.
 	recs := readTestWAL(t, cdir)
@@ -925,7 +925,7 @@ func TestGCChunkAccess(t *testing.T) {
 	_, err = cr.Chunk(chunks[1].Ref)
 	testutil.Ok(t, err)
 
-	testutil.Ok(t, h.Truncate(1500)) // Remove a chunk.
+	testutil.Ok(t, h.Truncate(1500, true)) // Remove a chunk.
 
 	_, err = cr.Chunk(chunks[0].Ref)
 	testutil.Equals(t, ErrNotFound, err)
@@ -965,7 +965,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	_, err = cr.Chunk(chunks[1].Ref)
 	testutil.Ok(t, err)
 
-	testutil.Ok(t, h.Truncate(2000)) // Remove the series.
+	testutil.Ok(t, h.Truncate(2000, true)) // Remove the series.
 
 	testutil.Equals(t, (*memSeries)(nil), h.series.getByID(1))
 
@@ -987,7 +987,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	_, err = app.Add(lset, 2100, 1)
 	testutil.Ok(t, err)
 
-	testutil.Ok(t, h.Truncate(2000))
+	testutil.Ok(t, h.Truncate(2000, true))
 	testutil.Assert(t, nil != h.series.getByHash(lset.Hash(), lset), "series should not have been garbage collected")
 
 	testutil.Ok(t, app.Commit())
@@ -1014,7 +1014,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	_, err = app.Add(lset, 2100, 1)
 	testutil.Ok(t, err)
 
-	testutil.Ok(t, h.Truncate(2000))
+	testutil.Ok(t, h.Truncate(2000, true))
 	testutil.Assert(t, nil != h.series.getByHash(lset.Hash(), lset), "series should not have been garbage collected")
 
 	testutil.Ok(t, app.Rollback())
@@ -1029,7 +1029,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	testutil.Equals(t, false, ss.Next())
 
 	// Truncate again, this time the series should be deleted
-	testutil.Ok(t, h.Truncate(2050))
+	testutil.Ok(t, h.Truncate(2050, true))
 	testutil.Equals(t, (*memSeries)(nil), h.series.getByHash(lset.Hash(), lset))
 }
 
@@ -1198,13 +1198,13 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	testutil.Equals(t, 0, last)
 
 	add(1)
-	testutil.Ok(t, h.Truncate(1))
+	testutil.Ok(t, h.Truncate(1, true))
 	_, last, err = wlog.Segments()
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, last)
 
 	add(2)
-	testutil.Ok(t, h.Truncate(2))
+	testutil.Ok(t, h.Truncate(2, true))
 	_, last, err = wlog.Segments()
 	testutil.Ok(t, err)
 	testutil.Equals(t, 2, last)

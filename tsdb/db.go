@@ -548,7 +548,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		return nil, err
 	}
 
-	if err := db.reload(); err != nil {
+	if err := db.reload(false); err != nil {
 		return nil, err
 	}
 	// Set the min valid time for the ingested samples
@@ -690,7 +690,7 @@ func (db *DB) compact() (err error) {
 
 		runtime.GC()
 
-		if err := db.reload(); err != nil {
+		if err := db.reload(true); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
 				return errors.Wrapf(err, "delete persisted head block after failed db reload:%s", uid)
 			}
@@ -700,7 +700,7 @@ func (db *DB) compact() (err error) {
 			// Compaction resulted in an empty block.
 			// Head truncating during db.reload() depends on the persisted blocks and
 			// in this case no new block will be persisted so manually truncate the head.
-			if err = db.head.Truncate(maxt); err != nil {
+			if err = db.head.Truncate(maxt, true); err != nil {
 				return errors.Wrap(err, "head truncate failed (in compact)")
 			}
 		}
@@ -729,7 +729,7 @@ func (db *DB) compact() (err error) {
 		}
 		runtime.GC()
 
-		if err := db.reload(); err != nil {
+		if err := db.reload(true); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
 				return errors.Wrapf(err, "delete compacted block after failed db reload:%s", uid)
 			}
@@ -754,7 +754,7 @@ func getBlock(allBlocks []*Block, id ulid.ULID) (*Block, bool) {
 
 // reload blocks and trigger head truncation if new blocks appeared.
 // Blocks that are obsolete due to replacement or retention will be deleted.
-func (db *DB) reload() (err error) {
+func (db *DB) reload(createCheckpoint bool) (err error) {
 	defer func() {
 		if err != nil {
 			db.metrics.reloadsFailed.Inc()
@@ -847,7 +847,7 @@ func (db *DB) reload() (err error) {
 
 	maxt := loadable[len(loadable)-1].Meta().MaxTime
 
-	return errors.Wrap(db.head.Truncate(maxt), "head truncate failed")
+	return errors.Wrap(db.head.Truncate(maxt, createCheckpoint), "head truncate failed")
 }
 
 func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
@@ -1298,7 +1298,7 @@ func (db *DB) CleanTombstones() (err error) {
 			newUIDs = append(newUIDs, *uid)
 		}
 	}
-	return errors.Wrap(db.reload(), "reload blocks")
+	return errors.Wrap(db.reload(false), "reload blocks")
 }
 
 func isBlockDir(fi os.FileInfo) bool {

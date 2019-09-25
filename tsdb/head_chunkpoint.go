@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -91,19 +92,22 @@ const chunkpointPrefix = "chunkpoint."
 // The chunkpoint is stored in a directory named chunkpoint.N in the same
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package.
-func Chunkpoint(h *Head) (*ChunkpointStats, error) {
+func (h *Head) Chunkpoint() (*ChunkpointStats, error) {
 	stats := &ChunkpointStats{}
 
 	_, last, err := LastChunkpoint(h.wal.Dir())
+	if err != nil && err != record.ErrNotFound {
+		return stats, errors.Wrap(err, "find last chunkpoint")
+	}
 	cpdir := filepath.Join(h.wal.Dir(), fmt.Sprintf(chunkpointPrefix+"%06d", last+1))
 	cpdirtmp := cpdir + ".tmp"
 
 	if err := os.MkdirAll(cpdirtmp, 0777); err != nil {
-		return nil, errors.Wrap(err, "create chunkpoint dir")
+		return stats, errors.Wrap(err, "create chunkpoint dir")
 	}
 	cp, err := wal.New(nil, nil, cpdirtmp, h.wal.CompressionEnabled())
 	if err != nil {
-		return nil, errors.Wrap(err, "open chunkpoint")
+		return stats, errors.Wrap(err, "open chunkpoint")
 	}
 
 	// Ensures that an early return caused by an error doesn't leave any tmp files.
@@ -129,7 +133,7 @@ func Chunkpoint(h *Head) (*ChunkpointStats, error) {
 			// Flush records in 10 MB increments.
 			if len(buf) > 10*1024*1024 {
 				if err := cp.Log(recs...); err != nil {
-					return nil, errors.Wrap(err, "flush records")
+					return stats, errors.Wrap(err, "flush records")
 				}
 				buf, recs = buf[:0], recs[:0]
 			}
@@ -141,14 +145,22 @@ func Chunkpoint(h *Head) (*ChunkpointStats, error) {
 
 	// Flush remaining records.
 	if err := cp.Log(recs...); err != nil {
-		return nil, errors.Wrap(err, "flush records")
+		return stats, errors.Wrap(err, "flush records")
 	}
 	if err := cp.Close(); err != nil {
-		return nil, errors.Wrap(err, "close chunkpoint")
+		return stats, errors.Wrap(err, "close chunkpoint")
 	}
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
-		return nil, errors.Wrap(err, "rename chunkpoint directory")
+		return stats, errors.Wrap(err, "rename chunkpoint directory")
 	}
 
-	return stats, DeleteChunkpoints(h.wal.Dir(), last)
+	h.metrics.checkpointDeleteTotal.Inc()
+	if err = DeleteChunkpoints(h.wal.Dir(), last); err != nil {
+		// Leftover old chunkpoints do not cause problems down the line beyond
+		// occupying disk space.
+		// They will just be ignored since a higher chunkpoint exists.
+		level.Error(h.logger).Log("msg", "delete old chunkpoints", "err", err)
+		h.metrics.checkpointDeleteFail.Inc()
+	}
+	return stats, errors.Wrap(err, "delete chunkpoint")
 }
