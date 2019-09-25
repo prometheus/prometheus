@@ -1,0 +1,14 @@
+rule_files:
+    - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+    - interval: 1m
+      input_series:
+          - series: 'up{job="prometheus", instance="localhost:9090"}'
+            values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+
+      alert_rule_test:
+          - eval_time: 10m
+            alertname: ""

@@ -1,0 +1,15 @@
+evaluation_interval: 1m
+
+tests:
+    - interval: 1m
+      input_series:
+          - series: 'go_goroutines{job="prometheus", instance="localhost:9090"}'
+            values: '10+10x2 30+20x5' # 10 20 30 30 50 70 90 110 130
+
+      # Invalid PromQL expression.
+      promql_expr_test:
+          - expr: go_goroutines >
+            eval_time: 4m
+            exp_samples:
+                - labels: 'go_goroutines{job="prometheus",instance="localhost:9090"}'
+                  value: 50

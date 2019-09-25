@@ -1,0 +1,15 @@
+evaluation_interval: 1m
+
+tests:
+    - interval: 1m
+      input_series:
+          - series: 'go_goroutines{job="node_exporter", instance="localhost:9100"}'
+            values: '10+10x7 10+30x4' # 10 20 30 40 50 60 70 80 10 40 70 100 130
+
+      promql_expr_test:
+          - expr: go_goroutines > 5
+            eval_time: 4m
+            exp_samples:
+                - labels: 'go_goroutines{job="prometheus"'
+                  value: 50
+

@@ -41,6 +41,7 @@ func RulesUnitTest(files ...string) int {
 	failed := false
 
 	for _, f := range files {
+		fmt.Println("Unit Testing:", f)
 		if errs := ruleUnitTest(f); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
@@ -59,47 +60,36 @@ func RulesUnitTest(files ...string) int {
 }
 
 func ruleUnitTest(filename string) []error {
-	fmt.Println("Unit Testing: ", filename)
-
 	b, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return []error{err}
 	}
 
-	var unitTestInp unitTestFile
-	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
+	var unitTest unitTestFile
+	if err := yaml.UnmarshalStrict(b, &unitTest); err != nil {
 		return []error{err}
 	}
-	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {
+	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTest); err != nil {
 		return []error{err}
 	}
 
-	if unitTestInp.EvaluationInterval == 0 {
-		unitTestInp.EvaluationInterval = 1 * time.Minute
+	interval := unitTest.EvaluationInterval
+	if interval == 0 {
+		interval = 1 * time.Minute
 	}
 
 	// Bounds for evaluating the rules.
 	mint := time.Unix(0, 0)
-	maxd := unitTestInp.maxEvalTime()
+	maxd := unitTest.maxEvalTime()
 	maxt := mint.Add(maxd)
 	// Rounding off to nearest Eval time (> maxt).
-	maxt = maxt.Add(unitTestInp.EvaluationInterval / 2).Round(unitTestInp.EvaluationInterval)
-
-	// Giving number for groups mentioned in the file for ordering.
-	// Lower number group should be evaluated before higher number group.
-	groupOrderMap := make(map[string]int)
-	for i, gn := range unitTestInp.GroupEvalOrder {
-		if _, ok := groupOrderMap[gn]; ok {
-			return []error{errors.Errorf("group name repeated in evaluation order: %s", gn)}
-		}
-		groupOrderMap[gn] = i
-	}
+	maxt = maxt.Add(interval / 2).Round(interval)
 
 	// Testing.
 	var errs []error
-	for _, t := range unitTestInp.Tests {
-		ers := t.test(mint, maxt, unitTestInp.EvaluationInterval, groupOrderMap,
-			unitTestInp.RuleFiles...)
+	for _, t := range unitTest.Tests {
+		ers := t.test(mint, maxt, interval, unitTest.GroupEvalOrder,
+			unitTest.RuleFiles...)
 		if ers != nil {
 			errs = append(errs, ers...)
 		}
@@ -113,10 +103,31 @@ func ruleUnitTest(filename string) []error {
 
 // unitTestFile holds the contents of a single unit test file.
 type unitTestFile struct {
-	RuleFiles          []string      `yaml:"rule_files"`
-	EvaluationInterval time.Duration `yaml:"evaluation_interval,omitempty"`
-	GroupEvalOrder     []string      `yaml:"group_eval_order"`
-	Tests              []testGroup   `yaml:"tests"`
+	RuleFiles          []string       `yaml:"rule_files"`
+	EvaluationInterval time.Duration  `yaml:"evaluation_interval,omitempty"`
+	GroupEvalOrder     groupEvalOrder `yaml:"group_eval_order"`
+	Tests              []testGroup    `yaml:"tests"`
+}
+
+type groupEvalOrder map[string]int
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (geo *groupEvalOrder) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	plain := []string{}
+	if err := unmarshal(&plain); err != nil {
+		return err
+	}
+	// Giving number for groups mentioned in the file for ordering.
+	// Lower number group should be evaluated before higher number group.
+	*geo = make(map[string]int)
+	for i, n := range plain {
+		if _, ok := (*geo)[n]; ok {
+			return errors.Errorf("group name repeated in evaluation order: %s", n)
+		}
+		(*geo)[n] = i
+	}
+
+	return nil
 }
 
 func (utf *unitTestFile) maxEvalTime() time.Duration {
@@ -200,7 +211,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		if _, ok := alertsInTest[alert.EvalTime]; !ok {
 			alertsInTest[alert.EvalTime] = make(map[string]struct{})
 		}
-		alertsInTest[alert.EvalTime][alert.Alertname] = struct{}{}
+		alertsInTest[alert.EvalTime][alert.Name] = struct{}{}
 
 		alertTests[alert.EvalTime] = append(alertTests[alert.EvalTime], alert)
 	}
@@ -251,7 +262,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 			presentAlerts := alertsInTest[t]
 			got := make(map[string]labelsAndAnnotations)
 
-			// Same Alert name can be present in multiple groups.
+			// The same alert name can be present in multiple groups.
 			// Hence we collect them all to check against expected alerts.
 			for _, g := range groups {
 				grules := g.Rules()
@@ -279,35 +290,12 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 			}
 
 			for _, testcase := range alertTests[t] {
-				// Checking alerts.
-				gotAlerts := got[testcase.Alertname]
-
-				var expAlerts labelsAndAnnotations
-				for _, a := range testcase.ExpAlerts {
-					// User gives only the labels from alerting rule, which doesn't
-					// include this label (added by Prometheus during Eval).
-					if a.ExpLabels == nil {
-						a.ExpLabels = make(map[string]string)
-					}
-					a.ExpLabels[labels.AlertName] = testcase.Alertname
-
-					expAlerts = append(expAlerts, labelAndAnnotation{
-						Labels:      labels.FromMap(a.ExpLabels),
-						Annotations: labels.FromMap(a.ExpAnnotations),
-					})
-				}
-
-				if gotAlerts.Len() != expAlerts.Len() {
-					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
-				} else {
-					sort.Sort(gotAlerts)
-					sort.Sort(expAlerts)
-
-					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
-					}
+				gotAlerts := got[testcase.Name]
+				sort.Sort(gotAlerts)
+				expAlerts := testcase.Alerts
+				if !reflect.DeepEqual(expAlerts, gotAlerts) {
+					errs = append(errs, errors.Errorf("    alertname: %q, time: %s\n        exp: %s, \n        got: %s",
+						testcase.Name, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
 				}
 			}
 
@@ -316,7 +304,6 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	}
 
 	// Checking promql expressions.
-Outer:
 	for _, testCase := range tg.PromqlExprTests {
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(testCase.EvalTime),
 			suite.QueryEngine(), suite.Queryable())
@@ -326,38 +313,20 @@ Outer:
 			continue
 		}
 
-		var gotSamples []parsedSample
+		var gotSamples samples
 		for _, s := range got {
-			gotSamples = append(gotSamples, parsedSample{
+			gotSamples = append(gotSamples, sample{
 				Labels: s.Metric.Copy(),
 				Value:  s.V,
 			})
 		}
+		sort.Sort(gotSamples)
 
-		var expSamples []parsedSample
-		for _, s := range testCase.ExpSamples {
-			lb, err := promql.ParseMetric(s.Labels)
-			if err != nil {
-				err = errors.Wrapf(err, "labels %q", s.Labels)
-				errs = append(errs, errors.Errorf("    expr: %q, time: %s, err: %s", testCase.Expr,
-					testCase.EvalTime.String(), err.Error()))
-				continue Outer
-			}
-			expSamples = append(expSamples, parsedSample{
-				Labels: lb,
-				Value:  s.Value,
-			})
-		}
-
-		sort.Slice(expSamples, func(i, j int) bool {
-			return labels.Compare(expSamples[i].Labels, expSamples[j].Labels) <= 0
-		})
-		sort.Slice(gotSamples, func(i, j int) bool {
-			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
-		})
+		expSamples := testCase.ExpSamples
+		sort.Sort(expSamples)
 		if !reflect.DeepEqual(expSamples, gotSamples) {
-			errs = append(errs, errors.Errorf("    expr: %q, time: %s,\n        exp:%#v\n        got:%#v", testCase.Expr,
-				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
+			errs = append(errs, errors.Errorf("    expr: %q, time: %s\n        exp:%#v\n        got:%#v", testCase.Expr,
+				testCase.EvalTime.String(), expSamples.String(), gotSamples.String()))
 		}
 	}
 
@@ -465,8 +434,8 @@ func (la labelsAndAnnotations) String() string {
 }
 
 type labelAndAnnotation struct {
-	Labels      labels.Labels
-	Annotations labels.Labels
+	Labels      labels.Labels `yaml:"exp_labels"`
+	Annotations labels.Labels `yaml:"exp_annotations"`
 }
 
 func (la *labelAndAnnotation) String() string {
@@ -479,44 +448,86 @@ type series struct {
 }
 
 type alertTestCase struct {
-	EvalTime  time.Duration `yaml:"eval_time"`
-	Alertname string        `yaml:"alertname"`
-	ExpAlerts []alert       `yaml:"exp_alerts"`
+	EvalTime time.Duration        `yaml:"eval_time"`
+	Name     string               `yaml:"alertname"`
+	Alerts   labelsAndAnnotations `yaml:"exp_alerts"`
 }
 
-type alert struct {
-	ExpLabels      map[string]string `yaml:"exp_labels"`
-	ExpAnnotations map[string]string `yaml:"exp_annotations"`
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (a *alertTestCase) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type plain alertTestCase
+	if err := unmarshal((*plain)(a)); err != nil {
+		return err
+	}
+
+	if a.Name == "" {
+		return errors.New("'alertname' can't be empty")
+	}
+	// User gives only the labels from alerting rule, which doesn't
+	// include this label (added by Prometheus during Eval).
+	for i := range a.Alerts {
+		builder := labels.NewBuilder(a.Alerts[i].Labels)
+		builder.Set(labels.AlertName, a.Name)
+		a.Alerts[i].Labels = builder.Labels()
+	}
+	sort.Sort(a.Alerts)
+
+	return nil
 }
 
 type promqlTestCase struct {
 	Expr       string        `yaml:"expr"`
 	EvalTime   time.Duration `yaml:"eval_time"`
-	ExpSamples []sample      `yaml:"exp_samples"`
+	ExpSamples samples       `yaml:"exp_samples"`
 }
 
-type sample struct {
-	Labels string  `yaml:"labels"`
-	Value  float64 `yaml:"value"`
-}
+type samples []sample
 
-// parsedSample is a sample with parsed Labels.
-type parsedSample struct {
-	Labels labels.Labels
-	Value  float64
-}
-
-func parsedSamplesString(pss []parsedSample) string {
-	if len(pss) == 0 {
+func (ss samples) String() string {
+	if len(ss) == 0 {
 		return "nil"
 	}
-	s := pss[0].String()
-	for _, ps := range pss[1:] {
-		s += ", " + ps.String()
+	s := ss[0].String()
+	for _, sample := range ss[1:] {
+		s += ", " + sample.String()
 	}
 	return s
 }
 
-func (ps *parsedSample) String() string {
-	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
+// Len implements the sort.Interface interface.
+func (ss samples) Len() int { return len(ss) }
+
+// Swap implements the sort.Interface interface.
+func (ss samples) Swap(i, j int) { ss[i], ss[j] = ss[j], ss[i] }
+
+// Less implements the sort.Interface interface.
+func (ss samples) Less(i, j int) bool { return labels.Compare(ss[i].Labels, ss[j].Labels) <= 0 }
+
+type sample struct {
+	Labels labels.Labels
+	Value  float64
+}
+
+func (s *sample) String() string {
+	return s.Labels.String() + " " + strconv.FormatFloat(s.Value, 'E', -1, 64)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (s *sample) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	plain := struct {
+		Labels string  `yaml:"labels"`
+		Value  float64 `yaml:"value"`
+	}{}
+	if err := unmarshal(&plain); err != nil {
+		return err
+	}
+	lbs, err := promql.ParseMetric(plain.Labels)
+	if err != nil {
+		err = errors.Wrapf(err, "labels %q", plain.Labels)
+		return err
+	}
+	s.Labels = lbs
+	s.Value = plain.Value
+	sort.Sort(s.Labels)
+	return nil
 }

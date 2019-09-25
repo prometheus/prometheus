@@ -1,0 +1,50 @@
+rule_files:
+- alerts.yml
+
+evaluation_interval: 1m
+
+group_eval_order:
+- example
+
+tests:
+- interval: 1m
+  input_series:
+  - series: 'up{job="prometheus", instance="localhost:9090"}'
+    values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+  - series: 'up{job="node_exporter", instance="localhost:9100"}'
+    values: '1+0x6 0 0 0 0 0 0 0 0' # 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0
+  - series: 'go_goroutines{job="prometheus", instance="localhost:9090"}'
+    values: '10+10x2 30+20x5' # 10 20 30 30 50 70 90 110 130
+  - series: 'go_goroutines{job="node_exporter", instance="localhost:9100"}'
+    values: '10+10x7 10+30x4' # 10 20 30 40 50 60 70 80 10 40 70 100 130
+
+  external_labels:
+    dc: dc1
+
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: InstanceDown
+    exp_alerts:
+    - exp_labels:
+        severity: page
+        instance: localhost:9090
+        job: prometheus
+      exp_annotations:
+        summary: "Instance localhost:9090 down"
+        description: "localhost:9090 of job prometheus in dc1 has been down for more than 5 minutes."
+
+  promql_expr_test:
+  - expr: go_goroutines > 5
+    eval_time: 4m
+    exp_samples:
+    - labels: 'go_goroutines{job="prometheus",instance="localhost:9090"}'
+      value: 50
+    - labels: 'go_goroutines{job="node_exporter",instance="localhost:9100"}'
+      value: 50
+  - expr: job:up:count
+    eval_time: 5m
+    exp_samples:
+    - labels: 'job:up:count{job="prometheus"}'
+      value: 1
+    - labels: 'job:up:count{job="node_exporter"}'
+      value: 1
