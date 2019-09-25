@@ -39,6 +39,7 @@ func (e *Encbuf) Len() int    { return len(e.B) }
 
 func (e *Encbuf) PutString(s string) { e.B = append(e.B, s...) }
 func (e *Encbuf) PutByte(c byte)     { e.B = append(e.B, c) }
+func (e *Encbuf) PutBytes(b []byte)  { e.B = append(e.B, b...) }
 
 func (e *Encbuf) PutBE32int(x int)      { e.PutBE32(uint32(x)) }
 func (e *Encbuf) PutUvarint32(x uint32) { e.PutUvarint64(uint64(x)) }
@@ -70,6 +71,12 @@ func (e *Encbuf) PutUvarintStr(s string) {
 	b := *(*[]byte)(unsafe.Pointer(&s))
 	e.PutUvarint(len(b))
 	e.PutString(s)
+}
+
+// PutUvarintBytes writes a a variable length byte buffer.
+func (e *Encbuf) PutUvarintBytes(b []byte) {
+	e.PutUvarint(len(b))
+	e.PutBytes(b)
 }
 
 // PutHash appends a hash over the buffers current contents to the buffer.
@@ -166,6 +173,22 @@ func (d *Decbuf) UvarintStr() string {
 	s := string(d.B[:l])
 	d.B = d.B[l:]
 	return s
+}
+
+func (d *Decbuf) UvarintBytes(b []byte) []byte {
+	l := d.Uvarint64()
+	if d.E != nil {
+		return b[:0]
+	}
+	if len(d.B) < int(l) {
+		d.E = ErrInvalidSize
+		return b[:0]
+	}
+	if uint64(cap(b)) < l {
+		b = make([]byte, 0, l)
+	}
+	copy(b[:0], d.B[:l])
+	return b
 }
 
 func (d *Decbuf) Varint64() int64 {

@@ -84,6 +84,9 @@ type Head struct {
 	deletedMtx sync.Mutex
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
+	quit chan struct{}
+	wg   sync.WaitGroup
+
 	postings *index.MemPostings // postings lists for terms
 }
 
@@ -248,6 +251,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
 		deleted:    map[uint64]int{},
+		quit:       make(chan struct{}),
 	}
 	h.metrics = newHeadMetrics(h, r)
 
@@ -559,6 +563,28 @@ func (h *Head) Init(minValidTime int64) error {
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
 	}
+
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+
+		tick := time.NewTicker(2 * time.Minute)
+		for {
+			select {
+			case <-tick.C:
+				level.Info(h.logger).Log("msg", "starting to create a chunkpoint")
+				start := time.Now()
+				stats, err := Chunkpoint(h)
+				if err != nil {
+					level.Error(h.logger).Log("msg", "chunkpoint failed", "err", err, "duration", time.Since(start))
+					continue
+				}
+				level.Info(h.logger).Log("msg", "chunkpoint complete", "series", stats.TotalSeries, "duration", time.Since(start))
+			case <-h.quit:
+				return
+			}
+		}
+	}()
 
 	return nil
 }
@@ -1186,6 +1212,8 @@ func (h *Head) compactable() bool {
 
 // Close flushes the WAL and closes the head.
 func (h *Head) Close() error {
+	close(h.quit)
+	h.wg.Wait()
 	if h.wal == nil {
 		return nil
 	}
@@ -1641,6 +1669,72 @@ func newMemSeries(lset labels.Labels, id uint64, chunkRange int64) *memSeries {
 		nextAt:     math.MinInt64,
 	}
 	return s
+}
+
+func (s *memSeries) encodeSeries(b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+
+	// Series info.
+	buf.PutBE64(s.ref)
+	buf.PutUvarint(len(s.lset))
+	for _, l := range s.lset {
+		buf.PutUvarintStr(l.Name)
+		buf.PutUvarintStr(l.Value)
+	}
+	buf.PutBE64int64(s.chunkRange)
+
+	// Chunks.
+	s.Lock()
+	buf.PutUvarint(len(s.chunks))
+	for _, c := range s.chunks {
+		buf.PutBE64int64(c.minTime)
+		buf.PutBE64int64(c.maxTime)
+		buf.PutUvarintBytes(c.chunk.Bytes())
+	}
+	s.Unlock()
+
+	return buf.Get()
+}
+
+func newMemSeriesFromBytes(b []byte) (*memSeries, error) {
+	dec := encoding.Decbuf{B: b}
+
+	ref := dec.Be64()
+
+	lset := make(labels.Labels, dec.Uvarint())
+
+	for i := range lset {
+		lset[i].Name = dec.UvarintStr()
+		lset[i].Value = dec.UvarintStr()
+	}
+	sort.Sort(lset)
+
+	chunkRange := dec.Be64int64()
+	numChunks := dec.Uvarint()
+
+	s := &memSeries{
+		lset:       lset,
+		ref:        ref,
+		chunkRange: chunkRange,
+		nextAt:     math.MinInt64,
+		chunks:     make([]*memChunk, 0, numChunks),
+	}
+
+	for i := 0; i < numChunks; i++ {
+		mc := &memChunk{}
+		mc.minTime = dec.Be64int64()
+		mc.maxTime = dec.Be64int64()
+		mc.chunk = chunkenc.NewXORChunkFromBytes(dec.UvarintBytes(nil))
+		s.chunks = append(s.chunks, mc)
+	}
+
+	if dec.Err() != nil {
+		return nil, dec.Err()
+	}
+	if len(dec.B) > 0 {
+		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return s, nil
 }
 
 func (s *memSeries) minTime() int64 {
