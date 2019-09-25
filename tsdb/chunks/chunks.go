@@ -34,7 +34,6 @@ import (
 
 // Segment header fields constants.
 const (
-
 	// MagicChunks is 4 bytes at the head of a series file.
 	MagicChunks = 0x85BD40DD
 	// MagicChunksSize is the size in bytes of MagicChunks.
@@ -294,36 +293,47 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 	return newChunk, nil
 }
 
+// WriteChunks writes as many chunks as possible to the current segment,
+// cuts a new segment when the current segment is full and
+// writes the rest of the chunks in the new segment.
 func (w *Writer) WriteChunks(chks ...Meta) error {
-	cutChunk := false
-	// First chunk so no need for other checks.
-	if w.wbuf == nil {
-		cutChunk = true
-	} else {
-		// Calculate maximum required space and cut a new segment when
-		// the chunks won't fit in the current segment.
+	var chksBatchSize int64
+	var from int
+	length := len(chks)
 
-		// Each segment contains: a header + many chunks.
+	for i := 0; i < length; i++ {
 		// Each chunk contains: data length + encoding + the data itself + crc32
-		reqSpace := int64(SegmentHeaderSize) // The segment header.
-		for _, c := range chks {
-			reqSpace += maxChunkLengthFieldSize     // The data length is a variable length field so use the maximum possible value.
-			reqSpace += chunkEncodingSize           // The chunk encoding.
-			reqSpace += int64(len(c.Chunk.Bytes())) // The data itself.
-			reqSpace += crc32.Size                  // The 4 bytes of crc32
+		chksBatchSize += int64(maxChunkLengthFieldSize)    // The data length is a variable length field so use the maximum possible value.
+		chksBatchSize += chunkEncodingSize                 // The chunk encoding.
+		chksBatchSize += int64(len(chks[i].Chunk.Bytes())) // The data itself.
+		chksBatchSize += crc32.Size                        // The 4 bytes of crc32
+
+		if chksBatchSize+w.n > w.segmentSize {
+			fmt.Println("i-----------------------", i)
+			if err := w.writeChunks(chks[from:i+1], true); err != nil {
+				return err
+			}
+			from++
+			chksBatchSize = 0
+			continue
 		}
 
-		// Cutting a segment will not help here as
-		// this chunk will not fit even in a new segment.
-		if reqSpace > w.segmentSize {
-			return errors.New("chunks size larger than a full segment file")
-		}
-		if w.n+reqSpace > w.segmentSize {
-			cutChunk = true
-		}
 	}
 
-	if cutChunk {
+	if err := w.writeChunks(chks, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (w *Writer) writeChunks(chks []Meta, cutChunk bool) error {
+	if len(chks) == 0 {
+		return nil
+	}
+	// w.wbuf == nil means it is the first chunk
+	// so need to start a new segment.
+	if cutChunk || w.wbuf == nil {
 		if err := w.cut(); err != nil {
 			return err
 		}
