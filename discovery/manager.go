@@ -41,10 +41,10 @@ import (
 )
 
 var (
-	failedConfigs = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_configs_failed_total",
-			Help: "Total number of service discovery configurations that failed to load.",
+	failedConfigs = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_sd_failed_configs",
+			Help: "Current number of service discovery configurations that failed to load.",
 		},
 		[]string{"name"},
 	)
@@ -194,10 +194,14 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
 	m.providers = nil
 	m.discoverCancel = nil
+
+	failedCount := 0
 	for name, scfg := range cfg {
-		m.registerProviders(scfg, name)
+		failedCount += m.registerProviders(scfg, name)
 		discoveredTargets.WithLabelValues(m.name, name).Set(0)
 	}
+	failedConfigs.WithLabelValues(m.name).Set(float64(failedCount))
+
 	for _, prov := range m.providers {
 		m.startProvider(m.ctx, prov)
 	}
@@ -317,8 +321,12 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	return tSets
 }
 
-func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
-	var added bool
+// registerProviders returns a number of failed SD config.
+func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) int {
+	var (
+		failedCount int
+		added       bool
+	)
 	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
 		t := reflect.TypeOf(cfg).String()
 		for _, p := range m.providers {
@@ -332,7 +340,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 		d, err := newDiscoverer()
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
-			failedConfigs.WithLabelValues(m.name).Inc()
+			failedCount++
 			return
 		}
 
@@ -421,6 +429,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 			return &StaticProvider{TargetGroups: []*targetgroup.Group{{}}}, nil
 		})
 	}
+	return failedCount
 }
 
 // StaticProvider holds a list of target groups that never change.

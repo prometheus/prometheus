@@ -252,7 +252,7 @@ func TestSDConfigUnmarshalYAML(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "invalid unkown dns type",
+			name: "invalid unknown dns type",
 			input: SDConfig{
 				Names: []string{"a.example.com", "b.example.com"},
 				Type:  "PTR",
