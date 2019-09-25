@@ -332,7 +332,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// isZero returns true iff the global config is the zero value.
+// isZero returns true if the global config is the zero value.
 func (c *GlobalConfig) isZero() bool {
 	return c.ExternalLabels == nil &&
 		c.ScrapeInterval == 0 &&
