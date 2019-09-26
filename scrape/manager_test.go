@@ -339,6 +339,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 
 	ts := make(chan map[string][]*targetgroup.Group)
 	go m.Run(ts)
+	defer m.Stop()
 
 	tgSent := make(map[string][]*targetgroup.Group)
 	for x := 0; x < 10; x++ {

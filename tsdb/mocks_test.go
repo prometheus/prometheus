@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
 type mockIndexWriter struct {
@@ -72,7 +73,9 @@ type mockBReader struct {
 	maxt int64
 }
 
-func (r *mockBReader) Index() (IndexReader, error)          { return r.ir, nil }
-func (r *mockBReader) Chunks() (ChunkReader, error)         { return r.cr, nil }
-func (r *mockBReader) Tombstones() (TombstoneReader, error) { return newMemTombstones(), nil }
-func (r *mockBReader) Meta() BlockMeta                      { return BlockMeta{MinTime: r.mint, MaxTime: r.maxt} }
+func (r *mockBReader) Index() (IndexReader, error)  { return r.ir, nil }
+func (r *mockBReader) Chunks() (ChunkReader, error) { return r.cr, nil }
+func (r *mockBReader) Tombstones() (tombstones.Reader, error) {
+	return tombstones.NewMemTombstones(), nil
+}
+func (r *mockBReader) Meta() BlockMeta { return BlockMeta{MinTime: r.mint, MaxTime: r.maxt} }

@@ -1,6 +1,18 @@
-## Unreleased
+## 2.13.0-rc.0 / 2019-09-25
 
-* [BUGFIX] Fix tsdb panic when querying corrupted chunks. #6040
+* [CHANGE] Metrics: renamed prometheus_sd_configs_failed_total to prometheus_sd_failed_configs and changed to Gauge #5254
+* [ENHANCEMENT] Service discovery: add new node address types for kubernetes. #5902
+* [ENHANCEMENT] UI: show warnings if query have returned some warnings. #5964
+* [ENHANCEMENT] Remote write: reduce memory usage of the series cache. #5849
+* [ENHANCEMENT] Remote read: use remote read streaming to reduce memory usage. #5703
+* [ENHANCEMENT] Metrics: added metrics for remote write max/min/desired shards to queue manager. #5787
+* [ENHANCEMENT] Promtool: show the warnings during label query. #5924
+* [ENHANCEMENT] Promtool: improve error messages when parsing bad rules. #5965
+* [ENHANCEMENT] Promtool: more promlint rules. #5515
+* [BUGFIX] Promtool: fix recording inconsistency due to duplicate labels. #6026
+* [BUGFIX] UI: fixes service-discovery view when accessed from unhealthy targets. #5915
+* [BUGFIX] Metrics format: OpenMetrics parser crashes on short input. #5939
+* [BUGFIX] UI: avoid truncated Y-axis values. #6014
 
 ## 2.12.0 / 2019-08-17
 

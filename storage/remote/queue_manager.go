@@ -32,8 +32,9 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
 // String constants for instrumentation.
@@ -191,7 +192,7 @@ type QueueManager struct {
 	externalLabels labels.Labels
 	relabelConfigs []*relabel.Config
 	client         StorageClient
-	watcher        *WALWatcher
+	watcher        *wal.Watcher
 
 	seriesLabels         map[uint64]labels.Labels
 	seriesSegmentIndexes map[uint64]int
@@ -223,7 +224,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels labels.Labels, relabelConfigs []*relabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
+func NewQueueManager(reg prometheus.Registerer, logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels labels.Labels, relabelConfigs []*relabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -252,7 +253,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 	}
 
-	t.watcher = NewWALWatcher(logger, name, t, walDir)
+	t.watcher = wal.NewWatcher(reg, wal.NewWatcherMetrics(reg), logger, name, t, walDir)
 	t.shards = t.newShards()
 
 	return t
@@ -260,7 +261,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
-func (t *QueueManager) Append(samples []tsdb.RefSample) bool {
+func (t *QueueManager) Append(samples []record.RefSample) bool {
 outer:
 	for _, s := range samples {
 		lbls, ok := t.seriesLabels[s.Ref]
@@ -376,7 +377,7 @@ func (t *QueueManager) Stop() {
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
-func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
+func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	for _, s := range series {
 		ls := processExternalLabels(s.Labels, t.externalLabels)
 		lbls := relabel.Process(ls, t.relabelConfigs...)

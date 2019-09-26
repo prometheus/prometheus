@@ -664,6 +664,15 @@ func TestLoadConfig(t *testing.T) {
 	testutil.Equals(t, expectedConf, c)
 }
 
+func TestScrapeIntervalLarger(t *testing.T) {
+	c, err := LoadFile("testdata/scrape_interval_larger.good.yml")
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, len(c.ScrapeConfigs))
+	for _, sc := range c.ScrapeConfigs {
+		testutil.Equals(t, true, sc.ScrapeInterval >= sc.ScrapeTimeout)
+	}
+}
+
 // YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
 	c, err := LoadFile("testdata/conf.good.yml")
