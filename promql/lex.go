@@ -338,6 +338,16 @@ type lexer struct {
 	seriesDesc bool
 }
 
+// determines the postion of an Item
+
+func (l lexer) ItemPos(i item) token.Pos {
+	return l.file.Pos(int(i.pos))
+}
+
+func (l lexer) ItemEndPos(i item) token.Pos {
+	return l.file.Pos(int(i.pos) + len(i.val))
+}
+
 // next returns the next rune in the input.
 func (l *lexer) next() rune {
 	if int(l.offset) >= len(l.input) {
@@ -424,11 +434,9 @@ func (l *lexer) nextItem() item {
 
 // lex creates a new scanner for the input string.
 func lex(input string) *lexer {
-	// Create a File with empty name.
-	// TODO: not generate a new File set every time as
-	// this is expensive
 	fileSet := token.NewFileSet()
 	file := fileSet.AddFile("", -1, len(input))
+	file.SetLinesForContent([]byte(input))
 	return lexFile(input, file)
 }
 

@@ -575,7 +575,14 @@ func (p *parser) primaryExpr() Expr {
 	switch t := p.next(); {
 	case t.typ == ItemNumber:
 		f := p.number(t.val)
-		return &NumberLiteral{token.NoPos, token.NoPos, f}
+		l := p.lex
+		return &NumberLiteral{
+			// This line causes a data race
+			// If the call to ItemPos is inlined, i.e. replaced with l.file.Pos(int(t.pos))
+			// no data race is detected
+			l.ItemPos(t),
+			l.ItemEndPos(t),
+			f}
 
 	case t.typ == ItemString:
 		return &StringLiteral{token.NoPos, token.NoPos, p.unquoteString(t.val)}
