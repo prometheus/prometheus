@@ -20,13 +20,13 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # Go to the root of the repo
-cd "$(git rev-parse --show-cdup)"
+cd "$(git rev-parse --show-cdup)" || exit 1
 
 source_makefile="$(pwd)/Makefile.common"
 source_checksum="$(sha256sum Makefile.common | cut -d' ' -f1)"
 
 tmp_dir=$(mktemp -d)
-trap "rm -rf ${tmp_dir}" EXIT
+trap 'rm -rf ${tmp_dir}' EXIT
 
 # Iterate over all repositories in ${org}. The GitHub API can return 100 items
 # at most but it should be enough for us as there are less than 40 repositories
@@ -40,7 +40,7 @@ curl --retry 5 --silent -u "${git_user}:${GITHUB_TOKEN}" https://api.github.com/
 		echo "Makefile.common doesn't exist in ${repo}"
 		continue
 	fi
-	target_checksum="$(echo ${target_makefile} | sha256sum | cut -d' ' -f1)"
+	target_checksum="$(echo "${target_makefile}" | sha256sum | cut -d' ' -f1)"
 	if [ "${source_checksum}" == "${target_checksum}" ]; then
 		echo "Makefile.common is already in sync."
 		continue
@@ -48,7 +48,7 @@ curl --retry 5 --silent -u "${git_user}:${GITHUB_TOKEN}" https://api.github.com/
 
 	# Clone target repo to temporary directory and checkout to new branch
 	git clone --quiet "https://github.com/${org}/${repo}.git" "${tmp_dir}/${repo}"
-	cd "${tmp_dir}/${repo}"
+	cd "${tmp_dir}/${repo}" || exit 1
 	git checkout -b "${branch}"
 
 	# Replace Makefile.common in target repo by one from prometheus/prometheus

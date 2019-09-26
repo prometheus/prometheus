@@ -5,12 +5,12 @@
 set -e
 set -u
 
-if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
+if ! [[ "$0" =~ scripts/genproto.sh ]]; then
 	echo "must be run from repository root"
 	exit 255
 fi
 
-if ! [[ $(protoc --version) =~ "3.5.1" ]]; then
+if ! [[ $(protoc --version) =~ 3.5.1 ]]; then
 	echo "could not find protoc 3.5.1, is it installed + in PATH?"
 	exit 255
 fi
