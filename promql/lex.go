@@ -340,11 +340,11 @@ type lexer struct {
 
 // determines the postion of an Item
 
-func (l lexer) ItemPos(i item) token.Pos {
+func (l *lexer) ItemPos(i item) token.Pos {
 	return l.file.Pos(int(i.pos))
 }
 
-func (l lexer) ItemEndPos(i item) token.Pos {
+func (l *lexer) ItemEndPos(i item) token.Pos {
 	return l.file.Pos(int(i.pos) + len(i.val))
 }
 
