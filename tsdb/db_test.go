@@ -14,7 +14,9 @@
 package tsdb
 
 import (
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -2433,4 +2435,109 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	}
 	testutil.Ok(t, seriesSet.Err())
 	testutil.Equals(t, 1000.0, sum)
+}
+
+// TestChunkWriter ensures that chunk segment are cut at
+// the next chunk that is outside the set segment size.
+func TestChunkWriter(t *testing.T) {
+	ch := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
+
+	tests := []struct {
+		chks             []chunks.Meta
+		segmentSize      int
+		expSegmentsCount int
+	}{
+		// Last chunk ends at the segment boundary so
+		// all chunks should fit in single segment.
+		{
+			chks: []chunks.Meta{
+				ch,
+				ch,
+				ch,
+			},
+			segmentSize:      chunks.SegmentHeaderSize + 3*len(ch.Chunk.Bytes()),
+			expSegmentsCount: 1,
+		},
+		// Segment can fit 2 chunks so the last one should result in a new segment.
+		{
+			chks: []chunks.Meta{
+				ch,
+				ch,
+				ch,
+			},
+			segmentSize:      chunks.SegmentHeaderSize + 2*len(ch.Chunk.Bytes()),
+			expSegmentsCount: 2,
+		},
+		// When the last chunk is bigger than the max segment size
+		// it shouldn't cause a dead loop by trying to create a many segments.
+		{
+			chks: []chunks.Meta{
+				ch,
+				ch,
+				ch,
+			},
+			segmentSize:      chunks.SegmentHeaderSize + 2*len(ch.Chunk.Bytes()) - 1,
+			expSegmentsCount: 2,
+		},
+		// When the first chunk is bigger than the max segment size
+		// it shouldn't cause a dead loop by trying to create a many segments.
+		{
+			chks: []chunks.Meta{
+				ch,
+			},
+			segmentSize:      chunks.SegmentHeaderSize + len(ch.Chunk.Bytes()) - 1,
+			expSegmentsCount: 1,
+		},
+		// All chunks are bigger than the max segment size, but
+		// these should still be written even when this will result in bigger segment than the set size.
+		// Each segment will hold a single chunk.
+		{
+			chks: []chunks.Meta{
+				ch,
+				ch,
+				ch,
+			},
+			segmentSize:      chunks.SegmentHeaderSize + 1,
+			expSegmentsCount: 3,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("", func(t *testing.T) {
+
+			tmpdir, err := ioutil.TempDir("", "test_chunk_witer")
+			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(tmpdir))
+			}()
+
+			chunkw, err := chunks.NewWriter(tmpdir, int64(test.segmentSize))
+			testutil.Ok(t, err)
+			chunkw.WriteChunks(test.chks...)
+			testutil.Ok(t, chunkw.Close())
+
+			files, err := ioutil.ReadDir(tmpdir)
+			testutil.Ok(t, err)
+			testutil.Equals(t, test.expSegmentsCount, len(files))
+
+			// Ensure all data is written to the segments.
+			sizeExp := 0
+			sizeAct := 0
+
+			for _, chk := range test.chks {
+				l := make([]byte, binary.MaxVarintLen32)
+				sizeExp += binary.PutUvarint(l, uint64(len(chk.Chunk.Bytes()))) // The length field.
+				sizeExp++                                                       // One byte for the chunk encoding.
+				sizeExp += len(chk.Chunk.Bytes())                               // The data itself.
+				sizeExp += crc32.Size                                           // The 4 bytes of crc32
+			}
+			sizeExp += test.expSegmentsCount * chunks.SegmentHeaderSize // The segment header bytes.
+
+			for _, f := range files {
+				sizeAct += int(f.Size())
+			}
+			testutil.Equals(t, sizeExp, sizeAct)
+
+		})
+	}
 }

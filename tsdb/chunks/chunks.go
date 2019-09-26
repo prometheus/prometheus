@@ -113,11 +113,16 @@ type Writer struct {
 }
 
 const (
-	defaultChunkSegmentSize = 512 * 1024 * 1024
+	// DefaultChunkSegmentSize is the default chunks segment size.
+	DefaultChunkSegmentSize = 512 * 1024 * 1024
 )
 
 // NewWriter returns a new writer against the given directory.
-func NewWriter(dir string) (*Writer, error) {
+// When the segment size argument is less than 1 it uses the DefaultChunkSegmentSize.
+func NewWriter(dir string, segmentSize int64) (*Writer, error) {
+	if segmentSize <= 0 {
+		segmentSize = DefaultChunkSegmentSize
+	}
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -129,7 +134,7 @@ func NewWriter(dir string) (*Writer, error) {
 		dirFile:     dirFile,
 		n:           0,
 		crc32:       newCRC32(),
-		segmentSize: defaultChunkSegmentSize,
+		segmentSize: segmentSize,
 	}
 	return cw, nil
 }
@@ -193,9 +198,11 @@ func (w *Writer) cut() error {
 	binary.BigEndian.PutUint32(metab[:MagicChunksSize], MagicChunks)
 	metab[4] = chunksFormatV1
 
-	if _, err := f.Write(metab); err != nil {
+	n, err := f.Write(metab)
+	if err != nil {
 		return err
 	}
+	w.n = int64(n)
 
 	w.files = append(w.files, f)
 	if w.wbuf != nil {
@@ -203,7 +210,6 @@ func (w *Writer) cut() error {
 	} else {
 		w.wbuf = bufio.NewWriterSize(f, 8*1024*1024)
 	}
-	w.n = SegmentHeaderSize
 
 	return nil
 }
@@ -297,27 +303,28 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 // cuts a new segment when the current segment is full and
 // writes the rest of the chunks in the new segment.
 func (w *Writer) WriteChunks(chks ...Meta) error {
-	var chksBatchSize int64
-	var from int
-	length := len(chks)
+	var (
+		chksBatchSize int64
+		end           int = 0
+	)
 
-	for i := 0; i < length; i++ {
+	for _, chk := range chks {
 		// Each chunk contains: data length + encoding + the data itself + crc32
-		chksBatchSize += int64(maxChunkLengthFieldSize)    // The data length is a variable length field so use the maximum possible value.
-		chksBatchSize += chunkEncodingSize                 // The chunk encoding.
-		chksBatchSize += int64(len(chks[i].Chunk.Bytes())) // The data itself.
-		chksBatchSize += crc32.Size                        // The 4 bytes of crc32
+		chksBatchSize += int64(maxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
+		chksBatchSize += chunkEncodingSize              // The chunk encoding.
+		chksBatchSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
+		chksBatchSize += crc32.Size                     // The 4 bytes of crc32
 
+		end++
 		if chksBatchSize+w.n > w.segmentSize {
-			fmt.Println("i-----------------------", i)
-			if err := w.writeChunks(chks[from:i+1], true); err != nil {
+			if err := w.writeChunks(chks[:end], true); err != nil {
 				return err
 			}
-			from++
+			chks = chks[end:]
 			chksBatchSize = 0
+			end = 0
 			continue
 		}
-
 	}
 
 	if err := w.writeChunks(chks, false); err != nil {
@@ -412,7 +419,7 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // of series data.
 type Reader struct {
 	// The underlying bytes holding the encoded series data.
-	// Each slice hold the date for a different segment.
+	// Each slice holds the date for a different segment.
 	bs    []ByteSlice
 	cs    []io.Closer // Closers for resources behind the byte slices.
 	size  int64       // The total size of bytes in the reader.
