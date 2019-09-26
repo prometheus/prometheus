@@ -538,8 +538,8 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	if _, err := s.crc32.Write(sgmBytes.Range(chkEncStart, chkDataEnd)); err != nil {
 		return nil, err
 	}
-	if s := s.crc32.Sum(s.buf[:0]); !bytes.Equal(s, sum) {
-		return nil, errors.Errorf("unexpected checksum %x, expected %x", s, sum)
+	if act := s.crc32.Sum(s.buf[:0]); !bytes.Equal(act, sum) {
+		return nil, errors.Errorf("unexpected checksum %x, expected %x", act, sum)
 	}
 
 	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
