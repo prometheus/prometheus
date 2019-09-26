@@ -34,7 +34,7 @@ func tree(node Node, level string) string {
 	}
 	typs := strings.Split(fmt.Sprintf("%T", node), ".")[1]
 
-	t := fmt.Sprintf("%s |---- %s :: %s\n", level, typs, node)
+	t := fmt.Sprintf("%s |---- %s :: %s : %d - %d\n", level, typs, node, node.Pos(), node.EndPos())
 
 	level += " · · ·"
 
@@ -44,6 +44,9 @@ func tree(node Node, level string) string {
 
 	case *AggregateExpr:
 		t += tree(n.Expr, level)
+		if n.Param != nil {
+			t += tree(n.Param, level)
+		}
 
 	case *BinaryExpr:
 		t += tree(n.LHS, level)

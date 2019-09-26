@@ -456,6 +456,7 @@ func (p *parser) unaryExpr() Expr {
 			if t.typ == ItemSUB {
 				nl.Val *= -1
 			}
+			nl.pos -= 1
 			return nl
 		}
 		return &UnaryExpr{Op: t.typ, Expr: e}
@@ -572,20 +573,17 @@ func (p *parser) number(val string) float64 {
 //		<metric_name> | <function_call> | <Vector_aggregation> | <literal>
 //
 func (p *parser) primaryExpr() Expr {
+	l := p.lex
 	switch t := p.next(); {
 	case t.typ == ItemNumber:
 		f := p.number(t.val)
-		l := p.lex
 		return &NumberLiteral{
-			// This line causes a data race
-			// If the call to ItemPos is inlined, i.e. replaced with l.file.Pos(int(t.pos))
-			// no data race is detected
 			l.ItemPos(t),
 			l.ItemEndPos(t),
 			f}
 
 	case t.typ == ItemString:
-		return &StringLiteral{token.NoPos, token.NoPos, p.unquoteString(t.val)}
+		return &StringLiteral{l.ItemPos(t), l.ItemEndPos(t) - 1, p.unquoteString(t.val)}
 
 	case t.typ == ItemLeftBrace:
 		// Metric selector without metric name.
@@ -711,6 +709,7 @@ func (p *parser) call(name string) *Call {
 	}
 
 	p.expect(ItemLeftParen, ctx)
+
 	// Might be call without args.
 	if p.peek().typ == ItemRightParen {
 		p.next() // Consume.
