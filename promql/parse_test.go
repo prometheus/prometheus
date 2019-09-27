@@ -1274,12 +1274,18 @@ var testExpr = []struct {
 	{
 		input: "time()",
 		expected: &Call{
-			Func: mustGetFunction("time"),
+			pos:    1,
+			LParen: 5,
+			RParen: 6,
+			Func:   mustGetFunction("time"),
 		},
 	}, {
 		input: `floor(some_metric{foo!="bar"})`,
 		expected: &Call{
-			Func: mustGetFunction("floor"),
+			pos:    1,
+			LParen: 6,
+			RParen: 30,
+			Func:   mustGetFunction("floor"),
 			Args: []Expr{
 				&VectorSelector{
 					Name: "some_metric",
@@ -1293,7 +1299,10 @@ var testExpr = []struct {
 	}, {
 		input: "rate(some_metric[5m])",
 		expected: &Call{
-			Func: mustGetFunction("rate"),
+			pos:    1,
+			LParen: 5,
+			RParen: 21,
+			Func:   mustGetFunction("rate"),
 			Args: []Expr{
 				&MatrixSelector{
 					Name: "some_metric",
@@ -1307,7 +1316,10 @@ var testExpr = []struct {
 	}, {
 		input: "round(some_metric)",
 		expected: &Call{
-			Func: mustGetFunction("round"),
+			pos:    1,
+			LParen: 6,
+			RParen: 18,
+			Func:   mustGetFunction("round"),
 			Args: []Expr{
 				&VectorSelector{
 					Name: "some_metric",
@@ -1320,7 +1332,10 @@ var testExpr = []struct {
 	}, {
 		input: "round(some_metric, 5)",
 		expected: &Call{
-			Func: mustGetFunction("round"),
+			pos:    1,
+			LParen: 6,
+			RParen: 21,
+			Func:   mustGetFunction("round"),
 			Args: []Expr{
 				&VectorSelector{
 					Name: "some_metric",
@@ -1458,11 +1473,17 @@ var testExpr = []struct {
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`,
 		expected: &Call{
-			Func: mustGetFunction("min_over_time"),
+			pos:    1,
+			LParen: 14,
+			RParen: 46,
+			Func:   mustGetFunction("min_over_time"),
 			Args: []Expr{
 				&SubqueryExpr{
 					Expr: &Call{
-						Func: mustGetFunction("rate"),
+						pos:    15,
+						LParen: 19,
+						RParen: 38,
+						Func:   mustGetFunction("rate"),
 						Args: []Expr{
 							&MatrixSelector{
 								Name:  "foo",
@@ -1483,11 +1504,17 @@ var testExpr = []struct {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 		expected: &SubqueryExpr{
 			Expr: &Call{
-				Func: mustGetFunction("min_over_time"),
+				pos:    1,
+				LParen: 14,
+				RParen: 44,
+				Func:   mustGetFunction("min_over_time"),
 				Args: []Expr{
 					&SubqueryExpr{
 						Expr: &Call{
-							Func: mustGetFunction("rate"),
+							pos:    15,
+							LParen: 19,
+							RParen: 38,
+							Func:   mustGetFunction("rate"),
 							Args: []Expr{
 								&MatrixSelector{
 									Name:  "foo",
@@ -1510,11 +1537,17 @@ var testExpr = []struct {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 4m)[4m:3s]`,
 		expected: &SubqueryExpr{
 			Expr: &Call{
-				Func: mustGetFunction("min_over_time"),
+				pos:    1,
+				LParen: 14,
+				RParen: 54,
+				Func:   mustGetFunction("min_over_time"),
 				Args: []Expr{
 					&SubqueryExpr{
 						Expr: &Call{
-							Func: mustGetFunction("rate"),
+							pos:    15,
+							LParen: 19,
+							RParen: 38,
+							Func:   mustGetFunction("rate"),
 							Args: []Expr{
 								&MatrixSelector{
 									Name:  "foo",
