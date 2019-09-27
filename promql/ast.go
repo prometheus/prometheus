@@ -145,7 +145,8 @@ func (e *Call) EndPos() token.Pos {
 // MatrixSelector represents a Matrix selection.
 type MatrixSelector struct {
 	pos           token.Pos
-	endPos        token.Pos
+	LBracket      token.Pos
+	RBracket      token.Pos
 	Name          string
 	Range         time.Duration
 	Offset        time.Duration
@@ -160,23 +161,24 @@ func (e *MatrixSelector) Pos() token.Pos {
 	return e.pos
 }
 func (e *MatrixSelector) EndPos() token.Pos {
-	return e.endPos
+	return e.RBracket + 1
 }
 
 // SubqueryExpr represents a subquery.
 type SubqueryExpr struct {
-	Expr   Expr
-	endPos token.Pos
-	Range  time.Duration
-	Offset time.Duration
-	Step   time.Duration
+	Expr     Expr
+	LBracket token.Pos
+	RBracket token.Pos
+	Range    time.Duration
+	Offset   time.Duration
+	Step     time.Duration
 }
 
 func (e *SubqueryExpr) Pos() token.Pos {
 	return e.Expr.Pos()
 }
 func (e *SubqueryExpr) EndPos() token.Pos {
-	return e.endPos
+	return e.RBracket + 1
 }
 
 // NumberLiteral represents a number.

@@ -338,11 +338,12 @@ func (p *parser) expr() Expr {
 	// on the operators' precedence.
 	for {
 		// If the next token is not an operator the expression is done.
-		op := p.peek().typ
+		peek := p.peek()
+		op := peek.typ
 		if !op.isOperator() {
 			// Check for subquery.
 			if op == ItemLeftBracket {
-				expr = p.subqueryOrRangeSelector(expr, false)
+				expr = p.subqueryOrRangeSelector(expr, false, p.lex.ItemPos(peek))
 				if s, ok := expr.(*SubqueryExpr); ok {
 					// Parse optional offset.
 					if p.peek().typ == ItemOffset {
@@ -471,8 +472,8 @@ func (p *parser) unaryExpr() Expr {
 	e := p.primaryExpr()
 
 	// Expression might be followed by a range selector.
-	if p.peek().typ == ItemLeftBracket {
-		e = p.subqueryOrRangeSelector(e, true)
+	if peek := p.peek(); peek.typ == ItemLeftBracket {
+		e = p.subqueryOrRangeSelector(e, true, p.lex.ItemPos(peek))
 	}
 
 	// Parse optional offset.
@@ -499,7 +500,8 @@ func (p *parser) unaryExpr() Expr {
 //
 //		<Vector_selector> '[' <duration> ']' | <Vector_selector> '[' <duration> ':' [<duration>] ']'
 //
-func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
+func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool, lBracket token.Pos) Expr {
+	fmt.Println(lBracket)
 	ctx := "subquery selector"
 	if checkRange {
 		ctx = "range/subquery selector"
@@ -510,7 +512,8 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 	var erange time.Duration
 	var err error
 
-	erangeStr := p.expect(ItemDuration, ctx).val
+	erangeItem := p.expect(ItemDuration, ctx)
+	erangeStr := erangeItem.val
 	erange, err = parseDuration(erangeStr)
 	if err != nil {
 		p.error(err)
@@ -525,7 +528,11 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 			if !ok {
 				p.errorf("range specification must be preceded by a metric selector, but follows a %T instead", expr)
 			}
+			// TODO make vs a child of MatrixSelector
 			return &MatrixSelector{
+				pos:           vs.Pos(),
+				LBracket:      lBracket,
+				RBracket:      p.lex.ItemPos(itm),
 				Name:          vs.Name,
 				LabelMatchers: vs.LabelMatchers,
 				Range:         erange,
@@ -545,13 +552,16 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 		if err != nil {
 			p.error(err)
 		}
-		p.expect(ItemRightBracket, ctx)
+		itm = p.expect(ItemRightBracket, ctx)
+
 	}
 
 	return &SubqueryExpr{
-		Expr:  expr,
-		Range: erange,
-		Step:  estep,
+		LBracket: lBracket,
+		RBracket: p.lex.ItemPos(itm),
+		Expr:     expr,
+		Range:    erange,
+		Step:     estep,
 	}
 }
 
