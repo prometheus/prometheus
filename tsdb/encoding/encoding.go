@@ -184,10 +184,11 @@ func (d *Decbuf) UvarintBytes(b []byte) []byte {
 		d.E = ErrInvalidSize
 		return b[:0]
 	}
-	if uint64(cap(b)) < l {
+	if cap(b) < int(l) {
 		b = make([]byte, 0, l)
 	}
 	copy(b[:0], d.B[:l])
+	d.B = d.B[l:]
 	return b
 }
 

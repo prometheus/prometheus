@@ -402,6 +402,8 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 					multiRefLock.Lock()
 					multiRef[s.Ref] = series.ref
 					multiRefLock.Unlock()
+				} else {
+					fmt.Println("New series was created")
 				}
 
 				if h.lastSeriesID < s.Ref {
@@ -516,9 +518,46 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
-	multiRef := map[uint64]uint64{}
+
+	{
+		// Backfill the chunkpoint first if it exists.
+		dir, _, err := LastChunkpoint(h.wal.Dir())
+		if err != nil && err != record.ErrNotFound {
+			return errors.Wrap(err, "find last chunkpoint")
+		}
+		if err == nil {
+			sr, err := wal.NewSegmentsReader(dir)
+			if err != nil {
+				return errors.Wrap(err, "open chunkpoint")
+			}
+			defer func() {
+				if err := sr.Close(); err != nil {
+					level.Warn(h.logger).Log("msg", "error while closing the wal segments reader", "err", err)
+				}
+			}()
+
+			r := wal.NewReader(sr)
+
+			count := 0
+			for r.Next() {
+				count++
+				s, err := newMemSeriesFromBytes(r.Record())
+				if err != nil {
+					return errors.Wrap(err, "create series")
+				}
+				if _, created := h.getOrCreateWithSeries(s, s.lset.Hash()); !created {
+					return fmt.Errorf("duplicate series in chunkpoint %q", s.lset.String())
+				}
+				if h.lastSeriesID < s.ref {
+					h.lastSeriesID = s.ref
+				}
+			}
+			level.Info(h.logger).Log("msg", "WAL chunkpoint loaded", "num_series", count, "last_series_id", h.lastSeriesID)
+		}
+	}
 
 	// Find the last segment.
+	multiRef := map[uint64]uint64{}
 	startFrom, last, err := h.wal.Segments()
 	if err != nil {
 		return errors.Wrap(err, "finding WAL segments")
@@ -545,7 +584,7 @@ func (h *Head) Init(minValidTime int64) error {
 	go func() {
 		defer h.wg.Done()
 
-		tick := time.NewTicker(100 * time.Minute)
+		tick := time.NewTicker(1 * time.Minute)
 		for {
 			select {
 			case <-tick.C:
@@ -632,7 +671,7 @@ func (h *Head) performChunkpoint() error {
 
 	// The last segment would still be active, so only truncate the segments
 	// before that.
-	if err := h.wal.Truncate(last - 1); err != nil {
+	if err := h.wal.Truncate(last); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
 		// Leftover segments will just be ignored in the future if there's a checkpoint
 		// that supersedes them.
@@ -1399,7 +1438,10 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool) {
 
 func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSeries, bool) {
 	s := newMemSeries(lset, id, h.chunkRange)
+	return h.getOrCreateWithSeries(s, hash)
+}
 
+func (h *Head) getOrCreateWithSeries(s *memSeries, hash uint64) (*memSeries, bool) {
 	s, created := h.series.getOrSet(hash, s)
 	if !created {
 		return s, false
@@ -1408,12 +1450,12 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	h.metrics.seriesCreated.Inc()
 	atomic.AddUint64(&h.numSeries, 1)
 
-	h.postings.Add(id, lset)
+	h.postings.Add(s.ref, s.lset)
 
 	h.symMtx.Lock()
 	defer h.symMtx.Unlock()
 
-	for _, l := range lset {
+	for _, l := range s.lset {
 		valset, ok := h.values[l.Name]
 		if !ok {
 			valset = stringset{}
@@ -1688,6 +1730,7 @@ func newMemSeriesFromBytes(b []byte) (*memSeries, error) {
 		mc := &memChunk{}
 		mc.minTime = dec.Be64int64()
 		mc.maxTime = dec.Be64int64()
+
 		mc.chunk = chunkenc.NewXORChunkFromBytes(dec.UvarintBytes(nil))
 		s.chunks = append(s.chunks, mc)
 	}
