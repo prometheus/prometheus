@@ -1067,7 +1067,9 @@ var testExpr = []struct {
 	{
 		input: "sum by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: ItemSum,
+			pos:    1,
+			endPos: 26,
+			Op:     ItemSum,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1079,7 +1081,9 @@ var testExpr = []struct {
 	}, {
 		input: "avg by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: ItemAvg,
+			pos:    1,
+			endPos: 26,
+			Op:     ItemAvg,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1091,7 +1095,9 @@ var testExpr = []struct {
 	}, {
 		input: "max by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: ItemMax,
+			pos:    1,
+			endPos: 26,
+			Op:     ItemMax,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1103,6 +1109,8 @@ var testExpr = []struct {
 	}, {
 		input: "sum without (foo) (some_metric)",
 		expected: &AggregateExpr{
+			pos:     1,
+			endPos:  32,
 			Op:      ItemSum,
 			Without: true,
 			Expr: &VectorSelector{
@@ -1116,6 +1124,8 @@ var testExpr = []struct {
 	}, {
 		input: "sum (some_metric) without (foo)",
 		expected: &AggregateExpr{
+			pos:     1,
+			endPos:  32,
 			Op:      ItemSum,
 			Without: true,
 			Expr: &VectorSelector{
@@ -1129,7 +1139,9 @@ var testExpr = []struct {
 	}, {
 		input: "stddev(some_metric)",
 		expected: &AggregateExpr{
-			Op: ItemStddev,
+			pos:    1,
+			endPos: 20,
+			Op:     ItemStddev,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1140,7 +1152,9 @@ var testExpr = []struct {
 	}, {
 		input: "stdvar by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: ItemStdvar,
+			pos:    1,
+			endPos: 29,
+			Op:     ItemStdvar,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1152,7 +1166,9 @@ var testExpr = []struct {
 	}, {
 		input: "sum by ()(some_metric)",
 		expected: &AggregateExpr{
-			Op: ItemSum,
+			pos:    1,
+			endPos: 23,
+			Op:     ItemSum,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1164,7 +1180,9 @@ var testExpr = []struct {
 	}, {
 		input: "topk(5, some_metric)",
 		expected: &AggregateExpr{
-			Op: ItemTopK,
+			pos:    1,
+			endPos: 21,
+			Op:     ItemTopK,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1176,7 +1194,9 @@ var testExpr = []struct {
 	}, {
 		input: "count_values(\"value\", some_metric)",
 		expected: &AggregateExpr{
-			Op: ItemCountValues,
+			pos:    1,
+			endPos: 35,
+			Op:     ItemCountValues,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1189,6 +1209,8 @@ var testExpr = []struct {
 		// Test usage of keywords as label names.
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric)",
 		expected: &AggregateExpr{
+			pos:     1,
+			endPos:  66,
 			Op:      ItemSum,
 			Without: true,
 			Expr: &VectorSelector{
@@ -1516,6 +1538,8 @@ var testExpr = []struct {
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
 		expected: &SubqueryExpr{
 			Expr: &AggregateExpr{
+				pos:     1,
+				endPos:  66,
 				Op:      ItemSum,
 				Without: true,
 				Expr: &VectorSelector{

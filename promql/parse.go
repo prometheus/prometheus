@@ -380,7 +380,7 @@ func (p *parser) expr() Expr {
 				vecMatching.On = true
 			}
 			p.next()
-			vecMatching.MatchingLabels = p.labels()
+			vecMatching.MatchingLabels, _, _ = p.labels()
 
 			// Parse grouping.
 			if t := p.peek().typ; t == ItemGroupLeft || t == ItemGroupRight {
@@ -391,7 +391,7 @@ func (p *parser) expr() Expr {
 					vecMatching.Card = CardOneToMany
 				}
 				if p.peek().typ == ItemLeftParen {
-					vecMatching.Include = p.labels()
+					vecMatching.Include, _, _ = p.labels()
 				}
 			}
 		}
@@ -614,10 +614,13 @@ func (p *parser) primaryExpr() Expr {
 //
 //		'(' <label_name>, ... ')'
 //
-func (p *parser) labels() []string {
+// TODO Make this an own node
+func (p *parser) labels() ([]string, token.Pos, token.Pos) {
 	const ctx = "grouping opts"
 
-	p.expect(ItemLeftParen, ctx)
+	lParen := p.expect(ItemLeftParen, ctx)
+
+	pos := p.lex.ItemPos(lParen)
 
 	labels := []string{}
 	if p.peek().typ != ItemRightParen {
@@ -634,9 +637,10 @@ func (p *parser) labels() []string {
 			p.next()
 		}
 	}
-	p.expect(ItemRightParen, ctx)
+	rParen := p.expect(ItemRightParen, ctx)
+	endPos := p.lex.ItemPos(rParen) + 1
 
-	return labels
+	return labels, pos, endPos
 }
 
 // aggrExpr parses an aggregation expression.
@@ -653,6 +657,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	}
 	var grouping []string
 	var without bool
+	var endPos token.Pos
 
 	modifiersFirst := false
 
@@ -661,8 +666,9 @@ func (p *parser) aggrExpr() *AggregateExpr {
 			without = true
 		}
 		p.next()
-		grouping = p.labels()
+		grouping, _, _ = p.labels()
 		modifiersFirst = true
+
 	}
 
 	p.expect(ItemLeftParen, ctx)
@@ -672,7 +678,8 @@ func (p *parser) aggrExpr() *AggregateExpr {
 		p.expect(ItemComma, ctx)
 	}
 	e := p.expr()
-	p.expect(ItemRightParen, ctx)
+	rParen := p.expect(ItemRightParen, ctx)
+	endPos = p.lex.ItemEndPos(rParen)
 
 	if !modifiersFirst {
 		if t := p.peek().typ; t == ItemBy || t == ItemWithout {
@@ -683,11 +690,13 @@ func (p *parser) aggrExpr() *AggregateExpr {
 				without = true
 			}
 			p.next()
-			grouping = p.labels()
+			grouping, _, endPos = p.labels()
 		}
 	}
 
 	return &AggregateExpr{
+		pos:      p.lex.ItemPos(agop),
+		endPos:   endPos,
 		Op:       agop.typ,
 		Expr:     e,
 		Param:    param,
