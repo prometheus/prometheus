@@ -77,13 +77,14 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 // label matchers.
 func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	p := newParser(input)
+	pos := token.Pos(1)
 	defer p.recover(&err)
 
 	name := ""
 	if t := p.peek().typ; t == ItemMetricIdentifier || t == ItemIdentifier {
 		name = p.next().val
 	}
-	vs := p.VectorSelector(name)
+	vs := p.VectorSelector(name, pos)
 	if p.peek().typ != ItemEOF {
 		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastOffset:])
 	}
@@ -501,7 +502,6 @@ func (p *parser) unaryExpr() Expr {
 //		<Vector_selector> '[' <duration> ']' | <Vector_selector> '[' <duration> ':' [<duration>] ']'
 //
 func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool, lBracket token.Pos) Expr {
-	fmt.Println(lBracket)
 	ctx := "subquery selector"
 	if checkRange {
 		ctx = "range/subquery selector"
@@ -598,7 +598,7 @@ func (p *parser) primaryExpr() Expr {
 	case t.typ == ItemLeftBrace:
 		// Metric selector without metric name.
 		p.backup()
-		return p.VectorSelector("")
+		return p.VectorSelector("", p.lex.ItemEndPos(t))
 
 	case t.typ == ItemIdentifier:
 		// Check for function call.
@@ -608,7 +608,7 @@ func (p *parser) primaryExpr() Expr {
 		fallthrough // Else metric selector.
 
 	case t.typ == ItemMetricIdentifier:
-		return p.VectorSelector(t.val)
+		return p.VectorSelector(t.val, p.lex.ItemPos(t))
 
 	case t.typ.isAggregator():
 		p.backup()
@@ -763,7 +763,8 @@ func (p *parser) call(name string, pos token.Pos) *Call {
 //
 func (p *parser) labelSet() labels.Labels {
 	set := []labels.Label{}
-	for _, lm := range p.labelMatchers(ItemEQL) {
+	matchers, _ := p.labelMatchers(ItemEQL)
+	for _, lm := range matchers {
 		set = append(set, labels.Label{Name: lm.Name, Value: lm.Value})
 	}
 	return labels.New(set...)
@@ -773,7 +774,7 @@ func (p *parser) labelSet() labels.Labels {
 //
 //		'{' [ <labelname> <match_op> <match_string>, ... ] '}'
 //
-func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
+func (p *parser) labelMatchers(operators ...ItemType) ([]*labels.Matcher, token.Pos) {
 	const ctx = "label matching"
 
 	matchers := []*labels.Matcher{}
@@ -782,8 +783,9 @@ func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
 
 	// Check if no matchers are provided.
 	if p.peek().typ == ItemRightBrace {
-		p.next()
-		return matchers
+		rBrace := p.next()
+		rBracePos := p.lex.ItemPos(rBrace)
+		return matchers, rBracePos
 	}
 
 	for {
@@ -843,9 +845,10 @@ func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
 		}
 	}
 
-	p.expect(ItemRightBrace, ctx)
+	rBrace := p.expect(ItemRightBrace, ctx)
+	rBracePos := p.lex.ItemPos(rBrace)
 
-	return matchers
+	return matchers, rBracePos
 }
 
 // metric parses a metric.
@@ -898,11 +901,15 @@ func (p *parser) offset() time.Duration {
 //		<metric_identifier> [<label_matchers>]
 //		[<metric_identifier>] <label_matchers>
 //
-func (p *parser) VectorSelector(name string) *VectorSelector {
+func (p *parser) VectorSelector(name string, pos token.Pos) *VectorSelector {
+	lBrace := token.NoPos
+	rBrace := token.NoPos
 	var matchers []*labels.Matcher
+
 	// Parse label matching if any.
 	if t := p.peek(); t.typ == ItemLeftBrace {
-		matchers = p.labelMatchers(ItemEQL, ItemNEQ, ItemEQLRegex, ItemNEQRegex)
+		matchers, rBrace = p.labelMatchers(ItemEQL, ItemNEQ, ItemEQLRegex, ItemNEQRegex)
+		lBrace = p.lex.ItemPos(t)
 	}
 	// Metric name must not be set in the label matchers and before at the same time.
 	if name != "" {
@@ -936,6 +943,9 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 	}
 
 	return &VectorSelector{
+		pos:           pos,
+		LBrace:        lBrace,
+		RBrace:        rBrace,
 		Name:          name,
 		LabelMatchers: matchers,
 	}

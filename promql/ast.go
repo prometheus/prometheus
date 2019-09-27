@@ -245,7 +245,8 @@ func (e *UnaryExpr) EndPos() token.Pos {
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
 	pos           token.Pos
-	endPos        token.Pos
+	LBrace        token.Pos
+	RBrace        token.Pos
 	Name          string
 	Offset        time.Duration
 	LabelMatchers []*labels.Matcher
@@ -259,7 +260,11 @@ func (e *VectorSelector) Pos() token.Pos {
 	return e.pos
 }
 func (e *VectorSelector) EndPos() token.Pos {
-	return e.endPos
+	if e.RBrace == token.NoPos {
+		return e.pos + token.Pos(len(e.Name))
+	} else {
+		return e.RBrace + 1
+	}
 }
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
 func (e *Call) Type() ValueType           { return e.Func.ReturnType }
