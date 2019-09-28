@@ -271,7 +271,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           return;
         }
 
-        pageConfig.allMetrics = json.data; // todo: do we need self.allMetrics? Or can it just live on the page
+        pageConfig.allMetrics = json.data || []; // todo: do we need self.allMetrics? Or can it just live on the page
         for (var i = 0; i < pageConfig.allMetrics.length; i++) {
           self.insertMetric[0].options.add(new Option(pageConfig.allMetrics[i], pageConfig.allMetrics[i]));
         }
