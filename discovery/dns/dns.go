@@ -82,6 +82,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.New("DNS-SD config must contain at least one SRV record name")
 	}
 	switch strings.ToUpper(c.Type) {
+	case "TXT":
 	case "SRV":
 	case "A", "AAAA":
 		if c.Port == 0 {
@@ -124,6 +125,8 @@ func NewDiscovery(conf SDConfig, logger log.Logger) *Discovery {
 		qtype = dns.TypeAAAA
 	case "SRV":
 		qtype = dns.TypeSRV
+	case "TXT":
+		qtype = dns.TypeTXT
 	}
 	d := &Discovery{
 		names:    conf.Names,
@@ -184,7 +187,10 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 
 	for _, record := range response.Answer {
 		var target model.LabelValue
+		var targetLabel model.LabelValue
 		switch addr := record.(type) {
+		case *dns.TXT:
+			targetLabel = model.LabelValue(addr.Txt[0])
 		case *dns.SRV:
 			// Remove the final dot from rooted DNS names to make them look more usual.
 			addr.Target = strings.TrimRight(addr.Target, ".")
@@ -199,8 +205,10 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 			continue
 		}
 		tg.Targets = append(tg.Targets, model.LabelSet{
-			model.AddressLabel: target,
-			dnsNameLabel:       model.LabelValue(name),
+			model.AddressLabel:                target,
+			dnsNameLabel:                      model.LabelValue(name),
+			model.LabelName("__param_target"): targetLabel,
+			model.LabelName("instance"):       targetLabel,
 		})
 	}
 
