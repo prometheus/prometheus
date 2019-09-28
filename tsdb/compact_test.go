@@ -936,7 +936,7 @@ func TestCancelCompactions(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(tmpdirCopy))
 	}()
 
-	// Measure the compaction time without interupting it.
+	// Measure the compaction time without interrupting it.
 	var timeCompactionUninterrupted time.Duration
 	{
 		db, err := Open(tmpdir, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})

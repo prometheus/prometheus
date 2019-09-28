@@ -401,7 +401,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			// cut() truncates and fsyncs the first segment async. If it happens after
 			// the corruption we apply below, the corruption will be overwritten again.
-			// Fire and forget a sync to avoid flakyness.
+			// Fire and forget a sync to avoid flakiness.
 			w.files[0].Sync()
 			// Corrupt the second entry in the first file.
 			// After re-opening we must be able to read the first entry

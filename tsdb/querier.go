@@ -906,7 +906,7 @@ func (s *chainedSeries) Iterator() SeriesIterator {
 	return newChainedSeriesIterator(s.series...)
 }
 
-// chainedSeriesIterator implements a series iterater over a list
+// chainedSeriesIterator implements a series iterator over a list
 // of time-sorted, non-overlapping iterators.
 type chainedSeriesIterator struct {
 	series []Series // series in time order
@@ -977,7 +977,7 @@ func (s *verticalChainedSeries) Iterator() SeriesIterator {
 	return newVerticalMergeSeriesIterator(s.series...)
 }
 
-// verticalMergeSeriesIterator implements a series iterater over a list
+// verticalMergeSeriesIterator implements a series iterator over a list
 // of time-sorted, time-overlapping iterators.
 type verticalMergeSeriesIterator struct {
 	a, b                  SeriesIterator

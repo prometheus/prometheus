@@ -915,7 +915,7 @@ func (r *walReader) Read(
 		et, flag, b := r.at()
 
 		// In decoding below we never return a walCorruptionErr for now.
-		// Those should generally be catched by entry decoding before.
+		// Those should generally be caught by entry decoding before.
 		switch et {
 		case WALEntrySeries:
 			var series []record.RefSeries
