@@ -51,6 +51,35 @@ func TestDNS(t *testing.T) {
 			expected: []*targetgroup.Group{},
 		},
 		{
+			name: "TXT record query",
+			config: SDConfig{
+				Names:           []string{"web.example.com."},
+				RefreshInterval: model.Duration(time.Minute),
+				Type:            "TXT",
+			},
+			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+				return &dns.Msg{
+						Answer: []dns.RR{
+							&dns.TXT{Txt: []string{"my-txt-target.example.com"}},
+						},
+					},
+					nil
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "web.example.com.",
+					Targets: []model.LabelSet{
+						{
+							"__address__":     "",
+							"__param_target":  "my-txt-target.example.com",
+							"__meta_dns_name": "web.example.com.",
+							"instance":        "my-txt-target.example.com",
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "A record query",
 			config: SDConfig{
 				Names:           []string{"web.example.com."},
@@ -201,6 +230,14 @@ func TestSDConfigUnmarshalYAML(t *testing.T) {
 		input     SDConfig
 		expectErr bool
 	}{
+		{
+			name: "valid txt",
+			input: SDConfig{
+				Names: []string{"a.example.com", "b.example.com"},
+				Type:  "TXT",
+			},
+			expectErr: false,
+		},
 		{
 			name: "valid srv",
 			input: SDConfig{
