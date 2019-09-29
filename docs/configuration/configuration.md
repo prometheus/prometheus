@@ -414,10 +414,10 @@ names:
 Where `<domain_name>` is a valid DNS domain name.
 Where `<query_type>` is `SRV`, `TXT`, `A`, or `AAAA`.
 
-If you use `TXT` query type, that will do request by default to /metrics&target=<your_target_result>
-This has been designed to have dns auto discovery feature for blackbox-exporter.
+Using `TXT` query type allow you to specify sub URLs and protocol in target.
+This feature has been designed to allow dns auto discovery for blackbox-exporter.
 
-Below is an example of configuration file to configure blackbox address
+Below is an example with TXT DNS service discovery according to [Blackbox documentation](https://github.com/prometheus/blackbox_exporter#prometheus-configuration)
 
 ```yaml
 scrape_configs:
@@ -432,14 +432,12 @@ scrape_configs:
         type: TXT
         refresh_interval: 10s
     relabel_configs:
-      - source_labels: []
-        regex: .*
-        target_label: __address__
-        replacement: blackbox.example.com:9115
-      - source_labels: []
-        regex: .*
-        target_label: module
-        replacement: http_2xx
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115  # The blackbox exporter's real hostname:port.
 ```
 
 ### `<ec2_sd_config>`

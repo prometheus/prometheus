@@ -60,6 +60,33 @@ func TestDNS(t *testing.T) {
 			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
+							&dns.TXT{Txt: []string{"https://my-txt-target.example.com/api"}},
+						},
+					},
+					nil
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "web.example.com.",
+					Targets: []model.LabelSet{
+						{
+							"__address__":     "https://my-txt-target.example.com/api",
+							"__meta_dns_name": "web.example.com.",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "TXT record query",
+			config: SDConfig{
+				Names:           []string{"web.example.com."},
+				RefreshInterval: model.Duration(time.Minute),
+				Type:            "TXT",
+			},
+			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+				return &dns.Msg{
+						Answer: []dns.RR{
 							&dns.TXT{Txt: []string{"my-txt-target.example.com"}},
 						},
 					},
@@ -70,10 +97,8 @@ func TestDNS(t *testing.T) {
 					Source: "web.example.com.",
 					Targets: []model.LabelSet{
 						{
-							"__address__":     "",
-							"__param_target":  "my-txt-target.example.com",
+							"__address__":     "my-txt-target.example.com",
 							"__meta_dns_name": "web.example.com.",
-							"instance":        "my-txt-target.example.com",
 						},
 					},
 				},
