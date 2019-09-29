@@ -412,7 +412,35 @@ names:
 ```
 
 Where `<domain_name>` is a valid DNS domain name.
-Where `<query_type>` is `SRV`, `A`, or `AAAA`.
+Where `<query_type>` is `SRV`, `TXT`, `A`, or `AAAA`.
+
+If you use `TXT` query type, that will do request by default to /metrics&target=<your_target_result>
+This has been designed to have dns auto discovery feature for blackbox-exporter.
+
+Below is an example of configuration file to configure blackbox address
+
+```yaml
+scrape_configs:
+  - job_name: 'blackbox'
+    scrape_interval: 5s
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    dns_sd_configs:
+      - names:
+         - your-record.example.com.
+        type: TXT
+        refresh_interval: 10s
+    relabel_configs:
+      - source_labels: []
+        regex: .*
+        target_label: __address__
+        replacement: blackbox.example.com:9115
+      - source_labels: []
+        regex: .*
+        target_label: module
+        replacement: http_2xx
+```
 
 ### `<ec2_sd_config>`
 
