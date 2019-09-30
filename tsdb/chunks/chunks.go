@@ -305,7 +305,7 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 func (w *Writer) WriteChunks(chks ...Meta) error {
 	var (
 		chksBatchSize int64
-		end           int = 0
+		end           int
 	)
 
 	for _, chk := range chks {
@@ -327,11 +327,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		}
 	}
 
-	if err := w.writeChunks(chks, false); err != nil {
-		return err
-	}
-
-	return nil
+	return w.writeChunks(chks, false)
 }
 
 func (w *Writer) writeChunks(chks []Meta, cutChunk bool) error {
