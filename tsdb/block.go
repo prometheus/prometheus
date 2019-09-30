@@ -275,7 +275,7 @@ type Block struct {
 	meta BlockMeta
 
 	// Symbol Table Size in bytes.
-	// We maintain this variable to avoid recalculation everytime.
+	// We maintain this variable to avoid recalculation every time.
 	symbolTableSize uint64
 
 	chunkr     ChunkReader
