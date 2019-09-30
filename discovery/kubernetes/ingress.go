@@ -142,7 +142,8 @@ const (
 )
 
 func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
-	ls := make(model.LabelSet, len(ingress.Labels)+len(ingress.Annotations)+2)
+	// Each label and annotation will create two key-value pairs in the map.
+	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
 	ls[ingressNameLabel] = lv(ingress.Name)
 	ls[namespaceLabel] = lv(ingress.Namespace)
 

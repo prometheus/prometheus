@@ -147,7 +147,8 @@ const (
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
-	ls := make(model.LabelSet, len(svc.Labels)+len(svc.Annotations)+2)
+	// Each label and annotation will create two key-value pairs in the map.
+	ls := make(model.LabelSet, 2*(len(svc.Labels)+len(svc.Annotations))+2)
 
 	ls[serviceNameLabel] = lv(svc.Name)
 	ls[namespaceLabel] = lv(svc.Namespace)
