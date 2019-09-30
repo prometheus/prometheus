@@ -149,7 +149,7 @@ func TestHead_ReadWAL(t *testing.T) {
 			s100 := head.series.getByID(100)
 
 			testutil.Equals(t, labels.FromStrings("a", "1"), s10.lset)
-			testutil.Equals(t, (*memSeries)(nil), s11) // Series without samples should be garbage colected at head.Init().
+			testutil.Equals(t, (*memSeries)(nil), s11) // Series without samples should be garbage collected at head.Init().
 			testutil.Equals(t, labels.FromStrings("a", "4"), s50.lset)
 			testutil.Equals(t, labels.FromStrings("a", "3"), s100.lset)
 

@@ -77,7 +77,7 @@ type recoverableError struct {
 func (c *Client) Store(ctx context.Context, req []byte) error {
 	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(req))
 	if err != nil {
-		// Errors from NewRequest are from unparseable URLs, so are not
+		// Errors from NewRequest are from unparsable URLs, so are not
 		// recoverable.
 		return err
 	}

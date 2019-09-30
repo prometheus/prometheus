@@ -13,7 +13,7 @@
 
 // +build go1.12
 
-// Package goversion enforces the go version suported by the tsdb module.
+// Package goversion enforces the go version supported by the tsdb module.
 package goversion
 
 const _SoftwareRequiresGOVERSION1_12 = uint8(0)
