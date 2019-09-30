@@ -2438,7 +2438,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 }
 
 // TestChunkWriter ensures that chunk segment are cut at
-// the next chunk that is outside the set segment size.
+// the chunk that is outside the set segment size.
 func TestChunkWriter(t *testing.T) {
 	ch := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
 
@@ -2448,7 +2448,7 @@ func TestChunkWriter(t *testing.T) {
 		expSegmentsCount int
 	}{
 		// Last chunk ends at the segment boundary so
-		// all chunks should fit in single segment.
+		// all chunks should fit in a single segment.
 		{
 			chks: []chunks.Meta{
 				ch,
@@ -2468,8 +2468,9 @@ func TestChunkWriter(t *testing.T) {
 			segmentSize:      chunks.SegmentHeaderSize + 2*len(ch.Chunk.Bytes()),
 			expSegmentsCount: 2,
 		},
-		// When the last chunk is bigger than the max segment size
-		// it shouldn't cause a dead loop by trying to create a many segments.
+		// When the segment size is smaller than the last chunk
+		// it should still write the chunk to avoid a dead loop by
+		// trying to create many segments.
 		{
 			chks: []chunks.Meta{
 				ch,
@@ -2479,8 +2480,9 @@ func TestChunkWriter(t *testing.T) {
 			segmentSize:      chunks.SegmentHeaderSize + 2*len(ch.Chunk.Bytes()) - 1,
 			expSegmentsCount: 2,
 		},
-		// When the first chunk is bigger than the max segment size
-		// it shouldn't cause a dead loop by trying to create a many segments.
+		// When the segment is smaller than a single chunk
+		// it should still write the chunk to avoid a dead loop by
+		// trying to create many segments.
 		{
 			chks: []chunks.Meta{
 				ch,
@@ -2520,7 +2522,7 @@ func TestChunkWriter(t *testing.T) {
 			testutil.Ok(t, err)
 			testutil.Equals(t, test.expSegmentsCount, len(files))
 
-			// Ensure all data is written to the segments.
+			// Verify that all data is written to the segments.
 			sizeExp := 0
 			sizeAct := 0
 
@@ -2537,7 +2539,6 @@ func TestChunkWriter(t *testing.T) {
 				sizeAct += int(f.Size())
 			}
 			testutil.Equals(t, sizeExp, sizeAct)
-
 		})
 	}
 }

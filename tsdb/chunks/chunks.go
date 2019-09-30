@@ -415,7 +415,7 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // of series data.
 type Reader struct {
 	// The underlying bytes holding the encoded series data.
-	// Each slice holds the date for a different segment.
+	// Each slice holds the data for a different segment.
 	bs    []ByteSlice
 	cs    []io.Closer // Closers for resources behind the byte slices.
 	size  int64       // The total size of bytes in the reader.
