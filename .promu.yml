@@ -10,6 +10,8 @@ build:
           path: ./cmd/prometheus
         - name: promtool
           path: ./cmd/promtool
+        - name: tsdb
+          path: ./tsdb/cmd/tsdb
     flags: -mod=vendor -a -tags netgo
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}
