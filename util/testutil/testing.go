@@ -71,7 +71,7 @@ func Equals(tb TB, exp, act interface{}, msgAndArgs ...interface{}) {
 	}
 }
 
-// Fatal fails the test immediately
+// Fatal fails the test immediately.
 func Fatal(tb TB, msgAndArgs ...interface{}) {
 	tb.Helper()
 	tb.Fatalf("\033[31m%s\033[39m\n", formatMessage(msgAndArgs))
