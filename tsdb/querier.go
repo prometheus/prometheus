@@ -560,7 +560,7 @@ func (s *mergedSeriesSet) Err() error {
 	return s.err
 }
 
-// This function is to call Next() for all SeriesSet.
+// nextAll is to call Next() for all SeriesSet.
 // Because the order of the SeriesSet slice will affect the results,
 // we need to use an buffer slice to hold the order.
 func (s *mergedSeriesSet) nextAll() {
@@ -577,7 +577,7 @@ func (s *mergedSeriesSet) nextAll() {
 	s.all, s.buf = s.buf, s.all
 }
 
-// This function is to call Next() for the SeriesSet with the indices of s.ids.
+// nextWithID is to call Next() for the SeriesSet with the indices of s.ids.
 // Because the order of the SeriesSet slice will affect the results,
 // we need to use an buffer slice to hold the order.
 func (s *mergedSeriesSet) nextWithID() {
