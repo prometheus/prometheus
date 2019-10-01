@@ -841,5 +841,5 @@ func TestMemPostings_Delete(t *testing.T) {
 	deleted := p.Get("lbl1", "b")
 	expanded, err = ExpandPostings(deleted)
 	testutil.Ok(t, err)
-	testutil.Assert(t, 0 == len(expanded), "expected empty postings, got %v", expanded)
+	testutil.Assert(t, len(expanded) == 0, "expected empty postings, got %v", expanded)
 }
