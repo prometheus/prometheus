@@ -552,7 +552,7 @@ var expectedConf = &Config{
 			},
 		},
 		{
-			JobName: "測試",
+			JobName: "test",
 
 			HonorTimestamps: true,
 			ScrapeInterval:  model.Duration(15 * time.Second),

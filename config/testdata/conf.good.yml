@@ -237,7 +237,7 @@ scrape_configs:
     - targets:
       - localhost:9090
 
-- job_name: 測試
+- job_name: test
   metrics_path: /metrics
   static_configs:
     - targets:
