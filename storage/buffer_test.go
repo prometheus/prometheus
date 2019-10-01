@@ -78,10 +78,10 @@ func TestSampleRing(t *testing.T) {
 					}
 				}
 				if sold.t >= s.t-c.delta && !found {
-					t.Fatalf("%d: expected sample %d to be in buffer but was not; buffer %v", i, sold.t, buffered)
+					testutil.Fatal(t, "%d: expected sample %d to be in buffer but was not; buffer %v", i, sold.t, buffered)
 				}
 				if sold.t < s.t-c.delta && found {
-					t.Fatalf("%d: unexpected sample %d in buffer; buffer %v", i, sold.t, buffered)
+					testutil.Fatal(t, "%d: unexpected sample %d in buffer; buffer %v", i, sold.t, buffered)
 				}
 			}
 		}
