@@ -4,7 +4,8 @@ using the vfsgen library (c.f. Makefile).
 
 During development it is more convenient to always use the files on disk to
 directly see changes without recompiling.
-To make this work, add `-tags dev` to the `flags` entry in `.promu.yml`, and then `make build`.
+To make this work, remove the `builtinassets` build tag in the `flags` entry
+in `.promu.yml`, and then `make build`.
 
 This will serve all files from your local filesystem.
 This is for development purposes only.

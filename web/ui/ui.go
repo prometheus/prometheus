@@ -11,39 +11,59 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build dev
+// +build !builtinassets
 
 package ui
 
 import (
 	"net/http"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/shurcooL/httpfs/filter"
 	"github.com/shurcooL/httpfs/union"
 )
 
-var static http.FileSystem = filter.Keep(
-	http.Dir("./static"),
-	func(path string, fi os.FileInfo) bool {
-		return fi.IsDir() ||
-			(!strings.HasSuffix(path, "map.js") &&
-				!strings.HasSuffix(path, "/bootstrap.js") &&
-				!strings.HasSuffix(path, "/bootstrap-theme.css") &&
-				!strings.HasSuffix(path, "/bootstrap.css"))
-	},
-)
-
-var templates http.FileSystem = filter.Keep(
-	http.Dir("./templates"),
-	func(path string, fi os.FileInfo) bool {
-		return fi.IsDir() || strings.HasSuffix(path, ".html")
-	},
-)
-
 // Assets contains the project's assets.
-var Assets http.FileSystem = union.New(map[string]http.FileSystem{
-	"/templates": templates,
-	"/static":    static,
-})
+var Assets http.FileSystem = func() http.FileSystem {
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	var assetsPrefix string
+	switch path.Base(wd) {
+	case "prometheus":
+		// When running Prometheus (without built-in assets) from the repo root.
+		assetsPrefix = "./web/ui"
+	case "web":
+		// When running web tests.
+		assetsPrefix = "./ui"
+	case "ui":
+		// When generating statically compiled-in assets.
+		assetsPrefix = "./"
+	}
+
+	static := filter.Keep(
+		http.Dir(path.Join(assetsPrefix, "static")),
+		func(path string, fi os.FileInfo) bool {
+			return fi.IsDir() ||
+				(!strings.HasSuffix(path, "map.js") &&
+					!strings.HasSuffix(path, "/bootstrap.js") &&
+					!strings.HasSuffix(path, "/bootstrap-theme.css") &&
+					!strings.HasSuffix(path, "/bootstrap.css"))
+		},
+	)
+
+	templates := filter.Keep(
+		http.Dir(path.Join(assetsPrefix, "templates")),
+		func(path string, fi os.FileInfo) bool {
+			return fi.IsDir() || strings.HasSuffix(path, ".html")
+		},
+	)
+
+	return union.New(map[string]http.FileSystem{
+		"/templates": templates,
+		"/static":    static,
+	})
+}()

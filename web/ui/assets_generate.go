@@ -29,7 +29,7 @@ func main() {
 	fs := modtimevfs.New(ui.Assets, time.Unix(1, 0))
 	err := vfsgen.Generate(fs, vfsgen.Options{
 		PackageName:  "ui",
-		BuildTags:    "!dev",
+		BuildTags:    "builtinassets",
 		VariableName: "Assets",
 	})
 	if err != nil {

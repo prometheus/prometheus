@@ -14,6 +14,9 @@
 # Needs to be defined before including Makefile.common to auto-generate targets
 DOCKER_ARCHS ?= amd64 armv7 arm64
 
+NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
+REACT_APP_PATH = web/ui/react-app
+
 TSDB_PROJECT_DIR = "./tsdb"
 TSDB_CLI_DIR="$(TSDB_PROJECT_DIR)/cmd/tsdb"
 TSDB_BIN = "$(TSDB_CLI_DIR)/tsdb"
@@ -25,24 +28,37 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
-.PHONY: react-app
-react-app:
+$(REACT_APP_PATH)/node_modules: $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/yarn.lock
+	cd $(REACT_APP_PATH) && yarn --frozen-lockfile
+
+.PHONY: build-react-app
+build-react-app: $(REACT_APP_PATH)/node_modules
 	@echo ">> building React app"
 	@./scripts/build_react_app.sh
 
 .PHONY: assets
-assets: react-app
+assets: build-react-app
 	@echo ">> writing assets"
 	cd $(PREFIX)/web/ui && GO111MODULE=$(GO111MODULE) $(GO) generate -x -v $(GOOPTS)
 	@$(GOFMT) -w ./web/ui
 
-.PHONY: check_assets
-check_assets: assets
-	@echo ">> checking that assets are up-to-date"
-	@if ! (cd $(PREFIX)/web/ui && git diff --exit-code -- . ':(exclude)web/ui/static/graph-new'); then \
-		echo "Run 'make assets' and commit the changes to fix the error."; \
-		exit 1; \
-	fi
+.PHONY: npm_licenses
+npm_licenses:
+	@echo ">> bundling npm licenses"
+	rm -f $(NPM_LICENSES_TARBALL)
+	find web/ui/react-app/node_modules -iname "license*" | tar cfj $(NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
+
+.PHONY: tarball
+tarball: npm_licenses
+	$(MAKE) common-tarball
+
+.PHONY: docker
+docker: npm_licenses
+	$(MAKE) common-docker
+
+.PHONY: build
+build: assets
+	$(MAKE) common-build
 
 build_tsdb:
 	GO111MODULE=$(GO111MODULE) $(GO) build -o $(TSDB_BIN) $(TSDB_CLI_DIR)
