@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
@@ -947,6 +949,91 @@ scrape_configs:
 				origScrpCfg.ServiceDiscoveryConfig.StaticConfigs, sdcfg.StaticConfigs)
 		}
 	}
+}
+
+func TestGaugeFailedConfigs(t *testing.T) {
+	var (
+		fcGauge prometheus.Gauge
+		err     error
+	)
+
+	cfgOneText := `
+scrape_configs:
+- job_name: prometheus
+  consul_sd_configs:
+  - server: "foo:8500"
+    tls_config:
+      cert_file: "/tmp/non_existent"
+  - server: "bar:8500"
+    tls_config:
+      cert_file: "/tmp/non_existent"
+  - server: "foo2:8500"
+    tls_config:
+      cert_file: "/tmp/non_existent"
+`
+	cfgOne := &config.Config{}
+
+	err = yaml.UnmarshalStrict([]byte(cfgOneText), cfgOne)
+	if err != nil {
+		t.Fatalf("Unable to load YAML config cfgOne: %s", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := make(map[string]sd_config.ServiceDiscoveryConfig)
+	for _, v := range cfgOne.ScrapeConfigs {
+		c[v.JobName] = v.ServiceDiscoveryConfig
+	}
+
+	discoveryManager.ApplyConfig(c)
+	<-discoveryManager.SyncCh()
+
+	metricOne := &dto.Metric{}
+	fcGauge, err = failedConfigs.GetMetricWithLabelValues(discoveryManager.name)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fcGauge.Write(metricOne)
+
+	failedCount := metricOne.GetGauge().GetValue()
+	if failedCount != 3 {
+		t.Fatalf("Expected to have 3 failed configs, got: %v", failedCount)
+	}
+
+	cfgTwoText := `
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+    - targets: ["foo:9090"]
+`
+	cfgTwo := &config.Config{}
+	if err := yaml.UnmarshalStrict([]byte(cfgTwoText), cfgTwo); err != nil {
+		t.Fatalf("Unable to load YAML config cfgTwo: %s", err)
+	}
+	c = make(map[string]sd_config.ServiceDiscoveryConfig)
+	for _, v := range cfgTwo.ScrapeConfigs {
+		c[v.JobName] = v.ServiceDiscoveryConfig
+	}
+
+	discoveryManager.ApplyConfig(c)
+	<-discoveryManager.SyncCh()
+
+	metricTwo := &dto.Metric{}
+	fcGauge, err = failedConfigs.GetMetricWithLabelValues(discoveryManager.name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fcGauge.Write(metricTwo)
+
+	failedCount = metricTwo.GetGauge().GetValue()
+	if failedCount != 0 {
+		t.Fatalf("Expected to get no failed config, got: %v", failedCount)
+	}
+
 }
 
 func TestCoordinationWithReceiver(t *testing.T) {

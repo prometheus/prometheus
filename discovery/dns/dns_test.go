@@ -22,8 +22,9 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/miekg/dns"
-	"github.com/prometheus/common/model"
+	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -103,6 +104,7 @@ func TestDNS(t *testing.T) {
 			name: "SRV record query",
 			config: SDConfig{
 				Names:           []string{"_mysql._tcp.db.example.com."},
+				Type:            "SRV",
 				RefreshInterval: model.Duration(time.Minute),
 			},
 			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
@@ -175,6 +177,96 @@ func TestDNS(t *testing.T) {
 			tgs, err := sd.refresh(context.Background())
 			testutil.Ok(t, err)
 			testutil.Equals(t, tc.expected, tgs)
+		})
+	}
+}
+
+func TestSDConfigUnmarshalYAML(t *testing.T) {
+	marshal := func(c SDConfig) []byte {
+		d, err := yaml.Marshal(c)
+		if err != nil {
+			panic(err)
+		}
+		return d
+	}
+
+	unmarshal := func(d []byte) func(interface{}) error {
+		return func(o interface{}) error {
+			return yaml.Unmarshal(d, o)
+		}
+	}
+
+	cases := []struct {
+		name      string
+		input     SDConfig
+		expectErr bool
+	}{
+		{
+			name: "valid srv",
+			input: SDConfig{
+				Names: []string{"a.example.com", "b.example.com"},
+				Type:  "SRV",
+			},
+			expectErr: false,
+		},
+		{
+			name: "valid a",
+			input: SDConfig{
+				Names: []string{"a.example.com", "b.example.com"},
+				Type:  "A",
+				Port:  5300,
+			},
+			expectErr: false,
+		},
+		{
+			name: "valid aaaa",
+			input: SDConfig{
+				Names: []string{"a.example.com", "b.example.com"},
+				Type:  "AAAA",
+				Port:  5300,
+			},
+			expectErr: false,
+		},
+		{
+			name: "invalid a without port",
+			input: SDConfig{
+				Names: []string{"a.example.com", "b.example.com"},
+				Type:  "A",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid aaaa without port",
+			input: SDConfig{
+				Names: []string{"a.example.com", "b.example.com"},
+				Type:  "AAAA",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid empty names",
+			input: SDConfig{
+				Names: []string{},
+				Type:  "AAAA",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid unknown dns type",
+			input: SDConfig{
+				Names: []string{"a.example.com", "b.example.com"},
+				Type:  "PTR",
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var config SDConfig
+			d := marshal(c.input)
+			err := config.UnmarshalYAML(unmarshal(d))
+			testutil.Equals(t, c.expectErr, err != nil)
 		})
 	}
 }
