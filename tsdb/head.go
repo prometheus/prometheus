@@ -589,7 +589,7 @@ func (h *Head) Init(minValidTime int64) error {
 	go func() {
 		defer h.wg.Done()
 
-		tick := time.NewTicker(1 * time.Minute)
+		tick := time.NewTicker(30 * time.Second)
 		for {
 			select {
 			case <-tick.C:
@@ -1854,6 +1854,13 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 		s.headChunk = nil
 	} else {
 		s.headChunk = s.chunks[len(s.chunks)-1]
+		if s.app == nil {
+			app, err := s.headChunk.chunk.Appender()
+			if err != nil {
+				panic(err)
+			}
+			s.app = app
+		}
 	}
 
 	return k
