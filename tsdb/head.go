@@ -402,8 +402,6 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 					multiRefLock.Lock()
 					multiRef[s.Ref] = series.ref
 					multiRefLock.Unlock()
-				} else {
-					fmt.Println("New series was created")
 				}
 
 				if h.lastSeriesID < s.Ref {
@@ -539,6 +537,7 @@ func (h *Head) Init(minValidTime int64) error {
 			r := wal.NewReader(sr)
 
 			count := 0
+			// TODO: Process them in parallel.
 			for r.Next() {
 				count++
 				s, err := newMemSeriesFromBytes(r.Record())
@@ -550,6 +549,12 @@ func (h *Head) Init(minValidTime int64) error {
 				}
 				if h.lastSeriesID < s.ref {
 					h.lastSeriesID = s.ref
+				}
+
+				if len(s.chunks) > 0 {
+					mint := s.chunks[0].minTime
+					maxt := s.chunks[len(s.chunks)-1].maxTime
+					h.updateMinMaxTime(mint, maxt)
 				}
 			}
 			level.Info(h.logger).Log("msg", "WAL chunkpoint loaded", "num_series", count, "last_series_id", h.lastSeriesID)
@@ -1432,7 +1437,6 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool) {
 
 	// Optimistically assume that we are the first one to create the series.
 	id := atomic.AddUint64(&h.lastSeriesID, 1)
-
 	return h.getOrCreateWithID(id, hash, lset)
 }
 
@@ -1688,6 +1692,7 @@ func (s *memSeries) encodeSeries(b []byte) []byte {
 		buf.PutUvarintStr(l.Value)
 	}
 	buf.PutBE64int64(s.chunkRange)
+	buf.PutBE64int64(s.nextAt)
 
 	// Chunks.
 	s.Lock()
@@ -1716,13 +1721,14 @@ func newMemSeriesFromBytes(b []byte) (*memSeries, error) {
 	sort.Sort(lset)
 
 	chunkRange := dec.Be64int64()
+	nextAt := dec.Be64int64()
 	numChunks := dec.Uvarint()
 
 	s := &memSeries{
 		lset:       lset,
 		ref:        ref,
 		chunkRange: chunkRange,
-		nextAt:     math.MinInt64,
+		nextAt:     nextAt,
 		chunks:     make([]*memChunk, 0, numChunks),
 	}
 
@@ -1730,7 +1736,6 @@ func newMemSeriesFromBytes(b []byte) (*memSeries, error) {
 		mc := &memChunk{}
 		mc.minTime = dec.Be64int64()
 		mc.maxTime = dec.Be64int64()
-
 		mc.chunk = chunkenc.NewXORChunkFromBytes(dec.UvarintBytes(nil))
 		s.chunks = append(s.chunks, mc)
 	}

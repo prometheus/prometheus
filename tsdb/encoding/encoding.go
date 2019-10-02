@@ -187,7 +187,8 @@ func (d *Decbuf) UvarintBytes(b []byte) []byte {
 	if cap(b) < int(l) {
 		b = make([]byte, 0, l)
 	}
-	copy(b[:0], d.B[:l])
+	b = b[:l]
+	copy(b, d.B[:l])
 	d.B = d.B[l:]
 	return b
 }
