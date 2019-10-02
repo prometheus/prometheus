@@ -100,56 +100,82 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 }
 
 func BenchmarkLoadWAL(b *testing.B) {
-	dir, err := ioutil.TempDir("", "test_load_wal")
-	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(dir))
-	}()
-
-	w, err := wal.New(nil, nil, dir, false)
-	testutil.Ok(b, err)
-
-	// Write series.
-	totalSeriesBatches := 10
-	seriesPerBatch := 1000
-	labelCount := 5
-	refSeries := make([]record.RefSeries, 0, seriesPerBatch)
-	for k := 0; k < totalSeriesBatches; k++ {
-		refSeries = refSeries[:0]
-		for i := k * seriesPerBatch; i < (k+1)*seriesPerBatch; i++ {
-			lbls := make(map[string]string, labelCount)
-			lbls[defaultLabelName] = strconv.Itoa(i)
-			for j := 1; len(lbls) < labelCount; j++ {
-				lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
-			}
-			refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 100, Labels: labels.FromMap(lbls)})
-		}
-		populateTestWAL(b, w, []interface{}{refSeries})
+	cases := []struct {
+		// Total series is (batches*seriesPerBatch).
+		batches          int
+		seriesPerBatch   int
+		samplesPerSeries int
+	}{
+		{ // Less series and more samples.
+			batches:          10,
+			seriesPerBatch:   100,
+			samplesPerSeries: 100000,
+		},
+		{ // More series and less samples.
+			batches:          10,
+			seriesPerBatch:   10000,
+			samplesPerSeries: 100,
+		},
+		{ // In between.
+			batches:          10,
+			seriesPerBatch:   1000,
+			samplesPerSeries: 10000,
+		},
 	}
 
-	// Write samples.
-	samplesPerSeries := 10000
-	refSamples := make([]record.RefSample, 0, seriesPerBatch)
-	for i := 0; i < samplesPerSeries; i++ {
-		for j := 0; j < totalSeriesBatches; j++ {
-			refSamples = refSamples[:0]
-			for k := j * seriesPerBatch; k < (j+1)*seriesPerBatch; k++ {
-				refSamples = append(refSamples, record.RefSample{
-					Ref: uint64(k) * 100,
-					T:   int64(i) * 10,
-					V:   float64(i) * 100,
-				})
-			}
-			populateTestWAL(b, w, []interface{}{refSamples})
-		}
+	labelsPerSeries := 5
+	for _, c := range cases {
+		b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries),
+			func(b *testing.B) {
+				dir, err := ioutil.TempDir("", "test_load_wal")
+				testutil.Ok(b, err)
+				defer func() {
+					testutil.Ok(b, os.RemoveAll(dir))
+				}()
+
+				w, err := wal.New(nil, nil, dir, false)
+				testutil.Ok(b, err)
+
+				// Write series.
+				refSeries := make([]record.RefSeries, 0, c.seriesPerBatch)
+				for k := 0; k < c.batches; k++ {
+					refSeries = refSeries[:0]
+					for i := k * c.seriesPerBatch; i < (k+1)*c.seriesPerBatch; i++ {
+						lbls := make(map[string]string, labelsPerSeries)
+						lbls[defaultLabelName] = strconv.Itoa(i)
+						for j := 1; len(lbls) < labelsPerSeries; j++ {
+							lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
+						}
+						refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 100, Labels: labels.FromMap(lbls)})
+					}
+					populateTestWAL(b, w, []interface{}{refSeries})
+				}
+
+				// Write samples.
+				refSamples := make([]record.RefSample, 0, c.seriesPerBatch)
+				for i := 0; i < c.samplesPerSeries; i++ {
+					for j := 0; j < c.batches; j++ {
+						refSamples = refSamples[:0]
+						for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
+							refSamples = append(refSamples, record.RefSample{
+								Ref: uint64(k) * 100,
+								T:   int64(i) * 10,
+								V:   float64(i) * 100,
+							})
+						}
+						populateTestWAL(b, w, []interface{}{refSamples})
+					}
+				}
+
+				h, err := NewHead(nil, nil, w, 1000)
+				testutil.Ok(b, err)
+
+				b.ResetTimer()
+
+				// Load the WAL.
+				h.Init(0)
+			})
 	}
-
-	h, err := NewHead(nil, nil, w, 1000)
-	testutil.Ok(b, err)
-
-	b.ResetTimer()
-
-	h.Init(0)
 }
 
 func TestHead_ReadWAL(t *testing.T) {
