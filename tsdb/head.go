@@ -28,6 +28,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -517,6 +518,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
 
+	currT := timestamp.FromTime(time.Now())
 	{
 		// Backfill the chunkpoint first if it exists.
 		dir, _, err := LastChunkpoint(h.wal.Dir())
@@ -524,6 +526,7 @@ func (h *Head) Init(minValidTime int64) error {
 			return errors.Wrap(err, "find last chunkpoint")
 		}
 		if err == nil {
+			start := time.Now()
 			sr, err := wal.NewSegmentsReader(dir)
 			if err != nil {
 				return errors.Wrap(err, "open chunkpoint")
@@ -556,8 +559,11 @@ func (h *Head) Init(minValidTime int64) error {
 					maxt := s.chunks[len(s.chunks)-1].maxTime
 					h.updateMinMaxTime(mint, maxt)
 				}
+				// Start a new chunk.
+				s.cut(currT)
 			}
-			level.Info(h.logger).Log("msg", "WAL chunkpoint loaded", "num_series", count, "last_series_id", h.lastSeriesID)
+			elapsed := time.Since(start)
+			level.Info(h.logger).Log("msg", "WAL chunkpoint loaded", "num_series", count, "duration", elapsed.String())
 		}
 	}
 
@@ -595,7 +601,9 @@ func (h *Head) Init(minValidTime int64) error {
 			case <-tick.C:
 				// TODO: if chunkpoint was created very recently by the truncation of WAL
 				// then skip this stage.
-				h.performChunkpoint()
+				if err := h.performChunkpoint(); err != nil {
+					level.Error(h.logger).Log("msg", "error while performing chunkpoint", "err", err)
+				}
 			case <-h.quit:
 				return
 			}
@@ -1854,13 +1862,6 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 		s.headChunk = nil
 	} else {
 		s.headChunk = s.chunks[len(s.chunks)-1]
-		if s.app == nil {
-			app, err := s.headChunk.chunk.Appender()
-			if err != nil {
-				panic(err)
-			}
-			s.app = app
-		}
 	}
 
 	return k
@@ -1880,6 +1881,11 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 		chunkCreated = true
 	}
 	numSamples := c.chunk.NumSamples()
+	if numSamples == 0 {
+		// It could be the new chunk created after reading checkpoint,
+		// hence we fix the minTime of the chunk here.
+		c.minTime = t
+	}
 
 	// Out of order sample.
 	if c.maxTime >= t {

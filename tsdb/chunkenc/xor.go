@@ -62,7 +62,7 @@ func NewXORChunk() *XORChunk {
 
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
 func NewXORChunkFromBytes(b []byte) *XORChunk {
-	return &XORChunk{b: bstream{stream: b, count: 0}}
+	return &XORChunk{b: newBReader(b)}
 }
 
 // Encoding returns the encoding type.
