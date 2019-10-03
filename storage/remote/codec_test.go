@@ -125,15 +125,10 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		t.Run(test.description, func(t *testing.T) {
 			err := validateLabelsAndMetricName(test.input)
 			if err == nil {
-				if !test.shouldPass {
-					t.Fatalf("Test should fail, but passed instead.")
-				}
+				testutil.Assert(t, test.shouldPass, "Test should fail, but passed instead.")
 			} else {
-				if test.shouldPass {
-					t.Fatalf("Test should pass, got unexpected error: %v", err)
-				} else if err.Error() != test.expectedErr {
-					t.Fatalf("Test should fail with: %s got unexpected error instead: %v", test.expectedErr, err)
-				}
+				testutil.Assert(t, !test.shouldPass, "Test should pass, got unexpected error: %v", err)
+				testutil.Equals(t, test.expectedErr, err.Error())
 			}
 		})
 	}
@@ -151,21 +146,11 @@ func TestConcreteSeriesSet(t *testing.T) {
 	c := &concreteSeriesSet{
 		series: []storage.Series{series1, series2},
 	}
-	if !c.Next() {
-		t.Fatalf("Expected Next() to be true.")
-	}
-	if c.At() != series1 {
-		t.Fatalf("Unexpected series returned.")
-	}
-	if !c.Next() {
-		t.Fatalf("Expected Next() to be true.")
-	}
-	if c.At() != series2 {
-		t.Fatalf("Unexpected series returned.")
-	}
-	if c.Next() {
-		t.Fatalf("Expected Next() to be false.")
-	}
+	testutil.Assert(t,c.Next(),"Expected Next() to be true.")
+	testutil.Equals(t, series1, c.At(), "Unexpected series returned.")
+	testutil.Assert(t,c.Next(),"Expected Next() to be true.")
+	testutil.Equals(t, series2, c.At(), "Unexpected series returned.")
+	testutil.Assert(t,!c.Next(),"Expected Next() to be false.")
 }
 
 func TestConcreteSeriesClonesLabels(t *testing.T) {
