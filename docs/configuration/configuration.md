@@ -855,23 +855,16 @@ namespaces:
   names:
     [ - <string> ]
 
-# Polling interval
-[ resync_period: <duration> | default = 10m ]
-
 # Optional label and filter selectors to limit the discovery process to a subset of available resources. 
+# See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
+# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to know more about the possible 
+# filters that can be used.
 [ label_selector: <string> ]
 [ field_selector: <string> ]
 ```
 
 Where `<role>` must be `endpoints`, `service`, `pod`, `node`, or
 `ingress`.
-
-By default `label_selector` and `field_selector` are empty, so the discovery pulls all resources 
-from Kubernetes API and then offloads a drop/keep/transform logic for a later relabeling process. This can 
-cause a heavy load on a Kubernetes API on big clusters, so it is generally a good idea to limit
-the API response to only a subset of required resources. Check the Kubernetes documentation about
-[field selector](https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/)
-and [label selector](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/) syntax.
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
 for a detailed example of configuring Prometheus for Kubernetes.

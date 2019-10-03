@@ -93,7 +93,6 @@ type SDConfig struct {
 	NamespaceDiscovery NamespaceDiscovery           `yaml:"namespaces,omitempty"`
 	LabelSelector      string                       `yaml:"label_selector,omitempty"`
 	FieldSelector      string                       `yaml:"field_selector,omitempty"`
-	ResyncPeriod       model.Duration               `yaml:"resync_period,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -110,9 +109,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
 		return err
-	}
-	if c.ResyncPeriod == 0 {
-		c.ResyncPeriod = model.Duration(10 * time.Minute)
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config_util.HTTPClientConfig{}) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
@@ -169,7 +165,6 @@ type Discovery struct {
 	discoverers        []discoverer
 	labelSelector      string
 	fieldSelector      string
-	resyncPeriod       time.Duration
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -222,9 +217,10 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		discoverers:        make([]discoverer, 0),
 		labelSelector:      conf.LabelSelector,
 		fieldSelector:      conf.FieldSelector,
-		resyncPeriod:       time.Duration(conf.ResyncPeriod),
 	}, nil
 }
+
+const resyncPeriod = 10 * time.Minute
 
 // Run implements the discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
@@ -274,9 +270,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			eps := NewEndpoints(
 				log.With(d.logger, "role", "endpoint"),
-				cache.NewSharedInformer(slw, &apiv1.Service{}, d.resyncPeriod),
-				cache.NewSharedInformer(elw, &apiv1.Endpoints{}, d.resyncPeriod),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, d.resyncPeriod),
+				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
+				cache.NewSharedInformer(elw, &apiv1.Endpoints{}, resyncPeriod),
+				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, eps)
 			go eps.endpointsInf.Run(ctx.Done())
@@ -300,7 +296,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			pod := NewPod(
 				log.With(d.logger, "role", "pod"),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, d.resyncPeriod),
+				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, pod)
 			go pod.informer.Run(ctx.Done())
@@ -322,7 +318,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			svc := NewService(
 				log.With(d.logger, "role", "service"),
-				cache.NewSharedInformer(slw, &apiv1.Service{}, d.resyncPeriod),
+				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, svc)
 			go svc.informer.Run(ctx.Done())
@@ -344,7 +340,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			ingress := NewIngress(
 				log.With(d.logger, "role", "ingress"),
-				cache.NewSharedInformer(ilw, &extensionsv1beta1.Ingress{}, d.resyncPeriod),
+				cache.NewSharedInformer(ilw, &extensionsv1beta1.Ingress{}, resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, ingress)
 			go ingress.informer.Run(ctx.Done())
@@ -364,7 +360,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 		node := NewNode(
 			log.With(d.logger, "role", "node"),
-			cache.NewSharedInformer(nlw, &apiv1.Node{}, d.resyncPeriod),
+			cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod),
 		)
 		d.discoverers = append(d.discoverers, node)
 		go node.informer.Run(ctx.Done())
