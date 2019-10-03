@@ -226,6 +226,7 @@ const resyncPeriod = 10 * time.Minute
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	d.Lock()
 	namespaces := d.getNamespaces()
+
 	switch d.role {
 	case RoleEndpoint:
 		for _, namespace := range namespaces {
