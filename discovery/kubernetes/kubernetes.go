@@ -91,6 +91,9 @@ type SDConfig struct {
 	Role               Role                         `yaml:"role"`
 	HTTPClientConfig   config_util.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery           `yaml:"namespaces,omitempty"`
+	LabelSelector      string                       `yaml:"label_selector,omitempty"`
+	FieldSelector      string                       `yaml:"field_selector,omitempty"`
+	ResyncPeriod       model.Duration               `yaml:"resync_period,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -107,6 +110,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
 		return err
+	}
+	if (c.ResyncPeriod == 0) {
+		c.ResyncPeriod = model.Duration(10 * time.Minute)
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config_util.HTTPClientConfig{}) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
@@ -161,6 +167,9 @@ type Discovery struct {
 	logger             log.Logger
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discoverer
+	labelSelector      string
+	fieldSelector      string
+	resyncPeriod       time.Duration
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -211,51 +220,65 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		role:               conf.Role,
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discoverer, 0),
+		labelSelector:      conf.LabelSelector,
+		fieldSelector:      conf.FieldSelector,
+		resyncPeriod:       time.Duration(conf.ResyncPeriod),
 	}, nil
 }
 
-const resyncPeriod = 10 * time.Minute
+//const resyncPeriod = 10 * time.Minute
 
 // Run implements the discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	d.Lock()
 	namespaces := d.getNamespaces()
-
 	switch d.role {
 	case RoleEndpoint:
 		for _, namespace := range namespaces {
 			e := d.client.CoreV1().Endpoints(namespace)
 			elw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return e.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return e.Watch(options)
 				},
 			}
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return s.Watch(options)
 				},
 			}
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return p.Watch(options)
 				},
 			}
 			eps := NewEndpoints(
 				log.With(d.logger, "role", "endpoint"),
-				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
-				cache.NewSharedInformer(elw, &apiv1.Endpoints{}, resyncPeriod),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				cache.NewSharedInformer(slw, &apiv1.Service{}, d.resyncPeriod),
+				cache.NewSharedInformer(elw, &apiv1.Endpoints{}, d.resyncPeriod),
+				cache.NewSharedInformer(plw, &apiv1.Pod{}, d.resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, eps)
 			go eps.endpointsInf.Run(ctx.Done())
@@ -267,15 +290,19 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return p.Watch(options)
 				},
 			}
 			pod := NewPod(
 				log.With(d.logger, "role", "pod"),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				cache.NewSharedInformer(plw, &apiv1.Pod{}, d.resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, pod)
 			go pod.informer.Run(ctx.Done())
@@ -285,15 +312,19 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return s.Watch(options)
 				},
 			}
 			svc := NewService(
 				log.With(d.logger, "role", "service"),
-				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
+				cache.NewSharedInformer(slw, &apiv1.Service{}, d.resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, svc)
 			go svc.informer.Run(ctx.Done())
@@ -303,15 +334,19 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			i := d.client.ExtensionsV1beta1().Ingresses(namespace)
 			ilw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return i.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.fieldSelector
+					options.LabelSelector = d.labelSelector
 					return i.Watch(options)
 				},
 			}
 			ingress := NewIngress(
 				log.With(d.logger, "role", "ingress"),
-				cache.NewSharedInformer(ilw, &extensionsv1beta1.Ingress{}, resyncPeriod),
+				cache.NewSharedInformer(ilw, &extensionsv1beta1.Ingress{}, d.resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, ingress)
 			go ingress.informer.Run(ctx.Done())
@@ -319,15 +354,19 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	case RoleNode:
 		nlw := &cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				options.FieldSelector = d.fieldSelector
+				options.LabelSelector = d.labelSelector
 				return d.client.CoreV1().Nodes().List(options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				options.FieldSelector = d.fieldSelector
+				options.LabelSelector = d.labelSelector
 				return d.client.CoreV1().Nodes().Watch(options)
 			},
 		}
 		node := NewNode(
 			log.With(d.logger, "role", "node"),
-			cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod),
+			cache.NewSharedInformer(nlw, &apiv1.Node{}, d.resyncPeriod),
 		)
 		d.discoverers = append(d.discoverers, node)
 		go node.informer.Run(ctx.Done())
