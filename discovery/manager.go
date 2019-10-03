@@ -226,7 +226,6 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 	updates := make(chan []*targetgroup.Group)
 
 	m.discoverCancel = append(m.discoverCancel, cancel)
-
 	go p.d.Run(ctx, updates)
 	go m.updater(ctx, p, updates)
 }
