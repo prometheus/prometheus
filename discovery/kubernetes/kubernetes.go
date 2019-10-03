@@ -111,7 +111,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if (c.ResyncPeriod == 0) {
+	if c.ResyncPeriod == 0 {
 		c.ResyncPeriod = model.Duration(10 * time.Minute)
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config_util.HTTPClientConfig{}) {
@@ -225,8 +225,6 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		resyncPeriod:       time.Duration(conf.ResyncPeriod),
 	}, nil
 }
-
-//const resyncPeriod = 10 * time.Minute
 
 // Run implements the discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
