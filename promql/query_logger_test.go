@@ -136,3 +136,43 @@ func TestMMapFile(t *testing.T) {
 		t.Fatalf("Mmap failed")
 	}
 }
+
+func TestParseBrokenJson(t *testing.T) {
+	for _, tc := range []struct {
+		b []byte
+
+		ok  bool
+		out string
+	}{
+		{
+			b: []byte(""),
+		},
+		{
+			b: []byte("\x00\x00"),
+		},
+		{
+			b: []byte("\x00[\x00"),
+		},
+		{
+			b:   []byte("\x00[]\x00"),
+			ok:  true,
+			out: "[]",
+		},
+		{
+			b:   []byte("[\"up == 0\",\"rate(http_requests[2w]\"]\x00\x00\x00"),
+			ok:  true,
+			out: "[\"up == 0\",\"rate(http_requests[2w]\"]",
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			ok, out := parseBrokenJson(tc.b)
+			if tc.ok != ok {
+				t.Fatalf("expected %t, got %t", tc.ok, ok)
+				return
+			}
+			if ok && tc.out != out {
+				t.Fatalf("expected %s, got %s", tc.out, out)
+			}
+		})
+	}
+}
