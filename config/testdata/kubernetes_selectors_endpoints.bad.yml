@@ -1,0 +1,14 @@
+scrape_configs:
+  - job_name: prometheus
+    kubernetes_sd_configs:
+      - role: endpoints
+        selectors:
+          node:
+            label: "foo=bar"
+            field: "metadata.status=Running"
+          service:
+            label: "foo=bar"
+            field: "metadata.status=Running"
+          endpoints:
+            label: "foo=bar"
+            field: "metadata.status=Running"

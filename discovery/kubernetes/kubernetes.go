@@ -91,6 +91,20 @@ type SDConfig struct {
 	Role               Role                         `yaml:"role"`
 	HTTPClientConfig   config_util.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery           `yaml:"namespaces,omitempty"`
+	Selectors          RoleSelectorConfig           `yaml:"selectors,omitempty"`
+}
+
+type RoleSelectorConfig struct {
+	Node      ResourceSelectorConfig `yaml:"node,omitempty"`
+	Pod       ResourceSelectorConfig `yaml:"pod,omitempty"`
+	Service   ResourceSelectorConfig `yaml:"service,omitempty"`
+	Endpoints ResourceSelectorConfig `yaml:"endpoints,omitempty"`
+	Ingress   ResourceSelectorConfig `yaml:"ingress,omitempty"`
+}
+
+type ResourceSelectorConfig struct {
+	Label string `yaml:"label,omitempty"`
+	Field string `yaml:"field,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -101,15 +115,36 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.Role == "" {
-		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
-	}
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
 		return err
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config_util.HTTPClientConfig{}) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
+	}
+	switch c.Role {
+	case "pod":
+		if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
+			return errors.Errorf("pod role supports only pod selectors")
+		}
+	case "service":
+		if len(c.Selectors.Pod.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
+			return errors.Errorf("service role supports only service selectors")
+		}
+	case "endpoints":
+		if len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
+			return errors.Errorf("endpoints role supports only pod, service and endpoints selectors")
+		}
+	case "node":
+		if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Pod.Field) > 0 {
+			return errors.Errorf("node role supports only node selectors")
+		}
+	case "ingress":
+		if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Node.Field) > 0 || len(c.Selectors.Pod.Field) > 0 {
+			return errors.Errorf("ingress role supports only ingress selectors")
+		}
+	default:
+		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
 	}
 	return nil
 }
@@ -161,6 +196,7 @@ type Discovery struct {
 	logger             log.Logger
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discoverer
+	selectors          RoleSelectorConfig
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -211,6 +247,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		role:               conf.Role,
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discoverer, 0),
+		selectors:          conf.Selectors,
 	}, nil
 }
 
@@ -227,27 +264,39 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			e := d.client.CoreV1().Endpoints(namespace)
 			elw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.Endpoints.Field
+					options.LabelSelector = d.selectors.Endpoints.Label
 					return e.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.Endpoints.Field
+					options.LabelSelector = d.selectors.Endpoints.Label
 					return e.Watch(options)
 				},
 			}
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.Service.Field
+					options.LabelSelector = d.selectors.Service.Label
 					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.Service.Field
+					options.LabelSelector = d.selectors.Service.Label
 					return s.Watch(options)
 				},
 			}
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.Pod.Field
+					options.LabelSelector = d.selectors.Pod.Label
 					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.Pod.Field
+					options.LabelSelector = d.selectors.Pod.Label
 					return p.Watch(options)
 				},
 			}
@@ -267,9 +316,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.Pod.Field
+					options.LabelSelector = d.selectors.Pod.Label
 					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.Pod.Field
+					options.LabelSelector = d.selectors.Pod.Label
 					return p.Watch(options)
 				},
 			}
@@ -285,9 +338,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.Service.Field
+					options.LabelSelector = d.selectors.Service.Label
 					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.Service.Field
+					options.LabelSelector = d.selectors.Service.Label
 					return s.Watch(options)
 				},
 			}
@@ -303,9 +360,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			i := d.client.ExtensionsV1beta1().Ingresses(namespace)
 			ilw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.Ingress.Field
+					options.LabelSelector = d.selectors.Ingress.Label
 					return i.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.Ingress.Field
+					options.LabelSelector = d.selectors.Ingress.Label
 					return i.Watch(options)
 				},
 			}
@@ -319,9 +380,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	case RoleNode:
 		nlw := &cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				options.FieldSelector = d.selectors.Node.Field
+				options.LabelSelector = d.selectors.Node.Label
 				return d.client.CoreV1().Nodes().List(options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				options.FieldSelector = d.selectors.Node.Field
+				options.LabelSelector = d.selectors.Node.Label
 				return d.client.CoreV1().Nodes().Watch(options)
 			},
 		}
