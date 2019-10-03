@@ -709,6 +709,11 @@ func TestKubernetesEmptyAPIServer(t *testing.T) {
 	testutil.Ok(t, err)
 }
 
+func TestKubernetesSelectors(t *testing.T) {
+	_, err := LoadFile("testdata/kubernetes_selectors.good.yml")
+	testutil.Ok(t, err)
+}
+
 var expectedErrors = []struct {
 	filename string
 	errMsg   string
