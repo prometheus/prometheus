@@ -368,6 +368,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		samples   []record.RefSample
 		tstones   []tombstones.Stone
 		allStones = tombstones.NewMemTombstones()
+		shards    = make([][]record.RefSample, n)
 	)
 	defer func() {
 		if err := allStones.Close(); err != nil {
@@ -421,7 +422,6 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 				if len(samples) < m {
 					m = len(samples)
 				}
-				shards := make([][]record.RefSample, n)
 				for i := 0; i < n; i++ {
 					var buf []record.RefSample
 					select {
