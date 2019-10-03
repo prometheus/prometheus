@@ -146,11 +146,11 @@ func TestConcreteSeriesSet(t *testing.T) {
 	c := &concreteSeriesSet{
 		series: []storage.Series{series1, series2},
 	}
-	testutil.Assert(t,c.Next(),"Expected Next() to be true.")
+	testutil.Assert(t, c.Next(), "Expected Next() to be true.")
 	testutil.Equals(t, series1, c.At(), "Unexpected series returned.")
-	testutil.Assert(t,c.Next(),"Expected Next() to be true.")
+	testutil.Assert(t, c.Next(), "Expected Next() to be true.")
 	testutil.Equals(t, series2, c.At(), "Unexpected series returned.")
-	testutil.Assert(t,!c.Next(),"Expected Next() to be false.")
+	testutil.Assert(t, !c.Next(), "Expected Next() to be false.")
 }
 
 func TestConcreteSeriesClonesLabels(t *testing.T) {
