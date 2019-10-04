@@ -5,6 +5,8 @@ var INPUT_DEBOUNCE_WAIT = 500; // ms
 var SECOND = 1000;
 // Do not show the metrics selector if there are more than this many metrics.
 const METRIC_SELECTOR_LIMIT = 5_000;
+// If there are more than this many metrics do not do fuzzy matching.
+const FUZZY_MATCHING_LIMIT = 10_000;
 
 /**
  * Graph
@@ -315,15 +317,25 @@ Prometheus.Graph.prototype.initTypeahead = function(self) {
   self.expr.typeahead({
     autoSelect: false,
     source: function(query, resultsFn) {
-      const source = queryHistory.isEnabled() ? pageConfig.queryHistMetrics.concat(pageConfig.allMetrics) : pageConfig.allMetrics;
-      self.makeFuzzyResult(self, this.query, source);
+      const source = pageConfig.allMetrics;
+      let history = queryHistory.isEnabled() ? pageConfig.queryHistMetrics : [];
+      let metrics = source;
+
+      // If we have many metrics don't do full fuzzy matching and filter them just on name.
+      // Note the fuzzy matching will still be applied to this afterwards for sorting.
+      if (source.length > FUZZY_MATCHING_LIMIT) {
+        metrics = source.filter(x => x.indexOf(query) != -1);
+        if (metrics.length > METRIC_SELECTOR_LIMIT) {
+          metrics = metrics.slice(0, METRIC_SELECTOR_LIMIT);
+        }
+      }
+      self.makeFuzzyResult(self, this.query, history.concat(metrics));
       resultsFn(Object.keys(self.fuzzyResult.map))
     },
     items: 1000,
     matcher: function (item) {
       return item in self.fuzzyResult.map;
     },
-
     sorter: function (items) {
       items.sort(function(a,b) {
         var i = self.fuzzyResult.map[b].score - self.fuzzyResult.map[a].score;
