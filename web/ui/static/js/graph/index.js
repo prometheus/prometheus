@@ -4,9 +4,9 @@ var graphTemplate;
 var INPUT_DEBOUNCE_WAIT = 500; // ms
 var SECOND = 1000;
 // Do not show the metrics selector if there are more than this many metrics.
-const METRIC_SELECTOR_LIMIT = 5_000;
+const METRIC_SELECTOR_LIMIT = 5000;
 // If there are more than this many metrics do not do fuzzy matching.
-const FUZZY_MATCHING_LIMIT = 10_000;
+const FUZZY_MATCHING_LIMIT = 10000;
 
 /**
  * Graph
