@@ -1,6 +1,8 @@
-## 2.13.0-rc.0 / 2019-09-25
+## 2.13.0 / 2019-10-04
 
+* [SECURITY/BUGFIX] UI: Fix a Stored DOM XSS vulnerability with query history [CVE-2019-10215](http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10215). #6098
 * [CHANGE] Metrics: renamed prometheus_sd_configs_failed_total to prometheus_sd_failed_configs and changed to Gauge #5254
+* [ENHANCEMENT] Include the tsdb tool in builds. #6089
 * [ENHANCEMENT] Service discovery: add new node address types for kubernetes. #5902
 * [ENHANCEMENT] UI: show warnings if query have returned some warnings. #5964
 * [ENHANCEMENT] Remote write: reduce memory usage of the series cache. #5849
