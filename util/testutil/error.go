@@ -13,15 +13,11 @@
 
 package testutil
 
-// ErrorEqual compares Go errors for equality.
-func ErrorEqual(left, right error) bool {
-	if left == right {
-		return true
+// ErrorsEqual fails when Go errors are not equal.
+func ErrorsEqual(tb TB, exp, act error) {
+	if exp != nil && act != nil {
+		if exp.Error() != act.Error() {
+			tb.Fatalf("\033[31munexp error; want %v, got %v\033[39m\n", exp, act)
+		}
 	}
-
-	if left != nil && right != nil {
-		return left.Error() == right.Error()
-	}
-
-	return false
 }

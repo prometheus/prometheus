@@ -215,7 +215,7 @@ func TestPopulateLabels(t *testing.T) {
 		in := c.in.Copy()
 
 		res, orig, err := populateLabels(c.in, c.cfg)
-		testutil.ErrorEqual(err, c.err)
+		testutil.ErrorsEqual(t, c.err, err)
 		testutil.Equals(t, c.in, in)
 		testutil.Equals(t, c.res, res)
 		testutil.Equals(t, c.resOrig, orig)

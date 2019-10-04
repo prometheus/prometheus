@@ -755,9 +755,8 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 	//nolint:govet
 	a[123] = 1
 
-	if err.Error() != "unexpected error" {
-		t.Fatalf("wrong error message: %q, expected %q", err, "unexpected error")
-	}
+	unexpectedErr := errors.New("unexpected error")
+	testutil.ErrorsEqual(t, unexpectedErr, err)
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {
@@ -767,9 +766,7 @@ func TestRecoverEvaluatorError(t *testing.T) {
 	e := errors.New("custom error")
 
 	defer func() {
-		if err.Error() != e.Error() {
-			t.Fatalf("wrong error message: %q, expected %q", err, e)
-		}
+		testutil.ErrorsEqual(t, e, err)
 	}()
 	defer ev.recover(&err)
 

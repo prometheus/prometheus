@@ -54,7 +54,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		},
 	}
 
-	for i, test := range tests {
+	for _, test := range tests {
 		server := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, longErrMessage, test.code)
@@ -75,9 +75,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		}
 
 		err = c.Store(context.Background(), []byte{})
-		if !testutil.ErrorEqual(err, test.err) {
-			t.Errorf("%d. Unexpected error; want %v, got %v", i, test.err, err)
-		}
+		testutil.ErrorsEqual(t, test.err, err)
 
 		server.Close()
 	}
