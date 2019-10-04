@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/prometheus/prometheus/util/testutil"
@@ -697,12 +696,4 @@ func TestLexer(t *testing.T) {
 			}
 		})
 	}
-}
-
-func expectedList(exp []item) string {
-	s := ""
-	for _, it := range exp {
-		s += fmt.Sprintf("\t%#v\n", it)
-	}
-	return s
 }
