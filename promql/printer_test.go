@@ -15,6 +15,8 @@ package promql
 
 import (
 	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestExprString(t *testing.T) {
@@ -88,15 +90,13 @@ func TestExprString(t *testing.T) {
 
 	for _, test := range inputs {
 		expr, err := ParseExpr(test.in)
-		if err != nil {
-			t.Fatalf("parsing error for %q: %s", test.in, err)
-		}
+		testutil.Ok(t, err)
+
 		exp := test.in
 		if test.out != "" {
 			exp = test.out
 		}
-		if expr.String() != exp {
-			t.Fatalf("expected %q to be returned as:\n%s\ngot:\n%s\n", test.in, exp, expr.String())
-		}
+
+		testutil.Equals(t, expr.String(), exp)
 	}
 }

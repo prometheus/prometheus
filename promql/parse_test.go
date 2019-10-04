@@ -15,7 +15,6 @@ package promql
 
 import (
 	"math"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1590,26 +1589,14 @@ func TestParseExpressions(t *testing.T) {
 		expr, err := ParseExpr(test.input)
 
 		// Unexpected errors are always caused by a bug.
-		if err == errUnexpected {
-			t.Fatalf("unexpected error occurred")
-		}
+		testutil.Assert(t, err != errUnexpected, "unexpected error occurred")
 
-		if !test.fail && err != nil {
-			t.Errorf("error in input '%s'", test.input)
-			t.Fatalf("could not parse: %s", err)
-		}
-
-		if test.fail && err != nil {
-			if !strings.Contains(err.Error(), test.errMsg) {
-				t.Errorf("unexpected error on input '%s'", test.input)
-				t.Fatalf("expected error to contain %q but got %q", test.errMsg, err)
-			}
-			continue
-		}
-
-		if !reflect.DeepEqual(expr, test.expected) {
-			t.Errorf("error on input '%s'", test.input)
-			t.Fatalf("no match\n\nexpected:\n%s\ngot: \n%s\n", Tree(test.expected), Tree(expr))
+		if !test.fail {
+			testutil.Ok(t, err)
+			testutil.Equals(t, expr, test.expected, "error on input '%s'", test.input)
+		} else {
+			testutil.NotOk(t, err)
+			testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s'", test.input)
 		}
 	}
 }
@@ -1617,21 +1604,11 @@ func TestParseExpressions(t *testing.T) {
 // NaN has no equality. Thus, we need a separate test for it.
 func TestNaNExpression(t *testing.T) {
 	expr, err := ParseExpr("NaN")
-	if err != nil {
-		t.Errorf("error on input 'NaN'")
-		t.Fatalf("could not parse: %s", err)
-	}
+	testutil.Ok(t, err)
 
 	nl, ok := expr.(*NumberLiteral)
-	if !ok {
-		t.Errorf("error on input 'NaN'")
-		t.Fatalf("expected number literal but got %T", expr)
-	}
-
-	if !math.IsNaN(float64(nl.Val)) {
-		t.Errorf("error on input 'NaN'")
-		t.Fatalf("expected 'NaN' in number literal but got %v", nl.Val)
-	}
+	testutil.Assert(t, ok, "expected number literal but got %T", expr)
+	testutil.Assert(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
 }
 
 func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
@@ -1746,29 +1723,14 @@ func TestParseSeries(t *testing.T) {
 		metric, vals, err := parseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
-		if err == errUnexpected {
-			t.Fatalf("unexpected error occurred")
-		}
+		testutil.Assert(t, err != errUnexpected, "unexpected error occurred")
 
-		if test.fail {
-			if err != nil {
-				continue
-			}
-			t.Errorf("error in input: \n\n%s\n", test.input)
-			t.Fatalf("failure expected, but passed")
+		if !test.fail {
+			testutil.Ok(t, err)
+			testutil.Equals(t, test.expectedMetric, metric, "error on input '%s'", test.input)
+			testutil.Equals(t, test.expectedValues, vals, "error in input '%s'", test.input)
 		} else {
-			if err != nil {
-				t.Errorf("error in input: \n\n%s\n", test.input)
-				t.Fatalf("could not parse: %s", err)
-			}
-		}
-
-		testutil.Equals(t, test.expectedMetric, metric)
-		testutil.Equals(t, test.expectedValues, vals)
-
-		if !reflect.DeepEqual(vals, test.expectedValues) || !reflect.DeepEqual(metric, test.expectedMetric) {
-			t.Errorf("error in input: \n\n%s\n", test.input)
-			t.Fatalf("no match\n\nexpected:\n%s %s\ngot: \n%s %s\n", test.expectedMetric, test.expectedValues, metric, vals)
+			testutil.NotOk(t, err)
 		}
 	}
 }
@@ -1778,13 +1740,10 @@ func TestRecoverParserRuntime(t *testing.T) {
 	var err error
 
 	defer func() {
-		if err != errUnexpected {
-			t.Fatalf("wrong error message: %q, expected %q", err, errUnexpected)
-		}
+		testutil.Equals(t, err, errUnexpected)
 
-		if _, ok := <-p.lex.items; ok {
-			t.Fatalf("lex.items was not closed")
-		}
+		_, ok := <-p.lex.items
+		testutil.Assert(t, !ok, "lex.items was not closed")
 	}()
 	defer p.recover(&err)
 	// Cause a runtime panic.
@@ -1800,9 +1759,7 @@ func TestRecoverParserError(t *testing.T) {
 	e := errors.New("custom error")
 
 	defer func() {
-		if err.Error() != e.Error() {
-			t.Fatalf("wrong error message: %q, expected %q", err, e)
-		}
+		testutil.Equals(t, err.Error(), e.Error())
 	}()
 	defer p.recover(&err)
 
