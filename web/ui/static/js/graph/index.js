@@ -290,26 +290,31 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
   });
 };
 
+Prometheus.Graph.prototype.makeFuzzyResult = function(self, query, source) {
+  // If fuzzyResult has already been calculated for this query, don't calculate again
+  if (self.fuzzyResult.query !== query) {
+    self.fuzzyResult.query = query;
+    self.fuzzyResult.map = {};
+    self.fuzzyResult.result = fuzzy.filter(query.replace(/ /g, ""), source, {
+      pre: "<strong>",
+      post: "</strong>"
+    });
+    self.fuzzyResult.result.forEach(function(r) {
+      self.fuzzyResult.map[r.original] = r;
+    });
+  }
+}
+
 Prometheus.Graph.prototype.initTypeahead = function(self) {
-  const source = queryHistory.isEnabled() ? pageConfig.queryHistMetrics.concat(pageConfig.allMetrics) : pageConfig.allMetrics;
   self.expr.typeahead({
     autoSelect: false,
-    source: source,
+    source: function(query, resultsFn) {
+      const source = queryHistory.isEnabled() ? pageConfig.queryHistMetrics.concat(pageConfig.allMetrics) : pageConfig.allMetrics;
+      self.makeFuzzyResult(self, this.query, source);
+      resultsFn(Object.keys(self.fuzzyResult.map))
+    },
     items: 1000,
     matcher: function (item) {
-      // If we have result for current query, skip
-      if (self.fuzzyResult.query !== this.query) {
-        self.fuzzyResult.query = this.query;
-        self.fuzzyResult.map = {};
-        self.fuzzyResult.result = fuzzy.filter(this.query.replace(/ /g, ""), this.source, {
-          pre: "<strong>",
-          post: "</strong>"
-        });
-        self.fuzzyResult.result.forEach(function(r) {
-          self.fuzzyResult.map[r.original] = r;
-        });
-      }
-
       return item in self.fuzzyResult.map;
     },
 
@@ -1132,34 +1137,19 @@ const queryHistory = {
 
     localStorage.setItem('history', JSON.stringify(parsedQueryHistory));
     pageConfig.queryHistMetrics = parsedQueryHistory;
-    if (queryHistory.isEnabled()) {
-      this.updateTypeaheadMetricSet(pageConfig.queryHistMetrics.concat(pageConfig.allMetrics));
-    }
   },
 
   toggleOn: function(targetEl) {
-    this.updateTypeaheadMetricSet(pageConfig.queryHistMetrics.concat(pageConfig.allMetrics));
-
     $(targetEl).children('i').removeClass('glyphicon-unchecked').addClass('glyphicon-check');
     targetEl.addClass('is-checked');
     localStorage.setItem('enable-query-history', true);
   },
 
   toggleOff: function(targetEl) {
-    this.updateTypeaheadMetricSet(pageConfig.allMetrics);
-
     $(targetEl).children('i').removeClass('glyphicon-check').addClass('glyphicon-unchecked');
     targetEl.removeClass('is-checked');
     localStorage.setItem('enable-query-history', false);
   },
-
-  updateTypeaheadMetricSet: function(metricSet) {
-    pageConfig.graphs.forEach(function(graph) {
-      if (graph.expr.data('typeahead')) {
-        graph.expr.data('typeahead').source = metricSet;
-      }
-    });
-  }
 };
 
 // Defers invocation of fn for waitPeriod if returned function is called repeatedly
