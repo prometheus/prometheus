@@ -15,11 +15,11 @@ package promql
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -104,9 +104,9 @@ func TestQueryTimeout(t *testing.T) {
 
 	res := query.Exec(ctx)
 	testutil.NotOk(t, res.Err, "expected timeout error but got none")
-	if _, ok := res.Err.(ErrQueryTimeout); res.Err != nil && !ok {
-		t.Fatalf("expected timeout error but got: %s", res.Err)
-	}
+
+	var e ErrQueryTimeout
+	testutil.Assert(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
 }
 
 const errQueryCanceled = ErrQueryCanceled("test statement execution")
@@ -423,9 +423,8 @@ func TestEngineShutdown(t *testing.T) {
 	res2 := query2.Exec(ctx)
 	testutil.NotOk(t, res2.Err, "expected error on querying with canceled context but got none")
 
-	if _, ok := res2.Err.(ErrQueryCanceled); !ok {
-		t.Fatalf("expected cancellation error, got %q", res2.Err)
-	}
+	var e ErrQueryCanceled
+	testutil.Assert(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {
