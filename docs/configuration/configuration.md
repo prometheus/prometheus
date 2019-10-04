@@ -855,12 +855,14 @@ namespaces:
   names:
     [ - <string> ]
 
-# Optional label and filter selectors to limit the discovery process to a subset of available resources. 
+# Optional label and field selectors to limit the discovery process to a subset of available resources. 
 # See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
 # and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to know more about the possible 
 # filters that can be used.
-[ label_selector: <string> ]
-[ field_selector: <string> ]
+selectors:
+  <role>:
+    [ label: <string> ]
+    [ field: <string> ]
 ```
 
 Where `<role>` must be `endpoints`, `service`, `pod`, `node`, or

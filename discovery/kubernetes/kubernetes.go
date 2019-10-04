@@ -91,8 +91,20 @@ type SDConfig struct {
 	Role               Role                         `yaml:"role"`
 	HTTPClientConfig   config_util.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery           `yaml:"namespaces,omitempty"`
-	LabelSelector      string                       `yaml:"label_selector,omitempty"`
-	FieldSelector      string                       `yaml:"field_selector,omitempty"`
+	Selectors          RoleSelectorConfig           `yaml:"selectors,omitempty"`
+}
+
+type RoleSelectorConfig struct {
+	Node      ResourceSelectorConfig `yaml:"node,omitempty"`
+	Pod       ResourceSelectorConfig `yaml:"pod,omitempty"`
+	Service   ResourceSelectorConfig `yaml:"service,omitempty"`
+	Endpoints ResourceSelectorConfig `yaml:"endpoints,omitempty"`
+	Ingress   ResourceSelectorConfig `yaml:"ingress,omitempty"`
+}
+
+type ResourceSelectorConfig struct {
+	Label string `yaml:"label,omitempty"`
+	Field string `yaml:"field,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -163,8 +175,7 @@ type Discovery struct {
 	logger             log.Logger
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discoverer
-	labelSelector      string
-	fieldSelector      string
+	selectors          RoleSelectorConfig
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -215,8 +226,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		role:               conf.Role,
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discoverer, 0),
-		labelSelector:      conf.LabelSelector,
-		fieldSelector:      conf.FieldSelector,
+		selectors:          conf.Selectors,
 	}, nil
 }
 
@@ -233,39 +243,39 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			e := d.client.CoreV1().Endpoints(namespace)
 			elw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Endpoints.Field
+					options.LabelSelector = d.selectors.Endpoints.Label
 					return e.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Endpoints.Field
+					options.LabelSelector = d.selectors.Endpoints.Label
 					return e.Watch(options)
 				},
 			}
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Service.Field
+					options.LabelSelector = d.selectors.Service.Label
 					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Service.Field
+					options.LabelSelector = d.selectors.Service.Label
 					return s.Watch(options)
 				},
 			}
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Pod.Field
+					options.LabelSelector = d.selectors.Pod.Label
 					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Pod.Field
+					options.LabelSelector = d.selectors.Pod.Label
 					return p.Watch(options)
 				},
 			}
@@ -285,13 +295,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Pod.Field
+					options.LabelSelector = d.selectors.Pod.Label
 					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Pod.Field
+					options.LabelSelector = d.selectors.Pod.Label
 					return p.Watch(options)
 				},
 			}
@@ -307,13 +317,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Service.Field
+					options.LabelSelector = d.selectors.Service.Label
 					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Service.Field
+					options.LabelSelector = d.selectors.Service.Label
 					return s.Watch(options)
 				},
 			}
@@ -329,13 +339,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			i := d.client.ExtensionsV1beta1().Ingresses(namespace)
 			ilw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Ingress.Field
+					options.LabelSelector = d.selectors.Ingress.Label
 					return i.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.fieldSelector
-					options.LabelSelector = d.labelSelector
+					options.FieldSelector = d.selectors.Ingress.Field
+					options.LabelSelector = d.selectors.Ingress.Label
 					return i.Watch(options)
 				},
 			}
@@ -349,13 +359,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	case RoleNode:
 		nlw := &cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				options.FieldSelector = d.fieldSelector
-				options.LabelSelector = d.labelSelector
+				options.FieldSelector = d.selectors.Node.Field
+				options.LabelSelector = d.selectors.Node.Label
 				return d.client.CoreV1().Nodes().List(options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				options.FieldSelector = d.fieldSelector
-				options.LabelSelector = d.labelSelector
+				options.FieldSelector = d.selectors.Node.Field
+				options.LabelSelector = d.selectors.Node.Label
 				return d.client.CoreV1().Nodes().Watch(options)
 			},
 		}
