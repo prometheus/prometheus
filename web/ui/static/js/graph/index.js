@@ -3,6 +3,8 @@ var graphTemplate;
 
 var INPUT_DEBOUNCE_WAIT = 500; // ms
 var SECOND = 1000;
+// Do not show the metrics selector if there are more than this many metrics.
+const METRIC_SELECTOR_LIMIT = 5_000;
 
 /**
  * Graph
@@ -272,8 +274,12 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
         }
 
         pageConfig.allMetrics = json.data; // todo: do we need self.allMetrics? Or can it just live on the page
-        for (var i = 0; i < pageConfig.allMetrics.length; i++) {
-          self.insertMetric[0].options.add(new Option(pageConfig.allMetrics[i], pageConfig.allMetrics[i]));
+        if (pageConfig.allMetrics.length < METRIC_SELECTOR_LIMIT) {
+          for (var i = 0; i < pageConfig.allMetrics.length; i++) {
+            self.insertMetric[0].options.add(new Option(pageConfig.allMetrics[i], pageConfig.allMetrics[i]));
+          }
+        } else {
+          self.insertMetric.hide();
         }
 
         self.fuzzyResult = {
