@@ -2,5 +2,19 @@ scrape_configs:
   - job_name: prometheus
     kubernetes_sd_configs:
       - role: endpoints
-        label_selector: "foo=bar"
-        field_selector: "metadata.status=Running"
+        selector:
+          pod:
+            label: "foo=bar"
+            field: "metadata.status=Running"
+          node:
+            label: "foo=bar"
+            field: "metadata.status=Running"
+          service:
+            label: "foo=bar"
+            field: "metadata.status=Running"
+          ingress:
+            label: "foo=bar"
+            field: "metadata.status=Running"
+          endpoints:
+            label: "foo=bar"
+            field: "metadata.status=Running"
