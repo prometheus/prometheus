@@ -299,7 +299,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
 };
 
 Prometheus.Graph.prototype.makeFuzzyResult = function(self, query, source) {
-  // If fuzzyResult has already been calculated for this query, don't calculate again
+  // If fuzzyResult has already been calculated for this query, don't calculate again.
   if (self.fuzzyResult.query !== query) {
     self.fuzzyResult.query = query;
     self.fuzzyResult.map = {};
