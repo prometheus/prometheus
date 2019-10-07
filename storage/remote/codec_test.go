@@ -113,8 +113,10 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
 			err := validateLabelsAndMetricName(test.input)
-			if test.expectedErr != "" || err != nil {
+			if test.expectedErr != "" {
 				testutil.NotOk(t, err)
+			}
+			if err != nil {
 				testutil.Equals(t, test.expectedErr, err.Error())
 			}
 		})
