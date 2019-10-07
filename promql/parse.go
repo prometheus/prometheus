@@ -465,11 +465,17 @@ func (p *parser) unaryExpr() Expr {
 		return &UnaryExpr{Op: t.typ, Expr: e}
 
 	case ItemLeftParen:
+		lParenPos := p.lex.ItemPos(t)
 		p.next()
 		e := p.expr()
-		p.expect(ItemRightParen, "paren expression")
+		rParen := p.expect(ItemRightParen, "paren expression")
+		rParenPos := p.lex.ItemPos(rParen)
 
-		return &ParenExpr{Expr: e}
+		return &ParenExpr{
+			Expr:   e,
+			LParen: lParenPos,
+			RParen: rParenPos,
+		}
 	}
 	e := p.primaryExpr()
 

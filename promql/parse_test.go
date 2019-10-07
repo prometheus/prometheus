@@ -1776,8 +1776,9 @@ var testExpr = []struct {
 			LBracket: 22,
 			RBracket: 26,
 			endPos:   27,
-			Expr: &ParenExpr{LParen: token.NoPos,
-				RParen: token.NoPos,
+			Expr: &ParenExpr{
+				LParen: 1,
+				RParen: 21,
 				Expr: &BinaryExpr{
 					Op: ItemADD,
 					VectorMatching: &VectorMatching{
@@ -1812,8 +1813,9 @@ var testExpr = []struct {
 			LBracket: 22,
 			RBracket: 26,
 			endPos:   38,
-			Expr: &ParenExpr{LParen: token.NoPos,
-				RParen: token.NoPos,
+			Expr: &ParenExpr{
+				LParen: 1,
+				RParen: 21,
 				Expr: &BinaryExpr{
 					Op: ItemADD,
 					VectorMatching: &VectorMatching{
