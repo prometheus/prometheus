@@ -93,8 +93,7 @@ var testExpr = []struct {
 	}, {
 		input:    "1 / 1",
 		expected: &BinaryExpr{ItemDIV, &NumberLiteral{token.Pos(1), token.Pos(2), 1}, &NumberLiteral{token.Pos(5), token.Pos(6), 1}, nil, false},
-		// Postions are still off by one here
-	}, /*  {
+	}, {
 		input:    "1 == bool 1",
 		expected: &BinaryExpr{ItemEQL, &NumberLiteral{token.Pos(1), token.Pos(2), 1}, &NumberLiteral{token.Pos(11), token.Pos(12), 1}, nil, true},
 	}, {
@@ -102,35 +101,48 @@ var testExpr = []struct {
 		expected: &BinaryExpr{ItemNEQ, &NumberLiteral{token.Pos(1), token.Pos(2), 1}, &NumberLiteral{token.Pos(11), token.Pos(12), 1}, nil, true},
 	}, {
 		input:    "1 > bool 1",
-		expected: &BinaryExpr{ItemGTR, &NumberLiteral{token.Pos(1), token.Pos(2), 1}, &NumberLiteral{token.Pos(11), token.Pos(12), 1}, nil, true},
+		expected: &BinaryExpr{ItemGTR, &NumberLiteral{token.Pos(1), token.Pos(2), 1}, &NumberLiteral{token.Pos(10), token.Pos(11), 1}, nil, true},
 	}, {
 		input:    "1 >= bool 1",
 		expected: &BinaryExpr{ItemGTE, &NumberLiteral{token.Pos(1), token.Pos(2), 1}, &NumberLiteral{token.Pos(11), token.Pos(12), 1}, nil, true},
 	}, {
 		input:    "1 < bool 1",
-		expected: &BinaryExpr{ItemLSS, &NumberLiteral{token.Pos(1), token.Pos(2), 1}, &NumberLiteral{token.Pos(11), token.Pos(12), 1}, nil, true},
+		expected: &BinaryExpr{ItemLSS, &NumberLiteral{token.Pos(1), token.Pos(2), 1}, &NumberLiteral{token.Pos(10), token.Pos(11), 1}, nil, true},
 	}, {
 		input:    "1 <= bool 1",
 		expected: &BinaryExpr{ItemLTE, &NumberLiteral{token.Pos(1), token.Pos(2), 1}, &NumberLiteral{token.Pos(11), token.Pos(12), 1}, nil, true},
-	},{
+	}, {
 		input: "+1 + -2 * 1",
 		expected: &BinaryExpr{
-			Op:  ItemADD,
-			LHS: &NumberLiteral{token.NoPos, token.NoPos, 1},
+			Op: ItemADD,
+			LHS: &NumberLiteral{
+				pos:    1,
+				endPos: 3,
+				Val:    1,
+			},
 			RHS: &BinaryExpr{
-				Op: ItemMUL, LHS: &NumberLiteral{token.NoPos, token.NoPos, -2}, RHS: &NumberLiteral{token.NoPos, token.NoPos, 1},
+				Op: ItemMUL, LHS: &NumberLiteral{
+					pos:    6,
+					endPos: 8,
+					Val:    -2,
+				},
+				RHS: &NumberLiteral{
+					pos:    11,
+					endPos: 12,
+					Val:    1,
+				},
 			},
 		},
 	}, {
 		input: "1 + 2/(3*1)",
 		expected: &BinaryExpr{
 			Op:  ItemADD,
-			LHS: &NumberLiteral{token.NoPos, token.NoPos, 1},
+			LHS: &NumberLiteral{token.Pos(1), token.Pos(2), 1},
 			RHS: &BinaryExpr{
 				Op:  ItemDIV,
-				LHS: &NumberLiteral{token.NoPos, token.NoPos, 2},
-				RHS: &ParenExpr{token.NoPos, token.NoPos, &BinaryExpr{
-					Op: ItemMUL, LHS: &NumberLiteral{token.NoPos, token.NoPos, 3}, RHS: &NumberLiteral{token.NoPos, token.NoPos, 1},
+				LHS: &NumberLiteral{token.Pos(5), token.Pos(6), 2},
+				RHS: &ParenExpr{token.Pos(7), token.Pos(11), &BinaryExpr{
+					Op: ItemMUL, LHS: &NumberLiteral{token.Pos(8), token.Pos(9), 3}, RHS: &NumberLiteral{token.Pos(10), token.Pos(11), 1},
 				}},
 			},
 		},
@@ -139,16 +151,16 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op:         ItemLSS,
 			ReturnBool: true,
-			LHS:        &NumberLiteral{token.NoPos, token.NoPos, 1},
+			LHS:        &NumberLiteral{token.Pos(1), token.Pos(2), 1},
 			RHS: &BinaryExpr{
 				Op:  ItemSUB,
-				LHS: &NumberLiteral{token.NoPos, token.NoPos, 2},
+				LHS: &NumberLiteral{token.Pos(10), token.Pos(11), 2},
 				RHS: &BinaryExpr{
-					Op: ItemMUL, LHS: &NumberLiteral{token.NoPos, token.NoPos, 1}, RHS: &NumberLiteral{token.NoPos, token.NoPos, 2},
+					Op: ItemMUL, LHS: &NumberLiteral{token.Pos(14), token.Pos(15), 1}, RHS: &NumberLiteral{token.Pos(18), token.Pos(19), 2},
 				},
 			},
 		},
-	}, */{
+	}, {
 		input: "-some_metric",
 		expected: &UnaryExpr{
 			Op: ItemSUB,
