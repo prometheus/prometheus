@@ -78,7 +78,7 @@ You can also clone the repository yourself and build using `make`:
 
 The Makefile provides several targets:
 
-  * *build*: build the `prometheus` and `promtool` binaries
+  * *build*: build the `prometheus`, `promtool` and `tsdb` binaries
   * *test*: run the tests
   * *test-short*: run the short tests
   * *format*: format the source code
