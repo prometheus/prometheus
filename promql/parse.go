@@ -348,8 +348,9 @@ func (p *parser) expr() Expr {
 				if s, ok := expr.(*SubqueryExpr); ok {
 					// Parse optional offset.
 					if p.peek().typ == ItemOffset {
-						offset := p.offset()
+						offset, endPos := p.offset()
 						s.Offset = offset
+						s.endPos = endPos
 					}
 				}
 			}
@@ -479,15 +480,18 @@ func (p *parser) unaryExpr() Expr {
 
 	// Parse optional offset.
 	if p.peek().typ == ItemOffset {
-		offset := p.offset()
+		offset, endPos := p.offset()
 
 		switch s := e.(type) {
 		case *VectorSelector:
 			s.Offset = offset
+			s.endPos = endPos
 		case *MatrixSelector:
 			s.Offset = offset
+			s.endPos = endPos
 		case *SubqueryExpr:
 			s.Offset = offset
+			s.endPos = endPos
 		default:
 			p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
 		}
@@ -529,10 +533,12 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool, lBracket to
 				p.errorf("range specification must be preceded by a metric selector, but follows a %T instead", expr)
 			}
 			// TODO make vs a child of MatrixSelector
+			rBracket := p.lex.ItemPos(itm)
 			return &MatrixSelector{
 				pos:           vs.Pos(),
 				LBracket:      lBracket,
-				RBracket:      p.lex.ItemPos(itm),
+				RBracket:      rBracket,
+				endPos:        rBracket + 1,
 				Name:          vs.Name,
 				LabelMatchers: vs.LabelMatchers,
 				Range:         erange,
@@ -555,10 +561,12 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool, lBracket to
 		itm = p.expect(ItemRightBracket, ctx)
 
 	}
+	rBracket := p.lex.ItemPos(itm)
 
 	return &SubqueryExpr{
 		LBracket: lBracket,
-		RBracket: p.lex.ItemPos(itm),
+		RBracket: rBracket,
+		endPos:   rBracket + 1,
 		Expr:     expr,
 		Range:    erange,
 		Step:     estep,
@@ -882,7 +890,7 @@ func (p *parser) metric() labels.Labels {
 //
 //		offset <duration>
 //
-func (p *parser) offset() time.Duration {
+func (p *parser) offset() (time.Duration, token.Pos) {
 	const ctx = "offset"
 
 	p.next()
@@ -893,7 +901,9 @@ func (p *parser) offset() time.Duration {
 		p.error(err)
 	}
 
-	return offset
+	endPos := p.lex.ItemEndPos(offi)
+
+	return offset, endPos
 }
 
 // VectorSelector parses a new (instant) vector selector.
@@ -942,10 +952,19 @@ func (p *parser) VectorSelector(name string, pos token.Pos) *VectorSelector {
 		p.errorf("vector selector must contain at least one non-empty matcher")
 	}
 
+	var endPos token.Pos
+
+	if rBrace == 0 {
+		endPos = pos + token.Pos(len(name))
+	} else {
+		endPos = rBrace + 1
+	}
+
 	return &VectorSelector{
 		pos:           pos,
 		LBrace:        lBrace,
 		RBrace:        rBrace,
+		endPos:        endPos,
 		Name:          name,
 		LabelMatchers: matchers,
 	}

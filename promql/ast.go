@@ -147,6 +147,7 @@ type MatrixSelector struct {
 	pos           token.Pos
 	LBracket      token.Pos
 	RBracket      token.Pos
+	endPos        token.Pos
 	Name          string
 	Range         time.Duration
 	Offset        time.Duration
@@ -161,7 +162,7 @@ func (e *MatrixSelector) Pos() token.Pos {
 	return e.pos
 }
 func (e *MatrixSelector) EndPos() token.Pos {
-	return e.RBracket + 1
+	return e.endPos
 }
 
 // SubqueryExpr represents a subquery.
@@ -169,6 +170,7 @@ type SubqueryExpr struct {
 	Expr     Expr
 	LBracket token.Pos
 	RBracket token.Pos
+	endPos   token.Pos
 	Range    time.Duration
 	Offset   time.Duration
 	Step     time.Duration
@@ -178,7 +180,7 @@ func (e *SubqueryExpr) Pos() token.Pos {
 	return e.Expr.Pos()
 }
 func (e *SubqueryExpr) EndPos() token.Pos {
-	return e.RBracket + 1
+	return e.endPos
 }
 
 // NumberLiteral represents a number.
@@ -247,6 +249,7 @@ type VectorSelector struct {
 	pos           token.Pos
 	LBrace        token.Pos
 	RBrace        token.Pos
+	endPos        token.Pos
 	Name          string
 	Offset        time.Duration
 	LabelMatchers []*labels.Matcher
@@ -260,11 +263,7 @@ func (e *VectorSelector) Pos() token.Pos {
 	return e.pos
 }
 func (e *VectorSelector) EndPos() token.Pos {
-	if e.RBrace == token.NoPos {
-		return e.pos + token.Pos(len(e.Name))
-	} else {
-		return e.RBrace + 1
-	}
+	return e.endPos
 }
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
 func (e *Call) Type() ValueType           { return e.Func.ReturnType }
@@ -318,6 +317,7 @@ func (vmc VectorMatchCardinality) String() string {
 	panic("promql.VectorMatchCardinality.String: unknown match cardinality")
 }
 
+// TODO Implement Node interface
 // VectorMatching describes how elements from two Vectors in a binary
 // operation are supposed to be matched.
 type VectorMatching struct {
