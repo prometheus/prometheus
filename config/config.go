@@ -140,6 +140,9 @@ type Config struct {
 
 	// original is the input from which the config was parsed.
 	original string
+
+	Modulus uint64 `yaml:"modulus,omitempty"`
+	TmpHash uint64 `yaml:"tmpHash,omitempty"`
 }
 
 // resolveFilepaths joins all relative paths in a configuration

@@ -430,6 +430,8 @@ func main() {
 			for _, v := range cfg.ScrapeConfigs {
 				c[v.JobName] = v.ServiceDiscoveryConfig
 			}
+			discoveryManagerScrape.TmpHash = cfg.TmpHash
+			discoveryManagerScrape.Modulus = cfg.Modulus
 			return discoveryManagerScrape.ApplyConfig(c)
 		},
 		notifierManager.ApplyConfig,

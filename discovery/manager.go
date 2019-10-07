@@ -15,7 +15,10 @@ package discovery
 
 import (
 	"context"
+	"crypto/md5"
 	"fmt"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"reflect"
 	"sync"
 	"time"
@@ -145,6 +148,8 @@ func Name(n string) func(*Manager) {
 type Manager struct {
 	logger         log.Logger
 	name           string
+	Modulus        uint64
+	TmpHash        uint64
 	mtx            sync.RWMutex
 	ctx            context.Context
 	discoverCancel []context.CancelFunc
@@ -307,6 +312,24 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	for pkey, tsets := range m.targets {
 		var n int
 		for _, tg := range tsets {
+			// hash service discovery
+			if m.Modulus > 0 {
+				hashTargets := make([]model.LabelSet, 0)
+				for _, t := range tg.Targets {
+					value := t[model.AddressLabel]
+					mod := relabel.Sum64(md5.Sum([]byte(value))) % m.Modulus
+					if mod == m.TmpHash {
+						hashTargets = append(hashTargets, t)
+					}
+				}
+				if len(hashTargets) == 0 {
+					continue
+				}
+				tg.Targets = hashTargets
+				tSets[pkey.setName] = append(tSets[pkey.setName], tg)
+				n += len(tg.Targets)
+				continue
+			}
 			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
 			// to signal that it needs to stop all scrape loops for this target set.
 			tSets[pkey.setName] = append(tSets[pkey.setName], tg)
