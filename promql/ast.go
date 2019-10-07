@@ -55,7 +55,7 @@ type Statement interface {
 
 // EvalStmt holds an expression and information on the range it should
 // be evaluated on.
-// TODO split into an Expr and an RangeExpr
+// TODO(slrtbtfs) split into an Expr and an RangeExpr
 type EvalStmt struct {
 	Expr   Expr // Expression to be evaluated.
 	endPos token.Pos
@@ -317,7 +317,7 @@ func (vmc VectorMatchCardinality) String() string {
 	panic("promql.VectorMatchCardinality.String: unknown match cardinality")
 }
 
-// TODO Implement Node interface
+// TODO(slrtbtfs) Implement Node interface and move to ast.go
 // VectorMatching describes how elements from two Vectors in a binary
 // operation are supposed to be matched.
 type VectorMatching struct {

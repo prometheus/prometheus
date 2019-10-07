@@ -532,7 +532,7 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool, lBracket to
 			if !ok {
 				p.errorf("range specification must be preceded by a metric selector, but follows a %T instead", expr)
 			}
-			// TODO make vs a child of MatrixSelector
+			// TODO make VectorSelector a child of MatrixSelector
 			rBracket := p.lex.ItemPos(itm)
 			return &MatrixSelector{
 				pos:           vs.Pos(),
