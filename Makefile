@@ -39,7 +39,7 @@ build-react-app: $(REACT_APP_PATH)/node_modules
 .PHONY: assets
 assets: build-react-app
 	@echo ">> writing assets"
-	cd web/ui && GO111MODULE=$(GO111MODULE) $(GO) generate -x -v $(GOOPTS)
+	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
 	@$(GOFMT) -w ./web/ui
 
 .PHONY: npm_licenses
