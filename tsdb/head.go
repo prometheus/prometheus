@@ -331,11 +331,10 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 	// They are connected through a ring of channels which ensures that all sample batches
 	// read from the WAL are processed in order.
 	var (
-		wg           sync.WaitGroup
-		multiRefLock sync.Mutex
-		n            = runtime.GOMAXPROCS(0)
-		inputs       = make([]chan []record.RefSample, n)
-		outputs      = make([]chan []record.RefSample, n)
+		wg      sync.WaitGroup
+		n       = runtime.GOMAXPROCS(0)
+		inputs  = make([]chan []record.RefSample, n)
+		outputs = make([]chan []record.RefSample, n)
 	)
 	wg.Add(n)
 
@@ -394,9 +393,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 
 				if !created {
 					// There's already a different ref for this series.
-					multiRefLock.Lock()
 					multiRef[s.Ref] = series.ref
-					multiRefLock.Unlock()
 				}
 
 				if h.lastSeriesID < s.Ref {
