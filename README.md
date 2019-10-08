@@ -75,7 +75,7 @@ read its web assets from local filesystem directories under `web/ui/static` and
 from the root of the cloned repository. Note also that these directories do not include the
 new experimental React UI unless it has been built explicitly using `make assets` or `make build`.
 
-You can also clone the repository yourself and build using `make`, which will compile in
+You can also clone the repository yourself and build using `make build`, which will compile in
 the web assets so that Prometheus can be run from anywhere:
 
     $ mkdir -p $GOPATH/src/github.com/prometheus
