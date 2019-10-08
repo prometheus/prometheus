@@ -34,7 +34,7 @@ DOCKER_IMAGE_NAME       ?= prometheus
 $(REACT_APP_NODE_MODULES_PATH): $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/yarn.lock
 	cd $(REACT_APP_PATH) && yarn --frozen-lockfile
 
-$(REACT_APP_OUTPUT_DIR): $(REACT_APP_PATH)/node_modules $(REACT_APP_SOURCE_FILES)
+$(REACT_APP_OUTPUT_DIR): $(REACT_APP_NODE_MODULES_PATH) $(REACT_APP_SOURCE_FILES)
 	@echo ">> building React app"
 	@./scripts/build_react_app.sh
 
