@@ -207,6 +207,8 @@ type QueueManager struct {
 	samplesIn, samplesDropped, samplesOut, samplesOutDuration *ewmaRate
 	integralAccumulator                                       float64
 	startedAt                                                 time.Time
+	lastSendTimestampLock                                     sync.RWMutex
+	lastSendTimestamp                                         int64
 
 	highestSentTimestampMetric *maxGauge
 	pendingSamplesMetric       prometheus.Gauge
@@ -468,17 +470,45 @@ func (t *QueueManager) updateShardsLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			t.calculateDesiredShards()
+			desiredShards := t.calculateDesiredShards()
+			if desiredShards == t.numShards {
+				continue
+			}
+			// Resharding can take some time, and we want this loop
+			// to stay close to shardUpdateDuration.
+			select {
+			case t.reshardChan <- desiredShards:
+				level.Info(t.logger).Log("msg", "Remote storage resharding", "from", t.numShards, "to", numShards)
+				t.numShards = desiredShards
+			default:
+				level.Info(t.logger).Log("msg", "Currently resharding, skipping.")
+			}
 		case <-t.quit:
 			return
 		}
 	}
 }
 
-func (t *QueueManager) calculateDesiredShards() {
+// calculateDesiredShards returns the number of desired shards, which will be
+// the current QueueManager.numShards if resharding should not occur for reasons
+// outlined in this functions implementation. It is up to the caller to reshard, or not,
+// based on the return value.
+func (t *QueueManager) calculateDesiredShards() int {
 	t.samplesOut.tick()
 	t.samplesDropped.tick()
 	t.samplesOutDuration.tick()
+
+	// We shouldn't reshard if Prometheus hasn't been able to send to the
+	// remote endpoint successfully within some period of time.
+	now := time.Now().Unix()
+	threshold := int64(time.Duration(2 * t.cfg.BatchSendDeadline).Seconds())
+	t.lastSendTimestampLock.RLock()
+	diff := now - t.lastSendTimestamp
+	t.lastSendTimestampLock.RUnlock()
+	if diff > threshold {
+		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold")
+		return t.numShards
+	}
 
 	// We use the number of incoming samples as a prediction of how much work we
 	// will need to do next iteration.  We add to this any pending samples
@@ -496,7 +526,7 @@ func (t *QueueManager) calculateDesiredShards() {
 	)
 
 	if samplesOutRate <= 0 {
-		return
+		return t.numShards
 	}
 
 	// We use an integral accumulator, like in a PID, to help dampen
@@ -538,7 +568,7 @@ func (t *QueueManager) calculateDesiredShards() {
 	level.Debug(t.logger).Log("msg", "QueueManager.updateShardsLoop",
 		"lowerBound", lowerBound, "desiredShards", desiredShards, "upperBound", upperBound)
 	if lowerBound <= desiredShards && desiredShards <= upperBound {
-		return
+		return t.numShards
 	}
 
 	numShards := int(math.Ceil(desiredShards))
@@ -548,19 +578,7 @@ func (t *QueueManager) calculateDesiredShards() {
 	} else if numShards < t.cfg.MinShards {
 		numShards = t.cfg.MinShards
 	}
-	if numShards == t.numShards {
-		return
-	}
-
-	// Resharding can take some time, and we want this loop
-	// to stay close to shardUpdateDuration.
-	select {
-	case t.reshardChan <- numShards:
-		level.Info(t.logger).Log("msg", "Remote storage resharding", "from", t.numShards, "to", numShards)
-		t.numShards = numShards
-	default:
-		level.Info(t.logger).Log("msg", "Currently resharding, skipping.")
-	}
+	return numShards
 }
 
 func (t *QueueManager) reshardLoop() {
@@ -802,6 +820,9 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if err == nil {
 			s.qm.succeededSamplesTotal.Add(float64(len(samples)))
 			s.qm.highestSentTimestampMetric.Set(float64(highest / 1000))
+			s.qm.lastSendTimestampLock.Lock()
+			s.qm.lastSendTimestamp = time.Now().Unix()
+			s.qm.lastSendTimestampLock.Unlock()
 			return nil
 		}
 
