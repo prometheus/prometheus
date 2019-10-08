@@ -26,7 +26,7 @@ tarball:
         - documentation/examples/prometheus.yml
         - LICENSE
         - NOTICE
-        - web/ui/react-app/npm_licenses.tar.bz2
+        - npm_licenses.tar.bz2
 crossbuild:
     platforms:
         - linux/amd64
