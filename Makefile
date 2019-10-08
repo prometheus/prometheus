@@ -14,8 +14,11 @@
 # Needs to be defined before including Makefile.common to auto-generate targets
 DOCKER_ARCHS ?= amd64 armv7 arm64
 
-NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
 REACT_APP_PATH = web/ui/react-app
+REACT_APP_SOURCE_FILES = $(wildcard $(REACT_APP_PATH)/public/* $(REACT_APP_PATH)/src/* $(REACT_APP_PATH)/tsconfig.json)
+REACT_APP_OUTPUT_DIR = web/ui/static/graph-new
+REACT_APP_NODE_MODULES_PATH = $(REACT_APP_PATH)/node_modules
+REACT_APP_NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
 
 TSDB_PROJECT_DIR = "./tsdb"
 TSDB_CLI_DIR="$(TSDB_PROJECT_DIR)/cmd/tsdb"
@@ -28,25 +31,27 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
-$(REACT_APP_PATH)/node_modules: $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/yarn.lock
+$(REACT_APP_NODE_MODULES_PATH): $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/yarn.lock
 	cd $(REACT_APP_PATH) && yarn --frozen-lockfile
 
-.PHONY: build-react-app
-build-react-app: $(REACT_APP_PATH)/node_modules
+$(REACT_APP_OUTPUT_DIR): $(REACT_APP_PATH)/node_modules $(REACT_APP_SOURCE_FILES)
 	@echo ">> building React app"
 	@./scripts/build_react_app.sh
 
 .PHONY: assets
-assets: build-react-app
+assets: $(REACT_APP_OUTPUT_DIR)
 	@echo ">> writing assets"
+	# Un-setting GOOS and GOARCH here because the generated Go code is always the same,
+	# but the cached object code is incompatible between architectures and OSes (which
+	# breaks cross-building for different combinations on CI in the same container).
 	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
 	@$(GOFMT) -w ./web/ui
 
 .PHONY: npm_licenses
 npm_licenses:
 	@echo ">> bundling npm licenses"
-	rm -f $(NPM_LICENSES_TARBALL)
-	find web/ui/react-app/node_modules -iname "license*" | tar cfj $(NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
+	rm -f $(REACT_APP_NPM_LICENSES_TARBALL)
+	find $(REACT_APP_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
 
 .PHONY: tarball
 tarball: npm_licenses
