@@ -79,7 +79,9 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer n.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), n.informer.HasSynced) {
-		level.Error(n.logger).Log("msg", "node informer unable to sync cache")
+		if ctx.Err() != context.Canceled {
+			level.Error(n.logger).Log("msg", "node informer unable to sync cache")
+		}
 		return
 	}
 

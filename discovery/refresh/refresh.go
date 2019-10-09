@@ -75,7 +75,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tgs, err := d.refresh(ctx)
 	if err != nil {
-		level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
+		if ctx.Err() != context.Canceled {
+			level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
+		}
 	} else {
 		select {
 		case ch <- tgs:
@@ -92,7 +94,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case <-ticker.C:
 			tgs, err := d.refresh(ctx)
 			if err != nil {
-				level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
+				if ctx.Err() != context.Canceled {
+					level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
+				}
 				continue
 			}
 
