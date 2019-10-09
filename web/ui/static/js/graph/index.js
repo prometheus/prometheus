@@ -112,7 +112,7 @@ Prometheus.Graph.prototype.initialize = function() {
     self.expr.focus();
     self.expr.val(self.expr.val());
     return e.preventDefault();
-  })
+  });
 
   self.error = graphWrapper.find(".error").hide();
   self.warning = graphWrapper.find(".warning").hide();
@@ -156,7 +156,7 @@ Prometheus.Graph.prototype.initialize = function() {
     timeZone: 'UTC',
   });
   if (self.options.timestamp) {
-    var date = new Date(self.options.timestamp*1000)
+    var date = new Date(self.options.timestamp*1000);
     self.moment.data('DateTimePicker').date(date);
   } else if (self.options.moment_input) {
     self.moment.data('DateTimePicker').date(self.options.moment_input);
@@ -325,7 +325,7 @@ Prometheus.Graph.prototype.initTypeahead = function(self) {
   // otherwise breaks the typeahead functionality.
   self.expr.focus();
   queryHistory.bindHistoryEvents(self);
-}
+};
 
 Prometheus.Graph.prototype.getOptions = function() {
   var self = this;
@@ -581,7 +581,7 @@ Prometheus.Graph.prototype.updateRefresh = function() {
     window.clearTimeout(self.timeoutID);
   }
 
-  interval = self.parseDuration(self.refreshInterval.val());
+  var interval = self.parseDuration(self.refreshInterval.val());
   if (!interval) { return; }
 
   self.timeoutID = window.setTimeout(function() {
@@ -597,7 +597,7 @@ Prometheus.Graph.prototype.renderLabels = function(labels) {
       labelStrings.push("<strong>" + label + "</strong>: " + escapeHTML(labels[label]));
     }
   }
-  return labels = "<div class=\"labels\">" + labelStrings.join("<br>") + "</div>";
+  return "<div class=\"labels\">" + labelStrings.join("<br>") + "</div>";
 };
 
 Prometheus.Graph.prototype.metricToTsName = function(labels) {
@@ -743,9 +743,9 @@ Prometheus.Graph.prototype.updateGraph = function() {
     self.rickshawGraph.min = min - offset;
   }
 
-  var xAxis = new Rickshaw.Graph.Axis.Time({ graph: self.rickshawGraph });
+  new Rickshaw.Graph.Axis.Time({ graph: self.rickshawGraph });
 
-  var yAxis = new Rickshaw.Graph.Axis.Y({
+  new Rickshaw.Graph.Axis.Y({
     graph: self.rickshawGraph,
     orientation: "left",
     tickFormat: this.formatKMBT,
@@ -769,12 +769,12 @@ Prometheus.Graph.prototype.updateGraph = function() {
     graph: self.rickshawGraph,
   });
 
-  var highlighter = new Rickshaw.Graph.Behavior.Series.Highlight( {
+  new Rickshaw.Graph.Behavior.Series.Highlight( {
     graph: self.rickshawGraph,
     legend: legend
   });
 
-  var shelving = new Rickshaw.Graph.Behavior.Series.Toggle({
+  new Rickshaw.Graph.Behavior.Series.Toggle({
     graph: self.rickshawGraph,
     legend: legend
   });
@@ -905,7 +905,7 @@ Prometheus.Graph.prototype.formatKMBT = function(y) {
   } else if (abs_y <= 1) {
     return y
   }
-}
+};
 
 Prometheus.Graph.prototype.limitSeries = function(result) {
   var self = this;
@@ -919,7 +919,7 @@ Prometheus.Graph.prototype.limitSeries = function(result) {
     return result.splice(0, MAX_SERIES_NUM);
   }
   return result;
-}
+};
 
 /**
  * Page

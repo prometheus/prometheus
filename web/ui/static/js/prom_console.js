@@ -507,7 +507,7 @@ PromConsole.Graph.prototype._render = function(data) {
           min: this.params.min,
           series: series
   });
-  var hoverDetail = new Rickshaw.Graph.HoverDetail({
+  new Rickshaw.Graph.HoverDetail({
       graph: graph,
       onRender: function() {
         var xLabel = this.element.getElementsByClassName("x_label")[0];
@@ -535,7 +535,7 @@ PromConsole.Graph.prototype._render = function(data) {
   var xAxis = new Rickshaw.Graph.Axis.Time({
       graph: graph,
   });
-  var legend = new Rickshaw.Graph.Legend({
+  new Rickshaw.Graph.Legend({
       graph: graph,
       element: this.legendDiv
   });
@@ -574,7 +574,6 @@ PromConsole.Graph.prototype.dispatch = function() {
   this._xhrs = new Array(this.params.expr.length);
   var pending_requests = this.params.expr.length;
   for (var i = 0; i < this.params.expr.length; ++i) {
-    var endTime = this.params.endTime;
     var url = this.buildQueryUrl(this.params.expr[i]);
     var xhr = new XMLHttpRequest();
     xhr.open('get', url, true);
