@@ -115,14 +115,40 @@ local g = import 'grafana-builder/grafana.libsonnet';
         )
       )
       .addRow(
-        g.row('Shards')
+        g.row('Shards Overview')
         .addPanel(
           g.panel('Num. Shards') +
           g.queryPanel('prometheus_remote_storage_shards{cluster=~"$cluster", instance=~"$instance"}', '{{cluster}}:{{instance}}-{{queue}}')
         )
         .addPanel(
+          g.panel('Desired Shards') +
+          g.queryPanel('prometheus_remote_storage_shards_desired{cluster=~"$cluster", instance=~"$instance"}', '{{cluster}}:{{instance}}-{{queue}}')
+        )
+      )
+      .addRow(
+        g.row('Shards Details')
+        .addPanel(
           g.panel('Capacity') +
           g.queryPanel('prometheus_remote_storage_shard_capacity{cluster=~"$cluster", instance=~"$instance"}', '{{cluster}}:{{instance}}-{{queue}}')
+        )
+        .addPanel(
+          g.panel('Min Shards') +
+          g.queryPanel('prometheus_remote_storage_shards_min{cluster=~"$cluster", instance=~"$instance"}', '{{cluster}}:{{instance}}-{{queue}}')
+        )
+        .addPanel(
+          g.panel('Max Shards') +
+          g.queryPanel('prometheus_remote_storage_shards_max{cluster=~"$cluster", instance=~"$instance"}', '{{cluster}}:{{instance}}-{{queue}}')
+        )
+      )
+      .addRow(
+        g.row('WAL Segments')
+        .addPanel(
+          g.panel('TSDB Current Segment') +
+          g.queryPanel('prometheus_tsdb_wal_segment_current{cluster=~"$cluster", instance=~"$instance"}', '{{cluster}}:{{instance}}')
+        )
+        .addPanel(
+          g.panel('Remote Write Current Segment') +
+          g.queryPanel('prometheus_wal_watcher_current_segment{cluster=~"$cluster", instance=~"$instance"}', '{{cluster}}:{{instance}}-{{queue}}')
         )
       )
       .addRow(
