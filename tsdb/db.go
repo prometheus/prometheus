@@ -548,9 +548,6 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		return nil, err
 	}
 
-	if err := db.reload(false); err != nil {
-		return nil, err
-	}
 	// Set the min valid time for the ingested samples
 	// to be no lower than the maxt of the last block.
 	blocks := db.Blocks()
@@ -565,6 +562,12 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		if err := wlog.Repair(initErr); err != nil {
 			return nil, errors.Wrap(err, "repair corrupted WAL")
 		}
+	}
+
+	// Reloading after initing the head deletes the data before minValidTime
+	// from the head.
+	if err := db.reload(false); err != nil {
+		return nil, err
 	}
 
 	go db.run()

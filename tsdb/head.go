@@ -1700,10 +1700,10 @@ func (s *memSeries) encodeSeries(b []byte) []byte {
 		buf.PutUvarintStr(l.Value)
 	}
 	buf.PutBE64int64(s.chunkRange)
-	buf.PutBE64int64(s.nextAt)
 
 	// Chunks.
 	s.Lock()
+	buf.PutBE64int64(s.nextAt)
 	buf.PutUvarint(len(s.chunks))
 	for _, c := range s.chunks {
 		buf.PutBE64int64(c.minTime)
