@@ -82,7 +82,9 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer p.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), p.informer.HasSynced) {
-		level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
+		if ctx.Err() != context.Canceled {
+			level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
+		}
 		return
 	}
 
