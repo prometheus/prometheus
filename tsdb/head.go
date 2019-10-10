@@ -61,18 +61,20 @@ var (
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
-	chunkRange int64
+	// Keep all 64bit atomically accessed variables at the top of this struct.
+	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
+	chunkRange       int64
+	numSeries        uint64
+	minTime, maxTime int64 // Current min and max of the samples included in the head.
+	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
+	lastSeriesID     uint64
+
 	metrics    *headMetrics
 	wal        *wal.WAL
 	logger     log.Logger
 	appendPool sync.Pool
 	seriesPool sync.Pool
 	bytesPool  sync.Pool
-	numSeries  uint64
-
-	minTime, maxTime int64 // Current min and max of the samples included in the head.
-	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
-	lastSeriesID     uint64
 
 	// All series addressable by their ID or hash.
 	series *stripeSeries
