@@ -308,6 +308,14 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		end           int
 	)
 
+	// w.wbuf == nil means it is the first chunk
+	// so need to start a new segment.
+	if w.wbuf == nil {
+		if err := w.cut(); err != nil {
+			return err
+		}
+	}
+
 	for _, chk := range chks {
 		// Each chunk contains: data length + encoding + the data itself + crc32
 		chksBatchSize += int64(maxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
@@ -317,29 +325,34 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 
 		end++
 		if chksBatchSize+w.n > w.segmentSize {
-			if err := w.writeChunks(chks[:end], true); err != nil {
+			if end > 1 {
+				// Don't include the last chunk only if there are >1 chunks.
+				// This will keep segment size within the configured limit.
+				// If a single chunks if bigger than the configured limit,
+				// we cannot do much.
+				end--
+			}
+			if err := w.writeChunks(chks[:end]); err != nil {
 				return err
 			}
 			chks = chks[end:]
 			chksBatchSize = 0
 			end = 0
-			continue
+			if err := w.cut(); err != nil {
+				return err
+			}
 		}
 	}
 
-	return w.writeChunks(chks, false)
+	return w.writeChunks(chks)
 }
 
-func (w *Writer) writeChunks(chks []Meta, cutChunk bool) error {
+// writeChunks writes the chunks into the current segment irrespective
+// of the configured segment size limit. A segment should have been already
+// started before calling this.
+func (w *Writer) writeChunks(chks []Meta) error {
 	if len(chks) == 0 {
 		return nil
-	}
-	// w.wbuf == nil means it is the first chunk
-	// so need to start a new segment.
-	if cutChunk || w.wbuf == nil {
-		if err := w.cut(); err != nil {
-			return err
-		}
 	}
 
 	var seq = uint64(w.seq()) << 32
