@@ -238,7 +238,7 @@ var lastCardinalityStatsCall int64 = 0
 const cardinalityCacheExperationTime int64 = 30 //seconds
 
 //Return Highest Cardinality for Labels and Metrics Names
-func (h *Head) PopulateCardinalityStats() *index.Stats {
+func (h *Head) PopulateCardinalityStats(label string) *index.Stats {
 	cardinalityMutex.Lock()
 
 	seconds := time.Now().Unix() - lastCardinalityStatsCall
@@ -251,7 +251,7 @@ func (h *Head) PopulateCardinalityStats() *index.Stats {
 		return cardinalityCache
 	}
 
-	cardinalityCache = h.postings.CardinalityStats()
+	cardinalityCache = h.postings.CardinalityStats(label)
 	lastCardinalityStatsCall = time.Now().Unix()
 
 	cardinalityMutex.Unlock()
@@ -279,6 +279,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		deleted:    map[uint64]int{},
 	}
 	h.metrics = newHeadMetrics(h, r)
+
 	return h, nil
 }
 

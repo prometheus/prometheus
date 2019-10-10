@@ -92,13 +92,13 @@ type Stats struct {
 }
 
 // Calculating Cardinality Stats
-func (p *MemPostings) CardinalityStats() *Stats {
+func (p *MemPostings) CardinalityStats(label string) *Stats {
 	metrics := make([]HeadStats, 0)
 	labels := make([]HeadStats, 0)
 	labelValueLenght := make([]HeadStats, 0)
 	labelValuePairs := make([]HeadStats, 0)
 	const maxNumOfRecords = 10
-	var size uint64 = 0
+	var size uint64
 	p.mtx.RLock()
 
 	for n, e := range p.m {
@@ -107,7 +107,7 @@ func (p *MemPostings) CardinalityStats() *Stats {
 		}
 		labels = append(labels, HeadStats{Name: n, Count: uint64(len(e))})
 		size = 0
-		if n == "__name__" {
+		if n == label {
 			for name, values := range e {
 				metrics = append(metrics, HeadStats{Name: name, Count: uint64(len(values))})
 				labelValuePairs = append(labelValuePairs, HeadStats{Name: n + "=" + name, Count: uint64(len(values))})

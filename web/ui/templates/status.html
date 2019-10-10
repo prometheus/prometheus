@@ -112,9 +112,11 @@
         </tr>
       </tbody>
     </table>
-    <input class="btn btn-primary" type="submit" value="Query Cardinality Status" id="get_stats"></div>
+    {{if .CardinalityStats }}
+    <input class="btn btn-primary" type="submit" value="Query Cardinality Stats" id="get_stats"></div>
     <div id="devHeadStats" class="container-fluid">
 
     </div>
+    {{end}}
   </div>
 {{end}}

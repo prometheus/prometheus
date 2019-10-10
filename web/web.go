@@ -242,6 +242,7 @@ type Options struct {
 	ConsoleLibrariesPath       string
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
+	DisableCardinalityStats    bool
 	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
@@ -667,16 +668,21 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "graph.html", nil)
 }
+
 func (h *Handler) headstats(w http.ResponseWriter, r *http.Request) {
-	startTime := time.Now().Unix()
+	if h.options.DisableCardinalityStats {
+		http.Error(w, "Cardinality Stats is not enabled", http.StatusInternalServerError)
+		return
+	}
+	startTime := time.Now().UnixNano()
 	db := h.tsdb()
-	stats := db.Head().PopulateCardinalityStats()
+	stats := db.Head().PopulateCardinalityStats("__name__")
 	data := struct {
 		Stats    *index.Stats
-		Duration int64
+		Duration string
 	}{
 		Stats:    stats,
-		Duration: time.Now().Unix() - startTime,
+		Duration: fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9)),
 	}
 
 	f, err := ui.Assets.Open(path.Join("/templates", "headstats.html"))
@@ -709,6 +715,7 @@ func (h *Handler) headstats(w http.ResponseWriter, r *http.Request) {
 	}
 	io.WriteString(w, result)
 }
+
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 
 	status := struct {
@@ -729,15 +736,17 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		NumSeries           uint64
 		MaxTime             int64
 		MinTime             int64
+		CardinalityStats    bool
 	}{
-		Birth:          h.birth,
-		CWD:            h.cwd,
-		Version:        h.versionInfo,
-		Alertmanagers:  h.notifier.Alertmanagers(),
-		GoroutineCount: runtime.NumGoroutine(),
-		GOMAXPROCS:     runtime.GOMAXPROCS(0),
-		GOGC:           os.Getenv("GOGC"),
-		GODEBUG:        os.Getenv("GODEBUG"),
+		Birth:            h.birth,
+		CWD:              h.cwd,
+		Version:          h.versionInfo,
+		Alertmanagers:    h.notifier.Alertmanagers(),
+		GoroutineCount:   runtime.NumGoroutine(),
+		GOMAXPROCS:       runtime.GOMAXPROCS(0),
+		GOGC:             os.Getenv("GOGC"),
+		GODEBUG:          os.Getenv("GODEBUG"),
+		CardinalityStats: !h.options.DisableCardinalityStats,
 	}
 
 	if h.options.TSDBCfg.RetentionDuration != 0 {
@@ -775,16 +784,6 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	status.MinTime = db.Head().MaxTime()
 
 	h.executeTemplate(w, "status.html", status)
-}
-
-func parseParam(r *http.Request) map[string]string {
-	rawParams, _ := url.ParseQuery(r.URL.RawQuery)
-
-	params := make(map[string]string)
-	for k, v := range rawParams {
-		params[k] = v[0]
-	}
-	return params
 }
 
 func toFloat64(f *io_prometheus_client.MetricFamily) float64 {

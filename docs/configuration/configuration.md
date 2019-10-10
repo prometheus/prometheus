@@ -20,6 +20,8 @@ A configuration reload is triggered by sending a `SIGHUP` to the Prometheus proc
 sending a HTTP POST request to the `/-/reload` endpoint (when the `--web.enable-lifecycle` flag is enabled).
 This will also reload any configured rule files.
 
+To disable TSDB head statistics (cardinality stats) on Prometheus web UI (Status>Runtime & Build Information) set `--web.disable-cardinality-stats` flag
+
 ## Configuration file
 
 To specify which configuration file to load, use the `--config.file` flag.
