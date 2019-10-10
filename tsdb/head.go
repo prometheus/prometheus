@@ -233,14 +233,16 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 
 var cardinalityMutex = &sync.Mutex{}
 var cardinalityCache *index.Stats = nil
-var lastCall int64 = 0
+var lastCardinalityStatsCall int64 = 0
+
+const cardinalityCacheExperationTime int64 = 30 //seconds
 
 //Return Highest Cardinality for Labels and Metrics Names
 func (h *Head) PopulateCardinalityStats() *index.Stats {
 	cardinalityMutex.Lock()
 
-	seconds := time.Now().Unix() - lastCall
-	if seconds > 30 {
+	seconds := time.Now().Unix() - lastCardinalityStatsCall
+	if seconds > cardinalityCacheExperationTime {
 		cardinalityCache = nil
 	}
 
