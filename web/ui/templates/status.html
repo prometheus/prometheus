@@ -1,4 +1,6 @@
-{{define "head"}}<!-- nix -->{{end}}
+{{define "head"}}
+<script src="{{ pathPrefix }}/static/js/status.js?v={{ buildVersion }}"></script>
+{{end}}
 
 {{define "content"}}
   <div class="container-fluid">
@@ -20,14 +22,6 @@
         <tr>
           <th>Last successful configuration reload</th>
           <td>{{.LastConfigTime.UTC}}</td>
-        </tr>
-        <tr>
-          <th>Head chunks</th>
-          <td>{{.ChunkCount}}</td>
-        </tr>
-        <tr>
-          <th>Head time series</th>
-          <td>{{.TimeSeriesCount}}</td>
         </tr>
         <tr>
           <th>WAL corruptions</th>
@@ -101,5 +95,26 @@
       </tbody>
     </table>
 
+    <h2 id="headstatus">Head Stats</h2>
+    <table class="table table-sm table-bordered table-striped table-hover">
+      <tbody>
+        <tr>
+           <th>Number Of Series </th>
+           <th>Number of Chunks</th>
+           <th>Current Max Time</th>
+           <th>Current Min Time</th>
+        </tr>
+        <tr>
+          <td scope="row">{{ .NumSeries}}</th>
+          <td>{{.ChunkCount}}</td>  
+          <td>{{ .MaxTime}}</td>
+          <td>{{ .MinTime}}</td>
+        </tr>
+      </tbody>
+    </table>
+    <input class="btn btn-primary" type="submit" value="Populate Cardinality Status" id="get_stats"></div>
+    <div id="devHeadStats" class="container-fluid">
+
+    </div>
   </div>
 {{end}}

@@ -1,0 +1,61 @@
+
+<h3 id="headstatus">Highest Cardinality Labels {{.Cache}}</h3>
+<table class="table table-sm table-bordered table-striped table-hover">
+  <tbody>
+    <tr>
+       <th>Name</th>
+       <th>Count</th>
+    </tr>
+    {{ range .CardinalityLabelStats }}
+    <tr>
+      <td scope="row">{{.Name}}</th>
+      <td>{{.Count}}</td>  
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+<h3 id="headstatus">Highest Cardinality Metric Names</h3>
+<table class="table table-sm table-bordered table-striped table-hover">
+    <tbody>
+      <tr>
+         <th>Name</th>
+         <th>Count</th>
+      </tr>
+      {{ range .CardinalityMetricsStats }}
+      <tr>
+        <td scope="row">{{.Name}}</th>
+        <td>{{.Count}}</td>  
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <h3 id="headstatus">Label Names With Highest Cumulative Label Value Length</h3>
+  <table class="table table-sm table-bordered table-striped table-hover">
+      <tbody>
+        <tr>
+           <th>Name</th>
+           <th>Length</th>
+        </tr>
+        {{ range .LabelValueStats }}
+        <tr>
+          <td scope="row">{{.Name}}</th>
+          <td>{{.Count}}</td>  
+        </tr>
+        {{end}}
+      </tbody>
+    </table>      
+    <h3 id="headstatus">Most Common Label Pairs</h3>
+    <table class="table table-sm table-bordered table-striped table-hover">
+        <tbody>
+          <tr>
+             <th>Name</th>
+             <th>Count</th>
+          </tr>
+          {{ range .LabelValuePairsStats }}
+          <tr>
+            <td scope="row">{{.Name}}</th>
+            <td>{{.Count}}</td>  
+          </tr>
+          {{end}}
+        </tbody>
+    </table>   

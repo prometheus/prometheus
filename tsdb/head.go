@@ -231,6 +231,11 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	return m
 }
 
+//Return Highest Cardinality for Labels and Metrics Names
+func (h *Head) PopulateCardinalityStats() *index.Stats {
+	return h.postings.CardinalityStats()
+}
+
 // NewHead opens the head block in dir.
 func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64) (*Head, error) {
 	if l == nil {
@@ -252,7 +257,6 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		deleted:    map[uint64]int{},
 	}
 	h.metrics = newHeadMetrics(h, r)
-
 	return h, nil
 }
 

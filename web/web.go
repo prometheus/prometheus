@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/soheilhy/cmux"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
@@ -329,6 +330,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/alerts", readyf(h.alerts))
 	router.Get("/graph", readyf(h.graph))
 	router.Get("/status", readyf(h.status))
+	router.Get("/headstats", readyf(h.headstats))
 	router.Get("/flags", readyf(h.flags))
 	router.Get("/config", readyf(h.serveConfig))
 	router.Get("/rules", readyf(h.rules))
@@ -665,8 +667,43 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "graph.html", nil)
 }
+func (h *Handler) headstats(w http.ResponseWriter, r *http.Request) {
+	var status *index.Stats
+	db := h.tsdb()
+	status = db.Head().PopulateCardinalityStats()
 
+	f, err := ui.Assets.Open(path.Join("/templates", "headstats.html"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	b, err := ioutil.ReadAll(f)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	text := string(b)
+	tmpl := template.NewTemplateExpander(
+		h.context,
+		text,
+		"headstats.html",
+		status,
+		h.now(),
+		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine, h.storage)),
+		h.options.ExternalURL,
+	)
+	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
+
+	result, err := tmpl.ExpandHTML(nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	io.WriteString(w, result)
+}
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
+
 	status := struct {
 		Birth               time.Time
 		CWD                 string
@@ -682,6 +719,9 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		LastConfigTime      time.Time
 		ReloadConfigSuccess bool
 		StorageRetention    string
+		NumSeries           uint64
+		MaxTime             int64
+		MinTime             int64
 	}{
 		Birth:          h.birth,
 		CWD:            h.cwd,
@@ -722,7 +762,22 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
 		}
 	}
+	db := h.tsdb()
+	status.NumSeries = db.Head().NumSeries()
+	status.MaxTime = db.Head().MaxTime()
+	status.MinTime = db.Head().MaxTime()
+
 	h.executeTemplate(w, "status.html", status)
+}
+
+func parseParam(r *http.Request) map[string]string {
+	rawParams, _ := url.ParseQuery(r.URL.RawQuery)
+
+	params := make(map[string]string)
+	for k, v := range rawParams {
+		params[k] = v[0]
+	}
+	return params
 }
 
 func toFloat64(f *io_prometheus_client.MetricFamily) float64 {

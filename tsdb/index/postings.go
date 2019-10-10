@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/prometheus/prometheus/tsdb/labels"
 )
@@ -77,6 +78,92 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 		return keys[i].Value < keys[j].Value
 	})
 	return keys
+}
+
+type HeadStats struct {
+	Name  string
+	Count uint64
+}
+
+type Stats struct {
+	CardinalityMetricsStats []HeadStats
+	CardinalityLabelStats   []HeadStats
+	LabelValueStats         []HeadStats
+	LabelValuePairsStats    []HeadStats
+	Cache                   bool
+}
+
+var cardinalityMutex = &sync.Mutex{}
+var cardinalityCache *Stats = nil
+var lastCall int64 = 0
+
+// Calculating Cardinality Stats
+func (p *MemPostings) CardinalityStats() *Stats {
+	cardinalityMutex.Lock()
+
+	seconds := time.Now().Unix() - lastCall
+	if seconds > 30 {
+		cardinalityCache = nil
+	}
+
+	if cardinalityCache != nil {
+		cardinalityCache.Cache = true
+		cardinalityMutex.Unlock()
+		return cardinalityCache
+	}
+
+	metrics := make([]HeadStats, 0)
+	labels := make([]HeadStats, 0)
+	labelValueLenght := make([]HeadStats, 0)
+	labelValuePairs := make([]HeadStats, 0)
+	const maxNumOfRecords = 10
+	var size uint64 = 0
+	p.mtx.RLock()
+
+	for n, e := range p.m {
+		if n == "" {
+			continue
+		}
+		labels = append(labels, HeadStats{Name: n, Count: uint64(len(e))})
+		size = 0
+		if n == "__name__" {
+			for name, values := range e {
+				metrics = append(metrics, HeadStats{Name: name, Count: uint64(len(values))})
+				labelValuePairs = append(labelValuePairs, HeadStats{Name: n + "=" + name, Count: uint64(len(values))})
+				size += uint64(len(name))
+			}
+			labelValueLenght = append(labelValueLenght, HeadStats{Name: n, Count: size})
+		} else {
+			for name, values := range e {
+				labelValuePairs = append(labelValuePairs, HeadStats{Name: n + "=" + name, Count: uint64(len(values))})
+				size += uint64(len(name))
+			}
+			labelValueLenght = append(labelValueLenght, HeadStats{Name: n, Count: size})
+		}
+	}
+	p.mtx.RUnlock()
+
+	sliceFunction := func(stats []HeadStats) []HeadStats {
+		sort.Slice(stats, func(i, j int) bool {
+			return stats[i].Count > stats[j].Count
+		})
+
+		if len(stats) > maxNumOfRecords {
+			stats = stats[0:maxNumOfRecords]
+		}
+		return stats
+	}
+	cardinalityCache = &Stats{
+		CardinalityMetricsStats: sliceFunction(metrics),
+		CardinalityLabelStats:   sliceFunction(labels),
+		LabelValueStats:         sliceFunction(labelValueLenght),
+		LabelValuePairsStats:    sliceFunction(labelValuePairs),
+		Cache:                   false,
+	}
+	lastCall = time.Now().Unix()
+
+	cardinalityMutex.Unlock()
+	return cardinalityCache
 }
 
 // Get returns a postings list for the given label pair.
