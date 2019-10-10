@@ -668,9 +668,16 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "graph.html", nil)
 }
 func (h *Handler) headstats(w http.ResponseWriter, r *http.Request) {
-	var status *index.Stats
+	startTime := time.Now().Unix()
 	db := h.tsdb()
-	status = db.Head().PopulateCardinalityStats()
+	stats := db.Head().PopulateCardinalityStats()
+	data := struct {
+		Stats    *index.Stats
+		Duration int64
+	}{
+		Stats:    stats,
+		Duration: time.Now().Unix() - startTime,
+	}
 
 	f, err := ui.Assets.Open(path.Join("/templates", "headstats.html"))
 	if err != nil {
@@ -688,7 +695,7 @@ func (h *Handler) headstats(w http.ResponseWriter, r *http.Request) {
 		h.context,
 		text,
 		"headstats.html",
-		status,
+		data,
 		h.now(),
 		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine, h.storage)),
 		h.options.ExternalURL,

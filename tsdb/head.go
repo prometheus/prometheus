@@ -247,13 +247,12 @@ func (h *Head) PopulateCardinalityStats() *index.Stats {
 	}
 
 	if cardinalityCache != nil {
-		cardinalityCache.Cache = true
 		cardinalityMutex.Unlock()
 		return cardinalityCache
 	}
 
 	cardinalityCache = h.postings.CardinalityStats()
-	lastCall = time.Now().Unix()
+	lastCardinalityStatsCall = time.Now().Unix()
 
 	cardinalityMutex.Unlock()
 	return cardinalityCache

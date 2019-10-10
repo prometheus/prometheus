@@ -89,7 +89,6 @@ type Stats struct {
 	CardinalityLabelStats   []HeadStats
 	LabelValueStats         []HeadStats
 	LabelValuePairsStats    []HeadStats
-	Cache                   bool
 }
 
 // Calculating Cardinality Stats
@@ -141,7 +140,6 @@ func (p *MemPostings) CardinalityStats() *Stats {
 		CardinalityLabelStats:   sliceFunction(labels),
 		LabelValueStats:         sliceFunction(labelValueLenght),
 		LabelValuePairsStats:    sliceFunction(labelValuePairs),
-		Cache:                   false,
 	}
 }
 
