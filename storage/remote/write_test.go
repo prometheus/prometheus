@@ -15,10 +15,12 @@ package remote
 
 import (
 	"io/ioutil"
+	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -87,6 +89,12 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 			&config.DefaultRemoteWriteConfig,
 		},
 	}
+	// We need to set URL's so that metric creation doesn't panic.
+	conf.RemoteWriteConfigs[0].URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
+	}
 	hash, err := toHash(conf.RemoteWriteConfigs[0])
 	testutil.Ok(t, err)
 
@@ -125,6 +133,22 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	conf := &config.Config{
 		GlobalConfig:       config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{c0, c1, c2},
+	}
+	// We need to set URL's so that metric creation doesn't panic.
+	conf.RemoteWriteConfigs[0].URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
+	}
+	conf.RemoteWriteConfigs[1].URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
+	}
+	conf.RemoteWriteConfigs[2].URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
 	}
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 3, len(s.queues))

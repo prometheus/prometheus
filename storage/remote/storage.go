@@ -28,6 +28,14 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// String constants for instrumentation.
+const (
+	namespace  = "prometheus"
+	subsystem  = "remote_storage"
+	remoteName = "remote_name"
+	endpoint   = "url"
+)
+
 // startTimeCallback is a callback func that return the oldest timestamp stored in a storage.
 type startTimeCallback func() (int64, error)
 

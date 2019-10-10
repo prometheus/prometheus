@@ -40,10 +40,10 @@ var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	name    string // Used to differentiate clients in metrics.
-	url     *config_util.URL
-	client  *http.Client
-	timeout time.Duration
+	remoteName string // Used to differentiate clients in metrics.
+	url        *config_util.URL
+	client     *http.Client
+	timeout    time.Duration
 }
 
 // ClientConfig configures a Client.
@@ -54,17 +54,17 @@ type ClientConfig struct {
 }
 
 // NewClient creates a new Client.
-func NewClient(name string, conf *ClientConfig) (*Client, error) {
+func NewClient(remoteName string, conf *ClientConfig) (*Client, error) {
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage", false)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Client{
-		name:    name,
-		url:     conf.URL,
-		client:  httpClient,
-		timeout: time.Duration(conf.Timeout),
+		remoteName: remoteName,
+		url:        conf.URL,
+		client:     httpClient,
+		timeout:    time.Duration(conf.Timeout),
 	}, nil
 }
 
@@ -115,9 +115,14 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	return err
 }
 
-// Name identifies the client.
+// Name uniquely identifies the client.
 func (c Client) Name() string {
-	return fmt.Sprintf("%s:%s", c.name, c.url)
+	return c.remoteName
+}
+
+// Endpoint is the remote read or write endpoint.
+func (c Client) Endpoint() string {
+	return c.url.String()
 }
 
 // Read reads from a remote endpoint.
