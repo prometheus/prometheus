@@ -66,13 +66,9 @@ build: assets
 	$(MAKE) common-build
 
 .PHONY: react-app-test
-react-app-test:
+react-app-test: $(REACT_APP_NODE_MODULES_PATH)
 	@echo ">> running React app tests"
-	which yarn >/dev/null && (cd web/ui/react-app && yarn test --no-watch) || echo "WARNING: yarn not installed, skipping React app tests..."
-
-.PHONY: test
-test: react-app-test
-	$(MAKE) common-test
+	yarn test --no-watch
 
 build_tsdb:
 	GO111MODULE=$(GO111MODULE) $(GO) build -o $(TSDB_BIN) $(TSDB_CLI_DIR)
