@@ -231,9 +231,30 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	return m
 }
 
+var cardinalityMutex = &sync.Mutex{}
+var cardinalityCache *index.Stats = nil
+var lastCall int64 = 0
+
 //Return Highest Cardinality for Labels and Metrics Names
 func (h *Head) PopulateCardinalityStats() *index.Stats {
-	return h.postings.CardinalityStats()
+	cardinalityMutex.Lock()
+
+	seconds := time.Now().Unix() - lastCall
+	if seconds > 30 {
+		cardinalityCache = nil
+	}
+
+	if cardinalityCache != nil {
+		cardinalityCache.Cache = true
+		cardinalityMutex.Unlock()
+		return cardinalityCache
+	}
+
+	cardinalityCache = h.postings.CardinalityStats()
+	lastCall = time.Now().Unix()
+
+	cardinalityMutex.Unlock()
+	return cardinalityCache
 }
 
 // NewHead opens the head block in dir.

@@ -20,7 +20,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/prometheus/prometheus/tsdb/labels"
 )
@@ -93,25 +92,8 @@ type Stats struct {
 	Cache                   bool
 }
 
-var cardinalityMutex = &sync.Mutex{}
-var cardinalityCache *Stats = nil
-var lastCall int64 = 0
-
 // Calculating Cardinality Stats
 func (p *MemPostings) CardinalityStats() *Stats {
-	cardinalityMutex.Lock()
-
-	seconds := time.Now().Unix() - lastCall
-	if seconds > 30 {
-		cardinalityCache = nil
-	}
-
-	if cardinalityCache != nil {
-		cardinalityCache.Cache = true
-		cardinalityMutex.Unlock()
-		return cardinalityCache
-	}
-
 	metrics := make([]HeadStats, 0)
 	labels := make([]HeadStats, 0)
 	labelValueLenght := make([]HeadStats, 0)
@@ -153,17 +135,14 @@ func (p *MemPostings) CardinalityStats() *Stats {
 		}
 		return stats
 	}
-	cardinalityCache = &Stats{
+
+	return &Stats{
 		CardinalityMetricsStats: sliceFunction(metrics),
 		CardinalityLabelStats:   sliceFunction(labels),
 		LabelValueStats:         sliceFunction(labelValueLenght),
 		LabelValuePairsStats:    sliceFunction(labelValuePairs),
 		Cache:                   false,
 	}
-	lastCall = time.Now().Unix()
-
-	cardinalityMutex.Unlock()
-	return cardinalityCache
 }
 
 // Get returns a postings list for the given label pair.
