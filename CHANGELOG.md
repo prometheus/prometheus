@@ -128,7 +128,7 @@ and the memory is available to the kernel when it needs it.
 * [BUGFIX] Check if label value is valid when unmarshaling external labels from YAML. #5316
 * [BUGFIX] Promparse: sort all labels when parsing. #5372
 * [BUGFIX] Reload rules: copy state on both name and labels. #5368
-* [BUGFIX] Exponentation operator to drop metric name in result of operation. #5329
+* [BUGFIX] Exponentiation operator to drop metric name in result of operation. #5329
 * [BUGFIX] Config: resolve more file paths. #5284
 * [BUGFIX] Promtool: resolve relative paths in alert test files. #5336
 * [BUGFIX] Set TLSHandshakeTimeout in HTTP transport. common#179
