@@ -68,7 +68,7 @@ build: assets
 .PHONY: react-app-test
 react-app-test: $(REACT_APP_NODE_MODULES_PATH)
 	@echo ">> running React app tests"
-	yarn test --no-watch
+	cd $(REACT_APP_PATH) && yarn test --no-watch
 
 build_tsdb:
 	GO111MODULE=$(GO111MODULE) $(GO) build -o $(TSDB_BIN) $(TSDB_CLI_DIR)
