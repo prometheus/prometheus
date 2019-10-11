@@ -17,7 +17,6 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
-	"github.com/prometheus/prometheus/pkg/relabel"
 	"io/ioutil"
 	"os"
 	"reflect"
@@ -33,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"gopkg.in/yaml.v2"
 )
 

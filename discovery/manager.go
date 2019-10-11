@@ -17,8 +17,6 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/relabel"
 	"reflect"
 	"sync"
 	"time"
@@ -26,6 +24,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -41,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
+	"github.com/prometheus/prometheus/pkg/relabel"
 )
 
 var (
