@@ -15,7 +15,9 @@ package discovery
 
 import (
 	"context"
+	"crypto/md5"
 	"fmt"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"io/ioutil"
 	"os"
 	"reflect"
@@ -1188,6 +1190,129 @@ func TestCoordinationWithReceiver(t *testing.T) {
 						}
 						assertEqualGroups(t, tgs[k], expected.tgs[k], func(got, expected string) string {
 							return fmt.Sprintf("step %d: targets mismatch \ngot: %q \nexpected: %q", i, got, expected)
+						})
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestHashFunc(t *testing.T) {
+
+	testCases := []struct {
+		title        string
+		address      []string
+		expectedHash []uint64
+	}{
+		{
+			title: "Test hash service discovery",
+			address: []string{
+				"192.168.1.1:9090",
+				"192.168.1.2:9090",
+				"192.168.1.3:9090",
+				"192.168.1.4:9090",
+			},
+			expectedHash: []uint64{
+				1, 9, 4, 0,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.title, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			discoveryManager := NewManager(ctx, log.NewNopLogger())
+			discoveryManager.updatert = 100 * time.Millisecond
+
+			var Modulus uint64 = 10
+
+			for index, addr := range tc.address {
+				mod := relabel.Sum64(md5.Sum([]byte(addr))) % Modulus
+
+				if mod != tc.expectedHash[index] {
+					t.Error("testHashFail . mod:", mod, ",expectedHash:", tc.expectedHash[index], ",:addr:", addr)
+
+				}
+			}
+
+		})
+	}
+}
+
+func TestHashTarget(t *testing.T) {
+
+	testCases := []struct {
+		title           string
+		updates         map[string][]update
+		expectedTargets [][]*targetgroup.Group
+	}{
+		{
+			title: "Test hash service discovery",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tp1_group1",
+								Targets: []model.LabelSet{{model.AddressLabel: "192.168.1.1:9090"}, {model.AddressLabel: "192.168.1.2:9090"}},
+							},
+							{
+								Source:  "tp1_group2",
+								Targets: []model.LabelSet{{model.AddressLabel: "192.168.1.3:9090"}, {model.AddressLabel: "192.168.1.4:9090"}},
+							}},
+					},
+				},
+			},
+			expectedTargets: [][]*targetgroup.Group{
+				{
+					{
+						Source:  "tp1_group1",
+						Targets: []model.LabelSet{{model.AddressLabel: "192.168.1.1:9090"}},
+					},
+				},
+			},
+		},
+	}
+
+	for i, tc := range testCases {
+		tc := tc
+		t.Run(tc.title, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			discoveryManager := NewManager(ctx, log.NewNopLogger())
+			discoveryManager.updatert = 100 * time.Millisecond
+
+			discoveryManager.Shards = 10
+			discoveryManager.ShardIndex = 1
+
+			var totalUpdatesCount int
+			provUpdates := make(chan []*targetgroup.Group)
+			for _, up := range tc.updates {
+				go newMockDiscoveryProvider(up...).Run(ctx, provUpdates)
+				if len(up) > 0 {
+					totalUpdatesCount = totalUpdatesCount + len(up)
+				}
+			}
+
+		Loop:
+			for x := 0; x < totalUpdatesCount; x++ {
+				select {
+				case <-ctx.Done():
+					t.Errorf("%d: no update arrived within the timeout limit", x)
+					break Loop
+				case tgs := <-provUpdates:
+					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
+					for _, got := range discoveryManager.allGroups() {
+						assertEqualGroups(t, got, tc.expectedTargets[x], func(got, expected string) string {
+							return fmt.Sprintf("%d: \ntargets mismatch \ngot: %v \nexpected: %v",
+								x,
+								got,
+								expected)
 						})
 					}
 				}

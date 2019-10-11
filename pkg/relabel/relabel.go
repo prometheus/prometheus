@@ -226,7 +226,7 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 		}
 		lb.Set(string(target), string(res))
 	case HashMod:
-		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
+		mod := Sum64(md5.Sum([]byte(val))) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 	case LabelMap:
 		for _, l := range lset {
@@ -255,7 +255,7 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 }
 
 // sum64 sums the md5 hash to an uint64.
-func sum64(hash [md5.Size]byte) uint64 {
+func Sum64(hash [md5.Size]byte) uint64 {
 	var s uint64
 
 	for i, b := range hash {

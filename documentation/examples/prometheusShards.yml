@@ -1,0 +1,9 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  shards: 2 # shard scrape = 2
+  shard_index: 0 # 0 or 1 <shards=2 . shard index =1 . mod = hash % shards
+scrape_configs:
+  - job_name: 'prometheusShards'
+    static_configs:
+    - targets: ['localhost:9090']

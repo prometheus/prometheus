@@ -289,6 +289,9 @@ type GlobalConfig struct {
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
+	//for shard scrape
+	Shards     uint64 `yaml:"shards,omitempty"`
+	ShardIndex uint64 `yaml:"shard_index,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

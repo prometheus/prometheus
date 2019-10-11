@@ -15,7 +15,10 @@ package discovery
 
 import (
 	"context"
+	"crypto/md5"
 	"fmt"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"reflect"
 	"sync"
 	"time"
@@ -160,6 +163,10 @@ type Manager struct {
 	// How long to wait before sending updates to the channel. The variable
 	// should only be modified in unit tests.
 	updatert time.Duration
+
+	//for shard scrape
+	Shards     uint64
+	ShardIndex uint64
 
 	// The triggerSend channel signals to the manager that new updates have been received from providers.
 	triggerSend chan struct{}
@@ -311,6 +318,24 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	for pkey, tsets := range m.targets {
 		var n int
 		for _, tg := range tsets {
+			// hash service discovery
+			if m.Shards > 1 {
+				hashTargets := make([]model.LabelSet, 0)
+				for _, t := range tg.Targets {
+					value := t[model.AddressLabel]
+					mod := relabel.Sum64(md5.Sum([]byte(value))) % m.Shards
+					if mod == m.ShardIndex {
+						hashTargets = append(hashTargets, t)
+					}
+				}
+				if len(hashTargets) == 0 {
+					continue
+				}
+				tg.Targets = hashTargets
+				tSets[pkey.setName] = append(tSets[pkey.setName], tg)
+				n += len(tg.Targets)
+				continue
+			}
 			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
 			// to signal that it needs to stop all scrape loops for this target set.
 			tSets[pkey.setName] = append(tSets[pkey.setName], tg)

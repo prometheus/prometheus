@@ -443,6 +443,9 @@ func main() {
 				}
 				c[fmt.Sprintf("%x", md5.Sum(b))] = v.ServiceDiscoveryConfig
 			}
+
+			discoveryManagerScrape.Shards = cfg.GlobalConfig.Shards
+			discoveryManagerScrape.ShardIndex = cfg.GlobalConfig.ShardIndex
 			return discoveryManagerNotify.ApplyConfig(c)
 		},
 		func(cfg *config.Config) error {
@@ -551,7 +554,6 @@ func main() {
 				// It depends on the config being in sync with the discovery manager so
 				// we wait until the config is fully loaded.
 				<-reloadReady.C
-
 				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
 				level.Info(logger).Log("msg", "Scrape manager stopped")
 				return err
