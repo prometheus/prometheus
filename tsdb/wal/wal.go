@@ -756,22 +756,45 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 	if err != nil {
 		return nil, err
 	}
-	var last int
+	var last, outofSeq int
+	// assume in segments sequence as starting value
+	inSequence := true
 	for _, fn := range files {
 		k, err := strconv.Atoi(fn)
 		if err != nil {
 			continue
 		}
 		if len(refs) > 0 && k > last+1 {
-			return nil, errors.New("segments are not sequential")
+			outofSeq = k
+			inSequence = false
 		}
 		refs = append(refs, segmentRef{name: fn, index: k})
 		last = k
+	}
+	if !inSequence {
+		level.Warn(log.NewNopLogger()).Log("msg", "deleting segments after the sequence gap")
+		return repairUnsequentialSegments(dir, refs, outofSeq)
 	}
 	sort.Slice(refs, func(i, j int) bool {
 		return refs[i].index < refs[j].index
 	})
 	return refs, nil
+}
+
+// Returns the sequential segments after deleting the out of sequence wals after the sequence gap.
+func repairUnsequentialSegments(dir string, segments []segmentRef, lastIndex int) ([]segmentRef, error) {
+	var sequentialSegs []segmentRef
+	for i, seg := range segments {
+		if seg.index >= lastIndex {
+			err := os.Remove(SegmentName(dir, seg.index))
+			if err != nil {
+				return nil, errors.Wrapf(err, "delete segment: %d", i)
+			}
+		} else {
+			sequentialSegs = append(sequentialSegs, seg)
+		}
+	}
+	return sequentialSegs, nil
 }
 
 // SegmentRange groups segments by the directory and the first and last index it includes.
