@@ -405,7 +405,7 @@ func (l *lexer) acceptRun(valid string) {
 // The Position is encoded as an integer, using the go/token package
 // from the go compiler.
 // If you aren't working on the parser internals, you probably want
-// to use Postion instead.
+// to use Position instead.
 func (l *lexer) Pos() token.Pos {
 	return l.file.Pos(int(l.lastOffset))
 }
