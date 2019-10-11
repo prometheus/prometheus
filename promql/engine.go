@@ -359,7 +359,7 @@ type testStmt func(context.Context) error
 func (testStmt) String() string { return "test statement" }
 func (testStmt) stmt()          {}
 
-// FIXME
+// Fake Nodes don't have a position
 func (testStmt) Pos() token.Pos    { return token.NoPos }
 func (testStmt) EndPos() token.Pos { return token.NoPos }
 

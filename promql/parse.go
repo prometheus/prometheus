@@ -61,6 +61,18 @@ func ParseExpr(input string) (Expr, error) {
 	return expr, err
 }
 
+// ParseExpr returns the expression parsed from the input.
+func ParseFile(input string, file *token.File) (Expr, error) {
+	p := newParserFromFile(input, file)
+
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	err = p.typecheck(expr)
+	return expr, err
+}
+
 // ParseMetric parses the input into a metric
 func ParseMetric(input string) (m labels.Labels, err error) {
 	p := newParser(input)
@@ -77,14 +89,13 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 // label matchers.
 func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	p := newParser(input)
-	pos := token.Pos(1)
 	defer p.recover(&err)
 
 	name := ""
 	if t := p.peek().typ; t == ItemMetricIdentifier || t == ItemIdentifier {
 		name = p.next().val
 	}
-	vs := p.VectorSelector(name, pos)
+	vs := p.VectorSelector(name, token.Pos(1))
 	if p.peek().typ != ItemEOF {
 		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastOffset:])
 	}
@@ -95,6 +106,14 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 func newParser(input string) *parser {
 	p := &parser{
 		lex: lex(input),
+	}
+	return p
+}
+
+// newParserFromFile returns a new parser.
+func newParserFromFile(input string, file *token.File) *parser {
+	p := &parser{
+		lex: lexFile(input, file),
 	}
 	return p
 }

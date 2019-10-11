@@ -339,7 +339,6 @@ type lexer struct {
 }
 
 // determines the postion of an Item
-
 func (l *lexer) ItemPos(i item) token.Pos {
 	return l.file.Pos(int(i.pos))
 }
@@ -403,10 +402,10 @@ func (l *lexer) acceptRun(valid string) {
 // Pos reports the position we're on, based on the position of
 // the previous item returned by nextItem. Doing it this way
 // means we don't have to worry about peek double counting.
-// The Position is encoded as an integer, using the token package
-// from the go compiler
+// The Position is encoded as an integer, using the go/token package
+// from the go compiler.
 // If you aren't working on the parser internals, you probably want
-// to use Postion instead
+// to use Postion instead.
 func (l *lexer) Pos() token.Pos {
 	return l.file.Pos(int(l.lastOffset))
 }

@@ -132,7 +132,10 @@ func (node *Call) String() string {
 		args += e.String()
 		args += ", "
 	}
-	args = args[:len(args)-2]
+
+	if len(args) > 1 {
+		args = args[:len(args)-2]
+	}
 
 	return fmt.Sprintf("%s(%s)", node.Func.Name, args)
 }

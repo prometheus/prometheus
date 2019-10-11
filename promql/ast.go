@@ -14,9 +14,8 @@
 package promql
 
 import (
-	"time"
-
 	"go/token"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -41,8 +40,10 @@ type Node interface {
 	// String representation of the node that returns the given node when parsed
 	// as part of a valid query.
 	String() string
-	Pos() token.Pos    // position of first character belonging to the node
-	EndPos() token.Pos // position of first character immediately after the node
+	// position of first character belonging to the node
+	Pos() token.Pos
+	// position of first character immediately after the node
+	EndPos() token.Pos
 }
 
 // Statement is a generic interface for all statements.
