@@ -757,14 +757,14 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		return nil, err
 	}
 	var last, outofSeq int
-	// assume in segments sequence as starting value
+	// assume segments in sequence
 	inSequence := true
 	for _, fn := range files {
 		k, err := strconv.Atoi(fn)
 		if err != nil {
 			continue
 		}
-		if len(refs) > 0 && k > last+1 {
+		if len(refs) > 0 && k > last+1 && inSequence {
 			outofSeq = k
 			inSequence = false
 		}
