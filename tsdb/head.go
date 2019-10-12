@@ -87,6 +87,10 @@ type Head struct {
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
 	postings *index.MemPostings // postings lists for terms
+
+	cardinalityMutex      sync.Mutex
+	cardinalityCache      *index.PostingsStats //posting stats cache which will expire after 30sec
+	lastPostingsStatsCall int64                // last posting stats call (PostgingsCardinalityStats()) time for caching
 }
 
 type headMetrics struct {
@@ -231,31 +235,28 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	return m
 }
 
-var cardinalityMutex = &sync.Mutex{}
-var cardinalityCache *index.Stats = nil
-var lastCardinalityStatsCall int64 = 0
-
 const cardinalityCacheExperationTime int64 = 30 //seconds
 
-//Return Highest Cardinality for Labels and Metrics Names
-func (h *Head) PopulateCardinalityStats(label string) *index.Stats {
-	cardinalityMutex.Lock()
+//Return Highest Cardinality stats for Labels and Metrics Names
+func (h *Head) PostgingsCardinalityStats(label string) *index.PostingsStats {
+	h.cardinalityMutex.Lock()
+	defer h.cardinalityMutex.Unlock()
 
-	seconds := time.Now().Unix() - lastCardinalityStatsCall
+	seconds := time.Now().Unix() - h.lastPostingsStatsCall
+
 	if seconds > cardinalityCacheExperationTime {
-		cardinalityCache = nil
+		h.cardinalityCache = nil
 	}
 
-	if cardinalityCache != nil {
-		cardinalityMutex.Unlock()
-		return cardinalityCache
+	if h.cardinalityCache != nil {
+		return h.cardinalityCache
 	}
 
-	cardinalityCache = h.postings.CardinalityStats(label)
-	lastCardinalityStatsCall = time.Now().Unix()
+	h.cardinalityCache = h.postings.Stats(label)
 
-	cardinalityMutex.Unlock()
-	return cardinalityCache
+	h.lastPostingsStatsCall = time.Now().Unix()
+
+	return h.cardinalityCache
 }
 
 // NewHead opens the head block in dir.

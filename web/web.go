@@ -676,9 +676,9 @@ func (h *Handler) headstats(w http.ResponseWriter, r *http.Request) {
 	}
 	startTime := time.Now().UnixNano()
 	db := h.tsdb()
-	stats := db.Head().PopulateCardinalityStats("__name__")
+	stats := db.Head().PostgingsCardinalityStats("__name__")
 	data := struct {
-		Stats    *index.Stats
+		Stats    *index.PostingsStats
 		Duration string
 	}{
 		Stats:    stats,
