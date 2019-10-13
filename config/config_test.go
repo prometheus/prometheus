@@ -105,6 +105,7 @@ var expectedConf = &Config{
 		},
 		{
 			URL:              mustParseURL("http://remote3/read"),
+			LvsUrl:           mustParseURL("http://remote3/labalvalues"),
 			RemoteTimeout:    model.Duration(1 * time.Minute),
 			ReadRecent:       false,
 			RequiredMatchers: model.LabelSet{"job": "special"},

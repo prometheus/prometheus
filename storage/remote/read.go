@@ -80,7 +80,11 @@ func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (
 // LabelValues implements storage.Querier and is a noop.
 func (q *querier) LabelValues(name string) ([]string, storage.Warnings, error) {
 	// TODO implement?
-	return nil, nil, nil
+	remoteResult, err := q.client.LabelValues(q.ctx, name)
+	if err != nil {
+		return make([]string, 0), nil, nil
+	}
+	return remoteResult, nil, nil
 }
 
 // LabelNames implements storage.Querier and is a noop.

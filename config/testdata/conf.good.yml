@@ -27,6 +27,7 @@ remote_read:
   - url: http://remote1/read
     read_recent: true
   - url: http://remote3/read
+    labal_values_url: http://remote3/labalvalues
     read_recent: false
     required_matchers:
       job: special

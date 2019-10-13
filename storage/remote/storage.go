@@ -71,6 +71,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	for i, rrConf := range conf.RemoteReadConfigs {
 		c, err := NewClient(i, &ClientConfig{
 			URL:              rrConf.URL,
+			LabalValuesUrl:   rrConf.LvsUrl,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
 		})

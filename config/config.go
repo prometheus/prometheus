@@ -640,6 +640,7 @@ type QueueConfig struct {
 // RemoteReadConfig is the configuration for reading from remote storage.
 type RemoteReadConfig struct {
 	URL           *config_util.URL `yaml:"url"`
+	LvsUrl        *config_util.URL `yaml:"labal_values_url"`
 	RemoteTimeout model.Duration   `yaml:"remote_timeout,omitempty"`
 	ReadRecent    bool             `yaml:"read_recent,omitempty"`
 	// We cannot do proper Go type embedding below as the parser will then parse

@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -42,6 +43,7 @@ var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 type Client struct {
 	index   int // Used to differentiate clients in metrics.
 	url     *config_util.URL
+	lvsUrl  *config_util.URL
 	client  *http.Client
 	timeout time.Duration
 }
@@ -49,6 +51,7 @@ type Client struct {
 // ClientConfig configures a Client.
 type ClientConfig struct {
 	URL              *config_util.URL
+	LabalValuesUrl   *config_util.URL
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
 }
@@ -63,6 +66,7 @@ func NewClient(index int, conf *ClientConfig) (*Client, error) {
 	return &Client{
 		index:   index,
 		url:     conf.URL,
+		lvsUrl:  conf.LabalValuesUrl,
 		client:  httpClient,
 		timeout: time.Duration(conf.Timeout),
 	}, nil
@@ -182,4 +186,42 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 
 	return resp.Results[0], nil
+}
+
+// Read reads from a remote endpoint.
+func (c *Client) LabelValues(ctx context.Context, name string) ([]string, error) {
+	if c.lvsUrl.String() == "" {
+		return make([]string, 0), nil
+	}
+	httpReq, err := http.NewRequest("POST", c.lvsUrl.String(), strings.NewReader("name="+name))
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to create request")
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
+	if err != nil {
+		return nil, errors.Wrap(err, "error sending labelValues request")
+	}
+	defer func() {
+		io.Copy(ioutil.Discard, httpResp.Body)
+		httpResp.Body.Close()
+	}()
+
+	result, err := ioutil.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("error reading response. HTTP status code: %s", httpResp.Status))
+	}
+
+	if httpResp.StatusCode/100 != 2 {
+		return nil, errors.Errorf("remote server %s returned HTTP status %s", c.url.String(), httpResp.Status)
+	}
+
+	var lvsResult []string
+	err = json.Unmarshal(result, &lvsResult)
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("error parse response. json.Unmarshal err: %s", err))
+	}
+	return lvsResult, nil
 }
