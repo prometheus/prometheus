@@ -731,7 +731,6 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		NumSeries           uint64
 		MaxTime             int64
 		MinTime             int64
-		CardinalityStats    bool
 	}{
 		Birth:          h.birth,
 		CWD:            h.cwd,
