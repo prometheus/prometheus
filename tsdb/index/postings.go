@@ -109,18 +109,12 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 		}
 		labels.Push(Stat{Name: n, Count: uint64(len(e))})
 		size = 0
-		if n == label {
-			for name, values := range e {
+		for name, values := range e {
+			if n == label {
 				metrics.Push(Stat{Name: name, Count: uint64(len(values))})
-				labelValuePairs.Push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
-				size += uint64(len(name))
 			}
-		} else {
-			for name, values := range e {
-				labelValuePairs.Push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
-				size += uint64(len(name))
-			}
-
+			labelValuePairs.Push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
+			size += uint64(len(name))
 		}
 		labelValueLenght.Push(Stat{Name: n, Count: size})
 	}

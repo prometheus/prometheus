@@ -13,12 +13,13 @@
 package index
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestStatsMaxHep(t *testing.T) {
+func TestPostingsStats(t *testing.T) {
 	stats := &MaxHeap{}
 	max := 3000000
 	heapLength := 10
@@ -30,14 +31,32 @@ func TestStatsMaxHep(t *testing.T) {
 		}
 		stats.Push(item)
 	}
+	stats.Push(Stat{Name: "Stuff", Count: 3000000})
+
 	data := stats.Get()
 	testutil.Equals(t, 10, len(data))
 	for i := 0; i < heapLength; i++ {
-		testutil.Equals(t, uint64(max-i-1), data[i].Count)
+		fmt.Printf("%d", data[i].Count)
+		testutil.Equals(t, uint64(max-i), data[i].Count)
 	}
 
 }
 
+func TestPostingsStats2(t *testing.T) {
+	stats := &MaxHeap{}
+	heapLength := 10
+
+	stats.Init(heapLength)
+	stats.Push(Stat{Name: "Stuff", Count: 10})
+	stats.Push(Stat{Name: "Stuff", Count: 11})
+	stats.Push(Stat{Name: "Stuff", Count: 1})
+	stats.Push(Stat{Name: "Stuff", Count: 6})
+
+	data := stats.Get()
+
+	testutil.Equals(t, 4, len(data))
+	testutil.Equals(t, uint64(11), data[0].Count)
+}
 func BenchmarkPostingStatsMaxHep(b *testing.B) {
 	stats := &MaxHeap{}
 	max := 9000000

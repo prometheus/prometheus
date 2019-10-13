@@ -242,7 +242,6 @@ type Options struct {
 	ConsoleLibrariesPath       string
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
-	DisableCardinalityStats    bool
 	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
@@ -670,13 +669,9 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) headstats(w http.ResponseWriter, r *http.Request) {
-	if h.options.DisableCardinalityStats {
-		http.Error(w, "Cardinality Stats is not enabled", http.StatusInternalServerError)
-		return
-	}
 	startTime := time.Now().UnixNano()
 	db := h.tsdb()
-	stats := db.Head().PostgingsCardinalityStats("__name__")
+	stats := db.Head().PostingsCardinalityStats("__name__")
 	data := struct {
 		Stats    *index.PostingsStats
 		Duration string
@@ -738,15 +733,14 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		MinTime             int64
 		CardinalityStats    bool
 	}{
-		Birth:            h.birth,
-		CWD:              h.cwd,
-		Version:          h.versionInfo,
-		Alertmanagers:    h.notifier.Alertmanagers(),
-		GoroutineCount:   runtime.NumGoroutine(),
-		GOMAXPROCS:       runtime.GOMAXPROCS(0),
-		GOGC:             os.Getenv("GOGC"),
-		GODEBUG:          os.Getenv("GODEBUG"),
-		CardinalityStats: !h.options.DisableCardinalityStats,
+		Birth:          h.birth,
+		CWD:            h.cwd,
+		Version:        h.versionInfo,
+		Alertmanagers:  h.notifier.Alertmanagers(),
+		GoroutineCount: runtime.NumGoroutine(),
+		GOMAXPROCS:     runtime.GOMAXPROCS(0),
+		GOGC:           os.Getenv("GOGC"),
+		GODEBUG:        os.Getenv("GODEBUG"),
 	}
 
 	if h.options.TSDBCfg.RetentionDuration != 0 {

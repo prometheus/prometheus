@@ -166,9 +166,6 @@ func main() {
 	a.Flag("web.enable-admin-api", "Enable API endpoints for admin control actions.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
-	a.Flag("web.disable-cardinality-stats", "Disable cardinality stats from status page.").
-		Default("false").BoolVar(&cfg.web.DisableCardinalityStats)
-
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
 		Default("consoles").StringVar(&cfg.web.ConsoleTemplatesPath)
 

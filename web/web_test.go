@@ -279,6 +279,11 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get("http://localhost:9090/headstats")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, http.StatusOK, resp.StatusCode)
 }
 
 func TestRoutePrefix(t *testing.T) {

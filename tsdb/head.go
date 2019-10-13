@@ -237,8 +237,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 
 const cardinalityCacheExperationTime int64 = 30 //seconds
 
-//Return Highest Cardinality stats for Labels and Metrics Names
-func (h *Head) PostgingsCardinalityStats(label string) *index.PostingsStats {
+//Return Highest Cardinality stats for Labels and Value Names
+func (h *Head) PostingsCardinalityStats(label string) *index.PostingsStats {
 	h.cardinalityMutex.Lock()
 	defer h.cardinalityMutex.Unlock()
 
