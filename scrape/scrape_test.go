@@ -550,12 +550,12 @@ func TestScrapeLoopRun(t *testing.T) {
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Cancelation during initial offset failed")
+		t.Fatalf("Cancellation during initial offset failed")
 	case err := <-errc:
 		t.Fatalf("Unexpected error: %s", err)
 	}
 
-	// The provided timeout must cause cancelation of the context passed down to the
+	// The provided timeout must cause cancellation of the context passed down to the
 	// scraper. The scraper has to respect the context.
 	scraper.offsetDur = 0
 
@@ -607,7 +607,7 @@ func TestScrapeLoopRun(t *testing.T) {
 	case err := <-errc:
 		t.Fatalf("Unexpected error: %s", err)
 	case <-time.After(3 * time.Second):
-		t.Fatalf("Loop did not terminate on context cancelation")
+		t.Fatalf("Loop did not terminate on context cancellation")
 	}
 }
 
@@ -1469,7 +1469,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 		if err == nil {
 			errc <- errors.New("Expected error but got nil")
 		} else if ctx.Err() != context.Canceled {
-			errc <- errors.Errorf("Expected context cancelation error but got: %s", ctx.Err())
+			errc <- errors.Errorf("Expected context cancellation error but got: %s", ctx.Err())
 		}
 		close(errc)
 	}()
