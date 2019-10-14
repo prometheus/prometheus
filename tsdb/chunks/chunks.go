@@ -47,8 +47,8 @@ const (
 // Chunk fields constants.
 const (
 	// The data length is a variable length field so use the maximum possible value.
-	maxChunkLengthFieldSize = binary.MaxVarintLen32
-	chunkEncodingSize       = 1
+	MaxChunkLengthFieldSize = binary.MaxVarintLen32
+	ChunkEncodingSize       = 1
 )
 
 // Meta holds information about a chunk of data.
@@ -318,8 +318,8 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 
 	for _, chk := range chks {
 		// Each chunk contains: data length + encoding + the data itself + crc32
-		chksBatchSize += int64(maxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
-		chksBatchSize += chunkEncodingSize              // The chunk encoding.
+		chksBatchSize += int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
+		chksBatchSize += ChunkEncodingSize              // The chunk encoding.
 		chksBatchSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
 		chksBatchSize += crc32.Size                     // The 4 bytes of crc32
 
@@ -328,7 +328,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 			if end > 1 {
 				// Don't include the last chunk only if there are >1 chunks.
 				// This will keep segment size within the configured limit.
-				// If a single chunks if bigger than the configured limit,
+				// If a single chunks is bigger than the configured limit,
 				// we cannot do much.
 				end--
 			}
@@ -338,8 +338,12 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 			chks = chks[end:]
 			chksBatchSize = 0
 			end = 0
-			if err := w.cut(); err != nil {
-				return err
+			// Cut a new segment only when there are more chunks to write.
+			// This avoids creating a new empty segment.
+			if len(chks) > 0 {
+				if err := w.cut(); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -522,20 +526,20 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 
 	sgmBytes := s.bs[sgmIndex]
 
-	if sgmChunkStart+maxChunkLengthFieldSize > sgmBytes.Len() {
-		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", sgmChunkStart+maxChunkLengthFieldSize, sgmBytes.Len())
+	if sgmChunkStart+MaxChunkLengthFieldSize > sgmBytes.Len() {
+		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", sgmChunkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
-	c := sgmBytes.Range(sgmChunkStart, sgmChunkStart+maxChunkLengthFieldSize)
+	c := sgmBytes.Range(sgmChunkStart, sgmChunkStart+MaxChunkLengthFieldSize)
 	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
 
 	chkEncStart := sgmChunkStart + n
-	chkEnd := chkEncStart + chunkEncodingSize + int(chkDataLen) + crc32.Size
-	chkDataStart := chkEncStart + chunkEncodingSize
+	chkEnd := chkEncStart + ChunkEncodingSize + int(chkDataLen) + crc32.Size
+	chkDataStart := chkEncStart + ChunkEncodingSize
 	chkDataEnd := chkEnd - crc32.Size
 
 	if chkEnd > sgmBytes.Len() {
@@ -552,7 +556,7 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	}
 
 	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
-	chkEnc := sgmBytes.Range(chkEncStart, chkEncStart+chunkEncodingSize)[0]
+	chkEnc := sgmBytes.Range(chkEncStart, chkEncStart+ChunkEncodingSize)[0]
 	return s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
 }
 

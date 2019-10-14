@@ -2441,13 +2441,14 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 // the chunk that is outside the set segment size.
 func TestChunkWriter(t *testing.T) {
 	ch := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
+	chunkSize := len(ch.Chunk.Bytes()) + chunks.MaxChunkLengthFieldSize + chunks.ChunkEncodingSize + crc32.Size
 
 	tests := []struct {
 		chks             []chunks.Meta
 		segmentSize      int
 		expSegmentsCount int
 	}{
-		// Last chunk ends at the segment boundary so
+		// 0:Last chunk ends at the segment boundary so
 		// all chunks should fit in a single segment.
 		{
 			chks: []chunks.Meta{
@@ -2455,20 +2456,20 @@ func TestChunkWriter(t *testing.T) {
 				ch,
 				ch,
 			},
-			segmentSize:      chunks.SegmentHeaderSize + 3*len(ch.Chunk.Bytes()),
+			segmentSize:      chunks.SegmentHeaderSize + 3*chunkSize,
 			expSegmentsCount: 1,
 		},
-		// Segment can fit 2 chunks so the last one should result in a new segment.
+		// 1:Segment can fit 2 chunks so the last one should result in a new segment.
 		{
 			chks: []chunks.Meta{
 				ch,
 				ch,
 				ch,
 			},
-			segmentSize:      chunks.SegmentHeaderSize + 2*len(ch.Chunk.Bytes()),
+			segmentSize:      chunks.SegmentHeaderSize + 2*chunkSize,
 			expSegmentsCount: 2,
 		},
-		// When the segment size is smaller than the last chunk
+		// 2:When the segment size is smaller than the last chunk
 		// it should still write the chunk to avoid a dead loop by
 		// trying to create many segments.
 		{
@@ -2477,20 +2478,20 @@ func TestChunkWriter(t *testing.T) {
 				ch,
 				ch,
 			},
-			segmentSize:      chunks.SegmentHeaderSize + 2*len(ch.Chunk.Bytes()) - 1,
+			segmentSize:      chunks.SegmentHeaderSize + 2*chunkSize - 1,
 			expSegmentsCount: 2,
 		},
-		// When the segment is smaller than a single chunk
+		// 3:When the segment is smaller than a single chunk
 		// it should still write the chunk to avoid a dead loop by
 		// trying to create many segments.
 		{
 			chks: []chunks.Meta{
 				ch,
 			},
-			segmentSize:      chunks.SegmentHeaderSize + len(ch.Chunk.Bytes()) - 1,
+			segmentSize:      chunks.SegmentHeaderSize + chunkSize - 1,
 			expSegmentsCount: 1,
 		},
-		// All chunks are bigger than the max segment size, but
+		// 4:All chunks are bigger than the max segment size, but
 		// these should still be written even when this will result in bigger segment than the set size.
 		// Each segment will hold a single chunk.
 		{
@@ -2529,9 +2530,9 @@ func TestChunkWriter(t *testing.T) {
 			for _, chk := range test.chks {
 				l := make([]byte, binary.MaxVarintLen32)
 				sizeExp += binary.PutUvarint(l, uint64(len(chk.Chunk.Bytes()))) // The length field.
-				sizeExp++                                                       // One byte for the chunk encoding.
-				sizeExp += len(chk.Chunk.Bytes())                               // The data itself.
-				sizeExp += crc32.Size                                           // The 4 bytes of crc32
+				sizeExp += chunks.ChunkEncodingSize
+				sizeExp += len(chk.Chunk.Bytes()) // The data itself.
+				sizeExp += crc32.Size             // The 4 bytes of crc32
 			}
 			sizeExp += test.expSegmentsCount * chunks.SegmentHeaderSize // The segment header bytes.
 
