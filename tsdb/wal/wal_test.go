@@ -17,6 +17,8 @@ package wal
 import (
 	"bytes"
 	"fmt"
+	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -478,4 +480,76 @@ func BenchmarkWAL_Log(b *testing.B) {
 			b.StopTimer()
 		})
 	}
+}
+
+func TestWAL_Size(t *testing.T) {
+	dir, err := ioutil.TempDir("", "wal_size")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+
+	var enc record.Encoder
+
+	var (
+		logger           = testutil.NewLogger(t)
+		requiredSegments = 4
+		segmentSize      = pageSize * 2
+	)
+
+	wall, err := NewSize(logger, nil, dir, segmentSize, false)
+	testutil.Ok(t, err)
+
+	// Fill with random records until we reach the required number of segments.
+	for idx := 0; ; idx++ {
+		_, lastSegment, err := wall.Segments()
+		testutil.Ok(t, err)
+		if lastSegment+1 >= requiredSegments {
+			break
+		}
+		if idx == 0 {
+			series := enc.Series([]record.RefSeries{
+				{Ref: 1, Labels: labels.FromStrings("foo", "bar")},
+			}, nil)
+			testutil.Ok(t, wall.Log(series))
+		}
+		samples := enc.Samples([]record.RefSample{
+			{Ref: 0, T: int64(idx + 10), V: float64(idx)},
+		}, nil)
+		testutil.Ok(t, wall.Log(samples))
+	}
+
+	// Check if WAL size is as expected before checkpointing.
+	walSizeBeforeChkpt, err := wall.Size()
+	testutil.Ok(t, err)
+
+	firstSegment, lastSegment, err := wall.Segments()
+	testutil.Ok(t, err)
+
+	// Checkpoint everything, except the most recent segment.
+	_, err = Checkpoint(wall, firstSegment, lastSegment-1, func(x uint64) bool {
+		return false
+	}, 0)
+	testutil.Ok(t, err)
+
+	chkptedSegmentsSize := int64((lastSegment - firstSegment) * segmentSize)
+
+	walSizeAfterChkpt, err := wall.Size()
+	testutil.Ok(t, err)
+	// Test to see if the WAL size has now increased as expected
+	testutil.Equals(t, walSizeAfterChkpt, walSizeBeforeChkpt+chkptedSegmentsSize)
+
+	// Truncate everything before the latest segment
+	err = wall.Truncate(lastSegment)
+	testutil.Ok(t, err)
+
+	f, l, err := wall.Segments()
+	testutil.Ok(t, err)
+	// Test to see if the truncate has gone through fine.
+	testutil.Equals(t, f, l)
+
+	walSizeAfterTruncate, err := wall.Size()
+	testutil.Ok(t, err)
+	// Test to see if the WAL size has now decreased as expected.
+	testutil.Equals(t, walSizeAfterTruncate, walSizeAfterChkpt-chkptedSegmentsSize)
 }
