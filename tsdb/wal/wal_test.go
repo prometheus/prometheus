@@ -16,11 +16,14 @@ package wal
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -202,6 +205,18 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			testutil.Equals(t, int64(0), fi.Size())
 		})
 	}
+}
+
+func TestUnsequentialSegments(t *testing.T) {
+	segsN := 5 * pageSize
+	dir := "../testdata/repair_unsequential_wals"
+	w, err := NewSize(nil, nil, dir, segsN, false)
+	testutil.Ok(t, err)
+	w.Repair(errors.New("ErrorUnsequentialSegments"))
+	f, err := exec.Command("ls", "../testdata/repair_unsequential_wals").Output()
+	testutil.Ok(t, err)
+	str := strings.Split(string(f), "\n")
+	testutil.Assert(t, len(str) <= 3, "unable to delete unsequential segments", nil)
 }
 
 // TestCorruptAndCarryOn writes a multi-segment WAL; corrupts the first segment and

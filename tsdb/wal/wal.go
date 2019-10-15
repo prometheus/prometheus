@@ -262,7 +262,10 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 
 	_, last, err := w.Segments()
 	if err != nil {
-		return nil, errors.Wrap(err, "get segment range")
+		// repairing corrupted segments
+		if err = w.Repair(err); err != nil {
+			return nil, errors.Wrap(err, "get segment range")
+		}
 	}
 
 	// Index of the Segment we want to open and write to.
@@ -339,6 +342,30 @@ func (w *WAL) Repair(origErr error) error {
 
 	cerr, ok := err.(*CorruptionErr)
 	if !ok {
+		// handle ErrorUnsequentialSegments
+		segs, errSegs := listSegments(w.dir)
+
+		if errSegs != nil {
+			level.Warn(w.logger).Log("msg", "deleting unsequential segments")
+			inSequence := true
+			last := -1
+			for _, s := range segs {
+				k, err := strconv.Atoi(s.name)
+				if err != nil {
+					return errors.Wrap(err, "segment name")
+				}
+				if k > last+1 && inSequence {
+					inSequence = false
+				}
+				if !inSequence {
+					if err = os.Remove(SegmentName(w.dir, s.index)); err != nil {
+						return errors.Wrapf(err, "delete segment: %d", k)
+					}
+				}
+				last = k
+			}
+			return nil
+		}
 		return errors.Wrap(origErr, "cannot handle error")
 	}
 	if cerr.Segment < 0 {
@@ -756,7 +783,7 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 	if err != nil {
 		return nil, err
 	}
-	var last, outofSeq int
+	var last int
 	// assume segments in sequence
 	inSequence := true
 	for _, fn := range files {
@@ -764,37 +791,20 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		if err != nil {
 			continue
 		}
+
 		if len(refs) > 0 && k > last+1 && inSequence {
-			outofSeq = k
 			inSequence = false
 		}
 		refs = append(refs, segmentRef{name: fn, index: k})
 		last = k
 	}
 	if !inSequence {
-		level.Warn(log.NewNopLogger()).Log("msg", "deleting segments after the sequence gap")
-		return repairUnsequentialSegments(dir, refs, outofSeq)
+		return refs, errors.New("ErrorUnsequentialSegments")
 	}
 	sort.Slice(refs, func(i, j int) bool {
 		return refs[i].index < refs[j].index
 	})
 	return refs, nil
-}
-
-// Returns the sequential segments after deleting the out of sequence wals after the sequence gap.
-func repairUnsequentialSegments(dir string, segments []segmentRef, lastIndex int) ([]segmentRef, error) {
-	var sequentialSegs []segmentRef
-	for i, seg := range segments {
-		if seg.index >= lastIndex {
-			err := os.Remove(SegmentName(dir, seg.index))
-			if err != nil {
-				return nil, errors.Wrapf(err, "delete segment: %d", i)
-			}
-		} else {
-			sequentialSegs = append(sequentialSegs, seg)
-		}
-	}
-	return sequentialSegs, nil
 }
 
 // SegmentRange groups segments by the directory and the first and last index it includes.
