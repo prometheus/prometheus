@@ -17,35 +17,86 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/util/testutil"
 	"gopkg.in/yaml.v2"
 )
 
 func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 	tests := []struct {
-		json          string
-		expectedReply error
+		json            string
+		expectedReply   error
+		expectedTargets []model.LabelSet
 	}{
 		{
 			json: `	{"labels": {},"targets": []}`,
+			expectedReply:   nil,
+			expectedTargets: []model.LabelSet{},
+		},
+		{
+			json: `	{"labels": {},"targets": ["localhost:9090","localhost:9091"]}`,
 			expectedReply: nil,
+			expectedTargets: []model.LabelSet{
+				model.LabelSet{"__address__": "localhost:9090"},
+				model.LabelSet{"__address__": "localhost:9091"}},
 		},
 		{
 			json: `	{"label": {},"targets": []}`,
-			expectedReply: errors.New("json: unknown field \"label\""),
+			expectedReply:   errors.New("json: unknown field \"label\""),
+			expectedTargets: nil,
 		},
 		{
 			json: `	{"labels": {},"target": []}`,
-			expectedReply: errors.New("json: unknown field \"target\""),
+			expectedReply:   errors.New("json: unknown field \"target\""),
+			expectedTargets: nil,
 		},
 	}
-	tg := Group{}
 
 	for _, test := range tests {
+		tg := Group{}
 		actual := tg.UnmarshalJSON([]byte(test.json))
 		testutil.Equals(t, test.expectedReply, actual)
+		testutil.Equals(t, test.expectedTargets, tg.Targets)
 	}
 
+}
+
+func TestTargetGroupYamlMarshal(t *testing.T) {
+	marshal := func(g interface{}) []byte {
+		d, err := yaml.Marshal(g)
+		if err != nil {
+			panic(err)
+		}
+		return d
+	}
+
+	tests := []struct {
+		expectedYaml  string
+		expectetedErr error
+		group         Group
+	}{
+		{
+			//labels should be omitted if empty
+			group:         Group{},
+			expectedYaml:  "targets: []\n",
+			expectetedErr: nil,
+		},
+		{
+			//targets only exposes addresses
+			group: Group{Targets: []model.LabelSet{
+				model.LabelSet{"__address__": "localhost:9090"},
+				model.LabelSet{"__address__": "localhost:9091"}},
+				Labels: model.LabelSet{"foo": "bar", "bar": "baz"}},
+			expectedYaml:  "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
+			expectetedErr: nil,
+		},
+	}
+
+	for _, test := range tests {
+		actual, err := test.group.MarshalYAML()
+		testutil.Equals(t, test.expectetedErr, err)
+		testutil.Equals(t, test.expectedYaml, string(marshal(actual)))
+	}
 }
 
 func TestTargetGroupYamlUnmarshal(t *testing.T) {
@@ -61,18 +112,28 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 		expectedReply           error
 	}{
 		{
+			//empty targe group
 			yaml:                    "labels:\ntargets:\n",
 			expectedNumberOfTargets: 0,
 			expectedNumberOfLabels:  0,
 			expectedReply:           nil,
 		},
 		{
+			//brackets syntax
 			yaml:                    "labels:\n  my:  label\ntargets:\n  ['localhost:9090', 'localhost:9191']",
 			expectedNumberOfTargets: 2,
 			expectedNumberOfLabels:  1,
 			expectedReply:           nil,
 		},
 		{
+			//hyphen syntax
+			yaml:                    "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
+			expectedNumberOfTargets: 2,
+			expectedNumberOfLabels:  2,
+			expectedReply:           nil,
+		},
+		{
+			//incorrect syntax
 			yaml:                    "labels:\ntargets:\n  'localhost:9090'",
 			expectedNumberOfTargets: 0,
 			expectedNumberOfLabels:  0,
@@ -87,5 +148,23 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 		testutil.Equals(t, test.expectedNumberOfTargets, len(tg.Targets))
 		testutil.Equals(t, test.expectedNumberOfLabels, len(tg.Labels))
 	}
+
+}
+
+func TestString(t *testing.T) {
+	//String() should return only the source, regardless of other attributes
+	group1 :=
+		Group{Targets: []model.LabelSet{
+			model.LabelSet{"__address__": "localhost:9090"},
+			model.LabelSet{"__address__": "localhost:9091"}},
+			Source: "<source>",
+			Labels: model.LabelSet{"foo": "bar", "bar": "baz"}}
+	group2 :=
+		Group{Targets: []model.LabelSet{},
+			Source: "<source>",
+			Labels: model.LabelSet{}}
+	testutil.Equals(t, "<source>", group1.String())
+	testutil.Equals(t, "<source>", group2.String())
+	testutil.Equals(t, group1.String(), group2.String())
 
 }
