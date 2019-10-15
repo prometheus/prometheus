@@ -41,14 +41,16 @@ const (
 	chunksFormatV1           = 1
 	ChunksFormatVersionSize  = 1
 	segmentHeaderPaddingSize = 3
-	SegmentHeaderSize        = MagicChunksSize + ChunksFormatVersionSize + segmentHeaderPaddingSize
+	// SegmentHeaderSize defines the total size of the header part.
+	SegmentHeaderSize = MagicChunksSize + ChunksFormatVersionSize + segmentHeaderPaddingSize
 )
 
 // Chunk fields constants.
 const (
-	// The data length is a variable length field so use the maximum possible value.
+	// MaxChunkLengthFieldSize defines the maximum size of the data length part.
 	MaxChunkLengthFieldSize = binary.MaxVarintLen32
-	ChunkEncodingSize       = 1
+	// ChunkEncodingSize defines the size of the chunk encoding part.
+	ChunkEncodingSize = 1
 )
 
 // Meta holds information about a chunk of data.
