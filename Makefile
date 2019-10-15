@@ -48,7 +48,7 @@ assets: $(REACT_APP_OUTPUT_DIR)
 	@$(GOFMT) -w ./web/ui
 
 .PHONY: npm_licenses
-npm_licenses:
+npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
 	@echo ">> bundling npm licenses"
 	rm -f $(REACT_APP_NPM_LICENSES_TARBALL)
 	find $(REACT_APP_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
