@@ -27,6 +27,9 @@ TSDB_BENCHMARK_NUM_METRICS ?= 1000
 TSDB_BENCHMARK_DATASET ?= "$(TSDB_PROJECT_DIR)/testdata/20kseries.json"
 TSDB_BENCHMARK_OUTPUT_DIR ?= "$(TSDB_CLI_DIR)/benchout"
 
+.PHONY: all
+all: common-all check_assets
+
 include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
@@ -67,9 +70,11 @@ react-app-test: $(REACT_APP_NODE_MODULES_PATH)
 	@echo ">> running React app tests"
 	cd $(REACT_APP_PATH) && yarn test --no-watch
 
+.PHONY: build_tsdb
 build_tsdb:
 	GO111MODULE=$(GO111MODULE) $(GO) build -o $(TSDB_BIN) $(TSDB_CLI_DIR)
 
+.PHONY: bench_tsdb
 bench_tsdb: build_tsdb
 	@echo ">> running benchmark, writing result to $(TSDB_BENCHMARK_OUTPUT_DIR)"
 	@$(TSDB_BIN) bench write --metrics=$(TSDB_BENCHMARK_NUM_METRICS) --out=$(TSDB_BENCHMARK_OUTPUT_DIR) $(TSDB_BENCHMARK_DATASET)
