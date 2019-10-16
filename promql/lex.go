@@ -410,7 +410,7 @@ func (l *lexer) Pos() token.Pos {
 	return l.file.Pos(int(l.lastOffset))
 }
 
-// Pos reports the position we're on, based on the position of
+// Position reports the position we're on, based on the position of
 // the previous item returned by nextItem. Doing it this way
 // means we don't have to worry about peek double counting.
 func (l *lexer) Position() token.Position {
