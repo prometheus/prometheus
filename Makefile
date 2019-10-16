@@ -54,16 +54,13 @@ npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
 	find $(REACT_APP_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
 
 .PHONY: tarball
-tarball: npm_licenses
-	$(MAKE) common-tarball
+tarball: npm_licenses common-tarball
 
 .PHONY: docker
-docker: npm_licenses
-	$(MAKE) common-docker
+docker: npm_licenses common-docker
 
 .PHONY: build
-build: assets
-	$(MAKE) common-build
+build: assets common-build
 
 .PHONY: react-app-test
 react-app-test: $(REACT_APP_NODE_MODULES_PATH)
