@@ -84,11 +84,13 @@ class ExpressionInput extends Component<ExpressionInputProps> {
 
   componentDidMount() {
     const $exprInput = $(this.exprInputRef.current!);
-    $exprInput.on('input', () => {
+    const resize = () => {
       const el = $exprInput.get(0);
       const offset = el.offsetHeight - el.clientHeight;
       $exprInput.css('height', 'auto').css('height', el.scrollHeight + offset);
-    });
+    };
+    resize();
+    $exprInput.on('input', resize);
   }
 
   render() {
