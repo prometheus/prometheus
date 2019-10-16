@@ -41,10 +41,16 @@ const (
 	recordHeaderSize   = 7
 )
 
-// The table gets initialized with sync.Once but may still cause a race
-// with any other use of the crc32 package anywhere. Thus we initialize it
-// before.
-var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
+var (
+	// The table gets initialized with sync.Once but may still cause a race
+	// with any other use of the crc32 package anywhere. Thus we initialize it
+	// before.
+	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
+
+	// ErrorUnsequentialSegments is returned when the wal segments are
+	// found out of order.
+	ErrorUnsequentialSegments = "ErrorUnsequentialSegments"
+)
 
 // page is an in memory buffer used to batch disk writes.
 // Records bigger than the page size are split and flushed separately.
@@ -338,34 +344,15 @@ func (w *WAL) Repair(origErr error) error {
 	// But that's not generally applicable if the records have any kind of causality.
 	// Maybe as an extra mode in the future if mid-WAL corruptions become
 	// a frequent concern.
+
+	if origErr.Error() == ErrorUnsequentialSegments {
+		return w.repairUnsequentialSegments()
+	}
+
 	err := errors.Cause(origErr) // So that we can pick up errors even if wrapped.
 
 	cerr, ok := err.(*CorruptionErr)
 	if !ok {
-		// handle ErrorUnsequentialSegments
-		segs, errSegs := listSegments(w.dir)
-
-		if errSegs != nil {
-			level.Warn(w.logger).Log("msg", "deleting unsequential segments")
-			inSequence := true
-			last := -1
-			for _, s := range segs {
-				k, err := strconv.Atoi(s.name)
-				if err != nil {
-					return errors.Wrap(err, "segment name")
-				}
-				if k > last+1 && inSequence {
-					inSequence = false
-				}
-				if !inSequence {
-					if err = os.Remove(SegmentName(w.dir, s.index)); err != nil {
-						return errors.Wrapf(err, "delete segment: %d", k)
-					}
-				}
-				last = k
-			}
-			return nil
-		}
 		return errors.Wrap(origErr, "cannot handle error")
 	}
 	if cerr.Segment < 0 {
@@ -799,12 +786,35 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		last = k
 	}
 	if !inSequence {
-		return refs, errors.New("ErrorUnsequentialSegments")
+		return refs, errors.New(ErrorUnsequentialSegments)
 	}
 	sort.Slice(refs, func(i, j int) bool {
 		return refs[i].index < refs[j].index
 	})
 	return refs, nil
+}
+
+// Returns the sequential segments after deleting the out of sequence wals after the sequence gap.
+func (w *WAL) repairUnsequentialSegments() error {
+	segments, _ := listSegments(w.dir)
+	level.Warn(w.logger).Log("msg", "deleting unsequential segments")
+	last, outofSequence := -1, false
+
+	for _, seg := range segments {
+		k, err := strconv.Atoi(seg.name)
+		if err != nil {
+			return errors.Wrap(err, "faulty segment name")
+		}
+		if k > last+1 || outofSequence {
+			outofSequence = true
+			err := os.Remove(SegmentName(w.dir, seg.index))
+			if err != nil {
+				return errors.Wrapf(err, "delete segment: %s", seg.name)
+			}
+		}
+		last = k
+	}
+	return nil
 }
 
 // SegmentRange groups segments by the directory and the first and last index it includes.
