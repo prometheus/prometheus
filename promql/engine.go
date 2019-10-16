@@ -359,9 +359,10 @@ type testStmt func(context.Context) error
 func (testStmt) String() string { return "test statement" }
 func (testStmt) stmt()          {}
 
-// Fake Nodes don't have a position
+// Fake Nodes don't have a position and on childs
 func (testStmt) Pos() token.Pos    { return token.NoPos }
 func (testStmt) EndPos() token.Pos { return token.NoPos }
+func (testStmt) Childs() []Node    { return []Node{} }
 
 func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 	qry := &query{
