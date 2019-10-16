@@ -17,9 +17,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
 	"gopkg.in/yaml.v2"
+	"github.com/prometheus/common/model"
+	
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
@@ -76,13 +77,13 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 		group         Group
 	}{
 		{
-			//labels should be omitted if empty
+			// labels should be omitted if empty.
 			group:         Group{},
 			expectedYaml:  "targets: []\n",
 			expectetedErr: nil,
 		},
 		{
-			//targets only exposes addresses
+			// targets only exposes addresses.
 			group: Group{Targets: []model.LabelSet{
 				model.LabelSet{"__address__": "localhost:9090"},
 				model.LabelSet{"__address__": "localhost:9091"}},
@@ -106,38 +107,31 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 		}
 	}
 	tests := []struct {
-		yaml                    string
-		expectedNumberOfTargets int
-		expectedNumberOfLabels  int
-		expectedReply           error
+		yaml                   string
+		expectedTargets        []model.LabelSet
+		expectedNumberOfLabels int
+		expectedReply          error
 	}{
 		{
-			//empty targe group
-			yaml:                    "labels:\ntargets:\n",
-			expectedNumberOfTargets: 0,
-			expectedNumberOfLabels:  0,
-			expectedReply:           nil,
+			// empty target group.
+			yaml:                   "labels:\ntargets:\n",
+			expectedNumberOfLabels: 0,
+			expectedTargets:        []model.LabelSet{},
+			expectedReply:          nil,
 		},
 		{
-			//brackets syntax
-			yaml:                    "labels:\n  my:  label\ntargets:\n  ['localhost:9090', 'localhost:9191']",
-			expectedNumberOfTargets: 2,
-			expectedNumberOfLabels:  1,
-			expectedReply:           nil,
-		},
+			// brackets syntax.
+			yaml:                   "labels:\n  my:  label\ntargets:\n  ['localhost:9090', 'localhost:9191']",
+			expectedNumberOfLabels: 1,
+			expectedReply:          nil,
+			expectedTargets: []model.LabelSet{
+				model.LabelSet{"__address__": "localhost:9090"},
+				model.LabelSet{"__address__": "localhost:9191"}}},
 		{
-			//hyphen syntax
-			yaml:                    "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
-			expectedNumberOfTargets: 2,
-			expectedNumberOfLabels:  2,
-			expectedReply:           nil,
-		},
-		{
-			//incorrect syntax
-			yaml:                    "labels:\ntargets:\n  'localhost:9090'",
-			expectedNumberOfTargets: 0,
-			expectedNumberOfLabels:  0,
-			expectedReply:           &yaml.TypeError{Errors: []string{"line 3: cannot unmarshal !!str `localho...` into []string"}},
+			// incorrect syntax.
+			yaml:                   "labels:\ntargets:\n  'localhost:9090'",
+			expectedNumberOfLabels: 0,
+			expectedReply:          &yaml.TypeError{Errors: []string{"line 3: cannot unmarshal !!str `localho...` into []string"}},
 		},
 	}
 
@@ -145,14 +139,14 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 		tg := Group{}
 		actual := tg.UnmarshalYAML(unmarshal([]byte(test.yaml)))
 		testutil.Equals(t, test.expectedReply, actual)
-		testutil.Equals(t, test.expectedNumberOfTargets, len(tg.Targets))
 		testutil.Equals(t, test.expectedNumberOfLabels, len(tg.Labels))
+		testutil.Equals(t, test.expectedTargets, tg.Targets)
 	}
 
 }
 
 func TestString(t *testing.T) {
-	//String() should return only the source, regardless of other attributes
+	// String() should return only the source, regardless of other attributes.
 	group1 :=
 		Group{Targets: []model.LabelSet{
 			model.LabelSet{"__address__": "localhost:9090"},
@@ -166,5 +160,4 @@ func TestString(t *testing.T) {
 	testutil.Equals(t, "<source>", group1.String())
 	testutil.Equals(t, "<source>", group2.String())
 	testutil.Equals(t, group1.String(), group2.String())
-
 }
