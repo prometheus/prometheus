@@ -186,6 +186,9 @@ type StorageClient interface {
 // indicated by the provided StorageClient. Implements writeTo interface
 // used by WAL Watcher.
 type QueueManager struct {
+	// https://golang.org/pkg/sync/atomic/#pkg-note-BUG
+	lastSendTimestamp int64
+
 	logger         log.Logger
 	flushDeadline  time.Duration
 	cfg            config.QueueConfig
@@ -207,8 +210,6 @@ type QueueManager struct {
 	samplesIn, samplesDropped, samplesOut, samplesOutDuration *ewmaRate
 	integralAccumulator                                       float64
 	startedAt                                                 time.Time
-	lastSendTimestampLock                                     sync.RWMutex
-	lastSendTimestamp                                         int64
 
 	highestSentTimestampMetric *maxGauge
 	pendingSamplesMetric       prometheus.Gauge
@@ -498,18 +499,6 @@ func (t *QueueManager) calculateDesiredShards() int {
 	t.samplesDropped.tick()
 	t.samplesOutDuration.tick()
 
-	// We shouldn't reshard if Prometheus hasn't been able to send to the
-	// remote endpoint successfully within some period of time.
-	now := time.Now().Unix()
-	threshold := int64(time.Duration(2 * t.cfg.BatchSendDeadline).Seconds())
-	t.lastSendTimestampLock.RLock()
-	diff := now - t.lastSendTimestamp
-	t.lastSendTimestampLock.RUnlock()
-	if diff > threshold {
-		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold")
-		return t.numShards
-	}
-
 	// We use the number of incoming samples as a prediction of how much work we
 	// will need to do next iteration.  We add to this any pending samples
 	// (received - send) so we can catch up with any backlog. We use the average
@@ -541,6 +530,15 @@ func (t *QueueManager) calculateDesiredShards() int {
 		t.integralAccumulator = integralGain * samplesPending / float64(elapsed)
 	}
 	t.integralAccumulator += samplesPendingRate * integralGain
+
+	// We shouldn't reshard if Prometheus hasn't been able to send to the
+	// remote endpoint successfully within some period of time.
+	lts := atomic.LoadInt64(&t.lastSendTimestamp)
+	skip := (time.Now().Unix() - lts) > int64(2*time.Duration(t.cfg.BatchSendDeadline)/time.Second)
+	if skip {
+		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold")
+		return t.numShards
+	}
 
 	var (
 		timePerSample = samplesOutDuration / samplesOutRate
@@ -820,9 +818,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if err == nil {
 			s.qm.succeededSamplesTotal.Add(float64(len(samples)))
 			s.qm.highestSentTimestampMetric.Set(float64(highest / 1000))
-			s.qm.lastSendTimestampLock.Lock()
-			s.qm.lastSendTimestamp = time.Now().Unix()
-			s.qm.lastSendTimestampLock.Unlock()
+			atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
 			return nil
 		}
 
