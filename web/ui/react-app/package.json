@@ -51,5 +51,6 @@
     "@types/flot": "0.0.31",
     "@types/moment-timezone": "^0.5.10",
     "@types/reactstrap": "^7.1.3"
-  }
+  },
+  "proxy": "http://localhost:9090"
 }
