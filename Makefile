@@ -50,6 +50,14 @@ assets: $(REACT_APP_OUTPUT_DIR)
 	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
 	@$(GOFMT) -w ./web/ui
 
+.PHONY: react-app-test
+react-app-test: $(REACT_APP_NODE_MODULES_PATH)
+	@echo ">> running React app tests"
+	cd $(REACT_APP_PATH) && yarn test --no-watch
+
+.PHONY: test
+test: common-test react-app-test
+
 .PHONY: npm_licenses
 npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
 	@echo ">> bundling npm licenses"
@@ -64,11 +72,6 @@ docker: npm_licenses common-docker
 
 .PHONY: build
 build: assets common-build
-
-.PHONY: react-app-test
-react-app-test: $(REACT_APP_NODE_MODULES_PATH)
-	@echo ">> running React app tests"
-	cd $(REACT_APP_PATH) && yarn test --no-watch
 
 .PHONY: build_tsdb
 build_tsdb:

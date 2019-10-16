@@ -18,5 +18,5 @@ before_install:
 - if [[ "$TRAVIS_OS_NAME" == "windows" ]]; then choco install make; fi
 
 script:
-- make check_license style unused test react-app-test lint
+- make check_license style unused test lint
 - git diff --exit-code
