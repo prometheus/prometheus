@@ -1,3 +1,8 @@
+## 2.13.1 / 2019-10-16
+
+* [BUGFIX] Fix panic in ARM builds of Prometheus. #6110
+* [BUGFIX] promql: fix potential panic in the query logger. #6094
+
 ## 2.13.0 / 2019-10-04
 
 * [SECURITY/BUGFIX] UI: Fix a Stored DOM XSS vulnerability with query history [CVE-2019-10215](http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10215). #6098
