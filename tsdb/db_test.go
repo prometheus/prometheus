@@ -24,6 +24,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -2440,73 +2441,123 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 // TestChunkWriter ensures that chunk segment are cut at
 // the chunk that is outside the set segment size.
 func TestChunkWriter(t *testing.T) {
-	ch := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
-	chunkSize := len(ch.Chunk.Bytes()) + chunks.MaxChunkLengthFieldSize + chunks.ChunkEncodingSize + crc32.Size
+	chk := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
+	chunkSize := len(chk.Chunk.Bytes()) + chunks.MaxChunkLengthFieldSize + chunks.ChunkEncodingSize + crc32.Size
 
+	fmt.Println("chunkSize", chunkSize)
 	tests := []struct {
-		chks             []chunks.Meta
-		segmentSize      int
+		chks [][]chunks.Meta
+		segmentSize,
 		expSegmentsCount int
+		expSegmentSizes []int
 	}{
 		// 0:Last chunk ends at the segment boundary so
 		// all chunks should fit in a single segment.
 		{
-			chks: []chunks.Meta{
-				ch,
-				ch,
-				ch,
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk,
+					chk,
+					chk,
+				},
 			},
-			segmentSize:      chunks.SegmentHeaderSize + 3*chunkSize,
+			segmentSize:      3 * chunkSize,
+			expSegmentSizes:  []int{3 * chunkSize},
 			expSegmentsCount: 1,
 		},
 		// 1:Segment can fit 2 chunks so the last one should result in a new segment.
 		{
-			chks: []chunks.Meta{
-				ch,
-				ch,
-				ch,
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk,
+					chk,
+					chk,
+				},
 			},
-			segmentSize:      chunks.SegmentHeaderSize + 2*chunkSize,
+			segmentSize:      2 * chunkSize,
+			expSegmentSizes:  []int{2 * chunkSize, chunkSize},
 			expSegmentsCount: 2,
 		},
-		// 2:When the segment size is smaller than the last chunk
-		// it should still write the chunk to avoid a dead loop by
-		// trying to create many segments.
+		// 2:When the segment size is smaller than the size of 2 chunks
+		// each chunk should create a new segment.
 		{
-			chks: []chunks.Meta{
-				ch,
-				ch,
-				ch,
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk,
+					chk,
+					chk,
+				},
 			},
-			segmentSize:      chunks.SegmentHeaderSize + 2*chunkSize - 1,
-			expSegmentsCount: 2,
+			segmentSize:      2*chunkSize - 1,
+			expSegmentSizes:  []int{chunkSize, chunkSize, chunkSize},
+			expSegmentsCount: 3,
 		},
 		// 3:When the segment is smaller than a single chunk
-		// it should still write the chunk to avoid a dead loop by
-		// trying to create many segments.
+		// it should still be written by ignoring the max segment size.
 		{
-			chks: []chunks.Meta{
-				ch,
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk,
+				},
 			},
-			segmentSize:      chunks.SegmentHeaderSize + chunkSize - 1,
+			segmentSize:      chunkSize - 1,
+			expSegmentSizes:  []int{chunkSize},
 			expSegmentsCount: 1,
 		},
 		// 4:All chunks are bigger than the max segment size, but
 		// these should still be written even when this will result in bigger segment than the set size.
 		// Each segment will hold a single chunk.
 		{
-			chks: []chunks.Meta{
-				ch,
-				ch,
-				ch,
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk,
+					chk,
+					chk,
+				},
 			},
-			segmentSize:      chunks.SegmentHeaderSize + 1,
+			segmentSize:      1,
+			expSegmentSizes:  []int{chunkSize, chunkSize, chunkSize},
 			expSegmentsCount: 3,
+		},
+		// 5:Adding multiple batches of chunks.
+		{
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk,
+					chk,
+					chk,
+				},
+				[]chunks.Meta{
+					chk,
+					chk,
+				},
+			},
+			segmentSize:      3 * chunkSize,
+			expSegmentSizes:  []int{3 * chunkSize, 2 * chunkSize},
+			expSegmentsCount: 2,
+		},
+		// 6:Adding multiple batches of chunks.
+		{
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk,
+				},
+				[]chunks.Meta{
+					chk,
+					chk,
+				},
+				[]chunks.Meta{
+					chk,
+				},
+			},
+			segmentSize:      2 * chunkSize,
+			expSegmentSizes:  []int{2 * chunkSize, 2 * chunkSize},
+			expSegmentsCount: 2,
 		},
 	}
 
-	for _, test := range tests {
-		t.Run("", func(t *testing.T) {
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
 			tmpdir, err := ioutil.TempDir("", "test_chunk_witer")
 			testutil.Ok(t, err)
@@ -2514,30 +2565,40 @@ func TestChunkWriter(t *testing.T) {
 				testutil.Ok(t, os.RemoveAll(tmpdir))
 			}()
 
-			chunkw, err := chunks.NewWriter(tmpdir, int64(test.segmentSize))
+			chunkw, err := chunks.NewWriter(tmpdir, chunks.SegmentHeaderSize+int64(test.segmentSize))
 			testutil.Ok(t, err)
-			chunkw.WriteChunks(test.chks...)
+
+			for _, chks := range test.chks {
+				chunkw.WriteChunks(chks...)
+			}
+
 			testutil.Ok(t, chunkw.Close())
 
 			files, err := ioutil.ReadDir(tmpdir)
 			testutil.Ok(t, err)
-			testutil.Equals(t, test.expSegmentsCount, len(files))
+			testutil.Equals(t, test.expSegmentsCount, len(files), "expected segments count mismatch")
 
 			// Verify that all data is written to the segments.
 			sizeExp := 0
 			sizeAct := 0
 
-			for _, chk := range test.chks {
-				l := make([]byte, binary.MaxVarintLen32)
-				sizeExp += binary.PutUvarint(l, uint64(len(chk.Chunk.Bytes()))) // The length field.
-				sizeExp += chunks.ChunkEncodingSize
-				sizeExp += len(chk.Chunk.Bytes()) // The data itself.
-				sizeExp += crc32.Size             // The 4 bytes of crc32
+			for _, chks := range test.chks {
+				for _, chk := range chks {
+					l := make([]byte, binary.MaxVarintLen32)
+					sizeExp += binary.PutUvarint(l, uint64(len(chk.Chunk.Bytes()))) // The length field.
+					sizeExp += chunks.ChunkEncodingSize
+					sizeExp += len(chk.Chunk.Bytes()) // The data itself.
+					sizeExp += crc32.Size             // The 4 bytes of crc32
+				}
 			}
 			sizeExp += test.expSegmentsCount * chunks.SegmentHeaderSize // The segment header bytes.
 
-			for _, f := range files {
-				sizeAct += int(f.Size())
+			for i, f := range files {
+				size := int(f.Size())
+				// Verify that the segment is the same or smaller than the expected size.
+				testutil.Assert(t, chunks.SegmentHeaderSize+test.expSegmentSizes[i] >= size, "Segment:%v should NOT be bigger than:%v actual:%v", i, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size)
+
+				sizeAct += size
 			}
 			testutil.Equals(t, sizeExp, sizeAct)
 		})

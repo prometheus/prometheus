@@ -323,31 +323,48 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		chksBatchSize += int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
 		chksBatchSize += ChunkEncodingSize              // The chunk encoding.
 		chksBatchSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
-		chksBatchSize += crc32.Size                     // The 4 bytes of crc32
+		chksBatchSize += crc32.Size
 
-		end++
 		if chksBatchSize+w.n > w.segmentSize {
-			if end > 1 {
-				// Don't include the last chunk only if there are >1 chunks.
-				// This will keep segment size within the configured limit.
-				// If a single chunks is bigger than the configured limit,
-				// we cannot do much.
-				end--
-			}
-			if err := w.writeChunks(chks[:end]); err != nil {
-				return err
-			}
-			chks = chks[end:]
-			chksBatchSize = 0
-			end = 0
-			// Cut a new segment only when there are more chunks to write.
-			// This avoids creating a new empty segment.
-			if len(chks) > 0 {
+			cut := true
+			// When it is the first chunk, but the segment already has some data
+			// should cut a new segment before writing to it.
+			if end == 0 && w.n > SegmentHeaderSize {
 				if err := w.cut(); err != nil {
 					return err
 				}
+				cut = false
 			}
+
+			// When it is the first chunk and it is bigger than the segment
+			// cutting a new segment won't make a difference so just write it.
+			if end == 0 {
+				end++
+			}
+
+			if err := w.writeChunks(chks[:end]); err != nil {
+				return err
+			}
+
+			// When it is the last chunk in the batch no need to cut a new chunk.
+			if end != len(chks) {
+				if cut {
+					if err := w.cut(); err != nil {
+						return err
+					}
+				}
+			}
+			chks = chks[end:]
+
+			// Revert the batch size to the current chunk.
+			chksBatchSize = int64(MaxChunkLengthFieldSize)
+			chksBatchSize += ChunkEncodingSize
+			chksBatchSize += int64(len(chk.Chunk.Bytes()))
+			chksBatchSize += crc32.Size
+			end = 0
+
 		}
+		end++
 	}
 
 	return w.writeChunks(chks)
@@ -393,7 +410,6 @@ func (w *Writer) writeChunks(chks []Meta) error {
 			return err
 		}
 	}
-
 	return nil
 }
 
