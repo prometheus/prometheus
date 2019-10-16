@@ -27,9 +27,6 @@ TSDB_BENCHMARK_NUM_METRICS ?= 1000
 TSDB_BENCHMARK_DATASET ?= "$(TSDB_PROJECT_DIR)/testdata/20kseries.json"
 TSDB_BENCHMARK_OUTPUT_DIR ?= "$(TSDB_CLI_DIR)/benchout"
 
-.PHONY: all
-all: common-all check_assets
-
 include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
