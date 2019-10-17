@@ -25,31 +25,29 @@ import (
 
 func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 	tests := []struct {
-		json            string
-		expectedReply   error
-		expectedTargets []model.LabelSet
+		json          string
+		expectedReply error
+		expectedGroup Group
 	}{
 		{
 			json: `	{"labels": {},"targets": []}`,
-			expectedReply:   nil,
-			expectedTargets: []model.LabelSet{},
+			expectedReply: nil,
+			expectedGroup: Group{Targets: []model.LabelSet{}, Labels: model.LabelSet{}},
 		},
 		{
-			json: `	{"labels": {},"targets": ["localhost:9090","localhost:9091"]}`,
+			json: `	{"labels": {"my":"label"},"targets": ["localhost:9090","localhost:9091"]}`,
 			expectedReply: nil,
-			expectedTargets: []model.LabelSet{
+			expectedGroup: Group{Targets: []model.LabelSet{
 				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9091"}},
+				model.LabelSet{"__address__": "localhost:9091"}}, Labels: model.LabelSet{"my": "label"}},
 		},
 		{
 			json: `	{"label": {},"targets": []}`,
-			expectedReply:   errors.New("json: unknown field \"label\""),
-			expectedTargets: nil,
+			expectedReply: errors.New("json: unknown field \"label\""),
 		},
 		{
 			json: `	{"labels": {},"target": []}`,
-			expectedReply:   errors.New("json: unknown field \"target\""),
-			expectedTargets: nil,
+			expectedReply: errors.New("json: unknown field \"target\""),
 		},
 	}
 
@@ -57,7 +55,7 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 		tg := Group{}
 		actual := tg.UnmarshalJSON([]byte(test.json))
 		testutil.Equals(t, test.expectedReply, actual)
-		testutil.Equals(t, test.expectedTargets, tg.Targets)
+		testutil.Equals(t, test.expectedGroup, tg)
 	}
 
 }
@@ -107,31 +105,28 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 		}
 	}
 	tests := []struct {
-		yaml                   string
-		expectedTargets        []model.LabelSet
-		expectedNumberOfLabels int
-		expectedReply          error
+		yaml          string
+		expectedGroup Group
+		expectedReply error
 	}{
 		{
 			// empty target group.
-			yaml:                   "labels:\ntargets:\n",
-			expectedNumberOfLabels: 0,
-			expectedTargets:        []model.LabelSet{},
-			expectedReply:          nil,
+			yaml:          "labels:\ntargets:\n",
+			expectedGroup: Group{Targets: []model.LabelSet{}},
+			expectedReply: nil,
 		},
 		{
 			// brackets syntax.
-			yaml:                   "labels:\n  my:  label\ntargets:\n  ['localhost:9090', 'localhost:9191']",
-			expectedNumberOfLabels: 1,
-			expectedReply:          nil,
-			expectedTargets: []model.LabelSet{
+			yaml:          "labels:\n  my:  label\ntargets:\n  ['localhost:9090', 'localhost:9191']",
+			expectedReply: nil,
+			expectedGroup: Group{Targets: []model.LabelSet{
 				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9191"}}},
+				model.LabelSet{"__address__": "localhost:9191"}}, Labels: model.LabelSet{"my": "label"}},
+		},
 		{
 			// incorrect syntax.
-			yaml:                   "labels:\ntargets:\n  'localhost:9090'",
-			expectedNumberOfLabels: 0,
-			expectedReply:          &yaml.TypeError{Errors: []string{"line 3: cannot unmarshal !!str `localho...` into []string"}},
+			yaml:          "labels:\ntargets:\n  'localhost:9090'",
+			expectedReply: &yaml.TypeError{Errors: []string{"line 3: cannot unmarshal !!str `localho...` into []string"}},
 		},
 	}
 
@@ -139,8 +134,7 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 		tg := Group{}
 		actual := tg.UnmarshalYAML(unmarshal([]byte(test.yaml)))
 		testutil.Equals(t, test.expectedReply, actual)
-		testutil.Equals(t, test.expectedNumberOfLabels, len(tg.Labels))
-		testutil.Equals(t, test.expectedTargets, tg.Targets)
+		testutil.Equals(t, test.expectedGroup, tg)
 	}
 
 }
