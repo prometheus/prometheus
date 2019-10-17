@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 
 import { Alert, Button, Col, Row } from 'reactstrap';
 
-import Panel, { PanelOptions, PanelType, PanelDefaultOptions } from './Panel';
+import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from './utils/urlParams';
 
 interface PanelListState {
@@ -94,7 +94,7 @@ class PanelList extends Component<any, PanelListState> {
 
   updateURL(): void {
     const query = encodePanelOptionsToQueryString(this.state.panels);
-    history.pushState({}, '', query);
+    window.history.pushState({}, '', query);
   }
 
   addPanel = (): void => {

@@ -65,7 +65,7 @@ class DataTable extends PureComponent<QueryResult> {
           .map((s: InstantSample, index: number): ReactNode => {
             return <tr key={index}><td><SeriesName labels={s.metric} format={false}/></td><td>{s.value[1]}</td></tr>;
           });
-        limited = rows.length != data.result.length;
+        limited = rows.length !== data.result.length;
         break;
       case 'matrix':
         rows = (this.limitSeries(data.result) as RangeSamples[])
@@ -75,7 +75,7 @@ class DataTable extends PureComponent<QueryResult> {
             }).join('\n');
             return <tr style={{whiteSpace: 'pre'}} key={index}><td><SeriesName labels={s.metric} format={false}/></td><td>{valueText}</td></tr>;
           });
-        limited = rows.length != data.result.length;
+        limited = rows.length !== data.result.length;
         break;
       case 'scalar':
         rows.push(<tr><td>scalar</td><td>{data.result[1]}</td></tr>);

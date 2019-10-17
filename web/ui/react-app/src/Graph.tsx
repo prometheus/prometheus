@@ -1,8 +1,9 @@
 import $ from 'jquery';
 import React, { PureComponent } from 'react';
 import ReactResizeDetector from 'react-resize-detector';
-
 import { Alert } from 'reactstrap';
+
+import Legend from './Legend';
 
 require('flot');
 require('flot/source/jquery.flot.crosshair');
@@ -10,8 +11,6 @@ require('flot/source/jquery.flot.legend');
 require('flot/source/jquery.flot.time');
 require('flot/source/jquery.canvaswrapper');
 require('jquery.flot.tooltip');
-
-import Legend from './Legend';
 
 var graphID = 0;
 function getGraphID() {

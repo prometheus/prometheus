@@ -8,7 +8,7 @@ import {
   Input,
 } from 'reactstrap';
 
-import Downshift, { ChildrenFunction, ControllerStateAndHelpers, DownshiftInterface } from 'downshift';
+import Downshift from 'downshift';
 import fuzzy from 'fuzzy';
 
 import { library } from '@fortawesome/fontawesome-svg-core';
