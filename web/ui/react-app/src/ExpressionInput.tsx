@@ -1,4 +1,3 @@
-import $ from 'jquery';
 import React, { Component } from 'react';
 import {
   Button,
@@ -25,10 +24,43 @@ interface ExpressionInputProps {
   loading: boolean;
 }
 
-class ExpressionInput extends Component<ExpressionInputProps> {
+interface ExpressionInputState {
+  height: number | string
+  value: string
+}
+
+class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
   prevNoMatchValue: string | null = null;
   private exprInputRef = React.createRef<HTMLInputElement>();
 
+  constructor(props: ExpressionInputProps) {
+    super(props)
+    this.state = {
+      value: props.value,
+      height: 'auto'
+    }
+  }
+
+  componentDidMount() {
+    this.setHeight()
+  }
+
+
+  setHeight = () => {
+    const { offsetHeight, clientHeight, scrollHeight } = this.exprInputRef.current!;
+    const offset = offsetHeight - clientHeight; // needed in order height to be more accurate
+    this.setState({ height: scrollHeight + offset });
+  }
+
+  handleInput = () => {
+    this.setState({
+      height: 'auto',
+      value: this.exprInputRef.current!.value
+    }, this.setHeight);
+  }
+
+  handleDropdownSelection = (value: string) => this.setState({ value });
+  
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       this.props.executeQuery(this.exprInputRef.current!.value);
@@ -83,23 +115,14 @@ class ExpressionInput extends Component<ExpressionInputProps> {
     );
   }
 
-  componentDidMount() {
-    const $exprInput = $(this.exprInputRef.current!);
-    const resize = () => {
-      const el = $exprInput.get(0);
-      const offset = el.offsetHeight - el.clientHeight;
-      $exprInput.css('height', 'auto').css('height', el.scrollHeight + offset);
-    };
-    resize();
-    $exprInput.on('input', resize);
-  }
-
   render() {
+    const { value, height } = this.state;
     return (
       <Downshift
         //inputValue={this.props.value}
         //onInputValueChange={this.props.onChange}
-        selectedItem={this.props.value}
+        onChange={this.handleDropdownSelection}
+        inputValue={value}
       >
         {(downshift) => (
           <div>
@@ -110,6 +133,8 @@ class ExpressionInput extends Component<ExpressionInputProps> {
                 </InputGroupText>
               </InputGroupAddon>
               <Input
+                onInput={this.handleInput}
+                style={{ height }}
                 autoFocus
                 type="textarea"
                 rows="1"
