@@ -2,6 +2,7 @@
 
 * [BUGFIX] Fix panic in ARM builds of Prometheus. #6110
 * [BUGFIX] promql: fix potential panic in the query logger. #6094
+* [BUGFIX] Multiple errors of http: superfluous response.WriteHeader call in the logs. #6145
 
 ## 2.13.0 / 2019-10-04
 
