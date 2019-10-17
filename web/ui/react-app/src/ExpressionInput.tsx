@@ -73,7 +73,7 @@ class ExpressionInput extends Component<ExpressionInputProps> {
                   },
                 })}
               >
-                <SanitizeHTML inline={true}>
+                <SanitizeHTML inline={true} allowedTags={['strong']}>
                   {item.string}
                 </SanitizeHTML>
               </li>

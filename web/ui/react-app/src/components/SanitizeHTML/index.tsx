@@ -6,13 +6,14 @@ import sanitizeHTML from 'sanitize-html';
 
 interface SanitizeHTMLProps {
   inline: Boolean;
+  allowedTags: string[];
   children: Element | string;
 }
 
 class SanitizeHTML extends PureComponent<SanitizeHTMLProps> {
   sanitize = (html: any) => {
     return sanitizeHTML(html, {
-      allowedTags: ['strong']
+      allowedTags: this.props.allowedTags
     });
   };
 
