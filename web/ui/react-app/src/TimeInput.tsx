@@ -92,7 +92,6 @@ class TimeInput extends Component<TimeInputProps> {
   }
 
   componentDidUpdate() {
-    console.log(this.props);
     this.$time.datetimepicker('date', this.props.time ? moment(this.props.time) : null);
   }
 
