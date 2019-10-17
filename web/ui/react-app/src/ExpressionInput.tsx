@@ -8,8 +8,9 @@ import {
   Input,
 } from 'reactstrap';
 
-import Downshift, { ChildrenFunction, ControllerStateAndHelpers, DownshiftInterface } from 'downshift';
+import Downshift from 'downshift';
 import fuzzy from 'fuzzy';
+import SanitizeHTML from './components/SanitizeHTML';
 
 import { library } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -72,9 +73,9 @@ class ExpressionInput extends Component<ExpressionInputProps> {
                   },
                 })}
               >
-                {/* TODO: Find better way than setting inner HTML dangerously. We just want the <strong> to not be escaped.
-                    This will be a problem when we save history and the user enters HTML into a query. */}
-                <span dangerouslySetInnerHTML={{__html: item.string}}></span>
+                <SanitizeHTML inline={true}>
+                  {item.string}
+                </SanitizeHTML>
               </li>
             ))
         }
@@ -95,63 +96,68 @@ class ExpressionInput extends Component<ExpressionInputProps> {
 
   render() {
     return (
-        <Downshift
-          //inputValue={this.props.value}
-          //onInputValueChange={this.props.onChange}
-          selectedItem={this.props.value}
-        >
-          {(downshift) => (
-            <div>
-              <InputGroup className="expression-input">
-                <InputGroupAddon addonType="prepend">
-                  <InputGroupText>
-                  {this.props.loading ? <FontAwesomeIcon icon="spinner" spin/> : <FontAwesomeIcon icon="search"/>}
-                  </InputGroupText>
-                </InputGroupAddon>
-
-                <Input
-                  autoFocus
-                  type="textarea"
-                  rows="1"
-                  onKeyPress={this.handleKeyPress}
-                  placeholder="Expression (press Shift+Enter for newlines)"
-                  innerRef={this.exprInputRef}
-                  {...downshift.getInputProps({
-                    onKeyDown: (event: React.KeyboardEvent): void => {
-                      switch (event.key) {
-                        case 'Home':
-                        case 'End':
-                          // We want to be able to jump to the beginning/end of the input field.
-                          // By default, Downshift otherwise jumps to the first/last suggestion item instead.
+      <Downshift
+        //inputValue={this.props.value}
+        //onInputValueChange={this.props.onChange}
+        selectedItem={this.props.value}
+      >
+        {(downshift) => (
+          <div>
+            <InputGroup className="expression-input">
+              <InputGroupAddon addonType="prepend">
+                <InputGroupText>
+                {this.props.loading ? <FontAwesomeIcon icon="spinner" spin/> : <FontAwesomeIcon icon="search"/>}
+                </InputGroupText>
+              </InputGroupAddon>
+              <Input
+                autoFocus
+                type="textarea"
+                rows="1"
+                onKeyPress={this.handleKeyPress}
+                placeholder="Expression (press Shift+Enter for newlines)"
+                innerRef={this.exprInputRef}
+                {...downshift.getInputProps({
+                  onKeyDown: (event: React.KeyboardEvent): void => {
+                    switch (event.key) {
+                      case 'Home':
+                      case 'End':
+                        // We want to be able to jump to the beginning/end of the input field.
+                        // By default, Downshift otherwise jumps to the first/last suggestion item instead.
+                        (event.nativeEvent as any).preventDownshiftDefault = true;
+                        break;
+                      case 'ArrowUp':
+                      case 'ArrowDown':
+                        if (!downshift.isOpen) {
                           (event.nativeEvent as any).preventDownshiftDefault = true;
-                          break;
-                        case 'ArrowUp':
-                        case 'ArrowDown':
-                          if (!downshift.isOpen) {
-                            (event.nativeEvent as any).preventDownshiftDefault = true;
-                          }
-                          break;
-                        case 'Enter':
-                          downshift.closeMenu();
-                          break;
-                        case 'Escape':
-                          if (!downshift.isOpen) {
-                            this.exprInputRef.current!.blur();
-                          }
-                          break;
-                        default:
-                      }
+                        }
+                        break;
+                      case 'Enter':
+                        downshift.closeMenu();
+                        break;
+                      case 'Escape':
+                        if (!downshift.isOpen) {
+                          this.exprInputRef.current!.blur();
+                        }
+                        break;
+                      default:
                     }
-                  } as any)}
-                />
-                <InputGroupAddon addonType="append">
-                  <Button className="execute-btn" color="primary" onClick={() => this.props.executeQuery(this.exprInputRef.current!.value)}>Execute</Button>
-                </InputGroupAddon>
-              </InputGroup>
-              {this.renderAutosuggest(downshift)}
-            </div>
-          )}
-        </Downshift>
+                  }
+                } as any)}
+              />
+              <InputGroupAddon addonType="append">
+                <Button
+                  className="execute-btn"
+                  color="primary"
+                  onClick={() => this.props.executeQuery(this.exprInputRef.current!.value)}
+                >
+                  Execute
+                </Button>
+              </InputGroupAddon>
+            </InputGroup>
+            {this.renderAutosuggest(downshift)}
+          </div>
+        )}
+      </Downshift>
     );
   }
 }
