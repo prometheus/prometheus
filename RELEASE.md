@@ -56,7 +56,7 @@ For a patch release, work in the branch of the minor release you want to patch.
 
 For a new major or minor release, create the corresponding release branch based on the master branch.
 
-Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR as this gives others the opportunity to chime in on the release in general and on the addition to the changelog in particular.
+Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to the changelog in particular.
 
 Note that `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
 

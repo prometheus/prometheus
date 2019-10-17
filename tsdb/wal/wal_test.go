@@ -46,7 +46,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			8,
 		},
 		// Ensures that the page buffer is big enough to fit
-		// an entire page size without panicing.
+		// an entire page size without panicking.
 		// https://github.com/prometheus/prometheus/tsdb/pull/414
 		"bad_header": {
 			1,

@@ -253,7 +253,6 @@ func (t *memTombstones) AddInterval(ref uint64, itvs ...Interval) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	for _, itv := range itvs {
-		fmt.Println("adding interval to ref: ", ref)
 		t.intvlGroups[ref] = t.intvlGroups[ref].Add(itv)
 	}
 }

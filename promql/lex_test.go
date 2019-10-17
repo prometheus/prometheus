@@ -14,9 +14,9 @@
 package promql
 
 import (
-	"fmt"
-	"reflect"
 	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type testCase struct {
@@ -688,24 +688,12 @@ func TestLexer(t *testing.T) {
 					t.Fatalf("unexpected lexing error at position %d: %s", lastItem.pos, lastItem)
 				}
 
-				if !reflect.DeepEqual(lastItem, item{ItemEOF, Pos(len(test.input)), ""}) {
-					t.Logf("%d: input %q", i, test.input)
-					t.Fatalf("lexing error: expected output to end with EOF item.\ngot:\n%s", expectedList(out))
-				}
+				eofItem := item{ItemEOF, Pos(len(test.input)), ""}
+				testutil.Equals(t, lastItem, eofItem, "%d: input %q", i, test.input)
+
 				out = out[:len(out)-1]
-				if !reflect.DeepEqual(out, test.expected) {
-					t.Logf("%d: input %q", i, test.input)
-					t.Fatalf("lexing mismatch:\nexpected:\n%s\ngot:\n%s", expectedList(test.expected), expectedList(out))
-				}
+				testutil.Equals(t, out, test.expected, "%d: input %q", i, test.input)
 			}
 		})
 	}
-}
-
-func expectedList(exp []item) string {
-	s := ""
-	for _, it := range exp {
-		s += fmt.Sprintf("\t%#v\n", it)
-	}
-	return s
 }

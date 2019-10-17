@@ -43,7 +43,9 @@ The directory structure of a Prometheus server's data directory will look someth
 ```
 
 
-Note that a limitation of the local storage is that it is not clustered or replicated. Thus, it is not arbitrarily scalable or durable in the face of disk or node outages and should thus be treated as more of an ephemeral sliding window of recent data. However, if your durability requirements are not strict, you may still succeed in storing up to years of data in the local storage.
+Note that a limitation of the local storage is that it is not clustered or replicated. Thus, it is not arbitrarily scalable or durable in the face of disk or node outages and should be treated as you would any other kind of single node database. Using RAID for disk availiablity, [snapshots](https://prometheus.io/docs/prometheus/latest/querying/api/#snapshot) for backups, capacity planning, etc, is recommended for improved durability. With proper storage durability and planning storing years of data in the local storage is possible.
+
+Alternatively, external storage may be used via the [remote read/write APIs](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage). Careful evaluation is required for these systems as they vary greatly in durability, performance, and efficiency.
 
 For further details on file format, see [TSDB format](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/README.md).
 
@@ -51,7 +53,7 @@ For further details on file format, see [TSDB format](https://github.com/prometh
 
 The initial two-hour blocks are eventually compacted into longer blocks in the background.
 
-Compaction will create larger blocks up to 10% of the rention time, or 21 days, whichever is smaller.
+Compaction will create larger blocks up to 10% of the retention time, or 21 days, whichever is smaller.
 
 ## Operational aspects
 

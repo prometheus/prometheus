@@ -9,7 +9,7 @@ executors:
   # should also be updated.
   golang:
     docker:
-    - image: circleci/golang:1.13
+    - image: circleci/golang:1.13-node
 
   fuzzit:
     docker:
@@ -24,7 +24,7 @@ jobs:
     - run:
         command: make
         environment:
-          # Run garbage collection more aggresively to avoid getting OOMed during the lint phase.
+          # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
           GOGC: "20"
           # By default Go uses GOMAXPROCS but a Circle CI executor has many
           # cores (> 30) while the CPU and RAM resources are throttled. If we

@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/util/testutil"
+	"gopkg.in/yaml.v2"
 )
 
 func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
@@ -43,6 +44,48 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 	for _, test := range tests {
 		actual := tg.UnmarshalJSON([]byte(test.json))
 		testutil.Equals(t, test.expectedReply, actual)
+	}
+
+}
+
+func TestTargetGroupYamlUnmarshal(t *testing.T) {
+	unmarshal := func(d []byte) func(interface{}) error {
+		return func(o interface{}) error {
+			return yaml.Unmarshal(d, o)
+		}
+	}
+	tests := []struct {
+		yaml                    string
+		expectedNumberOfTargets int
+		expectedNumberOfLabels  int
+		expectedReply           error
+	}{
+		{
+			yaml:                    "labels:\ntargets:\n",
+			expectedNumberOfTargets: 0,
+			expectedNumberOfLabels:  0,
+			expectedReply:           nil,
+		},
+		{
+			yaml:                    "labels:\n  my:  label\ntargets:\n  ['localhost:9090', 'localhost:9191']",
+			expectedNumberOfTargets: 2,
+			expectedNumberOfLabels:  1,
+			expectedReply:           nil,
+		},
+		{
+			yaml:                    "labels:\ntargets:\n  'localhost:9090'",
+			expectedNumberOfTargets: 0,
+			expectedNumberOfLabels:  0,
+			expectedReply:           &yaml.TypeError{Errors: []string{"line 3: cannot unmarshal !!str `localho...` into []string"}},
+		},
+	}
+
+	for _, test := range tests {
+		tg := Group{}
+		actual := tg.UnmarshalYAML(unmarshal([]byte(test.yaml)))
+		testutil.Equals(t, test.expectedReply, actual)
+		testutil.Equals(t, test.expectedNumberOfTargets, len(tg.Targets))
+		testutil.Equals(t, test.expectedNumberOfLabels, len(tg.Labels))
 	}
 
 }
