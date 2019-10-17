@@ -50,7 +50,7 @@ require (
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/alertmanager v0.18.0
-	github.com/prometheus/client_golang v1.1.0
+	github.com/prometheus/client_golang v1.2.0
 	github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4
 	github.com/prometheus/common v0.7.0
 	github.com/samuel/go-zookeeper v0.0.0-20190810000440-0ceca61e4d75
@@ -64,9 +64,9 @@ require (
 	golang.org/x/net v0.0.0-20190724013045-ca1201d0de80
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	golang.org/x/sync v0.0.0-20190423024810-112230192c58
-	golang.org/x/sys v0.0.0-20190813064441-fde4db37ae7a
+	golang.org/x/sys v0.0.0-20191010194322-b09406accb47
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
-	golang.org/x/tools v0.0.0-20190813034749-528a2984e271
+	golang.org/x/tools v0.0.0-20190918214516-5a1a30219888
 	google.golang.org/api v0.8.0
 	google.golang.org/genproto v0.0.0-20190801165951-fa694d86fc64
 	google.golang.org/grpc v1.22.1
