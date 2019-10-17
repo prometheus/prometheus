@@ -287,6 +287,13 @@ type RawSockaddrXDP struct {
 
 type RawSockaddrPPPoX [0x1e]byte
 
+type RawSockaddrTIPC struct {
+	Family   uint16
+	Addrtype uint8
+	Scope    int8
+	Addr     [12]byte
+}
+
 type RawSockaddr struct {
 	Family uint16
 	Data   [14]uint8
@@ -428,6 +435,7 @@ const (
 	SizeofSockaddrVM        = 0x10
 	SizeofSockaddrXDP       = 0x10
 	SizeofSockaddrPPPoX     = 0x1e
+	SizeofSockaddrTIPC      = 0x10
 	SizeofLinger            = 0x8
 	SizeofIovec             = 0x10
 	SizeofIPMreq            = 0x8
@@ -594,22 +602,6 @@ const (
 	RTN_THROW               = 0x9
 	RTN_NAT                 = 0xa
 	RTN_XRESOLVE            = 0xb
-	RTNLGRP_NONE            = 0x0
-	RTNLGRP_LINK            = 0x1
-	RTNLGRP_NOTIFY          = 0x2
-	RTNLGRP_NEIGH           = 0x3
-	RTNLGRP_TC              = 0x4
-	RTNLGRP_IPV4_IFADDR     = 0x5
-	RTNLGRP_IPV4_MROUTE     = 0x6
-	RTNLGRP_IPV4_ROUTE      = 0x7
-	RTNLGRP_IPV4_RULE       = 0x8
-	RTNLGRP_IPV6_IFADDR     = 0x9
-	RTNLGRP_IPV6_MROUTE     = 0xa
-	RTNLGRP_IPV6_ROUTE      = 0xb
-	RTNLGRP_IPV6_IFINFO     = 0xc
-	RTNLGRP_IPV6_PREFIX     = 0x12
-	RTNLGRP_IPV6_RULE       = 0x13
-	RTNLGRP_ND_USEROPT      = 0x14
 	SizeofNlMsghdr          = 0x10
 	SizeofNlMsgerr          = 0x14
 	SizeofRtGenmsg          = 0x1
@@ -617,6 +609,7 @@ const (
 	SizeofRtAttr            = 0x4
 	SizeofIfInfomsg         = 0x10
 	SizeofIfAddrmsg         = 0x8
+	SizeofIfaCacheinfo      = 0x10
 	SizeofRtMsg             = 0xc
 	SizeofRtNexthop         = 0x8
 	SizeofNdUseroptmsg      = 0x10
@@ -665,6 +658,13 @@ type IfAddrmsg struct {
 	Flags     uint8
 	Scope     uint8
 	Index     uint32
+}
+
+type IfaCacheinfo struct {
+	Prefered uint32
+	Valid    uint32
+	Cstamp   uint32
+	Tstamp   uint32
 }
 
 type RtMsg struct {
@@ -2470,6 +2470,42 @@ const (
 	BPF_FD_TYPE_URETPROBE               = 0x5
 )
 
+const (
+	RTNLGRP_NONE          = 0x0
+	RTNLGRP_LINK          = 0x1
+	RTNLGRP_NOTIFY        = 0x2
+	RTNLGRP_NEIGH         = 0x3
+	RTNLGRP_TC            = 0x4
+	RTNLGRP_IPV4_IFADDR   = 0x5
+	RTNLGRP_IPV4_MROUTE   = 0x6
+	RTNLGRP_IPV4_ROUTE    = 0x7
+	RTNLGRP_IPV4_RULE     = 0x8
+	RTNLGRP_IPV6_IFADDR   = 0x9
+	RTNLGRP_IPV6_MROUTE   = 0xa
+	RTNLGRP_IPV6_ROUTE    = 0xb
+	RTNLGRP_IPV6_IFINFO   = 0xc
+	RTNLGRP_DECnet_IFADDR = 0xd
+	RTNLGRP_NOP2          = 0xe
+	RTNLGRP_DECnet_ROUTE  = 0xf
+	RTNLGRP_DECnet_RULE   = 0x10
+	RTNLGRP_NOP4          = 0x11
+	RTNLGRP_IPV6_PREFIX   = 0x12
+	RTNLGRP_IPV6_RULE     = 0x13
+	RTNLGRP_ND_USEROPT    = 0x14
+	RTNLGRP_PHONET_IFADDR = 0x15
+	RTNLGRP_PHONET_ROUTE  = 0x16
+	RTNLGRP_DCB           = 0x17
+	RTNLGRP_IPV4_NETCONF  = 0x18
+	RTNLGRP_IPV6_NETCONF  = 0x19
+	RTNLGRP_MDB           = 0x1a
+	RTNLGRP_MPLS_ROUTE    = 0x1b
+	RTNLGRP_NSID          = 0x1c
+	RTNLGRP_MPLS_NETCONF  = 0x1d
+	RTNLGRP_IPV4_MROUTE_R = 0x1e
+	RTNLGRP_IPV6_MROUTE_R = 0x1f
+	RTNLGRP_NEXTHOP       = 0x20
+)
+
 type CapUserHeader struct {
 	Version uint32
 	Pid     int32
@@ -2524,3 +2560,72 @@ type LoopInfo64 struct {
 	Encrypt_key      [32]uint8
 	Init             [2]uint64
 }
+
+type TIPCSocketAddr struct {
+	Ref  uint32
+	Node uint32
+}
+
+type TIPCServiceRange struct {
+	Type  uint32
+	Lower uint32
+	Upper uint32
+}
+
+type TIPCServiceName struct {
+	Type     uint32
+	Instance uint32
+	Domain   uint32
+}
+
+type TIPCSubscr struct {
+	Seq     TIPCServiceRange
+	Timeout uint32
+	Filter  uint32
+	Handle  [8]uint8
+}
+
+type TIPCEvent struct {
+	Event uint32
+	Lower uint32
+	Upper uint32
+	Port  TIPCSocketAddr
+	S     TIPCSubscr
+}
+
+type TIPCGroupReq struct {
+	Type     uint32
+	Instance uint32
+	Scope    uint32
+	Flags    uint32
+}
+
+type TIPCSIOCLNReq struct {
+	Peer     uint32
+	Id       uint32
+	Linkname [68]uint8
+}
+
+type TIPCSIOCNodeIDReq struct {
+	Peer uint32
+	Id   [16]uint8
+}
+
+const (
+	TIPC_CLUSTER_SCOPE = 0x2
+	TIPC_NODE_SCOPE    = 0x3
+)
+
+const (
+	SYSLOG_ACTION_CLOSE         = 0
+	SYSLOG_ACTION_OPEN          = 1
+	SYSLOG_ACTION_READ          = 2
+	SYSLOG_ACTION_READ_ALL      = 3
+	SYSLOG_ACTION_READ_CLEAR    = 4
+	SYSLOG_ACTION_CLEAR         = 5
+	SYSLOG_ACTION_CONSOLE_OFF   = 6
+	SYSLOG_ACTION_CONSOLE_ON    = 7
+	SYSLOG_ACTION_CONSOLE_LEVEL = 8
+	SYSLOG_ACTION_SIZE_UNREAD   = 9
+	SYSLOG_ACTION_SIZE_BUFFER   = 10
+)
