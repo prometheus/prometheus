@@ -308,6 +308,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	var (
 		chksBatchSize int64
 		end           int
+		start         int
 	)
 
 	// w.wbuf == nil means it is the first chunk
@@ -318,56 +319,52 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		}
 	}
 
-	for _, chk := range chks {
+	for i, chk := range chks {
 		// Each chunk contains: data length + encoding + the data itself + crc32
-		chksBatchSize += int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
-		chksBatchSize += ChunkEncodingSize              // The chunk encoding.
-		chksBatchSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
-		chksBatchSize += crc32.Size
+		chkSize := int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
+		chkSize += ChunkEncodingSize              // The chunk encoding.
+		chkSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
+		chkSize += crc32.Size                     // The 4 bytes of crc32
 
+		end++
+		chksBatchSize += chkSize
 		if chksBatchSize+w.n > w.segmentSize {
-			cut := true
-			// When it is the first chunk, but the segment already has some data
-			// should cut a new segment before writing to it.
-			if end == 0 && w.n > SegmentHeaderSize {
+			if i == 0 && w.n > SegmentHeaderSize {
+				// When it is the first chunk, but the segment already has some data
+				// should cut a new segment before writing to it.
 				if err := w.cut(); err != nil {
 					return err
 				}
-				cut = false
+				continue
 			}
 
-			// When it is the first chunk and it is bigger than the segment
-			// cutting a new segment won't make a difference so just write it.
-			if end == 0 {
-				end++
+			if end-start > 1 {
+				// Don't include the last chunk only if there are >1 chunks.
+				// This will keep segment size within the configured limit.
+				// If a single chunks is bigger than the configured limit,
+				// we cannot do much.
+				end--
+				chksBatchSize = chkSize
+			} else {
+				chksBatchSize = 0
 			}
 
-			if err := w.writeChunks(chks[:end]); err != nil {
+			if err := w.writeChunks(chks[start:end]); err != nil {
 				return err
 			}
-
-			// When it is the last chunk in the batch no need to cut a new chunk.
-			if end != len(chks) {
-				if cut {
-					if err := w.cut(); err != nil {
-						return err
-					}
+			// Cut a new segment only when there are more chunks to write.
+			// This avoids creating a new empty segment.
+			if len(chks) > end {
+				if err := w.cut(); err != nil {
+					return err
 				}
 			}
-			chks = chks[end:]
 
-			// Revert the batch size to the current chunk.
-			chksBatchSize = int64(MaxChunkLengthFieldSize)
-			chksBatchSize += ChunkEncodingSize
-			chksBatchSize += int64(len(chk.Chunk.Bytes()))
-			chksBatchSize += crc32.Size
-			end = 0
-
+			start = end
 		}
-		end++
 	}
 
-	return w.writeChunks(chks)
+	return w.writeChunks(chks[start:])
 }
 
 // writeChunks writes the chunks into the current segment irrespective
