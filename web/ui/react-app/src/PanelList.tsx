@@ -89,12 +89,10 @@ class PanelList extends Component<any, PanelListState> {
       }
       return p;
     });
-    console.log("UPDATE OP", key, opts);
     this.setState({panels: newPanels}, this.updateURL)
   }
 
   updateURL(): void {
-    console.log("UPDATE");
     const query = encodePanelOptionsToQueryString(this.state.panels);
     history.pushState({}, '', query);
   }
