@@ -9,7 +9,7 @@ executors:
   # should also be updated.
   golang:
     docker:
-    - image: circleci/golang:1.13
+    - image: circleci/golang:1.13-node
 
   fuzzit:
     docker:
