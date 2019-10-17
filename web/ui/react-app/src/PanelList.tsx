@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 
 import { Alert, Button, Col, Row } from 'reactstrap';
 
-import Panel, { PanelOptions, PanelType, PanelDefaultOptions } from './Panel';
+import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from './utils/urlParams';
 
 interface PanelListState {
