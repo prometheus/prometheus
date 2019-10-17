@@ -361,7 +361,7 @@ func (r *Registry) Unregister(c Collector) bool {
 	var (
 		descChan    = make(chan *Desc, capDescChan)
 		descIDs     = map[uint64]struct{}{}
-		collectorID uint64 // Just a sum of the desc IDs.
+		collectorID uint64 // All desc IDs XOR'd together.
 	)
 	go func() {
 		c.Describe(descChan)
@@ -369,7 +369,7 @@ func (r *Registry) Unregister(c Collector) bool {
 	}()
 	for desc := range descChan {
 		if _, exists := descIDs[desc.id]; !exists {
-			collectorID += desc.id
+			collectorID ^= desc.id
 			descIDs[desc.id] = struct{}{}
 		}
 	}

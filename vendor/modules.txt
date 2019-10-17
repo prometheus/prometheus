@@ -264,7 +264,7 @@ github.com/opentracing/opentracing-go/log
 github.com/pkg/errors
 # github.com/prometheus/alertmanager v0.18.0
 github.com/prometheus/alertmanager/api/v2/models
-# github.com/prometheus/client_golang v1.2.0
+# github.com/prometheus/client_golang v1.2.1
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
 github.com/prometheus/client_golang/prometheus
