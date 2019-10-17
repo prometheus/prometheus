@@ -96,7 +96,7 @@ class PanelList extends Component<any, PanelListState> {
   updateURL(): void {
     console.log("UPDATE");
     const query = encodePanelOptionsToQueryString(this.state.panels);
-    history.pushState({}, '', query);
+    window.history.pushState({}, '', query);
   }
 
   addPanel = (): void => {
