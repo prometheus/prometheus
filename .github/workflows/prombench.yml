@@ -51,7 +51,7 @@ jobs:
       id: make_deploy
       uses: docker://prombench/prombench:2.0.2
       env:
-        AUTH_FILE: ${{ secrets.AUTH_FILE }}
+        AUTH_FILE: ${{ secrets.PROMBENCH_GKE_AUTH }}
         PROJECT_ID: macro-mile-203600
         CLUSTER_NAME: prombench
         ZONE: us-central1-a
@@ -109,7 +109,7 @@ jobs:
       id: make_clean
       uses: docker://prombench/prombench:2.0.2
       env:
-        AUTH_FILE: ${{ secrets.AUTH_FILE }}
+        AUTH_FILE: ${{ secrets.PROMBENCH_GKE_AUTH }}
         PROJECT_ID: macro-mile-203600
         CLUSTER_NAME: prombench
         ZONE: us-central1-a
@@ -177,7 +177,7 @@ jobs:
       id: make_restart
       uses: docker://prombench/prombench:2.0.2
       env:
-        AUTH_FILE: ${{ secrets.AUTH_FILE }}
+        AUTH_FILE: ${{ secrets.PROMBENCH_GKE_AUTH }}
         PROJECT_ID: macro-mile-203600
         CLUSTER_NAME: prombench
         ZONE: us-central1-a
