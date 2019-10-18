@@ -533,10 +533,10 @@ func (t *QueueManager) calculateDesiredShards() int {
 
 	// We shouldn't reshard if Prometheus hasn't been able to send to the
 	// remote endpoint successfully within some period of time.
-	lts := atomic.LoadInt64(&t.lastSendTimestamp)
-	skip := (time.Now().Unix() - lts) > int64(2*time.Duration(t.cfg.BatchSendDeadline)/time.Second)
-	if skip {
-		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold")
+	minSendTimestamp := time.Now().Add(-2 * time.Duration(t.cfg.BatchSendDeadline)).Unix()
+	lsts := atomic.LoadInt64(&t.lastSendTimestamp)
+	if lsts < minSendTimestamp {
+		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
 		return t.numShards
 	}
 

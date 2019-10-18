@@ -283,8 +283,9 @@ func TestReleaseNoninternedString(t *testing.T) {
 
 func TestCalculateDesiredsShards(t *testing.T) {
 	type testcase struct {
-		startingShards int
-		reshard        bool
+		startingShards        int
+		samplesIn, samplesOut int64
+		reshard               bool
 	}
 	cases := []testcase{
 		{
@@ -292,19 +293,22 @@ func TestCalculateDesiredsShards(t *testing.T) {
 			// sample recently the queue will not reshard.
 			startingShards: 10,
 			reshard:        false,
+			samplesIn:      1000,
+			samplesOut:     10,
 		},
 		{
 			startingShards: 5,
 			reshard:        true,
+			samplesIn:      1000,
+			samplesOut:     10,
 		},
 	}
 	for _, c := range cases {
 		client := NewTestStorageClient()
 		m := NewQueueManager(nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, client, defaultFlushDeadline)
 		m.numShards = c.startingShards
-		// Fake the samples in/out rates and the last sent timestamp so the reshard calculation has some numbers to use.
-		m.samplesIn.incr(1000)
-		m.samplesOut.incr(10)
+		m.samplesIn.incr(c.samplesIn)
+		m.samplesOut.incr(c.samplesOut)
 		m.lastSendTimestamp = time.Now().Unix()
 
 		// Resharding shouldn't take place if the last successful send was > batch send deadline*2 seconds ago.
@@ -318,10 +322,8 @@ func TestCalculateDesiredsShards(t *testing.T) {
 			testutil.Assert(t, desiredShards == m.numShards, "expected calculateDesiredShards to not want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
 		} else {
 			testutil.Assert(t, desiredShards != m.numShards, "expected calculateDesiredShards to want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
-
 		}
 	}
-
 }
 
 func createTimeseries(n int) ([]record.RefSample, []record.RefSeries) {
