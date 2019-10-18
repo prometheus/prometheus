@@ -7,7 +7,7 @@ import {
   Input,
 } from 'reactstrap';
 
-import Downshift from 'downshift';
+import Downshift, { ControllerStateAndHelpers } from 'downshift';
 import fuzzy from 'fuzzy';
 import SanitizeHTML from './components/SanitizeHTML';
 
@@ -25,16 +25,16 @@ interface ExpressionInputProps {
 }
 
 interface ExpressionInputState {
-  height: number | string
-  value: string
+  height: number | string;
+  value: string;
 }
 
 class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
-  prevNoMatchValue: string | null = null;
+  private prevNoMatchValue: string | null = null;
   private exprInputRef = React.createRef<HTMLInputElement>();
 
   constructor(props: ExpressionInputProps) {
-    super(props)
+    super(props);
     this.state = {
       value: props.value,
       height: 'auto'
@@ -42,13 +42,13 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   }
 
   componentDidMount() {
-    this.setHeight()
+    this.setHeight();
   }
 
 
   setHeight = () => {
     const { offsetHeight, clientHeight, scrollHeight } = this.exprInputRef.current!;
-    const offset = offsetHeight - clientHeight; // needed in order height to be more accurate
+    const offset = offsetHeight - clientHeight; // Needed in order for the height to be more accurate.
     this.setState({ height: scrollHeight + offset });
   }
 
@@ -68,22 +68,23 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     }
   }
 
-  renderAutosuggest = (downshift: any) => {
-    if (!downshift.isOpen) {
+  executeQuery = () => this.props.executeQuery(this.exprInputRef.current!.value)
+
+  renderAutosuggest = (downshift: ControllerStateAndHelpers<any>) => {
+    const { inputValue } = downshift
+    if (!inputValue || (this.prevNoMatchValue && inputValue.includes(this.prevNoMatchValue))) {
+      downshift.closeMenu();
       return null;
     }
 
-    if (this.prevNoMatchValue && downshift.inputValue.includes(this.prevNoMatchValue)) {
-      return null;
-    }
-
-    let matches = fuzzy.filter(downshift.inputValue.replace(/ /g, ''), this.props.metricNames, {
+    const matches = fuzzy.filter(inputValue.replace(/ /g, ''), this.props.metricNames, {
       pre: "<strong>",
       post: "</strong>",
     });
 
     if (matches.length === 0) {
-      this.prevNoMatchValue = downshift.inputValue;
+      this.prevNoMatchValue = inputValue;
+      downshift.closeMenu();    
       return null;
     }
 
@@ -119,8 +120,6 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     const { value, height } = this.state;
     return (
       <Downshift
-        //inputValue={this.props.value}
-        //onInputValueChange={this.props.onChange}
         onChange={this.handleDropdownSelection}
         inputValue={value}
       >
@@ -173,13 +172,13 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                 <Button
                   className="execute-btn"
                   color="primary"
-                  onClick={() => this.props.executeQuery(this.exprInputRef.current!.value)}
+                  onClick={this.executeQuery}
                 >
                   Execute
                 </Button>
               </InputGroupAddon>
             </InputGroup>
-            {this.renderAutosuggest(downshift)}
+            {downshift.isOpen && this.renderAutosuggest(downshift)}
           </div>
         )}
       </Downshift>
