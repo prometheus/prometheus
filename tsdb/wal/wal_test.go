@@ -16,7 +16,6 @@ package wal
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -29,6 +28,7 @@ import (
 	"github.com/go-kit/kit/log"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/pkg/errors"
 )
 
 // TestWALRepair_ReadingError ensures that a repair is run for an error
@@ -212,10 +212,9 @@ func TestUnsequentialSegments(t *testing.T) {
 	segsN := 5 * pageSize
 	dir := "../testdata/repair_unsequential_wals"
 	w, err := NewSize(log.NewNopLogger(), nil, dir, segsN, false)
-	testutil.Ok(t, err)
 
 	// send unsequential segments error to trigger the segment scan
-	w.Repair(errors.New(ErrorUnsequentialSegments))
+	w.Repair(errors.Cause(err))
 	f, err := exec.Command("ls", "../testdata/repair_unsequential_wals").Output()
 	testutil.Ok(t, err)
 	str := strings.Split(string(f), "\n")

@@ -538,6 +538,15 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 			segmentSize = opts.WALSegmentSize
 		}
 		wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
+		if errors.Cause(err).Error() == wal.ErrorUnsequentialSegments {
+			if err = wlog.Repair(errors.Cause(err)); err != nil {
+				return nil, err
+			}
+			// get new WAL after the repair of unsequential segments
+			wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
+		}
+
+		// if error still exists even after repair
 		if err != nil {
 			return nil, err
 		}

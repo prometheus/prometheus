@@ -264,15 +264,13 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		stopc:       make(chan chan struct{}),
 		compress:    compress,
 	}
-	w.metrics = newWALMetrics(w, reg)
 
 	_, last, err := w.Segments()
 	if err != nil {
-		// repairing corrupted segments
-		if err = w.Repair(err); err != nil {
-			return nil, errors.Wrap(err, "get segment range")
-		}
+		return w, errors.Wrap(err, "get segment range")
 	}
+
+	w.metrics = newWALMetrics(w, reg)
 
 	// Index of the Segment we want to open and write to.
 	writeSegmentIndex := 0
