@@ -26,9 +26,9 @@ import (
 	"testing"
 
 	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/util/testutil"
-	"github.com/pkg/errors"
 )
 
 // TestWALRepair_ReadingError ensures that a repair is run for an error
