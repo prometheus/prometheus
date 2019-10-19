@@ -48,16 +48,16 @@ function init() {
 
   $("#alertFilters :input").change(function() {
         const target = $(this).attr("id");
-        var isActive = $(this).parent().hasClass("active");
+        var shouldHide = $(this).parent().hasClass("active");
         if (target === "inactiveAlerts") {
-            localStorage.setItem("hideInactiveAlerts", isActive);
-            displayAlerts("alert-success", !isActive);
+            localStorage.setItem("hideInactiveAlerts", shouldHide);
+            displayAlerts("alert-success", !shouldHide);
         } else if (target === "activeAlerts") {
-            localStorage.setItem("hideActiveAlerts", isActive);
-            displayAlerts("alert-warning", !isActive);
+            localStorage.setItem("hideActiveAlerts", shouldHide);
+            displayAlerts("alert-warning", !shouldHide);
         } else if (target === "firingAlerts") {
-            localStorage.setItem("hideFiringAlerts", isActive);
-            displayAlerts("alert-danger", !isActive);
+            localStorage.setItem("hideFiringAlerts", shouldHide);
+            displayAlerts("alert-danger", !shouldHide);
         }
   });
 
