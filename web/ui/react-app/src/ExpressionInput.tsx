@@ -1,4 +1,3 @@
-import $ from 'jquery';
 import React, { Component } from 'react';
 import {
   Button,
@@ -8,7 +7,7 @@ import {
   Input,
 } from 'reactstrap';
 
-import Downshift from 'downshift';
+import Downshift, { ControllerStateAndHelpers } from 'downshift';
 import fuzzy from 'fuzzy';
 import SanitizeHTML from './components/SanitizeHTML';
 
@@ -25,10 +24,43 @@ interface ExpressionInputProps {
   loading: boolean;
 }
 
-class ExpressionInput extends Component<ExpressionInputProps> {
-  prevNoMatchValue: string | null = null;
+interface ExpressionInputState {
+  height: number | string;
+  value: string;
+}
+
+class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
+  private prevNoMatchValue: string | null = null;
   private exprInputRef = React.createRef<HTMLInputElement>();
 
+  constructor(props: ExpressionInputProps) {
+    super(props);
+    this.state = {
+      value: props.value,
+      height: 'auto'
+    }
+  }
+
+  componentDidMount() {
+    this.setHeight();
+  }
+
+
+  setHeight = () => {
+    const { offsetHeight, clientHeight, scrollHeight } = this.exprInputRef.current!;
+    const offset = offsetHeight - clientHeight; // Needed in order for the height to be more accurate.
+    this.setState({ height: scrollHeight + offset });
+  }
+
+  handleInput = () => {
+    this.setState({
+      height: 'auto',
+      value: this.exprInputRef.current!.value
+    }, this.setHeight);
+  }
+
+  handleDropdownSelection = (value: string) => this.setState({ value });
+  
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       this.props.executeQuery(this.exprInputRef.current!.value);
@@ -36,22 +68,23 @@ class ExpressionInput extends Component<ExpressionInputProps> {
     }
   }
 
-  renderAutosuggest = (downshift: any) => {
-    if (!downshift.isOpen) {
+  executeQuery = () => this.props.executeQuery(this.exprInputRef.current!.value)
+
+  renderAutosuggest = (downshift: ControllerStateAndHelpers<any>) => {
+    const { inputValue } = downshift
+    if (!inputValue || (this.prevNoMatchValue && inputValue.includes(this.prevNoMatchValue))) {
+      downshift.closeMenu();
       return null;
     }
 
-    if (this.prevNoMatchValue && downshift.inputValue.includes(this.prevNoMatchValue)) {
-      return null;
-    }
-
-    let matches = fuzzy.filter(downshift.inputValue.replace(/ /g, ''), this.props.metricNames, {
+    const matches = fuzzy.filter(inputValue.replace(/ /g, ''), this.props.metricNames, {
       pre: "<strong>",
       post: "</strong>",
     });
 
     if (matches.length === 0) {
-      this.prevNoMatchValue = downshift.inputValue;
+      this.prevNoMatchValue = inputValue;
+      downshift.closeMenu();    
       return null;
     }
 
@@ -83,23 +116,12 @@ class ExpressionInput extends Component<ExpressionInputProps> {
     );
   }
 
-  componentDidMount() {
-    const $exprInput = $(this.exprInputRef.current!);
-    const resize = () => {
-      const el = $exprInput.get(0);
-      const offset = el.offsetHeight - el.clientHeight;
-      $exprInput.css('height', 'auto').css('height', el.scrollHeight + offset);
-    };
-    resize();
-    $exprInput.on('input', resize);
-  }
-
   render() {
+    const { value, height } = this.state;
     return (
       <Downshift
-        //inputValue={this.props.value}
-        //onInputValueChange={this.props.onChange}
-        selectedItem={this.props.value}
+        onChange={this.handleDropdownSelection}
+        inputValue={value}
       >
         {(downshift) => (
           <div>
@@ -110,6 +132,8 @@ class ExpressionInput extends Component<ExpressionInputProps> {
                 </InputGroupText>
               </InputGroupAddon>
               <Input
+                onInput={this.handleInput}
+                style={{ height }}
                 autoFocus
                 type="textarea"
                 rows="1"
@@ -148,13 +172,13 @@ class ExpressionInput extends Component<ExpressionInputProps> {
                 <Button
                   className="execute-btn"
                   color="primary"
-                  onClick={() => this.props.executeQuery(this.exprInputRef.current!.value)}
+                  onClick={this.executeQuery}
                 >
                   Execute
                 </Button>
               </InputGroupAddon>
             </InputGroup>
-            {this.renderAutosuggest(downshift)}
+            {downshift.isOpen && this.renderAutosuggest(downshift)}
           </div>
         )}
       </Downshift>
