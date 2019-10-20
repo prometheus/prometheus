@@ -237,12 +237,12 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 		wg.Add(len(q.queriers))
 		var priErr error = nil
 		queryResultChan := make(chan *queryResult, len(q.queriers))
-		for _, qr := range q.queriers {
+		for _, qry := range q.queriers {
 			go func(querier Querier) {
 				defer wg.Done()
 				set, wrn, selectError := querier.Select(params, matchers...)
 				queryResultChan <- &queryResult{qr: querier, set: set, wrn: wrn, selectError: selectError}
-			}(qr)
+			}(qry)
 		}
 		wg.Wait()
 		for i := 0; i < len(q.queriers); i++ {
