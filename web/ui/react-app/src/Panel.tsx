@@ -19,6 +19,7 @@ import GraphControls from './GraphControls';
 import Graph from './Graph';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
+import QueryStats from './QueryStats';
 
 interface PanelProps {
   options: PanelOptions;
@@ -36,7 +37,11 @@ interface PanelState {
   } | null;
   loading: boolean;
   error: string | null;
-  stats: null; // TODO: Stats.
+  stats: {
+    loadTime: number,
+    resolution: number,
+    totalTimeSeries: number,
+  } | null,
 }
 
 export interface PanelOptions {
@@ -100,6 +105,7 @@ class Panel extends Component<PanelProps, PanelState> {
   }
 
   executeQuery = (expr: string): void => {
+    const queryStart = Date.now();
     if (this.props.options.expr !== expr) {
       this.setOptions({expr: expr});
     }
@@ -119,7 +125,6 @@ class Panel extends Component<PanelProps, PanelState> {
     const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueof only work when it's a moment?
     const startTime = endTime - this.props.options.range;
     const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250), 1);
-
     const url = new URL(window.location.href);
     const params: {[key: string]: string} = {
       'query': expr,
@@ -153,6 +158,15 @@ class Panel extends Component<PanelProps, PanelState> {
         throw new Error(json.error || 'invalid response JSON');
       }
 
+      let totalTimeSeries = 0;
+      if (json.data !== undefined) {
+        if (json.data.resultType === "scalar") {
+          totalTimeSeries = 1;
+        } else if(json.data.result !== null) {
+          totalTimeSeries = json.data.result.length;
+        }
+      }
+      
       this.setState({
         error: null,
         data: json.data,
@@ -160,6 +174,11 @@ class Panel extends Component<PanelProps, PanelState> {
           startTime: startTime,
           endTime: endTime,
           resolution: resolution,
+        },
+        stats: {
+          loadTime: Date.now() - queryStart,
+          resolution: resolution,
+          totalTimeSeries: totalTimeSeries,
         },
         loading: false,
       });
@@ -246,6 +265,7 @@ class Panel extends Component<PanelProps, PanelState> {
                   Graph
                 </NavLink>
               </NavItem>
+              <QueryStats loading={this.state.loading} stats={this.state.stats} />
             </Nav>
             <TabContent activeTab={this.props.options.type}>
               <TabPane tabId="table">
@@ -287,7 +307,7 @@ class Panel extends Component<PanelProps, PanelState> {
         <Row>
           <Col>
             <Button className="float-right" color="link" onClick={this.props.removePanel} size="sm">Remove Panel</Button>
-          </Col>
+          </Col>          
         </Row>
       </div>
     );
