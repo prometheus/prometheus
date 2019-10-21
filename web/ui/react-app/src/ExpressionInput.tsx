@@ -59,7 +59,9 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     }, this.setHeight);
   }
 
-  handleDropdownSelection = (value: string) => this.setState({ value });
+  handleDropdownSelection = (value: string) => {
+    this.setState({ value, height: 'auto' }, this.setHeight)
+  };
   
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
