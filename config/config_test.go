@@ -710,7 +710,15 @@ func TestKubernetesEmptyAPIServer(t *testing.T) {
 }
 
 func TestKubernetesSelectors(t *testing.T) {
-	_, err := LoadFile("testdata/kubernetes_selectors.good.yml")
+	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml")
 	testutil.Ok(t, err)
 }
 
@@ -796,6 +804,21 @@ var expectedErrors = []struct {
 	}, {
 		filename: "kubernetes_role.bad.yml",
 		errMsg:   "role",
+	}, {
+		filename: "kubernetes_selectors_endpoints.bad.yml",
+		errMsg:   "endpoints role supports only pod, service and endpoints selectors",
+	}, {
+		filename: "kubernetes_selectors_ingress.bad.yml",
+		errMsg:   "ingress role supports only ingress selectors",
+	}, {
+		filename: "kubernetes_selectors_node.bad.yml",
+		errMsg:   "node role supports only node selectors",
+	}, {
+		filename: "kubernetes_selectors_pod.bad.yml",
+		errMsg:   "pod role supports only pod selectors",
+	}, {
+		filename: "kubernetes_selectors_service.bad.yml",
+		errMsg:   "service role supports only service selectors",
 	}, {
 		filename: "kubernetes_namespace_discovery.bad.yml",
 		errMsg:   "field foo not found in type kubernetes.plain",
