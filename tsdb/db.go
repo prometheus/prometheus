@@ -538,15 +538,17 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 			segmentSize = opts.WALSegmentSize
 		}
 		wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
-		if errors.Cause(err).Error() == wal.ErrorUnsequentialSegments {
-			if err = wlog.Repair(errors.Cause(err)); err != nil {
+		if err != nil && errors.Cause(err).Error() == wal.ErrorUnsequentialSegments {
+			level.Warn(db.logger).Log("msg", "encountered WAL segment sequence error, attempting repair", "err", err)
+			level.Warn(db.logger).Log("msg", "deleting unsequential segments")
+			if err = wlog.Repair(errors.Cause(err), filepath.Join(dir, "wal")); err != nil {
 				return nil, err
 			}
-			// get new WAL after the repair of unsequential segments
+			// Get new WAL after the repair of unsequential segments
 			wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
 		}
 
-		// if error still exists even after repair
+		// If error still exists even after repair
 		if err != nil {
 			return nil, err
 		}
@@ -571,7 +573,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
 		level.Warn(db.logger).Log("msg", "encountered WAL read error, attempting repair", "err", err)
-		if err := wlog.Repair(initErr); err != nil {
+		if err := wlog.Repair(initErr, ""); err != nil {
 			return nil, errors.Wrap(err, "repair corrupted WAL")
 		}
 	}

@@ -20,9 +20,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/go-kit/kit/log"
@@ -174,7 +172,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				if r.Err() == nil {
 					continue
 				}
-				testutil.Ok(t, w.Repair(r.Err()))
+				testutil.Ok(t, w.Repair(r.Err(), ""))
 				break
 			}
 
@@ -208,18 +206,21 @@ func TestWALRepair_ReadingError(t *testing.T) {
 	}
 }
 
+// TestUnsequentialSegments tests whether the Unsequential wal segments are
+// deleted or not.
 func TestUnsequentialSegments(t *testing.T) {
+	// Prevent invalid segment size error
 	segsN := 5 * pageSize
+
 	dir := "../testdata/repair_unsequential_wals"
 	w, err := NewSize(log.NewNopLogger(), nil, dir, segsN, false)
 
-	// send unsequential segments error to trigger the segment scan
-	w.Repair(errors.Cause(err))
-	f, err := exec.Command("ls", "../testdata/repair_unsequential_wals").Output()
+	// Send unsequential segments error to trigger the segment scan
+	w.Repair(errors.Cause(err), dir)
+	f, err := ioutil.ReadDir("../testdata/repair_unsequential_wals")
 	testutil.Ok(t, err)
-	str := strings.Split(string(f), "\n")
 
-	testutil.Assert(t, len(str) <= 3, "unable to delete unsequential segments", nil)
+	testutil.Assert(t, len(f) <= 3, "unable to delete unsequential segments", nil)
 }
 
 // TestCorruptAndCarryOn writes a multi-segment WAL; corrupts the first segment and
@@ -315,7 +316,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		w, err := NewSize(logger, nil, dir, segmentSize, false)
 		testutil.Ok(t, err)
 
-		err = w.Repair(corruptionErr)
+		err = w.Repair(corruptionErr, "")
 		testutil.Ok(t, err)
 
 		// Ensure that we have a completely clean slate after reapiring.

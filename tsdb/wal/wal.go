@@ -267,9 +267,10 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 
 	_, last, err := w.Segments()
 	if err != nil {
-		return w, errors.Wrap(err, "get segment range")
+		return nil, errors.Wrap(err, "get segment range")
 	}
 
+	// Prevent MustRegister if segments corrupted
 	w.metrics = newWALMetrics(w, reg)
 
 	// Index of the Segment we want to open and write to.
@@ -336,7 +337,7 @@ Loop:
 
 // Repair attempts to repair the WAL based on the error.
 // It discards all data after the corruption.
-func (w *WAL) Repair(origErr error) error {
+func (w *WAL) Repair(origErr error, dir string) error {
 	// We could probably have a mode that only discards torn records right around
 	// the corruption to preserve as data much as possible.
 	// But that's not generally applicable if the records have any kind of causality.
@@ -344,7 +345,7 @@ func (w *WAL) Repair(origErr error) error {
 	// a frequent concern.
 
 	if origErr.Error() == ErrorUnsequentialSegments {
-		return w.repairUnsequentialSegments()
+		return w.repairUnsequentialSegments(dir)
 	}
 
 	err := errors.Cause(origErr) // So that we can pick up errors even if wrapped.
@@ -769,22 +770,37 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		return nil, err
 	}
 	var last int
-	// assume segments in sequence
-	inSequence := true
 	for _, fn := range files {
 		k, err := strconv.Atoi(fn)
 		if err != nil {
 			continue
 		}
 
-		if len(refs) > 0 && k > last+1 && inSequence {
-			inSequence = false
+		if len(refs) > 0 && k > last + 1 {
+			return nil, errors.New(ErrorUnsequentialSegments)
 		}
 		refs = append(refs, segmentRef{name: fn, index: k})
 		last = k
 	}
-	if !inSequence {
-		return refs, errors.New(ErrorUnsequentialSegments)
+	sort.Slice(refs, func(i, j int) bool {
+		return refs[i].index < refs[j].index
+	})
+	return refs, nil
+}
+
+// Get segments from the directory
+func getSegments(dir string) ([]segmentRef, error) {
+	files, err := fileutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var refs []segmentRef
+	for _, fn := range files {
+		k, err := strconv.Atoi(fn)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, segmentRef{name: fn, index: k})
 	}
 	sort.Slice(refs, func(i, j int) bool {
 		return refs[i].index < refs[j].index
@@ -793,22 +809,24 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 }
 
 // Returns the sequential segments after deleting the out of sequence wals after the sequence gap.
-func (w *WAL) repairUnsequentialSegments() error {
-	segments, _ := listSegments(w.dir)
-	level.Warn(w.logger).Log("msg", "deleting unsequential segments")
-	last, outofSequence := -1, false
+func (w *WAL) repairUnsequentialSegments(dir string) error {
+	segments, err := getSegments(dir)
+	if err != nil {
+		return errors.Wrap(err, "getSegments")
+	}
+	last := -1
 
 	for _, seg := range segments {
 		k, err := strconv.Atoi(seg.name)
 		if err != nil {
-			return errors.Wrap(err, "faulty segment name")
+			return errors.Wrap(err, "invalid segment name")
 		}
-		if k > last+1 || outofSequence {
-			outofSequence = true
-			err := os.Remove(SegmentName(w.dir, seg.index))
+		if k > last + 1 {
+			err := os.Remove(SegmentName(dir, seg.index))
 			if err != nil {
 				return errors.Wrapf(err, "delete segment: %s", seg.name)
 			}
+			continue
 		}
 		last = k
 	}
