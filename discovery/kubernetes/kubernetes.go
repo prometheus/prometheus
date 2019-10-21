@@ -125,6 +125,25 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config_util.HTTPClientConfig{}) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
+	switch c.Role {
+	case "pod": if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
+		return errors.Errorf("pod role supports only pod selectors")
+	}
+	case "service": if len(c.Selectors.Pod.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
+		return errors.Errorf("service role supports only service selectors")
+	}
+	case "endpoints": if len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
+		return errors.Errorf("endpoints role supports only pod, service and endpoints selectors")
+	}
+	case "node": if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Pod.Field) > 0 {
+		return errors.Errorf("node role supports only node selectors")
+	}
+	case "ingress": if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Node.Field) > 0 || len(c.Selectors.Pod.Field) > 0 {
+		return errors.Errorf("ingress role supports only ingress selectors")
+	}
+	default:
+		return errors.Errorf("role is not one of: pod, service, endpoints, node, ingress")
+	}
 	return nil
 }
 
