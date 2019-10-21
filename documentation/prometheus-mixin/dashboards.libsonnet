@@ -153,11 +153,11 @@ local template = grafana.template;
 
       local shardsQueries = 
         graphPanel.new(
-          'Shards: $cluster',
+          'Shards: $queue',
           datasource='$datasource',
           span=12,
           min_span=6,
-          repeat='cluster'
+          repeat='queue'
         )
         .addTarget(prometheus.target(
           'prometheus_remote_storage_shards_max{cluster=~"$cluster", instance=~"$instance"}',
@@ -186,9 +186,10 @@ local template = grafana.template;
 
       local shardsCapacity =
         graphPanel.new(
-          'Shard Capacity: $cluster',
+          'Shard Capacity: $queue',
           datasource='$datasource',
           span=6,
+          repeat='queue'
         )
         .addTarget(prometheus.target(
           'prometheus_remote_storage_shard_capacity{cluster=~"$cluster", instance=~"$instance"}',
@@ -198,9 +199,10 @@ local template = grafana.template;
       
       local pendingSamples =
         graphPanel.new(
-          'Pending Samples: $cluster',
+          'Pending Samples: $queue',
           datasource='$datasource',
           span=6,
+          repeat='queue'
         )
         .addTarget(prometheus.target(
           'prometheus_remote_storage_pending_samples{cluster=~"$cluster", instance=~"$instance"}',
