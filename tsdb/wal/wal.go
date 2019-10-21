@@ -776,7 +776,7 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 			continue
 		}
 
-		if len(refs) > 0 && k > last + 1 {
+		if len(refs) > 0 && k > last+1 {
 			return nil, errors.New(ErrorUnsequentialSegments)
 		}
 		refs = append(refs, segmentRef{name: fn, index: k})
@@ -821,7 +821,7 @@ func (w *WAL) repairUnsequentialSegments(dir string) error {
 		if err != nil {
 			return errors.Wrap(err, "invalid segment name")
 		}
-		if k > last + 1 {
+		if k > last+1 {
 			err := os.Remove(SegmentName(dir, seg.index))
 			if err != nil {
 				return errors.Wrapf(err, "delete segment: %s", seg.name)
