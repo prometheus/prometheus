@@ -4,6 +4,7 @@ import { Alert, Button, Col, Row } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from './utils/urlParams';
+import Checkbox from './Checkbox';
 
 interface PanelListState {
   panels: {
@@ -17,7 +18,7 @@ interface PanelListState {
 
 class PanelList extends Component<any, PanelListState> {
   private key: number = 0;
-
+  private initialMetricsNames: string[] = [];
   constructor(props: any) {
     super(props);
 
@@ -45,7 +46,10 @@ class PanelList extends Component<any, PanelListState> {
         throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
       }
     })
-    .then(json => this.setState({ metricNames: json.data }))
+    .then(json => {
+      this.initialMetricsNames = json.data;
+      this.setMetrics();
+    })
     .catch(error => this.setState({ fetchMetricsError: error.message }));
 
     const browserTime = new Date().getTime() / 1000;
@@ -73,6 +77,40 @@ class PanelList extends Component<any, PanelListState> {
         this.setState({panels: panels});
       }
     }
+  }
+
+  isHistoryEnabled = () => JSON.parse(localStorage.getItem('enable-query-history') || 'false') as boolean;
+
+  getHistoryItems = () => JSON.parse(localStorage.getItem('history') || '[]') as string[];
+
+  toggleQueryHistory = (enabled: boolean) => {
+    localStorage.setItem('enable-query-history', `${enabled}`);
+    this.setMetrics();
+  }
+
+  setMetrics = () => {
+    if (this.isHistoryEnabled()) {
+      const historyItems = this.getHistoryItems();
+      const { length } = historyItems;
+      this.setState({
+        metricNames: [...historyItems.slice(length - 50, length), ...this.initialMetricsNames],
+      });
+    } else {
+      this.setState({ metricNames: this.initialMetricsNames });
+    }
+  }
+
+  handleQueryHistory = (query: string) => {
+    const isSimpleMetric = this.initialMetricsNames.indexOf(query) !== -1;            
+    if (isSimpleMetric || !query.length) {
+      return;
+    }
+    const historyItems = this.getHistoryItems();
+    const extendedItems = historyItems.reduce((acc, metric) => {
+      return metric === query ? acc : [...acc, metric]; // Prevent adding query twice.
+    }, [query]);
+    localStorage.setItem('history', JSON.stringify(extendedItems));
+    this.setMetrics();
   }
 
   getKey(): string {
@@ -126,8 +164,14 @@ class PanelList extends Component<any, PanelListState> {
             {this.state.fetchMetricsError && <Alert color="danger"><strong>Warning:</strong> Error fetching metrics list: {this.state.fetchMetricsError}</Alert>}
           </Col>
         </Row>
+        <Checkbox
+          onToggle={this.toggleQueryHistory}
+          checked={this.isHistoryEnabled()}>
+            Enable query history
+        </Checkbox>
         {this.state.panels.map(p =>
           <Panel
+            onExecuteQuery={this.handleQueryHistory}
             key={p.key}
             options={p.options}
             onOptionsChanged={(opts: PanelOptions) => this.handleOptionsChanged(p.key, opts)}

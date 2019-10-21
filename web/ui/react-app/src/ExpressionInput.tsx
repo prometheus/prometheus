@@ -73,7 +73,9 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   renderAutosuggest = (downshift: ControllerStateAndHelpers<any>) => {
     const { inputValue } = downshift
     if (!inputValue || (this.prevNoMatchValue && inputValue.includes(this.prevNoMatchValue))) {
-      downshift.closeMenu();
+      // This is ugly but is needed in order to sync state updates.
+      // This way we force downshift to wait React render call to complete before closeMenu to be triggered.
+      setTimeout(downshift.closeMenu);
       return null;
     }
 
@@ -84,7 +86,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
 
     if (matches.length === 0) {
       this.prevNoMatchValue = inputValue;
-      downshift.closeMenu();    
+      setTimeout(downshift.closeMenu);
       return null;
     }
 

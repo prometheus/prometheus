@@ -10,6 +10,24 @@ button.classic-ui-btn {
     margin-bottom: 20px;
 }
 
+.checkbox{
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    margin: 0 0 13px 3px;
+}
+
+.checkbox.checked {
+    color: #286090
+}
+
+.checkbox-label {
+    font-size: 13px;
+    line-height: 1;
+    margin-left: 5px;
+    user-select: none;
+}
+
 .expression-input {
     margin-bottom: 10px;
 }
