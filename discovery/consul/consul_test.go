@@ -297,3 +297,89 @@ func TestAllOptions(t *testing.T) {
 	checkOneTarget(t, <-ch)
 	cancel()
 }
+
+func TestGetDatacenter_ShouldUseAgentInfo(t *testing.T) {
+	stub, config := newServer(t)
+	defer stub.Close()
+
+	d := newDiscovery(t, config)
+
+	// should be empty if not initialized
+	testutil.Equals(t, "", d.clientDatacenter)
+
+	err := d.getDatacenter()
+
+	// no error expected here
+	testutil.Equals(t, nil, err)
+	// should be value of agent info once initialized
+	testutil.Equals(t, "test-dc", d.clientDatacenter)
+
+	// second call should use value cached
+	err = d.getDatacenter()
+
+	// no error expected here
+	testutil.Equals(t, nil, err)
+	// should be value of agent info once initialized
+	testutil.Equals(t, "test-dc", d.clientDatacenter)
+}
+
+func TestGetDatacenter_ShouldReturnErrorGivenInternalServerError(t *testing.T) {
+
+	// create a stub server that will return status 500
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	stuburl, err := url.Parse(stub.URL)
+	testutil.Ok(t, err)
+
+	config := &SDConfig{
+		Server:          stuburl.Host,
+		Token:           "fake-token",
+		RefreshInterval: model.Duration(1 * time.Second),
+	}
+	// do not forget to close it
+	defer stub.Close()
+
+	d := newDiscovery(t, config)
+
+	// should be empty if not initialized
+	testutil.Equals(t, "", d.clientDatacenter)
+
+	err = d.getDatacenter()
+
+	// an error should be returned
+	testutil.Equals(t, "Unexpected response code: 500 ()", err.Error())
+	// should still be empty
+	testutil.Equals(t, "", d.clientDatacenter)
+}
+
+func TestGetDatacenter_ShouldReturnErrorGivenNotFoundInResponse(t *testing.T) {
+
+	// create a stub server that will return incorrect response
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
+	}))
+	stuburl, err := url.Parse(stub.URL)
+	testutil.Ok(t, err)
+
+	config := &SDConfig{
+		Server:          stuburl.Host,
+		Token:           "fake-token",
+		RefreshInterval: model.Duration(1 * time.Second),
+	}
+
+	// do not forget to close it
+	defer stub.Close()
+
+	d := newDiscovery(t, config)
+
+	// should be empty if not initialized
+	testutil.Equals(t, "", d.clientDatacenter)
+
+	err = d.getDatacenter()
+
+	// an error should be returned
+	testutil.Equals(t, "invalid value '<nil>' for Config.Datacenter", err.Error())
+	// should still be empty
+	testutil.Equals(t, "", d.clientDatacenter)
+}
