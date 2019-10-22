@@ -655,8 +655,10 @@ func main() {
 		g.Add(
 			func() error {
 				level.Info(logger).Log("msg", "Starting TSDB ...")
-				if cfg.tsdb.WALSegmentSize > 256*1024*1024 {
-					return errors.New("flag 'storage.tsdb.wal-segment-size' must be less than 256MB")
+				if cfg.tsdb.WALSegmentSize > 0 {
+					if cfg.tsdb.WALSegmentSize < 10*1024*1024 || cfg.tsdb.WALSegmentSize > 256*1024*1024 {
+						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
+					}
 				}
 				db, err := tsdb.Open(
 					cfg.localStoragePath,
