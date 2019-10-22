@@ -14,6 +14,9 @@
 package config
 
 import (
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -626,6 +629,19 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	return c.HTTPClientConfig.Validate()
 }
 
+// ToHash generates a hash of the config struct minus it's name, as we consider configs
+// that are identical in all but name to still be identical.
+func (c *RemoteWriteConfig) ToHash() (string, error) {
+	temp := *c
+	temp.Name = ""
+	bytes, err := json.Marshal(temp)
+	if err != nil {
+		return "", err
+	}
+	hash := md5.Sum(bytes)
+	return hex.EncodeToString(hash[:]), nil
+}
+
 // QueueConfig is the configuration for the queue used to write to remote
 // storage.
 type QueueConfig struct {
@@ -680,4 +696,18 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	return c.HTTPClientConfig.Validate()
+}
+
+// ToHash generates a hash of the config struct minus it's name, as we consider configs
+// that are identical in all but name to still be identical.
+// Copy of RemoteWriteConfigs ToHash
+func (c *RemoteReadConfig) ToHash() (string, error) {
+	temp := *c
+	temp.Name = ""
+	bytes, err := json.Marshal(temp)
+	if err != nil {
+		return "", err
+	}
+	hash := md5.Sum(bytes)
+	return hex.EncodeToString(hash[:]), nil
 }

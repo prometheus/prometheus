@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -109,9 +110,14 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	newQueues := make(map[string]*QueueManager)
 	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
-		hash, err := toHash(rwConf)
+		hash, err := rwConf.ToHash()
 		if err != nil {
 			return err
+		}
+
+		// Don't allow duplicate remote write configs.
+		if _, ok := newQueues[hash]; ok {
+			return fmt.Errorf("duplicate remote write configs are not allowed, found duplicate for URL: %s", rwConf.URL)
 		}
 
 		// If the hash exists in the current queues map, we only need

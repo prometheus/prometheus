@@ -21,11 +21,51 @@ import (
 	"time"
 
 	common_config "github.com/prometheus/common/config"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestNoDuplicateWriteConfigs(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestNoDuplicateWriteConfigs")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	// Test that configs that are identical in all but name are considered identical.
+	cfg1 := config.RemoteWriteConfig{
+		Name: "write-1",
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+	}
+	cfg2 := config.RemoteWriteConfig{
+		Name: "write-2",
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+	}
+
+	s := NewWriteStorage(nil, dir, defaultFlushDeadline)
+	conf := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			&cfg1,
+			&cfg2,
+		},
+	}
+	testutil.NotOk(t, s.ApplyConfig(conf))
+
+	err = s.Close()
+	testutil.Ok(t, err)
+}
 
 func TestWriteStorageLifecycle(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageLifecycle")

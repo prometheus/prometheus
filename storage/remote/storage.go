@@ -15,6 +15,10 @@ package remote
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -75,12 +79,19 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	}
 
 	// Update read clients
+	readHashes := make(map[string]struct{})
 	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
 	for _, rrConf := range conf.RemoteReadConfigs {
-		hash, err := toHash(rrConf)
+		hash, err := rrConf.ToHash()
 		if err != nil {
 			return nil
 		}
+
+		// Don't allow duplicate remote read configs.
+		if _, ok := readHashes[hash]; ok {
+			return fmt.Errorf("duplicate remote read configs are not allowed, found duplicate for URL: %s", rrConf.URL)
+		}
+		readHashes[hash] = struct{}{}
 
 		// Set the queue name to the config hash if the user has not set
 		// a name in their remote write config so we can still differentiate
@@ -159,4 +170,14 @@ func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
 		})
 	}
 	return ms
+}
+
+// Used for hashing configs and diff'ing hashes in ApplyConfig.
+func toHash(data interface{}) (string, error) {
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	hash := md5.Sum(bytes)
+	return hex.EncodeToString(hash[:]), nil
 }
