@@ -19,7 +19,7 @@ import GraphControls from './GraphControls';
 import Graph from './Graph';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
-import QueryStats from './QueryStats';
+import QueryStatsView, { QueryStats } from './QueryStatsView';
 
 interface PanelProps {
   options: PanelOptions;
@@ -37,11 +37,7 @@ interface PanelState {
   } | null;
   loading: boolean;
   error: string | null;
-  stats: {
-    loadTime: number,
-    resolution: number,
-    totalTimeSeries: number,
-  } | null,
+  stats: QueryStats | null,
 }
 
 export interface PanelOptions {
@@ -158,28 +154,29 @@ class Panel extends Component<PanelProps, PanelState> {
         throw new Error(json.error || 'invalid response JSON');
       }
 
-      let totalTimeSeries = 0;
-      if (json.data !== undefined) {
-        if (json.data.resultType === "scalar") {
-          totalTimeSeries = 1;
-        } else if(json.data.result !== null) {
-          totalTimeSeries = json.data.result.length;
+      let resultSeries = 0;
+      if (json.data) {
+        const { resultType, result } = json.data;
+        if (resultType === "scalar") {
+          resultSeries = 1;
+        } else if (result && result.length > 0) {
+          resultSeries = result.length;
         }
       }
-      
+
       this.setState({
         error: null,
         data: json.data,
         lastQueryParams: {
-          startTime: startTime,
-          endTime: endTime,
-          resolution: resolution,
+          startTime,
+          endTime,
+          resolution,
         },
         stats: {
           loadTime: Date.now() - queryStart,
-          resolution: resolution,
-          totalTimeSeries: totalTimeSeries,
-        },
+          resolution,
+          resultSeries
+      },
         loading: false,
       });
       this.abortInFlightFetch = null;
@@ -265,7 +262,10 @@ class Panel extends Component<PanelProps, PanelState> {
                   Graph
                 </NavLink>
               </NavItem>
-              <QueryStats loading={this.state.loading} stats={this.state.stats} />
+              {
+                (!this.state.loading && !this.state.error && this.state.stats) && 
+                <QueryStatsView {...this.state.stats} />
+              }
             </Nav>
             <TabContent activeTab={this.props.options.type}>
               <TabPane tabId="table">
@@ -307,7 +307,7 @@ class Panel extends Component<PanelProps, PanelState> {
         <Row>
           <Col>
             <Button className="float-right" color="link" onClick={this.props.removePanel} size="sm">Remove Panel</Button>
-          </Col>          
+          </Col>
         </Row>
       </div>
     );
