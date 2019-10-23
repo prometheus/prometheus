@@ -281,6 +281,51 @@ func TestReleaseNoninternedString(t *testing.T) {
 	testutil.Assert(t, metric == 0, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
 }
 
+func TestCalculateDesiredsShards(t *testing.T) {
+	type testcase struct {
+		startingShards        int
+		samplesIn, samplesOut int64
+		reshard               bool
+	}
+	cases := []testcase{
+		{
+			// Test that ensures that if we haven't successfully sent a
+			// sample recently the queue will not reshard.
+			startingShards: 10,
+			reshard:        false,
+			samplesIn:      1000,
+			samplesOut:     10,
+		},
+		{
+			startingShards: 5,
+			reshard:        true,
+			samplesIn:      1000,
+			samplesOut:     10,
+		},
+	}
+	for _, c := range cases {
+		client := NewTestStorageClient()
+		m := NewQueueManager(nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, client, defaultFlushDeadline)
+		m.numShards = c.startingShards
+		m.samplesIn.incr(c.samplesIn)
+		m.samplesOut.incr(c.samplesOut)
+		m.lastSendTimestamp = time.Now().Unix()
+
+		// Resharding shouldn't take place if the last successful send was > batch send deadline*2 seconds ago.
+		if !c.reshard {
+			m.lastSendTimestamp = m.lastSendTimestamp - int64(3*time.Duration(config.DefaultQueueConfig.BatchSendDeadline)/time.Second)
+		}
+		m.Start()
+		desiredShards := m.calculateDesiredShards()
+		m.Stop()
+		if !c.reshard {
+			testutil.Assert(t, desiredShards == m.numShards, "expected calculateDesiredShards to not want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
+		} else {
+			testutil.Assert(t, desiredShards != m.numShards, "expected calculateDesiredShards to want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
+		}
+	}
+}
+
 func createTimeseries(n int) ([]record.RefSample, []record.RefSeries) {
 	samples := make([]record.RefSample, 0, n)
 	series := make([]record.RefSeries, 0, n)

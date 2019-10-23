@@ -9,6 +9,7 @@ body {
 div.query-history {
   font-size: 0.8em;
   padding-top: 1em;
+  float: left;
 }
 
 div.query-history:hover {
@@ -169,7 +170,7 @@ input[name="end_input"], input[name="range_input"] {
 
 .prometheus_input_group .input {
   width: 100px;
-  
+
   padding: 5px 12px 6px 12px;
   font-size: 14px;
   line-height: 1.42857143;
@@ -205,4 +206,8 @@ input[name="end_input"], input[name="range_input"] {
 
 li.active, .dropdown-item:focus, .dropdown-item:hover {
   background-color: steelblue;
+}
+
+button.new_ui_button {
+  float: right;
 }
