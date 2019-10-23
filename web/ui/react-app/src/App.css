@@ -10,6 +10,16 @@ button.classic-ui-btn {
     margin-bottom: 20px;
 }
 
+input[type='checkbox']:checked + label {
+  color: #286090;
+}
+
+.custom-control-label {
+  cursor: pointer;
+  font-size: .875rem;
+  line-height: 1.8;
+}
+
 .expression-input {
     margin-bottom: 10px;
 }

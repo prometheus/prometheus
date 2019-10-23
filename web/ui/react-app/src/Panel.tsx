@@ -26,6 +26,7 @@ interface PanelProps {
   onOptionsChanged: (opts: PanelOptions) => void;
   metricNames: string[];
   removePanel: () => void;
+  onExecuteQuery: (query: string) => void;
 }
 
 interface PanelState {
@@ -102,6 +103,7 @@ class Panel extends Component<PanelProps, PanelState> {
 
   executeQuery = (expr: string): void => {
     const queryStart = Date.now();
+    this.props.onExecuteQuery(expr)
     if (this.props.options.expr !== expr) {
       this.setOptions({expr: expr});
     }
