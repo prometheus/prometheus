@@ -20,12 +20,12 @@ REACT_APP_OUTPUT_DIR = web/ui/static/graph-new
 REACT_APP_NODE_MODULES_PATH = $(REACT_APP_PATH)/node_modules
 REACT_APP_NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
 
-TSDB_PROJECT_DIR = "./tsdb"
-TSDB_CLI_DIR="$(TSDB_PROJECT_DIR)/cmd/tsdb"
-TSDB_BIN = "$(TSDB_CLI_DIR)/tsdb"
+TSDB_PROJECT_DIR = ./tsdb
+TSDB_CLI_DIR= $(TSDB_PROJECT_DIR)/cmd/tsdb
+TSDB_BIN = $(TSDB_CLI_DIR)/tsdb
 TSDB_BENCHMARK_NUM_METRICS ?= 1000
-TSDB_BENCHMARK_DATASET ?= "$(TSDB_PROJECT_DIR)/testdata/20kseries.json"
-TSDB_BENCHMARK_OUTPUT_DIR ?= "$(TSDB_CLI_DIR)/benchout"
+TSDB_BENCHMARK_DATASET ?= $(TSDB_PROJECT_DIR)/testdata/20kseries.json
+TSDB_BENCHMARK_OUTPUT_DIR ?= $(TSDB_CLI_DIR)/benchout
 
 include Makefile.common
 
