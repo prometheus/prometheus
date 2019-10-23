@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React, { Component, ChangeEvent } from 'react';
 
 import { Alert, Button, Col, Row } from 'reactstrap';
 
@@ -18,7 +18,7 @@ interface PanelListState {
 
 class PanelList extends Component<any, PanelListState> {
   private key: number = 0;
-  private initialMetricsNames: string[] = [];
+  private initialMetricNames: string[] = [];
   constructor(props: any) {
     super(props);
 
@@ -47,7 +47,7 @@ class PanelList extends Component<any, PanelListState> {
       }
     })
     .then(json => {
-      this.initialMetricsNames = json.data;
+      this.initialMetricNames = json.data;
       this.setMetrics();
     })
     .catch(error => this.setState({ fetchMetricsError: error.message }));
@@ -83,8 +83,8 @@ class PanelList extends Component<any, PanelListState> {
 
   getHistoryItems = () => JSON.parse(localStorage.getItem('history') || '[]') as string[];
 
-  toggleQueryHistory = (enabled: boolean) => {
-    localStorage.setItem('enable-query-history', `${enabled}`);
+  toggleQueryHistory = (e: ChangeEvent<HTMLInputElement>) => {
+    localStorage.setItem('enable-query-history', `${e.target.checked}`);
     this.setMetrics();
   }
 
@@ -93,15 +93,15 @@ class PanelList extends Component<any, PanelListState> {
       const historyItems = this.getHistoryItems();
       const { length } = historyItems;
       this.setState({
-        metricNames: [...historyItems.slice(length - 50, length), ...this.initialMetricsNames],
+        metricNames: [...historyItems.slice(length - 50, length), ...this.initialMetricNames],
       });
     } else {
-      this.setState({ metricNames: this.initialMetricsNames });
+      this.setState({ metricNames: this.initialMetricNames });
     }
   }
 
   handleQueryHistory = (query: string) => {
-    const isSimpleMetric = this.initialMetricsNames.indexOf(query) !== -1;            
+    const isSimpleMetric = this.initialMetricNames.indexOf(query) !== -1;            
     if (isSimpleMetric || !query.length) {
       return;
     }
@@ -154,6 +154,23 @@ class PanelList extends Component<any, PanelListState> {
   render() {
     return (
       <>
+        <Row className="mb-2">
+          <Checkbox
+            style={{ margin: '0 0 0 15px', alignSelf: 'center' }}
+            onChange={this.toggleQueryHistory}
+            checked={this.isHistoryEnabled()}>
+            Enable query history
+          </Checkbox>
+          <Col>
+            <Button
+              className="float-right classic-ui-btn"
+              color="link"
+              onClick={() => { window.location.pathname = "../../graph" }}
+              size="sm">
+              Return to classic UI
+            </Button>
+          </Col>
+        </Row>
         <Row>
           <Col>
             {this.state.timeDriftError && <Alert color="danger"><strong>Warning:</strong> Error fetching server time: {this.state.timeDriftError}</Alert>}
@@ -164,11 +181,6 @@ class PanelList extends Component<any, PanelListState> {
             {this.state.fetchMetricsError && <Alert color="danger"><strong>Warning:</strong> Error fetching metrics list: {this.state.fetchMetricsError}</Alert>}
           </Col>
         </Row>
-        <Checkbox
-          onToggle={this.toggleQueryHistory}
-          checked={this.isHistoryEnabled()}>
-            Enable query history
-        </Checkbox>
         {this.state.panels.map(p =>
           <Panel
             onExecuteQuery={this.handleQueryHistory}

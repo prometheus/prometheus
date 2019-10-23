@@ -1,23 +1,22 @@
-import React, { FC, useState, HTMLProps, memo } from 'react';
-import { FontAwesomeIcon, FontAwesomeIconProps } from '@fortawesome/react-fontawesome';
+import React, { FC, HTMLProps, memo } from 'react';
+import { FormGroup, Label, Input } from 'reactstrap';
+import { uuidGen } from './utils/func';
 
-interface CheckboxProps extends Omit<HTMLProps<HTMLSpanElement>, 'size' | 'onClick'> {
-  onToggle: (selected: boolean) => void
-}
-
-const Checkbox: FC<CheckboxProps & Pick<FontAwesomeIconProps, 'size'>> = props => {
-  const { children, onToggle, size = 'sm', checked = false, ...rest } = props;
-  const [selected, setSelected] = useState(checked);
-  const handleClick = () => {
-    setSelected(!selected);
-    onToggle && onToggle(!selected);
-  }
+const Checkbox: FC<HTMLProps<HTMLSpanElement>> = ({ children, onChange, style }) => {
+  const id = uuidGen();
   return (
-    <span {...rest} onClick={handleClick} className={`checkbox${(selected ? ' checked' : '')}`}>
-      <FontAwesomeIcon size={size} icon={['far', (selected ? 'check-square' : 'square')]}/>
-      <span className="checkbox-label">{children}</span>
-    </span>
+    <FormGroup className="custom-control custom-checkbox" style={style}>
+      <Input
+        onChange={onChange}
+        type="checkbox"
+        className="custom-control-input"
+        id={`checkbox_${id}`}
+        placeholder="password placeholder" />
+      <Label style={{ userSelect: 'none' }} className="custom-control-label" for={`checkbox_${id}`}>
+        {children}
+      </Label>
+    </FormGroup>
   )
-};
+}
 
 export default memo(Checkbox);
