@@ -304,28 +304,28 @@ func TestGetDatacenter_ShouldUseAgentInfo(t *testing.T) {
 
 	d := newDiscovery(t, config)
 
-	// should be empty if not initialized
+	// Should be empty if not initialized.
 	testutil.Equals(t, "", d.clientDatacenter)
 
 	err := d.getDatacenter()
 
-	// no error expected here
+	// No error expected here.
 	testutil.Equals(t, nil, err)
-	// should be value of agent info once initialized
+	// Should be value of agent info once initialized.
 	testutil.Equals(t, "test-dc", d.clientDatacenter)
 
-	// second call should use value cached
+	// second call should use value cached.
 	err = d.getDatacenter()
 
-	// no error expected here
+	// No error expected here.
 	testutil.Equals(t, nil, err)
-	// should be value of agent info once initialized
+	// Should still be value of agent info.
 	testutil.Equals(t, "test-dc", d.clientDatacenter)
 }
 
 func TestGetDatacenter_ShouldReturnErrorGivenInternalServerError(t *testing.T) {
 
-	// create a stub server that will return status 500
+	// Create a stub server that will return status 500.
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 	}))
@@ -337,25 +337,25 @@ func TestGetDatacenter_ShouldReturnErrorGivenInternalServerError(t *testing.T) {
 		Token:           "fake-token",
 		RefreshInterval: model.Duration(1 * time.Second),
 	}
-	// do not forget to close it
+	// Do not forget to close it.
 	defer stub.Close()
 
 	d := newDiscovery(t, config)
 
-	// should be empty if not initialized
+	// Should be empty if not initialized.
 	testutil.Equals(t, "", d.clientDatacenter)
 
 	err = d.getDatacenter()
 
-	// an error should be returned
+	// An error should be returned.
 	testutil.Equals(t, "Unexpected response code: 500 ()", err.Error())
-	// should still be empty
+	// Should still be empty.
 	testutil.Equals(t, "", d.clientDatacenter)
 }
 
 func TestGetDatacenter_ShouldReturnErrorGivenNotFoundInResponse(t *testing.T) {
 
-	// create a stub server that will return incorrect response
+	// Create a stub server that will return incorrect response.
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
 	}))
@@ -368,18 +368,18 @@ func TestGetDatacenter_ShouldReturnErrorGivenNotFoundInResponse(t *testing.T) {
 		RefreshInterval: model.Duration(1 * time.Second),
 	}
 
-	// do not forget to close it
+	// Do not forget to close it.
 	defer stub.Close()
 
 	d := newDiscovery(t, config)
 
-	// should be empty if not initialized
+	// Should be empty if not initialized.
 	testutil.Equals(t, "", d.clientDatacenter)
 
 	err = d.getDatacenter()
 
-	// an error should be returned
+	// An error should be returned.
 	testutil.Equals(t, "invalid value '<nil>' for Config.Datacenter", err.Error())
-	// should still be empty
+	// Should still be empty.
 	testutil.Equals(t, "", d.clientDatacenter)
 }
