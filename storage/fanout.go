@@ -249,7 +249,7 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 		go func(qr Querier) {
 			defer wg.Done()
 			set, wrn, err := qr.SelectSorted(params, matchers...)
-			queryResultChan <- &queryResult{qr: querier, set: set, wrn: wrn, selectError: err}
+			queryResultChan <- &queryResult{qr: qr, set: set, wrn: wrn, selectError: err}
 		}(querier)
 	}
 	wg.Wait()
