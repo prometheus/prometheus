@@ -55,28 +55,32 @@ class PanelList extends Component<any, PanelListState> {
     .catch(error => this.setState({ fetchMetricsError: error.message }));
 
     const browserTime = new Date().getTime() / 1000;
-    fetch("../../api/v1/query?query=time()", {cache: "no-store"})
-    .then(resp => {
-      if (resp.ok) {
-        return resp.json();
-      } else {
-        throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
-      }
-    })
-    .then(json => {
-      const serverTime = json.data.result[0];
-      const delta = Math.abs(browserTime - serverTime);
+    fetch('../../api/v1/query?query=time()', { cache: 'no-store' })
+      .then(resp => {
+        if (resp.ok) {
+          return resp.json();
+        } else {
+          throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
+        }
+      })
+      .then(json => {
+        const serverTime = json.data.result[0];
+        const delta = Math.abs(browserTime - serverTime);
 
-      if (delta >= 30) {
-        throw new Error('Detected ' + delta + ' seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.');
-      }
-    })
-    .catch(error => this.setState({ timeDriftError: error.message }));
+        if (delta >= 30) {
+          throw new Error(
+            'Detected ' +
+              delta +
+              ' seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.'
+          );
+        }
+      })
+      .catch(error => this.setState({ timeDriftError: error.message }));
 
     window.onpopstate = () => {
       const panels = decodePanelOptionsFromQueryString(window.location.search);
       if (panels.length !== 0) {
-        this.setState({panels: panels});
+        this.setState({ panels: panels });
       }
     }
 
@@ -121,11 +125,11 @@ class PanelList extends Component<any, PanelListState> {
         return {
           key: key,
           options: opts,
-        }
+        };
       }
       return p;
     });
-    this.setState({panels: newPanels}, this.updateURL)
+    this.setState({ panels: newPanels }, this.updateURL);
   }
 
   updateURL(): void {
@@ -139,15 +143,15 @@ class PanelList extends Component<any, PanelListState> {
       key: this.getKey(),
       options: PanelDefaultOptions,
     });
-    this.setState({panels: panels}, this.updateURL);
-  }
+    this.setState({ panels: panels }, this.updateURL);
+  };
 
   removePanel = (key: string): void => {
     const panels = this.state.panels.filter(panel => {
       return panel.key !== key;
     });
-    this.setState({panels: panels}, this.updateURL);
-  }
+    this.setState({ panels: panels }, this.updateURL);
+  };
 
   render() {
     const { metricNames, pastQueries, timeDriftError, fetchMetricsError } = this.state;
@@ -172,7 +176,7 @@ class PanelList extends Component<any, PanelListState> {
             {fetchMetricsError && <Alert color="danger"><strong>Warning:</strong> Error fetching metrics list: {this.state.fetchMetricsError}</Alert>}
           </Col>
         </Row>
-        {this.state.panels.map(p =>
+        {this.state.panels.map(p => (
           <Panel
             onExecuteQuery={this.handleQueryHistory}
             key={p.key}
@@ -182,8 +186,10 @@ class PanelList extends Component<any, PanelListState> {
             metricNames={metricNames}
             pastQueries={pastQueries}
           />
-        )}
-        <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>Add Panel</Button>
+        ))}
+        <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>
+          Add Panel
+        </Button>
       </>
     );
   }

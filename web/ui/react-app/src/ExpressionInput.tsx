@@ -37,8 +37,8 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     super(props);
     this.state = {
       value: props.value,
-      height: 'auto'
-    }
+      height: 'auto',
+    };
   }
 
   componentDidMount() {
@@ -49,14 +49,17 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     const { offsetHeight, clientHeight, scrollHeight } = this.exprInputRef.current!;
     const offset = offsetHeight - clientHeight; // Needed in order for the height to be more accurate.
     this.setState({ height: scrollHeight + offset });
-  }
+  };
 
   handleInput = () => {
-    this.setState({
-      height: 'auto',
-      value: this.exprInputRef.current!.value
-    }, this.setHeight);
-  }
+    this.setState(
+      {
+        height: 'auto',
+        value: this.exprInputRef.current!.value,
+      },
+      this.setHeight
+    );
+  };
 
   handleDropdownSelection = (value: string) => {
     this.setState({ value, height: 'auto' }, this.setHeight);
@@ -67,7 +70,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
       this.props.executeQuery(this.exprInputRef.current!.value);
       event.preventDefault();
     }
-  }
+  };
 
   executeQuery = () => this.props.executeQuery(this.exprInputRef.current!.value);
 
@@ -124,7 +127,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
         { sections }
       </div>
     );
-  }
+  };
 
   render() {
     const { value, height } = this.state;
@@ -175,15 +178,11 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                         break;
                       default:
                     }
-                  }
+                  },
                 } as any)}
               />
               <InputGroupAddon addonType="append">
-                <Button
-                  className="execute-btn"
-                  color="primary"
-                  onClick={this.executeQuery}
-                >
+                <Button className="execute-btn" color="primary" onClick={this.executeQuery}>
                   Execute
                 </Button>
               </InputGroupAddon>

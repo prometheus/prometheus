@@ -42,21 +42,21 @@ class TimeInput extends Component<TimeInputProps> {
 
   getBaseTime = (): number => {
     return this.props.time || moment().valueOf();
-  }
+  };
 
   increaseTime = (): void => {
-    const time = this.getBaseTime() + this.props.range*1000/2;
+    const time = this.getBaseTime() + (this.props.range * 1000) / 2;
     this.props.onChangeTime(time);
-  }
+  };
 
   decreaseTime = (): void => {
-    const time = this.getBaseTime() - this.props.range*1000/2;
+    const time = this.getBaseTime() - (this.props.range * 1000) / 2;
     this.props.onChangeTime(time);
-  }
+  };
 
   clearTime = (): void => {
     this.props.onChangeTime(null);
-  }
+  };
 
   componentDidMount() {
     this.$time = $(this.timeInputRef.current!);
@@ -104,16 +104,16 @@ class TimeInput extends Component<TimeInputProps> {
           innerRef={this.timeInputRef}
           onFocus={() => this.$time.datetimepicker('show')}
           onBlur={() => this.$time.datetimepicker('hide')}
-          onKeyDown={(e) => ['Escape', 'Enter'].includes(e.key) && this.$time.datetimepicker('hide')}
+          onKeyDown={e => ['Escape', 'Enter'].includes(e.key) && this.$time.datetimepicker('hide')}
         />
 
         {/* CAUTION: While the datetimepicker also has an option to show a 'clear' button,
             that functionality is broken, so we create an external solution instead. */}
-        {this.props.time &&
+        {this.props.time && (
           <InputGroupAddon addonType="append">
             <Button className="clear-time-btn" title="Clear time" onClick={this.clearTime}><FontAwesomeIcon icon={faTimes} fixedWidth /></Button>
           </InputGroupAddon>
-        }
+        )}
 
         <InputGroupAddon addonType="append">
           <Button title="Increase time" onClick={this.increaseTime}><FontAwesomeIcon icon={faChevronRight} fixedWidth /></Button>

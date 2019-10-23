@@ -42,10 +42,32 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "lint:fix": "eslint --fix \"src/**/*.{ts,tsx}\""
   },
   "eslintConfig": {
-    "extends": "react-app"
+    "parser": "@typescript-eslint/parser",
+    "extends": [
+      "react-app",
+      "plugin:@typescript-eslint/recommended",
+      "plugin:prettier/recommended"
+    ],
+    "rules": {
+      "@typescript-eslint/camelcase": "warn",
+      "eol-last": [
+        "error",
+        "always"
+      ],
+      "prefer-const": "warn"
+    },
+    "plugins": [
+      "prettier"
+    ]
+  },
+  "prettier": {
+    "singleQuote": true,
+    "trailingComma": "es5",
+    "printWidth": 125
   },
   "browserslist": [
     ">0.2%",
@@ -56,7 +78,20 @@
   "devDependencies": {
     "@types/flot": "0.0.31",
     "@types/moment-timezone": "^0.5.10",
-    "@types/reactstrap": "^8.0.5"
+    "@types/reactstrap": "^8.0.5",
+    "@typescript-eslint/eslint-plugin": "2.x",
+    "@typescript-eslint/parser": "2.x",
+    "babel-eslint": "10.x",
+    "eslint": "6.x",
+    "eslint-config-prettier": "^6.4.0",
+    "eslint-config-react-app": "^5.0.2",
+    "eslint-plugin-flowtype": "3.x",
+    "eslint-plugin-import": "2.x",
+    "eslint-plugin-jsx-a11y": "6.x",
+    "eslint-plugin-prettier": "^3.1.1",
+    "eslint-plugin-react": "7.x",
+    "eslint-plugin-react-hooks": "1.x",
+    "prettier": "^1.18.2"
   },
   "proxy": "http://localhost:9090"
 }

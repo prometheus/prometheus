@@ -5,33 +5,38 @@ import { Alert, Table } from 'reactstrap';
 import SeriesName from './SeriesName';
 
 export interface QueryResult {
-  data: null | {
-    resultType: 'vector',
-    result: InstantSample[],
-  } | {
-    resultType: 'matrix',
-    result: RangeSamples[],
-  } | {
-    resultType: 'scalar',
-    result: SampleValue,
-  } | {
-    resultType: 'string',
-    result: string,
-  },
-};
+  data:
+    | null
+    | {
+        resultType: 'vector';
+        result: InstantSample[];
+      }
+    | {
+        resultType: 'matrix';
+        result: RangeSamples[];
+      }
+    | {
+        resultType: 'scalar';
+        result: SampleValue;
+      }
+    | {
+        resultType: 'string';
+        result: string;
+      };
+}
 
 interface InstantSample {
-  metric: Metric,
-  value: SampleValue,
+  metric: Metric;
+  value: SampleValue;
 }
 
 interface RangeSamples {
-  metric: Metric,
-  values: SampleValue[],
+  metric: Metric;
+  values: SampleValue[];
 }
 
 interface Metric {
-  [key: string]: string,
+  [key: string]: string;
 }
 
 type SampleValue = [number, string];
@@ -59,29 +64,55 @@ class DataTable extends PureComponent<QueryResult> {
 
     let rows: ReactNode[] = [];
     let limited = false;
-    switch(data.resultType) {
+    switch (data.resultType) {
       case 'vector':
-        rows = (this.limitSeries(data.result) as InstantSample[])
-          .map((s: InstantSample, index: number): ReactNode => {
-            return <tr key={index}><td><SeriesName labels={s.metric} format={false}/></td><td>{s.value[1]}</td></tr>;
-          });
+        rows = (this.limitSeries(data.result) as InstantSample[]).map(
+          (s: InstantSample, index: number): ReactNode => {
+            return (
+              <tr key={index}>
+                <td>
+                  <SeriesName labels={s.metric} format={false} />
+                </td>
+                <td>{s.value[1]}</td>
+              </tr>
+            );
+          }
+        );
         limited = rows.length !== data.result.length;
         break;
       case 'matrix':
-        rows = (this.limitSeries(data.result) as RangeSamples[])
-          .map((s, index) => {
-            const valueText = s.values.map((v) => {
+        rows = (this.limitSeries(data.result) as RangeSamples[]).map((s, index) => {
+          const valueText = s.values
+            .map(v => {
               return [1] + ' @' + v[0];
-            }).join('\n');
-            return <tr style={{whiteSpace: 'pre'}} key={index}><td><SeriesName labels={s.metric} format={false}/></td><td>{valueText}</td></tr>;
-          });
+            })
+            .join('\n');
+          return (
+            <tr style={{ whiteSpace: 'pre' }} key={index}>
+              <td>
+                <SeriesName labels={s.metric} format={false} />
+              </td>
+              <td>{valueText}</td>
+            </tr>
+          );
+        });
         limited = rows.length !== data.result.length;
         break;
       case 'scalar':
-        rows.push(<tr><td>scalar</td><td>{data.result[1]}</td></tr>);
+        rows.push(
+          <tr>
+            <td>scalar</td>
+            <td>{data.result[1]}</td>
+          </tr>
+        );
         break;
       case 'string':
-        rows.push(<tr><td>scalar</td><td>{data.result[1]}</td></tr>);
+        rows.push(
+          <tr>
+            <td>scalar</td>
+            <td>{data.result[1]}</td>
+          </tr>
+        );
         break;
       default:
         return <Alert color="danger">Unsupported result value type</Alert>;
@@ -89,15 +120,13 @@ class DataTable extends PureComponent<QueryResult> {
 
     return (
       <>
-        {limited &&
+        {limited && (
           <Alert color="danger">
             <strong>Warning:</strong> Fetched {data.result.length} metrics, only displaying first {rows.length}.
           </Alert>
-        }
+        )}
         <Table hover size="sm" className="data-table">
-          <tbody>
-            {rows}
-          </tbody>
+          <tbody>{rows}</tbody>
         </Table>
       </>
     );
