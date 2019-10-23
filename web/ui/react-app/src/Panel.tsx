@@ -19,6 +19,7 @@ import GraphControls from './GraphControls';
 import Graph from './Graph';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
+import QueryStatsView, { QueryStats } from './QueryStatsView';
 
 interface PanelProps {
   options: PanelOptions;
@@ -36,7 +37,7 @@ interface PanelState {
   } | null;
   loading: boolean;
   error: string | null;
-  stats: null; // TODO: Stats.
+  stats: QueryStats | null,
 }
 
 export interface PanelOptions {
@@ -100,6 +101,7 @@ class Panel extends Component<PanelProps, PanelState> {
   }
 
   executeQuery = (expr: string): void => {
+    const queryStart = Date.now();
     if (this.props.options.expr !== expr) {
       this.setOptions({expr: expr});
     }
@@ -119,7 +121,6 @@ class Panel extends Component<PanelProps, PanelState> {
     const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueof only work when it's a moment?
     const startTime = endTime - this.props.options.range;
     const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250), 1);
-
     const url = new URL(window.location.href);
     const params: {[key: string]: string} = {
       'query': expr,
@@ -153,14 +154,29 @@ class Panel extends Component<PanelProps, PanelState> {
         throw new Error(json.error || 'invalid response JSON');
       }
 
+      let resultSeries = 0;
+      if (json.data) {
+        const { resultType, result } = json.data;
+        if (resultType === "scalar") {
+          resultSeries = 1;
+        } else if (result && result.length > 0) {
+          resultSeries = result.length;
+        }
+      }
+
       this.setState({
         error: null,
         data: json.data,
         lastQueryParams: {
-          startTime: startTime,
-          endTime: endTime,
-          resolution: resolution,
+          startTime,
+          endTime,
+          resolution,
         },
+        stats: {
+          loadTime: Date.now() - queryStart,
+          resolution,
+          resultSeries
+      },
         loading: false,
       });
       this.abortInFlightFetch = null;
@@ -246,6 +262,10 @@ class Panel extends Component<PanelProps, PanelState> {
                   Graph
                 </NavLink>
               </NavItem>
+              {
+                (!this.state.loading && !this.state.error && this.state.stats) && 
+                <QueryStatsView {...this.state.stats} />
+              }
             </Nav>
             <TabContent activeTab={this.props.options.type}>
               <TabPane tabId="table">
