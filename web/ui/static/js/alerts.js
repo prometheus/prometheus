@@ -37,8 +37,8 @@ function init() {
       $("#inactiveAlerts").parent().removeClass("active");
       displayAlerts("alert-success", false);
   }
-  if(localStorage.hideActiveAlerts === "true") {
-      $("#activeAlerts").parent().removeClass("active");
+  if(localStorage.hidePendingAlerts === "true") {
+      $("#pendingAlerts").parent().removeClass("active");
       displayAlerts("alert-warning", false);
   }
   if(localStorage.hideFiringAlerts === "true") {
@@ -52,8 +52,8 @@ function init() {
         if (target === "inactiveAlerts") {
             localStorage.setItem("hideInactiveAlerts", shouldHide);
             displayAlerts("alert-success", !shouldHide);
-        } else if (target === "activeAlerts") {
-            localStorage.setItem("hideActiveAlerts", shouldHide);
+        } else if (target === "pendingAlerts") {
+            localStorage.setItem("hidePendingAlerts", shouldHide);
             displayAlerts("alert-warning", !shouldHide);
         } else if (target === "firingAlerts") {
             localStorage.setItem("hideFiringAlerts", shouldHide);

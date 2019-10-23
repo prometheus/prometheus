@@ -562,7 +562,7 @@ func alertCounts(groups []*rules.Group) AlertByStateCount {
 			case rules.StateInactive:
 				result.Inactive++
 			case rules.StatePending:
-				result.Active++
+				result.Pending++
 			case rules.StateFiring:
 				result.Firing++
 			}
@@ -990,6 +990,6 @@ type AlertStatus struct {
 
 type AlertByStateCount struct {
 	Inactive int32
-	Active   int32
+	Pending  int32
 	Firing   int32
 }
