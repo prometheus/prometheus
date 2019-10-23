@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -121,6 +122,22 @@ type Appender interface {
 
 	// Rollback rolls back all modifications made in the appender so far.
 	// Appender has to be discarded after rollback.
+	Rollback() error
+}
+
+// ExemplarAppender provides batched appends against a storage.
+type ExemplarAppender interface {
+	Add(l labels.Labels, t int64, v float64) (uint64, error)
+
+	AddFast(ref uint64, t int64, v float64) error
+
+	AddWithExemplar(l labels.Labels, e exemplar.Exemplar, t int64, v float64) (uint64, error)
+
+	AddFastWithExemplar(e exemplar.Exemplar, ref uint64, t int64, v float64) error
+
+	// Commit submits the collected samples and purges the batch.
+	Commit() error
+
 	Rollback() error
 }
 

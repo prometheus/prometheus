@@ -38,6 +38,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/pool"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -1064,8 +1065,10 @@ func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total,
 		numOutOfOrder  = 0
 		numDuplicates  = 0
 		numOutOfBounds = 0
+		sampleLimitErr error
 	)
-	var sampleLimitErr error
+
+	exemplarApp, isExemplarApp := app.(storage.ExemplarAppender)
 
 loop:
 	for {
@@ -1101,12 +1104,20 @@ loop:
 			t = *tp
 		}
 
+		var e exemplar.Exemplar
+		exemplarExists := p.Exemplar(&e)
+
 		if sl.cache.getDropped(yoloString(met)) {
 			continue
 		}
 		ce, ok := sl.cache.get(yoloString(met))
 		if ok {
-			switch err = app.AddFast(ce.ref, t, v); err {
+			if exemplarExists && isExemplarApp {
+				err = exemplarApp.AddFastWithExemplar(ce.lset, e, ce.ref, t, v)
+			} else {
+				err = app.AddFast(ce.ref, t, v)
+			}
+			switch err {
 			case nil:
 				if tp == nil {
 					sl.cache.trackStaleness(ce.hash, ce.lset)
@@ -1155,7 +1166,12 @@ loop:
 			}
 
 			var ref uint64
-			ref, err = app.Add(lset, t, v)
+			if exemplarExists && isExemplarApp {
+				ref, err = exemplarApp.AddWithExemplar(lset, e, t, v)
+			} else {
+				ref, err = app.Add(lset, t, v)
+			}
+
 			switch err {
 			case nil:
 			case storage.ErrOutOfOrderSample:

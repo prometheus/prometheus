@@ -21,6 +21,7 @@ import "gogoproto/gogo.proto";
 message Sample {
   double value    = 1;
   int64 timestamp = 2;
+  Exemplar exemplar = 3;
 }
 
 // TimeSeries represents samples and labels for a single time series.
@@ -49,6 +50,12 @@ message LabelMatcher {
   Type type    = 1;
   string name  = 2;
   string value = 3;
+}
+
+message Exemplar {
+  repeated Label labels = 1 [(gogoproto.nullable) = false];
+  double value = 2;
+  int64 timestamp = 3;
 }
 
 message ReadHints {
