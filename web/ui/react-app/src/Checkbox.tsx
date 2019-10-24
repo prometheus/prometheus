@@ -13,7 +13,7 @@ const Checkbox: FC<CheckboxProps> = ({ children, wrapperStyles, id, ...rest }) =
         {children}
       </Label>
     </FormGroup>
-  )
-}
+  );
+};
 
 export default memo(Checkbox);
