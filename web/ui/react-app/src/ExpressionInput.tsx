@@ -32,7 +32,6 @@ interface ExpressionInputState {
 }
 
 class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
-  private prevNoMatchValue: string | null = null;
   private exprInputRef = React.createRef<HTMLInputElement>();
 
   constructor(props: ExpressionInputProps) {
@@ -81,48 +80,43 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   }
 
   creatAutocompleteSection = (downshift: ControllerStateAndHelpers<any>) => {
-    const { inputValue, closeMenu, highlightedIndex } = downshift;
-    if (!inputValue || (this.prevNoMatchValue && inputValue.includes(this.prevNoMatchValue))) {
+    const { inputValue = '', closeMenu, highlightedIndex } = downshift;
+    const { metricGroups } = this.props;
+    let index = 0;
+    const sections = inputValue!.length ?
+      Object.values(metricGroups).reduce((acc, { items, title }) => {
+        const matches = this.getSearchMatches(inputValue!, items);
+        return !matches.length ? acc : [
+          ...acc,
+            <Card tag={ListGroup} key={title}>
+              <CardHeader style={{ fontSize: 13 }}>{title}</CardHeader>
+              {
+                matches
+                  .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+                  .map(({ original, string }) => {
+                    const itemProps = downshift.getItemProps({
+                      key: original,
+                      index,
+                      item: original,
+                      style: {
+                        backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
+                      },
+                    })
+                    return (
+                      <SanitizeHTML tag={ListGroupItem} {...itemProps} allowedTags={['strong']}>
+                        {string}
+                      </SanitizeHTML>
+                    )
+                  })
+              }
+            </Card>
+        ]
+      }, [] as JSX.Element[]) : []
+
+    if (!sections.length) {
       // This is ugly but is needed in order to sync state updates.
       // This way we force downshift to wait React render call to complete before closeMenu to be triggered.
       setTimeout(closeMenu);
-      return null;
-    }
-
-    const { metricGroups } = this.props;
-    let index = 0;
-    const sections = Object.values(metricGroups).reduce((acc, { items, title }, i) => {
-      const matches = this.getSearchMatches(inputValue, items);
-      return !matches.length ? acc : [
-        ...acc,
-          <Card tag={ListGroup} key={`sec_${i}`}>
-            <CardHeader style={{ fontSize: 13 }}>{title}</CardHeader>
-            {
-              matches
-                .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
-                .map(({ original, string }) => {
-                  const itemProps = downshift.getItemProps({
-                    key: original,
-                    index,
-                    item: original,
-                    style: {
-                      backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
-                    },
-                  })
-                  return (
-                    <SanitizeHTML tag={ListGroupItem} {...itemProps} allowedTags={['strong']}>
-                      {string}
-                    </SanitizeHTML>
-                  )
-                })
-            }
-          </Card>
-      ]
-    }, [] as JSX.Element[])
-
-    if (sections.length === 0) {
-      this.prevNoMatchValue = inputValue;
-      setTimeout(downshift.closeMenu);
       return null;
     }
 

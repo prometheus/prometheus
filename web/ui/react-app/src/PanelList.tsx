@@ -96,15 +96,9 @@ class PanelList extends Component<any, PanelListState> {
 
   setMetrics = (metrics?: string[]) => {
     const { metricNames, queries } = this.state.metricGroups;
-    let queryItems: string[] = [];
-    if (this.isHistoryEnabled()) {
-      const historyItems = this.getHistoryItems();
-      const { length } = historyItems;
-      queryItems = historyItems.slice(length - 50, length)
-    }
     this.setState({
       metricGroups: {
-        queries: { ...queries, items: queryItems },
+        queries: { ...queries, items: this.isHistoryEnabled() ? this.getHistoryItems() : [] },
         metricNames: { ...metricNames, items: metrics || metricNames.items }
       }
     });
@@ -119,7 +113,7 @@ class PanelList extends Component<any, PanelListState> {
     const extendedItems = historyItems.reduce((acc, metric) => {
       return metric === query ? acc : [...acc, metric]; // Prevent adding query twice.
     }, [query]);
-    localStorage.setItem('history', JSON.stringify(extendedItems));
+    localStorage.setItem('history', JSON.stringify(extendedItems.slice(0, 50)));
     this.setMetrics();
   }
 
