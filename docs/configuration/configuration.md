@@ -853,7 +853,7 @@ namespaces:
 
 # Optional label and field selectors to limit the discovery process to a subset of available resources. 
 # See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
-# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to know more about the possible 
+# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible 
 # filters that can be used. Endpoints role supports pod, service and endpoints selectors, other roles
 # only support selectors matching the role itself (e.g. node role can only contain node selectors).
 selectors:
