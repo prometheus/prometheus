@@ -32,12 +32,6 @@ expression), only some of these types are legal as the result from a
 user-specified expression. For example, an expression that returns an instant
 vector is the only type that can be directly graphed.
 
-## Comments
-
-PromQL supports line comments that start with `#`. Example:
-
-        # This is a comment
-
 ## Literals
 
 ### String literals
@@ -193,6 +187,12 @@ in detail in the [expression language operators](operators.md) page.
 
 Prometheus supports several functions to operate on data. These are described
 in detail in the [expression language functions](functions.md) page.
+
+## Comments
+
+PromQL supports line comments that start with `#`. Example:
+
+        # This is a comment
 
 ## Gotchas
 
