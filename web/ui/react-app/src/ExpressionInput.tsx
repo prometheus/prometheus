@@ -131,8 +131,8 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     const { value, height } = this.state;
     return (
       <Downshift
-        onChange={this.handleDropdownSelection}
         inputValue={value}
+        onSelect={this.handleDropdownSelection}
       >
         {(downshift) => (
           <div>
