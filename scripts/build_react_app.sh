@@ -12,9 +12,6 @@ fi
 
 cd web/ui/react-app
 
-echo "linting React app"
-PUBLIC_URL=. yarn lint:ci
-
 echo "building React app"
 PUBLIC_URL=. yarn build
 rm -rf ../static/react

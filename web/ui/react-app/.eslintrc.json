@@ -7,13 +7,17 @@
     ],
     "rules": {
       "@typescript-eslint/camelcase": "warn",
-      "eol-last": [
-        "error",
-        "always"
-      ],
-      "prefer-const": "warn"
+      "eol-last": ["error", "always"],
+      "object-curly-spacing": ["error", "always"],
+      "prefer-const": "warn",
+      "comma-dangle": ["error", {
+        "arrays": "always-multiline",
+        "objects": "always-multiline",
+        "imports": "always-multiline"
+      }]
     },
     "plugins": [
       "prettier"
     ]
   }
+  

@@ -47,8 +47,13 @@ assets: $(REACT_APP_OUTPUT_DIR)
 	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
 	@$(GOFMT) -w ./web/ui
 
+.PHONY: react-app-lint
+react-app-lint: 
+	@echo ">> running React app linting"
+	cd $(REACT_APP_PATH) && yarn lint:ci
+
 .PHONY: react-app-test
-react-app-test: $(REACT_APP_NODE_MODULES_PATH)
+react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
 	@echo ">> running React app tests"
 	cd $(REACT_APP_PATH) && yarn test --no-watch
 
