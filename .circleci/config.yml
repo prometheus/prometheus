@@ -3,6 +3,7 @@ version: 2.1
 
 orbs:
   prometheus: prometheus/prometheus@0.3.0
+  go: circleci/go@0.2.0
 
 executors:
   # Whenever the Go version is updated here, .travis.yml and .promu.yml
@@ -21,6 +22,12 @@ jobs:
 
     steps:
     - prometheus/setup_environment
+    - go/load-cache:
+        key: v1
+    - restore_cache:
+        keys:
+        - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        - v1-npm-deps-
     - run:
         command: make
         environment:
@@ -36,6 +43,12 @@ jobs:
         file: prometheus
     - prometheus/store_artifact:
         file: promtool
+    - go/save-cache:
+        key: v1
+    - save_cache:
+        key: v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        paths:
+        - web/ui/react-app/node_modules
   fuzzit_regression:
     executor: fuzzit
     working_directory: /go/src/github.com/prometheus/prometheus
