@@ -115,9 +115,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.Role == "" {
-		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
-	}
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
 		return err
@@ -147,7 +144,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return errors.Errorf("ingress role supports only ingress selectors")
 		}
 	default:
-		return errors.Errorf("role is not one of: pod, service, endpoints, node, ingress")
+		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
 	}
 	return nil
 }
