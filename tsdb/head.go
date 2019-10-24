@@ -237,23 +237,19 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 
 const cardinalityCacheExperationTime int64 = 30 //seconds
 
-//Return Highest Cardinality stats for Labels and Value Names
-func (h *Head) PostingsCardinalityStats(label string) *index.PostingsStats {
+//Return top 10 Highest Cardinality stats for Labels and Value Names
+func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.PostingsStats {
 	h.cardinalityMutex.Lock()
 	defer h.cardinalityMutex.Unlock()
 
 	seconds := time.Now().Unix() - h.lastPostingsStatsCall
-
 	if seconds > cardinalityCacheExperationTime {
 		h.cardinalityCache = nil
 	}
-
 	if h.cardinalityCache != nil {
 		return h.cardinalityCache
 	}
-
-	h.cardinalityCache = h.postings.Stats(label)
-
+	h.cardinalityCache = h.postings.Stats(statsByLabelName)
 	h.lastPostingsStatsCall = time.Now().Unix()
 
 	return h.cardinalityCache
