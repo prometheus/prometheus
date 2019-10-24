@@ -43,26 +43,8 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "lint:fix": "eslint --fix \"src/**/*.{ts,tsx}\""
-  },
-  "eslintConfig": {
-    "parser": "@typescript-eslint/parser",
-    "extends": [
-      "react-app",
-      "plugin:@typescript-eslint/recommended",
-      "plugin:prettier/recommended"
-    ],
-    "rules": {
-      "@typescript-eslint/camelcase": "warn",
-      "eol-last": [
-        "error",
-        "always"
-      ],
-      "prefer-const": "warn"
-    },
-    "plugins": [
-      "prettier"
-    ]
+    "lint:ci": "eslint --quiet \"src/**/*.{ts,tsx}\"",
+    "lint": "eslint --fix \"src/**/*.{ts,tsx}\""
   },
   "prettier": {
     "singleQuote": true,

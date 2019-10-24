@@ -1,0 +1,19 @@
+{
+    "parser": "@typescript-eslint/parser",
+    "extends": [
+      "react-app",
+      "plugin:@typescript-eslint/recommended",
+      "plugin:prettier/recommended"
+    ],
+    "rules": {
+      "@typescript-eslint/camelcase": "warn",
+      "eol-last": [
+        "error",
+        "always"
+      ],
+      "prefer-const": "warn"
+    },
+    "plugins": [
+      "prettier"
+    ]
+  }
