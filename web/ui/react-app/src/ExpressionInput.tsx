@@ -126,7 +126,11 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
       return null;
     }
 
-    return sections;
+    return (
+      <div {...downshift.getMenuProps()} className="autosuggest-dropdown">
+        { sections }
+      </div>
+    );
   }
 
   render() {
@@ -191,10 +195,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                 </Button>
               </InputGroupAddon>
             </InputGroup>
-            {downshift.isOpen &&
-              <div {...downshift.getMenuProps()} className="autosuggest-dropdown">
-                { this.creatAutocompleteSection(downshift) }
-              </div>}
+            {downshift.isOpen && this.creatAutocompleteSection(downshift)}
           </div>
         )}
       </Downshift>
