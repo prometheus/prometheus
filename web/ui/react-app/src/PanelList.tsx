@@ -6,19 +6,23 @@ import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from './utils/urlParams';
 import Checkbox from './Checkbox';
 
+export type MetricGroup = { title: string; items: string[] };
+
 interface PanelListState {
   panels: {
     key: string;
     options: PanelOptions;
   }[],
-  metricNames: string[];
+  metricGroups: {
+    queries: MetricGroup;
+    metricNames: MetricGroup;
+  };
   fetchMetricsError: string | null;
   timeDriftError: string | null;
 }
 
 class PanelList extends Component<any, PanelListState> {
   private key: number = 0;
-  private initialMetricNames: string[] = [];
   constructor(props: any) {
     super(props);
 
@@ -31,7 +35,10 @@ class PanelList extends Component<any, PanelListState> {
           options: PanelDefaultOptions,
         },
       ],
-      metricNames: [],
+      metricGroups: {
+        queries: { title: 'Query History', items: []},
+        metricNames: { title: 'Metric Names', items: []},
+      },
       fetchMetricsError: null,
       timeDriftError: null,
     };
@@ -47,8 +54,7 @@ class PanelList extends Component<any, PanelListState> {
       }
     })
     .then(json => {
-      this.initialMetricNames = json.data;
-      this.setMetrics();
+      this.setMetrics(json.data);
     })
     .catch(error => this.setState({ fetchMetricsError: error.message }));
 
@@ -88,20 +94,24 @@ class PanelList extends Component<any, PanelListState> {
     this.setMetrics();
   }
 
-  setMetrics = () => {
+  setMetrics = (metrics?: string[]) => {
+    const { metricNames, queries } = this.state.metricGroups;
+    let queryItems: string[] = [];
     if (this.isHistoryEnabled()) {
       const historyItems = this.getHistoryItems();
       const { length } = historyItems;
-      this.setState({
-        metricNames: [...historyItems.slice(length - 50, length), ...this.initialMetricNames],
-      });
-    } else {
-      this.setState({ metricNames: this.initialMetricNames });
+      queryItems = historyItems.slice(length - 50, length)
     }
+    this.setState({
+      metricGroups: {
+        queries: { ...queries, items: queryItems },
+        metricNames: { ...metricNames, items: metrics || metricNames.items }
+      }
+    });
   }
 
   handleQueryHistory = (query: string) => {
-    const isSimpleMetric = this.initialMetricNames.indexOf(query) !== -1;            
+    const isSimpleMetric = this.state.metricGroups.metricNames.items.indexOf(query) !== -1;            
     if (isSimpleMetric || !query.length) {
       return;
     }
@@ -156,9 +166,10 @@ class PanelList extends Component<any, PanelListState> {
       <>
         <Row className="mb-2">
           <Checkbox
-            style={{ margin: '0 0 0 15px', alignSelf: 'center' }}
+            id="query-history-checkbox"
+            wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
             onChange={this.toggleQueryHistory}
-            checked={this.isHistoryEnabled()}>
+            defaultChecked={this.isHistoryEnabled()}>
             Enable query history
           </Checkbox>
           <Col>
@@ -188,7 +199,7 @@ class PanelList extends Component<any, PanelListState> {
             options={p.options}
             onOptionsChanged={(opts: PanelOptions) => this.handleOptionsChanged(p.key, opts)}
             removePanel={() => this.removePanel(p.key)}
-            metricNames={this.state.metricNames}
+            metricGroups={this.state.metricGroups}
           />
         )}
         <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>Add Panel</Button>

@@ -20,11 +20,12 @@ import Graph from './Graph';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
+import { MetricGroup } from './PanelList';
 
 interface PanelProps {
   options: PanelOptions;
   onOptionsChanged: (opts: PanelOptions) => void;
-  metricNames: string[];
+  metricGroups: { [key: string]: MetricGroup };
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
 }
@@ -236,7 +237,7 @@ class Panel extends Component<PanelProps, PanelState> {
               value={this.props.options.expr}
               executeQuery={this.executeQuery}
               loading={this.state.loading}
-              metricNames={this.props.metricNames}
+              metricGroups={this.props.metricGroups}
             />
           </Col>
         </Row>

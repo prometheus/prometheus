@@ -5,6 +5,10 @@ import {
   InputGroupAddon,
   InputGroupText,
   Input,
+  ListGroup,
+  ListGroupItem,
+  Card,
+  CardHeader,
 } from 'reactstrap';
 
 import Downshift, { ControllerStateAndHelpers } from 'downshift';
@@ -13,10 +17,11 @@ import SanitizeHTML from './components/SanitizeHTML';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { MetricGroup } from './PanelList';
 
 interface ExpressionInputProps {
   value: string;
-  metricNames: string[];
+  metricGroups: { [key: string]: MetricGroup };
   executeQuery: (expr: string) => void;
   loading: boolean;
 }
@@ -42,7 +47,6 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     this.setHeight();
   }
 
-
   setHeight = () => {
     const { offsetHeight, clientHeight, scrollHeight } = this.exprInputRef.current!;
     const offset = offsetHeight - clientHeight; // Needed in order for the height to be more accurate.
@@ -57,7 +61,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   }
 
   handleDropdownSelection = (value: string) => {
-    this.setState({ value, height: 'auto' }, this.setHeight)
+    this.setState({ value, height: 'auto' }, this.setHeight);
   };
 
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -67,54 +71,62 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     }
   }
 
-  executeQuery = () => this.props.executeQuery(this.exprInputRef.current!.value)
+  executeQuery = () => this.props.executeQuery(this.exprInputRef.current!.value);
 
-  renderAutosuggest = (downshift: ControllerStateAndHelpers<any>) => {
-    const { inputValue } = downshift
-    if (!inputValue || (this.prevNoMatchValue && inputValue.includes(this.prevNoMatchValue))) {
-      // This is ugly but is needed in order to sync state updates.
-      // This way we force downshift to wait React render call to complete before closeMenu to be triggered.
-      setTimeout(downshift.closeMenu);
-      return null;
-    }
-
-    const matches = fuzzy.filter(inputValue.replace(/ /g, ''), this.props.metricNames, {
+  getSearchMatches = (input: string, expressions: string[]) => {
+    return fuzzy.filter(input.replace(/ /g, ''), expressions, {
       pre: "<strong>",
       post: "</strong>",
     });
+  }
 
-    if (matches.length === 0) {
+  creatAutocompleteSection = (downshift: ControllerStateAndHelpers<any>) => {
+    const { inputValue, closeMenu, highlightedIndex } = downshift;
+    if (!inputValue || (this.prevNoMatchValue && inputValue.includes(this.prevNoMatchValue))) {
+      // This is ugly but is needed in order to sync state updates.
+      // This way we force downshift to wait React render call to complete before closeMenu to be triggered.
+      setTimeout(closeMenu);
+      return null;
+    }
+
+    const { metricGroups } = this.props;
+    let index = 0;
+    const sections = Object.values(metricGroups).reduce((acc, { items, title }, i) => {
+      const matches = this.getSearchMatches(inputValue, items);
+      return !matches.length ? acc : [
+        ...acc,
+          <Card tag={ListGroup} key={`sec_${i}`}>
+            <CardHeader style={{ fontSize: 13 }}>{title}</CardHeader>
+            {
+              matches
+                .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+                .map(({ original, string }) => {
+                  const itemProps = downshift.getItemProps({
+                    key: original,
+                    index,
+                    item: original,
+                    style: {
+                      backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
+                    },
+                  })
+                  return (
+                    <SanitizeHTML tag={ListGroupItem} {...itemProps} allowedTags={['strong']}>
+                      {string}
+                    </SanitizeHTML>
+                  )
+                })
+            }
+          </Card>
+      ]
+    }, [] as JSX.Element[])
+
+    if (sections.length === 0) {
       this.prevNoMatchValue = inputValue;
       setTimeout(downshift.closeMenu);
       return null;
     }
 
-    return (
-      <ul className="autosuggest-dropdown" {...downshift.getMenuProps()}>
-        {
-          matches
-            .slice(0, 200) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
-            .map((item, index) => (
-              <li
-                {...downshift.getItemProps({
-                  key: item.original,
-                  index,
-                  item: item.original,
-                  style: {
-                    backgroundColor:
-                      downshift.highlightedIndex === index ? 'lightgray' : 'white',
-                    fontWeight: downshift.selectedItem === item ? 'bold' : 'normal',
-                  },
-                })}
-              >
-                <SanitizeHTML inline={true} allowedTags={['strong']}>
-                  {item.string}
-                </SanitizeHTML>
-              </li>
-            ))
-        }
-      </ul>
-    );
+    return sections;
   }
 
   render() {
@@ -179,7 +191,10 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                 </Button>
               </InputGroupAddon>
             </InputGroup>
-            {downshift.isOpen && this.renderAutosuggest(downshift)}
+            {downshift.isOpen &&
+              <div {...downshift.getMenuProps()} className="autosuggest-dropdown">
+                { this.creatAutocompleteSection(downshift) }
+              </div>}
           </div>
         )}
       </Downshift>
