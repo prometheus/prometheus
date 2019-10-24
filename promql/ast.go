@@ -44,7 +44,7 @@ type Node interface {
 	EndPos() token.Pos
 
 	// Get the direct Child nodes. Does not return nil childs
-	Childs() []Node
+	Children() []Node
 }
 
 // Statement is a generic interface for all statements.
@@ -84,7 +84,7 @@ func (e *EvalStmt) EndPos() token.Pos {
 	return e.endPos
 }
 
-func (e *EvalStmt) Childs() []Node {
+func (e *EvalStmt) Children() []Node {
 	ret := []Node{}
 	appendIfNotNil(&ret, e.Expr)
 	return ret
@@ -121,7 +121,7 @@ func (e *AggregateExpr) EndPos() token.Pos {
 	return e.endPos
 }
 
-func (e *AggregateExpr) Childs() []Node {
+func (e *AggregateExpr) Children() []Node {
 	ret := []Node{}
 	appendIfNotNil(&ret, e.Expr)
 	appendIfNotNil(&ret, e.Param)
@@ -148,7 +148,7 @@ func (e *BinaryExpr) EndPos() token.Pos {
 	return e.RHS.EndPos()
 }
 
-func (e *BinaryExpr) Childs() []Node {
+func (e *BinaryExpr) Children() []Node {
 	ret := []Node{}
 	appendIfNotNil(&ret, e.LHS)
 	appendIfNotNil(&ret, e.RHS)
@@ -171,7 +171,7 @@ func (e *Call) EndPos() token.Pos {
 	return e.RParen + 1
 }
 
-func (e *Call) Childs() []Node {
+func (e *Call) Children() []Node {
 	ret := []Node{}
 	for _, arg := range e.Args {
 		appendIfNotNil(&ret, arg)
@@ -202,7 +202,7 @@ func (e *MatrixSelector) EndPos() token.Pos {
 	return e.endPos
 }
 
-func (e *MatrixSelector) Childs() []Node {
+func (e *MatrixSelector) Children() []Node {
 	ret := []Node{}
 	return ret
 }
@@ -225,7 +225,7 @@ func (e *SubqueryExpr) EndPos() token.Pos {
 	return e.endPos
 }
 
-func (e *SubqueryExpr) Childs() []Node {
+func (e *SubqueryExpr) Children() []Node {
 	ret := []Node{}
 	appendIfNotNil(&ret, e.Expr)
 	return ret
@@ -245,7 +245,7 @@ func (e *NumberLiteral) EndPos() token.Pos {
 	return e.endPos
 }
 
-func (e *NumberLiteral) Childs() []Node {
+func (e *NumberLiteral) Children() []Node {
 	ret := []Node{}
 	return ret
 }
@@ -266,7 +266,7 @@ func (e *ParenExpr) EndPos() token.Pos {
 	return e.RParen + 1
 }
 
-func (e *ParenExpr) Childs() []Node {
+func (e *ParenExpr) Children() []Node {
 	ret := []Node{}
 	appendIfNotNil(&ret, e.Expr)
 	return ret
@@ -287,7 +287,7 @@ func (e *StringLiteral) EndPos() token.Pos {
 	return e.RQuote + 1
 }
 
-func (e *StringLiteral) Childs() []Node {
+func (e *StringLiteral) Children() []Node {
 	ret := []Node{}
 	return ret
 }
@@ -308,7 +308,7 @@ func (e *UnaryExpr) EndPos() token.Pos {
 	return e.Expr.EndPos()
 }
 
-func (e *UnaryExpr) Childs() []Node {
+func (e *UnaryExpr) Children() []Node {
 	ret := []Node{}
 	appendIfNotNil(&ret, e.Expr)
 	return ret
@@ -335,7 +335,7 @@ func (e *VectorSelector) Pos() token.Pos {
 func (e *VectorSelector) EndPos() token.Pos {
 	return e.endPos
 }
-func (e *VectorSelector) Childs() []Node {
+func (e *VectorSelector) Children() []Node {
 	ret := []Node{}
 	return ret
 }
@@ -429,7 +429,7 @@ func Walk(v Visitor, node Node, path []Node) error {
 	}
 	path = append(path, node)
 
-	for _, e := range node.Childs() {
+	for _, e := range node.Children() {
 		if err := Walk(v, e, path); err != nil {
 			return err
 		}
