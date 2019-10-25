@@ -324,29 +324,26 @@ func TestGetDatacenter_ShouldUseAgentInfo(t *testing.T) {
 }
 
 func TestGetDatacenter_ShouldReturnError(t *testing.T) {
-	// Initialize table-driven test fixtures.
-	tests := []struct {
-		handler func(http.ResponseWriter, *http.Request)
-		message string
+	for _, tc := range []struct {
+		handler    func(http.ResponseWriter, *http.Request)
+		errMessage string
 	}{
 		{
 			// Create a stub server that will return status 500.
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(500)
 			},
-			message: "Unexpected response code: 500 ()",
+			errMessage: "Unexpected response code: 500 ()",
 		},
 		{
 			// Create a stub server that will return incorrect response.
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
 			},
-			message: "invalid value '<nil>' for Config.Datacenter",
+			errMessage: "invalid value '<nil>' for Config.Datacenter",
 		},
-	}
-
-	for _, test := range tests {
-		stub := httptest.NewServer(http.HandlerFunc(test.handler))
+	} {
+		stub := httptest.NewServer(http.HandlerFunc(tc.handler))
 		stuburl, err := url.Parse(stub.URL)
 		testutil.Ok(t, err)
 
@@ -364,7 +361,7 @@ func TestGetDatacenter_ShouldReturnError(t *testing.T) {
 		err = d.getDatacenter()
 
 		// An error should be returned.
-		testutil.Equals(t, test.message, err.Error())
+		testutil.Equals(t, tc.errMessage, err.Error())
 		// Should still be empty.
 		testutil.Equals(t, "", d.clientDatacenter)
 	}
