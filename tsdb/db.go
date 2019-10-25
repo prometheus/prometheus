@@ -57,9 +57,8 @@ var DefaultOptions = &Options{
 // Options of the DB storage.
 type Options struct {
 	// Segments (wal files) max size.
-	// WALSegmentSize = 0, segment size is default size.
+	// WALSegmentSize <= 0, segment size is default size.
 	// WALSegmentSize > 0, segment size is WALSegmentSize.
-	// WALSegmentSize < 0, wal is disabled.
 	WALSegmentSize int
 
 	// Duration of persisted data to keep.
@@ -531,16 +530,13 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 
 	var wlog *wal.WAL
 	segmentSize := wal.DefaultSegmentSize
-	// Wal is enabled.
-	if opts.WALSegmentSize >= 0 {
-		// Wal is set to a custom size.
-		if opts.WALSegmentSize > 0 {
-			segmentSize = opts.WALSegmentSize
-		}
-		wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
-		if err != nil {
-			return nil, err
-		}
+	// Wal is set to a custom size.
+	if opts.WALSegmentSize > 0 {
+		segmentSize = opts.WALSegmentSize
+	}
+	wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
+	if err != nil {
+		return nil, err
 	}
 
 	db.head, err = NewHead(r, l, wlog, opts.BlockRanges[0])

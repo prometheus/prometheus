@@ -847,12 +847,6 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 			lastFile := files[len(files)-1]
 			testutil.Assert(t, int64(segmentSize) > lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
 		},
-		// Wal disabled.
-		-1: func(dbDir string, segmentSize int) {
-			if _, err := os.Stat(filepath.Join(dbDir, "wal")); !os.IsNotExist(err) {
-				t.Fatal("wal directory is present when the wal is disabled")
-			}
-		},
 	}
 	for segmentSize, testFunc := range tests {
 		t.Run(fmt.Sprintf("WALSegmentSize %d test", segmentSize), func(t *testing.T) {
