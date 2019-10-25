@@ -324,54 +324,44 @@ func TestGetDatacenter_ShouldUseAgentInfo(t *testing.T) {
 }
 
 func TestGetDatacenter_ShouldReturnError(t *testing.T) {
-	// Define struct for test fixtures.
-	type fixture struct {
-		stub    *httptest.Server
-		config  *SDConfig
-		message string
-	}
-
 	// Initialize table-driven test fixtures.
-	tests := []fixture{}
-	{
-		// Create a stub server that will return status 500.
-		stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(500)
-		}))
-		stuburl, err := url.Parse(stub.URL)
-		testutil.Ok(t, err)
-
-		config := &SDConfig{
-			Server:          stuburl.Host,
-			Token:           "fake-token",
-			RefreshInterval: model.Duration(1 * time.Second),
-		}
-		tests = append(tests, fixture{stub: stub, config: config, message: "Unexpected response code: 500 ()"})
-	}
-	{
-		// Create a stub server that will return incorrect response.
-		stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
-		}))
-		stuburl, err := url.Parse(stub.URL)
-		testutil.Ok(t, err)
-
-		config := &SDConfig{
-			Server:          stuburl.Host,
-			Token:           "fake-token",
-			RefreshInterval: model.Duration(1 * time.Second),
-		}
-		tests = append(tests, fixture{stub: stub, config: config, message: "invalid value '<nil>' for Config.Datacenter"})
+	tests := []struct {
+		handler func(http.ResponseWriter, *http.Request)
+		message string
+	}{
+		{
+			// Create a stub server that will return status 500.
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(500)
+			},
+			message: "Unexpected response code: 500 ()",
+		},
+		{
+			// Create a stub server that will return incorrect response.
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
+			},
+			message: "invalid value '<nil>' for Config.Datacenter",
+		},
 	}
 
 	for _, test := range tests {
-		defer test.stub.Close()
-		d := newDiscovery(t, test.config)
+		stub := httptest.NewServer(http.HandlerFunc(test.handler))
+		stuburl, err := url.Parse(stub.URL)
+		testutil.Ok(t, err)
+
+		config := &SDConfig{
+			Server:          stuburl.Host,
+			Token:           "fake-token",
+			RefreshInterval: model.Duration(1 * time.Second),
+		}
+		defer stub.Close()
+		d := newDiscovery(t, config)
 
 		// Should be empty if not initialized.
 		testutil.Equals(t, "", d.clientDatacenter)
 
-		err := d.getDatacenter()
+		err = d.getDatacenter()
 
 		// An error should be returned.
 		testutil.Equals(t, test.message, err.Error())
