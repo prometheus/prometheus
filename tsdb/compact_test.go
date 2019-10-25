@@ -163,7 +163,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 }
 
 func TestLeveledCompactor_plan(t *testing.T) {
-	// This mimicks our default ExponentialBlockRanges with min block size equals to 20.
+	// This mimics our default ExponentialBlockRanges with min block size equals to 20.
 	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
 		20,
 		60,

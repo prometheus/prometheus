@@ -12,7 +12,7 @@ build:
           path: ./cmd/promtool
         - name: tsdb
           path: ./tsdb/cmd/tsdb
-    flags: -mod=vendor -a -tags netgo
+    flags: -mod=vendor -a -tags netgo,builtinassets
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}
         -X github.com/prometheus/common/version.Revision={{.Revision}}
@@ -26,6 +26,7 @@ tarball:
         - documentation/examples/prometheus.yml
         - LICENSE
         - NOTICE
+        - npm_licenses.tar.bz2
 crossbuild:
     platforms:
         - linux/amd64

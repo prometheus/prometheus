@@ -18,6 +18,8 @@ import (
 	"os"
 	"regexp"
 	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestQueryLogging(t *testing.T) {
@@ -106,24 +108,18 @@ func TestIndexReuse(t *testing.T) {
 
 func TestMMapFile(t *testing.T) {
 	file, err := ioutil.TempFile("", "mmapedFile")
-	if err != nil {
-		t.Fatalf("Couldn't create temp test file. %s", err)
-	}
+	testutil.Ok(t, err)
 
 	filename := file.Name()
 	defer os.Remove(filename)
 
 	fileAsBytes, err := getMMapedFile(filename, 2, nil)
 
-	if err != nil {
-		t.Fatalf("Couldn't create test mmaped file")
-	}
+	testutil.Ok(t, err)
 	copy(fileAsBytes, "ab")
 
 	f, err := os.Open(filename)
-	if err != nil {
-		t.Fatalf("Couldn't open test mmaped file")
-	}
+	testutil.Ok(t, err)
 
 	bytes := make([]byte, 4)
 	n, err := f.Read(bytes)
@@ -134,5 +130,45 @@ func TestMMapFile(t *testing.T) {
 
 	if string(bytes[:2]) != string(fileAsBytes) {
 		t.Fatalf("Mmap failed")
+	}
+}
+
+func TestParseBrokenJson(t *testing.T) {
+	for _, tc := range []struct {
+		b []byte
+
+		ok  bool
+		out string
+	}{
+		{
+			b: []byte(""),
+		},
+		{
+			b: []byte("\x00\x00"),
+		},
+		{
+			b: []byte("\x00[\x00"),
+		},
+		{
+			b:   []byte("\x00[]\x00"),
+			ok:  true,
+			out: "[]",
+		},
+		{
+			b:   []byte("[\"up == 0\",\"rate(http_requests[2w]\"]\x00\x00\x00"),
+			ok:  true,
+			out: "[\"up == 0\",\"rate(http_requests[2w]\"]",
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			ok, out := parseBrokenJson(tc.b)
+			if tc.ok != ok {
+				t.Fatalf("expected %t, got %t", tc.ok, ok)
+				return
+			}
+			if ok && tc.out != out {
+				t.Fatalf("expected %s, got %s", tc.out, out)
+			}
+		})
 	}
 }

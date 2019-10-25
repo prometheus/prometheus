@@ -41,10 +41,13 @@ const (
 )
 
 // WriteTo is an interface used by the Watcher to send the samples it's read
-// from the WAL on to somewhere else.
+// from the WAL on to somewhere else. Functions will be called concurrently
+// and it is left to the implementer to make sure they are safe.
 type WriteTo interface {
 	Append([]record.RefSample) bool
 	StoreSeries([]record.RefSeries, int)
+	// SeriesReset is called after reading a checkpoint to allow the deletion
+	// of all series created in a segment lower than the argument.
 	SeriesReset(int)
 }
 
@@ -337,6 +340,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 		}
 	}
 
+	gcSem := make(chan struct{}, 1)
 	for {
 		select {
 		case <-w.quit:
@@ -345,9 +349,21 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 		case <-checkpointTicker.C:
 			// Periodically check if there is a new checkpoint so we can garbage
 			// collect labels. As this is considered an optimisation, we ignore
-			// errors during checkpoint processing.
-			if err := w.garbageCollectSeries(segmentNum); err != nil {
-				level.Warn(w.logger).Log("msg", "error process checkpoint", "err", err)
+			// errors during checkpoint processing. Doing the process asynchronously
+			// allows the current WAL segment to be processed while reading the
+			// checkpoint.
+			select {
+			case gcSem <- struct{}{}:
+				go func() {
+					defer func() {
+						<-gcSem
+					}()
+					if err := w.garbageCollectSeries(segmentNum); err != nil {
+						level.Warn(w.logger).Log("msg", "error process checkpoint", "err", err)
+					}
+				}()
+			default:
+				// Currently doing a garbage collect, try again later.
 			}
 
 		case <-segmentTicker.C:

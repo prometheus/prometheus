@@ -186,6 +186,9 @@ type StorageClient interface {
 // indicated by the provided StorageClient. Implements writeTo interface
 // used by WAL Watcher.
 type QueueManager struct {
+	// https://golang.org/pkg/sync/atomic/#pkg-note-BUG
+	lastSendTimestamp int64
+
 	logger         log.Logger
 	flushDeadline  time.Duration
 	cfg            config.QueueConfig
@@ -194,6 +197,7 @@ type QueueManager struct {
 	client         StorageClient
 	watcher        *wal.Watcher
 
+	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64]labels.Labels
 	seriesSegmentIndexes map[uint64]int
 	droppedSeries        map[uint64]struct{}
@@ -264,6 +268,7 @@ func NewQueueManager(reg prometheus.Registerer, logger log.Logger, walDir string
 func (t *QueueManager) Append(samples []record.RefSample) bool {
 outer:
 	for _, s := range samples {
+		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[s.Ref]
 		if !ok {
 			t.droppedSamplesTotal.Inc()
@@ -271,8 +276,10 @@ outer:
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
 			}
+			t.seriesMtx.Unlock()
 			continue
 		}
+		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
 		for {
@@ -356,9 +363,11 @@ func (t *QueueManager) Stop() {
 	t.watcher.Stop()
 
 	// On shutdown, release the strings in the labels from the intern pool.
+	t.seriesMtx.Lock()
 	for _, labels := range t.seriesLabels {
 		releaseLabels(labels)
 	}
+	t.seriesMtx.Unlock()
 	// Delete metrics so we don't have alerts for queues that are gone.
 	name := t.client.Name()
 	queueHighestSentTimestamp.DeleteLabelValues(name)
@@ -378,6 +387,8 @@ func (t *QueueManager) Stop() {
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
 func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
 	for _, s := range series {
 		ls := processExternalLabels(s.Labels, t.externalLabels)
 		lbls := relabel.Process(ls, t.relabelConfigs...)
@@ -402,6 +413,8 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 // stored series records with the checkpoints index number, so we can now
 // delete any ref ID's lower than that # from the two maps.
 func (t *QueueManager) SeriesReset(index int) {
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
 	// Check for series that are in segments older than the checkpoint
 	// that were not also present in the checkpoint.
 	for k, v := range t.seriesSegmentIndexes {
@@ -409,6 +422,7 @@ func (t *QueueManager) SeriesReset(index int) {
 			delete(t.seriesSegmentIndexes, k)
 			releaseLabels(t.seriesLabels[k])
 			delete(t.seriesLabels, k)
+			delete(t.droppedSeries, k)
 		}
 	}
 }
@@ -468,14 +482,30 @@ func (t *QueueManager) updateShardsLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			t.calculateDesiredShards()
+			desiredShards := t.calculateDesiredShards()
+			if desiredShards == t.numShards {
+				continue
+			}
+			// Resharding can take some time, and we want this loop
+			// to stay close to shardUpdateDuration.
+			select {
+			case t.reshardChan <- desiredShards:
+				level.Info(t.logger).Log("msg", "Remote storage resharding", "from", t.numShards, "to", numShards)
+				t.numShards = desiredShards
+			default:
+				level.Info(t.logger).Log("msg", "Currently resharding, skipping.")
+			}
 		case <-t.quit:
 			return
 		}
 	}
 }
 
-func (t *QueueManager) calculateDesiredShards() {
+// calculateDesiredShards returns the number of desired shards, which will be
+// the current QueueManager.numShards if resharding should not occur for reasons
+// outlined in this functions implementation. It is up to the caller to reshard, or not,
+// based on the return value.
+func (t *QueueManager) calculateDesiredShards() int {
 	t.samplesOut.tick()
 	t.samplesDropped.tick()
 	t.samplesOutDuration.tick()
@@ -496,7 +526,7 @@ func (t *QueueManager) calculateDesiredShards() {
 	)
 
 	if samplesOutRate <= 0 {
-		return
+		return t.numShards
 	}
 
 	// We use an integral accumulator, like in a PID, to help dampen
@@ -511,6 +541,15 @@ func (t *QueueManager) calculateDesiredShards() {
 		t.integralAccumulator = integralGain * samplesPending / float64(elapsed)
 	}
 	t.integralAccumulator += samplesPendingRate * integralGain
+
+	// We shouldn't reshard if Prometheus hasn't been able to send to the
+	// remote endpoint successfully within some period of time.
+	minSendTimestamp := time.Now().Add(-2 * time.Duration(t.cfg.BatchSendDeadline)).Unix()
+	lsts := atomic.LoadInt64(&t.lastSendTimestamp)
+	if lsts < minSendTimestamp {
+		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
+		return t.numShards
+	}
 
 	var (
 		timePerSample = samplesOutDuration / samplesOutRate
@@ -538,7 +577,7 @@ func (t *QueueManager) calculateDesiredShards() {
 	level.Debug(t.logger).Log("msg", "QueueManager.updateShardsLoop",
 		"lowerBound", lowerBound, "desiredShards", desiredShards, "upperBound", upperBound)
 	if lowerBound <= desiredShards && desiredShards <= upperBound {
-		return
+		return t.numShards
 	}
 
 	numShards := int(math.Ceil(desiredShards))
@@ -548,19 +587,7 @@ func (t *QueueManager) calculateDesiredShards() {
 	} else if numShards < t.cfg.MinShards {
 		numShards = t.cfg.MinShards
 	}
-	if numShards == t.numShards {
-		return
-	}
-
-	// Resharding can take some time, and we want this loop
-	// to stay close to shardUpdateDuration.
-	select {
-	case t.reshardChan <- numShards:
-		level.Info(t.logger).Log("msg", "Remote storage resharding", "from", t.numShards, "to", numShards)
-		t.numShards = numShards
-	default:
-		level.Info(t.logger).Log("msg", "Currently resharding, skipping.")
-	}
+	return numShards
 }
 
 func (t *QueueManager) reshardLoop() {
@@ -802,6 +829,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if err == nil {
 			s.qm.succeededSamplesTotal.Add(float64(len(samples)))
 			s.qm.highestSentTimestampMetric.Set(float64(highest / 1000))
+			atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
 			return nil
 		}
 

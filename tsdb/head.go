@@ -61,18 +61,20 @@ var (
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
-	chunkRange int64
+	// Keep all 64bit atomically accessed variables at the top of this struct.
+	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
+	chunkRange       int64
+	numSeries        uint64
+	minTime, maxTime int64 // Current min and max of the samples included in the head.
+	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
+	lastSeriesID     uint64
+
 	metrics    *headMetrics
 	wal        *wal.WAL
 	logger     log.Logger
 	appendPool sync.Pool
 	seriesPool sync.Pool
 	bytesPool  sync.Pool
-	numSeries  uint64
-
-	minTime, maxTime int64 // Current min and max of the samples included in the head.
-	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
-	lastSeriesID     uint64
 
 	// All series addressable by their ID or hash.
 	series *stripeSeries
@@ -331,11 +333,10 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 	// They are connected through a ring of channels which ensures that all sample batches
 	// read from the WAL are processed in order.
 	var (
-		wg           sync.WaitGroup
-		multiRefLock sync.Mutex
-		n            = runtime.GOMAXPROCS(0)
-		inputs       = make([]chan []record.RefSample, n)
-		outputs      = make([]chan []record.RefSample, n)
+		wg      sync.WaitGroup
+		n       = runtime.GOMAXPROCS(0)
+		inputs  = make([]chan []record.RefSample, n)
+		outputs = make([]chan []record.RefSample, n)
 	)
 	wg.Add(n)
 
@@ -394,9 +395,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 
 				if !created {
 					// There's already a different ref for this series.
-					multiRefLock.Lock()
 					multiRef[s.Ref] = series.ref
-					multiRefLock.Unlock()
 				}
 
 				if h.lastSeriesID < s.Ref {

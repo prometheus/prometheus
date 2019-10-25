@@ -1,6 +1,14 @@
-## 2.13.0-rc.0 / 2019-09-25
+## 2.13.1 / 2019-10-16
 
+* [BUGFIX] Fix panic in ARM builds of Prometheus. #6110
+* [BUGFIX] promql: fix potential panic in the query logger. #6094
+* [BUGFIX] Multiple errors of http: superfluous response.WriteHeader call in the logs. #6145
+
+## 2.13.0 / 2019-10-04
+
+* [SECURITY/BUGFIX] UI: Fix a Stored DOM XSS vulnerability with query history [CVE-2019-10215](http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10215). #6098
 * [CHANGE] Metrics: renamed prometheus_sd_configs_failed_total to prometheus_sd_failed_configs and changed to Gauge #5254
+* [ENHANCEMENT] Include the tsdb tool in builds. #6089
 * [ENHANCEMENT] Service discovery: add new node address types for kubernetes. #5902
 * [ENHANCEMENT] UI: show warnings if query have returned some warnings. #5964
 * [ENHANCEMENT] Remote write: reduce memory usage of the series cache. #5849
@@ -126,7 +134,7 @@ and the memory is available to the kernel when it needs it.
 * [BUGFIX] Check if label value is valid when unmarshaling external labels from YAML. #5316
 * [BUGFIX] Promparse: sort all labels when parsing. #5372
 * [BUGFIX] Reload rules: copy state on both name and labels. #5368
-* [BUGFIX] Exponentation operator to drop metric name in result of operation. #5329
+* [BUGFIX] Exponentiation operator to drop metric name in result of operation. #5329
 * [BUGFIX] Config: resolve more file paths. #5284
 * [BUGFIX] Promtool: resolve relative paths in alert test files. #5336
 * [BUGFIX] Set TLSHandshakeTimeout in HTTP transport. common#179

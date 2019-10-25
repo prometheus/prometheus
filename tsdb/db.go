@@ -216,7 +216,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		db.mtx.RLock()
 		defer db.mtx.RUnlock()
 		if len(db.blocks) == 0 {
-			return float64(db.head.minTime)
+			return float64(db.head.MinTime())
 		}
 		return float64(db.blocks[0].meta.MinTime)
 	})

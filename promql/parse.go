@@ -106,9 +106,6 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 	defer p.recover(&err)
 
 	for p.peek().typ != ItemEOF {
-		if p.peek().typ == ItemComment {
-			continue
-		}
 		if expr != nil {
 			p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 		}

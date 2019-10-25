@@ -40,8 +40,11 @@ type pool struct {
 }
 
 type entry struct {
-	s    string
+	// Keep all 64bit atomically accessed variables at the top of this struct.
+	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
 	refs int64
+
+	s string
 }
 
 func newPool() *pool {

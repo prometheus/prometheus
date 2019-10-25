@@ -70,7 +70,9 @@ func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer i.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), i.informer.HasSynced) {
-		level.Error(i.logger).Log("msg", "ingress informer unable to sync cache")
+		if ctx.Err() != context.Canceled {
+			level.Error(i.logger).Log("msg", "ingress informer unable to sync cache")
+		}
 		return
 	}
 
