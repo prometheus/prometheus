@@ -329,14 +329,14 @@ func TestGetDatacenter_ShouldReturnError(t *testing.T) {
 		errMessage string
 	}{
 		{
-			// Create a stub server that will return status 500.
+			// Define a handler that will return status 500.
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(500)
 			},
 			errMessage: "Unexpected response code: 500 ()",
 		},
 		{
-			// Create a stub server that will return incorrect response.
+			// Define a handler that will return incorrect response.
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
 			},
