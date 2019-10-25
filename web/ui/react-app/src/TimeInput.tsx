@@ -20,14 +20,11 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 
 library.add(
-  faChevronLeft,
-  faChevronRight,
   faCalendarCheck,
   faArrowUp,
   faArrowDown,
   faTimes,
 );
-
 // Sadly needed to also replace <i> within the date picker, since it's not a React component.
 dom.watch();
 
@@ -99,7 +96,7 @@ class TimeInput extends Component<TimeInputProps> {
     return (
       <InputGroup className="time-input" size="sm">
         <InputGroupAddon addonType="prepend">
-          <Button title="Decrease time" onClick={this.decreaseTime}><FontAwesomeIcon icon="chevron-left" fixedWidth/></Button>
+          <Button title="Decrease time" onClick={this.decreaseTime}><FontAwesomeIcon icon={faChevronLeft} fixedWidth /></Button>
         </InputGroupAddon>
 
         <Input
@@ -114,12 +111,12 @@ class TimeInput extends Component<TimeInputProps> {
             that functionality is broken, so we create an external solution instead. */}
         {this.props.time &&
           <InputGroupAddon addonType="append">
-            <Button className="clear-time-btn" title="Clear time" onClick={this.clearTime}><FontAwesomeIcon icon="times" fixedWidth/></Button>
+            <Button className="clear-time-btn" title="Clear time" onClick={this.clearTime}><FontAwesomeIcon icon={faTimes} fixedWidth /></Button>
           </InputGroupAddon>
         }
 
         <InputGroupAddon addonType="append">
-          <Button title="Increase time" onClick={this.increaseTime}><FontAwesomeIcon icon="chevron-right" fixedWidth/></Button>
+          <Button title="Increase time" onClick={this.increaseTime}><FontAwesomeIcon icon={faChevronRight} fixedWidth /></Button>
         </InputGroupAddon>
       </InputGroup>
     );

@@ -188,6 +188,12 @@ in detail in the [expression language operators](operators.md) page.
 Prometheus supports several functions to operate on data. These are described
 in detail in the [expression language functions](functions.md) page.
 
+## Comments
+
+PromQL supports line comments that start with `#`. Example:
+
+        # This is a comment
+
 ## Gotchas
 
 ### Staleness

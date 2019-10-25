@@ -8,7 +8,6 @@ import {
   Input,
 } from 'reactstrap';
 
-import { library } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlus,
@@ -19,13 +18,6 @@ import {
 
 import TimeInput from './TimeInput';
 import { parseRange, formatRange } from './utils/timeFormat';
-
-library.add(
-  faPlus,
-  faMinus,
-  faChartArea,
-  faChartLine,
-);
 
 interface GraphControlsProps {
   range: number;
@@ -111,7 +103,7 @@ class GraphControls extends Component<GraphControlsProps> {
       <Form inline className="graph-controls" onSubmit={e => e.preventDefault()}>
         <InputGroup className="range-input" size="sm">
           <InputGroupAddon addonType="prepend">
-            <Button title="Decrease range" onClick={this.decreaseRange}><FontAwesomeIcon icon="minus" fixedWidth/></Button>
+            <Button title="Decrease range" onClick={this.decreaseRange}><FontAwesomeIcon icon={faMinus} fixedWidth/></Button>
           </InputGroupAddon>
 
           <Input
@@ -121,7 +113,7 @@ class GraphControls extends Component<GraphControlsProps> {
           />
 
           <InputGroupAddon addonType="append">
-            <Button title="Increase range" onClick={this.increaseRange}><FontAwesomeIcon icon="plus" fixedWidth/></Button>
+            <Button title="Increase range" onClick={this.increaseRange}><FontAwesomeIcon icon={faPlus} fixedWidth/></Button>
           </InputGroupAddon>
         </InputGroup>
 
@@ -145,8 +137,8 @@ class GraphControls extends Component<GraphControlsProps> {
         />
 
         <ButtonGroup className="stacked-input" size="sm">
-          <Button title="Show unstacked line graph" onClick={() => this.props.onChangeStacking(false)} active={!this.props.stacked}><FontAwesomeIcon icon="chart-line" fixedWidth/></Button>
-          <Button title="Show stacked graph" onClick={() => this.props.onChangeStacking(true)} active={this.props.stacked}><FontAwesomeIcon icon="chart-area" fixedWidth/></Button>
+          <Button title="Show unstacked line graph" onClick={() => this.props.onChangeStacking(false)} active={!this.props.stacked}><FontAwesomeIcon icon={faChartLine} fixedWidth/></Button>
+          <Button title="Show stacked graph" onClick={() => this.props.onChangeStacking(true)} active={this.props.stacked}><FontAwesomeIcon icon={faChartArea} fixedWidth/></Button>
         </ButtonGroup>
       </Form>
     );

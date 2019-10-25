@@ -1,8 +1,6 @@
 # TSDB 
 
-[![Build Status](https://travis-ci.org/prometheus/tsdb.svg?branch=master)](https://travis-ci.org/prometheus/tsdb)
-[![GoDoc](https://godoc.org/github.com/prometheus/tsdb?status.svg)](https://godoc.org/github.com/prometheus/tsdb)
-[![Go Report Card](https://goreportcard.com/badge/github.com/prometheus/tsdb)](https://goreportcard.com/report/github.com/prometheus/tsdb)
+[![GoDoc](https://godoc.org/github.com/prometheus/prometheus/tsdb?status.svg)](https://godoc.org/github.com/prometheus/prometheus/tsdb)
 
 This repository contains the Prometheus storage layer that is used in its 2.x releases.
 

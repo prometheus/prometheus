@@ -11,11 +11,8 @@ import Downshift, { ControllerStateAndHelpers } from 'downshift';
 import fuzzy from 'fuzzy';
 import SanitizeHTML from './components/SanitizeHTML';
 
-import { library } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
-
-library.add(faSearch, faSpinner);
 
 interface ExpressionInputProps {
   value: string;
@@ -59,8 +56,10 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     }, this.setHeight);
   }
 
-  handleDropdownSelection = (value: string) => this.setState({ value });
-  
+  handleDropdownSelection = (value: string) => {
+    this.setState({ value, height: 'auto' }, this.setHeight)
+  };
+
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       this.props.executeQuery(this.exprInputRef.current!.value);
@@ -73,7 +72,9 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   renderAutosuggest = (downshift: ControllerStateAndHelpers<any>) => {
     const { inputValue } = downshift
     if (!inputValue || (this.prevNoMatchValue && inputValue.includes(this.prevNoMatchValue))) {
-      downshift.closeMenu();
+      // This is ugly but is needed in order to sync state updates.
+      // This way we force downshift to wait React render call to complete before closeMenu to be triggered.
+      setTimeout(downshift.closeMenu);
       return null;
     }
 
@@ -84,7 +85,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
 
     if (matches.length === 0) {
       this.prevNoMatchValue = inputValue;
-      downshift.closeMenu();    
+      setTimeout(downshift.closeMenu);
       return null;
     }
 
@@ -128,7 +129,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
             <InputGroup className="expression-input">
               <InputGroupAddon addonType="prepend">
                 <InputGroupText>
-                {this.props.loading ? <FontAwesomeIcon icon="spinner" spin/> : <FontAwesomeIcon icon="search"/>}
+                  {this.props.loading ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faSearch} />}
                 </InputGroupText>
               </InputGroupAddon>
               <Input
