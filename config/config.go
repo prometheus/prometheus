@@ -260,6 +260,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			}
 		}
 
+		if scfg.ScrapeRetry == 0 {
+			scfg.ScrapeRetry = c.GlobalConfig.ScrapeRetry
+		}
+
 		if _, ok := jobNames[scfg.JobName]; ok {
 			return errors.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}
@@ -285,6 +289,8 @@ type GlobalConfig struct {
 	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The default timeout when scraping targets.
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
+	// The default retry when scraping targets.
+	ScrapeRetry int `yaml:"scrape_retry,omitempty"`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
@@ -354,6 +360,8 @@ type ScrapeConfig struct {
 	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The timeout for scraping targets of this config.
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
+	// The retry for scraping targets of this config.
+	ScrapeRetry int `yaml:"scrape_retry,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.

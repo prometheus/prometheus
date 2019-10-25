@@ -308,7 +308,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	for fp, oldLoop := range sp.loops {
 		var (
 			t       = sp.activeTargets[fp]
-			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout}
+			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, scrapeRetry: sp.config.ScrapeRetry}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -392,7 +392,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		uniqueTargets[hash] = struct{}{}
 
 		if _, ok := sp.activeTargets[hash]; !ok {
-			s := &targetScraper{Target: t, client: sp.client, timeout: timeout}
+			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, scrapeRetry: sp.config.ScrapeRetry}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -507,9 +507,10 @@ type scraper interface {
 type targetScraper struct {
 	*Target
 
-	client  *http.Client
-	req     *http.Request
-	timeout time.Duration
+	client      *http.Client
+	req         *http.Request
+	timeout     time.Duration
+	scrapeRetry int
 
 	gzipr *gzip.Reader
 	buf   *bufio.Reader
@@ -533,7 +534,18 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		s.req = req
 	}
 
-	resp, err := s.client.Do(s.req.WithContext(ctx))
+	var err error
+	var resp *http.Response
+	if s.scrapeRetry > 1 {
+		for i := 0; i < s.scrapeRetry; i++ {
+			resp, err = s.client.Do(s.req.WithContext(ctx))
+			if err == nil {
+				break
+			}
+		}
+	} else {
+		resp, err = s.client.Do(s.req.WithContext(ctx))
+	}
 	if err != nil {
 		return "", err
 	}

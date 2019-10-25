@@ -1,0 +1,12 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  scrape_retry:     3
+scrape_configs:
+- job_name: 'prometheus-with-retry'
+  static_configs:
+  - targets: ['localhost:9090']
+  scrape_retry:     5
+- job_name: 'prometheus-without-retry'
+  static_configs:
+  - targets: ['localhost:9091']
