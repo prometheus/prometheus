@@ -6,11 +6,14 @@ import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from './utils/urlParams';
 import Checkbox from './Checkbox';
 
+export type MetricGroup = { title: string; items: string[] };
+
 interface PanelListState {
   panels: {
     key: string;
     options: PanelOptions;
-  }[],
+  }[];
+  pastQueries: string[];
   metricNames: string[];
   fetchMetricsError: string | null;
   timeDriftError: string | null;
@@ -18,7 +21,6 @@ interface PanelListState {
 
 class PanelList extends Component<any, PanelListState> {
   private key: number = 0;
-  private initialMetricNames: string[] = [];
   constructor(props: any) {
     super(props);
 
@@ -31,6 +33,7 @@ class PanelList extends Component<any, PanelListState> {
           options: PanelDefaultOptions,
         },
       ],
+      pastQueries: [],
       metricNames: [],
       fetchMetricsError: null,
       timeDriftError: null,
@@ -47,8 +50,7 @@ class PanelList extends Component<any, PanelListState> {
       }
     })
     .then(json => {
-      this.initialMetricNames = json.data;
-      this.setMetrics();
+      this.setMetrics(json.data);
     })
     .catch(error => this.setState({ fetchMetricsError: error.message }));
 
@@ -88,20 +90,15 @@ class PanelList extends Component<any, PanelListState> {
     this.setMetrics();
   }
 
-  setMetrics = () => {
-    if (this.isHistoryEnabled()) {
-      const historyItems = this.getHistoryItems();
-      const { length } = historyItems;
-      this.setState({
-        metricNames: [...historyItems.slice(length - 50, length), ...this.initialMetricNames],
-      });
-    } else {
-      this.setState({ metricNames: this.initialMetricNames });
-    }
+  setMetrics = (metricNames: string[] = this.state.metricNames) => {
+    this.setState({
+      pastQueries: this.isHistoryEnabled() ? this.getHistoryItems() : [],
+      metricNames
+    });
   }
 
   handleQueryHistory = (query: string) => {
-    const isSimpleMetric = this.initialMetricNames.indexOf(query) !== -1;            
+    const isSimpleMetric = this.state.metricNames.indexOf(query) !== -1;            
     if (isSimpleMetric || !query.length) {
       return;
     }
@@ -109,7 +106,7 @@ class PanelList extends Component<any, PanelListState> {
     const extendedItems = historyItems.reduce((acc, metric) => {
       return metric === query ? acc : [...acc, metric]; // Prevent adding query twice.
     }, [query]);
-    localStorage.setItem('history', JSON.stringify(extendedItems));
+    localStorage.setItem('history', JSON.stringify(extendedItems.slice(0, 50)));
     this.setMetrics();
   }
 
@@ -152,13 +149,15 @@ class PanelList extends Component<any, PanelListState> {
   }
 
   render() {
+    const { metricNames, pastQueries, timeDriftError, fetchMetricsError } = this.state;
     return (
       <>
         <Row className="mb-2">
           <Checkbox
-            style={{ margin: '0 0 0 15px', alignSelf: 'center' }}
+            id="query-history-checkbox"
+            wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
             onChange={this.toggleQueryHistory}
-            checked={this.isHistoryEnabled()}>
+            defaultChecked={this.isHistoryEnabled()}>
             Enable query history
           </Checkbox>
           <Col>
@@ -173,12 +172,12 @@ class PanelList extends Component<any, PanelListState> {
         </Row>
         <Row>
           <Col>
-            {this.state.timeDriftError && <Alert color="danger"><strong>Warning:</strong> Error fetching server time: {this.state.timeDriftError}</Alert>}
+            {timeDriftError && <Alert color="danger"><strong>Warning:</strong> Error fetching server time: {this.state.timeDriftError}</Alert>}
           </Col>
         </Row>
         <Row>
           <Col>
-            {this.state.fetchMetricsError && <Alert color="danger"><strong>Warning:</strong> Error fetching metrics list: {this.state.fetchMetricsError}</Alert>}
+            {fetchMetricsError && <Alert color="danger"><strong>Warning:</strong> Error fetching metrics list: {this.state.fetchMetricsError}</Alert>}
           </Col>
         </Row>
         {this.state.panels.map(p =>
@@ -188,7 +187,8 @@ class PanelList extends Component<any, PanelListState> {
             options={p.options}
             onOptionsChanged={(opts: PanelOptions) => this.handleOptionsChanged(p.key, opts)}
             removePanel={() => this.removePanel(p.key)}
-            metricNames={this.state.metricNames}
+            metricNames={metricNames}
+            pastQueries={pastQueries}
           />
         )}
         <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>Add Panel</Button>

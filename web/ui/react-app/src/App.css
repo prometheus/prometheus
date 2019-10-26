@@ -75,7 +75,6 @@ button.execute-btn {
     top: 100%;
     left: 56px;
     float: left;
-    padding: .5rem 1px .5rem 1px;
     margin: -5px;
     list-style: none;
 }
@@ -88,6 +87,14 @@ button.execute-btn {
     background-color: transparent;
     border: 0;
     display: block;
+}
+
+.autosuggest-dropdown .card-header {
+    background: rgba(240, 230, 140, 0.4);
+    height: 30px;
+    display: flex;
+    align-items: center;
+    text-transform: uppercase;
 }
 
 .graph-controls, .table-controls {

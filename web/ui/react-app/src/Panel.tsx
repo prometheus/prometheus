@@ -24,6 +24,7 @@ import QueryStatsView, { QueryStats } from './QueryStatsView';
 interface PanelProps {
   options: PanelOptions;
   onOptionsChanged: (opts: PanelOptions) => void;
+  pastQueries: string[];
   metricNames: string[];
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
@@ -228,15 +229,19 @@ class Panel extends Component<PanelProps, PanelState> {
   }
 
   render() {
+    const { pastQueries, metricNames, options } = this.props;
     return (
       <div className="panel">
         <Row>
           <Col>
             <ExpressionInput
-              value={this.props.options.expr}
+              value={options.expr}
               executeQuery={this.executeQuery}
               loading={this.state.loading}
-              metricNames={this.props.metricNames}
+              autocompleteSections={{
+                'Query History': pastQueries,
+                'Metric Names': metricNames,
+              }}
             />
           </Col>
         </Row>
@@ -250,7 +255,7 @@ class Panel extends Component<PanelProps, PanelState> {
             <Nav tabs>
               <NavItem>
                 <NavLink
-                  className={this.props.options.type === 'table' ? 'active' : ''}
+                  className={options.type === 'table' ? 'active' : ''}
                   onClick={() => { this.setOptions({type: 'table'}); }}
                 >
                   Table
@@ -258,7 +263,7 @@ class Panel extends Component<PanelProps, PanelState> {
               </NavItem>
               <NavItem>
                 <NavLink
-                  className={this.props.options.type === 'graph' ? 'active' : ''}
+                  className={options.type === 'graph' ? 'active' : ''}
                   onClick={() => { this.setOptions({type: 'graph'}); }}
                 >
                   Graph
@@ -269,14 +274,14 @@ class Panel extends Component<PanelProps, PanelState> {
                 <QueryStatsView {...this.state.stats} />
               }
             </Nav>
-            <TabContent activeTab={this.props.options.type}>
+            <TabContent activeTab={options.type}>
               <TabPane tabId="table">
-                {this.props.options.type === 'table' &&
+                {options.type === 'table' &&
                   <>
                     <div className="table-controls">
                       <TimeInput
-                        time={this.props.options.endTime}
-                        range={this.props.options.range}
+                        time={options.endTime}
+                        range={options.range}
                         placeholder="Evaluation time"
                         onChangeTime={this.handleChangeEndTime}
                       />
@@ -289,17 +294,17 @@ class Panel extends Component<PanelProps, PanelState> {
                 {this.props.options.type === 'graph' &&
                   <>
                     <GraphControls
-                      range={this.props.options.range}
-                      endTime={this.props.options.endTime}
-                      resolution={this.props.options.resolution}
-                      stacked={this.props.options.stacked}
+                      range={options.range}
+                      endTime={options.endTime}
+                      resolution={options.resolution}
+                      stacked={options.stacked}
 
                       onChangeRange={this.handleChangeRange}
                       onChangeEndTime={this.handleChangeEndTime}
                       onChangeResolution={this.handleChangeResolution}
                       onChangeStacking={this.handleChangeStacking}
                     />
-                    <Graph data={this.state.data} stacked={this.props.options.stacked} queryParams={this.state.lastQueryParams} />
+                    <Graph data={this.state.data} stacked={options.stacked} queryParams={this.state.lastQueryParams} />
                   </>
                 }
               </TabPane>

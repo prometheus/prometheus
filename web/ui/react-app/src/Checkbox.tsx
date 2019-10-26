@@ -1,18 +1,15 @@
-import React, { FC, HTMLProps, memo } from 'react';
-import { FormGroup, Label, Input } from 'reactstrap';
-import { uuidGen } from './utils/func';
+import React, { FC, memo, CSSProperties } from 'react';
+import { FormGroup, Label, Input, InputProps } from 'reactstrap';
 
-const Checkbox: FC<HTMLProps<HTMLSpanElement>> = ({ children, onChange, style }) => {
-  const id = uuidGen();
+interface CheckboxProps extends InputProps {
+  wrapperStyles?: CSSProperties;
+}
+
+const Checkbox: FC<CheckboxProps> = ({ children, wrapperStyles, id, ...rest }) => {
   return (
-    <FormGroup className="custom-control custom-checkbox" style={style}>
-      <Input
-        onChange={onChange}
-        type="checkbox"
-        className="custom-control-input"
-        id={`checkbox_${id}`}
-        placeholder="password placeholder" />
-      <Label style={{ userSelect: 'none' }} className="custom-control-label" for={`checkbox_${id}`}>
+    <FormGroup className="custom-control custom-checkbox" style={wrapperStyles}>
+      <Input {...rest} id={id} type="checkbox" className="custom-control-input" />
+      <Label style={{ userSelect: 'none' }} className="custom-control-label" for={id}>
         {children}
       </Label>
     </FormGroup>
