@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 )
@@ -77,4 +78,20 @@ func mockServer(code int, body string) (*httptest.Server, func() *http.Request) 
 		return req
 	}
 	return server, f
+}
+
+func TestCheckExpression(t *testing.T) {
+	// Temporarily move error output from CheckExpression calls
+	// to /dev/null, only return value is relevant
+	stderr := os.Stderr
+	defer func() { os.Stderr = stderr }()
+	os.Stderr = os.NewFile(0, os.DevNull)
+
+	if CheckExpression("test{query=\"hello\"}") != 0 {
+		t.Error()
+	}
+
+	if CheckExpression("i{am=\"incomplete\"") == 0 {
+		t.Error()
+	}
 }

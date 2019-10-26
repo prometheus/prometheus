@@ -40,6 +40,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
@@ -63,6 +64,9 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
+
+	checkExpressionCmd := checkCmd.Command("expression", "Check validity of PromQL expression")
+	checkExpr := checkExpressionCmd.Arg("expr", "PromQL query expression.").Required().String()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
@@ -122,6 +126,9 @@ func main() {
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics())
+
+	case checkExpressionCmd.FullCommand():
+		os.Exit(CheckExpression(*checkExpr))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryServer, *queryExpr, p))
@@ -372,6 +379,18 @@ func CheckMetrics() int {
 
 	if len(problems) > 0 {
 		return 3
+	}
+
+	return 0
+}
+
+// CheckExpression validates if the input expression is a valid PromQL expression
+func CheckExpression(expr string) int {
+	_, err := promql.ParseExpr(expr)
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error while validating:", err)
+		return 1
 	}
 
 	return 0
