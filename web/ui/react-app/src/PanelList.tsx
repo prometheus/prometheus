@@ -50,7 +50,7 @@ class PanelList extends Component<any, PanelListState> {
       }
     })
     .then(json => {
-      this.setMetrics(json.data);
+      this.setState({metricNames: json.data});
     })
     .catch(error => this.setState({ fetchMetricsError: error.message }));
 
@@ -87,18 +87,17 @@ class PanelList extends Component<any, PanelListState> {
 
   toggleQueryHistory = (e: ChangeEvent<HTMLInputElement>) => {
     localStorage.setItem('enable-query-history', `${e.target.checked}`);
-    this.setMetrics();
+    this.updatePastQueries();
   }
 
-  setMetrics = (metricNames: string[] = this.state.metricNames) => {
+  updatePastQueries = () => {
     this.setState({
-      pastQueries: this.isHistoryEnabled() ? this.getHistoryItems() : [],
-      metricNames
+      pastQueries: this.isHistoryEnabled() ? this.getHistoryItems() : []
     });
   }
 
   handleQueryHistory = (query: string) => {
-    const isSimpleMetric = this.state.metricNames.indexOf(query) !== -1;            
+    const isSimpleMetric = this.state.metricNames.indexOf(query) !== -1;
     if (isSimpleMetric || !query.length) {
       return;
     }
@@ -107,7 +106,7 @@ class PanelList extends Component<any, PanelListState> {
       return metric === query ? acc : [...acc, metric]; // Prevent adding query twice.
     }, [query]);
     localStorage.setItem('history', JSON.stringify(extendedItems.slice(0, 50)));
-    this.setMetrics();
+    this.updatePastQueries();
   }
 
   getKey(): string {
