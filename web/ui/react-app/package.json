@@ -77,8 +77,10 @@
     "eslint-plugin-react": "7.x",
     "eslint-plugin-react-hooks": "1.x",
     "prettier": "^1.18.2",
+    "@types/sinon": "^7.5.0",
     "enzyme": "^3.10.0",
-    "enzyme-adapter-react-16": "^1.15.1"
+    "enzyme-adapter-react-16": "^1.15.1",
+    "sinon": "^7.5.0"
   },
   "proxy": "http://localhost:9090"
 }
