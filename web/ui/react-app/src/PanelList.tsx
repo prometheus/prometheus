@@ -79,6 +79,8 @@ class PanelList extends Component<any, PanelListState> {
         this.setState({panels: panels});
       }
     }
+
+    this.updatePastQueries();
   }
 
   isHistoryEnabled = () => JSON.parse(localStorage.getItem('enable-query-history') || 'false') as boolean;
