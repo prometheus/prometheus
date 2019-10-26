@@ -72,10 +72,15 @@ button.execute-btn {
     left: 56px;
     float: left;
     margin: -5px;
+}
+
+.autosuggest-dropdown-list {
+    padding: 0;
+    margin: 0 0 5px 0;
     list-style: none;
 }
 
-.autosuggest-dropdown li {
+.autosuggest-dropdown-list li {
     width: 100%;
     padding: .25rem 1.5rem;
     clear: both;
@@ -85,9 +90,11 @@ button.execute-btn {
     display: block;
 }
 
-.autosuggest-dropdown .card-header {
-    background: rgba(240, 230, 140, 0.4);
-    height: 30px;
+.autosuggest-dropdown-list li.autosuggest-dropdown-header {
+    margin-bottom: 5px;
+    background-color: #bfdeff;
+    height: 25px;
+    font-size: 10px;
     display: flex;
     align-items: center;
     text-transform: uppercase;
