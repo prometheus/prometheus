@@ -14,7 +14,5 @@ cd web/ui/react-app
 
 echo "building React app"
 PUBLIC_URL=. yarn build
-rm -rf ../static/graph-new
-mv build ../static/graph-new
-# Prevent bad redirect due to Go HTTP router treating index.html specially.
-mv ../static/graph-new/index.html ../static/graph-new/app.html
+rm -rf ../static/react
+mv build ../static/react

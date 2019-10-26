@@ -68,7 +68,23 @@ import (
 	"github.com/prometheus/prometheus/web/ui"
 )
 
-var localhostRepresentations = []string{"127.0.0.1", "localhost"}
+var (
+	localhostRepresentations = []string{"127.0.0.1", "localhost"}
+
+	// Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
+	reactAppPaths = []string{
+		"/",
+		"/alerts",
+		"/config",
+		"/flags",
+		"/graph",
+		"/rules",
+		"/service-discovery",
+		"/status",
+		"/targets",
+		"/version",
+	}
+)
 
 // withStackTrace logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
@@ -330,6 +346,21 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
+		fs := server.StaticFileServer(ui.Assets)
+		fs.ServeHTTP(w, r)
+	})
+
+	router.Get("/new/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		p := route.Param(r.Context(), "filepath")
+		r.URL.Path = path.Join("/static/react/", p)
+
+		for _, rp := range reactAppPaths {
+			if p == rp {
+				r.URL.Path = "/static/react/"
+				break
+			}
+		}
+
 		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})
