@@ -17,11 +17,10 @@ import SanitizeHTML from './components/SanitizeHTML';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
-import { MetricGroup } from './PanelList';
 
 interface ExpressionInputProps {
   value: string;
-  metricGroups: { [key: string]: MetricGroup };
+  autocompleteSections: { [key: string]: string[] };
   executeQuery: (expr: string) => void;
   loading: boolean;
 }
@@ -79,12 +78,12 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     });
   }
 
-  creatAutocompleteSection = (downshift: ControllerStateAndHelpers<any>) => {
+  createAutocompleteSection = (downshift: ControllerStateAndHelpers<any>) => {
     const { inputValue = '', closeMenu, highlightedIndex } = downshift;
-    const { metricGroups } = this.props;
+    const { autocompleteSections } = this.props;
     let index = 0;
     const sections = inputValue!.length ?
-      Object.values(metricGroups).reduce((acc, { items, title }) => {
+      Object.entries(autocompleteSections).reduce((acc, [title, items]) => {
         const matches = this.getSearchMatches(inputValue!, items);
         return !matches.length ? acc : [
           ...acc,
@@ -106,7 +105,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                       <SanitizeHTML tag={ListGroupItem} {...itemProps} allowedTags={['strong']}>
                         {string}
                       </SanitizeHTML>
-                    )
+                    );
                   })
               }
             </Card>
@@ -189,7 +188,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                 </Button>
               </InputGroupAddon>
             </InputGroup>
-            {downshift.isOpen && this.creatAutocompleteSection(downshift)}
+            {downshift.isOpen && this.createAutocompleteSection(downshift)}
           </div>
         )}
       </Downshift>

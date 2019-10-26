@@ -12,11 +12,9 @@ interface PanelListState {
   panels: {
     key: string;
     options: PanelOptions;
-  }[],
-  metricGroups: {
-    queries: MetricGroup;
-    metricNames: MetricGroup;
-  };
+  }[];
+  pastQueries: string[];
+  metricNames: string[];
   fetchMetricsError: string | null;
   timeDriftError: string | null;
 }
@@ -35,10 +33,8 @@ class PanelList extends Component<any, PanelListState> {
           options: PanelDefaultOptions,
         },
       ],
-      metricGroups: {
-        queries: { title: 'Query History', items: []},
-        metricNames: { title: 'Metric Names', items: []},
-      },
+      pastQueries: [],
+      metricNames: [],
       fetchMetricsError: null,
       timeDriftError: null,
     };
@@ -94,18 +90,15 @@ class PanelList extends Component<any, PanelListState> {
     this.setMetrics();
   }
 
-  setMetrics = (metrics?: string[]) => {
-    const { metricNames, queries } = this.state.metricGroups;
+  setMetrics = (metricNames: string[] = this.state.metricNames) => {
     this.setState({
-      metricGroups: {
-        queries: { ...queries, items: this.isHistoryEnabled() ? this.getHistoryItems() : [] },
-        metricNames: { ...metricNames, items: metrics || metricNames.items }
-      }
+      pastQueries: this.isHistoryEnabled() ? this.getHistoryItems() : [],
+      metricNames
     });
   }
 
   handleQueryHistory = (query: string) => {
-    const isSimpleMetric = this.state.metricGroups.metricNames.items.indexOf(query) !== -1;            
+    const isSimpleMetric = this.state.metricNames.indexOf(query) !== -1;            
     if (isSimpleMetric || !query.length) {
       return;
     }
@@ -156,6 +149,7 @@ class PanelList extends Component<any, PanelListState> {
   }
 
   render() {
+    const { metricNames, pastQueries, timeDriftError, fetchMetricsError } = this.state;
     return (
       <>
         <Row className="mb-2">
@@ -178,12 +172,12 @@ class PanelList extends Component<any, PanelListState> {
         </Row>
         <Row>
           <Col>
-            {this.state.timeDriftError && <Alert color="danger"><strong>Warning:</strong> Error fetching server time: {this.state.timeDriftError}</Alert>}
+            {timeDriftError && <Alert color="danger"><strong>Warning:</strong> Error fetching server time: {this.state.timeDriftError}</Alert>}
           </Col>
         </Row>
         <Row>
           <Col>
-            {this.state.fetchMetricsError && <Alert color="danger"><strong>Warning:</strong> Error fetching metrics list: {this.state.fetchMetricsError}</Alert>}
+            {fetchMetricsError && <Alert color="danger"><strong>Warning:</strong> Error fetching metrics list: {this.state.fetchMetricsError}</Alert>}
           </Col>
         </Row>
         {this.state.panels.map(p =>
@@ -193,7 +187,8 @@ class PanelList extends Component<any, PanelListState> {
             options={p.options}
             onOptionsChanged={(opts: PanelOptions) => this.handleOptionsChanged(p.key, opts)}
             removePanel={() => this.removePanel(p.key)}
-            metricGroups={this.state.metricGroups}
+            metricNames={metricNames}
+            pastQueries={pastQueries}
           />
         )}
         <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>Add Panel</Button>
