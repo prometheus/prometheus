@@ -4,6 +4,7 @@ import ReactResizeDetector from 'react-resize-detector';
 import { Alert } from 'reactstrap';
 
 import Legend from './Legend';
+import { escapeHTML } from './utils/html';
 
 require('flot');
 require('flot/source/jquery.flot.crosshair');
@@ -32,26 +33,11 @@ class Graph extends PureComponent<GraphProps> {
   private id: number = getGraphID();
   private chartRef = React.createRef<HTMLDivElement>();
 
-  escapeHTML(str: string) {
-    const entityMap: { [key: string]: string } = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-      '/': '&#x2F;',
-    };
-
-    return String(str).replace(/[&<>"'/]/g, function(s) {
-      return entityMap[s];
-    });
-  }
-
-  renderLabels(labels: { [key: string]: string }) {
-    const labelStrings: string[] = [];
+  renderLabels(labels: {[key: string]: string}) {
+    let labelStrings: string[] = [];
     for (const label in labels) {
       if (label !== '__name__') {
-        labelStrings.push('<strong>' + label + '</strong>: ' + this.escapeHTML(labels[label]));
+        labelStrings.push('<strong>' + label + '</strong>: ' + escapeHTML(labels[label]));
       }
     }
     return '<div class="labels">' + labelStrings.join('<br>') + '</div>';
