@@ -248,6 +248,7 @@ func TestUnsequentialSegments(t *testing.T) {
 	w.Repair(errors.New(ErrorUnsequentialSegments), dir)
 
 	df, err := ioutil.ReadDir(dir)
+	testutil.Ok(t, err)
 	testutil.Assert(t, len(df) == correctSegmentsCount, "Unable to repair unsequential segments")
 }
 
