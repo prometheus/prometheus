@@ -588,9 +588,9 @@ func (db *DB) run() {
 			return
 		case <-time.After(backoff):
 		}
-
+		timer := time.NewTimer(1 * time.Minute)
 		select {
-		case <-time.After(1 * time.Minute):
+		case <-timer.C:
 			select {
 			case db.compactc <- struct{}{}:
 			default:
@@ -611,8 +611,10 @@ func (db *DB) run() {
 			}
 			db.autoCompactMtx.Unlock()
 		case <-db.stopc:
+			timer.Stop()
 			return
 		}
+		timer.Stop()
 	}
 }
 
