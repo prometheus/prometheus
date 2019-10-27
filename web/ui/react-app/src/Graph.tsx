@@ -33,7 +33,7 @@ class Graph extends PureComponent<GraphProps> {
   private id: number = getGraphID();
   private chartRef = React.createRef<HTMLDivElement>();
 
-  renderLabels(labels: {[key: string]: string}) {
+  renderLabels(labels: { [key: string]: string }) {
     let labelStrings: string[] = [];
     for (const label in labels) {
       if (label !== '__name__') {
