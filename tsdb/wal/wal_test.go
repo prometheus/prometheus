@@ -23,7 +23,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -209,18 +208,47 @@ func TestWALRepair_ReadingError(t *testing.T) {
 // TestUnsequentialSegments tests whether the Unsequential wal segments are
 // deleted or not.
 func TestUnsequentialSegments(t *testing.T) {
-	// Prevent invalid segment size error
-	segsN := 5 * pageSize
-
-	dir := "../testdata/repair_unsequential_wals"
-	w, err := NewSize(log.NewNopLogger(), nil, dir, segsN, false)
-
-	// Send unsequential segments error to trigger the segment scan
-	w.Repair(errors.Cause(err), dir)
-	f, err := ioutil.ReadDir("../testdata/repair_unsequential_wals")
+	dir, err := ioutil.TempDir("", "wal_unsequential")
 	testutil.Ok(t, err)
 
-	testutil.Assert(t, len(f) <= 3, "unable to delete unsequential segments", nil)
+	var (
+		logger         = testutil.NewLogger(t)
+		segmentSize    = pageSize * 3
+		recordSize     = pageSize - recordHeaderSize
+		segments       = 20
+		deletePosition = segments / 2
+	)
+
+	// Create temporary segments
+	{
+		for i := 0; i < segments; i++ {
+			w, err := NewSize(logger, nil, dir, segmentSize, false)
+			testutil.Ok(t, err)
+			buf := make([]byte, recordSize)
+			_, err = rand.Read(buf)
+			testutil.Ok(t, err)
+			testutil.Ok(t, w.Log(buf))
+		}
+	}
+	f, err := ioutil.ReadDir(dir)
+	testutil.Ok(t, err)
+
+	// Check if the total created segments have number equal to the segments
+	testutil.Assert(t, len(f) == segments, "Segments not created as expected")
+
+	// Delete a segment in order to create a gap or unsequential
+	deletionSegName := f[deletePosition].Name()
+	correctSegmentsCount := segments - deletePosition
+
+	// Create a gap in the middle of the sequence
+	os.Remove(dir + "/" + deletionSegName)
+	w, err := Open(logger, nil, dir)
+	testutil.Ok(t, err)
+
+	w.Repair(errors.New(ErrorUnsequentialSegments), dir)
+
+	df, err := ioutil.ReadDir(dir)
+	testutil.Assert(t, len(df) == correctSegmentsCount, "Unable to repair unsequential segments")
 }
 
 // TestCorruptAndCarryOn writes a multi-segment WAL; corrupts the first segment and

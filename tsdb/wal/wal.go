@@ -246,6 +246,7 @@ func New(logger log.Logger, reg prometheus.Registerer, dir string, compress bool
 // NewSize returns a new WAL over the given directory.
 // New segments are created with the specified size.
 func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool) (*WAL, error) {
+	fmt.Println("new size")
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
 	}
@@ -265,12 +266,12 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		compress:    compress,
 	}
 
+	// Prevent MustRegister if segments corrupted
 	_, last, err := w.Segments()
 	if err != nil {
 		return nil, errors.Wrap(err, "get segment range")
 	}
 
-	// Prevent MustRegister if segments corrupted
 	w.metrics = newWALMetrics(w, reg)
 
 	// Index of the Segment we want to open and write to.
