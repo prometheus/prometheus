@@ -2,9 +2,9 @@ import React, { Component, ChangeEvent } from 'react';
 
 import { Alert, Button, Col, Row } from 'reactstrap';
 
-import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
-import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from './utils/urlParams';
-import Checkbox from './Checkbox';
+import Panel, { PanelOptions, PanelDefaultOptions } from '../Panel';
+import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from '../utils/urlParams';
+import Checkbox from '../Checkbox';
 
 export type MetricGroup = { title: string; items: string[] };
 
@@ -161,15 +161,6 @@ class PanelList extends Component<any, PanelListState> {
             defaultChecked={this.isHistoryEnabled()}>
             Enable query history
           </Checkbox>
-          <Col>
-            <Button
-              className="float-right classic-ui-btn"
-              color="link"
-              onClick={() => { window.location.pathname = "../../graph" }}
-              size="sm">
-              Return to classic UI
-            </Button>
-          </Col>
         </Row>
         <Row>
           <Col>
