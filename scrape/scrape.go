@@ -917,7 +917,7 @@ mainLoop:
 				sl.lastScrapeSize = len(b)
 			}
 		} else {
-			level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr.Error())
+			level.Warn(sl.l).Log("msg", "Scrape failed", "err", scrapeErr.Error())
 			if errc != nil {
 				errc <- scrapeErr
 			}
