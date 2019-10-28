@@ -1,13 +1,13 @@
 import moment from 'moment-timezone';
 
-const rangeUnits: {[unit: string]: number} = {
-  'y': 60 * 60 * 24 * 365,
-  'w': 60 * 60 * 24 * 7,
-  'd': 60 * 60 * 24,
-  'h': 60 * 60,
-  'm': 60,
-  's': 1
-}
+const rangeUnits: { [unit: string]: number } = {
+  y: 60 * 60 * 24 * 365,
+  w: 60 * 60 * 24 * 7,
+  d: 60 * 60 * 24,
+  h: 60 * 60,
+  m: 60,
+  s: 1,
+};
 
 export function parseRange(rangeText: string): number | null {
   const rangeRE = new RegExp('^([0-9]+)([ywdhms]+)$');
@@ -21,9 +21,9 @@ export function parseRange(rangeText: string): number | null {
 }
 
 export function formatRange(range: number): string {
-  for (let unit of Object.keys(rangeUnits)) {
+  for (const unit of Object.keys(rangeUnits)) {
     if (range % rangeUnits[unit] === 0) {
-      return (range / rangeUnits[unit]) + unit;
+      return range / rangeUnits[unit] + unit;
     }
   }
   return range + 's';

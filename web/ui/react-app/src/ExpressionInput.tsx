@@ -37,8 +37,8 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     super(props);
     this.state = {
       value: props.value,
-      height: 'auto'
-    }
+      height: 'auto',
+    };
   }
 
   componentDidMount() {
@@ -49,14 +49,17 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     const { offsetHeight, clientHeight, scrollHeight } = this.exprInputRef.current!;
     const offset = offsetHeight - clientHeight; // Needed in order for the height to be more accurate.
     this.setState({ height: scrollHeight + offset });
-  }
+  };
 
   handleInput = () => {
-    this.setState({
-      height: 'auto',
-      value: this.exprInputRef.current!.value
-    }, this.setHeight);
-  }
+    this.setState(
+      {
+        height: 'auto',
+        value: this.exprInputRef.current!.value,
+      },
+      this.setHeight
+    );
+  };
 
   handleDropdownSelection = (value: string) => {
     this.setState({ value, height: 'auto' }, this.setHeight);
@@ -67,50 +70,54 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
       this.props.executeQuery(this.exprInputRef.current!.value);
       event.preventDefault();
     }
-  }
+  };
 
   executeQuery = () => this.props.executeQuery(this.exprInputRef.current!.value);
 
   getSearchMatches = (input: string, expressions: string[]) => {
     return fuzzy.filter(input.replace(/ /g, ''), expressions, {
-      pre: "<strong>",
-      post: "</strong>",
+      pre: '<strong>',
+      post: '</strong>',
     });
-  }
+  };
 
   createAutocompleteSection = (downshift: ControllerStateAndHelpers<any>) => {
     const { inputValue = '', closeMenu, highlightedIndex } = downshift;
     const { autocompleteSections } = this.props;
     let index = 0;
-    const sections = inputValue!.length ?
-      Object.entries(autocompleteSections).reduce((acc, [title, items]) => {
-        const matches = this.getSearchMatches(inputValue!, items);
-        return !matches.length ? acc : [
-          ...acc,
-            <Card tag={ListGroup} key={title}>
-              <CardHeader style={{ fontSize: 13 }}>{title}</CardHeader>
-              {
-                matches
-                  .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
-                  .map(({ original, string }) => {
-                    const itemProps = downshift.getItemProps({
-                      key: original,
-                      index,
-                      item: original,
-                      style: {
-                        backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
-                      },
-                    })
-                    return (
-                      <SanitizeHTML tag={ListGroupItem} {...itemProps} allowedTags={['strong']}>
-                        {string}
-                      </SanitizeHTML>
-                    );
-                  })
-              }
-            </Card>
-        ]
-      }, [] as JSX.Element[]) : []
+    const sections = inputValue!.length
+      ? Object.entries(autocompleteSections).reduce(
+          (acc, [title, items]) => {
+            const matches = this.getSearchMatches(inputValue!, items);
+            return !matches.length
+              ? acc
+              : [
+                  ...acc,
+                  <Card tag={ListGroup} key={title}>
+                    <CardHeader style={{ fontSize: 13 }}>{title}</CardHeader>
+                    {matches
+                      .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+                      .map(({ original, string }) => {
+                        const itemProps = downshift.getItemProps({
+                          key: original,
+                          index,
+                          item: original,
+                          style: {
+                            backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
+                          },
+                        });
+                        return (
+                          <SanitizeHTML tag={ListGroupItem} {...itemProps} allowedTags={['strong']}>
+                            {string}
+                          </SanitizeHTML>
+                        );
+                      })}
+                  </Card>,
+                ];
+          },
+          [] as JSX.Element[]
+        )
+      : [];
 
     if (!sections.length) {
       // This is ugly but is needed in order to sync state updates.
@@ -121,19 +128,16 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
 
     return (
       <div {...downshift.getMenuProps()} className="autosuggest-dropdown">
-        { sections }
+        {sections}
       </div>
     );
-  }
+  };
 
   render() {
     const { value, height } = this.state;
     return (
-      <Downshift
-        inputValue={value}
-        onSelect={this.handleDropdownSelection}
-      >
-        {(downshift) => (
+      <Downshift inputValue={value} onSelect={this.handleDropdownSelection}>
+        {downshift => (
           <div>
             <InputGroup className="expression-input">
               <InputGroupAddon addonType="prepend">
@@ -175,15 +179,11 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                         break;
                       default:
                     }
-                  }
+                  },
                 } as any)}
               />
               <InputGroupAddon addonType="append">
-                <Button
-                  className="execute-btn"
-                  color="primary"
-                  onClick={this.executeQuery}
-                >
+                <Button className="execute-btn" color="primary" onClick={this.executeQuery}>
                   Execute
                 </Button>
               </InputGroupAddon>

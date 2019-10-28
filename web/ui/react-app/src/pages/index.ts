@@ -7,13 +7,4 @@ import Status from './Status';
 import Targets from './Targets';
 import PanelList from './PanelList';
 
-export {
-  Alerts,
-  Config,
-  Flags,
-  Rules,
-  Services,
-  Status,
-  Targets,
-  PanelList,
-}
+export { Alerts, Config, Flags, Rules, Services, Status, Targets, PanelList };

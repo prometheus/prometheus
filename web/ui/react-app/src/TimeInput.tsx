@@ -19,12 +19,7 @@ import {
   faTimes,
 } from '@fortawesome/free-solid-svg-icons';
 
-library.add(
-  faCalendarCheck,
-  faArrowUp,
-  faArrowDown,
-  faTimes,
-);
+library.add(faCalendarCheck, faArrowUp, faArrowDown, faTimes);
 // Sadly needed to also replace <i> within the date picker, since it's not a React component.
 dom.watch();
 
@@ -42,21 +37,21 @@ class TimeInput extends Component<TimeInputProps> {
 
   getBaseTime = (): number => {
     return this.props.time || moment().valueOf();
-  }
+  };
 
   increaseTime = (): void => {
-    const time = this.getBaseTime() + this.props.range*1000/2;
+    const time = this.getBaseTime() + (this.props.range * 1000) / 2;
     this.props.onChangeTime(time);
-  }
+  };
 
   decreaseTime = (): void => {
-    const time = this.getBaseTime() - this.props.range*1000/2;
+    const time = this.getBaseTime() - (this.props.range * 1000) / 2;
     this.props.onChangeTime(time);
-  }
+  };
 
   clearTime = (): void => {
     this.props.onChangeTime(null);
-  }
+  };
 
   componentDidMount() {
     this.$time = $(this.timeInputRef.current!);
@@ -96,7 +91,9 @@ class TimeInput extends Component<TimeInputProps> {
     return (
       <InputGroup className="time-input" size="sm">
         <InputGroupAddon addonType="prepend">
-          <Button title="Decrease time" onClick={this.decreaseTime}><FontAwesomeIcon icon={faChevronLeft} fixedWidth /></Button>
+          <Button title="Decrease time" onClick={this.decreaseTime}>
+            <FontAwesomeIcon icon={faChevronLeft} fixedWidth />
+          </Button>
         </InputGroupAddon>
 
         <Input
@@ -104,19 +101,23 @@ class TimeInput extends Component<TimeInputProps> {
           innerRef={this.timeInputRef}
           onFocus={() => this.$time.datetimepicker('show')}
           onBlur={() => this.$time.datetimepicker('hide')}
-          onKeyDown={(e) => ['Escape', 'Enter'].includes(e.key) && this.$time.datetimepicker('hide')}
+          onKeyDown={e => ['Escape', 'Enter'].includes(e.key) && this.$time.datetimepicker('hide')}
         />
 
         {/* CAUTION: While the datetimepicker also has an option to show a 'clear' button,
             that functionality is broken, so we create an external solution instead. */}
-        {this.props.time &&
+        {this.props.time && (
           <InputGroupAddon addonType="append">
-            <Button className="clear-time-btn" title="Clear time" onClick={this.clearTime}><FontAwesomeIcon icon={faTimes} fixedWidth /></Button>
+            <Button className="clear-time-btn" title="Clear time" onClick={this.clearTime}>
+              <FontAwesomeIcon icon={faTimes} fixedWidth />
+            </Button>
           </InputGroupAddon>
-        }
+        )}
 
         <InputGroupAddon addonType="append">
-          <Button title="Increase time" onClick={this.increaseTime}><FontAwesomeIcon icon={faChevronRight} fixedWidth /></Button>
+          <Button title="Increase time" onClick={this.increaseTime}>
+            <FontAwesomeIcon icon={faChevronRight} fixedWidth />
+          </Button>
         </InputGroupAddon>
       </InputGroup>
     );

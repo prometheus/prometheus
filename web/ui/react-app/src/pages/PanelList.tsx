@@ -20,19 +20,22 @@ interface PanelListState {
 }
 
 class PanelList extends Component<any, PanelListState> {
-  private key: number = 0;
+  private key = 0;
   constructor(props: any) {
     super(props);
 
     const urlPanels = decodePanelOptionsFromQueryString(window.location.search);
 
     this.state = {
-      panels: urlPanels.length !== 0 ? urlPanels : [
-        {
-          key: this.getKey(),
-          options: PanelDefaultOptions,
-        },
-      ],
+      panels:
+        urlPanels.length !== 0
+          ? urlPanels
+          : [
+              {
+                key: this.getKey(),
+                options: PanelDefaultOptions,
+              },
+            ],
       pastQueries: [],
       metricNames: [],
       fetchMetricsError: null,
@@ -41,44 +44,48 @@ class PanelList extends Component<any, PanelListState> {
   }
 
   componentDidMount() {
-    fetch("../../api/v1/label/__name__/values", {cache: "no-store"})
-    .then(resp => {
-      if (resp.ok) {
-        return resp.json();
-      } else {
-        throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
-      }
-    })
-    .then(json => {
-      this.setState({metricNames: json.data});
-    })
-    .catch(error => this.setState({ fetchMetricsError: error.message }));
+    fetch('../../api/v1/label/__name__/values', { cache: 'no-store' })
+      .then(resp => {
+        if (resp.ok) {
+          return resp.json();
+        } else {
+          throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
+        }
+      })
+      .then(json => {
+        this.setState({ metricNames: json.data });
+      })
+      .catch(error => this.setState({ fetchMetricsError: error.message }));
 
     const browserTime = new Date().getTime() / 1000;
-    fetch("../../api/v1/query?query=time()", {cache: "no-store"})
-    .then(resp => {
-      if (resp.ok) {
-        return resp.json();
-      } else {
-        throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
-      }
-    })
-    .then(json => {
-      const serverTime = json.data.result[0];
-      const delta = Math.abs(browserTime - serverTime);
+    fetch('../../api/v1/query?query=time()', { cache: 'no-store' })
+      .then(resp => {
+        if (resp.ok) {
+          return resp.json();
+        } else {
+          throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
+        }
+      })
+      .then(json => {
+        const serverTime = json.data.result[0];
+        const delta = Math.abs(browserTime - serverTime);
 
-      if (delta >= 30) {
-        throw new Error('Detected ' + delta + ' seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.');
-      }
-    })
-    .catch(error => this.setState({ timeDriftError: error.message }));
+        if (delta >= 30) {
+          throw new Error(
+            'Detected ' +
+              delta +
+              ' seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.'
+          );
+        }
+      })
+      .catch(error => this.setState({ timeDriftError: error.message }));
 
     window.onpopstate = () => {
       const panels = decodePanelOptionsFromQueryString(window.location.search);
       if (panels.length !== 0) {
-        this.setState({panels: panels});
+        this.setState({ panels: panels });
       }
-    }
+    };
 
     this.updatePastQueries();
   }
@@ -90,13 +97,13 @@ class PanelList extends Component<any, PanelListState> {
   toggleQueryHistory = (e: ChangeEvent<HTMLInputElement>) => {
     localStorage.setItem('enable-query-history', `${e.target.checked}`);
     this.updatePastQueries();
-  }
+  };
 
   updatePastQueries = () => {
     this.setState({
-      pastQueries: this.isHistoryEnabled() ? this.getHistoryItems() : []
+      pastQueries: this.isHistoryEnabled() ? this.getHistoryItems() : [],
     });
-  }
+  };
 
   handleQueryHistory = (query: string) => {
     const isSimpleMetric = this.state.metricNames.indexOf(query) !== -1;
@@ -104,12 +111,15 @@ class PanelList extends Component<any, PanelListState> {
       return;
     }
     const historyItems = this.getHistoryItems();
-    const extendedItems = historyItems.reduce((acc, metric) => {
-      return metric === query ? acc : [...acc, metric]; // Prevent adding query twice.
-    }, [query]);
+    const extendedItems = historyItems.reduce(
+      (acc, metric) => {
+        return metric === query ? acc : [...acc, metric]; // Prevent adding query twice.
+      },
+      [query]
+    );
     localStorage.setItem('history', JSON.stringify(extendedItems.slice(0, 50)));
     this.updatePastQueries();
-  }
+  };
 
   getKey(): string {
     return (this.key++).toString();
@@ -121,11 +131,11 @@ class PanelList extends Component<any, PanelListState> {
         return {
           key: key,
           options: opts,
-        }
+        };
       }
       return p;
     });
-    this.setState({panels: newPanels}, this.updateURL)
+    this.setState({ panels: newPanels }, this.updateURL);
   }
 
   updateURL(): void {
@@ -139,15 +149,15 @@ class PanelList extends Component<any, PanelListState> {
       key: this.getKey(),
       options: PanelDefaultOptions,
     });
-    this.setState({panels: panels}, this.updateURL);
-  }
+    this.setState({ panels: panels }, this.updateURL);
+  };
 
   removePanel = (key: string): void => {
     const panels = this.state.panels.filter(panel => {
       return panel.key !== key;
     });
-    this.setState({panels: panels}, this.updateURL);
-  }
+    this.setState({ panels: panels }, this.updateURL);
+  };
 
   render() {
     const { metricNames, pastQueries, timeDriftError, fetchMetricsError } = this.state;
@@ -158,21 +168,30 @@ class PanelList extends Component<any, PanelListState> {
             id="query-history-checkbox"
             wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
             onChange={this.toggleQueryHistory}
-            defaultChecked={this.isHistoryEnabled()}>
+            defaultChecked={this.isHistoryEnabled()}
+          >
             Enable query history
           </Checkbox>
         </Row>
         <Row>
           <Col>
-            {timeDriftError && <Alert color="danger"><strong>Warning:</strong> Error fetching server time: {this.state.timeDriftError}</Alert>}
+            {timeDriftError && (
+              <Alert color="danger">
+                <strong>Warning:</strong> Error fetching server time: {this.state.timeDriftError}
+              </Alert>
+            )}
           </Col>
         </Row>
         <Row>
           <Col>
-            {fetchMetricsError && <Alert color="danger"><strong>Warning:</strong> Error fetching metrics list: {this.state.fetchMetricsError}</Alert>}
+            {fetchMetricsError && (
+              <Alert color="danger">
+                <strong>Warning:</strong> Error fetching metrics list: {this.state.fetchMetricsError}
+              </Alert>
+            )}
           </Col>
         </Row>
-        {this.state.panels.map(p =>
+        {this.state.panels.map(p => (
           <Panel
             onExecuteQuery={this.handleQueryHistory}
             key={p.key}
@@ -182,8 +201,10 @@ class PanelList extends Component<any, PanelListState> {
             metricNames={metricNames}
             pastQueries={pastQueries}
           />
-        )}
-        <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>Add Panel</Button>
+        ))}
+        <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>
+          Add Panel
+        </Button>
       </>
     );
   }
