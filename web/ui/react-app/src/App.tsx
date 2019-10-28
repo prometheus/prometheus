@@ -21,7 +21,7 @@ class App extends Component {
       <>
         <Navigation />
         <Container fluid>
-          <Router basepath="/react">
+          <Router basepath="/new">
             <PanelList path="/graph" />
             <Alerts path="/alerts" />
             <Config path="/config" />
