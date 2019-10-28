@@ -210,6 +210,9 @@ func TestWALRepair_ReadingError(t *testing.T) {
 func TestUnsequentialSegments(t *testing.T) {
 	dir, err := ioutil.TempDir("", "wal_unsequential")
 	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	var (
 		logger         = testutil.NewLogger(t)
