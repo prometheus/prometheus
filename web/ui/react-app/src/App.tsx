@@ -1,19 +1,10 @@
 import React, { Component } from 'react';
-import Navigation from "./Navbar";
+import Navigation from './Navbar';
 import { Container } from 'reactstrap';
 
 import './App.css';
 import { Router } from '@reach/router';
-import {
-  Alerts,
-  Config,
-  Flags,
-  Rules,
-  Services,
-  Status,
-  Targets,
-  PanelList,
-} from './pages';
+import { Alerts, Config, Flags, Rules, Services, Status, Targets, PanelList } from './pages';
 
 class App extends Component {
   render() {

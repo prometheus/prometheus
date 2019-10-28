@@ -9,7 +9,7 @@ import './Config.css';
 
 const Config: FC<RouteComponentProps> = () => {
   const [config, setConfig] = useState(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -25,7 +25,10 @@ const Config: FC<RouteComponentProps> = () => {
         Configuration&nbsp;
         <CopyToClipboard
           text={config ? config! : ''}
-          onCopy={(text, result) => { setCopied(result); setTimeout(setCopied, 1500);}}
+          onCopy={(text, result) => {
+            setCopied(result);
+            setTimeout(setCopied, 1500);
+          }}
         >
           <Button color="light" disabled={!config}>
             {copied ? 'Copied' : 'Copy to clipboard'}
@@ -33,14 +36,17 @@ const Config: FC<RouteComponentProps> = () => {
         </CopyToClipboard>
       </h2>
 
-      {error
-        ? <Alert color="danger"><strong>Error:</strong> Error fetching configuration: {error}</Alert>
-        : config
-          ? <pre className="config-yaml">{config}</pre>
-          : <FontAwesomeIcon icon={faSpinner} spin />
-      }
+      {error ? (
+        <Alert color="danger">
+          <strong>Error:</strong> Error fetching configuration: {error}
+        </Alert>
+      ) : config ? (
+        <pre className="config-yaml">{config}</pre>
+      ) : (
+        <FontAwesomeIcon icon={faSpinner} spin />
+      )}
     </>
-  )
-}
+  );
+};
 
 export default Config;

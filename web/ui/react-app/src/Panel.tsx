@@ -246,7 +246,9 @@ class Panel extends Component<PanelProps, PanelState> {
               <NavItem>
                 <NavLink
                   className={options.type === 'table' ? 'active' : ''}
-                  onClick={() => { this.setOptions({type: 'table'}); }}
+                  onClick={() => {
+                    this.setOptions({ type: 'table' });
+                  }}
                 >
                   Table
                 </NavLink>
@@ -254,7 +256,9 @@ class Panel extends Component<PanelProps, PanelState> {
               <NavItem>
                 <NavLink
                   className={options.type === 'graph' ? 'active' : ''}
-                  onClick={() => { this.setOptions({type: 'graph'}); }}
+                  onClick={() => {
+                    this.setOptions({ type: 'graph' });
+                  }}
                 >
                   Graph
                 </NavLink>
@@ -263,7 +267,7 @@ class Panel extends Component<PanelProps, PanelState> {
             </Nav>
             <TabContent activeTab={options.type}>
               <TabPane tabId="table">
-                {options.type === 'table' &&
+                {options.type === 'table' && (
                   <>
                     <div className="table-controls">
                       <TimeInput
@@ -285,7 +289,6 @@ class Panel extends Component<PanelProps, PanelState> {
                       endTime={options.endTime}
                       resolution={options.resolution}
                       stacked={options.stacked}
-
                       onChangeRange={this.handleChangeRange}
                       onChangeEndTime={this.handleChangeEndTime}
                       onChangeResolution={this.handleChangeResolution}
