@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright 2019 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,29 +17,26 @@ import (
 	"sort"
 )
 
+// Stat holds values for a single cardinality statistic.
 type Stat struct {
 	Name  string
 	Count uint64
 }
 
-type MaxHeap struct {
+type maxHeap struct {
 	maxLength int
 	minValue  uint64
 	minIndex  int
 	Items     []Stat
 }
 
-func (m *MaxHeap) Init(len int) {
+func (m *maxHeap) init(len int) {
 	m.maxLength = len
 	m.minValue = math.MaxUint64
 	m.Items = make([]Stat, 0, len)
 }
 
-func (m *MaxHeap) Len() int {
-	return m.maxLength
-}
-
-func (m *MaxHeap) Push(item Stat) {
+func (m *maxHeap) push(item Stat) {
 	if len(m.Items) < m.maxLength {
 		if item.Count < m.minValue {
 			m.minValue = item.Count
@@ -64,7 +61,7 @@ func (m *MaxHeap) Push(item Stat) {
 
 }
 
-func (m *MaxHeap) Get() []Stat {
+func (m *maxHeap) get() []Stat {
 	sort.Slice(m.Items, func(i, j int) bool {
 		return m.Items[i].Count > m.Items[j].Count
 	})

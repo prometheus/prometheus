@@ -330,7 +330,6 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/alerts", readyf(h.alerts))
 	router.Get("/graph", readyf(h.graph))
 	router.Get("/status", readyf(h.status))
-	router.Get("/headstats", readyf(h.headstats))
 	router.Get("/flags", readyf(h.flags))
 	router.Get("/config", readyf(h.serveConfig))
 	router.Get("/rules", readyf(h.rules))
@@ -668,51 +667,7 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "graph.html", nil)
 }
 
-func (h *Handler) headstats(w http.ResponseWriter, r *http.Request) {
-	startTime := time.Now().UnixNano()
-	db := h.tsdb()
-	stats := db.Head().PostingsCardinalityStats("__name__")
-	data := struct {
-		Stats    *index.PostingsStats
-		Duration string
-	}{
-		Stats:    stats,
-		Duration: fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9)),
-	}
-
-	f, err := ui.Assets.Open(path.Join("/templates", "headstats.html"))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	text := string(b)
-	tmpl := template.NewTemplateExpander(
-		h.context,
-		text,
-		"headstats.html",
-		data,
-		h.now(),
-		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine, h.storage)),
-		h.options.ExternalURL,
-	)
-	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
-
-	result, err := tmpl.ExpandHTML(nil)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	io.WriteString(w, result)
-}
-
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
-
 	status := struct {
 		Birth               time.Time
 		CWD                 string
@@ -731,6 +686,8 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		NumSeries           uint64
 		MaxTime             int64
 		MinTime             int64
+		Stats               *index.PostingsStats
+		Duration            string
 	}{
 		Birth:          h.birth,
 		CWD:            h.cwd,
@@ -772,6 +729,9 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	db := h.tsdb()
+	startTime := time.Now().UnixNano()
+	status.Stats = db.Head().PostingsCardinalityStats("__name__")
+	status.Duration = fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9))
 	status.NumSeries = db.Head().NumSeries()
 	status.MaxTime = db.Head().MaxTime()
 	status.MinTime = db.Head().MaxTime()

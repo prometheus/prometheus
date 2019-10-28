@@ -79,6 +79,7 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	return keys
 }
 
+// PostingsStats contains cardinality based statistics for postings.
 type PostingsStats struct {
 	CardinalityMetricsStats []Stat
 	CardinalityLabelStats   []Stat
@@ -86,46 +87,46 @@ type PostingsStats struct {
 	LabelValuePairsStats    []Stat
 }
 
-// Calculating Cardinality Stats
+// Stats calculates the cardinality statistics from postings.
 func (p *MemPostings) Stats(label string) *PostingsStats {
 	const maxNumOfRecords = 10
 	var size uint64
 
 	p.mtx.RLock()
 
-	metrics := &MaxHeap{}
-	labels := &MaxHeap{}
-	labelValueLenght := &MaxHeap{}
-	labelValuePairs := &MaxHeap{}
+	metrics := &maxHeap{}
+	labels := &maxHeap{}
+	labelValueLenght := &maxHeap{}
+	labelValuePairs := &maxHeap{}
 
-	metrics.Init(maxNumOfRecords)
-	labels.Init(maxNumOfRecords)
-	labelValueLenght.Init(maxNumOfRecords)
-	labelValuePairs.Init(maxNumOfRecords)
+	metrics.init(maxNumOfRecords)
+	labels.init(maxNumOfRecords)
+	labelValueLenght.init(maxNumOfRecords)
+	labelValuePairs.init(maxNumOfRecords)
 
 	for n, e := range p.m {
 		if n == "" {
 			continue
 		}
-		labels.Push(Stat{Name: n, Count: uint64(len(e))})
+		labels.push(Stat{Name: n, Count: uint64(len(e))})
 		size = 0
 		for name, values := range e {
 			if n == label {
-				metrics.Push(Stat{Name: name, Count: uint64(len(values))})
+				metrics.push(Stat{Name: name, Count: uint64(len(values))})
 			}
-			labelValuePairs.Push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
+			labelValuePairs.push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
 			size += uint64(len(name))
 		}
-		labelValueLenght.Push(Stat{Name: n, Count: size})
+		labelValueLenght.push(Stat{Name: n, Count: size})
 	}
 
 	p.mtx.RUnlock()
 
 	return &PostingsStats{
-		CardinalityMetricsStats: metrics.Get(),
-		CardinalityLabelStats:   labels.Get(),
-		LabelValueStats:         labelValueLenght.Get(),
-		LabelValuePairsStats:    labelValuePairs.Get(),
+		CardinalityMetricsStats: metrics.get(),
+		CardinalityLabelStats:   labels.get(),
+		LabelValueStats:         labelValueLenght.get(),
+		LabelValuePairsStats:    labelValuePairs.get(),
 	}
 }
 
