@@ -7,7 +7,7 @@
     "@fortawesome/free-solid-svg-icons": "^5.7.1",
     "@fortawesome/react-fontawesome": "^0.1.4",
     "@reach/router": "^1.2.1",
-    "@types/jest": "^24.0.4",
+    "@types/jest": "^24.0.20",
     "@types/jquery": "^3.3.29",
     "@types/node": "^12.11.1",
     "@types/reach__router": "^1.2.6",
@@ -42,6 +42,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:debug": "react-scripts --inspect-brk test --runInBand --no-cache",
     "eject": "react-scripts eject",
     "lint:ci": "eslint --quiet \"src/**/*.{ts,tsx}\"",
     "lint": "eslint --fix \"src/**/*.{ts,tsx}\""
@@ -58,6 +59,8 @@
     "not op_mini all"
   ],
   "devDependencies": {
+    "@types/enzyme": "^3.10.3",
+    "@types/enzyme-adapter-react-16": "^1.0.5",
     "@types/flot": "0.0.31",
     "@types/moment-timezone": "^0.5.10",
     "@types/reactstrap": "^8.0.5",
@@ -73,7 +76,11 @@
     "eslint-plugin-prettier": "^3.1.1",
     "eslint-plugin-react": "7.x",
     "eslint-plugin-react-hooks": "1.x",
-    "prettier": "^1.18.2"
+    "prettier": "^1.18.2",
+    "@types/sinon": "^7.5.0",
+    "enzyme": "^3.10.0",
+    "enzyme-adapter-react-16": "^1.15.1",
+    "sinon": "^7.5.0"
   },
   "proxy": "http://localhost:9090"
 }

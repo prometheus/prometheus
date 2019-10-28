@@ -100,7 +100,7 @@ class DataTable extends PureComponent<QueryResult> {
         break;
       case 'scalar':
         rows.push(
-          <tr>
+          <tr key="0">
             <td>scalar</td>
             <td>{data.result[1]}</td>
           </tr>
@@ -108,7 +108,7 @@ class DataTable extends PureComponent<QueryResult> {
         break;
       case 'string':
         rows.push(
-          <tr>
+          <tr key="0">
             <td>scalar</td>
             <td>{data.result[1]}</td>
           </tr>

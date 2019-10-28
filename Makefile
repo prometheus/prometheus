@@ -60,7 +60,7 @@ react-app-lint-fix:
 .PHONY: react-app-test
 react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
 	@echo ">> running React app tests"
-	cd $(REACT_APP_PATH) && yarn test --no-watch
+	cd $(REACT_APP_PATH) && yarn test --no-watch --coverage
 
 .PHONY: test
 test: common-test react-app-test
