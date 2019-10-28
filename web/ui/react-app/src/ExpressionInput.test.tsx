@@ -28,8 +28,8 @@ describe('ExpressionInput', () => {
   const expressionInput = mount(<ExpressionInput {...expressionInputProps} />);
 
   it('renders a downshift component', () => {
-    const downshift = expressionInput.find(Downshift);
-    expect(downshift.prop('inputValue')).toEqual('node_cpu');
+    const downshift = expressionInput.find(Input);
+    expect(downshift.prop('value')).toEqual('node_cpu');
   });
 
   it('renders an InputGroup', () => {
@@ -126,12 +126,14 @@ describe('ExpressionInput', () => {
     it('renders an autosuggest if there are matches', () => {
       const downshift = expressionInput.find(Downshift);
       downshift.setState({ isOpen: true });
-      const ul = downshift.find('ul');
-      expect(ul.prop('className')).toEqual('autosuggest-dropdown-list');
-      const items = ul.find(SanitizeHTML);
-      expect(items.map(item => item.text()).join(', ')).toEqual(
-        'node_cpu_guest_seconds_total, node_cpu_seconds_total, instance:node_cpu_utilisation:rate1m'
-      );
+      setTimeout(() => {
+        const ul = downshift.find('ul');
+        expect(ul.prop('className')).toEqual('card list-group');
+        const items = ul.find(SanitizeHTML);
+        expect(items.map(item => item.text()).join(', ')).toEqual(
+          'node_cpu_guest_seconds_total, node_cpu_seconds_total, instance:node_cpu_utilisation:rate1m'
+        );
+      });
     });
   });
 
