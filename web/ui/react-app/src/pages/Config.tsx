@@ -17,7 +17,7 @@ const Config: FC<RouteComponentProps> = () => {
       .then(res => res.json())
       .then(res => setConfig(res.data.yaml))
       .catch(error => setError(error.message));
-  });
+  }, []);
 
   return (
     <>
@@ -25,7 +25,7 @@ const Config: FC<RouteComponentProps> = () => {
         Configuration&nbsp;
         <CopyToClipboard
           text={config ? config! : ''}
-          onCopy={() => { setCopied(true); setTimeout(() => setCopied(false), 1500);}}
+          onCopy={(text, result) => { setCopied(result); setTimeout(setCopied, 1500);}}
         >
           <Button color="light" disabled={!config}>
             {copied ? 'Copied' : 'Copy to clipboard'}
@@ -36,7 +36,7 @@ const Config: FC<RouteComponentProps> = () => {
       {error
         ? <Alert color="danger"><strong>Error:</strong> Error fetching configuration: {error}</Alert>
         : config
-          ? <pre className="config-yaml">{config !== null ? config : "Loading..."}</pre>
+          ? <pre className="config-yaml">{config}</pre>
           : <FontAwesomeIcon icon={faSpinner} spin />
       }
     </>
