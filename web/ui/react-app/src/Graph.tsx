@@ -34,7 +34,7 @@ class Graph extends PureComponent<GraphProps> {
   private chartRef = React.createRef<HTMLDivElement>();
 
   renderLabels(labels: { [key: string]: string }) {
-    let labelStrings: string[] = [];
+    const labelStrings: string[] = [];
     for (const label in labels) {
       if (label !== '__name__') {
         labelStrings.push('<strong>' + label + '</strong>: ' + escapeHTML(labels[label]));

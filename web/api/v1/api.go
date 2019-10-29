@@ -108,6 +108,31 @@ type rulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+// PrometheusVersion contains build information about Prometheus.
+type PrometheusVersion struct {
+	Version   string `json:"version"`
+	Revision  string `json:"revision"`
+	Branch    string `json:"branch"`
+	BuildUser string `json:"buildUser"`
+	BuildDate string `json:"buildDate"`
+	GoVersion string `json:"goVersion"`
+}
+
+type RuntimeInfo struct {
+	Birth               time.Time
+	CWD                 string
+	GoroutineCount      int
+	GOMAXPROCS          int
+	GOGC                string
+	GODEBUG             string
+	CorruptionCount     int64
+	ChunkCount          int64
+	TimeSeriesCount     int64
+	LastConfigTime      time.Time
+	ReloadConfigSuccess bool
+	StorageRetention    string
+}
+
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -154,6 +179,8 @@ type API struct {
 	remoteReadMaxBytesInFrame int
 	remoteReadGate            *gate.Gate
 	CORSOrigin                *regexp.Regexp
+	buildInfo				  *PrometheusVersion
+	runtimeInfo				  func() RuntimeInfo
 }
 
 func init() {
@@ -178,6 +205,8 @@ func NewAPI(
 	remoteReadConcurrencyLimit int,
 	remoteReadMaxBytesInFrame int,
 	CORSOrigin *regexp.Regexp,
+	runtimeInfo func() RuntimeInfo,
+	buildInfo *PrometheusVersion,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -197,6 +226,8 @@ func NewAPI(
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		logger:                    logger,
 		CORSOrigin:                CORSOrigin,
+		runtimeInfo:			   runtimeInfo,
+		buildInfo:				   buildInfo,
 	}
 }
 
@@ -242,6 +273,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
 
 	r.Get("/status/config", wrap(api.serveConfig))
+	r.Get("/runtimeinfo", wrap(api.serveRuntimeInfo))
+	r.Get("/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 
@@ -830,6 +863,14 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 type prometheusConfig struct {
 	YAML string `json:"yaml"`
+}
+
+func (api *API) serveRuntimeInfo(r *http.Request) apiFuncResult {
+	return apiFuncResult{api.runtimeInfo(), nil, nil, nil}
+}
+
+func (api *API) serveBuildInfo(r *http.Request) apiFuncResult {
+	return apiFuncResult{api.buildInfo, nil, nil, nil}
 }
 
 func (api *API) serveConfig(r *http.Request) apiFuncResult {
