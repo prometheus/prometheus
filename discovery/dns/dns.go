@@ -151,7 +151,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	wg.Add(len(d.names))
 	for _, name := range d.names {
 		go func(n string) {
-			if err := d.refreshOne(ctx, n, ch); err != nil {
+			if err := d.refreshOne(ctx, n, ch); err != nil && err != context.Canceled {
 				level.Error(d.logger).Log("msg", "Error refreshing DNS targets", "err", err)
 			}
 			wg.Done()

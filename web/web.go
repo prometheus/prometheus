@@ -68,7 +68,23 @@ import (
 	"github.com/prometheus/prometheus/web/ui"
 )
 
-var localhostRepresentations = []string{"127.0.0.1", "localhost"}
+var (
+	localhostRepresentations = []string{"127.0.0.1", "localhost"}
+
+	// Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
+	reactAppPaths = []string{
+		"/",
+		"/alerts",
+		"/config",
+		"/flags",
+		"/graph",
+		"/rules",
+		"/service-discovery",
+		"/status",
+		"/targets",
+		"/version",
+	}
+)
 
 // withStackTrace logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
@@ -334,6 +350,21 @@ func New(logger log.Logger, o *Options) *Handler {
 		fs.ServeHTTP(w, r)
 	})
 
+	router.Get("/new/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		p := route.Param(r.Context(), "filepath")
+		r.URL.Path = path.Join("/static/react/", p)
+
+		for _, rp := range reactAppPaths {
+			if p == rp {
+				r.URL.Path = "/static/react/"
+				break
+			}
+		}
+
+		fs := server.StaticFileServer(ui.Assets)
+		fs.ServeHTTP(w, r)
+	})
+
 	if o.UserAssetsPath != "" {
 		router.Get("/user/*filepath", route.FileServe(o.UserAssetsPath))
 	}
@@ -548,8 +579,27 @@ func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 			rules.StatePending:  "warning",
 			rules.StateFiring:   "danger",
 		},
+		Counts: alertCounts(groups),
 	}
 	h.executeTemplate(w, "alerts.html", alertStatus)
+}
+
+func alertCounts(groups []*rules.Group) AlertByStateCount {
+	result := AlertByStateCount{}
+
+	for _, group := range groups {
+		for _, alert := range group.AlertingRules() {
+			switch alert.State() {
+			case rules.StateInactive:
+				result.Inactive++
+			case rules.StatePending:
+				result.Pending++
+			case rules.StateFiring:
+				result.Firing++
+			}
+		}
+	}
+	return result
 }
 
 func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
@@ -966,4 +1016,11 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 type AlertStatus struct {
 	Groups               []*rules.Group
 	AlertStateToRowClass map[rules.AlertState]string
+	Counts               AlertByStateCount
+}
+
+type AlertByStateCount struct {
+	Inactive int32
+	Pending  int32
+	Firing   int32
 }

@@ -204,7 +204,7 @@ They are used to track label index sections. They are read into memory when an i
 ### Postings Offset Table
 
 A postings offset table stores a sequence of postings offset entries.
-Every postings offset entry holds the lable name/value pair and the offset to its series list in the postings section.
+Every postings offset entry holds the label name/value pair and the offset to its series list in the postings section.
 They are used to track postings sections. They are read into memory when an index file is loaded.
 
 ```

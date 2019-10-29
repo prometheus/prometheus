@@ -196,7 +196,12 @@ vector of fewer elements with aggregated values:
 * `quantile` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
 
 These operators can either be used to aggregate over **all** label dimensions
-or preserve distinct dimensions by including a `without` or `by` clause.
+or preserve distinct dimensions by including a `without` or `by` clause. These
+clauses may be used before or after the expression.
+
+    <aggr-op> [without|by (<label list>)] ([parameter,] <vector expression>)
+
+or
 
     <aggr-op>([parameter,] <vector expression>) [without|by (<label list>)]
 
@@ -221,11 +226,11 @@ If the metric `http_requests_total` had time series that fan out by
 `application`, `instance`, and `group` labels, we could calculate the total
 number of seen HTTP requests per application and group over all instances via:
 
-    sum(http_requests_total) without (instance)
+    sum without (instance) (http_requests_total)
 
 Which is equivalent to:
 
-     sum(http_requests_total) by (application, group)
+     sum by (application, group) (http_requests_total)
 
 If we are just interested in the total of HTTP requests we have seen in **all**
 applications, we could simply write:
