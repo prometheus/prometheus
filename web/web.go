@@ -579,8 +579,27 @@ func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 			rules.StatePending:  "warning",
 			rules.StateFiring:   "danger",
 		},
+		Counts: alertCounts(groups),
 	}
 	h.executeTemplate(w, "alerts.html", alertStatus)
+}
+
+func alertCounts(groups []*rules.Group) AlertByStateCount {
+	result := AlertByStateCount{}
+
+	for _, group := range groups {
+		for _, alert := range group.AlertingRules() {
+			switch alert.State() {
+			case rules.StateInactive:
+				result.Inactive++
+			case rules.StatePending:
+				result.Pending++
+			case rules.StateFiring:
+				result.Firing++
+			}
+		}
+	}
+	return result
 }
 
 func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
@@ -997,4 +1016,11 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 type AlertStatus struct {
 	Groups               []*rules.Group
 	AlertStateToRowClass map[rules.AlertState]string
+	Counts               AlertByStateCount
+}
+
+type AlertByStateCount struct {
+	Inactive int32
+	Pending  int32
+	Firing   int32
 }
