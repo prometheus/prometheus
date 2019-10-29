@@ -542,7 +542,7 @@ func TestReaderData(t *testing.T) {
 			}
 			testutil.Ok(t, reader.Err())
 
-			err = w.Repair(reader.Err(), "")
+			err = w.Repair(reader.Err())
 			testutil.Ok(t, err)
 		})
 	}

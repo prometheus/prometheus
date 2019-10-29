@@ -23,7 +23,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pkg/errors"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -171,7 +170,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				if r.Err() == nil {
 					continue
 				}
-				testutil.Ok(t, w.Repair(r.Err(), ""))
+				testutil.Ok(t, w.Repair(r.Err()))
 				break
 			}
 
@@ -248,7 +247,7 @@ func TestUnsequentialSegments(t *testing.T) {
 	w, err := Open(logger, nil, dir)
 	testutil.Ok(t, err)
 
-	w.Repair(errors.New(ErrorUnsequentialSegments), dir)
+	w.RepairUnsequentialSegments(dir)
 
 	df, err := ioutil.ReadDir(dir)
 	testutil.Ok(t, err)
@@ -348,7 +347,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		w, err := NewSize(logger, nil, dir, segmentSize, false)
 		testutil.Ok(t, err)
 
-		err = w.Repair(corruptionErr, "")
+		err = w.Repair(corruptionErr)
 		testutil.Ok(t, err)
 
 		// Ensure that we have a completely clean slate after reapiring.

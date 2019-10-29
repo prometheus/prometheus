@@ -337,16 +337,12 @@ Loop:
 
 // Repair attempts to repair the WAL based on the error.
 // It discards all data after the corruption.
-func (w *WAL) Repair(origErr error, dir string) error {
+func (w *WAL) Repair(origErr error) error {
 	// We could probably have a mode that only discards torn records right around
 	// the corruption to preserve as data much as possible.
 	// But that's not generally applicable if the records have any kind of causality.
 	// Maybe as an extra mode in the future if mid-WAL corruptions become
 	// a frequent concern.
-
-	if origErr.Error() == ErrorUnsequentialSegments {
-		return w.repairUnsequentialSegments(dir)
-	}
 
 	err := errors.Cause(origErr) // So that we can pick up errors even if wrapped.
 
@@ -808,8 +804,9 @@ func getSegments(dir string) ([]segmentRef, error) {
 	return refs, nil
 }
 
+// RepairUnsequentialSegments repairs the out of sequence segments by deleting the onces after the sequence gap.
 // Returns the sequential segments after deleting the out of sequence wals after the sequence gap.
-func (w *WAL) repairUnsequentialSegments(dir string) error {
+func (w *WAL) RepairUnsequentialSegments(dir string) error {
 	segments, err := getSegments(dir)
 	if err != nil {
 		return errors.Wrap(err, "getSegments")
