@@ -1,6 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { useState, useEffect } from 'react';
 
 const useFetch = <R extends any>(urls: string | string[], options?: any) => {
   const [response, setResponse] = useState<typeof urls extends string[] ? R[] : R>();
@@ -36,20 +34,7 @@ const useFetch = <R extends any>(urls: string | string[], options?: any) => {
     fetchData();
   }, [urls]);
 
-  return {
-    response,
-    error,
-    spinner:
-      !response || !response.length ? (
-        <FontAwesomeIcon
-          size="3x"
-          icon={faSpinner}
-          spin
-          className="position-absolute"
-          style={{ transform: 'translate(-50%, -50%)', top: '50%', left: '50%' }}
-        />
-      ) : null,
-  };
+  return { response, error, isLoading: !response || !response.length };
 };
 
 export default useFetch;

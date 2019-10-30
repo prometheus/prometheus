@@ -119,7 +119,7 @@ type PrometheusVersion struct {
 }
 
 type RuntimeInfo struct {
-	Birth               time.Time
+	StartTime 			time.Time
 	CWD                 string
 	GoroutineCount      int
 	GOMAXPROCS          int

@@ -1,10 +1,13 @@
 import React, { FC, Fragment } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import { Table, Alert } from 'reactstrap';
+import { Table, Alert, Row } from 'reactstrap';
 import useFetch from './useFetch';
 
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+
 const ENDPOINTS = ['../api/v1/runtimeinfo', '../api/v1/buildinfo', '../api/v1/alertmanagers'];
-const sectionsTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
+const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
 
 interface StatusConfig {
   [k: string]: { title: string; normalizeValue?: (v: any) => any };
@@ -12,17 +15,17 @@ interface StatusConfig {
 
 type StatusPageState = Array<{ [k: string]: string }>;
 
-const normalizeAlertManagerValue = (alertMgrs: { url: string }[]) => {
+const normalizeAlertmanagerValue = (alertMgrs: { url: string }[]) => {
   return alertMgrs.map(({ url }) => (
-    <a key={url} className="mr-2" href={url}>
+    <a key={url} className="mr-5" href={url}>
       {url}
     </a>
   ));
 };
 
 const statusConfig: StatusConfig = {
-  Birth: { title: 'Uptime', normalizeValue: (v: string) => new Date(v).toUTCString() },
-  CWD: { title: 'Working Directory' },
+  StartTime: { title: 'Start time', normalizeValue: (v: string) => new Date(v).toUTCString() },
+  CWD: { title: 'Working directory' },
   ReloadConfigSuccess: {
     title: 'Configuration reload',
     normalizeValue: (v: boolean) => (v ? 'Successful' : 'Unsuccessful'),
@@ -32,19 +35,19 @@ const statusConfig: StatusConfig = {
   TimeSeriesCount: { title: 'Head time series' },
   CorruptionCount: { title: 'WAL corruptions' },
   GoroutineCount: { title: 'Goroutines' },
-  StorageRetention: { title: 'Storage Retention' },
+  StorageRetention: { title: 'Storage retention' },
   activeAlertmanagers: {
     title: 'Active',
-    normalizeValue: normalizeAlertManagerValue,
+    normalizeValue: normalizeAlertmanagerValue,
   },
   droppedAlertmanagers: {
     title: 'Dropped',
-    normalizeValue: normalizeAlertManagerValue,
+    normalizeValue: normalizeAlertmanagerValue,
   },
 };
 
 const Status = () => {
-  const { response: data, error, spinner } = useFetch<StatusPageState[]>(ENDPOINTS);
+  const { response: data, error, isLoading } = useFetch<StatusPageState[]>(ENDPOINTS);
   console.log(data);
   if (error) {
     return (
@@ -52,22 +55,32 @@ const Status = () => {
         <strong>Error:</strong> Error fetching status: {error.message}
       </Alert>
     );
-  } else if (spinner) {
-    return spinner;
+  } else if (isLoading) {
+    return (
+      <FontAwesomeIcon
+        size="3x"
+        icon={faSpinner}
+        spin
+        className="position-absolute"
+        style={{ transform: 'translate(-50%, -50%)', top: '50%', left: '50%' }}
+      />
+    );
   }
   return data
     ? data.map((statuses, i) => {
         return (
           <Fragment key={i}>
-            <h2>{sectionsTitles[i]}</h2>
-            <Table size="sm" key={i} borderless>
+            <h2>{sectionTitles[i]}</h2>
+            <Table className="h-auto" size="sm" borderless striped responsive>
               <tbody>
-                {Object.entries(statuses).map(([k, v], index: number) => {
+                {Object.entries(statuses).map(([k, v]) => {
                   const { title = k, normalizeValue = (val: any) => val } = statusConfig[k] || {};
                   return (
-                    <tr key={k} className={index % 2 ? 'bg-white' : 'bg-light'}>
-                      <td className="w-50">{title}</td>
-                      <td>{normalizeValue(v)}</td>
+                    <tr key={k}>
+                      <td style={{ width: '35%' }}>{title}</td>
+                      <Row tag="td" className="m-0">
+                        {normalizeValue(v)}
+                      </Row>
                     </tr>
                   );
                 })}

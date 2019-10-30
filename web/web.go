@@ -741,7 +741,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) runtimeInfo() api_v1.RuntimeInfo {
 	status := api_v1.RuntimeInfo {
-		Birth:          h.birth,
+		StartTime:      h.birth,
 		CWD:            h.cwd,
 		GoroutineCount: runtime.NumGoroutine(),
 		GOMAXPROCS:     runtime.GOMAXPROCS(0),
