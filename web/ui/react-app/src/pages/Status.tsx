@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import React, { FC, Fragment } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table, Alert } from 'reactstrap';
 import useFetch from './useFetch';
@@ -44,7 +44,7 @@ const statusConfig: StatusConfig = {
 };
 
 const Status = () => {
-  const { response: data, error, loading } = useFetch<StatusPageState[]>(ENDPOINTS);
+  const { response: data, error, spinner } = useFetch<StatusPageState[]>(ENDPOINTS);
   console.log(data);
   if (error) {
     return (
@@ -52,13 +52,13 @@ const Status = () => {
         <strong>Error:</strong> Error fetching status: {error.message}
       </Alert>
     );
-  } else if (loading) {
-    return loading.spiner;
+  } else if (spinner) {
+    return spinner;
   }
   return data
     ? data.map((statuses, i) => {
         return (
-          <>
+          <Fragment key={i}>
             <h2>{sectionsTitles[i]}</h2>
             <Table size="sm" key={i} borderless>
               <tbody>
@@ -73,7 +73,7 @@ const Status = () => {
                 })}
               </tbody>
             </Table>
-          </>
+          </Fragment>
         );
       })
     : null;
