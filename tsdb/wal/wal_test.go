@@ -537,7 +537,7 @@ func TestWAL_Size(t *testing.T) {
 	walSizeAfterChkpt, err := wall.Size()
 	testutil.Ok(t, err)
 	// Test to see if the WAL size has now increased as expected
-	testutil.Equals(t, walSizeAfterChkpt, walSizeBeforeChkpt+chkptedSegmentsSize)
+	testutil.Equals(t, walSizeAfterChkpt, walSizeBeforeChkpt+chkptedSegmentsSize, "WAL size after checkpoint does not match expected")
 
 	// Truncate everything before the latest segment
 	err = wall.Truncate(lastSegment)
@@ -546,10 +546,10 @@ func TestWAL_Size(t *testing.T) {
 	f, l, err := wall.Segments()
 	testutil.Ok(t, err)
 	// Test to see if the truncate has gone through fine.
-	testutil.Equals(t, f, l)
+	testutil.Equals(t, f, l, "Number of segments after WAL truncate has not changed as expected")
 
 	walSizeAfterTruncate, err := wall.Size()
 	testutil.Ok(t, err)
 	// Test to see if the WAL size has now decreased as expected.
-	testutil.Equals(t, walSizeAfterTruncate, walSizeAfterChkpt-chkptedSegmentsSize)
+	testutil.Equals(t, walSizeAfterTruncate, walSizeAfterChkpt-chkptedSegmentsSize, "WAL size after truncate does not match expected")
 }

@@ -1117,6 +1117,10 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Ok(t, db.reload())                                       // Reload the db to register the new db size.
 	testutil.Equals(t, len(blocks), len(db.Blocks()))                 // Ensure all blocks are registered.
 	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
+	walSize, err := db.Head().wal.Size()
+	testutil.Ok(t, err)
+	// Expected size should take into account block size + WAL size
+	expSize += walSize
 	actSize, err := fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
@@ -1131,6 +1135,10 @@ func TestSizeRetention(t *testing.T) {
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
 	expSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
+	walSize, err = db.Head().wal.Size()
+	testutil.Ok(t, err)
+	// Expected size should take into account block size + WAL size
+	expSize += walSize
 	actRetentCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
 	actSize, err = fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
