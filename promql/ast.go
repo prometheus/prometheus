@@ -89,6 +89,9 @@ type Expr interface {
 	expr()
 }
 
+// Expressions is a list of expression nodes that implements Node.
+type Expressions []Expr
+
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
 	pos      token.Pos
