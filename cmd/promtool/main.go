@@ -387,7 +387,6 @@ func CheckMetrics() int {
 // CheckExpression validates if the input expression is a valid PromQL expression
 func CheckExpression(expr string) int {
 	_, err := promql.ParseExpr(expr)
-
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error while validating:", err)
 		return 1
