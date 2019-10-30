@@ -77,7 +77,7 @@ describe('Flags', () => {
       });
       flags.update();
 
-      expect(mock).toHaveBeenCalledWith('../api/v1/status/flags');
+      expect(mock).toHaveBeenCalledWith('../api/v1/status/flags', undefined);
       const table = flags.find(Table);
       expect(table.prop('striped')).toBe(true);
 
@@ -102,7 +102,7 @@ describe('Flags', () => {
       });
       flags.update();
 
-      expect(mock).toHaveBeenCalledWith('../api/v1/status/flags');
+      expect(mock).toHaveBeenCalledWith('../api/v1/status/flags', undefined);
       const alert = flags.find(Alert);
       expect(alert.prop('color')).toBe('danger');
       expect(alert.text()).toContain('error loading flags');

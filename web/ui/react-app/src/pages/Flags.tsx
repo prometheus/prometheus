@@ -1,29 +1,23 @@
-import React, { FC, useEffect, useState } from 'react';
+import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Alert, Table } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { useFetch } from '../utils/useFetch';
 
 export interface FlagMap {
   [key: string]: string;
-};
+}
 
 const Flags: FC<RouteComponentProps> = () => {
-  const [flags, setFlags] = useState<FlagMap>();
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    fetch('../api/v1/status/flags')
-      .then(res => res.json())
-      .then(res => setFlags(res.data))
-      .catch(error => setError(error.message));
-  }, []);
+  const { response, error } = useFetch('../api/v1/status/flags');
 
   const body = () => {
+    const flags: FlagMap = response && response.data;
     if (error) {
       return (
         <Alert color="danger">
-          <strong>Error:</strong> Error fetching flags: {error}
+          <strong>Error:</strong> Error fetching flags: {error.message}
         </Alert>
       );
     } else if (flags) {

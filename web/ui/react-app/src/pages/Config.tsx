@@ -1,24 +1,18 @@
-import React, { FC, useEffect, useState } from 'react';
+import React, { FC, useState } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Alert, Button } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import CopyToClipboard from 'react-copy-to-clipboard';
+import { useFetch } from '../utils/useFetch';
 
 import './Config.css';
 
 const Config: FC<RouteComponentProps> = () => {
-  const [config, setConfig] = useState(null);
-  const [error, setError] = useState('');
+  const { response, error } = useFetch('../api/v1/status/config');
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    fetch('../api/v1/status/config')
-      .then(res => res.json())
-      .then(res => setConfig(res.data.yaml))
-      .catch(error => setError(error.message));
-  }, []);
-
+  const config = response && response.data.yaml;
   return (
     <>
       <h2>
@@ -38,7 +32,7 @@ const Config: FC<RouteComponentProps> = () => {
 
       {error ? (
         <Alert color="danger">
-          <strong>Error:</strong> Error fetching configuration: {error}
+          <strong>Error:</strong> Error fetching configuration: {error.message}
         </Alert>
       ) : config ? (
         <pre className="config-yaml">{config}</pre>
