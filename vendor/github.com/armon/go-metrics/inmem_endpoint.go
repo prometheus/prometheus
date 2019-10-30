@@ -41,16 +41,6 @@ type SampledValue struct {
 	DisplayLabels map[string]string `json:"Labels"`
 }
 
-// deepCopy allocates a new instance of AggregateSample
-func (source *SampledValue) deepCopy() SampledValue {
-	dest := *source
-	if source.AggregateSample != nil {
-		dest.AggregateSample = &AggregateSample{}
-		*dest.AggregateSample = *source.AggregateSample
-	}
-	return dest
-}
-
 // DisplayMetrics returns a summary of the metrics from the most recent finished interval.
 func (i *InmemSink) DisplayMetrics(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
 	data := i.Data()
@@ -62,14 +52,11 @@ func (i *InmemSink) DisplayMetrics(resp http.ResponseWriter, req *http.Request) 
 		return nil, fmt.Errorf("no metric intervals have been initialized yet")
 	case n == 1:
 		// Show the current interval if it's all we have
-		interval = data[0]
+		interval = i.intervals[0]
 	default:
 		// Show the most recent finished interval if we have one
-		interval = data[n-2]
+		interval = i.intervals[n-2]
 	}
-
-	interval.RLock()
-	defer interval.RUnlock()
 
 	summary := MetricsSummary{
 		Timestamp: interval.Interval.Round(time.Second).UTC().String(),

@@ -208,6 +208,7 @@ func (opts formatOptions) FormatValue(v reflect.Value, m visitedPointers) (out t
 func formatMapKey(v reflect.Value) string {
 	var opts formatOptions
 	opts.TypeMode = elideType
+	opts.AvoidStringer = true
 	opts.ShallowPointers = true
 	s := opts.FormatValue(v, visitedPointers{}).String()
 	return strings.TrimSpace(s)
