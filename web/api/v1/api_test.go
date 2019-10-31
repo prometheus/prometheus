@@ -703,6 +703,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 						Labels: map[string]string{
 							"job": "blackbox",
 						},
+						ScrapeJob:          "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
 						Health:             "down",
 						LastError:          "failed",
@@ -714,6 +715,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 						Labels: map[string]string{
 							"job": "test",
 						},
+						ScrapeJob:          "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						Health:             "up",
 						LastError:          "",

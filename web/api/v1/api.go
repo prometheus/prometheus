@@ -562,6 +562,7 @@ type Target struct {
 	// Any labels that are added to this target and its metrics.
 	Labels map[string]string `json:"labels"`
 
+	ScrapeJob string `json:"scrapeJob"`
 	ScrapeURL string `json:"scrapeUrl"`
 
 	LastError          string              `json:"lastError"`
@@ -583,7 +584,7 @@ type TargetDiscovery struct {
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
-	flatten := func(targets map[string][]*scrape.Target) []*scrape.Target {
+	flatten := func(targets map[string][]*scrape.Target) ([]string, []*scrape.Target) {
 		var n int
 		keys := make([]string, 0, len(targets))
 		for k := range targets {
@@ -595,14 +596,14 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		for _, k := range keys {
 			res = append(res, targets[k]...)
 		}
-		return res
+		return keys, res
 	}
 
-	tActive := flatten(api.targetRetriever.TargetsActive())
-	tDropped := flatten(api.targetRetriever.TargetsDropped())
+	activeKeys, tActive := flatten(api.targetRetriever.TargetsActive())
+	_, tDropped := flatten(api.targetRetriever.TargetsDropped())
 	res := &TargetDiscovery{ActiveTargets: make([]*Target, 0, len(tActive)), DroppedTargets: make([]*DroppedTarget, 0, len(tDropped))}
 
-	for _, target := range tActive {
+	for i, target := range tActive {
 		lastErrStr := ""
 		lastErr := target.LastError()
 		if lastErr != nil {
@@ -612,6 +613,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		res.ActiveTargets = append(res.ActiveTargets, &Target{
 			DiscoveredLabels:   target.DiscoveredLabels().Map(),
 			Labels:             target.Labels().Map(),
+			ScrapeJob:          activeKeys[i],
 			ScrapeURL:          target.URL().String(),
 			LastError:          lastErrStr,
 			LastScrape:         target.LastScrape(),
