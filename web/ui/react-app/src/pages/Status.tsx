@@ -6,7 +6,7 @@ import useFetch from './useFetch';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 
-const ENDPOINTS = ['../api/v1/runtimeinfo', '../api/v1/buildinfo', '../api/v1/alertmanagers'];
+const ENDPOINTS = ['../api/v1/status/runtimeinfo', '../api/v1/status/buildinfo', '../api/v1/alertmanagers'];
 const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
 
 interface StatusConfig {

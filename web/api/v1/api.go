@@ -273,8 +273,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
 
 	r.Get("/status/config", wrap(api.serveConfig))
-	r.Get("/runtimeinfo", wrap(api.serveRuntimeInfo))
-	r.Get("/buildinfo", wrap(api.serveBuildInfo))
+	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
+	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 
