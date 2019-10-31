@@ -4,7 +4,7 @@ import { Status } from '../pages';
 import { Alert, Table } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import * as useFetch from '../pages/useFetch';
-import renderer from 'react-test-renderer';
+import toJson from 'enzyme-to-json'
 
 describe('Status', () => {
   afterEach(() => jest.restoreAllMocks());
@@ -91,8 +91,8 @@ describe('Status', () => {
     });
     it('should match table snapshot', () => {
       jest.spyOn(useFetch, 'default').mockImplementation(() => ({ response } as any));
-      const wrapper = renderer.create(<Status />);
-      expect(wrapper.toJSON()).toMatchSnapshot();
+      const wrapper = shallow(<Status />);
+      expect(toJson(wrapper)).toMatchSnapshot();
     });
   });
 });
