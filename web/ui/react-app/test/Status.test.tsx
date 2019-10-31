@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { shallow } from 'enzyme';
-import { Status } from '../pages';
-import { Alert, Table } from 'reactstrap';
+import { Status } from '../src/pages';
+import { Alert } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import * as useFetch from '../pages/useFetch';
+import * as useFetch from '../src/pages/useFetch';
 import toJson from 'enzyme-to-json'
 
 describe('Status', () => {
@@ -21,9 +21,9 @@ describe('Status', () => {
   it('should fetch proper API endpoints', () => {
     const useFetchSpy = jest.spyOn(useFetch, 'default');
     shallow(<Status />);
-    expect(useFetchSpy).toHaveBeenCalledWith(['../api/v1/runtimeinfo', '../api/v1/buildinfo', '../api/v1/alertmanagers']);
+    expect(useFetchSpy).toHaveBeenCalledWith(['../api/v1/status/runtimeinfo', '../api/v1/status/buildinfo', '../api/v1/alertmanagers']);
   });
-  describe('Status Table', () => {
+  describe('Snapshot testing', () => {
     const response = [
       {
         StartTime: '2019-10-30T22:03:23.247913868+02:00',
@@ -59,40 +59,11 @@ describe('Status', () => {
         droppedAlertmanagers: [],
       },
     ];
-
-    afterEach(() => jest.restoreAllMocks());
-
-    it('should display 3 tables', () => {
-      jest.spyOn(useFetch, 'default').mockImplementation(() => ({ response } as any));
-      const wrapper = shallow(<Status />);
-      expect(wrapper.find(Table)).toHaveLength(3);
-    });
-    it('should titles have proper positions', () => {
-      jest.spyOn(useFetch, 'default').mockImplementation(() => ({ response } as any));
-      const wrapper = shallow(<Status />);
-      expect(
-        wrapper
-          .find('h2')
-          .at(0)
-          .text()
-      ).toEqual('Runtime Information');
-      expect(
-        wrapper
-          .find('h2')
-          .at(1)
-          .text()
-      ).toEqual('Build Information');
-      expect(
-        wrapper
-          .find('h2')
-          .at(2)
-          .text()
-      ).toEqual('Alertmanagers');
-    });
     it('should match table snapshot', () => {
       jest.spyOn(useFetch, 'default').mockImplementation(() => ({ response } as any));
       const wrapper = shallow(<Status />);
       expect(toJson(wrapper)).toMatchSnapshot();
+      jest.restoreAllMocks();
     });
   });
 });
