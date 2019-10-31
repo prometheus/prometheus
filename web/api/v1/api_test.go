@@ -57,32 +57,36 @@ import (
 
 type testTargetRetriever struct{}
 
+var (
+	scrapeStart = time.Now().Add(-11 * time.Second)
+)
+
 func (t testTargetRetriever) TargetsActive() map[string][]*scrape.Target {
+	testTarget := scrape.NewTarget(
+		labels.FromMap(map[string]string{
+			model.SchemeLabel:      "http",
+			model.AddressLabel:     "example.com:8080",
+			model.MetricsPathLabel: "/metrics",
+			model.JobLabel:         "test",
+		}),
+		nil,
+		url.Values{},
+	)
+	testTarget.Report(scrapeStart, 70*time.Millisecond, nil)
+	blackboxTarget := scrape.NewTarget(
+		labels.FromMap(map[string]string{
+			model.SchemeLabel:      "http",
+			model.AddressLabel:     "localhost:9115",
+			model.MetricsPathLabel: "/probe",
+			model.JobLabel:         "blackbox",
+		}),
+		nil,
+		url.Values{"target": []string{"example.com"}},
+	)
+	blackboxTarget.Report(scrapeStart, 100*time.Millisecond, errors.New("failed"))
 	return map[string][]*scrape.Target{
-		"test": {
-			scrape.NewTarget(
-				labels.FromMap(map[string]string{
-					model.SchemeLabel:      "http",
-					model.AddressLabel:     "example.com:8080",
-					model.MetricsPathLabel: "/metrics",
-					model.JobLabel:         "test",
-				}),
-				nil,
-				url.Values{},
-			),
-		},
-		"blackbox": {
-			scrape.NewTarget(
-				labels.FromMap(map[string]string{
-					model.SchemeLabel:      "http",
-					model.AddressLabel:     "localhost:9115",
-					model.MetricsPathLabel: "/probe",
-					model.JobLabel:         "blackbox",
-				}),
-				nil,
-				url.Values{"target": []string{"example.com"}},
-			),
-		},
+		"test":     {testTarget},
+		"blackbox": {blackboxTarget},
 	}
 }
 func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
@@ -699,16 +703,22 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 						Labels: map[string]string{
 							"job": "blackbox",
 						},
-						ScrapeURL: "http://localhost:9115/probe?target=example.com",
-						Health:    "unknown",
+						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						Health:             "down",
+						LastError:          "failed",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 100 * time.Millisecond,
 					},
 					{
 						DiscoveredLabels: map[string]string{},
 						Labels: map[string]string{
 							"job": "test",
 						},
-						ScrapeURL: "http://example.com:8080/metrics",
-						Health:    "unknown",
+						ScrapeURL:          "http://example.com:8080/metrics",
+						Health:             "up",
+						LastError:          "",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 70 * time.Millisecond,
 					},
 				},
 				DroppedTargets: []*DroppedTarget{

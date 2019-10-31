@@ -200,7 +200,8 @@ func (t *Target) URL() *url.URL {
 	}
 }
 
-func (t *Target) report(start time.Time, dur time.Duration, err error) {
+// Report sets target data about the last scrape
+func (t *Target) Report(start time.Time, dur time.Duration, err error) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 

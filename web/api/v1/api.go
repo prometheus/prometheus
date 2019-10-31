@@ -564,9 +564,10 @@ type Target struct {
 
 	ScrapeURL string `json:"scrapeUrl"`
 
-	LastError  string              `json:"lastError"`
-	LastScrape time.Time           `json:"lastScrape"`
-	Health     scrape.TargetHealth `json:"health"`
+	LastError          string              `json:"lastError"`
+	LastScrape         time.Time           `json:"lastScrape"`
+	LastScrapeDuration time.Duration       `json:"lastScrapeDuration"`
+	Health             scrape.TargetHealth `json:"health"`
 }
 
 // DroppedTarget has the information for one target that was dropped during relabelling.
@@ -609,12 +610,13 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		}
 
 		res.ActiveTargets = append(res.ActiveTargets, &Target{
-			DiscoveredLabels: target.DiscoveredLabels().Map(),
-			Labels:           target.Labels().Map(),
-			ScrapeURL:        target.URL().String(),
-			LastError:        lastErrStr,
-			LastScrape:       target.LastScrape(),
-			Health:           target.Health(),
+			DiscoveredLabels:   target.DiscoveredLabels().Map(),
+			Labels:             target.Labels().Map(),
+			ScrapeURL:          target.URL().String(),
+			LastError:          lastErrStr,
+			LastScrape:         target.LastScrape(),
+			LastScrapeDuration: target.LastScrapeDuration(),
+			Health:             target.Health(),
 		})
 	}
 
