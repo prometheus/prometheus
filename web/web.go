@@ -740,7 +740,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) runtimeInfo() api_v1.RuntimeInfo {
-	status := api_v1.RuntimeInfo {
+	status := api_v1.RuntimeInfo{
 		StartTime:      h.birth,
 		CWD:            h.cwd,
 		GoroutineCount: runtime.NumGoroutine(),

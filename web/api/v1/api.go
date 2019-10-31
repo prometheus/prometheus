@@ -119,7 +119,7 @@ type PrometheusVersion struct {
 }
 
 type RuntimeInfo struct {
-	StartTime 			time.Time
+	StartTime           time.Time
 	CWD                 string
 	GoroutineCount      int
 	GOMAXPROCS          int
@@ -179,8 +179,8 @@ type API struct {
 	remoteReadMaxBytesInFrame int
 	remoteReadGate            *gate.Gate
 	CORSOrigin                *regexp.Regexp
-	buildInfo				  *PrometheusVersion
-	runtimeInfo				  func() RuntimeInfo
+	buildInfo                 *PrometheusVersion
+	runtimeInfo               func() RuntimeInfo
 }
 
 func init() {
@@ -226,8 +226,8 @@ func NewAPI(
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		logger:                    logger,
 		CORSOrigin:                CORSOrigin,
-		runtimeInfo:			   runtimeInfo,
-		buildInfo:				   buildInfo,
+		runtimeInfo:               runtimeInfo,
+		buildInfo:                 buildInfo,
 	}
 }
 
