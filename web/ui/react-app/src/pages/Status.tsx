@@ -23,7 +23,7 @@ const normalizeAlertmanagerValue = (alertMgrs: { url: string }[]) => {
   ));
 };
 
-const statusConfig: StatusConfig = {
+export const statusConfig: StatusConfig = {
   StartTime: { title: 'Start time', normalizeValue: (v: string) => new Date(v).toUTCString() },
   CWD: { title: 'Working directory' },
   ReloadConfigSuccess: {
@@ -48,7 +48,6 @@ const statusConfig: StatusConfig = {
 
 const Status = () => {
   const { response: data, error, isLoading } = useFetch<StatusPageState[]>(ENDPOINTS);
-  console.log(data);
   if (error) {
     return (
       <Alert color="danger">
