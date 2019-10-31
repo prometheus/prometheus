@@ -1,10 +1,11 @@
 import * as React from 'react';
-import { shallow, mount } from 'enzyme';
+import { shallow } from 'enzyme';
 import { Status } from '../pages';
-import { Alert, Table, Row } from 'reactstrap';
+import { Alert, Table } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import * as useFetch from '../pages/useFetch';
-import { statusConfig } from '../pages/Status';
+import renderer from 'react-test-renderer';
+
 describe('Status', () => {
   afterEach(() => jest.restoreAllMocks());
 
@@ -88,79 +89,10 @@ describe('Status', () => {
           .text()
       ).toEqual('Alertmanagers');
     });
-    describe('Data should be placed properly within then table', () => {
-      it('should render runtimeInfo table', () => {
-        jest.spyOn(useFetch, 'default').mockImplementation(() => ({ response } as any));
-        const wrapper = mount(<Status />);
-        const runtimeInfo = wrapper
-          .find(Table)
-          .at(0)
-          .find('tr');
-        const runtimeInfoKeys = Object.keys(response[0]);
-        const runtimeInfoValues = Object.values(response[0]);
-        runtimeInfo.forEach((row: any, i: number) => {
-          const rowTitle = row
-            .find('td')
-            .at(0)
-            .text();
-          const rowValue = row
-            .find('td')
-            .at(1)
-            .text();
-          const { title = runtimeInfoKeys[i], normalizeValue = (v: any) => v } = statusConfig[runtimeInfoKeys[i]] || {};
-          expect(title).toEqual(rowTitle);
-          expect(typeof runtimeInfoValues[i] === 'number' ? parseInt(rowValue) : rowValue).toEqual(
-            normalizeValue(runtimeInfoValues[i])
-          );
-        });
-      });
-      it('should render Build information table', () => {
-        jest.spyOn(useFetch, 'default').mockImplementation(() => ({ response } as any));
-        const wrapper = mount(<Status />);
-        const runtimeInfo = wrapper
-          .find(Table)
-          .at(1)
-          .find('tr');
-        const runtimeInfoKeys = Object.keys(response[1]);
-        const runtimeInfoValues = Object.values(response[1]);
-        runtimeInfo.forEach((row: any, i: number) => {
-          const rowTitle = row
-            .find('td')
-            .at(0)
-            .text();
-          const rowValue = row
-            .find('td')
-            .at(1)
-            .text();
-          const { title = runtimeInfoKeys[i], normalizeValue = (v: any) => v } = statusConfig[runtimeInfoKeys[i]] || {};
-          expect(title).toEqual(rowTitle);
-          expect(typeof runtimeInfoValues[i] === 'number' ? parseInt(rowValue) : rowValue).toEqual(
-            normalizeValue(runtimeInfoValues[i])
-          );
-        });
-      });
-      it('should render Alertmanagers table', () => {
-        jest.spyOn(useFetch, 'default').mockImplementation(() => ({ response } as any));
-        const wrapper = mount(<Status />);
-        const runtimeInfo = wrapper
-          .find(Table)
-          .at(2)
-          .find('tr');
-        const runtimeInfoKeys = Object.keys(response[2]);
-        const runtimeInfoValues = Object.values(response[2]);
-        runtimeInfo.forEach((row: any, i: number) => {
-          const rowTitle = row
-            .find('td')
-            .at(0)
-            .text();
-          const rowValue = row
-            .find('td')
-            .at(1)
-            .text();
-          const { title = runtimeInfoKeys[i], normalizeValue = (v: any) => v } = statusConfig[runtimeInfoKeys[i]] || {};
-          expect(title).toEqual(rowTitle);
-        });
-      });
+    it('should match table snapshot', () => {
+      jest.spyOn(useFetch, 'default').mockImplementation(() => ({ response } as any));
+      const wrapper = renderer.create(<Status />);
+      expect(wrapper.toJSON()).toMatchSnapshot();
     });
   });
 });

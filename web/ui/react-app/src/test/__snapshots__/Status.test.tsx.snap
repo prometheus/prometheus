@@ -1,0 +1,1192 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Status Status Table Data should be placed properly within the table 1`] = `
+Array [
+  <h2>
+    Runtime Information
+  </h2>,
+  <div
+    className="table-responsive"
+  >
+    <table
+      className="h-auto table table-sm table-borderless table-striped"
+    >
+      <tbody>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Start time
+          </td>
+          <td
+            className="m-0 row"
+          >
+            Wed, 30 Oct 2019 20:03:23 GMT
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Working directory
+          </td>
+          <td
+            className="m-0 row"
+          >
+            /home/boyskila/Desktop/prometheus
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Goroutines
+          </td>
+          <td
+            className="m-0 row"
+          >
+            37
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GOMAXPROCS
+          </td>
+          <td
+            className="m-0 row"
+          >
+            4
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GOGC
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GODEBUG
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            WAL corruptions
+          </td>
+          <td
+            className="m-0 row"
+          >
+            0
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Head chunks
+          </td>
+          <td
+            className="m-0 row"
+          >
+            1383
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Head time series
+          </td>
+          <td
+            className="m-0 row"
+          >
+            461
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Last successful configuration reload
+          </td>
+          <td
+            className="m-0 row"
+          >
+            2019-10-30T22:03:23+02:00
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Configuration reload
+          </td>
+          <td
+            className="m-0 row"
+          >
+            Successful
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Storage retention
+          </td>
+          <td
+            className="m-0 row"
+          >
+            15d
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>,
+  <h2>
+    Build Information
+  </h2>,
+  <div
+    className="table-responsive"
+  >
+    <table
+      className="h-auto table table-sm table-borderless table-striped"
+    >
+      <tbody>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            version
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            revision
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            branch
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            buildUser
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            buildDate
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            goVersion
+          </td>
+          <td
+            className="m-0 row"
+          >
+            go1.13.3
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>,
+  <h2>
+    Alertmanagers
+  </h2>,
+  <div
+    className="table-responsive"
+  >
+    <table
+      className="h-auto table table-sm table-borderless table-striped"
+    >
+      <tbody>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Active
+          </td>
+          <td
+            className="m-0 row"
+          >
+            <a
+              className="mr-5"
+              href="https://1.2.3.4:9093/api/v1/alerts"
+            >
+              https://1.2.3.4:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.5:9093/api/v1/alerts"
+            >
+              https://1.2.3.5:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.6:9093/api/v1/alerts"
+            >
+              https://1.2.3.6:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.7:9093/api/v1/alerts"
+            >
+              https://1.2.3.7:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.8:9093/api/v1/alerts"
+            >
+              https://1.2.3.8:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.9:9093/api/v1/alerts"
+            >
+              https://1.2.3.9:9093/api/v1/alerts
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Dropped
+          </td>
+          <td
+            className="m-0 row"
+          />
+        </tr>
+      </tbody>
+    </table>
+  </div>,
+]
+`;
+
+exports[`Status Status Table Data should be placed properly within the table should render Runtime Information table 1`] = `
+Array [
+  <h2>
+    Runtime Information
+  </h2>,
+  <div
+    className="table-responsive"
+  >
+    <table
+      className="h-auto table table-sm table-borderless table-striped"
+    >
+      <tbody>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Start time
+          </td>
+          <td
+            className="m-0 row"
+          >
+            Wed, 30 Oct 2019 20:03:23 GMT
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Working directory
+          </td>
+          <td
+            className="m-0 row"
+          >
+            /home/boyskila/Desktop/prometheus
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Goroutines
+          </td>
+          <td
+            className="m-0 row"
+          >
+            37
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GOMAXPROCS
+          </td>
+          <td
+            className="m-0 row"
+          >
+            4
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GOGC
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GODEBUG
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            WAL corruptions
+          </td>
+          <td
+            className="m-0 row"
+          >
+            0
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Head chunks
+          </td>
+          <td
+            className="m-0 row"
+          >
+            1383
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Head time series
+          </td>
+          <td
+            className="m-0 row"
+          >
+            461
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Last successful configuration reload
+          </td>
+          <td
+            className="m-0 row"
+          >
+            2019-10-30T22:03:23+02:00
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Configuration reload
+          </td>
+          <td
+            className="m-0 row"
+          >
+            Successful
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Storage retention
+          </td>
+          <td
+            className="m-0 row"
+          >
+            15d
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>,
+  <h2>
+    Build Information
+  </h2>,
+  <div
+    className="table-responsive"
+  >
+    <table
+      className="h-auto table table-sm table-borderless table-striped"
+    >
+      <tbody>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            version
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            revision
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            branch
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            buildUser
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            buildDate
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            goVersion
+          </td>
+          <td
+            className="m-0 row"
+          >
+            go1.13.3
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>,
+  <h2>
+    Alertmanagers
+  </h2>,
+  <div
+    className="table-responsive"
+  >
+    <table
+      className="h-auto table table-sm table-borderless table-striped"
+    >
+      <tbody>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Active
+          </td>
+          <td
+            className="m-0 row"
+          >
+            <a
+              className="mr-5"
+              href="https://1.2.3.4:9093/api/v1/alerts"
+            >
+              https://1.2.3.4:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.5:9093/api/v1/alerts"
+            >
+              https://1.2.3.5:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.6:9093/api/v1/alerts"
+            >
+              https://1.2.3.6:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.7:9093/api/v1/alerts"
+            >
+              https://1.2.3.7:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.8:9093/api/v1/alerts"
+            >
+              https://1.2.3.8:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.9:9093/api/v1/alerts"
+            >
+              https://1.2.3.9:9093/api/v1/alerts
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Dropped
+          </td>
+          <td
+            className="m-0 row"
+          />
+        </tr>
+      </tbody>
+    </table>
+  </div>,
+]
+`;
+
+exports[`Status Status Table should match table snapshot 1`] = `
+Array [
+  <h2>
+    Runtime Information
+  </h2>,
+  <div
+    className="table-responsive"
+  >
+    <table
+      className="h-auto table table-sm table-borderless table-striped"
+    >
+      <tbody>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Start time
+          </td>
+          <td
+            className="m-0 row"
+          >
+            Wed, 30 Oct 2019 20:03:23 GMT
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Working directory
+          </td>
+          <td
+            className="m-0 row"
+          >
+            /home/boyskila/Desktop/prometheus
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Goroutines
+          </td>
+          <td
+            className="m-0 row"
+          >
+            37
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GOMAXPROCS
+          </td>
+          <td
+            className="m-0 row"
+          >
+            4
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GOGC
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GODEBUG
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            WAL corruptions
+          </td>
+          <td
+            className="m-0 row"
+          >
+            0
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Head chunks
+          </td>
+          <td
+            className="m-0 row"
+          >
+            1383
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Head time series
+          </td>
+          <td
+            className="m-0 row"
+          >
+            461
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Last successful configuration reload
+          </td>
+          <td
+            className="m-0 row"
+          >
+            2019-10-30T22:03:23+02:00
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Configuration reload
+          </td>
+          <td
+            className="m-0 row"
+          >
+            Successful
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Storage retention
+          </td>
+          <td
+            className="m-0 row"
+          >
+            15d
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>,
+  <h2>
+    Build Information
+  </h2>,
+  <div
+    className="table-responsive"
+  >
+    <table
+      className="h-auto table table-sm table-borderless table-striped"
+    >
+      <tbody>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            version
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            revision
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            branch
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            buildUser
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            buildDate
+          </td>
+          <td
+            className="m-0 row"
+          >
+            
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            goVersion
+          </td>
+          <td
+            className="m-0 row"
+          >
+            go1.13.3
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>,
+  <h2>
+    Alertmanagers
+  </h2>,
+  <div
+    className="table-responsive"
+  >
+    <table
+      className="h-auto table table-sm table-borderless table-striped"
+    >
+      <tbody>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Active
+          </td>
+          <td
+            className="m-0 row"
+          >
+            <a
+              className="mr-5"
+              href="https://1.2.3.4:9093/api/v1/alerts"
+            >
+              https://1.2.3.4:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.5:9093/api/v1/alerts"
+            >
+              https://1.2.3.5:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.6:9093/api/v1/alerts"
+            >
+              https://1.2.3.6:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.7:9093/api/v1/alerts"
+            >
+              https://1.2.3.7:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.8:9093/api/v1/alerts"
+            >
+              https://1.2.3.8:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.9:9093/api/v1/alerts"
+            >
+              https://1.2.3.9:9093/api/v1/alerts
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Dropped
+          </td>
+          <td
+            className="m-0 row"
+          />
+        </tr>
+      </tbody>
+    </table>
+  </div>,
+]
+`;
