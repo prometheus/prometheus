@@ -28,6 +28,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 )
@@ -232,6 +233,12 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 	sort.Sort(*l)
 
 	return s
+}
+
+// Exemplar writes the exemplar of the current sample into the passed
+// exemplar. It returns the string from which the metric was parsed.
+func (p *PromParser) Exemplar(e *exemplar.Exemplar) string {
+	return ""
 }
 
 // nextToken returns the next token from the promlexer. It skips over tabs

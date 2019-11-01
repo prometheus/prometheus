@@ -17,6 +17,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -38,9 +39,13 @@ some:aggregate:rate5m{a_b="c"} 1
 # TYPE go_goroutines gauge
 go_goroutines 33 123.123
 # TYPE hh histogram
-hh_bucket{le="+Inf"} 1 # {} 4
+hh_bucket{le="+Inf"} 1
 # TYPE gh gaugehistogram
-gh_bucket{le="+Inf"} 1 # {} 4
+gh_bucket{le="+Inf"} 1
+# TYPE hhh histogram
+hhh_bucket{le="+Inf"} 1 # {aa="bb"} 4
+# TYPE ggh gaugehistogram
+ggh_bucket{le="+Inf"} 1 # {cc="dd",xx="yy"} 4
 # TYPE ii info
 ii{foo="bar"} 1
 # TYPE ss stateset
@@ -66,6 +71,7 @@ testmetric{label="\"bar\""} 1`
 		help    string
 		unit    string
 		comment string
+		e       exemplar.Exemplar
 	}{
 		{
 			m:    "go_gc_duration_seconds",
@@ -135,6 +141,22 @@ testmetric{label="\"bar\""} 1`
 			v:    1,
 			lset: labels.FromStrings("__name__", "gh_bucket", "le", "+Inf"),
 		}, {
+			m:   "hhh",
+			typ: MetricTypeHistogram,
+		}, {
+			m:    `hhh_bucket{le="+Inf"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "hhh_bucket", "le", "+Inf"),
+			e:    exemplar.Exemplar{Labels: labels.FromStrings("aa", "bb"), Value: 4},
+		}, {
+			m:   "ggh",
+			typ: MetricTypeGaugeHistogram,
+		}, {
+			m:    `ggh_bucket{le="+Inf"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
+			e:    exemplar.Exemplar{Labels: labels.FromStrings("cc", "dd", "xx", "yy"), Value: 4},
+		}, {
 			m:   "ii",
 			typ: MetricTypeInfo,
 		}, {
@@ -193,12 +215,15 @@ testmetric{label="\"bar\""} 1`
 		case EntrySeries:
 			m, ts, v := p.Series()
 
+			var e exemplar.Exemplar
 			p.Metric(&res)
+			p.Exemplar(&e)
 
 			testutil.Equals(t, exp[i].m, string(m))
 			testutil.Equals(t, exp[i].t, ts)
 			testutil.Equals(t, exp[i].v, v)
 			testutil.Equals(t, exp[i].lset, res)
+			testutil.Equals(t, exp[i].e, e)
 			res = res[:0]
 
 		case EntryType:
@@ -232,11 +257,11 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 	}{
 		{
 			input: "",
-			err:   "unexpected end of data, got \"EOF\"",
+			err:   "EOF",
 		},
 		{
 			input: "a",
-			err:   "expected value after metric, got \"MNAME\"",
+			err:   "expected value after metric, got \"INVALID\"",
 		},
 		{
 			input: "\n",
@@ -280,7 +305,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "a\t1\n",
-			err:   "expected value after metric, got \"MNAME\"",
+			err:   "expected value after metric, got \"INVALID\"",
 		},
 		{
 			input: "a 1\t2\n",
@@ -288,11 +313,11 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "a 1 2 \n",
-			err:   "expected next entry after timestamp, got \"MNAME\"",
+			err:   "expected next entry after timestamp, got \"INVALID\"",
 		},
 		{
 			input: "a 1 2 #\n",
-			err:   "expected next entry after timestamp, got \"MNAME\"",
+			err:   "expected next entry after timestamp, got \"TIMESTAMP\"",
 		},
 		{
 			input: "a 1 1z\n",
@@ -324,7 +349,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "a 1 1 1\n",
-			err:   "expected next entry after timestamp, got \"MNAME\"",
+			err:   "expected next entry after timestamp, got \"TIMESTAMP\"",
 		},
 		{
 			input: "a{b='c'} 1\n",
@@ -386,6 +411,14 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			input: "foo 0 1_2\n",
 			err:   "unsupported character in float",
 		},
+		{
+			input: "custom_metric 1 # {aa=bb}",
+			err:   "expected label value, got \"INVALID\"",
+		},
+		{
+			input: `custom_metric 1 # {aa="bb"}`,
+			err:   "expected value after exemplar labels, got \"INVALID\"",
+		},
 	}
 
 	for i, c := range cases {
@@ -433,15 +466,15 @@ func TestOMNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "a\x00{b=\"ddd\"} 1",
-			err:   "expected value after metric, got \"MNAME\"",
+			err:   "expected value after metric, got \"INVALID\"",
 		},
 		{
 			input: "#",
-			err:   "\"INVALID\" \" \" is not a valid start token",
+			err:   "\"INVALID\" \"\\n\" is not a valid start token",
 		},
 		{
 			input: "# H",
-			err:   "\"INVALID\" \" \" is not a valid start token",
+			err:   "\"INVALID\" \"\\n\" is not a valid start token",
 		},
 	}
 
