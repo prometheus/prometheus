@@ -41,16 +41,16 @@ interface Metric {
 
 type SampleValue = [number, string];
 
+const limitSeries = <S extends InstantSample | RangeSamples>(series: S[]): S[] => {
+  const maxSeries = 10000;
+
+  if (series.length > maxSeries) {
+    return series.slice(0, maxSeries);
+  }
+  return series;
+};
+
 const DataTable: FC<QueryResult> = ({ data }) => {
-  const limitSeries = <S extends InstantSample | RangeSamples>(series: S[]): S[] => {
-    const maxSeries = 10000;
-
-    if (series.length > maxSeries) {
-      return series.slice(0, maxSeries);
-    }
-    return series;
-  };
-
   if (data === null) {
     return <Alert color="light">No data queried yet</Alert>;
   }
