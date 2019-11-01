@@ -1,7 +1,7 @@
 import React, { FC, Fragment } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import { Table, Alert, Row } from 'reactstrap';
-import useFetch from './useFetch';
+import { Table, Alert } from 'reactstrap';
+import useFetches from '../hooks/useFetches';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
@@ -47,7 +47,7 @@ export const statusConfig: StatusConfig = {
 };
 
 const Status = () => {
-  const { response: data, error, isLoading } = useFetch<StatusPageState[]>(ENDPOINTS);
+  const { response: data, error, isLoading } = useFetches<StatusPageState[]>(ENDPOINTS);
   if (error) {
     return (
       <Alert color="danger">
@@ -70,16 +70,14 @@ const Status = () => {
         return (
           <Fragment key={i}>
             <h2>{sectionTitles[i]}</h2>
-            <Table className="h-auto" size="sm" borderless striped responsive>
+            <Table className="h-auto" size="sm" borderless striped>
               <tbody>
                 {Object.entries(statuses).map(([k, v]) => {
                   const { title = k, normalizeValue = (val: any) => val } = statusConfig[k] || {};
                   return (
                     <tr key={k}>
-                      <td style={{ width: '35%' }}>{title}</td>
-                      <Row tag="td" className="m-0">
-                        {normalizeValue(v)}
-                      </Row>
+                      <th style={{ width: '35%' }}>{title}</th>
+                      <td className="text-break">{normalizeValue(v)}</td>
                     </tr>
                   );
                 })}

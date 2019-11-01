@@ -3,18 +3,17 @@ import { shallow } from 'enzyme';
 import { Status } from '../src/pages';
 import { Alert } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import * as useFetch from '../src/pages/useFetch';
+import * as useFetch from '../src/hooks/useFetches';
 import toJson from 'enzyme-to-json'
 
 describe('Status', () => {
   afterEach(() => jest.restoreAllMocks());
-
   it('should render spinner while waiting data', () => {
     const wrapper = shallow(<Status />);
     expect(wrapper.find(FontAwesomeIcon)).toHaveLength(1);
   });
   it('should render Alert on error', () => {
-    jest.spyOn(useFetch, 'default').mockImplementation(() => ({ error: new Error('foo') } as any));
+    (useFetch as any).default = jest.fn().mockImplementation(() => ({ error: new Error('foo') }))
     const wrapper = shallow(<Status />);
     expect(wrapper.find(Alert)).toHaveLength(1);
   });
@@ -60,7 +59,7 @@ describe('Status', () => {
       },
     ];
     it('should match table snapshot', () => {
-      jest.spyOn(useFetch, 'default').mockImplementation(() => ({ response } as any));
+      (useFetch as any).default = jest.fn().mockImplementation(() => ({ response }))
       const wrapper = shallow(<Status />);
       expect(toJson(wrapper)).toMatchSnapshot();
       jest.restoreAllMocks();
