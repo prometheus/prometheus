@@ -17,7 +17,7 @@ const Navigation = () => {
   const [isOpen, setIsOpen] = useState(false);
   const toggle = () => setIsOpen(!isOpen);
   return (
-    <Navbar className="mb-3" dark color="dark" expand="md">
+    <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} />
       <Link className="pt-0 navbar-brand" to="/new/graph">
         Prometheus
