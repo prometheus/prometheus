@@ -1,5 +1,449 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
+exports[`Status Snapshot testing should match table snapshot 1`] = `
+Array [
+  <Fragment
+    key="0"
+  >
+    <h2>
+      Runtime Information
+    </h2>
+    <Table
+      borderless={true}
+      className="h-auto"
+      responsiveTag="div"
+      size="sm"
+      striped={true}
+      tag="table"
+    >
+      <tbody>
+        <tr
+          key="StartTime"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            StartTime
+          </th>
+          <td
+            className="text-break"
+          >
+            2019-10-30T22:03:23.247913868+02:00
+          </td>
+        </tr>
+        <tr
+          key="CWD"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Working directory
+          </th>
+          <td
+            className="text-break"
+          >
+            /home/boyskila/Desktop/prometheus
+          </td>
+        </tr>
+        <tr
+          key="GoroutineCount"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GoroutineCount
+          </th>
+          <td
+            className="text-break"
+          >
+            37
+          </td>
+        </tr>
+        <tr
+          key="GOMAXPROCS"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GOMAXPROCS
+          </th>
+          <td
+            className="text-break"
+          >
+            4
+          </td>
+        </tr>
+        <tr
+          key="GOGC"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GOGC
+          </th>
+          <td
+            className="text-break"
+          />
+        </tr>
+        <tr
+          key="GODEBUG"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            GODEBUG
+          </th>
+          <td
+            className="text-break"
+          />
+        </tr>
+        <tr
+          key="CorruptionCount"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            CorruptionCount
+          </th>
+          <td
+            className="text-break"
+          >
+            0
+          </td>
+        </tr>
+        <tr
+          key="ChunkCount"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            ChunkCount
+          </th>
+          <td
+            className="text-break"
+          >
+            1383
+          </td>
+        </tr>
+        <tr
+          key="TimeSeriesCount"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            TimeSeriesCount
+          </th>
+          <td
+            className="text-break"
+          >
+            461
+          </td>
+        </tr>
+        <tr
+          key="LastConfigTime"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            LastConfigTime
+          </th>
+          <td
+            className="text-break"
+          >
+            2019-10-30T22:03:23+02:00
+          </td>
+        </tr>
+        <tr
+          key="ReloadConfigSuccess"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            ReloadConfigSuccess
+          </th>
+          <td
+            className="text-break"
+          >
+            <Component />
+          </td>
+        </tr>
+        <tr
+          key="StorageRetention"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            StorageRetention
+          </th>
+          <td
+            className="text-break"
+          >
+            15d
+          </td>
+        </tr>
+      </tbody>
+    </Table>
+  </Fragment>,
+  <Fragment
+    key="1"
+  >
+    <h2>
+      Build Information
+    </h2>
+    <Table
+      borderless={true}
+      className="h-auto"
+      responsiveTag="div"
+      size="sm"
+      striped={true}
+      tag="table"
+    >
+      <tbody>
+        <tr
+          key="version"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            version
+          </th>
+          <td
+            className="text-break"
+          />
+        </tr>
+        <tr
+          key="revision"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            revision
+          </th>
+          <td
+            className="text-break"
+          />
+        </tr>
+        <tr
+          key="branch"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            branch
+          </th>
+          <td
+            className="text-break"
+          />
+        </tr>
+        <tr
+          key="buildUser"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            buildUser
+          </th>
+          <td
+            className="text-break"
+          />
+        </tr>
+        <tr
+          key="buildDate"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            buildDate
+          </th>
+          <td
+            className="text-break"
+          />
+        </tr>
+        <tr
+          key="goVersion"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            goVersion
+          </th>
+          <td
+            className="text-break"
+          >
+            go1.13.3
+          </td>
+        </tr>
+      </tbody>
+    </Table>
+  </Fragment>,
+  <Fragment
+    key="2"
+  >
+    <h2>
+      Alertmanagers
+    </h2>
+    <Table
+      borderless={true}
+      className="h-auto"
+      responsiveTag="div"
+      size="sm"
+      striped={true}
+      tag="table"
+    >
+      <tbody>
+        <tr
+          key="activeAlertmanagers"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Active
+          </th>
+          <td
+            className="text-break"
+          >
+            <a
+              className="mr-5"
+              href="https://1.2.3.4:9093/api/v1/alerts"
+              key="https://1.2.3.4:9093/api/v1/alerts"
+            >
+              https://1.2.3.4:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.5:9093/api/v1/alerts"
+              key="https://1.2.3.5:9093/api/v1/alerts"
+            >
+              https://1.2.3.5:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.6:9093/api/v1/alerts"
+              key="https://1.2.3.6:9093/api/v1/alerts"
+            >
+              https://1.2.3.6:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.7:9093/api/v1/alerts"
+              key="https://1.2.3.7:9093/api/v1/alerts"
+            >
+              https://1.2.3.7:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.8:9093/api/v1/alerts"
+              key="https://1.2.3.8:9093/api/v1/alerts"
+            >
+              https://1.2.3.8:9093/api/v1/alerts
+            </a>
+            <a
+              className="mr-5"
+              href="https://1.2.3.9:9093/api/v1/alerts"
+              key="https://1.2.3.9:9093/api/v1/alerts"
+            >
+              https://1.2.3.9:9093/api/v1/alerts
+            </a>
+          </td>
+        </tr>
+        <tr
+          key="droppedAlertmanagers"
+        >
+          <th
+            style={
+              Object {
+                "width": "35%",
+              }
+            }
+          >
+            Dropped
+          </th>
+          <td
+            className="text-break"
+          />
+        </tr>
+      </tbody>
+    </Table>
+  </Fragment>,
+]
+`;
+
 exports[`Status Status Table should match table snapshot 1`] = `
 Array [
   <Fragment

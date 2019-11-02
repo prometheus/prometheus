@@ -739,7 +739,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "status.html", status)
 }
 
-func (h *Handler) runtimeInfo() api_v1.RuntimeInfo {
+func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 	status := api_v1.RuntimeInfo{
 		StartTime:      h.birth,
 		CWD:            h.cwd,
@@ -761,8 +761,7 @@ func (h *Handler) runtimeInfo() api_v1.RuntimeInfo {
 
 	metrics, err := h.gatherer.Gather()
 	if err != nil {
-		fmt.Println(err)
-		return status
+		return status, errors.Errorf("error gathering runtime status: %s", err)
 	}
 	for _, mF := range metrics {
 		switch *mF.Name {
@@ -778,7 +777,7 @@ func (h *Handler) runtimeInfo() api_v1.RuntimeInfo {
 			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
 		}
 	}
-	return status
+	return status, nil
 }
 
 func toFloat64(f *io_prometheus_client.MetricFamily) float64 {

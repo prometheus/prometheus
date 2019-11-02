@@ -24,18 +24,18 @@ const normalizeAlertmanagerValue = (alertMgrs: { url: string }[]) => {
 };
 
 export const statusConfig: StatusConfig = {
-  StartTime: { title: 'Start time', normalizeValue: (v: string) => new Date(v).toUTCString() },
+  startTime: { title: 'Start time', normalizeValue: (v: string) => new Date(v).toUTCString() },
   CWD: { title: 'Working directory' },
-  ReloadConfigSuccess: {
+  reloadConfigSuccess: {
     title: 'Configuration reload',
     normalizeValue: (v: boolean) => (v ? 'Successful' : 'Unsuccessful'),
   },
-  LastConfigTime: { title: 'Last successful configuration reload' },
-  ChunkCount: { title: 'Head chunks' },
-  TimeSeriesCount: { title: 'Head time series' },
-  CorruptionCount: { title: 'WAL corruptions' },
-  GoroutineCount: { title: 'Goroutines' },
-  StorageRetention: { title: 'Storage retention' },
+  lastConfigTime: { title: 'Last successful configuration reload' },
+  chunkCount: { title: 'Head chunks' },
+  timeSeriesCount: { title: 'Head time series' },
+  corruptionCount: { title: 'WAL corruptions' },
+  goroutineCount: { title: 'Goroutines' },
+  storageRetention: { title: 'Storage retention' },
   activeAlertmanagers: {
     title: 'Active',
     normalizeValue: normalizeAlertmanagerValue,

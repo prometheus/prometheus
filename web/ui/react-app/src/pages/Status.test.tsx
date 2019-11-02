@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { shallow } from 'enzyme';
-import { Status } from '../src/pages';
+import { Status } from '.';
 import { Alert } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import * as useFetch from '../src/hooks/useFetches';
+import * as useFetch from '../hooks/useFetches';
 import toJson from 'enzyme-to-json'
 
 describe('Status', () => {

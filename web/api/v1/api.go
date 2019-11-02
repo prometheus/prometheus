@@ -118,19 +118,20 @@ type PrometheusVersion struct {
 	GoVersion string `json:"goVersion"`
 }
 
+// RuntimeInfo contains runtime information about Prometheus.
 type RuntimeInfo struct {
-	StartTime           time.Time
-	CWD                 string
-	GoroutineCount      int
-	GOMAXPROCS          int
-	GOGC                string
-	GODEBUG             string
-	CorruptionCount     int64
-	ChunkCount          int64
-	TimeSeriesCount     int64
-	LastConfigTime      time.Time
-	ReloadConfigSuccess bool
-	StorageRetention    string
+	StartTime           time.Time `json:"startTime"`
+	CWD                 string    `json:"CWD"`
+	GoroutineCount      int       `json:"goroutineCount"`
+	GOMAXPROCS          int       `json:"GOMAXPROCS"`
+	GOGC                string    `json:"GOGC"`
+	GODEBUG             string    `json:"GODEBUG"`
+	CorruptionCount     int64     `json:"corruptionCount"`
+	ChunkCount          int64     `json:"chunkCount"`
+	TimeSeriesCount     int64     `json:"timeSeriesCount"`
+	LastConfigTime      time.Time `json:"lastConfigTime"`
+	ReloadConfigSuccess bool      `json:"reloadConfigSuccess"`
+	StorageRetention    string    `json:"storageRetention"`
 }
 
 type response struct {
@@ -180,7 +181,7 @@ type API struct {
 	remoteReadGate            *gate.Gate
 	CORSOrigin                *regexp.Regexp
 	buildInfo                 *PrometheusVersion
-	runtimeInfo               func() RuntimeInfo
+	runtimeInfo               func() (RuntimeInfo, error)
 }
 
 func init() {
@@ -205,7 +206,7 @@ func NewAPI(
 	remoteReadConcurrencyLimit int,
 	remoteReadMaxBytesInFrame int,
 	CORSOrigin *regexp.Regexp,
-	runtimeInfo func() RuntimeInfo,
+	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 ) *API {
 	return &API{
@@ -866,7 +867,11 @@ type prometheusConfig struct {
 }
 
 func (api *API) serveRuntimeInfo(r *http.Request) apiFuncResult {
-	return apiFuncResult{api.runtimeInfo(), nil, nil, nil}
+	status, err := api.runtimeInfo()
+	if err != nil {
+		return apiFuncResult{status, &apiError{errorInternal, err}, nil, nil}
+	}
+	return apiFuncResult{status, nil, nil, nil}
 }
 
 func (api *API) serveBuildInfo(r *http.Request) apiFuncResult {
@@ -1217,6 +1222,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		Error:     apiErr.err.Error(),
 		Data:      data,
 	})
+
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
