@@ -108,6 +108,32 @@ type rulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+// PrometheusVersion contains build information about Prometheus.
+type PrometheusVersion struct {
+	Version   string `json:"version"`
+	Revision  string `json:"revision"`
+	Branch    string `json:"branch"`
+	BuildUser string `json:"buildUser"`
+	BuildDate string `json:"buildDate"`
+	GoVersion string `json:"goVersion"`
+}
+
+// RuntimeInfo contains runtime information about Prometheus.
+type RuntimeInfo struct {
+	StartTime           time.Time `json:"startTime"`
+	CWD                 string    `json:"CWD"`
+	ReloadConfigSuccess bool      `json:"reloadConfigSuccess"`
+	LastConfigTime      time.Time `json:"lastConfigTime"`
+	ChunkCount          int64     `json:"chunkCount"`
+	TimeSeriesCount     int64     `json:"timeSeriesCount"`
+	CorruptionCount     int64     `json:"corruptionCount"`
+	GoroutineCount      int       `json:"goroutineCount"`
+	GOMAXPROCS          int       `json:"GOMAXPROCS"`
+	GOGC                string    `json:"GOGC"`
+	GODEBUG             string    `json:"GODEBUG"`
+	StorageRetention    string    `json:"storageRetention"`
+}
+
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -154,6 +180,8 @@ type API struct {
 	remoteReadMaxBytesInFrame int
 	remoteReadGate            *gate.Gate
 	CORSOrigin                *regexp.Regexp
+	buildInfo                 *PrometheusVersion
+	runtimeInfo               func() (RuntimeInfo, error)
 }
 
 func init() {
@@ -178,6 +206,8 @@ func NewAPI(
 	remoteReadConcurrencyLimit int,
 	remoteReadMaxBytesInFrame int,
 	CORSOrigin *regexp.Regexp,
+	runtimeInfo func() (RuntimeInfo, error),
+	buildInfo *PrometheusVersion,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -197,6 +227,8 @@ func NewAPI(
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		logger:                    logger,
 		CORSOrigin:                CORSOrigin,
+		runtimeInfo:               runtimeInfo,
+		buildInfo:                 buildInfo,
 	}
 }
 
@@ -242,6 +274,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
 
 	r.Get("/status/config", wrap(api.serveConfig))
+	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
+	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 
@@ -832,6 +866,18 @@ type prometheusConfig struct {
 	YAML string `json:"yaml"`
 }
 
+func (api *API) serveRuntimeInfo(r *http.Request) apiFuncResult {
+	status, err := api.runtimeInfo()
+	if err != nil {
+		return apiFuncResult{status, &apiError{errorInternal, err}, nil, nil}
+	}
+	return apiFuncResult{status, nil, nil, nil}
+}
+
+func (api *API) serveBuildInfo(r *http.Request) apiFuncResult {
+	return apiFuncResult{api.buildInfo, nil, nil, nil}
+}
+
 func (api *API) serveConfig(r *http.Request) apiFuncResult {
 	cfg := &prometheusConfig{
 		YAML: api.config().String(),
@@ -1176,6 +1222,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		Error:     apiErr.err.Error(),
 		Data:      data,
 	})
+
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

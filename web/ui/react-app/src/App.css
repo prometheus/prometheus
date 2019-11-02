@@ -12,6 +12,10 @@ input[type='checkbox']:checked + label {
   line-height: 1.8;
 }
 
+.capitalize-title::first-letter {
+    text-transform: capitalize;
+}
+
 .expression-input {
     margin-bottom: 10px;
 }

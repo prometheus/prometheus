@@ -11,7 +11,7 @@ class App extends Component {
     return (
       <>
         <Navigation />
-        <Container fluid>
+        <Container fluid style={{ paddingTop: 70 }}>
           <Router basepath="/new">
             <PanelList path="/graph" />
             <Alerts path="/alerts" />

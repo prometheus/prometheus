@@ -163,6 +163,9 @@ func (m *metrics) instrumentHandler(handlerName string, handler http.HandlerFunc
 	)
 }
 
+// PrometheusVersion contains build information about Prometheus.
+type PrometheusVersion = api_v1.PrometheusVersion
+
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
 	logger log.Logger
@@ -204,16 +207,6 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 	h.config = conf
 
 	return nil
-}
-
-// PrometheusVersion contains build information about Prometheus.
-type PrometheusVersion struct {
-	Version   string `json:"version"`
-	Revision  string `json:"revision"`
-	Branch    string `json:"branch"`
-	BuildUser string `json:"buildUser"`
-	BuildDate string `json:"buildDate"`
-	GoVersion string `json:"goVersion"`
 }
 
 // Options for the web Handler.
@@ -310,6 +303,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.RemoteReadConcurrencyLimit,
 		h.options.RemoteReadBytesInFrame,
 		h.options.CORSOrigin,
+		h.runtimeInfo,
+		h.versionInfo,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -742,6 +737,47 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.executeTemplate(w, "status.html", status)
+}
+
+func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
+	status := api_v1.RuntimeInfo{
+		StartTime:      h.birth,
+		CWD:            h.cwd,
+		GoroutineCount: runtime.NumGoroutine(),
+		GOMAXPROCS:     runtime.GOMAXPROCS(0),
+		GOGC:           os.Getenv("GOGC"),
+		GODEBUG:        os.Getenv("GODEBUG"),
+	}
+
+	if h.options.TSDBCfg.RetentionDuration != 0 {
+		status.StorageRetention = h.options.TSDBCfg.RetentionDuration.String()
+	}
+	if h.options.TSDBCfg.MaxBytes != 0 {
+		if status.StorageRetention != "" {
+			status.StorageRetention = status.StorageRetention + " or "
+		}
+		status.StorageRetention = status.StorageRetention + h.options.TSDBCfg.MaxBytes.String()
+	}
+
+	metrics, err := h.gatherer.Gather()
+	if err != nil {
+		return status, errors.Errorf("error gathering runtime status: %s", err)
+	}
+	for _, mF := range metrics {
+		switch *mF.Name {
+		case "prometheus_tsdb_head_chunks":
+			status.ChunkCount = int64(toFloat64(mF))
+		case "prometheus_tsdb_head_series":
+			status.TimeSeriesCount = int64(toFloat64(mF))
+		case "prometheus_tsdb_wal_corruptions_total":
+			status.CorruptionCount = int64(toFloat64(mF))
+		case "prometheus_config_last_reload_successful":
+			status.ReloadConfigSuccess = toFloat64(mF) != 0
+		case "prometheus_config_last_reload_success_timestamp_seconds":
+			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
+		}
+	}
+	return status, nil
 }
 
 func toFloat64(f *io_prometheus_client.MetricFamily) float64 {
