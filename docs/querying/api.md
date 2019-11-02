@@ -679,7 +679,7 @@ The following endpoint returns flag values that Prometheus was configured with:
 GET /api/v1/status/flags
 ```
 
-All values are in a form of "string".
+All values are of the result type `string`.
 
 ```json
 $ curl http://localhost:9090/api/v1/status/flags
@@ -697,6 +697,70 @@ $ curl http://localhost:9090/api/v1/status/flags
 ```
 
 *New in v2.2*
+
+### Runtime Information
+
+The following endpoint returns various runtime information properties about the Prometheus server:
+
+```
+GET /api/v1/status/runtimeinfo
+```
+
+The returned values are of different types, depending on the nature of the runtime property.
+
+```json
+$ curl http://localhost:9090/api/v1/status/runtimeinfo
+{
+  "status": "success",
+  "data": {
+    "startTime": "2019-11-02T17:23:59.301361365+01:00",
+    "CWD": "/",
+    "reloadConfigSuccess": true,
+    "lastConfigTime": "2019-11-02T17:23:59+01:00",
+    "chunkCount": 873,
+    "timeSeriesCount": 873,
+    "corruptionCount": 0,
+    "goroutineCount": 48,
+    "GOMAXPROCS": 4,
+    "GOGC": "",
+    "GODEBUG": "",
+    "storageRetention": "15d"
+  }
+}
+```
+
+**NOTE**: The exact returned runtime properties may change without notice between Prometheus versions.
+
+*New in v2.14*
+
+### Build Information
+
+The following endpoint returns various build information properties about the Prometheus server:
+
+```
+GET /api/v1/status/buildinfo
+```
+
+All values are of the result type `string`.
+
+```json
+$ curl http://localhost:9090/api/v1/status/buildinfo
+{
+  "status": "success",
+  "data": {
+    "version": "2.13.1",
+    "revision": "cb7cbad5f9a2823a622aaa668833ca04f50a0ea7",
+    "branch": "master",
+    "buildUser": "julius@desktop",
+    "buildDate": "20191102-16:19:59",
+    "goVersion": "go1.13.1"
+  }
+}
+```
+
+**NOTE**: The exact returned build properties may change without notice between Prometheus versions.
+
+*New in v2.14*
 
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
