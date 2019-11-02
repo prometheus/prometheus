@@ -584,7 +584,7 @@ type TargetDiscovery struct {
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
-	flatten := func(targets map[string][]*scrape.Target) ([]string, []*scrape.Target) {
+	sortKeys := func(targets map[string][]*scrape.Target) ([]string, int) {
 		var n int
 		keys := make([]string, 0, len(targets))
 		for k := range targets {
@@ -592,34 +592,41 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 			n += len(targets[k])
 		}
 		sort.Strings(keys)
+		return keys, n
+	}
+
+	flatten := func(targets map[string][]*scrape.Target) []*scrape.Target {
+		keys, n := sortKeys(targets)
 		res := make([]*scrape.Target, 0, n)
 		for _, k := range keys {
 			res = append(res, targets[k]...)
 		}
-		return keys, res
+		return res
 	}
+	targetsActive := api.targetRetriever.TargetsActive()
+	activeKeys, numTargets := sortKeys(targetsActive)
+	tDropped := flatten(api.targetRetriever.TargetsDropped())
+	res := &TargetDiscovery{ActiveTargets: make([]*Target, 0, numTargets), DroppedTargets: make([]*DroppedTarget, 0, len(tDropped))}
 
-	activeKeys, tActive := flatten(api.targetRetriever.TargetsActive())
-	_, tDropped := flatten(api.targetRetriever.TargetsDropped())
-	res := &TargetDiscovery{ActiveTargets: make([]*Target, 0, len(tActive)), DroppedTargets: make([]*DroppedTarget, 0, len(tDropped))}
+	for _, key := range activeKeys {
+		for _, target := range targetsActive[key] {
+			lastErrStr := ""
+			lastErr := target.LastError()
+			if lastErr != nil {
+				lastErrStr = lastErr.Error()
+			}
 
-	for i, target := range tActive {
-		lastErrStr := ""
-		lastErr := target.LastError()
-		if lastErr != nil {
-			lastErrStr = lastErr.Error()
+			res.ActiveTargets = append(res.ActiveTargets, &Target{
+				DiscoveredLabels:   target.DiscoveredLabels().Map(),
+				Labels:             target.Labels().Map(),
+				ScrapeJob:          key,
+				ScrapeURL:          target.URL().String(),
+				LastError:          lastErrStr,
+				LastScrape:         target.LastScrape(),
+				LastScrapeDuration: target.LastScrapeDuration(),
+				Health:             target.Health(),
+			})
 		}
-
-		res.ActiveTargets = append(res.ActiveTargets, &Target{
-			DiscoveredLabels:   target.DiscoveredLabels().Map(),
-			Labels:             target.Labels().Map(),
-			ScrapeJob:          activeKeys[i],
-			ScrapeURL:          target.URL().String(),
-			LastError:          lastErrStr,
-			LastScrape:         target.LastScrape(),
-			LastScrapeDuration: target.LastScrapeDuration(),
-			Health:             target.Health(),
-		})
 	}
 
 	for _, t := range tDropped {

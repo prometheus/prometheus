@@ -1,0 +1,24 @@
+.table {
+  width: 100%;
+}
+
+.cell {
+  height: auto;
+  word-wrap: break-word;
+  word-break: break-all;
+}
+
+.endpoint, .labels {
+  composes: cell;
+  width: 25%;
+}
+
+.state, .last-scrape {
+  composes: cell;
+  width: 10%;
+}
+
+.errors {
+  composes: cell;
+  width: 30%;
+}

@@ -1,10 +1,10 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import { Alert, Table } from 'reactstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { Table } from 'reactstrap';
 import { useFetch } from '../utils/useFetch';
 import PathPrefixProps from '../PathPrefixProps';
+import Loader from '../Loader';
+import ErrorAlert from '../ErrorAlert';
 
 export interface FlagMap {
   [key: string]: string;
@@ -16,11 +16,7 @@ const Flags: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const body = () => {
     const flags: FlagMap = response && response.data;
     if (error) {
-      return (
-        <Alert color="danger">
-          <strong>Error:</strong> Error fetching flags: {error.message}
-        </Alert>
-      );
+      return <ErrorAlert summary="Error fetching flags" message={error.message} />;
     } else if (flags) {
       return (
         <Table bordered={true} size="sm" striped={true}>
@@ -37,7 +33,7 @@ const Flags: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
         </Table>
       );
     }
-    return <FontAwesomeIcon icon={faSpinner} spin />;
+    return <Loader />;
   };
 
   return (
