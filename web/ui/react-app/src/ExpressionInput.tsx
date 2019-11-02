@@ -97,7 +97,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                           },
                         });
                         return (
-                          <SanitizeHTML tag={'li'} {...itemProps} allowedTags={['strong']}>
+                          <SanitizeHTML tag="li" {...itemProps} allowedTags={['strong']}>
                             {string}
                           </SanitizeHTML>
                         );

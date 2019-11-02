@@ -62,21 +62,17 @@ button.execute-btn {
 .autosuggest-dropdown {
     position: absolute;
     border: 1px solid #ced4da;
-    border-radius: .25rem;
     background-color: #fff;
     color: #495057;
     font-size: 1rem;
     z-index: 1000;
-    min-width: 10rem;
-    top: 100%;
     left: 56px;
-    float: left;
-    margin: -5px;
+    margin-top: -6px;
 }
 
 .autosuggest-dropdown-list {
     padding: 0;
-    margin: 0 0 5px 0;
+    margin: 0;
     list-style: none;
 }
 
@@ -91,13 +87,11 @@ button.execute-btn {
 }
 
 .autosuggest-dropdown-list li.autosuggest-dropdown-header {
-    margin-bottom: 5px;
     background-color: #bfdeff;
-    height: 25px;
     font-size: 10px;
-    display: flex;
-    align-items: center;
+    line-height: 1.5;
     text-transform: uppercase;
+    text-align: center;
 }
 
 .graph-controls, .table-controls {
