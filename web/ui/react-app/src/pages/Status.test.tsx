@@ -4,7 +4,7 @@ import { Status } from '.';
 import { Alert } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import * as useFetch from '../hooks/useFetches';
-import toJson from 'enzyme-to-json'
+import toJson from 'enzyme-to-json';
 
 describe('Status', () => {
   afterEach(() => jest.restoreAllMocks());
@@ -13,30 +13,34 @@ describe('Status', () => {
     expect(wrapper.find(FontAwesomeIcon)).toHaveLength(1);
   });
   it('should render Alert on error', () => {
-    (useFetch as any).default = jest.fn().mockImplementation(() => ({ error: new Error('foo') }))
+    (useFetch as any).default = jest.fn().mockImplementation(() => ({ error: new Error('foo') }));
     const wrapper = shallow(<Status />);
     expect(wrapper.find(Alert)).toHaveLength(1);
   });
   it('should fetch proper API endpoints', () => {
     const useFetchSpy = jest.spyOn(useFetch, 'default');
     shallow(<Status />);
-    expect(useFetchSpy).toHaveBeenCalledWith(['../api/v1/status/runtimeinfo', '../api/v1/status/buildinfo', '../api/v1/alertmanagers']);
+    expect(useFetchSpy).toHaveBeenCalledWith([
+      '../api/v1/status/runtimeinfo',
+      '../api/v1/status/buildinfo',
+      '../api/v1/alertmanagers',
+    ]);
   });
   describe('Snapshot testing', () => {
     const response = [
       {
-        StartTime: '2019-10-30T22:03:23.247913868+02:00',
+        startTime: '2019-10-30T22:03:23.247913868+02:00',
         CWD: '/home/boyskila/Desktop/prometheus',
-        GoroutineCount: 37,
+        reloadConfigSuccess: true,
+        lastConfigTime: '2019-10-30T22:03:23+02:00',
+        chunkCount: 1383,
+        timeSeriesCount: 461,
+        corruptionCount: 0,
+        goroutineCount: 37,
         GOMAXPROCS: 4,
         GOGC: '',
         GODEBUG: '',
-        CorruptionCount: 0,
-        ChunkCount: 1383,
-        TimeSeriesCount: 461,
-        LastConfigTime: '2019-10-30T22:03:23+02:00',
-        ReloadConfigSuccess: true,
-        StorageRetention: '15d',
+        storageRetention: '15d',
       },
       {
         version: '',
@@ -59,7 +63,7 @@ describe('Status', () => {
       },
     ];
     it('should match table snapshot', () => {
-      (useFetch as any).default = jest.fn().mockImplementation(() => ({ response }))
+      (useFetch as any).default = jest.fn().mockImplementation(() => ({ response }));
       const wrapper = shallow(<Status />);
       expect(toJson(wrapper)).toMatchSnapshot();
       jest.restoreAllMocks();

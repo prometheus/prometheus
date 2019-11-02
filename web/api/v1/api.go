@@ -122,15 +122,15 @@ type PrometheusVersion struct {
 type RuntimeInfo struct {
 	StartTime           time.Time `json:"startTime"`
 	CWD                 string    `json:"CWD"`
+	ReloadConfigSuccess bool      `json:"reloadConfigSuccess"`
+	LastConfigTime      time.Time `json:"lastConfigTime"`
+	ChunkCount          int64     `json:"chunkCount"`
+	TimeSeriesCount     int64     `json:"timeSeriesCount"`
+	CorruptionCount     int64     `json:"corruptionCount"`
 	GoroutineCount      int       `json:"goroutineCount"`
 	GOMAXPROCS          int       `json:"GOMAXPROCS"`
 	GOGC                string    `json:"GOGC"`
 	GODEBUG             string    `json:"GODEBUG"`
-	CorruptionCount     int64     `json:"corruptionCount"`
-	ChunkCount          int64     `json:"chunkCount"`
-	TimeSeriesCount     int64     `json:"timeSeriesCount"`
-	LastConfigTime      time.Time `json:"lastConfigTime"`
-	ReloadConfigSuccess bool      `json:"reloadConfigSuccess"`
 	StorageRetention    string    `json:"storageRetention"`
 }
 
