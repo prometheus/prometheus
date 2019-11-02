@@ -696,6 +696,8 @@ $ curl http://localhost:9090/api/v1/status/flags
 }
 ```
 
+*New in v2.2*
+
 ### Runtime Information
 
 The following endpoint returns various runtime information properties about the Prometheus server:
@@ -729,6 +731,8 @@ $ curl http://localhost:9090/api/v1/status/runtimeinfo
 
 **NOTE**: The exact returned runtime properties may change without notice between Prometheus versions.
 
+*New in v2.14*
+
 ### Build Information
 
 The following endpoint returns various build information properties about the Prometheus server:
@@ -756,7 +760,7 @@ $ curl http://localhost:9090/api/v1/status/buildinfo
 
 **NOTE**: The exact returned build properties may change without notice between Prometheus versions.
 
-*New in v2.2*
+*New in v2.14*
 
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
