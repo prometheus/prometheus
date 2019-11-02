@@ -14,10 +14,12 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -50,19 +52,23 @@ func main() {
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
 
-	checkConfigCmd := checkCmd.Command("config", "Check if the config files are valid or not.")
+	checkConfigCmd := checkCmd.Command("config", checkUsage("Check if the config files are valid or not.", "config.yml", "check config"))
 	configFiles := checkConfigCmd.Arg(
 		"config-files",
 		"The config files to check.",
-	).Required().ExistingFiles()
+	).ExistingFiles()
 
-	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
+	checkRulesCmd := checkCmd.Command("rules", checkUsage("Check if the rule files are valid or not.", "rules.yml", "check rules"))
 	ruleFiles := checkRulesCmd.Arg(
 		"rule-files",
 		"The rule files to check.",
-	).Required().ExistingFiles()
+	).ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
+	metricsFiles := checkMetricsCmd.Arg(
+		"metrics-files",
+		"The metrics files to check.",
+	).ExistingFiles()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
@@ -97,11 +103,11 @@ func main() {
 	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
 
 	testCmd := app.Command("test", "Unit testing.")
-	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
+	testRulesCmd := testCmd.Command("rules", checkUsage("Unit tests for rules.", "test.yml", "test rules"))
 	testRulesFiles := testRulesCmd.Arg(
 		"test-rule-file",
 		"The unit test file.",
-	).Required().ExistingFiles()
+	).ExistingFiles()
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -121,7 +127,7 @@ func main() {
 		os.Exit(CheckRules(*ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
-		os.Exit(CheckMetrics())
+		os.Exit(CheckMetrics(*metricsFiles...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryServer, *queryExpr, p))
@@ -149,12 +155,42 @@ func main() {
 	}
 }
 
+func getStdin() []byte {
+	var input []byte
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		panic(err)
+	}
+
+	if info.Mode()&os.ModeNamedPipe != 0 {
+		r := bufio.NewReader(os.Stdin)
+		for {
+			in, err := r.ReadByte()
+			if err != nil && err == io.EOF {
+				break
+			}
+			input = append(input, in)
+		}
+	}
+	return input
+}
+
+func exitOnNoArgs(message string) int {
+	name, _ := os.Executable()
+	fmt.Println(filepath.Base(name) + message)
+	return 1
+}
+
 // CheckConfig validates configuration files.
 func CheckConfig(files ...string) int {
 	failed := false
 
-	for _, f := range files {
-		ruleFiles, err := checkConfig(f)
+	input := getStdin()
+
+	if len(input) == 0 && len(files) == 0 {
+		return exitOnNoArgs(": error: required argument 'config-files' not provided, try --help")
+	} else if len(input) > 0 {
+		ruleFiles, err := checkConfig(string(input), false)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
@@ -164,7 +200,7 @@ func CheckConfig(files ...string) int {
 		fmt.Println()
 
 		for _, rf := range ruleFiles {
-			if n, errs := checkRules(rf); len(errs) > 0 {
+			if n, errs := checkRules(rf, true); len(errs) > 0 {
 				fmt.Fprintln(os.Stderr, "  FAILED:")
 				for _, err := range errs {
 					fmt.Fprintln(os.Stderr, "    ", err)
@@ -174,6 +210,30 @@ func CheckConfig(files ...string) int {
 				fmt.Printf("  SUCCESS: %d rules found\n", n)
 			}
 			fmt.Println()
+		}
+	} else {
+		for _, f := range files {
+			ruleFiles, err := checkConfig(f, true)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "  FAILED:", err)
+				failed = true
+			} else {
+				fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
+			}
+			fmt.Println()
+
+			for _, rf := range ruleFiles {
+				if n, errs := checkRules(rf, true); len(errs) > 0 {
+					fmt.Fprintln(os.Stderr, "  FAILED:")
+					for _, err := range errs {
+						fmt.Fprintln(os.Stderr, "    ", err)
+					}
+					failed = true
+				} else {
+					fmt.Printf("  SUCCESS: %d rules found\n", n)
+				}
+				fmt.Println()
+			}
 		}
 	}
 	if failed {
@@ -191,10 +251,16 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(filename string) ([]string, error) {
-	fmt.Println("Checking", filename)
+func checkConfig(file string, isFileName bool) ([]string, error) {
+	var cfg *config.Config
+	var err error
 
-	cfg, err := config.LoadFile(filename)
+	if isFileName {
+		fmt.Println("Checking", file)
+		cfg, err = config.LoadFile(file)
+	} else {
+		cfg, err = config.Load(file)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -273,8 +339,12 @@ func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
 func CheckRules(files ...string) int {
 	failed := false
 
-	for _, f := range files {
-		if n, errs := checkRules(f); errs != nil {
+	input := getStdin()
+
+	if len(input) == 0 && len(files) == 0 {
+		return exitOnNoArgs(": error: required argument 'rule-files' not provided, try --help")
+	} else if len(input) > 0 {
+		if n, errs := checkRules(string(input), false); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -284,17 +354,38 @@ func CheckRules(files ...string) int {
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
 		}
 		fmt.Println()
+	} else {
+		for _, f := range files {
+			if n, errs := checkRules(f, true); errs != nil {
+				fmt.Fprintln(os.Stderr, "  FAILED:")
+				for _, e := range errs {
+					fmt.Fprintln(os.Stderr, e.Error())
+				}
+				failed = true
+			} else {
+				fmt.Printf("  SUCCESS: %d rules found\n", n)
+			}
+			fmt.Println()
+		}
 	}
+
 	if failed {
 		return 1
 	}
 	return 0
 }
 
-func checkRules(filename string) (int, []error) {
-	fmt.Println("Checking", filename)
+func checkRules(file string, isFileName bool) (int, []error) {
+	var rgs *rulefmt.RuleGroups
+	var errs []error
 
-	rgs, errs := rulefmt.ParseFile(filename)
+	if isFileName {
+		fmt.Println("Checking", file)
+		rgs, errs = rulefmt.ParseFile(file)
+	} else {
+		rgs, errs = rulefmt.Parse([]byte(file))
+	}
+
 	if errs != nil {
 		return 0, errs
 	}
@@ -362,15 +453,64 @@ examples:
 $ cat metrics.prom | promtool check metrics
 
 $ curl -s http://localhost:9090/metrics | promtool check metrics
+
+$ promtool check metrics metrics.prom
 `)
 
+var checkUsage = func(help, file, command string) string {
+	return fmt.Sprintf(strings.TrimSpace(`
+%s
+
+examples:
+
+$ promtool %s %s
+
+$ cat %s | promtool %s
+`), help, command, file, file, command)
+}
+
 // CheckMetrics performs a linting pass on input metrics.
-func CheckMetrics() int {
-	l := promlint.New(os.Stdin)
+func CheckMetrics(files ...string) int {
+	failed := false
+
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		panic(err)
+	}
+
+	if info.Mode()&os.ModeNamedPipe == 0 && len(files) == 0 {
+		return exitOnNoArgs(": error: required argument 'metrics-files' not provided, try --help")
+	}
+
+	var l *promlint.Linter
+	if len(files) > 0 {
+		for i := range files {
+			file, _ := os.Open(files[i])
+			l = promlint.New(file)
+			n, err := checkMetrics(l)
+			if err != nil || n > 0 {
+				failed = true
+			}
+		}
+	} else {
+		l = promlint.New(os.Stdin)
+		n, err := checkMetrics(l)
+		if err != nil || n > 0 {
+			failed = true
+		}
+	}
+
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+func checkMetrics(l *promlint.Linter) (int, error) {
 	problems, err := l.Lint()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error while linting:", err)
-		return 1
+		return 1, err
 	}
 
 	for _, p := range problems {
@@ -378,10 +518,10 @@ func CheckMetrics() int {
 	}
 
 	if len(problems) > 0 {
-		return 3
+		return 3, nil
 	}
 
-	return 0
+	return 0, nil
 }
 
 // QueryInstant performs an instant query against a Prometheus server.

@@ -40,8 +40,12 @@ import (
 func RulesUnitTest(files ...string) int {
 	failed := false
 
-	for _, f := range files {
-		if errs := ruleUnitTest(f); errs != nil {
+	input := getStdin()
+
+	if len(input) == 0 && len(files) == 0 {
+		return exitOnNoArgs(": error: required argument 'test-rule-files' not provided, try --help")
+	} else if len(input) > 0 {
+		if errs := ruleUnitTest(string(input), false); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -50,7 +54,19 @@ func RulesUnitTest(files ...string) int {
 		} else {
 			fmt.Println("  SUCCESS")
 		}
-		fmt.Println()
+	} else {
+		for _, f := range files {
+			if errs := ruleUnitTest(f, true); errs != nil {
+				fmt.Fprintln(os.Stderr, "  FAILED:")
+				for _, e := range errs {
+					fmt.Fprintln(os.Stderr, e.Error())
+				}
+				failed = true
+			} else {
+				fmt.Println("  SUCCESS")
+			}
+			fmt.Println()
+		}
 	}
 	if failed {
 		return 1
@@ -58,10 +74,17 @@ func RulesUnitTest(files ...string) int {
 	return 0
 }
 
-func ruleUnitTest(filename string) []error {
-	fmt.Println("Unit Testing: ", filename)
+func ruleUnitTest(file string, isFileName bool) []error {
+	var b []byte
+	var err error
 
-	b, err := ioutil.ReadFile(filename)
+	if isFileName {
+		fmt.Println("Unit Testing: ", file)
+		b, err = ioutil.ReadFile(file)
+	} else {
+		b = []byte(file)
+	}
+
 	if err != nil {
 		return []error{err}
 	}
@@ -70,8 +93,16 @@ func ruleUnitTest(filename string) []error {
 	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
 		return []error{err}
 	}
-	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {
+
+	if len(unitTestInp.RuleFiles) < 1 {
+		err = fmt.Errorf("must specify at least one rule file")
 		return []error{err}
+	}
+
+	if isFileName {
+		if err := resolveAndGlobFilepaths(filepath.Dir(unitTestInp.RuleFiles[0]), &unitTestInp); err != nil {
+			return []error{err}
+		}
 	}
 
 	if unitTestInp.EvaluationInterval == 0 {
