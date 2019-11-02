@@ -57,7 +57,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
 
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
-      this.props.executeQuery(this.exprInputRef.current!.value);
+      this.executeQuery();
       event.preventDefault();
     }
   };
