@@ -5,8 +5,9 @@ import useFetches from '../hooks/useFetches';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+import PathPrefixProps from '../PathPrefixProps';
 
-const ENDPOINTS = ['../api/v1/status/runtimeinfo', '../api/v1/status/buildinfo', '../api/v1/alertmanagers'];
+const ENDPOINTS = ['/api/v1/status/runtimeinfo', '/api/v1/status/buildinfo', '/api/v1/alertmanagers'];
 const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
 
 interface StatusConfig {
@@ -54,8 +55,18 @@ export const statusConfig: StatusConfig = {
   droppedAlertmanagers: { skip: true },
 };
 
-const Status = () => {
-  const { response: data, error, isLoading } = useFetches<StatusPageState[]>(ENDPOINTS);
+const endpointsMemo: { [prefix: string]: string[] } = {};
+
+const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+  if (!endpointsMemo[pathPrefix]) {
+    // TODO: REMOVE THIS SUPER UGLY HACK IMMEDIATELY.
+    // The problem is that there's an infinite reload loop if the endpoints array is
+    // reconstructed on every render, as the dependency checking in useFetches()
+    // then thinks that something has changed... the whole useFetches() should
+    // probably removed and solved differently (within the component?) somehow.
+    endpointsMemo[pathPrefix] = ENDPOINTS.map(ep => `${pathPrefix}${ep}`);
+  }
+  const { response: data, error, isLoading } = useFetches<StatusPageState[]>(endpointsMemo[pathPrefix]);
   if (error) {
     return (
       <Alert color="danger">
@@ -73,36 +84,40 @@ const Status = () => {
       />
     );
   }
-  return data
-    ? data.map((statuses, i) => {
-        return (
-          <Fragment key={i}>
-            <h2>{sectionTitles[i]}</h2>
-            <Table className="h-auto" size="sm" bordered striped>
-              <tbody>
-                {Object.entries(statuses).map(([k, v]) => {
-                  const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
-                  if (skip) {
-                    return null;
-                  }
-                  if (customRow) {
-                    return customizeValue(v);
-                  }
-                  return (
-                    <tr key={k}>
-                      <th className="capitalize-title" style={{ width: '35%' }}>
-                        {title}
-                      </th>
-                      <td className="text-break">{customizeValue(v)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
-          </Fragment>
-        );
-      })
-    : null;
+  return (
+    <>
+      {data
+        ? data.map((statuses, i) => {
+            return (
+              <Fragment key={i}>
+                <h2>{sectionTitles[i]}</h2>
+                <Table className="h-auto" size="sm" bordered striped>
+                  <tbody>
+                    {Object.entries(statuses).map(([k, v]) => {
+                      const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
+                      if (skip) {
+                        return null;
+                      }
+                      if (customRow) {
+                        return customizeValue(v);
+                      }
+                      return (
+                        <tr key={k}>
+                          <th className="capitalize-title" style={{ width: '35%' }}>
+                            {title}
+                          </th>
+                          <td className="text-break">{customizeValue(v)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              </Fragment>
+            );
+          })
+        : null}
+    </>
+  );
 };
 
-export default Status as FC<RouteComponentProps>;
+export default Status;

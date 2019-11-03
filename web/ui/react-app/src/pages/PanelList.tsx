@@ -1,10 +1,12 @@
 import React, { Component, ChangeEvent } from 'react';
+import { RouteComponentProps } from '@reach/router';
 
 import { Alert, Button, Col, Row } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from '../Panel';
 import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from '../utils/urlParams';
 import Checkbox from '../Checkbox';
+import PathPrefixProps from '../PathPrefixProps';
 
 export type MetricGroup = { title: string; items: string[] };
 
@@ -19,9 +21,9 @@ interface PanelListState {
   timeDriftError: string | null;
 }
 
-class PanelList extends Component<any, PanelListState> {
+class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelListState> {
   private key = 0;
-  constructor(props: any) {
+  constructor(props: PathPrefixProps) {
     super(props);
 
     const urlPanels = decodePanelOptionsFromQueryString(window.location.search);
@@ -44,7 +46,7 @@ class PanelList extends Component<any, PanelListState> {
   }
 
   componentDidMount() {
-    fetch('../../api/v1/label/__name__/values', { cache: 'no-store' })
+    fetch(`${this.props.pathPrefix}/api/v1/label/__name__/values`, { cache: 'no-store' })
       .then(resp => {
         if (resp.ok) {
           return resp.json();
@@ -58,7 +60,7 @@ class PanelList extends Component<any, PanelListState> {
       .catch(error => this.setState({ fetchMetricsError: error.message }));
 
     const browserTime = new Date().getTime() / 1000;
-    fetch('../../api/v1/query?query=time()', { cache: 'no-store' })
+    fetch(`${this.props.pathPrefix}/api/v1/query?query=time()`, { cache: 'no-store' })
       .then(resp => {
         if (resp.ok) {
           return resp.json();
@@ -161,6 +163,7 @@ class PanelList extends Component<any, PanelListState> {
 
   render() {
     const { metricNames, pastQueries, timeDriftError, fetchMetricsError } = this.state;
+    const { pathPrefix } = this.props;
     return (
       <>
         <Row className="mb-2">
@@ -200,6 +203,7 @@ class PanelList extends Component<any, PanelListState> {
             removePanel={() => this.removePanel(p.key)}
             metricNames={metricNames}
             pastQueries={pastQueries}
+            pathPrefix={pathPrefix}
           />
         ))}
         <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>

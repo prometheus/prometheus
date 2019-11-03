@@ -19,11 +19,11 @@ describe('Status', () => {
   });
   it('should fetch proper API endpoints', () => {
     const useFetchSpy = jest.spyOn(useFetch, 'default');
-    shallow(<Status />);
+    shallow(<Status pathPrefix="/path/prefix" />);
     expect(useFetchSpy).toHaveBeenCalledWith([
-      '../api/v1/status/runtimeinfo',
-      '../api/v1/status/buildinfo',
-      '../api/v1/alertmanagers',
+      '/path/prefix/api/v1/status/runtimeinfo',
+      '/path/prefix/api/v1/status/buildinfo',
+      '/path/prefix/api/v1/alertmanagers',
     ]);
   });
   describe('Snapshot testing', () => {

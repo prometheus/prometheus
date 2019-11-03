@@ -10,6 +10,7 @@ import Graph from './Graph';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
+import PathPrefixProps from './PathPrefixProps';
 
 interface PanelProps {
   options: PanelOptions;
@@ -56,7 +57,7 @@ export const PanelDefaultOptions: PanelOptions = {
   stacked: false,
 };
 
-class Panel extends Component<PanelProps, PanelState> {
+class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
   private abortInFlightFetch: (() => void) | null = null;
 
   constructor(props: PanelProps) {
@@ -123,21 +124,21 @@ class Panel extends Component<PanelProps, PanelState> {
     let path: string;
     switch (this.props.options.type) {
       case 'graph':
-        path = '../../api/v1/query_range';
+        path = '/api/v1/query_range';
         params.append('start', startTime.toString());
         params.append('end', endTime.toString());
         params.append('step', resolution.toString());
         // TODO path prefix here and elsewhere.
         break;
       case 'table':
-        path = '../../api/v1/query';
+        path = '/api/v1/query';
         params.append('time', endTime.toString());
         break;
       default:
         throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
 
-    fetch(`${path}?${params}`, { cache: 'no-store', signal: abortController.signal })
+    fetch(`${this.props.pathPrefix}${path}?${params}`, { cache: 'no-store', signal: abortController.signal })
       .then(resp => resp.json())
       .then(json => {
         if (json.status !== 'success') {
