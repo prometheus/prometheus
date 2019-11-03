@@ -116,33 +116,28 @@ class Panel extends Component<PanelProps, PanelState> {
     const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueof only work when it's a moment?
     const startTime = endTime - this.props.options.range;
     const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250), 1);
-    const url = new URL(window.location.href);
-    const params: { [key: string]: string } = {
+    const params: URLSearchParams = new URLSearchParams({
       query: expr,
-    };
+    });
 
+    let path: string;
     switch (this.props.options.type) {
       case 'graph':
-        url.pathname = '../../api/v1/query_range';
-        Object.assign(params, {
-          start: startTime,
-          end: endTime,
-          step: resolution,
-        });
+        path = '../../api/v1/query_range';
+        params.append('start', startTime.toString());
+        params.append('end', endTime.toString());
+        params.append('step', resolution.toString());
         // TODO path prefix here and elsewhere.
         break;
       case 'table':
-        url.pathname = '../../api/v1/query';
-        Object.assign(params, {
-          time: endTime,
-        });
+        path = '../../api/v1/query';
+        params.append('time', endTime.toString());
         break;
       default:
         throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
-    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
 
-    fetch(url.toString(), { cache: 'no-store', signal: abortController.signal })
+    fetch(`${path}?${params}`, { cache: 'no-store', signal: abortController.signal })
       .then(resp => resp.json())
       .then(json => {
         if (json.status !== 'success') {
