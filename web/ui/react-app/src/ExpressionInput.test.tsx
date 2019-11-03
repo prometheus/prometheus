@@ -127,7 +127,7 @@ describe('ExpressionInput', () => {
       const downshift = expressionInput.find(Downshift);
       downshift.setState({ isOpen: true });
       const ul = downshift.find('ul');
-      expect(ul.prop('className')).toEqual('card list-group');
+      expect(ul.prop('className')).toEqual('autosuggest-dropdown-list');
       const items = ul.find(SanitizeHTML);
       expect(items.map(item => item.text()).join(', ')).toEqual(
         'node_cpu_guest_seconds_total, node_cpu_seconds_total, instance:node_cpu_utilisation:rate1m'
