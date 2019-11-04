@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { FC, useState } from 'react';
 import { Link } from '@reach/router';
 import {
   Collapse,
@@ -12,25 +12,26 @@ import {
   DropdownMenu,
   DropdownItem,
 } from 'reactstrap';
+import PathPrefixProps from './PathPrefixProps';
 
-const Navigation = () => {
+const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
   const [isOpen, setIsOpen] = useState(false);
   const toggle = () => setIsOpen(!isOpen);
   return (
     <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} />
-      <Link className="pt-0 navbar-brand" to="/new/graph">
+      <Link className="pt-0 navbar-brand" to={`${pathPrefix}/new/graph`}>
         Prometheus
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
         <Nav className="ml-0" navbar>
           <NavItem>
-            <NavLink tag={Link} to="/new/alerts">
+            <NavLink tag={Link} to={`${pathPrefix}/new/alerts`}>
               Alerts
             </NavLink>
           </NavItem>
           <NavItem>
-            <NavLink tag={Link} to="/new/graph">
+            <NavLink tag={Link} to={`${pathPrefix}/new/graph`}>
               Graph
             </NavLink>
           </NavItem>
@@ -39,22 +40,22 @@ const Navigation = () => {
               Status
             </DropdownToggle>
             <DropdownMenu>
-              <DropdownItem tag={Link} to="/new/status">
+              <DropdownItem tag={Link} to={`${pathPrefix}/new/status`}>
                 Runtime & Build Information
               </DropdownItem>
-              <DropdownItem tag={Link} to="/new/flags">
+              <DropdownItem tag={Link} to={`${pathPrefix}/new/flags`}>
                 Command-Line Flags
               </DropdownItem>
-              <DropdownItem tag={Link} to="/new/config">
+              <DropdownItem tag={Link} to={`${pathPrefix}/new/config`}>
                 Configuration
               </DropdownItem>
-              <DropdownItem tag={Link} to="/new/rules">
+              <DropdownItem tag={Link} to={`${pathPrefix}/new/rules`}>
                 Rules
               </DropdownItem>
-              <DropdownItem tag={Link} to="/new/targets">
+              <DropdownItem tag={Link} to={`${pathPrefix}/new/targets`}>
                 Targets
               </DropdownItem>
-              <DropdownItem tag={Link} to="/new/service-discovery">
+              <DropdownItem tag={Link} to={`${pathPrefix}/new/service-discovery`}>
                 Service Discovery
               </DropdownItem>
             </DropdownMenu>
@@ -63,7 +64,7 @@ const Navigation = () => {
             <NavLink href="https://prometheus.io/docs/prometheus/latest/getting_started/">Help</NavLink>
           </NavItem>
           <NavItem>
-            <NavLink tag={Link} to="../../graph">
+            <NavLink tag={Link} to={pathPrefix}>
               Classic UI
             </NavLink>
           </NavItem>

@@ -8,6 +8,14 @@
       content="width=device-width, initial-scale=1, shrink-to-fit=no"
     />
     <meta name="theme-color" content="#000000" />
+
+    <!--
+      This constant's placeholder magic value is replaced during serving by Prometheus
+      and set to Prometheus's external URL path. It gets prepended to all links back
+      to Prometheus, both for asset loading as well as API accesses.
+    -->
+    <script>const PATH_PREFIX='PATH_PREFIX_PLACEHOLDER';</script>
+
     <!--
       manifest.json provides metadata used when your web app is added to the
       homescreen on Android. See https://developers.google.com/web/fundamentals/web-app-manifest/

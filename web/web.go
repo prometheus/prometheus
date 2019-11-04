@@ -14,6 +14,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -72,7 +73,7 @@ var (
 	localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
 	// Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
-	reactAppPaths = []string{
+	reactRouterPaths = []string{
 		"/",
 		"/alerts",
 		"/config",
@@ -347,15 +348,33 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/new/*filepath", func(w http.ResponseWriter, r *http.Request) {
 		p := route.Param(r.Context(), "filepath")
-		r.URL.Path = path.Join("/static/react/", p)
 
-		for _, rp := range reactAppPaths {
-			if p == rp {
-				r.URL.Path = "/static/react/"
-				break
+		// For paths that the React/Reach router handles, we want to serve the
+		// index.html, but with replaced path prefix placeholder.
+		for _, rp := range reactRouterPaths {
+			if p != rp {
+				continue
 			}
+
+			f, err := ui.Assets.Open("/static/react/index.html")
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, "Error opening React index.html: %v", err)
+				return
+			}
+			idx, err := ioutil.ReadAll(f)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, "Error reading React index.html: %v", err)
+				return
+			}
+			prefixedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
+			w.Write(prefixedIdx)
+			return
 		}
 
+		// For all other paths, serve auxiliary assets.
+		r.URL.Path = path.Join("/static/react/", p)
 		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})

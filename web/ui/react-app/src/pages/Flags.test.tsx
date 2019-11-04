@@ -73,11 +73,11 @@ describe('Flags', () => {
 
       let flags: ReactWrapper;
       await act(async () => {
-        flags = mount(<Flags />);
+        flags = mount(<Flags pathPrefix="/path/prefix" />);
       });
       flags.update();
 
-      expect(mock).toHaveBeenCalledWith('../api/v1/status/flags', undefined);
+      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/flags', undefined);
       const table = flags.find(Table);
       expect(table.prop('striped')).toBe(true);
 
@@ -98,11 +98,11 @@ describe('Flags', () => {
 
       let flags: ReactWrapper;
       await act(async () => {
-        flags = mount(<Flags />);
+        flags = mount(<Flags pathPrefix="/path/prefix" />);
       });
       flags.update();
 
-      expect(mock).toHaveBeenCalledWith('../api/v1/status/flags', undefined);
+      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/flags', undefined);
       const alert = flags.find(Alert);
       expect(alert.prop('color')).toBe('danger');
       expect(alert.text()).toContain('error loading flags');

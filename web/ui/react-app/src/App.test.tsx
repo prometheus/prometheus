@@ -7,15 +7,17 @@ import { Router } from '@reach/router';
 import { Alerts, Config, Flags, Rules, Services, Status, Targets, PanelList } from './pages';
 
 describe('App', () => {
-  const app = shallow(<App />);
+  const app = shallow(<App pathPrefix="/path/prefix" />);
 
   it('navigates', () => {
     expect(app.find(Navigation)).toHaveLength(1);
   });
   it('routes', () => {
-    [Alerts, Config, Flags, Rules, Services, Status, Targets, PanelList].forEach(component =>
-      expect(app.find(component)).toHaveLength(1)
-    );
+    [Alerts, Config, Flags, Rules, Services, Status, Targets, PanelList].forEach(component => {
+      const c = app.find(component);
+      expect(c).toHaveLength(1);
+      expect(c.prop('pathPrefix')).toBe('/path/prefix');
+    });
     expect(app.find(Router)).toHaveLength(1);
     expect(app.find(Container)).toHaveLength(1);
   });
