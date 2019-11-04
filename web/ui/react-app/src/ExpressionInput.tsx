@@ -57,7 +57,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
 
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
-      this.props.executeQuery(this.exprInputRef.current!.value);
+      this.executeQuery();
       event.preventDefault();
     }
   };
@@ -126,7 +126,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   render() {
     const { value, height } = this.state;
     return (
-      <Downshift inputValue={value} onSelect={this.handleDropdownSelection}>
+      <Downshift onSelect={this.handleDropdownSelection}>
         {downshift => (
           <div>
             <InputGroup className="expression-input">
@@ -171,6 +171,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                     }
                   },
                 } as any)}
+                value={value}
               />
               <InputGroupAddon addonType="append">
                 <Button className="execute-btn" color="primary" onClick={this.executeQuery}>
