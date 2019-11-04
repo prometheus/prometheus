@@ -609,7 +609,7 @@ func BenchmarkPostingsWithBlockQuerier(b *testing.B) {
 			tupleArrs = append(tupleArrs, labelCountTuple{name: k, value: v, count: c})
 		}
 	}
-	sort.Slice(tupleArrs, func (i, j int) bool {
+	sort.Slice(tupleArrs, func(i, j int) bool {
 		return tupleArrs[i].count < tupleArrs[j].count
 	})
 
@@ -634,16 +634,17 @@ func BenchmarkPostingsWithBlockQuerier(b *testing.B) {
 		testutil.Ok(b, q.Close())
 	}()
 
-	b.Run("Next", func (bench *testing.B) {
+	b.Run("Next", func(bench *testing.B) {
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for i := 0; i < bench.N; i++ {
 			ss, err := q.Select(labels.NewEqualMatcher("", ""))
 			testutil.Ok(b, err)
-			for ss.Next() {}
+			for ss.Next() {
+			}
 		}
 	})
-	b.Run("Seek2Postings", func (bench *testing.B) {
+	b.Run("Seek2Postings", func(bench *testing.B) {
 		m1 := labels.NewEqualMatcher(tupleArrs[0].name, tupleArrs[0].value)
 		m2 := labels.NewEqualMatcher(tupleArrs[1].name, tupleArrs[1].value)
 		bench.ResetTimer()
@@ -651,10 +652,11 @@ func BenchmarkPostingsWithBlockQuerier(b *testing.B) {
 		for i := 0; i < bench.N; i++ {
 			ss, err := q.Select(m1, m2)
 			testutil.Ok(b, err)
-			for ss.Next() {}
+			for ss.Next() {
+			}
 		}
 	})
-	b.Run("Seek5Postings", func (bench *testing.B) {
+	b.Run("Seek5Postings", func(bench *testing.B) {
 		matchers := make([]labels.Matcher, 5)
 		for i := 0; i < 5; i++ {
 			matchers[i] = labels.NewEqualMatcher(tupleArrs[i].name, tupleArrs[i].value)
@@ -664,10 +666,11 @@ func BenchmarkPostingsWithBlockQuerier(b *testing.B) {
 		for i := 0; i < bench.N; i++ {
 			ss, err := q.Select(matchers...)
 			testutil.Ok(b, err)
-			for ss.Next() {}
+			for ss.Next() {
+			}
 		}
 	})
-	b.Run("Seek10Postings", func (bench *testing.B) {
+	b.Run("Seek10Postings", func(bench *testing.B) {
 		matchers := make([]labels.Matcher, 10)
 		for i := 0; i < 10; i++ {
 			matchers[i] = labels.NewEqualMatcher(tupleArrs[i].name, tupleArrs[i].value)
@@ -677,10 +680,11 @@ func BenchmarkPostingsWithBlockQuerier(b *testing.B) {
 		for i := 0; i < bench.N; i++ {
 			ss, err := q.Select(matchers...)
 			testutil.Ok(b, err)
-			for ss.Next() {}
+			for ss.Next() {
+			}
 		}
 	})
-	b.Run("Seek20Postings", func (bench *testing.B) {
+	b.Run("Seek20Postings", func(bench *testing.B) {
 		matchers := make([]labels.Matcher, 20)
 		for i := 0; i < 20; i++ {
 			matchers[i] = labels.NewEqualMatcher(tupleArrs[i].name, tupleArrs[i].value)
@@ -690,7 +694,8 @@ func BenchmarkPostingsWithBlockQuerier(b *testing.B) {
 		for i := 0; i < bench.N; i++ {
 			ss, err := q.Select(matchers...)
 			testutil.Ok(b, err)
-			for ss.Next() {}
+			for ss.Next() {
+			}
 		}
 	})
 }
