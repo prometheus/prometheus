@@ -59,7 +59,8 @@ const endpointsMemo: { [prefix: string]: string[] } = {};
 
 const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
   if (!endpointsMemo[pathPrefix]) {
-    // TODO: REMOVE THIS SUPER UGLY HACK IMMEDIATELY.
+    // TODO: Come up with a nicer solution for this?
+    //
     // The problem is that there's an infinite reload loop if the endpoints array is
     // reconstructed on every render, as the dependency checking in useFetches()
     // then thinks that something has changed... the whole useFetches() should
@@ -84,40 +85,38 @@ const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) 
       />
     );
   }
-  return (
+  return data ? (
     <>
-      {data
-        ? data.map((statuses, i) => {
-            return (
-              <Fragment key={i}>
-                <h2>{sectionTitles[i]}</h2>
-                <Table className="h-auto" size="sm" bordered striped>
-                  <tbody>
-                    {Object.entries(statuses).map(([k, v]) => {
-                      const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
-                      if (skip) {
-                        return null;
-                      }
-                      if (customRow) {
-                        return customizeValue(v);
-                      }
-                      return (
-                        <tr key={k}>
-                          <th className="capitalize-title" style={{ width: '35%' }}>
-                            {title}
-                          </th>
-                          <td className="text-break">{customizeValue(v)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </Table>
-              </Fragment>
-            );
-          })
-        : null}
+      {data.map((statuses, i) => {
+        return (
+          <Fragment key={i}>
+            <h2>{sectionTitles[i]}</h2>
+            <Table className="h-auto" size="sm" bordered striped>
+              <tbody>
+                {Object.entries(statuses).map(([k, v]) => {
+                  const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
+                  if (skip) {
+                    return null;
+                  }
+                  if (customRow) {
+                    return customizeValue(v);
+                  }
+                  return (
+                    <tr key={k}>
+                      <th className="capitalize-title" style={{ width: '35%' }}>
+                        {title}
+                      </th>
+                      <td className="text-break">{customizeValue(v)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </Fragment>
+        );
+      })}
     </>
-  );
+  ) : null;
 };
 
 export default Status;
