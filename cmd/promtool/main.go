@@ -324,19 +324,19 @@ type compareRuleType struct {
 	label  map[string]string
 }
 
-func checkDuplicates(r []rulefmt.RuleGroup) []compareRuleType {
+func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	var duplicates []compareRuleType
 
-	for rindex := range r {
-		for index, props := range r[rindex].Rules {
+	for _, group := range groups {
+		for index, rule := range group.Rules {
 			inst := compareRuleType{
-				metric: props.Record,
-				label:  props.Labels,
+				metric: ruleMetric(rule),
+				label:  rule.Labels,
 			}
 			for i := 0; i < index; i++ {
 				t := compareRuleType{
-					metric: r[rindex].Rules[i].Record,
-					label:  r[rindex].Rules[i].Labels,
+					metric: ruleMetric(group.Rules[i]),
+					label:  group.Rules[i].Labels,
 				}
 				if reflect.DeepEqual(t, inst) {
 					duplicates = append(duplicates, t)
@@ -345,6 +345,13 @@ func checkDuplicates(r []rulefmt.RuleGroup) []compareRuleType {
 		}
 	}
 	return duplicates
+}
+
+func ruleMetric(rule rulefmt.Rule) string {
+	if rule.Alert != "" {
+		return rule.Alert
+	}
+	return rule.Record
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
