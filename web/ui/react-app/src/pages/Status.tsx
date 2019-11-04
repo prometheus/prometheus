@@ -1,7 +1,7 @@
 import React, { FC, Fragment } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table, Alert } from 'reactstrap';
-import { Fetcher, FetcherState } from '../api/Fetcher';
+import { Fetch, FetchState } from '../api/Fetch';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
@@ -57,8 +57,8 @@ export const statusConfig: StatusConfig = {
 
 const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
   return (
-    <Fetcher urls={ENDPOINTS.map(e => `${pathPrefix}${e}`)}>
-      {({ error, data = [] }: FetcherState<StatusPageState>) => {
+    <Fetch urls={ENDPOINTS.map(e => `${pathPrefix}${e}`)}>
+      {({ error, data = [] }: FetchState<StatusPageState>) => {
         if (error) {
           return (
             <Alert color="danger">
@@ -105,7 +105,7 @@ const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) 
           );
         });
       }}
-    </Fetcher>
+    </Fetch>
   );
 };
 

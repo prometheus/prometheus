@@ -7,13 +7,13 @@ import CopyToClipboard from 'react-copy-to-clipboard';
 import PathPrefixProps from '../PathPrefixProps';
 
 import './Config.css';
-import { Fetcher, FetcherState } from '../api/Fetcher';
+import { Fetch, FetchState } from '../api/Fetch';
 
 const Config: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const [copied, setCopied] = useState(false);
   return (
-    <Fetcher url={`${pathPrefix}/api/v1/status/config`}>
-      {({ error, data }: FetcherState<any>) => {
+    <Fetch url={`${pathPrefix}/api/v1/status/config`}>
+      {({ error, data }: FetchState<any>) => {
         const config = data && data.yaml;
         return (
           <>
@@ -44,7 +44,7 @@ const Config: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
           </>
         );
       }}
-    </Fetcher>
+    </Fetch>
   );
 };
 

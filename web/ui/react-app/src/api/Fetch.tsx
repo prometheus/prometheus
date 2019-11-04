@@ -1,11 +1,11 @@
 import { Component } from 'react';
 
-export interface FetcherState<T> {
+export interface FetchState<T> {
   data?: T;
   error?: Error;
 }
 
-interface FetcherProps {
+interface FetchProps {
   url?: string;
   urls?: string[];
   options?: RequestInit;
@@ -19,7 +19,7 @@ const urlsEqual = (urls?: string[], nextURLs?: string[]) => {
   return JSON.stringify(urls) === JSON.stringify(nextURLs);
 };
 
-export class Fetcher extends Component<FetcherProps, FetcherState<any>> {
+export class Fetch extends Component<FetchProps, FetchState<any>> {
   state = {
     data: undefined,
     error: undefined,
@@ -36,11 +36,11 @@ export class Fetcher extends Component<FetcherProps, FetcherState<any>> {
     }
   }
 
-  componentDidUpdate(nextProps: FetcherProps) {
-    const { url: nextURL, urls: nextURLS, options } = nextProps;
+  componentDidUpdate(nextProps: FetchProps) {
+    const { url: nextURL, urls: nextURLs, options } = nextProps;
     const { url, urls } = this.props;
-    if (nextURLS && !urlsEqual(urls, nextURLS)) {
-      this.handleResponse(async () => await Promise.all(nextURLS.map(this.get(options)).filter(Boolean)));
+    if (nextURLs && !urlsEqual(urls, nextURLs)) {
+      this.handleResponse(async () => await Promise.all(nextURLs.map(this.get(options)).filter(Boolean)));
     } else if (nextURL && url !== nextURL) {
       this.handleResponse(() => this.get(options)(nextURL));
     }
@@ -53,7 +53,8 @@ export class Fetcher extends Component<FetcherProps, FetcherState<any>> {
       this.setState({ error });
     }
   };
-  get = (options: RequestInit = {}) => async (url: string) => {
+
+  get = (options?: RequestInit) => async (url: string) => {
     const res = await fetch(url, options);
     if (!res.ok) {
       throw new Error(res.statusText);

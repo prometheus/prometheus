@@ -3,7 +3,7 @@ import { RouteComponentProps } from '@reach/router';
 import { Alert, Table } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
-import { Fetcher, FetcherState } from '../api/Fetcher';
+import { Fetch, FetchState } from '../api/Fetch';
 import PathPrefixProps from '../PathPrefixProps';
 
 export interface FlagMap {
@@ -14,8 +14,8 @@ const Flags: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   return (
     <>
       <h2>Command-Line Flags</h2>
-      <Fetcher url={`${pathPrefix}/api/v1/status/flags`}>
-        {({ error, data: flags }: FetcherState<FlagMap>) => {
+      <Fetch url={`${pathPrefix}/api/v1/status/flags`}>
+        {({ error, data: flags }: FetchState<FlagMap>) => {
           if (error) {
             return (
               <Alert color="danger">
@@ -40,7 +40,7 @@ const Flags: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
           }
           return <FontAwesomeIcon icon={faSpinner} spin />;
         }}
-      </Fetcher>
+      </Fetch>
     </>
   );
 };
