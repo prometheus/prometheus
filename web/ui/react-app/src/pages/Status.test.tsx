@@ -1,22 +1,12 @@
 import * as React from 'react';
 import { shallow } from 'enzyme';
-import { statusRenderer as Status } from './Status';
-import { Alert } from 'reactstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import * as useFetch from '../hooks/useFetches';
 import toJson from 'enzyme-to-json';
+import { StatusContent } from './Status';
 
 describe('Status', () => {
-  afterEach(() => jest.restoreAllMocks());
-  it('should render spinner while waiting data', () => {
-    const wrapper = shallow(<Status data={[] as any} />);
-    expect(wrapper.find(FontAwesomeIcon)).toHaveLength(1);
-  });
-  it('should render Alert on error', () => {
-    (useFetch as any).default = jest.fn().mockImplementation(() => ({ error: new Error('foo') }));
-    const wrapper = shallow(<Status error={{ message: 'foo' } as Error} />);
-    expect(wrapper.find(Alert)).toHaveLength(1);
-    expect(wrapper.find(Alert).prop('children')).toEqual([<strong>Error:</strong>, ' Error fetching status: ', 'foo']);
+  it('should not fail with undefined data', () => {
+    const wrapper = shallow(<StatusContent />);
+    expect(wrapper).toHaveLength(1);
   });
   describe('Snapshot testing', () => {
     const response: any = [
@@ -55,8 +45,7 @@ describe('Status', () => {
       },
     ];
     it('should match table snapshot', () => {
-      (useFetch as any).default = jest.fn().mockImplementation(() => ({ response }));
-      const wrapper = shallow(<Status data={response} />);
+      const wrapper = shallow(<StatusContent data={response} />);
       expect(toJson(wrapper)).toMatchSnapshot();
       jest.restoreAllMocks();
     });
