@@ -1,4 +1,4 @@
-import React, { FC, Fragment } from 'react';
+import React, { Fragment } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table, Alert } from 'reactstrap';
 import { Fetch, FetchState } from '../api/Fetch';
@@ -7,7 +7,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import PathPrefixProps from '../PathPrefixProps';
 
-const ENDPOINTS = ['/api/v1/status/runtimeinfo', '/api/v1/status/buildinfo', '/api/v1/alertmanagers'];
+const endpoints = ['/api/v1/status/runtimeinfo', '/api/v1/status/buildinfo', '/api/v1/alertmanagers'];
 const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
 
 interface StatusConfig {
@@ -55,58 +55,58 @@ export const statusConfig: StatusConfig = {
   droppedAlertmanagers: { skip: true },
 };
 
-const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+export const statusRenderer = ({ data, error }: FetchState<StatusPageState>) => {
+  if (error) {
+    return (
+      <Alert color="danger">
+        <strong>Error:</strong> Error fetching status: {error.message}
+      </Alert>
+    );
+  } else if (!data || !data.length) {
+    return (
+      <FontAwesomeIcon
+        size="3x"
+        icon={faSpinner}
+        spin
+        className="position-absolute"
+        style={{ transform: 'translate(-50%, -50%)', top: '50%', left: '50%' }}
+      />
+    );
+  }
   return (
-    <Fetch urls={ENDPOINTS.map(e => `${pathPrefix}${e}`)}>
-      {({ error, data = [] }: FetchState<StatusPageState>) => {
-        if (error) {
-          return (
-            <Alert color="danger">
-              <strong>Error:</strong> Error fetching status: {error.message}
-            </Alert>
-          );
-        } else if (!data || !data.length) {
-          return (
-            <FontAwesomeIcon
-              size="3x"
-              icon={faSpinner}
-              spin
-              className="position-absolute"
-              style={{ transform: 'translate(-50%, -50%)', top: '50%', left: '50%' }}
-            />
-          );
-        }
-        return data.map((statuses, i) => {
-          return (
-            <Fragment key={i}>
-              <h2>{sectionTitles[i]}</h2>
-              <Table className="h-auto" size="sm" bordered striped>
-                <tbody>
-                  {Object.entries(statuses).map(([k, v]) => {
-                    const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
-                    if (skip) {
-                      return null;
-                    }
-                    if (customRow) {
-                      return customizeValue(v);
-                    }
-                    return (
-                      <tr key={k}>
-                        <th className="capitalize-title" style={{ width: '35%' }}>
-                          {title}
-                        </th>
-                        <td className="text-break">{customizeValue(v)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </Table>
-            </Fragment>
-          );
-        });
-      }}
-    </Fetch>
+    <>
+      {data.map((statuses, i) => {
+        return (
+          <Fragment key={i}>
+            <h2>{sectionTitles[i]}</h2>
+            <Table className="h-auto" size="sm" bordered striped>
+              <tbody>
+                {Object.entries(statuses).map(([k, v]) => {
+                  const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
+                  if (skip) {
+                    return null;
+                  }
+                  if (customRow) {
+                    return customizeValue(v);
+                  }
+                  return (
+                    <tr key={k}>
+                      <th className="capitalize-title" style={{ width: '35%' }}>
+                        {title}
+                      </th>
+                      <td className="text-break">{customizeValue(v)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </Fragment>
+        );
+      })}
+    </>
   );
 };
 
-export default Status;
+export default ({ pathPrefix = '' }: RouteComponentProps & PathPrefixProps) => (
+  <Fetch urls={endpoints.map(e => `${pathPrefix}${e}`)}>{statusRenderer}</Fetch>
+);
