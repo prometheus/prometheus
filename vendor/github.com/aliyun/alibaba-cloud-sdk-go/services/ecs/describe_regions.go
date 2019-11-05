@@ -77,12 +77,12 @@ func (client *Client) DescribeRegionsWithCallback(request *DescribeRegionsReques
 type DescribeRegionsRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	InstanceChargeType   string           `position:"Query" name:"InstanceChargeType"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	AcceptLanguage       string           `position:"Query" name:"AcceptLanguage"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
-	InstanceChargeType   string           `position:"Query" name:"InstanceChargeType"`
 	ResourceType         string           `position:"Query" name:"ResourceType"`
+	AcceptLanguage       string           `position:"Query" name:"AcceptLanguage"`
 }
 
 // DescribeRegionsResponse is the response struct for api DescribeRegions

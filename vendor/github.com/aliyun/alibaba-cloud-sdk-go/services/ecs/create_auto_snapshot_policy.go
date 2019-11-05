@@ -77,12 +77,12 @@ func (client *Client) CreateAutoSnapshotPolicyWithCallback(request *CreateAutoSn
 type CreateAutoSnapshotPolicyRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId        requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount   string           `position:"Query" name:"ResourceOwnerAccount"`
 	TimePoints             string           `position:"Query" name:"timePoints"`
-	RetentionDays          requests.Integer `position:"Query" name:"retentionDays"`
-	OwnerId                requests.Integer `position:"Query" name:"OwnerId"`
 	RepeatWeekdays         string           `position:"Query" name:"repeatWeekdays"`
+	ResourceOwnerAccount   string           `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerId                requests.Integer `position:"Query" name:"OwnerId"`
 	AutoSnapshotPolicyName string           `position:"Query" name:"autoSnapshotPolicyName"`
+	RetentionDays          requests.Integer `position:"Query" name:"retentionDays"`
 }
 
 // CreateAutoSnapshotPolicyResponse is the response struct for api CreateAutoSnapshotPolicy

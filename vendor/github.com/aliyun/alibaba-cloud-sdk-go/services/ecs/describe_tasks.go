@@ -77,15 +77,15 @@ func (client *Client) DescribeTasksWithCallback(request *DescribeTasksRequest, c
 type DescribeTasksRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	EndTime              string           `position:"Query" name:"EndTime"`
 	StartTime            string           `position:"Query" name:"StartTime"`
-	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	TaskIds              string           `position:"Query" name:"TaskIds"`
 	PageNumber           requests.Integer `position:"Query" name:"PageNumber"`
 	TaskStatus           string           `position:"Query" name:"TaskStatus"`
 	PageSize             requests.Integer `position:"Query" name:"PageSize"`
+	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
+	EndTime              string           `position:"Query" name:"EndTime"`
+	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	TaskAction           string           `position:"Query" name:"TaskAction"`
 }
 

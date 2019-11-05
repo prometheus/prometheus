@@ -78,11 +78,11 @@ type ModifyImageSharePermissionRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
 	ImageId              string           `position:"Query" name:"ImageId"`
-	AddAccount           *[]string        `position:"Query" name:"AddAccount"  type:"Repeated"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	RemoveAccount        *[]string        `position:"Query" name:"RemoveAccount"  type:"Repeated"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	AddAccount           *[]string        `position:"Query" name:"AddAccount"  type:"Repeated"`
+	RemoveAccount        *[]string        `position:"Query" name:"RemoveAccount"  type:"Repeated"`
 }
 
 // ModifyImageSharePermissionResponse is the response struct for api ModifyImageSharePermission

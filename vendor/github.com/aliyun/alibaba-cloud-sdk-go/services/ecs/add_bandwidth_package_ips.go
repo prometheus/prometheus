@@ -77,9 +77,9 @@ func (client *Client) AddBandwidthPackageIpsWithCallback(request *AddBandwidthPa
 type AddBandwidthPackageIpsRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	ClientToken          string           `position:"Query" name:"ClientToken"`
 	BandwidthPackageId   string           `position:"Query" name:"BandwidthPackageId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	ClientToken          string           `position:"Query" name:"ClientToken"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	IpCount              string           `position:"Query" name:"IpCount"`

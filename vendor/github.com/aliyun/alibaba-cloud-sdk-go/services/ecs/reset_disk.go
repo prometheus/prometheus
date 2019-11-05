@@ -78,9 +78,9 @@ type ResetDiskRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
 	SnapshotId           string           `position:"Query" name:"SnapshotId"`
+	DiskId               string           `position:"Query" name:"DiskId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	DiskId               string           `position:"Query" name:"DiskId"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 }
 

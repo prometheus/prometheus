@@ -78,8 +78,8 @@ type DescribeInstanceTopologyRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	InstanceIds          string           `position:"Query" name:"InstanceIds"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceIds          string           `position:"Query" name:"InstanceIds"`
 }
 
 // DescribeInstanceTopologyResponse is the response struct for api DescribeInstanceTopology

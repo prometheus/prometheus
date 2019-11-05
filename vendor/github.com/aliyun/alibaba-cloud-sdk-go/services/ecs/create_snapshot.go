@@ -77,18 +77,15 @@ func (client *Client) CreateSnapshotWithCallback(request *CreateSnapshotRequest,
 type CreateSnapshotRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer     `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string               `position:"Query" name:"ResourceOwnerAccount"`
 	ClientToken          string               `position:"Query" name:"ClientToken"`
-	OwnerAccount         string               `position:"Query" name:"OwnerAccount"`
 	Description          string               `position:"Query" name:"Description"`
 	SnapshotName         string               `position:"Query" name:"SnapshotName"`
-	OwnerId              requests.Integer     `position:"Query" name:"OwnerId"`
-	SourceSnapshotId     string               `position:"Query" name:"SourceSnapshotId"`
-	RemoveSourceSnapshot requests.Boolean     `position:"Query" name:"RemoveSourceSnapshot"`
 	DiskId               string               `position:"Query" name:"DiskId"`
-	RetentionDays        requests.Integer     `position:"Query" name:"RetentionDays"`
 	Tag                  *[]CreateSnapshotTag `position:"Query" name:"Tag"  type:"Repeated"`
-	Category             string               `position:"Query" name:"Category"`
+	ResourceOwnerAccount string               `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string               `position:"Query" name:"OwnerAccount"`
+	OwnerId              requests.Integer     `position:"Query" name:"OwnerId"`
+	RetentionDays        requests.Integer     `position:"Query" name:"RetentionDays"`
 }
 
 // CreateSnapshotTag is a repeated param struct in CreateSnapshotRequest

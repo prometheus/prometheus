@@ -80,16 +80,16 @@ type CreateVirtualBorderRouterRequest struct {
 	CircuitCode          string           `position:"Query" name:"CircuitCode"`
 	VlanId               requests.Integer `position:"Query" name:"VlanId"`
 	ClientToken          string           `position:"Query" name:"ClientToken"`
-	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	Description          string           `position:"Query" name:"Description"`
-	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	PeerGatewayIp        string           `position:"Query" name:"PeerGatewayIp"`
 	PeeringSubnetMask    string           `position:"Query" name:"PeeringSubnetMask"`
-	PhysicalConnectionId string           `position:"Query" name:"PhysicalConnectionId"`
-	Name                 string           `position:"Query" name:"Name"`
 	LocalGatewayIp       string           `position:"Query" name:"LocalGatewayIp"`
 	UserCidr             string           `position:"Query" name:"UserCidr"`
+	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
+	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	PhysicalConnectionId string           `position:"Query" name:"PhysicalConnectionId"`
+	Name                 string           `position:"Query" name:"Name"`
 	VbrOwnerId           requests.Integer `position:"Query" name:"VbrOwnerId"`
 }
 

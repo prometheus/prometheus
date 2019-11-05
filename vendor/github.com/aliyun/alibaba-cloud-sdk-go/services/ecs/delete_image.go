@@ -80,8 +80,8 @@ type DeleteImageRequest struct {
 	ImageId              string           `position:"Query" name:"ImageId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	Force                requests.Boolean `position:"Query" name:"Force"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	Force                requests.Boolean `position:"Query" name:"Force"`
 }
 
 // DeleteImageResponse is the response struct for api DeleteImage

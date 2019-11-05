@@ -76,14 +76,14 @@ func (client *Client) StartInstanceWithCallback(request *StartInstanceRequest, c
 // StartInstanceRequest is the request struct for api StartInstance
 type StartInstanceRequest struct {
 	*requests.RpcRequest
+	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
 	SourceRegionId       string           `position:"Query" name:"SourceRegionId"`
 	InitLocalDisk        requests.Boolean `position:"Query" name:"InitLocalDisk"`
-	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	InstanceId           string           `position:"Query" name:"InstanceId"`
 	DryRun               requests.Boolean `position:"Query" name:"DryRun"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId           string           `position:"Query" name:"InstanceId"`
 }
 
 // StartInstanceResponse is the response struct for api StartInstance

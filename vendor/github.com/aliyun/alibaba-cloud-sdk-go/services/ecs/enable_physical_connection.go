@@ -77,12 +77,12 @@ func (client *Client) EnablePhysicalConnectionWithCallback(request *EnablePhysic
 type EnablePhysicalConnectionRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	ClientToken          string           `position:"Query" name:"ClientToken"`
-	PhysicalConnectionId string           `position:"Query" name:"PhysicalConnectionId"`
-	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	UserCidr             string           `position:"Query" name:"UserCidr"`
+	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	PhysicalConnectionId string           `position:"Query" name:"PhysicalConnectionId"`
 }
 
 // EnablePhysicalConnectionResponse is the response struct for api EnablePhysicalConnection

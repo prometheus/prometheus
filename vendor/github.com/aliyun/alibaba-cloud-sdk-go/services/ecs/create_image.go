@@ -79,18 +79,18 @@ type CreateImageRequest struct {
 	DiskDeviceMapping    *[]CreateImageDiskDeviceMapping `position:"Query" name:"DiskDeviceMapping"  type:"Repeated"`
 	ResourceOwnerId      requests.Integer                `position:"Query" name:"ResourceOwnerId"`
 	SnapshotId           string                          `position:"Query" name:"SnapshotId"`
-	ResourceOwnerAccount string                          `position:"Query" name:"ResourceOwnerAccount"`
 	ClientToken          string                          `position:"Query" name:"ClientToken"`
-	OwnerAccount         string                          `position:"Query" name:"OwnerAccount"`
 	Description          string                          `position:"Query" name:"Description"`
-	OwnerId              requests.Integer                `position:"Query" name:"OwnerId"`
 	Platform             string                          `position:"Query" name:"Platform"`
 	ResourceGroupId      string                          `position:"Query" name:"ResourceGroupId"`
-	InstanceId           string                          `position:"Query" name:"InstanceId"`
 	ImageName            string                          `position:"Query" name:"ImageName"`
-	ImageVersion         string                          `position:"Query" name:"ImageVersion"`
 	Tag                  *[]CreateImageTag               `position:"Query" name:"Tag"  type:"Repeated"`
 	Architecture         string                          `position:"Query" name:"Architecture"`
+	ResourceOwnerAccount string                          `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string                          `position:"Query" name:"OwnerAccount"`
+	OwnerId              requests.Integer                `position:"Query" name:"OwnerId"`
+	InstanceId           string                          `position:"Query" name:"InstanceId"`
+	ImageVersion         string                          `position:"Query" name:"ImageVersion"`
 }
 
 // CreateImageDiskDeviceMapping is a repeated param struct in CreateImageRequest

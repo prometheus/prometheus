@@ -77,9 +77,9 @@ func (client *Client) ImportKeyPairWithCallback(request *ImportKeyPairRequest, c
 type ImportKeyPairRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	KeyPairName          string           `position:"Query" name:"KeyPairName"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	PublicKeyBody        string           `position:"Query" name:"PublicKeyBody"`
-	KeyPairName          string           `position:"Query" name:"KeyPairName"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 }
 

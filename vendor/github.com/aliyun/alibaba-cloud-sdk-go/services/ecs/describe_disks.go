@@ -77,38 +77,38 @@ func (client *Client) DescribeDisksWithCallback(request *DescribeDisksRequest, c
 type DescribeDisksRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId               requests.Integer    `position:"Query" name:"ResourceOwnerId"`
-	SnapshotId                    string              `position:"Query" name:"SnapshotId"`
 	Filter2Value                  string              `position:"Query" name:"Filter.2.Value"`
 	AutoSnapshotPolicyId          string              `position:"Query" name:"AutoSnapshotPolicyId"`
-	PageNumber                    requests.Integer    `position:"Query" name:"PageNumber"`
 	DiskName                      string              `position:"Query" name:"DiskName"`
 	DeleteAutoSnapshot            requests.Boolean    `position:"Query" name:"DeleteAutoSnapshot"`
 	ResourceGroupId               string              `position:"Query" name:"ResourceGroupId"`
 	DiskChargeType                string              `position:"Query" name:"DiskChargeType"`
 	LockReason                    string              `position:"Query" name:"LockReason"`
 	Filter1Key                    string              `position:"Query" name:"Filter.1.Key"`
-	PageSize                      requests.Integer    `position:"Query" name:"PageSize"`
-	DiskIds                       string              `position:"Query" name:"DiskIds"`
 	Tag                           *[]DescribeDisksTag `position:"Query" name:"Tag"  type:"Repeated"`
-	DeleteWithInstance            requests.Boolean    `position:"Query" name:"DeleteWithInstance"`
 	EnableAutoSnapshot            requests.Boolean    `position:"Query" name:"EnableAutoSnapshot"`
 	DryRun                        requests.Boolean    `position:"Query" name:"DryRun"`
-	ResourceOwnerAccount          string              `position:"Query" name:"ResourceOwnerAccount"`
-	OwnerAccount                  string              `position:"Query" name:"OwnerAccount"`
 	Filter1Value                  string              `position:"Query" name:"Filter.1.Value"`
 	Portable                      requests.Boolean    `position:"Query" name:"Portable"`
+	OwnerId                       requests.Integer    `position:"Query" name:"OwnerId"`
+	AdditionalAttributes          *[]string           `position:"Query" name:"AdditionalAttributes"  type:"Repeated"`
+	InstanceId                    string              `position:"Query" name:"InstanceId"`
+	ZoneId                        string              `position:"Query" name:"ZoneId"`
+	Status                        string              `position:"Query" name:"Status"`
+	SnapshotId                    string              `position:"Query" name:"SnapshotId"`
+	PageNumber                    requests.Integer    `position:"Query" name:"PageNumber"`
+	PageSize                      requests.Integer    `position:"Query" name:"PageSize"`
+	DiskIds                       string              `position:"Query" name:"DiskIds"`
+	DeleteWithInstance            requests.Boolean    `position:"Query" name:"DeleteWithInstance"`
+	ResourceOwnerAccount          string              `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount                  string              `position:"Query" name:"OwnerAccount"`
 	EnableAutomatedSnapshotPolicy requests.Boolean    `position:"Query" name:"EnableAutomatedSnapshotPolicy"`
 	Filter2Key                    string              `position:"Query" name:"Filter.2.Key"`
-	OwnerId                       requests.Integer    `position:"Query" name:"OwnerId"`
 	DiskType                      string              `position:"Query" name:"DiskType"`
-	AdditionalAttributes          *[]string           `position:"Query" name:"AdditionalAttributes"  type:"Repeated"`
 	EnableShared                  requests.Boolean    `position:"Query" name:"EnableShared"`
-	InstanceId                    string              `position:"Query" name:"InstanceId"`
 	Encrypted                     requests.Boolean    `position:"Query" name:"Encrypted"`
-	ZoneId                        string              `position:"Query" name:"ZoneId"`
 	Category                      string              `position:"Query" name:"Category"`
 	KMSKeyId                      string              `position:"Query" name:"KMSKeyId"`
-	Status                        string              `position:"Query" name:"Status"`
 }
 
 // DescribeDisksTag is a repeated param struct in DescribeDisksRequest

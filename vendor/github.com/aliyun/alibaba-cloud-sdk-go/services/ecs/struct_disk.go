@@ -28,8 +28,8 @@ type Disk struct {
 	IOPS                          int                           `json:"IOPS" xml:"IOPS"`
 	RegionId                      string                        `json:"RegionId" xml:"RegionId"`
 	MountInstanceNum              int                           `json:"MountInstanceNum" xml:"MountInstanceNum"`
-	StorageSetId                  string                        `json:"StorageSetId" xml:"StorageSetId"`
 	ResourceGroupId               string                        `json:"ResourceGroupId" xml:"ResourceGroupId"`
+	StorageSetId                  string                        `json:"StorageSetId" xml:"StorageSetId"`
 	InstanceId                    string                        `json:"InstanceId" xml:"InstanceId"`
 	Description                   string                        `json:"Description" xml:"Description"`
 	Type                          string                        `json:"Type" xml:"Type"`

@@ -77,10 +77,10 @@ func (client *Client) DetachClassicLinkVpcWithCallback(request *DetachClassicLin
 type DetachClassicLinkVpcRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	InstanceId           string           `position:"Query" name:"InstanceId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	VpcId                string           `position:"Query" name:"VpcId"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId           string           `position:"Query" name:"InstanceId"`
+	VpcId                string           `position:"Query" name:"VpcId"`
 }
 
 // DetachClassicLinkVpcResponse is the response struct for api DetachClassicLinkVpc

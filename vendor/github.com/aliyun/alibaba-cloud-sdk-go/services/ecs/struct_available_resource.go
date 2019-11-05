@@ -17,6 +17,6 @@ package ecs
 
 // AvailableResource is a nested struct in ecs response
 type AvailableResource struct {
-	Type               string                                            `json:"Type" xml:"Type"`
-	SupportedResources SupportedResourcesInDescribeResourcesModification `json:"SupportedResources" xml:"SupportedResources"`
+	Type               string                                        `json:"Type" xml:"Type"`
+	SupportedResources SupportedResourcesInDescribeAvailableResource `json:"SupportedResources" xml:"SupportedResources"`
 }

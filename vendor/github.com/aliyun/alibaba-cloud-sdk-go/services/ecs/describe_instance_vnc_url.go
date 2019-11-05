@@ -77,10 +77,10 @@ func (client *Client) DescribeInstanceVncUrlWithCallback(request *DescribeInstan
 type DescribeInstanceVncUrlRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	InstanceId           string           `position:"Query" name:"InstanceId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId           string           `position:"Query" name:"InstanceId"`
 }
 
 // DescribeInstanceVncUrlResponse is the response struct for api DescribeInstanceVncUrl

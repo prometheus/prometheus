@@ -17,9 +17,17 @@ package ecs
 
 // EipAddress is a nested struct in ecs response
 type EipAddress struct {
-	Bandwidth            int    `json:"Bandwidth" xml:"Bandwidth"`
-	IsSupportUnassociate bool   `json:"IsSupportUnassociate" xml:"IsSupportUnassociate"`
-	IpAddress            string `json:"IpAddress" xml:"IpAddress"`
-	InternetChargeType   string `json:"InternetChargeType" xml:"InternetChargeType"`
-	AllocationId         string `json:"AllocationId" xml:"AllocationId"`
+	ExpiredTime        string                               `json:"ExpiredTime" xml:"ExpiredTime"`
+	IpAddress          string                               `json:"IpAddress" xml:"IpAddress"`
+	EipBandwidth       string                               `json:"EipBandwidth" xml:"EipBandwidth"`
+	ChargeType         string                               `json:"ChargeType" xml:"ChargeType"`
+	AllocationTime     string                               `json:"AllocationTime" xml:"AllocationTime"`
+	InstanceType       string                               `json:"InstanceType" xml:"InstanceType"`
+	AllocationId       string                               `json:"AllocationId" xml:"AllocationId"`
+	RegionId           string                               `json:"RegionId" xml:"RegionId"`
+	InstanceId         string                               `json:"InstanceId" xml:"InstanceId"`
+	Bandwidth          string                               `json:"Bandwidth" xml:"Bandwidth"`
+	InternetChargeType string                               `json:"InternetChargeType" xml:"InternetChargeType"`
+	Status             string                               `json:"Status" xml:"Status"`
+	OperationLocks     OperationLocksInDescribeEipAddresses `json:"OperationLocks" xml:"OperationLocks"`
 }

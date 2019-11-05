@@ -77,9 +77,9 @@ func (client *Client) DescribeUserDataWithCallback(request *DescribeUserDataRequ
 type DescribeUserDataRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	InstanceId           string           `position:"Query" name:"InstanceId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId           string           `position:"Query" name:"InstanceId"`
 }
 
 // DescribeUserDataResponse is the response struct for api DescribeUserData

@@ -76,15 +76,15 @@ func (client *Client) DescribePhysicalConnectionsWithCallback(request *DescribeP
 // DescribePhysicalConnectionsRequest is the request struct for api DescribePhysicalConnections
 type DescribePhysicalConnectionsRequest struct {
 	*requests.RpcRequest
-	Filter               *[]DescribePhysicalConnectionsFilter `position:"Query" name:"Filter"  type:"Repeated"`
 	ResourceOwnerId      requests.Integer                     `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string                               `position:"Query" name:"ResourceOwnerAccount"`
 	ClientToken          string                               `position:"Query" name:"ClientToken"`
-	OwnerAccount         string                               `position:"Query" name:"OwnerAccount"`
+	PageNumber           requests.Integer                     `position:"Query" name:"PageNumber"`
 	PageSize             requests.Integer                     `position:"Query" name:"PageSize"`
 	UserCidr             string                               `position:"Query" name:"UserCidr"`
+	ResourceOwnerAccount string                               `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string                               `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer                     `position:"Query" name:"OwnerId"`
-	PageNumber           requests.Integer                     `position:"Query" name:"PageNumber"`
+	Filter               *[]DescribePhysicalConnectionsFilter `position:"Query" name:"Filter"  type:"Repeated"`
 }
 
 // DescribePhysicalConnectionsFilter is a repeated param struct in DescribePhysicalConnectionsRequest

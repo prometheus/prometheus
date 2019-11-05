@@ -19,6 +19,8 @@ package ecs
 type InvokeInstance struct {
 	InstanceId           string `json:"InstanceId" xml:"InstanceId"`
 	InstanceInvokeStatus string `json:"InstanceInvokeStatus" xml:"InstanceInvokeStatus"`
+	Output               string `json:"Output" xml:"Output"`
+	ExitCode             int64  `json:"ExitCode" xml:"ExitCode"`
 	CreationTime         string `json:"CreationTime" xml:"CreationTime"`
 	StartTime            string `json:"StartTime" xml:"StartTime"`
 	FinishTime           string `json:"FinishTime" xml:"FinishTime"`

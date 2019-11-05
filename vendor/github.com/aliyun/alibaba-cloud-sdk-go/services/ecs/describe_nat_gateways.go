@@ -77,13 +77,13 @@ func (client *Client) DescribeNatGatewaysWithCallback(request *DescribeNatGatewa
 type DescribeNatGatewaysRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	VpcId                string           `position:"Query" name:"VpcId"`
+	PageNumber           requests.Integer `position:"Query" name:"PageNumber"`
 	PageSize             requests.Integer `position:"Query" name:"PageSize"`
 	NatGatewayId         string           `position:"Query" name:"NatGatewayId"`
+	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
-	PageNumber           requests.Integer `position:"Query" name:"PageNumber"`
+	VpcId                string           `position:"Query" name:"VpcId"`
 }
 
 // DescribeNatGatewaysResponse is the response struct for api DescribeNatGateways

@@ -78,12 +78,12 @@ type ExportImageRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
 	ImageId              string           `position:"Query" name:"ImageId"`
+	ImageFormat          string           `position:"Query" name:"ImageFormat"`
 	OSSBucket            string           `position:"Query" name:"OSSBucket"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	OSSPrefix            string           `position:"Query" name:"OSSPrefix"`
 	RoleName             string           `position:"Query" name:"RoleName"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
-	ImageFormat          string           `position:"Query" name:"ImageFormat"`
+	OSSPrefix            string           `position:"Query" name:"OSSPrefix"`
 }
 
 // ExportImageResponse is the response struct for api ExportImage

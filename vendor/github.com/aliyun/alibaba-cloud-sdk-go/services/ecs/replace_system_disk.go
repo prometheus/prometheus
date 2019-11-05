@@ -78,20 +78,20 @@ type ReplaceSystemDiskRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId             requests.Integer `position:"Query" name:"ResourceOwnerId"`
 	ImageId                     string           `position:"Query" name:"ImageId"`
-	ResourceOwnerAccount        string           `position:"Query" name:"ResourceOwnerAccount"`
 	ClientToken                 string           `position:"Query" name:"ClientToken"`
-	OwnerAccount                string           `position:"Query" name:"OwnerAccount"`
 	SecurityEnhancementStrategy string           `position:"Query" name:"SecurityEnhancementStrategy"`
 	KeyPairName                 string           `position:"Query" name:"KeyPairName"`
-	OwnerId                     requests.Integer `position:"Query" name:"OwnerId"`
 	Platform                    string           `position:"Query" name:"Platform"`
 	Password                    string           `position:"Query" name:"Password"`
-	InstanceId                  string           `position:"Query" name:"InstanceId"`
 	PasswordInherit             requests.Boolean `position:"Query" name:"PasswordInherit"`
-	SystemDiskSize              requests.Integer `position:"Query" name:"SystemDisk.Size"`
 	DiskId                      string           `position:"Query" name:"DiskId"`
-	UseAdditionalService        requests.Boolean `position:"Query" name:"UseAdditionalService"`
 	Architecture                string           `position:"Query" name:"Architecture"`
+	ResourceOwnerAccount        string           `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount                string           `position:"Query" name:"OwnerAccount"`
+	OwnerId                     requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId                  string           `position:"Query" name:"InstanceId"`
+	SystemDiskSize              requests.Integer `position:"Query" name:"SystemDisk.Size"`
+	UseAdditionalService        requests.Boolean `position:"Query" name:"UseAdditionalService"`
 }
 
 // ReplaceSystemDiskResponse is the response struct for api ReplaceSystemDisk

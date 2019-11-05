@@ -17,10 +17,9 @@ package ecs
 
 // LaunchTemplateConfig is a nested struct in ecs response
 type LaunchTemplateConfig struct {
-	VSWitchId        string  `json:"VSWitchId" xml:"VSWitchId"`
-	VSwitchId        string  `json:"VSwitchId" xml:"VSwitchId"`
 	InstanceType     string  `json:"InstanceType" xml:"InstanceType"`
-	WeightedCapacity float64 `json:"WeightedCapacity" xml:"WeightedCapacity"`
 	MaxPrice         float64 `json:"MaxPrice" xml:"MaxPrice"`
+	VSwitchId        string  `json:"VSwitchId" xml:"VSwitchId"`
+	WeightedCapacity float64 `json:"WeightedCapacity" xml:"WeightedCapacity"`
 	Priority         float64 `json:"Priority" xml:"Priority"`
 }

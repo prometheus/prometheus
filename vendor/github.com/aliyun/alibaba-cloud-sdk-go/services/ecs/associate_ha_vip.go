@@ -76,13 +76,13 @@ func (client *Client) AssociateHaVipWithCallback(request *AssociateHaVipRequest,
 // AssociateHaVipRequest is the request struct for api AssociateHaVip
 type AssociateHaVipRequest struct {
 	*requests.RpcRequest
-	HaVipId              string           `position:"Query" name:"HaVipId"`
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	InstanceId           string           `position:"Query" name:"InstanceId"`
-	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	ClientToken          string           `position:"Query" name:"ClientToken"`
+	HaVipId              string           `position:"Query" name:"HaVipId"`
+	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId           string           `position:"Query" name:"InstanceId"`
 }
 
 // AssociateHaVipResponse is the response struct for api AssociateHaVip

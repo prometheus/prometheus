@@ -77,12 +77,12 @@ func (client *Client) UnassociateEipAddressWithCallback(request *UnassociateEipA
 type UnassociateEipAddressRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	InstanceId           string           `position:"Query" name:"InstanceId"`
+	AllocationId         string           `position:"Query" name:"AllocationId"`
+	InstanceType         string           `position:"Query" name:"InstanceType"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	InstanceType         string           `position:"Query" name:"InstanceType"`
-	AllocationId         string           `position:"Query" name:"AllocationId"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId           string           `position:"Query" name:"InstanceId"`
 }
 
 // UnassociateEipAddressResponse is the response struct for api UnassociateEipAddress

@@ -77,14 +77,14 @@ func (client *Client) DescribeTagsWithCallback(request *DescribeTagsRequest, cal
 type DescribeTagsRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer   `position:"Query" name:"ResourceOwnerId"`
-	ResourceId           string             `position:"Query" name:"ResourceId"`
-	ResourceOwnerAccount string             `position:"Query" name:"ResourceOwnerAccount"`
+	PageNumber           requests.Integer   `position:"Query" name:"PageNumber"`
 	PageSize             requests.Integer   `position:"Query" name:"PageSize"`
 	Tag                  *[]DescribeTagsTag `position:"Query" name:"Tag"  type:"Repeated"`
+	ResourceId           string             `position:"Query" name:"ResourceId"`
+	ResourceOwnerAccount string             `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerId              requests.Integer   `position:"Query" name:"OwnerId"`
-	Category             string             `position:"Query" name:"Category"`
 	ResourceType         string             `position:"Query" name:"ResourceType"`
-	PageNumber           requests.Integer   `position:"Query" name:"PageNumber"`
+	Category             string             `position:"Query" name:"Category"`
 }
 
 // DescribeTagsTag is a repeated param struct in DescribeTagsRequest

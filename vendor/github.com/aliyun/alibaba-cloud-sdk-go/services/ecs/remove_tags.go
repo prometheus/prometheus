@@ -77,9 +77,9 @@ func (client *Client) RemoveTagsWithCallback(request *RemoveTagsRequest, callbac
 type RemoveTagsRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	Tag                  *[]RemoveTagsTag `position:"Query" name:"Tag"  type:"Repeated"`
 	ResourceId           string           `position:"Query" name:"ResourceId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	Tag                  *[]RemoveTagsTag `position:"Query" name:"Tag"  type:"Repeated"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	ResourceType         string           `position:"Query" name:"ResourceType"`
 }

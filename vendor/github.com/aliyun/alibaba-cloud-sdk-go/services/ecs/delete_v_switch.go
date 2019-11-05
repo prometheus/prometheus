@@ -76,11 +76,11 @@ func (client *Client) DeleteVSwitchWithCallback(request *DeleteVSwitchRequest, c
 // DeleteVSwitchRequest is the request struct for api DeleteVSwitch
 type DeleteVSwitchRequest struct {
 	*requests.RpcRequest
-	VSwitchId            string           `position:"Query" name:"VSwitchId"`
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	VSwitchId            string           `position:"Query" name:"VSwitchId"`
 }
 
 // DeleteVSwitchResponse is the response struct for api DeleteVSwitch

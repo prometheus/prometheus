@@ -76,12 +76,12 @@ func (client *Client) DescribeVirtualBorderRoutersWithCallback(request *Describe
 // DescribeVirtualBorderRoutersRequest is the request struct for api DescribeVirtualBorderRouters
 type DescribeVirtualBorderRoutersRequest struct {
 	*requests.RpcRequest
-	Filter               *[]DescribeVirtualBorderRoutersFilter `position:"Query" name:"Filter"  type:"Repeated"`
 	ResourceOwnerId      requests.Integer                      `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string                                `position:"Query" name:"ResourceOwnerAccount"`
-	PageSize             requests.Integer                      `position:"Query" name:"PageSize"`
-	OwnerId              requests.Integer                      `position:"Query" name:"OwnerId"`
 	PageNumber           requests.Integer                      `position:"Query" name:"PageNumber"`
+	PageSize             requests.Integer                      `position:"Query" name:"PageSize"`
+	ResourceOwnerAccount string                                `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerId              requests.Integer                      `position:"Query" name:"OwnerId"`
+	Filter               *[]DescribeVirtualBorderRoutersFilter `position:"Query" name:"Filter"  type:"Repeated"`
 }
 
 // DescribeVirtualBorderRoutersFilter is a repeated param struct in DescribeVirtualBorderRoutersRequest

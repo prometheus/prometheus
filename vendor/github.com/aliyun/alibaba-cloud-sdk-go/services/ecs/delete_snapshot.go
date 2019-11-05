@@ -80,8 +80,8 @@ type DeleteSnapshotRequest struct {
 	SnapshotId           string           `position:"Query" name:"SnapshotId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	Force                requests.Boolean `position:"Query" name:"Force"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	Force                requests.Boolean `position:"Query" name:"Force"`
 }
 
 // DeleteSnapshotResponse is the response struct for api DeleteSnapshot

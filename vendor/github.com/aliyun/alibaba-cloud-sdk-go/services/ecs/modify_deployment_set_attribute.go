@@ -76,11 +76,11 @@ func (client *Client) ModifyDeploymentSetAttributeWithCallback(request *ModifyDe
 // ModifyDeploymentSetAttributeRequest is the request struct for api ModifyDeploymentSetAttribute
 type ModifyDeploymentSetAttributeRequest struct {
 	*requests.RpcRequest
-	DeploymentSetId      string           `position:"Query" name:"DeploymentSetId"`
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	Description          string           `position:"Query" name:"Description"`
+	DeploymentSetId      string           `position:"Query" name:"DeploymentSetId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	Description          string           `position:"Query" name:"Description"`
 	DeploymentSetName    string           `position:"Query" name:"DeploymentSetName"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 }

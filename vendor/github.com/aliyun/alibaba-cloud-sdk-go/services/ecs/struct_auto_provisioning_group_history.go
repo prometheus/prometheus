@@ -17,9 +17,9 @@ package ecs
 
 // AutoProvisioningGroupHistory is a nested struct in ecs response
 type AutoProvisioningGroupHistory struct {
-	TaskId          string                                                `json:"TaskId" xml:"TaskId"`
-	Status          string                                                `json:"Status" xml:"Status"`
-	LastEventTime   string                                                `json:"LastEventTime" xml:"LastEventTime"`
-	StartTime       string                                                `json:"StartTime" xml:"StartTime"`
-	ActivityDetails ActivityDetailsInDescribeAutoProvisioningGroupHistory `json:"ActivityDetails" xml:"ActivityDetails"`
+	TaskId          string          `json:"TaskId" xml:"TaskId"`
+	Status          string          `json:"Status" xml:"Status"`
+	LastEventTime   string          `json:"LastEventTime" xml:"LastEventTime"`
+	StartTime       string          `json:"StartTime" xml:"StartTime"`
+	ActivityDetails ActivityDetails `json:"ActivityDetails" xml:"ActivityDetails"`
 }

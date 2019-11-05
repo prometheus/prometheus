@@ -77,16 +77,16 @@ func (client *Client) ModifyInstanceAttributeWithCallback(request *ModifyInstanc
 type ModifyInstanceAttributeRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	Recyclable           requests.Boolean `position:"Query" name:"Recyclable"`
-	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	Description          string           `position:"Query" name:"Description"`
-	CreditSpecification  string           `position:"Query" name:"CreditSpecification"`
-	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	DeletionProtection   requests.Boolean `position:"Query" name:"DeletionProtection"`
 	UserData             string           `position:"Query" name:"UserData"`
 	Password             string           `position:"Query" name:"Password"`
 	HostName             string           `position:"Query" name:"HostName"`
+	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
+	CreditSpecification  string           `position:"Query" name:"CreditSpecification"`
+	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	InstanceId           string           `position:"Query" name:"InstanceId"`
 	InstanceName         string           `position:"Query" name:"InstanceName"`
 }

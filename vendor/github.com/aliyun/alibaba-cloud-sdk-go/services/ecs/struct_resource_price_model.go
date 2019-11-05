@@ -17,9 +17,9 @@ package ecs
 
 // ResourcePriceModel is a nested struct in ecs response
 type ResourcePriceModel struct {
-	DiscountPrice float64                        `json:"DiscountPrice" xml:"DiscountPrice"`
-	TradePrice    float64                        `json:"TradePrice" xml:"TradePrice"`
-	OriginalPrice float64                        `json:"OriginalPrice" xml:"OriginalPrice"`
-	Resource      string                         `json:"Resource" xml:"Resource"`
-	SubRules      SubRulesInDescribeRenewalPrice `json:"SubRules" xml:"SubRules"`
+	DiscountPrice float64                 `json:"DiscountPrice" xml:"DiscountPrice"`
+	TradePrice    float64                 `json:"TradePrice" xml:"TradePrice"`
+	OriginalPrice float64                 `json:"OriginalPrice" xml:"OriginalPrice"`
+	Resource      string                  `json:"Resource" xml:"Resource"`
+	SubRules      SubRulesInDescribePrice `json:"SubRules" xml:"SubRules"`
 }

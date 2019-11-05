@@ -76,20 +76,27 @@ func (client *Client) ListTagResourcesWithCallback(request *ListTagResourcesRequ
 // ListTagResourcesRequest is the request struct for api ListTagResources
 type ListTagResourcesRequest struct {
 	*requests.RpcRequest
-	ResourceOwnerId      requests.Integer       `position:"Query" name:"ResourceOwnerId"`
-	NextToken            string                 `position:"Query" name:"NextToken"`
-	Tag                  *[]ListTagResourcesTag `position:"Query" name:"Tag"  type:"Repeated"`
-	ResourceId           *[]string              `position:"Query" name:"ResourceId"  type:"Repeated"`
-	ResourceOwnerAccount string                 `position:"Query" name:"ResourceOwnerAccount"`
-	OwnerAccount         string                 `position:"Query" name:"OwnerAccount"`
-	OwnerId              requests.Integer       `position:"Query" name:"OwnerId"`
-	ResourceType         string                 `position:"Query" name:"ResourceType"`
+	ResourceOwnerId      requests.Integer             `position:"Query" name:"ResourceOwnerId"`
+	NextToken            string                       `position:"Query" name:"NextToken"`
+	Tag                  *[]ListTagResourcesTag       `position:"Query" name:"Tag"  type:"Repeated"`
+	ResourceId           *[]string                    `position:"Query" name:"ResourceId"  type:"Repeated"`
+	ResourceOwnerAccount string                       `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string                       `position:"Query" name:"OwnerAccount"`
+	OwnerId              requests.Integer             `position:"Query" name:"OwnerId"`
+	TagFilter            *[]ListTagResourcesTagFilter `position:"Query" name:"TagFilter"  type:"Repeated"`
+	ResourceType         string                       `position:"Query" name:"ResourceType"`
 }
 
 // ListTagResourcesTag is a repeated param struct in ListTagResourcesRequest
 type ListTagResourcesTag struct {
 	Key   string `name:"Key"`
 	Value string `name:"Value"`
+}
+
+// ListTagResourcesTagFilter is a repeated param struct in ListTagResourcesRequest
+type ListTagResourcesTagFilter struct {
+	TagKey    string    `name:"TagKey"`
+	TagValues *[]string `name:"TagValues" type:"Repeated"`
 }
 
 // ListTagResourcesResponse is the response struct for api ListTagResources

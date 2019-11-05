@@ -77,12 +77,12 @@ func (client *Client) DeleteInstanceWithCallback(request *DeleteInstanceRequest,
 type DeleteInstanceRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId       requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	InstanceId            string           `position:"Query" name:"InstanceId"`
+	TerminateSubscription requests.Boolean `position:"Query" name:"TerminateSubscription"`
 	ResourceOwnerAccount  string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount          string           `position:"Query" name:"OwnerAccount"`
-	TerminateSubscription requests.Boolean `position:"Query" name:"TerminateSubscription"`
-	Force                 requests.Boolean `position:"Query" name:"Force"`
 	OwnerId               requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId            string           `position:"Query" name:"InstanceId"`
+	Force                 requests.Boolean `position:"Query" name:"Force"`
 }
 
 // DeleteInstanceResponse is the response struct for api DeleteInstance

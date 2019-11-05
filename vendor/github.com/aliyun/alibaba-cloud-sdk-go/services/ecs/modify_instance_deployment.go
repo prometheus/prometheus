@@ -85,6 +85,7 @@ type ModifyInstanceDeploymentRequest struct {
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	InstanceId           string           `position:"Query" name:"InstanceId"`
 	Force                requests.Boolean `position:"Query" name:"Force"`
+	MigrationType        string           `position:"Query" name:"MigrationType"`
 	Affinity             string           `position:"Query" name:"Affinity"`
 }
 

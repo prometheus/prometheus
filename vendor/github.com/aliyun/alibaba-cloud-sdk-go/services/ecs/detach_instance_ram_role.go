@@ -78,9 +78,9 @@ type DetachInstanceRamRoleRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	InstanceIds          string           `position:"Query" name:"InstanceIds"`
 	RamRoleName          string           `position:"Query" name:"RamRoleName"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceIds          string           `position:"Query" name:"InstanceIds"`
 }
 
 // DetachInstanceRamRoleResponse is the response struct for api DetachInstanceRamRole

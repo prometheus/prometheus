@@ -77,13 +77,13 @@ func (client *Client) DescribeBandwidthPackagesWithCallback(request *DescribeBan
 type DescribeBandwidthPackagesRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	PageNumber           requests.Integer `position:"Query" name:"PageNumber"`
+	PageSize             requests.Integer `position:"Query" name:"PageSize"`
+	NatGatewayId         string           `position:"Query" name:"NatGatewayId"`
 	BandwidthPackageId   string           `position:"Query" name:"BandwidthPackageId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	PageSize             requests.Integer `position:"Query" name:"PageSize"`
-	NatGatewayId         string           `position:"Query" name:"NatGatewayId"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
-	PageNumber           requests.Integer `position:"Query" name:"PageNumber"`
 }
 
 // DescribeBandwidthPackagesResponse is the response struct for api DescribeBandwidthPackages

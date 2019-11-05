@@ -81,8 +81,8 @@ type ModifyImageShareGroupPermissionRequest struct {
 	AddGroup1            string           `position:"Query" name:"AddGroup.1"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	RemoveGroup1         string           `position:"Query" name:"RemoveGroup.1"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	RemoveGroup1         string           `position:"Query" name:"RemoveGroup.1"`
 }
 
 // ModifyImageShareGroupPermissionResponse is the response struct for api ModifyImageShareGroupPermission

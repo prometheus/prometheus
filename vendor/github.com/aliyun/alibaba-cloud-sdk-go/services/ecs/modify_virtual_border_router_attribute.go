@@ -79,17 +79,17 @@ type ModifyVirtualBorderRouterAttributeRequest struct {
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
 	CircuitCode          string           `position:"Query" name:"CircuitCode"`
 	VlanId               requests.Integer `position:"Query" name:"VlanId"`
-	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	ClientToken          string           `position:"Query" name:"ClientToken"`
-	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	Description          string           `position:"Query" name:"Description"`
 	VbrId                string           `position:"Query" name:"VbrId"`
-	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	PeerGatewayIp        string           `position:"Query" name:"PeerGatewayIp"`
 	PeeringSubnetMask    string           `position:"Query" name:"PeeringSubnetMask"`
-	Name                 string           `position:"Query" name:"Name"`
 	LocalGatewayIp       string           `position:"Query" name:"LocalGatewayIp"`
 	UserCidr             string           `position:"Query" name:"UserCidr"`
+	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
+	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	Name                 string           `position:"Query" name:"Name"`
 }
 
 // ModifyVirtualBorderRouterAttributeResponse is the response struct for api ModifyVirtualBorderRouterAttribute

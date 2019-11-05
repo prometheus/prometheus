@@ -77,9 +77,9 @@ func (client *Client) CancelTaskWithCallback(request *CancelTaskRequest, callbac
 type CancelTaskRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	TaskId               string           `position:"Query" name:"TaskId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
-	TaskId               string           `position:"Query" name:"TaskId"`
 }
 
 // CancelTaskResponse is the response struct for api CancelTask

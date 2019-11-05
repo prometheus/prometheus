@@ -17,5 +17,5 @@ package ecs
 
 // EipAddresses is a nested struct in ecs response
 type EipAddresses struct {
-	EipAddress []EipAddressInDescribeEipAddresses `json:"EipAddress" xml:"EipAddress"`
+	EipAddress []EipAddress `json:"EipAddress" xml:"EipAddress"`
 }

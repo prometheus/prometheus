@@ -77,8 +77,8 @@ func (client *Client) DeleteAutoSnapshotPolicyWithCallback(request *DeleteAutoSn
 type DeleteAutoSnapshotPolicyRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	AutoSnapshotPolicyId string           `position:"Query" name:"autoSnapshotPolicyId"`
+	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 }
 

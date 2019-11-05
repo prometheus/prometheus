@@ -77,19 +77,19 @@ func (client *Client) ModifyInstanceSpecWithCallback(request *ModifyInstanceSpec
 type ModifyInstanceSpecRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId                  requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount             string           `position:"Query" name:"ResourceOwnerAccount"`
 	ClientToken                      string           `position:"Query" name:"ClientToken"`
 	AllowMigrateAcrossZone           requests.Boolean `position:"Query" name:"AllowMigrateAcrossZone"`
-	OwnerAccount                     string           `position:"Query" name:"OwnerAccount"`
 	InternetMaxBandwidthOut          requests.Integer `position:"Query" name:"InternetMaxBandwidthOut"`
+	SystemDiskCategory               string           `position:"Query" name:"SystemDisk.Category"`
+	InstanceType                     string           `position:"Query" name:"InstanceType"`
+	TemporaryEndTime                 string           `position:"Query" name:"Temporary.EndTime"`
+	ResourceOwnerAccount             string           `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount                     string           `position:"Query" name:"OwnerAccount"`
 	OwnerId                          requests.Integer `position:"Query" name:"OwnerId"`
 	TemporaryInternetMaxBandwidthOut requests.Integer `position:"Query" name:"Temporary.InternetMaxBandwidthOut"`
-	SystemDiskCategory               string           `position:"Query" name:"SystemDisk.Category"`
 	TemporaryStartTime               string           `position:"Query" name:"Temporary.StartTime"`
 	Async                            requests.Boolean `position:"Query" name:"Async"`
 	InstanceId                       string           `position:"Query" name:"InstanceId"`
-	InstanceType                     string           `position:"Query" name:"InstanceType"`
-	TemporaryEndTime                 string           `position:"Query" name:"Temporary.EndTime"`
 	InternetMaxBandwidthIn           requests.Integer `position:"Query" name:"InternetMaxBandwidthIn"`
 }
 

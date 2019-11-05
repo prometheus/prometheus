@@ -77,13 +77,13 @@ func (client *Client) DescribeInstanceStatusWithCallback(request *DescribeInstan
 type DescribeInstanceStatusRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	PageNumber           requests.Integer `position:"Query" name:"PageNumber"`
+	PageSize             requests.Integer `position:"Query" name:"PageSize"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	PageSize             requests.Integer `position:"Query" name:"PageSize"`
-	ZoneId               string           `position:"Query" name:"ZoneId"`
 	ClusterId            string           `position:"Query" name:"ClusterId"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
-	PageNumber           requests.Integer `position:"Query" name:"PageNumber"`
+	ZoneId               string           `position:"Query" name:"ZoneId"`
 }
 
 // DescribeInstanceStatusResponse is the response struct for api DescribeInstanceStatus

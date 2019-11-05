@@ -90,6 +90,7 @@ type DescribeAvailableResourceRequest struct {
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	DedicatedHostId      string           `position:"Query" name:"DedicatedHostId"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	SpotDuration         requests.Integer `position:"Query" name:"SpotDuration"`
 	ResourceType         string           `position:"Query" name:"ResourceType"`
 	SpotStrategy         string           `position:"Query" name:"SpotStrategy"`
 	DestinationResource  string           `position:"Query" name:"DestinationResource"`

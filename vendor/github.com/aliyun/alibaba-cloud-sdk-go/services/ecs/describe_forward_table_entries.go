@@ -77,13 +77,13 @@ func (client *Client) DescribeForwardTableEntriesWithCallback(request *DescribeF
 type DescribeForwardTableEntriesRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	ForwardEntryId       string           `position:"Query" name:"ForwardEntryId"`
-	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	ForwardTableId       string           `position:"Query" name:"ForwardTableId"`
-	PageSize             requests.Integer `position:"Query" name:"PageSize"`
-	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	PageNumber           requests.Integer `position:"Query" name:"PageNumber"`
+	ForwardEntryId       string           `position:"Query" name:"ForwardEntryId"`
+	PageSize             requests.Integer `position:"Query" name:"PageSize"`
+	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
+	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 }
 
 // DescribeForwardTableEntriesResponse is the response struct for api DescribeForwardTableEntries

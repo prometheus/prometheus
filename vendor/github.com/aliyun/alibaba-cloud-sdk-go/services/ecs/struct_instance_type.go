@@ -25,11 +25,11 @@ type InstanceType struct {
 	Memory                      int     `json:"Memory" xml:"Memory"`
 	InstanceTypeId              string  `json:"InstanceTypeId" xml:"InstanceTypeId"`
 	InstanceBandwidthRx         int     `json:"InstanceBandwidthRx" xml:"InstanceBandwidthRx"`
-	InstanceType                string  `json:"InstanceType" xml:"InstanceType"`
 	BaselineCredit              int     `json:"BaselineCredit" xml:"BaselineCredit"`
+	InstanceType                string  `json:"InstanceType" xml:"InstanceType"`
 	EniQuantity                 int     `json:"EniQuantity" xml:"EniQuantity"`
-	Generation                  string  `json:"Generation" xml:"Generation"`
 	GPUAmount                   int     `json:"GPUAmount" xml:"GPUAmount"`
+	Generation                  string  `json:"Generation" xml:"Generation"`
 	SupportIoOptimized          string  `json:"SupportIoOptimized" xml:"SupportIoOptimized"`
 	InstanceTypeFamily          string  `json:"InstanceTypeFamily" xml:"InstanceTypeFamily"`
 	InitialCredit               int     `json:"InitialCredit" xml:"InitialCredit"`

@@ -77,15 +77,15 @@ func (client *Client) CreateRouteEntryWithCallback(request *CreateRouteEntryRequ
 type CreateRouteEntryRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer               `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string                         `position:"Query" name:"ResourceOwnerAccount"`
 	ClientToken          string                         `position:"Query" name:"ClientToken"`
+	NextHopId            string                         `position:"Query" name:"NextHopId"`
+	NextHopType          string                         `position:"Query" name:"NextHopType"`
+	RouteTableId         string                         `position:"Query" name:"RouteTableId"`
+	ResourceOwnerAccount string                         `position:"Query" name:"ResourceOwnerAccount"`
 	DestinationCidrBlock string                         `position:"Query" name:"DestinationCidrBlock"`
 	OwnerAccount         string                         `position:"Query" name:"OwnerAccount"`
-	NextHopId            string                         `position:"Query" name:"NextHopId"`
 	OwnerId              requests.Integer               `position:"Query" name:"OwnerId"`
-	NextHopType          string                         `position:"Query" name:"NextHopType"`
 	NextHopList          *[]CreateRouteEntryNextHopList `position:"Query" name:"NextHopList"  type:"Repeated"`
-	RouteTableId         string                         `position:"Query" name:"RouteTableId"`
 }
 
 // CreateRouteEntryNextHopList is a repeated param struct in CreateRouteEntryRequest

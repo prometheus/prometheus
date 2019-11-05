@@ -17,23 +17,23 @@ package ecs
 
 // AutoProvisioningGroup is a nested struct in ecs response
 type AutoProvisioningGroup struct {
-	AutoProvisioningGroupId          string                                                `json:"AutoProvisioningGroupId" xml:"AutoProvisioningGroupId"`
-	AutoProvisioningGroupName        string                                                `json:"AutoProvisioningGroupName" xml:"AutoProvisioningGroupName"`
-	AutoProvisioningGroupType        string                                                `json:"AutoProvisioningGroupType" xml:"AutoProvisioningGroupType"`
-	Status                           string                                                `json:"Status" xml:"Status"`
-	State                            string                                                `json:"State" xml:"State"`
-	RegionId                         string                                                `json:"RegionId" xml:"RegionId"`
-	ValidFrom                        string                                                `json:"ValidFrom" xml:"ValidFrom"`
-	ValidUntil                       string                                                `json:"ValidUntil" xml:"ValidUntil"`
-	ExcessCapacityTerminationPolicy  string                                                `json:"ExcessCapacityTerminationPolicy" xml:"ExcessCapacityTerminationPolicy"`
-	MaxSpotPrice                     float64                                               `json:"MaxSpotPrice" xml:"MaxSpotPrice"`
-	LaunchTemplateId                 string                                                `json:"LaunchTemplateId" xml:"LaunchTemplateId"`
-	LaunchTemplateVersion            string                                                `json:"LaunchTemplateVersion" xml:"LaunchTemplateVersion"`
-	TerminateInstances               bool                                                  `json:"TerminateInstances" xml:"TerminateInstances"`
-	TerminateInstancesWithExpiration bool                                                  `json:"TerminateInstancesWithExpiration" xml:"TerminateInstancesWithExpiration"`
-	CreationTime                     string                                                `json:"CreationTime" xml:"CreationTime"`
-	SpotOptions                      SpotOptions                                           `json:"SpotOptions" xml:"SpotOptions"`
-	PayAsYouGoOptions                PayAsYouGoOptions                                     `json:"PayAsYouGoOptions" xml:"PayAsYouGoOptions"`
-	TargetCapacitySpecification      TargetCapacitySpecification                           `json:"TargetCapacitySpecification" xml:"TargetCapacitySpecification"`
-	LaunchTemplateConfigs            LaunchTemplateConfigsInDescribeAutoProvisioningGroups `json:"LaunchTemplateConfigs" xml:"LaunchTemplateConfigs"`
+	AutoProvisioningGroupId          string                      `json:"AutoProvisioningGroupId" xml:"AutoProvisioningGroupId"`
+	AutoProvisioningGroupName        string                      `json:"AutoProvisioningGroupName" xml:"AutoProvisioningGroupName"`
+	AutoProvisioningGroupType        string                      `json:"AutoProvisioningGroupType" xml:"AutoProvisioningGroupType"`
+	Status                           string                      `json:"Status" xml:"Status"`
+	State                            string                      `json:"State" xml:"State"`
+	RegionId                         string                      `json:"RegionId" xml:"RegionId"`
+	ValidFrom                        string                      `json:"ValidFrom" xml:"ValidFrom"`
+	ValidUntil                       string                      `json:"ValidUntil" xml:"ValidUntil"`
+	ExcessCapacityTerminationPolicy  string                      `json:"ExcessCapacityTerminationPolicy" xml:"ExcessCapacityTerminationPolicy"`
+	MaxSpotPrice                     float64                     `json:"MaxSpotPrice" xml:"MaxSpotPrice"`
+	LaunchTemplateId                 string                      `json:"LaunchTemplateId" xml:"LaunchTemplateId"`
+	LaunchTemplateVersion            string                      `json:"LaunchTemplateVersion" xml:"LaunchTemplateVersion"`
+	TerminateInstances               bool                        `json:"TerminateInstances" xml:"TerminateInstances"`
+	TerminateInstancesWithExpiration bool                        `json:"TerminateInstancesWithExpiration" xml:"TerminateInstancesWithExpiration"`
+	CreationTime                     string                      `json:"CreationTime" xml:"CreationTime"`
+	SpotOptions                      SpotOptions                 `json:"SpotOptions" xml:"SpotOptions"`
+	PayAsYouGoOptions                PayAsYouGoOptions           `json:"PayAsYouGoOptions" xml:"PayAsYouGoOptions"`
+	TargetCapacitySpecification      TargetCapacitySpecification `json:"TargetCapacitySpecification" xml:"TargetCapacitySpecification"`
+	LaunchTemplateConfigs            LaunchTemplateConfigs       `json:"LaunchTemplateConfigs" xml:"LaunchTemplateConfigs"`
 }

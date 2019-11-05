@@ -130,6 +130,7 @@ type CreateInstanceRequest struct {
 	DedicatedHostId               string                    `position:"Query" name:"DedicatedHostId"`
 	ClusterId                     string                    `position:"Query" name:"ClusterId"`
 	CreditSpecification           string                    `position:"Query" name:"CreditSpecification"`
+	SpotDuration                  requests.Integer          `position:"Query" name:"SpotDuration"`
 	DataDisk                      *[]CreateInstanceDataDisk `position:"Query" name:"DataDisk"  type:"Repeated"`
 	StorageSetId                  string                    `position:"Query" name:"StorageSetId"`
 	SystemDiskSize                requests.Integer          `position:"Query" name:"SystemDisk.Size"`

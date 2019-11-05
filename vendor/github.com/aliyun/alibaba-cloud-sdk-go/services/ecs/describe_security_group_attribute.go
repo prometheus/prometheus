@@ -78,11 +78,11 @@ type DescribeSecurityGroupAttributeRequest struct {
 	*requests.RpcRequest
 	NicType              string           `position:"Query" name:"NicType"`
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	SecurityGroupId      string           `position:"Query" name:"SecurityGroupId"`
+	Direction            string           `position:"Query" name:"Direction"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	SecurityGroupId      string           `position:"Query" name:"SecurityGroupId"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
-	Direction            string           `position:"Query" name:"Direction"`
 }
 
 // DescribeSecurityGroupAttributeResponse is the response struct for api DescribeSecurityGroupAttribute

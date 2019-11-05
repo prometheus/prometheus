@@ -77,16 +77,16 @@ func (client *Client) CreateSecurityGroupWithCallback(request *CreateSecurityGro
 type CreateSecurityGroupRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer          `position:"Query" name:"ResourceOwnerId"`
-	ResourceOwnerAccount string                    `position:"Query" name:"ResourceOwnerAccount"`
 	ClientToken          string                    `position:"Query" name:"ClientToken"`
-	OwnerAccount         string                    `position:"Query" name:"OwnerAccount"`
 	Description          string                    `position:"Query" name:"Description"`
-	OwnerId              requests.Integer          `position:"Query" name:"OwnerId"`
 	SecurityGroupName    string                    `position:"Query" name:"SecurityGroupName"`
-	SecurityGroupType    string                    `position:"Query" name:"SecurityGroupType"`
 	ResourceGroupId      string                    `position:"Query" name:"ResourceGroupId"`
-	VpcId                string                    `position:"Query" name:"VpcId"`
 	Tag                  *[]CreateSecurityGroupTag `position:"Query" name:"Tag"  type:"Repeated"`
+	ResourceOwnerAccount string                    `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string                    `position:"Query" name:"OwnerAccount"`
+	OwnerId              requests.Integer          `position:"Query" name:"OwnerId"`
+	SecurityGroupType    string                    `position:"Query" name:"SecurityGroupType"`
+	VpcId                string                    `position:"Query" name:"VpcId"`
 }
 
 // CreateSecurityGroupTag is a repeated param struct in CreateSecurityGroupRequest

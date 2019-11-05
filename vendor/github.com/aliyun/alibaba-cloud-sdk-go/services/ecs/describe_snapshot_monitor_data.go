@@ -77,11 +77,11 @@ func (client *Client) DescribeSnapshotMonitorDataWithCallback(request *DescribeS
 type DescribeSnapshotMonitorDataRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	StartTime            string           `position:"Query" name:"StartTime"`
 	Period               requests.Integer `position:"Query" name:"Period"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	EndTime              string           `position:"Query" name:"EndTime"`
-	StartTime            string           `position:"Query" name:"StartTime"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 }
 

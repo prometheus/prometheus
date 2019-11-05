@@ -17,8 +17,8 @@ package ecs
 
 // VpcAttributes is a nested struct in ecs response
 type VpcAttributes struct {
-	VSwitchId        string                              `json:"VSwitchId" xml:"VSwitchId"`
-	VpcId            string                              `json:"VpcId" xml:"VpcId"`
-	NatIpAddress     string                              `json:"NatIpAddress" xml:"NatIpAddress"`
-	PrivateIpAddress PrivateIpAddressInDescribeInstances `json:"PrivateIpAddress" xml:"PrivateIpAddress"`
+	VSwitchId        string                                      `json:"VSwitchId" xml:"VSwitchId"`
+	VpcId            string                                      `json:"VpcId" xml:"VpcId"`
+	NatIpAddress     string                                      `json:"NatIpAddress" xml:"NatIpAddress"`
+	PrivateIpAddress PrivateIpAddressInDescribeInstanceAttribute `json:"PrivateIpAddress" xml:"PrivateIpAddress"`
 }

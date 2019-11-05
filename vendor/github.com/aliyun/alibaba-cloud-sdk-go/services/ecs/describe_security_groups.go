@@ -77,21 +77,21 @@ func (client *Client) DescribeSecurityGroupsWithCallback(request *DescribeSecuri
 type DescribeSecurityGroupsRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer             `position:"Query" name:"ResourceOwnerId"`
-	DryRun               requests.Boolean             `position:"Query" name:"DryRun"`
 	FuzzyQuery           requests.Boolean             `position:"Query" name:"FuzzyQuery"`
-	ResourceOwnerAccount string                       `position:"Query" name:"ResourceOwnerAccount"`
-	OwnerAccount         string                       `position:"Query" name:"OwnerAccount"`
 	SecurityGroupId      string                       `position:"Query" name:"SecurityGroupId"`
 	IsQueryEcsCount      requests.Boolean             `position:"Query" name:"IsQueryEcsCount"`
 	NetworkType          string                       `position:"Query" name:"NetworkType"`
-	OwnerId              requests.Integer             `position:"Query" name:"OwnerId"`
-	SecurityGroupIds     string                       `position:"Query" name:"SecurityGroupIds"`
 	SecurityGroupName    string                       `position:"Query" name:"SecurityGroupName"`
 	PageNumber           requests.Integer             `position:"Query" name:"PageNumber"`
 	ResourceGroupId      string                       `position:"Query" name:"ResourceGroupId"`
-	VpcId                string                       `position:"Query" name:"VpcId"`
 	PageSize             requests.Integer             `position:"Query" name:"PageSize"`
 	Tag                  *[]DescribeSecurityGroupsTag `position:"Query" name:"Tag"  type:"Repeated"`
+	DryRun               requests.Boolean             `position:"Query" name:"DryRun"`
+	ResourceOwnerAccount string                       `position:"Query" name:"ResourceOwnerAccount"`
+	OwnerAccount         string                       `position:"Query" name:"OwnerAccount"`
+	OwnerId              requests.Integer             `position:"Query" name:"OwnerId"`
+	SecurityGroupIds     string                       `position:"Query" name:"SecurityGroupIds"`
+	VpcId                string                       `position:"Query" name:"VpcId"`
 }
 
 // DescribeSecurityGroupsTag is a repeated param struct in DescribeSecurityGroupsRequest

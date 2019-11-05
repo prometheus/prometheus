@@ -77,10 +77,10 @@ func (client *Client) DescribeInstanceAttributeWithCallback(request *DescribeIns
 type DescribeInstanceAttributeRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	InstanceId           string           `position:"Query" name:"InstanceId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId           string           `position:"Query" name:"InstanceId"`
 }
 
 // DescribeInstanceAttributeResponse is the response struct for api DescribeInstanceAttribute
@@ -115,7 +115,7 @@ type DescribeInstanceAttributeResponse struct {
 	PublicIpAddress         PublicIpAddressInDescribeInstanceAttribute  `json:"PublicIpAddress" xml:"PublicIpAddress"`
 	InnerIpAddress          InnerIpAddressInDescribeInstanceAttribute   `json:"InnerIpAddress" xml:"InnerIpAddress"`
 	VpcAttributes           VpcAttributes                               `json:"VpcAttributes" xml:"VpcAttributes"`
-	EipAddress              EipAddress                                  `json:"EipAddress" xml:"EipAddress"`
+	EipAddress              EipAddressInDescribeInstanceAttribute       `json:"EipAddress" xml:"EipAddress"`
 	DedicatedHostAttribute  DedicatedHostAttribute                      `json:"DedicatedHostAttribute" xml:"DedicatedHostAttribute"`
 	OperationLocks          OperationLocksInDescribeInstanceAttribute   `json:"OperationLocks" xml:"OperationLocks"`
 }

@@ -78,9 +78,9 @@ type DeleteVpcRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	VpcId                string           `position:"Query" name:"VpcId"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	VpcId                string           `position:"Query" name:"VpcId"`
 }
 
 // DeleteVpcResponse is the response struct for api DeleteVpc

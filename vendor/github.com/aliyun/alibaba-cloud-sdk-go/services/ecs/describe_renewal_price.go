@@ -77,11 +77,11 @@ func (client *Client) DescribeRenewalPriceWithCallback(request *DescribeRenewalP
 type DescribeRenewalPriceRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	PriceUnit            string           `position:"Query" name:"PriceUnit"`
 	ResourceId           string           `position:"Query" name:"ResourceId"`
 	Period               requests.Integer `position:"Query" name:"Period"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	PriceUnit            string           `position:"Query" name:"PriceUnit"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	ResourceType         string           `position:"Query" name:"ResourceType"`
 }

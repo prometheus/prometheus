@@ -78,11 +78,11 @@ type AllocatePublicIpAddressRequest struct {
 	*requests.RpcRequest
 	IpAddress            string           `position:"Query" name:"IpAddress"`
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	InstanceId           string           `position:"Query" name:"InstanceId"`
-	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	VlanId               string           `position:"Query" name:"VlanId"`
+	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId           string           `position:"Query" name:"InstanceId"`
 }
 
 // AllocatePublicIpAddressResponse is the response struct for api AllocatePublicIpAddress

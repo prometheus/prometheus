@@ -2,6 +2,7 @@ package ecs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/denverdino/aliyungo/metadata"
@@ -44,7 +45,7 @@ type SDConfig struct {
 	UserId          string         `yaml:"user_id,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	RegionId        string         `yaml:"region_id,omitempty"` // env set PROMETHEUS_DS_ECS_REGION_ID
-	TagFilters         []*TagFilter      `yaml:"tag_filters"`
+	TagFilters      []*TagFilter   `yaml:"tag_filters"`
 
 	// Alibaba ECS Auth Args
 	// https://github.com/aliyun/alibaba-cloud-sdk-go/blob/master/docs/2-Client-EN.md
@@ -101,16 +102,16 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	defer level.Debug(d.logger).Log("msg", "ECS discovery completed")
 
+	// list resource from tag
+	filterdInstanceIdsStr, listTagErr := d.filterInstancesIdFromListTagResources()
+	if listTagErr != nil {
+		return nil, errors.Wrap(listTagErr, "get ecs instanceIds err. listTagResourcesError.")
+	}
+
 	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
 	describeInstancesRequest.RegionId = getConfigRegionId(d.ecsCfg.RegionId)
 
-	// tag filters
-	var tagsFilters []ecs_pop.DescribeInstancesTag
-	for _, tagFilter := range d.ecsCfg.TagFilters {
-		tag := ecs_pop.DescribeInstancesTag{Key: tagFilter.Key, Value: tagFilter.Value}
-		tagsFilters = append(tagsFilters, tag)
-	}
-	describeInstancesRequest.Tag = &tagsFilters
+	describeInstancesRequest.InstanceIds = filterdInstanceIdsStr
 
 	// 分页查询
 	var pageLimit = MAX_PAGE_LIMIT
@@ -127,7 +128,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	client, clientErr := getEcsClient(d.ecsCfg, d.logger)
 
-	level.Debug(d.logger).Log("msg", "Start to get Ecs Client from ram7.", "client: ", client)
+	level.Debug(d.logger).Log("msg", "Start to get Ecs Client from ram.", "client: ", client)
 
 	if clientErr != nil {
 		return nil, errors.Wrap(clientErr, "could not create alibaba ecs client.")
@@ -135,7 +136,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	describeInstancesResponse, responseErr := client.DescribeInstances(describeInstancesRequest)
 
-	level.Debug(d.logger).Log("msg", "Start to get Ecs Client from ram8.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse)
+	level.Debug(d.logger).Log("msg", "getResponse from describeInstancesResponse.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse)
 
 	if responseErr != nil {
 		return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
@@ -231,6 +232,42 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}
 
 	return []*targetgroup.Group{tg}, nil
+}
+
+func (d *Discovery) filterInstancesIdFromListTagResources() (instanceIdsStr string, err error) {
+	listTagResourcesRequest := ecs_pop.CreateListTagResourcesRequest()
+	listTagResourcesRequest.RegionId = getConfigRegionId(d.ecsCfg.RegionId)
+	listTagResourcesRequest.ResourceType = "instance"
+
+	// tag filters
+	tagsFilters := []ecs_pop.ListTagResourcesTagFilter{}
+	for _, tagFilter := range d.ecsCfg.TagFilters {
+		tagFilter := ecs_pop.ListTagResourcesTagFilter{TagKey: tagFilter.Key, TagValues: &[]string{tagFilter.Value}}
+		tagsFilters = append(tagsFilters, tagFilter)
+	}
+	listTagResourcesRequest.TagFilter = &tagsFilters
+
+	client, clientErr := getEcsClient(d.ecsCfg, d.logger)
+
+	level.Debug(d.logger).Log("msg", "Start to get Ecs Client from ram. for ListTagResourcesTagFilter.", "client: ", client)
+
+	if clientErr != nil {
+		return "[]", errors.Wrap(clientErr, "could not create alibaba ecs client.")
+	}
+
+	response, responseErr := client.ListTagResources(listTagResourcesRequest)
+	if responseErr != nil {
+		return "[]", errors.Wrap(responseErr, "could not get response from ListTagResources.")
+	}
+
+	var resourceIds []string
+	for _, tagResource := range response.TagResources.TagResource {
+		resourceIds = append(resourceIds, tagResource.ResourceId)
+	}
+	resourceIdsJsonArrayStrBytes, jsonErr := json.Marshal(resourceIds)
+	resourceIdsJsonArrayStr := string(resourceIdsJsonArrayStrBytes)
+	level.Debug(d.logger).Log("msg", "listTagResource and get ECS instanceIds. for ListTagResourcesTagFilter.", "instanceIds: ", resourceIdsJsonArrayStr)
+	return resourceIdsJsonArrayStr, nil
 }
 
 func getEcsClient(config *SDConfig, logger log.Logger) (client *ecs_pop.Client, err error) {

@@ -17,7 +17,7 @@ package ecs
 
 // SpotOptions is a nested struct in ecs response
 type SpotOptions struct {
+	AllocationStrategy           string `json:"AllocationStrategy" xml:"AllocationStrategy"`
 	InstanceInterruptionBehavior string `json:"InstanceInterruptionBehavior" xml:"InstanceInterruptionBehavior"`
 	InstancePoolsToUseCount      int    `json:"InstancePoolsToUseCount" xml:"InstancePoolsToUseCount"`
-	AllocationStrategy           string `json:"AllocationStrategy" xml:"AllocationStrategy"`
 }

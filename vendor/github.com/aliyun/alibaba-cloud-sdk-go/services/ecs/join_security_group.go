@@ -77,11 +77,11 @@ func (client *Client) JoinSecurityGroupWithCallback(request *JoinSecurityGroupRe
 type JoinSecurityGroupRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
-	InstanceId           string           `position:"Query" name:"InstanceId"`
+	SecurityGroupId      string           `position:"Query" name:"SecurityGroupId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
 	OwnerAccount         string           `position:"Query" name:"OwnerAccount"`
-	SecurityGroupId      string           `position:"Query" name:"SecurityGroupId"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
+	InstanceId           string           `position:"Query" name:"InstanceId"`
 }
 
 // JoinSecurityGroupResponse is the response struct for api JoinSecurityGroup

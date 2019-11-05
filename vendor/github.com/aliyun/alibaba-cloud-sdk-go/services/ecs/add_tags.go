@@ -77,9 +77,9 @@ func (client *Client) AddTagsWithCallback(request *AddTagsRequest, callback func
 type AddTagsRequest struct {
 	*requests.RpcRequest
 	ResourceOwnerId      requests.Integer `position:"Query" name:"ResourceOwnerId"`
+	Tag                  *[]AddTagsTag    `position:"Query" name:"Tag"  type:"Repeated"`
 	ResourceId           string           `position:"Query" name:"ResourceId"`
 	ResourceOwnerAccount string           `position:"Query" name:"ResourceOwnerAccount"`
-	Tag                  *[]AddTagsTag    `position:"Query" name:"Tag"  type:"Repeated"`
 	OwnerId              requests.Integer `position:"Query" name:"OwnerId"`
 	ResourceType         string           `position:"Query" name:"ResourceType"`
 }
