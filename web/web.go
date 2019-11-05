@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/soheilhy/cmux"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
@@ -715,6 +716,11 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		LastConfigTime      time.Time
 		ReloadConfigSuccess bool
 		StorageRetention    string
+		NumSeries           uint64
+		MaxTime             int64
+		MinTime             int64
+		Stats               *index.PostingsStats
+		Duration            string
 	}{
 		Birth:          h.birth,
 		CWD:            h.cwd,
@@ -755,6 +761,14 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
 		}
 	}
+	db := h.tsdb()
+	startTime := time.Now().UnixNano()
+	status.Stats = db.Head().PostingsCardinalityStats("__name__")
+	status.Duration = fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9))
+	status.NumSeries = db.Head().NumSeries()
+	status.MaxTime = db.Head().MaxTime()
+	status.MinTime = db.Head().MaxTime()
+
 	h.executeTemplate(w, "status.html", status)
 }
 

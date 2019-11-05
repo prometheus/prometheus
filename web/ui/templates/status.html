@@ -22,14 +22,6 @@
           <td>{{.LastConfigTime.UTC}}</td>
         </tr>
         <tr>
-          <th>Head chunks</th>
-          <td>{{.ChunkCount}}</td>
-        </tr>
-        <tr>
-          <th>Head time series</th>
-          <td>{{.TimeSeriesCount}}</td>
-        </tr>
-        <tr>
           <th>WAL corruptions</th>
           <td>{{.CorruptionCount}}</td>
         </tr>
@@ -101,5 +93,83 @@
       </tbody>
     </table>
 
+    <h2 id="headstatus">Head Stats</h2>
+    <table class="table table-sm table-bordered table-striped table-hover">
+      <tbody>
+        <tr>
+           <th>Number Of Series </th>
+           <th>Number of Chunks</th>
+           <th>Current Max Time</th>
+           <th>Current Min Time</th>
+        </tr>
+        <tr>
+          <td scope="row">{{ .NumSeries}}</th>
+          <td>{{.ChunkCount}}</td>  
+          <td>{{ .MaxTime}}</td>
+          <td>{{ .MinTime}}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div>Total Query Time: {{ .Duration }} Seconds</div>
+    <h3 id="headstatus">Highest Cardinality Labels </h3>
+    <table class="table table-sm table-bordered table-striped table-hover">
+      <tbody>
+        <tr>
+           <th>Name</th>
+           <th>Count</th>
+        </tr>
+        {{ range .Stats.CardinalityLabelStats }}
+        <tr>
+          <td scope="row">{{.Name}}</th>
+          <td>{{.Count}}</td>  
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    <h3 id="headstatus">Highest Cardinality Metric Names</h3>
+    <table class="table table-sm table-bordered table-striped table-hover">
+        <tbody>
+          <tr>
+             <th>Name</th>
+             <th>Count</th>
+          </tr>
+          {{ range .Stats.CardinalityMetricsStats }}
+          <tr>
+            <td scope="row">{{.Name}}</th>
+            <td>{{.Count}}</td>  
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      <h3 id="headstatus">Label Names With Highest Cumulative Label Value Length</h3>
+      <table class="table table-sm table-bordered table-striped table-hover">
+          <tbody>
+            <tr>
+               <th>Name</th>
+               <th>Length</th>
+            </tr>
+            {{ range .Stats.LabelValueStats }}
+            <tr>
+              <td scope="row">{{.Name}}</th>
+              <td>{{.Count}}</td>  
+            </tr>
+            {{end}}
+          </tbody>
+        </table>      
+        <h3 id="headstatus">Most Common Label Pairs</h3>
+        <table class="table table-sm table-bordered table-striped table-hover">
+            <tbody>
+              <tr>
+                 <th>Name</th>
+                 <th>Count</th>
+              </tr>
+              {{ range .Stats.LabelValuePairsStats }}
+              <tr>
+                <td scope="row">{{.Name}}</th>
+                <td>{{.Count}}</td>  
+              </tr>
+              {{end}}
+            </tbody>
+        </table>   
   </div>
 {{end}}

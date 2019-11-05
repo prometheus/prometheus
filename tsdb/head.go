@@ -87,6 +87,10 @@ type Head struct {
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
 	postings *index.MemPostings // postings lists for terms
+
+	cardinalityMutex      sync.Mutex
+	cardinalityCache      *index.PostingsStats // posting stats cache which will expire after 30sec
+	lastPostingsStatsCall time.Duration        // last posting stats call (PostgingsCardinalityStats()) time for caching
 }
 
 type headMetrics struct {
@@ -229,6 +233,26 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		)
 	}
 	return m
+}
+
+const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
+
+// PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.
+func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.PostingsStats {
+	h.cardinalityMutex.Lock()
+	defer h.cardinalityMutex.Unlock()
+	currentTime := time.Duration(time.Now().Unix()) * time.Second
+	seconds := currentTime - h.lastPostingsStatsCall
+	if seconds > cardinalityCacheExpirationTime {
+		h.cardinalityCache = nil
+	}
+	if h.cardinalityCache != nil {
+		return h.cardinalityCache
+	}
+	h.cardinalityCache = h.postings.Stats(statsByLabelName)
+	h.lastPostingsStatsCall = time.Duration(time.Now().Unix()) * time.Second
+
+	return h.cardinalityCache
 }
 
 // NewHead opens the head block in dir.
