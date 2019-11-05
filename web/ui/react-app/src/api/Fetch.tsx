@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { fetchAPI } from './FetchAPI';
 
 export interface FetchState<T> {
   data?: T;
@@ -28,9 +29,9 @@ export class Fetch extends Component<FetchProps, FetchState<any>> {
   componentDidMount() {
     const { url, urls, options } = this.props;
     if (urls && urls.length) {
-      this.handleResponse(async () => await Promise.all(urls.map(this.get(options)).filter(Boolean)));
+      this.handleResponse(() => this.getAll(urls, options));
     } else if (url) {
-      this.handleResponse(() => this.get(options)(url));
+      this.handleResponse(() => fetchAPI(url, options).then(res => res.data));
     } else {
       throw new Error('URL/s is Missing');
     }
@@ -40,27 +41,29 @@ export class Fetch extends Component<FetchProps, FetchState<any>> {
     const { url: nextURL, urls: nextURLs, options } = nextProps;
     const { url, urls } = this.props;
     if (nextURLs && !urlsEqual(urls, nextURLs)) {
-      this.handleResponse(async () => await Promise.all(nextURLs.map(this.get(options)).filter(Boolean)));
+      this.handleResponse(() => this.getAll(nextURLs, options));
     } else if (nextURL && url !== nextURL) {
-      this.handleResponse(() => this.get(options)(nextURL));
+      this.handleResponse(() => fetchAPI(nextURL, options).then(res => res.data));
     }
   }
 
-  handleResponse = async (cb: () => Promise<any>) => {
+  getAll = async (urls: string[], options?: RequestInit) => {
+    return await Promise.all(
+      urls
+        .map(async url => {
+          const result = await fetchAPI(url, options);
+          return result.data;
+        })
+        .filter(Boolean)
+    );
+  };
+
+  handleResponse = async (resultCb: () => Promise<any>) => {
     try {
-      this.setState({ data: await cb() });
+      this.setState({ data: await resultCb() });
     } catch (error) {
       this.setState({ error });
     }
-  };
-
-  get = (options?: RequestInit) => async (url: string) => {
-    const res = await fetch(url, options);
-    if (!res.ok) {
-      throw new Error(res.statusText);
-    }
-    const result = await res.json();
-    return result.data;
   };
 
   render() {
