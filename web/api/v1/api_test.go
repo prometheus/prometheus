@@ -736,6 +736,102 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			},
 		},
 		{
+			endpoint: api.targets,
+			query: url.Values{
+				"state": []string{"active,dropped"},
+			},
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels: map[string]string{
+							"job": "blackbox",
+						},
+						ScrapeJob:          "blackbox",
+						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						Health:             "down",
+						LastError:          "failed",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 100 * time.Millisecond,
+					},
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels: map[string]string{
+							"job": "test",
+						},
+						ScrapeJob:          "test",
+						ScrapeURL:          "http://example.com:8080/metrics",
+						Health:             "up",
+						LastError:          "",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 70 * time.Millisecond,
+					},
+				},
+				DroppedTargets: []*DroppedTarget{
+					{
+						DiscoveredLabels: map[string]string{
+							"__address__":      "http://dropped.example.com:9115",
+							"__metrics_path__": "/probe",
+							"__scheme__":       "http",
+							"job":              "blackbox",
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.targets,
+			query: url.Values{
+				"state": []string{"active"},
+			},
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels: map[string]string{
+							"job": "blackbox",
+						},
+						ScrapeJob:          "blackbox",
+						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						Health:             "down",
+						LastError:          "failed",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 100 * time.Millisecond,
+					},
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels: map[string]string{
+							"job": "test",
+						},
+						ScrapeJob:          "test",
+						ScrapeURL:          "http://example.com:8080/metrics",
+						Health:             "up",
+						LastError:          "",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 70 * time.Millisecond,
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.targets,
+			query: url.Values{
+				"state": []string{"Dropped"},
+			},
+			response: &TargetDiscovery{
+				DroppedTargets: []*DroppedTarget{
+					{
+						DiscoveredLabels: map[string]string{
+							"__address__":      "http://dropped.example.com:9115",
+							"__metrics_path__": "/probe",
+							"__scheme__":       "http",
+							"job":              "blackbox",
+						},
+					},
+				},
+			},
+		},
+		{
 			endpoint: api.alertmanagers,
 			response: &AlertmanagerDiscovery{
 				ActiveAlertmanagers: []*AlertmanagerTarget{

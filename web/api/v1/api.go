@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -579,8 +580,8 @@ type DroppedTarget struct {
 
 // TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
-	ActiveTargets  []*Target        `json:"activeTargets"`
-	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
+	ActiveTargets  []*Target        `json:"activeTargets,omitempty"`
+	DroppedTargets []*DroppedTarget `json:"droppedTargets,omitempty"`
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
@@ -603,36 +604,46 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		}
 		return res
 	}
-	targetsActive := api.targetRetriever.TargetsActive()
-	activeKeys, numTargets := sortKeys(targetsActive)
-	tDropped := flatten(api.targetRetriever.TargetsDropped())
-	res := &TargetDiscovery{ActiveTargets: make([]*Target, 0, numTargets), DroppedTargets: make([]*DroppedTarget, 0, len(tDropped))}
 
-	for _, key := range activeKeys {
-		for _, target := range targetsActive[key] {
-			lastErrStr := ""
-			lastErr := target.LastError()
-			if lastErr != nil {
-				lastErrStr = lastErr.Error()
+	state := strings.ToLower(r.URL.Query().Get("state"))
+	showActive := state == "" || strings.Contains(state, "active")
+	showDropped := state == "" || strings.Contains(state, "dropped")
+	res := &TargetDiscovery{}
+
+	if showActive {
+		targetsActive := api.targetRetriever.TargetsActive()
+		activeKeys, numTargets := sortKeys(targetsActive)
+		res.ActiveTargets = make([]*Target, 0, numTargets)
+
+		for _, key := range activeKeys {
+			for _, target := range targetsActive[key] {
+				lastErrStr := ""
+				lastErr := target.LastError()
+				if lastErr != nil {
+					lastErrStr = lastErr.Error()
+				}
+
+				res.ActiveTargets = append(res.ActiveTargets, &Target{
+					DiscoveredLabels:   target.DiscoveredLabels().Map(),
+					Labels:             target.Labels().Map(),
+					ScrapeJob:          key,
+					ScrapeURL:          target.URL().String(),
+					LastError:          lastErrStr,
+					LastScrape:         target.LastScrape(),
+					LastScrapeDuration: target.LastScrapeDuration(),
+					Health:             target.Health(),
+				})
 			}
-
-			res.ActiveTargets = append(res.ActiveTargets, &Target{
-				DiscoveredLabels:   target.DiscoveredLabels().Map(),
-				Labels:             target.Labels().Map(),
-				ScrapeJob:          key,
-				ScrapeURL:          target.URL().String(),
-				LastError:          lastErrStr,
-				LastScrape:         target.LastScrape(),
-				LastScrapeDuration: target.LastScrapeDuration(),
-				Health:             target.Health(),
-			})
 		}
 	}
-
-	for _, t := range tDropped {
-		res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
-			DiscoveredLabels: t.DiscoveredLabels().Map(),
-		})
+	if showDropped {
+		tDropped := flatten(api.targetRetriever.TargetsDropped())
+		res.DroppedTargets = make([]*DroppedTarget, 0, len(tDropped))
+		for _, t := range tDropped {
+			res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
+				DiscoveredLabels: t.DiscoveredLabels().Map(),
+			})
+		}
 	}
 	return apiFuncResult{res, nil, nil, nil}
 }
