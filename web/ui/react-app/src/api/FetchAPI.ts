@@ -5,7 +5,7 @@ export const DEFAULT_HEADERS = {
 
 export const handleResponse = (response: Response) => {
   const { headers, ok } = response;
-  
+
   if (!ok) {
     throw new Error(response.statusText);
   }
@@ -17,7 +17,7 @@ export const handleResponse = (response: Response) => {
 
 export const getOptions = (options: RequestInit): RequestInit => ({
   ...options,
-  credentials: options && options.credentials,
+  credentials: options && options.credentials || 'same-origin',
   headers: { ...DEFAULT_HEADERS, ...((options && options.headers) || {}) },
 });
 

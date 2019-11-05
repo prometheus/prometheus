@@ -55,7 +55,7 @@ export const statusConfig: StatusConfig = {
   droppedAlertmanagers: { skip: true },
 };
 
-export const statusRenderer = ({ data, error }: FetchState<StatusPageState>) => {
+export const Status = ({ data, error }: FetchState<StatusPageState>) => {
   if (error) {
     return (
       <Alert color="danger">
@@ -108,5 +108,5 @@ export const statusRenderer = ({ data, error }: FetchState<StatusPageState>) => 
 };
 
 export default ({ pathPrefix = '' }: RouteComponentProps & PathPrefixProps) => (
-  <Fetch urls={endpoints.map(e => `${pathPrefix}${e}`)}>{statusRenderer}</Fetch>
+  <Fetch urls={endpoints.map(e => `${pathPrefix}${e}`)}>{Status}</Fetch>
 );
