@@ -19,7 +19,7 @@ import {
   faTimes,
 } from '@fortawesome/free-solid-svg-icons';
 
-library.add(faCalendarCheck, faArrowUp, faArrowDown, faTimes);
+library.add(faChevronLeft, faChevronRight, faCalendarCheck, faArrowUp, faArrowDown, faTimes);
 // Sadly needed to also replace <i> within the date picker, since it's not a React component.
 dom.watch();
 
