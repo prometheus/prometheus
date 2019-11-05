@@ -1,17 +1,20 @@
-import * as React from 'react';
-import SeriesLabel from './SeriesLabel';
-import ErrorAlert from '../../ErrorAlert';
+import React, { FC } from 'react';
+import { Badge, Alert } from 'reactstrap';
 
 export interface EndpointLinkProps {
   endpoint: string;
 }
 
-const EndpointLink: React.FC<EndpointLinkProps> = ({ endpoint }) => {
+const EndpointLink: FC<EndpointLinkProps> = ({ endpoint }) => {
   let url: URL;
   try {
     url = new URL(endpoint);
   } catch (e) {
-    return <ErrorAlert summary={e.message} />;
+    return (
+      <Alert color="danger">
+        <strong>Error:</strong> {e.message}
+      </Alert>
+    );
   }
 
   const { host, pathname, protocol, searchParams }: URL = url;
@@ -21,8 +24,12 @@ const EndpointLink: React.FC<EndpointLinkProps> = ({ endpoint }) => {
     <>
       <a href={endpoint}>{`${protocol}//${host}${pathname}`}</a>
       {params.length > 0 ? <br /> : null}
-      {params.map(([labelKey, labelValue]: [string, string]) => {
-        return <SeriesLabel key={labelKey} labelKey={labelKey} labelValue={labelValue} />;
+      {params.map(([labelName, labelValue]: [string, string]) => {
+        return (
+          <Badge color="primary" className={`mr-1 ${labelName}`} key={labelName}>
+            {`${labelName}="${labelValue}"`}
+          </Badge>
+        );
       })}
     </>
   );

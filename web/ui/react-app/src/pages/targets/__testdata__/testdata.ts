@@ -1,10 +1,10 @@
 /* eslint @typescript-eslint/camelcase: 0 */
 
-import { TargetGroups, Target, Labels } from '../target';
+import { ScrapePools, Target, Labels } from '../target';
 
-export const targetGroups: TargetGroups = {
+export const targetGroups: ScrapePools = Object.freeze({
   blackbox: {
-    metadata: { up: 2 },
+    upCount: 2,
     targets: [
       {
         discoveredLabels: {
@@ -18,7 +18,7 @@ export const targetGroups: TargetGroups = {
           instance: 'http://prometheus.io',
           job: 'blackbox',
         },
-        scrapeJob: 'blackbox',
+        scrapePool: 'blackbox',
         scrapeUrl: 'http://127.0.0.1:9115/probe?module=http_2xx&target=http%3A%2F%2Fprometheus.io',
         lastError: '',
         lastScrape: '2019-11-04T11:52:14.759299-07:00',
@@ -37,7 +37,7 @@ export const targetGroups: TargetGroups = {
           instance: 'https://prometheus.io',
           job: 'blackbox',
         },
-        scrapeJob: 'blackbox',
+        scrapePool: 'blackbox',
         scrapeUrl: 'http://127.0.0.1:9115/probe?module=http_2xx&target=https%3A%2F%2Fprometheus.io',
         lastError: '',
         lastScrape: '2019-11-04T11:52:24.731096-07:00',
@@ -56,7 +56,7 @@ export const targetGroups: TargetGroups = {
           instance: 'http://example.com:8080',
           job: 'blackbox',
         },
-        scrapeJob: 'blackbox',
+        scrapePool: 'blackbox',
         scrapeUrl: 'http://127.0.0.1:9115/probe?module=http_2xx&target=http%3A%2F%2Fexample.com%3A8080',
         lastError: '',
         lastScrape: '2019-11-04T11:52:13.516654-07:00',
@@ -66,7 +66,7 @@ export const targetGroups: TargetGroups = {
     ],
   },
   node_exporter: {
-    metadata: { up: 1 },
+    upCount: 1,
     targets: [
       {
         discoveredLabels: {
@@ -79,7 +79,7 @@ export const targetGroups: TargetGroups = {
           instance: 'localhost:9100',
           job: 'node_exporter',
         },
-        scrapeJob: 'node_exporter',
+        scrapePool: 'node_exporter',
         scrapeUrl: 'http://localhost:9100/metrics',
         lastError: '',
         lastScrape: '2019-11-04T11:52:14.145703-07:00',
@@ -89,7 +89,7 @@ export const targetGroups: TargetGroups = {
     ],
   },
   prometheus: {
-    metadata: { up: 1 },
+    upCount: 1,
     targets: [
       {
         discoveredLabels: {
@@ -102,7 +102,7 @@ export const targetGroups: TargetGroups = {
           instance: 'localhost:9090',
           job: 'prometheus',
         },
-        scrapeJob: 'prometheus',
+        scrapePool: 'prometheus',
         scrapeUrl: 'http://localhost:9090/metrics',
         lastError: '',
         lastScrape: '2019-11-04T11:52:18.479731-07:00',
@@ -111,14 +111,9 @@ export const targetGroups: TargetGroups = {
       },
     ],
   },
-};
+});
 
-export const sampleApiResponse: {
-  status: string;
-  data: {
-    activeTargets: Target[];
-  };
-} = {
+export const sampleApiResponse = Object.freeze({
   status: 'success',
   data: {
     activeTargets: [
@@ -134,7 +129,7 @@ export const sampleApiResponse: {
           instance: 'http://prometheus.io',
           job: 'blackbox',
         },
-        scrapeJob: 'blackbox',
+        scrapePool: 'blackbox',
         scrapeUrl: 'http://127.0.0.1:9115/probe?module=http_2xx&target=http%3A%2F%2Fprometheus.io',
         lastError: '',
         lastScrape: '2019-11-04T11:52:14.759299-07:00',
@@ -153,7 +148,7 @@ export const sampleApiResponse: {
           instance: 'https://prometheus.io',
           job: 'blackbox',
         },
-        scrapeJob: 'blackbox',
+        scrapePool: 'blackbox',
         scrapeUrl: 'http://127.0.0.1:9115/probe?module=http_2xx&target=https%3A%2F%2Fprometheus.io',
         lastError: '',
         lastScrape: '2019-11-04T11:52:24.731096-07:00',
@@ -172,7 +167,7 @@ export const sampleApiResponse: {
           instance: 'http://example.com:8080',
           job: 'blackbox',
         },
-        scrapeJob: 'blackbox',
+        scrapePool: 'blackbox',
         scrapeUrl: 'http://127.0.0.1:9115/probe?module=http_2xx&target=http%3A%2F%2Fexample.com%3A8080',
         lastError: '',
         lastScrape: '2019-11-04T11:52:13.516654-07:00',
@@ -190,7 +185,7 @@ export const sampleApiResponse: {
           instance: 'localhost:9100',
           job: 'node_exporter',
         },
-        scrapeJob: 'node_exporter',
+        scrapePool: 'node_exporter',
         scrapeUrl: 'http://localhost:9100/metrics',
         lastError: '',
         lastScrape: '2019-11-04T11:52:14.145703-07:00',
@@ -208,7 +203,7 @@ export const sampleApiResponse: {
           instance: 'localhost:9090',
           job: 'prometheus',
         },
-        scrapeJob: 'prometheus',
+        scrapePool: 'prometheus',
         scrapeUrl: 'http://localhost:9090/metrics',
         lastError: '',
         lastScrape: '2019-11-04T11:52:18.479731-07:00',
@@ -217,4 +212,4 @@ export const sampleApiResponse: {
       },
     ],
   },
-};
+});

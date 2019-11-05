@@ -1,28 +1,45 @@
 /* eslint @typescript-eslint/camelcase: 0 */
 
 import { sampleApiResponse } from './__testdata__/testdata';
-import { groupTargets, Target, TargetGroups } from './target';
+import { groupTargets, Target, ScrapePools, getColor } from './target';
+import { string } from 'prop-types';
 
 describe('groupTargets', () => {
-  const targets: Target[] = sampleApiResponse.data.activeTargets;
-  const targetGroups: TargetGroups = groupTargets(targets);
+  const targets: Target[] = sampleApiResponse.data.activeTargets as Target[];
+  const targetGroups: ScrapePools = groupTargets(targets);
 
   it('groups a list of targets by scrape job', () => {
-    ['blackbox', 'prometheus', 'node_exporter'].forEach(scrapeJob => {
-      expect(Object.keys(targetGroups)).toContain(scrapeJob);
+    ['blackbox', 'prometheus', 'node_exporter'].forEach(scrapePool => {
+      expect(Object.keys(targetGroups)).toContain(scrapePool);
     });
-    Object.keys(targetGroups).forEach((scrapeJob: string): void => {
-      const ts: Target[] = targetGroups[scrapeJob].targets;
+    Object.keys(targetGroups).forEach((scrapePool: string): void => {
+      const ts: Target[] = targetGroups[scrapePool].targets;
       ts.forEach((t: Target) => {
-        expect(t.scrapeJob).toEqual(scrapeJob);
+        expect(t.scrapePool).toEqual(scrapePool);
       });
     });
   });
 
-  it('adds up metadata during aggregation', () => {
+  it('adds upCount during aggregation', () => {
     const testCases: { [key: string]: number } = { blackbox: 3, prometheus: 1, node_exporter: 1 };
-    Object.keys(testCases).forEach((scrapeJob: string): void => {
-      expect(targetGroups[scrapeJob].metadata.up).toEqual(testCases[scrapeJob]);
+    Object.keys(testCases).forEach((scrapePool: string): void => {
+      expect(targetGroups[scrapePool].upCount).toEqual(testCases[scrapePool]);
+    });
+  });
+});
+
+describe('getColor', () => {
+  const testCases: { color: string; status: string }[] = [
+    { color: 'danger', status: 'down' },
+    { color: 'danger', status: 'DOWN' },
+    { color: 'warning', status: 'unknown' },
+    { color: 'warning', status: 'foo' },
+    { color: 'success', status: 'up' },
+    { color: 'success', status: 'Up' },
+  ];
+  testCases.forEach(({ color, status }) => {
+    it(`returns ${color} for ${status} status`, () => {
+      expect(getColor(status)).toEqual(color);
     });
   });
 });

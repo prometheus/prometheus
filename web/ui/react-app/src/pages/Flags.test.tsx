@@ -3,7 +3,8 @@ import { mount, shallow, ReactWrapper } from 'enzyme';
 import { act } from 'react-dom/test-utils';
 import Flags, { FlagMap } from './Flags';
 import { Alert, Table } from 'reactstrap';
-import Loader from '../Loader';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 
 const sampleFlagsResponse: {
   status: string;
@@ -60,7 +61,9 @@ describe('Flags', () => {
   describe('before data is returned', () => {
     it('renders a spinner', () => {
       const flags = shallow(<Flags />);
-      expect(flags.find(Loader)).toHaveLength(1);
+      const icon = flags.find(FontAwesomeIcon);
+      expect(icon.prop('icon')).toEqual(faSpinner);
+      expect(icon.prop('spin')).toEqual(true);
     });
   });
 

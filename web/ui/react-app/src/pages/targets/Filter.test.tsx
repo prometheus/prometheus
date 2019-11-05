@@ -7,7 +7,7 @@ import sinon, { SinonSpy } from 'sinon';
 describe('Filter', () => {
   const initialState: FilterData = { showHealthy: true, showUnhealthy: true };
   let setFilter: SinonSpy;
-  let filterWrapper: ShallowWrapper<FilterProps, Readonly<{}>, Component<{}, {}, React.Component>>;
+  let filterWrapper: ShallowWrapper<FilterProps, Readonly<{}>, Component<{}, {}, Component>>;
   beforeEach(() => {
     setFilter = sinon.spy();
     filterWrapper = shallow(<Filter filter={initialState} setFilter={setFilter} />);

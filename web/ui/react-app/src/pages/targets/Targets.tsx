@@ -1,19 +1,19 @@
 import React, { FC, useState } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import Filter from './Filter';
-import JobsList from './JobsList';
+import ScrapePoolList from './ScrapePoolList';
 import PathPrefixProps from '../../PathPrefixProps';
 
 const Targets: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const [filter, setFilter] = useState({ showHealthy: true, showUnhealthy: true });
   const filterProps = { filter, setFilter };
-  const jobsListProps = { filter, pathPrefix };
+  const scrapePoolListProps = { filter, pathPrefix };
 
   return (
     <>
-      <h1>Targets</h1>
+      <h2>Targets</h2>
       <Filter {...filterProps} />
-      <JobsList {...jobsListProps} />
+      <ScrapePoolList {...scrapePoolListProps} />
     </>
   );
 };

@@ -1,4 +1,4 @@
-import * as React from 'react';
+import React, { Dispatch, FC, SetStateAction } from 'react';
 import { Button, ButtonGroup } from 'reactstrap';
 import styles from './Filter.module.css';
 
@@ -9,10 +9,10 @@ export interface FilterData {
 
 export interface FilterProps {
   filter: FilterData;
-  setFilter: React.Dispatch<React.SetStateAction<FilterData>>;
+  setFilter: Dispatch<SetStateAction<FilterData>>;
 }
 
-const Filter: React.FC<FilterProps> = ({ filter, setFilter }) => {
+const Filter: FC<FilterProps> = ({ filter, setFilter }) => {
   const { showHealthy } = filter;
   const btnProps = {
     all: {

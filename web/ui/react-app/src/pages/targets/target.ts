@@ -5,7 +5,7 @@ export interface Labels {
 export interface Target {
   discoveredLabels: Labels;
   labels: Labels;
-  scrapeJob: string;
+  scrapePool: string;
   scrapeUrl: string;
   lastError: string;
   lastScrape: string;
@@ -13,30 +13,37 @@ export interface Target {
   health: string;
 }
 
-export interface TargetGroupMetadata {
-  up: number;
-}
-
-export interface TargetGroup {
-  metadata: TargetGroupMetadata;
+export interface ScrapePool {
+  upCount: number;
   targets: Target[];
 }
 
-export interface TargetGroups {
-  [scrapeJob: string]: TargetGroup;
+export interface ScrapePools {
+  [scrapePool: string]: ScrapePool;
 }
 
-export const groupTargets = (targets: Target[]): TargetGroups =>
-  targets.reduce((groups: TargetGroups, target: Target) => {
-    const { health, scrapeJob } = target;
+export const groupTargets = (targets: Target[]): ScrapePools =>
+  targets.reduce((pools: ScrapePools, target: Target) => {
+    const { health, scrapePool } = target;
     const up = health.toLowerCase() === 'up' ? 1 : 0;
-    if (!groups[scrapeJob]) {
-      groups[scrapeJob] = {
-        metadata: { up: 0 },
+    if (!pools[scrapePool]) {
+      pools[scrapePool] = {
+        upCount: 0,
         targets: [],
       };
     }
-    groups[scrapeJob].targets.push(target);
-    groups[scrapeJob].metadata.up += up;
-    return groups;
+    pools[scrapePool].targets.push(target);
+    pools[scrapePool].upCount += up;
+    return pools;
   }, {});
+
+export const getColor = (health: string): string => {
+  switch (health.toLowerCase()) {
+    case 'up':
+      return 'success';
+    case 'down':
+      return 'danger';
+    default:
+      return 'warning';
+  }
+};
