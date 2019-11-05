@@ -691,52 +691,6 @@ func (it *bigEndianPostings) Err() error {
 	return nil
 }
 
-type bigEndian64Postings struct {
-	list []byte
-	cur  uint64
-}
-
-func newBigEndian64Postings(list []byte) *bigEndian64Postings {
-	return &bigEndian64Postings{list: list}
-}
-
-func (it *bigEndian64Postings) At() uint64 {
-	return it.cur
-}
-
-func (it *bigEndian64Postings) Next() bool {
-	if len(it.list) >= 8 {
-		it.cur = binary.BigEndian.Uint64(it.list)
-		it.list = it.list[8:]
-		return true
-	}
-	return false
-}
-
-func (it *bigEndian64Postings) Seek(x uint64) bool {
-	if it.cur >= x {
-		return true
-	}
-
-	num := len(it.list) / 8
-	// Do binary search between current position and end.
-	i := sort.Search(num, func(i int) bool {
-		return binary.BigEndian.Uint64(it.list[i*8:]) >= x
-	})
-	if i < num {
-		j := i * 8
-		it.cur = binary.BigEndian.Uint64(it.list[j:])
-		it.list = it.list[j+8:]
-		return true
-	}
-	it.list = nil
-	return false
-}
-
-func (it *bigEndian64Postings) Err() error {
-	return nil
-}
-
 type prefixCompressedPostings struct {
 	bs          []byte
 	cur         uint64

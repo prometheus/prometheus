@@ -808,13 +808,6 @@ func BenchmarkPostingsOneBlock(b *testing.B) {
 		binary.BigEndian.PutUint32(b, ls1[i])
 	}
 
-	// bigEndian64Postings for ls1.
-	bufBE641 := make([]byte, num*8)
-	for i := 0; i < num; i++ {
-		b := bufBE641[i*8 : i*8+8]
-		binary.BigEndian.PutUint64(b, uint64(ls1[i]))
-	}
-
 	// prefixCompressedPostings for ls1.
 	bufPCP1 := encoding.Encbuf{}
 	temp := make([]uint64, len(ls1))
@@ -828,13 +821,6 @@ func BenchmarkPostingsOneBlock(b *testing.B) {
 	for i := 0; i < num; i++ {
 		b := bufBE2[i*4 : i*4+4]
 		binary.BigEndian.PutUint32(b, ls2[i])
-	}
-
-	// bigEndian64Postings for ls2.
-	bufBE642 := make([]byte, num*8)
-	for i := 0; i < num; i++ {
-		b := bufBE642[i*8 : i*8+8]
-		binary.BigEndian.PutUint64(b, uint64(ls2[i]))
 	}
 
 	// prefixCompressedPostings for ls2.
@@ -1004,20 +990,6 @@ func BenchmarkPostingsOneBlock(b *testing.B) {
 			testutil.Assert(bench, bep.Err() == nil, "")
 		}
 	})
-	b.Run("bigEndian64Iteration_one_block_key=0", func(bench *testing.B) {
-		bench.ResetTimer()
-		bench.ReportAllocs()
-		for j := 0; j < bench.N; j++ {
-			bep := newBigEndian64Postings(bufBE641)
-
-			for i := 0; i < num; i++ {
-				testutil.Assert(bench, bep.Next() == true, "")
-				testutil.Equals(bench, uint64(ls1[i]), bep.At())
-			}
-			testutil.Assert(bench, bep.Next() == false, "")
-			testutil.Assert(bench, bep.Err() == nil, "")
-		}
-	})
 	b.Run("prefixCompressedPostingsIteration_one_block_key=0", func(bench *testing.B) {
 		bench.ResetTimer()
 		bench.ReportAllocs()
@@ -1038,19 +1010,6 @@ func BenchmarkPostingsOneBlock(b *testing.B) {
 		bench.ReportAllocs()
 		for j := 0; j < bench.N; j++ {
 			bep := newBigEndianPostings(bufBE1)
-
-			for _, v := range table1 {
-				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
-				testutil.Equals(bench, uint64(v.val), bep.At())
-				testutil.Assert(bench, bep.Err() == nil, "")
-			}
-		}
-	})
-	b.Run("bigEndian64Seek_one_block_key=0", func(bench *testing.B) {
-		bench.ResetTimer()
-		bench.ReportAllocs()
-		for j := 0; j < bench.N; j++ {
-			bep := newBigEndian64Postings(bufBE641)
 
 			for _, v := range table1 {
 				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
@@ -1087,20 +1046,6 @@ func BenchmarkPostingsOneBlock(b *testing.B) {
 			testutil.Assert(bench, bep.Err() == nil, "")
 		}
 	})
-	b.Run("bigEndian64Iteration_one_block_key>0", func(bench *testing.B) {
-		bench.ResetTimer()
-		bench.ReportAllocs()
-		for j := 0; j < bench.N; j++ {
-			bep := newBigEndian64Postings(bufBE642)
-
-			for i := 0; i < num; i++ {
-				testutil.Assert(bench, bep.Next() == true, "")
-				testutil.Equals(bench, uint64(ls2[i]), bep.At())
-			}
-			testutil.Assert(bench, bep.Next() == false, "")
-			testutil.Assert(bench, bep.Err() == nil, "")
-		}
-	})
 	b.Run("prefixCompressedPostingsIteration_one_block_key>0", func(bench *testing.B) {
 		bench.ResetTimer()
 		bench.ReportAllocs()
@@ -1121,19 +1066,6 @@ func BenchmarkPostingsOneBlock(b *testing.B) {
 		bench.ReportAllocs()
 		for j := 0; j < bench.N; j++ {
 			bep := newBigEndianPostings(bufBE2)
-
-			for _, v := range table2 {
-				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
-				testutil.Equals(bench, uint64(v.val), bep.At())
-				testutil.Assert(bench, bep.Err() == nil, "")
-			}
-		}
-	})
-	b.Run("bigEndian64Seek_one_block_key>0", func(bench *testing.B) {
-		bench.ResetTimer()
-		bench.ReportAllocs()
-		for j := 0; j < bench.N; j++ {
-			bep := newBigEndian64Postings(bufBE642)
 
 			for _, v := range table2 {
 				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
@@ -1175,13 +1107,6 @@ func BenchmarkPostingsManyBlocks(b *testing.B) {
 		binary.BigEndian.PutUint32(b, ls1[i])
 	}
 
-	// bigEndian64Postings for ls1.
-	bufBE641 := make([]byte, num*8)
-	for i := 0; i < num; i++ {
-		b := bufBE641[i*8 : i*8+8]
-		binary.BigEndian.PutUint64(b, uint64(ls1[i]))
-	}
-
 	// prefixCompressedPostings for ls1.
 	bufPCP1 := encoding.Encbuf{}
 	temp := make([]uint64, len(ls1))
@@ -1195,13 +1120,6 @@ func BenchmarkPostingsManyBlocks(b *testing.B) {
 	for i := 0; i < num; i++ {
 		b := bufBE2[i*4 : i*4+4]
 		binary.BigEndian.PutUint32(b, ls2[i])
-	}
-
-	// bigEndian64Postings for ls2.
-	bufBE642 := make([]byte, num*8)
-	for i := 0; i < num; i++ {
-		b := bufBE642[i*8 : i*8+8]
-		binary.BigEndian.PutUint64(b, uint64(ls2[i]))
 	}
 
 	// prefixCompressedPostings for ls2.
@@ -1383,20 +1301,6 @@ func BenchmarkPostingsManyBlocks(b *testing.B) {
 			testutil.Assert(bench, bep.Err() == nil, "")
 		}
 	})
-	b.Run("bigEndian64Iteration_many_blocks_key=0", func(bench *testing.B) {
-		bench.ResetTimer()
-		bench.ReportAllocs()
-		for j := 0; j < bench.N; j++ {
-			bep := newBigEndian64Postings(bufBE641)
-
-			for i := 0; i < num; i++ {
-				testutil.Assert(bench, bep.Next() == true, "")
-				testutil.Equals(bench, uint64(ls1[i]), bep.At())
-			}
-			testutil.Assert(bench, bep.Next() == false, "")
-			testutil.Assert(bench, bep.Err() == nil, "")
-		}
-	})
 	b.Run("prefixCompressedPostingsIteration_many_blocks_key=0", func(bench *testing.B) {
 		bench.ResetTimer()
 		bench.ReportAllocs()
@@ -1425,19 +1329,6 @@ func BenchmarkPostingsManyBlocks(b *testing.B) {
 			}
 		}
 	})
-	b.Run("bigEndian64Seek_many_blocks_key=0", func(bench *testing.B) {
-		bench.ResetTimer()
-		bench.ReportAllocs()
-		for j := 0; j < bench.N; j++ {
-			bep := newBigEndian64Postings(bufBE641)
-
-			for _, v := range table1 {
-				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
-				testutil.Equals(bench, uint64(v.val), bep.At())
-				testutil.Assert(bench, bep.Err() == nil, "")
-			}
-		}
-	})
 	b.Run("prefixCompressedPostingsSeek_many_blocks_key=0", func(bench *testing.B) {
 		bench.ResetTimer()
 		bench.ReportAllocs()
@@ -1457,20 +1348,6 @@ func BenchmarkPostingsManyBlocks(b *testing.B) {
 		bench.ReportAllocs()
 		for j := 0; j < bench.N; j++ {
 			bep := newBigEndianPostings(bufBE2)
-
-			for i := 0; i < num; i++ {
-				testutil.Assert(bench, bep.Next() == true, "")
-				testutil.Equals(bench, uint64(ls2[i]), bep.At())
-			}
-			testutil.Assert(bench, bep.Next() == false, "")
-			testutil.Assert(bench, bep.Err() == nil, "")
-		}
-	})
-	b.Run("bigEndian64Iteration_many_blocks_key>0", func(bench *testing.B) {
-		bench.ResetTimer()
-		bench.ReportAllocs()
-		for j := 0; j < bench.N; j++ {
-			bep := newBigEndian64Postings(bufBE642)
 
 			for i := 0; i < num; i++ {
 				testutil.Assert(bench, bep.Next() == true, "")
@@ -1508,19 +1385,6 @@ func BenchmarkPostingsManyBlocks(b *testing.B) {
 			}
 		}
 	})
-	b.Run("bigEndian64Seek_many_blocks_key>0", func(bench *testing.B) {
-		bench.ResetTimer()
-		bench.ReportAllocs()
-		for j := 0; j < bench.N; j++ {
-			bep := newBigEndian64Postings(bufBE642)
-
-			for _, v := range table2 {
-				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
-				testutil.Equals(bench, uint64(v.val), bep.At())
-				testutil.Assert(bench, bep.Err() == nil, "")
-			}
-		}
-	})
 	b.Run("prefixCompressedPostingsSeek_many_blocks_key>0", func(bench *testing.B) {
 		bench.ResetTimer()
 		bench.ReportAllocs()
@@ -1550,13 +1414,6 @@ func BenchmarkPostings(b *testing.B) {
 	for i := 0; i < num; i++ {
 		b := bufBE[i*4 : i*4+4]
 		binary.BigEndian.PutUint32(b, ls[i])
-	}
-
-	// bigEndian64Postings.
-	bufBE64 := make([]byte, num*8)
-	for i := 0; i < num; i++ {
-		b := bufBE64[i*8 : i*8+8]
-		binary.BigEndian.PutUint64(b, uint64(ls[i]))
 	}
 
 	// prefixCompressedPostings.
@@ -1660,20 +1517,6 @@ func BenchmarkPostings(b *testing.B) {
 			testutil.Assert(bench, bep.Err() == nil, "")
 		}
 	})
-	b.Run("bigEndian64Iteration", func(bench *testing.B) {
-		bench.ResetTimer()
-		bench.ReportAllocs()
-		for j := 0; j < bench.N; j++ {
-			bep := newBigEndian64Postings(bufBE64)
-
-			for i := 0; i < num; i++ {
-				testutil.Assert(bench, bep.Next() == true, "")
-				testutil.Equals(bench, uint64(ls[i]), bep.At())
-			}
-			testutil.Assert(bench, bep.Next() == false, "")
-			testutil.Assert(bench, bep.Err() == nil, "")
-		}
-	})
 	b.Run("prefixCompressedPostingsIteration", func(bench *testing.B) {
 		bench.ResetTimer()
 		bench.ReportAllocs()
@@ -1694,19 +1537,6 @@ func BenchmarkPostings(b *testing.B) {
 		bench.ReportAllocs()
 		for j := 0; j < bench.N; j++ {
 			bep := newBigEndianPostings(bufBE)
-
-			for _, v := range table {
-				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
-				testutil.Equals(bench, uint64(v.val), bep.At())
-				testutil.Assert(bench, bep.Err() == nil, "")
-			}
-		}
-	})
-	b.Run("bigEndian64Seek", func(bench *testing.B) {
-		bench.ResetTimer()
-		bench.ReportAllocs()
-		for j := 0; j < bench.N; j++ {
-			bep := newBigEndian64Postings(bufBE64)
 
 			for _, v := range table {
 				testutil.Equals(bench, v.found, bep.Seek(uint64(v.seek)))
