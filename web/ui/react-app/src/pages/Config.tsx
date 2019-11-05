@@ -1,20 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import { Alert, Button } from 'reactstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { Button } from 'reactstrap';
 import CopyToClipboard from 'react-copy-to-clipboard';
 import PathPrefixProps from '../PathPrefixProps';
 
 import './Config.css';
 import { Fetch, FetchState } from '../api/Fetch';
+import { StatusIndicator } from '../StatusIndicator';
 
-type YamlConfig = { yaml: string }
+type YamlConfig = { yaml: string };
 
-export const Config = ({ error, data }: FetchState<YamlConfig>) => {
+export const ConfigContent: FC<FetchState<YamlConfig>> = ({ error, data }) => {
   const [copied, setCopied] = useState(false);
   const config = data && data.yaml ? data.yaml : '';
-
+  const hasConfig = Boolean(config && config.length);
   return (
     <>
       <h2>
@@ -26,29 +25,24 @@ export const Config = ({ error, data }: FetchState<YamlConfig>) => {
             setTimeout(setCopied, 1500);
           }}
         >
-          <Button color="light" disabled={!config}>
+          <Button color="light" disabled={!hasConfig}>
             {copied ? 'Copied' : 'Copy to clipboard'}
           </Button>
         </CopyToClipboard>
       </h2>
-
-      {error ? (
-        <Alert color="danger">
-          <strong>Error:</strong> Error fetching configuration: {error.message}
-        </Alert>
-      ) : config ? (
+      <StatusIndicator error={error && `Error fetching configuration: ${error.message}`} hasData={hasConfig}>
         <pre className="config-yaml">{config}</pre>
-      ) : (
-        <FontAwesomeIcon icon={faSpinner} spin />
-      )}
+      </StatusIndicator>
     </>
   );
-}
+};
 
-export default ({ pathPrefix }: RouteComponentProps & PathPrefixProps) => {
+const Config: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   return (
     <Fetch url={`${pathPrefix}/api/v1/status/config`}>
-      {(state: FetchState<YamlConfig>) => <Config {...state} />}
+      {(state: FetchState<YamlConfig>) => <ConfigContent {...state} />}
     </Fetch>
-  )
-}
+  );
+};
+
+export default Config;

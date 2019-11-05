@@ -17,7 +17,7 @@ export const handleResponse = (response: Response) => {
 
 export const getOptions = (options: RequestInit): RequestInit => ({
   ...options,
-  credentials: options && options.credentials || 'same-origin',
+  credentials: (options && options.credentials) || 'same-origin',
   headers: { ...DEFAULT_HEADERS, ...((options && options.headers) || {}) },
 });
 

@@ -1,11 +1,10 @@
-import React, { Fragment } from 'react';
+import React, { Fragment, FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import { Table, Alert } from 'reactstrap';
-import { Fetch, FetchState } from '../api/Fetch';
+import { Table } from 'reactstrap';
+import { Fetch } from '../api/Fetch';
 
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import PathPrefixProps from '../PathPrefixProps';
+import { StatusIndicator } from '../StatusIndicator';
 
 const endpoints = ['/api/v1/status/runtimeinfo', '/api/v1/status/buildinfo', '/api/v1/alertmanagers'];
 const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
@@ -14,7 +13,9 @@ interface StatusConfig {
   [k: string]: { title?: string; customizeValue?: (v: any) => any; customRow?: boolean; skip?: boolean };
 }
 
-type StatusPageState = Array<{ [k: string]: string }>;
+type StatusPageState = {
+  data: Array<{ [k: string]: string }>;
+};
 
 export const statusConfig: StatusConfig = {
   startTime: { title: 'Start time', customizeValue: (v: string) => new Date(v).toUTCString() },
@@ -55,24 +56,7 @@ export const statusConfig: StatusConfig = {
   droppedAlertmanagers: { skip: true },
 };
 
-export const Status = ({ data, error }: FetchState<StatusPageState>) => {
-  if (error) {
-    return (
-      <Alert color="danger">
-        <strong>Error:</strong> Error fetching status: {error.message}
-      </Alert>
-    );
-  } else if (!data || !data.length) {
-    return (
-      <FontAwesomeIcon
-        size="3x"
-        icon={faSpinner}
-        spin
-        className="position-absolute"
-        style={{ transform: 'translate(-50%, -50%)', top: '50%', left: '50%' }}
-      />
-    );
-  }
+export const StatusContent: FC<StatusPageState> = ({ data }) => {
   return (
     <>
       {data.map((statuses, i) => {
@@ -107,6 +91,16 @@ export const Status = ({ data, error }: FetchState<StatusPageState>) => {
   );
 };
 
-export default ({ pathPrefix = '' }: RouteComponentProps & PathPrefixProps) => (
-  <Fetch urls={endpoints.map(e => `${pathPrefix}${e}`)}>{Status}</Fetch>
+const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => (
+  <Fetch urls={endpoints.map(e => `${pathPrefix}${e}`)}>
+    {({ error, data }) => {
+      return (
+        <StatusIndicator error={error && `Error fetching status: ${error.message}`} hasData={data && data.length}>
+          <StatusContent data={data} />
+        </StatusIndicator>
+      );
+    }}
+  </Fetch>
 );
+
+export default Status;
