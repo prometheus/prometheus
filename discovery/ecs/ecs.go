@@ -260,6 +260,11 @@ func (d *Discovery) filterInstancesIdFromListTagResources() (instanceIdsStr stri
 		return "[]", errors.Wrap(responseErr, "could not get response from ListTagResources.")
 	}
 
+	if response.TagResources.TagResource == nil || len(response.TagResources.TagResource) == 0 {
+		level.Debug(d.logger).Log("msg", "ListTagResourcesTagFilter found no resources.", "response: ", response)
+		return "[]", nil
+	}
+
 	var resourceIds []string
 	for _, tagResource := range response.TagResources.TagResource {
 		resourceIds = append(resourceIds, tagResource.ResourceId)
