@@ -22,8 +22,8 @@ scrape_configs:
       access_key: <aliyun ak>                     # Aliyun 鉴权字段 AK
       access_key_secret: <aliyun sk>              # Aliyun 鉴权字段 SK
       tag_filters:                                # Aliyun ECS tag filter， 按tagKey tagValue匹配筛选实例
-       - key: testK
-         value: testV
+       - key: 'testK'
+         value: '*'
 #      limit: 40                                  # 从接口取到的最大实例个数限制，不填为获取所有ecs实例
 
 # relabel为可选配置，用于手动筛选实例
