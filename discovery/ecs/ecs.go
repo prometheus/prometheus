@@ -265,6 +265,11 @@ func (d *Discovery) filterInstancesIdFromListTagResources() (instanceIdsStr stri
 		resourceIds = append(resourceIds, tagResource.ResourceId)
 	}
 	resourceIdsJsonArrayStrBytes, jsonErr := json.Marshal(resourceIds)
+	if jsonErr != nil {
+		return "[]", errors.Wrap(jsonErr, "ListTagResources jsonErr.")
+	}
+
+
 	resourceIdsJsonArrayStr := string(resourceIdsJsonArrayStrBytes)
 	level.Debug(d.logger).Log("msg", "listTagResource and get ECS instanceIds. for ListTagResourcesTagFilter.", "instanceIds: ", resourceIdsJsonArrayStr)
 	return resourceIdsJsonArrayStr, nil
