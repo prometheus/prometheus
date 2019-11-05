@@ -3,6 +3,8 @@ ARG OS="linux"
 FROM quay.io/prometheus/busybox-${OS}-${ARCH}:latest
 LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com>"
 
+WORKDIR /Users/fengshichun/goLandProjects/src/prometheus-community
+
 ARG ARCH="amd64"
 ARG OS="linux"
 COPY .build/${OS}-${ARCH}/prometheus        /bin/prometheus
@@ -13,7 +15,7 @@ COPY consoles/                              /usr/share/prometheus/consoles/
 
 RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles/ /etc/prometheus/
 RUN mkdir -p /prometheus && \
-    chown -R nobody:nogroup etc/prometheus /prometheus
+    chown -R nobody:nogroup /etc/prometheus /prometheus
 
 USER       nobody
 EXPOSE     9090
@@ -21,6 +23,7 @@ VOLUME     [ "/prometheus" ]
 WORKDIR    /prometheus
 ENTRYPOINT [ "/bin/prometheus" ]
 CMD        [ "--config.file=/etc/prometheus/prometheus.yml", \
+             "--log.level=debug", \
              "--storage.tsdb.path=/prometheus", \
              "--web.console.libraries=/usr/share/prometheus/console_libraries", \
              "--web.console.templates=/usr/share/prometheus/consoles" ]

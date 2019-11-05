@@ -198,6 +198,11 @@ endif
 endif
 endif
 
+.PHONY: common-crossbuild
+common-crossbuild:
+	@echo "[ cross build linux binary ]"
+	GO111MODULE=$(GO111MODULE) $(PROMU) crossbuild
+
 .PHONY: common-build
 common-build: promu
 	@echo ">> building binaries"
