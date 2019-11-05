@@ -40,7 +40,7 @@ describe('Flags', () => {
         jobsList = mount(<JobsList {...defaultProps} />);
       });
       jobsList.update();
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets', undefined);
+      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', undefined);
       const jobPanels = jobsList.find(JobPanel);
       expect(jobPanels).toHaveLength(3);
       const activeTargets: Target[] = sampleApiResponse.data.activeTargets;
@@ -59,7 +59,7 @@ describe('Flags', () => {
         jobsList = mount(<JobsList {...props} />);
       });
       jobsList.update();
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets', undefined);
+      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', undefined);
       const jobPanels = jobsList.find(JobPanel);
       expect(jobPanels).toHaveLength(0);
     });
@@ -75,7 +75,7 @@ describe('Flags', () => {
       });
       jobsList.update();
 
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets', undefined);
+      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', undefined);
       const alert = jobsList.find(Alert);
       expect(alert.prop('color')).toBe('danger');
       expect(alert.text()).toContain('Error fetching targets');

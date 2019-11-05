@@ -117,9 +117,6 @@ export const sampleApiResponse: {
   status: string;
   data: {
     activeTargets: Target[];
-    droppedTargets: {
-      discoveredLabels: Labels;
-    }[];
   };
 } = {
   status: 'success',
@@ -217,16 +214,6 @@ export const sampleApiResponse: {
         lastScrape: '2019-11-04T11:52:18.479731-07:00',
         lastScrapeDuration: 4050976,
         health: 'up',
-      },
-    ],
-    droppedTargets: [
-      {
-        discoveredLabels: {
-          __address__: 'localhost:9093',
-          __metrics_path__: '/metrics',
-          __scheme__: 'http',
-          job: 'alertmanager',
-        },
       },
     ],
   },

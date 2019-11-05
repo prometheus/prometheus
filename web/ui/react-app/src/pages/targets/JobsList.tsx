@@ -17,7 +17,7 @@ const filterByHealth = ({ metadata, targets }: TargetGroup, { showHealthy, showU
 };
 
 const JobsList: FC<JobsListProps & PathPrefixProps> = ({ filter, pathPrefix }) => {
-  const { response, error } = useFetch(`${pathPrefix}/api/v1/targets`);
+  const { response, error } = useFetch(`${pathPrefix}/api/v1/targets?state=active`);
 
   if (error) {
     return <Error summary="Error fetching targets" message={error.message} />;
