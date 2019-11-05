@@ -411,11 +411,11 @@ $ curl http://localhost:9090/api/v1/targets
           "instance": "127.0.0.1:9090",
           "job": "prometheus"
         },
-        "scrapeJob": "prometheus",
+        "scrapePool": "prometheus",
         "scrapeUrl": "http://127.0.0.1:9090/metrics",
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
-        "lastScrapeDuration": 50688943, // nanoseconds
+        "lastScrapeDuration": 0.050688943,
         "health": "up"
       }
     ],
@@ -432,9 +432,11 @@ $ curl http://localhost:9090/api/v1/targets
   }
 }
 ```
+
 The `state` query parameter allows the caller to filter by active or dropped targets,
 (e.g., `state=active`, `state=dropped`, `state=active,dropped`). 
 Other values are ignored.
+
 ```json
 $ curl http://localhost:9090/api/v1/targets?state=active
 {
@@ -452,7 +454,7 @@ $ curl http://localhost:9090/api/v1/targets?state=active
           "instance": "127.0.0.1:9090",
           "job": "prometheus"
         },
-        "scrapeJob": "prometheus",
+        "scrapePool": "prometheus",
         "scrapeUrl": "http://127.0.0.1:9090/metrics",
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",

@@ -703,24 +703,24 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 						Labels: map[string]string{
 							"job": "blackbox",
 						},
-						ScrapeJob:          "blackbox",
+						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
 						Health:             "down",
 						LastError:          "failed",
 						LastScrape:         scrapeStart,
-						LastScrapeDuration: 100 * time.Millisecond,
+						LastScrapeDuration: 0.1,
 					},
 					{
 						DiscoveredLabels: map[string]string{},
 						Labels: map[string]string{
 							"job": "test",
 						},
-						ScrapeJob:          "test",
+						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						Health:             "up",
 						LastError:          "",
 						LastScrape:         scrapeStart,
-						LastScrapeDuration: 70 * time.Millisecond,
+						LastScrapeDuration: 0.07,
 					},
 				},
 				DroppedTargets: []*DroppedTarget{
@@ -738,7 +738,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 		{
 			endpoint: api.targets,
 			query: url.Values{
-				"state": []string{"active,dropped"},
+				"state": []string{"any"},
 			},
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
@@ -747,24 +747,24 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 						Labels: map[string]string{
 							"job": "blackbox",
 						},
-						ScrapeJob:          "blackbox",
+						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
 						Health:             "down",
 						LastError:          "failed",
 						LastScrape:         scrapeStart,
-						LastScrapeDuration: 100 * time.Millisecond,
+						LastScrapeDuration: 0.1,
 					},
 					{
 						DiscoveredLabels: map[string]string{},
 						Labels: map[string]string{
 							"job": "test",
 						},
-						ScrapeJob:          "test",
+						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						Health:             "up",
 						LastError:          "",
 						LastScrape:         scrapeStart,
-						LastScrapeDuration: 70 * time.Millisecond,
+						LastScrapeDuration: 0.07,
 					},
 				},
 				DroppedTargets: []*DroppedTarget{
@@ -791,26 +791,27 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 						Labels: map[string]string{
 							"job": "blackbox",
 						},
-						ScrapeJob:          "blackbox",
+						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
 						Health:             "down",
 						LastError:          "failed",
 						LastScrape:         scrapeStart,
-						LastScrapeDuration: 100 * time.Millisecond,
+						LastScrapeDuration: 0.1,
 					},
 					{
 						DiscoveredLabels: map[string]string{},
 						Labels: map[string]string{
 							"job": "test",
 						},
-						ScrapeJob:          "test",
+						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						Health:             "up",
 						LastError:          "",
 						LastScrape:         scrapeStart,
-						LastScrapeDuration: 70 * time.Millisecond,
+						LastScrapeDuration: 0.07,
 					},
 				},
+				DroppedTargets: []*DroppedTarget{},
 			},
 		},
 		{
@@ -819,6 +820,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				"state": []string{"Dropped"},
 			},
 			response: &TargetDiscovery{
+				ActiveTargets: []*Target{},
 				DroppedTargets: []*DroppedTarget{
 					{
 						DiscoveredLabels: map[string]string{

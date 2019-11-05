@@ -563,12 +563,12 @@ type Target struct {
 	// Any labels that are added to this target and its metrics.
 	Labels map[string]string `json:"labels"`
 
-	ScrapeJob string `json:"scrapeJob"`
-	ScrapeURL string `json:"scrapeUrl"`
+	ScrapePool string `json:"scrapePool"`
+	ScrapeURL  string `json:"scrapeUrl"`
 
 	LastError          string              `json:"lastError"`
 	LastScrape         time.Time           `json:"lastScrape"`
-	LastScrapeDuration time.Duration       `json:"lastScrapeDuration"`
+	LastScrapeDuration float64             `json:"lastScrapeDuration"`
 	Health             scrape.TargetHealth `json:"health"`
 }
 
@@ -580,8 +580,8 @@ type DroppedTarget struct {
 
 // TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
-	ActiveTargets  []*Target        `json:"activeTargets,omitempty"`
-	DroppedTargets []*DroppedTarget `json:"droppedTargets,omitempty"`
+	ActiveTargets  []*Target        `json:"activeTargets"`
+	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
@@ -606,8 +606,8 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 	}
 
 	state := strings.ToLower(r.URL.Query().Get("state"))
-	showActive := state == "" || strings.Contains(state, "active")
-	showDropped := state == "" || strings.Contains(state, "dropped")
+	showActive := state == "" || state == "any" || state == "active"
+	showDropped := state == "" || state == "any" || state == "dropped"
 	res := &TargetDiscovery{}
 
 	if showActive {
@@ -626,15 +626,17 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
 					DiscoveredLabels:   target.DiscoveredLabels().Map(),
 					Labels:             target.Labels().Map(),
-					ScrapeJob:          key,
+					ScrapePool:         key,
 					ScrapeURL:          target.URL().String(),
 					LastError:          lastErrStr,
 					LastScrape:         target.LastScrape(),
-					LastScrapeDuration: target.LastScrapeDuration(),
+					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
 					Health:             target.Health(),
 				})
 			}
 		}
+	} else {
+		res.ActiveTargets = []*Target{}
 	}
 	if showDropped {
 		tDropped := flatten(api.targetRetriever.TargetsDropped())
@@ -644,6 +646,8 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 				DiscoveredLabels: t.DiscoveredLabels().Map(),
 			})
 		}
+	} else {
+		res.DroppedTargets = []*DroppedTarget{}
 	}
 	return apiFuncResult{res, nil, nil, nil}
 }
