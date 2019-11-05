@@ -1,9 +1,8 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
-import { Fetch, FetchState } from '../api/Fetch';
-import PathPrefixProps from '../PathPrefixProps';
-import { StatusIndicator } from '../StatusIndicator';
+import { FetchState } from '../api/Fetch';
+import { fetchWithStatus } from '../api/FetchWithStatus';
 
 export interface FlagMap {
   [key: string]: string;
@@ -27,16 +26,6 @@ export const FlagsContent: FC<FetchState<FlagMap>> = ({ data = {} }) => {
   );
 };
 
-const Flags: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
-  return (
-    <Fetch url={`${pathPrefix}/api/v1/status/flags`}>
-      {({ error, data }: FetchState<FlagMap>) => (
-        <StatusIndicator error={error && `Error fetching flags: ${error.message}`} hasData={Boolean(data)}>
-          <FlagsContent data={data} />
-        </StatusIndicator>
-      )}
-    </Fetch>
-  );
-};
+FlagsContent.displayName = 'Flags';
 
-export default Flags;
+export default fetchWithStatus<RouteComponentProps, FlagMap>(FlagsContent, `/api/v1/status/flags`);

@@ -28,6 +28,9 @@ export class Fetch extends Component<FetchProps, FetchState<any>> {
 
   componentDidMount() {
     const { url, urls, options } = this.props;
+    if (Boolean(url) && Boolean(urls)) {
+      throw new Error('Please provide either url or urls param but not both.');
+    }
     if (urls && urls.length) {
       this.handleResponse(() => this.getAll(urls, options));
     } else if (url) {

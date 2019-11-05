@@ -1,10 +1,8 @@
 import React, { Fragment, FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
-import { Fetch } from '../api/Fetch';
-
-import PathPrefixProps from '../PathPrefixProps';
-import { StatusIndicator } from '../StatusIndicator';
+import { FetchState } from '../api/Fetch';
+import { fetchWithStatus } from '../api/FetchWithStatus';
 
 const endpoints = ['/api/v1/status/runtimeinfo', '/api/v1/status/buildinfo', '/api/v1/alertmanagers'];
 const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
@@ -13,9 +11,7 @@ interface StatusConfig {
   [k: string]: { title?: string; customizeValue?: (v: any) => any; customRow?: boolean; skip?: boolean };
 }
 
-type StatusPageState = {
-  data: Array<{ [k: string]: string }>;
-};
+type StatusPageState = Array<{ [k: string]: string }>;
 
 export const statusConfig: StatusConfig = {
   startTime: { title: 'Start time', customizeValue: (v: string) => new Date(v).toUTCString() },
@@ -56,7 +52,7 @@ export const statusConfig: StatusConfig = {
   droppedAlertmanagers: { skip: true },
 };
 
-export const StatusContent: FC<StatusPageState> = ({ data }) => {
+export const StatusContent: FC<FetchState<StatusPageState>> = ({ data = [] }) => {
   return (
     <>
       {data.map((statuses, i) => {
@@ -91,16 +87,6 @@ export const StatusContent: FC<StatusPageState> = ({ data }) => {
   );
 };
 
-const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => (
-  <Fetch urls={endpoints.map(e => `${pathPrefix}${e}`)}>
-    {({ error, data }) => {
-      return (
-        <StatusIndicator error={error && `Error fetching status: ${error.message}`} hasData={data && data.length}>
-          <StatusContent data={data} />
-        </StatusIndicator>
-      );
-    }}
-  </Fetch>
-);
+StatusContent.displayName = 'Status';
 
-export default Status;
+export default fetchWithStatus<RouteComponentProps, StatusPageState>(StatusContent, undefined, endpoints);
