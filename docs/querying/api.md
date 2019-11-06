@@ -760,6 +760,67 @@ $ curl http://localhost:9090/api/v1/status/buildinfo
 
 **NOTE**: The exact returned build properties may change without notice between Prometheus versions.
 
+### TSDB Stats
+
+The following endpoint returns various cardinality statistics about the Prometheus TSDB:
+
+```
+GET /api/v1/status/tsdb
+```
+- **seriesCountByMetricName:**  This will provide a list of metrics names and their series count.
+- **labelValueCountByLabelName:** This will provide a list of the label names and their value count.
+- **memoryInBytesByLabelName** This will provide a list of the label names and memory used in bytes. Memory usage is calculated by adding the length of all values for a given label name.
+- **seriesCountByLabelPair** This will provide a list of label value pairs and their series count.
+
+```json
+$ curl http://localhost:9090/api/v1/status/tsdb
+{
+  "status": "success",
+  "data": {
+    "seriesCountByMetricName": [
+      {
+        "name": "net_conntrack_dialer_conn_failed_total",
+        "value": 20
+      },
+      {
+        "name": "prometheus_http_request_duration_seconds_bucket",
+        "value": 20
+      }
+    ],
+    "labelValueCountByLabelName": [
+      {
+        "name": "__name__",
+        "value": 211
+      },
+      {
+        "name": "event",
+        "value": 3
+      }
+    ],
+    "memoryInBytesByLabelName": [
+      {
+        "name": "__name__",
+        "value": 8266
+      },
+      {
+        "name": "instance",
+        "value": 28
+      }
+    ],
+    "seriesCountByLabelValuePair": [
+      {
+        "name": "job=prometheus",
+        "value": 425
+      },
+      {
+        "name": "instance=localhost:9090",
+        "value": 425
+      }
+    ]
+  }
+}
+```
+
 *New in v2.14*
 
 ## TSDB Admin APIs

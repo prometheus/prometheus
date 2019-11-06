@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
+	"github.com/prometheus/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
@@ -1222,6 +1223,10 @@ func (f *fakeDB) Dir() string {
 	return dir
 }
 func (f *fakeDB) Snapshot(dir string, withHead bool) error { return f.err }
+func (f *fakeDB) Head() *tsdb.Head {
+	h, _ := tsdb.NewHead(nil, nil, nil, 1000)
+	return h
+}
 
 func TestAdminEndpoints(t *testing.T) {
 	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: errors.New("some error")}
@@ -1729,6 +1734,47 @@ func TestRespond(t *testing.T) {
 		if string(body) != c.expected {
 			t.Fatalf("Expected response \n%v\n but got \n%v\n", c.expected, string(body))
 		}
+	}
+}
+
+func TestTSDBStatus(t *testing.T) {
+	tsdb := &fakeDB{}
+	tsdbStatusAPI := func(api *API) apiFunc { return api.serveTSDBStatus }
+
+	for i, tc := range []struct {
+		db       *fakeDB
+		endpoint func(api *API) apiFunc
+		method   string
+		values   url.Values
+
+		errType errorType
+	}{
+		// Tests for the TSDB Status endpoint.
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+
+			errType: errorNone,
+		},
+	} {
+		tc := tc
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			api := &API{
+				db: func() TSDBAdmin {
+					if tc.db != nil {
+						return tc.db
+					}
+					return nil
+				},
+			}
+			endpoint := tc.endpoint(api)
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			if err != nil {
+				t.Fatalf("Error when creating test request: %s", err)
+			}
+			res := endpoint(req)
+			assertAPIError(t, res.err, tc.errType)
+		})
 	}
 }
 
