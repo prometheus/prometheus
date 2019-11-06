@@ -1,4 +1,4 @@
-import React, { FC, useState } from 'react';
+import React, { FC } from 'react';
 import { ScrapePool, getColor } from './target';
 import { Button, Collapse, Table, Badge } from 'reactstrap';
 import styles from './ScrapePoolPanel.module.css';
@@ -7,6 +7,7 @@ import EndpointLink from './EndpointLink';
 import TargetLabels from './TargetLabels';
 import { formatRelative, humanizeDuration } from '../../utils/timeFormat';
 import { now } from 'moment';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 interface PanelProps {
   scrapePool: string;
@@ -16,7 +17,7 @@ interface PanelProps {
 export const columns = ['Endpoint', 'State', 'Labels', 'Last Scrape', 'Scrape Duration', 'Error'];
 
 const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [{ expanded }, setOptions] = useLocalStorage(`targets-${scrapePool}-expanded`, { expanded: true });
   const modifier = targetGroup.upCount < targetGroup.targets.length ? 'danger' : 'normal';
   const id = `pool-${scrapePool}`;
   const anchorProps = {
@@ -26,7 +27,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
   const btnProps = {
     children: `show ${expanded ? 'less' : 'more'}`,
     color: 'primary',
-    onClick: (): void => setExpanded(!expanded),
+    onClick: (): void => setOptions({ expanded: !expanded }),
     size: 'xs',
     style: {
       padding: '0.3em 0.3em 0.25em 0.3em',

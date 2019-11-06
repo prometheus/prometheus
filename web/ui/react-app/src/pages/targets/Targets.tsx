@@ -1,11 +1,12 @@
-import React, { FC, useState } from 'react';
+import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import Filter from './Filter';
 import ScrapePoolList from './ScrapePoolList';
 import PathPrefixProps from '../../PathPrefixProps';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 const Targets: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const [filter, setFilter] = useState({ showHealthy: true, showUnhealthy: true });
+  const [filter, setFilter] = useLocalStorage('targets-page-filter', { showHealthy: true, showUnhealthy: true });
   const filterProps = { filter, setFilter };
   const scrapePoolListProps = { filter, pathPrefix };
 
