@@ -1115,7 +1115,6 @@ func TestSizeRetention(t *testing.T) {
 
 	headBlocks := []*BlockMeta{
 		{MinTime: 700, MaxTime: 800},
-		{MinTime: 800, MaxTime: 900},
 	}
 
 	// Add some data to the WAL.
@@ -1123,18 +1122,10 @@ func TestSizeRetention(t *testing.T) {
 	for _, m := range headBlocks {
 		series := genSeries(100, 10, m.MinTime, m.MaxTime)
 		for _, s := range series {
-			var err error
-			ref := uint64(0)
 			it := s.Iterator()
 			for it.Next() {
 				tim, v := it.At()
-				if ref != 0 {
-					err := headApp.AddFast(ref, tim, v)
-					if err == nil {
-						continue
-					}
-				}
-				ref, err = headApp.Add(s.Labels(), tim, v)
+				_, err := headApp.Add(s.Labels(), tim, v)
 				testutil.Ok(t, err)
 			}
 			testutil.Ok(t, it.Err())
