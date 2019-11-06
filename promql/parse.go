@@ -861,6 +861,15 @@ func (p *parser) offset() time.Duration {
 	const ctx = "offset"
 
 	p.next()
+
+	sign := int64(1)
+	if t := p.peek(); t.typ == ItemSUB || t.typ == ItemADD {
+		if t.typ == ItemSUB {
+			sign = int64(-1)
+		}
+		p.next()
+	}
+
 	offi := p.expect(ItemDuration, ctx)
 
 	offset, err := parseDuration(offi.val)
@@ -868,7 +877,7 @@ func (p *parser) offset() time.Duration {
 		p.error(err)
 	}
 
-	return offset
+	return time.Duration(sign * int64(offset))
 }
 
 // VectorSelector parses a new (instant) vector selector.

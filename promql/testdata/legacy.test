@@ -279,6 +279,10 @@ eval instant at 50m rate(http_requests{group="production",job="api-server"}[10m]
 	{group="production", instance="0", job="api-server"} 0.03333333333333333
 	{group="production", instance="1", job="api-server"} 0.06666666666666667
 
+eval instant at 40m rate(http_requests{group="production",job="api-server"}[10m] offset -5m)
+	{group="production", instance="0", job="api-server"} 0.03333333333333333
+	{group="production", instance="1", job="api-server"} 0.06666666666666667
+
 eval instant at 50m http_requests{group="canary", instance="0", job="api-server"} / 0
 	{group="canary", instance="0", job="api-server"} +Inf
 
