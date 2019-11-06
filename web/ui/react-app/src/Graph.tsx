@@ -68,21 +68,21 @@ class Graph extends PureComponent<GraphProps> {
       return y.toFixed(2);
     } else if (abs_y === 0) {
       return y.toFixed(2);
-    } else if (abs_y <= 1e-24) {
+    } else if (abs_y < 1e-23) {
       return (y / 1e-24).toFixed(2) + 'y';
-    } else if (abs_y <= 1e-21) {
+    } else if (abs_y < 1e-20) {
       return (y / 1e-21).toFixed(2) + 'z';
-    } else if (abs_y <= 1e-18) {
+    } else if (abs_y < 1e-17) {
       return (y / 1e-18).toFixed(2) + 'a';
-    } else if (abs_y <= 1e-15) {
+    } else if (abs_y < 1e-14) {
       return (y / 1e-15).toFixed(2) + 'f';
-    } else if (abs_y <= 1e-12) {
+    } else if (abs_y < 1e-11) {
       return (y / 1e-12).toFixed(2) + 'p';
-    } else if (abs_y <= 1e-9) {
+    } else if (abs_y < 1e-8) {
       return (y / 1e-9).toFixed(2) + 'n';
-    } else if (abs_y <= 1e-6) {
+    } else if (abs_y < 1e-5) {
       return (y / 1e-6).toFixed(2) + 'µ';
-    } else if (abs_y <= 1e-3) {
+    } else if (abs_y < 1e-2) {
       return (y / 1e-3).toFixed(2) + 'm';
     } else if (abs_y <= 1) {
       return y.toFixed(2);
