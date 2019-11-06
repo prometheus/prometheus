@@ -102,16 +102,19 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	defer level.Debug(d.logger).Log("msg", "ECS discovery completed")
 
-	// list resource from tag
-	filterdInstanceIdsStr, listTagErr := d.filterInstancesIdFromListTagResources()
-	if listTagErr != nil {
-		return nil, errors.Wrap(listTagErr, "get ecs instanceIds err. listTagResourcesError.")
-	}
+
 
 	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
 	describeInstancesRequest.RegionId = getConfigRegionId(d.ecsCfg.RegionId)
 
-	describeInstancesRequest.InstanceIds = filterdInstanceIdsStr
+	if d.ecsCfg != nil && d.ecsCfg.TagFilters != nil && len(d.ecsCfg.TagFilters) > 0 {
+		// list resource from tag
+		filterdInstanceIdsStr, listTagErr := d.filterInstancesIdFromListTagResources()
+		if listTagErr != nil {
+			return nil, errors.Wrap(listTagErr, "get ecs instanceIds err. listTagResourcesError.")
+		}
+		describeInstancesRequest.InstanceIds = filterdInstanceIdsStr
+	}
 
 	// 分页查询
 	var pageLimit = MAX_PAGE_LIMIT
