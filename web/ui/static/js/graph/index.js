@@ -514,7 +514,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
         }
 
         if ("warnings" in json && json.warnings.length > 0) {
-          self.showWarning(json.warnings.join('<br>'));
+          self.showWarning(json.warnings.map(escapeHTML).join('<br>'));
         }
 
         queryHistory.handleHistory(self);
