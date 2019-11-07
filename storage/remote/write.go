@@ -115,25 +115,25 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 
-		// Don't allow duplicate remote write configs.
-		if _, ok := newQueues[hash]; ok {
-			return fmt.Errorf("duplicate remote write configs are not allowed, found duplicate for URL: %s", rwConf.URL)
-		}
-
-		// If the hash exists in the current queues map, we only need
-		// to restart queue if the external labels have changed.
-		if queue, ok := rws.queues[hash]; ok && externalLabelUnchanged {
-			newQueues[hash] = queue
-			delete(rws.queues, hash)
-			continue
-		}
-
 		// Set the queue name to the config hash if the user has not set
 		// a name in their remote write config so we can still differentiate
 		// between queues that have the same remote write endpoint.
 		name := string(hash[:6])
 		if rwConf.Name != "" {
 			name = rwConf.Name
+		}
+
+		// Don't allow duplicate remote write configs.
+		if _, ok := newQueues[hash]; ok {
+			return fmt.Errorf("duplicate remote write configs are not allowed, found duplicate for URL: %s", rwConf.URL)
+		}
+
+		// If the hash exists in the current queues map, we only need to restart the
+		// if the external labels have changed or if the remote name has changed.
+		if queue, ok := rws.queues[hash]; ok && externalLabelUnchanged && queue.client.Name() == name {
+			newQueues[hash] = queue
+			delete(rws.queues, hash)
+			continue
 		}
 
 		c, err := NewClient(name, &ClientConfig{

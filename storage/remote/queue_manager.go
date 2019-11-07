@@ -239,7 +239,6 @@ func NewQueueManager(reg prometheus.Registerer, logger log.Logger, walDir string
 		logger = log.NewNopLogger()
 	}
 
-	// name := client.Name()
 	logger = log.With(logger, remoteName, client.Name(), endpoint, client.Endpoint())
 	t := &QueueManager{
 		logger:         logger,

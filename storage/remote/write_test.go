@@ -28,6 +28,17 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+var cfg = config.RemoteWriteConfig{
+	Name: "dev",
+	URL: &config_util.URL{
+		URL: &url.URL{
+			Scheme: "http",
+			Host:   "localhost",
+		},
+	},
+	QueueConfig: config.DefaultQueueConfig,
+}
+
 func TestNoDuplicateWriteConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestNoDuplicateWriteConfigs")
 	testutil.Ok(t, err)
@@ -67,6 +78,33 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 	testutil.Ok(t, err)
 }
 
+func TestRestartOnNameChange(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestRestartOnNameChange")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	hash, err := cfg.ToHash()
+	testutil.Ok(t, err)
+
+	s := NewWriteStorage(nil, dir, time.Millisecond)
+	conf := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			&cfg,
+		},
+	}
+	testutil.Ok(t, s.ApplyConfig(conf))
+	testutil.Equals(t, s.queues[hash].client.Name(), cfg.Name)
+
+	// Change the queues name, ensure the queue has been restarted.
+	conf.RemoteWriteConfigs[0].Name = "dev-2"
+	testutil.Ok(t, s.ApplyConfig(conf))
+	testutil.Equals(t, s.queues[hash].client.Name(), cfg.Name)
+
+	err = s.Close()
+	testutil.Ok(t, err)
+}
+
 func TestWriteStorageLifecycle(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageLifecycle")
 	testutil.Ok(t, err)
@@ -91,18 +129,17 @@ func TestUpdateExternalLabels(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	s := NewWriteStorage(nil, dir, defaultFlushDeadline)
+	s := NewWriteStorage(nil, dir, time.Second)
 
 	externalLabels := labels.FromStrings("external", "true")
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			&config.DefaultRemoteWriteConfig,
+			&cfg,
 		},
 	}
-	hash, err := toHash(conf.RemoteWriteConfigs[0])
+	hash, err := conf.RemoteWriteConfigs[0].ToHash()
 	testutil.Ok(t, err)
-
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 1, len(s.queues))
 	testutil.Equals(t, labels.Labels(nil), s.queues[hash].externalLabels)
