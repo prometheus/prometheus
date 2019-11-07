@@ -24,9 +24,9 @@ import (
 
 var (
 	// Debug is true when the SWAGGER_DEBUG env var is not empty.
-	// It enables a more verbose logging of this package.
+	// It enables a more verbose logging of validators.
 	Debug = os.Getenv("SWAGGER_DEBUG") != ""
-	// specLogger is a debug logger for this package
+	// validateLogger is a debug logger for this package
 	specLogger *log.Logger
 )
 

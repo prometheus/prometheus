@@ -79,7 +79,9 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer n.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), n.informer.HasSynced) {
-		level.Error(n.logger).Log("msg", "node informer unable to sync cache")
+		if ctx.Err() != context.Canceled {
+			level.Error(n.logger).Log("msg", "node informer unable to sync cache")
+		}
 		return
 	}
 
@@ -149,7 +151,8 @@ const (
 )
 
 func nodeLabels(n *apiv1.Node) model.LabelSet {
-	ls := make(model.LabelSet, len(n.Labels)+len(n.Annotations)+1)
+	// Each label and annotation will create two key-value pairs in the map.
+	ls := make(model.LabelSet, 2*(len(n.Labels)+len(n.Annotations))+1)
 
 	ls[nodeNameLabel] = lv(n.Name)
 

@@ -163,7 +163,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 }
 
 func TestLeveledCompactor_plan(t *testing.T) {
-	// This mimicks our default ExponentialBlockRanges with min block size equals to 20.
+	// This mimics our default ExponentialBlockRanges with min block size equals to 20.
 	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
 		20,
 		60,
@@ -936,7 +936,7 @@ func TestCancelCompactions(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(tmpdirCopy))
 	}()
 
-	// Measure the compaction time without interupting it.
+	// Measure the compaction time without interrupting it.
 	var timeCompactionUninterrupted time.Duration
 	{
 		db, err := Open(tmpdir, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})

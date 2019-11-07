@@ -2274,7 +2274,7 @@ func TestDBReadOnly(t *testing.T) {
 		err            error
 	)
 
-	// Boostrap the db.
+	// Bootstrap the db.
 	{
 		dbDir, err = ioutil.TempDir("", "test")
 		testutil.Ok(t, err)
@@ -2373,7 +2373,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 		maxt   int
 	)
 
-	// Boostrap the db.
+	// Bootstrap the db.
 	{
 		dbDir, err = ioutil.TempDir("", "test")
 		testutil.Ok(t, err)

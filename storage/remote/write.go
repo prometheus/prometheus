@@ -122,7 +122,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		}
 
 		// Use RemoteWriteConfigs and its index to get hash. So if its index changed,
-		// the correspoinding queue should also be restarted.
+		// the corresponding queue should also be restarted.
 		hash := md5.Sum(b)
 		if i < len(rws.queues) && rws.hashes[i] == hash && externalLabelUnchanged {
 			// The RemoteWriteConfig and index both not changed, keep the queue.

@@ -22,10 +22,10 @@ function showUnhealthy(_, container) {
 
 function init() {
   if ($("#unhealthy-targets").length) {
-    if (!localStorage.selectedTab || localStorage.selectedTab == "all-targets") {
+    if (!localStorage.selectedTargetsTab || localStorage.selectedTargetsTab == "all-targets") {
       $("#all-targets").parent().addClass("active");
       $(".table-container").each(showAll);
-    } else if (localStorage.selectedTab == "unhealthy-targets") {
+    } else if (localStorage.selectedTargetsTab == "unhealthy-targets") {
       $("#unhealthy-targets").parent().addClass("active");
       $(".table-container").each(showUnhealthy);
     }
@@ -57,10 +57,10 @@ function init() {
 
     if (target === "all-targets") {
       $(".table-container").each(showAll);
-      localStorage.setItem("selectedTab", "all-targets");
+      localStorage.setItem("selectedTargetsTab", "all-targets");
     } else if (target === "unhealthy-targets") {
       $(".table-container").each(showUnhealthy);
-      localStorage.setItem("selectedTab", "unhealthy-targets");
+      localStorage.setItem("selectedTargetsTab", "unhealthy-targets");
     }
   });
 }

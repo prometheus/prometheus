@@ -128,7 +128,9 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer e.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), e.endpointsInf.HasSynced, e.serviceInf.HasSynced, e.podInf.HasSynced) {
-		level.Error(e.logger).Log("msg", "endpoints informer unable to sync cache")
+		if ctx.Err() != context.Canceled {
+			level.Error(e.logger).Log("msg", "endpoints informer unable to sync cache")
+		}
 		return
 	}
 

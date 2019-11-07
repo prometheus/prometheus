@@ -70,7 +70,9 @@ func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer i.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), i.informer.HasSynced) {
-		level.Error(i.logger).Log("msg", "ingress informer unable to sync cache")
+		if ctx.Err() != context.Canceled {
+			level.Error(i.logger).Log("msg", "ingress informer unable to sync cache")
+		}
 		return
 	}
 
@@ -142,7 +144,8 @@ const (
 )
 
 func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
-	ls := make(model.LabelSet, len(ingress.Labels)+len(ingress.Annotations)+2)
+	// Each label and annotation will create two key-value pairs in the map.
+	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
 	ls[ingressNameLabel] = lv(ingress.Name)
 	ls[namespaceLabel] = lv(ingress.Namespace)
 

@@ -216,7 +216,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		db.mtx.RLock()
 		defer db.mtx.RUnlock()
 		if len(db.blocks) == 0 {
-			return float64(db.head.minTime)
+			return float64(db.head.MinTime())
 		}
 		return float64(db.blocks[0].meta.MinTime)
 	})
@@ -260,7 +260,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 var ErrClosed = errors.New("db already closed")
 
 // DBReadOnly provides APIs for read only operations on a database.
-// Current implementation doesn't support concurency so
+// Current implementation doesn't support concurrency so
 // all API calls should happen in the same go routine.
 type DBReadOnly struct {
 	logger  log.Logger
@@ -272,7 +272,7 @@ type DBReadOnly struct {
 // OpenDBReadOnly opens DB in the given directory for read only operations.
 func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
 	if _, err := os.Stat(dir); err != nil {
-		return nil, errors.Wrap(err, "openning the db dir")
+		return nil, errors.Wrap(err, "opening the db dir")
 	}
 
 	if l == nil {
@@ -359,7 +359,7 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (Querier, error) {
 		maxBlockTime = blocks[len(blocks)-1].Meta().MaxTime
 	}
 
-	// Also add the WAL if the current blocks don't cover the requestes time range.
+	// Also add the WAL if the current blocks don't cover the requests time range.
 	if maxBlockTime <= maxt {
 		w, err := wal.Open(db.logger, nil, filepath.Join(db.dir, "wal"))
 		if err != nil {

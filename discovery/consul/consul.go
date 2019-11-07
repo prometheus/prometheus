@@ -357,6 +357,13 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 	elapsed := time.Since(t0)
 	rpcDuration.WithLabelValues("catalog", "services").Observe(elapsed.Seconds())
 
+	// Check the context before in order to exit early.
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Error refreshing service list", "err", err)
 		rpcFailuresCount.Inc()

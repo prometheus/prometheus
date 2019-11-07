@@ -75,7 +75,9 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer s.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), s.informer.HasSynced) {
-		level.Error(s.logger).Log("msg", "service informer unable to sync cache")
+		if ctx.Err() != context.Canceled {
+			level.Error(s.logger).Log("msg", "service informer unable to sync cache")
+		}
 		return
 	}
 
@@ -147,7 +149,8 @@ const (
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
-	ls := make(model.LabelSet, len(svc.Labels)+len(svc.Annotations)+2)
+	// Each label and annotation will create two key-value pairs in the map.
+	ls := make(model.LabelSet, 2*(len(svc.Labels)+len(svc.Annotations))+2)
 
 	ls[serviceNameLabel] = lv(svc.Name)
 	ls[namespaceLabel] = lv(svc.Namespace)

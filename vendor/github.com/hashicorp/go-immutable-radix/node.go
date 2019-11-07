@@ -79,18 +79,6 @@ func (n *Node) getEdge(label byte) (int, *Node) {
 	return -1, nil
 }
 
-func (n *Node) getLowerBoundEdge(label byte) (int, *Node) {
-	num := len(n.edges)
-	idx := sort.Search(num, func(i int) bool {
-		return n.edges[i].label >= label
-	})
-	// we want lower bound behavior so return even if it's not an exact match
-	if idx < num {
-		return idx, n.edges[idx].node
-	}
-	return -1, nil
-}
-
 func (n *Node) delEdge(label byte) {
 	num := len(n.edges)
 	idx := sort.Search(num, func(i int) bool {

@@ -128,6 +128,9 @@ func (a *Adapter) writeOutput() error {
 		return err
 	}
 
+	// Close the file immediately for platforms (eg. Windows) that cannot move
+	// a file while a process is holding a file handle.
+	tmpfile.Close()
 	err = os.Rename(tmpfile.Name(), a.output)
 	if err != nil {
 		return err
