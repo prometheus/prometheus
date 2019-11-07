@@ -307,9 +307,9 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 func (w *Writer) WriteChunks(chks ...Meta) error {
 	var (
 		batchSize  int64
-		batchID    int
 		batchStart int
 		batch      = make([][]Meta, 1)
+		batchID    = len(batch) - 1
 		firstBatch = true
 	)
 
@@ -320,7 +320,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		batchSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
 		batchSize += crc32.Size                     // The 4 bytes of crc32.
 
-		// Cut a new batch When it is not the first chunk and
+		// Cut a new batch when it is not the first chunk(to avoid empty segments) and
 		// the batch is too large to fit in the current segment.
 		cutNewBatch := (i != 0) && (batchSize+SegmentHeaderSize > w.segmentSize)
 
@@ -335,8 +335,8 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 
 		if cutNewBatch {
 			batchStart = i
-			batchID++
 			batch = append(batch, []Meta{})
+			batchID = len(batch) - 1
 		}
 		batch[batchID] = chks[batchStart : i+1]
 	}
