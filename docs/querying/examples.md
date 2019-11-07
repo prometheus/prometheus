@@ -23,7 +23,7 @@ making it a range vector:
     http_requests_total{job="apiserver", handler="/api/comments"}[5m]
 
 Note that an expression resulting in a range vector cannot be graphed directly,
-but viewed in the tabular ("Console") view of the expression browser.
+but viewed in the tabular ("Console") view of the expression browser, also this output will not be sorted by timestamp.
 
 Using regular expressions, you could select time series only for jobs whose
 name match a certain pattern, in this case, all jobs that end with `server`:
@@ -95,3 +95,25 @@ Assuming this metric contains one time series per running instance, you could
 count the number of running instances per application like this:
 
     count by (app) (instance_cpu_time_ns)
+  
+To find out the maximum value of a metric over a period of time, for eg. last 
+6 hours, you can query like this:
+
+    max_over_time(instance_cpu_time_ns[6h])
+ 
+If you don't want your metric values to go beyond a certain threshold, you can
+clamp them to the threshold value like this:
+
+    clamp_max(instance_cpu_time_ns, 100)
+    
+You can calculate the rolling sum of value of a metric over a period of time, 
+say 6 hours like below:
+
+    sum_over_time(some_mertic_name[6h])
+    
+Lets assume we have a deduped metric `processing_time_ns` denoting the time 
+taken by a process. Its value can either be 0 or some time in ns. To calculate
+the number of times the process actually ran (i.e. took time greater than 0) 
+over a time period, say 6 hours, you can write an expression like this:
+
+    sum_over_time(clamp_max(processing_time_ns, 1)[6h]) 
