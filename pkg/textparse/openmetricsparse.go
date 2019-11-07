@@ -322,7 +322,6 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			if err := p.parseComment(); err != nil {
 				return EntryInvalid, err
 			}
-			break
 		case tTimestamp:
 			p.hasTS = true
 			var ts float64
