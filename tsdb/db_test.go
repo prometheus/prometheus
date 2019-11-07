@@ -2441,10 +2441,13 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 // TestChunkWriter ensures that chunk segment are cut at
 // the chunk that is outside the set segment size.
 func TestChunkWriter(t *testing.T) {
-	chk := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
-	chunkSize := len(chk.Chunk.Bytes()) + chunks.MaxChunkLengthFieldSize + chunks.ChunkEncodingSize + crc32.Size
+	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
+	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2}})
+	chk3 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3}})
+	chk4 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4}})
+	chk5 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5}})
+	chunkSize := len(chk1.Chunk.Bytes()) + chunks.MaxChunkLengthFieldSize + chunks.ChunkEncodingSize + crc32.Size
 
-	fmt.Println("chunkSize", chunkSize)
 	tests := []struct {
 		chks [][]chunks.Meta
 		segmentSize,
@@ -2456,22 +2459,22 @@ func TestChunkWriter(t *testing.T) {
 		{
 			chks: [][]chunks.Meta{
 				[]chunks.Meta{
-					chk,
-					chk,
-					chk,
+					chk1,
+					chk2,
+					chk3,
 				},
 			},
 			segmentSize:      3 * chunkSize,
 			expSegmentSizes:  []int{3 * chunkSize},
 			expSegmentsCount: 1,
 		},
-		// 1:Segment can fit 2 chunks so the last one should result in a new segment.
+		// 1:Two chunks can fit in a single segment can fit so the last one should result in a new segment.
 		{
 			chks: [][]chunks.Meta{
 				[]chunks.Meta{
-					chk,
-					chk,
-					chk,
+					chk1,
+					chk2,
+					chk3,
 				},
 			},
 			segmentSize:      2 * chunkSize,
@@ -2479,13 +2482,13 @@ func TestChunkWriter(t *testing.T) {
 			expSegmentsCount: 2,
 		},
 		// 2:When the segment size is smaller than the size of 2 chunks
-		// each chunk should create a new segment.
+		// the last segment should still keep should create a new segment.
 		{
 			chks: [][]chunks.Meta{
 				[]chunks.Meta{
-					chk,
-					chk,
-					chk,
+					chk1,
+					chk2,
+					chk3,
 				},
 			},
 			segmentSize:      2*chunkSize - 1,
@@ -2497,7 +2500,7 @@ func TestChunkWriter(t *testing.T) {
 		{
 			chks: [][]chunks.Meta{
 				[]chunks.Meta{
-					chk,
+					chk1,
 				},
 			},
 			segmentSize:      chunkSize - 1,
@@ -2510,9 +2513,9 @@ func TestChunkWriter(t *testing.T) {
 		{
 			chks: [][]chunks.Meta{
 				[]chunks.Meta{
-					chk,
-					chk,
-					chk,
+					chk1,
+					chk2,
+					chk3,
 				},
 			},
 			segmentSize:      1,
@@ -2523,13 +2526,13 @@ func TestChunkWriter(t *testing.T) {
 		{
 			chks: [][]chunks.Meta{
 				[]chunks.Meta{
-					chk,
-					chk,
-					chk,
+					chk1,
+					chk2,
+					chk3,
 				},
 				[]chunks.Meta{
-					chk,
-					chk,
+					chk4,
+					chk5,
 				},
 			},
 			segmentSize:      3 * chunkSize,
@@ -2540,14 +2543,14 @@ func TestChunkWriter(t *testing.T) {
 		{
 			chks: [][]chunks.Meta{
 				[]chunks.Meta{
-					chk,
+					chk1,
 				},
 				[]chunks.Meta{
-					chk,
-					chk,
+					chk2,
+					chk3,
 				},
 				[]chunks.Meta{
-					chk,
+					chk4,
 				},
 			},
 			segmentSize:      2 * chunkSize,
@@ -2601,6 +2604,18 @@ func TestChunkWriter(t *testing.T) {
 				sizeAct += size
 			}
 			testutil.Equals(t, sizeExp, sizeAct)
+
+			// Check the content of the chunks.
+			r, err := chunks.NewDirReader(tmpdir, nil)
+			testutil.Ok(t, err)
+
+			for _, chks := range test.chks {
+				for _, chkExp := range chks {
+					chkAct, err := r.Chunk(chkExp.Ref)
+					testutil.Ok(t, err)
+					testutil.Equals(t, chkExp.Chunk.Bytes(), chkAct.Bytes())
+				}
+			}
 		})
 	}
 }
