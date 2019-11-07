@@ -306,65 +306,61 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 // writes the rest of the chunks in the new segment.
 func (w *Writer) WriteChunks(chks ...Meta) error {
 	var (
-		chksBatchSize int64
-		end           int
-		start         int
+		batchSize  int64
+		batchID    int
+		batchStart int
+		batch      = make([][]Meta, 1)
+		firstBatch = true
 	)
 
-	// w.wbuf == nil means it is the first chunk
-	// so need to start a new segment.
-	if w.wbuf == nil {
+	for i, chk := range chks {
+		// Each chunk contains: data length + encoding + the data itself + crc32
+		batchSize += int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
+		batchSize += ChunkEncodingSize              // The chunk encoding.
+		batchSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
+		batchSize += crc32.Size                     // The 4 bytes of crc32.
+
+		// Cut a new batch When it is not the first chunk and
+		// the batch is too large to fit in the current segment.
+		cutNewBatch := (i != 0) && (batchSize+SegmentHeaderSize > w.segmentSize)
+
+		// When the segment already has some data the
+		// the first batch size calculation should account for that.
+		if firstBatch && w.n > SegmentHeaderSize {
+			cutNewBatch = batchSize+w.n > w.segmentSize
+			if cutNewBatch {
+				firstBatch = false
+			}
+		}
+
+		if cutNewBatch {
+			batchStart = i
+			batchID++
+			batch = append(batch, []Meta{})
+		}
+		batch[batchID] = chks[batchStart : i+1]
+	}
+
+	// Create a new segment when one doesn't already exist.
+	if w.n == 0 {
 		if err := w.cut(); err != nil {
 			return err
 		}
 	}
 
-	for i, chk := range chks {
-		// Each chunk contains: data length + encoding + the data itself + crc32
-		chkSize := int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
-		chkSize += ChunkEncodingSize              // The chunk encoding.
-		chkSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
-		chkSize += crc32.Size                     // The 4 bytes of crc32
-
-		end++
-		chksBatchSize += chkSize
-		if chksBatchSize+w.n > w.segmentSize {
-			if i == 0 && w.n > SegmentHeaderSize {
-				// When it is the first chunk, but the segment already has some data
-				// should cut a new segment before writing to it.
-				if err := w.cut(); err != nil {
-					return err
-				}
-				continue
-			}
-
-			if end-start > 1 {
-				// Don't include the last chunk only if there are >1 chunks.
-				// This will keep segment size within the configured limit.
-				// If a single chunks is bigger than the configured limit,
-				// we cannot do much.
-				end--
-				chksBatchSize = chkSize
-			} else {
-				chksBatchSize = 0
-			}
-
-			if err := w.writeChunks(chks[start:end]); err != nil {
+	for i, chks := range batch {
+		if err := w.writeChunks(chks); err != nil {
+			return err
+		}
+		// Cut a new segment only when there are more chunks to write.
+		// Avoid creating a new empty segment at the end of the write.
+		if i < len(batch)-1 {
+			if err := w.cut(); err != nil {
 				return err
 			}
-			// Cut a new segment only when there are more chunks to write.
-			// This avoids creating a new empty segment.
-			if len(chks) > end {
-				if err := w.cut(); err != nil {
-					return err
-				}
-			}
-
-			start = end
 		}
 	}
-
-	return w.writeChunks(chks[start:])
+	return nil
 }
 
 // writeChunks writes the chunks into the current segment irrespective
