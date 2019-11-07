@@ -36,7 +36,7 @@ const (
 	ecsLabelUserId      = ecsLabel + "user_id"
 	ecsLabelTag         = ecsLabel + "tag_"
 
-	MAX_PAGE_LIMIT = 100 // it's limited by ecs describeInstances API
+	MAX_PAGE_LIMIT = 50 // it's limited by ecs describeInstances API
 )
 
 // SDConfig is the configuration for Azure based service discovery.
@@ -102,81 +102,24 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	defer level.Debug(d.logger).Log("msg", "ECS discovery completed")
 
-
-
-	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
-	describeInstancesRequest.RegionId = getConfigRegionId(d.ecsCfg.RegionId)
-
+	var instances []ecs_pop.Instance
 	if d.ecsCfg != nil && d.ecsCfg.TagFilters != nil && len(d.ecsCfg.TagFilters) > 0 {
-		// list resource from tag
-		filterdInstanceIdsStr, listTagErr := d.filterInstancesIdFromListTagResources()
-		if listTagErr != nil {
-			return nil, errors.Wrap(listTagErr, "get ecs instanceIds err. listTagResourcesError.")
+		instancesFromListTagResources, queryInstanceErr := d.queryFromListTagResources()
+		if queryInstanceErr != nil {
+			return nil, queryInstanceErr
 		}
-		describeInstancesRequest.InstanceIds = filterdInstanceIdsStr
-	}
-
-	// 分页查询
-	var pageLimit = MAX_PAGE_LIMIT
-	var currentLimit = d.limit
-	var currentTotalCount = 0
-	var totalCount = 0
-	if d.limit <= 0 || d.limit > MAX_PAGE_LIMIT {
-		pageLimit = MAX_PAGE_LIMIT
+		instances = instancesFromListTagResources
 	} else {
-		pageLimit = d.limit
-	}
-	describeInstancesRequest.PageNumber = requests.NewInteger(1)
-	describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
-
-	client, clientErr := getEcsClient(d.ecsCfg, d.logger)
-
-	level.Debug(d.logger).Log("msg", "Start to get Ecs Client from ram.", "client: ", client)
-
-	if clientErr != nil {
-		return nil, errors.Wrap(clientErr, "could not create alibaba ecs client.")
-	}
-
-	describeInstancesResponse, responseErr := client.DescribeInstances(describeInstancesRequest)
-
-	level.Debug(d.logger).Log("msg", "getResponse from describeInstancesResponse.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse)
-
-	if responseErr != nil {
-		return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
-	}
-
-	// first query to get TotalCount
-	instances := describeInstancesResponse.Instances.Instance
-	currentTotalCount = len(describeInstancesResponse.Instances.Instance)
-	totalCount = describeInstancesResponse.TotalCount
-	if d.limit <= 0 {
-		currentLimit = totalCount
-	}
-
-	// multi page query
-	if currentTotalCount < currentLimit {
-
-		for pageIndex := 2; currentTotalCount < currentLimit; pageIndex++ {
-			if (currentLimit - currentTotalCount) < MAX_PAGE_LIMIT {
-				pageLimit = currentLimit - currentTotalCount
-			}
-			describeInstancesRequest.PageNumber = requests.NewInteger(pageIndex)
-			describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
-			describeInstancesResponse, responseErr := client.DescribeInstances(describeInstancesRequest)
-			if responseErr != nil {
-				return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
-			}
-			for _, instance := range describeInstancesResponse.Instances.Instance {
-				instances = append(instances, instance)
-			}
-
-			if describeInstancesResponse.PageSize == 0 {
-				break
-			}
-			currentTotalCount += len(describeInstancesResponse.Instances.Instance)
+		instancesFromDiscribeInstances, queryInstanceErr := d.queryFromDescribeInstances()
+		if queryInstanceErr != nil {
+			return nil, queryInstanceErr
 		}
-
+		instances = instancesFromDiscribeInstances
 	}
+
+
+
+	// build instances list.
 
 	level.Debug(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(instances))
 
@@ -237,10 +180,20 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	return []*targetgroup.Group{tg}, nil
 }
 
-func (d *Discovery) filterInstancesIdFromListTagResources() (instanceIdsStr string, err error) {
+func (d *Discovery) filterInstancesIdFromListTagResources(token string) (instanceIdsStr string, nextToken string, err error) {
+
 	listTagResourcesRequest := ecs_pop.CreateListTagResourcesRequest()
 	listTagResourcesRequest.RegionId = getConfigRegionId(d.ecsCfg.RegionId)
 	listTagResourcesRequest.ResourceType = "instance"
+
+	// FIRST token is empty, and continue
+	if token != "FIRST" {
+		if token != "" && token != "ICM="  {
+			listTagResourcesRequest.NextToken = token
+		} else {
+			return "[]", "", nil
+		}
+	}
 
 	// tag filters
 	tagsFilters := []ecs_pop.ListTagResourcesTagFilter{}
@@ -255,17 +208,17 @@ func (d *Discovery) filterInstancesIdFromListTagResources() (instanceIdsStr stri
 	level.Debug(d.logger).Log("msg", "Start to get Ecs Client from ram. for ListTagResourcesTagFilter.", "client: ", client)
 
 	if clientErr != nil {
-		return "[]", errors.Wrap(clientErr, "could not create alibaba ecs client.")
+		return "[]", "", errors.Wrap(clientErr, "could not create alibaba ecs client.")
 	}
 
 	response, responseErr := client.ListTagResources(listTagResourcesRequest)
 	if responseErr != nil {
-		return "[]", errors.Wrap(responseErr, "could not get response from ListTagResources.")
+		return "[]", "", errors.Wrap(responseErr, "could not get response from ListTagResources.")
 	}
 
 	if response.TagResources.TagResource == nil || len(response.TagResources.TagResource) == 0 {
 		level.Debug(d.logger).Log("msg", "ListTagResourcesTagFilter found no resources.", "response: ", response)
-		return "[]", nil
+		return "[]", "", nil
 	}
 
 	var resourceIds []string
@@ -274,13 +227,151 @@ func (d *Discovery) filterInstancesIdFromListTagResources() (instanceIdsStr stri
 	}
 	resourceIdsJsonArrayStrBytes, jsonErr := json.Marshal(resourceIds)
 	if jsonErr != nil {
-		return "[]", errors.Wrap(jsonErr, "ListTagResources jsonErr.")
+		return "[]", "", errors.Wrap(jsonErr, "ListTagResources jsonErr.")
 	}
-
 
 	resourceIdsJsonArrayStr := string(resourceIdsJsonArrayStrBytes)
 	level.Debug(d.logger).Log("msg", "listTagResource and get ECS instanceIds. for ListTagResourcesTagFilter.", "instanceIds: ", resourceIdsJsonArrayStr)
-	return resourceIdsJsonArrayStr, nil
+	return resourceIdsJsonArrayStr, response.NextToken, nil
+}
+
+func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, err error) {
+
+	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
+	describeInstancesRequest.RegionId = getConfigRegionId(d.ecsCfg.RegionId)
+
+	// 分页查询
+	var pageLimit = MAX_PAGE_LIMIT
+	var currentLimit = d.limit
+	var currentTotalCount = 0
+	var totalCount = 0
+	if d.limit <= 0 || d.limit > MAX_PAGE_LIMIT {
+		pageLimit = MAX_PAGE_LIMIT
+	} else {
+		pageLimit = d.limit
+	}
+	describeInstancesRequest.PageNumber = requests.NewInteger(1)
+	describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
+
+	client, clientErr := getEcsClient(d.ecsCfg, d.logger)
+
+	level.Debug(d.logger).Log("msg", "Start to get Ecs Client from ram.", "client: ", client)
+
+	if clientErr != nil {
+		return nil, errors.Wrap(clientErr, "could not create alibaba ecs client.")
+	}
+
+	describeInstancesResponse, responseErr := client.DescribeInstances(describeInstancesRequest)
+
+	level.Debug(d.logger).Log("msg", "getResponse from describeInstancesResponse.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse)
+
+	if responseErr != nil {
+		return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
+	}
+
+	// first query to get TotalCount
+	instances = describeInstancesResponse.Instances.Instance
+	currentTotalCount = len(describeInstancesResponse.Instances.Instance)
+	totalCount = describeInstancesResponse.TotalCount
+	if d.limit <= 0 {
+		currentLimit = totalCount
+	}
+
+	// multi page query
+	if currentTotalCount < currentLimit {
+
+		for pageIndex := 2; currentTotalCount < currentLimit; pageIndex++ {
+			if (currentLimit - currentTotalCount) < MAX_PAGE_LIMIT {
+				pageLimit = currentLimit - currentTotalCount
+			}
+			describeInstancesRequest.PageNumber = requests.NewInteger(pageIndex)
+			describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
+			describeInstancesResponse, responseErr := client.DescribeInstances(describeInstancesRequest)
+			if responseErr != nil {
+				return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
+			}
+			for _, instance := range describeInstancesResponse.Instances.Instance {
+				instances = append(instances, instance)
+			}
+
+			if describeInstancesResponse.PageSize == 0 {
+				break
+			}
+			currentTotalCount += len(describeInstancesResponse.Instances.Instance)
+		}
+
+	}
+
+	return instances, nil
+}
+
+func (d *Discovery) queryFromListTagResources() (instances []ecs_pop.Instance, err error) {
+
+	nextToken := "FIRST"
+	var nextTokenInstances []ecs_pop.Instance
+	var getInstancesFromListTagResourcesErr error
+	currentTotalCount := 0
+	for {
+		if nextToken != "" && nextToken != "ICM="  {
+			nextToken, nextTokenInstances, getInstancesFromListTagResourcesErr = d.getInstancesFromListTagResources(nextToken, currentTotalCount)
+			currentTotalCount = currentTotalCount + len(nextTokenInstances)
+			if getInstancesFromListTagResourcesErr != nil {
+				return nil, getInstancesFromListTagResourcesErr
+			}
+			instances = mergeInstances(instances, nextTokenInstances)
+		} else {
+			break
+		}
+	}
+	return instances, nil
+}
+
+func mergeInstances(instances []ecs_pop.Instance, instances2 []ecs_pop.Instance) []ecs_pop.Instance {
+	for _, each := range instances2{
+		instances = append(instances, each)
+	}
+	return instances
+}
+
+func (d *Discovery) getInstancesFromListTagResources(token string, currentTotalCount int) (nextToken string, instances []ecs_pop.Instance, err error) {
+
+	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
+	describeInstancesRequest.RegionId = getConfigRegionId(d.ecsCfg.RegionId)
+
+	// list resource from tag
+	filterdInstanceIdsStr, nextToken, listTagErr := d.filterInstancesIdFromListTagResources(token)
+	if listTagErr != nil {
+		return "", nil, errors.Wrap(listTagErr, "get ecs instanceIds err. listTagResourcesError.")
+	}
+	describeInstancesRequest.InstanceIds = filterdInstanceIdsStr
+
+	// 分页查询 每次50个
+	var pageLimit = MAX_PAGE_LIMIT
+	var currentLimit = d.limit - currentTotalCount
+	if currentLimit < MAX_PAGE_LIMIT && currentLimit > 0 {
+		pageLimit = currentLimit
+	}
+	describeInstancesRequest.PageNumber = requests.NewInteger(1)
+	describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
+
+	client, clientErr := getEcsClient(d.ecsCfg, d.logger)
+
+	level.Debug(d.logger).Log("msg", "Start to get Ecs Client from ram.", "client: ", client)
+
+	if clientErr != nil {
+		return "", nil, errors.Wrap(clientErr, "could not create alibaba ecs client.")
+	}
+
+	describeInstancesResponse, responseErr := client.DescribeInstances(describeInstancesRequest)
+
+	level.Debug(d.logger).Log("msg", "getResponse from describeInstancesResponse.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse)
+
+	if responseErr != nil {
+		return "", nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
+	}
+
+	instances = describeInstancesResponse.Instances.Instance
+	return nextToken, instances, nil
 }
 
 func getEcsClient(config *SDConfig, logger log.Logger) (client *ecs_pop.Client, err error) {
