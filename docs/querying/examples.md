@@ -116,4 +116,4 @@ taken by a process. Its value can either be 0 or some time in ns. To calculate
 the number of times the process actually ran (i.e. took time greater than 0) 
 over a time period, say 6 hours, you can write an expression like this:
 
-    sum_over_time(clamp_max(processing_time_ns, 1)[6h]) 
+    sum_over_time(clamp_max(processing_time_ns, 1)[6h:]) 
