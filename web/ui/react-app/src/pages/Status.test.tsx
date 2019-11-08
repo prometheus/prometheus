@@ -5,7 +5,7 @@ import { StatusContent } from './Status';
 
 describe('Status', () => {
   it('should not fail with undefined data', () => {
-    const wrapper = shallow(<StatusContent />);
+    const wrapper = shallow(<StatusContent data={[]} />);
     expect(wrapper).toHaveLength(1);
   });
   describe('Snapshot testing', () => {

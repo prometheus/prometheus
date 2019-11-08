@@ -1,14 +1,19 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
-import { FetchState } from '../api/Fetch';
-import { fetchWithStatus } from '../api/FetchWithStatus';
+import { withStatusIndicator } from '../withStatusIndicator';
+import { useFetch } from '../utils/useFetch';
+import PathPrefixProps from '../PathPrefixProps';
 
-export interface FlagMap {
+interface FlagMap {
   [key: string]: string;
 }
 
-export const FlagsContent: FC<FetchState<FlagMap>> = ({ data = {} }) => {
+interface FlagsProps {
+  data: FlagMap;
+}
+
+export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
   return (
     <>
       <h2>Command-Line Flags</h2>
@@ -25,7 +30,13 @@ export const FlagsContent: FC<FetchState<FlagMap>> = ({ data = {} }) => {
     </>
   );
 };
+const FlagsWithStatus = withStatusIndicator(FlagsContent);
 
 FlagsContent.displayName = 'Flags';
 
-export default fetchWithStatus<RouteComponentProps, FlagMap>(FlagsContent, `/api/v1/status/flags`);
+const Flags: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+  const { response, error, isLoading } = useFetch<FlagMap>(`${pathPrefix}/api/v1/status/flags`);
+  return <FlagsWithStatus data={response.data} error={error} isLoading={isLoading} />;
+};
+
+export default Flags;

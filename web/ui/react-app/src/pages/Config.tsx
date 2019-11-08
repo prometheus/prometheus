@@ -5,12 +5,22 @@ import CopyToClipboard from 'react-copy-to-clipboard';
 import PathPrefixProps from '../PathPrefixProps';
 
 import './Config.css';
-import { Fetch, FetchState } from '../api/Fetch';
-import { StatusIndicator } from '../StatusIndicator';
+import { withStatusIndicator } from '../withStatusIndicator';
+import { useFetch } from '../utils/useFetch';
 
 type YamlConfig = { yaml: string };
 
-export const ConfigContent: FC<FetchState<YamlConfig>> = ({ error, data }) => {
+interface ConfigContentProps {
+  error?: Error;
+  data: YamlConfig;
+}
+
+const YamlContent = ({ yaml }: YamlConfig) => <pre className="config-yaml">{yaml}</pre>;
+YamlContent.displayName = 'Config';
+
+const ConfigWithResponseIndicator = withStatusIndicator(YamlContent);
+
+export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
   const [copied, setCopied] = useState(false);
   const config = data && data.yaml ? data.yaml : '';
   const hasConfig = Boolean(config && config.length);
@@ -30,19 +40,14 @@ export const ConfigContent: FC<FetchState<YamlConfig>> = ({ error, data }) => {
           </Button>
         </CopyToClipboard>
       </h2>
-      <StatusIndicator error={error && `Error fetching configuration: ${error.message}`} hasData={hasConfig}>
-        <pre className="config-yaml">{config}</pre>
-      </StatusIndicator>
+      <ConfigWithResponseIndicator error={error} isLoading={!hasConfig} yaml={config} />
     </>
   );
 };
 
 const Config: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  return (
-    <Fetch url={`${pathPrefix}/api/v1/status/config`}>
-      {(state: FetchState<YamlConfig>) => <ConfigContent {...state} />}
-    </Fetch>
-  );
+  const { response, error } = useFetch<YamlConfig>(`${pathPrefix}/api/v1/status/config`);
+  return <ConfigContent error={error} data={response.data} />;
 };
 
 export default Config;

@@ -1,17 +1,21 @@
 import React, { Fragment, FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
-import { FetchState } from '../api/Fetch';
-import { fetchWithStatus } from '../api/FetchWithStatus';
+import { withStatusIndicator } from '../withStatusIndicator';
+import { useFetch } from '../utils/useFetch';
+import PathPrefixProps from '../PathPrefixProps';
 
-const endpoints = ['/api/v1/status/runtimeinfo', '/api/v1/status/buildinfo', '/api/v1/alertmanagers'];
 const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
 
 interface StatusConfig {
   [k: string]: { title?: string; customizeValue?: (v: any) => any; customRow?: boolean; skip?: boolean };
 }
 
-type StatusPageState = Array<{ [k: string]: string }>;
+type StatusPageState = { [k: string]: string };
+
+interface StatusPageProps {
+  data: StatusPageState[];
+}
 
 export const statusConfig: StatusConfig = {
   startTime: { title: 'Start time', customizeValue: (v: string) => new Date(v).toUTCString() },
@@ -52,7 +56,7 @@ export const statusConfig: StatusConfig = {
   droppedAlertmanagers: { skip: true },
 };
 
-export const StatusContent: FC<FetchState<StatusPageState>> = ({ data = [] }) => {
+export const StatusContent: FC<StatusPageProps> = ({ data = [] }) => {
   return (
     <>
       {data.map((statuses, i) => {
@@ -86,7 +90,22 @@ export const StatusContent: FC<FetchState<StatusPageState>> = ({ data = [] }) =>
     </>
   );
 };
+const StatusWithResponseIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-export default fetchWithStatus<RouteComponentProps, StatusPageState>(StatusContent, undefined, endpoints);
+const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+  const status = useFetch<StatusPageState>(`${pathPrefix}/api/v1/status/runtimeinfo`);
+  const runtime = useFetch<StatusPageState>(`${pathPrefix}/api/v1/status/buildinfo`);
+  const build = useFetch<StatusPageState>(`${pathPrefix}/api/v1/alertmanagers`);
+
+  return (
+    <StatusWithResponseIndicator
+      data={[status.response.data, runtime.response.data, build.response.data]}
+      isLoading={status.isLoading || runtime.isLoading || build.isLoading}
+      error={status.error || runtime.error || build.error}
+    />
+  );
+};
+
+export default Status;
