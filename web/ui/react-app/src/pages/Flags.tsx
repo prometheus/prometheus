@@ -10,7 +10,7 @@ interface FlagMap {
 }
 
 interface FlagsProps {
-  data: FlagMap;
+  data?: FlagMap;
 }
 
 export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {

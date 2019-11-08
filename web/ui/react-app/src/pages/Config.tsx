@@ -12,7 +12,7 @@ type YamlConfig = { yaml: string };
 
 interface ConfigContentProps {
   error?: Error;
-  data: YamlConfig;
+  data?: YamlConfig;
 }
 
 const YamlContent = ({ yaml }: YamlConfig) => <pre className="config-yaml">{yaml}</pre>;
@@ -30,7 +30,7 @@ export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
         Configuration&nbsp;
         <CopyToClipboard
           text={config}
-          onCopy={(text, result) => {
+          onCopy={(_, result) => {
             setCopied(result);
             setTimeout(setCopied, 1500);
           }}

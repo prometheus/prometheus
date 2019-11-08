@@ -8,13 +8,13 @@ import PathPrefixProps from '../PathPrefixProps';
 const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
 
 interface StatusConfig {
-  [k: string]: { title?: string; customizeValue?: (v: any) => any; customRow?: boolean; skip?: boolean };
+  [k: string]: { title?: string; customizeValue?: (v: any, key: string) => any; customRow?: boolean; skip?: boolean };
 }
 
 type StatusPageState = { [k: string]: string };
 
 interface StatusPageProps {
-  data: StatusPageState[];
+  data?: StatusPageState[];
 }
 
 export const statusConfig: StatusConfig = {
@@ -32,9 +32,9 @@ export const statusConfig: StatusConfig = {
   storageRetention: { title: 'Storage retention' },
   activeAlertmanagers: {
     customRow: true,
-    customizeValue: (alertMgrs: { url: string }[]) => {
+    customizeValue: (alertMgrs: { url: string }[], key) => {
       return (
-        <Fragment key="alert-managers">
+        <Fragment key={key}>
           <tr>
             <th>Endpoint</th>
           </tr>
@@ -65,20 +65,20 @@ export const StatusContent: FC<StatusPageProps> = ({ data = [] }) => {
             <h2>{sectionTitles[i]}</h2>
             <Table className="h-auto" size="sm" bordered striped>
               <tbody>
-                {Object.entries(statuses).map(([k, v]) => {
+                {Object.entries(statuses).map(([k, v], i) => {
                   const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
                   if (skip) {
                     return null;
                   }
                   if (customRow) {
-                    return customizeValue(v);
+                    return customizeValue(v, k);
                   }
                   return (
                     <tr key={k}>
                       <th className="capitalize-title" style={{ width: '35%' }}>
                         {title}
                       </th>
-                      <td className="text-break">{customizeValue(v)}</td>
+                      <td className="text-break">{customizeValue(v, title)}</td>
                     </tr>
                   );
                 })}
@@ -95,13 +95,19 @@ const StatusWithResponseIndicator = withStatusIndicator(StatusContent);
 StatusContent.displayName = 'Status';
 
 const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
-  const status = useFetch<StatusPageState>(`${pathPrefix}/api/v1/status/runtimeinfo`);
-  const runtime = useFetch<StatusPageState>(`${pathPrefix}/api/v1/status/buildinfo`);
-  const build = useFetch<StatusPageState>(`${pathPrefix}/api/v1/alertmanagers`);
+  const path = `${pathPrefix}/api/v1`;
+  const status = useFetch<StatusPageState>(`${path}/status/runtimeinfo`);
+  const runtime = useFetch<StatusPageState>(`${path}/status/buildinfo`);
+  const build = useFetch<StatusPageState>(`${path}/alertmanagers`);
+
+  let data;
+  if (status.response.data && runtime.response.data && build.response.data) {
+    data = [status.response.data, runtime.response.data, build.response.data];
+  }
 
   return (
     <StatusWithResponseIndicator
-      data={[status.response.data, runtime.response.data, build.response.data]}
+      data={data}
       isLoading={status.isLoading || runtime.isLoading || build.isLoading}
       error={status.error || runtime.error || build.error}
     />

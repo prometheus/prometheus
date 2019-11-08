@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export type APIResponse<T> = { status: string; data: T };
+export type APIResponse<T> = { status: string; data?: T };
 
 export interface FetchState<T> {
   response: APIResponse<T>;
@@ -9,7 +9,7 @@ export interface FetchState<T> {
 }
 
 export const useFetch = <T extends {}>(url: string, options?: RequestInit): FetchState<T> => {
-  const [response, setResponse] = useState<APIResponse<T>>({ status: 'start fetching', data: {} as T });
+  const [response, setResponse] = useState<APIResponse<T>>({ status: 'start fetching' });
   const [error, setError] = useState<Error>();
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
