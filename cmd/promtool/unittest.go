@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	yaml "gopkg.in/yaml.v2"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
@@ -75,15 +76,16 @@ func ruleUnitTest(filename string) []error {
 	}
 
 	if unitTestInp.EvaluationInterval == 0 {
-		unitTestInp.EvaluationInterval = 1 * time.Minute
+		unitTestInp.EvaluationInterval = model.Duration(1 * time.Minute)
 	}
 
 	// Bounds for evaluating the rules.
 	mint := time.Unix(0, 0)
 	maxd := unitTestInp.maxEvalTime()
 	maxt := mint.Add(maxd)
+	evalInterval := time.Duration(unitTestInp.EvaluationInterval)
 	// Rounding off to nearest Eval time (> maxt).
-	maxt = maxt.Add(unitTestInp.EvaluationInterval / 2).Round(unitTestInp.EvaluationInterval)
+	maxt = maxt.Add(evalInterval / 2).Round(evalInterval)
 
 	// Giving number for groups mentioned in the file for ordering.
 	// Lower number group should be evaluated before higher number group.
@@ -98,7 +100,7 @@ func ruleUnitTest(filename string) []error {
 	// Testing.
 	var errs []error
 	for _, t := range unitTestInp.Tests {
-		ers := t.test(mint, maxt, unitTestInp.EvaluationInterval, groupOrderMap,
+		ers := t.test(mint, maxt, evalInterval, groupOrderMap,
 			unitTestInp.RuleFiles...)
 		if ers != nil {
 			errs = append(errs, ers...)
@@ -113,10 +115,10 @@ func ruleUnitTest(filename string) []error {
 
 // unitTestFile holds the contents of a single unit test file.
 type unitTestFile struct {
-	RuleFiles          []string      `yaml:"rule_files"`
-	EvaluationInterval time.Duration `yaml:"evaluation_interval,omitempty"`
-	GroupEvalOrder     []string      `yaml:"group_eval_order"`
-	Tests              []testGroup   `yaml:"tests"`
+	RuleFiles          []string       `yaml:"rule_files"`
+	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
+	GroupEvalOrder     []string       `yaml:"group_eval_order"`
+	Tests              []testGroup    `yaml:"tests"`
 }
 
 func (utf *unitTestFile) maxEvalTime() time.Duration {
@@ -153,7 +155,7 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 
 // testGroup is a group of input series and tests associated with it.
 type testGroup struct {
-	Interval        time.Duration    `yaml:"interval"`
+	Interval        model.Duration   `yaml:"interval"`
 	InputSeries     []series         `yaml:"input_series"`
 	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
 	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
@@ -178,7 +180,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		Logger:     log.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
-	groupsMap, ers := m.LoadGroups(tg.Interval, tg.ExternalLabels, ruleFiles...)
+	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, ruleFiles...)
 	if ers != nil {
 		return ers
 	}
@@ -189,11 +191,11 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	// This avoids storing them in memory, as the number of evals might be high.
 
 	// All the `eval_time` for which we have unit tests for alerts.
-	alertEvalTimesMap := map[time.Duration]struct{}{}
+	alertEvalTimesMap := map[model.Duration]struct{}{}
 	// Map of all the eval_time+alertname combination present in the unit tests.
-	alertsInTest := make(map[time.Duration]map[string]struct{})
+	alertsInTest := make(map[model.Duration]map[string]struct{})
 	// Map of all the unit tests for given eval_time.
-	alertTests := make(map[time.Duration][]alertTestCase)
+	alertTests := make(map[model.Duration][]alertTestCase)
 	for _, alert := range tg.AlertRuleTests {
 		alertEvalTimesMap[alert.EvalTime] = struct{}{}
 
@@ -204,7 +206,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 
 		alertTests[alert.EvalTime] = append(alertTests[alert.EvalTime], alert)
 	}
-	alertEvalTimes := make([]time.Duration, 0, len(alertEvalTimesMap))
+	alertEvalTimes := make([]model.Duration, 0, len(alertEvalTimesMap))
 	for k := range alertEvalTimesMap {
 		alertEvalTimes = append(alertEvalTimes, k)
 	}
@@ -238,8 +240,8 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		}
 
 		for {
-			if !(curr < len(alertEvalTimes) && ts.Sub(mint) <= alertEvalTimes[curr] &&
-				alertEvalTimes[curr] < ts.Add(evalInterval).Sub(mint)) {
+			if !(curr < len(alertEvalTimes) && ts.Sub(mint) <= time.Duration(alertEvalTimes[curr]) &&
+				time.Duration(alertEvalTimes[curr]) < ts.Add(time.Duration(evalInterval)).Sub(mint)) {
 				break
 			}
 
@@ -318,7 +320,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	// Checking promql expressions.
 Outer:
 	for _, testCase := range tg.PromqlExprTests {
-		got, err := query(suite.Context(), testCase.Expr, mint.Add(testCase.EvalTime),
+		got, err := query(suite.Context(), testCase.Expr, mint.Add(time.Duration(testCase.EvalTime)),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {
 			errs = append(errs, errors.Errorf("    expr: %q, time: %s, err: %s", testCase.Expr,
@@ -370,7 +372,7 @@ Outer:
 // seriesLoadingString returns the input series in PromQL notation.
 func (tg *testGroup) seriesLoadingString() string {
 	result := ""
-	result += "load " + shortDuration(tg.Interval) + "\n"
+	result += "load " + shortDuration(time.Duration(tg.Interval)) + "\n"
 	for _, is := range tg.InputSeries {
 		result += "  " + is.Series + " " + is.Values + "\n"
 	}
@@ -405,13 +407,13 @@ func orderedGroups(groupsMap map[string]*rules.Group, groupOrderMap map[string]i
 func (tg *testGroup) maxEvalTime() time.Duration {
 	var maxd time.Duration
 	for _, alert := range tg.AlertRuleTests {
-		if alert.EvalTime > maxd {
-			maxd = alert.EvalTime
+		if time.Duration(alert.EvalTime) > maxd {
+			maxd = time.Duration(alert.EvalTime)
 		}
 	}
 	for _, pet := range tg.PromqlExprTests {
-		if pet.EvalTime > maxd {
-			maxd = pet.EvalTime
+		if time.Duration(pet.EvalTime) > maxd {
+			maxd = time.Duration(pet.EvalTime)
 		}
 	}
 	return maxd
@@ -479,9 +481,9 @@ type series struct {
 }
 
 type alertTestCase struct {
-	EvalTime  time.Duration `yaml:"eval_time"`
-	Alertname string        `yaml:"alertname"`
-	ExpAlerts []alert       `yaml:"exp_alerts"`
+	EvalTime  model.Duration `yaml:"eval_time"`
+	Alertname string         `yaml:"alertname"`
+	ExpAlerts []alert        `yaml:"exp_alerts"`
 }
 
 type alert struct {
@@ -490,9 +492,9 @@ type alert struct {
 }
 
 type promqlTestCase struct {
-	Expr       string        `yaml:"expr"`
-	EvalTime   time.Duration `yaml:"eval_time"`
-	ExpSamples []sample      `yaml:"exp_samples"`
+	Expr       string         `yaml:"expr"`
+	EvalTime   model.Duration `yaml:"eval_time"`
+	ExpSamples []sample       `yaml:"exp_samples"`
 }
 
 type sample struct {
