@@ -261,7 +261,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "a",
-			err:   "expected value after metric, got \"INVALID\"",
+			err:   "expected value after metric, got \"EOF\"",
 		},
 		{
 			input: "\n",
@@ -417,7 +417,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: `custom_metric 1 # {aa="bb"}`,
-			err:   "expected value after exemplar labels, got \"INVALID\"",
+			err:   "expected value after exemplar labels, got \"EOF\"",
 		},
 	}
 
@@ -470,11 +470,11 @@ func TestOMNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "#",
-			err:   "\"INVALID\" \"\\n\" is not a valid start token",
+			err:   "\"INVALID\" \" \" is not a valid start token",
 		},
 		{
 			input: "# H",
-			err:   "\"INVALID\" \"\\n\" is not a valid start token",
+			err:   "\"INVALID\" \" \" is not a valid start token",
 		},
 	}
 

@@ -97,9 +97,6 @@ type OpenMetricsParser struct {
 
 // NewOpenMetricsParser returns a new parser of the byte slice.
 func NewOpenMetricsParser(b []byte) Parser {
-	if len(b) > 0 && b[len(b)-1] != '\n' {
-		b = append(b, '\n')
-	}
 	return &OpenMetricsParser{l: &openMetricsLexer{b: b}}
 }
 
@@ -307,7 +304,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			p.series = p.l.b[p.start:p.l.i]
 			t2 = p.nextToken()
 		}
-		p.val, err = p.getFLoatValue(t2, "metric")
+		p.val, err = p.getFloatValue(t2, "metric")
 		if err != nil {
 			return EntryInvalid, err
 		}
@@ -358,7 +355,7 @@ func (p *OpenMetricsParser) parseComment() error {
 	p.eOffsets = append(p.eOffsets, offsets...)
 	p.exemplar = p.l.b[p.start:p.l.i]
 
-	p.exemplarVal, err = p.getFLoatValue(p.nextToken(), "exemplar labels")
+	p.exemplarVal, err = p.getFloatValue(p.nextToken(), "exemplar labels")
 	if err != nil {
 		return err
 	}
@@ -436,7 +433,7 @@ func (p *OpenMetricsParser) parseLVals() ([]int, error) {
 	}
 }
 
-func (p *OpenMetricsParser) getFLoatValue(t token, after string) (float64, error) {
+func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error) {
 	if t != tValue {
 		return 0, parseError(fmt.Sprintf("expected value after %v", after), t)
 	}
