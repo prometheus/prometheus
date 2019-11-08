@@ -117,8 +117,6 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		instances = instancesFromDiscribeInstances
 	}
 
-
-
 	// build instances list.
 
 	level.Debug(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(instances))
@@ -290,6 +288,8 @@ func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, 
 			if responseErr != nil {
 				return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
 			}
+			level.Debug(d.logger).Log("msg", "getResponse from describeInstancesResponse.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse, "pageNum: ", pageIndex)
+
 			for _, instance := range describeInstancesResponse.Instances.Instance {
 				instances = append(instances, instance)
 			}
