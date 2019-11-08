@@ -283,21 +283,27 @@ func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, 
 				pageLimit = currentLimit - currentTotalCount
 			}
 			describeInstancesRequest.PageNumber = requests.NewInteger(pageIndex)
-			describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
+			describeInstancesRequest.PageSize = requests.NewInteger(MAX_PAGE_LIMIT)
 			describeInstancesResponse, responseErr := client.DescribeInstances(describeInstancesRequest)
 			if responseErr != nil {
 				return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
 			}
 			level.Debug(d.logger).Log("msg", "getResponse from describeInstancesResponse.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse, "pageNum: ", pageIndex)
 
-			for _, instance := range describeInstancesResponse.Instances.Instance {
-				instances = append(instances, instance)
+			newInstanceIndex := 0
+			for instanceIndex, instance := range describeInstancesResponse.Instances.Instance {
+				if instanceIndex < pageLimit  {
+					newInstanceIndex ++
+					instances = append(instances, instance)
+				} else {
+					break
+				}
 			}
 
 			if describeInstancesResponse.PageSize == 0 {
 				break
 			}
-			currentTotalCount += len(describeInstancesResponse.Instances.Instance)
+			currentTotalCount += newInstanceIndex
 		}
 
 	}
@@ -352,7 +358,7 @@ func (d *Discovery) getInstancesFromListTagResources(token string, currentTotalC
 		pageLimit = currentLimit
 	}
 	describeInstancesRequest.PageNumber = requests.NewInteger(1)
-	describeInstancesRequest.PageSize = requests.NewInteger(pageLimit)
+	describeInstancesRequest.PageSize = requests.NewInteger(MAX_PAGE_LIMIT)
 
 	client, clientErr := getEcsClient(d.ecsCfg, d.logger)
 
@@ -370,7 +376,19 @@ func (d *Discovery) getInstancesFromListTagResources(token string, currentTotalC
 		return "", nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
 	}
 
-	instances = describeInstancesResponse.Instances.Instance
+	if pageLimit < MAX_PAGE_LIMIT {
+		for currentInstanceIndex, instance := range describeInstancesResponse.Instances.Instance {
+			if currentInstanceIndex < pageLimit {
+				instances = append(instances, instance)
+			} else {
+				break
+			}
+		}
+	} else {
+		instances = describeInstancesResponse.Instances.Instance
+	}
+
+
 	return nextToken, instances, nil
 }
 
