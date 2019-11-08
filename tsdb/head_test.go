@@ -106,20 +106,20 @@ func BenchmarkLoadWAL(b *testing.B) {
 		seriesPerBatch   int
 		samplesPerSeries int
 	}{
-		{ // Less series and more samples.
+		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
 			batches:          10,
 			seriesPerBatch:   100,
-			samplesPerSeries: 100000,
+			samplesPerSeries: 7200,
 		},
 		{ // More series and less samples.
 			batches:          10,
 			seriesPerBatch:   10000,
-			samplesPerSeries: 100,
+			samplesPerSeries: 50,
 		},
 		{ // In between.
 			batches:          10,
 			seriesPerBatch:   1000,
-			samplesPerSeries: 10000,
+			samplesPerSeries: 480,
 		},
 	}
 
@@ -167,13 +167,14 @@ func BenchmarkLoadWAL(b *testing.B) {
 					}
 				}
 
-				h, err := NewHead(nil, nil, w, 1000)
-				testutil.Ok(b, err)
-
 				b.ResetTimer()
 
 				// Load the WAL.
-				h.Init(0)
+				for i := 0; i < b.N; i++ {
+					h, err := NewHead(nil, nil, w, 1000)
+					testutil.Ok(b, err)
+					h.Init(0)
+				}
 			})
 	}
 }
