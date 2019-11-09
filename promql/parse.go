@@ -97,7 +97,7 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 func trimQueryDurationValues(input *string) {
 	inArr := strings.Split(*input, "[")
 	for i, inst := range inArr {
-		inArr[i] = strings.TrimSpace(inst)
+		inArr[i] = strings.TrimLeft(inst, " ")
 	}
 	*input = strings.Join(inArr, "[")
 }
