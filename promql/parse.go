@@ -93,18 +93,8 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	return vs.LabelMatchers, nil
 }
 
-// trimQueryDurationValues trims spaces before and after the time duration
-func trimQueryDurationValues(input *string) {
-	inArr := strings.Split(*input, "[")
-	for i, inst := range inArr {
-		inArr[i] = strings.TrimLeft(inst, " ")
-	}
-	*input = strings.Join(inArr, "[")
-}
-
 // newParser returns a new parser.
 func newParser(input string) *parser {
-	trimQueryDurationValues(&input)
 	p := &parser{
 		lex: lex(input),
 	}

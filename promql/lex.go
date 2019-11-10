@@ -550,6 +550,9 @@ func lexStatements(l *lexer) stateFn {
 		}
 		l.gotColon = false
 		l.emit(ItemLeftBracket)
+		if isSpace(l.peek()) {
+			skipSpaces(l)
+		}
 		l.bracketOpen = true
 		return lexDuration
 	case r == ']':
@@ -713,6 +716,14 @@ func digitVal(ch rune) int {
 		return int(ch - 'A' + 10)
 	}
 	return 16 // Larger than any legal digit val.
+}
+
+// skipSpaces skips the spaces until a non-space is encountered.
+func skipSpaces(l *lexer) {
+	for isSpace(l.peek()) {
+		l.next()
+	}
+	l.ignore()
 }
 
 // lexString scans a quoted string. The initial quote has already been seen.
