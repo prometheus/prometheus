@@ -371,15 +371,15 @@ Outer:
 
 // seriesLoadingString returns the input series in PromQL notation.
 func (tg *testGroup) seriesLoadingString() string {
-	result := ""
-	result += "load " + shortDuration(time.Duration(tg.Interval)) + "\n"
+
+	result := fmt.Sprintf("load %v\n", shortDuration(tg.Interval))
 	for _, is := range tg.InputSeries {
-		result += "  " + is.Series + " " + is.Values + "\n"
+		result += fmt.Sprintf("  %v %v\n", is.Series, is.Values)
 	}
 	return result
 }
 
-func shortDuration(d time.Duration) string {
+func shortDuration(d model.Duration) string {
 	s := d.String()
 	if strings.HasSuffix(s, "m0s") {
 		s = s[:len(s)-2]
@@ -405,18 +405,18 @@ func orderedGroups(groupsMap map[string]*rules.Group, groupOrderMap map[string]i
 
 // maxEvalTime returns the max eval time among all alert and promql unit tests.
 func (tg *testGroup) maxEvalTime() time.Duration {
-	var maxd time.Duration
+	var maxd model.Duration
 	for _, alert := range tg.AlertRuleTests {
-		if time.Duration(alert.EvalTime) > maxd {
-			maxd = time.Duration(alert.EvalTime)
+		if alert.EvalTime > maxd {
+			maxd = alert.EvalTime
 		}
 	}
 	for _, pet := range tg.PromqlExprTests {
-		if time.Duration(pet.EvalTime) > maxd {
-			maxd = time.Duration(pet.EvalTime)
+		if pet.EvalTime > maxd {
+			maxd = pet.EvalTime
 		}
 	}
-	return maxd
+	return time.Duration(maxd)
 }
 
 func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, qu storage.Queryable) (promql.Vector, error) {
