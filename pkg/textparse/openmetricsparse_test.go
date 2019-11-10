@@ -54,7 +54,9 @@ ss{ss="bar"} 0
 # TYPE un unknown
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
-testmetric{label="\"bar\""} 1`
+testmetric{label="\"bar\""} 1
+# TYPE foo counter
+foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
@@ -189,6 +191,15 @@ testmetric{label="\"bar\""} 1`
 			m:    "testmetric{label=\"\\\"bar\\\"\"}",
 			v:    1,
 			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
+		}, {
+			m:   "foo",
+			typ: MetricTypeCounter,
+		}, {
+			m:    "foo_total",
+			v:    17,
+			lset: labels.FromStrings("__name__", "foo_total"),
+			t:    int64p(1520879607789),
+			e:    exemplar.Exemplar{Labels: labels.FromStrings("xx", "yy"), Value: 5},
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
@@ -412,12 +423,16 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			err:   "unsupported character in float",
 		},
 		{
-			input: "custom_metric 1 # {aa=bb}",
+			input: "custom_metric_total 1 # {aa=bb}",
 			err:   "expected label value, got \"INVALID\"",
 		},
 		{
-			input: `custom_metric 1 # {aa="bb"}`,
+			input: `custom_metric_total 1 # {aa="bb"}`,
 			err:   "expected value after exemplar labels, got \"EOF\"",
+		},
+		{
+			input: `custom_metric 1 # {aa="bb"}`,
+			err:   "metric name custom_metric does not support exemplars",
 		},
 	}
 

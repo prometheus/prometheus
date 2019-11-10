@@ -31,6 +31,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/value"
 )
 
+var allowedSuffixes = []string{"_total", "_bucket"}
+
 type openMetricsLexer struct {
 	b     []byte
 	i     int
@@ -104,7 +106,8 @@ func NewOpenMetricsParser(b []byte) Parser {
 // of the current sample.
 func (p *OpenMetricsParser) Series() ([]byte, *int64, float64) {
 	if p.hasTS {
-		return p.series, &p.ts, p.val
+		ts := p.ts
+		return p.series, &ts, p.val
 	}
 	return p.series, nil, p.val
 }
@@ -187,7 +190,8 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) string {
 
 	e.Value = p.exemplarVal
 	if p.hasExemplarTs {
-		e.Ts = &p.exemplarTs
+		exemplarTs := p.exemplarTs
+		e.Ts = &exemplarTs
 	}
 
 	for i := 0; i < len(p.eOffsets); i += 4 {
@@ -199,8 +203,7 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) string {
 		e.Labels = append(e.Labels, labels.Label{Name: s[a:b], Value: s[c:d]})
 	}
 
-	// Sort labels. We can skip the first entry since the metric name is
-	// already at the right place.
+	// Sort the labels.
 	sort.Sort(e.Labels)
 
 	return s
@@ -337,7 +340,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				return EntryInvalid, parseError("expected next entry after timestamp", t3)
 			}
 		default:
-			return EntryInvalid, parseError("expected timestamp or comment", t2)
+			return EntryInvalid, parseError("expected timestamp or # symbol", t2)
 		}
 		return EntrySeries, nil
 
@@ -348,6 +351,13 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 }
 
 func (p *OpenMetricsParser) parseComment() error {
+	// Validate the name of the metric. It must have _total or _bucket as
+	// suffix for exemplars to be supported.
+	if err := p.validateNameForExemplar(string(p.series[:p.offsets[0]-p.start])); err != nil {
+		return err
+	}
+
+	// Parse the labels.
 	offsets, err := p.parseLVals()
 	if err != nil {
 		return err
@@ -355,11 +365,13 @@ func (p *OpenMetricsParser) parseComment() error {
 	p.eOffsets = append(p.eOffsets, offsets...)
 	p.exemplar = p.l.b[p.start:p.l.i]
 
+	// Get the value.
 	p.exemplarVal, err = p.getFloatValue(p.nextToken(), "exemplar labels")
 	if err != nil {
 		return err
 	}
 
+	// Read the optional timestamp.
 	p.hasExemplarTs = false
 	switch t2 := p.nextToken(); t2 {
 	case tEOF:
@@ -446,4 +458,13 @@ func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error
 		val = math.Float64frombits(value.NormalNaN)
 	}
 	return val, nil
+}
+
+func (p *OpenMetricsParser) validateNameForExemplar(name string) error {
+	for _, suffix := range allowedSuffixes {
+		if strings.HasSuffix(name, suffix) {
+			return nil
+		}
+	}
+	return fmt.Errorf("metric name %v does not support exemplars", name)
 }

@@ -52,7 +52,7 @@ type Parser interface {
 	Metric(l *labels.Labels) string
 
 	// Exemplar writes the exemplar of the current sample into the passed
-	// exemplar. It returns the string from which the metric was parsed.
+	// exemplar. It returns the string from which the exemplar was parsed.
 	Exemplar(l *exemplar.Exemplar) string
 
 	// Next advances the parser to the next sample. It returns false if no
