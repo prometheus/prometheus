@@ -1,4 +1,4 @@
-## 2.14.0-rc.0 / 2019-11-06
+## 2.14.0 / 2019-11-11
 
 * [SECURITY/BUGFIX] UI: Ensure warnings from the API are escaped. #6279
 * [FEATURE] API: `/api/v1/status/runtimeinfo` and `/api/v1/status/buildinfo` endpoints added for use by the React UI. #6243
