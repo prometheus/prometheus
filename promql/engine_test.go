@@ -105,8 +105,8 @@ func TestQueryTimeout(t *testing.T) {
 	res := query.Exec(ctx)
 	testutil.NotOk(t, res.Err, "expected timeout error but got none")
 
-	// var e ErrQueryTimeout
-	// testutil.Assert(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
+	var e ErrQueryTimeout
+	testutil.Assert(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
 }
 
 const errQueryCanceled = ErrQueryCanceled("test statement execution")
@@ -423,8 +423,8 @@ func TestEngineShutdown(t *testing.T) {
 	res2 := query2.Exec(ctx)
 	testutil.NotOk(t, res2.Err, "expected error on querying with canceled context but got none")
 
-	// var e ErrQueryCanceled
-	// testutil.Assert(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
+	var e ErrQueryCanceled
+	testutil.Assert(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {

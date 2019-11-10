@@ -50,6 +50,27 @@ var tests = []struct {
 					{ItemRightBracket, 3, `]`},
 				},
 			}, {
+				input: "[ 5m]",
+				expected: []item{
+					{ItemLeftBracket, 0, `[`},
+					{ItemDuration, 2, `5m`},
+					{ItemRightBracket, 4, `]`},
+				},
+			}, {
+				input: "[  5m]",
+				expected: []item{
+					{ItemLeftBracket, 0, `[`},
+					{ItemDuration, 3, `5m`},
+					{ItemRightBracket, 5, `]`},
+				},
+			}, {
+				input: "[  5m ]",
+				expected: []item{
+					{ItemLeftBracket, 0, `[`},
+					{ItemDuration, 3, `5m`},
+					{ItemRightBracket, 6, `]`},
+				},
+			}, {
 				input:    "\r\n\r",
 				expected: []item{},
 			},
@@ -631,6 +652,15 @@ var tests = []struct {
 					{ItemColon, 57, `:`},
 					{ItemDuration, 58, `3s`},
 					{ItemRightBracket, 60, `]`},
+				},
+			},
+			{
+				input: `test:name[ 5m]`,
+				expected: []item{
+					{ItemMetricIdentifier, 0, `test:name`},
+					{ItemLeftBracket, 9, `[`},
+					{ItemDuration, 11, `5m`},
+					{ItemRightBracket, 13, `]`},
 				},
 			},
 			{
