@@ -17,6 +17,7 @@
 package textparse
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -354,7 +355,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 func (p *OpenMetricsParser) parseComment() error {
 	// Validate the name of the metric. It must have _total or _bucket as
 	// suffix for exemplars to be supported.
-	if err := p.validateNameForExemplar(string(p.series[:p.offsets[0]-p.start])); err != nil {
+	if err := p.validateNameForExemplar(p.series[:p.offsets[0]-p.start]); err != nil {
 		return err
 	}
 
@@ -461,11 +462,11 @@ func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error
 	return val, nil
 }
 
-func (p *OpenMetricsParser) validateNameForExemplar(name string) error {
+func (p *OpenMetricsParser) validateNameForExemplar(name []byte) error {
 	for _, suffix := range allowedSuffixes {
-		if strings.HasSuffix(name, suffix) {
+		if bytes.HasSuffix(name, []byte(suffix)) {
 			return nil
 		}
 	}
-	return fmt.Errorf("metric name %v does not support exemplars", name)
+	return fmt.Errorf("metric name %v does not support exemplars", string(name))
 }
