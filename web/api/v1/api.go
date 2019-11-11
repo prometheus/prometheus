@@ -644,9 +644,17 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
-	matchers, err := promql.ParseMetricSelector(r.FormValue("match_target"))
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	matchTarget := r.FormValue("match_target")
+
+	var matchers []*labels.Matcher
+
+	var err error
+
+	if matchTarget != "" {
+		matchers, err = promql.ParseMetricSelector(matchTarget)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
 	}
 
 	metric := r.FormValue("metric")
@@ -658,7 +666,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 				break
 			}
 			// Filter targets that don't satisfy the label matchers.
-			if !matchLabels(t.Labels(), matchers) {
+			if matchTarget != "" && !matchLabels(t.Labels(), matchers) {
 				continue
 			}
 			// If no metric is specified, get the full list for the target.
