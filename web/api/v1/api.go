@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -562,11 +563,13 @@ type Target struct {
 	// Any labels that are added to this target and its metrics.
 	Labels map[string]string `json:"labels"`
 
-	ScrapeURL string `json:"scrapeUrl"`
+	ScrapePool string `json:"scrapePool"`
+	ScrapeURL  string `json:"scrapeUrl"`
 
-	LastError  string              `json:"lastError"`
-	LastScrape time.Time           `json:"lastScrape"`
-	Health     scrape.TargetHealth `json:"health"`
+	LastError          string              `json:"lastError"`
+	LastScrape         time.Time           `json:"lastScrape"`
+	LastScrapeDuration float64             `json:"lastScrapeDuration"`
+	Health             scrape.TargetHealth `json:"health"`
 }
 
 // DroppedTarget has the information for one target that was dropped during relabelling.
@@ -582,7 +585,7 @@ type TargetDiscovery struct {
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
-	flatten := func(targets map[string][]*scrape.Target) []*scrape.Target {
+	sortKeys := func(targets map[string][]*scrape.Target) ([]string, int) {
 		var n int
 		keys := make([]string, 0, len(targets))
 		for k := range targets {
@@ -590,6 +593,11 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 			n += len(targets[k])
 		}
 		sort.Strings(keys)
+		return keys, n
+	}
+
+	flatten := func(targets map[string][]*scrape.Target) []*scrape.Target {
+		keys, n := sortKeys(targets)
 		res := make([]*scrape.Target, 0, n)
 		for _, k := range keys {
 			res = append(res, targets[k]...)
@@ -597,31 +605,49 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		return res
 	}
 
-	tActive := flatten(api.targetRetriever.TargetsActive())
-	tDropped := flatten(api.targetRetriever.TargetsDropped())
-	res := &TargetDiscovery{ActiveTargets: make([]*Target, 0, len(tActive)), DroppedTargets: make([]*DroppedTarget, 0, len(tDropped))}
+	state := strings.ToLower(r.URL.Query().Get("state"))
+	showActive := state == "" || state == "any" || state == "active"
+	showDropped := state == "" || state == "any" || state == "dropped"
+	res := &TargetDiscovery{}
 
-	for _, target := range tActive {
-		lastErrStr := ""
-		lastErr := target.LastError()
-		if lastErr != nil {
-			lastErrStr = lastErr.Error()
+	if showActive {
+		targetsActive := api.targetRetriever.TargetsActive()
+		activeKeys, numTargets := sortKeys(targetsActive)
+		res.ActiveTargets = make([]*Target, 0, numTargets)
+
+		for _, key := range activeKeys {
+			for _, target := range targetsActive[key] {
+				lastErrStr := ""
+				lastErr := target.LastError()
+				if lastErr != nil {
+					lastErrStr = lastErr.Error()
+				}
+
+				res.ActiveTargets = append(res.ActiveTargets, &Target{
+					DiscoveredLabels:   target.DiscoveredLabels().Map(),
+					Labels:             target.Labels().Map(),
+					ScrapePool:         key,
+					ScrapeURL:          target.URL().String(),
+					LastError:          lastErrStr,
+					LastScrape:         target.LastScrape(),
+					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
+					Health:             target.Health(),
+				})
+			}
 		}
-
-		res.ActiveTargets = append(res.ActiveTargets, &Target{
-			DiscoveredLabels: target.DiscoveredLabels().Map(),
-			Labels:           target.Labels().Map(),
-			ScrapeURL:        target.URL().String(),
-			LastError:        lastErrStr,
-			LastScrape:       target.LastScrape(),
-			Health:           target.Health(),
-		})
+	} else {
+		res.ActiveTargets = []*Target{}
 	}
-
-	for _, t := range tDropped {
-		res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
-			DiscoveredLabels: t.DiscoveredLabels().Map(),
-		})
+	if showDropped {
+		tDropped := flatten(api.targetRetriever.TargetsDropped())
+		res.DroppedTargets = make([]*DroppedTarget, 0, len(tDropped))
+		for _, t := range tDropped {
+			res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
+				DiscoveredLabels: t.DiscoveredLabels().Map(),
+			})
+		}
+	} else {
+		res.DroppedTargets = []*DroppedTarget{}
 	}
 	return apiFuncResult{res, nil, nil, nil}
 }

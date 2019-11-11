@@ -390,7 +390,7 @@ Prometheus target discovery:
 GET /api/v1/targets
 ```
 
-Both the active and dropped targets are part of the response.
+Both the active and dropped targets are part of the response by default.
 `labels` represents the label set after relabelling has occurred.
 `discoveredLabels` represent the unmodified labels retrieved during service discovery before relabelling has occurred.
 
@@ -411,9 +411,11 @@ $ curl http://localhost:9090/api/v1/targets
           "instance": "127.0.0.1:9090",
           "job": "prometheus"
         },
+        "scrapePool": "prometheus",
         "scrapeUrl": "http://127.0.0.1:9090/metrics",
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
+        "lastScrapeDuration": 0.050688943,
         "health": "up"
       }
     ],
@@ -427,6 +429,41 @@ $ curl http://localhost:9090/api/v1/targets
         },
       }
     ]
+  }
+}
+```
+
+The `state` query parameter allows the caller to filter by active or dropped targets,
+(e.g., `state=active`, `state=dropped`, `state=any`).
+Note that an empty array is still returned for targets that are filtered out.
+Other values are ignored.
+
+```json
+$ curl 'http://localhost:9090/api/v1/targets?state=active'
+{
+  "status": "success",
+  "data": {
+    "activeTargets": [
+      {
+        "discoveredLabels": {
+          "__address__": "127.0.0.1:9090",
+          "__metrics_path__": "/metrics",
+          "__scheme__": "http",
+          "job": "prometheus"
+        },
+        "labels": {
+          "instance": "127.0.0.1:9090",
+          "job": "prometheus"
+        },
+        "scrapePool": "prometheus",
+        "scrapeUrl": "http://127.0.0.1:9090/metrics",
+        "lastError": "",
+        "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
+        "lastScrapeDuration": 50688943,
+        "health": "up"
+      }
+    ],
+    "droppedTargets": []
   }
 }
 ```
