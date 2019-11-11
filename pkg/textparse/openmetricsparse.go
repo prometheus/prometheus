@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/value"
 )
 
-var allowedSuffixes = []string{"_total", "_bucket"}
+var allowedSuffixes = [][]byte{[]byte("_total"), []byte("_bucket")}
 
 type openMetricsLexer struct {
 	b     []byte
@@ -464,7 +464,7 @@ func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error
 
 func (p *OpenMetricsParser) validateNameForExemplar(name []byte) error {
 	for _, suffix := range allowedSuffixes {
-		if bytes.HasSuffix(name, []byte(suffix)) {
+		if bytes.HasSuffix(name, suffix) {
 			return nil
 		}
 	}
