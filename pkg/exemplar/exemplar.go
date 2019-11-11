@@ -19,5 +19,6 @@ import "github.com/prometheus/prometheus/pkg/labels"
 type Exemplar struct {
 	Labels labels.Labels
 	Value  float64
-	Ts     *int64
+	HasTs  bool
+	Ts     int64
 }

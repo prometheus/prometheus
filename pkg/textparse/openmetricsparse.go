@@ -190,8 +190,8 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) string {
 
 	e.Value = p.exemplarVal
 	if p.hasExemplarTs {
-		exemplarTs := p.exemplarTs
-		e.Ts = &exemplarTs
+		e.HasTs = true
+		e.Ts = p.exemplarTs
 	}
 
 	for i := 0; i < len(p.eOffsets); i += 4 {
@@ -224,6 +224,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 	p.offsets = p.offsets[:0]
 	p.eOffsets = p.eOffsets[:0]
 	p.exemplarVal = 0
+	p.hasExemplarTs = false
 
 	switch t := p.nextToken(); t {
 	case tEofWord:

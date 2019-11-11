@@ -45,7 +45,7 @@ gh_bucket{le="+Inf"} 1
 # TYPE hhh histogram
 hhh_bucket{le="+Inf"} 1 # {aa="bb"} 4
 # TYPE ggh gaugehistogram
-ggh_bucket{le="+Inf"} 1 # {cc="dd",xx="yy"} 4
+ggh_bucket{le="+Inf"} 1 # {cc="dd",xx="yy"} 4 123.123
 # TYPE ii info
 ii{foo="bar"} 1
 # TYPE ss stateset
@@ -157,7 +157,7 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			m:    `ggh_bucket{le="+Inf"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
-			e:    exemplar.Exemplar{Labels: labels.FromStrings("cc", "dd", "xx", "yy"), Value: 4},
+			e:    exemplar.Exemplar{Labels: labels.FromStrings("cc", "dd", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
 		}, {
 			m:   "ii",
 			typ: MetricTypeInfo,
