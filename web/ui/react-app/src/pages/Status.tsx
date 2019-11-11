@@ -90,7 +90,7 @@ export const StatusContent: FC<StatusPageProps> = ({ data = [] }) => {
     </>
   );
 };
-const StatusWithResponseIndicator = withStatusIndicator(StatusContent);
+const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
@@ -106,7 +106,7 @@ const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) 
   }
 
   return (
-    <StatusWithResponseIndicator
+    <StatusWithStatusIndicator
       data={data}
       isLoading={status.isLoading || runtime.isLoading || build.isLoading}
       error={status.error || runtime.error || build.error}

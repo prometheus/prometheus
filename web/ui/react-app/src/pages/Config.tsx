@@ -8,7 +8,7 @@ import './Config.css';
 import { withStatusIndicator } from '../withStatusIndicator';
 import { useFetch } from '../utils/useFetch';
 
-type YamlConfig = { yaml: string };
+type YamlConfig = { yaml?: string };
 
 interface ConfigContentProps {
   error?: Error;
@@ -18,29 +18,28 @@ interface ConfigContentProps {
 const YamlContent = ({ yaml }: YamlConfig) => <pre className="config-yaml">{yaml}</pre>;
 YamlContent.displayName = 'Config';
 
-const ConfigWithResponseIndicator = withStatusIndicator(YamlContent);
+const ConfigWithStatusIndicator = withStatusIndicator(YamlContent);
 
 export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
   const [copied, setCopied] = useState(false);
-  const config = data && data.yaml ? data.yaml : '';
-  const hasConfig = Boolean(config && config.length);
+  const config = data && data.yaml;
   return (
     <>
       <h2>
         Configuration&nbsp;
         <CopyToClipboard
-          text={config}
+          text={config!}
           onCopy={(_, result) => {
             setCopied(result);
             setTimeout(setCopied, 1500);
           }}
         >
-          <Button color="light" disabled={!hasConfig}>
+          <Button color="light" disabled={!config}>
             {copied ? 'Copied' : 'Copy to clipboard'}
           </Button>
         </CopyToClipboard>
       </h2>
-      <ConfigWithResponseIndicator error={error} isLoading={!hasConfig} yaml={config} />
+      <ConfigWithStatusIndicator error={error} isLoading={!config} yaml={config} />
     </>
   );
 };
