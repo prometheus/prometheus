@@ -79,7 +79,8 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
       prevOpts.type !== opts.type ||
       prevOpts.range !== opts.range ||
       prevOpts.endTime !== opts.endTime ||
-      prevOpts.resolution !== opts.resolution
+      prevOpts.resolution !== opts.resolution ||
+      prevOpts.expr !== opts.expr
     ) {
       if (prevOpts.type !== opts.type) {
         // If the other options change, we still want to show the old data until the new

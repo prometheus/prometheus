@@ -96,11 +96,11 @@ describe('ExpressionInput', () => {
     });
   });
 
-  describe('handleDropdownSelection', () => {
+  describe('onSelect', () => {
     it('should call setState with selected value', () => {
       const instance: any = expressionInput.instance();
       const stateSpy = jest.spyOn(instance, 'setState');
-      instance.handleDropdownSelection('foo');
+      instance.setValue('foo');
       expect(stateSpy).toHaveBeenCalledWith({ value: 'foo', height: 'auto' }, expect.anything());
     });
   });
