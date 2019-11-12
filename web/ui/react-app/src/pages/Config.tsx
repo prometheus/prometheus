@@ -1,26 +1,35 @@
-import React, { FC, useState } from 'react';
+import React, { useState, FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import { Alert, Button } from 'reactstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { Button } from 'reactstrap';
 import CopyToClipboard from 'react-copy-to-clipboard';
-import { useFetch } from '../utils/useFetch';
 import PathPrefixProps from '../PathPrefixProps';
 
 import './Config.css';
+import { withStatusIndicator } from '../withStatusIndicator';
+import { useFetch } from '../utils/useFetch';
 
-const Config: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const { response, error } = useFetch(`${pathPrefix}/api/v1/status/config`);
+type YamlConfig = { yaml?: string };
+
+interface ConfigContentProps {
+  error?: Error;
+  data?: YamlConfig;
+}
+
+const YamlContent = ({ yaml }: YamlConfig) => <pre className="config-yaml">{yaml}</pre>;
+YamlContent.displayName = 'Config';
+
+const ConfigWithStatusIndicator = withStatusIndicator(YamlContent);
+
+export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
   const [copied, setCopied] = useState(false);
-
-  const config = response && response.data.yaml;
+  const config = data && data.yaml;
   return (
     <>
       <h2>
         Configuration&nbsp;
         <CopyToClipboard
-          text={config ? config! : ''}
-          onCopy={(text, result) => {
+          text={config!}
+          onCopy={(_, result) => {
             setCopied(result);
             setTimeout(setCopied, 1500);
           }}
@@ -30,18 +39,14 @@ const Config: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
           </Button>
         </CopyToClipboard>
       </h2>
-
-      {error ? (
-        <Alert color="danger">
-          <strong>Error:</strong> Error fetching configuration: {error.message}
-        </Alert>
-      ) : config ? (
-        <pre className="config-yaml">{config}</pre>
-      ) : (
-        <FontAwesomeIcon icon={faSpinner} spin />
-      )}
+      <ConfigWithStatusIndicator error={error} isLoading={!config} yaml={config} />
     </>
   );
+};
+
+const Config: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
+  const { response, error } = useFetch<YamlConfig>(`${pathPrefix}/api/v1/status/config`);
+  return <ConfigContent error={error} data={response.data} />;
 };
 
 export default Config;

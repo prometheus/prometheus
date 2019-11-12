@@ -1,20 +1,21 @@
-import React, { FC, Fragment } from 'react';
+import React, { Fragment, FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import { Table, Alert } from 'reactstrap';
-import useFetches from '../hooks/useFetches';
-
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { Table } from 'reactstrap';
+import { withStatusIndicator } from '../withStatusIndicator';
+import { useFetch } from '../utils/useFetch';
 import PathPrefixProps from '../PathPrefixProps';
 
-const ENDPOINTS = ['/api/v1/status/runtimeinfo', '/api/v1/status/buildinfo', '/api/v1/alertmanagers'];
 const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
 
 interface StatusConfig {
-  [k: string]: { title?: string; customizeValue?: (v: any) => any; customRow?: boolean; skip?: boolean };
+  [k: string]: { title?: string; customizeValue?: (v: any, key: string) => any; customRow?: boolean; skip?: boolean };
 }
 
-type StatusPageState = Array<{ [k: string]: string }>;
+type StatusPageState = { [k: string]: string };
+
+interface StatusPageProps {
+  data?: StatusPageState[];
+}
 
 export const statusConfig: StatusConfig = {
   startTime: { title: 'Start time', customizeValue: (v: string) => new Date(v).toUTCString() },
@@ -31,9 +32,9 @@ export const statusConfig: StatusConfig = {
   storageRetention: { title: 'Storage retention' },
   activeAlertmanagers: {
     customRow: true,
-    customizeValue: (alertMgrs: { url: string }[]) => {
+    customizeValue: (alertMgrs: { url: string }[], key) => {
       return (
-        <Fragment key="alert-managers">
+        <Fragment key={key}>
           <tr>
             <th>Endpoint</th>
           </tr>
@@ -55,37 +56,8 @@ export const statusConfig: StatusConfig = {
   droppedAlertmanagers: { skip: true },
 };
 
-const endpointsMemo: { [prefix: string]: string[] } = {};
-
-const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
-  if (!endpointsMemo[pathPrefix]) {
-    // TODO: Come up with a nicer solution for this?
-    //
-    // The problem is that there's an infinite reload loop if the endpoints array is
-    // reconstructed on every render, as the dependency checking in useFetches()
-    // then thinks that something has changed... the whole useFetches() should
-    // probably removed and solved differently (within the component?) somehow.
-    endpointsMemo[pathPrefix] = ENDPOINTS.map(ep => `${pathPrefix}${ep}`);
-  }
-  const { response: data, error, isLoading } = useFetches<StatusPageState[]>(endpointsMemo[pathPrefix]);
-  if (error) {
-    return (
-      <Alert color="danger">
-        <strong>Error:</strong> Error fetching status: {error.message}
-      </Alert>
-    );
-  } else if (isLoading) {
-    return (
-      <FontAwesomeIcon
-        size="3x"
-        icon={faSpinner}
-        spin
-        className="position-absolute"
-        style={{ transform: 'translate(-50%, -50%)', top: '50%', left: '50%' }}
-      />
-    );
-  }
-  return data ? (
+export const StatusContent: FC<StatusPageProps> = ({ data = [] }) => {
+  return (
     <>
       {data.map((statuses, i) => {
         return (
@@ -93,20 +65,20 @@ const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) 
             <h2>{sectionTitles[i]}</h2>
             <Table className="h-auto" size="sm" bordered striped>
               <tbody>
-                {Object.entries(statuses).map(([k, v]) => {
+                {Object.entries(statuses).map(([k, v], i) => {
                   const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
                   if (skip) {
                     return null;
                   }
                   if (customRow) {
-                    return customizeValue(v);
+                    return customizeValue(v, k);
                   }
                   return (
                     <tr key={k}>
                       <th className="capitalize-title" style={{ width: '35%' }}>
                         {title}
                       </th>
-                      <td className="text-break">{customizeValue(v)}</td>
+                      <td className="text-break">{customizeValue(v, title)}</td>
                     </tr>
                   );
                 })}
@@ -116,7 +88,30 @@ const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) 
         );
       })}
     </>
-  ) : null;
+  );
+};
+const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
+
+StatusContent.displayName = 'Status';
+
+const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+  const path = `${pathPrefix}/api/v1`;
+  const status = useFetch<StatusPageState>(`${path}/status/runtimeinfo`);
+  const runtime = useFetch<StatusPageState>(`${path}/status/buildinfo`);
+  const build = useFetch<StatusPageState>(`${path}/alertmanagers`);
+
+  let data;
+  if (status.response.data && runtime.response.data && build.response.data) {
+    data = [status.response.data, runtime.response.data, build.response.data];
+  }
+
+  return (
+    <StatusWithStatusIndicator
+      data={data}
+      isLoading={status.isLoading || runtime.isLoading || build.isLoading}
+      error={status.error || runtime.error || build.error}
+    />
+  );
 };
 
 export default Status;
