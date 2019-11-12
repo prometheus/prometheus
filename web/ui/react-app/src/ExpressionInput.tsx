@@ -42,18 +42,19 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   };
 
   handleInput = () => {
-    this.setState(
-      {
-        height: 'auto',
-        value: this.exprInputRef.current!.value,
-      },
-      this.setHeight
-    );
+    this.setValue(this.exprInputRef.current!.value);
   };
 
-  handleDropdownSelection = (value: string) => {
+  setValue = (value: string) => {
     this.setState({ value, height: 'auto' }, this.setHeight);
   };
+
+  componentDidUpdate(prevProps: ExpressionInputProps) {
+    const { value } = this.props;
+    if (value !== prevProps.value) {
+      this.setValue(value);
+    }
+  }
 
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -126,7 +127,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   render() {
     const { value, height } = this.state;
     return (
-      <Downshift onSelect={this.handleDropdownSelection}>
+      <Downshift onSelect={this.setValue}>
         {downshift => (
           <div>
             <InputGroup className="expression-input">
