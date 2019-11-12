@@ -73,7 +73,7 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 		help    string
 		unit    string
 		comment string
-		e       exemplar.Exemplar
+		e       *exemplar.Exemplar
 	}{
 		{
 			m:    "go_gc_duration_seconds",
@@ -149,7 +149,7 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			m:    `hhh_bucket{le="+Inf"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "hhh_bucket", "le", "+Inf"),
-			e:    exemplar.Exemplar{Labels: labels.FromStrings("aa", "bb"), Value: 4},
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("aa", "bb"), Value: 4},
 		}, {
 			m:   "ggh",
 			typ: MetricTypeGaugeHistogram,
@@ -157,7 +157,7 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			m:    `ggh_bucket{le="+Inf"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
-			e:    exemplar.Exemplar{Labels: labels.FromStrings("cc", "dd", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("cc", "dd", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
 		}, {
 			m:   "ii",
 			typ: MetricTypeInfo,
@@ -199,7 +199,7 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			v:    17,
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
-			e:    exemplar.Exemplar{Labels: labels.FromStrings("xx", "yy"), Value: 5},
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("xx", "yy"), Value: 5},
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
@@ -228,13 +228,18 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 
 			var e exemplar.Exemplar
 			p.Metric(&res)
-			p.Exemplar(&e)
+			found := p.Exemplar(&e)
 
 			testutil.Equals(t, exp[i].m, string(m))
 			testutil.Equals(t, exp[i].t, ts)
 			testutil.Equals(t, exp[i].v, v)
 			testutil.Equals(t, exp[i].lset, res)
-			testutil.Equals(t, exp[i].e, e)
+			if exp[i].e == nil {
+				testutil.Equals(t, false, found)
+			} else {
+				testutil.Equals(t, true, found)
+				testutil.Equals(t, *exp[i].e, e)
+			}
 			res = res[:0]
 
 		case EntryType:
@@ -434,6 +439,30 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			input: `custom_metric 1 # {aa="bb"}`,
 			err:   "metric name custom_metric does not support exemplars",
 		},
+		{
+			input: `custom_metric_total 1 # {aa="bb",,cc="dd"} 1`,
+			err:   "expected label name, got \"COMMA\"",
+		},
+		{
+			input: `custom_metric_total 1 # {aa="bb"} 1_2`,
+			err:   "unsupported character in float",
+		},
+		{
+			input: `custom_metric_total 1 # {aa="bb"} 0x1p-3`,
+			err:   "unsupported character in float",
+		},
+		{
+			input: `custom_metric_total 1 # {aa="bb"} true`,
+			err:   "strconv.ParseFloat: parsing \"true\": invalid syntax",
+		},
+		{
+			input: `custom_metric_total 1 # {aa="bb",cc=}`,
+			err:   "expected label value, got \"INVALID\"",
+		},
+		{
+			input: `custom_metric_total 1 # {aa=\"\xff\"} 9.0`,
+			err:   "expected label value, got \"INVALID\"",
+		},
 	}
 
 	for i, c := range cases {
@@ -490,6 +519,14 @@ func TestOMNullByteHandling(t *testing.T) {
 		{
 			input: "# H",
 			err:   "\"INVALID\" \" \" is not a valid start token",
+		},
+		{
+			input: "custom_metric_total 1 # {b=\x00\"ssss\"} 1\n",
+			err:   "expected label value, got \"INVALID\"",
+		},
+		{
+			input: "custom_metric_total 1 # {b=\"\x00ss\"} 1\n",
+			err:   "expected label value, got \"INVALID\"",
 		},
 	}
 

@@ -236,9 +236,9 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 }
 
 // Exemplar writes the exemplar of the current sample into the passed
-// exemplar. It returns the string from which the metric was parsed.
-func (p *PromParser) Exemplar(e *exemplar.Exemplar) string {
-	return ""
+// exemplar. It returns if an exemplar exists.
+func (p *PromParser) Exemplar(e *exemplar.Exemplar) bool {
+	return false
 }
 
 // nextToken returns the next token from the promlexer. It skips over tabs
