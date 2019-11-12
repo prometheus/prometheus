@@ -36,6 +36,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
@@ -158,6 +160,7 @@ type TSDBAdmin interface {
 	Delete(mint, maxt int64, ms ...tsdbLabels.Matcher) error
 	Dir() string
 	Snapshot(dir string, withHead bool) error
+	Head() *tsdb.Head
 }
 
 // API can register a set of endpoints in a router and handle
@@ -278,6 +281,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
+	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 
 	r.Get("/alerts", wrap(api.alerts))
@@ -913,6 +917,45 @@ func (api *API) serveConfig(r *http.Request) apiFuncResult {
 
 func (api *API) serveFlags(r *http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
+}
+
+// stat holds the information about individual cardinality.
+type stat struct {
+	Name  string `json:"name"`
+	Value uint64 `json:"value"`
+}
+
+// tsdbStatus has information of cardinality statistics from postings.
+type tsdbStatus struct {
+	SeriesCountByMetricName     []stat `json:"seriesCountByMetricName"`
+	LabelValueCountByLabelName  []stat `json:"labelValueCountByLabelName"`
+	MemoryInBytesByLabelName    []stat `json:"memoryInBytesByLabelName"`
+	SeriesCountByLabelValuePair []stat `json:"seriesCountByLabelValuePair"`
+}
+
+func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
+	db := api.db()
+	if db == nil {
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil, nil}
+	}
+	convert := func(stats []index.Stat) []stat {
+		result := make([]stat, 0, len(stats))
+		for _, item := range stats {
+			item := stat{Name: item.Name, Value: item.Count}
+			result = append(result, item)
+		}
+		return result
+	}
+
+	posting := db.Head().PostingsCardinalityStats(model.MetricNameLabel)
+	response := tsdbStatus{
+		SeriesCountByMetricName:     convert(posting.CardinalityMetricsStats),
+		LabelValueCountByLabelName:  convert(posting.CardinalityLabelStats),
+		MemoryInBytesByLabelName:    convert(posting.LabelValueStats),
+		SeriesCountByLabelValuePair: convert(posting.LabelValuePairsStats),
+	}
+
+	return apiFuncResult{response, nil, nil, nil}
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
