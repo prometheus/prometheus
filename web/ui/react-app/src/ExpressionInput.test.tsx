@@ -178,7 +178,7 @@ describe('ExpressionInput', () => {
       const downshift = expressionInput.find(Downshift);
       const instance: any = expressionInput.instance();
       const spyBlur = jest.fn();
-      instance.exprInputRef.current = { blur: spyBlur };
+      instance.exprInputRef.current!.blur = spyBlur;
       const input = downshift.find(Input);
       downshift.setState({ isOpen: false });
       const event = getKeyEvent('Escape');
