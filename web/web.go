@@ -84,6 +84,7 @@ var (
 		"/service-discovery",
 		"/status",
 		"/targets",
+		"/tsdb-status",
 		"/version",
 	}
 )
