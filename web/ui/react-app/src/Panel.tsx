@@ -291,7 +291,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
                       onChangeResolution={this.handleChangeResolution}
                       onChangeStacking={this.handleChangeStacking}
                     />
-                    <Graph data={this.state.data} stacked={options.stacked} queryParams={this.state.lastQueryParams} />
+                    {this.state.data && <Graph data={this.state.data} stacked={options.stacked} queryParams={this.state.lastQueryParams} />}
                   </>
                 )}
               </TabPane>

@@ -3,8 +3,8 @@ import React, { PureComponent } from 'react';
 import ReactResizeDetector from 'react-resize-detector';
 import { Alert } from 'reactstrap';
 
-import Legend from './Legend';
 import { escapeHTML } from './utils/html';
+import SeriesName from './SeriesName';
 
 require('flot');
 require('flot/source/jquery.flot.crosshair');
@@ -19,6 +19,15 @@ function getGraphID() {
   return graphID++;
 }
 
+export type GraphSeriesValue = number | null;
+
+export interface GraphSeriesXY {
+  labels: { [key: string]: string };
+  color: string;
+  data: GraphSeriesValue[][]; // [x,y][]
+  index: number;
+}
+
 interface GraphProps {
   data: any; // TODO: Type this.
   stacked: boolean;
@@ -28,10 +37,19 @@ interface GraphProps {
     resolution: number;
   } | null;
 }
+interface GraphState {
+  selectedSerieIndex: number;
+  hoveredSerieIndex: number;
+}
 
-class Graph extends PureComponent<GraphProps> {
+class Graph extends PureComponent<GraphProps, GraphState> {
   private id: number = getGraphID();
   private chartRef = React.createRef<HTMLDivElement>();
+
+  state = {
+    selectedSerieIndex: -1,
+    hoveredSerieIndex: -1,
+  }
 
   renderLabels(labels: { [key: string]: string }) {
     const labelStrings: string[] = [];
@@ -172,7 +190,7 @@ class Graph extends PureComponent<GraphProps> {
     return colors;
   }
 
-  getData() {
+  getData(): GraphSeriesXY[] {
     const colors = this.getColors();
 
     return this.props.data.result.map((ts: any /* TODO: Type this*/, index: number) => {
@@ -193,12 +211,14 @@ class Graph extends PureComponent<GraphProps> {
           data.push([t * 1000, this.props.stacked ? 0 : null]);
         }
       }
+      const { r, g, b } = colors[index]
+      const opacity = this.state.hoveredSerieIndex === index ? 0.5 : 1;
 
       return {
         labels: ts.metric !== null ? ts.metric : {},
-        data: data,
-        color: colors[index],
-        index: index,
+        color: `rgba(${r}, ${g}, ${b}, ${opacity})`,
+        data,
+        index,
       };
     });
   }
@@ -221,7 +241,10 @@ class Graph extends PureComponent<GraphProps> {
     this.plot();
   }
 
-  componentDidUpdate() {
+  componentDidUpdate(prevProps: GraphProps) {
+    if (prevProps.data !== this.props.data) {
+      this.setState({ selectedSerieIndex: -1 })
+    }
     this.plot();
   }
 
@@ -229,12 +252,14 @@ class Graph extends PureComponent<GraphProps> {
     this.destroyPlot();
   }
 
-  plot() {
+  plot = () => {
     if (this.chartRef.current === null) {
       return;
     }
+    const selectedData = this.getData()[this.state.selectedSerieIndex]
     this.destroyPlot();
-    $.plot($(this.chartRef.current!), this.getData(), this.getOptions());
+    $.plot($(this.chartRef.current!), selectedData ? [selectedData] : this.getData(), this.getOptions());
+
   }
 
   destroyPlot() {
@@ -242,6 +267,15 @@ class Graph extends PureComponent<GraphProps> {
     if (chart !== undefined) {
       chart.destroy();
     }
+  }
+
+  onSerieSelect = (index: number) => () => {
+    const { selectedSerieIndex } = this.state;
+    this.setState({ selectedSerieIndex: selectedSerieIndex === -1 || selectedSerieIndex !== index ? index : -1 })
+
+  }
+  onSerieHover = (index: number) => () => {
+    this.state.selectedSerieIndex === -1 && this.setState({ hoveredSerieIndex: index })
   }
 
   render() {
@@ -260,12 +294,24 @@ class Graph extends PureComponent<GraphProps> {
     if (this.props.data.result.length === 0) {
       return <Alert color="secondary">Empty query result</Alert>;
     }
-
+    const { selectedSerieIndex } = this.state;
+    const series = this.getData();
     return (
       <div className="graph">
-        <ReactResizeDetector handleWidth onResize={() => this.plot()} />
+        <ReactResizeDetector handleWidth onResize={this.plot} />
         <div className="graph-chart" ref={this.chartRef} />
-        <Legend series={this.getData()} />
+        <div className="graph-legend">
+          {series.map(({ index, color, labels }) => (
+            <div style={{ opacity: selectedSerieIndex > -1 && index !== selectedSerieIndex ? 0.4 : 1 }}
+                onClick={series.length > 1 ? this.onSerieSelect(index) : undefined}
+                onMouseOver={series.length > 1 ? this.onSerieHover(index) : undefined}
+                key={index}
+                className="legend-item">
+              <span className="legend-swatch" style={{ backgroundColor: color }}></span>
+              <SeriesName labels={labels} format />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

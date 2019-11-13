@@ -135,16 +135,40 @@ div.time-input {
 }
 
 .graph-legend {
-    margin: 15px 0 15px 25px;
-    font-size: 0.8em;
+    margin: 15px 0 15px 55px;
+    font-size: 0.75em;
+    background: #222;
+    color: white;
+    padding: 10px 5px;
+    display: inline-block;
+    cursor: pointer;
 }
 
-.graph-legend .legend-swatch {
-    padding: 5px;
-    height: 5px;
+.legend-item {
+    display: flex;
+    align-items: center;
+    padding: 0 5px;
+    border-radius: 3px;
+    user-select: none;
+}
+
+.legend-item::before {
+    content: "✔";
+    opacity: 0.5;
+    margin-right: 5px;
+}
+
+.legend-swatch {
+    width: 7px;
+    height: 7px;
     outline-offset: 1px;
     outline: 1.5px solid #ccc;
     margin: 2px 8px 2px 0;
+    display: inline-block;
+}
+
+.legend-item:hover {
+    background: rgba(255, 255, 255, 0.18);
 }
 
 .legend-metric-name {
