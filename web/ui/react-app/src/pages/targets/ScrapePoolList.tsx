@@ -1,12 +1,17 @@
 import React, { FC } from 'react';
 import { FilterData } from './Filter';
 import { useFetch } from '../../utils/useFetch';
-import { ScrapePool, groupTargets } from './target';
+import { ScrapePool, groupTargets, Target } from './target';
 import ScrapePoolPanel from './ScrapePoolPanel';
 import PathPrefixProps from '../../PathPrefixProps';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { Alert } from 'reactstrap';
+
+interface TargetsResponse {
+  activeTargets: Target[];
+  droppedTargets: Target[];
+}
 
 interface ScrapePoolListProps {
   filter: FilterData;
@@ -33,7 +38,7 @@ const ScrapePoolList: FC<ScrapePoolListProps & PathPrefixProps> = ({ filter, pat
       </Alert>
     );
   } else if (response && response.data) {
-    const { activeTargets } = response.data;
+    const { activeTargets } = response.data as TargetsResponse;
     const targetGroups = groupTargets(activeTargets);
     return (
       <>
