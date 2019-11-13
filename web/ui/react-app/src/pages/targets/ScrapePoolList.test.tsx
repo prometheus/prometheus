@@ -8,6 +8,7 @@ import ScrapePoolPanel from './ScrapePoolPanel';
 import { Target } from './target';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { FetchMock } from 'jest-fetch-mock/types';
 
 describe('Flags', () => {
   const defaultProps = {
@@ -16,7 +17,7 @@ describe('Flags', () => {
   };
 
   beforeEach(() => {
-    fetch.resetMocks();
+    fetchMock.resetMocks();
   });
 
   describe('before data is returned', () => {
@@ -35,7 +36,7 @@ describe('Flags', () => {
 
   describe('when data is returned', () => {
     let scrapePoolList: ReactWrapper;
-    let mock: Promise<Response>;
+    let mock: FetchMock;
     beforeEach(() => {
       //Tooltip requires DOM elements to exist. They do not in enzyme rendering so we must manually create them.
       const scrapePools: { [key: string]: number } = { blackbox: 3, node_exporter: 1, prometheus: 1 };
@@ -46,7 +47,7 @@ describe('Flags', () => {
           document.body.appendChild(div);
         });
       });
-      mock = fetch.mockResponse(JSON.stringify(sampleApiResponse));
+      mock = fetchMock.mockResponse(JSON.stringify(sampleApiResponse));
     });
 
     it('renders a table', async () => {
@@ -81,9 +82,9 @@ describe('Flags', () => {
 
   describe('when an error is returned', () => {
     it('displays an alert', async () => {
-      const mock = fetch.mockReject(new Error('Error fetching targets'));
+      const mock = fetchMock.mockReject(new Error('Error fetching targets'));
 
-      let scrapePoolList: ReactWrapper;
+      let scrapePoolList: any;
       await act(async () => {
         scrapePoolList = mount(<ScrapePoolList {...defaultProps} />);
       });

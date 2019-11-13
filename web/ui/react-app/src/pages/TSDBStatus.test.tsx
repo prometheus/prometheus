@@ -1,11 +1,11 @@
 import * as React from 'react';
 import { mount, shallow, ReactWrapper } from 'enzyme';
 import { act } from 'react-dom/test-utils';
-import { Alert, Table, Badge } from 'reactstrap';
+import { Alert, Table } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { TSDBStatus } from '.';
-import { TSDBMap, Stats } from './TSDBStatus';
+import { TSDBMap } from './TSDBStatus';
 
 const fakeTSDBStatusResponse: {
   status: string;
@@ -46,7 +46,7 @@ const fakeTSDBStatusResponse: {
 
 describe('TSDB Stats', () => {
   beforeEach(() => {
-    fetch.resetMocks();
+    fetchMock.resetMocks();
   });
 
   it('before data is returned', () => {
@@ -58,9 +58,9 @@ describe('TSDB Stats', () => {
 
   describe('when an error is returned', () => {
     it('displays an alert', async () => {
-      const mock = fetch.mockReject(new Error('error loading tsdb status'));
+      const mock = fetchMock.mockReject(new Error('error loading tsdb status'));
 
-      let page: ReactWrapper;
+      let page: any;
       await act(async () => {
         page = mount(<TSDBStatus pathPrefix="/path/prefix" />);
       });
@@ -94,8 +94,8 @@ describe('TSDB Stats', () => {
         },
       ];
 
-      const mock = fetch.mockResponse(JSON.stringify(fakeTSDBStatusResponse));
-      let page: ReactWrapper;
+      const mock = fetchMock.mockResponse(JSON.stringify(fakeTSDBStatusResponse));
+      let page: any;
       await act(async () => {
         page = mount(<TSDBStatus pathPrefix="/path/prefix" />);
       });
@@ -104,17 +104,17 @@ describe('TSDB Stats', () => {
       expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', undefined);
 
       for (let i = 0; i < tables.length; i++) {
-        let data = tables[i].data;
-        let table = page
+        const data = tables[i].data;
+        const table = page
           .find(Table)
           .at(tables[i].table_index)
           .find('tbody');
-        let rows = table.find('tr');
+        const rows = table.find('tr');
         for (let i = 0; i < data.length; i++) {
           const firstRowColumns = rows
             .at(i)
             .find('td')
-            .map(column => column.text());
+            .map((column: ReactWrapper) => column.text());
           expect(rows.length).toBe(data.length);
           expect(firstRowColumns[0]).toBe(data[i].name);
           expect(firstRowColumns[1]).toBe(data[i].value.toString());
