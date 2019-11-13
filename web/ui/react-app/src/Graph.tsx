@@ -49,7 +49,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   state = {
     selectedSerieIndex: -1,
     hoveredSerieIndex: -1,
-  }
+  };
 
   renderLabels(labels: { [key: string]: string }) {
     const labelStrings: string[] = [];
@@ -211,12 +211,11 @@ class Graph extends PureComponent<GraphProps, GraphState> {
           data.push([t * 1000, this.props.stacked ? 0 : null]);
         }
       }
-      const { r, g, b } = colors[index]
-      const opacity = this.state.hoveredSerieIndex === index ? 0.5 : 1;
+      const { r, g, b } = colors[index];
 
       return {
         labels: ts.metric !== null ? ts.metric : {},
-        color: `rgba(${r}, ${g}, ${b}, ${opacity})`,
+        color: `rgba(${r}, ${g}, ${b}, ${this.state.hoveredSerieIndex === index ? 0.5 : 1})`,
         data,
         index,
       };
@@ -243,7 +242,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   componentDidUpdate(prevProps: GraphProps) {
     if (prevProps.data !== this.props.data) {
-      this.setState({ selectedSerieIndex: -1 })
+      this.setState({ selectedSerieIndex: -1 });
     }
     this.plot();
   }
@@ -256,11 +255,10 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     if (this.chartRef.current === null) {
       return;
     }
-    const selectedData = this.getData()[this.state.selectedSerieIndex]
+    const selectedData = this.getData()[this.state.selectedSerieIndex];
     this.destroyPlot();
     $.plot($(this.chartRef.current!), selectedData ? [selectedData] : this.getData(), this.getOptions());
-
-  }
+  };
 
   destroyPlot() {
     const chart = $(this.chartRef.current!).data('plot');
@@ -271,12 +269,11 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   onSerieSelect = (index: number) => () => {
     const { selectedSerieIndex } = this.state;
-    this.setState({ selectedSerieIndex: selectedSerieIndex === -1 || selectedSerieIndex !== index ? index : -1 })
-
-  }
+    this.setState({ selectedSerieIndex: selectedSerieIndex === -1 || selectedSerieIndex !== index ? index : -1 });
+  };
   onSerieHover = (index: number) => () => {
-    this.state.selectedSerieIndex === -1 && this.setState({ hoveredSerieIndex: index })
-  }
+    this.state.selectedSerieIndex === -1 && this.setState({ hoveredSerieIndex: index });
+  };
 
   render() {
     if (this.props.data === null) {
@@ -302,11 +299,13 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         <div className="graph-chart" ref={this.chartRef} />
         <div className="graph-legend">
           {series.map(({ index, color, labels }) => (
-            <div style={{ opacity: selectedSerieIndex > -1 && index !== selectedSerieIndex ? 0.4 : 1 }}
-                onClick={series.length > 1 ? this.onSerieSelect(index) : undefined}
-                onMouseOver={series.length > 1 ? this.onSerieHover(index) : undefined}
-                key={index}
-                className="legend-item">
+            <div
+              style={{ opacity: selectedSerieIndex > -1 && index !== selectedSerieIndex ? 0.4 : 1 }}
+              onClick={series.length > 1 ? this.onSerieSelect(index) : undefined}
+              onMouseOver={series.length > 1 ? this.onSerieHover(index) : undefined}
+              key={index}
+              className="legend-item"
+            >
               <span className="legend-swatch" style={{ backgroundColor: color }}></span>
               <SeriesName labels={labels} format />
             </div>
