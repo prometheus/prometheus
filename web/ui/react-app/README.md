@@ -42,6 +42,14 @@ Create React App uses the [Jest](https://jestjs.io/) framework for running tests
 
     yarn test
 
+To generate an HTML-based test coverage report, run:
+
+    CI=true yarn test --coverage
+
+This creates a `coverage` subdirectory with the generated report. Open `coverage/lcov-report/index.html` in the browser to view it.
+
+The `CI=true` environment variable prevents the tests from being run in interactive / watching mode.
+
 See the [Create React App documentation](https://create-react-app.dev/docs/running-tests/) for more information about running tests.
 
 ## Linting
