@@ -266,7 +266,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   onSerieSelect = (index: number) => () => {
     const { selectedSerieIndex } = this.state;
-    this.setState({ selectedSerieIndex: selectedSerieIndex === -1 || selectedSerieIndex !== index ? index : -1 });
+    this.setState({ selectedSerieIndex: selectedSerieIndex !== index ? index : -1 });
   };
   onSerieHover = (index: number) => () => {
     this.state.selectedSerieIndex === -1 && this.setState({ hoveredSerieIndex: index });
