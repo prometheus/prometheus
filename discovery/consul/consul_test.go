@@ -323,7 +323,7 @@ func TestGetDatacenter_ShouldUseAgentInfo(t *testing.T) {
 	testutil.Equals(t, "test-dc", d.clientDatacenter)
 }
 
-func TestGetDatacenter_ShouldReturnError(t *testing.T) {
+func TestGetDatacenterShouldReturnError(t *testing.T) {
 	for _, tc := range []struct {
 		handler    func(http.ResponseWriter, *http.Request)
 		errMessage string
