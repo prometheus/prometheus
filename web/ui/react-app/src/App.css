@@ -156,6 +156,8 @@ div.time-input {
     content: "✔";
     opacity: 0.5;
     margin-right: 5px;
+    line-height: 1.4;
+    font-size: 7px;
 }
 
 .legend-swatch {

@@ -215,7 +215,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
       return {
         labels: ts.metric !== null ? ts.metric : {},
-        color: `rgba(${r}, ${g}, ${b}, ${this.state.hoveredSerieIndex === index ? 0.5 : 1})`,
+        color: `rgba(${r}, ${g}, ${b}, ${this.state.hoveredSerieIndex === -1 || this.state.hoveredSerieIndex === index ? 1 : 0.5})`,
         data,
         index,
       };
@@ -236,10 +236,6 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     return val;
   }
 
-  componentDidMount() {
-    this.plot();
-  }
-
   componentDidUpdate(prevProps: GraphProps) {
     if (prevProps.data !== this.props.data) {
       this.setState({ selectedSerieIndex: -1 });
@@ -252,12 +248,12 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   }
 
   plot = () => {
-    if (this.chartRef.current === null) {
+    if (!this.chartRef.current) {
       return;
     }
     const selectedData = this.getData()[this.state.selectedSerieIndex];
     this.destroyPlot();
-    $.plot($(this.chartRef.current!), selectedData ? [selectedData] : this.getData(), this.getOptions());
+    $.plot($(this.chartRef.current), selectedData ? [selectedData] : this.getData(), this.getOptions());
   };
 
   destroyPlot() {
@@ -297,7 +293,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       <div className="graph">
         <ReactResizeDetector handleWidth onResize={this.plot} />
         <div className="graph-chart" ref={this.chartRef} />
-        <div className="graph-legend">
+        <div className="graph-legend" onMouseOut={() => this.setState({ hoveredSerieIndex: -1 })}>
           {series.map(({ index, color, labels }) => (
             <div
               style={{ opacity: selectedSerieIndex > -1 && index !== selectedSerieIndex ? 0.4 : 1 }}
