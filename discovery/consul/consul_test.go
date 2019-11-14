@@ -298,31 +298,6 @@ func TestAllOptions(t *testing.T) {
 	cancel()
 }
 
-func TestGetDatacenter_ShouldUseAgentInfo(t *testing.T) {
-	stub, config := newServer(t)
-	defer stub.Close()
-
-	d := newDiscovery(t, config)
-
-	// Should be empty if not initialized.
-	testutil.Equals(t, "", d.clientDatacenter)
-
-	err := d.getDatacenter()
-
-	// No error expected here.
-	testutil.Equals(t, nil, err)
-	// Should be value of agent info once initialized.
-	testutil.Equals(t, "test-dc", d.clientDatacenter)
-
-	// second call should use value cached.
-	err = d.getDatacenter()
-
-	// No error expected here.
-	testutil.Equals(t, nil, err)
-	// Should still be value of agent info.
-	testutil.Equals(t, "test-dc", d.clientDatacenter)
-}
-
 func TestGetDatacenterShouldReturnError(t *testing.T) {
 	for _, tc := range []struct {
 		handler    func(http.ResponseWriter, *http.Request)
