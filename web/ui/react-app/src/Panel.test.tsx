@@ -83,7 +83,7 @@ describe('Panel', () => {
     };
     const graphPanel = mount(<Panel {...props} options={options} />);
     const controls = graphPanel.find(GraphControls);
-    graphPanel.setState({ data: []})
+    graphPanel.setState({ data: [] });
     const graph = graphPanel.find(Graph);
     expect(controls.prop('endTime')).toEqual(options.endTime);
     expect(controls.prop('range')).toEqual(options.range);
