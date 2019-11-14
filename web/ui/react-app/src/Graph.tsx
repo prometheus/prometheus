@@ -268,9 +268,12 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     const { selectedSeriesIndex } = this.state;
     this.setState({ selectedSeriesIndex: selectedSeriesIndex !== index ? index : -1 });
   };
+
   onSeriesHover = (index: number) => () => {
-    this.state.selectedSeriesIndex === -1 && this.setState({ hoveredSeriesIndex: index });
+    this.setState({ hoveredSeriesIndex: index });
   };
+
+  onLegendMouseOut = () => this.setState({ hoveredSeriesIndex: -1 });
 
   render() {
     if (this.props.data === null) {
@@ -290,16 +293,17 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
     const { selectedSeriesIndex } = this.state;
     const series = this.getData();
+    const canUseHover = series.length > 1 && selectedSeriesIndex === -1;
     return (
       <div className="graph">
         <ReactResizeDetector handleWidth onResize={this.plot} />
         <div className="graph-chart" ref={this.chartRef} />
-        <div className="graph-legend" onMouseOut={() => this.setState({ hoveredSeriesIndex: -1 })}>
+        <div className="graph-legend" onMouseOut={canUseHover ? this.onLegendMouseOut : undefined}>
           {series.map(({ index, color, labels }) => (
             <div
               style={{ opacity: selectedSeriesIndex > -1 && index !== selectedSeriesIndex ? 0.4 : 1 }}
               onClick={series.length > 1 ? this.onSeriesSelect(index) : undefined}
-              onMouseOver={series.length > 1 ? this.onSeriesHover(index) : undefined}
+              onMouseOver={canUseHover ? this.onSeriesHover(index) : undefined}
               key={index}
               className="legend-item"
             >
