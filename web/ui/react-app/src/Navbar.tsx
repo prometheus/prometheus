@@ -43,6 +43,9 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
               <DropdownItem tag={Link} to={`${pathPrefix}/new/status`}>
                 Runtime & Build Information
               </DropdownItem>
+              <DropdownItem tag={Link} to={`${pathPrefix}/new/tsdb-status`}>
+                TSDB Status
+              </DropdownItem>
               <DropdownItem tag={Link} to={`${pathPrefix}/new/flags`}>
                 Command-Line Flags
               </DropdownItem>

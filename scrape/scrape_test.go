@@ -1450,7 +1450,7 @@ func (ts *testScraper) offset(interval time.Duration, jitterSeed uint64) time.Du
 	return ts.offsetDur
 }
 
-func (ts *testScraper) report(start time.Time, duration time.Duration, err error) {
+func (ts *testScraper) Report(start time.Time, duration time.Duration, err error) {
 	ts.lastStart = start
 	ts.lastDuration = duration
 	ts.lastError = err

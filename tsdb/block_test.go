@@ -16,6 +16,9 @@ package tsdb
 import (
 	"context"
 	"encoding/binary"
+
+	"github.com/prometheus/prometheus/tsdb/fileutil"
+
 	"errors"
 	"hash/crc32"
 	"io/ioutil"
@@ -231,7 +234,8 @@ func TestBlockSize(t *testing.T) {
 			testutil.Ok(t, blockInit.Close())
 		}()
 		expSizeInit = blockInit.Size()
-		actSizeInit := testutil.DirSize(t, blockInit.Dir())
+		actSizeInit, err := fileutil.DirSize(blockInit.Dir())
+		testutil.Ok(t, err)
 		testutil.Equals(t, expSizeInit, actSizeInit)
 	}
 
@@ -240,7 +244,7 @@ func TestBlockSize(t *testing.T) {
 		testutil.Ok(t, blockInit.Delete(1, 10, labels.NewMustRegexpMatcher("", ".*")))
 		expAfterDelete := blockInit.Size()
 		testutil.Assert(t, expAfterDelete > expSizeInit, "after a delete the block size should be bigger as the tombstone file should grow %v > %v", expAfterDelete, expSizeInit)
-		actAfterDelete := testutil.DirSize(t, blockDirInit)
+		actAfterDelete, err := fileutil.DirSize(blockDirInit)
 		testutil.Ok(t, err)
 		testutil.Equals(t, expAfterDelete, actAfterDelete, "after a delete reported block size doesn't match actual disk size")
 
@@ -254,7 +258,8 @@ func TestBlockSize(t *testing.T) {
 			testutil.Ok(t, blockAfterCompact.Close())
 		}()
 		expAfterCompact := blockAfterCompact.Size()
-		actAfterCompact := testutil.DirSize(t, blockAfterCompact.Dir())
+		actAfterCompact, err := fileutil.DirSize(blockAfterCompact.Dir())
+		testutil.Ok(t, err)
 		testutil.Assert(t, actAfterDelete > actAfterCompact, "after a delete and compaction the block size should be smaller %v,%v", actAfterDelete, actAfterCompact)
 		testutil.Equals(t, expAfterCompact, actAfterCompact, "after a delete and compaction reported block size doesn't match actual disk size")
 	}

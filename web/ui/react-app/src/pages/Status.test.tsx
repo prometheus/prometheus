@@ -1,33 +1,15 @@
 import * as React from 'react';
 import { shallow } from 'enzyme';
-import { Status } from '.';
-import { Alert } from 'reactstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import * as useFetch from '../hooks/useFetches';
 import toJson from 'enzyme-to-json';
+import { StatusContent } from './Status';
 
 describe('Status', () => {
-  afterEach(() => jest.restoreAllMocks());
-  it('should render spinner while waiting data', () => {
-    const wrapper = shallow(<Status />);
-    expect(wrapper.find(FontAwesomeIcon)).toHaveLength(1);
-  });
-  it('should render Alert on error', () => {
-    (useFetch as any).default = jest.fn().mockImplementation(() => ({ error: new Error('foo') }));
-    const wrapper = shallow(<Status />);
-    expect(wrapper.find(Alert)).toHaveLength(1);
-  });
-  it('should fetch proper API endpoints', () => {
-    const useFetchSpy = jest.spyOn(useFetch, 'default');
-    shallow(<Status pathPrefix="/path/prefix" />);
-    expect(useFetchSpy).toHaveBeenCalledWith([
-      '/path/prefix/api/v1/status/runtimeinfo',
-      '/path/prefix/api/v1/status/buildinfo',
-      '/path/prefix/api/v1/alertmanagers',
-    ]);
+  it('should not fail with undefined data', () => {
+    const wrapper = shallow(<StatusContent data={[]} />);
+    expect(wrapper).toHaveLength(1);
   });
   describe('Snapshot testing', () => {
-    const response = [
+    const response: any = [
       {
         startTime: '2019-10-30T22:03:23.247913868+02:00',
         CWD: '/home/boyskila/Desktop/prometheus',
@@ -63,8 +45,7 @@ describe('Status', () => {
       },
     ];
     it('should match table snapshot', () => {
-      (useFetch as any).default = jest.fn().mockImplementation(() => ({ response }));
-      const wrapper = shallow(<Status />);
+      const wrapper = shallow(<StatusContent data={response} />);
       expect(toJson(wrapper)).toMatchSnapshot();
       jest.restoreAllMocks();
     });
