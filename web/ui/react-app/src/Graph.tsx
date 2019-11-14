@@ -38,8 +38,8 @@ interface GraphProps {
   } | null;
 }
 interface GraphState {
-  selectedSerieIndex: number;
-  hoveredSerieIndex: number;
+  selectedSeriesIndex: number;
+  hoveredSeriesIndex: number;
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
@@ -47,8 +47,8 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   private chartRef = React.createRef<HTMLDivElement>();
 
   state = {
-    selectedSerieIndex: -1,
-    hoveredSerieIndex: -1,
+    selectedSeriesIndex: -1,
+    hoveredSeriesIndex: -1,
   };
 
   renderLabels(labels: { [key: string]: string }) {
@@ -192,7 +192,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   getData(): GraphSeriesXY[] {
     const colors = this.getColors();
-    const { hoveredSerieIndex } = this.state;
+    const { hoveredSeriesIndex } = this.state;
     const { stacked, queryParams } = this.props;
     return this.props.data.result.map((ts: any /* TODO: Type this*/, index: number) => {
       // Insert nulls for all missing steps.
@@ -216,7 +216,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
       return {
         labels: ts.metric !== null ? ts.metric : {},
-        color: `rgba(${r}, ${g}, ${b}, ${hoveredSerieIndex === -1 || hoveredSerieIndex === index ? 1 : 0.5})`,
+        color: `rgba(${r}, ${g}, ${b}, ${hoveredSeriesIndex === -1 || hoveredSeriesIndex === index ? 1 : 0.5})`,
         data,
         index,
       };
@@ -239,7 +239,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   componentDidUpdate(prevProps: GraphProps) {
     if (prevProps.data !== this.props.data) {
-      this.setState({ selectedSerieIndex: -1 });
+      this.setState({ selectedSeriesIndex: -1 });
     }
     this.plot();
   }
@@ -252,7 +252,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     if (!this.chartRef.current) {
       return;
     }
-    const selectedData = this.getData()[this.state.selectedSerieIndex];
+    const selectedData = this.getData()[this.state.selectedSeriesIndex];
     this.destroyPlot();
     $.plot($(this.chartRef.current), selectedData ? [selectedData] : this.getData(), this.getOptions());
   };
@@ -264,12 +264,12 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
   }
 
-  onSerieSelect = (index: number) => () => {
-    const { selectedSerieIndex } = this.state;
-    this.setState({ selectedSerieIndex: selectedSerieIndex !== index ? index : -1 });
+  onSeriesSelect = (index: number) => () => {
+    const { selectedSeriesIndex } = this.state;
+    this.setState({ selectedSeriesIndex: selectedSeriesIndex !== index ? index : -1 });
   };
-  onSerieHover = (index: number) => () => {
-    this.state.selectedSerieIndex === -1 && this.setState({ hoveredSerieIndex: index });
+  onSeriesHover = (index: number) => () => {
+    this.state.selectedSeriesIndex === -1 && this.setState({ hoveredSeriesIndex: index });
   };
 
   render() {
@@ -288,18 +288,18 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     if (this.props.data.result.length === 0) {
       return <Alert color="secondary">Empty query result</Alert>;
     }
-    const { selectedSerieIndex } = this.state;
+    const { selectedSeriesIndex } = this.state;
     const series = this.getData();
     return (
       <div className="graph">
         <ReactResizeDetector handleWidth onResize={this.plot} />
         <div className="graph-chart" ref={this.chartRef} />
-        <div className="graph-legend" onMouseOut={() => this.setState({ hoveredSerieIndex: -1 })}>
+        <div className="graph-legend" onMouseOut={() => this.setState({ hoveredSeriesIndex: -1 })}>
           {series.map(({ index, color, labels }) => (
             <div
-              style={{ opacity: selectedSerieIndex > -1 && index !== selectedSerieIndex ? 0.4 : 1 }}
-              onClick={series.length > 1 ? this.onSerieSelect(index) : undefined}
-              onMouseOver={series.length > 1 ? this.onSerieHover(index) : undefined}
+              style={{ opacity: selectedSeriesIndex > -1 && index !== selectedSeriesIndex ? 0.4 : 1 }}
+              onClick={series.length > 1 ? this.onSeriesSelect(index) : undefined}
+              onMouseOver={series.length > 1 ? this.onSeriesHover(index) : undefined}
               key={index}
               className="legend-item"
             >
