@@ -192,12 +192,13 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   getData(): GraphSeriesXY[] {
     const colors = this.getColors();
-
+    const { hoveredSerieIndex } = this.state;
+    const { stacked, queryParams } = this.props;
     return this.props.data.result.map((ts: any /* TODO: Type this*/, index: number) => {
       // Insert nulls for all missing steps.
       const data = [];
       let pos = 0;
-      const params = this.props.queryParams!;
+      const params = queryParams!;
 
       for (let t = params.startTime; t <= params.endTime; t += params.resolution) {
         // Allow for floating point inaccuracy.
@@ -208,14 +209,14 @@ class Graph extends PureComponent<GraphProps, GraphState> {
           // TODO: Flot has problems displaying intermittent "null" values when stacked,
           // resort to 0 now. In Grafana this works for some reason, figure out how they
           // do it.
-          data.push([t * 1000, this.props.stacked ? 0 : null]);
+          data.push([t * 1000, stacked ? 0 : null]);
         }
       }
       const { r, g, b } = colors[index];
 
       return {
         labels: ts.metric !== null ? ts.metric : {},
-        color: `rgba(${r}, ${g}, ${b}, ${this.state.hoveredSerieIndex === -1 || this.state.hoveredSerieIndex === index ? 1 : 0.5})`,
+        color: `rgba(${r}, ${g}, ${b}, ${hoveredSerieIndex === -1 || hoveredSerieIndex === index ? 1 : 0.5})`,
         data,
         index,
       };
