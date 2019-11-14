@@ -308,8 +308,8 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	var (
 		batchSize  int64
 		batchStart int
-		batch      = make([][]Meta, 1)
-		batchID    = len(batch) - 1
+		batches    = make([][]Meta, 1)
+		batchID    = len(batches) - 1
 		firstBatch = true
 	)
 
@@ -335,10 +335,10 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 
 		if cutNewBatch {
 			batchStart = i
-			batch = append(batch, []Meta{})
-			batchID = len(batch) - 1
+			batches = append(batches, []Meta{})
+			batchID = len(batches) - 1
 		}
-		batch[batchID] = chks[batchStart : i+1]
+		batches[batchID] = chks[batchStart : i+1]
 	}
 
 	// Create a new segment when one doesn't already exist.
@@ -348,13 +348,13 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		}
 	}
 
-	for i, chks := range batch {
+	for i, chks := range batches {
 		if err := w.writeChunks(chks); err != nil {
 			return err
 		}
 		// Cut a new segment only when there are more chunks to write.
 		// Avoid creating a new empty segment at the end of the write.
-		if i < len(batch)-1 {
+		if i < len(batches)-1 {
 			if err := w.cut(); err != nil {
 				return err
 			}
