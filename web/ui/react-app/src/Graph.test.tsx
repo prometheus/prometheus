@@ -3,7 +3,6 @@ import { shallow } from 'enzyme';
 import Graph from './Graph';
 import { Alert } from 'reactstrap';
 import ReactResizeDetector from 'react-resize-detector';
-import Legend from './Legend';
 
 describe('Graph', () => {
   [
@@ -95,14 +94,12 @@ describe('Graph', () => {
       const div = graph.find('div').filterWhere(elem => elem.prop('className') === 'graph');
       const resize = div.find(ReactResizeDetector);
       const innerdiv = div.find('div').filterWhere(elem => elem.prop('className') === 'graph-chart');
-      const legend = graph.find(Legend);
       expect(resize.prop('handleWidth')).toBe(true);
       expect(div).toHaveLength(1);
       expect(innerdiv).toHaveLength(1);
-      expect(legend).toHaveLength(1);
     });
     it('formats tick values correctly', () => {
-      const graph = new Graph();
+      const graph = new Graph({} as any);
       [
         { input: 2e24, output: '2.00Y' },
         { input: 2e23, output: '200.00Z' },
@@ -158,6 +155,12 @@ describe('Graph', () => {
         { input: 2e-26, output: '0.02y' },
       ].map(function(t) {
         expect(graph.formatValue(t.input)).toBe(t.output);
+      });
+    });
+    describe('Legend', () => {
+      it('renders a legend', () => {
+        const graph = shallow(<Graph {...props} />);
+        expect(graph.find('.graph-legend .legend-item')).toHaveLength(1);
       });
     });
   });

@@ -83,11 +83,12 @@ describe('Panel', () => {
     };
     const graphPanel = mount(<Panel {...props} options={options} />);
     const controls = graphPanel.find(GraphControls);
+    graphPanel.setState({ data: []})
     const graph = graphPanel.find(Graph);
-    expect(controls.prop('endTime')).toEqual(props.options.endTime);
-    expect(controls.prop('range')).toEqual(props.options.range);
-    expect(controls.prop('resolution')).toEqual(props.options.resolution);
-    expect(controls.prop('stacked')).toEqual(props.options.stacked);
-    expect(graph.prop('stacked')).toEqual(props.options.stacked);
+    expect(controls.prop('endTime')).toEqual(options.endTime);
+    expect(controls.prop('range')).toEqual(options.range);
+    expect(controls.prop('resolution')).toEqual(options.resolution);
+    expect(controls.prop('stacked')).toEqual(options.stacked);
+    expect(graph.prop('stacked')).toEqual(options.stacked);
   });
 });
