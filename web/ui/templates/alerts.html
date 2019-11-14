@@ -6,11 +6,23 @@
 {{define "content"}}
 <div class="container-fluid">
   <h1>Alerts</h1>
+    <div id="alertFilters" class="btn-group btn-group-toggle" data-toggle="buttons">
+        <label class="btn btn-primary active">
+            <input type="checkbox" name="alertFilters" id="inactiveAlerts" autocomplete="off"> Inactive ({{ .Counts.Inactive }})
+        </label>
+        <label class="btn btn-primary active">
+            <input type="checkbox" name="alertFilters" id="pendingAlerts" autocomplete="off"> Pending ({{ .Counts.Pending }})
+        </label>
+        <label class="btn btn-primary active">
+            <input type="checkbox" name="alertFilters" id="firingAlerts" autocomplete="off"> Firing ({{ .Counts.Firing }})
+        </label>
+        </br>
+    </div>
   <div class="show-annotations">
      <i class="glyphicon glyphicon-unchecked"></i>
        <button type="button" class="show-annotations" title="show annotations">Show annotations</button>
   </div>
-  <table class="table table-bordered table-collapsed">
+  <table id="alertsTable" class="table table-bordered table-collapsed">
     <tbody>
       {{$alertStateToRowClass := .AlertStateToRowClass}}
       {{range .Groups}}

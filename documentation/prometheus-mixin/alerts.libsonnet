@@ -218,7 +218,7 @@
               # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
               (
                 max_over_time(prometheus_remote_storage_shards_desired{%(prometheusSelector)s}[5m])
-              > on(job, instance) group_right
+              >
                 max_over_time(prometheus_remote_storage_shards_max{%(prometheusSelector)s}[5m])
               )
             ||| % $._config,
@@ -228,7 +228,7 @@
             },
             annotations: {
               summary: 'Prometheus remote write desired shards calculation wants to run more than configured max shards.',
-              description: 'Prometheus %(prometheusName)s remote write desired shards calculation wants to run {{ printf $value }} shards, which is more than the max of {{ printf `prometheus_remote_storage_shards_max{instance="%%s",%(prometheusSelector)s}` $labels.instance | query | first | value }}.' % $._config,
+              description: 'Prometheus %(prometheusName)s remote write desired shards calculation wants to run {{ $value }} shards, which is more than the max of {{ printf `prometheus_remote_storage_shards_max{instance="%%s",%(prometheusSelector)s}` $labels.instance | query | first | value }}.' % $._config,
             },
           },
           {

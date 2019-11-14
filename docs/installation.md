@@ -39,15 +39,19 @@ two examples.
 Bind-mount your `prometheus.yml` from the host by running:
 
 ```bash
-docker run -p 9090:9090 -v /tmp/prometheus.yml:/etc/prometheus/prometheus.yml \
-       prom/prometheus
+docker run \
+    -p 9090:9090 \
+    -v /tmp/prometheus.yml:/etc/prometheus/prometheus.yml \
+    prom/prometheus
 ```
 
 Or use an additional volume for the config:
 
 ```bash
-docker run -p 9090:9090 -v /prometheus-data \
-       prom/prometheus --config.file=/prometheus-data/prometheus.yml
+docker run \
+    -p 9090:9090 \
+    -v /path/to/config:/etc/prometheus \
+    prom/prometheus
 ```
 
 ### Custom image

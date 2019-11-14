@@ -109,10 +109,6 @@ func ByteStreamProducer(opts ...byteStreamOpt) Producer {
 		}
 		defer close()
 
-		if rc, ok := data.(io.ReadCloser); ok {
-			defer rc.Close()
-		}
-
 		if rdr, ok := data.(io.Reader); ok {
 			_, err := io.Copy(writer, rdr)
 			return err

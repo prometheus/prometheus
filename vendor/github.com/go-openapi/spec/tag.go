@@ -30,11 +30,10 @@ type TagProps struct {
 
 // NewTag creates a new tag
 func NewTag(name, description string, externalDocs *ExternalDocumentation) Tag {
-	return Tag{TagProps: TagProps{Description: description, Name: name, ExternalDocs: externalDocs}}
+	return Tag{TagProps: TagProps{description, name, externalDocs}}
 }
 
-// Tag allows adding meta data to a single tag that is used by the
-// [Operation Object](http://goo.gl/8us55a#operationObject).
+// Tag allows adding meta data to a single tag that is used by the [Operation Object](http://goo.gl/8us55a#operationObject).
 // It is not mandatory to have a Tag Object per tag used there.
 //
 // For more information: http://goo.gl/8us55a#tagObject

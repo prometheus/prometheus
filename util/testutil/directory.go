@@ -133,20 +133,6 @@ func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
 	return
 }
 
-// DirSize returns the size in bytes of all files in a directory.
-func DirSize(t *testing.T, path string) int64 {
-	var size int64
-	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
-		Ok(t, err)
-		if !info.IsDir() {
-			size += info.Size()
-		}
-		return nil
-	})
-	Ok(t, err)
-	return size
-}
-
 // DirHash returns a hash of all files attribites and their content within a directory.
 func DirHash(t *testing.T, path string) []byte {
 	hash := sha256.New()

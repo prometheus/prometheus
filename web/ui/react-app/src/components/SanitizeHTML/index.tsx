@@ -1,30 +1,17 @@
 /**
  * SanitizeHTML to render HTML, this takes care of sanitizing HTML.
  */
-import React, { PureComponent } from 'react';
+import React, { memo } from 'react';
 import sanitizeHTML from 'sanitize-html';
 
 interface SanitizeHTMLProps {
-  inline: Boolean;
   allowedTags: string[];
-  children: Element | string;
+  children: string;
+  tag?: keyof JSX.IntrinsicElements;
 }
 
-class SanitizeHTML extends PureComponent<SanitizeHTMLProps> {
-  sanitize = (html: any) => {
-    return sanitizeHTML(html, {
-      allowedTags: this.props.allowedTags
-    });
-  };
+const SanitizeHTML = ({ tag: Tag = 'div', children, allowedTags, ...rest }: SanitizeHTMLProps) => (
+  <Tag {...rest} dangerouslySetInnerHTML={{ __html: sanitizeHTML(children, { allowedTags }) }} />
+);
 
-  render() {
-    const { inline, children } = this.props;
-    return inline ? (
-      <span dangerouslySetInnerHTML={{ __html: this.sanitize(children) }} />
-    ) : (
-      <div dangerouslySetInnerHTML={{ __html: this.sanitize(children) }} />
-    );
-  }
-}
-
-export default SanitizeHTML;
+export default memo(SanitizeHTML);

@@ -15,16 +15,14 @@
 package compiler
 
 import (
-	"errors"
 	"fmt"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
-
-	yaml "gopkg.in/yaml.v2"
 )
 
 var fileCache map[string][]byte
@@ -32,8 +30,6 @@ var infoCache map[string]interface{}
 var count int64
 
 var verboseReader = false
-var fileCacheEnable = true
-var infoCacheEnable = true
 
 func initializeFileCache() {
 	if fileCache == nil {
@@ -47,56 +43,24 @@ func initializeInfoCache() {
 	}
 }
 
-func DisableFileCache() {
-	fileCacheEnable = false
-}
-
-func DisableInfoCache() {
-	infoCacheEnable = false
-}
-
-func RemoveFromFileCache(fileurl string) {
-	if !fileCacheEnable {
-		return
-	}
-	initializeFileCache()
-	delete(fileCache, fileurl)
-}
-
-func RemoveFromInfoCache(filename string) {
-	if !infoCacheEnable {
-		return
-	}
-	initializeInfoCache()
-	delete(infoCache, filename)
-}
-
 // FetchFile gets a specified file from the local filesystem or a remote location.
 func FetchFile(fileurl string) ([]byte, error) {
-	var bytes []byte
 	initializeFileCache()
-	if fileCacheEnable {
-		bytes, ok := fileCache[fileurl]
-		if ok {
-			if verboseReader {
-				log.Printf("Cache hit %s", fileurl)
-			}
-			return bytes, nil
-		}
+	bytes, ok := fileCache[fileurl]
+	if ok {
 		if verboseReader {
-			log.Printf("Fetching %s", fileurl)
+			log.Printf("Cache hit %s", fileurl)
 		}
+		return bytes, nil
 	}
+	log.Printf("Fetching %s", fileurl)
 	response, err := http.Get(fileurl)
 	if err != nil {
 		return nil, err
 	}
 	defer response.Body.Close()
-	if response.StatusCode != 200 {
-		return nil, errors.New(fmt.Sprintf("Error downloading %s: %s", fileurl, response.Status))
-	}
 	bytes, err = ioutil.ReadAll(response.Body)
-	if fileCacheEnable && err == nil {
+	if err == nil {
 		fileCache[fileurl] = bytes
 	}
 	return bytes, err
@@ -125,33 +89,29 @@ func ReadBytesForFile(filename string) ([]byte, error) {
 // ReadInfoFromBytes unmarshals a file as a yaml.MapSlice.
 func ReadInfoFromBytes(filename string, bytes []byte) (interface{}, error) {
 	initializeInfoCache()
-	if infoCacheEnable {
-		cachedInfo, ok := infoCache[filename]
-		if ok {
-			if verboseReader {
-				log.Printf("Cache hit info for file %s", filename)
-			}
-			return cachedInfo, nil
-		}
+	cachedInfo, ok := infoCache[filename]
+	if ok {
 		if verboseReader {
-			log.Printf("Reading info for file %s", filename)
+			log.Printf("Cache hit info for file %s", filename)
 		}
+		return cachedInfo, nil
+	}
+	if verboseReader {
+		log.Printf("Reading info for file %s", filename)
 	}
 	var info yaml.MapSlice
 	err := yaml.Unmarshal(bytes, &info)
 	if err != nil {
 		return nil, err
 	}
-	if infoCacheEnable && len(filename) > 0 {
-		infoCache[filename] = info
-	}
+	infoCache[filename] = info
 	return info, nil
 }
 
 // ReadInfoForRef reads a file and return the fragment needed to resolve a $ref.
 func ReadInfoForRef(basefile string, ref string) (interface{}, error) {
 	initializeInfoCache()
-	if infoCacheEnable {
+	{
 		info, ok := infoCache[ref]
 		if ok {
 			if verboseReader {
@@ -159,9 +119,9 @@ func ReadInfoForRef(basefile string, ref string) (interface{}, error) {
 			}
 			return info, nil
 		}
-		if verboseReader {
-			log.Printf("Reading info for ref %s#%s", basefile, ref)
-		}
+	}
+	if verboseReader {
+		log.Printf("Reading info for ref %s#%s", basefile, ref)
 	}
 	count = count + 1
 	basedir, _ := filepath.Split(basefile)
@@ -202,8 +162,6 @@ func ReadInfoForRef(basefile string, ref string) (interface{}, error) {
 			}
 		}
 	}
-	if infoCacheEnable {
-		infoCache[ref] = info
-	}
+	infoCache[ref] = info
 	return info, nil
 }

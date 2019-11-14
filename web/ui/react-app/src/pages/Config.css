@@ -1,0 +1,10 @@
+.config-yaml {
+  display: block;
+  padding: 10px;
+  font-size: 13px;
+  color: #333;
+  word-break: break-all;
+  background-color: #f5f5f5;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}

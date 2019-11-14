@@ -136,5 +136,8 @@ func (s *SecurityScheme) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &s.SecuritySchemeProps); err != nil {
 		return err
 	}
-	return json.Unmarshal(data, &s.VendorExtensible)
+	if err := json.Unmarshal(data, &s.VendorExtensible); err != nil {
+		return err
+	}
+	return nil
 }

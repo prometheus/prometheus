@@ -7,7 +7,6 @@ package terminal
 import (
 	"bytes"
 	"io"
-	"strconv"
 	"sync"
 	"unicode/utf8"
 )
@@ -272,44 +271,34 @@ func (t *Terminal) moveCursorToPos(pos int) {
 }
 
 func (t *Terminal) move(up, down, left, right int) {
-	m := []rune{}
-
-	// 1 unit up can be expressed as ^[[A or ^[A
-	// 5 units up can be expressed as ^[[5A
-
-	if up == 1 {
-		m = append(m, keyEscape, '[', 'A')
-	} else if up > 1 {
-		m = append(m, keyEscape, '[')
-		m = append(m, []rune(strconv.Itoa(up))...)
-		m = append(m, 'A')
+	movement := make([]rune, 3*(up+down+left+right))
+	m := movement
+	for i := 0; i < up; i++ {
+		m[0] = keyEscape
+		m[1] = '['
+		m[2] = 'A'
+		m = m[3:]
+	}
+	for i := 0; i < down; i++ {
+		m[0] = keyEscape
+		m[1] = '['
+		m[2] = 'B'
+		m = m[3:]
+	}
+	for i := 0; i < left; i++ {
+		m[0] = keyEscape
+		m[1] = '['
+		m[2] = 'D'
+		m = m[3:]
+	}
+	for i := 0; i < right; i++ {
+		m[0] = keyEscape
+		m[1] = '['
+		m[2] = 'C'
+		m = m[3:]
 	}
 
-	if down == 1 {
-		m = append(m, keyEscape, '[', 'B')
-	} else if down > 1 {
-		m = append(m, keyEscape, '[')
-		m = append(m, []rune(strconv.Itoa(down))...)
-		m = append(m, 'B')
-	}
-
-	if right == 1 {
-		m = append(m, keyEscape, '[', 'C')
-	} else if right > 1 {
-		m = append(m, keyEscape, '[')
-		m = append(m, []rune(strconv.Itoa(right))...)
-		m = append(m, 'C')
-	}
-
-	if left == 1 {
-		m = append(m, keyEscape, '[', 'D')
-	} else if left > 1 {
-		m = append(m, keyEscape, '[')
-		m = append(m, []rune(strconv.Itoa(left))...)
-		m = append(m, 'D')
-	}
-
-	t.queue(m)
+	t.queue(movement)
 }
 
 func (t *Terminal) clearLineToRight() {

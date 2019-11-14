@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -35,6 +36,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
@@ -108,6 +111,32 @@ type rulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+// PrometheusVersion contains build information about Prometheus.
+type PrometheusVersion struct {
+	Version   string `json:"version"`
+	Revision  string `json:"revision"`
+	Branch    string `json:"branch"`
+	BuildUser string `json:"buildUser"`
+	BuildDate string `json:"buildDate"`
+	GoVersion string `json:"goVersion"`
+}
+
+// RuntimeInfo contains runtime information about Prometheus.
+type RuntimeInfo struct {
+	StartTime           time.Time `json:"startTime"`
+	CWD                 string    `json:"CWD"`
+	ReloadConfigSuccess bool      `json:"reloadConfigSuccess"`
+	LastConfigTime      time.Time `json:"lastConfigTime"`
+	ChunkCount          int64     `json:"chunkCount"`
+	TimeSeriesCount     int64     `json:"timeSeriesCount"`
+	CorruptionCount     int64     `json:"corruptionCount"`
+	GoroutineCount      int       `json:"goroutineCount"`
+	GOMAXPROCS          int       `json:"GOMAXPROCS"`
+	GOGC                string    `json:"GOGC"`
+	GODEBUG             string    `json:"GODEBUG"`
+	StorageRetention    string    `json:"storageRetention"`
+}
+
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -131,6 +160,7 @@ type TSDBAdmin interface {
 	Delete(mint, maxt int64, ms ...tsdbLabels.Matcher) error
 	Dir() string
 	Snapshot(dir string, withHead bool) error
+	Head() *tsdb.Head
 }
 
 // API can register a set of endpoints in a router and handle
@@ -154,6 +184,8 @@ type API struct {
 	remoteReadMaxBytesInFrame int
 	remoteReadGate            *gate.Gate
 	CORSOrigin                *regexp.Regexp
+	buildInfo                 *PrometheusVersion
+	runtimeInfo               func() (RuntimeInfo, error)
 }
 
 func init() {
@@ -178,6 +210,8 @@ func NewAPI(
 	remoteReadConcurrencyLimit int,
 	remoteReadMaxBytesInFrame int,
 	CORSOrigin *regexp.Regexp,
+	runtimeInfo func() (RuntimeInfo, error),
+	buildInfo *PrometheusVersion,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -197,6 +231,8 @@ func NewAPI(
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		logger:                    logger,
 		CORSOrigin:                CORSOrigin,
+		runtimeInfo:               runtimeInfo,
+		buildInfo:                 buildInfo,
 	}
 }
 
@@ -242,7 +278,10 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
 
 	r.Get("/status/config", wrap(api.serveConfig))
+	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
+	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
+	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 
 	r.Get("/alerts", wrap(api.alerts))
@@ -528,11 +567,13 @@ type Target struct {
 	// Any labels that are added to this target and its metrics.
 	Labels map[string]string `json:"labels"`
 
-	ScrapeURL string `json:"scrapeUrl"`
+	ScrapePool string `json:"scrapePool"`
+	ScrapeURL  string `json:"scrapeUrl"`
 
-	LastError  string              `json:"lastError"`
-	LastScrape time.Time           `json:"lastScrape"`
-	Health     scrape.TargetHealth `json:"health"`
+	LastError          string              `json:"lastError"`
+	LastScrape         time.Time           `json:"lastScrape"`
+	LastScrapeDuration float64             `json:"lastScrapeDuration"`
+	Health             scrape.TargetHealth `json:"health"`
 }
 
 // DroppedTarget has the information for one target that was dropped during relabelling.
@@ -548,7 +589,7 @@ type TargetDiscovery struct {
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
-	flatten := func(targets map[string][]*scrape.Target) []*scrape.Target {
+	sortKeys := func(targets map[string][]*scrape.Target) ([]string, int) {
 		var n int
 		keys := make([]string, 0, len(targets))
 		for k := range targets {
@@ -556,6 +597,11 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 			n += len(targets[k])
 		}
 		sort.Strings(keys)
+		return keys, n
+	}
+
+	flatten := func(targets map[string][]*scrape.Target) []*scrape.Target {
+		keys, n := sortKeys(targets)
 		res := make([]*scrape.Target, 0, n)
 		for _, k := range keys {
 			res = append(res, targets[k]...)
@@ -563,31 +609,49 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		return res
 	}
 
-	tActive := flatten(api.targetRetriever.TargetsActive())
-	tDropped := flatten(api.targetRetriever.TargetsDropped())
-	res := &TargetDiscovery{ActiveTargets: make([]*Target, 0, len(tActive)), DroppedTargets: make([]*DroppedTarget, 0, len(tDropped))}
+	state := strings.ToLower(r.URL.Query().Get("state"))
+	showActive := state == "" || state == "any" || state == "active"
+	showDropped := state == "" || state == "any" || state == "dropped"
+	res := &TargetDiscovery{}
 
-	for _, target := range tActive {
-		lastErrStr := ""
-		lastErr := target.LastError()
-		if lastErr != nil {
-			lastErrStr = lastErr.Error()
+	if showActive {
+		targetsActive := api.targetRetriever.TargetsActive()
+		activeKeys, numTargets := sortKeys(targetsActive)
+		res.ActiveTargets = make([]*Target, 0, numTargets)
+
+		for _, key := range activeKeys {
+			for _, target := range targetsActive[key] {
+				lastErrStr := ""
+				lastErr := target.LastError()
+				if lastErr != nil {
+					lastErrStr = lastErr.Error()
+				}
+
+				res.ActiveTargets = append(res.ActiveTargets, &Target{
+					DiscoveredLabels:   target.DiscoveredLabels().Map(),
+					Labels:             target.Labels().Map(),
+					ScrapePool:         key,
+					ScrapeURL:          target.URL().String(),
+					LastError:          lastErrStr,
+					LastScrape:         target.LastScrape(),
+					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
+					Health:             target.Health(),
+				})
+			}
 		}
-
-		res.ActiveTargets = append(res.ActiveTargets, &Target{
-			DiscoveredLabels: target.DiscoveredLabels().Map(),
-			Labels:           target.Labels().Map(),
-			ScrapeURL:        target.URL().String(),
-			LastError:        lastErrStr,
-			LastScrape:       target.LastScrape(),
-			Health:           target.Health(),
-		})
+	} else {
+		res.ActiveTargets = []*Target{}
 	}
-
-	for _, t := range tDropped {
-		res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
-			DiscoveredLabels: t.DiscoveredLabels().Map(),
-		})
+	if showDropped {
+		tDropped := flatten(api.targetRetriever.TargetsDropped())
+		res.DroppedTargets = make([]*DroppedTarget, 0, len(tDropped))
+		for _, t := range tDropped {
+			res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
+				DiscoveredLabels: t.DiscoveredLabels().Map(),
+			})
+		}
+	} else {
+		res.DroppedTargets = []*DroppedTarget{}
 	}
 	return apiFuncResult{res, nil, nil, nil}
 }
@@ -610,9 +674,17 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
-	matchers, err := promql.ParseMetricSelector(r.FormValue("match_target"))
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	matchTarget := r.FormValue("match_target")
+
+	var matchers []*labels.Matcher
+
+	var err error
+
+	if matchTarget != "" {
+		matchers, err = promql.ParseMetricSelector(matchTarget)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
 	}
 
 	metric := r.FormValue("metric")
@@ -624,7 +696,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 				break
 			}
 			// Filter targets that don't satisfy the label matchers.
-			if !matchLabels(t.Labels(), matchers) {
+			if matchTarget != "" && !matchLabels(t.Labels(), matchers) {
 				continue
 			}
 			// If no metric is specified, get the full list for the target.
@@ -832,6 +904,18 @@ type prometheusConfig struct {
 	YAML string `json:"yaml"`
 }
 
+func (api *API) serveRuntimeInfo(r *http.Request) apiFuncResult {
+	status, err := api.runtimeInfo()
+	if err != nil {
+		return apiFuncResult{status, &apiError{errorInternal, err}, nil, nil}
+	}
+	return apiFuncResult{status, nil, nil, nil}
+}
+
+func (api *API) serveBuildInfo(r *http.Request) apiFuncResult {
+	return apiFuncResult{api.buildInfo, nil, nil, nil}
+}
+
 func (api *API) serveConfig(r *http.Request) apiFuncResult {
 	cfg := &prometheusConfig{
 		YAML: api.config().String(),
@@ -841,6 +925,45 @@ func (api *API) serveConfig(r *http.Request) apiFuncResult {
 
 func (api *API) serveFlags(r *http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
+}
+
+// stat holds the information about individual cardinality.
+type stat struct {
+	Name  string `json:"name"`
+	Value uint64 `json:"value"`
+}
+
+// tsdbStatus has information of cardinality statistics from postings.
+type tsdbStatus struct {
+	SeriesCountByMetricName     []stat `json:"seriesCountByMetricName"`
+	LabelValueCountByLabelName  []stat `json:"labelValueCountByLabelName"`
+	MemoryInBytesByLabelName    []stat `json:"memoryInBytesByLabelName"`
+	SeriesCountByLabelValuePair []stat `json:"seriesCountByLabelValuePair"`
+}
+
+func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
+	db := api.db()
+	if db == nil {
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil, nil}
+	}
+	convert := func(stats []index.Stat) []stat {
+		result := make([]stat, 0, len(stats))
+		for _, item := range stats {
+			item := stat{Name: item.Name, Value: item.Count}
+			result = append(result, item)
+		}
+		return result
+	}
+
+	posting := db.Head().PostingsCardinalityStats(model.MetricNameLabel)
+	response := tsdbStatus{
+		SeriesCountByMetricName:     convert(posting.CardinalityMetricsStats),
+		LabelValueCountByLabelName:  convert(posting.CardinalityLabelStats),
+		MemoryInBytesByLabelName:    convert(posting.LabelValueStats),
+		SeriesCountByLabelValuePair: convert(posting.LabelValuePairsStats),
+	}
+
+	return apiFuncResult{response, nil, nil, nil}
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
@@ -1176,6 +1299,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		Error:     apiErr.err.Error(),
 		Data:      data,
 	})
+
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

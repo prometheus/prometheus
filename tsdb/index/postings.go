@@ -79,6 +79,57 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	return keys
 }
 
+// PostingsStats contains cardinality based statistics for postings.
+type PostingsStats struct {
+	CardinalityMetricsStats []Stat
+	CardinalityLabelStats   []Stat
+	LabelValueStats         []Stat
+	LabelValuePairsStats    []Stat
+}
+
+// Stats calculates the cardinality statistics from postings.
+func (p *MemPostings) Stats(label string) *PostingsStats {
+	const maxNumOfRecords = 10
+	var size uint64
+
+	p.mtx.RLock()
+
+	metrics := &maxHeap{}
+	labels := &maxHeap{}
+	labelValueLenght := &maxHeap{}
+	labelValuePairs := &maxHeap{}
+
+	metrics.init(maxNumOfRecords)
+	labels.init(maxNumOfRecords)
+	labelValueLenght.init(maxNumOfRecords)
+	labelValuePairs.init(maxNumOfRecords)
+
+	for n, e := range p.m {
+		if n == "" {
+			continue
+		}
+		labels.push(Stat{Name: n, Count: uint64(len(e))})
+		size = 0
+		for name, values := range e {
+			if n == label {
+				metrics.push(Stat{Name: name, Count: uint64(len(values))})
+			}
+			labelValuePairs.push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
+			size += uint64(len(name))
+		}
+		labelValueLenght.push(Stat{Name: n, Count: size})
+	}
+
+	p.mtx.RUnlock()
+
+	return &PostingsStats{
+		CardinalityMetricsStats: metrics.get(),
+		CardinalityLabelStats:   labels.get(),
+		LabelValueStats:         labelValueLenght.get(),
+		LabelValuePairsStats:    labelValuePairs.get(),
+	}
+}
+
 // Get returns a postings list for the given label pair.
 func (p *MemPostings) Get(name, value string) Postings {
 	var lp []uint64

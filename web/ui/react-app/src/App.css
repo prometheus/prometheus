@@ -1,11 +1,3 @@
-body {
-    padding-top: 10px; /* TODO remove */
-}
-
-button.classic-ui-btn {
-    padding: 10px 0;
-}
-
 .panel {
     margin-bottom: 20px;
 }
@@ -18,6 +10,10 @@ input[type='checkbox']:checked + label {
   cursor: pointer;
   font-size: .875rem;
   line-height: 1.8;
+}
+
+.capitalize-title::first-letter {
+    text-transform: capitalize;
 }
 
 .expression-input {
@@ -66,21 +62,21 @@ button.execute-btn {
 .autosuggest-dropdown {
     position: absolute;
     border: 1px solid #ced4da;
-    border-radius: .25rem;
     background-color: #fff;
     color: #495057;
     font-size: 1rem;
     z-index: 1000;
-    min-width: 10rem;
-    top: 100%;
     left: 56px;
-    float: left;
-    padding: .5rem 1px .5rem 1px;
-    margin: -5px;
+    margin-top: -6px;
+}
+
+.autosuggest-dropdown-list {
+    padding: 0;
+    margin: 0;
     list-style: none;
 }
 
-.autosuggest-dropdown li {
+.autosuggest-dropdown-list li {
     width: 100%;
     padding: .25rem 1.5rem;
     clear: both;
@@ -88,6 +84,14 @@ button.execute-btn {
     background-color: transparent;
     border: 0;
     display: block;
+}
+
+.autosuggest-dropdown-list li.autosuggest-dropdown-header {
+    background-color: #bfdeff;
+    font-size: 10px;
+    line-height: 1.5;
+    text-transform: uppercase;
+    text-align: center;
 }
 
 .graph-controls, .table-controls {
