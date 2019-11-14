@@ -306,10 +306,10 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 // writes the rest of the chunks in the new segment.
 func (w *Writer) WriteChunks(chks ...Meta) error {
 	var (
-		batchSize  int64
-		batchStart int
+		batchSize  = int64(0)
+		batchStart = 0
 		batches    = make([][]Meta, 1)
-		batchID    = len(batches) - 1
+		batchID    = 0
 		firstBatch = true
 	)
 
@@ -336,7 +336,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		if cutNewBatch {
 			batchStart = i
 			batches = append(batches, []Meta{})
-			batchID = len(batches) - 1
+			batchID++
 		}
 		batches[batchID] = chks[batchStart : i+1]
 	}
