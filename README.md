@@ -96,6 +96,10 @@ The Makefile provides several targets:
   * *vet*: check the source code for common errors
   * *docker*: build a docker container for the current `HEAD`
 
+## React UI Development
+
+For more information on building, running, and developing on the new React-based UI, see the React app's [README.md](https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/README.md).
+
 ## More information
 
   * The source code is periodically indexed: [Prometheus Core](https://godoc.org/github.com/prometheus/prometheus).
