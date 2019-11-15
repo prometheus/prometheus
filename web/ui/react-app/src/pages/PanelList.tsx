@@ -7,42 +7,39 @@ import Panel, { PanelOptions, PanelDefaultOptions } from '../Panel';
 import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from '../utils/urlParams';
 import Checkbox from '../Checkbox';
 import PathPrefixProps from '../PathPrefixProps';
+import { generateID } from '../utils/func';
 
 export type MetricGroup = { title: string; items: string[] };
+export type PanelMeta = { key: string; options: PanelOptions; id: string };
 
 interface PanelListState {
-  panels: {
-    key: string;
-    options: PanelOptions;
-  }[];
+  panels: PanelMeta[];
   pastQueries: string[];
   metricNames: string[];
   fetchMetricsError: string | null;
   timeDriftError: string | null;
 }
 
+const initialPanel = {
+  id: generateID(),
+  key: '0',
+  options: PanelDefaultOptions,
+};
+
 class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelListState> {
-  private key = 0;
   constructor(props: PathPrefixProps) {
     super(props);
 
     const urlPanels = decodePanelOptionsFromQueryString(window.location.search);
 
     this.state = {
-      panels:
-        urlPanels.length !== 0
-          ? urlPanels
-          : [
-              {
-                key: this.getKey(),
-                options: PanelDefaultOptions,
-              },
-            ],
+      panels: urlPanels.length ? urlPanels : [initialPanel],
       pastQueries: [],
       metricNames: [],
       fetchMetricsError: null,
       timeDriftError: null,
     };
+    !urlPanels.length && this.updateURL();
   }
 
   componentDidMount() {
@@ -84,8 +81,8 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
 
     window.onpopstate = () => {
       const panels = decodePanelOptionsFromQueryString(window.location.search);
-      if (panels.length !== 0) {
-        this.setState({ panels: panels });
+      if (panels.length) {
+        this.setState({ panels });
       }
     };
 
@@ -123,46 +120,43 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
     this.updatePastQueries();
   };
 
-  getKey(): string {
-    return (this.key++).toString();
-  }
-
-  handleOptionsChanged(key: string, opts: PanelOptions): void {
-    const newPanels = this.state.panels.map(p => {
-      if (key === p.key) {
-        return {
-          key: key,
-          options: opts,
-        };
-      }
-      return p;
+  handleOptionsChanged = (key: string, options: PanelOptions) => {
+    const panels = this.state.panels.map(panel => {
+      return key === panel.key
+        ? {
+            ...panel,
+            options,
+          }
+        : panel;
     });
-    this.setState({ panels: newPanels }, this.updateURL);
-  }
-
-  updateURL(): void {
-    const query = encodePanelOptionsToQueryString(this.state.panels);
-    window.history.pushState({}, '', query);
-  }
-
-  addPanel = (): void => {
-    const panels = this.state.panels.slice();
-    panels.push({
-      key: this.getKey(),
-      options: PanelDefaultOptions,
-    });
-    this.setState({ panels: panels }, this.updateURL);
+    this.setState({ panels }, this.updateURL);
   };
 
-  removePanel = (key: string): void => {
-    const panels = this.state.panels.filter(panel => {
-      return panel.key !== key;
-    });
-    this.setState({ panels: panels }, this.updateURL);
+  updateURL() {
+    const query = encodePanelOptionsToQueryString(this.state.panels);
+    window.history.pushState({}, '', query);
+  };
+
+  addPanel = () => {
+    const { panels } = this.state;
+    const addedPanel = {
+      id: generateID(),
+      key: `${panels.length}`,
+      options: PanelDefaultOptions,
+    };
+    this.setState({ panels: [...panels, addedPanel] }, this.updateURL);
+  };
+
+  removePanel = (key: string) => {
+    let newKey = 0;
+    const panels = this.state.panels.reduce<PanelMeta[]>((acc, panel) => {
+      return panel.key !== key ? [...acc, { ...panel, key: `${newKey++}` }] : acc;
+    }, []);
+    this.setState({ panels }, this.updateURL);
   };
 
   render() {
-    const { metricNames, pastQueries, timeDriftError, fetchMetricsError } = this.state;
+    const { metricNames, pastQueries, timeDriftError, fetchMetricsError, panels } = this.state;
     const { pathPrefix } = this.props;
     return (
       <>
@@ -180,7 +174,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
           <Col>
             {timeDriftError && (
               <Alert color="danger">
-                <strong>Warning:</strong> Error fetching server time: {this.state.timeDriftError}
+                <strong>Warning:</strong> Error fetching server time: {timeDriftError}
               </Alert>
             )}
           </Col>
@@ -189,18 +183,18 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
           <Col>
             {fetchMetricsError && (
               <Alert color="danger">
-                <strong>Warning:</strong> Error fetching metrics list: {this.state.fetchMetricsError}
+                <strong>Warning:</strong> Error fetching metrics list: {fetchMetricsError}
               </Alert>
             )}
           </Col>
         </Row>
-        {this.state.panels.map(p => (
+        {panels.map(({ id, options, key }) => (
           <Panel
             onExecuteQuery={this.handleQueryHistory}
-            key={p.key}
-            options={p.options}
-            onOptionsChanged={(opts: PanelOptions) => this.handleOptionsChanged(p.key, opts)}
-            removePanel={() => this.removePanel(p.key)}
+            key={id}
+            options={options}
+            onOptionsChanged={opts => this.handleOptionsChanged(key, opts)}
+            removePanel={() => this.removePanel(key)}
             metricNames={metricNames}
             pastQueries={pastQueries}
             pathPrefix={pathPrefix}
