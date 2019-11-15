@@ -1,7 +1,7 @@
 import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from './urlParams';
 import { PanelType } from '../Panel';
 
-const panels = [
+const panels: any = [
   {
     key: '0',
     options: {
@@ -33,7 +33,7 @@ describe('decodePanelOptionsFromQueryString', () => {
     expect(decodePanelOptionsFromQueryString('')).toEqual([]);
   });
   it('returns and array of parsed params when query string is non-empty', () => {
-    expect(decodePanelOptionsFromQueryString(query)).toEqual(panels);
+    expect(decodePanelOptionsFromQueryString(query)).toMatchObject(panels);
   });
 });
 

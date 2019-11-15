@@ -135,7 +135,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
   updateURL() {
     const query = encodePanelOptionsToQueryString(this.state.panels);
     window.history.pushState({}, '', query);
-  };
+  }
 
   addPanel = () => {
     const { panels } = this.state;
