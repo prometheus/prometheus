@@ -2,10 +2,6 @@
 
 This directory contains the service discovery (SD) component of Prometheus.
 
-There is currently a moratorium on new service discovery mechanisms being added
-to Prometheus due to a lack of developer capacity. In the meantime `file_sd` 
-remains available.
-
 ## Design of a Prometheus SD
 
 There are many requests to add new SDs to Prometheus, this section looks at
@@ -18,6 +14,10 @@ SD? An SD mechanism should be reasonably well established, and at a minimum in
 use across multiple organizations. It should allow discovering of machines
 and/or services running somewhere. When exactly an SD is popular enough to
 justify being added to Prometheus natively is an open question.
+
+Note: As part of lifting the past moratorium on new SD implementations it was
+agreed that, in addition to the existing requirements, new service discovery 
+implementations will be required to have a committed maintainer with push access (i.e., on -team).
 
 It should not be a brand new SD mechanism, or a variant of an established
 mechanism. We want to integrate Prometheus with the SD that's already there in
