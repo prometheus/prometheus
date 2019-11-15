@@ -157,7 +157,7 @@ func TestMergedSeriesSet(t *testing.T) {
 
 Outer:
 	for _, c := range cases {
-		res := newMergedSeriesSet(c.a, c.b)
+		res := NewMergedSeriesSet([]SeriesSet{c.a, c.b})
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
@@ -1172,17 +1172,8 @@ func (m *mockChunkSeriesSet) Err() error {
 // Test the cost of merging series sets for different number of merged sets and their size.
 // The subset are all equivalent so this does not capture merging of partial or non-overlapping sets well.
 func BenchmarkMergedSeriesSet(b *testing.B) {
-	var sel func(sets []SeriesSet) SeriesSet
-
-	sel = func(sets []SeriesSet) SeriesSet {
-		if len(sets) == 0 {
-			return EmptySeriesSet()
-		}
-		if len(sets) == 1 {
-			return sets[0]
-		}
-		l := len(sets) / 2
-		return newMergedSeriesSet(sel(sets[:l]), sel(sets[l:]))
+	var sel = func(sets []SeriesSet) SeriesSet {
+		return NewMergedSeriesSet(sets)
 	}
 
 	for _, k := range []int{
