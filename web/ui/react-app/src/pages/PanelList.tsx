@@ -20,29 +20,21 @@ interface PanelListState {
   timeDriftError: string | null;
 }
 
-const initialPanel = {
-  id: generateID(),
-  key: '0',
-  options: PanelDefaultOptions,
-};
-
 class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelListState> {
   constructor(props: PathPrefixProps) {
     super(props);
 
-    const urlPanels = decodePanelOptionsFromQueryString(window.location.search);
-
     this.state = {
-      panels: urlPanels.length ? urlPanels : [initialPanel],
+      panels: decodePanelOptionsFromQueryString(window.location.search),
       pastQueries: [],
       metricNames: [],
       fetchMetricsError: null,
       timeDriftError: null,
     };
-    !urlPanels.length && this.updateURL();
   }
 
   componentDidMount() {
+    !this.state.panels.length && this.addPanel()
     fetch(`${this.props.pathPrefix}/api/v1/label/__name__/values`, { cache: 'no-store' })
       .then(resp => {
         if (resp.ok) {
