@@ -538,8 +538,6 @@ type mergedSeriesSet struct {
 func NewMergedSeriesSet(all []SeriesSet) SeriesSet {
 	if len(all) == 1 {
 		return all[0]
-	} else if len(all) == 2 {
-		return newBinaryMergedSeriesSet(all[0], all[1])
 	}
 	s := &mergedSeriesSet{all: all}
 	// Initialize first elements of all sets as Next() needs
@@ -589,7 +587,7 @@ func (s *mergedSeriesSet) nextWithID() {
 	i1 := 0
 	i2 := 0
 	for i1 < len(s.all) {
-		if i1 == s.ids[i2] {
+		if i2 < len(s.ids) && i1 == s.ids[i2] {
 			if !s.all[s.ids[i2]].Next() {
 				if s.all[s.ids[i2]].Err() != nil {
 					s.done = true
@@ -644,70 +642,6 @@ func (s *mergedSeriesSet) Next() bool {
 		s.cur = &chainedSeries{series: series}
 	} else {
 		s.cur = s.all[s.ids[0]].At()
-	}
-	return true
-}
-
-type binaryMergedSeriesSet struct {
-	a, b SeriesSet
-
-	cur          Series
-	adone, bdone bool
-}
-
-func NewBinaryMergedSeriesSet(a, b SeriesSet) SeriesSet {
-	return newBinaryMergedSeriesSet(a, b)
-}
-
-func newBinaryMergedSeriesSet(a, b SeriesSet) *binaryMergedSeriesSet {
-	s := &binaryMergedSeriesSet{a: a, b: b}
-	// Initialize first elements of both sets as Next() needs
-	// one element look-ahead.
-	s.adone = !s.a.Next()
-	s.bdone = !s.b.Next()
-
-	return s
-}
-
-func (s *binaryMergedSeriesSet) At() Series {
-	return s.cur
-}
-
-func (s *binaryMergedSeriesSet) Err() error {
-	if s.a.Err() != nil {
-		return s.a.Err()
-	}
-	return s.b.Err()
-}
-
-func (s *binaryMergedSeriesSet) compare() int {
-	if s.adone {
-		return 1
-	}
-	if s.bdone {
-		return -1
-	}
-	return labels.Compare(s.a.At().Labels(), s.b.At().Labels())
-}
-
-func (s *binaryMergedSeriesSet) Next() bool {
-	if s.adone && s.bdone || s.Err() != nil {
-		return false
-	}
-
-	d := s.compare()
-
-	// Both sets contain the current series. Chain them into a single one.
-	if d > 0 {
-		s.cur = s.b.At()
-		s.bdone = !s.b.Next()
-	} else if d < 0 {
-		s.cur = s.a.At()
-		s.adone = !s.a.Next()
-	} else {
-		s.cur = &chainedSeries{series: []Series{s.a.At(), s.b.At()}}
-		s.adone = !s.a.Next()
-		s.bdone = !s.b.Next()
 	}
 	return true
 }
