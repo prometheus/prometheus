@@ -23,9 +23,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
@@ -273,7 +273,7 @@ type series struct {
 }
 
 func (s series) Labels() labels.Labels            { return s.s.Labels() }
-func (s series) Iterator() storage.SeriesIterator { return storage.SeriesIterator(s.s.Iterator()) }
+func (s series) Iterator() storage.SeriesIterator { return s.s.Iterator() }
 
 type appender struct {
 	a tsdb.Appender
