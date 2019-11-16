@@ -7,39 +7,38 @@ export const decodePanelOptionsFromQueryString = (query: string): PanelMeta[] =>
   return query === '' ? [] : parseParams(query.substring(1).split('&'));
 };
 
-const byParamFormat = (p: string) => /^g\d+\..+=.+$/.test(p);
+const paramFormat = /^g\d+\..+=.+$/;
 
 const parseParams = (params: string[]) => {
   let key = 0;
-  return params
-    .filter(byParamFormat)
-    .sort()
-    .reduce<PanelMeta[]>((panels, urlParam, i, sortedParams) => {
-      const prefix = `g${key}.`;
+  return params.sort().reduce<PanelMeta[]>((panels, urlParam, i, sortedParams) => {
+    const prefix = `g${key}.`;
 
-      if (urlParam.startsWith(`${prefix}expr=`)) {
-        let options: Partial<PanelOptions> = {};
+    if (urlParam.startsWith(`${prefix}expr=`)) {
+      let options: Partial<PanelOptions> = {};
 
-        for (let index = i; index < sortedParams.length; index++) {
-          const param = sortedParams[index];
-          if (!param.startsWith(prefix)) {
-            break;
-          }
+      for (let index = i; index < sortedParams.length; index++) {
+        const param = sortedParams[index];
+        if (!param.startsWith(prefix)) {
+          break;
+        }
+        if (paramFormat.test(param)) {
           options = { ...options, ...parseOption(param.substring(prefix.length)) };
         }
-
-        return [
-          ...panels,
-          {
-            id: generateID(),
-            key: `${key++}`,
-            options: { ...PanelDefaultOptions, ...options },
-          },
-        ];
       }
 
-      return panels;
-    }, []);
+      return [
+        ...panels,
+        {
+          id: generateID(),
+          key: `${key++}`,
+          options: { ...PanelDefaultOptions, ...options },
+        },
+      ];
+    }
+
+    return panels;
+  }, []);
 };
 
 const parseOption = (param: string): Partial<PanelOptions> => {
@@ -57,7 +56,7 @@ const parseOption = (param: string): Partial<PanelOptions> => {
 
     case 'range_input':
       const range = parseRange(val);
-      return range ? { range } : {};
+      return range !== null ? { range: range } : {};
 
     case 'end_input':
     case 'moment_input':
@@ -65,7 +64,7 @@ const parseOption = (param: string): Partial<PanelOptions> => {
 
     case 'step_input':
       const resolution = parseInt(val);
-      return resolution ? { resolution } : {};
+      return resolution > 0 ? { resolution } : {};
   }
   return {};
 };
@@ -77,13 +76,13 @@ export const encodePanelOptionsToQueryString = (panels: PanelMeta[]) => {
     const prefix = `g${key}.`;
     const { expr, type, stacked, range, endTime, resolution } = options;
     const panelParams: { [key: string]: string | undefined } = {
-      expr,
+      expr: expr,
       tab: type === PanelType.Graph ? '0' : '1',
       stacked: stacked ? '1' : '0',
       range_input: formatRange(range),
-      end_input: endTime ? formatTime(endTime) : undefined,
-      moment_input: endTime ? formatTime(endTime) : undefined,
-      step_input: resolution ? resolution.toString() : undefined,
+      end_input: endTime !== null ? formatTime(endTime) : undefined,
+      moment_input: endTime !== null ? formatTime(endTime) : undefined,
+      step_input: resolution !== null ? resolution.toString() : undefined,
     };
 
     for (const o in panelParams) {

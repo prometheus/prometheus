@@ -73,7 +73,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
 
     window.onpopstate = () => {
       const panels = decodePanelOptionsFromQueryString(window.location.search);
-      if (panels.length) {
+      if (panels.length > 0) {
         this.setState({ panels });
       }
     };
@@ -113,15 +113,14 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
   };
 
   handleOptionsChanged = (key: string, options: PanelOptions) => {
-    const panels = this.state.panels.map(panel => {
-      return key === panel.key
-        ? {
-            ...panel,
-            options,
-          }
-        : panel;
-    });
-    this.setState({ panels }, this.updateURL);
+    this.setState(
+      {
+        panels: this.state.panels.map(p => {
+          return key === p.key ? { ...p, options } : p;
+        }),
+      },
+      this.updateURL
+    );
   };
 
   updateURL() {
@@ -141,10 +140,14 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
 
   removePanel = (key: string) => {
     let newKey = 0;
-    const panels = this.state.panels.reduce<PanelMeta[]>((acc, panel) => {
-      return panel.key !== key ? [...acc, { ...panel, key: `${newKey++}` }] : acc;
-    }, []);
-    this.setState({ panels }, this.updateURL);
+    this.setState(
+      {
+        panels: this.state.panels.reduce<PanelMeta[]>((acc, panel) => {
+          return panel.key !== key ? [...acc, { ...panel, key: `${newKey++}` }] : acc;
+        }, []),
+      },
+      this.updateURL
+    );
   };
 
   render() {
