@@ -74,39 +74,39 @@ func BenchmarkHeadPostingForMatchers(b *testing.B) {
 		}
 	}
 
-	n1 := labels.NewEqualMatcher("n", "1")
+	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1")
 
-	jFoo := labels.NewEqualMatcher("j", "foo")
-	jNotFoo := labels.Not(jFoo)
+	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
+	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
 
-	iStar := labels.NewMustRegexpMatcher("i", "^.*$")
-	iPlus := labels.NewMustRegexpMatcher("i", "^.+$")
-	i1Plus := labels.NewMustRegexpMatcher("i", "^1.+$")
-	iEmptyRe := labels.NewMustRegexpMatcher("i", "^$")
-	iNotEmpty := labels.Not(labels.NewEqualMatcher("i", ""))
-	iNot2 := labels.Not(labels.NewEqualMatcher("n", "2"))
-	iNot2Star := labels.Not(labels.NewMustRegexpMatcher("i", "^2.*$"))
+	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")
+	iPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
+	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^1.+$")
+	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")
+	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
+	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2")
+	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
 
 	cases := []struct {
 		name     string
-		matchers []labels.Matcher
+		matchers []*labels.Matcher
 	}{
-		{`n="1"`, []labels.Matcher{n1}},
-		{`n="1",j="foo"`, []labels.Matcher{n1, jFoo}},
-		{`j="foo",n="1"`, []labels.Matcher{jFoo, n1}},
-		{`n="1",j!="foo"`, []labels.Matcher{n1, jNotFoo}},
-		{`i=~".*"`, []labels.Matcher{iStar}},
-		{`i=~".+"`, []labels.Matcher{iPlus}},
-		{`i=~""`, []labels.Matcher{iEmptyRe}},
-		{`i!=""`, []labels.Matcher{iNotEmpty}},
-		{`n="1",i=~".*",j="foo"`, []labels.Matcher{n1, iStar, jFoo}},
-		{`n="1",i=~".*",i!="2",j="foo"`, []labels.Matcher{n1, iStar, iNot2, jFoo}},
-		{`n="1",i!=""`, []labels.Matcher{n1, iNotEmpty}},
-		{`n="1",i!="",j="foo"`, []labels.Matcher{n1, iNotEmpty, jFoo}},
-		{`n="1",i=~".+",j="foo"`, []labels.Matcher{n1, iPlus, jFoo}},
-		{`n="1",i=~"1.+",j="foo"`, []labels.Matcher{n1, i1Plus, jFoo}},
-		{`n="1",i=~".+",i!="2",j="foo"`, []labels.Matcher{n1, iPlus, iNot2, jFoo}},
-		{`n="1",i=~".+",i!~"2.*",j="foo"`, []labels.Matcher{n1, iPlus, iNot2Star, jFoo}},
+		{`n="1"`, []*labels.Matcher{n1}},
+		{`n="1",j="foo"`, []*labels.Matcher{n1, jFoo}},
+		{`j="foo",n="1"`, []*labels.Matcher{jFoo, n1}},
+		{`n="1",j!="foo"`, []*labels.Matcher{n1, jNotFoo}},
+		{`i=~".*"`, []*labels.Matcher{iStar}},
+		{`i=~".+"`, []*labels.Matcher{iPlus}},
+		{`i=~""`, []*labels.Matcher{iEmptyRe}},
+		{`i!=""`, []*labels.Matcher{iNotEmpty}},
+		{`n="1",i=~".*",j="foo"`, []*labels.Matcher{n1, iStar, jFoo}},
+		{`n="1",i=~".*",i!="2",j="foo"`, []*labels.Matcher{n1, iStar, iNot2, jFoo}},
+		{`n="1",i!=""`, []*labels.Matcher{n1, iNotEmpty}},
+		{`n="1",i!="",j="foo"`, []*labels.Matcher{n1, iNotEmpty, jFoo}},
+		{`n="1",i=~".+",j="foo"`, []*labels.Matcher{n1, iPlus, jFoo}},
+		{`n="1",i=~"1.+",j="foo"`, []*labels.Matcher{n1, i1Plus, jFoo}},
+		{`n="1",i=~".+",i!="2",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2, jFoo}},
+		{`n="1",i=~".+",i!~"2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2Star, jFoo}},
 	}
 
 	for _, c := range cases {

@@ -68,6 +68,15 @@ func NewMatcher(t MatchType, n, v string) (*Matcher, error) {
 	return m, nil
 }
 
+// MustNewMatcher panics on error - only for use in tests!
+func MustNewMatcher(mt MatchType, name, val string) *Matcher {
+	m, err := NewMatcher(mt, name, val)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
 func (m *Matcher) String() string {
 	return fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value)
 }
