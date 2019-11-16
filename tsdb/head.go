@@ -28,11 +28,11 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -1047,7 +1047,7 @@ func (a *headAppender) Rollback() error {
 
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given
 // label matchers.
-func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	// Do not delete anything beyond the currently valid range.
 	mint, maxt = clampInterval(mint, maxt, h.MinTime(), h.MaxTime())
 
@@ -1516,7 +1516,7 @@ type seriesHashmap map[uint64][]*memSeries
 
 func (m seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	for _, s := range m[hash] {
-		if s.lset.Equals(lset) {
+		if labels.Equal(s.lset, lset) {
 			return s
 		}
 	}
@@ -1526,7 +1526,7 @@ func (m seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 func (m seriesHashmap) set(hash uint64, s *memSeries) {
 	l := m[hash]
 	for i, prev := range l {
-		if prev.lset.Equals(s.lset) {
+		if labels.Equal(prev.lset, s.lset) {
 			l[i] = s
 			return
 		}
@@ -1537,7 +1537,7 @@ func (m seriesHashmap) set(hash uint64, s *memSeries) {
 func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
 	var rem []*memSeries
 	for _, s := range m[hash] {
-		if !s.lset.Equals(lset) {
+		if !labels.Equal(s.lset, lset) {
 			rem = append(rem, s)
 		}
 	}

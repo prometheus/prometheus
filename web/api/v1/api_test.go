@@ -40,7 +40,7 @@ import (
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/prometheus/tsdb"
-	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
+	tsdbLabels "github.com/prometheus/prometheus/pkg/labels"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"

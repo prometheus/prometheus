@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
-	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -117,7 +116,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 		})
 		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
-			Labels: tsdbLabels.Labels{tsdbLabels.Label{Name: "__name__", Value: name}},
+			Labels: labels.Labels{labels.Label{Name: "__name__", Value: name}},
 		})
 	}
 
@@ -186,7 +185,7 @@ func TestSeriesReset(t *testing.T) {
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
 		for j := 0; j < numSeries; j++ {
-			series = append(series, record.RefSeries{Ref: uint64((i * 100) + j), Labels: tsdbLabels.Labels{{Name: "a", Value: "a"}}})
+			series = append(series, record.RefSeries{Ref: uint64((i * 100) + j), Labels: labels.Labels{{Name: "a", Value: "a"}}})
 		}
 		m.StoreSeries(series, i)
 	}
@@ -266,8 +265,8 @@ func TestReleaseNoninternedString(t *testing.T) {
 		m.StoreSeries([]record.RefSeries{
 			{
 				Ref: uint64(i),
-				Labels: tsdbLabels.Labels{
-					tsdbLabels.Label{
+				Labels: labels.Labels{
+					labels.Label{
 						Name:  "asdf",
 						Value: fmt.Sprintf("%d", i),
 					},
@@ -338,7 +337,7 @@ func createTimeseries(n int) ([]record.RefSample, []record.RefSeries) {
 		})
 		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
-			Labels: tsdbLabels.Labels{{Name: "__name__", Value: name}},
+			Labels: labels.Labels{{Name: "__name__", Value: name}},
 		})
 	}
 	return samples, series
@@ -541,27 +540,27 @@ func BenchmarkStartup(b *testing.B) {
 
 func TestProcessExternalLabels(t *testing.T) {
 	for _, tc := range []struct {
-		labels         tsdbLabels.Labels
+		labels         labels.Labels
 		externalLabels labels.Labels
 		expected       labels.Labels
 	}{
 		// Test adding labels at the end.
 		{
-			labels:         tsdbLabels.Labels{{Name: "a", Value: "b"}},
+			labels:         labels.Labels{{Name: "a", Value: "b"}},
 			externalLabels: labels.Labels{{Name: "c", Value: "d"}},
 			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
 		},
 
 		// Test adding labels at the beginning.
 		{
-			labels:         tsdbLabels.Labels{{Name: "c", Value: "d"}},
+			labels:         labels.Labels{{Name: "c", Value: "d"}},
 			externalLabels: labels.Labels{{Name: "a", Value: "b"}},
 			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
 		},
 
 		// Test we don't override existing labels.
 		{
-			labels:         tsdbLabels.Labels{{Name: "a", Value: "b"}},
+			labels:         labels.Labels{{Name: "a", Value: "b"}},
 			externalLabels: labels.Labels{{Name: "a", Value: "c"}},
 			expected:       labels.Labels{{Name: "a", Value: "b"}},
 		},

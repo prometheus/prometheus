@@ -36,9 +36,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/index"
-	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -51,6 +48,8 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
 )
@@ -157,7 +156,7 @@ type apiFunc func(r *http.Request) apiFuncResult
 // TSDBAdmin defines the tsdb interfaces used by the v1 API for admin operations.
 type TSDBAdmin interface {
 	CleanTombstones() error
-	Delete(mint, maxt int64, ms ...tsdbLabels.Matcher) error
+	Delete(mint, maxt int64, ms ...*labels.Matcher) error
 	Dir() string
 	Snapshot(dir string, withHead bool) error
 	Head() *tsdb.Head
@@ -1173,12 +1172,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 
-		var selector tsdbLabels.Selector
-		for _, m := range matchers {
-			selector = append(selector, convertMatcher(m))
-		}
-
-		if err := db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), selector...); err != nil {
+		if err := db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
 			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 		}
 	}
@@ -1239,31 +1233,6 @@ func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
 	}
 
 	return apiFuncResult{nil, nil, nil, nil}
-}
-
-func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
-	switch m.Type {
-	case labels.MatchEqual:
-		return tsdbLabels.NewEqualMatcher(m.Name, m.Value)
-
-	case labels.MatchNotEqual:
-		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
-
-	case labels.MatchRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
-		if err != nil {
-			panic(err)
-		}
-		return res
-
-	case labels.MatchNotRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
-		if err != nil {
-			panic(err)
-		}
-		return tsdbLabels.Not(res)
-	}
-	panic("storage.convertMatcher: invalid matcher type")
 }
 
 func (api *API) respond(w http.ResponseWriter, data interface{}, warnings storage.Warnings) {
