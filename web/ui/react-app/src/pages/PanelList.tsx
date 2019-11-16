@@ -21,7 +21,7 @@ interface PanelListState {
 }
 
 class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelListState> {
-  constructor(props: PathPrefixProps) {
+  constructor(props: RouteComponentProps & PathPrefixProps) {
     super(props);
 
     this.state = {
@@ -112,38 +112,34 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
     this.updatePastQueries();
   };
 
-  handleOptionsChanged = (key: string, options: PanelOptions) => {
-    this.setState(
-      {
-        panels: this.state.panels.map(p => {
-          return key === p.key ? { ...p, options } : p;
-        }),
-      },
-      this.updateURL
-    );
-  };
-
   updateURL() {
     const query = encodePanelOptionsToQueryString(this.state.panels);
     window.history.pushState({}, '', query);
   }
 
-  addPanel = () => {
-    const { panels } = this.state;
-    const addedPanel = {
-      id: generateID(),
-      key: `${panels.length}`,
-      options: PanelDefaultOptions,
-    };
-    this.setState({ panels: [...panels, addedPanel] }, this.updateURL);
+  handleOptionsChanged = (id: string, options: PanelOptions) => {
+    const updatedPanels = this.state.panels.map(p => (id === p.id ? { ...p, options } : p));
+    this.setState({ panels: updatedPanels }, this.updateURL);
   };
 
-  removePanel = (key: string) => {
-    let newKey = 0;
+  addPanel = () => {
+    const { panels } = this.state;
+    const nextPanels = [
+      ...panels,
+      {
+        id: generateID(),
+        key: `${panels.length}`,
+        options: PanelDefaultOptions,
+      },
+    ];
+    this.setState({ panels: nextPanels }, this.updateURL);
+  };
+
+  removePanel = (id: string) => {
     this.setState(
       {
         panels: this.state.panels.reduce<PanelMeta[]>((acc, panel) => {
-          return panel.key !== key ? [...acc, { ...panel, key: `${newKey++}` }] : acc;
+          return panel.id !== id ? [...acc, { ...panel, key: `${acc.length}` }] : acc;
         }, []),
       },
       this.updateURL
@@ -183,13 +179,13 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
             )}
           </Col>
         </Row>
-        {panels.map(({ id, options, key }) => (
+        {panels.map(({ id, options }) => (
           <Panel
             onExecuteQuery={this.handleQueryHistory}
             key={id}
             options={options}
-            onOptionsChanged={opts => this.handleOptionsChanged(key, opts)}
-            removePanel={() => this.removePanel(key)}
+            onOptionsChanged={opts => this.handleOptionsChanged(id, opts)}
+            removePanel={() => this.removePanel(id)}
             metricNames={metricNames}
             pastQueries={pastQueries}
             pathPrefix={pathPrefix}
