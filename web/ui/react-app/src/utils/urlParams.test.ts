@@ -1,5 +1,6 @@
-import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from './urlParams';
+import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, parseOption, toQueryString } from './urlParams';
 import { PanelType } from '../Panel';
+import moment from 'moment';
 
 const panels: any = [
   {
@@ -34,6 +35,60 @@ describe('decodePanelOptionsFromQueryString', () => {
   });
   it('returns and array of parsed params when query string is non-empty', () => {
     expect(decodePanelOptionsFromQueryString(query)).toMatchObject(panels);
+  });
+});
+
+describe('parseOption', () => {
+  it('should return empty object for invalid param', () => {
+    expect(parseOption('invalid_prop=foo')).toEqual({});
+  });
+  it('should parse expr param', () => {
+    expect(parseOption('expr=foo')).toEqual({ expr: 'foo' });
+  });
+  it('should parse stacked', () => {
+    expect(parseOption('stacked=1')).toEqual({ stacked: true });
+  });
+  it('should parse end_input', () => {
+    expect(parseOption('end_input=2019-10-25%2023%3A37')).toEqual({ endTime: moment.utc('2019-10-25 23:37').valueOf() });
+  });
+  it('should parse moment_input', () => {
+    expect(parseOption('moment_input=2019-10-25%2023%3A37')).toEqual({ endTime: moment.utc('2019-10-25 23:37').valueOf() });
+  });
+  describe('step_input', () => {
+    it('should return step_input parsed if > 0', () => {
+      expect(parseOption('step_input=2')).toEqual({ resolution: 2 });
+    });
+    it('should return empty object if step is equal 0', () => {
+      expect(parseOption('step_input=0')).toEqual({});
+    });
+  });
+  describe('range_input', () => {
+    it('should return range parsed if its ot null', () => {
+      expect(parseOption('range_input=2h')).toEqual({ range: 7200 });
+    });
+    it('should return empty object for invalid value', () => {
+      expect(parseOption('range_input=h')).toEqual({});
+    });
+  });
+  describe('Parse type param', () => {
+    it('should return "graph" if tab value is 0', () => {
+      expect(parseOption('tab=0')).toEqual({ type: 'graph' });
+    });
+    it('should return "table" if tab value is 1', () => {
+      expect(parseOption('tab=0')).toEqual({ type: 'graph' });
+    });
+  });
+});
+
+describe('toQueryString', () => {
+  it('should generate query string from panels options', () => {
+    expect(
+      toQueryString({
+        id: 'asdf',
+        key: '0',
+        options: { expr: 'foo', type: PanelType.Graph, stacked: true, range: 0, endTime: null, resolution: 1 },
+      })
+    ).toEqual('g0.expr=foo&g0.tab=0&g0.stacked=1&g0.range_input=0y&g0.step_input=1');
   });
 });
 
