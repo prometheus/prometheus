@@ -68,12 +68,13 @@ export const formatParam = (key: string) => (paramName: string, value: number | 
 export const toQueryString = ({ key, options }: PanelMeta) => {
   const formatWithKey = formatParam(key);
   const { expr, type, stacked, range, endTime, resolution } = options;
+  const time = isPresent(endTime) ? formatTime(endTime) : false;
   const urlParams = [
     formatWithKey('expr', expr),
     formatWithKey('tab', type === PanelType.Graph ? 0 : 1),
     formatWithKey('stacked', stacked ? 1 : 0),
-    formatWithKey('range_input', range),
-    isPresent(endTime) ? `${formatWithKey('end_input', endTime)}&${formatWithKey('moment_input', endTime)}` : '',
+    formatWithKey('range_input', formatRange(range)),
+    time ? `${formatWithKey('end_input', time)}&${formatWithKey('moment_input', time)}` : '',
     isPresent(resolution) ? formatWithKey('step_input', resolution) : '',
   ];
   return urlParams.filter(byEmptyString).join('&');
