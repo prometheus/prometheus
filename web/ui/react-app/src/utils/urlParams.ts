@@ -1,6 +1,6 @@
 import { parseRange, parseTime, formatRange, formatTime } from './timeFormat';
 import { PanelOptions, PanelType, PanelDefaultOptions } from '../Panel';
-import { generateID } from './func';
+import { generateID, byEmptyString, isPresent } from './func';
 import { PanelMeta } from '../pages/PanelList';
 
 const paramFormat = /^g\d+\..+=.+$/;
@@ -48,7 +48,7 @@ export const parseOption = (param: string): Partial<PanelOptions> => {
 
     case 'range_input':
       const range = parseRange(decodedValue);
-      return range !== null ? { range } : {};
+      return isPresent(range) ? { range } : {};
 
     case 'end_input':
     case 'moment_input':
@@ -62,27 +62,20 @@ export const parseOption = (param: string): Partial<PanelOptions> => {
 };
 
 export const encodePanelOptionsToQueryString = (panels: PanelMeta[]) => {
-  const queryParams: string[] = [];
-
-  panels.forEach(({ key, options }) => {
-    const { expr, type, stacked, range, endTime, resolution } = options;
-    const panelParams: { [key: string]: string | undefined } = {
-      expr: expr,
-      tab: type === PanelType.Graph ? '0' : '1',
-      stacked: stacked ? '1' : '0',
-      range_input: formatRange(range),
-      end_input: endTime !== null ? formatTime(endTime) : undefined,
-      moment_input: endTime !== null ? formatTime(endTime) : undefined,
-      step_input: resolution !== null ? resolution.toString() : undefined,
-    };
-
-    for (const o in panelParams) {
-      const pp = panelParams[o];
-      if (pp !== undefined) {
-        queryParams.push(`g${key}.${o}=${encodeURIComponent(pp)}`);
-      }
-    }
-  });
-
-  return `?${queryParams.join('&')}`;
+  return `?${panels
+    .reduce<string[]>((acc, { key, options, id }) => {
+      const { expr, type, stacked, range, endTime, resolution } = options;
+      return [
+        ...acc,
+        `g${key}.expr=${encodeURIComponent(expr)}`,
+        `g${key}.tab=${encodeURIComponent(type === PanelType.Graph ? 0 : 1)}`,
+        `g${key}.stacked=${encodeURIComponent(stacked ? 1 : 0)}`,
+        `g${key}.range_input=${encodeURIComponent(formatRange(range))}`,
+        isPresent(endTime) ? `g${key}.end_input=${encodeURIComponent(formatTime(endTime))}` : '',
+        isPresent(endTime) ? `g${key}.moment_input=${encodeURIComponent(formatTime(endTime))}` : '',
+        isPresent(resolution) ? `g${key}.step_input=${encodeURIComponent(resolution)}` : '',
+      ];
+    }, [])
+    .filter(byEmptyString)
+    .join('&')}`;
 };
