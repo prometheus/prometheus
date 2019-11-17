@@ -61,21 +61,24 @@ export const parseOption = (param: string): Partial<PanelOptions> => {
   return {};
 };
 
+export const formatParam = (key: string) => (paramName: string, value: number | string | boolean) => {
+  return `g${key}.${paramName}=${encodeURIComponent(value)}`;
+};
+
+export const toQueryString = ({ key, options }: PanelMeta) => {
+  const formatWithKey = formatParam(key);
+  const { expr, type, stacked, range, endTime, resolution } = options;
+  const urlParams = [
+    formatWithKey('expr', expr),
+    formatWithKey('tab', type === PanelType.Graph ? 0 : 1),
+    formatWithKey('stacked', stacked ? 1 : 0),
+    formatWithKey('range_input', range),
+    isPresent(endTime) ? `${formatWithKey('end_input', endTime)}&${formatWithKey('moment_input', endTime)}` : '',
+    isPresent(resolution) ? formatWithKey('step_input', resolution) : '',
+  ];
+  return urlParams.filter(byEmptyString).join('&');
+};
+
 export const encodePanelOptionsToQueryString = (panels: PanelMeta[]) => {
-  return `?${panels
-    .reduce<string[]>((acc, { key, options, id }) => {
-      const { expr, type, stacked, range, endTime, resolution } = options;
-      return [
-        ...acc,
-        `g${key}.expr=${encodeURIComponent(expr)}`,
-        `g${key}.tab=${encodeURIComponent(type === PanelType.Graph ? 0 : 1)}`,
-        `g${key}.stacked=${encodeURIComponent(stacked ? 1 : 0)}`,
-        `g${key}.range_input=${encodeURIComponent(formatRange(range))}`,
-        isPresent(endTime) ? `g${key}.end_input=${encodeURIComponent(formatTime(endTime))}` : '',
-        isPresent(endTime) ? `g${key}.moment_input=${encodeURIComponent(formatTime(endTime))}` : '',
-        isPresent(resolution) ? `g${key}.step_input=${encodeURIComponent(resolution)}` : '',
-      ];
-    }, [])
-    .filter(byEmptyString)
-    .join('&')}`;
+  return `?${panels.map(toQueryString).join('&')}`;
 };
