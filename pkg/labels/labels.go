@@ -201,6 +201,24 @@ func (ls Labels) Has(name string) bool {
 	return false
 }
 
+// WithoutEmpty returns the labelset without empty labels.
+// May return the same labelset.
+func (ls Labels) WithoutEmpty() Labels {
+	for _, v := range ls {
+		if v.Value != "" {
+			continue
+		}
+		els := make(Labels, 0, len(ls)-1)
+		for _, v := range ls {
+			if v.Value != "" {
+				els = append(els, v)
+			}
+		}
+		return els
+	}
+	return ls
+}
+
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
 	if len(ls) != len(o) {

@@ -34,11 +34,11 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"golang.org/x/sync/errgroup"
 )
@@ -1247,7 +1247,7 @@ func rangeForTimestamp(t int64, width int64) (maxt int64) {
 }
 
 // Delete implements deletion of metrics. It only has atomicity guarantees on a per-block basis.
-func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+func (db *DB) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 

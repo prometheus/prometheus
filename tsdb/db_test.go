@@ -32,9 +32,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -56,7 +56,7 @@ func openTestDB(t testing.TB, opts *Options) (db *DB, close func()) {
 }
 
 // query runs a matcher query against the querier and fully expands its data.
-func query(t testing.TB, q Querier, matchers ...labels.Matcher) map[string][]tsdbutil.Sample {
+func query(t testing.TB, q Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
 	ss, err := q.Select(matchers...)
 	defer func() {
 		testutil.Ok(t, q.Close())
@@ -127,7 +127,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 
 	querier, err := db.Querier(0, 1)
 	testutil.Ok(t, err)
-	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
+	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	testutil.Equals(t, map[string][]tsdbutil.Sample{}, seriesSet)
 
 	err = app.Commit()
@@ -137,7 +137,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	testutil.Ok(t, err)
 	defer querier.Close()
 
-	seriesSet = query(t, querier, labels.NewEqualMatcher("foo", "bar"))
+	seriesSet = query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 0, v: 0}}}, seriesSet)
 }
@@ -160,7 +160,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	testutil.Ok(t, err)
 	defer querier.Close()
 
-	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
+	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{}, seriesSet)
 }
@@ -207,7 +207,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	q, err := db.Querier(0, 200)
 	testutil.Ok(t, err)
 
-	res := query(t, q, labels.NewEqualMatcher("a", "b"))
+	res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{
 		labels.FromStrings("a", "b").String(): {
@@ -293,14 +293,14 @@ Outer:
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
 		for _, r := range c.Intervals {
-			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
+			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// Compare the result.
 		q, err := db.Querier(0, numSamples)
 		testutil.Ok(t, err)
 
-		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+		res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 		testutil.Ok(t, err)
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
@@ -419,7 +419,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	q, err := db.Querier(0, 10)
 	testutil.Ok(t, err)
 
-	ssMap := query(t, q, labels.NewEqualMatcher("a", "b"))
+	ssMap := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{
 		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}},
@@ -436,7 +436,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	q, err = db.Querier(0, 10)
 	testutil.Ok(t, err)
 
-	ssMap = query(t, q, labels.NewEqualMatcher("a", "b"))
+	ssMap = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{
 		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}, sample{10, 3}},
@@ -477,7 +477,7 @@ func TestDB_Snapshot(t *testing.T) {
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// sum values
-	seriesSet, err := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	seriesSet, err := querier.Select(labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	testutil.Ok(t, err)
 
 	sum := 0.0
@@ -531,7 +531,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// Sum values.
-	seriesSet, err := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	seriesSet, err := querier.Select(labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	testutil.Ok(t, err)
 
 	sum := 0.0
@@ -579,7 +579,7 @@ Outer:
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
 		for _, r := range c.intervals {
-			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
+			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// create snapshot
@@ -602,7 +602,7 @@ Outer:
 		testutil.Ok(t, err)
 		defer func() { testutil.Ok(t, q.Close()) }()
 
-		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+		res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 		testutil.Ok(t, err)
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
@@ -647,7 +647,7 @@ func TestDB_e2e(t *testing.T) {
 		timeInterval  = int64(3)
 	)
 	// Create 8 series with 1000 data-points of different ranges and run queries.
-	lbls := [][]labels.Label{
+	lbls := []labels.Labels{
 		{
 			{Name: "a", Value: "b"},
 			{Name: "instance", Value: "localhost:9090"},
@@ -726,22 +726,22 @@ func TestDB_e2e(t *testing.T) {
 
 	// Query each selector on 1000 random time-ranges.
 	queries := []struct {
-		ms []labels.Matcher
+		ms []*labels.Matcher
 	}{
 		{
-			ms: []labels.Matcher{labels.NewEqualMatcher("a", "b")},
+			ms: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "b")},
 		},
 		{
-			ms: []labels.Matcher{
-				labels.NewEqualMatcher("a", "b"),
-				labels.NewEqualMatcher("job", "prom-k8s"),
+			ms: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "b"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "prom-k8s"),
 			},
 		},
 		{
-			ms: []labels.Matcher{
-				labels.NewEqualMatcher("a", "c"),
-				labels.NewEqualMatcher("instance", "localhost:9090"),
-				labels.NewEqualMatcher("job", "prometheus"),
+			ms: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "c"),
+				labels.MustNewMatcher(labels.MatchEqual, "instance", "localhost:9090"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus"),
 			},
 		},
 		// TODO: Add Regexp Matchers.
@@ -920,7 +920,7 @@ func TestTombstoneClean(t *testing.T) {
 		defer db.Close()
 
 		for _, r := range c.intervals {
-			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
+			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// All of the setup for THIS line.
@@ -931,7 +931,7 @@ func TestTombstoneClean(t *testing.T) {
 		testutil.Ok(t, err)
 		defer q.Close()
 
-		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+		res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 		testutil.Ok(t, err)
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
@@ -1232,39 +1232,39 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 		series   []labels.Labels
 	}{{
 		selector: labels.Selector{
-			labels.Not(labels.NewEqualMatcher("lname", "lvalue")),
+			labels.MustNewMatcher(labels.MatchNotEqual, "lname", "lvalue"),
 		},
 		series: labelpairs,
 	}, {
 		selector: labels.Selector{
-			labels.NewEqualMatcher("a", "abcd"),
-			labels.Not(labels.NewEqualMatcher("b", "abcde")),
+			labels.MustNewMatcher(labels.MatchEqual, "a", "abcd"),
+			labels.MustNewMatcher(labels.MatchNotEqual, "b", "abcde"),
 		},
 		series: []labels.Labels{},
 	}, {
 		selector: labels.Selector{
-			labels.NewEqualMatcher("a", "abcd"),
-			labels.Not(labels.NewEqualMatcher("b", "abc")),
+			labels.MustNewMatcher(labels.MatchEqual, "a", "abcd"),
+			labels.MustNewMatcher(labels.MatchNotEqual, "b", "abc"),
 		},
 		series: []labels.Labels{labelpairs[0]},
 	}, {
 		selector: labels.Selector{
-			labels.Not(labels.NewMustRegexpMatcher("a", "abd.*")),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "a", "abd.*"),
 		},
 		series: labelpairs,
 	}, {
 		selector: labels.Selector{
-			labels.Not(labels.NewMustRegexpMatcher("a", "abc.*")),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "a", "abc.*"),
 		},
 		series: labelpairs[1:],
 	}, {
 		selector: labels.Selector{
-			labels.Not(labels.NewMustRegexpMatcher("c", "abd.*")),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "c", "abd.*"),
 		},
 		series: labelpairs,
 	}, {
 		selector: labels.Selector{
-			labels.Not(labels.NewMustRegexpMatcher("labelname", "labelvalue")),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "labelname", "labelvalue"),
 		},
 		series: labelpairs[:1],
 	}}
@@ -1605,7 +1605,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 
 	rangeToTriggerCompaction := db.opts.BlockRanges[0]/2*3 - 1
 	defaultLabel := labels.FromStrings("foo", "bar")
-	defaultMatcher := labels.NewMustRegexpMatcher("", ".*")
+	defaultMatcher := labels.MustNewMatcher(labels.MatchRegexp, "", ".*")
 
 	t.Run("Test no blocks after compact with empty head.", func(t *testing.T) {
 		testutil.Ok(t, db.compact())
@@ -1807,7 +1807,7 @@ func TestCorrectNumTombstones(t *testing.T) {
 
 	blockRange := DefaultOptions.BlockRanges[0]
 	defaultLabel := labels.FromStrings("foo", "bar")
-	defaultMatcher := labels.NewEqualMatcher(defaultLabel[0].Name, defaultLabel[0].Value)
+	defaultMatcher := labels.MustNewMatcher(labels.MatchEqual, defaultLabel[0].Name, defaultLabel[0].Value)
 
 	app := db.Appender()
 	for i := int64(0); i < 3; i++ {
@@ -2152,7 +2152,7 @@ func TestVerticalCompaction(t *testing.T) {
 		},
 	}
 
-	defaultMatcher := labels.NewMustRegexpMatcher("__name__", ".*")
+	defaultMatcher := labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*")
 	for _, c := range cases {
 		if ok := t.Run("", func(t *testing.T) {
 
@@ -2311,7 +2311,7 @@ func TestDBReadOnly(t *testing.T) {
 		expSeries      map[string][]tsdbutil.Sample
 		expSeriesCount int
 		expDBHash      []byte
-		matchAll       = labels.NewEqualMatcher("", "")
+		matchAll       = labels.MustNewMatcher(labels.MatchEqual, "", "")
 		err            error
 	)
 
@@ -2465,7 +2465,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// Sum the values.
-	seriesSet, err := querier.Select(labels.NewEqualMatcher(defaultLabelName, "flush"))
+	seriesSet, err := querier.Select(labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "flush"))
 	testutil.Ok(t, err)
 
 	sum := 0.0

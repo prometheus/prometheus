@@ -27,10 +27,10 @@ import (
 
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -290,7 +290,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 
 	q, err := NewBlockQuerier(head, 0, 300)
 	testutil.Ok(t, err)
-	series := query(t, q, labels.NewEqualMatcher("foo", "bar"))
+	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{100, 1}, sample{300, 2}}}, series)
 }
 
@@ -437,7 +437,7 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 
 			testutil.Ok(t, head.Init(math.MinInt64))
 
-			testutil.Ok(t, head.Delete(0, 100, labels.NewEqualMatcher("a", "1")))
+			testutil.Ok(t, head.Delete(0, 100, labels.MustNewMatcher(labels.MatchEqual, "a", "1")))
 		})
 	}
 }
@@ -507,7 +507,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 				// Delete the ranges.
 				for _, r := range c.dranges {
-					testutil.Ok(t, head.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher(lblDefault.Name, lblDefault.Value)))
+					testutil.Ok(t, head.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value)))
 				}
 
 				// Compare the samples for both heads - before and after the reload.
@@ -522,7 +522,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 					indexr, err := h.Index()
 					testutil.Ok(t, err)
 					// Use an emptyTombstoneReader explicitly to get all the samples.
-					css, err := LookupChunkSeries(indexr, emptyTombstoneReader, labels.NewEqualMatcher(lblDefault.Name, lblDefault.Value))
+					css, err := LookupChunkSeries(indexr, emptyTombstoneReader, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, err)
 
 					// Getting the actual samples.
@@ -564,7 +564,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, h := range []*Head{head, reloadedHead} {
 					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
 					testutil.Ok(t, err)
-					actSeriesSet, err := q.Select(labels.NewEqualMatcher(lblDefault.Name, lblDefault.Value))
+					actSeriesSet, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, err)
 
 					lns, err := q.LabelNames()
@@ -623,12 +623,12 @@ func TestDeleteUntilCurMax(t *testing.T) {
 		testutil.Ok(t, err)
 	}
 	testutil.Ok(t, app.Commit())
-	testutil.Ok(t, hb.Delete(0, 10000, labels.NewEqualMatcher("a", "b")))
+	testutil.Ok(t, hb.Delete(0, 10000, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 
 	// Test the series have been deleted.
 	q, err := NewBlockQuerier(hb, 0, 100000)
 	testutil.Ok(t, err)
-	res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+	res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Ok(t, err)
 	testutil.Assert(t, !res.Next(), "series didn't get deleted")
 
@@ -639,7 +639,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 	q, err = NewBlockQuerier(hb, 0, 100000)
 	testutil.Ok(t, err)
-	res, err = q.Select(labels.NewEqualMatcher("a", "b"))
+	res, err = q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Ok(t, err)
 	testutil.Assert(t, res.Next(), "series don't exist")
 	exps := res.At()
@@ -669,7 +669,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 	}
-	testutil.Ok(t, hb.Delete(0, int64(numSamples), labels.NewEqualMatcher("a", "b")))
+	testutil.Ok(t, hb.Delete(0, int64(numSamples), labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 	testutil.Ok(t, hb.Truncate(1))
 	testutil.Ok(t, hb.Close())
 
@@ -774,25 +774,25 @@ func TestDelete_e2e(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 	// Delete a time-range from each-selector.
 	dels := []struct {
-		ms     []labels.Matcher
+		ms     []*labels.Matcher
 		drange tombstones.Intervals
 	}{
 		{
-			ms:     []labels.Matcher{labels.NewEqualMatcher("a", "b")},
+			ms:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "b")},
 			drange: tombstones.Intervals{{Mint: 300, Maxt: 500}, {Mint: 600, Maxt: 670}},
 		},
 		{
-			ms: []labels.Matcher{
-				labels.NewEqualMatcher("a", "b"),
-				labels.NewEqualMatcher("job", "prom-k8s"),
+			ms: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "b"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "prom-k8s"),
 			},
 			drange: tombstones.Intervals{{Mint: 300, Maxt: 500}, {Mint: 100, Maxt: 670}},
 		},
 		{
-			ms: []labels.Matcher{
-				labels.NewEqualMatcher("a", "c"),
-				labels.NewEqualMatcher("instance", "localhost:9090"),
-				labels.NewEqualMatcher("job", "prometheus"),
+			ms: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "c"),
+				labels.MustNewMatcher(labels.MatchEqual, "instance", "localhost:9090"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus"),
 			},
 			drange: tombstones.Intervals{{Mint: 300, Maxt: 400}, {Mint: 100, Maxt: 6700}},
 		},
@@ -1077,7 +1077,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer q.Close()
 
-	ss, err := q.Select(labels.NewEqualMatcher("a", "1"))
+	ss, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	testutil.Ok(t, err)
 
 	testutil.Equals(t, true, ss.Next())
@@ -1104,7 +1104,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer q.Close()
 
-	ss, err := q.Select(labels.NewEqualMatcher("a", "1"))
+	ss, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	testutil.Ok(t, err)
 
 	testutil.Equals(t, false, ss.Next())

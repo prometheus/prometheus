@@ -20,11 +20,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -32,7 +32,7 @@ import (
 // time range.
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
-	Select(...labels.Matcher) (SeriesSet, error)
+	Select(...*labels.Matcher) (SeriesSet, error)
 
 	// LabelValues returns all potential values for a label name.
 	LabelValues(string) ([]string, error)
@@ -112,7 +112,7 @@ func (q *querier) LabelValuesFor(string, labels.Label) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (q *querier) Select(ms ...labels.Matcher) (SeriesSet, error) {
+func (q *querier) Select(ms ...*labels.Matcher) (SeriesSet, error) {
 	if len(q.blocks) == 0 {
 		return EmptySeriesSet(), nil
 	}
@@ -145,11 +145,11 @@ type verticalQuerier struct {
 	querier
 }
 
-func (q *verticalQuerier) Select(ms ...labels.Matcher) (SeriesSet, error) {
+func (q *verticalQuerier) Select(ms ...*labels.Matcher) (SeriesSet, error) {
 	return q.sel(q.blocks, ms)
 }
 
-func (q *verticalQuerier) sel(qs []Querier, ms []labels.Matcher) (SeriesSet, error) {
+func (q *verticalQuerier) sel(qs []Querier, ms []*labels.Matcher) (SeriesSet, error) {
 	if len(qs) == 0 {
 		return EmptySeriesSet(), nil
 	}
@@ -206,7 +206,7 @@ type blockQuerier struct {
 	mint, maxt int64
 }
 
-func (q *blockQuerier) Select(ms ...labels.Matcher) (SeriesSet, error) {
+func (q *blockQuerier) Select(ms ...*labels.Matcher) (SeriesSet, error) {
 	base, err := LookupChunkSeries(q.index, q.tombstones, ms...)
 	if err != nil {
 		return nil, err
@@ -320,26 +320,31 @@ func findSetMatches(pattern string) []string {
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers.
-func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, error) {
+func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
 	labelMustBeSet := make(map[string]bool, len(ms))
 	for _, m := range ms {
 		if !m.Matches("") {
-			labelMustBeSet[m.Name()] = true
+			labelMustBeSet[m.Name] = true
 		}
 	}
 
 	for _, m := range ms {
-		if labelMustBeSet[m.Name()] {
+		if labelMustBeSet[m.Name] {
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
-			nm, isNot := m.(*labels.NotMatcher)
+			isNot := m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp
 			if isNot && matchesEmpty { // l!="foo"
 				// If the label can't be empty and is a Not and the inner matcher
 				// doesn't match empty, then subtract it out at the end.
-				it, err := postingsForMatcher(ix, nm.Matcher)
+				inverse, err := m.Inverse()
+				if err != nil {
+					return nil, err
+				}
+
+				it, err := postingsForMatcher(ix, inverse)
 				if err != nil {
 					return nil, err
 				}
@@ -347,7 +352,12 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 			} else if isNot && !matchesEmpty { // l!=""
 				// If the label can't be empty and is a Not, but the inner matcher can
 				// be empty we need to use inversePostingsForMatcher.
-				it, err := inversePostingsForMatcher(ix, nm.Matcher)
+				inverse, err := m.Inverse()
+				if err != nil {
+					return nil, err
+				}
+
+				it, err := inversePostingsForMatcher(ix, inverse)
 				if err != nil {
 					return nil, err
 				}
@@ -391,23 +401,23 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 	return ix.SortedPostings(it), nil
 }
 
-func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
+func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
 	// This method will not return postings for missing labels.
 
 	// Fast-path for equal matching.
-	if em, ok := m.(*labels.EqualMatcher); ok {
-		return ix.Postings(em.Name(), em.Value())
+	if m.Type == labels.MatchEqual {
+		return ix.Postings(m.Name, m.Value)
 	}
 
 	// Fast-path for set matching.
-	if em, ok := m.(*labels.RegexpMatcher); ok {
-		setMatches := findSetMatches(em.Value())
+	if m.Type == labels.MatchRegexp {
+		setMatches := findSetMatches(m.Value)
 		if len(setMatches) > 0 {
-			return postingsForSetMatcher(ix, em.Name(), setMatches)
+			return postingsForSetMatcher(ix, m.Name, setMatches)
 		}
 	}
 
-	tpls, err := ix.LabelValues(m.Name())
+	tpls, err := ix.LabelValues(m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +440,7 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 	var rit []index.Postings
 
 	for _, v := range res {
-		it, err := ix.Postings(m.Name(), v)
+		it, err := ix.Postings(m.Name, v)
 		if err != nil {
 			return nil, err
 		}
@@ -441,8 +451,8 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
-func inversePostingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
-	tpls, err := ix.LabelValues(m.Name())
+func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
+	tpls, err := ix.LabelValues(m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +471,7 @@ func inversePostingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings
 
 	var rit []index.Postings
 	for _, v := range res {
-		it, err := ix.Postings(m.Name(), v)
+		it, err := ix.Postings(m.Name, v)
 		if err != nil {
 			return nil, err
 		}
@@ -737,7 +747,7 @@ type baseChunkSeries struct {
 
 // LookupChunkSeries retrieves all series for the given matchers and returns a ChunkSeriesSet
 // over them. It drops chunks based on tombstones in the given reader.
-func LookupChunkSeries(ir IndexReader, tr tombstones.Reader, ms ...labels.Matcher) (ChunkSeriesSet, error) {
+func LookupChunkSeries(ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (ChunkSeriesSet, error) {
 	if tr == nil {
 		tr = tombstones.NewMemTombstones()
 	}
