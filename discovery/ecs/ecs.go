@@ -139,11 +139,15 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			labels[ecsLabelUserId] = model.LabelValue(d.ecsCfg.UserId)
 		}
 
+		// instance must have AddressLabel
+		isAddressLabelExist := false
+
 		// check classic public ip
 		if len(instance.PublicIpAddress.IpAddress) > 0 {
 			labels[ecsLabelPublicIp] = model.LabelValue(instance.PublicIpAddress.IpAddress[0])
 			addr := net.JoinHostPort(instance.PublicIpAddress.IpAddress[0], fmt.Sprintf("%d", d.port))
 			labels[model.AddressLabel] = model.LabelValue(addr)
+			isAddressLabelExist = true
 		}
 
 		// check classic inner ip
@@ -151,6 +155,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			labels[ecsLabelInnerIp] = model.LabelValue(instance.InnerIpAddress.IpAddress[0])
 			addr := net.JoinHostPort(instance.InnerIpAddress.IpAddress[0], fmt.Sprintf("%d", d.port))
 			labels[model.AddressLabel] = model.LabelValue(addr)
+			isAddressLabelExist = true
 		}
 
 		// check vpc eip
@@ -158,6 +163,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			labels[ecsLabelEip] = model.LabelValue(instance.EipAddress.IpAddress)
 			addr := net.JoinHostPort(instance.EipAddress.IpAddress, fmt.Sprintf("%d", d.port))
 			labels[model.AddressLabel] = model.LabelValue(addr)
+			isAddressLabelExist = true
 		}
 
 		// check vpc private ip
@@ -165,6 +171,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			labels[ecsLabelPrivateIp] = model.LabelValue(instance.VpcAttributes.PrivateIpAddress.IpAddress[0])
 			addr := net.JoinHostPort(instance.VpcAttributes.PrivateIpAddress.IpAddress[0], fmt.Sprintf("%d", d.port))
 			labels[model.AddressLabel] = model.LabelValue(addr)
+			isAddressLabelExist = true
+		}
+
+		if !isAddressLabelExist {
+			level.Warn(d.logger).Log("msg", "Instance dont have AddressLabel.", "instance: ", fmt.Sprintf("%v", instance))
+			continue
 		}
 
 		// tags
@@ -213,6 +225,7 @@ func (d *Discovery) filterInstancesIdFromListTagResources(token string) (instanc
 	if responseErr != nil {
 		return "[]", "", errors.Wrap(responseErr, "could not get response from ListTagResources.")
 	}
+	level.Debug(d.logger).Log("msg", "get response from ListTagResources.", "response: ", response)
 
 	if response.TagResources.TagResource == nil || len(response.TagResources.TagResource) == 0 {
 		level.Debug(d.logger).Log("msg", "ListTagResourcesTagFilter found no resources.", "response: ", response)
