@@ -500,12 +500,10 @@ func main() {
 				case <-term:
 					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
 					reloadReady.Close()
-
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
 				case <-cancel:
 					reloadReady.Close()
-					break
 				}
 				return nil
 			},
