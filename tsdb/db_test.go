@@ -2502,30 +2502,32 @@ func TestChunkWriter(t *testing.T) {
 	}{
 		// 0:Last chunk ends at the segment boundary so
 		// all chunks should fit in a single segment.
+		// {
+		// 	chks: [][]chunks.Meta{
+		// 		[]chunks.Meta{
+		// 			chk1,
+		// 			chk2,
+		// 			chk3,
+		// 		},
+		// 	},
+		// 	segmentSize:      3 * chunkSize,
+		// 	expSegmentSizes:  []int{3 * chunkSize},
+		// 	expSegmentsCount: 1,
+		// },
+		// 1:Two chunks can fit in a single segment so the last one should result in a new segment.
 		{
 			chks: [][]chunks.Meta{
 				[]chunks.Meta{
 					chk1,
 					chk2,
 					chk3,
-				},
-			},
-			segmentSize:      3 * chunkSize,
-			expSegmentSizes:  []int{3 * chunkSize},
-			expSegmentsCount: 1,
-		},
-		// 1:Two chunks can fit in a single segment can fit so the last one should result in a new segment.
-		{
-			chks: [][]chunks.Meta{
-				[]chunks.Meta{
-					chk1,
-					chk2,
-					chk3,
+					chk4,
+					chk5,
 				},
 			},
 			segmentSize:      2 * chunkSize,
-			expSegmentSizes:  []int{2 * chunkSize, chunkSize},
-			expSegmentsCount: 2,
+			expSegmentSizes:  []int{2 * chunkSize, 2 * chunkSize, chunkSize},
+			expSegmentsCount: 3,
 		},
 		// 2:When the segment size is smaller than the size of 2 chunks
 		// the last segment should still keep should create a new segment.

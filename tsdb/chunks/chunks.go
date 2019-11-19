@@ -315,10 +315,11 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 
 	for i, chk := range chks {
 		// Each chunk contains: data length + encoding + the data itself + crc32
-		batchSize += int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
-		batchSize += ChunkEncodingSize              // The chunk encoding.
-		batchSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
-		batchSize += crc32.Size                     // The 4 bytes of crc32.
+		currentChkSize := int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
+		currentChkSize += ChunkEncodingSize              // The chunk encoding.
+		currentChkSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
+		currentChkSize += crc32.Size                     // The 4 bytes of crc32.
+		batchSize += currentChkSize
 
 		// Cut a new batch when it is not the first chunk(to avoid empty segments) and
 		// the batch is too large to fit in the current segment.
@@ -337,6 +338,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 			batchStart = i
 			batches = append(batches, []Meta{})
 			batchID++
+			batchSize = currentChkSize
 		}
 		batches[batchID] = chks[batchStart : i+1]
 	}
