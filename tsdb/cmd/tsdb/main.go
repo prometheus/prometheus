@@ -32,10 +32,10 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -630,7 +630,7 @@ func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
 		err = merr.Err()
 	}()
 
-	ss, err := q.Select(labels.NewMustRegexpMatcher("", ".*"))
+	ss, err := q.Select(labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	if err != nil {
 		return err
 	}
