@@ -170,6 +170,15 @@ var (
 		},
 		[]string{queue},
 	)
+	bytesSent = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "sent_bytes_total",
+			Help:      "The total number of bytes sent by the queue.",
+		},
+		[]string{queue},
+	)
 )
 
 // StorageClient defines an interface for sending a batch of samples to an
@@ -224,6 +233,7 @@ type QueueManager struct {
 	maxNumShards               prometheus.Gauge
 	minNumShards               prometheus.Gauge
 	desiredNumShards           prometheus.Gauge
+	bytesSent                  prometheus.Counter
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -331,6 +341,7 @@ func (t *QueueManager) Start() {
 	t.maxNumShards = maxNumShards.WithLabelValues(name)
 	t.minNumShards = minNumShards.WithLabelValues(name)
 	t.desiredNumShards = desiredNumShards.WithLabelValues(name)
+	t.bytesSent = bytesSent.WithLabelValues(name)
 
 	// Initialise some metrics.
 	t.shardCapacity.Set(float64(t.cfg.Capacity))
@@ -827,6 +838,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 		if err == nil {
 			s.qm.succeededSamplesTotal.Add(float64(len(samples)))
+			s.qm.bytesSent.Add(float64(len(req)))
 			s.qm.highestSentTimestampMetric.Set(float64(highest / 1000))
 			atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
 			return nil
