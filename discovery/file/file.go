@@ -71,6 +71,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 const fileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
+const enabledLabel = "enabled"
 
 // TimestampCollector is a Custom Collector for Timestamps of the files.
 type TimestampCollector struct {
@@ -393,6 +394,12 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 
+		for label, labelVal := range tg.Labels {
+			if label == enabledLabel && labelVal == "false" {
+				targetGroups = removeTarget(targetGroups, i)
+			}
+		}
+
 		tg.Source = fileSource(filename, i)
 		if tg.Labels == nil {
 			tg.Labels = model.LabelSet{}
@@ -403,6 +410,11 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 	d.writeTimestamp(filename, float64(info.ModTime().Unix()))
 
 	return targetGroups, nil
+}
+
+//removeTarget if contains label enabled=false
+func removeTarget(targetGroups []*targetgroup.Group, i int) []*targetgroup.Group {
+	return append(targetGroups[:i], targetGroups[i+1:]...)
 }
 
 // fileSource returns a source ID for the i-th target group in the file.
