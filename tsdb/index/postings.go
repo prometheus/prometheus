@@ -96,12 +96,12 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 
 	metrics := &maxHeap{}
 	labels := &maxHeap{}
-	labelValueLenght := &maxHeap{}
+	labelValueLength := &maxHeap{}
 	labelValuePairs := &maxHeap{}
 
 	metrics.init(maxNumOfRecords)
 	labels.init(maxNumOfRecords)
-	labelValueLenght.init(maxNumOfRecords)
+	labelValueLength.init(maxNumOfRecords)
 	labelValuePairs.init(maxNumOfRecords)
 
 	for n, e := range p.m {
@@ -117,7 +117,7 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 			labelValuePairs.push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
 			size += uint64(len(name))
 		}
-		labelValueLenght.push(Stat{Name: n, Count: size})
+		labelValueLength.push(Stat{Name: n, Count: size})
 	}
 
 	p.mtx.RUnlock()
@@ -125,7 +125,7 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 	return &PostingsStats{
 		CardinalityMetricsStats: metrics.get(),
 		CardinalityLabelStats:   labels.get(),
-		LabelValueStats:         labelValueLenght.get(),
+		LabelValueStats:         labelValueLength.get(),
 		LabelValuePairsStats:    labelValuePairs.get(),
 	}
 }
