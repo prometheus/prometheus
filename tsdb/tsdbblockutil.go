@@ -17,7 +17,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-kit/kit/log"
-	tsdb_labels "github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"os"
 	"path/filepath"
 )
@@ -27,7 +27,7 @@ var InvalidTimesError = fmt.Errorf("max time is lesser than min time")
 type MetricSample struct {
 	TimestampMs int64
 	Value       float64
-	Labels      tsdb_labels.Labels
+	Labels      labels.Labels
 }
 
 // CreateHead creates a TSDB writer head to write the sample data to.
