@@ -149,15 +149,6 @@ div.time-input {
     align-items: center;
     padding: 0 5px;
     border-radius: 3px;
-    user-select: none;
-}
-
-.legend-item::before {
-    content: "✔";
-    opacity: 0.5;
-    margin-right: 5px;
-    line-height: 1.4;
-    font-size: 7px;
 }
 
 .legend-swatch {

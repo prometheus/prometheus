@@ -13,15 +13,9 @@ require('flot/source/jquery.flot.time');
 require('flot/source/jquery.canvaswrapper');
 require('jquery.flot.tooltip');
 
-let graphID = 0;
-function getGraphID() {
-  // TODO: This is ugly.
-  return graphID++;
-}
-
 export type GraphSeriesValue = number | null;
 
-export interface GraphSeriesXY {
+export interface GraphSeries {
   labels: { [key: string]: string };
   color: string;
   data: GraphSeriesValue[][]; // [x,y][]
@@ -37,18 +31,18 @@ interface GraphProps {
     resolution: number;
   } | null;
 }
+
 interface GraphState {
-  selectedSeriesIndex: number;
-  hoveredSeriesIndex: number;
+  selectedSeriesIndex: number | null;
+  hoveredSeriesIndex: number | null;
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
-  private id: number = getGraphID();
   private chartRef = React.createRef<HTMLDivElement>();
 
   state = {
-    selectedSeriesIndex: -1,
-    hoveredSeriesIndex: -1,
+    selectedSeriesIndex: null,
+    hoveredSeriesIndex: null,
   };
 
   renderLabels(labels: { [key: string]: string }) {
@@ -166,7 +160,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     const neededColors = this.props.data.result.length;
 
     for (let i = 0; i < neededColors; i++) {
-      const c = ($ as any).color.parse(colorPool[i % colorPoolSize] || '#666');
+      const c = ($ as jquery.flot.axisOptions).color.parse(colorPool[i % colorPoolSize] || '#666');
 
       // Each time we exhaust the colors in the pool we adjust
       // a scaling factor used to produce more variations on
@@ -190,7 +184,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     return colors;
   }
 
-  getData(): GraphSeriesXY[] {
+  getData(): GraphSeries[] {
     const colors = this.getColors();
     const { hoveredSeriesIndex } = this.state;
     const { stacked, queryParams } = this.props;
@@ -239,7 +233,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   componentDidUpdate(prevProps: GraphProps) {
     if (prevProps.data !== this.props.data) {
-      this.setState({ selectedSeriesIndex: -1 });
+      this.setState({ selectedSeriesIndex: null });
     }
     this.plot();
   }
@@ -252,7 +246,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     if (!this.chartRef.current) {
       return;
     }
-    const selectedData = this.getData()[this.state.selectedSeriesIndex];
+    const selectedData = this.getData()[this.state.selectedSeriesIndex || -1];
     this.destroyPlot();
     $.plot($(this.chartRef.current), selectedData ? [selectedData] : this.getData(), this.getOptions());
   };
@@ -264,16 +258,16 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
   }
 
-  onSeriesSelect = (index: number) => () => {
+  handleSeriesSelect = (index: number) => () => {
     const { selectedSeriesIndex } = this.state;
     this.setState({ selectedSeriesIndex: selectedSeriesIndex !== index ? index : -1 });
   };
 
-  onSeriesHover = (index: number) => () => {
+  handleSeriesHover = (index: number) => () => {
     this.setState({ hoveredSeriesIndex: index });
   };
 
-  onLegendMouseOut = () => this.setState({ hoveredSeriesIndex: -1 });
+  handleLegendMouseOut = () => this.setState({ hoveredSeriesIndex: null });
 
   render() {
     if (this.props.data === null) {
@@ -293,17 +287,17 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
     const { selectedSeriesIndex } = this.state;
     const series = this.getData();
-    const canUseHover = series.length > 1 && selectedSeriesIndex === -1;
+    const canUseHover = series.length > 1 && selectedSeriesIndex === null;
     return (
       <div className="graph">
         <ReactResizeDetector handleWidth onResize={this.plot} />
         <div className="graph-chart" ref={this.chartRef} />
-        <div className="graph-legend" onMouseOut={canUseHover ? this.onLegendMouseOut : undefined}>
+        <div className="graph-legend" onMouseOut={canUseHover ? this.handleLegendMouseOut : undefined}>
           {series.map(({ index, color, labels }) => (
             <div
-              style={{ opacity: selectedSeriesIndex > -1 && index !== selectedSeriesIndex ? 0.4 : 1 }}
-              onClick={series.length > 1 ? this.onSeriesSelect(index) : undefined}
-              onMouseOver={canUseHover ? this.onSeriesHover(index) : undefined}
+              style={{ opacity: selectedSeriesIndex !== null && index !== selectedSeriesIndex ? 0.4 : 1 }}
+              onClick={series.length > 1 ? this.handleSeriesSelect(index) : undefined}
+              onMouseOver={canUseHover ? this.handleSeriesHover(index) : undefined}
               key={index}
               className="legend-item"
             >
