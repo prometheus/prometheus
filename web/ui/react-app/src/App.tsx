@@ -15,6 +15,10 @@ const App: FC<PathPrefixProps> = ({ pathPrefix }) => {
         <Router basepath={`${pathPrefix}/new`}>
           <Redirect from="/" to={`${pathPrefix}/new/graph`} />
 
+          {/*
+            NOTE: Any route added here needs to also be added to the list of
+            React-handled router paths ("reactRouterPaths") in /web/web.go.
+          */}
           <PanelList path="/graph" pathPrefix={pathPrefix} />
           <Alerts path="/alerts" pathPrefix={pathPrefix} />
           <Config path="/config" pathPrefix={pathPrefix} />
