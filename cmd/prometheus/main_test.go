@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-var promPath string
 var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
 var promData = filepath.Join(os.TempDir(), "data")
 
