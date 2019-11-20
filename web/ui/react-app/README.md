@@ -1,68 +1,79 @@
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+# Working with the React UI
 
-## Available Scripts
+This file explains how to work with the React-based Prometheus UI.
 
-In the project directory, you can run:
+## Introduction
 
-### `npm start`
+The [React-based](https://reactjs.org/) Prometheus UI was was bootstrapped using [Create React App](https://github.com/facebook/create-react-app), a popular toolkit for generating React application setups. You can find general information about Create React App on [their documentation site](https://create-react-app.dev/).
 
-Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+Instead of plain JavaScript, we use [TypeScript](https://www.typescriptlang.org/) to ensure typed code.
 
-The page will reload if you make edits.<br>
-You will also see any lint errors in the console.
+## Development environment
 
-### `npm test`
+To work with the React UI code, you will need to have the following tools installed:
 
-Launches the test runner in the interactive watch mode.<br>
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+* The [Node.js](https://nodejs.org/) JavaScript runtime.
+* The [Yarn](https://yarnpkg.com/) package manager.
+* *Recommended:* An editor with TypeScript, React, and [ESLint](https://eslint.org/) linting support. See e.g. [Create React App's editor setup instructions](https://create-react-app.dev/docs/setting-up-your-editor/). If you are not sure which editor to use, we recommend using [Visual Studio Code](https://code.visualstudio.com/docs/languages/typescript). Make sure that [the editor uses the project's TypeScript version rather than its own](https://code.visualstudio.com/docs/typescript/typescript-compiling#_using-the-workspace-version-of-typescript).
 
-### `npm run build`
+## Installing npm dependencies
 
-Builds the app for production to the `build` folder.<br>
-It correctly bundles React in production mode and optimizes the build for the best performance.
+The React UI depends on a large number of [npm](https://www.npmjs.com/) packages. These are not checked in, so you will need to download and install them locally via the Yarn package manager:
 
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
+    yarn
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+Yarn consults the `package.json` and `yarn.lock` files for dependencies to install. It creates a `node_modules` directory with all installed dependencies.
 
-### `npm run eject`
+## Running a local development server
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+You can start a development server for the React UI outside of a running Prometheus server by running:
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+    yarn start
 
-Instead, it will copy all the configuration files and the transitive dependencies (Webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+This will open a browser window with the React app running on http://localhost:3000/. The page will reload if you make edits to the source code. You will also see any lint errors in the console.
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+Due to a `"proxy": "http://localhost:9090"` setting in the `package.json` file, any API requests from the React UI are proxied to `localhost` on port `9090` by the development server. This allows you to run a normal Prometheus server to handle API requests, while iterating separately on the UI.
 
-## Learn More
+    [browser] ----> [localhost:3000 (dev server)] --(proxy API requests)--> [localhost:9090 (Prometheus)]
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## Running tests
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+Create React App uses the [Jest](https://jestjs.io/) framework for running tests. To run tests in interactive watch mode:
 
-### Code Splitting
+    yarn test
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/code-splitting
+To generate an HTML-based test coverage report, run:
 
-### Analyzing the Bundle Size
+    CI=true yarn test --coverage
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size
+This creates a `coverage` subdirectory with the generated report. Open `coverage/lcov-report/index.html` in the browser to view it.
 
-### Making a Progressive Web App
+The `CI=true` environment variable prevents the tests from being run in interactive / watching mode.
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app
+See the [Create React App documentation](https://create-react-app.dev/docs/running-tests/) for more information about running tests.
 
-### Advanced Configuration
+## Linting
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/advanced-configuration
+We define linting rules for the [ESLint](https://eslint.org/) linter. We recommend integrating automated linting and fixing into your editor (e.g. upon save), but you can also run the linter separately from the command-line.
 
-### Deployment
+To detect and automatically fix lint errors, run:
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/deployment
+    yarn lint
 
-### `npm run build` fails to minify
+This is also available via the `react-app-lint-fix` target in the main Prometheus `Makefile`.
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify
+## Building the app for production
+
+To build a production-optimized version of the React app to a `build` subdirectory, run:
+
+    yarn build
+
+**NOTE:** You will likely not need to do this directly. Instead, this is taken care of by the `build` target in the main Prometheus `Makefile` when building the full binary.
+
+## Integration into Prometheus
+
+To build a Prometheus binary that includes a compiled-in version of the production build of the React app, change to the root of the repository and run:
+
+    make build
+
+This installs npm dependencies via Yarn, builds a production build of the React app, and then finally compiles in all web assets into the Prometheus binary.

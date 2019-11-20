@@ -1,11 +1,5 @@
 import React, { Component } from 'react';
-import {
-  Button,
-  InputGroup,
-  InputGroupAddon,
-  InputGroupText,
-  Input,
-} from 'reactstrap';
+import { Button, InputGroup, InputGroupAddon, InputGroupText, Input } from 'reactstrap';
 
 import Downshift, { ControllerStateAndHelpers } from 'downshift';
 import fuzzy from 'fuzzy';
@@ -16,7 +10,7 @@ import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
 
 interface ExpressionInputProps {
   value: string;
-  metricNames: string[];
+  autocompleteSections: { [key: string]: string[] };
   executeQuery: (expr: string) => void;
   loading: boolean;
 }
@@ -27,104 +21,114 @@ interface ExpressionInputState {
 }
 
 class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
-  private prevNoMatchValue: string | null = null;
   private exprInputRef = React.createRef<HTMLInputElement>();
 
   constructor(props: ExpressionInputProps) {
     super(props);
     this.state = {
       value: props.value,
-      height: 'auto'
-    }
+      height: 'auto',
+    };
   }
 
   componentDidMount() {
     this.setHeight();
   }
 
-
   setHeight = () => {
     const { offsetHeight, clientHeight, scrollHeight } = this.exprInputRef.current!;
     const offset = offsetHeight - clientHeight; // Needed in order for the height to be more accurate.
     this.setState({ height: scrollHeight + offset });
-  }
+  };
 
   handleInput = () => {
-    this.setState({
-      height: 'auto',
-      value: this.exprInputRef.current!.value
-    }, this.setHeight);
-  }
-
-  handleDropdownSelection = (value: string) => {
-    this.setState({ value, height: 'auto' }, this.setHeight)
+    this.setValue(this.exprInputRef.current!.value);
   };
+
+  setValue = (value: string) => {
+    this.setState({ value, height: 'auto' }, this.setHeight);
+  };
+
+  componentDidUpdate(prevProps: ExpressionInputProps) {
+    const { value } = this.props;
+    if (value !== prevProps.value) {
+      this.setValue(value);
+    }
+  }
 
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
-      this.props.executeQuery(this.exprInputRef.current!.value);
+      this.executeQuery();
       event.preventDefault();
     }
-  }
+  };
 
-  executeQuery = () => this.props.executeQuery(this.exprInputRef.current!.value)
+  executeQuery = () => this.props.executeQuery(this.exprInputRef.current!.value);
 
-  renderAutosuggest = (downshift: ControllerStateAndHelpers<any>) => {
-    const { inputValue } = downshift
-    if (!inputValue || (this.prevNoMatchValue && inputValue.includes(this.prevNoMatchValue))) {
+  getSearchMatches = (input: string, expressions: string[]) => {
+    return fuzzy.filter(input.replace(/ /g, ''), expressions, {
+      pre: '<strong>',
+      post: '</strong>',
+    });
+  };
+
+  createAutocompleteSection = (downshift: ControllerStateAndHelpers<any>) => {
+    const { inputValue = '', closeMenu, highlightedIndex } = downshift;
+    const { autocompleteSections } = this.props;
+    let index = 0;
+    const sections = inputValue!.length
+      ? Object.entries(autocompleteSections).reduce(
+          (acc, [title, items]) => {
+            const matches = this.getSearchMatches(inputValue!, items);
+            return !matches.length
+              ? acc
+              : [
+                  ...acc,
+                  <ul className="autosuggest-dropdown-list" key={title}>
+                    <li className="autosuggest-dropdown-header">{title}</li>
+                    {matches
+                      .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+                      .map(({ original, string }) => {
+                        const itemProps = downshift.getItemProps({
+                          key: original,
+                          index,
+                          item: original,
+                          style: {
+                            backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
+                          },
+                        });
+                        return (
+                          <SanitizeHTML key={title} tag="li" {...itemProps} allowedTags={['strong']}>
+                            {string}
+                          </SanitizeHTML>
+                        );
+                      })}
+                  </ul>,
+                ];
+          },
+          [] as JSX.Element[]
+        )
+      : [];
+
+    if (!sections.length) {
       // This is ugly but is needed in order to sync state updates.
       // This way we force downshift to wait React render call to complete before closeMenu to be triggered.
-      setTimeout(downshift.closeMenu);
-      return null;
-    }
-
-    const matches = fuzzy.filter(inputValue.replace(/ /g, ''), this.props.metricNames, {
-      pre: "<strong>",
-      post: "</strong>",
-    });
-
-    if (matches.length === 0) {
-      this.prevNoMatchValue = inputValue;
-      setTimeout(downshift.closeMenu);
+      setTimeout(closeMenu);
       return null;
     }
 
     return (
-      <ul className="autosuggest-dropdown" {...downshift.getMenuProps()}>
-        {
-          matches
-            .slice(0, 200) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
-            .map((item, index) => (
-              <li
-                {...downshift.getItemProps({
-                  key: item.original,
-                  index,
-                  item: item.original,
-                  style: {
-                    backgroundColor:
-                      downshift.highlightedIndex === index ? 'lightgray' : 'white',
-                    fontWeight: downshift.selectedItem === item ? 'bold' : 'normal',
-                  },
-                })}
-              >
-                <SanitizeHTML inline={true} allowedTags={['strong']}>
-                  {item.string}
-                </SanitizeHTML>
-              </li>
-            ))
-        }
-      </ul>
+      <div {...downshift.getMenuProps()} className="autosuggest-dropdown">
+        {sections}
+      </div>
     );
-  }
+  };
 
   render() {
     const { value, height } = this.state;
     return (
-      <Downshift
-        onChange={this.handleDropdownSelection}
-        inputValue={value}
-      >
-        {(downshift) => (
+      <Downshift onSelect={this.setValue}>
+        {downshift => (
           <div>
             <InputGroup className="expression-input">
               <InputGroupAddon addonType="prepend">
@@ -166,20 +170,17 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                         break;
                       default:
                     }
-                  }
+                  },
                 } as any)}
+                value={value}
               />
               <InputGroupAddon addonType="append">
-                <Button
-                  className="execute-btn"
-                  color="primary"
-                  onClick={this.executeQuery}
-                >
+                <Button className="execute-btn" color="primary" onClick={this.executeQuery}>
                   Execute
                 </Button>
               </InputGroupAddon>
             </InputGroup>
-            {downshift.isOpen && this.renderAutosuggest(downshift)}
+            {downshift.isOpen && this.createAutocompleteSection(downshift)}
           </div>
         )}
       </Downshift>

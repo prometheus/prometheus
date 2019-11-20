@@ -39,7 +39,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
-	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -51,38 +50,43 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type testTargetRetriever struct{}
 
+var (
+	scrapeStart = time.Now().Add(-11 * time.Second)
+)
+
 func (t testTargetRetriever) TargetsActive() map[string][]*scrape.Target {
+	testTarget := scrape.NewTarget(
+		labels.FromMap(map[string]string{
+			model.SchemeLabel:      "http",
+			model.AddressLabel:     "example.com:8080",
+			model.MetricsPathLabel: "/metrics",
+			model.JobLabel:         "test",
+		}),
+		nil,
+		url.Values{},
+	)
+	testTarget.Report(scrapeStart, 70*time.Millisecond, nil)
+	blackboxTarget := scrape.NewTarget(
+		labels.FromMap(map[string]string{
+			model.SchemeLabel:      "http",
+			model.AddressLabel:     "localhost:9115",
+			model.MetricsPathLabel: "/probe",
+			model.JobLabel:         "blackbox",
+		}),
+		nil,
+		url.Values{"target": []string{"example.com"}},
+	)
+	blackboxTarget.Report(scrapeStart, 100*time.Millisecond, errors.New("failed"))
 	return map[string][]*scrape.Target{
-		"test": {
-			scrape.NewTarget(
-				labels.FromMap(map[string]string{
-					model.SchemeLabel:      "http",
-					model.AddressLabel:     "example.com:8080",
-					model.MetricsPathLabel: "/metrics",
-					model.JobLabel:         "test",
-				}),
-				nil,
-				url.Values{},
-			),
-		},
-		"blackbox": {
-			scrape.NewTarget(
-				labels.FromMap(map[string]string{
-					model.SchemeLabel:      "http",
-					model.AddressLabel:     "localhost:9115",
-					model.MetricsPathLabel: "/probe",
-					model.JobLabel:         "blackbox",
-				}),
-				nil,
-				url.Values{"target": []string{"example.com"}},
-			),
-		},
+		"test":     {testTarget},
+		"blackbox": {blackboxTarget},
 	}
 }
 func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
@@ -699,18 +703,124 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 						Labels: map[string]string{
 							"job": "blackbox",
 						},
-						ScrapeURL: "http://localhost:9115/probe?target=example.com",
-						Health:    "unknown",
+						ScrapePool:         "blackbox",
+						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						Health:             "down",
+						LastError:          "failed",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 0.1,
 					},
 					{
 						DiscoveredLabels: map[string]string{},
 						Labels: map[string]string{
 							"job": "test",
 						},
-						ScrapeURL: "http://example.com:8080/metrics",
-						Health:    "unknown",
+						ScrapePool:         "test",
+						ScrapeURL:          "http://example.com:8080/metrics",
+						Health:             "up",
+						LastError:          "",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 0.07,
 					},
 				},
+				DroppedTargets: []*DroppedTarget{
+					{
+						DiscoveredLabels: map[string]string{
+							"__address__":      "http://dropped.example.com:9115",
+							"__metrics_path__": "/probe",
+							"__scheme__":       "http",
+							"job":              "blackbox",
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.targets,
+			query: url.Values{
+				"state": []string{"any"},
+			},
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels: map[string]string{
+							"job": "blackbox",
+						},
+						ScrapePool:         "blackbox",
+						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						Health:             "down",
+						LastError:          "failed",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 0.1,
+					},
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels: map[string]string{
+							"job": "test",
+						},
+						ScrapePool:         "test",
+						ScrapeURL:          "http://example.com:8080/metrics",
+						Health:             "up",
+						LastError:          "",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 0.07,
+					},
+				},
+				DroppedTargets: []*DroppedTarget{
+					{
+						DiscoveredLabels: map[string]string{
+							"__address__":      "http://dropped.example.com:9115",
+							"__metrics_path__": "/probe",
+							"__scheme__":       "http",
+							"job":              "blackbox",
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.targets,
+			query: url.Values{
+				"state": []string{"active"},
+			},
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels: map[string]string{
+							"job": "blackbox",
+						},
+						ScrapePool:         "blackbox",
+						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						Health:             "down",
+						LastError:          "failed",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 0.1,
+					},
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels: map[string]string{
+							"job": "test",
+						},
+						ScrapePool:         "test",
+						ScrapeURL:          "http://example.com:8080/metrics",
+						Health:             "up",
+						LastError:          "",
+						LastScrape:         scrapeStart,
+						LastScrapeDuration: 0.07,
+					},
+				},
+				DroppedTargets: []*DroppedTarget{},
+			},
+		},
+		{
+			endpoint: api.targets,
+			query: url.Values{
+				"state": []string{"Dropped"},
+			},
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{},
 				DroppedTargets: []*DroppedTarget{
 					{
 						DiscoveredLabels: map[string]string{
@@ -1212,8 +1322,8 @@ type fakeDB struct {
 	closer func()
 }
 
-func (f *fakeDB) CleanTombstones() error                                  { return f.err }
-func (f *fakeDB) Delete(mint, maxt int64, ms ...tsdbLabels.Matcher) error { return f.err }
+func (f *fakeDB) CleanTombstones() error                               { return f.err }
+func (f *fakeDB) Delete(mint, maxt int64, ms ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Dir() string {
 	dir, _ := ioutil.TempDir("", "fakeDB")
 	f.closer = func() {
@@ -1222,6 +1332,10 @@ func (f *fakeDB) Dir() string {
 	return dir
 }
 func (f *fakeDB) Snapshot(dir string, withHead bool) error { return f.err }
+func (f *fakeDB) Head() *tsdb.Head {
+	h, _ := tsdb.NewHead(nil, nil, nil, 1000)
+	return h
+}
 
 func TestAdminEndpoints(t *testing.T) {
 	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: errors.New("some error")}
@@ -1729,6 +1843,47 @@ func TestRespond(t *testing.T) {
 		if string(body) != c.expected {
 			t.Fatalf("Expected response \n%v\n but got \n%v\n", c.expected, string(body))
 		}
+	}
+}
+
+func TestTSDBStatus(t *testing.T) {
+	tsdb := &fakeDB{}
+	tsdbStatusAPI := func(api *API) apiFunc { return api.serveTSDBStatus }
+
+	for i, tc := range []struct {
+		db       *fakeDB
+		endpoint func(api *API) apiFunc
+		method   string
+		values   url.Values
+
+		errType errorType
+	}{
+		// Tests for the TSDB Status endpoint.
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+
+			errType: errorNone,
+		},
+	} {
+		tc := tc
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			api := &API{
+				db: func() TSDBAdmin {
+					if tc.db != nil {
+						return tc.db
+					}
+					return nil
+				},
+			}
+			endpoint := tc.endpoint(api)
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			if err != nil {
+				t.Fatalf("Error when creating test request: %s", err)
+			}
+			res := endpoint(req)
+			assertAPIError(t, res.err, tc.errType)
+		})
 	}
 }
 

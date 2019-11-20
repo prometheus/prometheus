@@ -35,7 +35,6 @@ type objectValidator struct {
 	PatternProperties    map[string]spec.Schema
 	Root                 interface{}
 	KnownFormats         strfmt.Registry
-	Options              SchemaValidatorOptions
 }
 
 func (o *objectValidator) SetPath(path string) {
@@ -84,9 +83,7 @@ func (o *objectValidator) checkItemsMustBeTypeArray(res *Result, val map[string]
 
 func (o *objectValidator) precheck(res *Result, val map[string]interface{}) {
 	o.checkArrayMustHaveItems(res, val)
-	if !o.Options.DisableObjectArrayTypeCheck {
-		o.checkItemsMustBeTypeArray(res, val)
-	}
+	o.checkItemsMustBeTypeArray(res, val)
 }
 
 func (o *objectValidator) Validate(data interface{}) *Result {
@@ -179,7 +176,7 @@ func (o *objectValidator) Validate(data interface{}) *Result {
 				// Cases: properties which are not regular properties and have not been matched by the PatternProperties validator
 				if o.AdditionalProperties != nil && o.AdditionalProperties.Schema != nil {
 					// AdditionalProperties as Schema
-					r := NewSchemaValidator(o.AdditionalProperties.Schema, o.Root, o.Path+"."+key, o.KnownFormats, o.Options.Options()...).Validate(value)
+					r := NewSchemaValidator(o.AdditionalProperties.Schema, o.Root, o.Path+"."+key, o.KnownFormats).Validate(value)
 					res.mergeForField(data.(map[string]interface{}), key, r)
 				} else if regularProperty && !(matched || succeededOnce) {
 					// TODO: this is dead code since regularProperty=false here
@@ -203,7 +200,7 @@ func (o *objectValidator) Validate(data interface{}) *Result {
 
 		// Recursively validates each property against its schema
 		if v, ok := val[pName]; ok {
-			r := NewSchemaValidator(&pSchema, o.Root, rName, o.KnownFormats, o.Options.Options()...).Validate(v)
+			r := NewSchemaValidator(&pSchema, o.Root, rName, o.KnownFormats).Validate(v)
 			res.mergeForField(data.(map[string]interface{}), pName, r)
 		} else if pSchema.Default != nil {
 			// If a default value is defined, creates the property from defaults
@@ -231,7 +228,7 @@ func (o *objectValidator) Validate(data interface{}) *Result {
 		if !regularProperty && (matched /*|| succeededOnce*/) {
 			for _, pName := range patterns {
 				if v, ok := o.PatternProperties[pName]; ok {
-					r := NewSchemaValidator(&v, o.Root, o.Path+"."+key, o.KnownFormats, o.Options.Options()...).Validate(value)
+					r := NewSchemaValidator(&v, o.Root, o.Path+"."+key, o.KnownFormats).Validate(value)
 					res.mergeForField(data.(map[string]interface{}), key, r)
 				}
 			}
@@ -247,11 +244,10 @@ func (o *objectValidator) validatePatternProperty(key string, value interface{},
 	var patterns []string
 
 	for k, schema := range o.PatternProperties {
-		sch := schema
 		if match, _ := regexp.MatchString(k, key); match {
 			patterns = append(patterns, k)
 			matched = true
-			validator := NewSchemaValidator(&sch, o.Root, o.Path+"."+key, o.KnownFormats, o.Options.Options()...)
+			validator := NewSchemaValidator(&schema, o.Root, o.Path+"."+key, o.KnownFormats)
 
 			res := validator.Validate(value)
 			result.Merge(res)

@@ -20,6 +20,6 @@
     "jsx": "preserve"
   },
   "include": [
-    "src"
+    "src", "test"
   ]
 }

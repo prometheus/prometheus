@@ -27,9 +27,9 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -289,7 +289,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		},
 		`Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
 		We need to actually look on max time instead.
-		
+
 		With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
 		block overlaps`: {
 			metas: []dirMeta{

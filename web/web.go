@@ -14,6 +14,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -50,6 +51,7 @@ import (
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/soheilhy/cmux"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
@@ -68,7 +70,23 @@ import (
 	"github.com/prometheus/prometheus/web/ui"
 )
 
-var localhostRepresentations = []string{"127.0.0.1", "localhost"}
+var (
+	localhostRepresentations = []string{"127.0.0.1", "localhost"}
+
+	// Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
+	reactRouterPaths = []string{
+		"/",
+		"/alerts",
+		"/config",
+		"/flags",
+		"/graph",
+		"/rules",
+		"/service-discovery",
+		"/status",
+		"/targets",
+		"/version",
+	}
+)
 
 // withStackTrace logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
@@ -147,6 +165,9 @@ func (m *metrics) instrumentHandler(handlerName string, handler http.HandlerFunc
 	)
 }
 
+// PrometheusVersion contains build information about Prometheus.
+type PrometheusVersion = api_v1.PrometheusVersion
+
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
 	logger log.Logger
@@ -188,16 +209,6 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 	h.config = conf
 
 	return nil
-}
-
-// PrometheusVersion contains build information about Prometheus.
-type PrometheusVersion struct {
-	Version   string `json:"version"`
-	Revision  string `json:"revision"`
-	Branch    string `json:"branch"`
-	BuildUser string `json:"buildUser"`
-	BuildDate string `json:"buildDate"`
-	GoVersion string `json:"goVersion"`
 }
 
 // Options for the web Handler.
@@ -294,6 +305,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.RemoteReadConcurrencyLimit,
 		h.options.RemoteReadBytesInFrame,
 		h.options.CORSOrigin,
+		h.runtimeInfo,
+		h.versionInfo,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -330,6 +343,48 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
+		fs := server.StaticFileServer(ui.Assets)
+		fs.ServeHTTP(w, r)
+	})
+
+	// Make sure that "<path-prefix>/new" is redirected to "<path-prefix>/new/" and
+	// not just the naked "/new/", which would be the default behavior of the router
+	// with the "RedirectTrailingSlash" option (https://godoc.org/github.com/julienschmidt/httprouter#Router.RedirectTrailingSlash),
+	// and which breaks users with a --web.route-prefix that deviates from the path derived
+	// from the external URL.
+	router.Get("/new", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "new")+"/", http.StatusFound)
+	})
+
+	router.Get("/new/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		p := route.Param(r.Context(), "filepath")
+
+		// For paths that the React/Reach router handles, we want to serve the
+		// index.html, but with replaced path prefix placeholder.
+		for _, rp := range reactRouterPaths {
+			if p != rp {
+				continue
+			}
+
+			f, err := ui.Assets.Open("/static/react/index.html")
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, "Error opening React index.html: %v", err)
+				return
+			}
+			idx, err := ioutil.ReadAll(f)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, "Error reading React index.html: %v", err)
+				return
+			}
+			prefixedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
+			w.Write(prefixedIdx)
+			return
+		}
+
+		// For all other paths, serve auxiliary assets.
+		r.URL.Path = path.Join("/static/react/", p)
 		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})
@@ -548,8 +603,27 @@ func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 			rules.StatePending:  "warning",
 			rules.StateFiring:   "danger",
 		},
+		Counts: alertCounts(groups),
 	}
 	h.executeTemplate(w, "alerts.html", alertStatus)
+}
+
+func alertCounts(groups []*rules.Group) AlertByStateCount {
+	result := AlertByStateCount{}
+
+	for _, group := range groups {
+		for _, alert := range group.AlertingRules() {
+			switch alert.State() {
+			case rules.StateInactive:
+				result.Inactive++
+			case rules.StatePending:
+				result.Pending++
+			case rules.StateFiring:
+				result.Firing++
+			}
+		}
+	}
+	return result
 }
 
 func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
@@ -651,6 +725,11 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		LastConfigTime      time.Time
 		ReloadConfigSuccess bool
 		StorageRetention    string
+		NumSeries           uint64
+		MaxTime             int64
+		MinTime             int64
+		Stats               *index.PostingsStats
+		Duration            string
 	}{
 		Birth:          h.birth,
 		CWD:            h.cwd,
@@ -691,7 +770,56 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
 		}
 	}
+	db := h.tsdb()
+	startTime := time.Now().UnixNano()
+	status.Stats = db.Head().PostingsCardinalityStats("__name__")
+	status.Duration = fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9))
+	status.NumSeries = db.Head().NumSeries()
+	status.MaxTime = db.Head().MaxTime()
+	status.MinTime = db.Head().MaxTime()
+
 	h.executeTemplate(w, "status.html", status)
+}
+
+func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
+	status := api_v1.RuntimeInfo{
+		StartTime:      h.birth,
+		CWD:            h.cwd,
+		GoroutineCount: runtime.NumGoroutine(),
+		GOMAXPROCS:     runtime.GOMAXPROCS(0),
+		GOGC:           os.Getenv("GOGC"),
+		GODEBUG:        os.Getenv("GODEBUG"),
+	}
+
+	if h.options.TSDBCfg.RetentionDuration != 0 {
+		status.StorageRetention = h.options.TSDBCfg.RetentionDuration.String()
+	}
+	if h.options.TSDBCfg.MaxBytes != 0 {
+		if status.StorageRetention != "" {
+			status.StorageRetention = status.StorageRetention + " or "
+		}
+		status.StorageRetention = status.StorageRetention + h.options.TSDBCfg.MaxBytes.String()
+	}
+
+	metrics, err := h.gatherer.Gather()
+	if err != nil {
+		return status, errors.Errorf("error gathering runtime status: %s", err)
+	}
+	for _, mF := range metrics {
+		switch *mF.Name {
+		case "prometheus_tsdb_head_chunks":
+			status.ChunkCount = int64(toFloat64(mF))
+		case "prometheus_tsdb_head_series":
+			status.TimeSeriesCount = int64(toFloat64(mF))
+		case "prometheus_tsdb_wal_corruptions_total":
+			status.CorruptionCount = int64(toFloat64(mF))
+		case "prometheus_config_last_reload_successful":
+			status.ReloadConfigSuccess = toFloat64(mF) != 0
+		case "prometheus_config_last_reload_success_timestamp_seconds":
+			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
+		}
+	}
+	return status, nil
 }
 
 func toFloat64(f *io_prometheus_client.MetricFamily) float64 {
@@ -966,4 +1094,11 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 type AlertStatus struct {
 	Groups               []*rules.Group
 	AlertStateToRowClass map[rules.AlertState]string
+	Counts               AlertByStateCount
+}
+
+type AlertByStateCount struct {
+	Inactive int32
+	Pending  int32
+	Firing   int32
 }

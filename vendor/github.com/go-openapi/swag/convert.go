@@ -39,12 +39,11 @@ func IsFloat64AJSONInteger(f float64) bool {
 	diff := math.Abs(f - g)
 
 	// more info: https://floating-point-gui.de/errors/comparison/#look-out-for-edge-cases
-	switch {
-	case f == g: // best case
+	if f == g { // best case
 		return true
-	case f == float64(int64(f)) || f == float64(uint64(f)): // optimistic case
+	} else if f == float64(int64(f)) || f == float64(uint64(f)) { // optimistic case
 		return true
-	case f == 0 || g == 0 || diff < math.SmallestNonzeroFloat64: // very close to 0 values
+	} else if f == 0 || g == 0 || diff < math.SmallestNonzeroFloat64 { // very close to 0 values
 		return diff < (epsilon * math.SmallestNonzeroFloat64)
 	}
 	// check the relative error

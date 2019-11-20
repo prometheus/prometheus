@@ -75,6 +75,8 @@ read its web assets from local filesystem directories under `web/ui/static` and
 from the root of the cloned repository. Note also that these directories do not include the
 new experimental React UI unless it has been built explicitly using `make assets` or `make build`.
 
+An example of the above configuration file can be found [here.](https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus.yml)
+
 You can also clone the repository yourself and build using `make build`, which will compile in
 the web assets so that Prometheus can be run from anywhere:
 
@@ -93,6 +95,10 @@ The Makefile provides several targets:
   * *format*: format the source code
   * *vet*: check the source code for common errors
   * *docker*: build a docker container for the current `HEAD`
+
+## React UI Development
+
+For more information on building, running, and developing on the new React-based UI, see the React app's [README.md](https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/README.md).
 
 ## More information
 

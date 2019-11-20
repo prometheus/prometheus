@@ -1,7 +1,7 @@
 import { parseRange, parseTime, formatRange, formatTime } from './timeFormat';
 import { PanelOptions, PanelType, PanelDefaultOptions } from '../Panel';
 
-export function decodePanelOptionsFromQueryString(query: string): {key: string, options: PanelOptions}[] {
+export function decodePanelOptionsFromQueryString(query: string): { key: string; options: PanelOptions }[] {
   if (query === '') {
     return [];
   }
@@ -21,12 +21,14 @@ interface IncompletePanelOptions {
   stacked?: boolean;
 }
 
-function parseParams(params: string[]): {key: string, options: PanelOptions}[] {
-  const sortedParams = params.filter((p) => {
-    return paramFormat.test(p);
-  }).sort();
+function parseParams(params: string[]): { key: string; options: PanelOptions }[] {
+  const sortedParams = params
+    .filter(p => {
+      return paramFormat.test(p);
+    })
+    .sort();
 
-  let panelOpts: {key: string, options: PanelOptions}[] = [];
+  const panelOpts: { key: string; options: PanelOptions }[] = [];
 
   let key = 0;
   let options: IncompletePanelOptions = {};
@@ -36,7 +38,7 @@ function parseParams(params: string[]): {key: string, options: PanelOptions}[] {
     if (!p.startsWith(prefix)) {
       panelOpts.push({
         key: key.toString(),
-        options: {...PanelDefaultOptions, ...options},
+        options: { ...PanelDefaultOptions, ...options },
       });
       options = {};
       key++;
@@ -46,17 +48,17 @@ function parseParams(params: string[]): {key: string, options: PanelOptions}[] {
   }
   panelOpts.push({
     key: key.toString(),
-    options: {...PanelDefaultOptions, ...options},
+    options: { ...PanelDefaultOptions, ...options },
   });
 
   return panelOpts;
 }
 
 function addParam(opts: IncompletePanelOptions, param: string): void {
-  let [ opt, val ] = param.split('=');
+  let [opt, val] = param.split('=');
   val = decodeURIComponent(val.replace(/\+/g, ' '));
 
-  switch(opt) {
+  switch (opt) {
     case 'expr':
       opts.expr = val;
       break;
@@ -97,29 +99,29 @@ function addParam(opts: IncompletePanelOptions, param: string): void {
   }
 }
 
-export function encodePanelOptionsToQueryString(panels: {key: string, options: PanelOptions}[]): string {
+export function encodePanelOptionsToQueryString(panels: { key: string; options: PanelOptions }[]): string {
   const queryParams: string[] = [];
 
   panels.forEach(p => {
     const prefix = 'g' + p.key + '.';
     const o = p.options;
-    const panelParams: {[key: string]: string | undefined} = {
-      'expr': o.expr,
-      'tab': o.type === PanelType.Graph ? '0' : '1',
-      'stacked': o.stacked ? '1' : '0',
-      'range_input': formatRange(o.range),
-      'end_input': o.endTime !== null ? formatTime(o.endTime) : undefined,
-      'moment_input': o.endTime !== null ? formatTime(o.endTime) : undefined,
-      'step_input': o.resolution !== null ? o.resolution.toString() : undefined,
+    const panelParams: { [key: string]: string | undefined } = {
+      expr: o.expr,
+      tab: o.type === PanelType.Graph ? '0' : '1',
+      stacked: o.stacked ? '1' : '0',
+      range_input: formatRange(o.range),
+      end_input: o.endTime !== null ? formatTime(o.endTime) : undefined,
+      moment_input: o.endTime !== null ? formatTime(o.endTime) : undefined,
+      step_input: o.resolution !== null ? o.resolution.toString() : undefined,
     };
 
-    for (let o in panelParams) {
+    for (const o in panelParams) {
       const pp = panelParams[o];
       if (pp !== undefined) {
         queryParams.push(prefix + o + '=' + encodeURIComponent(pp));
       }
     }
-  })
+  });
 
   return '?' + queryParams.join('&');
 }

@@ -499,7 +499,7 @@ func appender(app storage.Appender, limit int) storage.Appender {
 // A scraper retrieves samples and accepts a status report at the end.
 type scraper interface {
 	scrape(ctx context.Context, w io.Writer) (string, error)
-	report(start time.Time, dur time.Duration, err error)
+	Report(start time.Time, dur time.Duration, err error)
 	offset(interval time.Duration, jitterSeed uint64) time.Duration
 }
 
@@ -1212,7 +1212,7 @@ const (
 )
 
 func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, appended, seriesAdded int, err error) error {
-	sl.scraper.report(start, duration, err)
+	sl.scraper.Report(start, duration, err)
 
 	ts := timestamp.FromTime(start)
 
