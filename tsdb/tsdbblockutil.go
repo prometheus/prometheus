@@ -78,5 +78,6 @@ func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger l
 	if err != nil {
 		return "", err
 	}
+
 	return filepath.Join(dir, ulid.String()), nil
 }
