@@ -63,7 +63,7 @@ describe('parseOption', () => {
     });
   });
   describe('range_input', () => {
-    it('should return range parsed if its ot null', () => {
+    it('should return range parsed if its not null', () => {
       expect(parseOption('range_input=2h')).toEqual({ range: 7200 });
     });
     it('should return empty object for invalid value', () => {
@@ -71,17 +71,17 @@ describe('parseOption', () => {
     });
   });
   describe('Parse type param', () => {
-    it('should return "graph" if tab value is 0', () => {
-      expect(parseOption('tab=0')).toEqual({ type: 'graph' });
+    it('should return panel type "graph" if tab=0', () => {
+      expect(parseOption('tab=0')).toEqual({ type: PanelType.Graph });
     });
-    it('should return "table" if tab value is 1', () => {
-      expect(parseOption('tab=0')).toEqual({ type: 'graph' });
+    it('should return panel type "table" if tab=1', () => {
+      expect(parseOption('tab=1')).toEqual({ type: PanelType.Table });
     });
   });
 });
 
 describe('toQueryString', () => {
-  it('should generate query string from panels options', () => {
+  it('should generate query string from panel options', () => {
     expect(
       toQueryString({
         id: 'asdf',
