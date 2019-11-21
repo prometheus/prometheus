@@ -246,7 +246,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     if (!this.chartRef.current) {
       return;
     }
-    const selectedData = this.getData()[this.state.selectedSeriesIndex || -1];
+    const selectedData = this.getData()[this.state.selectedSeriesIndex!];
     this.destroyPlot();
     $.plot($(this.chartRef.current), selectedData ? [selectedData] : this.getData(), this.getOptions());
   };
@@ -260,7 +260,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   handleSeriesSelect = (index: number) => () => {
     const { selectedSeriesIndex } = this.state;
-    this.setState({ selectedSeriesIndex: selectedSeriesIndex !== index ? index : -1 });
+    this.setState({ selectedSeriesIndex: selectedSeriesIndex !== index ? index : null });
   };
 
   handleSeriesHover = (index: number) => () => {
