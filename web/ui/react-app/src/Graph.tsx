@@ -5,7 +5,7 @@ import { Alert } from 'reactstrap';
 
 import { escapeHTML } from './utils/html';
 import SeriesName from './SeriesName';
-import { NullableValue, GraphSeries, GraphMetric } from './types/types';
+import { Nullable, GraphSeries, GraphMetric, QueryParams } from './types/types';
 require('flot');
 require('flot/source/jquery.flot.crosshair');
 require('flot/source/jquery.flot.legend');
@@ -16,20 +16,15 @@ require('jquery.flot.tooltip');
 interface GraphProps {
   data: {
     resultType: string;
-    result: GraphMetric[];
-    values: Array<Array<number | string>>;
+    result: Array<{ metric: GraphMetric; values: [number, string][] }>;
   };
   stacked: boolean;
-  queryParams: {
-    startTime: number;
-    endTime: number;
-    resolution: number;
-  } | null;
+  queryParams: Nullable<QueryParams>;
 }
 
 interface GraphState {
-  selectedSeriesIndex: NullableValue<number>;
-  hoveredSeriesIndex: NullableValue<number>;
+  selectedSeriesIndex: Nullable<number>;
+  hoveredSeriesIndex: Nullable<number>;
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
@@ -40,7 +35,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     hoveredSeriesIndex: null,
   };
 
-  formatValue = (y: NullableValue<number>): string => {
+  formatValue = (y: Nullable<number>): string => {
     if (y === null) {
       return 'null';
     }
@@ -122,9 +117,11 @@ class Graph extends PureComponent<GraphProps, GraphState> {
               <span class="detail-swatch" style="background-color: ${color}" />
               <span>${labels.__name__ || 'value'}: <strong>${yval}</strong></span>
             <div>
-            <div class="labels">
+            <div class="labels mt-1">
               ${Object.keys(labels)
-                .map(k => (k !== '__name__' ? `<div><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>` : ''))
+                .map(k =>
+                  k !== '__name__' ? `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>` : ''
+                )
                 .join('')}
             </div>
           `;
@@ -146,15 +143,10 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   // This was adapted from Flot's color generation code.
   getColors() {
-    const colors = [];
     const colorPool = ['#edc240', '#afd8f8', '#cb4b4b', '#4da74d', '#9440ed'];
     const colorPoolSize = colorPool.length;
     let variation = 0;
-    const neededColors = this.props.data.result.length;
-
-    for (let i = 0; i < neededColors; i++) {
-      const c = ($ as jquery.flot.axisOptions).color.parse(colorPool[i % colorPoolSize] || '#666');
-
+    return this.props.data.result.map((_, i) => {
       // Each time we exhaust the colors in the pool we adjust
       // a scaling factor used to produce more variations on
       // those colors. The factor alternates negative/positive
@@ -170,27 +162,25 @@ class Graph extends PureComponent<GraphProps, GraphState> {
           variation = -variation;
         }
       }
-
-      colors[i] = c.scale('rgb', 1 + variation);
-    }
-
-    return colors;
+      return $.color.parse(colorPool[i % colorPoolSize] || '#666').scale('rgb', 1 + variation);
+    });
   }
 
   getData(): GraphSeries[] {
     const colors = this.getColors();
     const { hoveredSeriesIndex } = this.state;
     const { stacked, queryParams } = this.props;
-    return this.props.data.result.map((ts: any /* TODO: Type this*/, index: number) => {
+    const { startTime, endTime, resolution } = queryParams!;
+    return this.props.data.result.map((ts, index) => {
       // Insert nulls for all missing steps.
       const data = [];
       let pos = 0;
-      const params = queryParams!;
 
-      for (let t = params.startTime; t <= params.endTime; t += params.resolution) {
+      for (let t = startTime; t <= endTime; t += resolution) {
         // Allow for floating point inaccuracy.
-        if (ts.values.length > pos && ts.values[pos][0] < t + params.resolution / 100) {
-          data.push([ts.values[pos][0] * 1000, this.parseValue(ts.values[pos][1])]);
+        const currentValue = ts.values[pos];
+        if (ts.values.length > pos && currentValue[0] < t + resolution / 100) {
+          data.push([currentValue[0] * 1000, this.parseValue(currentValue[1])]);
           pos++;
         } else {
           // TODO: Flot has problems displaying intermittent "null" values when stacked,

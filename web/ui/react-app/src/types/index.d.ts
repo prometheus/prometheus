@@ -41,3 +41,24 @@ declare namespace jquery.flot {
     };
   }
 }
+
+interface Color {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+  add: (c: string, d: number) => Color;
+  scale: (c: string, f: number) => Color;
+  toString: () => string;
+  normalize: () => Color;
+  clone: () => Color;
+}
+
+interface JQueryStatic {
+  color: {
+    extract: (el: HTMLElement, css: { [k in keyof React.CSSProperties]: React.CSSProperties[k] }) => Color;
+    make: (c: string) => Color;
+    parse: (c: string) => Color;
+    scale: () => Color;
+  };
+}
