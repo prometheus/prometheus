@@ -12,7 +12,7 @@ declare namespace jquery.flot {
           series: {
             labels: { [key: string]: string };
             color: string;
-            data: number | null[][]; // [x,y][]
+            data: (number | null)[][]; // [x,y][]
             index: number;
           };
         }
@@ -56,8 +56,8 @@ interface Color {
 
 interface JQueryStatic {
   color: {
-    extract: (el: HTMLElement, css: { [k in keyof React.CSSProperties]: React.CSSProperties[k] }) => Color;
-    make: (c: string) => Color;
+    extract: (el: JQuery<HTMLElement>, css?: CSSStyleDeclaration) => Color;
+    make: (r?: number, g?: number, b?: number, a?: number) => Color;
     parse: (c: string) => Color;
     scale: () => Color;
   };

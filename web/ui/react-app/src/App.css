@@ -137,8 +137,6 @@ div.time-input {
 .graph-legend {
     margin: 15px 0 15px 55px;
     font-size: 0.75em;
-    background: #222;
-    color: white;
     padding: 10px 5px;
     display: inline-block;
     cursor: pointer;
@@ -161,7 +159,7 @@ div.time-input {
 }
 
 .legend-item:hover {
-    background: rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.18);
 }
 
 .legend-metric-name {

@@ -5,7 +5,7 @@ import { Alert } from 'reactstrap';
 
 import { escapeHTML } from './utils/html';
 import SeriesName from './SeriesName';
-import { Nullable, GraphSeries, GraphMetric, QueryParams } from './types/types';
+import { Metric, QueryParams } from './types/types';
 require('flot');
 require('flot/source/jquery.flot.crosshair');
 require('flot/source/jquery.flot.legend');
@@ -16,15 +16,23 @@ require('jquery.flot.tooltip');
 interface GraphProps {
   data: {
     resultType: string;
-    result: Array<{ metric: GraphMetric; values: [number, string][] }>;
+    result: Array<{ metric: Metric; values: [number, string][] }>;
   };
   stacked: boolean;
-  queryParams: Nullable<QueryParams>;
+  queryParams: QueryParams | null;
+}
+
+export interface GraphSeries {
+  labels: { [key: string]: string };
+  color: string;
+  normalizedColor: string;
+  data: (number | null)[][]; // [x,y][]
+  index: number;
 }
 
 interface GraphState {
-  selectedSeriesIndex: Nullable<number>;
-  hoveredSeriesIndex: Nullable<number>;
+  selectedSeriesIndex: number | null;
+  hoveredSeriesIndex: number | null;
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
@@ -35,7 +43,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     hoveredSeriesIndex: null,
   };
 
-  formatValue = (y: Nullable<number>): string => {
+  formatValue = (y: number | null): string => {
     if (y === null) {
       return 'null';
     }
@@ -193,7 +201,8 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
       return {
         labels: ts.metric !== null ? ts.metric : {},
-        color: `rgba(${r}, ${g}, ${b}, ${hoveredSeriesIndex === -1 || hoveredSeriesIndex === index ? 1 : 0.5})`,
+        color: `rgba(${r}, ${g}, ${b}, ${hoveredSeriesIndex === null || hoveredSeriesIndex === index ? 1 : 0.3})`,
+        normalizedColor: `rgb(${r}, ${g}, ${b}`,
         data,
         index,
       };
@@ -278,15 +287,15 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         <ReactResizeDetector handleWidth onResize={this.plot} />
         <div className="graph-chart" ref={this.chartRef} />
         <div className="graph-legend" onMouseOut={canUseHover ? this.handleLegendMouseOut : undefined}>
-          {series.map(({ index, color, labels }) => (
+          {series.map(({ index, normalizedColor, labels }) => (
             <div
-              style={{ opacity: selectedSeriesIndex !== null && index !== selectedSeriesIndex ? 0.4 : 1 }}
+              style={{ opacity: selectedSeriesIndex !== null && index !== selectedSeriesIndex ? 0.7 : 1 }}
               onClick={series.length > 1 ? this.handleSeriesSelect(index) : undefined}
               onMouseOver={canUseHover ? this.handleSeriesHover(index) : undefined}
               key={index}
               className="legend-item"
             >
-              <span className="legend-swatch" style={{ backgroundColor: color }}></span>
+              <span className="legend-swatch" style={{ backgroundColor: normalizedColor }}></span>
               <SeriesName labels={labels} format />
             </div>
           ))}
