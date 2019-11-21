@@ -43,12 +43,17 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// Default duration of a block in milliseconds - 2h.
+const (
+	DefaultBlockDuration = int64(2 * 60 * 60 * 1000)
+)
+
 // DefaultOptions used for the DB. They are sane for setups using
 // millisecond precision timestamps.
 var DefaultOptions = &Options{
 	WALSegmentSize:         wal.DefaultSegmentSize,
 	RetentionDuration:      15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
-	BlockRanges:            ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
+	BlockRanges:            ExponentialBlockRanges(DefaultBlockDuration, 3, 5),
 	NoLockfile:             false,
 	AllowOverlappingBlocks: false,
 	WALCompression:         false,
