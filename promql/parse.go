@@ -32,9 +32,9 @@ import (
 )
 
 type parser struct {
-	lex       *lexer
-	token     [3]item
-	peekCount int
+	lex     *lexer
+	token   item
+	peeking bool
 }
 
 // ParseErr wraps a parsing error with line and position context.
@@ -245,41 +245,41 @@ func (p *parser) typecheck(node Node) (err error) {
 
 // next returns the next token.
 func (p *parser) next() item {
-	if p.peekCount > 0 {
-		p.peekCount--
+	if p.peeking {
+		p.peeking = false
 	} else {
 		t := p.lex.nextItem()
 		// Skip comments.
 		for t.typ == ItemComment {
 			t = p.lex.nextItem()
 		}
-		p.token[0] = t
+		p.token = t
 	}
-	if p.token[p.peekCount].typ == ItemError {
-		p.errorf("%s", p.token[p.peekCount].val)
+	if p.token.typ == ItemError {
+		p.errorf("%s", p.token.val)
 	}
-	return p.token[p.peekCount]
+	return p.token
 }
 
 // peek returns but does not consume the next token.
 func (p *parser) peek() item {
-	if p.peekCount > 0 {
-		return p.token[p.peekCount-1]
+	if p.peeking {
+		return p.token
 	}
-	p.peekCount = 1
+	p.peeking = true
 
 	t := p.lex.nextItem()
 	// Skip comments.
 	for t.typ == ItemComment {
 		t = p.lex.nextItem()
 	}
-	p.token[0] = t
-	return p.token[0]
+	p.token = t
+	return p.token
 }
 
 // backup backs the input stream up one token.
 func (p *parser) backup() {
-	p.peekCount++
+	p.peeking = true
 }
 
 // errorf formats the error and terminates processing.
