@@ -287,8 +287,10 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
                       onChangeResolution={this.handleChangeResolution}
                       onChangeStacking={this.handleChangeStacking}
                     />
-                    {this.state.data && (
+                    {this.state.data ? (
                       <Graph data={this.state.data} stacked={options.stacked} queryParams={this.state.lastQueryParams} />
+                    ) : (
+                      <Alert color="light">No data queried yet</Alert>
                     )}
                   </>
                 )}
