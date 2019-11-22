@@ -38,39 +38,10 @@ func tree(node Node, level string) string {
 
 	level += " · · ·"
 
-	switch n := node.(type) {
-	case *EvalStmt:
-		t += tree(n.Expr, level)
-
-	case Expressions:
-		for _, e := range n {
-			t += tree(e, level)
-		}
-	case *AggregateExpr:
-		t += tree(n.Expr, level)
-
-	case *BinaryExpr:
-		t += tree(n.LHS, level)
-		t += tree(n.RHS, level)
-
-	case *Call:
-		t += tree(n.Args, level)
-
-	case *ParenExpr:
-		t += tree(n.Expr, level)
-
-	case *UnaryExpr:
-		t += tree(n.Expr, level)
-
-	case *SubqueryExpr:
-		t += tree(n.Expr, level)
-
-	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
-		// nothing to do
-
-	default:
-		panic("promql.Tree: not all node types covered")
+	for _, e := range Children(node) {
+		t += tree(e, level)
 	}
+
 	return t
 }
 
