@@ -67,7 +67,7 @@ type SDConfig struct {
 // Filter is the configuration tags for filtering ECS instances.
 type TagFilter struct {
 	Key   string `yaml:"key"`
-	Value string `yaml:"value"`
+	Values []string `yaml:"values"`
 }
 
 type Discovery struct {
@@ -208,7 +208,13 @@ func (d *Discovery) filterInstancesIdFromListTagResources(token string) (instanc
 	// tag filters
 	tagsFilters := []ecs_pop.ListTagResourcesTagFilter{}
 	for _, tagFilter := range d.ecsCfg.TagFilters {
-		tagFilter := ecs_pop.ListTagResourcesTagFilter{TagKey: tagFilter.Key, TagValues: &[]string{tagFilter.Value}}
+		if len(tagFilter.Values) == 0 {
+			return "[]", "", errors.New("ECS SD configuration filter values cannot be empty.")
+		}
+		tagFilter := ecs_pop.ListTagResourcesTagFilter{
+			TagKey: tagFilter.Key,
+			TagValues: &tagFilter.Values,
+		}
 		tagsFilters = append(tagsFilters, tagFilter)
 	}
 	listTagResourcesRequest.TagFilter = &tagsFilters
