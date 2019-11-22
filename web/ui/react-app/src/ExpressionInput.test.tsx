@@ -177,8 +177,7 @@ describe('ExpressionInput', () => {
     it('should blur input on escape', () => {
       const downshift = expressionInput.find(Downshift);
       const instance: any = expressionInput.instance();
-      const spyBlur = jest.fn();
-      instance.exprInputRef.current.blur = spyBlur;
+      const spyBlur = jest.spyOn(instance.exprInputRef.current, 'blur');
       const input = downshift.find(Input);
       downshift.setState({ isOpen: false });
       const event = getKeyEvent('Escape');
