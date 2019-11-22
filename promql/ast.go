@@ -248,61 +248,10 @@ func Walk(v Visitor, node Node, path []Node) error {
 	}
 	path = append(path, node)
 
-	switch n := node.(type) {
-	case *EvalStmt:
-		if err := Walk(v, n.Expr, path); err != nil {
+	for _, e := range Children(node) {
+		if err := Walk(v, e, path); err != nil {
 			return err
 		}
-
-	case Expressions:
-		for _, e := range n {
-			if err := Walk(v, e, path); err != nil {
-				return err
-			}
-		}
-	case *AggregateExpr:
-		if n.Param != nil {
-			if err := Walk(v, n.Param, path); err != nil {
-				return err
-			}
-		}
-		if err := Walk(v, n.Expr, path); err != nil {
-			return err
-		}
-
-	case *BinaryExpr:
-		if err := Walk(v, n.LHS, path); err != nil {
-			return err
-		}
-		if err := Walk(v, n.RHS, path); err != nil {
-			return err
-		}
-
-	case *Call:
-		if err := Walk(v, n.Args, path); err != nil {
-			return err
-		}
-
-	case *SubqueryExpr:
-		if err := Walk(v, n.Expr, path); err != nil {
-			return err
-		}
-
-	case *ParenExpr:
-		if err := Walk(v, n.Expr, path); err != nil {
-			return err
-		}
-
-	case *UnaryExpr:
-		if err := Walk(v, n.Expr, path); err != nil {
-			return err
-		}
-
-	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
-		// nothing to do
-
-	default:
-		panic(errors.Errorf("promql.Walk: unhandled node type %T", node))
 	}
 
 	_, err = v.Visit(nil, nil)
@@ -369,7 +318,7 @@ func Children(node Node) []Node {
 		return []Node{n.Expr}
 	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
 		// nothing to do
-
+		return []Node{}
 	default:
 		panic(errors.Errorf("promql.Children: unhandled node type %T", node))
 	}
