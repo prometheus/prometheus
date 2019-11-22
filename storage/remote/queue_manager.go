@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -201,6 +202,9 @@ type QueueManager struct {
 	seriesSegmentIndexes map[uint64]int
 	droppedSeries        map[uint64]struct{}
 
+	checkpointMtx sync.Mutex
+	rwCheckpoint  rwCheckpoint
+
 	shards      *shards
 	numShards   int
 	reshardChan chan int
@@ -227,7 +231,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(reg prometheus.Registerer, logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels labels.Labels, relabelConfigs []*relabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
+func NewQueueManager(reg prometheus.Registerer, logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels labels.Labels, relabelConfigs []*relabel.Config, client StorageClient, flushDeadline time.Duration, cfgHash [16]byte) (*QueueManager, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -259,7 +263,17 @@ func NewQueueManager(reg prometheus.Registerer, logger log.Logger, walDir string
 	t.watcher = wal.NewWatcher(reg, wal.NewWatcherMetrics(reg), logger, name, t, walDir)
 	t.shards = t.newShards()
 
-	return t
+	checkpoint, ts, err := NewRemoteWriteCheckpoint(string(cfgHash[:]))
+	if err != nil {
+		return nil, err
+	}
+	if ts != 0 {
+		level.Info(t.logger).Log("msg", "setting remote write start time based on checkpoint file, samples after this timestamp will be sent", "timestamp", ts)
+		t.startedAt = timestamp.Time(int64(ts))
+	}
+	t.rwCheckpoint = checkpoint
+
+	return t, nil
 }
 
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
@@ -310,7 +324,9 @@ outer:
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
 func (t *QueueManager) Start() {
-	t.startedAt = time.Now()
+	if !t.startedAt.IsZero() {
+		t.startedAt = time.Now()
+	}
 
 	// Setup the QueueManagers metrics. We do this here rather than in the
 	// constructor because of the ordering of creating Queue Managers's, stopping them,
@@ -382,6 +398,11 @@ func (t *QueueManager) Stop() {
 	maxNumShards.DeleteLabelValues(name)
 	minNumShards.DeleteLabelValues(name)
 	desiredNumShards.DeleteLabelValues(name)
+
+	err := t.rwCheckpoint.close()
+	if err != nil {
+		level.Error(t.logger).Log("msg", err)
+	}
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
@@ -828,6 +849,12 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if err == nil {
 			s.qm.succeededSamplesTotal.Add(float64(len(samples)))
 			s.qm.highestSentTimestampMetric.Set(float64(highest / 1000))
+			s.qm.checkpointMtx.Lock()
+			err = s.qm.rwCheckpoint.writeCheckpoint(highest)
+			if err != nil {
+				level.Error(s.qm.logger).Log("msg", err)
+			}
+			s.qm.checkpointMtx.Unlock()
 			atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
 			return nil
 		}

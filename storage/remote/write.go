@@ -140,7 +140,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
-		newQueues = append(newQueues, NewQueueManager(
+
+		newQueue, err := NewQueueManager(
 			prometheus.DefaultRegisterer,
 			rws.logger,
 			rws.walDir,
@@ -150,7 +151,12 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.WriteRelabelConfigs,
 			c,
 			rws.flushDeadline,
-		))
+			hash,
+		)
+		if err != nil {
+			return err
+		}
+		newQueues = append(newQueues, newQueue)
 		newHashes = append(newHashes, hash)
 		newClientIndexes = append(newClientIndexes, i)
 	}
