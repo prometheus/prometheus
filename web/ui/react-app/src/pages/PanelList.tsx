@@ -27,7 +27,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
     const urlPanels = decodePanelOptionsFromQueryString(window.location.search);
 
     this.state = {
-      panels: urlPanels,
+      panels: urlPanels.length ? urlPanels : [],
       pastQueries: [],
       metricNames: [],
       fetchMetricsError: null,
