@@ -3,48 +3,49 @@ import { shallow } from 'enzyme';
 import Graph from './Graph';
 import { Alert } from 'reactstrap';
 import ReactResizeDetector from 'react-resize-detector';
-import Legend from './Legend';
 
 describe('Graph', () => {
-  [
-    {
-      data: null,
-      color: 'light',
-      children: 'No data queried yet',
-    },
-    {
-      data: { resultType: 'invalid' },
+  it('renders an alert if data result type is different than "matrix"', () => {
+    const props: any = {
+      data: { resultType: 'invalid', result: [] },
+      stacked: false,
+      queryParams: {
+        startTime: 1572100210000,
+        endTime: 1572100217898,
+        resolution: 10,
+      },
       color: 'danger',
       children: `Query result is of wrong type '`,
-    },
-    {
+    };
+    const graph = shallow(<Graph {...props} />);
+    const alert = graph.find(Alert);
+    expect(alert.prop('color')).toEqual(props.color);
+    expect(alert.childAt(0).text()).toEqual(props.children);
+  });
+
+  it('renders an alert if data result empty', () => {
+    const props: any = {
       data: {
         resultType: 'matrix',
         result: [],
       },
       color: 'secondary',
       children: 'Empty query result',
-    },
-  ].forEach(testCase => {
-    it(`renders an alert if data is "${testCase.data}"`, () => {
-      const props = {
-        data: testCase.data,
-        stacked: false,
-        queryParams: {
-          startTime: 1572100210000,
-          endTime: 1572100217898,
-          resolution: 10,
-        },
-      };
-      const graph = shallow(<Graph {...props} />);
-      const alert = graph.find(Alert);
-      expect(alert.prop('color')).toEqual(testCase.color);
-      expect(alert.childAt(0).text()).toEqual(testCase.children);
-    });
+      stacked: false,
+      queryParams: {
+        startTime: 1572100210000,
+        endTime: 1572100217898,
+        resolution: 10,
+      },
+    };
+    const graph = shallow(<Graph {...props} />);
+    const alert = graph.find(Alert);
+    expect(alert.prop('color')).toEqual(props.color);
+    expect(alert.childAt(0).text()).toEqual(props.children);
   });
 
   describe('data is returned', () => {
-    const props = {
+    const props: any = {
       queryParams: {
         startTime: 1572128592,
         endTime: 1572130692,
@@ -95,14 +96,12 @@ describe('Graph', () => {
       const div = graph.find('div').filterWhere(elem => elem.prop('className') === 'graph');
       const resize = div.find(ReactResizeDetector);
       const innerdiv = div.find('div').filterWhere(elem => elem.prop('className') === 'graph-chart');
-      const legend = graph.find(Legend);
       expect(resize.prop('handleWidth')).toBe(true);
       expect(div).toHaveLength(1);
       expect(innerdiv).toHaveLength(1);
-      expect(legend).toHaveLength(1);
     });
     it('formats tick values correctly', () => {
-      const graph = new Graph();
+      const graph = new Graph({ data: { result: [] }, queryParams: {} } as any);
       [
         { input: 2e24, output: '2.00Y' },
         { input: 2e23, output: '200.00Z' },
@@ -156,8 +155,14 @@ describe('Graph', () => {
         { input: 2e-24, output: '2.00y' },
         { input: 2e-25, output: '0.20y' },
         { input: 2e-26, output: '0.02y' },
-      ].map(function(t) {
+      ].map(t => {
         expect(graph.formatValue(t.input)).toBe(t.output);
+      });
+    });
+    describe('Legend', () => {
+      it('renders a legend', () => {
+        const graph = shallow(<Graph {...props} />);
+        expect(graph.find('.graph-legend .legend-item')).toHaveLength(1);
       });
     });
   });

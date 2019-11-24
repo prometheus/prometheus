@@ -11,6 +11,7 @@ import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
 import PathPrefixProps from './PathPrefixProps';
+import { QueryParams } from './types/types';
 
 interface PanelProps {
   options: PanelOptions;
@@ -23,12 +24,7 @@ interface PanelProps {
 
 interface PanelState {
   data: any; // TODO: Type data.
-  lastQueryParams: {
-    // TODO: Share these with Graph.tsx in a file.
-    startTime: number;
-    endTime: number;
-    resolution: number;
-  } | null;
+  lastQueryParams: QueryParams | null;
   loading: boolean;
   error: string | null;
   stats: QueryStats | null;
@@ -291,7 +287,11 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
                       onChangeResolution={this.handleChangeResolution}
                       onChangeStacking={this.handleChangeStacking}
                     />
-                    <Graph data={this.state.data} stacked={options.stacked} queryParams={this.state.lastQueryParams} />
+                    {this.state.data ? (
+                      <Graph data={this.state.data} stacked={options.stacked} queryParams={this.state.lastQueryParams} />
+                    ) : (
+                      <Alert color="light">No data queried yet</Alert>
+                    )}
                   </>
                 )}
               </TabPane>

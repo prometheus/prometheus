@@ -135,16 +135,31 @@ div.time-input {
 }
 
 .graph-legend {
-    margin: 15px 0 15px 25px;
-    font-size: 0.8em;
+    margin: 15px 0 15px 55px;
+    font-size: 0.75em;
+    padding: 10px 5px;
+    display: inline-block;
+    cursor: pointer;
 }
 
-.graph-legend .legend-swatch {
-    padding: 5px;
-    height: 5px;
+.legend-item {
+    display: flex;
+    align-items: center;
+    padding: 0 5px;
+    border-radius: 3px;
+}
+
+.legend-swatch {
+    width: 7px;
+    height: 7px;
     outline-offset: 1px;
     outline: 1.5px solid #ccc;
     margin: 2px 8px 2px 0;
+    display: inline-block;
+}
+
+.legend-item:hover {
+    background: rgba(0, 0, 0, 0.18);
 }
 
 .legend-metric-name {
@@ -191,7 +206,6 @@ div.time-input {
     display: inline-block;
     width: 10px;
     height: 10px;
-    margin: 0 5px 0 0;
 }
 
 .add-panel-btn {
