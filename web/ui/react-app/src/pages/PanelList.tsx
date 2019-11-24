@@ -20,6 +20,12 @@ interface PanelListState {
   timeDriftError: string | null;
 }
 
+const initialPanel = {
+  id: generateID(),
+  key: '0',
+  options: PanelDefaultOptions,
+};
+
 class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelListState> {
   constructor(props: PathPrefixProps) {
     super(props);
@@ -27,7 +33,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
     const urlPanels = decodePanelOptionsFromQueryString(window.location.search);
 
     this.state = {
-      panels: urlPanels.length ? urlPanels : [],
+      panels: urlPanels.length ? urlPanels : [initialPanel],
       pastQueries: [],
       metricNames: [],
       fetchMetricsError: null,
