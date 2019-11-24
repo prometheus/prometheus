@@ -24,8 +24,10 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
   constructor(props: PathPrefixProps) {
     super(props);
 
+    const urlPanels = decodePanelOptionsFromQueryString(window.location.search);
+
     this.state = {
-      panels: decodePanelOptionsFromQueryString(window.location.search),
+      panels: urlPanels,
       pastQueries: [],
       metricNames: [],
       fetchMetricsError: null,
@@ -34,7 +36,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
   }
 
   componentDidMount() {
-    !this.state.panels.length && this.addPanel()
+    !this.state.panels.length && this.addPanel();
     fetch(`${this.props.pathPrefix}/api/v1/label/__name__/values`, { cache: 'no-store' })
       .then(resp => {
         if (resp.ok) {
