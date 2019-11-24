@@ -3,10 +3,10 @@ import { mount, shallow } from 'enzyme';
 import Panel, { PanelOptions, PanelType } from './Panel';
 import ExpressionInput from './ExpressionInput';
 import GraphControls from './GraphControls';
-import Graph from './Graph';
 import { NavLink, TabPane } from 'reactstrap';
 import TimeInput from './TimeInput';
 import DataTable from './DataTable';
+import { GraphTabContent } from './GraphTabContent';
 
 describe('Panel', () => {
   const props = {
@@ -83,8 +83,8 @@ describe('Panel', () => {
     };
     const graphPanel = mount(<Panel {...props} options={options} />);
     const controls = graphPanel.find(GraphControls);
-    graphPanel.setState({ data: [] });
-    const graph = graphPanel.find(Graph);
+    graphPanel.setState({ data: { resultType: 'matrix', result: [] } });
+    const graph = graphPanel.find(GraphTabContent);
     expect(controls.prop('endTime')).toEqual(options.endTime);
     expect(controls.prop('range')).toEqual(options.range);
     expect(controls.prop('resolution')).toEqual(options.resolution);
