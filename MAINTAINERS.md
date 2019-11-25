@@ -5,5 +5,6 @@ Maintainers of this repository with their focus areas:
 * Julius Volz <julius.volz@gmail.com> @juliusv: Web UI.
 * Krasi Georgiev <kgeorgie@redhat.com> @krasi-georgiev: TSDB - the storage engine.
 * Ganesh Vernekar <cs15btech11018@iith.ac.in> @codesome: TSDB - the storage engine.
-* Chris Marchbanks <csmarchbanks@gmail.com> @csmarchbanks: Remote storage integrations.
-* Callum Styan <callumstyan@gmail.com> @cstyan: Remote storage integrations.
+* Chris Marchbanks <csmarchbanks@gmail.com> @csmarchbanks: Remote write integration.
+* Callum Styan <callumstyan@gmail.com> @cstyan: Remote write integration.
+* Bartłomiej Płotka <bwplotka@gmail.com> @bwplotka: Remote read integration.
