@@ -25,11 +25,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
+	"github.com/ppanyukov/go-dump/dump"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
@@ -722,6 +724,13 @@ func (ev *evaluator) recover(errp *error) {
 
 func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 	defer ev.recover(&err)
+
+	// TODO(ppanyukov): remove instrumentation
+	memstats := dump.NewMemStats("promql-eval")
+	defer memstats.PrintDiff()
+	dump.WriteHeapDump("eval-before")
+	defer dump.WriteHeapDump("eval-after")
+
 	return ev.eval(expr), nil
 }
 
@@ -1130,10 +1139,18 @@ func (ev *evaluator) eval(expr Expr) Value {
 		checkForSeriesSetExpansion(ev.ctx, e)
 		mat := make(Matrix, 0, len(e.series))
 		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
+
+		// TODO(ppanyukov): remove instrumentation
+		fmt.Printf("PromQL: VectorSelector: Series Count: %d\n", len(e.series))
+		pointsCap := int64(0)
+		pointsCapPatch := int64(0)
+		pointsLen := int64(0)
+
 		for i, s := range e.series {
 			it.Reset(s.Iterator())
 			ss := Series{
 				Metric: e.series[i].Labels(),
+				// TODO(ppanyukov): this overallocates and keeps 200x-300x than required
 				Points: getPointSlice(numSteps),
 			}
 
@@ -1149,11 +1166,59 @@ func (ev *evaluator) eval(expr Expr) Value {
 				}
 			}
 
+			// TODO(ppanyukov): remove instrumentation
+			pointsCap += int64(cap(ss.Points))
+			pointsLen += int64(len(ss.Points))
+
+			// TODO(ppanyukov): this is overallocation patch to shrink ss.Points.
+			// Based on these numbers:
+			//		Ranged Query: `count({__name__=~".+"}) by (__name__)`
+			//		VectorSelector: Series: 710656
+			//		PromQL: VectorSelector: Current Samples: 508994
+			//		PromQL: VectorSelector: pointsAllocSize: 113217321; Size: 1811.48M
+			//		PromQL: VectorSelector: pointsNeededSize: 508994; Size: 8.14M
+			//		PromQL: VectorSelector: pointsOverAllocRatio: 222x
+			//		------
+			///		Ranged Query: `k8s_app_metric0`
+			//		VectorSelector: Series: 19456
+			//		PromQL: VectorSelector: Current Samples: 13700
+			//		PromQL: VectorSelector: pointsAllocSize: 4241900; Size: 67.87M
+			//		PromQL: VectorSelector: pointsNeededSize: 13700; Size: 0.22M
+			//		PromQL: VectorSelector: pointsOverAllocRatio: 309x
+			if len(ss.Points) == 0 {
+				ss.Points = make([]Point, 0)
+			} else {
+				// Don't
+				pointsOverallocLimit := 1.2
+				pointsOverallocRatio := float64(cap(ss.Points)) / float64(len(ss.Points))
+				if pointsOverallocRatio > pointsOverallocLimit {
+					pointsCopy := make([]Point, len(ss.Points))
+					copy(ss.Points, pointsCopy)
+					ss.Points = pointsCopy
+				}
+				pointsCapPatch += int64(cap(ss.Points))
+			}
+
 			if len(ss.Points) > 0 {
 				mat = append(mat, ss)
 			}
-
 		}
+
+		// TODO: remove this once we don't need it.
+		{
+			pointsAllocSize := pointsCap * int64(unsafe.Sizeof(Point{}))
+			pointsNeededSize := pointsLen * int64(unsafe.Sizeof(Point{}))
+			pointsPatchSize := pointsCapPatch * int64(unsafe.Sizeof(Point{}))
+			pointsOverAllocRatio := pointsAllocSize / pointsNeededSize
+			pointsPtchOverAllocRatio := pointsPatchSize / pointsNeededSize
+			fmt.Printf("PromQL: VectorSelector: pointsAllocSize: %d; Size: %.2fM\n", pointsCap, float64(pointsAllocSize)/1000000)
+			fmt.Printf("PromQL: VectorSelector: pointsNeededSize: %d; Size: %.2fM\n", pointsLen, float64(pointsNeededSize)/1000000)
+			fmt.Printf("PromQL: VectorSelector: pointsPatchSize: %d; Size: %.2fM\n", pointsCapPatch, float64(pointsCapPatch)/1000000)
+			fmt.Printf("PromQL: VectorSelector: pointsOverAllocRatio: %dx\n", pointsOverAllocRatio)
+			fmt.Printf("PromQL: VectorSelector: pointsPtchOverAllocRatio: %dx\n", pointsPtchOverAllocRatio)
+			fmt.Printf("PromQL: VectorSelector: Current Samples: %d\n", ev.currentSamples)
+		}
+
 		return mat
 
 	case *MatrixSelector:

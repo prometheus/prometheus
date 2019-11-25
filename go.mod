@@ -30,6 +30,7 @@ require (
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20190519235532-cf7a6c988dc9
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/pkg/errors v0.8.1
+	github.com/ppanyukov/go-dump v0.0.0-20191113151015-c92255313245
 	github.com/prometheus/alertmanager v0.18.0
 	github.com/prometheus/client_golang v1.2.0
 	github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4
