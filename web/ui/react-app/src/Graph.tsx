@@ -247,15 +247,10 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
   }
 
-  plotSetAndDraw = (data: GraphSeries[] = this.state.chartData) => {
-    if (this.rafID) {
-      cancelAnimationFrame(this.rafID);
-    }
-    this.rafID = requestAnimationFrame(() => {
-      this.$chart.setData(data);
-      this.$chart.draw();
-    });
-  };
+  plotSetAndDraw(data: GraphSeries[] = this.state.chartData) {
+    this.$chart.setData(data);
+    this.$chart.draw();
+  }
 
   handleSeriesSelect = (index: number) => () => {
     this.setState(({ selectedSeriesIndex, chartData }) => {
@@ -264,6 +259,13 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       );
       return { selectedSeriesIndex: selectedSeriesIndex === index ? null : index };
     });
+  };
+
+  handleSeriesHover = (index: number) => () => {
+    if (this.rafID) {
+      cancelAnimationFrame(this.rafID);
+    }
+    this.rafID = requestAnimationFrame(() => this.plotSetAndDraw(this.state.chartData.map(this.toHoverColor(index))));
   };
 
   handleLegendMouseOut = () => this.plotSetAndDraw();
@@ -279,10 +281,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       TODO: find better way to set the opacity.
     */
     const base = (1 - opacity) * 255;
-    return `rgb(
-        ${Math.round(base + opacity * r)},
-        ${Math.round(base + opacity * g)},
-        ${Math.round(base + opacity * b)})`;
+    return `rgb(${Math.round(base + opacity * r)},${Math.round(base + opacity * g)},${Math.round(base + opacity * b)})`;
   };
 
   toHoverColor = (index: number) => (series: GraphSeries, i: number) => ({
@@ -303,7 +302,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
             <div
               style={{ opacity: selectedSeriesIndex === null || index === selectedSeriesIndex ? 1 : 0.5 }}
               onClick={chartData.length > 1 ? this.handleSeriesSelect(index) : undefined}
-              onMouseOver={canUseHover ? () => this.plotSetAndDraw(chartData.map(this.toHoverColor(index))) : undefined}
+              onMouseOver={canUseHover ? this.handleSeriesHover(index) : undefined}
               key={index}
               className="legend-item"
             >
