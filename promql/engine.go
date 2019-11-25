@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"regexp"
 	"runtime"
 	"sort"
@@ -722,14 +723,27 @@ func (ev *evaluator) recover(errp *error) {
 	}
 }
 
+// TODO(ppanyukov): remove instrumentation
+// For easy switch on/off without rebuild. Default is "on".
+var isAllocPatchOff = func() bool {
+	return os.Getenv("PROMQL_ALLOC_PATCH_OFF") == "yes"
+}()
+
 func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 	defer ev.recover(&err)
 
 	// TODO(ppanyukov): remove instrumentation
 	memstats := dump.NewMemStats("promql-eval")
 	defer memstats.PrintDiff()
-	dump.WriteHeapDump("eval-before")
-	defer dump.WriteHeapDump("eval-after")
+
+	// TODO(ppanyukov): remove instrumentation
+	if isAllocPatchOff {
+		dump.WriteHeapDump("eval-start-orig")
+		defer dump.WriteHeapDump("eval-end-orig")
+	} else {
+		dump.WriteHeapDump("eval-start-patch")
+		defer dump.WriteHeapDump("eval-end-patch")
+	}
 
 	return ev.eval(expr), nil
 }
@@ -1185,18 +1199,20 @@ func (ev *evaluator) eval(expr Expr) Value {
 			//		PromQL: VectorSelector: pointsAllocSize: 4241900; Size: 67.87M
 			//		PromQL: VectorSelector: pointsNeededSize: 13700; Size: 0.22M
 			//		PromQL: VectorSelector: pointsOverAllocRatio: 309x
-			if len(ss.Points) == 0 {
-				ss.Points = make([]Point, 0)
-			} else {
-				// Don't
-				pointsOverallocLimit := 1.2
-				pointsOverallocRatio := float64(cap(ss.Points)) / float64(len(ss.Points))
-				if pointsOverallocRatio > pointsOverallocLimit {
-					pointsCopy := make([]Point, len(ss.Points))
-					copy(ss.Points, pointsCopy)
-					ss.Points = pointsCopy
+			if !isAllocPatchOff {
+				if len(ss.Points) == 0 {
+					ss.Points = make([]Point, 0)
+				} else {
+					// Don't
+					pointsOverallocLimit := 1.2
+					pointsOverallocRatio := float64(cap(ss.Points)) / float64(len(ss.Points))
+					if pointsOverallocRatio > pointsOverallocLimit {
+						pointsCopy := make([]Point, len(ss.Points))
+						copy(ss.Points, pointsCopy)
+						ss.Points = pointsCopy
+					}
+					pointsCapPatch += int64(cap(ss.Points))
 				}
-				pointsCapPatch += int64(cap(ss.Points))
 			}
 
 			if len(ss.Points) > 0 {
@@ -1211,6 +1227,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			pointsPatchSize := pointsCapPatch * int64(unsafe.Sizeof(Point{}))
 			pointsOverAllocRatio := pointsAllocSize / pointsNeededSize
 			pointsPtchOverAllocRatio := pointsPatchSize / pointsNeededSize
+			fmt.Printf("PromQL: PROMQL_ALLOC_PATCH_OFF: %t\n", isAllocPatchOff)
 			fmt.Printf("PromQL: VectorSelector: pointsAllocSize: %d; Size: %.2fM\n", pointsCap, float64(pointsAllocSize)/1000000)
 			fmt.Printf("PromQL: VectorSelector: pointsNeededSize: %d; Size: %.2fM\n", pointsLen, float64(pointsNeededSize)/1000000)
 			fmt.Printf("PromQL: VectorSelector: pointsPatchSize: %d; Size: %.2fM\n", pointsCapPatch, float64(pointsCapPatch)/1000000)
