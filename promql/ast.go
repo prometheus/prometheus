@@ -248,61 +248,10 @@ func Walk(v Visitor, node Node, path []Node) error {
 	}
 	path = append(path, node)
 
-	switch n := node.(type) {
-	case *EvalStmt:
-		if err := Walk(v, n.Expr, path); err != nil {
+	for _, e := range Children(node) {
+		if err := Walk(v, e, path); err != nil {
 			return err
 		}
-
-	case Expressions:
-		for _, e := range n {
-			if err := Walk(v, e, path); err != nil {
-				return err
-			}
-		}
-	case *AggregateExpr:
-		if n.Param != nil {
-			if err := Walk(v, n.Param, path); err != nil {
-				return err
-			}
-		}
-		if err := Walk(v, n.Expr, path); err != nil {
-			return err
-		}
-
-	case *BinaryExpr:
-		if err := Walk(v, n.LHS, path); err != nil {
-			return err
-		}
-		if err := Walk(v, n.RHS, path); err != nil {
-			return err
-		}
-
-	case *Call:
-		if err := Walk(v, n.Args, path); err != nil {
-			return err
-		}
-
-	case *SubqueryExpr:
-		if err := Walk(v, n.Expr, path); err != nil {
-			return err
-		}
-
-	case *ParenExpr:
-		if err := Walk(v, n.Expr, path); err != nil {
-			return err
-		}
-
-	case *UnaryExpr:
-		if err := Walk(v, n.Expr, path); err != nil {
-			return err
-		}
-
-	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
-		// nothing to do
-
-	default:
-		panic(errors.Errorf("promql.Walk: unhandled node type %T", node))
 	}
 
 	_, err = v.Visit(nil, nil)
@@ -325,4 +274,52 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 func Inspect(node Node, f inspector) {
 	//nolint: errcheck
 	Walk(inspector(f), node, nil)
+}
+
+// Children returns a list of all child nodes of a syntax tree node.
+func Children(node Node) []Node {
+	// For some reasons these switches have significantly better performance than interfaces
+	switch n := node.(type) {
+	case *EvalStmt:
+		return []Node{n.Expr}
+	case Expressions:
+		// golang cannot convert slices of interfaces
+		ret := make([]Node, len(n))
+		for i, e := range n {
+			ret[i] = e
+		}
+		return ret
+	case *AggregateExpr:
+		// While this does not look nice, it should avoid unnecessary allocations
+		// caused by slice resizing
+		if n.Expr == nil && n.Param == nil {
+			return nil
+		} else if n.Expr == nil {
+			return []Node{n.Param}
+		} else if n.Param == nil {
+			return []Node{n.Expr}
+		} else {
+			return []Node{n.Expr, n.Param}
+		}
+	case *BinaryExpr:
+		return []Node{n.LHS, n.RHS}
+	case *Call:
+		// golang cannot convert slices of interfaces
+		ret := make([]Node, len(n.Args))
+		for i, e := range n.Args {
+			ret[i] = e
+		}
+		return ret
+	case *SubqueryExpr:
+		return []Node{n.Expr}
+	case *ParenExpr:
+		return []Node{n.Expr}
+	case *UnaryExpr:
+		return []Node{n.Expr}
+	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
+		// nothing to do
+		return []Node{}
+	default:
+		panic(errors.Errorf("promql.Children: unhandled node type %T", node))
+	}
 }
