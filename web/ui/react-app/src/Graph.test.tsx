@@ -1,7 +1,6 @@
 import * as React from 'react';
-import { shallow } from 'enzyme';
+import { shallow, mount } from 'enzyme';
 import Graph from './Graph';
-import { Alert } from 'reactstrap';
 import ReactResizeDetector from 'react-resize-detector';
 
 describe('Graph', () => {
@@ -64,6 +63,8 @@ describe('Graph', () => {
     it('formats tick values correctly', () => {
       const graph = new Graph({ data: { result: [] }, queryParams: {} } as any);
       [
+        { input: null, output: 'null' },
+        { input: 0, output: '0.00' },
         { input: 2e24, output: '2.00Y' },
         { input: 2e23, output: '200.00Z' },
         { input: 2e22, output: '20.00Z' },
@@ -120,10 +121,148 @@ describe('Graph', () => {
         expect(graph.formatValue(t.input)).toBe(t.output);
       });
     });
+    it('should throw error if no match', () => {
+      const graph = new Graph({ data: { result: [] }, queryParams: {} } as any);
+      try {
+        graph.formatValue(undefined as any);
+      } catch (error) {
+        expect(error.message).toEqual("couldn't format a value, this is a bug");
+      }
+    });
+    it('should generate proper colors', () => {
+      const graph = new Graph({ data: { result: [{}, {}, {}, {}, {}, {}, {}, {}, {}] }, queryParams: {} } as any);
+      expect(
+        graph
+          .getColors()
+          .map(c => c.toString())
+          .join(',')
+      ).toEqual(
+        'rgb(237,194,64),rgb(175,216,248),rgb(203,75,75),rgb(77,167,77),rgb(148,64,237),rgb(189,155,51),rgb(140,172,198),rgb(162,60,60),rgb(61,133,61)'
+      );
+    });
     describe('Legend', () => {
       it('renders a legend', () => {
         const graph = shallow(<Graph {...props} />);
         expect(graph.find('.graph-legend .legend-item')).toHaveLength(1);
+      });
+    });
+  });
+  describe('Plot options', () => {
+    it('should configer options properly if stacked prop is true', () => {
+      const wrapper = shallow(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572130692,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      expect((wrapper.instance() as any).getOptions()).toMatchObject({
+        series: {
+          stack: true,
+          lines: { lineWidth: 1, steps: false, fill: true },
+          shadowSize: 0,
+        },
+      });
+    });
+    it('should configer options properly if stacked prop is false', () => {
+      const wrapper = shallow(
+        <Graph
+          {...({
+            stacked: false,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572130692,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      expect((wrapper.instance() as any).getOptions()).toMatchObject({
+        series: {
+          stack: false,
+          lines: { lineWidth: 2, steps: false, fill: false },
+          shadowSize: 0,
+        },
+      });
+    });
+    it('should return proper tooltip html from options', () => {
+      const wrapper = shallow(
+        <Graph
+          {...({
+            stacked: false,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572130692,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      expect(
+        (wrapper.instance() as any)
+          .getOptions()
+          .tooltip.content('', 1572128592, 1572128592, { series: { labels: { foo: 1, bar: 2 }, color: '' } })
+      ).toEqual(`
+            <div class="date">Mon, 19 Jan 1970 04:42:08 GMT</div>
+            <div>
+              <span class="detail-swatch" style="background-color: " />
+              <span>value: <strong>1572128592</strong></span>
+            <div>
+            <div class="labels mt-1">
+              <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
+            </div>
+          `);
+    });
+    it('should render Plot with proper options', () => {
+      const wrapper = mount(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572130692,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      expect((wrapper.instance() as any).getOptions()).toEqual({
+        grid: {
+          hoverable: true,
+          clickable: true,
+          autoHighlight: true,
+          mouseActiveRadius: 100,
+        },
+        legend: { show: false },
+        xaxis: {
+          mode: 'time',
+          showTicks: true,
+          showMinorTicks: true,
+          timeBase: 'milliseconds',
+        },
+        yaxis: { tickFormatter: expect.anything() },
+        crosshair: { mode: 'xy', color: '#bbb' },
+        tooltip: {
+          show: true,
+          cssClass: 'graph-tooltip',
+          content: expect.anything(),
+          defaultTheme: false,
+          lines: true,
+        },
+        series: {
+          stack: true,
+          lines: { lineWidth: 1, steps: false, fill: true },
+          shadowSize: 0,
+        },
       });
     });
   });
