@@ -1155,7 +1155,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 
 		// TODO(ppanyukov): remove instrumentation
-		fmt.Printf("PromQL: VectorSelector: Series Count: %d\n", len(e.series))
 		pointsCap := int64(0)
 		pointsCapPatch := int64(0)
 		pointsLen := int64(0)
@@ -1185,7 +1184,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 			pointsLen += int64(len(ss.Points))
 
 			// TODO(ppanyukov): this is overallocation patch to shrink ss.Points.
-			// Based on these numbers:
+			// 	The overallocation seems to be a function of:
+			//		- Resolution;
+			//		- The number of empty vs populated series.
+			//  One of examples:
 			//		Ranged Query: `count({__name__=~".+"}) by (__name__)`
 			//		VectorSelector: Series: 710656
 			//		PromQL: VectorSelector: Current Samples: 508994
@@ -1193,7 +1195,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			//		PromQL: VectorSelector: pointsNeededSize: 508994; Size: 8.14M
 			//		PromQL: VectorSelector: pointsOverAllocRatio: 222x
 			//		------
-			///		Ranged Query: `k8s_app_metric0`
+			//		Ranged Query: `k8s_app_metric0`
 			//		VectorSelector: Series: 19456
 			//		PromQL: VectorSelector: Current Samples: 13700
 			//		PromQL: VectorSelector: pointsAllocSize: 4241900; Size: 67.87M
@@ -1227,14 +1229,16 @@ func (ev *evaluator) eval(expr Expr) Value {
 			pointsAllocSize := pointsCap * int64(unsafe.Sizeof(Point{}))
 			pointsNeededSize := pointsLen * int64(unsafe.Sizeof(Point{}))
 			pointsPatchSize := pointsCapPatch * int64(unsafe.Sizeof(Point{}))
-			pointsOverAllocRatio := pointsAllocSize / pointsNeededSize
-			pointsPtchOverAllocRatio := pointsPatchSize / pointsNeededSize
+			pointsOverAllocRatio := float64(pointsAllocSize) / float64(pointsNeededSize)
+			pointsPtchOverAllocRatio := float64(pointsPatchSize) / float64(pointsNeededSize)
 			fmt.Printf("PromQL: PROMQL_ALLOC_PATCH_OFF: %t\n", isAllocPatchOff)
+			fmt.Printf("PromQL: Expression: %s\n", e.String())
+			fmt.Printf("PromQL: VectorSelector: Series Count: %d\n", len(e.series))
 			fmt.Printf("PromQL: VectorSelector: pointsAllocSize: %d; Size: %.2fM\n", pointsCap, float64(pointsAllocSize)/1000000)
 			fmt.Printf("PromQL: VectorSelector: pointsNeededSize: %d; Size: %.2fM\n", pointsLen, float64(pointsNeededSize)/1000000)
 			fmt.Printf("PromQL: VectorSelector: pointsPatchSize: %d; Size: %.2fM\n", pointsCapPatch, float64(pointsCapPatch)/1000000)
-			fmt.Printf("PromQL: VectorSelector: pointsOverAllocRatio: %dx\n", pointsOverAllocRatio)
-			fmt.Printf("PromQL: VectorSelector: pointsPtchOverAllocRatio: %dx\n", pointsPtchOverAllocRatio)
+			fmt.Printf("PromQL: VectorSelector: pointsOverAllocRatio: %.2fx\n", pointsOverAllocRatio)
+			fmt.Printf("PromQL: VectorSelector: pointsPtchOverAllocRatio: %.2fx\n", pointsPtchOverAllocRatio)
 			fmt.Printf("PromQL: VectorSelector: Current Samples: %d\n", ev.currentSamples)
 		}
 
