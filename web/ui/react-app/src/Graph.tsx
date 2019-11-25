@@ -37,6 +37,7 @@ interface GraphState {
 class Graph extends PureComponent<GraphProps, GraphState> {
   private chartRef = React.createRef<HTMLDivElement>();
   private $chart = {} as jquery.flot.plot;
+  private rafID = 0;
 
   state = {
     selectedSeriesIndex: null,
@@ -247,18 +248,21 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   }
 
   plotSetAndDraw = (data: GraphSeries[] = this.state.chartData) => {
-    this.$chart.setData(data);
-    this.$chart.draw();
+    if (this.rafID) {
+      cancelAnimationFrame(this.rafID);
+    }
+    this.rafID = requestAnimationFrame(() => {
+      this.$chart.setData(data);
+      this.$chart.draw();
+    });
   };
 
   handleSeriesSelect = (index: number) => () => {
     this.setState(({ selectedSeriesIndex, chartData }) => {
-      if (selectedSeriesIndex === index) {
-        this.plotSetAndDraw(chartData.map(this.toHoverColor(index)));
-        return { selectedSeriesIndex: null };
-      }
-      this.plotSetAndDraw(chartData.slice(index, index + 1));
-      return { selectedSeriesIndex: index };
+      this.plotSetAndDraw(
+        selectedSeriesIndex === index ? chartData.map(this.toHoverColor(index)) : chartData.slice(index, index + 1)
+      );
+      return { selectedSeriesIndex: selectedSeriesIndex === index ? null : index };
     });
   };
 
@@ -297,7 +301,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         <div className="graph-legend" onMouseOut={canUseHover ? this.handleLegendMouseOut : undefined}>
           {chartData.map(({ index, color, labels }) => (
             <div
-              style={{ opacity: selectedSeriesIndex !== null && index !== selectedSeriesIndex ? 0.5 : 1 }}
+              style={{ opacity: selectedSeriesIndex === null || index === selectedSeriesIndex ? 1 : 0.5 }}
               onClick={chartData.length > 1 ? this.handleSeriesSelect(index) : undefined}
               onMouseOver={canUseHover ? () => this.plotSetAndDraw(chartData.map(this.toHoverColor(index))) : undefined}
               key={index}
