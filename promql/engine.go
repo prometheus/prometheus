@@ -1201,9 +1201,11 @@ func (ev *evaluator) eval(expr Expr) Value {
 			//		PromQL: VectorSelector: pointsOverAllocRatio: 309x
 			if !isAllocPatchOff {
 				if len(ss.Points) == 0 {
+					// If we don't have any points, simply kill it, but may be unnecessary.
 					ss.Points = make([]Point, 0)
 				} else {
-					// Don't
+					// Don't bother with shrinking/realloc if we are less than 20% overallocated.
+					// It's an arbitrary number at this point.
 					pointsOverallocLimit := 1.2
 					pointsOverallocRatio := float64(cap(ss.Points)) / float64(len(ss.Points))
 					if pointsOverallocRatio > pointsOverallocLimit {
