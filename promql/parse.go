@@ -245,9 +245,7 @@ func (p *parser) typecheck(node Node) (err error) {
 
 // next returns the next token.
 func (p *parser) next() item {
-	if p.peeking {
-		p.peeking = false
-	} else {
+	if !p.peeking {
 		t := p.lex.nextItem()
 		// Skip comments.
 		for t.typ == ItemComment {
@@ -255,6 +253,9 @@ func (p *parser) next() item {
 		}
 		p.token = t
 	}
+
+	p.peeking = false
+
 	if p.token.typ == ItemError {
 		p.errorf("%s", p.token.val)
 	}
