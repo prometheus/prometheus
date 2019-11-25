@@ -262,7 +262,7 @@ github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
 # github.com/pkg/errors v0.8.1
 github.com/pkg/errors
-# github.com/ppanyukov/go-dump v0.0.0-20191113151015-c92255313245
+# github.com/ppanyukov/go-dump v0.0.0-20191125132645-5a8c0cfc58cf
 github.com/ppanyukov/go-dump/dump
 # github.com/prometheus/alertmanager v0.18.0
 github.com/prometheus/alertmanager/api/v2/models

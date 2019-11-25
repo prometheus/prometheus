@@ -28,6 +28,7 @@ func NewMemStats(name string) *MemStats {
 	return &MemStats{
 		Name:        name,
 		HeapAlloc:   int64(stats.HeapAlloc),
+		HeapSys:     int64(stats.HeapSys),
 		HeapObjects: int64(stats.HeapObjects),
 	}
 }
@@ -39,6 +40,7 @@ func newMemStatsDiff(base *MemStats, next *MemStats) *memStatsDiff {
 		Delta: &MemStats{
 			Name:        fmt.Sprintf("Delta: %s -> %s", base.Name, next.Name),
 			HeapAlloc:   next.HeapAlloc - base.HeapAlloc,
+			HeapSys:     next.HeapSys - base.HeapSys,
 			HeapObjects: next.HeapObjects - base.HeapObjects,
 		},
 	}
@@ -47,6 +49,7 @@ func newMemStatsDiff(base *MemStats, next *MemStats) *memStatsDiff {
 type MemStats struct {
 	Name        string
 	HeapAlloc   int64
+	HeapSys     int64
 	HeapObjects int64
 }
 
@@ -61,6 +64,7 @@ func (m *MemStats) String() string {
 	buf := &bytes.Buffer{}
 	_ = fmt.Sprint(buf, "MEM STATS: %s\n", m.Name)
 	_ = fmt.Sprint(buf, "  HeapAlloc  : %s\n", meg(m.HeapAlloc))
+	_ = fmt.Sprint(buf, "  HeapSys    : %s\n", meg(m.HeapSys))
 	_ = fmt.Sprint(buf, "  HeapObjects: %s", meg(m.HeapObjects))
 	return buf.String()
 }
@@ -80,6 +84,7 @@ func (m *memStatsDiff) String() string {
 	tw := tabwriter.NewWriter(buffer, 1, 8, 1, '\t', 0)
 	_, _ = fmt.Fprintf(tw, "MEM STATS DIFF:   \t%s \t%s \t-> %s \t\n", m.Base.Name, m.Next.Name, "Delta")
 	_, _ = fmt.Fprintf(tw, "    HeapAlloc  : \t%s \t%s \t-> %s \t\n", meg(m.Base.HeapAlloc), meg(m.Next.HeapAlloc), meg(m.Delta.HeapAlloc))
+	_, _ = fmt.Fprintf(tw, "    HeapSys    : \t%s \t%s \t-> %s \t\n", meg(m.Base.HeapSys), meg(m.Next.HeapSys), meg(m.Delta.HeapSys))
 	_, _ = fmt.Fprintf(tw, "    HeapObjects: \t%s \t%s \t-> %s \t\n", meg(m.Base.HeapObjects), meg(m.Next.HeapObjects), meg(m.Delta.HeapObjects))
 	tw.Flush()
 	return buffer.String()
