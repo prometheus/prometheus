@@ -102,7 +102,7 @@ For more information on building, running, and developing on the new React-based
 ## More information
 
   * The source code is periodically indexed: [Prometheus Core](https://godoc.org/github.com/prometheus/prometheus).
-  * You will find a Travis CI configuration in `.travis.yml`.
+  * You will find a CircleCI configuration in `.circleci/config.yml`.
   * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
 ## Contributing
@@ -114,7 +114,6 @@ Refer to [CONTRIBUTING.md](https://github.com/prometheus/prometheus/blob/master/
 Apache License 2.0, see [LICENSE](https://github.com/prometheus/prometheus/blob/master/LICENSE).
 
 
-[travis]: https://travis-ci.org/prometheus/prometheus
 [hub]: https://hub.docker.com/r/prom/prometheus/
 [circleci]: https://circleci.com/gh/prometheus/prometheus
 [quay]: https://quay.io/repository/prometheus/prometheus
