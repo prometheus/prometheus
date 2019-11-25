@@ -53,7 +53,7 @@ For further details on file format, see [TSDB format](https://github.com/prometh
 
 The initial two-hour blocks are eventually compacted into longer blocks in the background.
 
-Compaction will create larger blocks up to 10% of the retention time, or 21 days, whichever is smaller.
+Compaction will create larger blocks up to 10% of the retention time, or 31 days, whichever is smaller.
 
 ## Operational aspects
 
