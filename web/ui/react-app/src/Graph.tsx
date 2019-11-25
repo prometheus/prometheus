@@ -237,15 +237,13 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       return;
     }
     this.destroyPlot();
+
     this.$chart = $.plot($(this.chartRef.current), this.state.chartData, this.getOptions());
   };
 
-  destroyPlot() {
-    const $chart = $(this.chartRef.current!).data('plot');
-    if ($chart !== undefined) {
-      $chart.destroy();
-    }
-  }
+  destroyPlot = () => {
+    this.$chart.destroy && this.$chart.destroy();
+  };
 
   plotSetAndDraw(data: GraphSeries[] = this.state.chartData) {
     this.$chart.setData(data);
@@ -265,10 +263,15 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     if (this.rafID) {
       cancelAnimationFrame(this.rafID);
     }
-    this.rafID = requestAnimationFrame(() => this.plotSetAndDraw(this.state.chartData.map(this.toHoverColor(index))));
+    this.rafID = requestAnimationFrame(() => {
+      this.plotSetAndDraw(this.state.chartData.map(this.toHoverColor(index)));
+    });
   };
 
-  handleLegendMouseOut = () => this.plotSetAndDraw();
+  handleLegendMouseOut = () => {
+    cancelAnimationFrame(this.rafID);
+    this.plotSetAndDraw();
+  };
 
   getHoverColor = (color: string, opacity: number) => {
     const { r, g, b } = $.color.parse(color);
