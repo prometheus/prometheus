@@ -337,6 +337,33 @@ func (p *parser) recover(errp *error) {
 	p.lex.close()
 }
 
+// yySymType is the Type the yacc generated parser expects for lexer items.
+//
+// For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
+type yySymType item
+
+// Lex is expected by the yyLexer interface of the yacc generated parser.
+// It writes the next item provided by the lexer to the provided pointer address.
+// Comments are skipped.
+//
+// The yyLexer interface is currently implemented by the parser to allow
+// the generated and non-generated parts to work together with regards to lookahead
+// and error handling.
+//
+// For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
+func (p *parser) Lex(lval *yySymType) int {
+	*lval = yySymType(p.next())
+
+	return int(item(*lval).typ)
+}
+
+// Error is expected by the yyLexer interface of the yacc generated parser.
+//
+// For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
+func (p *parser) Error(e string) {
+	p.errorf(e)
+}
+
 // expr parses any expression.
 func (p *parser) expr() Expr {
 	// Parse the starting expression.
