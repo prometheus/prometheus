@@ -378,9 +378,14 @@ func (p *parser) Error(e string) {
 // https://www.gnu.org/software/bison/manual/html_node/Multiple-start_002dsymbols.html .
 // Only the Lex function used by the generated parser is affected by this injected item.
 // Trying to inject when a previously injected item has not yet been consumed will panic.
+// Only item types that are supposed to be used as start symbols are allowed as an argument.
 func (p *parser) InjectItem(typ ItemType) {
 	if p.injecting {
 		panic("cannot inject multiple items into the token stream")
+	}
+
+	if typ <= startSymbolsStart || typ >= startSymbolsEnd {
+		panic("cannot inject symbol that isn't start symbol")
 	}
 
 	p.inject = item{typ: typ}
