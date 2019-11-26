@@ -1177,7 +1177,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				pointsOverallocRatio := float64(cap(ss.Points)) / float64(len(ss.Points))
 				if pointsOverallocRatio > pointsOverallocLimit {
 					pointsCopy := make([]Point, len(ss.Points))
-					copy(ss.Points, pointsCopy)
+					copy(pointsCopy, ss.Points)
 					ss.Points = pointsCopy
 				}
 			}
