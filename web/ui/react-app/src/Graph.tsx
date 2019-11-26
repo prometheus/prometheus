@@ -1,11 +1,12 @@
 import $ from 'jquery';
 import React, { PureComponent } from 'react';
 import ReactResizeDetector from 'react-resize-detector';
-import { Alert } from 'reactstrap';
 
 import { escapeHTML } from './utils/html';
 import SeriesName from './SeriesName';
 import { Metric, QueryParams } from './types/types';
+import { isPresent } from './utils/func';
+
 require('flot');
 require('flot/source/jquery.flot.crosshair');
 require('flot/source/jquery.flot.legend');
@@ -22,25 +23,26 @@ interface GraphProps {
   queryParams: QueryParams | null;
 }
 
-export interface GraphSeries {
+interface GraphSeries {
   labels: { [key: string]: string };
   color: string;
-  normalizedColor: string;
   data: (number | null)[][]; // [x,y][]
   index: number;
 }
 
 interface GraphState {
   selectedSeriesIndex: number | null;
-  hoveredSeriesIndex: number | null;
+  chartData: GraphSeries[];
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
   private chartRef = React.createRef<HTMLDivElement>();
+  private $chart?: jquery.flot.plot;
+  private rafID = 0;
 
   state = {
     selectedSeriesIndex: null,
-    hoveredSeriesIndex: null,
+    chartData: this.getData(),
   };
 
   formatValue = (y: number | null): string => {
@@ -48,6 +50,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       return 'null';
     }
     const absY = Math.abs(y);
+
     if (absY >= 1e24) {
       return (y / 1e24).toFixed(2) + 'Y';
     } else if (absY >= 1e21) {
@@ -176,18 +179,17 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   getData(): GraphSeries[] {
     const colors = this.getColors();
-    const { hoveredSeriesIndex } = this.state;
     const { stacked, queryParams } = this.props;
     const { startTime, endTime, resolution } = queryParams!;
-    return this.props.data.result.map((ts, index) => {
+    return this.props.data.result.map(({ values, metric }, index) => {
       // Insert nulls for all missing steps.
       const data = [];
       let pos = 0;
 
       for (let t = startTime; t <= endTime; t += resolution) {
         // Allow for floating point inaccuracy.
-        const currentValue = ts.values[pos];
-        if (ts.values.length > pos && currentValue[0] < t + resolution / 100) {
+        const currentValue = values[pos];
+        if (values.length > pos && currentValue[0] < t + resolution / 100) {
           data.push([currentValue[0] * 1000, this.parseValue(currentValue[1])]);
           pos++;
         } else {
@@ -197,12 +199,10 @@ class Graph extends PureComponent<GraphProps, GraphState> {
           data.push([t * 1000, stacked ? 0 : null]);
         }
       }
-      const { r, g, b } = colors[index];
 
       return {
-        labels: ts.metric !== null ? ts.metric : {},
-        color: `rgba(${r}, ${g}, ${b}, ${hoveredSeriesIndex === null || hoveredSeriesIndex === index ? 1 : 0.3})`,
-        normalizedColor: `rgb(${r}, ${g}, ${b}`,
+        labels: metric !== null ? metric : {},
+        color: colors[index].toString(),
         data,
         index,
       };
@@ -224,10 +224,9 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   }
 
   componentDidUpdate(prevProps: GraphProps) {
-    if (prevProps.data !== this.props.data) {
-      this.setState({ selectedSeriesIndex: null });
+    if (prevProps.data !== this.props.data || prevProps.stacked !== this.props.stacked) {
+      this.setState({ selectedSeriesIndex: null, chartData: this.getData() }, this.plot);
     }
-    this.plot();
   }
 
   componentWillUnmount() {
@@ -238,64 +237,83 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     if (!this.chartRef.current) {
       return;
     }
-    const selectedData = this.getData()[this.state.selectedSeriesIndex!];
     this.destroyPlot();
-    $.plot($(this.chartRef.current), selectedData ? [selectedData] : this.getData(), this.getOptions());
+
+    this.$chart = $.plot($(this.chartRef.current), this.state.chartData, this.getOptions());
   };
 
-  destroyPlot() {
-    const chart = $(this.chartRef.current!).data('plot');
-    if (chart !== undefined) {
-      chart.destroy();
+  destroyPlot = () => {
+    if (isPresent(this.$chart)) {
+      this.$chart.destroy();
+    }
+  };
+
+  plotSetAndDraw(data: GraphSeries[] = this.state.chartData) {
+    if (isPresent(this.$chart)) {
+      this.$chart.setData(data);
+      this.$chart.draw();
     }
   }
 
   handleSeriesSelect = (index: number) => () => {
-    const { selectedSeriesIndex } = this.state;
-    this.setState({ selectedSeriesIndex: selectedSeriesIndex !== index ? index : null });
+    const { selectedSeriesIndex, chartData } = this.state;
+    this.plotSetAndDraw(
+      selectedSeriesIndex === index ? chartData.map(this.toHoverColor(index)) : chartData.slice(index, index + 1)
+    );
+    this.setState({ selectedSeriesIndex: selectedSeriesIndex === index ? null : index });
   };
 
   handleSeriesHover = (index: number) => () => {
-    this.setState({ hoveredSeriesIndex: index });
+    if (this.rafID) {
+      cancelAnimationFrame(this.rafID);
+    }
+    this.rafID = requestAnimationFrame(() => {
+      this.plotSetAndDraw(this.state.chartData.map(this.toHoverColor(index)));
+    });
   };
 
-  handleLegendMouseOut = () => this.setState({ hoveredSeriesIndex: null });
+  handleLegendMouseOut = () => {
+    cancelAnimationFrame(this.rafID);
+    this.plotSetAndDraw();
+  };
+
+  getHoverColor = (color: string, opacity: number) => {
+    const { r, g, b } = $.color.parse(color);
+    if (!this.props.stacked) {
+      return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+    }
+    /*
+      Unfortunetly flot doesn't take into consideration
+      the alpha value when adjusting the color on the stacked series.
+      TODO: find better way to set the opacity.
+    */
+    const base = (1 - opacity) * 255;
+    return `rgb(${Math.round(base + opacity * r)},${Math.round(base + opacity * g)},${Math.round(base + opacity * b)})`;
+  };
+
+  toHoverColor = (index: number) => (series: GraphSeries, i: number) => ({
+    ...series,
+    color: this.getHoverColor(series.color, i !== index ? 0.3 : 1),
+  });
 
   render() {
-    if (this.props.data === null) {
-      return <Alert color="light">No data queried yet</Alert>;
-    }
-
-    if (this.props.data.resultType !== 'matrix') {
-      return (
-        <Alert color="danger">
-          Query result is of wrong type '{this.props.data.resultType}', should be 'matrix' (range vector).
-        </Alert>
-      );
-    }
-
-    if (this.props.data.result.length === 0) {
-      return <Alert color="secondary">Empty query result</Alert>;
-    }
-
-    const { selectedSeriesIndex } = this.state;
-    const series = this.getData();
-    const canUseHover = series.length > 1 && selectedSeriesIndex === null;
+    const { selectedSeriesIndex, chartData } = this.state;
+    const canUseHover = chartData.length > 1 && selectedSeriesIndex === null;
 
     return (
       <div className="graph">
         <ReactResizeDetector handleWidth onResize={this.plot} />
         <div className="graph-chart" ref={this.chartRef} />
         <div className="graph-legend" onMouseOut={canUseHover ? this.handleLegendMouseOut : undefined}>
-          {series.map(({ index, normalizedColor, labels }) => (
+          {chartData.map(({ index, color, labels }) => (
             <div
-              style={{ opacity: selectedSeriesIndex !== null && index !== selectedSeriesIndex ? 0.7 : 1 }}
-              onClick={series.length > 1 ? this.handleSeriesSelect(index) : undefined}
+              style={{ opacity: selectedSeriesIndex === null || index === selectedSeriesIndex ? 1 : 0.5 }}
+              onClick={chartData.length > 1 ? this.handleSeriesSelect(index) : undefined}
               onMouseOver={canUseHover ? this.handleSeriesHover(index) : undefined}
               key={index}
               className="legend-item"
             >
-              <span className="legend-swatch" style={{ backgroundColor: normalizedColor }}></span>
+              <span className="legend-swatch" style={{ backgroundColor: color }}></span>
               <SeriesName labels={labels} format />
             </div>
           ))}

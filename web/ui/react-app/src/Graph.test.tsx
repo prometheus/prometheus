@@ -1,49 +1,10 @@
 import * as React from 'react';
-import { shallow } from 'enzyme';
+import $ from 'jquery';
+import { shallow, mount } from 'enzyme';
 import Graph from './Graph';
-import { Alert } from 'reactstrap';
 import ReactResizeDetector from 'react-resize-detector';
 
 describe('Graph', () => {
-  it('renders an alert if data result type is different than "matrix"', () => {
-    const props: any = {
-      data: { resultType: 'invalid', result: [] },
-      stacked: false,
-      queryParams: {
-        startTime: 1572100210000,
-        endTime: 1572100217898,
-        resolution: 10,
-      },
-      color: 'danger',
-      children: `Query result is of wrong type '`,
-    };
-    const graph = shallow(<Graph {...props} />);
-    const alert = graph.find(Alert);
-    expect(alert.prop('color')).toEqual(props.color);
-    expect(alert.childAt(0).text()).toEqual(props.children);
-  });
-
-  it('renders an alert if data result empty', () => {
-    const props: any = {
-      data: {
-        resultType: 'matrix',
-        result: [],
-      },
-      color: 'secondary',
-      children: 'Empty query result',
-      stacked: false,
-      queryParams: {
-        startTime: 1572100210000,
-        endTime: 1572100217898,
-        resolution: 10,
-      },
-    };
-    const graph = shallow(<Graph {...props} />);
-    const alert = graph.find(Alert);
-    expect(alert.prop('color')).toEqual(props.color);
-    expect(alert.childAt(0).text()).toEqual(props.children);
-  });
-
   describe('data is returned', () => {
     const props: any = {
       queryParams: {
@@ -100,9 +61,19 @@ describe('Graph', () => {
       expect(div).toHaveLength(1);
       expect(innerdiv).toHaveLength(1);
     });
+    describe('Legend', () => {
+      it('renders a legend', () => {
+        const graph = shallow(<Graph {...props} />);
+        expect(graph.find('.graph-legend .legend-item')).toHaveLength(1);
+      });
+    });
+  });
+  describe('formatValue', () => {
     it('formats tick values correctly', () => {
       const graph = new Graph({ data: { result: [] }, queryParams: {} } as any);
       [
+        { input: null, output: 'null' },
+        { input: 0, output: '0.00' },
         { input: 2e24, output: '2.00Y' },
         { input: 2e23, output: '200.00Z' },
         { input: 2e22, output: '20.00Z' },
@@ -159,10 +130,348 @@ describe('Graph', () => {
         expect(graph.formatValue(t.input)).toBe(t.output);
       });
     });
-    describe('Legend', () => {
-      it('renders a legend', () => {
-        const graph = shallow(<Graph {...props} />);
-        expect(graph.find('.graph-legend .legend-item')).toHaveLength(1);
+    it('should throw error if no match', () => {
+      const graph = new Graph({ data: { result: [] }, queryParams: {} } as any);
+      try {
+        graph.formatValue(undefined as any);
+      } catch (error) {
+        expect(error.message).toEqual("couldn't format a value, this is a bug");
+      }
+    });
+  });
+  describe('getColors', () => {
+    it('should generate proper colors', () => {
+      const graph = new Graph({ data: { result: [{}, {}, {}, {}, {}, {}, {}, {}, {}] }, queryParams: {} } as any);
+      expect(
+        graph
+          .getColors()
+          .map(c => c.toString())
+          .join(',')
+      ).toEqual(
+        'rgb(237,194,64),rgb(175,216,248),rgb(203,75,75),rgb(77,167,77),rgb(148,64,237),rgb(189,155,51),rgb(140,172,198),rgb(162,60,60),rgb(61,133,61)'
+      );
+    });
+  });
+  describe('on component update', () => {
+    let graph: any;
+    beforeEach(() => {
+      jest.spyOn($, 'plot').mockImplementation(() => {});
+      graph = mount(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+    });
+    afterAll(() => {
+      jest.restoreAllMocks();
+    });
+    it('should trigger state update when new data is recieved', () => {
+      const spyState = jest.spyOn(Graph.prototype, 'setState');
+      graph.setProps({ data: { result: [{ values: [{}], metric: {} }] } });
+      expect(spyState).toHaveBeenCalledWith(
+        {
+          chartData: [
+            {
+              color: 'rgb(237,194,64)',
+              data: [[1572128592000, 0]],
+              index: 0,
+              labels: {},
+            },
+          ],
+          selectedSeriesIndex: null,
+        },
+        expect.anything()
+      );
+    });
+    it('should trigger state update when stacked prop is changed', () => {
+      const spyState = jest.spyOn(Graph.prototype, 'setState');
+      graph.setProps({ stacked: true });
+      expect(spyState).toHaveBeenCalledWith(
+        {
+          chartData: [
+            {
+              color: 'rgb(237,194,64)',
+              data: [[1572128592000, 0]],
+              index: 0,
+              labels: {},
+            },
+          ],
+          selectedSeriesIndex: null,
+        },
+        expect.anything()
+      );
+    });
+  });
+  describe('on unmount', () => {
+    it('should call destroy plot', () => {
+      const wrapper = shallow(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572130692,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      const spyPlotDestroy = jest.spyOn(Graph.prototype, 'componentWillUnmount');
+      wrapper.unmount();
+      expect(spyPlotDestroy).toHaveBeenCalledTimes(1);
+    });
+  });
+  describe('parseValue', () => {
+    it('should parse number properly', () => {
+      expect(new Graph({ stacked: true, data: { result: [] }, queryParams: {} } as any).parseValue('12.3e')).toEqual(12.3);
+    });
+    it('should return 0 if value is NaN and stacked prop is true', () => {
+      expect(new Graph({ stacked: true, data: { result: [] }, queryParams: {} } as any).parseValue('asd')).toEqual(0);
+    });
+    it('should return null if value is NaN and stacked prop is false', () => {
+      expect(new Graph({ stacked: false, data: { result: [] }, queryParams: {} } as any).parseValue('asd')).toBeNull();
+    });
+  });
+
+  describe('plot', () => {
+    let spyFlot: any;
+    beforeEach(() => {
+      spyFlot = jest.spyOn($, 'plot').mockImplementation(() => {});
+    });
+    afterAll(() => {
+      jest.restoreAllMocks();
+    });
+    it('should not call jquery.plot if charRef not exist', () => {
+      const graph = shallow(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      (graph.instance() as any).plot();
+      expect(spyFlot).not.toBeCalled();
+    });
+    it('should call jquery.plot if charRef exist', () => {
+      const graph = mount(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      (graph.instance() as any).plot();
+      expect(spyFlot).toBeCalled();
+    });
+    it('should destroy plot', () => {
+      const spyPlotDestroy = jest.fn();
+      jest.spyOn($, 'plot').mockReturnValue({ destroy: spyPlotDestroy } as any);
+      const graph = mount(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      (graph.instance() as any).plot();
+      (graph.instance() as any).destroyPlot();
+      expect(spyPlotDestroy).toHaveBeenCalledTimes(1);
+      jest.restoreAllMocks();
+    });
+  });
+  describe('plotSetAndDraw', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+    it('should call spyPlotSetAndDraw on legend hover', () => {
+      jest.spyOn($, 'plot').mockReturnValue({ setData: jest.fn(), draw: jest.fn() } as any);
+      jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: any) => cb());
+      const graph = mount(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }, { values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      (graph.instance() as any).plot(); // create chart
+      const spyPlotSetAndDraw = jest.spyOn(Graph.prototype, 'plotSetAndDraw');
+      graph
+        .find('.legend-item')
+        .at(0)
+        .simulate('mouseover');
+      expect(spyPlotSetAndDraw).toHaveBeenCalledTimes(1);
+    });
+    it('should call spyPlotSetAndDraw with chartDate from state as default value', () => {
+      const spySetData = jest.fn();
+      jest.spyOn($, 'plot').mockReturnValue({ setData: spySetData, draw: jest.fn() } as any);
+      jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: any) => cb());
+      const graph: any = mount(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }, { values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      (graph.instance() as any).plot(); // create chart
+      graph.find('.graph-legend').simulate('mouseout');
+      expect(spySetData).toHaveBeenCalledWith(graph.state().chartData);
+    });
+  });
+  describe('Plot options', () => {
+    it('should configer options properly if stacked prop is true', () => {
+      const wrapper = shallow(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572130692,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      expect((wrapper.instance() as any).getOptions()).toMatchObject({
+        series: {
+          stack: true,
+          lines: { lineWidth: 1, steps: false, fill: true },
+          shadowSize: 0,
+        },
+      });
+    });
+    it('should configer options properly if stacked prop is false', () => {
+      const wrapper = shallow(
+        <Graph
+          {...({
+            stacked: false,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572130692,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      expect((wrapper.instance() as any).getOptions()).toMatchObject({
+        series: {
+          stack: false,
+          lines: { lineWidth: 2, steps: false, fill: false },
+          shadowSize: 0,
+        },
+      });
+    });
+    it('should return proper tooltip html from options', () => {
+      const wrapper = shallow(
+        <Graph
+          {...({
+            stacked: false,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572130692,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      expect(
+        (wrapper.instance() as any)
+          .getOptions()
+          .tooltip.content('', 1572128592, 1572128592, { series: { labels: { foo: 1, bar: 2 }, color: '' } })
+      ).toEqual(`
+            <div class="date">Mon, 19 Jan 1970 04:42:08 GMT</div>
+            <div>
+              <span class="detail-swatch" style="background-color: " />
+              <span>value: <strong>1572128592</strong></span>
+            <div>
+            <div class="labels mt-1">
+              <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
+            </div>
+          `);
+    });
+    it('should render Plot with proper options', () => {
+      const wrapper = mount(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572130692,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      expect((wrapper.instance() as any).getOptions()).toEqual({
+        grid: {
+          hoverable: true,
+          clickable: true,
+          autoHighlight: true,
+          mouseActiveRadius: 100,
+        },
+        legend: { show: false },
+        xaxis: {
+          mode: 'time',
+          showTicks: true,
+          showMinorTicks: true,
+          timeBase: 'milliseconds',
+        },
+        yaxis: { tickFormatter: expect.anything() },
+        crosshair: { mode: 'xy', color: '#bbb' },
+        tooltip: {
+          show: true,
+          cssClass: 'graph-tooltip',
+          content: expect.anything(),
+          defaultTheme: false,
+          lines: true,
+        },
+        series: {
+          stack: true,
+          lines: { lineWidth: 1, steps: false, fill: true },
+          shadowSize: 0,
+        },
       });
     });
   });

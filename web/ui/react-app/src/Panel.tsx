@@ -6,7 +6,7 @@ import moment from 'moment-timezone';
 
 import ExpressionInput from './ExpressionInput';
 import GraphControls from './GraphControls';
-import Graph from './Graph';
+import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
@@ -287,11 +287,11 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
                       onChangeResolution={this.handleChangeResolution}
                       onChangeStacking={this.handleChangeStacking}
                     />
-                    {this.state.data ? (
-                      <Graph data={this.state.data} stacked={options.stacked} queryParams={this.state.lastQueryParams} />
-                    ) : (
-                      <Alert color="light">No data queried yet</Alert>
-                    )}
+                    <GraphTabContent
+                      data={this.state.data}
+                      stacked={options.stacked}
+                      lastQueryParams={this.state.lastQueryParams}
+                    />
                   </>
                 )}
               </TabPane>
