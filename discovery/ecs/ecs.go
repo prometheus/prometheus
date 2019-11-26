@@ -119,7 +119,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	// build instances list.
 
-	level.Debug(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(instances))
+	level.Info(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(instances))
 
 	tg := &targetgroup.Group{
 		Source: getConfigRegionId(d.ecsCfg.RegionId),
