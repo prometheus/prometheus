@@ -285,10 +285,24 @@ describe('Graph', () => {
       expect(spyFlot).toBeCalled();
     });
     it('should destroy plot', () => {
-      const g = new Graph({ data: { result: [] }, queryParams: {} } as any);
-      const spyJqDestroy = jest.spyOn($, 'plot');
-      g.destroyPlot();
-      expect(spyJqDestroy).toHaveBeenCalledTimes(1);
+      const spyPlotDestroy = jest.fn();
+      jest.spyOn($, 'plot').mockReturnValue({ destroy: spyPlotDestroy } as any);
+      const graph = mount(
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
+      );
+      (graph.instance() as any).plot();
+      (graph.instance() as any).destroyPlot();
+      expect(spyPlotDestroy).toHaveBeenCalledTimes(1);
       jest.restoreAllMocks();
     });
   });
