@@ -451,9 +451,9 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		for _, l := range target.Labels() {
 			// existingValue will be empty if l.Name doesn't exist.
 			existingValue := lset.Get(l.Name)
-			// Because setting a label with an empty value is a no-op,
-			// this will only create the prefixed label if necessary.
-			lb.Set(model.ExportedLabelPrefix+l.Name, existingValue)
+			if existingValue != "" {
+				lb.Set(model.ExportedLabelPrefix+l.Name, existingValue)
+			}
 			// It is now safe to set the target label.
 			lb.Set(l.Name, l.Value)
 		}

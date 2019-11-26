@@ -936,6 +936,15 @@ func TestScrapeLoopAppend(t *testing.T) {
 			expLset:         labels.FromStrings("__name__", "metric", "exported_n", "1", "n", "2"),
 			expValue:        0,
 		}, {
+			// When "honor_labels" is not set
+			// exported label from discovery don't get overwritten
+			title:           "Label name collision",
+			honorLabels:     false,
+			scrapeLabels:    `metric 0`,
+			discoveryLabels: []string{"n", "2", "exported_n", "2"},
+			expLset:         labels.FromStrings("__name__", "metric", "n", "2", "exported_n", "2"),
+			expValue:        0,
+		}, {
 			// Labels with no value need to be removed as these should not be ingested.
 			title:           "Delete Empty labels",
 			honorLabels:     false,
