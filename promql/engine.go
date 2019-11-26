@@ -26,13 +26,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
-	"github.com/ppanyukov/go-dump/dump"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
@@ -731,20 +729,6 @@ var isAllocPatchOff = func() bool {
 
 func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 	defer ev.recover(&err)
-
-	// TODO(ppanyukov): remove instrumentation
-	memstats := dump.NewMemStats("promql-eval")
-	defer memstats.PrintDiff()
-
-	// TODO(ppanyukov): remove instrumentation
-	if isAllocPatchOff {
-		dump.WriteHeapDump("eval-start-orig")
-		defer dump.WriteHeapDump("eval-end-orig")
-	} else {
-		dump.WriteHeapDump("eval-start-patch")
-		defer dump.WriteHeapDump("eval-end-patch")
-	}
-
 	return ev.eval(expr), nil
 }
 
@@ -1154,16 +1138,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 		mat := make(Matrix, 0, len(e.series))
 		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 
-		// TODO(ppanyukov): remove instrumentation
-		pointsCap := int64(0)
-		pointsCapPatch := int64(0)
-		pointsLen := int64(0)
-
 		for i, s := range e.series {
 			it.Reset(s.Iterator())
 			ss := Series{
 				Metric: e.series[i].Labels(),
-				// TODO(ppanyukov): this overallocates and keeps 200x-300x than required
 				Points: getPointSlice(numSteps),
 			}
 
@@ -1178,10 +1156,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 					}
 				}
 			}
-
-			// TODO(ppanyukov): remove instrumentation
-			pointsCap += int64(cap(ss.Points))
-			pointsLen += int64(len(ss.Points))
 
 			// TODO(ppanyukov): this is overallocation patch to shrink ss.Points.
 			// 	The overallocation seems to be a function of:
@@ -1215,31 +1189,12 @@ func (ev *evaluator) eval(expr Expr) Value {
 						copy(ss.Points, pointsCopy)
 						ss.Points = pointsCopy
 					}
-					pointsCapPatch += int64(cap(ss.Points))
 				}
 			}
 
 			if len(ss.Points) > 0 {
 				mat = append(mat, ss)
 			}
-		}
-
-		// TODO: remove this once we don't need it.
-		{
-			pointsAllocSize := pointsCap * int64(unsafe.Sizeof(Point{}))
-			pointsNeededSize := pointsLen * int64(unsafe.Sizeof(Point{}))
-			pointsPatchSize := pointsCapPatch * int64(unsafe.Sizeof(Point{}))
-			pointsOverAllocRatio := float64(pointsAllocSize) / float64(pointsNeededSize)
-			pointsPtchOverAllocRatio := float64(pointsPatchSize) / float64(pointsNeededSize)
-			fmt.Printf("PromQL: PROMQL_ALLOC_PATCH_OFF: %t\n", isAllocPatchOff)
-			fmt.Printf("PromQL: Expression: %s\n", e.String())
-			fmt.Printf("PromQL: VectorSelector: Series Count: %d\n", len(e.series))
-			fmt.Printf("PromQL: VectorSelector: pointsAllocSize: %d; Size: %.2fM\n", pointsCap, float64(pointsAllocSize)/1000000)
-			fmt.Printf("PromQL: VectorSelector: pointsNeededSize: %d; Size: %.2fM\n", pointsLen, float64(pointsNeededSize)/1000000)
-			fmt.Printf("PromQL: VectorSelector: pointsPatchSize: %d; Size: %.2fM\n", pointsCapPatch, float64(pointsCapPatch)/1000000)
-			fmt.Printf("PromQL: VectorSelector: pointsOverAllocRatio: %.2fx\n", pointsOverAllocRatio)
-			fmt.Printf("PromQL: VectorSelector: pointsPtchOverAllocRatio: %.2fx\n", pointsPtchOverAllocRatio)
-			fmt.Printf("PromQL: VectorSelector: Current Samples: %d\n", ev.currentSamples)
 		}
 
 		return mat
