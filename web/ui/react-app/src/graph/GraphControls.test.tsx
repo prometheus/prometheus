@@ -4,7 +4,7 @@ import GraphControls from './GraphControls';
 import { Button, ButtonGroup, Form, InputGroup, InputGroupAddon, Input } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
-import TimeInput from './TimeInput';
+import TimeInput from '../TimeInput';
 
 const defaultGraphControlProps = {
   range: 60 * 60 * 24,

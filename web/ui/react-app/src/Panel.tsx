@@ -5,8 +5,8 @@ import { Alert, Button, Col, Nav, NavItem, NavLink, Row, TabContent, TabPane } f
 import moment from 'moment-timezone';
 
 import ExpressionInput from './ExpressionInput';
-import GraphControls from './GraphControls';
-import { GraphTabContent } from './GraphTabContent';
+import GraphControls from './graph/GraphControls';
+import { GraphTabContent } from './graph/GraphTabContent';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';

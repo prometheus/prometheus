@@ -155,7 +155,7 @@ describe('Graph', () => {
   describe('on component update', () => {
     let graph: any;
     beforeEach(() => {
-      jest.spyOn($, 'plot').mockImplementation(() => {});
+      jest.spyOn($, 'plot').mockImplementation(() => ({} as any));
       graph = mount(
         <Graph
           {...({
@@ -245,7 +245,7 @@ describe('Graph', () => {
   describe('plot', () => {
     let spyFlot: any;
     beforeEach(() => {
-      spyFlot = jest.spyOn($, 'plot').mockImplementation(() => {});
+      spyFlot = jest.spyOn($, 'plot').mockImplementation(() => ({} as any));
     });
     afterAll(() => {
       jest.restoreAllMocks();

@@ -2,10 +2,10 @@ import $ from 'jquery';
 import React, { PureComponent } from 'react';
 import ReactResizeDetector from 'react-resize-detector';
 
-import { escapeHTML } from './utils/html';
-import SeriesName from './SeriesName';
-import { Metric, QueryParams } from './types/types';
-import { isPresent } from './utils/func';
+import { escapeHTML } from '../utils/html';
+import SeriesName from '../SeriesName';
+import { Metric, QueryParams } from '../types/types';
+import { isPresent } from '../utils/func';
 
 require('flot');
 require('flot/source/jquery.flot.crosshair');
