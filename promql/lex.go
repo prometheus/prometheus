@@ -30,11 +30,11 @@ type item struct {
 // String returns a descriptive string for the item.
 func (i item) String() string {
 	switch {
-	case i.typ == ItemEOF:
+	case i.typ == EOF:
 		return "EOF"
-	case i.typ == ItemError:
+	case i.typ == ERROR:
 		return i.val
-	case i.typ == ItemIdentifier || i.typ == ItemMetricIdentifier:
+	case i.typ == IDENTIFIER || i.typ == METRIC_IDENTIFIER:
 		return fmt.Sprintf("%q", i.val)
 	case i.typ.isKeyword():
 		return fmt.Sprintf("<%s>", i.val)
@@ -59,7 +59,7 @@ func (i ItemType) isAggregator() bool { return i > aggregatorsStart && i < aggre
 // isAggregator returns true if the item is an aggregator that takes a parameter.
 // Returns false otherwise
 func (i ItemType) isAggregatorWithParam() bool {
-	return i == ItemTopK || i == ItemBottomK || i == ItemCountValues || i == ItemQuantile
+	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE
 }
 
 // isKeyword returns true if the item corresponds to a keyword.
@@ -70,7 +70,7 @@ func (i ItemType) isKeyword() bool { return i > keywordsStart && i < keywordsEnd
 // Returns false otherwise.
 func (i ItemType) isComparisonOperator() bool {
 	switch i {
-	case ItemEQL, ItemNEQ, ItemLTE, ItemLSS, ItemGTE, ItemGTR:
+	case EQL, NEQ, LTE, LSS, GTE, GTR:
 		return true
 	default:
 		return false
@@ -80,7 +80,7 @@ func (i ItemType) isComparisonOperator() bool {
 // isSetOperator returns whether the item corresponds to a set operator.
 func (i ItemType) isSetOperator() bool {
 	switch i {
-	case ItemLAND, ItemLOR, ItemLUnless:
+	case LAND, LOR, LUNLESS:
 		return true
 	}
 	return false
@@ -94,17 +94,17 @@ const LowestPrec = 0 // Non-operators.
 // is LowestPrec.
 func (i ItemType) precedence() int {
 	switch i {
-	case ItemLOR:
+	case LOR:
 		return 1
-	case ItemLAND, ItemLUnless:
+	case LAND, LUNLESS:
 		return 2
-	case ItemEQL, ItemNEQ, ItemLTE, ItemLSS, ItemGTE, ItemGTR:
+	case EQL, NEQ, LTE, LSS, GTE, GTR:
 		return 3
-	case ItemADD, ItemSUB:
+	case ADD, SUB:
 		return 4
-	case ItemMUL, ItemDIV, ItemMOD:
+	case MUL, DIV, MOD:
 		return 5
-	case ItemPOW:
+	case POW:
 		return 6
 	default:
 		return LowestPrec
@@ -113,7 +113,7 @@ func (i ItemType) precedence() int {
 
 func (i ItemType) isRightAssociative() bool {
 	switch i {
-	case ItemPOW:
+	case POW:
 		return true
 	default:
 		return false
@@ -124,138 +124,138 @@ func (i ItemType) isRightAssociative() bool {
 type ItemType int
 
 const (
-	ItemError ItemType = iota // Error occurred, value is error message
-	ItemEOF
-	ItemComment
-	ItemIdentifier
-	ItemMetricIdentifier
-	ItemLeftParen
-	ItemRightParen
-	ItemLeftBrace
-	ItemRightBrace
-	ItemLeftBracket
-	ItemRightBracket
-	ItemComma
-	ItemAssign
-	ItemColon
-	ItemSemicolon
-	ItemString
-	ItemNumber
-	ItemDuration
-	ItemBlank
-	ItemTimes
-	ItemSpace
+	ERROR ItemType = iota // Error occurred, value is error message
+	EOF
+	COMMENT
+	IDENTIFIER
+	METRIC_IDENTIFIER
+	LEFT_PAREN
+	RIGHT_PAREN
+	LEFT_BRACE
+	RIGHT_BRACE
+	LEFT_BRACKET
+	RIGHT_BRACKET
+	COMMA
+	ASSIGN
+	COLON
+	SEMICOLON
+	STRING
+	NUMBER
+	DURATION
+	BLANK
+	TIMES
+	SPACE
 
 	operatorsStart
 	// Operators.
-	ItemSUB
-	ItemADD
-	ItemMUL
-	ItemMOD
-	ItemDIV
-	ItemLAND
-	ItemLOR
-	ItemLUnless
-	ItemEQL
-	ItemNEQ
-	ItemLTE
-	ItemLSS
-	ItemGTE
-	ItemGTR
-	ItemEQLRegex
-	ItemNEQRegex
-	ItemPOW
+	SUB
+	ADD
+	MUL
+	MOD
+	DIV
+	LAND
+	LOR
+	LUNLESS
+	EQL
+	NEQ
+	LTE
+	LSS
+	GTE
+	GTR
+	EQL_REGEX
+	NEQ_REGEX
+	POW
 	operatorsEnd
 
 	aggregatorsStart
 	// Aggregators.
-	ItemAvg
-	ItemCount
-	ItemSum
-	ItemMin
-	ItemMax
-	ItemStddev
-	ItemStdvar
-	ItemTopK
-	ItemBottomK
-	ItemCountValues
-	ItemQuantile
+	AVG
+	COUNT
+	SUM
+	MIN
+	MAX
+	STDDEV
+	STDVAR
+	TOPK
+	BOTTOMK
+	COUNT_VALUES
+	QUANTILE
 	aggregatorsEnd
 
 	keywordsStart
 	// Keywords.
-	ItemOffset
-	ItemBy
-	ItemWithout
-	ItemOn
-	ItemIgnoring
-	ItemGroupLeft
-	ItemGroupRight
-	ItemBool
+	OFFSET
+	BY
+	WITHOUT
+	ON
+	IGNORING
+	GROUP_LEFT
+	GROUP_RIGHT
+	BOOL
 	keywordsEnd
 )
 
 var key = map[string]ItemType{
 	// Operators.
-	"and":    ItemLAND,
-	"or":     ItemLOR,
-	"unless": ItemLUnless,
+	"and":    LAND,
+	"or":     LOR,
+	"unless": LUNLESS,
 
 	// Aggregators.
-	"sum":          ItemSum,
-	"avg":          ItemAvg,
-	"count":        ItemCount,
-	"min":          ItemMin,
-	"max":          ItemMax,
-	"stddev":       ItemStddev,
-	"stdvar":       ItemStdvar,
-	"topk":         ItemTopK,
-	"bottomk":      ItemBottomK,
-	"count_values": ItemCountValues,
-	"quantile":     ItemQuantile,
+	"sum":          SUM,
+	"avg":          AVG,
+	"count":        COUNT,
+	"min":          MIN,
+	"max":          MAX,
+	"stddev":       STDDEV,
+	"stdvar":       STDVAR,
+	"topk":         TOPK,
+	"bottomk":      BOTTOMK,
+	"count_values": COUNT_VALUES,
+	"quantile":     QUANTILE,
 
 	// Keywords.
-	"offset":      ItemOffset,
-	"by":          ItemBy,
-	"without":     ItemWithout,
-	"on":          ItemOn,
-	"ignoring":    ItemIgnoring,
-	"group_left":  ItemGroupLeft,
-	"group_right": ItemGroupRight,
-	"bool":        ItemBool,
+	"offset":      OFFSET,
+	"by":          BY,
+	"without":     WITHOUT,
+	"on":          ON,
+	"ignoring":    IGNORING,
+	"group_left":  GROUP_LEFT,
+	"group_right": GROUP_RIGHT,
+	"bool":        BOOL,
 }
 
 // These are the default string representations for common items. It does not
 // imply that those are the only character sequences that can be lexed to such an item.
 var itemTypeStr = map[ItemType]string{
-	ItemLeftParen:    "(",
-	ItemRightParen:   ")",
-	ItemLeftBrace:    "{",
-	ItemRightBrace:   "}",
-	ItemLeftBracket:  "[",
-	ItemRightBracket: "]",
-	ItemComma:        ",",
-	ItemAssign:       "=",
-	ItemColon:        ":",
-	ItemSemicolon:    ";",
-	ItemBlank:        "_",
-	ItemTimes:        "x",
-	ItemSpace:        "<space>",
+	LEFT_PAREN:    "(",
+	RIGHT_PAREN:   ")",
+	LEFT_BRACE:    "{",
+	RIGHT_BRACE:   "}",
+	LEFT_BRACKET:  "[",
+	RIGHT_BRACKET: "]",
+	COMMA:         ",",
+	ASSIGN:        "=",
+	COLON:         ":",
+	SEMICOLON:     ";",
+	BLANK:         "_",
+	TIMES:         "x",
+	SPACE:         "<space>",
 
-	ItemSUB:      "-",
-	ItemADD:      "+",
-	ItemMUL:      "*",
-	ItemMOD:      "%",
-	ItemDIV:      "/",
-	ItemEQL:      "==",
-	ItemNEQ:      "!=",
-	ItemLTE:      "<=",
-	ItemLSS:      "<",
-	ItemGTE:      ">=",
-	ItemGTR:      ">",
-	ItemEQLRegex: "=~",
-	ItemNEQRegex: "!~",
-	ItemPOW:      "^",
+	SUB:       "-",
+	ADD:       "+",
+	MUL:       "*",
+	MOD:       "%",
+	DIV:       "/",
+	EQL:       "==",
+	NEQ:       "!=",
+	LTE:       "<=",
+	LSS:       "<",
+	GTE:       ">=",
+	GTR:       ">",
+	EQL_REGEX: "=~",
+	NEQ_REGEX: "!~",
+	POW:       "^",
 }
 
 func init() {
@@ -264,8 +264,8 @@ func init() {
 		itemTypeStr[ty] = s
 	}
 	// Special numbers.
-	key["inf"] = ItemNumber
-	key["nan"] = ItemNumber
+	key["inf"] = NUMBER
+	key["nan"] = NUMBER
 }
 
 func (i ItemType) String() string {
@@ -279,7 +279,7 @@ func (i item) desc() string {
 	if _, ok := itemTypeStr[i.typ]; ok {
 		return i.String()
 	}
-	if i.typ == ItemEOF {
+	if i.typ == EOF {
 		return i.typ.desc()
 	}
 	return fmt.Sprintf("%s %s", i.typ.desc(), i)
@@ -287,21 +287,21 @@ func (i item) desc() string {
 
 func (i ItemType) desc() string {
 	switch i {
-	case ItemError:
+	case ERROR:
 		return "error"
-	case ItemEOF:
+	case EOF:
 		return "end of input"
-	case ItemComment:
+	case COMMENT:
 		return "comment"
-	case ItemIdentifier:
+	case IDENTIFIER:
 		return "identifier"
-	case ItemMetricIdentifier:
+	case METRIC_IDENTIFIER:
 		return "metric identifier"
-	case ItemString:
+	case STRING:
 		return "string"
-	case ItemNumber:
+	case NUMBER:
 		return "number"
-	case ItemDuration:
+	case DURATION:
 		return "duration"
 	}
 	return fmt.Sprintf("%q", i)
@@ -408,7 +408,7 @@ func (l *lexer) linePosition() int {
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.nextItem.
 func (l *lexer) errorf(format string, args ...interface{}) stateFn {
-	l.items = append(l.items, item{ItemError, l.start, fmt.Sprintf(format, args...)})
+	l.items = append(l.items, item{ERROR, l.start, fmt.Sprintf(format, args...)})
 	return nil
 }
 
@@ -418,7 +418,7 @@ func (l *lexer) nextItem() item {
 		if l.state != nil {
 			l.state = l.state(l)
 		} else {
-			l.emit(ItemEOF)
+			l.emit(EOF)
 		}
 	}
 	item := l.items[0]
@@ -469,52 +469,52 @@ func lexStatements(l *lexer) stateFn {
 		} else if l.bracketOpen {
 			return l.errorf("unclosed left bracket")
 		}
-		l.emit(ItemEOF)
+		l.emit(EOF)
 		return nil
 	case r == ',':
-		l.emit(ItemComma)
+		l.emit(COMMA)
 	case isSpace(r):
 		return lexSpace
 	case r == '*':
-		l.emit(ItemMUL)
+		l.emit(MUL)
 	case r == '/':
-		l.emit(ItemDIV)
+		l.emit(DIV)
 	case r == '%':
-		l.emit(ItemMOD)
+		l.emit(MOD)
 	case r == '+':
-		l.emit(ItemADD)
+		l.emit(ADD)
 	case r == '-':
-		l.emit(ItemSUB)
+		l.emit(SUB)
 	case r == '^':
-		l.emit(ItemPOW)
+		l.emit(POW)
 	case r == '=':
 		if t := l.peek(); t == '=' {
 			l.next()
-			l.emit(ItemEQL)
+			l.emit(EQL)
 		} else if t == '~' {
 			return l.errorf("unexpected character after '=': %q", t)
 		} else {
-			l.emit(ItemAssign)
+			l.emit(ASSIGN)
 		}
 	case r == '!':
 		if t := l.next(); t == '=' {
-			l.emit(ItemNEQ)
+			l.emit(NEQ)
 		} else {
 			return l.errorf("unexpected character after '!': %q", t)
 		}
 	case r == '<':
 		if t := l.peek(); t == '=' {
 			l.next()
-			l.emit(ItemLTE)
+			l.emit(LTE)
 		} else {
-			l.emit(ItemLSS)
+			l.emit(LSS)
 		}
 	case r == '>':
 		if t := l.peek(); t == '=' {
 			l.next()
-			l.emit(ItemGTE)
+			l.emit(GTE)
 		} else {
-			l.emit(ItemGTR)
+			l.emit(GTR)
 		}
 	case isDigit(r) || (r == '.' && isDigit(l.peek())):
 		l.backup()
@@ -533,21 +533,21 @@ func lexStatements(l *lexer) stateFn {
 		if l.gotColon {
 			return l.errorf("unexpected colon %q", r)
 		}
-		l.emit(ItemColon)
+		l.emit(COLON)
 		l.gotColon = true
 	case r == '(':
-		l.emit(ItemLeftParen)
+		l.emit(LEFT_PAREN)
 		l.parenDepth++
 		return lexStatements
 	case r == ')':
-		l.emit(ItemRightParen)
+		l.emit(RIGHT_PAREN)
 		l.parenDepth--
 		if l.parenDepth < 0 {
 			return l.errorf("unexpected right parenthesis %q", r)
 		}
 		return lexStatements
 	case r == '{':
-		l.emit(ItemLeftBrace)
+		l.emit(LEFT_BRACE)
 		l.braceOpen = true
 		return lexInsideBraces(l)
 	case r == '[':
@@ -555,7 +555,7 @@ func lexStatements(l *lexer) stateFn {
 			return l.errorf("unexpected left bracket %q", r)
 		}
 		l.gotColon = false
-		l.emit(ItemLeftBracket)
+		l.emit(LEFT_BRACKET)
 		if isSpace(l.peek()) {
 			skipSpaces(l)
 		}
@@ -565,7 +565,7 @@ func lexStatements(l *lexer) stateFn {
 		if !l.bracketOpen {
 			return l.errorf("unexpected right bracket %q", r)
 		}
-		l.emit(ItemRightBracket)
+		l.emit(RIGHT_BRACKET)
 		l.bracketOpen = false
 
 	default:
@@ -590,7 +590,7 @@ func lexInsideBraces(l *lexer) stateFn {
 		l.backup()
 		return lexIdentifier
 	case r == ',':
-		l.emit(ItemComma)
+		l.emit(COMMA)
 	case r == '"' || r == '\'':
 		l.stringOpen = r
 		return lexString
@@ -599,24 +599,24 @@ func lexInsideBraces(l *lexer) stateFn {
 		return lexRawString
 	case r == '=':
 		if l.next() == '~' {
-			l.emit(ItemEQLRegex)
+			l.emit(EQL_REGEX)
 			break
 		}
 		l.backup()
-		l.emit(ItemEQL)
+		l.emit(EQL)
 	case r == '!':
 		switch nr := l.next(); {
 		case nr == '~':
-			l.emit(ItemNEQRegex)
+			l.emit(NEQ_REGEX)
 		case nr == '=':
-			l.emit(ItemNEQ)
+			l.emit(NEQ)
 		default:
 			return l.errorf("unexpected character after '!' inside braces: %q", nr)
 		}
 	case r == '{':
 		return l.errorf("unexpected left brace %q", r)
 	case r == '}':
-		l.emit(ItemRightBrace)
+		l.emit(RIGHT_BRACE)
 		l.braceOpen = false
 
 		if l.seriesDesc {
@@ -635,16 +635,16 @@ func lexValueSequence(l *lexer) stateFn {
 	case r == eof:
 		return lexStatements
 	case isSpace(r):
-		l.emit(ItemSpace)
+		l.emit(SPACE)
 		lexSpace(l)
 	case r == '+':
-		l.emit(ItemADD)
+		l.emit(ADD)
 	case r == '-':
-		l.emit(ItemSUB)
+		l.emit(SUB)
 	case r == 'x':
-		l.emit(ItemTimes)
+		l.emit(TIMES)
 	case r == '_':
-		l.emit(ItemBlank)
+		l.emit(BLANK)
 	case isDigit(r) || (r == '.' && isDigit(l.peek())):
 		l.backup()
 		lexNumber(l)
@@ -747,7 +747,7 @@ Loop:
 			break Loop
 		}
 	}
-	l.emit(ItemString)
+	l.emit(STRING)
 	return lexStatements
 }
 
@@ -764,7 +764,7 @@ Loop:
 			break Loop
 		}
 	}
-	l.emit(ItemString)
+	l.emit(STRING)
 	return lexStatements
 }
 
@@ -784,7 +784,7 @@ func lexLineComment(l *lexer) stateFn {
 		r = l.next()
 	}
 	l.backup()
-	l.emit(ItemComment)
+	l.emit(COMMENT)
 	return lexStatements
 }
 
@@ -798,7 +798,7 @@ func lexDuration(l *lexer) stateFn {
 			return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
 		}
 		l.backup()
-		l.emit(ItemDuration)
+		l.emit(DURATION)
 		return lexStatements
 	}
 	return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
@@ -809,14 +809,14 @@ func lexNumber(l *lexer) stateFn {
 	if !l.scanNumber() {
 		return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
 	}
-	l.emit(ItemNumber)
+	l.emit(NUMBER)
 	return lexStatements
 }
 
 // lexNumberOrDuration scans a number or a duration item.
 func lexNumberOrDuration(l *lexer) stateFn {
 	if l.scanNumber() {
-		l.emit(ItemNumber)
+		l.emit(NUMBER)
 		return lexStatements
 	}
 	// Next two chars must be a valid unit and a non-alphanumeric.
@@ -825,7 +825,7 @@ func lexNumberOrDuration(l *lexer) stateFn {
 			return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
 		}
 		l.backup()
-		l.emit(ItemDuration)
+		l.emit(DURATION)
 		return lexStatements
 	}
 	return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
@@ -862,7 +862,7 @@ func lexIdentifier(l *lexer) stateFn {
 		// absorb
 	}
 	l.backup()
-	l.emit(ItemIdentifier)
+	l.emit(IDENTIFIER)
 	return lexStatements
 }
 
@@ -881,9 +881,9 @@ Loop:
 			if kw, ok := key[strings.ToLower(word)]; ok {
 				l.emit(kw)
 			} else if !strings.Contains(word, ":") {
-				l.emit(ItemIdentifier)
+				l.emit(IDENTIFIER)
 			} else {
-				l.emit(ItemMetricIdentifier)
+				l.emit(METRIC_IDENTIFIER)
 			}
 			break Loop
 		}
