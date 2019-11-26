@@ -244,7 +244,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   destroyPlot = () => {
     if (isPresent(this.$chart)) {
-      this.$chart.destroy && this.$chart.destroy();
+      this.$chart.destroy();
     }
   };
 
