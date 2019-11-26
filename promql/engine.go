@@ -1130,7 +1130,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 		checkForSeriesSetExpansion(ev.ctx, e)
 		mat := make(Matrix, 0, len(e.series))
 		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
-
 		for i, s := range e.series {
 			it.Reset(s.Iterator())
 			ss := Series{
@@ -1186,8 +1185,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 			if len(ss.Points) > 0 {
 				mat = append(mat, ss)
 			}
-		}
 
+		}
 		return mat
 
 	case *MatrixSelector:
