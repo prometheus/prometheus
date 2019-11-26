@@ -38,39 +38,10 @@ func tree(node Node, level string) string {
 
 	level += " · · ·"
 
-	switch n := node.(type) {
-	case *EvalStmt:
-		t += tree(n.Expr, level)
-
-	case Expressions:
-		for _, e := range n {
-			t += tree(e, level)
-		}
-	case *AggregateExpr:
-		t += tree(n.Expr, level)
-
-	case *BinaryExpr:
-		t += tree(n.LHS, level)
-		t += tree(n.RHS, level)
-
-	case *Call:
-		t += tree(n.Args, level)
-
-	case *ParenExpr:
-		t += tree(n.Expr, level)
-
-	case *UnaryExpr:
-		t += tree(n.Expr, level)
-
-	case *SubqueryExpr:
-		t += tree(n.Expr, level)
-
-	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
-		// nothing to do
-
-	default:
-		panic("promql.Tree: not all node types covered")
+	for _, e := range Children(node) {
+		t += tree(e, level)
 	}
+
 	return t
 }
 
@@ -157,7 +128,11 @@ func (node *SubqueryExpr) String() string {
 	if node.Step != 0 {
 		step = model.Duration(node.Step).String()
 	}
-	return fmt.Sprintf("%s[%s:%s]", node.Expr.String(), model.Duration(node.Range), step)
+	offset := ""
+	if node.Offset != time.Duration(0) {
+		offset = fmt.Sprintf(" offset %s", model.Duration(node.Offset))
+	}
+	return fmt.Sprintf("%s[%s:%s]%s", node.Expr.String(), model.Duration(node.Range), step, offset)
 }
 
 func (node *NumberLiteral) String() string {

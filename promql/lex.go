@@ -317,13 +317,13 @@ type Pos int
 
 // lexer holds the state of the scanner.
 type lexer struct {
-	input   string    // The string being scanned.
-	state   stateFn   // The next lexing function to enter.
-	pos     Pos       // Current position in the input.
-	start   Pos       // Start position of this item.
-	width   Pos       // Width of last rune read from input.
-	lastPos Pos       // Position of most recent item returned by nextItem.
-	items   chan item // Channel of scanned items.
+	input   string  // The string being scanned.
+	state   stateFn // The next lexing function to enter.
+	pos     Pos     // Current position in the input.
+	start   Pos     // Start position of this item.
+	width   Pos     // Width of last rune read from input.
+	lastPos Pos     // Position of most recent item returned by nextItem.
+	items   []item  // Slice buffer of scanned items.
 
 	parenDepth  int  // Nesting depth of ( ) exprs.
 	braceOpen   bool // Whether a { is opened.
@@ -362,7 +362,7 @@ func (l *lexer) backup() {
 
 // emit passes an item back to the client.
 func (l *lexer) emit(t ItemType) {
-	l.items <- item{t, l.start, l.input[l.start:l.pos]}
+	l.items = append(l.items, item{t, l.start, l.input[l.start:l.pos]})
 	l.start = l.pos
 }
 
@@ -408,13 +408,21 @@ func (l *lexer) linePosition() int {
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.nextItem.
 func (l *lexer) errorf(format string, args ...interface{}) stateFn {
-	l.items <- item{ItemError, l.start, fmt.Sprintf(format, args...)}
+	l.items = append(l.items, item{ItemError, l.start, fmt.Sprintf(format, args...)})
 	return nil
 }
 
 // nextItem returns the next item from the input.
 func (l *lexer) nextItem() item {
-	item := <-l.items
+	for len(l.items) == 0 {
+		if l.state != nil {
+			l.state = l.state(l)
+		} else {
+			l.emit(ItemEOF)
+		}
+	}
+	item := l.items[0]
+	l.items = l.items[1:]
 	l.lastPos = item.pos
 	return item
 }
@@ -423,9 +431,8 @@ func (l *lexer) nextItem() item {
 func lex(input string) *lexer {
 	l := &lexer{
 		input: input,
-		items: make(chan item),
+		state: lexStatements,
 	}
-	go l.run()
 	return l
 }
 
@@ -434,7 +441,6 @@ func (l *lexer) run() {
 	for l.state = lexStatements; l.state != nil; {
 		l.state = l.state(l)
 	}
-	close(l.items)
 }
 
 // Release resources used by lexer.

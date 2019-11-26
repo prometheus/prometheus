@@ -695,15 +695,11 @@ func TestLexer(t *testing.T) {
 			for i, test := range typ.tests {
 				l := &lexer{
 					input:      test.input,
-					items:      make(chan item),
 					seriesDesc: test.seriesDesc,
 				}
-				go l.run()
+				l.run()
 
-				out := []item{}
-				for it := range l.items {
-					out = append(out, it)
-				}
+				out := l.items
 
 				lastItem := out[len(out)-1]
 				if test.fail {

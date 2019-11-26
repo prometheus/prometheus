@@ -1,6 +1,6 @@
 /* eslint @typescript-eslint/camelcase: 0 */
 
-import { ScrapePools, Target, Labels } from '../target';
+import { ScrapePools } from '../target';
 
 export const targetGroups: ScrapePools = Object.freeze({
   blackbox: {
