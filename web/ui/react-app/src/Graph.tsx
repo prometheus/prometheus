@@ -5,6 +5,7 @@ import ReactResizeDetector from 'react-resize-detector';
 import { escapeHTML } from './utils/html';
 import SeriesName from './SeriesName';
 import { Metric, QueryParams } from './types/types';
+import { isPresent } from './utils/func';
 
 require('flot');
 require('flot/source/jquery.flot.crosshair');
@@ -36,7 +37,7 @@ interface GraphState {
 
 class Graph extends PureComponent<GraphProps, GraphState> {
   private chartRef = React.createRef<HTMLDivElement>();
-  private $chart = {} as jquery.flot.plot;
+  private $chart?: jquery.flot.plot;
   private rafID = 0;
 
   state = {
@@ -242,21 +243,24 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   };
 
   destroyPlot = () => {
-    this.$chart.destroy && this.$chart.destroy();
+    if (isPresent(this.$chart)) {
+      this.$chart.destroy && this.$chart.destroy();
+    }
   };
 
   plotSetAndDraw(data: GraphSeries[] = this.state.chartData) {
-    this.$chart.setData(data);
-    this.$chart.draw();
+    if (isPresent(this.$chart)) {
+      this.$chart.setData(data);
+      this.$chart.draw();
+    }
   }
 
   handleSeriesSelect = (index: number) => () => {
-    this.setState(({ selectedSeriesIndex, chartData }) => {
-      this.plotSetAndDraw(
-        selectedSeriesIndex === index ? chartData.map(this.toHoverColor(index)) : chartData.slice(index, index + 1)
-      );
-      return { selectedSeriesIndex: selectedSeriesIndex === index ? null : index };
-    });
+    const { selectedSeriesIndex, chartData } = this.state;
+    this.plotSetAndDraw(
+      selectedSeriesIndex === index ? chartData.map(this.toHoverColor(index)) : chartData.slice(index, index + 1)
+    );
+    this.setState({ selectedSeriesIndex: selectedSeriesIndex === index ? null : index });
   };
 
   handleSeriesHover = (index: number) => () => {

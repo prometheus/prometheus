@@ -284,10 +284,9 @@ describe('Graph', () => {
       (graph.instance() as any).plot();
       expect(spyFlot).toBeCalled();
     });
-    it('should destroy jquery element if exist', () => {
+    it('should destroy plot', () => {
       const g = new Graph({ data: { result: [] }, queryParams: {} } as any);
-      const spyJqDestroy = jest.fn();
-      jest.spyOn($.fn, 'data').mockImplementation(() => ({ destroy: spyJqDestroy }));
+      const spyJqDestroy = jest.spyOn($, 'plot');
       g.destroyPlot();
       expect(spyJqDestroy).toHaveBeenCalledTimes(1);
       jest.restoreAllMocks();
