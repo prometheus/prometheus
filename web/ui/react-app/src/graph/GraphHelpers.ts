@@ -108,10 +108,10 @@ export const getOptions = (stacked: boolean): jquery.flot.plotOptions => {
             <div>
             <div class="labels mt-1">
               ${Object.keys(labels)
-            .map(k =>
-              k !== '__name__' ? `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>` : ''
-            )
-            .join('')}
+                .map(k =>
+                  k !== '__name__' ? `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>` : ''
+                )
+                .join('')}
             </div>
           `;
       },

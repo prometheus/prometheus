@@ -75,9 +75,12 @@ describe('GraphHelpers', () => {
     it('should generate proper colors', () => {
       const data: any = {
         resultType: 'matrix',
-        result: [{}, {}, {}, {}, {}, {}, {}]
-      }
-      expect(getColors(data).map(c => c.toString()).join(',')
+        result: [{}, {}, {}, {}, {}, {}, {}],
+      };
+      expect(
+        getColors(data)
+          .map(c => c.toString())
+          .join(',')
       ).toEqual(
         'rgb(237,194,64),rgb(175,216,248),rgb(203,75,75),rgb(77,167,77),rgb(148,64,237),rgb(189,155,51),rgb(140,172,198)'
       );
@@ -114,7 +117,10 @@ describe('GraphHelpers', () => {
       });
     });
     it('should return proper tooltip html from options', () => {
-      expect(getOptions(true).tooltip.content('', 1572128592, 1572128592, { series: { labels: { foo: '1', bar: '2' }, color: '' } } as any)
+      expect(
+        getOptions(true).tooltip.content('', 1572128592, 1572128592, {
+          series: { labels: { foo: '1', bar: '2' }, color: '' },
+        } as any)
       ).toEqual(`
             <div class="date">Mon, 19 Jan 1970 04:42:08 GMT</div>
             <div>
@@ -157,5 +163,5 @@ describe('GraphHelpers', () => {
         },
       });
     });
-  })
+  });
 });
