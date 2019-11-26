@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"regexp"
 	"runtime"
 	"sort"
@@ -721,12 +720,6 @@ func (ev *evaluator) recover(errp *error) {
 	}
 }
 
-// TODO(ppanyukov): remove instrumentation
-// For easy switch on/off without rebuild. Default is "on".
-var isAllocPatchOff = func() bool {
-	return os.Getenv("PROMQL_ALLOC_PATCH_OFF") == "yes"
-}()
-
 func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 	defer ev.recover(&err)
 	return ev.eval(expr), nil
@@ -1175,20 +1168,18 @@ func (ev *evaluator) eval(expr Expr) Value {
 			//		PromQL: VectorSelector: pointsAllocSize: 4241900; Size: 67.87M
 			//		PromQL: VectorSelector: pointsNeededSize: 13700; Size: 0.22M
 			//		PromQL: VectorSelector: pointsOverAllocRatio: 309x
-			if !isAllocPatchOff {
-				if len(ss.Points) == 0 {
-					// If we don't have any points, simply kill it, but may be unnecessary.
-					ss.Points = make([]Point, 0)
-				} else {
-					// Don't bother with shrinking/realloc if we are less than 20% overallocated.
-					// It's an arbitrary number at this point.
-					pointsOverallocLimit := 1.2
-					pointsOverallocRatio := float64(cap(ss.Points)) / float64(len(ss.Points))
-					if pointsOverallocRatio > pointsOverallocLimit {
-						pointsCopy := make([]Point, len(ss.Points))
-						copy(ss.Points, pointsCopy)
-						ss.Points = pointsCopy
-					}
+			if len(ss.Points) == 0 {
+				// If we don't have any points, simply kill it, but may be unnecessary.
+				ss.Points = make([]Point, 0)
+			} else {
+				// Don't bother with shrinking/realloc if we are less than 20% overallocated.
+				// It's an arbitrary number at this point.
+				pointsOverallocLimit := 1.2
+				pointsOverallocRatio := float64(cap(ss.Points)) / float64(len(ss.Points))
+				if pointsOverallocRatio > pointsOverallocLimit {
+					pointsCopy := make([]Point, len(ss.Points))
+					copy(ss.Points, pointsCopy)
+					ss.Points = pointsCopy
 				}
 			}
 
