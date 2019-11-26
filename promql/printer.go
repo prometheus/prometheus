@@ -128,7 +128,11 @@ func (node *SubqueryExpr) String() string {
 	if node.Step != 0 {
 		step = model.Duration(node.Step).String()
 	}
-	return fmt.Sprintf("%s[%s:%s]", node.Expr.String(), model.Duration(node.Range), step)
+	offset := ""
+	if node.Offset != time.Duration(0) {
+		offset = fmt.Sprintf(" offset %s", model.Duration(node.Offset))
+	}
+	return fmt.Sprintf("%s[%s:%s]%s", node.Expr.String(), model.Duration(node.Range), step, offset)
 }
 
 func (node *NumberLiteral) String() string {
