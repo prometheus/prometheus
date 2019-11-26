@@ -42,7 +42,7 @@ func (err *Error) Error() string {
 
 // RuleGroups is a set of rule groups that are typically exposed in a file.
 type RuleGroups struct {
-	Groups []RuleGroup `yaml:"groups"`
+	Groups []RuleGroup `yaml:"groups" json:"groups"`
 }
 
 // Validate validates all rules in the rule groups.
@@ -86,19 +86,19 @@ func (g *RuleGroups) Validate() (errs []error) {
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
 type RuleGroup struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Rules    []Rule         `yaml:"rules"`
+	Name     string         `yaml:"name" json:"name"`
+	Interval model.Duration `yaml:"interval,omitempty" json:"interval,omitempty"`
+	Rules    []Rule         `yaml:"rules" json:"rules"`
 }
 
 // Rule describes an alerting or recording rule.
 type Rule struct {
-	Record      string            `yaml:"record,omitempty"`
-	Alert       string            `yaml:"alert,omitempty"`
-	Expr        string            `yaml:"expr"`
-	For         model.Duration    `yaml:"for,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	Annotations map[string]string `yaml:"annotations,omitempty"`
+	Record      string            `yaml:"record,omitempty" json:"record,omitempty"`
+	Alert       string            `yaml:"alert,omitempty" json:"alert,omitempty"`
+	Expr        string            `yaml:"expr" json:"expr"`
+	For         model.Duration    `yaml:"for,omitempty" json:"yaml:"for,omitempty""`
+	Labels      map[string]string `yaml:"labels,omitempty" json:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty" json:"annotations,omitempty"`
 }
 
 // Validate the rule and return a list of encountered errors.
