@@ -319,7 +319,7 @@ func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, 
 				}
 			}
 
-			if describeInstancesResponse.Instances == nil || len(describeInstancesResponse.Instances.Instance) == 0 {
+			if len(describeInstancesResponse.Instances.Instance) == 0 {
 				break
 			}
 			currentTotalCount += newInstanceIndex
