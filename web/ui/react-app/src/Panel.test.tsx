@@ -2,11 +2,11 @@ import * as React from 'react';
 import { mount, shallow } from 'enzyme';
 import Panel, { PanelOptions, PanelType } from './Panel';
 import ExpressionInput from './ExpressionInput';
-import GraphControls from './GraphControls';
+import GraphControls from './graph/GraphControls';
 import { NavLink, TabPane } from 'reactstrap';
 import TimeInput from './TimeInput';
 import DataTable from './DataTable';
-import { GraphTabContent } from './GraphTabContent';
+import { GraphTabContent } from './graph/GraphTabContent';
 
 describe('Panel', () => {
   const props = {

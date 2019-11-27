@@ -1,8 +1,8 @@
 import React from 'react';
 import { Alert } from 'reactstrap';
 import Graph from './Graph';
-import { QueryParams } from './types/types';
-import { isPresent } from './utils/func';
+import { QueryParams } from '../types/types';
+import { isPresent } from '../utils/func';
 
 export const GraphTabContent = ({
   data,
