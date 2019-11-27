@@ -193,6 +193,10 @@ const (
 	GROUP_RIGHT
 	BOOL
 	keywordsEnd
+
+	startSymbolsStart
+	// Start symbols for the generated parser.
+	startSymbolsEnd
 )
 
 var key = map[string]ItemType{

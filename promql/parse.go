@@ -35,6 +35,9 @@ type parser struct {
 	lex     *lexer
 	token   item
 	peeking bool
+
+	inject    item
+	injecting bool
 }
 
 // ParseErr wraps a parsing error with line and position context.
@@ -352,7 +355,12 @@ type yySymType item
 //
 // For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Lex(lval *yySymType) int {
-	*lval = yySymType(p.next())
+	if p.injecting {
+		*lval = yySymType(p.inject)
+		p.injecting = false
+	} else {
+		*lval = yySymType(p.next())
+	}
 
 	return int(item(*lval).typ)
 }
@@ -362,6 +370,26 @@ func (p *parser) Lex(lval *yySymType) int {
 // For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Error(e string) {
 	p.errorf(e)
+}
+
+// InjectItem allows injecting a single item at the beginning of the token stream
+// consumed by the generated parser.
+// This allows having multiple start symbols as described in
+// https://www.gnu.org/software/bison/manual/html_node/Multiple-start_002dsymbols.html .
+// Only the Lex function used by the generated parser is affected by this injected item.
+// Trying to inject when a previously injected item has not yet been consumed will panic.
+// Only item types that are supposed to be used as start symbols are allowed as an argument.
+func (p *parser) InjectItem(typ ItemType) {
+	if p.injecting {
+		panic("cannot inject multiple items into the token stream")
+	}
+
+	if typ <= startSymbolsStart || typ >= startSymbolsEnd {
+		panic("cannot inject symbol that isn't start symbol")
+	}
+
+	p.inject = item{typ: typ}
+	p.injecting = true
 }
 
 // expr parses any expression.
