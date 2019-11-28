@@ -31,8 +31,8 @@ export interface GraphSeries {
 }
 
 interface GraphState {
-  selectedSeriesIndex: number | null;
   chartData: GraphSeries[];
+  selectedSeriesIndexes: number[];
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
@@ -41,28 +41,41 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   private rafID = 0;
 
   state = {
-    selectedSeriesIndex: null,
     chartData: normalizeData(this.props),
+    selectedSeriesIndexes: [] as number[],
   };
 
   componentDidUpdate(prevProps: GraphProps) {
     const { data, stacked } = this.props;
-    if (prevProps.data !== data || prevProps.stacked !== stacked) {
-      this.setState({ selectedSeriesIndex: null, chartData: normalizeData(this.props) }, this.plot);
+    if (prevProps.data !== data) {
+      this.setState({ selectedSeriesIndexes: [], chartData: normalizeData(this.props) }, this.plot);
+    } else if (prevProps.stacked !== stacked) {
+      const { selectedSeriesIndexes } = this.state;
+      this.setState({ chartData: normalizeData(this.props) }, () => {
+        if (selectedSeriesIndexes.length === 0) {
+          this.plot();
+        } else {
+          this.plot(this.state.chartData.filter((_, i) => selectedSeriesIndexes.includes(i)));
+        }
+      });
     }
+  }
+
+  componentDidMount() {
+    this.plot();
   }
 
   componentWillUnmount() {
     this.destroyPlot();
   }
 
-  plot = () => {
+  plot = (data: GraphSeries[] = this.state.chartData) => {
     if (!this.chartRef.current) {
       return;
     }
     this.destroyPlot();
 
-    this.$chart = $.plot($(this.chartRef.current), this.state.chartData, getOptions(this.props.stacked));
+    this.$chart = $.plot($(this.chartRef.current), data, getOptions(this.props.stacked));
   };
 
   destroyPlot = () => {
@@ -78,14 +91,24 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
   }
 
-  handleSeriesSelect = (index: number) => () => {
-    const { selectedSeriesIndex, chartData } = this.state;
-    this.plotSetAndDraw(
-      selectedSeriesIndex === index
+  handleSeriesSelect = (index: number) => (ev: any) => {
+    const { chartData, selectedSeriesIndexes } = this.state;
+
+    let selected = [index];
+    // Unselect.
+    if (selectedSeriesIndexes.includes(index)) {
+      selected = selectedSeriesIndexes.filter(idx => idx !== index);
+    } else if (ev.ctrlKey) {
+      selected = [...selectedSeriesIndexes, index]; // Select multiple.
+    }
+
+    this.setState({ selectedSeriesIndexes: selected });
+
+    this.plot(
+      selectedSeriesIndexes.length === 1 && selectedSeriesIndexes.includes(index)
         ? chartData.map(toHoverColor(index, this.props.stacked))
-        : chartData.slice(index, index + 1)
+        : chartData.filter((_, i) => selected.includes(i)) // draw only selected
     );
-    this.setState({ selectedSeriesIndex: selectedSeriesIndex === index ? null : index });
   };
 
   handleSeriesHover = (index: number) => () => {
@@ -102,18 +125,23 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     this.plotSetAndDraw();
   };
 
+  handleResize = () => {
+    const data = this.$chart ? this.$chart.getData() : undefined;
+    this.plot(data as GraphSeries[] | undefined);
+  };
+
   render() {
-    const { selectedSeriesIndex, chartData } = this.state;
-    const canUseHover = chartData.length > 1 && selectedSeriesIndex === null;
+    const { selectedSeriesIndexes, chartData } = this.state;
+    const canUseHover = chartData.length > 1 && selectedSeriesIndexes.length === 0;
 
     return (
       <div className="graph">
-        <ReactResizeDetector handleWidth onResize={this.plot} />
+        <ReactResizeDetector handleWidth onResize={this.handleResize} />
         <div className="graph-chart" ref={this.chartRef} />
         <div className="graph-legend" onMouseOut={canUseHover ? this.handleLegendMouseOut : undefined}>
           {chartData.map(({ index, color, labels }) => (
             <div
-              style={{ opacity: selectedSeriesIndex === null || index === selectedSeriesIndex ? 1 : 0.5 }}
+              style={{ opacity: selectedSeriesIndexes.length === 0 || selectedSeriesIndexes.includes(index) ? 1 : 0.5 }}
               onClick={chartData.length > 1 ? this.handleSeriesSelect(index) : undefined}
               onMouseOver={canUseHover ? this.handleSeriesHover(index) : undefined}
               key={index}
@@ -123,6 +151,11 @@ class Graph extends PureComponent<GraphProps, GraphState> {
               <SeriesName labels={labels} format />
             </div>
           ))}
+          {chartData.length > 1 && (
+            <div className="pl-1 mt-1 text-muted" style={{ fontSize: 13 }}>
+              Click: toogle single item, CTRL + click: toogle multiple
+            </div>
+          )}
         </div>
       </div>
     );
