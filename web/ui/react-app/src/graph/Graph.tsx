@@ -126,8 +126,9 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   };
 
   handleResize = () => {
-    const data = this.$chart ? this.$chart.getData() : undefined;
-    this.plot(data as GraphSeries[] | undefined);
+    if (isPresent(this.$chart)) {
+      this.plot(this.$chart.getData() as GraphSeries[]);
+    }
   };
 
   render() {
@@ -153,7 +154,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
           ))}
           {chartData.length > 1 && (
             <div className="pl-1 mt-1 text-muted" style={{ fontSize: 13 }}>
-              Click: toogle serie, CTRL + click: toogle multiple series
+              Click: toggle series, CTRL + click: toggle multiple series
             </div>
           )}
         </div>
