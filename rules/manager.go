@@ -910,6 +910,7 @@ func (m *Manager) LoadGroups(
 						externalLabels,
 						m.restored,
 						log.With(m.logger, "alert", r.Alert),
+						time.Duration(r.ValidFor),
 					))
 					continue
 				}

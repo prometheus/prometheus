@@ -97,6 +97,7 @@ type Rule struct {
 	Alert       string            `yaml:"alert,omitempty"`
 	Expr        string            `yaml:"expr"`
 	For         model.Duration    `yaml:"for,omitempty"`
+	ValidFor    model.Duration    `yaml:"validFor,omitempty"`
 	Labels      map[string]string `yaml:"labels,omitempty"`
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
@@ -121,6 +122,9 @@ func (r *Rule) Validate() (errs []error) {
 		}
 		if r.For != 0 {
 			errs = append(errs, errors.Errorf("invalid field 'for' in recording rule"))
+		}
+		if r.ValidFor != 0 {
+			errs = append(errs, errors.Errorf("invalid field 'validFor' in recording rule"))
 		}
 		if !model.IsValidMetricName(model.LabelValue(r.Record)) {
 			errs = append(errs, errors.Errorf("invalid recording rule name: %s", r.Record))

@@ -52,7 +52,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, nil, true, nil,
+		nil, nil, true, nil, 0,
 	)
 	result := promql.Vector{
 		{
@@ -193,7 +193,7 @@ func TestForStateAddSamples(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, nil, true, nil,
+		nil, nil, true, nil, 0,
 	)
 	result := promql.Vector{
 		{
@@ -367,7 +367,7 @@ func TestForStateRestore(t *testing.T) {
 		expr,
 		alertForDuration,
 		labels.FromStrings("severity", "critical"),
-		nil, nil, true, nil,
+		nil, nil, true, nil, 0,
 	)
 
 	group := NewGroup("default", "", time.Second, []Rule{rule}, true, opts)
@@ -427,7 +427,7 @@ func TestForStateRestore(t *testing.T) {
 			expr,
 			alertForDuration,
 			labels.FromStrings("severity", "critical"),
-			nil, nil, false, nil,
+			nil, nil, false, nil, 0,
 		)
 		newGroup := NewGroup("default", "", time.Second, []Rule{newRule}, true, opts)
 
@@ -582,13 +582,13 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil, 0),
 			NewRecordingRule("rule1", nil, nil),
 			NewRecordingRule("rule2", nil, nil),
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v3"}}),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil),
+			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil, 0),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{},
@@ -607,10 +607,10 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v0"}}),
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
-			NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil, 0),
 			NewRecordingRule("rule1", nil, nil),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v0"}}, nil, nil, true, nil),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil),
+			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v0"}}, nil, nil, true, nil, 0),
+			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil, 0),
 			NewRecordingRule("rule4", nil, nil),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
@@ -745,7 +745,7 @@ func TestNotify(t *testing.T) {
 
 	expr, err := promql.ParseExpr("a > 1")
 	testutil.Ok(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, nil, true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, nil, true, log.NewNopLogger(), 0)
 	group := NewGroup("alert", "", time.Second, []Rule{rule}, true, opts)
 
 	app, _ := storage.Appender()

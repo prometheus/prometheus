@@ -151,6 +151,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		labels.Labels{},
 		true,
 		log.NewNopLogger(),
+		0,
 	)
 	rule2 := rules.NewAlertingRule(
 		"test_metric4",
@@ -161,6 +162,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		labels.Labels{},
 		true,
 		log.NewNopLogger(),
+		0,
 	)
 	var r []*rules.AlertingRule
 	r = append(r, rule1)

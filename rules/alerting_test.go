@@ -14,6 +14,7 @@
 package rules
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ import (
 func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	expr, err := promql.ParseExpr(`foo{html="<b>BOLD<b>"}`)
 	testutil.Ok(t, err)
-	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, false, nil)
+	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, false, nil, 0)
 
 	const want = `alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=1">testrule</a>
 expr: <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=1">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
@@ -62,7 +63,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		// If an alert is going back and forth between two label values it will never fire.
 		// Instead, you should write two alerts with constant labels.
 		labels.FromStrings("severity", "{{ if lt $value 80.0 }}critical{{ else }}warning{{ end }}"),
-		nil, nil, true, nil,
+		nil, nil, true, nil, 0,
 	)
 
 	results := []promql.Vector{
@@ -164,6 +165,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		nil,
 		nil,
 		true, log.NewNopLogger(),
+		0,
 	)
 	ruleWithExternalLabels := NewAlertingRule(
 		"ExternalLabelExists",
@@ -173,6 +175,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		nil,
 		labels.FromStrings("foo", "bar", "dings", "bums"),
 		true, log.NewNopLogger(),
+		0,
 	)
 	result := promql.Vector{
 		{
@@ -256,6 +259,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		nil,
 		nil,
 		true, log.NewNopLogger(),
+		0,
 	)
 	result := promql.Vector{
 		{
@@ -288,4 +292,90 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		}
 	}
 	testutil.Equals(t, result, filteredRes)
+}
+
+func TestSendAlertWhenValidUntilIsSet(t *testing.T) {
+
+	expr, err := promql.ParseExpr(`http_requests < 100`)
+	testutil.Ok(t, err)
+
+	validDuration := time.Duration(30)
+	resendDelay := time.Duration(60)
+	ruleWithValidDuration := NewAlertingRule(
+		"AlertWithValidDuration",
+		expr,
+		time.Minute,
+		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
+		nil,
+		nil,
+		true, log.NewNopLogger(),
+		validDuration,
+	)
+
+	timeNow := time.Now()
+
+	notify := func(ctx context.Context, expr string, alerts ...*Alert) {
+		testutil.Equals(t, alerts[0].ValidUntil, timeNow.Add(validDuration), "Valid until is not set from validDuration")
+	}
+
+	activeAlert := &Alert{}
+	ruleWithValidDuration.active = map[uint64]*Alert{0: activeAlert}
+	ruleWithValidDuration.sendAlerts(context.TODO(), timeNow, resendDelay, 0, notify)
+}
+
+func TestSendAlertWhenValidUntilIsNotSetAndResendDelayIsHigherThanInterval(t *testing.T) {
+
+	expr, err := promql.ParseExpr(`http_requests < 100`)
+	testutil.Ok(t, err)
+
+	resendDelay := time.Duration(60)
+	ruleWithValidDuration := NewAlertingRule(
+		"AlertWithValidDuration",
+		expr,
+		time.Minute,
+		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
+		nil,
+		nil,
+		true, log.NewNopLogger(),
+		0,
+	)
+
+	timeNow := time.Now()
+
+	notify := func(ctx context.Context, expr string, alerts ...*Alert) {
+		testutil.Equals(t, alerts[0].ValidUntil, timeNow.Add(3*resendDelay), "Valid until is not set from resendDelay")
+	}
+
+	activeAlert := &Alert{}
+	ruleWithValidDuration.active = map[uint64]*Alert{0: activeAlert}
+	ruleWithValidDuration.sendAlerts(context.TODO(), timeNow, resendDelay, 0, notify)
+}
+
+func TestSendAlertWhenValidUntilIsNotSetAndIntervalIsHigherThanResendDelay(t *testing.T) {
+
+	expr, err := promql.ParseExpr(`http_requests < 100`)
+	testutil.Ok(t, err)
+
+	resendDelay := time.Duration(30)
+	interval := time.Duration(60)
+	ruleWithValidDuration := NewAlertingRule(
+		"AlertWithValidDuration",
+		expr,
+		time.Minute,
+		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
+		nil,
+		nil,
+		true, log.NewNopLogger(),
+		0,
+	)
+
+	timeNow := time.Now()
+
+	notify := func(ctx context.Context, expr string, alerts ...*Alert) {
+		testutil.Equals(t, alerts[0].ValidUntil, timeNow.Add(3*interval), "Valid until is not set from interval")
+	}
+
+	activeAlert := &Alert{}
+	ruleWithValidDuration.active = map[uint64]*Alert{0: activeAlert}
+	ruleWithValidDuration.sendAlerts(context.TODO(), timeNow, resendDelay, interval, notify)
 }

@@ -116,6 +116,8 @@ type AlertingRule struct {
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
+	// Explicit value for alert EndsAt field
+	validDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
 	labels labels.Labels
 	// Non-identifying key/value pairs.
@@ -146,7 +148,7 @@ type AlertingRule struct {
 func NewAlertingRule(
 	name string, vec promql.Expr, hold time.Duration,
 	labels, annotations, externalLabels labels.Labels,
-	restored bool, logger log.Logger,
+	restored bool, logger log.Logger, validFor time.Duration,
 ) *AlertingRule {
 	el := make(map[string]string, len(externalLabels))
 	for _, lbl := range externalLabels {
@@ -157,6 +159,7 @@ func NewAlertingRule(
 		name:           name,
 		vector:         vec,
 		holdDuration:   hold,
+		validDuration:  validFor,
 		labels:         labels,
 		annotations:    annotations,
 		externalLabels: el,
@@ -470,12 +473,17 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 	r.ForEachActiveAlert(func(alert *Alert) {
 		if alert.needsSending(ts, resendDelay) {
 			alert.LastSentAt = ts
-			// Allow for a couple Eval or Alertmanager send failures
-			delta := resendDelay
-			if interval > resendDelay {
-				delta = interval
+			// Alert validDuration is explicitly specified
+			if r.validDuration > 0 {
+				alert.ValidUntil = ts.Add(r.validDuration)
+			} else {
+				// Allow for a couple Eval or Alertmanager send failures
+				delta := resendDelay
+				if interval > resendDelay {
+					delta = interval
+				}
+				alert.ValidUntil = ts.Add(3 * delta)
 			}
-			alert.ValidUntil = ts.Add(3 * delta)
 			anew := *alert
 			alerts = append(alerts, &anew)
 		}
