@@ -136,7 +136,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
     return (
       <div className="graph">
-        <ReactResizeDetector handleWidth onResize={this.handleResize} />
+        <ReactResizeDetector handleWidth onResize={this.handleResize} skipOnMount />
         <div className="graph-chart" ref={this.chartRef} />
         <div className="graph-legend" onMouseOut={canUseHover ? this.handleLegendMouseOut : undefined}>
           {chartData.map(({ index, color, labels }) => (
@@ -153,7 +153,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
           ))}
           {chartData.length > 1 && (
             <div className="pl-1 mt-1 text-muted" style={{ fontSize: 13 }}>
-              Click: toogle single item, CTRL + click: toogle multiple
+              Click: toogle serie, CTRL + click: toogle multiple series
             </div>
           )}
         </div>
