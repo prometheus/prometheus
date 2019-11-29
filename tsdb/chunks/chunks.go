@@ -565,7 +565,7 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		return nil, err
 	}
 	if act := s.crc32.Sum(s.buf[:0]); !bytes.Equal(act, sum) {
-		return nil, errors.Errorf("unexpected checksum %x, expected %x", act, sum)
+		return nil, errors.Errorf("checksum mismatch expected:%x, actual:%x", sum, act)
 	}
 
 	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
