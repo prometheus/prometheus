@@ -530,7 +530,7 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		sgmIndex = int(ref >> 32)
 		// Get the lower 4 bytes.
 		// These contain the segment offset where the data for this chunk starts.
-		sgmChunkStart = int((ref << 32) >> 32)
+		chkStart = int((ref << 32) >> 32)
 	)
 
 	if sgmIndex >= len(s.bs) {
@@ -539,18 +539,18 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 
 	sgmBytes := s.bs[sgmIndex]
 
-	if sgmChunkStart+MaxChunkLengthFieldSize > sgmBytes.Len() {
-		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", sgmChunkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
+	if chkStart+MaxChunkLengthFieldSize > sgmBytes.Len() {
+		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
-	c := sgmBytes.Range(sgmChunkStart, sgmChunkStart+MaxChunkLengthFieldSize)
+	c := sgmBytes.Range(chkStart, chkStart+MaxChunkLengthFieldSize)
 	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
 
-	chkEncStart := sgmChunkStart + n
+	chkEncStart := chkStart + n
 	chkEnd := chkEncStart + ChunkEncodingSize + int(chkDataLen) + crc32.Size
 	chkDataStart := chkEncStart + ChunkEncodingSize
 	chkDataEnd := chkEnd - crc32.Size
