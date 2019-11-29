@@ -849,7 +849,6 @@ func (h *Handler) serveConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("inside the ruless")
 	h.executeTemplate(w, "rules.html", h.ruleManager)
 }
 
@@ -890,8 +889,6 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 			scrapeConfigData.Targets[job] = append(scrapeConfigData.Targets[job], target)
 		}
 	}
-	fmt.Println("scrapeConfig")
-	fmt.Println(scrapeConfigData)
 
 	h.executeTemplate(w, "service-discovery.html", scrapeConfigData)
 }

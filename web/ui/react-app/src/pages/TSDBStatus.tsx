@@ -52,14 +52,6 @@ function createTable(title: string, unit: string, stats: Array<Stats>) {
 
 const TSDBStatus: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const { response, error } = useFetch<TSDBMap>(`${pathPrefix}/api/v1/status/tsdb`);
-  fetch(`${pathPrefix}/api/v1/status/tsdb`).then(res => {
-    if (res.ok) {
-      return res.json()
-    }
-  }).then(r => {
-    console.warn('r ')
-    console.warn(r)
-  })
   const headStats = () => {
     const stats = response && response.data;
     if (error) {
