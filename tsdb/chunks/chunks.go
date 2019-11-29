@@ -549,6 +549,9 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
+	if chkDataLen == 0 {
+		return nil, errors.Errorf("reading chunk with zero length")
+	}
 
 	chkEncStart := chkStart + n
 	chkEnd := chkEncStart + ChunkEncodingSize + int(chkDataLen) + crc32.Size
