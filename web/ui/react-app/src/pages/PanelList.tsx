@@ -35,6 +35,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
 
   componentDidMount() {
     !this.state.panels.length && this.addPanel();
+    console.log('fetch addr is ', `${this.props.pathPrefix}/api/v1/label/__name__/values`)
     fetch(`${this.props.pathPrefix}/api/v1/label/__name__/values`, { cache: 'no-store' })
       .then(resp => {
         if (resp.ok) {

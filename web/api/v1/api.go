@@ -588,6 +588,7 @@ type TargetDiscovery struct {
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
+	fmt.Println("inside targets")
 	sortKeys := func(targets map[string][]*scrape.Target) ([]string, int) {
 		var n int
 		keys := make([]string, 0, len(targets))
@@ -652,6 +653,8 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 	} else {
 		res.DroppedTargets = []*DroppedTarget{}
 	}
+	fmt.Println("resT is")
+	fmt.Println(res)
 	return apiFuncResult{res, nil, nil, nil}
 }
 
@@ -896,6 +899,8 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 		}
 		res.RuleGroups[i] = apiRuleGroup
 	}
+	fmt.Println("res is ")
+	fmt.Println(res)
 	return apiFuncResult{res, nil, nil, nil}
 }
 
