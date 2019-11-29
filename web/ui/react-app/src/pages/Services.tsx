@@ -2,38 +2,20 @@ import React, { Component } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import PathPrefixProps from '../PathPrefixProps';
 
-// const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-//   console.warn(`${pathPrefix}/api/v1/targets`)
-//   // const { response, error } = useFetch<
-//   fetch(`${pathPrefix}/api/v1/targets`, { cache: 'no-store' }).then(resp => {
-//     console.warn('checeker')
-//     if (resp.ok) {
-//       return resp.json();
-//     }
-//   }).then(res => {
-//     console.warn('res is ')
-//     console.warn(res.data)
-//   })
-//   return (
-//     <>
-//       <h2>Service Discovery</h2>
-//       <Alert color="warning">
-//         This page is still under construction. Please try it in the <a href={`${pathPrefix}/service-discovery`}>Classic UI</a>.
-//       </Alert>
-//     </>
-//   );
-// };
-
 interface ServicesState {
-  response: Object;
+  response: Record<string, any>;
   fetchServicesErrorMessage: string;
   targets: any;
+  labels: any;
+  showMore: boolean;
 }
 
-interface targetsComponent {
-  name: string;
-  total: number;
-  active: number;
+interface LabelState {
+  showMore: boolean;
+}
+
+interface LabelProps {
+  value: any;
 }
 
 class Services extends Component<RouteComponentProps & PathPrefixProps, ServicesState> {
@@ -43,7 +25,9 @@ class Services extends Component<RouteComponentProps & PathPrefixProps, Services
     this.state = {
       response: {},
       fetchServicesErrorMessage: '',
-      targets: {}
+      targets: {},
+      labels: {},
+      showMore: false,
     };
   }
 
@@ -57,8 +41,7 @@ class Services extends Component<RouteComponentProps & PathPrefixProps, Services
         }
       })
       .then(json => {
-        this.setState({ response: json, targets: this.processResponse(json) });
-        console.warn(this.state.response)
+        this.setState({ response: json, targets: this.processTargets(json), labels: this.processLabels(json) });
       })
       .catch(err => {
         this.setState({ fetchServicesErrorMessage: err });
@@ -67,44 +50,148 @@ class Services extends Component<RouteComponentProps & PathPrefixProps, Services
 
   isHealthy = (health: string) => {
     return health === 'up';
-  }
+  };
 
-  processResponse = (resp: any) => {
-    let activeTargets = resp.data.activeTargets,
-      targets: any = {};
+  processTargets = (resp: any) => {
+    const activeTargets = resp.data.activeTargets,
+      targets: any = Object.create({});
 
-    // Get total targets of each type
+    // Get targets of each type along with the total and active end points
     for (const target of activeTargets) {
-      let name = target.scrapePool;
-      if (targets[name] === undefined) {
+      const name = target.scrapePool,
+        health = target.health;
+      if (!targets[name]) {
         targets[name] = {
           total: 1,
-          active: 0
+          active: 0,
         };
-        if (target.health === 'up') {
+        if (this.isHealthy(health)) {
           targets[name].active = 1;
         }
       } else {
         targets[name].total++;
-        if (this.isHealthy(target.health)) {
+        if (this.isHealthy(health)) {
           targets[name].active++;
         }
       }
     }
     return targets;
-  }
+  };
+
+  getLabels = (target: any) => {
+    return {
+      discoveredLabels: target.discoveredLabels,
+      labels: target.labels,
+    };
+  };
+
+  processLabels = (resp: any) => {
+    const labels = Object.create({}),
+      activeTargets = resp.data.activeTargets;
+
+    for (const target of activeTargets) {
+      const name = target.scrapePool;
+      if (!labels[name]) {
+        labels[name] = [];
+      }
+      labels[name].push(this.getLabels(target));
+    }
+
+    return labels;
+  };
 
   render() {
     return (
       <>
-       <h2>Service Discovery</h2>
-       <ul>
-         {
-           Object.keys(this.state.targets).map((val, i) => <li key={Object.keys(this.state.targets)[i]}> {val} ({ this.state.targets[val].active } / { this.state.targets[val].total } active targets) </li>)
-         }
-       </ul>
-       <hr/>
-     </>
+        <h2>Service Discovery</h2>
+        <ul>
+          {Object.keys(this.state.targets).map((val, i) => (
+            <li key={Object.keys(this.state.targets)[i]}>
+              <a href={'#' + val}>
+                {' '}
+                {val} ({this.state.targets[val].active} / {this.state.targets[val].total} active targets){' '}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <hr />
+        <div className="outer-layer">
+          {Object.keys(this.state.labels).map((val: any, i) => {
+            const value = this.state.labels[val];
+            return (
+              <div id={val} key={Object.keys(this.state.labels)[i]} className="label-component">
+                <span className="target-head">
+                  {' '}
+                  {i + 1}. {val}{' '}
+                </span>
+                <Labels value={value} />
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+}
+
+class Labels extends Component<LabelProps, LabelState> {
+  constructor(props: LabelProps) {
+    super(props);
+
+    this.state = {
+      showMore: false,
+    };
+  }
+
+  toggleMore = () => {
+    this.setState({ showMore: !this.state.showMore });
+  };
+
+  render() {
+    return (
+      <>
+        {!this.state.showMore ? (
+          <button className="btn btn-primary btn-sm" onClick={this.toggleMore}>
+            More
+          </button>
+        ) : (
+          <>
+            <button className="btn btn-primary btn-sm" onClick={this.toggleMore}>
+              Less
+            </button>
+            <div>
+              {Object.keys(this.props.value).map((_, i) => {
+                return (
+                  <div key={'inner-layer-' + i} className="row inner-layer">
+                    <div className="col-md-6">
+                      {i === 0 ? <div className="head">Discovered Labels</div> : null}
+                      <div key={this.props.value[i].discoveredLabels[i] + '-' + i}>
+                        {Object.keys(this.props.value[i].discoveredLabels).map((v, _) => (
+                          <div className="label-style" key={this.props.value[i].discoveredLabels[v]}>
+                            {' '}
+                            {v}={this.props.value[i].discoveredLabels[v]}{' '}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      {i === 0 ? <div className="head">Target Labels</div> : null}
+                      <div key={this.props.value[i].labels[i] + '-' + i}>
+                        {Object.keys(this.props.value[i].labels).map((v, _) => (
+                          <div className="label-style" key={this.props.value[i].labels[v]}>
+                            {' '}
+                            {v}={this.props.value[i].labels[v]}{' '}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </>
     );
   }
 }
