@@ -2,7 +2,6 @@
 
 import { sampleApiResponse } from './__testdata__/testdata';
 import { groupTargets, Target, ScrapePools, getColor } from './target';
-import { string } from 'prop-types';
 
 describe('groupTargets', () => {
   const targets: Target[] = sampleApiResponse.data.activeTargets as Target[];

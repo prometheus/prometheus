@@ -32,9 +32,12 @@ import (
 )
 
 type parser struct {
-	lex       *lexer
-	token     [3]item
-	peekCount int
+	lex     *lexer
+	token   item
+	peeking bool
+
+	inject    item
+	injecting bool
 }
 
 // ParseErr wraps a parsing error with line and position context.
@@ -70,7 +73,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 	defer p.recover(&err)
 
 	m = p.metric()
-	if p.peek().typ != ItemEOF {
+	if p.peek().typ != EOF {
 		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 	}
 	return m, nil
@@ -83,11 +86,11 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	defer p.recover(&err)
 
 	name := ""
-	if t := p.peek().typ; t == ItemMetricIdentifier || t == ItemIdentifier {
+	if t := p.peek().typ; t == METRIC_IDENTIFIER || t == IDENTIFIER {
 		name = p.next().val
 	}
 	vs := p.VectorSelector(name)
-	if p.peek().typ != ItemEOF {
+	if p.peek().typ != EOF {
 		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 	}
 	return vs.LabelMatchers, nil
@@ -105,7 +108,7 @@ func newParser(input string) *parser {
 func (p *parser) parseExpr() (expr Expr, err error) {
 	defer p.recover(&err)
 
-	for p.peek().typ != ItemEOF {
+	for p.peek().typ != EOF {
 		if expr != nil {
 			p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 		}
@@ -147,20 +150,20 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 
 	const ctx = "series values"
 	for {
-		for p.peek().typ == ItemSpace {
+		for p.peek().typ == SPACE {
 			p.next()
 		}
-		if p.peek().typ == ItemEOF {
+		if p.peek().typ == EOF {
 			break
 		}
 
 		// Extract blanks.
-		if p.peek().typ == ItemBlank {
+		if p.peek().typ == BLANK {
 			p.next()
 			times := uint64(1)
-			if p.peek().typ == ItemTimes {
+			if p.peek().typ == TIMES {
 				p.next()
-				times, err = strconv.ParseUint(p.expect(ItemNumber, ctx).val, 10, 64)
+				times, err = strconv.ParseUint(p.expect(NUMBER, ctx).val, 10, 64)
 				if err != nil {
 					p.errorf("invalid repetition in %s: %s", ctx, err)
 				}
@@ -170,7 +173,7 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 			}
 			// This is to ensure that there is a space between this and the next number.
 			// This is especially required if the next number is negative.
-			if t := p.expectOneOf(ItemSpace, ItemEOF, ctx).typ; t == ItemEOF {
+			if t := p.expectOneOf(SPACE, EOF, ctx).typ; t == EOF {
 				break
 			}
 			continue
@@ -178,15 +181,15 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 
 		// Extract values.
 		sign := 1.0
-		if t := p.peek().typ; t == ItemSUB || t == ItemADD {
-			if p.next().typ == ItemSUB {
+		if t := p.peek().typ; t == SUB || t == ADD {
+			if p.next().typ == SUB {
 				sign = -1
 			}
 		}
 		var k float64
-		if t := p.peek().typ; t == ItemNumber {
-			k = sign * p.number(p.expect(ItemNumber, ctx).val)
-		} else if t == ItemIdentifier && p.peek().val == "stale" {
+		if t := p.peek().typ; t == NUMBER {
+			k = sign * p.number(p.expect(NUMBER, ctx).val)
+		} else if t == IDENTIFIER && p.peek().val == "stale" {
 			p.next()
 			k = math.Float64frombits(value.StaleNaN)
 		} else {
@@ -197,24 +200,24 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 		})
 
 		// If there are no offset repetitions specified, proceed with the next value.
-		if t := p.peek(); t.typ == ItemSpace {
+		if t := p.peek(); t.typ == SPACE {
 			// This ensures there is a space between every value.
 			continue
-		} else if t.typ == ItemEOF {
+		} else if t.typ == EOF {
 			break
-		} else if t.typ != ItemADD && t.typ != ItemSUB {
+		} else if t.typ != ADD && t.typ != SUB {
 			p.errorf("expected next value or relative expansion in %s but got %s (value: %s)", ctx, t.desc(), p.peek())
 		}
 
 		// Expand the repeated offsets into values.
 		sign = 1.0
-		if p.next().typ == ItemSUB {
+		if p.next().typ == SUB {
 			sign = -1.0
 		}
-		offset := sign * p.number(p.expect(ItemNumber, ctx).val)
-		p.expect(ItemTimes, ctx)
+		offset := sign * p.number(p.expect(NUMBER, ctx).val)
+		p.expect(TIMES, ctx)
 
-		times, err := strconv.ParseUint(p.expect(ItemNumber, ctx).val, 10, 64)
+		times, err := strconv.ParseUint(p.expect(NUMBER, ctx).val, 10, 64)
 		if err != nil {
 			p.errorf("invalid repetition in %s: %s", ctx, err)
 		}
@@ -228,7 +231,7 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 		// This is to ensure that there is a space between this expanding notation
 		// and the next number. This is especially required if the next number
 		// is negative.
-		if t := p.expectOneOf(ItemSpace, ItemEOF, ctx).typ; t == ItemEOF {
+		if t := p.expectOneOf(SPACE, EOF, ctx).typ; t == EOF {
 			break
 		}
 	}
@@ -245,41 +248,42 @@ func (p *parser) typecheck(node Node) (err error) {
 
 // next returns the next token.
 func (p *parser) next() item {
-	if p.peekCount > 0 {
-		p.peekCount--
-	} else {
+	if !p.peeking {
 		t := p.lex.nextItem()
 		// Skip comments.
-		for t.typ == ItemComment {
+		for t.typ == COMMENT {
 			t = p.lex.nextItem()
 		}
-		p.token[0] = t
+		p.token = t
 	}
-	if p.token[p.peekCount].typ == ItemError {
-		p.errorf("%s", p.token[p.peekCount].val)
+
+	p.peeking = false
+
+	if p.token.typ == ERROR {
+		p.errorf("%s", p.token.val)
 	}
-	return p.token[p.peekCount]
+	return p.token
 }
 
 // peek returns but does not consume the next token.
 func (p *parser) peek() item {
-	if p.peekCount > 0 {
-		return p.token[p.peekCount-1]
+	if p.peeking {
+		return p.token
 	}
-	p.peekCount = 1
+	p.peeking = true
 
 	t := p.lex.nextItem()
 	// Skip comments.
-	for t.typ == ItemComment {
+	for t.typ == COMMENT {
 		t = p.lex.nextItem()
 	}
-	p.token[0] = t
-	return p.token[0]
+	p.token = t
+	return p.token
 }
 
 // backup backs the input stream up one token.
 func (p *parser) backup() {
-	p.peekCount++
+	p.peeking = true
 }
 
 // errorf formats the error and terminates processing.
@@ -336,6 +340,58 @@ func (p *parser) recover(errp *error) {
 	p.lex.close()
 }
 
+// yySymType is the Type the yacc generated parser expects for lexer items.
+//
+// For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
+type yySymType item
+
+// Lex is expected by the yyLexer interface of the yacc generated parser.
+// It writes the next item provided by the lexer to the provided pointer address.
+// Comments are skipped.
+//
+// The yyLexer interface is currently implemented by the parser to allow
+// the generated and non-generated parts to work together with regards to lookahead
+// and error handling.
+//
+// For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
+func (p *parser) Lex(lval *yySymType) int {
+	if p.injecting {
+		*lval = yySymType(p.inject)
+		p.injecting = false
+	} else {
+		*lval = yySymType(p.next())
+	}
+
+	return int(item(*lval).typ)
+}
+
+// Error is expected by the yyLexer interface of the yacc generated parser.
+//
+// For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
+func (p *parser) Error(e string) {
+	p.errorf(e)
+}
+
+// InjectItem allows injecting a single item at the beginning of the token stream
+// consumed by the generated parser.
+// This allows having multiple start symbols as described in
+// https://www.gnu.org/software/bison/manual/html_node/Multiple-start_002dsymbols.html .
+// Only the Lex function used by the generated parser is affected by this injected item.
+// Trying to inject when a previously injected item has not yet been consumed will panic.
+// Only item types that are supposed to be used as start symbols are allowed as an argument.
+func (p *parser) InjectItem(typ ItemType) {
+	if p.injecting {
+		panic("cannot inject multiple items into the token stream")
+	}
+
+	if typ <= startSymbolsStart || typ >= startSymbolsEnd {
+		panic("cannot inject symbol that isn't start symbol")
+	}
+
+	p.inject = item{typ: typ}
+	p.injecting = true
+}
+
 // expr parses any expression.
 func (p *parser) expr() Expr {
 	// Parse the starting expression.
@@ -348,11 +404,11 @@ func (p *parser) expr() Expr {
 		op := p.peek().typ
 		if !op.isOperator() {
 			// Check for subquery.
-			if op == ItemLeftBracket {
+			if op == LEFT_BRACKET {
 				expr = p.subqueryOrRangeSelector(expr, false)
 				if s, ok := expr.(*SubqueryExpr); ok {
 					// Parse optional offset.
-					if p.peek().typ == ItemOffset {
+					if p.peek().typ == OFFSET {
 						offset := p.offset()
 						s.Offset = offset
 					}
@@ -373,7 +429,7 @@ func (p *parser) expr() Expr {
 
 		returnBool := false
 		// Parse bool modifier.
-		if p.peek().typ == ItemBool {
+		if p.peek().typ == BOOL {
 			if !op.isComparisonOperator() {
 				p.errorf("bool modifier can only be used on comparison operators")
 			}
@@ -382,22 +438,22 @@ func (p *parser) expr() Expr {
 		}
 
 		// Parse ON/IGNORING clause.
-		if p.peek().typ == ItemOn || p.peek().typ == ItemIgnoring {
-			if p.peek().typ == ItemOn {
+		if p.peek().typ == ON || p.peek().typ == IGNORING {
+			if p.peek().typ == ON {
 				vecMatching.On = true
 			}
 			p.next()
 			vecMatching.MatchingLabels = p.labels()
 
 			// Parse grouping.
-			if t := p.peek().typ; t == ItemGroupLeft || t == ItemGroupRight {
+			if t := p.peek().typ; t == GROUP_LEFT || t == GROUP_RIGHT {
 				p.next()
-				if t == ItemGroupLeft {
+				if t == GROUP_LEFT {
 					vecMatching.Card = CardManyToOne
 				} else {
 					vecMatching.Card = CardOneToMany
 				}
-				if p.peek().typ == ItemLeftParen {
+				if p.peek().typ == LEFT_PAREN {
 					vecMatching.Include = p.labels()
 				}
 			}
@@ -454,35 +510,35 @@ func (p *parser) balance(lhs Expr, op ItemType, rhs Expr, vecMatching *VectorMat
 //
 func (p *parser) unaryExpr() Expr {
 	switch t := p.peek(); t.typ {
-	case ItemADD, ItemSUB:
+	case ADD, SUB:
 		p.next()
 		e := p.unaryExpr()
 
 		// Simplify unary expressions for number literals.
 		if nl, ok := e.(*NumberLiteral); ok {
-			if t.typ == ItemSUB {
+			if t.typ == SUB {
 				nl.Val *= -1
 			}
 			return nl
 		}
 		return &UnaryExpr{Op: t.typ, Expr: e}
 
-	case ItemLeftParen:
+	case LEFT_PAREN:
 		p.next()
 		e := p.expr()
-		p.expect(ItemRightParen, "paren expression")
+		p.expect(RIGHT_PAREN, "paren expression")
 
 		return &ParenExpr{Expr: e}
 	}
 	e := p.primaryExpr()
 
 	// Expression might be followed by a range selector.
-	if p.peek().typ == ItemLeftBracket {
+	if p.peek().typ == LEFT_BRACKET {
 		e = p.subqueryOrRangeSelector(e, true)
 	}
 
 	// Parse optional offset.
-	if p.peek().typ == ItemOffset {
+	if p.peek().typ == OFFSET {
 		offset := p.offset()
 
 		switch s := e.(type) {
@@ -516,7 +572,7 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 	var erange time.Duration
 	var err error
 
-	erangeStr := p.expect(ItemDuration, ctx).val
+	erangeStr := p.expect(DURATION, ctx).val
 	erange, err = parseDuration(erangeStr)
 	if err != nil {
 		p.error(err)
@@ -524,8 +580,8 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 
 	var itm item
 	if checkRange {
-		itm = p.expectOneOf(ItemRightBracket, ItemColon, ctx)
-		if itm.typ == ItemRightBracket {
+		itm = p.expectOneOf(RIGHT_BRACKET, COLON, ctx)
+		if itm.typ == RIGHT_BRACKET {
 			// Range selector.
 			vs, ok := expr.(*VectorSelector)
 			if !ok {
@@ -538,20 +594,20 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 			}
 		}
 	} else {
-		itm = p.expect(ItemColon, ctx)
+		itm = p.expect(COLON, ctx)
 	}
 
 	// Subquery.
 	var estep time.Duration
 
-	itm = p.expectOneOf(ItemRightBracket, ItemDuration, ctx)
-	if itm.typ == ItemDuration {
+	itm = p.expectOneOf(RIGHT_BRACKET, DURATION, ctx)
+	if itm.typ == DURATION {
 		estepStr := itm.val
 		estep, err = parseDuration(estepStr)
 		if err != nil {
 			p.error(err)
 		}
-		p.expect(ItemRightBracket, ctx)
+		p.expect(RIGHT_BRACKET, ctx)
 	}
 
 	return &SubqueryExpr{
@@ -580,26 +636,26 @@ func (p *parser) number(val string) float64 {
 //
 func (p *parser) primaryExpr() Expr {
 	switch t := p.next(); {
-	case t.typ == ItemNumber:
+	case t.typ == NUMBER:
 		f := p.number(t.val)
 		return &NumberLiteral{f}
 
-	case t.typ == ItemString:
+	case t.typ == STRING:
 		return &StringLiteral{p.unquoteString(t.val)}
 
-	case t.typ == ItemLeftBrace:
+	case t.typ == LEFT_BRACE:
 		// Metric selector without metric name.
 		p.backup()
 		return p.VectorSelector("")
 
-	case t.typ == ItemIdentifier:
+	case t.typ == IDENTIFIER:
 		// Check for function call.
-		if p.peek().typ == ItemLeftParen {
+		if p.peek().typ == LEFT_PAREN {
 			return p.call(t.val)
 		}
 		fallthrough // Else metric selector.
 
-	case t.typ == ItemMetricIdentifier:
+	case t.typ == METRIC_IDENTIFIER:
 		return p.VectorSelector(t.val)
 
 	case t.typ.isAggregator():
@@ -619,10 +675,10 @@ func (p *parser) primaryExpr() Expr {
 func (p *parser) labels() []string {
 	const ctx = "grouping opts"
 
-	p.expect(ItemLeftParen, ctx)
+	p.expect(LEFT_PAREN, ctx)
 
 	labels := []string{}
-	if p.peek().typ != ItemRightParen {
+	if p.peek().typ != RIGHT_PAREN {
 		for {
 			id := p.next()
 			if !isLabel(id.val) {
@@ -630,13 +686,13 @@ func (p *parser) labels() []string {
 			}
 			labels = append(labels, id.val)
 
-			if p.peek().typ != ItemComma {
+			if p.peek().typ != COMMA {
 				break
 			}
 			p.next()
 		}
 	}
-	p.expect(ItemRightParen, ctx)
+	p.expect(RIGHT_PAREN, ctx)
 
 	return labels
 }
@@ -658,8 +714,8 @@ func (p *parser) aggrExpr() *AggregateExpr {
 
 	modifiersFirst := false
 
-	if t := p.peek().typ; t == ItemBy || t == ItemWithout {
-		if t == ItemWithout {
+	if t := p.peek().typ; t == BY || t == WITHOUT {
+		if t == WITHOUT {
 			without = true
 		}
 		p.next()
@@ -667,21 +723,21 @@ func (p *parser) aggrExpr() *AggregateExpr {
 		modifiersFirst = true
 	}
 
-	p.expect(ItemLeftParen, ctx)
+	p.expect(LEFT_PAREN, ctx)
 	var param Expr
 	if agop.typ.isAggregatorWithParam() {
 		param = p.expr()
-		p.expect(ItemComma, ctx)
+		p.expect(COMMA, ctx)
 	}
 	e := p.expr()
-	p.expect(ItemRightParen, ctx)
+	p.expect(RIGHT_PAREN, ctx)
 
 	if !modifiersFirst {
-		if t := p.peek().typ; t == ItemBy || t == ItemWithout {
+		if t := p.peek().typ; t == BY || t == WITHOUT {
 			if len(grouping) > 0 {
 				p.errorf("aggregation must only contain one grouping clause")
 			}
-			if t == ItemWithout {
+			if t == WITHOUT {
 				without = true
 			}
 			p.next()
@@ -710,9 +766,9 @@ func (p *parser) call(name string) *Call {
 		p.errorf("unknown function with name %q", name)
 	}
 
-	p.expect(ItemLeftParen, ctx)
+	p.expect(LEFT_PAREN, ctx)
 	// Might be call without args.
-	if p.peek().typ == ItemRightParen {
+	if p.peek().typ == RIGHT_PAREN {
 		p.next() // Consume.
 		return &Call{fn, nil}
 	}
@@ -723,14 +779,14 @@ func (p *parser) call(name string) *Call {
 		args = append(args, e)
 
 		// Terminate if no more arguments.
-		if p.peek().typ != ItemComma {
+		if p.peek().typ != COMMA {
 			break
 		}
 		p.next()
 	}
 
 	// Call must be closed.
-	p.expect(ItemRightParen, ctx)
+	p.expect(RIGHT_PAREN, ctx)
 
 	return &Call{Func: fn, Args: args}
 }
@@ -741,7 +797,7 @@ func (p *parser) call(name string) *Call {
 //
 func (p *parser) labelSet() labels.Labels {
 	set := []labels.Label{}
-	for _, lm := range p.labelMatchers(ItemEQL) {
+	for _, lm := range p.labelMatchers(EQL) {
 		set = append(set, labels.Label{Name: lm.Name, Value: lm.Value})
 	}
 	return labels.New(set...)
@@ -756,16 +812,16 @@ func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
 
 	matchers := []*labels.Matcher{}
 
-	p.expect(ItemLeftBrace, ctx)
+	p.expect(LEFT_BRACE, ctx)
 
 	// Check if no matchers are provided.
-	if p.peek().typ == ItemRightBrace {
+	if p.peek().typ == RIGHT_BRACE {
 		p.next()
 		return matchers
 	}
 
 	for {
-		label := p.expect(ItemIdentifier, ctx)
+		label := p.expect(IDENTIFIER, ctx)
 
 		op := p.next().typ
 		if !op.isOperator() {
@@ -781,18 +837,18 @@ func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
 			p.errorf("operator must be one of %q, is %q", operators, op)
 		}
 
-		val := p.unquoteString(p.expect(ItemString, ctx).val)
+		val := p.unquoteString(p.expect(STRING, ctx).val)
 
 		// Map the item to the respective match type.
 		var matchType labels.MatchType
 		switch op {
-		case ItemEQL:
+		case EQL:
 			matchType = labels.MatchEqual
-		case ItemNEQ:
+		case NEQ:
 			matchType = labels.MatchNotEqual
-		case ItemEQLRegex:
+		case EQL_REGEX:
 			matchType = labels.MatchRegexp
-		case ItemNEQRegex:
+		case NEQ_REGEX:
 			matchType = labels.MatchNotRegexp
 		default:
 			p.errorf("item %q is not a metric match type", op)
@@ -805,23 +861,23 @@ func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
 
 		matchers = append(matchers, m)
 
-		if p.peek().typ == ItemIdentifier {
+		if p.peek().typ == IDENTIFIER {
 			p.errorf("missing comma before next identifier %q", p.peek().val)
 		}
 
 		// Terminate list if last matcher.
-		if p.peek().typ != ItemComma {
+		if p.peek().typ != COMMA {
 			break
 		}
 		p.next()
 
 		// Allow comma after each item in a multi-line listing.
-		if p.peek().typ == ItemRightBrace {
+		if p.peek().typ == RIGHT_BRACE {
 			break
 		}
 	}
 
-	p.expect(ItemRightBrace, ctx)
+	p.expect(RIGHT_BRACE, ctx)
 
 	return matchers
 }
@@ -836,14 +892,14 @@ func (p *parser) metric() labels.Labels {
 	var m labels.Labels
 
 	t := p.peek().typ
-	if t == ItemIdentifier || t == ItemMetricIdentifier {
+	if t == IDENTIFIER || t == METRIC_IDENTIFIER {
 		name = p.next().val
 		t = p.peek().typ
 	}
-	if t != ItemLeftBrace && name == "" {
+	if t != LEFT_BRACE && name == "" {
 		p.errorf("missing metric name or metric selector")
 	}
-	if t == ItemLeftBrace {
+	if t == LEFT_BRACE {
 		m = p.labelSet()
 	}
 	if name != "" {
@@ -861,7 +917,7 @@ func (p *parser) offset() time.Duration {
 	const ctx = "offset"
 
 	p.next()
-	offi := p.expect(ItemDuration, ctx)
+	offi := p.expect(DURATION, ctx)
 
 	offset, err := parseDuration(offi.val)
 	if err != nil {
@@ -879,8 +935,8 @@ func (p *parser) offset() time.Duration {
 func (p *parser) VectorSelector(name string) *VectorSelector {
 	var matchers []*labels.Matcher
 	// Parse label matching if any.
-	if t := p.peek(); t.typ == ItemLeftBrace {
-		matchers = p.labelMatchers(ItemEQL, ItemNEQ, ItemEQLRegex, ItemNEQRegex)
+	if t := p.peek(); t.typ == LEFT_BRACE {
+		matchers = p.labelMatchers(EQL, NEQ, EQL_REGEX, NEQ_REGEX)
 	}
 	// Metric name must not be set in the label matchers and before at the same time.
 	if name != "" {
@@ -966,10 +1022,10 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 			p.errorf("aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
 		p.expectType(n.Expr, ValueTypeVector, "aggregation expression")
-		if n.Op == ItemTopK || n.Op == ItemBottomK || n.Op == ItemQuantile {
+		if n.Op == TOPK || n.Op == BOTTOMK || n.Op == QUANTILE {
 			p.expectType(n.Param, ValueTypeScalar, "aggregation parameter")
 		}
-		if n.Op == ItemCountValues {
+		if n.Op == COUNT_VALUES {
 			p.expectType(n.Param, ValueTypeString, "aggregation parameter")
 		}
 
@@ -1031,7 +1087,7 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		p.checkType(n.Expr)
 
 	case *UnaryExpr:
-		if n.Op != ItemADD && n.Op != ItemSUB {
+		if n.Op != ADD && n.Op != SUB {
 			p.errorf("only + and - operators allowed for unary expressions")
 		}
 		if t := p.checkType(n.Expr); t != ValueTypeScalar && t != ValueTypeVector {

@@ -2,11 +2,11 @@ import * as React from 'react';
 import { mount, shallow } from 'enzyme';
 import Panel, { PanelOptions, PanelType } from './Panel';
 import ExpressionInput from './ExpressionInput';
-import GraphControls from './GraphControls';
-import Graph from './Graph';
+import GraphControls from './graph/GraphControls';
 import { NavLink, TabPane } from 'reactstrap';
 import TimeInput from './TimeInput';
 import DataTable from './DataTable';
+import { GraphTabContent } from './graph/GraphTabContent';
 
 describe('Panel', () => {
   const props = {
@@ -83,11 +83,12 @@ describe('Panel', () => {
     };
     const graphPanel = mount(<Panel {...props} options={options} />);
     const controls = graphPanel.find(GraphControls);
-    const graph = graphPanel.find(Graph);
-    expect(controls.prop('endTime')).toEqual(props.options.endTime);
-    expect(controls.prop('range')).toEqual(props.options.range);
-    expect(controls.prop('resolution')).toEqual(props.options.resolution);
-    expect(controls.prop('stacked')).toEqual(props.options.stacked);
-    expect(graph.prop('stacked')).toEqual(props.options.stacked);
+    graphPanel.setState({ data: { resultType: 'matrix', result: [] } });
+    const graph = graphPanel.find(GraphTabContent);
+    expect(controls.prop('endTime')).toEqual(options.endTime);
+    expect(controls.prop('range')).toEqual(options.range);
+    expect(controls.prop('resolution')).toEqual(options.resolution);
+    expect(controls.prop('stacked')).toEqual(options.stacked);
+    expect(graph.prop('stacked')).toEqual(options.stacked);
   });
 });

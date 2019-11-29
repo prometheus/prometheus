@@ -1,5 +1,5 @@
 go:
-    # Whenever the Go version is updated here, .travis.yml and
+    # Whenever the Go version is updated here,
     # .circle/config.yml should also be updated.
     version: 1.13
 repository:
