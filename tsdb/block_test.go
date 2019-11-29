@@ -168,7 +168,7 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Equals(t, n, 1)
 			},
 			nil,
-			errors.New("unexpected checksum 34815eae, expected cfc0526c"),
+			errors.New("checksum mismatch expected:cfc0526c, actual:34815eae"),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
