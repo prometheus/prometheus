@@ -3,6 +3,7 @@ import $ from 'jquery';
 import { shallow, mount } from 'enzyme';
 import Graph from './Graph';
 import ReactResizeDetector from 'react-resize-detector';
+import { Legend } from './Legend';
 
 describe('Graph', () => {
   beforeAll(() => {
@@ -67,7 +68,7 @@ describe('Graph', () => {
     describe('Legend', () => {
       it('renders a legend', () => {
         const graph = shallow(<Graph {...props} />);
-        expect(graph.find('.graph-legend .legend-item')).toHaveLength(1);
+        expect(graph.find(Legend)).toHaveLength(1);
       });
     });
   });
@@ -108,7 +109,6 @@ describe('Graph', () => {
               labels: {},
             },
           ],
-          selectedSeriesIndexes: [],
         },
         expect.anything()
       );

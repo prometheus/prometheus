@@ -2,7 +2,7 @@ import $ from 'jquery';
 import React, { PureComponent } from 'react';
 import ReactResizeDetector from 'react-resize-detector';
 
-import SeriesName from '../SeriesName';
+import { Legend } from './Legend';
 import { Metric, QueryParams } from '../types/types';
 import { isPresent } from '../utils/func';
 import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
@@ -32,30 +32,29 @@ export interface GraphSeries {
 
 interface GraphState {
   chartData: GraphSeries[];
-  selectedSeriesIndexes: number[];
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
   private chartRef = React.createRef<HTMLDivElement>();
   private $chart?: jquery.flot.plot;
   private rafID = 0;
+  private selectedSeriesIndexes: number[] = [];
 
   state = {
     chartData: normalizeData(this.props),
-    selectedSeriesIndexes: [] as number[],
   };
 
   componentDidUpdate(prevProps: GraphProps) {
     const { data, stacked } = this.props;
     if (prevProps.data !== data) {
-      this.setState({ selectedSeriesIndexes: [], chartData: normalizeData(this.props) }, this.plot);
+      this.selectedSeriesIndexes = [];
+      this.setState({ chartData: normalizeData(this.props) }, this.plot);
     } else if (prevProps.stacked !== stacked) {
-      const { selectedSeriesIndexes } = this.state;
       this.setState({ chartData: normalizeData(this.props) }, () => {
-        if (selectedSeriesIndexes.length === 0) {
+        if (this.selectedSeriesIndexes.length === 0) {
           this.plot();
         } else {
-          this.plot(this.state.chartData.filter((_, i) => selectedSeriesIndexes.includes(i)));
+          this.plot(this.state.chartData.filter((_, i) => this.selectedSeriesIndexes.includes(i)));
         }
       });
     }
@@ -91,24 +90,14 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
   }
 
-  handleSeriesSelect = (index: number) => (ev: any) => {
-    const { chartData, selectedSeriesIndexes } = this.state;
-
-    let selected = [index];
-    // Unselect.
-    if (selectedSeriesIndexes.includes(index)) {
-      selected = selectedSeriesIndexes.filter(idx => idx !== index);
-    } else if (ev.ctrlKey) {
-      selected = [...selectedSeriesIndexes, index]; // Select multiple.
-    }
-
-    this.setState({ selectedSeriesIndexes: selected });
-
+  handleSeriesSelect = (selected: number[], selectedIndex: number) => {
+    const { chartData } = this.state;
     this.plot(
-      selectedSeriesIndexes.length === 1 && selectedSeriesIndexes.includes(index)
-        ? chartData.map(toHoverColor(index, this.props.stacked))
+      this.selectedSeriesIndexes.length === 1 && this.selectedSeriesIndexes.includes(selectedIndex)
+        ? chartData.map(toHoverColor(selectedIndex, this.props.stacked))
         : chartData.filter((_, i) => selected.includes(i)) // draw only selected
     );
+    this.selectedSeriesIndexes = selected;
   };
 
   handleSeriesHover = (index: number) => () => {
@@ -132,32 +121,17 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   };
 
   render() {
-    const { selectedSeriesIndexes, chartData } = this.state;
-    const canUseHover = chartData.length > 1 && selectedSeriesIndexes.length === 0;
-
+    const { chartData } = this.state;
     return (
       <div className="graph">
         <ReactResizeDetector handleWidth onResize={this.handleResize} skipOnMount />
         <div className="graph-chart" ref={this.chartRef} />
-        <div className="graph-legend" onMouseOut={canUseHover ? this.handleLegendMouseOut : undefined}>
-          {chartData.map(({ index, color, labels }) => (
-            <div
-              style={{ opacity: selectedSeriesIndexes.length === 0 || selectedSeriesIndexes.includes(index) ? 1 : 0.5 }}
-              onClick={chartData.length > 1 ? this.handleSeriesSelect(index) : undefined}
-              onMouseOver={canUseHover ? this.handleSeriesHover(index) : undefined}
-              key={index}
-              className="legend-item"
-            >
-              <span className="legend-swatch" style={{ backgroundColor: color }}></span>
-              <SeriesName labels={labels} format />
-            </div>
-          ))}
-          {chartData.length > 1 && (
-            <div className="pl-1 mt-1 text-muted" style={{ fontSize: 13 }}>
-              Click: toggle series, CTRL + click: toggle multiple series
-            </div>
-          )}
-        </div>
+        <Legend
+          chartData={chartData}
+          onHover={this.handleSeriesHover}
+          onLegendMouseOut={this.handleLegendMouseOut}
+          onSeriesToggle={this.handleSeriesSelect}
+        />
       </div>
     );
   }
