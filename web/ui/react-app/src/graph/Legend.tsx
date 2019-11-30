@@ -22,16 +22,12 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
     const { selectedIndexes } = this.state;
 
     let selected = [index];
-    // Unselect.
-    if (selectedIndexes.includes(index)) {
-      selected = selectedIndexes.filter(idx => idx !== index);
-    } else if (ev.ctrlKey) {
+    if (ev.ctrlKey) {
+      const { chartData } = this.props;
       selected =
         // Flip the logic - In case non is selected ctrl + click should deselect clicked series.
         selectedIndexes.length === 0
-          ? this.props.chartData.reduce<number[]>((acc, _, i) => {
-              return i === index ? acc : [...acc, i];
-            }, [])
+          ? chartData.reduce<number[]>((acc, _, i) => (i === index ? acc : [...acc, i]), [])
           : [...selectedIndexes, index]; // Select multiple.
     }
 
