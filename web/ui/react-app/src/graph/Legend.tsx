@@ -9,7 +9,11 @@ interface LegendProps {
   onHover: (index: number) => (ev: SyntheticEvent<HTMLDivElement>) => void;
 }
 
-export class Legend extends PureComponent<LegendProps, { selectedIndexes: number[] }> {
+interface LegendState {
+  selectedIndexes: number[];
+}
+
+export class Legend extends PureComponent<LegendProps, LegendState> {
   state = {
     selectedIndexes: [] as number[],
   };
@@ -55,7 +59,7 @@ export class Legend extends PureComponent<LegendProps, { selectedIndexes: number
         ))}
         {chartData.length > 1 && (
           <div className="pl-1 mt-1 text-muted" style={{ fontSize: 13 }}>
-            Click: toggle series, CTRL + click: toggle multiple series
+            Click: select series, CTRL + click: toggle multiple series
           </div>
         )}
       </div>
