@@ -36,4 +36,4 @@ type Exemplars interface {
 
 	// Close the storage.
 	Close() error
-} 
+}
