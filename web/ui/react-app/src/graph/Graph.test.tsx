@@ -3,8 +3,12 @@ import $ from 'jquery';
 import { shallow, mount } from 'enzyme';
 import Graph from './Graph';
 import ReactResizeDetector from 'react-resize-detector';
+import { Legend } from './Legend';
 
 describe('Graph', () => {
+  beforeAll(() => {
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: any) => cb());
+  });
   describe('data is returned', () => {
     const props: any = {
       queryParams: {
@@ -64,14 +68,16 @@ describe('Graph', () => {
     describe('Legend', () => {
       it('renders a legend', () => {
         const graph = shallow(<Graph {...props} />);
-        expect(graph.find('.graph-legend .legend-item')).toHaveLength(1);
+        expect(graph.find(Legend)).toHaveLength(1);
       });
     });
   });
   describe('on component update', () => {
     let graph: any;
+    let spyState: any;
+    let mockPlot: any;
     beforeEach(() => {
-      jest.spyOn($, 'plot').mockImplementation(() => ({} as any));
+      mockPlot = jest.spyOn($, 'plot').mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: jest.fn() } as any);
       graph = mount(
         <Graph
           {...({
@@ -85,12 +91,13 @@ describe('Graph', () => {
           } as any)}
         />
       );
+      spyState = jest.spyOn(graph.instance(), 'setState');
     });
-    afterAll(() => {
-      jest.restoreAllMocks();
+    afterEach(() => {
+      spyState.mockReset();
+      mockPlot.mockReset();
     });
     it('should trigger state update when new data is recieved', () => {
-      const spyState = jest.spyOn(Graph.prototype, 'setState');
       graph.setProps({ data: { result: [{ values: [{}], metric: {} }] } });
       expect(spyState).toHaveBeenCalledWith(
         {
@@ -102,25 +109,22 @@ describe('Graph', () => {
               labels: {},
             },
           ],
-          selectedSeriesIndex: null,
         },
         expect.anything()
       );
     });
     it('should trigger state update when stacked prop is changed', () => {
-      const spyState = jest.spyOn(Graph.prototype, 'setState');
-      graph.setProps({ stacked: true });
+      graph.setProps({ stacked: false });
       expect(spyState).toHaveBeenCalledWith(
         {
           chartData: [
             {
               color: 'rgb(237,194,64)',
-              data: [[1572128592000, 0]],
+              data: [[1572128592000, null]],
               index: 0,
               labels: {},
             },
           ],
-          selectedSeriesIndex: null,
         },
         expect.anything()
       );
@@ -128,7 +132,7 @@ describe('Graph', () => {
   });
   describe('on unmount', () => {
     it('should call destroy plot', () => {
-      const wrapper = shallow(
+      const graph = mount(
         <Graph
           {...({
             stacked: true,
@@ -141,21 +145,17 @@ describe('Graph', () => {
           } as any)}
         />
       );
-      const spyPlotDestroy = jest.spyOn(Graph.prototype, 'componentWillUnmount');
-      wrapper.unmount();
+      const spyPlotDestroy = jest.spyOn(graph.instance(), 'componentWillUnmount');
+      graph.unmount();
       expect(spyPlotDestroy).toHaveBeenCalledTimes(1);
+      spyPlotDestroy.mockReset();
     });
   });
 
   describe('plot', () => {
-    let spyFlot: any;
-    beforeEach(() => {
-      spyFlot = jest.spyOn($, 'plot').mockImplementation(() => ({} as any));
-    });
-    afterAll(() => {
-      jest.restoreAllMocks();
-    });
     it('should not call jquery.plot if chartRef not exist', () => {
+      const mockSetData = jest.fn();
+      jest.spyOn($, 'plot').mockReturnValue({ setData: mockSetData, draw: jest.fn(), destroy: jest.fn() } as any);
       const graph = shallow(
         <Graph
           {...({
@@ -170,9 +170,12 @@ describe('Graph', () => {
         />
       );
       (graph.instance() as any).plot();
-      expect(spyFlot).not.toBeCalled();
+      expect(mockSetData).not.toBeCalled();
     });
     it('should call jquery.plot if chartRef exist', () => {
+      const mockPlot = jest
+        .spyOn($, 'plot')
+        .mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: jest.fn() } as any);
       const graph = mount(
         <Graph
           {...({
@@ -187,11 +190,11 @@ describe('Graph', () => {
         />
       );
       (graph.instance() as any).plot();
-      expect(spyFlot).toBeCalled();
+      expect(mockPlot).toBeCalled();
     });
     it('should destroy plot', () => {
-      const spyPlotDestroy = jest.fn();
-      jest.spyOn($, 'plot').mockReturnValue({ destroy: spyPlotDestroy } as any);
+      const mockDestroy = jest.fn();
+      jest.spyOn($, 'plot').mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: mockDestroy } as any);
       const graph = mount(
         <Graph
           {...({
@@ -207,17 +210,12 @@ describe('Graph', () => {
       );
       (graph.instance() as any).plot();
       (graph.instance() as any).destroyPlot();
-      expect(spyPlotDestroy).toHaveBeenCalledTimes(1);
-      jest.restoreAllMocks();
+      expect(mockDestroy).toHaveBeenCalledTimes(2);
     });
   });
   describe('plotSetAndDraw', () => {
-    afterEach(() => {
-      jest.restoreAllMocks();
-    });
     it('should call spyPlotSetAndDraw on legend hover', () => {
-      jest.spyOn($, 'plot').mockReturnValue({ setData: jest.fn(), draw: jest.fn() } as any);
-      jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: any) => cb());
+      jest.spyOn($, 'plot').mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: jest.fn() } as any);
       const graph = mount(
         <Graph
           {...({
@@ -232,7 +230,7 @@ describe('Graph', () => {
         />
       );
       (graph.instance() as any).plot(); // create chart
-      const spyPlotSetAndDraw = jest.spyOn(Graph.prototype, 'plotSetAndDraw');
+      const spyPlotSetAndDraw = jest.spyOn(graph.instance() as any, 'plotSetAndDraw');
       graph
         .find('.legend-item')
         .at(0)
@@ -240,9 +238,10 @@ describe('Graph', () => {
       expect(spyPlotSetAndDraw).toHaveBeenCalledTimes(1);
     });
     it('should call spyPlotSetAndDraw with chartDate from state as default value', () => {
-      const spySetData = jest.fn();
-      jest.spyOn($, 'plot').mockReturnValue({ setData: spySetData, draw: jest.fn() } as any);
-      jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: any) => cb());
+      const mockSetData = jest.fn();
+      const spyPlot = jest
+        .spyOn($, 'plot')
+        .mockReturnValue({ setData: mockSetData, draw: jest.fn(), destroy: jest.fn() } as any);
       const graph: any = mount(
         <Graph
           {...({
@@ -258,7 +257,8 @@ describe('Graph', () => {
       );
       (graph.instance() as any).plot(); // create chart
       graph.find('.graph-legend').simulate('mouseout');
-      expect(spySetData).toHaveBeenCalledWith(graph.state().chartData);
+      expect(mockSetData).toHaveBeenCalledWith(graph.state().chartData);
+      spyPlot.mockReset();
     });
   });
 });

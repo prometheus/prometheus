@@ -139,10 +139,10 @@ div.time-input {
     font-size: 0.75em;
     padding: 10px 5px;
     display: inline-block;
-    cursor: pointer;
 }
 
 .legend-item {
+    cursor: pointer;
     display: flex;
     align-items: center;
     padding: 0 5px;
