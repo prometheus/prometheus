@@ -213,8 +213,10 @@ func TestQueryError(t *testing.T) {
 // paramCheckerQuerier implements storage.Querier which checks the start and end times
 // in params.
 type paramCheckerQuerier struct {
-	start int64
-	end   int64
+	start    int64
+	end      int64
+	grouping []string
+	by       bool
 
 	t *testing.T
 }
@@ -222,6 +224,8 @@ type paramCheckerQuerier struct {
 func (q *paramCheckerQuerier) Select(sp *storage.SelectParams, _ ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	testutil.Equals(q.t, q.start, sp.Start)
 	testutil.Equals(q.t, q.end, sp.End)
+	testutil.Equals(q.t, q.grouping, sp.Grouping)
+	testutil.Equals(q.t, q.by, sp.By)
 
 	return errSeriesSet{err: nil}, nil, nil
 }
@@ -256,6 +260,9 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart int64
 		paramEnd   int64
+
+		paramGrouping []string
+		paramBy       bool
 	}{{
 		query: "foo",
 		start: 10,
@@ -348,12 +355,52 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 155, // 300 - 120 - 5 - 10 - 10
 		paramEnd:   490,
+	}, {
+		query: "sum by (dim1) (foo)",
+		start: 10,
+
+		paramStart:    5,
+		paramEnd:      10,
+		paramGrouping: []string{"dim1"},
+		paramBy:       true,
+	}, {
+		query: "sum without (dim1) (foo)",
+		start: 10,
+
+		paramStart:    5,
+		paramEnd:      10,
+		paramGrouping: []string{"dim1"},
+		paramBy:       false,
+	}, {
+		query: "sum by (dim1) (avg_over_time(foo[1s]))",
+		start: 10,
+
+		paramStart:    9,
+		paramEnd:      10,
+		paramGrouping: nil,
+		paramBy:       false,
+	}, {
+		query: "sum by (dim1) (max by (dim2) (foo))",
+		start: 10,
+
+		paramStart:    5,
+		paramEnd:      10,
+		paramGrouping: []string{"dim2"},
+		paramBy:       true,
+	}, {
+		query: "(max by (dim1) (foo))[5s:1s]",
+		start: 10,
+
+		paramStart:    0,
+		paramEnd:      10,
+		paramGrouping: []string{"dim1"},
+		paramBy:       true,
 	}}
 
 	for _, tc := range cases {
 		engine := NewEngine(opts)
 		queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-			return &paramCheckerQuerier{start: tc.paramStart * 1000, end: tc.paramEnd * 1000, t: t}, nil
+			return &paramCheckerQuerier{start: tc.paramStart * 1000, end: tc.paramEnd * 1000, grouping: tc.paramGrouping, by: tc.paramBy, t: t}, nil
 		})
 
 		var (

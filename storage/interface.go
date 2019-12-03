@@ -71,6 +71,9 @@ type SelectParams struct {
 
 	Step int64  // Query step size in milliseconds.
 	Func string // String representation of surrounding function or aggregation.
+
+	Grouping []string // List of label names of any fields used in aggregation.
+	By       bool     // Indicate whether it is without or by, it will be false if grouping is not used.
 }
 
 // QueryableFunc is an adapter to allow the use of ordinary functions as
