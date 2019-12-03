@@ -34,7 +34,7 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
         selected = selectedIndexes.filter(idx => idx !== index);
       } else {
         selected =
-          // Flip the logic - In case non is selected ctrl + click should deselect clicked series.
+          // Flip the logic - In case none is selected ctrl + click should deselect clicked series.
           selectedIndexes.length === 0
             ? chartData.reduce<number[]>((acc, _, i) => (i === index ? acc : [...acc, i]), [])
             : [...selectedIndexes, index]; // Select multiple.
@@ -46,6 +46,7 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
     this.setState({ selectedIndexes: selected });
     this.props.onSeriesToggle(selected, index);
   };
+
   render() {
     const { chartData, onLegendMouseOut, onHover } = this.props;
     const { selectedIndexes } = this.state;
