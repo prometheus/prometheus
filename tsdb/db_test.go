@@ -2484,8 +2484,8 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	testutil.Equals(t, 1000.0, sum)
 }
 
-// TestChunkWriter ensures that chunk segment are cut at
-// the chunk that is outside the set segment size.
+// TestChunkWriter ensures that chunk segment are cut at the set segment size and
+// that the resulted segments includes the expected chunks data.
 func TestChunkWriter(t *testing.T) {
 	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
 	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2}})
@@ -2530,7 +2530,7 @@ func TestChunkWriter(t *testing.T) {
 			expSegmentsCount: 3,
 		},
 		// 2:When the segment size is smaller than the size of 2 chunks
-		// the last segment should still keep should create a new segment.
+		// the last segment should still create a new segment.
 		{
 			chks: [][]chunks.Meta{
 				[]chunks.Meta{
@@ -2616,7 +2616,7 @@ func TestChunkWriter(t *testing.T) {
 				testutil.Ok(t, os.RemoveAll(tmpdir))
 			}()
 
-			chunkw, err := chunks.NewWriter(tmpdir, chunks.SegmentHeaderSize+int64(test.segmentSize))
+			chunkw, err := chunks.NewWriterWithSegSize(tmpdir, chunks.SegmentHeaderSize+int64(test.segmentSize))
 			testutil.Ok(t, err)
 
 			for _, chks := range test.chks {

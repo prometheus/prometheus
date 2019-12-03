@@ -119,12 +119,23 @@ const (
 	DefaultChunkSegmentSize = 512 * 1024 * 1024
 )
 
-// NewWriter returns a new writer against the given directory.
-// When the segment size argument is less than 1 it uses the DefaultChunkSegmentSize.
-func NewWriter(dir string, segmentSize int64) (*Writer, error) {
+// NewWriterWithSegSize returns a new writer against the given directory
+// and allows setting a custom size for the segments.
+func NewWriterWithSegSize(dir string, segmentSize int64) (*Writer, error) {
+	return newWriter(dir, segmentSize)
+}
+
+// NewWriter returns a new writer against the given directory
+// using the default segment size.
+func NewWriter(dir string) (*Writer, error) {
+	return newWriter(dir, DefaultChunkSegmentSize)
+}
+
+func newWriter(dir string, segmentSize int64) (*Writer, error) {
 	if segmentSize <= 0 {
 		segmentSize = DefaultChunkSegmentSize
 	}
+
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -132,13 +143,12 @@ func NewWriter(dir string, segmentSize int64) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	cw := &Writer{
+	return &Writer{
 		dirFile:     dirFile,
 		n:           0,
 		crc32:       newCRC32(),
 		segmentSize: segmentSize,
-	}
-	return cw, nil
+	}, nil
 }
 
 func (w *Writer) tail() *os.File {
@@ -315,17 +325,17 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 
 	for i, chk := range chks {
 		// Each chunk contains: data length + encoding + the data itself + crc32
-		currentChkSize := int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
-		currentChkSize += ChunkEncodingSize              // The chunk encoding.
-		currentChkSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
-		currentChkSize += crc32.Size                     // The 4 bytes of crc32.
-		batchSize += currentChkSize
+		chkSize := int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
+		chkSize += ChunkEncodingSize              // The chunk encoding.
+		chkSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
+		chkSize += crc32.Size                     // The 4 bytes of crc32.
+		batchSize += chkSize
 
 		// Cut a new batch when it is not the first chunk(to avoid empty segments) and
 		// the batch is too large to fit in the current segment.
 		cutNewBatch := (i != 0) && (batchSize+SegmentHeaderSize > w.segmentSize)
 
-		// When the segment already has some data the
+		// When the segment already has some data than
 		// the first batch size calculation should account for that.
 		if firstBatch && w.n > SegmentHeaderSize {
 			cutNewBatch = batchSize+w.n > w.segmentSize
@@ -338,7 +348,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 			batchStart = i
 			batches = append(batches, []Meta{})
 			batchID++
-			batchSize = currentChkSize
+			batchSize = chkSize
 		}
 		batches[batchID] = chks[batchStart : i+1]
 	}
@@ -381,7 +391,7 @@ func (w *Writer) writeChunks(chks []Meta) error {
 		// the data starts for this chunk.
 		//
 		// The upper 4 bytes are for the segment index and
-		// The lower 4 bytes are for the segment offset where to start reading this chunk.
+		// the lower 4 bytes are for the segment offset where to start reading this chunk.
 		chk.Ref = seq | uint64(w.n)
 
 		n := binary.PutUvarint(w.buf[:], uint64(len(chk.Chunk.Bytes())))
@@ -548,9 +558,6 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
-	}
-	if chkDataLen == 0 {
-		return nil, errors.Errorf("reading chunk with zero length")
 	}
 
 	chkEncStart := chkStart + n
