@@ -4,6 +4,7 @@ import { GraphSeries } from './Graph';
 
 interface LegendProps {
   chartData: GraphSeries[];
+  shouldReset: boolean;
   onLegendMouseOut: (ev: SyntheticEvent<HTMLDivElement>) => void;
   onSeriesToggle: (selected: number[], index: number) => void;
   onHover: (index: number) => (ev: SyntheticEvent<HTMLDivElement>) => void;
@@ -17,6 +18,11 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
   state = {
     selectedIndexes: [] as number[],
   };
+  componentDidUpdate(prevProps: LegendProps) {
+    if (this.props.shouldReset && prevProps.shouldReset !== this.props.shouldReset) {
+      this.setState({ selectedIndexes: [] });
+    }
+  }
   handleSeriesSelect = (index: number) => (ev: any) => {
     // TODO: add proper event type
     const { selectedIndexes } = this.state;
@@ -24,11 +30,17 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
     let selected = [index];
     if (ev.ctrlKey) {
       const { chartData } = this.props;
-      selected =
-        // Flip the logic - In case non is selected ctrl + click should deselect clicked series.
-        selectedIndexes.length === 0
-          ? chartData.reduce<number[]>((acc, _, i) => (i === index ? acc : [...acc, i]), [])
-          : [...selectedIndexes, index]; // Select multiple.
+      if (selectedIndexes.includes(index)) {
+        selected = selectedIndexes.filter(idx => idx !== index);
+      } else {
+        selected =
+          // Flip the logic - In case non is selected ctrl + click should deselect clicked series.
+          selectedIndexes.length === 0
+            ? chartData.reduce<number[]>((acc, _, i) => (i === index ? acc : [...acc, i]), [])
+            : [...selectedIndexes, index]; // Select multiple.
+      }
+    } else if (selectedIndexes.length === 1 && selectedIndexes.includes(index)) {
+      selected = [];
     }
 
     this.setState({ selectedIndexes: selected });

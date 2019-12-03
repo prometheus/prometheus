@@ -127,6 +127,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         <ReactResizeDetector handleWidth onResize={this.handleResize} skipOnMount />
         <div className="graph-chart" ref={this.chartRef} />
         <Legend
+          shouldReset={this.selectedSeriesIndexes.length === 0}
           chartData={chartData}
           onHover={this.handleSeriesHover}
           onLegendMouseOut={this.handleLegendMouseOut}
