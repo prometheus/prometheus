@@ -852,8 +852,12 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	typeParam := strings.ToLower(r.URL.Query().Get("type"))
 
 	if typeParam != "" && typeParam != "alert" && typeParam != "record" {
-		level.Warn(api.logger).Log("msg", "Invalid type param recieved. Will send all rules.")
+		err := errors.Errorf("invalid query parameter type='%v'", typeParam)
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+
+	returnAlerts := typeParam == "" || typeParam == "alert"
+	returnRecording := typeParam == "" || typeParam == "record"
 
 	for i, grp := range ruleGroups {
 		apiRuleGroup := &RuleGroup{
@@ -869,58 +873,39 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			if r.LastError() != nil {
 				lastError = r.LastError().Error()
 			}
-			if typeParam == "alert" {
-				alert, ok := r.(*rules.AlertingRule)
-				if ok {
-					apiRuleGroup.Rules = append(apiRuleGroup.Rules, alertingRule{
-						Name:        alert.Name(),
-						Query:       alert.Query().String(),
-						Duration:    alert.Duration().Seconds(),
-						Labels:      alert.Labels(),
-						Annotations: alert.Annotations(),
-						Alerts:      rulesAlertsToAPIAlerts(alert.ActiveAlerts()),
-						Health:      alert.Health(),
-						LastError:   lastError,
-					})
+			switch rule := r.(type) {
+			case *rules.AlertingRule:
+				if !returnAlerts {
+					break
 				}
-			} else if typeParam == "record" {
-				rec, ok := r.(*rules.RecordingRule)
-				if ok {
-					apiRuleGroup.Rules = append(apiRuleGroup.Rules, recordingRule{
-						Name:      rec.Name(),
-						Query:     rec.Query().String(),
-						Labels:    rec.Labels(),
-						Health:    rec.Health(),
-						LastError: lastError,
-					})
+				enrichedRule = alertingRule{
+					Name:        rule.Name(),
+					Query:       rule.Query().String(),
+					Duration:    rule.Duration().Seconds(),
+					Labels:      rule.Labels(),
+					Annotations: rule.Annotations(),
+					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Health:      rule.Health(),
+					LastError:   lastError,
+					Type:        "alerting",
 				}
-			} else {
-				switch rule := r.(type) {
-				case *rules.AlertingRule:
-					enrichedRule = alertingRule{
-						Name:        rule.Name(),
-						Query:       rule.Query().String(),
-						Duration:    rule.Duration().Seconds(),
-						Labels:      rule.Labels(),
-						Annotations: rule.Annotations(),
-						Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
-						Health:      rule.Health(),
-						LastError:   lastError,
-						Type:        "alerting",
-					}
-				case *rules.RecordingRule:
-					enrichedRule = recordingRule{
-						Name:      rule.Name(),
-						Query:     rule.Query().String(),
-						Labels:    rule.Labels(),
-						Health:    rule.Health(),
-						LastError: lastError,
-						Type:      "recording",
-					}
-				default:
-					err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
-					return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+			case *rules.RecordingRule:
+				if !returnRecording {
+					break
 				}
+				enrichedRule = recordingRule{
+					Name:      rule.Name(),
+					Query:     rule.Query().String(),
+					Labels:    rule.Labels(),
+					Health:    rule.Health(),
+					LastError: lastError,
+					Type:      "recording",
+				}
+			default:
+				err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
+				return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+			}
+			if enrichedRule != nil {
 				apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
 			}
 		}
