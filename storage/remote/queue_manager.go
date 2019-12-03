@@ -500,7 +500,7 @@ func (t *QueueManager) updateShardsLoop() {
 			// to stay close to shardUpdateDuration.
 			select {
 			case t.reshardChan <- desiredShards:
-				level.Info(t.logger).Log("msg", "Remote storage resharding", "from", t.numShards, "to", numShards)
+				level.Info(t.logger).Log("msg", "Remote storage resharding", "from", t.numShards, "to", desiredShards)
 				t.numShards = desiredShards
 			default:
 				level.Info(t.logger).Log("msg", "Currently resharding, skipping.")
@@ -565,6 +565,7 @@ func (t *QueueManager) calculateDesiredShards() int {
 		timePerSample = samplesOutDuration / samplesOutRate
 		desiredShards = timePerSample * (samplesInRate + t.integralAccumulator)
 	)
+	t.desiredNumShards.Set(desiredShards)
 	level.Debug(t.logger).Log("msg", "QueueManager.calculateDesiredShards",
 		"samplesInRate", samplesInRate,
 		"samplesOutRate", samplesOutRate,
@@ -591,7 +592,6 @@ func (t *QueueManager) calculateDesiredShards() int {
 	}
 
 	numShards := int(math.Ceil(desiredShards))
-	t.desiredNumShards.Set(float64(numShards))
 	if numShards > t.cfg.MaxShards {
 		numShards = t.cfg.MaxShards
 	} else if numShards < t.cfg.MinShards {
