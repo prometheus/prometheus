@@ -137,7 +137,7 @@ func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return t.droppedTargets
 }
 
-func (t testTargetRetriever) setMetadataStoreForTargets(identifier string, metadata scrape.MetricMetadataStore) error {
+func (t *testTargetRetriever) SetMetadataStoreForTargets(identifier string, metadata scrape.MetricMetadataStore) error {
 	targets, ok := t.activeTargets[identifier]
 
 	if !ok {
@@ -149,6 +149,14 @@ func (t testTargetRetriever) setMetadataStoreForTargets(identifier string, metad
 	}
 
 	return nil
+}
+
+func (t *testTargetRetriever) ResetMetadataStore() {
+	for _, at := range t.activeTargets {
+		for _, tt := range at {
+			tt.SetMetadataStore(&testMetaStore{})
+		}
+	}
 }
 
 type testAlertmanagerRetriever struct{}
@@ -302,7 +310,7 @@ func TestEndpoints(t *testing.T) {
 			rulesRetriever:        algr,
 		}
 
-		testEndpoints(t, api, true)
+		testEndpoints(t, api, testTargetRetriever, true)
 	})
 
 	// Run all the API tests against a API that is wired to forward queries via
@@ -366,7 +374,7 @@ func TestEndpoints(t *testing.T) {
 			rulesRetriever:        algr,
 		}
 
-		testEndpoints(t, api, false)
+		testEndpoints(t, api, testTargetRetriever, false)
 	})
 
 }
@@ -449,31 +457,8 @@ func setupTestTargetRetriever(t *testing.T) *testTargetRetriever {
 			Active: false,
 		},
 	}
-	targetRetriever := newTestTargetRetriever(targets)
 
-	targetRetriever.setMetadataStoreForTargets("test", &testMetaStore{
-		Metadata: []scrape.MetricMetadata{
-			{
-				Metric: "go_threads",
-				Type:   textparse.MetricTypeGauge,
-				Help:   "Number of OS threads created.",
-				Unit:   "",
-			},
-		},
-	})
-
-	targetRetriever.setMetadataStoreForTargets("blackbox", &testMetaStore{
-		Metadata: []scrape.MetricMetadata{
-			{
-				Metric: "prometheus_tsdb_storage_blocks_bytes",
-				Type:   textparse.MetricTypeGauge,
-				Help:   "The number of bytes that are currently used for local storage by all blocks.",
-				Unit:   "",
-			},
-		},
-	})
-
-	return targetRetriever
+	return newTestTargetRetriever(targets)
 }
 
 func setupRemote(s storage.Storage) *httptest.Server {
@@ -531,8 +516,13 @@ func setupRemote(s storage.Storage) *httptest.Server {
 	return httptest.NewServer(handler)
 }
 
-func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
+func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI bool) {
 	start := time.Unix(0, 0)
+
+	type targetMetadata struct {
+		identifier string
+		metadata   []scrape.MetricMetadata
+	}
 
 	type test struct {
 		endpoint apiFunc
@@ -541,6 +531,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 		response interface{}
 		errType  errorType
 		sorter   func(interface{})
+		metadata []targetMetadata
 	}
 
 	var tests = []test{
@@ -959,6 +950,19 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			query: url.Values{
 				"metric": []string{"go_threads"},
 			},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created.",
+							Unit:   "",
+						},
+					},
+				},
+			},
 			response: []metricMetadata{
 				{
 					Target: labels.FromMap(map[string]string{
@@ -976,6 +980,19 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			query: url.Values{
 				"match_target": []string{"{job=\"blackbox\"}"},
 			},
+			metadata: []targetMetadata{
+				{
+					identifier: "blackbox",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "prometheus_tsdb_storage_blocks_bytes",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "The number of bytes that are currently used for local storage by all blocks.",
+							Unit:   "",
+						},
+					},
+				},
+			},
 			response: []metricMetadata{
 				{
 					Target: labels.FromMap(map[string]string{
@@ -991,6 +1008,30 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 		// Without a target or metric.
 		{
 			endpoint: api.targetMetadata,
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created.",
+							Unit:   "",
+						},
+					},
+				},
+				{
+					identifier: "blackbox",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "prometheus_tsdb_storage_blocks_bytes",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "The number of bytes that are currently used for local storage by all blocks.",
+							Unit:   "",
+						},
+					},
+				},
+			},
 			response: []metricMetadata{
 				{
 					Target: labels.FromMap(map[string]string{
@@ -1024,7 +1065,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			query: url.Values{
 				"match_target": []string{"{job=\"non-existentblackbox\"}"},
 			},
-			errType: errorNotFound,
+			response: []metricMetadata{},
 		},
 		{
 			endpoint: api.alertmanagers,
@@ -1040,6 +1081,143 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 					},
 				},
 			},
+		},
+		// With metadata available.
+		{
+			endpoint: api.metricMetadata,
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "prometheus_engine_query_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "Query timings",
+							Unit:   "",
+						},
+						{
+							Metric: "go_info",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Information about the Go environment.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			response: map[string]metadataSet{
+				"prometheus_engine_query_duration_seconds": metadataSet{{textparse.MetricTypeSummary, "Query timings", ""}: struct{}{}},
+				"go_info": metadataSet{{textparse.MetricTypeGauge, "Information about the Go environment.", ""}: struct{}{}},
+			},
+		},
+		// With duplicate metadata for a metric that comes from different targets.
+		{
+			endpoint: api.metricMetadata,
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+					},
+				},
+				{
+					identifier: "blackbox",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			response: map[string]metadataSet{
+				"go_threads": metadataSet{{textparse.MetricTypeGauge, "Number of OS threads created", ""}: struct{}{}},
+			},
+		},
+		// With non-duplicate metadata for the same metric from different targets.
+		{
+			endpoint: api.metricMetadata,
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+					},
+				},
+				{
+					identifier: "blackbox",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads that were created.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			response: map[string]metadataSet{
+				"go_threads": metadataSet{
+					{textparse.MetricTypeGauge, "Number of OS threads created", ""}:            struct{}{},
+					{textparse.MetricTypeGauge, "Number of OS threads that were created.", ""}: struct{}{},
+				},
+			},
+		},
+		// With a limit for the number of metrics returned
+		{
+			endpoint: api.metricMetadata,
+			query: url.Values{
+				"limit": []string{"1"},
+			},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+						{
+							Metric: "prometheus_engine_query_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "Query Timmings.",
+							Unit:   "",
+						},
+					},
+				},
+				{
+					identifier: "blackbox",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			response: map[string]metadataSet{
+				"go_threads": metadataSet{{textparse.MetricTypeGauge, "Number of OS threads created", ""}: struct{}{}},
+			},
+		},
+		// With no available metadata
+		{
+			endpoint: api.metricMetadata,
+			response: map[string]metadataSet{},
 		},
 		{
 			endpoint: api.serveConfig,
@@ -1168,6 +1346,12 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
+			tr.ResetMetadataStore()
+			for _, tm := range test.metadata {
+				tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata})
+			}
+
 			res := test.endpoint(req.WithContext(ctx))
 			assertAPIError(t, res.err, test.errType)
 
