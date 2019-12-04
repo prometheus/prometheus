@@ -55,55 +55,62 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-type testTargetRetriever struct{}
+type testTargetRetriever struct {
+	activeTargets  map[string][]*scrape.Target
+	droppedTargets map[string][]*scrape.Target
+}
+
+type testTargetParams struct {
+	Identifier       string
+	Labels           []labels.Label
+	DiscoveredLabels []labels.Label
+	Params           url.Values
+	Reports          []*testReport
+	Active           bool
+}
+
+type testReport struct {
+	Start    time.Time
+	Duration time.Duration
+	Error    error
+}
+
+func newTestTargetRetriever(targetsInfo []*testTargetParams) *testTargetRetriever {
+	var activeTargets map[string][]*scrape.Target
+	var droppedTargets map[string][]*scrape.Target
+	activeTargets = make(map[string][]*scrape.Target)
+	droppedTargets = make(map[string][]*scrape.Target)
+
+	for _, t := range targetsInfo {
+		nt := scrape.NewTarget(t.Labels, t.DiscoveredLabels, t.Params)
+
+		for _, r := range t.Reports {
+			nt.Report(r.Start, r.Duration, r.Error)
+		}
+
+		if t.Active {
+			activeTargets[t.Identifier] = []*scrape.Target{nt}
+		} else {
+			droppedTargets[t.Identifier] = []*scrape.Target{nt}
+		}
+	}
+
+	return &testTargetRetriever{
+		activeTargets:  activeTargets,
+		droppedTargets: droppedTargets,
+	}
+}
 
 var (
 	scrapeStart = time.Now().Add(-11 * time.Second)
 )
 
 func (t testTargetRetriever) TargetsActive() map[string][]*scrape.Target {
-	testTarget := scrape.NewTarget(
-		labels.FromMap(map[string]string{
-			model.SchemeLabel:      "http",
-			model.AddressLabel:     "example.com:8080",
-			model.MetricsPathLabel: "/metrics",
-			model.JobLabel:         "test",
-		}),
-		nil,
-		url.Values{},
-	)
-	testTarget.Report(scrapeStart, 70*time.Millisecond, nil)
-	blackboxTarget := scrape.NewTarget(
-		labels.FromMap(map[string]string{
-			model.SchemeLabel:      "http",
-			model.AddressLabel:     "localhost:9115",
-			model.MetricsPathLabel: "/probe",
-			model.JobLabel:         "blackbox",
-		}),
-		nil,
-		url.Values{"target": []string{"example.com"}},
-	)
-	blackboxTarget.Report(scrapeStart, 100*time.Millisecond, errors.New("failed"))
-	return map[string][]*scrape.Target{
-		"test":     {testTarget},
-		"blackbox": {blackboxTarget},
-	}
+	return t.activeTargets
 }
+
 func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
-	return map[string][]*scrape.Target{
-		"blackbox": {
-			scrape.NewTarget(
-				nil,
-				labels.FromMap(map[string]string{
-					model.AddressLabel:     "http://dropped.example.com:9115",
-					model.MetricsPathLabel: "/probe",
-					model.SchemeLabel:      "http",
-					model.JobLabel:         "blackbox",
-				}),
-				url.Values{},
-			),
-		},
-	}
+	return t.droppedTargets
 }
 
 type testAlertmanagerRetriever struct{}
@@ -243,10 +250,53 @@ func TestEndpoints(t *testing.T) {
 
 		algr.RuleGroups()
 
+		targets := []*testTargetParams{
+			{
+				Identifier: "test",
+				Labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "example.com:8080",
+					model.MetricsPathLabel: "/metrics",
+					model.JobLabel:         "test",
+				}),
+				DiscoveredLabels: nil,
+				Params:           url.Values{},
+				Reports:          []*testReport{{scrapeStart, 70 * time.Millisecond, nil}},
+				Active:           true,
+			},
+			{
+				Identifier: "blackbox",
+				Labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "localhost:9115",
+					model.MetricsPathLabel: "/probe",
+					model.JobLabel:         "blackbox",
+				}),
+				DiscoveredLabels: nil,
+				Params:           url.Values{"target": []string{"example.com"}},
+				Reports:          []*testReport{{scrapeStart, 100 * time.Millisecond, errors.New("failed")}},
+				Active:           true,
+			},
+			{
+				Identifier: "blackbox",
+				Labels:     nil,
+				DiscoveredLabels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "http://dropped.example.com:9115",
+					model.MetricsPathLabel: "/probe",
+					model.JobLabel:         "blackbox",
+				}),
+				Params: url.Values{},
+				Active: false,
+			},
+		}
+
+		testTargetRetriever := newTestTargetRetriever(targets)
+
 		api := &API{
 			Queryable:             suite.Storage(),
 			QueryEngine:           suite.QueryEngine(),
-			targetRetriever:       testTargetRetriever{},
+			targetRetriever:       testTargetRetriever,
 			alertmanagerRetriever: testAlertmanagerRetriever{},
 			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
@@ -305,10 +355,53 @@ func TestEndpoints(t *testing.T) {
 
 		algr.RuleGroups()
 
+		targets := []*testTargetParams{
+			{
+				Identifier: "test",
+				Labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "example.com:8080",
+					model.MetricsPathLabel: "/metrics",
+					model.JobLabel:         "test",
+				}),
+				DiscoveredLabels: nil,
+				Params:           url.Values{},
+				Reports:          []*testReport{{scrapeStart, 70 * time.Millisecond, nil}},
+				Active:           true,
+			},
+			{
+				Identifier: "blackbox",
+				Labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "localhost:9115",
+					model.MetricsPathLabel: "/probe",
+					model.JobLabel:         "blackbox",
+				}),
+				DiscoveredLabels: nil,
+				Params:           url.Values{"target": []string{"example.com"}},
+				Reports:          []*testReport{{scrapeStart, 100 * time.Millisecond, errors.New("failed")}},
+				Active:           true,
+			},
+			{
+				Identifier: "blackbox",
+				Labels:     nil,
+				DiscoveredLabels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "http://dropped.example.com:9115",
+					model.MetricsPathLabel: "/probe",
+					model.JobLabel:         "blackbox",
+				}),
+				Params: url.Values{},
+				Active: false,
+			},
+		}
+
+		testTargetRetriever := newTestTargetRetriever(targets)
+
 		api := &API{
 			Queryable:             remote,
 			QueryEngine:           suite.QueryEngine(),
-			targetRetriever:       testTargetRetriever{},
+			targetRetriever:       testTargetRetriever,
 			alertmanagerRetriever: testAlertmanagerRetriever{},
 			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
