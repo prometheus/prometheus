@@ -3,8 +3,8 @@ package targets
 import (
 	"encoding/json"
 	"log"
-	"os"
 	"io/ioutil"
+	"os"
 )
 
 type Label struct{
