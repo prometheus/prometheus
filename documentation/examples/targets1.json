@@ -1,0 +1,1 @@
+[{"targets":["localhost:9091"],"labels":{"env":"prod","job":"status","id":""}},{"targets":["localhost:8080"],"labels":{"env":"prod","job":"status","id":"ABCDEF11"}}]
