@@ -1,9 +1,1 @@
-[
-	{
-		"targets": [ "localhost:9090", "localhost:8080" ],
-		"labels": {
-				"env": "prod",
-				"job": "status"
-			}
-	}
-]
+[{"targets":["localhost:9090"],"labels":{"env":"prod","job":"status","id":""}},{"targets":["localhost:8080"],"labels":{"env":"prod","job":"status","id":"ABCDEF1"}},{"targets":["localhost:8081"],"labels":{"env":"prod","job":"status","id":"ABCDEF1"}},{"targets":["localhost:8082"],"labels":{"env":"prod","job":"status","id":"ABCDEF1"}}]

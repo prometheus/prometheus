@@ -52,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/handler/targets"
 )
 
 const (
@@ -290,6 +291,8 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
 	r.Post("/admin/tsdb/clean_tombstones", wrap(api.cleanTombstones))
 	r.Post("/admin/tsdb/snapshot", wrap(api.snapshot))
+
+	r.Post("/admin/targets/add_target", wrap(api.addTarget))
 
 	r.Put("/admin/tsdb/delete_series", wrap(api.deleteSeries))
 	r.Put("/admin/tsdb/clean_tombstones", wrap(api.cleanTombstones))
@@ -1126,6 +1129,39 @@ func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, extern
 		return err
 	}
 	return seriesHandleFn(set)
+}
+
+func (api *API) addTarget(r *http.Request) apiFuncResult {
+	if !api.enableAdmin {
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "error parsing form values")}, nil, nil}
+	}
+
+	if len(r.Form["id"]) == 0 {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no id parameter provided")}, nil, nil}
+	}
+
+	if len(r.Form["url"]) == 0 {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no url parameter provided")}, nil, nil}
+	}
+
+	target_id := r.FormValue("id")
+	target_url := r.FormValue("url")
+
+	// lookup goes here
+
+	// addTarget function: curl -X POST -g 'http://localhost:9090/api/v1/admin/targets/add_target?id=ABCDEF1&url=localhost:8082'
+	if !targets.AddTargetToConfig(target_id, target_url) {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("could not add target")}, nil, nil}
+	}
+
+	return apiFuncResult{struct {
+			TargetId string `json:"id"`
+			TargetUrl string `json:"url"`
+	}{target_id, target_url}, nil, nil, nil}
 }
 
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {
