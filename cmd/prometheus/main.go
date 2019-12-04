@@ -59,6 +59,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
+	"github.com/prometheus/prometheus/util/hashutil"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -334,6 +335,10 @@ func main() {
 	level.Info(logger).Log("host_details", prom_runtime.Uname())
 	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
 	level.Info(logger).Log("vm_limits", prom_runtime.VmLimits())
+
+	// test function
+	level.Info(logger).Log("get_hash", hashutil.GetHash(39.7420, -104.9915))
+
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}

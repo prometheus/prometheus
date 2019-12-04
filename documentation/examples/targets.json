@@ -1,0 +1,9 @@
+[
+	{
+		"targets": [ "localhost:9090", "localhost:8080" ],
+		"labels": {
+				"env": "prod",
+				"job": "status"
+			}
+	}
+]
