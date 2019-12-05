@@ -38,6 +38,10 @@ type parser struct {
 
 	inject    item
 	injecting bool
+
+	switchSymbols []ItemType
+
+	generatedParserResult Node
 }
 
 // ParseErr wraps a parsing error with line and position context.
@@ -340,11 +344,6 @@ func (p *parser) recover(errp *error) {
 	p.lex.close()
 }
 
-// yySymType is the Type the yacc generated parser expects for lexer items.
-//
-// For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
-type yySymType item
-
 // Lex is expected by the yyLexer interface of the yacc generated parser.
 // It writes the next item provided by the lexer to the provided pointer address.
 // Comments are skipped.
@@ -356,20 +355,29 @@ type yySymType item
 // For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Lex(lval *yySymType) int {
 	if p.injecting {
-		*lval = yySymType(p.inject)
+		lval.item = p.inject
 		p.injecting = false
 	} else {
-		*lval = yySymType(p.next())
+		lval.item = p.next()
 	}
 
-	return int(item(*lval).typ)
+	typ := lval.item.typ
+
+	for _, t := range p.switchSymbols {
+		if t == typ {
+			p.InjectItem(0)
+		}
+	}
+
+	return int(typ)
 }
 
 // Error is expected by the yyLexer interface of the yacc generated parser.
 //
+// It is a no-op since the parsers error routines are triggered
+// by mechanisms that allow more fine grained control
 // For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Error(e string) {
-	p.errorf(e)
 }
 
 // InjectItem allows injecting a single item at the beginning of the token stream
@@ -384,7 +392,7 @@ func (p *parser) InjectItem(typ ItemType) {
 		panic("cannot inject multiple items into the token stream")
 	}
 
-	if typ <= startSymbolsStart || typ >= startSymbolsEnd {
+	if typ != 0 && (typ <= startSymbolsStart || typ >= startSymbolsEnd) {
 		panic("cannot inject symbol that isn't start symbol")
 	}
 
@@ -933,14 +941,18 @@ func (p *parser) offset() time.Duration {
 //		[<metric_identifier>] <label_matchers>
 //
 func (p *parser) VectorSelector(name string) *VectorSelector {
-	var matchers []*labels.Matcher
+	ret := &VectorSelector{
+		Name: name,
+	}
 	// Parse label matching if any.
 	if t := p.peek(); t.typ == LEFT_BRACE {
-		matchers = p.labelMatchers(EQL, NEQ, EQL_REGEX, NEQ_REGEX)
+		p.generatedParserResult = ret
+
+		p.parseGenerated(START_LABELS, []ItemType{RIGHT_BRACE, EOF})
 	}
 	// Metric name must not be set in the label matchers and before at the same time.
 	if name != "" {
-		for _, m := range matchers {
+		for _, m := range ret.LabelMatchers {
 			if m.Name == labels.MetricName {
 				p.errorf("metric name must not be set twice: %q or %q", name, m.Value)
 			}
@@ -950,16 +962,16 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 		if err != nil {
 			panic(err) // Must not happen with metric.Equal.
 		}
-		matchers = append(matchers, m)
+		ret.LabelMatchers = append(ret.LabelMatchers, m)
 	}
 
-	if len(matchers) == 0 {
+	if len(ret.LabelMatchers) == 0 {
 		p.errorf("vector selector must contain label matchers or metric name")
 	}
 	// A Vector selector must contain at least one non-empty matcher to prevent
 	// implicit selection of all metrics (e.g. by a typo).
 	notEmpty := false
-	for _, lm := range matchers {
+	for _, lm := range ret.LabelMatchers {
 		if !lm.Matches("") {
 			notEmpty = true
 			break
@@ -969,10 +981,7 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 		p.errorf("vector selector must contain at least one non-empty matcher")
 	}
 
-	return &VectorSelector{
-		Name:          name,
-		LabelMatchers: matchers,
-	}
+	return ret
 }
 
 // expectType checks the type of the node and raises an error if it
@@ -1126,4 +1135,51 @@ func parseDuration(ds string) (time.Duration, error) {
 		return 0, errors.New("duration must be greater than 0")
 	}
 	return time.Duration(dur), nil
+}
+
+// parseGenerated invokes the yacc generated parser.
+// The generated parser gets the provided startSymbol injected into
+// the lexer stream, based on which grammar will be used.
+//
+// The generated parser will consume the lexer Stream until one of the
+// tokens listed in switchSymbols is encountered. switchSymbols
+// should at least contain EOF
+func (p *parser) parseGenerated(startSymbol ItemType, switchSymbols []ItemType) Node {
+	p.InjectItem(startSymbol)
+
+	p.switchSymbols = switchSymbols
+
+	yyParse(p)
+
+	return p.generatedParserResult
+
+}
+
+func (p *parser) newLabelMatcher(label item, operator item, value item) *labels.Matcher {
+	op := operator.typ
+	val := p.unquoteString(value.val)
+
+	// Map the item to the respective match type.
+	var matchType labels.MatchType
+	switch op {
+	case EQL:
+		matchType = labels.MatchEqual
+	case NEQ:
+		matchType = labels.MatchNotEqual
+	case EQL_REGEX:
+		matchType = labels.MatchRegexp
+	case NEQ_REGEX:
+		matchType = labels.MatchNotRegexp
+	default:
+		// This should never happen, since the error should have been chaught
+		// by the generated parser.
+		panic("invalid operator")
+	}
+
+	m, err := labels.NewMatcher(matchType, label.val, val)
+	if err != nil {
+		p.error(err)
+	}
+
+	return m
 }

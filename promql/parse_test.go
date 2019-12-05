@@ -860,6 +860,16 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: `foo{bar='}'}`,
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: 0,
+			LabelMatchers: []*labels.Matcher{
+				mustLabelMatcher(labels.MatchEqual, "bar", "}"),
+				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+			},
+		},
+	}, {
 		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`,
 		expected: &VectorSelector{
 			Name:   "foo",
