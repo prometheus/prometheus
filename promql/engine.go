@@ -584,6 +584,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		case *VectorSelector:
 			params.Start = params.Start - durationMilliseconds(LookbackDelta)
 			params.Func = extractFuncFromPath(path)
+			params.By, params.Grouping = extractGroupsFromPath(path)
 			if n.Offset > 0 {
 				offsetMilliseconds := durationMilliseconds(n.Offset)
 				params.Start = params.Start - offsetMilliseconds
@@ -600,6 +601,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		case *MatrixSelector:
 			params.Func = extractFuncFromPath(path)
+			params.Range = durationMilliseconds(n.Range)
 			// For all matrix queries we want to ensure that we have (end-start) + range selected
 			// this way we have `range` data before the start time
 			params.Start = params.Start - durationMilliseconds(n.Range)
@@ -639,6 +641,18 @@ func extractFuncFromPath(p []Node) string {
 		return ""
 	}
 	return extractFuncFromPath(p[:len(p)-1])
+}
+
+// extractGroupsFromPath parses vector outer function and extracts grouping information if by or without was used.
+func extractGroupsFromPath(p []Node) (bool, []string) {
+	if len(p) == 0 {
+		return false, nil
+	}
+	switch n := p[len(p)-1].(type) {
+	case *AggregateExpr:
+		return !n.Without, n.Grouping
+	}
+	return false, nil
 }
 
 func checkForSeriesSetExpansion(ctx context.Context, expr Expr) {
