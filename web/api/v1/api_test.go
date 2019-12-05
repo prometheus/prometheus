@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -55,55 +56,98 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-type testTargetRetriever struct{}
+// testMetaStore satisfies the scrape.MetricMetadataStore interface.
+// It is used to inject specific metadata as part of a test case.
+type testMetaStore struct {
+	Metadata []scrape.MetricMetadata
+}
+
+func (s *testMetaStore) ListMetadata() []scrape.MetricMetadata {
+	return s.Metadata
+}
+
+func (s *testMetaStore) GetMetadata(metric string) (scrape.MetricMetadata, bool) {
+	for _, m := range s.Metadata {
+		if metric == m.Metric {
+			return m, true
+		}
+	}
+
+	return scrape.MetricMetadata{}, false
+}
+
+// testTargetRetriever represents a list of targets to scrape.
+// It is used to represent targets as part of test cases.
+type testTargetRetriever struct {
+	activeTargets  map[string][]*scrape.Target
+	droppedTargets map[string][]*scrape.Target
+}
+
+type testTargetParams struct {
+	Identifier       string
+	Labels           []labels.Label
+	DiscoveredLabels []labels.Label
+	Params           url.Values
+	Reports          []*testReport
+	Active           bool
+}
+
+type testReport struct {
+	Start    time.Time
+	Duration time.Duration
+	Error    error
+}
+
+func newTestTargetRetriever(targetsInfo []*testTargetParams) *testTargetRetriever {
+	var activeTargets map[string][]*scrape.Target
+	var droppedTargets map[string][]*scrape.Target
+	activeTargets = make(map[string][]*scrape.Target)
+	droppedTargets = make(map[string][]*scrape.Target)
+
+	for _, t := range targetsInfo {
+		nt := scrape.NewTarget(t.Labels, t.DiscoveredLabels, t.Params)
+
+		for _, r := range t.Reports {
+			nt.Report(r.Start, r.Duration, r.Error)
+		}
+
+		if t.Active {
+			activeTargets[t.Identifier] = []*scrape.Target{nt}
+		} else {
+			droppedTargets[t.Identifier] = []*scrape.Target{nt}
+		}
+	}
+
+	return &testTargetRetriever{
+		activeTargets:  activeTargets,
+		droppedTargets: droppedTargets,
+	}
+}
 
 var (
 	scrapeStart = time.Now().Add(-11 * time.Second)
 )
 
 func (t testTargetRetriever) TargetsActive() map[string][]*scrape.Target {
-	testTarget := scrape.NewTarget(
-		labels.FromMap(map[string]string{
-			model.SchemeLabel:      "http",
-			model.AddressLabel:     "example.com:8080",
-			model.MetricsPathLabel: "/metrics",
-			model.JobLabel:         "test",
-		}),
-		nil,
-		url.Values{},
-	)
-	testTarget.Report(scrapeStart, 70*time.Millisecond, nil)
-	blackboxTarget := scrape.NewTarget(
-		labels.FromMap(map[string]string{
-			model.SchemeLabel:      "http",
-			model.AddressLabel:     "localhost:9115",
-			model.MetricsPathLabel: "/probe",
-			model.JobLabel:         "blackbox",
-		}),
-		nil,
-		url.Values{"target": []string{"example.com"}},
-	)
-	blackboxTarget.Report(scrapeStart, 100*time.Millisecond, errors.New("failed"))
-	return map[string][]*scrape.Target{
-		"test":     {testTarget},
-		"blackbox": {blackboxTarget},
-	}
+	return t.activeTargets
 }
+
 func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
-	return map[string][]*scrape.Target{
-		"blackbox": {
-			scrape.NewTarget(
-				nil,
-				labels.FromMap(map[string]string{
-					model.AddressLabel:     "http://dropped.example.com:9115",
-					model.MetricsPathLabel: "/probe",
-					model.SchemeLabel:      "http",
-					model.JobLabel:         "blackbox",
-				}),
-				url.Values{},
-			),
-		},
+	return t.droppedTargets
+}
+
+func (t testTargetRetriever) setMetadataStoreForTargets(identifier string, metadata scrape.MetricMetadataStore) error {
+	targets, ok := t.activeTargets[identifier]
+
+	if !ok {
+		return errors.New("targets not found")
 	}
+
+	for _, at := range targets {
+		at.SetMetadataStore(metadata)
+	}
+
+	return nil
 }
 
 type testAlertmanagerRetriever struct{}
@@ -243,10 +287,12 @@ func TestEndpoints(t *testing.T) {
 
 		algr.RuleGroups()
 
+		testTargetRetriever := setupTestTargetRetriever(t)
+
 		api := &API{
 			Queryable:             suite.Storage(),
 			QueryEngine:           suite.QueryEngine(),
-			targetRetriever:       testTargetRetriever{},
+			targetRetriever:       testTargetRetriever,
 			alertmanagerRetriever: testAlertmanagerRetriever{},
 			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
@@ -305,10 +351,12 @@ func TestEndpoints(t *testing.T) {
 
 		algr.RuleGroups()
 
+		testTargetRetriever := setupTestTargetRetriever(t)
+
 		api := &API{
 			Queryable:             remote,
 			QueryEngine:           suite.QueryEngine(),
-			targetRetriever:       testTargetRetriever{},
+			targetRetriever:       testTargetRetriever,
 			alertmanagerRetriever: testAlertmanagerRetriever{},
 			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
@@ -355,6 +403,76 @@ func TestLabelNames(t *testing.T) {
 		assertAPIError(t, res.err, "")
 		assertAPIResponse(t, res.data, []string{"__name__", "baz", "foo", "foo1", "foo2", "xyz"})
 	}
+}
+
+func setupTestTargetRetriever(t *testing.T) *testTargetRetriever {
+	t.Helper()
+
+	targets := []*testTargetParams{
+		{
+			Identifier: "test",
+			Labels: labels.FromMap(map[string]string{
+				model.SchemeLabel:      "http",
+				model.AddressLabel:     "example.com:8080",
+				model.MetricsPathLabel: "/metrics",
+				model.JobLabel:         "test",
+			}),
+			DiscoveredLabels: nil,
+			Params:           url.Values{},
+			Reports:          []*testReport{{scrapeStart, 70 * time.Millisecond, nil}},
+			Active:           true,
+		},
+		{
+			Identifier: "blackbox",
+			Labels: labels.FromMap(map[string]string{
+				model.SchemeLabel:      "http",
+				model.AddressLabel:     "localhost:9115",
+				model.MetricsPathLabel: "/probe",
+				model.JobLabel:         "blackbox",
+			}),
+			DiscoveredLabels: nil,
+			Params:           url.Values{"target": []string{"example.com"}},
+			Reports:          []*testReport{{scrapeStart, 100 * time.Millisecond, errors.New("failed")}},
+			Active:           true,
+		},
+		{
+			Identifier: "blackbox",
+			Labels:     nil,
+			DiscoveredLabels: labels.FromMap(map[string]string{
+				model.SchemeLabel:      "http",
+				model.AddressLabel:     "http://dropped.example.com:9115",
+				model.MetricsPathLabel: "/probe",
+				model.JobLabel:         "blackbox",
+			}),
+			Params: url.Values{},
+			Active: false,
+		},
+	}
+	targetRetriever := newTestTargetRetriever(targets)
+
+	targetRetriever.setMetadataStoreForTargets("test", &testMetaStore{
+		Metadata: []scrape.MetricMetadata{
+			{
+				Metric: "go_threads",
+				Type:   textparse.MetricTypeGauge,
+				Help:   "Number of OS threads created.",
+				Unit:   "",
+			},
+		},
+	})
+
+	targetRetriever.setMetadataStoreForTargets("blackbox", &testMetaStore{
+		Metadata: []scrape.MetricMetadata{
+			{
+				Metric: "prometheus_tsdb_storage_blocks_bytes",
+				Type:   textparse.MetricTypeGauge,
+				Help:   "The number of bytes that are currently used for local storage by all blocks.",
+				Unit:   "",
+			},
+		},
+	})
+
+	return targetRetriever
 }
 
 func setupRemote(s storage.Storage) *httptest.Server {
@@ -832,6 +950,73 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 					},
 				},
 			},
+		},
+		// With a matching metric.
+		{
+			endpoint: api.targetMetadata,
+			query: url.Values{
+				"metric": []string{"go_threads"},
+			},
+			response: []metricMetadata{
+				{
+					Target: labels.FromMap(map[string]string{
+						"job": "test",
+					}),
+					Help: "Number of OS threads created.",
+					Type: textparse.MetricTypeGauge,
+					Unit: "",
+				},
+			},
+		},
+		// With a matching target.
+		{
+			endpoint: api.targetMetadata,
+			query: url.Values{
+				"match_target": []string{"{job=\"blackbox\"}"},
+			},
+			response: []metricMetadata{
+				{
+					Target: labels.FromMap(map[string]string{
+						"job": "blackbox",
+					}),
+					Metric: "prometheus_tsdb_storage_blocks_bytes",
+					Help:   "The number of bytes that are currently used for local storage by all blocks.",
+					Type:   textparse.MetricTypeGauge,
+					Unit:   "",
+				},
+			},
+		},
+		// Without a target or metric.
+		{
+			endpoint: api.targetMetadata,
+			response: []metricMetadata{
+				{
+					Target: labels.FromMap(map[string]string{
+						"job": "test",
+					}),
+					Metric: "go_threads",
+					Help:   "Number of OS threads created.",
+					Type:   textparse.MetricTypeGauge,
+					Unit:   "",
+				},
+				{
+					Target: labels.FromMap(map[string]string{
+						"job": "blackbox",
+					}),
+					Metric: "prometheus_tsdb_storage_blocks_bytes",
+					Help:   "The number of bytes that are currently used for local storage by all blocks.",
+					Type:   textparse.MetricTypeGauge,
+					Unit:   "",
+				},
+			},
+		},
+		// Without a matching metric.
+		{
+			endpoint: api.targetMetadata,
+			query: url.Values{
+				"match_target": []string{"{job=\"non-existentblackbox\"}"},
+			},
+			errType: errorNotFound,
 		},
 		{
 			endpoint: api.alertmanagers,

@@ -615,19 +615,19 @@ test_metric 1
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, total)
 
-	md, ok := cache.getMetadata("test_metric")
+	md, ok := cache.GetMetadata("test_metric")
 	testutil.Assert(t, ok, "expected metadata to be present")
 	testutil.Assert(t, textparse.MetricTypeCounter == md.Type, "unexpected metric type")
 	testutil.Equals(t, "some help text", md.Help)
 	testutil.Equals(t, "metric", md.Unit)
 
-	md, ok = cache.getMetadata("test_metric_no_help")
+	md, ok = cache.GetMetadata("test_metric_no_help")
 	testutil.Assert(t, ok, "expected metadata to be present")
 	testutil.Assert(t, textparse.MetricTypeGauge == md.Type, "unexpected metric type")
 	testutil.Equals(t, "", md.Help)
 	testutil.Equals(t, "", md.Unit)
 
-	md, ok = cache.getMetadata("test_metric_no_type")
+	md, ok = cache.GetMetadata("test_metric_no_type")
 	testutil.Assert(t, ok, "expected metadata to be present")
 	testutil.Assert(t, textparse.MetricTypeUnknown == md.Type, "unexpected metric type")
 	testutil.Equals(t, "other help text", md.Help)
