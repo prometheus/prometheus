@@ -708,7 +708,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			allSymbols[s] = struct{}{}
 		}
 
-		all, err := indexr.Postings(index.AllPostingsKey())
+		k, v := index.AllPostingsKey()
+		all, err := indexr.Postings(k, v)
 		if err != nil {
 			return err
 		}

@@ -14,6 +14,7 @@
 package index
 
 import (
+	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -111,9 +112,13 @@ func (m mockIndex) LabelValues(names ...string) (StringTuples, error) {
 	return NewStringTuples(m.labelIndex[names[0]], 1)
 }
 
-func (m mockIndex) Postings(name, value string) (Postings, error) {
-	l := labels.Label{Name: name, Value: value}
-	return NewListPostings(m.postings[l]), nil
+func (m mockIndex) Postings(name string, values ...string) (Postings, error) {
+	p := []Postings{}
+	for _, value := range values {
+		l := labels.Label{Name: name, Value: value}
+		p = append(p, NewListPostings(m.postings[l]))
+	}
+	return Merge(p...), nil
 }
 
 func (m mockIndex) SortedPostings(p Postings) Postings {
@@ -238,6 +243,96 @@ func TestIndexRW_Postings(t *testing.T) {
 	testutil.Ok(t, ir.Close())
 }
 
+func TestPostingsMany(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test_postings_many")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+
+	fn := filepath.Join(dir, indexFilename)
+
+	iw, err := NewWriter(fn)
+	testutil.Ok(t, err)
+
+	// Create a label in the index which has 999 values.
+	symbols := map[string]struct{}{}
+	series := []labels.Labels{}
+	for i := 1; i < 1000; i++ {
+		v := fmt.Sprintf("%03d", i)
+		series = append(series, labels.FromStrings("i", v, "foo", "bar"))
+		symbols[v] = struct{}{}
+	}
+	symbols["i"] = struct{}{}
+	symbols["foo"] = struct{}{}
+	symbols["bar"] = struct{}{}
+	testutil.Ok(t, iw.AddSymbols(symbols))
+
+	for i, s := range series {
+		testutil.Ok(t, iw.AddSeries(uint64(i), s))
+	}
+	for i, s := range series {
+		testutil.Ok(t, iw.WritePostings("i", s.Get("i"), newListPostings(uint64(i))))
+	}
+	testutil.Ok(t, iw.Close())
+
+	ir, err := NewFileReader(fn)
+	testutil.Ok(t, err)
+
+	cases := []struct {
+		in []string
+	}{
+		// Simple cases, everything is present.
+		{in: []string{"002"}},
+		{in: []string{"031", "032", "033"}},
+		{in: []string{"032", "033"}},
+		{in: []string{"127", "128"}},
+		{in: []string{"127", "128", "129"}},
+		{in: []string{"127", "129"}},
+		{in: []string{"128", "129"}},
+		{in: []string{"998", "999"}},
+		{in: []string{"999"}},
+		// Before actual values.
+		{in: []string{"000"}},
+		{in: []string{"000", "001"}},
+		{in: []string{"000", "002"}},
+		// After actual values.
+		{in: []string{"999a"}},
+		{in: []string{"999", "999a"}},
+		{in: []string{"998", "999", "999a"}},
+		// In the middle of actual values.
+		{in: []string{"126a", "127", "128"}},
+		{in: []string{"127", "127a", "128"}},
+		{in: []string{"127", "127a", "128", "128a", "129"}},
+		{in: []string{"127", "128a", "129"}},
+		{in: []string{"128", "128a", "129"}},
+		{in: []string{"128", "129", "129a"}},
+		{in: []string{"126a", "126b", "127", "127a", "127b", "128", "128a", "128b", "129", "129a", "129b"}},
+	}
+
+	for _, c := range cases {
+		it, err := ir.Postings("i", c.in...)
+		testutil.Ok(t, err)
+
+		got := []string{}
+		var lbls labels.Labels
+		var metas []chunks.Meta
+		for it.Next() {
+			testutil.Ok(t, ir.Series(it.At(), &lbls, &metas))
+			got = append(got, lbls.Get("i"))
+		}
+		testutil.Ok(t, it.Err())
+		exp := []string{}
+		for _, e := range c.in {
+			if _, ok := symbols[e]; ok && e != "l" {
+				exp = append(exp, e)
+			}
+		}
+		testutil.Equals(t, exp, got, fmt.Sprintf("input: %v", c.in))
+	}
+
+}
+
 func TestPersistence_index_e2e(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_persistence_e2e")
 	testutil.Ok(t, err)
@@ -327,12 +422,10 @@ func TestPersistence_index_e2e(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Ok(t, mi.WritePostings("", "", newListPostings(all...)))
 
-	for n, e := range postings.m {
-		for v := range e {
-			err = iw.WritePostings(n, v, postings.Get(n, v))
-			testutil.Ok(t, err)
-			mi.WritePostings(n, v, postings.Get(n, v))
-		}
+	for _, l := range postings.SortedKeys() {
+		err := iw.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value))
+		testutil.Ok(t, err)
+		mi.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value))
 	}
 
 	err = iw.Close()
@@ -364,7 +457,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 			testutil.Equals(t, explset, lset)
 			testutil.Equals(t, expchks, chks)
 		}
-		testutil.Assert(t, expp.Next() == false, "")
+		testutil.Assert(t, expp.Next() == false, "Unexpected Next() for "+p.Name+" "+p.Value)
 		testutil.Ok(t, gotp.Err())
 	}
 

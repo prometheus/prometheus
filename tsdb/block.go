@@ -69,14 +69,14 @@ type IndexReader interface {
 	// and indices.
 	Symbols() (map[string]struct{}, error)
 
-	// LabelValues returns the possible label values.
+	// LabelValues returns sorted possible label values.
 	LabelValues(names ...string) (index.StringTuples, error)
 
-	// Postings returns the postings list iterator for the label pair.
+	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
-	// Found IDs are not strictly required to point to a valid Series, e.g. during
-	// background garbage collections.
-	Postings(name, value string) (index.Postings, error)
+	// Found IDs are not strictly required to point to a valid Series, e.g.
+	// during background garbage collections. Input values must be sorted.
+	Postings(name string, values ...string) (index.Postings, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
@@ -450,8 +450,8 @@ func (r blockIndexReader) LabelValues(names ...string) (index.StringTuples, erro
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
-func (r blockIndexReader) Postings(name, value string) (index.Postings, error) {
-	p, err := r.ir.Postings(name, value)
+func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
+	p, err := r.ir.Postings(name, values...)
 	if err != nil {
 		return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}

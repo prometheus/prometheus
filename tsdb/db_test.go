@@ -1418,7 +1418,8 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 
 		meta := block.Meta()
 
-		p, err := r.Postings(index.AllPostingsKey())
+		k, v := index.AllPostingsKey()
+		p, err := r.Postings(k, v)
 		testutil.Ok(t, err)
 
 		var (

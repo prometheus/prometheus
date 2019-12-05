@@ -385,7 +385,8 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 
 	// If there's nothing to subtract from, add in everything and remove the notIts later.
 	if len(its) == 0 && len(notIts) != 0 {
-		allPostings, err := ix.Postings(index.AllPostingsKey())
+		k, v := index.AllPostingsKey()
+		allPostings, err := ix.Postings(k, v)
 		if err != nil {
 			return nil, err
 		}
@@ -413,7 +414,8 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 	if m.Type == labels.MatchRegexp {
 		setMatches := findSetMatches(m.Value)
 		if len(setMatches) > 0 {
-			return postingsForSetMatcher(ix, m.Name, setMatches)
+			sort.Strings(setMatches)
+			return ix.Postings(m.Name, setMatches...)
 		}
 	}
 
@@ -437,17 +439,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 		return index.EmptyPostings(), nil
 	}
 
-	var rit []index.Postings
-
-	for _, v := range res {
-		it, err := ix.Postings(m.Name, v)
-		if err != nil {
-			return nil, err
-		}
-		rit = append(rit, it)
-	}
-
-	return index.Merge(rit...), nil
+	return ix.Postings(m.Name, res...)
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
@@ -469,29 +461,7 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 		}
 	}
 
-	var rit []index.Postings
-	for _, v := range res {
-		it, err := ix.Postings(m.Name, v)
-		if err != nil {
-			return nil, err
-		}
-
-		rit = append(rit, it)
-	}
-
-	return index.Merge(rit...), nil
-}
-
-func postingsForSetMatcher(ix IndexReader, name string, matches []string) (index.Postings, error) {
-	var its []index.Postings
-	for _, match := range matches {
-		if it, err := ix.Postings(name, match); err == nil {
-			its = append(its, it)
-		} else {
-			return nil, err
-		}
-	}
-	return index.Merge(its...), nil
+	return ix.Postings(m.Name, res...)
 }
 
 func mergeStrings(a, b []string) []string {

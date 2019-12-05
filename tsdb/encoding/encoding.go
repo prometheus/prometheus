@@ -109,8 +109,11 @@ func NewDecbufAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Decbuf {
 	b = bs.Range(off+4, off+4+l+4)
 	dec := Decbuf{B: b[:len(b)-4]}
 
-	if exp := binary.BigEndian.Uint32(b[len(b)-4:]); dec.Crc32(castagnoliTable) != exp {
-		return Decbuf{E: ErrInvalidChecksum}
+	if castagnoliTable != nil {
+
+		if exp := binary.BigEndian.Uint32(b[len(b)-4:]); dec.Crc32(castagnoliTable) != exp {
+			return Decbuf{E: ErrInvalidChecksum}
+		}
 	}
 	return dec
 }
@@ -154,16 +157,30 @@ func (d *Decbuf) Crc32(castagnoliTable *crc32.Table) uint32 {
 	return crc32.Checksum(d.B, castagnoliTable)
 }
 
+func (d *Decbuf) Skip(l int) {
+	if len(d.B) < l {
+		d.E = ErrInvalidSize
+		return
+	}
+	d.B = d.B[l:]
+}
+
 func (d *Decbuf) UvarintStr() string {
+	return string(d.UvarintBytes())
+}
+
+// The return value becomes invalid if the byte slice goes away.
+// Compared to UvarintStr, this avoid allocations.
+func (d *Decbuf) UvarintBytes() []byte {
 	l := d.Uvarint64()
 	if d.E != nil {
-		return ""
+		return []byte{}
 	}
 	if len(d.B) < int(l) {
 		d.E = ErrInvalidSize
-		return ""
+		return []byte{}
 	}
-	s := string(d.B[:l])
+	s := d.B[:l]
 	d.B = d.B[l:]
 	return s
 }
