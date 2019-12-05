@@ -1383,9 +1383,13 @@ func (h *headIndexReader) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-// Postings returns the postings list iterator for the label pair.
-func (h *headIndexReader) Postings(name, value string) (index.Postings, error) {
-	return h.head.postings.Get(name, value), nil
+// Postings returns the postings list iterator for the label pairs.
+func (h *headIndexReader) Postings(name string, values ...string) (index.Postings, error) {
+	res := make([]index.Postings, 0, len(values))
+	for _, value := range values {
+		res = append(res, h.head.postings.Get(name, value))
+	}
+	return index.Merge(res...), nil
 }
 
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {

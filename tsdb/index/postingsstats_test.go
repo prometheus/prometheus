@@ -13,7 +13,6 @@
 package index
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/prometheus/prometheus/util/testutil"
@@ -36,7 +35,6 @@ func TestPostingsStats(t *testing.T) {
 	data := stats.get()
 	testutil.Equals(t, 10, len(data))
 	for i := 0; i < heapLength; i++ {
-		fmt.Printf("%d", data[i].Count)
 		testutil.Equals(t, uint64(max-i), data[i].Count)
 	}
 
