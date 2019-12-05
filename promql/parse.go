@@ -1153,3 +1153,32 @@ func (p *parser) parseGenerated(startSymbol ItemType, switchSymbols []ItemType) 
 	return p.generatedParserResult
 
 }
+
+func (p *parser) newLabelMatcher(label item, operator item, value item) *labels.Matcher {
+	op := operator.typ
+	val := p.unquoteString(value.val)
+
+	// Map the item to the respective match type.
+	var matchType labels.MatchType
+	switch op {
+	case EQL:
+		matchType = labels.MatchEqual
+	case NEQ:
+		matchType = labels.MatchNotEqual
+	case EQL_REGEX:
+		matchType = labels.MatchRegexp
+	case NEQ_REGEX:
+		matchType = labels.MatchNotRegexp
+	default:
+		// This should never happen, since the error should have been chaught
+		// by the generated parser
+		panic("invalid operator")
+	}
+
+	m, err := labels.NewMatcher(matchType, label.val, val)
+	if err != nil {
+		p.error(err)
+	}
+
+	return m
+}

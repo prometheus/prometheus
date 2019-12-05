@@ -13,11 +13,17 @@
 
 %{
     package promql
+
+    import (
+        "github.com/prometheus/prometheus/pkg/labels"
+    )
 %}
 
 %union {
     node Node
     item item
+    matchers []*labels.Matcher
+    matcher  *labels.Matcher
 }
 
 
@@ -95,14 +101,55 @@
 
 %token	startSymbolsStart
 /* Start symbols for the generated parser.*/
+%token START_LABELS
 %token	startSymbolsEnd
+
+%type <matchers> label_matchers label_match_list
+%type <matcher> label_matcher
+
+%type <item> match_op
 
 %start start
 
 %%
 
-start           : error 
-                    { yylex.(*parser).errorf("unknown syntax error after parsing %v", yylex.(*parser).token.desc()) }
+start           : START_LABELS label_matchers
+                     {yylex.(*parser).generatedParserResult.(*VectorSelector).LabelMatchers = $2}
+                | error 
+                        { yylex.(*parser).errorf("unknown syntax error after parsing %v", yylex.(*parser).token.desc()) }
                 ;
+
+
+label_match_list:
+                label_match_list COMMA label_matcher
+                        { $$ = append($1, $3)}
+                | label_matcher
+                        { $$ = []*labels.Matcher{$1}}
+                ;
+
+label_matchers  : 
+                LEFT_BRACE label_match_list RIGHT_BRACE
+                        { $$ = $2 }
+                | LEFT_BRACE RIGHT_BRACE
+                        { $$ = []*labels.Matcher{} }
+
+                ;
+
+label_matcher   :
+                IDENTIFIER match_op STRING
+                        { $$ = yylex.(*parser).newLabelMatcher($1, $2, $3) }
+                | IDENTIFIER match_op error
+                        { yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())}
+                ;
+
+match_op        :
+                EQL {$$ =$1}
+                | NEQ {$$=$1}
+                | EQL_REGEX {$$=$1}
+                | NEQ_REGEX {$$=$1}
+                | error 
+                        { yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.val) } 
+                ;
+
 
 %%
