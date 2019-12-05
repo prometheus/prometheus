@@ -94,6 +94,7 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 			EndMs:    p.End,
 			Grouping: p.Grouping,
 			By:       p.By,
+			RangeMs:  p.Range,
 		}
 	}
 

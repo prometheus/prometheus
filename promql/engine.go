@@ -601,6 +601,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		case *MatrixSelector:
 			params.Func = extractFuncFromPath(path)
+			params.Range = durationMilliseconds(n.Range)
 			// For all matrix queries we want to ensure that we have (end-start) + range selected
 			// this way we have `range` data before the start time
 			params.Start = params.Start - durationMilliseconds(n.Range)
@@ -642,12 +643,11 @@ func extractFuncFromPath(p []Node) string {
 	return extractFuncFromPath(p[:len(p)-1])
 }
 
-// extractGroupsFromPath parses vector outer function and extracts grouping and information if by or without was used.
+// extractGroupsFromPath parses vector outer function and extracts grouping information if by or without was used.
 func extractGroupsFromPath(p []Node) (bool, []string) {
 	if len(p) == 0 {
 		return false, nil
 	}
-	// only push down group bys if it is AggregateExpr.
 	switch n := p[len(p)-1].(type) {
 	case *AggregateExpr:
 		return !n.Without, n.Grouping
