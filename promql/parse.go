@@ -38,6 +38,10 @@ type parser struct {
 
 	inject    item
 	injecting bool
+
+	switchSymbols []ItemType
+
+	generatedParserResult Node
 }
 
 // ParseErr wraps a parsing error with line and position context.
@@ -359,6 +363,12 @@ func (p *parser) Lex(lval *yySymType) int {
 
 	typ := lval.item.typ
 
+	for _, t := range p.switchSymbols {
+		if t == typ {
+			p.InjectItem(0)
+		}
+	}
+
 	return int(typ)
 }
 
@@ -382,7 +392,7 @@ func (p *parser) InjectItem(typ ItemType) {
 		panic("cannot inject multiple items into the token stream")
 	}
 
-	if typ <= startSymbolsStart || typ >= startSymbolsEnd {
+	if typ != 0 && (typ <= startSymbolsStart || typ >= startSymbolsEnd) {
 		panic("cannot inject symbol that isn't start symbol")
 	}
 
@@ -1124,4 +1134,22 @@ func parseDuration(ds string) (time.Duration, error) {
 		return 0, errors.New("duration must be greater than 0")
 	}
 	return time.Duration(dur), nil
+}
+
+// parseGenerated invokes the yacc generated parser.
+// The generated parser gets the provided startSymbol injected into
+// the lexer stream, bases on which different grammars can be used.
+// 
+// The generated parser will consume the lexer Stream until one of the
+// tokens listed in switchSymbols is encountered. switchSymbols
+// should at least contain EOF
+func (p *parser) parseGenerated(startSymbol ItemType, switchSymbols []ItemType) Node {
+	p.InjectItem(startSymbol)
+
+	p.switchSymbols = switchSymbols
+
+	yyParse(p)
+
+	return p.generatedParserResult
+
 }
