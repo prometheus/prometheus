@@ -340,11 +340,6 @@ func (p *parser) recover(errp *error) {
 	p.lex.close()
 }
 
-// yySymType is the Type the yacc generated parser expects for lexer items.
-//
-// For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
-type yySymType item
-
 // Lex is expected by the yyLexer interface of the yacc generated parser.
 // It writes the next item provided by the lexer to the provided pointer address.
 // Comments are skipped.
@@ -356,20 +351,23 @@ type yySymType item
 // For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Lex(lval *yySymType) int {
 	if p.injecting {
-		*lval = yySymType(p.inject)
+		lval.item = p.inject
 		p.injecting = false
 	} else {
-		*lval = yySymType(p.next())
+		lval.item = p.next()
 	}
 
-	return int(item(*lval).typ)
+	typ := lval.item.typ
+
+	return int(typ)
 }
 
 // Error is expected by the yyLexer interface of the yacc generated parser.
 //
+// It is a no-op since the parsers error routines are triggered
+// over mechanisms that allow more fine grained control
 // For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Error(e string) {
-	p.errorf(e)
 }
 
 // InjectItem allows injecting a single item at the beginning of the token stream
