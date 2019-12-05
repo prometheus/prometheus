@@ -941,14 +941,18 @@ func (p *parser) offset() time.Duration {
 //		[<metric_identifier>] <label_matchers>
 //
 func (p *parser) VectorSelector(name string) *VectorSelector {
-	var matchers []*labels.Matcher
+	ret := &VectorSelector{
+		Name: name,
+	}
 	// Parse label matching if any.
 	if t := p.peek(); t.typ == LEFT_BRACE {
-		matchers = p.labelMatchers(EQL, NEQ, EQL_REGEX, NEQ_REGEX)
+		p.generatedParserResult = ret
+
+		p.parseGenerated(START_LABELS, []ItemType{RIGHT_BRACE, EOF})
 	}
 	// Metric name must not be set in the label matchers and before at the same time.
 	if name != "" {
-		for _, m := range matchers {
+		for _, m := range ret.LabelMatchers {
 			if m.Name == labels.MetricName {
 				p.errorf("metric name must not be set twice: %q or %q", name, m.Value)
 			}
@@ -958,16 +962,16 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 		if err != nil {
 			panic(err) // Must not happen with metric.Equal.
 		}
-		matchers = append(matchers, m)
+		ret.LabelMatchers = append(ret.LabelMatchers, m)
 	}
 
-	if len(matchers) == 0 {
+	if len(ret.LabelMatchers) == 0 {
 		p.errorf("vector selector must contain label matchers or metric name")
 	}
 	// A Vector selector must contain at least one non-empty matcher to prevent
 	// implicit selection of all metrics (e.g. by a typo).
 	notEmpty := false
-	for _, lm := range matchers {
+	for _, lm := range ret.LabelMatchers {
 		if !lm.Matches("") {
 			notEmpty = true
 			break
@@ -977,10 +981,7 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 		p.errorf("vector selector must contain at least one non-empty matcher")
 	}
 
-	return &VectorSelector{
-		Name:          name,
-		LabelMatchers: matchers,
-	}
+	return ret
 }
 
 // expectType checks the type of the node and raises an error if it
@@ -1139,7 +1140,7 @@ func parseDuration(ds string) (time.Duration, error) {
 // parseGenerated invokes the yacc generated parser.
 // The generated parser gets the provided startSymbol injected into
 // the lexer stream, bases on which different grammars can be used.
-// 
+//
 // The generated parser will consume the lexer Stream until one of the
 // tokens listed in switchSymbols is encountered. switchSymbols
 // should at least contain EOF
