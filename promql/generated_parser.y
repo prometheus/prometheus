@@ -50,7 +50,7 @@
 %token <item> SPACE
 
 %token	operatorsStart
-/* Operators.*/
+// Operators.
 %token <item> SUB
 %token <item> ADD
 %token <item> MUL
@@ -71,7 +71,7 @@
 %token	operatorsEnd
 
 %token	aggregatorsStart
-/* Aggregators.*/
+// Aggregators.
 %token <item> AVG
 %token <item> COUNT
 %token <item> SUM
@@ -86,7 +86,7 @@
 %token	aggregatorsEnd
 
 %token	keywordsStart
-/* Keywords. */
+// Keywords.
 %token <item> OFFSET
 %token <item> BY
 %token <item> WITHOUT
@@ -100,7 +100,7 @@
 
 
 %token	startSymbolsStart
-/* Start symbols for the generated parser.*/
+// Start symbols for the generated parser.
 %token START_LABELS
 %token	startSymbolsEnd
 

@@ -375,7 +375,7 @@ func (p *parser) Lex(lval *yySymType) int {
 // Error is expected by the yyLexer interface of the yacc generated parser.
 //
 // It is a no-op since the parsers error routines are triggered
-// over mechanisms that allow more fine grained control
+// by mechanisms that allow more fine grained control
 // For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Error(e string) {
 }
@@ -1139,7 +1139,7 @@ func parseDuration(ds string) (time.Duration, error) {
 
 // parseGenerated invokes the yacc generated parser.
 // The generated parser gets the provided startSymbol injected into
-// the lexer stream, bases on which different grammars can be used.
+// the lexer stream, based on which grammar will be used.
 //
 // The generated parser will consume the lexer Stream until one of the
 // tokens listed in switchSymbols is encountered. switchSymbols
@@ -1172,7 +1172,7 @@ func (p *parser) newLabelMatcher(label item, operator item, value item) *labels.
 		matchType = labels.MatchNotRegexp
 	default:
 		// This should never happen, since the error should have been chaught
-		// by the generated parser
+		// by the generated parser.
 		panic("invalid operator")
 	}
 
