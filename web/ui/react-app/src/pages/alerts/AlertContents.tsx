@@ -62,13 +62,13 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   return (
     <>
       <ButtonGroup className="mb-3">
-        <Button onClick={() => toggleState('inactive')} color="primary">
+        <Button active={state.inactive} onClick={() => toggleState('inactive')} color="primary">
           Inactive({statsCount.inactive})
         </Button>
-        <Button onClick={() => toggleState('pending')} color="primary">
+        <Button active={state.pending} onClick={() => toggleState('pending')} color="primary">
           Pending({statsCount.pending})
         </Button>
-        <Button onClick={() => toggleState('firing')} color="primary">
+        <Button active={state.firing} onClick={() => toggleState('firing')} color="primary">
           Firing({statsCount.firing})
         </Button>
       </ButtonGroup>
@@ -90,7 +90,13 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
                 {g.rules.map(r => {
                   return (
                     <Badge className="mr-1" color={alertColors[r.state]}>
-                      <span>{r.state}</span>
+                      <span>
+                        {r.state}(
+                        {g.rules.reduce((acc, el) => {
+                          return el.state === r.state ? acc + 1 : acc;
+                        }, 0)}
+                        )
+                      </span>
                     </Badge>
                   );
                 })}
