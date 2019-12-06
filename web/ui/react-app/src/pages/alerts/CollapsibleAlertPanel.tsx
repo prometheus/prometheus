@@ -13,7 +13,7 @@ const colors: RuleStatus<string> = {
   inactive: 'success',
 };
 
-export const ColappsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
+const CollapsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
   const [open, toggle] = useState(false);
   const { name, alerts, state, annotations, labels, query } = rule;
   return (
@@ -113,3 +113,5 @@ export const ColappsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations })
     </>
   );
 };
+
+export default CollapsibleAlertPanel;

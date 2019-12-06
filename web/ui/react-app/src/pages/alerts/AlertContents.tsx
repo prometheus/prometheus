@@ -1,6 +1,6 @@
 import React, { FC, useState, Fragment } from 'react';
 import { ButtonGroup, Button, Row } from 'reactstrap';
-import { ColappsibleAlertPanel } from './CollapsibelAlertPanel';
+import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../Checkbox';
 
 export type RuleState = keyof RuleStatus<any>;
@@ -92,7 +92,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
               {g.rules.map(
                 (rule, j) =>
                   state[rule.state] && (
-                    <ColappsibleAlertPanel key={rule.name + i + j} showAnnotations={annotationsVisible} rule={rule} />
+                    <CollapsibleAlertPanel key={rule.name + i + j} showAnnotations={annotationsVisible} rule={rule} />
                   )
               )}
             </Fragment>
