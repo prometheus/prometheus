@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 	"unsafe"
+	"io/ioutil"
 	
 
 	"github.com/go-kit/kit/log"
@@ -312,51 +313,6 @@ func (api *API) options(r *http.Request) apiFuncResult {
 }
 
 func (api *API) query(r *http.Request) apiFuncResult {
-
-	/*if strings.Contains(r.URL.String(), "id=") {
-		// find id
-		
-		/*id_start_index := strings.Index(r.URL.String(), "id=")
-		id_start_index = id_start_index + 6
-		id_end_index := id_start_index + 8
-		lookup_id := r.URL.String()[id_start_index:id_end_index]
-		level.Warn(api.logger).Log("msg", "checking of match", "err", lookup_id)
-
-		
-
-		// lookup if its not remote do nothing else get the ip and port
-		hostname := "http://localhost:9091/api/v1"
-		new_url := hostname+r.URL.String()
-		
-		query_response, err := http.Get(new_url)
-		if err != nil {
-			level.Warn(api.logger).Log("msg", "get request not successfull", "err", err)
-		}
-
-		defer query_response.Body.Close()
-
-		query_body, err := ioutil.ReadAll(query_response.Body)
-		if err != nil {
-			level.Warn(api.logger).Log("msg", "get response not successfull", "err", err)
-		}
-
-		query_body_new := "["+string(query_body)+"]"
-		var objs []map[string]*json.RawMessage
-
-		err = json.Unmarshal([]byte(query_body_new), &objs)
-		if err != nil {
-			level.Warn(api.logger).Log("msg", "could not unmarshal", "err", err)
-		}
-		level.Warn(api.logger).Log("msg", "successfull", "stat", objs[0]["data"])
-
-		return apiFuncResult{&queryData{
-			ResultType: objs[0]["data"]["resultType"],
-			Result:     objs[0]["data"]["result"],
-			Stats:      "",
-		}, nil, nil, nil}
-	}  */
-
-
 	var ts time.Time
 	if t := r.FormValue("time"); t != "" {
 		var err error
@@ -391,6 +347,46 @@ func (api *API) query(r *http.Request) apiFuncResult {
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
+	}
+
+	if strings.Contains(r.URL.String(), "id=") {
+		// find id
+		
+		/*id_start_index := strings.Index(r.URL.String(), "id=")
+		id_start_index = id_start_index + 6
+		id_end_index := id_start_index + 8
+		lookup_id := r.URL.String()[id_start_index:id_end_index]
+		level.Warn(api.logger).Log("msg", "checking of match", "err", lookup_id)*/
+
+		
+
+		// lookup if its not remote do nothing else get the ip and port
+		hostname := "http://localhost:9091/api/v1"
+		new_url := hostname+r.URL.String()
+		
+		query_response, err := http.Get(new_url)
+		if err != nil {
+			level.Warn(api.logger).Log("msg", "get request not successfull", "err", err)
+		}
+
+		defer query_response.Body.Close()
+
+		query_body, err := ioutil.ReadAll(query_response.Body)
+		if err != nil {
+			level.Warn(api.logger).Log("msg", "get response not successfull", "err", err)
+		}
+
+		var objs response
+
+		json := jsoniter.ConfigCompatibleWithStandardLibrary
+		err = json.Unmarshal(query_body, &objs)
+		if err != nil {
+			level.Warn(api.logger).Log("msg", "could not unmarshal", "err", err)
+		}
+		//level.Warn(api.logger).Log("msg", "successfull", "stat", objs)
+		fmt.Printf("%+v", objs)
+
+		return apiFuncResult{objs.Data, nil, nil, nil}
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -463,6 +459,46 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
+	}
+
+	if strings.Contains(r.URL.String(), "id=") {
+		// find id
+		
+		/*id_start_index := strings.Index(r.URL.String(), "id=")
+		id_start_index = id_start_index + 6
+		id_end_index := id_start_index + 8
+		lookup_id := r.URL.String()[id_start_index:id_end_index]
+		level.Warn(api.logger).Log("msg", "checking of match", "err", lookup_id)*/
+
+		
+
+		// lookup if its not remote do nothing else get the ip and port
+		hostname := "http://localhost:9091/api/v1"
+		new_url := hostname+r.URL.String()
+		
+		query_response, err := http.Get(new_url)
+		if err != nil {
+			level.Warn(api.logger).Log("msg", "get request not successfull", "err", err)
+		}
+
+		defer query_response.Body.Close()
+
+		query_body, err := ioutil.ReadAll(query_response.Body)
+		if err != nil {
+			level.Warn(api.logger).Log("msg", "get response not successfull", "err", err)
+		}
+
+		var objs response
+
+		json := jsoniter.ConfigCompatibleWithStandardLibrary
+		err = json.Unmarshal(query_body, &objs)
+		if err != nil {
+			level.Warn(api.logger).Log("msg", "could not unmarshal", "err", err)
+		}
+		//level.Warn(api.logger).Log("msg", "successfull", "stat", objs)
+		fmt.Printf("%+v", objs)
+
+		return apiFuncResult{objs.Data, nil, nil, nil}
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
