@@ -209,7 +209,10 @@ func TestBlockSize(t *testing.T) {
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []Series) string {
-	head := createHead(tb, series)
+	return createBlockFromHead(tb, dir, createHead(tb, series))
+}
+
+func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil)
 	testutil.Ok(tb, err)
 
