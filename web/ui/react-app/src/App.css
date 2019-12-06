@@ -211,3 +211,12 @@ div.time-input {
 .add-panel-btn {
     margin-bottom: 20px;
 }
+
+.alert-group-info {
+    display: flex;
+    margin-bottom: 10px;
+    padding: 10px;
+}
+.alert-group-info > span {
+    margin-right: 5px;
+}

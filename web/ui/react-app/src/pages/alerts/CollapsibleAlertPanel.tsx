@@ -1,6 +1,5 @@
 import React, { FC, useState, Fragment } from 'react';
 import { Link } from '@reach/router';
-import PathPrefixProps from '../../PathPrefixProps';
 import { Alert, Collapse, Card, CardBody, Table, Badge } from 'reactstrap';
 import { Rule, RuleStatus } from './AlertContents';
 
@@ -16,10 +15,10 @@ export const alertColors: RuleStatus<string> = {
 };
 
 const createExpressionLink = (expr: string) => {
-  return `../graph?g0.expr=${expr}&g0.tab=1&g0.stacked=0&g0.range_input=1h`;
+  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.range_input=1h`;
 };
 
-const CollapsibleAlertPanel: FC<ColapProps & PathPrefixProps> = ({ rule, showAnnotations, pathPrefix }) => {
+const CollapsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
   const [open, toggle] = useState(false);
   const { name, alerts, state, annotations, labels, query } = rule;
   return (
@@ -47,26 +46,24 @@ const CollapsibleAlertPanel: FC<ColapProps & PathPrefixProps> = ({ rule, showAnn
               </div>
             </code>
           </CardBody>
-          {alerts.map((alert, i) => {
-            return (
-              <Fragment key={i}>
-                <Table bordered className="mb-0">
-                  <thead>
-                    <tr>
-                      <th>Labels</th>
-                      <th>State</th>
-                      <th>Active Since</th>
-                      <th>Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+          <Table bordered className="mb-0">
+            <thead>
+              <tr>
+                <th>Labels</th>
+                <th>State</th>
+                <th>Active Since</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alerts.map(({ labels, activeAt, value }, i) => {
+                return (
+                  <Fragment key={i}>
                     <tr>
                       <td>
-                        {Object.entries(alert.labels).map(([k, v], j) => {
+                        {Object.entries(labels).map(([k, v], j) => {
                           return (
-                            <Badge key={j} color="primary" className="mr-1">
-                              {k}={v}
-                            </Badge>
+                            <Badge key={j} color="primary" className="mr-1">{k}={v}</Badge>
                           );
                         })}
                       </td>
@@ -77,41 +74,47 @@ const CollapsibleAlertPanel: FC<ColapProps & PathPrefixProps> = ({ rule, showAnn
                           </Badge>
                         </h5>
                       </td>
-                      <td>{alert.activeAt}</td>
-                      <td>{alert.value}</td>
+                      <td>{activeAt}</td>
+                      <td>{value}</td>
                     </tr>
-                  </tbody>
-                </Table>
-                <Collapse isOpen={showAnnotations}>
-                  <Table>
-                    <tbody>
-                      <tr>
-                        <td colSpan={4}>
-                          <h5 className="font-weight-bold">Annotations</h5>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td colSpan={4}>
-                          {Object.entries(alert.annotations).map(([k, v], i) => {
-                            return (
-                              <div key={i}>
-                                <strong>{k}</strong>
-                                <div>{v}</div>
-                              </div>
-                            );
-                          })}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </Table>
-                </Collapse>
-              </Fragment>
-            );
-          })}
+                    {showAnnotations && <Annotations annotations={rule.annotations} />}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </Table>
         </Card>
       </Collapse>
     </>
   );
 };
+
+interface AnnotationsProps {
+  annotations: { [k: string]: string }
+}
+
+export const Annotations: FC<AnnotationsProps> = ({ annotations }) => {
+  return (
+    <Fragment>
+      <tr>
+        <td colSpan={4}>
+          <h5 className="font-weight-bold">Annotations</h5>
+        </td>
+      </tr>
+      <tr>
+        <td colSpan={4}>
+          {Object.entries(annotations).map(([k, v], i) => {
+            return (
+              <div key={i}>
+                <strong>{k}</strong>
+                <div>{v}</div>
+              </div>
+            );
+          })}
+        </td>
+      </tr>
+    </Fragment>
+  )
+}
 
 export default CollapsibleAlertPanel;

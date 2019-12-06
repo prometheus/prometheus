@@ -1,6 +1,6 @@
 import React, { FC, useState, Fragment } from 'react';
 import { ButtonGroup, Button, Row, Badge } from 'reactstrap';
-import CollapsibleAlertPanel, { alertColors } from './CollapsibleAlertPanel';
+import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../Checkbox';
 
 export type RuleState = keyof RuleStatus<any>;
@@ -45,9 +45,9 @@ interface RuleGroup {
 
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   const [state, setState] = useState<RuleStatus<boolean>>({
-    firing: false,
-    pending: false,
-    inactive: false,
+    firing: true,
+    pending: true,
+    inactive: true,
   });
 
   const [annotationsVisible, setAnnotationsVisibility] = useState(false);
@@ -83,30 +83,18 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
         </Checkbox>
       </Row>
       <div>
-        {groups.map((g, i) => {
+        {groups.map(({ rules, name, file }, i) => {
           return (
             <Fragment key={i}>
-              <div className="d-flex mb-2 border p-3 rounded-sm" style={{ lineHeight: 0.9 }}>
-                {g.rules.map(r => {
-                  return (
-                    <Badge className="mr-1" color={alertColors[r.state]}>
-                      <span>
-                        {r.state}(
-                        {g.rules.reduce((acc, el) => {
-                          return el.state === r.state ? acc + 1 : acc;
-                        }, 0)}
-                        )
-                      </span>
-                    </Badge>
-                  );
-                })}
-                {g.file} > {g.name}
-              </div>
-              {g.rules.map(
-                (rule, j) =>
-                  state[rule.state] && (
+              <StatusBadges rules={rules}>
+                {file} > {name}
+              </StatusBadges>
+              {rules.map(
+                (rule, j) => {
+                  return state[rule.state] && (
                     <CollapsibleAlertPanel key={rule.name + i + j} showAnnotations={annotationsVisible} rule={rule} />
                   )
+                }
               )}
             </Fragment>
           );
@@ -115,6 +103,30 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     </>
   );
 };
+
+interface StatusBadgesProps {
+  rules: Rule[]
+}
+
+const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
+  const statesCounter = rules.reduce<any>((acc, r) => {
+    return {
+      ...acc,
+      [r.state]: acc[r.state] + r.alerts.length
+    }
+  }, {
+    firing: 0,
+    pending: 0,
+  })
+  return (
+    <div className="alert-group-info border rounded-sm" style={{ lineHeight: 1.1 }}>
+      {isNaN(statesCounter.inactive) && <Badge color="success">inactive</Badge>}
+      {statesCounter.pending > 0 && <Badge color="warning">pending({statesCounter.pending})</Badge>}
+      {statesCounter.firing > 0 && <Badge color="danger">firing({statesCounter.firing})</Badge>}
+      {children}
+    </div>
+  )
+}
 
 AlertsContent.displayName = 'Alerts';
 
