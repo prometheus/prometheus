@@ -824,6 +824,8 @@ type RuleGroup struct {
 type rule interface{}
 
 type alertingRule struct {
+	// State can be "pending", "firing", "inactive"
+	State       string           `json:"state"`
 	Name        string           `json:"name"`
 	Query       string           `json:"query"`
 	Duration    float64          `json:"duration"`
@@ -879,6 +881,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					break
 				}
 				enrichedRule = alertingRule{
+					State:       rule.State().String(),
 					Name:        rule.Name(),
 					Query:       rule.Query().String(),
 					Duration:    rule.Duration().Seconds(),
