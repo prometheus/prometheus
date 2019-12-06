@@ -1,4 +1,6 @@
 import React, { FC, useState, Fragment } from 'react';
+import { Link } from '@reach/router';
+import PathPrefixProps from '../../PathPrefixProps';
 import { Alert, Collapse, Card, CardBody, Table, Badge } from 'reactstrap';
 import { Rule, RuleStatus } from './AlertContents';
 
@@ -7,18 +9,22 @@ interface ColapProps {
   showAnnotations: boolean;
 }
 
-const colors: RuleStatus<string> = {
+export const alertColors: RuleStatus<string> = {
   firing: 'danger',
   pending: 'warning',
   inactive: 'success',
 };
 
-const CollapsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
+const createExpressionLink = (expr: string) => {
+  return `../graph?g0.expr=${expr}&g0.tab=1&g0.stacked=0&g0.range_input=1h`;
+};
+
+const CollapsibleAlertPanel: FC<ColapProps & PathPrefixProps> = ({ rule, showAnnotations, pathPrefix }) => {
   const [open, toggle] = useState(false);
   const { name, alerts, state, annotations, labels, query } = rule;
   return (
     <>
-      <Alert onClick={() => toggle(!open)} color={colors[state]}>
+      <Alert onClick={() => toggle(!open)} color={alertColors[state]} style={{ cursor: 'pointer' }}>
         <strong>{name}</strong>({`${rule.alerts.length} active`})
       </Alert>
       <Collapse isOpen={open} className="mb-2">
@@ -26,16 +32,10 @@ const CollapsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
           <CardBody tag="pre" style={{ background: '#f5f5f5' }}>
             <code>
               <div>
-                name:{' '}
-                <a href="#" onClick={console.log}>
-                  {name}
-                </a>
+                name: <Link to={createExpressionLink(name)}>{name}</Link>
               </div>
               <div>
-                expr:{' '}
-                <a href="#" onClick={console.log}>
-                  {query}
-                </a>
+                expr: <Link to={createExpressionLink(query)}>{query}</Link>
               </div>
               <div>
                 <div>labels:</div>
@@ -72,7 +72,7 @@ const CollapsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
                       </td>
                       <td>
                         <h5>
-                          <Badge color={colors[rule.state] + ' text-uppercase'} className="px-3">
+                          <Badge color={alertColors[rule.state] + ' text-uppercase'} className="px-3">
                             {rule.state}
                           </Badge>
                         </h5>

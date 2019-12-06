@@ -1,6 +1,6 @@
 import React, { FC, useState, Fragment } from 'react';
-import { ButtonGroup, Button, Row } from 'reactstrap';
-import CollapsibleAlertPanel from './CollapsibleAlertPanel';
+import { ButtonGroup, Button, Row, Badge } from 'reactstrap';
+import CollapsibleAlertPanel, { alertColors } from './CollapsibleAlertPanel';
 import Checkbox from '../../Checkbox';
 
 export type RuleState = keyof RuleStatus<any>;
@@ -45,7 +45,7 @@ interface RuleGroup {
 
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   const [state, setState] = useState<RuleStatus<boolean>>({
-    firing: true,
+    firing: false,
     pending: false,
     inactive: false,
   });
@@ -86,7 +86,14 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
         {groups.map((g, i) => {
           return (
             <Fragment key={i}>
-              <div>
+              <div className="d-flex mb-2 border p-3 rounded-sm" style={{ lineHeight: 0.9 }}>
+                {g.rules.map(r => {
+                  return (
+                    <Badge className="mr-1" color={alertColors[r.state]}>
+                      <span>{r.state}</span>
+                    </Badge>
+                  );
+                })}
                 {g.file} > {g.name}
               </div>
               {g.rules.map(
