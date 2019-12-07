@@ -852,8 +852,10 @@ func BenchmarkCompaction(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			_, err = c.Compact(dir, blockDirs, blocks)
-			testutil.Ok(b, err)
+			for i := 0; i < b.N; i++ {
+				_, err = c.Compact(dir, blockDirs, blocks)
+				testutil.Ok(b, err)
+			}
 		})
 	}
 }

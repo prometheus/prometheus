@@ -75,10 +75,20 @@ func (e *Encbuf) PutUvarintStr(s string) {
 // PutHash appends a hash over the buffers current contents to the buffer.
 func (e *Encbuf) PutHash(h hash.Hash) {
 	h.Reset()
+	e.WriteToHash(h)
+	e.PutHashSum(h)
+}
+
+// WriteToHash writes the current buffer contents to the given hash.
+func (e *Encbuf) WriteToHash(h hash.Hash) {
 	_, err := h.Write(e.B)
 	if err != nil {
 		panic(err) // The CRC32 implementation does not error
 	}
+}
+
+// PutHashSum writes the Sum of the given hash to the buffer.
+func (e *Encbuf) PutHashSum(h hash.Hash) {
 	e.B = h.Sum(e.B)
 }
 
