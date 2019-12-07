@@ -88,13 +88,13 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
               <StatusBadges rules={rules}>
                 {file} > {name}
               </StatusBadges>
-              {rules.map(
-                (rule, j) => {
-                  return state[rule.state] && (
+              {rules.map((rule, j) => {
+                return (
+                  state[rule.state] && (
                     <CollapsibleAlertPanel key={rule.name + i + j} showAnnotations={annotationsVisible} rule={rule} />
                   )
-                }
-              )}
+                );
+              })}
             </Fragment>
           );
         })}
@@ -104,46 +104,31 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
 };
 
 interface StatusBadgesProps {
-  rules: Rule[]
+  rules: Rule[];
 }
 
 const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
-  const statesCounter = rules.reduce<any>((acc, r) => {
-    return {
-      ...acc,
-      [r.state]: acc[r.state] + r.alerts.length
+  const statesCounter = rules.reduce<any>(
+    (acc, r) => {
+      return {
+        ...acc,
+        [r.state]: acc[r.state] + r.alerts.length,
+      };
+    },
+    {
+      firing: 0,
+      pending: 0,
     }
-  }, {
-    firing: 0,
-    pending: 0,
-  })
+  );
   return (
     <div className="status-badges border rounded-sm" style={{ lineHeight: 1.1 }}>
-      {
-        isNaN(statesCounter.inactive) && (
-          <Badge color="success">
-            inactive
-          </Badge>
-        )
-      }
-      {
-        statesCounter.pending > 0 && (
-          <Badge color="warning">
-            pending({statesCounter.pending})
-          </Badge>
-        )
-      }
-      {
-        statesCounter.firing > 0 && (
-          <Badge color="danger">
-            firing({statesCounter.firing})
-          </Badge>
-        )
-      }
+      {isNaN(statesCounter.inactive) && <Badge color="success">inactive</Badge>}
+      {statesCounter.pending > 0 && <Badge color="warning">pending({statesCounter.pending})</Badge>}
+      {statesCounter.firing > 0 && <Badge color="danger">firing({statesCounter.firing})</Badge>}
       {children}
     </div>
-  )
-}
+  );
+};
 
 AlertsContent.displayName = 'Alerts';
 

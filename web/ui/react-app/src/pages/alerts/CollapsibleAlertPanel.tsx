@@ -62,7 +62,9 @@ const CollapsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
                       <td>
                         {Object.entries(rule.labels).map(([k, v], j) => {
                           return (
-                            <Badge key={j} color="primary" className="mr-1">{k}={v}</Badge>
+                            <Badge key={j} color="primary" className="mr-1">
+                              {k}={v}
+                            </Badge>
                           );
                         })}
                       </td>
@@ -89,7 +91,7 @@ const CollapsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
 };
 
 interface AnnotationsProps {
-  annotations: { [k: string]: string }
+  annotations: { [k: string]: string };
 }
 
 export const Annotations: FC<AnnotationsProps> = ({ annotations }) => {
@@ -113,7 +115,7 @@ export const Annotations: FC<AnnotationsProps> = ({ annotations }) => {
         </td>
       </tr>
     </Fragment>
-  )
-}
+  );
+};
 
 export default CollapsibleAlertPanel;
