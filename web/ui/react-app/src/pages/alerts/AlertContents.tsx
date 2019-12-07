@@ -49,7 +49,6 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     pending: true,
     inactive: true,
   });
-
   const [annotationsVisible, setAnnotationsVisibility] = useState(false);
 
   const toggleState = (ruleState: RuleState) => {
@@ -119,10 +118,28 @@ const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
     pending: 0,
   })
   return (
-    <div className="alert-group-info border rounded-sm" style={{ lineHeight: 1.1 }}>
-      {isNaN(statesCounter.inactive) && <Badge color="success">inactive</Badge>}
-      {statesCounter.pending > 0 && <Badge color="warning">pending({statesCounter.pending})</Badge>}
-      {statesCounter.firing > 0 && <Badge color="danger">firing({statesCounter.firing})</Badge>}
+    <div className="status-badges border rounded-sm" style={{ lineHeight: 1.1 }}>
+      {
+        isNaN(statesCounter.inactive) && (
+          <Badge color="success">
+            inactive
+          </Badge>
+        )
+      }
+      {
+        statesCounter.pending > 0 && (
+          <Badge color="warning">
+            pending({statesCounter.pending})
+          </Badge>
+        )
+      }
+      {
+        statesCounter.firing > 0 && (
+          <Badge color="danger">
+            firing({statesCounter.firing})
+          </Badge>
+        )
+      }
       {children}
     </div>
   )

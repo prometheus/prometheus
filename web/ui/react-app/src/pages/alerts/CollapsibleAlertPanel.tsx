@@ -20,29 +20,28 @@ const createExpressionLink = (expr: string) => {
 
 const CollapsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
   const [open, toggle] = useState(false);
-  const { name, alerts, state, annotations, labels, query } = rule;
   return (
     <>
-      <Alert onClick={() => toggle(!open)} color={alertColors[state]} style={{ cursor: 'pointer' }}>
-        <strong>{name}</strong>({`${rule.alerts.length} active`})
+      <Alert onClick={() => toggle(!open)} color={alertColors[rule.state]} style={{ cursor: 'pointer' }}>
+        <strong>{rule.name}</strong>({`${rule.alerts.length} active`})
       </Alert>
       <Collapse isOpen={open} className="mb-2">
         <Card>
           <CardBody tag="pre" style={{ background: '#f5f5f5' }}>
             <code>
               <div>
-                name: <Link to={createExpressionLink(name)}>{name}</Link>
+                name: <Link to={createExpressionLink(rule.name)}>{rule.name}</Link>
               </div>
               <div>
-                expr: <Link to={createExpressionLink(query)}>{query}</Link>
+                expr: <Link to={createExpressionLink(rule.query)}>{rule.query}</Link>
               </div>
               <div>
                 <div>labels:</div>
-                <div className="ml-5">severity: {labels.severity}</div>
+                <div className="ml-5">severity: {rule.labels.severity}</div>
               </div>
               <div>
                 <div>annotations:</div>
-                <div className="ml-5">summary: {annotations.summary}</div>
+                <div className="ml-5">summary: {rule.annotations.summary}</div>
               </div>
             </code>
           </CardBody>
@@ -56,12 +55,12 @@ const CollapsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
               </tr>
             </thead>
             <tbody>
-              {alerts.map(({ labels, activeAt, value }, i) => {
+              {rule.alerts.map((alert, i) => {
                 return (
                   <Fragment key={i}>
                     <tr>
                       <td>
-                        {Object.entries(labels).map(([k, v], j) => {
+                        {Object.entries(rule.labels).map(([k, v], j) => {
                           return (
                             <Badge key={j} color="primary" className="mr-1">{k}={v}</Badge>
                           );
@@ -74,10 +73,10 @@ const CollapsibleAlertPanel: FC<ColapProps> = ({ rule, showAnnotations }) => {
                           </Badge>
                         </h5>
                       </td>
-                      <td>{activeAt}</td>
-                      <td>{value}</td>
+                      <td>{alert.activeAt}</td>
+                      <td>{alert.value}</td>
                     </tr>
-                    {showAnnotations && <Annotations annotations={rule.annotations} />}
+                    {showAnnotations && <Annotations annotations={alert.annotations} />}
                   </Fragment>
                 );
               })}

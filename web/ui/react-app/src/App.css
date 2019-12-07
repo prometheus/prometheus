@@ -212,11 +212,12 @@ div.time-input {
     margin-bottom: 20px;
 }
 
-.alert-group-info {
+.status-badges {
     display: flex;
     margin-bottom: 10px;
     padding: 10px;
 }
-.alert-group-info > span {
+.status-badges > span {
     margin-right: 5px;
+    max-height: 20px;
 }
