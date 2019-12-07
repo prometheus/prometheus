@@ -1059,6 +1059,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 						Interval: 1,
 						Rules: []rule{
 							alertingRule{
+								State:       "inactive",
 								Name:        "test_metric3",
 								Query:       "absent(test_metric3) != 1",
 								Duration:    1,
@@ -1069,6 +1070,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 								Type:        "alerting",
 							},
 							alertingRule{
+								State:       "inactive",
 								Name:        "test_metric4",
 								Query:       "up == 1",
 								Duration:    1,
