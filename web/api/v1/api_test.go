@@ -1092,6 +1092,69 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				},
 			},
 		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"type": []string{"alert"},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Rules: []rule{
+							alertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+							alertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"type": []string{"record"},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Rules: []rule{
+							recordingRule{
+								Name:   "recording-rule-1",
+								Query:  "vector(1)",
+								Labels: labels.Labels{},
+								Health: "unknown",
+								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	if testLabelAPI {
