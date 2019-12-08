@@ -45,7 +45,7 @@ const (
 	// FormatV2 represents 2 version of index.
 	FormatV2 = 2
 
-	labelNameSeperator = "\xff"
+	labelNameSeparator = "\xff"
 
 	indexFilename = "index"
 )
@@ -866,7 +866,7 @@ func (r *Reader) SymbolTableSize() uint64 {
 // LabelValues returns value tuples that exist for the given label name tuples.
 func (r *Reader) LabelValues(names ...string) (StringTuples, error) {
 
-	key := strings.Join(names, labelNameSeperator)
+	key := strings.Join(names, labelNameSeparator)
 	off, ok := r.labels[key]
 	if !ok {
 		// XXX(fabxc): hot fix. Should return a partial data error and handle cases
@@ -901,7 +901,7 @@ func (emptyStringTuples) Len() int                   { return 0 }
 func (r *Reader) LabelIndices() ([][]string, error) {
 	var res [][]string
 	for s := range r.labels {
-		res = append(res, strings.Split(s, labelNameSeperator))
+		res = append(res, strings.Split(s, labelNameSeparator))
 	}
 	return res, nil
 }
@@ -958,8 +958,8 @@ func (r *Reader) LabelNames() ([]string, error) {
 	labelNamesMap := make(map[string]struct{}, len(r.labels))
 	for key := range r.labels {
 		// 'key' contains the label names concatenated with the
-		// delimiter 'labelNameSeperator'.
-		names := strings.Split(key, labelNameSeperator)
+		// delimiter 'labelNameSeparator'.
+		names := strings.Split(key, labelNameSeparator)
 		for _, name := range names {
 			if name == allPostingsKey.Name {
 				// This is not from any metric.
