@@ -2,15 +2,16 @@ import React, { FC, useState, Fragment } from 'react';
 import { ButtonGroup, Button, Row, Badge } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../Checkbox';
+import { isPresent } from '../../utils/func';
 
 export type RuleState = keyof RuleStatus<any>;
 
 export interface Rule {
   alerts: Alert[];
-  annotations: { [k: string]: string };
+  annotations: Record<string, string>;
   duration: number;
   health: string;
-  labels: { [k: string]: string };
+  labels: Record<string, string>;
   name: string;
   query: string;
   state: RuleState;
@@ -29,10 +30,10 @@ export interface AlertsProps {
 }
 
 interface Alert {
-  labels: { [k: string]: string };
+  labels: Record<string, string>;
   state: RuleState;
   value: string;
-  annotations: { [k: string]: string };
+  annotations: Record<string, string>;
   activeAt: string;
 }
 
@@ -49,9 +50,9 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     pending: true,
     inactive: true,
   });
-  const [annotationsVisible, setAnnotationsVisibility] = useState(false);
+  const [showAnnotations, setShowAnnotations] = useState(false);
 
-  const toggleState = (ruleState: RuleState) => {
+  const toggle = (ruleState: RuleState) => () => {
     setState({
       ...state,
       [ruleState]: !state[ruleState],
@@ -61,13 +62,13 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   return (
     <>
       <ButtonGroup className="mb-3">
-        <Button active={state.inactive} onClick={() => toggleState('inactive')} color="primary">
+        <Button active={state.inactive} onClick={toggle('inactive')} color="primary">
           Inactive({statsCount.inactive})
         </Button>
-        <Button active={state.pending} onClick={() => toggleState('pending')} color="primary">
+        <Button active={state.pending} onClick={toggle('pending')} color="primary">
           Pending({statsCount.pending})
         </Button>
-        <Button active={state.firing} onClick={() => toggleState('firing')} color="primary">
+        <Button active={state.firing} onClick={toggle('firing')} color="primary">
           Firing({statsCount.firing})
         </Button>
       </ButtonGroup>
@@ -75,30 +76,27 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
         <Checkbox
           id="show_annotations"
           wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
-          defaultChecked={annotationsVisible}
-          onClick={() => setAnnotationsVisibility(!annotationsVisible)}
+          onClick={() => setShowAnnotations(!showAnnotations)}
         >
           Show annotations
         </Checkbox>
       </Row>
-      <div>
-        {groups.map(({ rules, name, file }, i) => {
-          return (
-            <Fragment key={i}>
-              <StatusBadges rules={rules}>
-                {file} > {name}
-              </StatusBadges>
-              {rules.map((rule, j) => {
-                return (
-                  state[rule.state] && (
-                    <CollapsibleAlertPanel key={rule.name + i + j} showAnnotations={annotationsVisible} rule={rule} />
-                  )
-                );
-              })}
-            </Fragment>
-          );
-        })}
-      </div>
+      {groups.map((group, i) => {
+        return (
+          <Fragment key={i}>
+            <StatusBadges rules={group.rules}>
+              {group.file} > {group.name}
+            </StatusBadges>
+            {group.rules.map((rule, j) => {
+              return (
+                state[rule.state] && (
+                  <CollapsibleAlertPanel key={rule.name + i + j} showAnnotations={showAnnotations} rule={rule} />
+                )
+              );
+            })}
+          </Fragment>
+        );
+      })}
     </>
   );
 };
@@ -120,9 +118,10 @@ const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
       pending: 0,
     }
   );
+
   return (
     <div className="status-badges border rounded-sm" style={{ lineHeight: 1.1 }}>
-      {isNaN(statesCounter.inactive) && <Badge color="success">inactive</Badge>}
+      {isPresent(statesCounter.inactive) && <Badge color="success">inactive</Badge>}
       {statesCounter.pending > 0 && <Badge color="warning">pending({statesCounter.pending})</Badge>}
       {statesCounter.firing > 0 && <Badge color="danger">firing({statesCounter.firing})</Badge>}
       {children}
