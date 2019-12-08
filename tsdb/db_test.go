@@ -1777,7 +1777,7 @@ func TestDB_LabelNames(t *testing.T) {
 		err = db.compact()
 		testutil.Ok(t, err)
 		// All blocks have same label names, hence check them individually.
-		// No need to aggregrate and check.
+		// No need to aggregate and check.
 		for _, b := range db.Blocks() {
 			blockIndexr, err := b.Index()
 			testutil.Ok(t, err)
@@ -1787,7 +1787,7 @@ func TestDB_LabelNames(t *testing.T) {
 			testutil.Ok(t, blockIndexr.Close())
 		}
 
-		// Addings more samples to head with new label names
+		// Adding more samples to head with new label names
 		// so that we can test (head+disk).LabelNames() (the union).
 		appendSamples(db, 5, 9, tst.sampleLabels2)
 
