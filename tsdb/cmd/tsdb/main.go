@@ -67,6 +67,9 @@ func execute() (err error) {
 		dumpPath             = dumpCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
 		dumpMinTime          = dumpCmd.Flag("min-time", "minimum timestamp to dump").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 		dumpMaxTime          = dumpCmd.Flag("max-time", "maximum timestamp to dump").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+		flushCmd             = cli.Command("flush", "flush the wal data into a block")
+		flushPath            = flushCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
+		flushBlockDir        = flushCmd.Arg("block dir", "directory of the created block").String()
 	)
 
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
@@ -136,6 +139,17 @@ func execute() (err error) {
 			err = merr.Err()
 		}()
 		return dumpSamples(db, *dumpMinTime, *dumpMaxTime)
+	case flushCmd.FullCommand():
+		db, err := tsdb.OpenDBReadOnly(*flushPath, nil)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			merr.Add(err)
+			merr.Add(db.Close())
+			err = merr.Err()
+		}()
+		return db.FlushWAL(*flushBlockDir)
 	}
 	return nil
 }
