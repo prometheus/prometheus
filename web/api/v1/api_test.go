@@ -540,7 +540,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 		query    url.Values
 		response interface{}
 		errType  errorType
-		sorter   func(interface{}) interface{}
+		sorter   func(interface{})
 	}
 
 	var tests = []test{
@@ -1011,10 +1011,11 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 					Unit:   "",
 				},
 			},
-			sorter: func(m interface{}) interface{} {
-				metrics := m.([]metricMetadata)
-				sort.Slice(metrics, func(i, j int) bool { return metrics[i].Metric < metrics[j].Metric })
-				return metrics
+			sorter: func(m interface{}) {
+				sort.Slice(m.([]metricMetadata), func(i, j int) bool {
+					s := m.([]metricMetadata)
+					return s[i].Metric < s[j].Metric
+				})
 			},
 		},
 		// Without a matching metric.
@@ -1170,12 +1171,11 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			res := test.endpoint(req.WithContext(ctx))
 			assertAPIError(t, res.err, test.errType)
 
-			data := res.data
 			if test.sorter != nil {
-				data = test.sorter(data)
+				test.sorter(res.data)
 			}
 
-			assertAPIResponse(t, data, test.response)
+			assertAPIResponse(t, res.data, test.response)
 		}
 	}
 }
