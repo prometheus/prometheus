@@ -140,6 +140,8 @@ label_match_list:
 label_matchers  : 
                 LEFT_BRACE label_match_list RIGHT_BRACE
                         { $$ = $2 }
+                | LEFT_BRACE label_match_list COMMA RIGHT_BRACE
+                        { $$ = $2 }
                 | LEFT_BRACE RIGHT_BRACE
                         { $$ = []*labels.Matcher{} }
 
@@ -163,6 +165,8 @@ match_op        :
 
 label_set       :
                 LEFT_BRACE label_set_list RIGHT_BRACE
+                        { $$ = labels.New($2...) }
+                | LEFT_BRACE label_set_list COMMA RIGHT_BRACE
                         { $$ = labels.New($2...) }
                 | LEFT_BRACE RIGHT_BRACE
                         { $$ = labels.New() }

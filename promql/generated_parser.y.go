@@ -169,7 +169,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyInitialStackSize = 16
 
-//line promql/generated_parser.y:190
+//line promql/generated_parser.y:194
 
 //line yacctab:1
 var yyExca = [...]int{
@@ -184,50 +184,50 @@ const yyLast = 68
 
 var yyAct = [...]int{
 
-	4, 24, 15, 28, 34, 31, 11, 25, 18, 1,
-	26, 17, 16, 12, 16, 8, 12, 14, 10, 6,
-	13, 33, 30, 7, 29, 19, 9, 5, 0, 32,
-	0, 0, 0, 20, 21, 27, 0, 0, 0, 22,
+	4, 24, 15, 28, 36, 32, 11, 25, 18, 1,
+	26, 17, 16, 12, 16, 12, 13, 33, 30, 14,
+	10, 35, 31, 8, 29, 6, 7, 19, 9, 34,
+	5, 0, 0, 20, 21, 27, 0, 0, 0, 22,
 	23, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 2, 3,
 }
 var yyPact = [...]int{
 
-	-2, -1000, 8, 4, -1000, -1000, 6, -1000, 5, -4,
-	-1000, -1000, -1, -5, -1000, -1000, 1, 9, -1000, 3,
-	-1000, -1000, -1000, -1000, -1000, -1000, 7, 2, -1000, -1000,
-	-1000, -1000, -1000, -1000, -1000,
+	-2, -1000, 14, 12, -1000, -1000, 8, -1000, 7, -4,
+	-1000, -1000, -1, -5, -1000, -1000, 1, 6, -1000, 3,
+	-1000, -1000, -1000, -1000, -1000, -1000, 5, 2, -1000, -1000,
+	-1000, -1000, -1000, -1000, -1000, -1000, -1000,
 }
 var yyPgo = [...]int{
 
-	0, 27, 26, 6, 25, 23, 20, 2, 9,
+	0, 30, 28, 6, 27, 26, 16, 2, 9,
 }
 var yyR1 = [...]int{
 
-	0, 8, 8, 8, 2, 2, 1, 1, 3, 3,
-	4, 4, 4, 4, 4, 5, 5, 6, 6, 7,
-	7, 7,
+	0, 8, 8, 8, 2, 2, 1, 1, 1, 3,
+	3, 4, 4, 4, 4, 4, 5, 5, 5, 6,
+	6, 7, 7, 7,
 }
 var yyR2 = [...]int{
 
-	0, 2, 2, 1, 3, 1, 3, 2, 3, 3,
-	1, 1, 1, 1, 1, 3, 2, 3, 1, 3,
-	3, 2,
+	0, 2, 2, 1, 3, 1, 3, 4, 2, 3,
+	3, 1, 1, 1, 1, 1, 3, 4, 2, 3,
+	1, 3, 3, 2,
 }
 var yyChk = [...]int{
 
 	-1000, -8, 68, 69, 2, -1, 11, -5, 11, -2,
 	12, -3, 7, -6, 12, -7, 7, 15, 12, -4,
 	34, 35, 40, 41, 2, 12, 15, 34, 2, -3,
-	19, 2, -7, 19, 2,
+	12, 19, 2, 12, -7, 19, 2,
 }
 var yyDef = [...]int{
 
 	0, -2, 0, 0, 3, 1, 0, 2, 0, 0,
-	7, 5, 0, 0, 16, 18, 0, 0, 6, 0,
-	10, 11, 12, 13, 14, 15, 0, 0, 21, 4,
-	8, 9, 17, 19, 20,
+	8, 5, 0, 0, 18, 20, 0, 0, 6, 0,
+	11, 12, 13, 14, 15, 16, 0, 0, 23, 4,
+	7, 9, 10, 17, 19, 21, 22,
 }
 var yyTok1 = [...]int{
 
@@ -621,44 +621,44 @@ yydefault:
 			yyVAL.matchers = yyDollar[2].matchers
 		}
 	case 7:
-		yyDollar = yyS[yypt-2 : yypt+1]
+		yyDollar = yyS[yypt-4 : yypt+1]
 //line promql/generated_parser.y:144
 		{
-			yyVAL.matchers = []*labels.Matcher{}
+			yyVAL.matchers = yyDollar[2].matchers
 		}
 	case 8:
-		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:150
+		yyDollar = yyS[yypt-2 : yypt+1]
+//line promql/generated_parser.y:146
 		{
-			yyVAL.matcher = yylex.(*parser).newLabelMatcher(yyDollar[1].item, yyDollar[2].item, yyDollar[3].item)
+			yyVAL.matchers = []*labels.Matcher{}
 		}
 	case 9:
 		yyDollar = yyS[yypt-3 : yypt+1]
 //line promql/generated_parser.y:152
 		{
-			yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())
+			yyVAL.matcher = yylex.(*parser).newLabelMatcher(yyDollar[1].item, yyDollar[2].item, yyDollar[3].item)
 		}
 	case 10:
-		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:156
+		yyDollar = yyS[yypt-3 : yypt+1]
+//line promql/generated_parser.y:154
 		{
-			yyVAL.item = yyDollar[1].item
+			yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())
 		}
 	case 11:
-		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:157
-		{
-			yyVAL.item = yyDollar[1].item
-		}
-	case 12:
 		yyDollar = yyS[yypt-1 : yypt+1]
 //line promql/generated_parser.y:158
 		{
 			yyVAL.item = yyDollar[1].item
 		}
-	case 13:
+	case 12:
 		yyDollar = yyS[yypt-1 : yypt+1]
 //line promql/generated_parser.y:159
+		{
+			yyVAL.item = yyDollar[1].item
+		}
+	case 13:
+		yyDollar = yyS[yypt-1 : yypt+1]
+//line promql/generated_parser.y:160
 		{
 			yyVAL.item = yyDollar[1].item
 		}
@@ -666,47 +666,59 @@ yydefault:
 		yyDollar = yyS[yypt-1 : yypt+1]
 //line promql/generated_parser.y:161
 		{
-			yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.Val)
+			yyVAL.item = yyDollar[1].item
 		}
 	case 15:
+		yyDollar = yyS[yypt-1 : yypt+1]
+//line promql/generated_parser.y:163
+		{
+			yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.Val)
+		}
+	case 16:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:166
+//line promql/generated_parser.y:168
 		{
 			yyVAL.labels = labels.New(yyDollar[2].labelSet...)
 		}
-	case 16:
+	case 17:
+		yyDollar = yyS[yypt-4 : yypt+1]
+//line promql/generated_parser.y:170
+		{
+			yyVAL.labels = labels.New(yyDollar[2].labelSet...)
+		}
+	case 18:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line promql/generated_parser.y:168
+//line promql/generated_parser.y:172
 		{
 			yyVAL.labels = labels.New()
 		}
-	case 17:
+	case 19:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:173
+//line promql/generated_parser.y:177
 		{
 			yyVAL.labelSet = append(yyDollar[1].labelSet, yyDollar[3].label)
 		}
-	case 18:
+	case 20:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:175
+//line promql/generated_parser.y:179
 		{
 			yyVAL.labelSet = []labels.Label{yyDollar[1].label}
 		}
-	case 19:
+	case 21:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:180
+//line promql/generated_parser.y:184
 		{
 			yyVAL.label = labels.Label{Name: yyDollar[1].item.Val, Value: yylex.(*parser).unquoteString(yyDollar[3].item.Val)}
 		}
-	case 20:
+	case 22:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:182
+//line promql/generated_parser.y:186
 		{
 			yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())
 		}
-	case 21:
+	case 23:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line promql/generated_parser.y:184
+//line promql/generated_parser.y:188
 		{
 			yylex.(*parser).errorf("expected \"=\" but got %s", yylex.(*parser).token.desc())
 		}

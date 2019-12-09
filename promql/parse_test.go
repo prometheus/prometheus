@@ -883,6 +883,19 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz",}`,
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: 0,
+			LabelMatchers: []*labels.Matcher{
+				mustLabelMatcher(labels.MatchEqual, "a", "b"),
+				mustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
+				mustLabelMatcher(labels.MatchRegexp, "test", "test"),
+				mustLabelMatcher(labels.MatchNotRegexp, "bar", "baz"),
+				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+			},
+		},
+	}, {
 		input:  `{`,
 		fail:   true,
 		errMsg: "unexpected end of input inside braces",
