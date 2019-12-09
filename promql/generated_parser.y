@@ -21,7 +21,7 @@
 
 %union {
     node Node
-    item item
+    item Item
     matchers []*labels.Matcher
     matcher  *labels.Matcher
 }
@@ -148,7 +148,7 @@ match_op        :
                 | EQL_REGEX {$$=$1}
                 | NEQ_REGEX {$$=$1}
                 | error 
-                        { yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.val) } 
+                        { yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.Val) } 
                 ;
 
 
