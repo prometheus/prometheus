@@ -332,6 +332,9 @@ var tests = []struct {
 			}, {
 				input:    "bool",
 				expected: []item{{BOOL, 0, "bool"}},
+			}, {
+				input:    "match",
+				expected: []item{{MATCH, 0, "match"}},
 			},
 		},
 	},

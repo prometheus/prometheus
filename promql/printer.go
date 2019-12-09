@@ -86,6 +86,11 @@ func (node *BinaryExpr) String() string {
 		returnBool = " bool"
 	}
 
+	matchBool := ""
+	if node.MatchBool {
+		matchBool = " match"
+	}
+
 	matching := ""
 	vm := node.VectorMatching
 	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
@@ -104,7 +109,7 @@ func (node *BinaryExpr) String() string {
 			matching += fmt.Sprintf("(%s)", strings.Join(vm.Include, ", "))
 		}
 	}
-	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, returnBool, matching, node.RHS)
+	return fmt.Sprintf("%s %s%s%s%s %s", node.LHS, node.Op, returnBool, matchBool, matching, node.RHS)
 }
 
 func (node *Call) String() string {
