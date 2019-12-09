@@ -1284,8 +1284,10 @@ func getPointSlice(sz int) []Point {
 }
 
 func putPointSlice(p []Point) {
-	//lint:ignore SA6002 relax staticcheck verification.
-	pointPool.Put(p[:0])
+	if cap(p) > 0 {
+		//lint:ignore SA6002 relax staticcheck verification.
+		pointPool.Put(p[:0])
+	}
 }
 
 // matrixSelector evaluates a *MatrixSelector expression.
