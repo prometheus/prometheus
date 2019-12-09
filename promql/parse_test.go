@@ -219,7 +219,7 @@ var testExpr = []struct {
 	}, {
 		input:  "1 == 1",
 		fail:   true,
-		errMsg: "parse error at char 7: comparisons between scalars must use BOOL modifier",
+		errMsg: "1:7: parse error: comparisons between scalars must use BOOL modifier",
 	}, {
 		input:  "1 or 1",
 		fail:   true,
@@ -255,7 +255,7 @@ var testExpr = []struct {
 	}, {
 		input:  "a - on(b) ignoring(c) d",
 		fail:   true,
-		errMsg: "parse error at char 11: no valid expression found",
+		errMsg: "1:11: parse error: no valid expression found",
 	},
 	// Vector binary operations.
 	{
@@ -919,7 +919,7 @@ var testExpr = []struct {
 	}, {
 		input:  "some_metric{a=\"\xff\"}",
 		fail:   true,
-		errMsg: "parse error at char 15: invalid UTF-8 rune",
+		errMsg: "1:15: parse error: invalid UTF-8 rune",
 	}, {
 		input:  `foo{gibberish}`,
 		fail:   true,
@@ -1057,11 +1057,11 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric OFFSET 1m[5m]`,
 		fail:   true,
-		errMsg: "parse error at char 25: unexpected \"]\" in subquery selector, expected \":\"",
+		errMsg: "1:25: parse error: unexpected \"]\" in subquery selector, expected \":\"",
 	}, {
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
-		errMsg: "parse error at char 15: unexpected \"]\" in subquery selector, expected \":\"",
+		errMsg: "1:15: parse error: unexpected \"]\" in subquery selector, expected \":\"",
 	},
 	// Test aggregation.
 	{
@@ -1222,7 +1222,7 @@ var testExpr = []struct {
 	}, {
 		input:  "MIN keep_common (some_metric)",
 		fail:   true,
-		errMsg: "parse error at char 5: unexpected identifier \"keep_common\" in aggregation, expected \"(\"",
+		errMsg: "1:5: parse error: unexpected identifier \"keep_common\" in aggregation, expected \"(\"",
 	}, {
 		input:  "MIN (some_metric) keep_common",
 		fail:   true,
@@ -1238,15 +1238,15 @@ var testExpr = []struct {
 	}, {
 		input:  `topk(some_metric)`,
 		fail:   true,
-		errMsg: "parse error at char 17: unexpected \")\" in aggregation, expected \",\"",
+		errMsg: "1:17: parse error: unexpected \")\" in aggregation, expected \",\"",
 	}, {
 		input:  `topk(some_metric, other_metric)`,
 		fail:   true,
-		errMsg: "parse error at char 32: expected type scalar in aggregation parameter, got instant vector",
+		errMsg: "1:32: parse error: expected type scalar in aggregation parameter, got instant vector",
 	}, {
 		input:  `count_values(5, other_metric)`,
 		fail:   true,
-		errMsg: "parse error at char 30: expected type string in aggregation parameter, got scalar",
+		errMsg: "1:30: parse error: expected type string in aggregation parameter, got scalar",
 	},
 	// Test function calls.
 	{
@@ -1332,7 +1332,7 @@ var testExpr = []struct {
 	}, {
 		input:  "label_replace(a, `b`, `c\xff`, `d`, `.*`)",
 		fail:   true,
-		errMsg: "parse error at char 23: invalid UTF-8 rune",
+		errMsg: "1:23: parse error: invalid UTF-8 rune",
 	},
 	// Fuzzing regression tests.
 	{
@@ -1586,11 +1586,11 @@ var testExpr = []struct {
 	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",
 		fail:   true,
-		errMsg: "parse error at char 29: subquery is only allowed on instant vector, got matrix in \"test[5d] offset 10s[10m:5s]\"",
+		errMsg: "1:29: parse error: subquery is only allowed on instant vector, got matrix in \"test[5d] offset 10s[10m:5s]\"",
 	}, {
 		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
 		fail:   true,
-		errMsg: "parse error at char 27: could not parse remaining input \"[10m:5s]\"...",
+		errMsg: "1:27: parse error: could not parse remaining input \"[10m:5s]\"...",
 	},
 }
 
