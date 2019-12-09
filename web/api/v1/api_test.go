@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -539,6 +540,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 		query    url.Values
 		response interface{}
 		errType  errorType
+		sorter   func(interface{}) interface{}
 	}
 
 	var tests = []test{
@@ -1009,6 +1011,11 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 					Unit:   "",
 				},
 			},
+			sorter: func(m interface{}) interface{} {
+				metrics := m.([]metricMetadata)
+				sort.Slice(metrics, func(i, j int) bool { return metrics[i].Metric < metrics[j].Metric })
+				return metrics
+			},
 		},
 		// Without a matching metric.
 		{
@@ -1162,7 +1169,13 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			}
 			res := test.endpoint(req.WithContext(ctx))
 			assertAPIError(t, res.err, test.errType)
-			assertAPIResponse(t, res.data, test.response)
+
+			data := res.data
+			if test.sorter != nil {
+				data = test.sorter(data)
+			}
+
+			assertAPIResponse(t, data, test.response)
 		}
 	}
 }
