@@ -1221,6 +1221,7 @@ func (ev *evaluator) rangeMatchEvalVV(e *BinaryExpr) Matrix {
 					pss[h] = ps
 				}
 				ps = append(ps, s.Point)
+				pss[h] = ps
 			}
 			return ev.VectorBinop(e.Op, l, v[1].(Vector), e.VectorMatching, false, res)
 		}, e.LHS, e.RHS)
