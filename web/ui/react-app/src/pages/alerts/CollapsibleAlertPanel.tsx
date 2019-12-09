@@ -33,7 +33,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
         <pre style={{ background: '#f5f5f5', padding: 15 }}>
           <code>
             <div>
-              name: <Link to={createExpressionLink(rule.name)}>{rule.name}</Link>
+              name: <Link to={createExpressionLink(`ALERTS{alertname="${rule.name}"}`)}>{rule.name}</Link>
             </div>
             <div>
               expr: <Link to={createExpressionLink(rule.query)}>{rule.query}</Link>
