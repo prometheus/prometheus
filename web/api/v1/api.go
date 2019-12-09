@@ -824,7 +824,7 @@ type RuleGroup struct {
 type rule interface{}
 
 type alertingRule struct {
-	// State can be "pending", "firing", "inactive"
+	// State can be "pending", "firing", "inactive".
 	State       string           `json:"state"`
 	Name        string           `json:"name"`
 	Query       string           `json:"query"`
