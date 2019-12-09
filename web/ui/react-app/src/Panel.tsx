@@ -71,33 +71,22 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
   componentDidUpdate(prevProps: PanelProps, prevState: PanelState) {
     const prevOpts = prevProps.options;
     const opts = this.props.options;
-    if (
-      prevOpts.type !== opts.type ||
-      prevOpts.range !== opts.range ||
-      prevOpts.endTime !== opts.endTime ||
-      prevOpts.resolution !== opts.resolution ||
-      prevOpts.expr !== opts.expr
-    ) {
-      if (prevOpts.type !== opts.type) {
-        // If the other options change, we still want to show the old data until the new
-        // query completes, but this is not a good idea when we actually change between
-        // table and graph view, since not all queries work well in both.
-        this.setState({ data: null });
-      }
-      this.executeQuery(opts.expr);
+    if (prevOpts.type !== opts.type) {
+      // If the other options change, we still want to show the old data until the new
+      // query completes, but this is not a good idea when we actually change between
+      // table and graph view, since not all queries work well in both.
+      this.setState({ data: null });
     }
   }
 
   componentDidMount() {
-    this.executeQuery(this.props.options.expr);
+    this.executeQuery();
   }
 
-  executeQuery = (expr: string): void => {
+  executeQuery = (): void => {
+    const { expr } = this.props.options;
     const queryStart = Date.now();
     this.props.onExecuteQuery(expr);
-    if (this.props.options.expr !== expr) {
-      this.setOptions({ expr: expr });
-    }
     if (expr === '') {
       return;
     }
@@ -192,6 +181,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
 
   handleChangeRange = (range: number): void => {
     this.setOptions({ range: range });
+    this.executeQuery();
   };
 
   getEndTime = (): number | moment.Moment => {
@@ -203,14 +193,21 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
 
   handleChangeEndTime = (endTime: number | null) => {
     this.setOptions({ endTime: endTime });
+    this.executeQuery();
   };
 
   handleChangeResolution = (resolution: number | null) => {
     this.setOptions({ resolution: resolution });
+    this.executeQuery();
+  };
+
+  handleChangeType = (type: PanelType) => {
+    this.setOptions({ type: type });
   };
 
   handleChangeStacking = (stacked: boolean) => {
     this.setOptions({ stacked: stacked });
+    this.executeQuery();
   };
 
   render() {
@@ -221,6 +218,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
           <Col>
             <ExpressionInput
               value={options.expr}
+              onExpressionChange={this.handleExpressionChange}
               executeQuery={this.executeQuery}
               loading={this.state.loading}
               autocompleteSections={{
@@ -239,9 +237,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
               <NavItem>
                 <NavLink
                   className={options.type === 'table' ? 'active' : ''}
-                  onClick={() => {
-                    this.setOptions({ type: 'table' });
-                  }}
+                  onClick={() => this.handleChangeType(PanelType.Table)}
                 >
                   Table
                 </NavLink>
@@ -249,9 +245,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
               <NavItem>
                 <NavLink
                   className={options.type === 'graph' ? 'active' : ''}
-                  onClick={() => {
-                    this.setOptions({ type: 'graph' });
-                  }}
+                  onClick={() => this.handleChangeType(PanelType.Graph)}
                 >
                   Graph
                 </NavLink>
