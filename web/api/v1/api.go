@@ -824,6 +824,8 @@ type RuleGroup struct {
 type rule interface{}
 
 type alertingRule struct {
+	// State can be "pending", "firing", "inactive".
+	State       string           `json:"state"`
 	Name        string           `json:"name"`
 	Query       string           `json:"query"`
 	Duration    float64          `json:"duration"`
@@ -849,6 +851,16 @@ type recordingRule struct {
 func (api *API) rules(r *http.Request) apiFuncResult {
 	ruleGroups := api.rulesRetriever.RuleGroups()
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
+	typeParam := strings.ToLower(r.URL.Query().Get("type"))
+
+	if typeParam != "" && typeParam != "alert" && typeParam != "record" {
+		err := errors.Errorf("invalid query parameter type='%v'", typeParam)
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	returnAlerts := typeParam == "" || typeParam == "alert"
+	returnRecording := typeParam == "" || typeParam == "record"
+
 	for i, grp := range ruleGroups {
 		apiRuleGroup := &RuleGroup{
 			Name:     grp.Name(),
@@ -856,7 +868,6 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			Interval: grp.Interval().Seconds(),
 			Rules:    []rule{},
 		}
-
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
 
@@ -864,10 +875,13 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			if r.LastError() != nil {
 				lastError = r.LastError().Error()
 			}
-
 			switch rule := r.(type) {
 			case *rules.AlertingRule:
+				if !returnAlerts {
+					break
+				}
 				enrichedRule = alertingRule{
+					State:       rule.State().String(),
 					Name:        rule.Name(),
 					Query:       rule.Query().String(),
 					Duration:    rule.Duration().Seconds(),
@@ -879,6 +893,9 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					Type:        "alerting",
 				}
 			case *rules.RecordingRule:
+				if !returnRecording {
+					break
+				}
 				enrichedRule = recordingRule{
 					Name:      rule.Name(),
 					Query:     rule.Query().String(),
@@ -891,8 +908,9 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
 				return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 			}
-
-			apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
+			if enrichedRule != nil {
+				apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
+			}
 		}
 		res.RuleGroups[i] = apiRuleGroup
 	}

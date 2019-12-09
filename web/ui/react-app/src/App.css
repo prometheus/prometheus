@@ -211,3 +211,15 @@ div.time-input {
 .add-panel-btn {
     margin-bottom: 20px;
 }
+
+.status-badges {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding: 10px;
+}
+
+.badges-wrapper > span {
+    margin-right: 5px;
+    max-height: 20px;
+}
