@@ -865,7 +865,7 @@ func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Po
 	for _, bDir := range bDirs {
 		meta, _, err := readMetaFile(bDir)
 		if err != nil {
-			level.Error(l).Log("msg", "not a block dir", "dir", bDir)
+			level.Error(l).Log("msg", "failed to read meta.json for a block", "dir", bDir, "err", err)
 			continue
 		}
 
