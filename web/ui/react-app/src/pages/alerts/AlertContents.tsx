@@ -63,18 +63,17 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     <>
       <ButtonGroup className="mb-3">
         <Button active={state.inactive} onClick={toggle('inactive')} color="primary">
-          Inactive({statsCount.inactive})
+          Inactive ({statsCount.inactive})
         </Button>
         <Button active={state.pending} onClick={toggle('pending')} color="primary">
-          Pending({statsCount.pending})
+          Pending ({statsCount.pending})
         </Button>
         <Button active={state.firing} onClick={toggle('firing')} color="primary">
-          Firing({statsCount.firing})
+          Firing ({statsCount.firing})
         </Button>
       </ButtonGroup>
       <Row className="mb-2">
         <Checkbox
-          id="show_annotations"
           wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
           onClick={() => setShowAnnotations(!showAnnotations)}
         >
@@ -90,7 +89,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
             {group.rules.map((rule, j) => {
               return (
                 state[rule.state] && (
-                  <CollapsibleAlertPanel key={rule.name + i + j} showAnnotations={showAnnotations} rule={rule} />
+                  <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotations} rule={rule} />
                 )
               );
             })}

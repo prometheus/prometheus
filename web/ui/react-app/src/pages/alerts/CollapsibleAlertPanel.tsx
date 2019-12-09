@@ -8,7 +8,7 @@ interface CollapsibleAlertPanelProps {
   showAnnotations: boolean;
 }
 
-export const alertColors: RuleStatus<string> = {
+const alertColors: RuleStatus<string> = {
   firing: 'danger',
   pending: 'warning',
   inactive: 'success',
@@ -24,7 +24,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
   return (
     <>
       <Alert onClick={() => toggle(!open)} color={alertColors[rule.state]} style={{ cursor: 'pointer' }}>
-        <strong>{rule.name}</strong>({`${rule.alerts.length} active`})
+        <strong>{rule.name}</strong> ({`${rule.alerts.length} active`})
       </Alert>
       <Collapse isOpen={open} className="mb-2">
         <pre style={{ background: '#f5f5f5', padding: 15 }}>
@@ -45,7 +45,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
             </div>
           </code>
         </pre>
-        <Table bordered className="mb-0">
+        <Table bordered size="sm">
           <thead>
             <tr>
               <th>Labels</th>
@@ -59,8 +59,8 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
               return (
                 <Fragment key={i}>
                   <tr>
-                    <td>
-                      {Object.entries(rule.labels).map(([k, v], j) => {
+                    <td style={{ verticalAlign: 'middle' }}>
+                      {Object.entries(alert.labels).map(([k, v], j) => {
                         return (
                           <Badge key={j} color="primary" className="mr-1">
                             {k}={v}
@@ -69,7 +69,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                       })}
                     </td>
                     <td>
-                      <h5>
+                      <h5 className="m-0">
                         <Badge color={alertColors[rule.state] + ' text-uppercase'} className="px-3">
                           {rule.state}
                         </Badge>
