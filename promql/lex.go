@@ -151,6 +151,7 @@ var key = map[string]ItemType{
 	"group_left":  GROUP_LEFT,
 	"group_right": GROUP_RIGHT,
 	"bool":        BOOL,
+	"match":       MATCH,
 }
 
 // These are the default string representations for common items. It does not

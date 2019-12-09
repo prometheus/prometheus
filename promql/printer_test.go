@@ -75,6 +75,9 @@ func TestExprString(t *testing.T) {
 			in: `up > bool 0`,
 		},
 		{
+			in: `up > match 0`,
+		},
+		{
 			in: `a offset 1m`,
 		},
 		{

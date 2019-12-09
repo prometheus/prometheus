@@ -1119,20 +1119,14 @@ func (ev *evaluator) eval(expr Expr) Value {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			default:
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
-					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
-				}, e.LHS, e.RHS)
+				return ev.rangeMatchEvalVV(e)
 			}
 
 		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
-				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool, enh)
-			}, e.LHS, e.RHS)
+			return ev.rangeMatchEvalVS(e, false)
 
 		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
-				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].Point.V}, true, e.ReturnBool, enh)
-			}, e.LHS, e.RHS)
+			return ev.rangeMatchEvalVS(e, true)
 		}
 
 	case *NumberLiteral:
@@ -1206,6 +1200,84 @@ func (ev *evaluator) eval(expr Expr) Value {
 	}
 
 	panic(errors.Errorf("unhandled expression of type: %T", expr))
+}
+
+func (ev *evaluator) rangeMatchEvalVV(e *BinaryExpr) Matrix {
+	var mat Matrix
+	if !e.MatchBool {
+		mat = ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
+		}, e.LHS, e.RHS)
+	} else {
+		pss := make(map[uint64][]Point)
+		mat = ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			res := &EvalNodeHelper{out: make(Vector, 0)}
+			l := v[0].(Vector)
+			for _, s := range l {
+				h := s.Metric.Hash()
+				ps, ok := pss[h]
+				if !ok {
+					ps = make([]Point, 0)
+					pss[h] = ps
+				}
+				ps = append(ps, s.Point)
+			}
+			return ev.VectorBinop(e.Op, l, v[1].(Vector), e.VectorMatching, false, res)
+		}, e.LHS, e.RHS)
+		for i, s := range mat {
+			h := s.Metric.Hash()
+			ps, ok := pss[h]
+			if !ok {
+				continue
+			}
+			mat[i] = Series{
+				Metric: s.Metric,
+				Points: ps,
+			}
+		}
+	}
+	return mat
+}
+
+func (ev *evaluator) rangeMatchEvalVS(e *BinaryExpr, swap bool) Matrix {
+	var mat Matrix
+	if !e.MatchBool {
+		mat = ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool, enh)
+		}, e.LHS, e.RHS)
+	} else {
+		pss := make(map[uint64][]Point)
+		mat = ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			res := &EvalNodeHelper{out: make(Vector, 0)}
+			li, ri := 0, 1
+			if swap {
+				li, ri = 1, 0
+			}
+			l := v[li].(Vector)
+			for _, s := range l {
+				h := s.Metric.Hash()
+				ps, ok := pss[h]
+				if !ok {
+					ps = make([]Point, 0)
+				}
+				ps = append(ps, s.Point)
+				pss[h] = ps
+			}
+			return ev.VectorscalarBinop(e.Op, l, Scalar{V: v[ri].(Vector)[0].Point.V}, swap, false, res)
+		}, e.LHS, e.RHS)
+		for i, s := range mat {
+			h := s.Metric.Hash()
+			ps, ok := pss[h]
+			if !ok {
+				continue
+			}
+			mat[i] = Series{
+				Metric: s.Metric,
+				Points: ps,
+			}
+		}
+	}
+	return mat
 }
 
 func durationToInt64Millis(d time.Duration) int64 {

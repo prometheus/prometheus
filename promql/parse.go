@@ -445,6 +445,16 @@ func (p *parser) expr() Expr {
 			returnBool = true
 		}
 
+		matchBool := false
+		// Parse match modifer
+		if p.peek().typ == MATCH {
+			if !op.isComparisonOperator() {
+				p.errorf("match modifier can only be used on comparison operators")
+			}
+			p.next()
+			matchBool = true
+		}
+
 		// Parse ON/IGNORING clause.
 		if p.peek().typ == ON || p.peek().typ == IGNORING {
 			if p.peek().typ == ON {
@@ -479,15 +489,15 @@ func (p *parser) expr() Expr {
 		rhs := p.unaryExpr()
 
 		// Assign the new root based on the precedence of the LHS and RHS operators.
-		expr = p.balance(expr, op, rhs, vecMatching, returnBool)
+		expr = p.balance(expr, op, rhs, vecMatching, returnBool, matchBool)
 	}
 }
 
-func (p *parser) balance(lhs Expr, op ItemType, rhs Expr, vecMatching *VectorMatching, returnBool bool) *BinaryExpr {
+func (p *parser) balance(lhs Expr, op ItemType, rhs Expr, vecMatching *VectorMatching, returnBool, matchBool bool) *BinaryExpr {
 	if lhsBE, ok := lhs.(*BinaryExpr); ok {
 		precd := lhsBE.Op.precedence() - op.precedence()
 		if (precd < 0) || (precd == 0 && op.isRightAssociative()) {
-			balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
+			balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool, matchBool)
 			if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == ValueTypeScalar && lhsBE.LHS.Type() == ValueTypeScalar {
 				p.errorf("comparisons between scalars must use BOOL modifier")
 			}
@@ -497,6 +507,7 @@ func (p *parser) balance(lhs Expr, op ItemType, rhs Expr, vecMatching *VectorMat
 				RHS:            balanced,
 				VectorMatching: lhsBE.VectorMatching,
 				ReturnBool:     lhsBE.ReturnBool,
+				MatchBool:      lhsBE.MatchBool,
 			}
 		}
 	}
@@ -509,6 +520,7 @@ func (p *parser) balance(lhs Expr, op ItemType, rhs Expr, vecMatching *VectorMat
 		RHS:            rhs,
 		VectorMatching: vecMatching,
 		ReturnBool:     returnBool,
+		MatchBool:      matchBool,
 	}
 }
 

@@ -97,6 +97,9 @@ type BinaryExpr struct {
 
 	// If a comparison operator, return 0/1 rather than filtering.
 	ReturnBool bool
+
+	// If a comparison operator, match series rather than filter
+	MatchBool bool
 }
 
 // Call represents a function call.

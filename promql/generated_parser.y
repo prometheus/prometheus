@@ -95,6 +95,7 @@
 %token <item> GROUP_LEFT
 %token <item> GROUP_RIGHT
 %token <item> BOOL
+%token <item> MATCH
 
 %token keywordsEnd
 

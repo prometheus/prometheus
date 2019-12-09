@@ -71,37 +71,37 @@ var testExpr = []struct {
 		expected: &NumberLiteral{-493},
 	}, {
 		input:    "1 + 1",
-		expected: &BinaryExpr{ADD, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		expected: &BinaryExpr{ADD, &NumberLiteral{1}, &NumberLiteral{1}, nil, false, false},
 	}, {
 		input:    "1 - 1",
-		expected: &BinaryExpr{SUB, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		expected: &BinaryExpr{SUB, &NumberLiteral{1}, &NumberLiteral{1}, nil, false, false},
 	}, {
 		input:    "1 * 1",
-		expected: &BinaryExpr{MUL, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		expected: &BinaryExpr{MUL, &NumberLiteral{1}, &NumberLiteral{1}, nil, false, false},
 	}, {
 		input:    "1 % 1",
-		expected: &BinaryExpr{MOD, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		expected: &BinaryExpr{MOD, &NumberLiteral{1}, &NumberLiteral{1}, nil, false, false},
 	}, {
 		input:    "1 / 1",
-		expected: &BinaryExpr{DIV, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		expected: &BinaryExpr{DIV, &NumberLiteral{1}, &NumberLiteral{1}, nil, false, false},
 	}, {
 		input:    "1 == bool 1",
-		expected: &BinaryExpr{EQL, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{EQL, &NumberLiteral{1}, &NumberLiteral{1}, nil, true, false},
 	}, {
 		input:    "1 != bool 1",
-		expected: &BinaryExpr{NEQ, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{NEQ, &NumberLiteral{1}, &NumberLiteral{1}, nil, true, false},
 	}, {
 		input:    "1 > bool 1",
-		expected: &BinaryExpr{GTR, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{GTR, &NumberLiteral{1}, &NumberLiteral{1}, nil, true, false},
 	}, {
 		input:    "1 >= bool 1",
-		expected: &BinaryExpr{GTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{GTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true, false},
 	}, {
 		input:    "1 < bool 1",
-		expected: &BinaryExpr{LSS, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{LSS, &NumberLiteral{1}, &NumberLiteral{1}, nil, true, false},
 	}, {
 		input:    "1 <= bool 1",
-		expected: &BinaryExpr{LTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
+		expected: &BinaryExpr{LTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true, false},
 	}, {
 		input: "+1 + -2 * 1",
 		expected: &BinaryExpr{
@@ -300,6 +300,19 @@ var testExpr = []struct {
 			},
 			RHS:        &NumberLiteral{1},
 			ReturnBool: true,
+		},
+	}, {
+		input: "foo == match 1",
+		expected: &BinaryExpr{
+			Op: EQL,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				},
+			},
+			RHS:       &NumberLiteral{1},
+			MatchBool: true,
 		},
 	}, {
 		input: "2.5 / bar",
