@@ -20,12 +20,13 @@
 %}
 
 %union {
-    node Node
-    item Item
-    matchers []*labels.Matcher
-    matcher  *labels.Matcher
-    labelSet []labels.Label
+    node      Node
+    item      Item
+    matchers  []*labels.Matcher
+    matcher   *labels.Matcher
+    labelSet  []labels.Label
     label     labels.Label
+    labels    labels.Labels
 }
 
 
@@ -112,7 +113,8 @@
 
 %type <item> match_op
 
-%type <labelSet> label_set label_set_list
+%type <labels> label_set
+%type <labelSet> label_set_list
 %type <label> label_set_item    
 
 %start start
@@ -122,6 +124,7 @@
 start           : START_LABELS label_matchers
                      {yylex.(*parser).generatedParserResult.(*VectorSelector).LabelMatchers = $2}
                 | START_LABEL_SET label_set
+                     { yylex.(*parser).generatedParserResult = $2 }
                 | error 
                         { yylex.(*parser).errorf("unknown syntax error after parsing %v", yylex.(*parser).token.desc()) }
                 ;
@@ -160,9 +163,9 @@ match_op        :
 
 label_set       :
                 LEFT_BRACE label_set_list RIGHT_BRACE
-                        { $$ = $2 }
+                        { $$ = labels.New($2...) }
                 | LEFT_BRACE RIGHT_BRACE
-                        { $$ = []labels.Label{} }
+                        { $$ = labels.New() }
                 ;
 
 label_set_list  :

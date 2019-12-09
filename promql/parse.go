@@ -41,7 +41,7 @@ type parser struct {
 
 	switchSymbols []ItemType
 
-	generatedParserResult Node
+	generatedParserResult interface{}
 }
 
 // ParseErr wraps a parsing error with line and position context.
@@ -801,90 +801,7 @@ func (p *parser) call(name string) *Call {
 //		'{' [ <labelname> '=' <match_string>, ... ] '}'
 //
 func (p *parser) labelSet() labels.Labels {
-	set := []labels.Label{}
-	for _, lm := range p.labelMatchers(EQL) {
-		set = append(set, labels.Label{Name: lm.Name, Value: lm.Value})
-	}
-	return labels.New(set...)
-}
-
-// labelMatchers parses a set of label matchers.
-//
-//		'{' [ <labelname> <match_op> <match_string>, ... ] '}'
-//
-func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
-	const ctx = "label matching"
-
-	matchers := []*labels.Matcher{}
-
-	p.expect(LEFT_BRACE, ctx)
-
-	// Check if no matchers are provided.
-	if p.peek().Typ == RIGHT_BRACE {
-		p.next()
-		return matchers
-	}
-
-	for {
-		label := p.expect(IDENTIFIER, ctx)
-
-		op := p.next().Typ
-		if !op.isOperator() {
-			p.errorf("expected label matching operator but got %s", op)
-		}
-		var validOp = false
-		for _, allowedOp := range operators {
-			if op == allowedOp {
-				validOp = true
-			}
-		}
-		if !validOp {
-			p.errorf("operator must be one of %q, is %q", operators, op)
-		}
-
-		val := p.unquoteString(p.expect(STRING, ctx).Val)
-
-		// Map the Item to the respective match type.
-		var matchType labels.MatchType
-		switch op {
-		case EQL:
-			matchType = labels.MatchEqual
-		case NEQ:
-			matchType = labels.MatchNotEqual
-		case EQL_REGEX:
-			matchType = labels.MatchRegexp
-		case NEQ_REGEX:
-			matchType = labels.MatchNotRegexp
-		default:
-			p.errorf("Item %q is not a metric match type", op)
-		}
-
-		m, err := labels.NewMatcher(matchType, label.Val, val)
-		if err != nil {
-			p.error(err)
-		}
-
-		matchers = append(matchers, m)
-
-		if p.peek().Typ == IDENTIFIER {
-			p.errorf("missing comma before next identifier %q", p.peek().Val)
-		}
-
-		// Terminate list if last matcher.
-		if p.peek().Typ != COMMA {
-			break
-		}
-		p.next()
-
-		// Allow comma after each Item in a multi-line listing.
-		if p.peek().Typ == RIGHT_BRACE {
-			break
-		}
-	}
-
-	p.expect(RIGHT_BRACE, ctx)
-
-	return matchers
+	return p.parseGenerated(START_LABEL_SET, []ItemType{RIGHT_BRACE, EOF}).(labels.Labels)
 }
 
 // metric parses a metric.
@@ -1141,7 +1058,7 @@ func parseDuration(ds string) (time.Duration, error) {
 // The generated parser will consume the lexer Stream until one of the
 // tokens listed in switchSymbols is encountered. switchSymbols
 // should at least contain EOF
-func (p *parser) parseGenerated(startSymbol ItemType, switchSymbols []ItemType) Node {
+func (p *parser) parseGenerated(startSymbol ItemType, switchSymbols []ItemType) interface{} {
 	p.InjectItem(startSymbol)
 
 	p.switchSymbols = switchSymbols

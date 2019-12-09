@@ -20,6 +20,7 @@ type yySymType struct {
 	matcher  *labels.Matcher
 	labelSet []labels.Label
 	label    labels.Label
+	labels   labels.Labels
 }
 
 const ERROR = 57346
@@ -168,7 +169,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyInitialStackSize = 16
 
-//line promql/generated_parser.y:187
+//line promql/generated_parser.y:190
 
 //line yacctab:1
 var yyExca = [...]int{
@@ -585,121 +586,127 @@ yydefault:
 
 	case 1:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line promql/generated_parser.y:123
+//line promql/generated_parser.y:125
 		{
 			yylex.(*parser).generatedParserResult.(*VectorSelector).LabelMatchers = yyDollar[2].matchers
 		}
+	case 2:
+		yyDollar = yyS[yypt-2 : yypt+1]
+//line promql/generated_parser.y:127
+		{
+			yylex.(*parser).generatedParserResult = yyDollar[2].labels
+		}
 	case 3:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:126
+//line promql/generated_parser.y:129
 		{
 			yylex.(*parser).errorf("unknown syntax error after parsing %v", yylex.(*parser).token.desc())
 		}
 	case 4:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:132
+//line promql/generated_parser.y:135
 		{
 			yyVAL.matchers = append(yyDollar[1].matchers, yyDollar[3].matcher)
 		}
 	case 5:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:134
+//line promql/generated_parser.y:137
 		{
 			yyVAL.matchers = []*labels.Matcher{yyDollar[1].matcher}
 		}
 	case 6:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:139
+//line promql/generated_parser.y:142
 		{
 			yyVAL.matchers = yyDollar[2].matchers
 		}
 	case 7:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line promql/generated_parser.y:141
+//line promql/generated_parser.y:144
 		{
 			yyVAL.matchers = []*labels.Matcher{}
 		}
 	case 8:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:147
+//line promql/generated_parser.y:150
 		{
 			yyVAL.matcher = yylex.(*parser).newLabelMatcher(yyDollar[1].item, yyDollar[2].item, yyDollar[3].item)
 		}
 	case 9:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:149
+//line promql/generated_parser.y:152
 		{
 			yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())
 		}
 	case 10:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:153
+//line promql/generated_parser.y:156
 		{
 			yyVAL.item = yyDollar[1].item
 		}
 	case 11:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:154
+//line promql/generated_parser.y:157
 		{
 			yyVAL.item = yyDollar[1].item
 		}
 	case 12:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:155
+//line promql/generated_parser.y:158
 		{
 			yyVAL.item = yyDollar[1].item
 		}
 	case 13:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:156
+//line promql/generated_parser.y:159
 		{
 			yyVAL.item = yyDollar[1].item
 		}
 	case 14:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:158
+//line promql/generated_parser.y:161
 		{
 			yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.Val)
 		}
 	case 15:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:163
+//line promql/generated_parser.y:166
 		{
-			yyVAL.labelSet = yyDollar[2].labelSet
+			yyVAL.labels = labels.New(yyDollar[2].labelSet...)
 		}
 	case 16:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line promql/generated_parser.y:165
+//line promql/generated_parser.y:168
 		{
-			yyVAL.labelSet = []labels.Label{}
+			yyVAL.labels = labels.New()
 		}
 	case 17:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:170
+//line promql/generated_parser.y:173
 		{
 			yyVAL.labelSet = append(yyDollar[1].labelSet, yyDollar[3].label)
 		}
 	case 18:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:172
+//line promql/generated_parser.y:175
 		{
 			yyVAL.labelSet = []labels.Label{yyDollar[1].label}
 		}
 	case 19:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:177
+//line promql/generated_parser.y:180
 		{
 			yyVAL.label = labels.Label{Name: yyDollar[1].item.Val, Value: yylex.(*parser).unquoteString(yyDollar[3].item.Val)}
 		}
 	case 20:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:179
+//line promql/generated_parser.y:182
 		{
 			yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())
 		}
 	case 21:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line promql/generated_parser.y:181
+//line promql/generated_parser.y:184
 		{
 			yylex.(*parser).errorf("expected \"=\" but got %s", yylex.(*parser).token.desc())
 		}
