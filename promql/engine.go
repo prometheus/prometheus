@@ -1242,18 +1242,18 @@ func (ev *evaluator) rangeMatchEvalVV(e *BinaryExpr) Matrix {
 
 func (ev *evaluator) rangeMatchEvalVS(e *BinaryExpr, swap bool) Matrix {
 	var mat Matrix
+	li, ri := 0, 1
+	if swap {
+		li, ri = 1, 0
+	}
 	if !e.MatchBool {
 		mat = ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
-			return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool, enh)
+			return ev.VectorscalarBinop(e.Op, v[li].(Vector), Scalar{V: v[ri].(Vector)[0].Point.V}, swap, e.ReturnBool, enh)
 		}, e.LHS, e.RHS)
 	} else {
 		pss := make(map[uint64][]Point)
 		mat = ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 			res := &EvalNodeHelper{out: make(Vector, 0)}
-			li, ri := 0, 1
-			if swap {
-				li, ri = 1, 0
-			}
 			l := v[li].(Vector)
 			for _, s := range l {
 				h := s.Metric.Hash()
