@@ -1198,6 +1198,8 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 }
 
 func assertAPIResponse(t *testing.T, got interface{}, exp interface{}) {
+	t.Helper()
+
 	if !reflect.DeepEqual(exp, got) {
 		respJSON, err := json.Marshal(got)
 		if err != nil {
