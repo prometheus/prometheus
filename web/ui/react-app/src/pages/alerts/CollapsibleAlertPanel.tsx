@@ -2,7 +2,7 @@ import React, { FC, useState, Fragment } from 'react';
 import { Link } from '@reach/router';
 import { Alert, Collapse, Table, Badge } from 'reactstrap';
 import { Rule, RuleStatus } from './AlertContents';
-import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 
 interface CollapsibleAlertPanelProps {
@@ -25,8 +25,8 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
 
   return (
     <>
-      <Alert onClick={() => toggle(!open)} color={alertColors[rule.state]} style={{ cursor: 'pointer' }}>
-        <FontAwesomeIcon icon={faChevronDown} fixedWidth />
+      <Alert fade={false} onClick={() => toggle(!open)} color={alertColors[rule.state]} style={{ cursor: 'pointer' }}>
+        <FontAwesomeIcon icon={open ? faChevronDown : faChevronRight} fixedWidth />
         <strong>{rule.name}</strong> ({`${rule.alerts.length} active`})
       </Alert>
       <Collapse isOpen={open} className="mb-2">
