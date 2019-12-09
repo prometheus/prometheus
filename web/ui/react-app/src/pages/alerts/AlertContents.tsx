@@ -74,6 +74,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
       </ButtonGroup>
       <Row className="mb-2">
         <Checkbox
+          id="show-annotations"
           wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
           onClick={() => setShowAnnotations(!showAnnotations)}
         >
@@ -120,10 +121,12 @@ const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
 
   return (
     <div className="status-badges border rounded-sm" style={{ lineHeight: 1.1 }}>
-      {isPresent(statesCounter.inactive) && <Badge color="success">inactive</Badge>}
-      {statesCounter.pending > 0 && <Badge color="warning">pending({statesCounter.pending})</Badge>}
-      {statesCounter.firing > 0 && <Badge color="danger">firing({statesCounter.firing})</Badge>}
       {children}
+      <div className="badges-wrapper">
+        {isPresent(statesCounter.inactive) && <Badge color="success">inactive</Badge>}
+        {statesCounter.pending > 0 && <Badge color="warning">pending ({statesCounter.pending})</Badge>}
+        {statesCounter.firing > 0 && <Badge color="danger">firing ({statesCounter.firing})</Badge>}
+      </div>
     </div>
   );
 };

@@ -214,10 +214,13 @@ div.time-input {
 
 .status-badges {
     display: flex;
+    justify-content: space-between;
     margin-bottom: 10px;
     padding: 10px;
 }
-.status-badges > span {
+
+.badges-wrapper > span {
     margin-right: 5px;
     max-height: 20px;
+    /* float: right; */
 }

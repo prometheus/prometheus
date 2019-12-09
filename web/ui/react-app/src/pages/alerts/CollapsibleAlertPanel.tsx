@@ -48,45 +48,47 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
             </div>
           </code>
         </pre>
-        <Table bordered size="sm">
-          <thead>
-            <tr>
-              <th>Labels</th>
-              <th>State</th>
-              <th>Active Since</th>
-              <th>Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rule.alerts.map((alert, i) => {
-              return (
-                <Fragment key={i}>
-                  <tr>
-                    <td style={{ verticalAlign: 'middle' }}>
-                      {Object.entries(alert.labels).map(([k, v], j) => {
-                        return (
-                          <Badge key={j} color="primary" className="mr-1">
-                            {k}={v}
+        {rule.alerts.length > 0 && (
+          <Table bordered size="sm">
+            <thead>
+              <tr>
+                <th>Labels</th>
+                <th>State</th>
+                <th>Active Since</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rule.alerts.map((alert, i) => {
+                return (
+                  <Fragment key={i}>
+                    <tr>
+                      <td style={{ verticalAlign: 'middle' }}>
+                        {Object.entries(alert.labels).map(([k, v], j) => {
+                          return (
+                            <Badge key={j} color="primary" className="mr-1">
+                              {k}={v}
+                            </Badge>
+                          );
+                        })}
+                      </td>
+                      <td>
+                        <h5 className="m-0">
+                          <Badge color={alertColors[alert.state] + ' text-uppercase'} className="px-3">
+                            {alert.state}
                           </Badge>
-                        );
-                      })}
-                    </td>
-                    <td>
-                      <h5 className="m-0">
-                        <Badge color={alertColors[rule.state] + ' text-uppercase'} className="px-3">
-                          {rule.state}
-                        </Badge>
-                      </h5>
-                    </td>
-                    <td>{alert.activeAt}</td>
-                    <td>{alert.value}</td>
-                  </tr>
-                  {showAnnotations && <Annotations annotations={alert.annotations} />}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </Table>
+                        </h5>
+                      </td>
+                      <td>{alert.activeAt}</td>
+                      <td>{alert.value}</td>
+                    </tr>
+                    {showAnnotations && <Annotations annotations={alert.annotations} />}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
       </Collapse>
     </>
   );
