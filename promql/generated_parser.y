@@ -24,6 +24,8 @@
     item Item
     matchers []*labels.Matcher
     matcher  *labels.Matcher
+    labelSet []labels.Label
+    label     labels.Label
 }
 
 
@@ -102,6 +104,7 @@
 %token	startSymbolsStart
 // Start symbols for the generated parser.
 %token START_LABELS
+%token START_LABEL_SET
 %token	startSymbolsEnd
 
 %type <matchers> label_matchers label_match_list
@@ -109,12 +112,16 @@
 
 %type <item> match_op
 
+%type <labelSet> label_set label_set_list
+%type <label> label_set_item    
+
 %start start
 
 %%
 
 start           : START_LABELS label_matchers
                      {yylex.(*parser).generatedParserResult.(*VectorSelector).LabelMatchers = $2}
+                | START_LABEL_SET label_set
                 | error 
                         { yylex.(*parser).errorf("unknown syntax error after parsing %v", yylex.(*parser).token.desc()) }
                 ;
@@ -150,6 +157,31 @@ match_op        :
                 | error 
                         { yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.Val) } 
                 ;
+
+label_set       :
+                LEFT_BRACE label_set_list RIGHT_BRACE
+                        { $$ = $2 }
+                | LEFT_BRACE RIGHT_BRACE
+                        { $$ = []labels.Label{} }
+                ;
+
+label_set_list  :
+                label_set_list COMMA label_set_item
+                        { $$ = append($1, $3) }
+                | label_set_item
+                        { $$ = []labels.Label{$1} }
+                ;
+
+label_set_item  :
+                IDENTIFIER EQL STRING
+                        { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } } 
+                | IDENTIFIER EQL error
+                        { yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())}
+                | IDENTIFIER error
+                        { yylex.(*parser).errorf("expected \"=\" but got %s", yylex.(*parser).token.desc())}
+                ;
+
+                
 
 
 %%
