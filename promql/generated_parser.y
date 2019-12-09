@@ -152,6 +152,8 @@ label_matcher   :
                         { $$ = yylex.(*parser).newLabelMatcher($1, $2, $3) }
                 | IDENTIFIER match_op error
                         { yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())}
+                | error
+                        { yylex.(*parser).errorf("unexpected %v in label matching, expected identifier or \"}\"", yylex.(*parser).token.desc()) }
                 ;
 
 match_op        :
@@ -177,6 +179,9 @@ label_set_list  :
                         { $$ = append($1, $3) }
                 | label_set_item
                         { $$ = []labels.Label{$1} }
+                | label_set_list error
+                        { yylex.(*parser).errorf("unexpected %v in label matching, expected \",\" or \"}\"", yylex.(*parser).token.desc()) }
+                
                 ;
 
 label_set_item  :
@@ -186,6 +191,8 @@ label_set_item  :
                         { yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())}
                 | IDENTIFIER error
                         { yylex.(*parser).errorf("expected \"=\" but got %s", yylex.(*parser).token.desc())}
+                | error
+                        { yylex.(*parser).errorf("unexpected %v in label matching, expected identifier or \"}\"", yylex.(*parser).token.desc()) }
                 ;
 
                 
