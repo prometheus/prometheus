@@ -525,13 +525,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 	}
 
 	type test struct {
-		endpoint apiFunc
-		params   map[string]string
-		query    url.Values
-		response interface{}
-		errType  errorType
-		sorter   func(interface{})
-		metadata []targetMetadata
+		endpoint    apiFunc
+		params      map[string]string
+		query       url.Values
+		response    interface{}
+		responseLen int
+		errType     errorType
+		sorter      func(interface{})
+		metadata    []targetMetadata
 	}
 
 	var tests = []test{
@@ -1178,7 +1179,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 		{
 			endpoint: api.metricMetadata,
 			query: url.Values{
-				"limit": []string{"1"},
+				"limit": []string{"2"},
 			},
 			metadata: []targetMetadata{
 				{
@@ -1210,9 +1211,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					},
 				},
 			},
-			response: map[string]metadataSet{
-				"go_threads": metadataSet{{textparse.MetricTypeGauge, "Number of OS threads created", ""}: struct{}{}},
-			},
+			responseLen: 2,
 		},
 		// With no available metadata
 		{
@@ -1359,7 +1358,11 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				test.sorter(res.data)
 			}
 
-			assertAPIResponse(t, res.data, test.response)
+			if test.responseLen != 0 {
+				assertAPIResponseLength(t, res.data, test.responseLen)
+			} else {
+				assertAPIResponse(t, res.data, test.response)
+			}
 		}
 	}
 }
@@ -1399,6 +1402,19 @@ func assertAPIResponse(t *testing.T, got interface{}, exp interface{}) {
 			"Response does not match, expected:\n%+v\ngot:\n%+v",
 			string(expectedRespJSON),
 			string(respJSON),
+		)
+	}
+}
+
+func assertAPIResponseLength(t *testing.T, got interface{}, expLen int) {
+	t.Helper()
+
+	gotLen := reflect.ValueOf(got).Len()
+	if gotLen != expLen {
+		t.Fatalf(
+			"Response length does not match, expected:\n%d\ngot:\n%d",
+			expLen,
+			gotLen,
 		)
 	}
 }
