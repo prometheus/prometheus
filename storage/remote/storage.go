@@ -82,7 +82,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	readHashes := make(map[string]struct{})
 	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
 	for _, rrConf := range conf.RemoteReadConfigs {
-		hash, err := rrConf.ToHash()
+		hash, err := toHash(rrConf)
 		if err != nil {
 			return nil
 		}

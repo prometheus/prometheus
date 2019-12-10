@@ -44,7 +44,6 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	// Test that configs that are identical in all but name are considered identical.
 	cfg1 := config.RemoteWriteConfig{
 		Name: "write-1",
 		URL: &config_util.URL{
@@ -53,6 +52,7 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 				Host:   "localhost",
 			},
 		},
+		QueueConfig: config.DefaultQueueConfig,
 	}
 	cfg2 := config.RemoteWriteConfig{
 		Name: "write-2",
@@ -62,20 +62,67 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 				Host:   "localhost",
 			},
 		},
+		QueueConfig: config.DefaultQueueConfig,
+	}
+	cfg3 := config.RemoteWriteConfig{
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+		QueueConfig: config.DefaultQueueConfig,
 	}
 
-	s := NewWriteStorage(nil, dir, defaultFlushDeadline)
-	conf := &config.Config{
-		GlobalConfig: config.DefaultGlobalConfig,
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			&cfg1,
-			&cfg2,
+	type testcase struct {
+		cfgs []*config.RemoteWriteConfig
+		err  bool
+	}
+
+	cases := []testcase{
+		{ // Two duplicates, we should get an error.
+			cfgs: []*config.RemoteWriteConfig{
+				&cfg1,
+				&cfg1,
+			},
+			err: true,
+		},
+		{ // Duplicates but with different names, we should not get an error.
+			cfgs: []*config.RemoteWriteConfig{
+				&cfg1,
+				&cfg2,
+			},
+			err: false,
+		},
+		{ // Duplicates but one with no name, we should not get an error.
+			cfgs: []*config.RemoteWriteConfig{
+				&cfg1,
+				&cfg3,
+			},
+			err: false,
+		},
+		{ // Duplicates both with no name, we should get an error.
+			cfgs: []*config.RemoteWriteConfig{
+				&cfg3,
+				&cfg3,
+			},
+			err: true,
 		},
 	}
-	testutil.NotOk(t, s.ApplyConfig(conf))
 
-	err = s.Close()
-	testutil.Ok(t, err)
+	for _, tc := range cases {
+		s := NewWriteStorage(nil, dir, time.Millisecond)
+		conf := &config.Config{
+			GlobalConfig:       config.DefaultGlobalConfig,
+			RemoteWriteConfigs: tc.cfgs,
+		}
+		err := s.ApplyConfig(conf)
+		gotError := err != nil
+		testutil.Equals(t, tc.err, gotError)
+
+		err = s.Close()
+		testutil.Ok(t, err)
+	}
 }
 
 func TestRestartOnNameChange(t *testing.T) {
@@ -83,7 +130,7 @@ func TestRestartOnNameChange(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	hash, err := cfg.ToHash()
+	hash, err := toHash(cfg)
 	testutil.Ok(t, err)
 
 	s := NewWriteStorage(nil, dir, time.Millisecond)
@@ -99,7 +146,9 @@ func TestRestartOnNameChange(t *testing.T) {
 	// Change the queues name, ensure the queue has been restarted.
 	conf.RemoteWriteConfigs[0].Name = "dev-2"
 	testutil.Ok(t, s.ApplyConfig(conf))
-	testutil.Equals(t, s.queues[hash].client.Name(), cfg.Name)
+	hash, err = toHash(cfg)
+	testutil.Ok(t, err)
+	testutil.Equals(t, s.queues[hash].client.Name(), conf.RemoteWriteConfigs[0].Name)
 
 	err = s.Close()
 	testutil.Ok(t, err)
@@ -138,13 +187,15 @@ func TestUpdateExternalLabels(t *testing.T) {
 			&cfg,
 		},
 	}
-	hash, err := conf.RemoteWriteConfigs[0].ToHash()
+	hash, err := toHash(conf.RemoteWriteConfigs[0])
 	testutil.Ok(t, err)
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 1, len(s.queues))
 	testutil.Equals(t, labels.Labels(nil), s.queues[hash].externalLabels)
 
 	conf.GlobalConfig.ExternalLabels = externalLabels
+	hash, err = toHash(conf.RemoteWriteConfigs[0])
+	testutil.Ok(t, err)
 	s.ApplyConfig(conf)
 	testutil.Equals(t, 1, len(s.queues))
 	testutil.Equals(t, externalLabels, s.queues[hash].externalLabels)

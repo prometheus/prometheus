@@ -62,21 +62,17 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		)
 
 		serverURL, err := url.Parse(server.URL)
-		if err != nil {
-			t.Fatal(err)
-		}
+		testutil.Ok(t, err)
+
 		conf := &ClientConfig{
 			URL:     &config_util.URL{URL: serverURL},
 			Timeout: model.Duration(time.Second),
 		}
+
 		hash, err := toHash(conf)
-		if err != nil {
-			t.Fatal(err)
-		}
+		testutil.Ok(t, err)
 		c, err := NewClient(hash, conf)
-		if err != nil {
-			t.Fatal(err)
-		}
+		testutil.Ok(t, err)
 
 		err = c.Store(context.Background(), []byte{})
 		if !testutil.ErrorEqual(err, test.err) {

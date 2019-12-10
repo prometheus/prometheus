@@ -110,7 +110,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	newQueues := make(map[string]*QueueManager)
 	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
-		hash, err := rwConf.ToHash()
+		hash, err := toHash(rwConf)
 		if err != nil {
 			return err
 		}
@@ -128,9 +128,12 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			return fmt.Errorf("duplicate remote write configs are not allowed, found duplicate for URL: %s", rwConf.URL)
 		}
 
-		// If the hash exists in the current queues map, we only need to restart the
-		// if the external labels have changed or if the remote name has changed.
-		if queue, ok := rws.queues[hash]; ok && externalLabelUnchanged && queue.client.Name() == name {
+		var nameUnchanged bool
+		queue, ok := rws.queues[hash]
+		if ok {
+			nameUnchanged = queue.client.Name() == name
+		}
+		if externalLabelUnchanged && nameUnchanged {
 			newQueues[hash] = queue
 			delete(rws.queues, hash)
 			continue
