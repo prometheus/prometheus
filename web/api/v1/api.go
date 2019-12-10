@@ -276,6 +276,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
 
+	r.Get("/metadata", wrap(api.metricMetadata))
+
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
@@ -688,7 +690,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 
 	metric := r.FormValue("metric")
 
-	var res []metricMetadata
+	res := []metricMetadata{}
 	for _, tt := range api.targetRetriever.TargetsActive() {
 		for _, t := range tt {
 			if limit >= 0 && len(res) >= limit {
@@ -722,9 +724,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			}
 		}
 	}
-	if len(res) == 0 {
-		return apiFuncResult{nil, &apiError{errorNotFound, errors.New("specified metadata not found")}, nil, nil}
-	}
+
 	return apiFuncResult{res, nil, nil, nil}
 }
 
@@ -803,6 +803,58 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 	}
 
 	return apiAlerts
+}
+
+type metadata struct {
+	Type textparse.MetricType `json:"type"`
+	Help string               `json:"help"`
+	Unit string               `json:"unit"`
+}
+
+func (api *API) metricMetadata(r *http.Request) apiFuncResult {
+	metrics := map[string]map[metadata]struct{}{}
+
+	limit := -1
+	if s := r.FormValue("limit"); s != "" {
+		var err error
+		if limit, err = strconv.Atoi(s); err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
+		}
+	}
+
+	for _, tt := range api.targetRetriever.TargetsActive() {
+		for _, t := range tt {
+			for _, mm := range t.MetadataList() {
+				m := metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
+				ms, ok := metrics[mm.Metric]
+
+				if !ok {
+					ms = map[metadata]struct{}{}
+					metrics[mm.Metric] = ms
+				}
+
+				ms[m] = struct{}{}
+			}
+		}
+	}
+
+	res := map[string][]metadata{}
+
+	for name, set := range metrics {
+		if limit >= 0 && len(res) >= limit {
+			break
+		}
+
+		s := []metadata{}
+
+		for metadata := range set {
+			s = append(s, metadata)
+		}
+
+		res[name] = s
+	}
+
+	return apiFuncResult{res, nil, nil, nil}
 }
 
 // RuleDiscovery has info for all rules

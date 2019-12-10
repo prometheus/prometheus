@@ -569,7 +569,7 @@ $ curl http://localhost:9090/api/v1/alerts
 
 ## Querying target metadata
 
-The following endpoint returns metadata about metrics currently scraped by targets.
+The following endpoint returns metadata about metrics currently scraped from targets.
 This is **experimental** and might change in the future.
 
 ```
@@ -650,6 +650,52 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
     },
     // ...
   ]
+}
+```
+
+## Querying metric metadata
+
+It returns metadata about metrics currently scrapped from targets. However, it does not provide any target information.
+This is considered **experimental** and might change in the future.
+
+```
+GET /api/v1/metadata
+```
+
+URL query parameters:
+
+- `limit=<number>`: Maximum number of metrics to return.
+
+The `data` section of the query result consists of an object where each key is a metric name and each value is a list of unique metadata objects, as exposed for that metric name across all targets.
+
+The following example returns two metrics. Note that the metric `http_requests_total` has more than one object in the list. At least one target has a value for `HELP` that do not match with the rest.
+
+```json
+curl -G http://localhost:9090/api/v1/metadata?limit=2
+
+{
+  "status": "success",
+  "data": {
+    "cortex_ring_tokens": [
+      {
+        "type": "gauge",
+        "help": "Number of tokens in the ring",
+        "unit": ""
+      }
+    ],
+    "http_requests_total": [
+      {
+        "type": "counter",
+        "help": "Number of HTTP requests",
+        "unit": ""
+      },
+      {
+        "type": "counter",
+        "help": "Amount of HTTP requests",
+        "unit": ""
+      }
+    ]
+  }
 }
 ```
 
