@@ -68,14 +68,15 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
     };
   }
 
-  componentDidUpdate(prevProps: PanelProps, prevState: PanelState) {
-    const prevOpts = prevProps.options;
-    const opts = this.props.options;
-    if (prevOpts.type !== opts.type) {
-      // If the other options change, we still want to show the old data until the new
-      // query completes, but this is not a good idea when we actually change between
-      // table and graph view, since not all queries work well in both.
-      this.setState({ data: null });
+  componentDidUpdate({ options: prevOpts }: PanelProps) {
+    const { endTime, range, resolution, type } = this.props.options;
+    if (
+      prevOpts.endTime !== endTime ||
+      prevOpts.range !== range ||
+      prevOpts.resolution !== resolution ||
+      prevOpts.type !== type
+    ) {
+      this.executeQuery();
     }
   }
 
@@ -181,7 +182,6 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
 
   handleChangeRange = (range: number): void => {
     this.setOptions({ range: range });
-    this.executeQuery();
   };
 
   getEndTime = (): number | moment.Moment => {
@@ -193,21 +193,19 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
 
   handleChangeEndTime = (endTime: number | null) => {
     this.setOptions({ endTime: endTime });
-    this.executeQuery();
   };
 
   handleChangeResolution = (resolution: number | null) => {
     this.setOptions({ resolution: resolution });
-    this.executeQuery();
   };
 
   handleChangeType = (type: PanelType) => {
+    this.setState({ data: null });
     this.setOptions({ type: type });
   };
 
   handleChangeStacking = (stacked: boolean) => {
     this.setOptions({ stacked: stacked });
-    this.executeQuery();
   };
 
   render() {

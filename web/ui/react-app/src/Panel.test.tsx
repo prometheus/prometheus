@@ -94,39 +94,22 @@ describe('Panel', () => {
   });
 
   describe('when switching between modes', () => {
-    const panel = shallow(<Panel {...defaultProps} />);
-    it('nulls out data', () => {
-      panel.setState({ data: 'somedata' });
-      expect(panel.state('data')).toEqual('somedata');
-      panel.setProps({ options: { ...defaultProps.options, type: PanelType.Graph } });
-      expect(panel.state('data')).toBeNull();
-    });
-  });
-
-  describe('callbacks', () => {
-    const panel = shallow(<Panel {...defaultProps} />);
-    const instance: any = panel.instance();
-    const executeQuerySpy = jest.spyOn(instance, 'executeQuery');
-    [
-      instance.handleChangeRange,
-      instance.handleChangeEndTime,
-      instance.handleChangeResolution,
-      instance.handleChangeStacking,
-    ].forEach(callback => {
-      it(`executes query during ${callback}`, () => {
-        callback();
-        expect(executeQuerySpy).toHaveBeenCalledTimes(1);
-        executeQuerySpy.mockReset();
-      });
-    });
-
-    [instance.handleExpressionChange, instance.handleChangeType].forEach(callback => {
-      it(`does NOT execute query during ${callback}`, () => {
-        callback();
-        expect(executeQuerySpy).toHaveBeenCalledTimes(0);
-        executeQuerySpy.mockReset();
-      });
-    });
+    [{ from: PanelType.Table, to: PanelType.Graph }, { from: PanelType.Graph, to: PanelType.Table }].forEach(
+      ({ from, to }: { from: PanelType; to: PanelType }) => {
+        it(`${from} -> ${to} nulls out data`, () => {
+          const props = {
+            ...defaultProps,
+            options: { ...defaultProps.options, type: from },
+          };
+          const panel = shallow(<Panel {...props} />);
+          const instance: any = panel.instance();
+          panel.setState({ data: 'somedata' });
+          expect(panel.state('data')).toEqual('somedata');
+          instance.handleChangeType(to);
+          expect(panel.state('data')).toBeNull();
+        });
+      }
+    );
   });
 
   describe('when changing query then time', () => {
@@ -137,10 +120,12 @@ describe('Panel', () => {
       const instance: any = panel.instance();
       instance.executeQuery();
       const executeQuerySpy = jest.spyOn(instance, 'executeQuery');
-      instance.handleExpressionChange(newExpr);
-      expect(executeQuerySpy).toHaveBeenCalledTimes(0); //change query without executing
-      instance.handleChangeEndTime(1575744840);
-      expect(executeQuerySpy).toHaveBeenCalledTimes(1); //execute query implicitly with time change
+      //change query without executing
+      panel.setProps({ options: { ...defaultProps.options, expr: newExpr } });
+      expect(executeQuerySpy).toHaveBeenCalledTimes(0);
+      //execute query implicitly with time change
+      panel.setProps({ options: { ...defaultProps.options, expr: newExpr, endTime: 1575744840 } });
+      expect(executeQuerySpy).toHaveBeenCalledTimes(1);
     });
   });
 });
