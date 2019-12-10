@@ -1105,9 +1105,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					},
 				},
 			},
-			response: map[string]metadataSet{
-				"prometheus_engine_query_duration_seconds": metadataSet{{textparse.MetricTypeSummary, "Query timings", ""}: struct{}{}},
-				"go_info": metadataSet{{textparse.MetricTypeGauge, "Information about the Go environment.", ""}: struct{}{}},
+			response: map[string][]metadata{
+				"prometheus_engine_query_duration_seconds": {{textparse.MetricTypeSummary, "Query timings", ""}},
+				"go_info": {{textparse.MetricTypeGauge, "Information about the Go environment.", ""}},
 			},
 		},
 		// With duplicate metadata for a metric that comes from different targets.
@@ -1137,8 +1137,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					},
 				},
 			},
-			response: map[string]metadataSet{
-				"go_threads": metadataSet{{textparse.MetricTypeGauge, "Number of OS threads created", ""}: struct{}{}},
+			response: map[string][]metadata{
+				"go_threads": {{textparse.MetricTypeGauge, "Number of OS threads created", ""}},
 			},
 		},
 		// With non-duplicate metadata for the same metric from different targets.
@@ -1168,11 +1168,18 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					},
 				},
 			},
-			response: map[string]metadataSet{
-				"go_threads": metadataSet{
-					{textparse.MetricTypeGauge, "Number of OS threads created", ""}:            struct{}{},
-					{textparse.MetricTypeGauge, "Number of OS threads that were created.", ""}: struct{}{},
+			response: map[string][]metadata{
+				"go_threads": []metadata{
+					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
+					{textparse.MetricTypeGauge, "Number of OS threads that were created.", ""},
 				},
+			},
+			sorter: func(m interface{}) {
+				v := m.(map[string][]metadata)["go_threads"]
+
+				sort.Slice(v, func(i, j int) bool {
+					return v[i].Help < v[j].Help
+				})
 			},
 		},
 		// With a limit for the number of metrics returned
@@ -1216,7 +1223,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 		// With no available metadata
 		{
 			endpoint: api.metricMetadata,
-			response: map[string]metadataSet{},
+			response: map[string][]metadata{},
 		},
 		{
 			endpoint: api.serveConfig,

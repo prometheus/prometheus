@@ -805,19 +805,6 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 	return apiAlerts
 }
 
-type metadataSet map[metadata]struct{}
-
-func (ms metadataSet) MarshalJSON() ([]byte, error) {
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	m := []metadata{}
-
-	for s := range ms {
-		m = append(m, s)
-	}
-
-	return json.Marshal(m)
-}
-
 type metadata struct {
 	Type textparse.MetricType `json:"type"`
 	Help string               `json:"help"`
@@ -825,7 +812,7 @@ type metadata struct {
 }
 
 func (api *API) metricMetadata(r *http.Request) apiFuncResult {
-	metrics := map[string]metadataSet{}
+	metrics := map[string]map[metadata]struct{}{}
 
 	limit := -1
 	if s := r.FormValue("limit"); s != "" {
@@ -842,7 +829,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 				ms, ok := metrics[mm.Metric]
 
 				if !ok {
-					ms = metadataSet{}
+					ms = map[metadata]struct{}{}
 					metrics[mm.Metric] = ms
 				}
 
@@ -851,21 +838,23 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
-	if limit >= 0 && len(metrics) >= limit {
-		lm := make(map[string]metadataSet, limit)
+	res := map[string][]metadata{}
 
-		for k, v := range metrics {
-			if len(lm) == limit {
-				break
-			}
-
-			lm[k] = v
+	for name, set := range metrics {
+		if limit >= 0 && len(res) >= limit {
+			break
 		}
 
-		metrics = lm
+		s := []metadata{}
+
+		for metadata := range set {
+			s = append(s, metadata)
+		}
+
+		res[name] = s
 	}
 
-	return apiFuncResult{metrics, nil, nil, nil}
+	return apiFuncResult{res, nil, nil, nil}
 }
 
 // RuleDiscovery has info for all rules
