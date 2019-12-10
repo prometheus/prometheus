@@ -21,7 +21,7 @@ import (
 
 type testCase struct {
 	input      string
-	expected   []item
+	expected   []Item
 	fail       bool
 	seriesDesc bool // Whether to lex a series description.
 }
@@ -35,44 +35,44 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    ",",
-				expected: []item{{COMMA, 0, ","}},
+				expected: []Item{{COMMA, 0, ","}},
 			}, {
 				input:    "()",
-				expected: []item{{LEFT_PAREN, 0, `(`}, {RIGHT_PAREN, 1, `)`}},
+				expected: []Item{{LEFT_PAREN, 0, `(`}, {RIGHT_PAREN, 1, `)`}},
 			}, {
 				input:    "{}",
-				expected: []item{{LEFT_BRACE, 0, `{`}, {RIGHT_BRACE, 1, `}`}},
+				expected: []Item{{LEFT_BRACE, 0, `{`}, {RIGHT_BRACE, 1, `}`}},
 			}, {
 				input: "[5m]",
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACKET, 0, `[`},
 					{DURATION, 1, `5m`},
 					{RIGHT_BRACKET, 3, `]`},
 				},
 			}, {
 				input: "[ 5m]",
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACKET, 0, `[`},
 					{DURATION, 2, `5m`},
 					{RIGHT_BRACKET, 4, `]`},
 				},
 			}, {
 				input: "[  5m]",
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACKET, 0, `[`},
 					{DURATION, 3, `5m`},
 					{RIGHT_BRACKET, 5, `]`},
 				},
 			}, {
 				input: "[  5m ]",
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACKET, 0, `[`},
 					{DURATION, 3, `5m`},
 					{RIGHT_BRACKET, 6, `]`},
 				},
 			}, {
 				input:    "\r\n\r",
-				expected: []item{},
+				expected: []Item{},
 			},
 		},
 	},
@@ -81,55 +81,55 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "1",
-				expected: []item{{NUMBER, 0, "1"}},
+				expected: []Item{{NUMBER, 0, "1"}},
 			}, {
 				input:    "4.23",
-				expected: []item{{NUMBER, 0, "4.23"}},
+				expected: []Item{{NUMBER, 0, "4.23"}},
 			}, {
 				input:    ".3",
-				expected: []item{{NUMBER, 0, ".3"}},
+				expected: []Item{{NUMBER, 0, ".3"}},
 			}, {
 				input:    "5.",
-				expected: []item{{NUMBER, 0, "5."}},
+				expected: []Item{{NUMBER, 0, "5."}},
 			}, {
 				input:    "NaN",
-				expected: []item{{NUMBER, 0, "NaN"}},
+				expected: []Item{{NUMBER, 0, "NaN"}},
 			}, {
 				input:    "nAN",
-				expected: []item{{NUMBER, 0, "nAN"}},
+				expected: []Item{{NUMBER, 0, "nAN"}},
 			}, {
 				input:    "NaN 123",
-				expected: []item{{NUMBER, 0, "NaN"}, {NUMBER, 4, "123"}},
+				expected: []Item{{NUMBER, 0, "NaN"}, {NUMBER, 4, "123"}},
 			}, {
 				input:    "NaN123",
-				expected: []item{{IDENTIFIER, 0, "NaN123"}},
+				expected: []Item{{IDENTIFIER, 0, "NaN123"}},
 			}, {
 				input:    "iNf",
-				expected: []item{{NUMBER, 0, "iNf"}},
+				expected: []Item{{NUMBER, 0, "iNf"}},
 			}, {
 				input:    "Inf",
-				expected: []item{{NUMBER, 0, "Inf"}},
+				expected: []Item{{NUMBER, 0, "Inf"}},
 			}, {
 				input:    "+Inf",
-				expected: []item{{ADD, 0, "+"}, {NUMBER, 1, "Inf"}},
+				expected: []Item{{ADD, 0, "+"}, {NUMBER, 1, "Inf"}},
 			}, {
 				input:    "+Inf 123",
-				expected: []item{{ADD, 0, "+"}, {NUMBER, 1, "Inf"}, {NUMBER, 5, "123"}},
+				expected: []Item{{ADD, 0, "+"}, {NUMBER, 1, "Inf"}, {NUMBER, 5, "123"}},
 			}, {
 				input:    "-Inf",
-				expected: []item{{SUB, 0, "-"}, {NUMBER, 1, "Inf"}},
+				expected: []Item{{SUB, 0, "-"}, {NUMBER, 1, "Inf"}},
 			}, {
 				input:    "Infoo",
-				expected: []item{{IDENTIFIER, 0, "Infoo"}},
+				expected: []Item{{IDENTIFIER, 0, "Infoo"}},
 			}, {
 				input:    "-Infoo",
-				expected: []item{{SUB, 0, "-"}, {IDENTIFIER, 1, "Infoo"}},
+				expected: []Item{{SUB, 0, "-"}, {IDENTIFIER, 1, "Infoo"}},
 			}, {
 				input:    "-Inf 123",
-				expected: []item{{SUB, 0, "-"}, {NUMBER, 1, "Inf"}, {NUMBER, 5, "123"}},
+				expected: []Item{{SUB, 0, "-"}, {NUMBER, 1, "Inf"}, {NUMBER, 5, "123"}},
 			}, {
 				input:    "0x123",
-				expected: []item{{NUMBER, 0, "0x123"}},
+				expected: []Item{{NUMBER, 0, "0x123"}},
 			},
 		},
 	},
@@ -138,22 +138,22 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "\"test\\tsequence\"",
-				expected: []item{{STRING, 0, `"test\tsequence"`}},
+				expected: []Item{{STRING, 0, `"test\tsequence"`}},
 			},
 			{
 				input:    "\"test\\\\.expression\"",
-				expected: []item{{STRING, 0, `"test\\.expression"`}},
+				expected: []Item{{STRING, 0, `"test\\.expression"`}},
 			},
 			{
 				input: "\"test\\.expression\"",
-				expected: []item{
+				expected: []Item{
 					{ERROR, 0, "unknown escape sequence U+002E '.'"},
 					{STRING, 0, `"test\.expression"`},
 				},
 			},
 			{
 				input:    "`test\\.expression`",
-				expected: []item{{STRING, 0, "`test\\.expression`"}},
+				expected: []Item{{STRING, 0, "`test\\.expression`"}},
 			},
 			{
 				// See https://github.com/prometheus/prometheus/issues/939.
@@ -167,19 +167,19 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "5s",
-				expected: []item{{DURATION, 0, "5s"}},
+				expected: []Item{{DURATION, 0, "5s"}},
 			}, {
 				input:    "123m",
-				expected: []item{{DURATION, 0, "123m"}},
+				expected: []Item{{DURATION, 0, "123m"}},
 			}, {
 				input:    "1h",
-				expected: []item{{DURATION, 0, "1h"}},
+				expected: []Item{{DURATION, 0, "1h"}},
 			}, {
 				input:    "3w",
-				expected: []item{{DURATION, 0, "3w"}},
+				expected: []Item{{DURATION, 0, "3w"}},
 			}, {
 				input:    "1y",
-				expected: []item{{DURATION, 0, "1y"}},
+				expected: []Item{{DURATION, 0, "1y"}},
 			},
 		},
 	},
@@ -188,16 +188,16 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "abc",
-				expected: []item{{IDENTIFIER, 0, "abc"}},
+				expected: []Item{{IDENTIFIER, 0, "abc"}},
 			}, {
 				input:    "a:bc",
-				expected: []item{{METRIC_IDENTIFIER, 0, "a:bc"}},
+				expected: []Item{{METRIC_IDENTIFIER, 0, "a:bc"}},
 			}, {
 				input:    "abc d",
-				expected: []item{{IDENTIFIER, 0, "abc"}, {IDENTIFIER, 4, "d"}},
+				expected: []Item{{IDENTIFIER, 0, "abc"}, {IDENTIFIER, 4, "d"}},
 			}, {
 				input:    ":bc",
-				expected: []item{{METRIC_IDENTIFIER, 0, ":bc"}},
+				expected: []Item{{METRIC_IDENTIFIER, 0, ":bc"}},
 			}, {
 				input: "0a:bc",
 				fail:  true,
@@ -209,10 +209,10 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "# some comment",
-				expected: []item{{COMMENT, 0, "# some comment"}},
+				expected: []Item{{COMMENT, 0, "# some comment"}},
 			}, {
 				input: "5 # 1+1\n5",
-				expected: []item{
+				expected: []Item{
 					{NUMBER, 0, "5"},
 					{COMMENT, 2, "# 1+1"},
 					{NUMBER, 8, "5"},
@@ -225,56 +225,56 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    `=`,
-				expected: []item{{ASSIGN, 0, `=`}},
+				expected: []Item{{ASSIGN, 0, `=`}},
 			}, {
 				// Inside braces equality is a single '=' character.
 				input:    `{=}`,
-				expected: []item{{LEFT_BRACE, 0, `{`}, {EQL, 1, `=`}, {RIGHT_BRACE, 2, `}`}},
+				expected: []Item{{LEFT_BRACE, 0, `{`}, {EQL, 1, `=`}, {RIGHT_BRACE, 2, `}`}},
 			}, {
 				input:    `==`,
-				expected: []item{{EQL, 0, `==`}},
+				expected: []Item{{EQL, 0, `==`}},
 			}, {
 				input:    `!=`,
-				expected: []item{{NEQ, 0, `!=`}},
+				expected: []Item{{NEQ, 0, `!=`}},
 			}, {
 				input:    `<`,
-				expected: []item{{LSS, 0, `<`}},
+				expected: []Item{{LSS, 0, `<`}},
 			}, {
 				input:    `>`,
-				expected: []item{{GTR, 0, `>`}},
+				expected: []Item{{GTR, 0, `>`}},
 			}, {
 				input:    `>=`,
-				expected: []item{{GTE, 0, `>=`}},
+				expected: []Item{{GTE, 0, `>=`}},
 			}, {
 				input:    `<=`,
-				expected: []item{{LTE, 0, `<=`}},
+				expected: []Item{{LTE, 0, `<=`}},
 			}, {
 				input:    `+`,
-				expected: []item{{ADD, 0, `+`}},
+				expected: []Item{{ADD, 0, `+`}},
 			}, {
 				input:    `-`,
-				expected: []item{{SUB, 0, `-`}},
+				expected: []Item{{SUB, 0, `-`}},
 			}, {
 				input:    `*`,
-				expected: []item{{MUL, 0, `*`}},
+				expected: []Item{{MUL, 0, `*`}},
 			}, {
 				input:    `/`,
-				expected: []item{{DIV, 0, `/`}},
+				expected: []Item{{DIV, 0, `/`}},
 			}, {
 				input:    `^`,
-				expected: []item{{POW, 0, `^`}},
+				expected: []Item{{POW, 0, `^`}},
 			}, {
 				input:    `%`,
-				expected: []item{{MOD, 0, `%`}},
+				expected: []Item{{MOD, 0, `%`}},
 			}, {
 				input:    `AND`,
-				expected: []item{{LAND, 0, `AND`}},
+				expected: []Item{{LAND, 0, `AND`}},
 			}, {
 				input:    `or`,
-				expected: []item{{LOR, 0, `or`}},
+				expected: []Item{{LOR, 0, `or`}},
 			}, {
 				input:    `unless`,
-				expected: []item{{LUNLESS, 0, `unless`}},
+				expected: []Item{{LUNLESS, 0, `unless`}},
 			},
 		},
 	},
@@ -283,25 +283,25 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    `sum`,
-				expected: []item{{SUM, 0, `sum`}},
+				expected: []Item{{SUM, 0, `sum`}},
 			}, {
 				input:    `AVG`,
-				expected: []item{{AVG, 0, `AVG`}},
+				expected: []Item{{AVG, 0, `AVG`}},
 			}, {
 				input:    `MAX`,
-				expected: []item{{MAX, 0, `MAX`}},
+				expected: []Item{{MAX, 0, `MAX`}},
 			}, {
 				input:    `min`,
-				expected: []item{{MIN, 0, `min`}},
+				expected: []Item{{MIN, 0, `min`}},
 			}, {
 				input:    `count`,
-				expected: []item{{COUNT, 0, `count`}},
+				expected: []Item{{COUNT, 0, `count`}},
 			}, {
 				input:    `stdvar`,
-				expected: []item{{STDVAR, 0, `stdvar`}},
+				expected: []Item{{STDVAR, 0, `stdvar`}},
 			}, {
 				input:    `stddev`,
-				expected: []item{{STDDEV, 0, `stddev`}},
+				expected: []Item{{STDDEV, 0, `stddev`}},
 			},
 		},
 	},
@@ -310,25 +310,25 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "offset",
-				expected: []item{{OFFSET, 0, "offset"}},
+				expected: []Item{{OFFSET, 0, "offset"}},
 			}, {
 				input:    "by",
-				expected: []item{{BY, 0, "by"}},
+				expected: []Item{{BY, 0, "by"}},
 			}, {
 				input:    "without",
-				expected: []item{{WITHOUT, 0, "without"}},
+				expected: []Item{{WITHOUT, 0, "without"}},
 			}, {
 				input:    "on",
-				expected: []item{{ON, 0, "on"}},
+				expected: []Item{{ON, 0, "on"}},
 			}, {
 				input:    "ignoring",
-				expected: []item{{IGNORING, 0, "ignoring"}},
+				expected: []Item{{IGNORING, 0, "ignoring"}},
 			}, {
 				input:    "group_left",
-				expected: []item{{GROUP_LEFT, 0, "group_left"}},
+				expected: []Item{{GROUP_LEFT, 0, "group_left"}},
 			}, {
 				input:    "group_right",
-				expected: []item{{GROUP_RIGHT, 0, "group_right"}},
+				expected: []Item{{GROUP_RIGHT, 0, "group_right"}},
 			}, {
 				input:    "bool",
 				expected: []item{{BOOL, 0, "bool"}},
@@ -352,7 +352,7 @@ var tests = []struct {
 				fail:  true,
 			}, {
 				input: `{foo='bar'}`,
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{IDENTIFIER, 1, `foo`},
 					{EQL, 4, `=`},
@@ -361,7 +361,7 @@ var tests = []struct {
 				},
 			}, {
 				input: `{foo="bar"}`,
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{IDENTIFIER, 1, `foo`},
 					{EQL, 4, `=`},
@@ -370,7 +370,7 @@ var tests = []struct {
 				},
 			}, {
 				input: `{foo="bar\"bar"}`,
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{IDENTIFIER, 1, `foo`},
 					{EQL, 4, `=`},
@@ -379,7 +379,7 @@ var tests = []struct {
 				},
 			}, {
 				input: `{NaN	!= "bar" }`,
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{IDENTIFIER, 1, `NaN`},
 					{NEQ, 5, `!=`},
@@ -388,7 +388,7 @@ var tests = []struct {
 				},
 			}, {
 				input: `{alert=~"bar" }`,
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{IDENTIFIER, 1, `alert`},
 					{EQL_REGEX, 6, `=~`},
@@ -397,7 +397,7 @@ var tests = []struct {
 				},
 			}, {
 				input: `{on!~"bar"}`,
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{IDENTIFIER, 1, `on`},
 					{NEQ_REGEX, 3, `!~`},
@@ -471,7 +471,7 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input: `{} _ 1 x .3`,
-				expected: []item{
+				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{RIGHT_BRACE, 1, `}`},
 					{SPACE, 2, ` `},
@@ -487,7 +487,7 @@ var tests = []struct {
 			},
 			{
 				input: `metric +Inf Inf NaN`,
-				expected: []item{
+				expected: []Item{
 					{IDENTIFIER, 0, `metric`},
 					{SPACE, 6, ` `},
 					{ADD, 7, `+`},
@@ -501,7 +501,7 @@ var tests = []struct {
 			},
 			{
 				input: `metric 1+1x4`,
-				expected: []item{
+				expected: []Item{
 					{IDENTIFIER, 0, `metric`},
 					{SPACE, 6, ` `},
 					{NUMBER, 7, `1`},
@@ -519,7 +519,7 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input: `test_name{on!~"bar"}[4m:4s]`,
-				expected: []item{
+				expected: []Item{
 					{IDENTIFIER, 0, `test_name`},
 					{LEFT_BRACE, 9, `{`},
 					{IDENTIFIER, 10, `on`},
@@ -535,7 +535,7 @@ var tests = []struct {
 			},
 			{
 				input: `test:name{on!~"bar"}[4m:4s]`,
-				expected: []item{
+				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
 					{LEFT_BRACE, 9, `{`},
 					{IDENTIFIER, 10, `on`},
@@ -550,7 +550,7 @@ var tests = []struct {
 				},
 			}, {
 				input: `test:name{on!~"b:ar"}[4m:4s]`,
-				expected: []item{
+				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
 					{LEFT_BRACE, 9, `{`},
 					{IDENTIFIER, 10, `on`},
@@ -565,7 +565,7 @@ var tests = []struct {
 				},
 			}, {
 				input: `test:name{on!~"b:ar"}[4m:]`,
-				expected: []item{
+				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
 					{LEFT_BRACE, 9, `{`},
 					{IDENTIFIER, 10, `on`},
@@ -579,7 +579,7 @@ var tests = []struct {
 				},
 			}, { // Nested Subquery.
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
-				expected: []item{
+				expected: []Item{
 
 					{IDENTIFIER, 0, `min_over_time`},
 					{LEFT_PAREN, 13, `(`},
@@ -610,7 +610,7 @@ var tests = []struct {
 			// Subquery with offset.
 			{
 				input: `test:name{on!~"b:ar"}[4m:4s] offset 10m`,
-				expected: []item{
+				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
 					{LEFT_BRACE, 9, `{`},
 					{IDENTIFIER, 10, `on`},
@@ -627,7 +627,7 @@ var tests = []struct {
 				},
 			}, {
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 6m)[4m:3s]`,
-				expected: []item{
+				expected: []Item{
 
 					{IDENTIFIER, 0, `min_over_time`},
 					{LEFT_PAREN, 13, `(`},
@@ -659,7 +659,7 @@ var tests = []struct {
 			},
 			{
 				input: `test:name[ 5m]`,
-				expected: []item{
+				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
 					{LEFT_BRACKET, 9, `[`},
 					{DURATION, 11, `5m`},
@@ -696,28 +696,28 @@ func TestLexer(t *testing.T) {
 	for _, typ := range tests {
 		t.Run(typ.name, func(t *testing.T) {
 			for i, test := range typ.tests {
-				l := &lexer{
+				l := &Lexer{
 					input:      test.input,
 					seriesDesc: test.seriesDesc,
 				}
 				l.run()
 
-				out := l.items
+				out := l.Items
 
 				lastItem := out[len(out)-1]
 				if test.fail {
-					if lastItem.typ != ERROR {
+					if lastItem.Typ != ERROR {
 						t.Logf("%d: input %q", i, test.input)
 						t.Fatalf("expected lexing error but did not fail")
 					}
 					continue
 				}
-				if lastItem.typ == ERROR {
+				if lastItem.Typ == ERROR {
 					t.Logf("%d: input %q", i, test.input)
-					t.Fatalf("unexpected lexing error at position %d: %s", lastItem.pos, lastItem)
+					t.Fatalf("unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
 				}
 
-				eofItem := item{EOF, Pos(len(test.input)), ""}
+				eofItem := Item{EOF, Pos(len(test.input)), ""}
 				testutil.Equals(t, lastItem, eofItem, "%d: input %q", i, test.input)
 
 				out = out[:len(out)-1]

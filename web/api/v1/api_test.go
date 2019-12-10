@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -539,6 +540,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 		query    url.Values
 		response interface{}
 		errType  errorType
+		sorter   func(interface{})
 	}
 
 	var tests = []test{
@@ -1009,6 +1011,12 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 					Unit:   "",
 				},
 			},
+			sorter: func(m interface{}) {
+				sort.Slice(m.([]metricMetadata), func(i, j int) bool {
+					s := m.([]metricMetadata)
+					return s[i].Metric < s[j].Metric
+				})
+			},
 		},
 		// Without a matching metric.
 		{
@@ -1059,6 +1067,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 						Interval: 1,
 						Rules: []rule{
 							alertingRule{
+								State:       "inactive",
 								Name:        "test_metric3",
 								Query:       "absent(test_metric3) != 1",
 								Duration:    1,
@@ -1069,6 +1078,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 								Type:        "alerting",
 							},
 							alertingRule{
+								State:       "inactive",
 								Name:        "test_metric4",
 								Query:       "up == 1",
 								Duration:    1,
@@ -1078,6 +1088,69 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 								Health:      "unknown",
 								Type:        "alerting",
 							},
+							recordingRule{
+								Name:   "recording-rule-1",
+								Query:  "vector(1)",
+								Labels: labels.Labels{},
+								Health: "unknown",
+								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"type": []string{"alert"},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Rules: []rule{
+							alertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+							alertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"type": []string{"record"},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Rules: []rule{
 							recordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
@@ -1162,6 +1235,11 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			}
 			res := test.endpoint(req.WithContext(ctx))
 			assertAPIError(t, res.err, test.errType)
+
+			if test.sorter != nil {
+				test.sorter(res.data)
+			}
+
 			assertAPIResponse(t, res.data, test.response)
 		}
 	}
@@ -1185,6 +1263,8 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 }
 
 func assertAPIResponse(t *testing.T, got interface{}, exp interface{}) {
+	t.Helper()
+
 	if !reflect.DeepEqual(exp, got) {
 		respJSON, err := json.Marshal(got)
 		if err != nil {

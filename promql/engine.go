@@ -1070,6 +1070,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 				} else {
 					ev.error(ErrTooManySamples(env))
 				}
+			} else {
+				putPointSlice(ss.Points)
 			}
 		}
 		if mat.ContainsSameLabelset() {
@@ -1159,6 +1161,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 			if len(ss.Points) > 0 {
 				mat = append(mat, ss)
+			} else {
+				putPointSlice(ss.Points)
 			}
 
 		}

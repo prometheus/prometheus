@@ -32,11 +32,11 @@ import (
 )
 
 type parser struct {
-	lex     *lexer
-	token   item
+	lex     *Lexer
+	token   Item
 	peeking bool
 
-	inject    item
+	inject    Item
 	injecting bool
 
 	switchSymbols []ItemType
@@ -53,10 +53,7 @@ type ParseErr struct {
 }
 
 func (e *ParseErr) Error() string {
-	if e.Line == 0 {
-		return fmt.Sprintf("parse error at char %d: %s", e.Pos, e.Err)
-	}
-	return fmt.Sprintf("parse error at line %d, char %d: %s", e.Line, e.Pos, e.Err)
+	return fmt.Sprintf("%d:%d: parse error: %s", e.Line+1, e.Pos, e.Err)
 }
 
 // ParseExpr returns the expression parsed from the input.
@@ -77,7 +74,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 	defer p.recover(&err)
 
 	m = p.metric()
-	if p.peek().typ != EOF {
+	if p.peek().Typ != EOF {
 		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 	}
 	return m, nil
@@ -90,11 +87,11 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	defer p.recover(&err)
 
 	name := ""
-	if t := p.peek().typ; t == METRIC_IDENTIFIER || t == IDENTIFIER {
-		name = p.next().val
+	if t := p.peek().Typ; t == METRIC_IDENTIFIER || t == IDENTIFIER {
+		name = p.next().Val
 	}
 	vs := p.VectorSelector(name)
-	if p.peek().typ != EOF {
+	if p.peek().Typ != EOF {
 		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 	}
 	return vs.LabelMatchers, nil
@@ -103,7 +100,7 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 // newParser returns a new parser.
 func newParser(input string) *parser {
 	p := &parser{
-		lex: lex(input),
+		lex: Lex(input),
 	}
 	return p
 }
@@ -112,7 +109,7 @@ func newParser(input string) *parser {
 func (p *parser) parseExpr() (expr Expr, err error) {
 	defer p.recover(&err)
 
-	for p.peek().typ != EOF {
+	for p.peek().Typ != EOF {
 		if expr != nil {
 			p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 		}
@@ -154,20 +151,20 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 
 	const ctx = "series values"
 	for {
-		for p.peek().typ == SPACE {
+		for p.peek().Typ == SPACE {
 			p.next()
 		}
-		if p.peek().typ == EOF {
+		if p.peek().Typ == EOF {
 			break
 		}
 
 		// Extract blanks.
-		if p.peek().typ == BLANK {
+		if p.peek().Typ == BLANK {
 			p.next()
 			times := uint64(1)
-			if p.peek().typ == TIMES {
+			if p.peek().Typ == TIMES {
 				p.next()
-				times, err = strconv.ParseUint(p.expect(NUMBER, ctx).val, 10, 64)
+				times, err = strconv.ParseUint(p.expect(NUMBER, ctx).Val, 10, 64)
 				if err != nil {
 					p.errorf("invalid repetition in %s: %s", ctx, err)
 				}
@@ -177,7 +174,7 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 			}
 			// This is to ensure that there is a space between this and the next number.
 			// This is especially required if the next number is negative.
-			if t := p.expectOneOf(SPACE, EOF, ctx).typ; t == EOF {
+			if t := p.expectOneOf(SPACE, EOF, ctx).Typ; t == EOF {
 				break
 			}
 			continue
@@ -185,15 +182,15 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 
 		// Extract values.
 		sign := 1.0
-		if t := p.peek().typ; t == SUB || t == ADD {
-			if p.next().typ == SUB {
+		if t := p.peek().Typ; t == SUB || t == ADD {
+			if p.next().Typ == SUB {
 				sign = -1
 			}
 		}
 		var k float64
-		if t := p.peek().typ; t == NUMBER {
-			k = sign * p.number(p.expect(NUMBER, ctx).val)
-		} else if t == IDENTIFIER && p.peek().val == "stale" {
+		if t := p.peek().Typ; t == NUMBER {
+			k = sign * p.number(p.expect(NUMBER, ctx).Val)
+		} else if t == IDENTIFIER && p.peek().Val == "stale" {
 			p.next()
 			k = math.Float64frombits(value.StaleNaN)
 		} else {
@@ -204,24 +201,24 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 		})
 
 		// If there are no offset repetitions specified, proceed with the next value.
-		if t := p.peek(); t.typ == SPACE {
+		if t := p.peek(); t.Typ == SPACE {
 			// This ensures there is a space between every value.
 			continue
-		} else if t.typ == EOF {
+		} else if t.Typ == EOF {
 			break
-		} else if t.typ != ADD && t.typ != SUB {
+		} else if t.Typ != ADD && t.Typ != SUB {
 			p.errorf("expected next value or relative expansion in %s but got %s (value: %s)", ctx, t.desc(), p.peek())
 		}
 
 		// Expand the repeated offsets into values.
 		sign = 1.0
-		if p.next().typ == SUB {
+		if p.next().Typ == SUB {
 			sign = -1.0
 		}
-		offset := sign * p.number(p.expect(NUMBER, ctx).val)
+		offset := sign * p.number(p.expect(NUMBER, ctx).Val)
 		p.expect(TIMES, ctx)
 
-		times, err := strconv.ParseUint(p.expect(NUMBER, ctx).val, 10, 64)
+		times, err := strconv.ParseUint(p.expect(NUMBER, ctx).Val, 10, 64)
 		if err != nil {
 			p.errorf("invalid repetition in %s: %s", ctx, err)
 		}
@@ -235,7 +232,7 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 		// This is to ensure that there is a space between this expanding notation
 		// and the next number. This is especially required if the next number
 		// is negative.
-		if t := p.expectOneOf(SPACE, EOF, ctx).typ; t == EOF {
+		if t := p.expectOneOf(SPACE, EOF, ctx).Typ; t == EOF {
 			break
 		}
 	}
@@ -251,35 +248,35 @@ func (p *parser) typecheck(node Node) (err error) {
 }
 
 // next returns the next token.
-func (p *parser) next() item {
+func (p *parser) next() Item {
 	if !p.peeking {
-		t := p.lex.nextItem()
+		t := p.lex.NextItem()
 		// Skip comments.
-		for t.typ == COMMENT {
-			t = p.lex.nextItem()
+		for t.Typ == COMMENT {
+			t = p.lex.NextItem()
 		}
 		p.token = t
 	}
 
 	p.peeking = false
 
-	if p.token.typ == ERROR {
-		p.errorf("%s", p.token.val)
+	if p.token.Typ == ERROR {
+		p.errorf("%s", p.token.Val)
 	}
 	return p.token
 }
 
 // peek returns but does not consume the next token.
-func (p *parser) peek() item {
+func (p *parser) peek() Item {
 	if p.peeking {
 		return p.token
 	}
 	p.peeking = true
 
-	t := p.lex.nextItem()
+	t := p.lex.NextItem()
 	// Skip comments.
-	for t.typ == COMMENT {
-		t = p.lex.nextItem()
+	for t.Typ == COMMENT {
+		t = p.lex.NextItem()
 	}
 	p.token = t
 	return p.token
@@ -309,18 +306,18 @@ func (p *parser) error(err error) {
 }
 
 // expect consumes the next token and guarantees it has the required type.
-func (p *parser) expect(exp ItemType, context string) item {
+func (p *parser) expect(exp ItemType, context string) Item {
 	token := p.next()
-	if token.typ != exp {
+	if token.Typ != exp {
 		p.errorf("unexpected %s in %s, expected %s", token.desc(), context, exp.desc())
 	}
 	return token
 }
 
 // expectOneOf consumes the next token and guarantees it has one of the required types.
-func (p *parser) expectOneOf(exp1, exp2 ItemType, context string) item {
+func (p *parser) expectOneOf(exp1, exp2 ItemType, context string) Item {
 	token := p.next()
-	if token.typ != exp1 && token.typ != exp2 {
+	if token.Typ != exp1 && token.Typ != exp2 {
 		p.errorf("unexpected %s in %s, expected %s or %s", token.desc(), context, exp1.desc(), exp2.desc())
 	}
 	return token
@@ -345,7 +342,7 @@ func (p *parser) recover(errp *error) {
 }
 
 // Lex is expected by the yyLexer interface of the yacc generated parser.
-// It writes the next item provided by the lexer to the provided pointer address.
+// It writes the next Item provided by the lexer to the provided pointer address.
 // Comments are skipped.
 //
 // The yyLexer interface is currently implemented by the parser to allow
@@ -361,7 +358,7 @@ func (p *parser) Lex(lval *yySymType) int {
 		lval.item = p.next()
 	}
 
-	typ := lval.item.typ
+	typ := lval.item.Typ
 
 	for _, t := range p.switchSymbols {
 		if t == typ {
@@ -380,23 +377,23 @@ func (p *parser) Lex(lval *yySymType) int {
 func (p *parser) Error(e string) {
 }
 
-// InjectItem allows injecting a single item at the beginning of the token stream
+// InjectItem allows injecting a single Item at the beginning of the token stream
 // consumed by the generated parser.
 // This allows having multiple start symbols as described in
 // https://www.gnu.org/software/bison/manual/html_node/Multiple-start_002dsymbols.html .
-// Only the Lex function used by the generated parser is affected by this injected item.
-// Trying to inject when a previously injected item has not yet been consumed will panic.
-// Only item types that are supposed to be used as start symbols are allowed as an argument.
+// Only the Lex function used by the generated parser is affected by this injected Item.
+// Trying to inject when a previously injected Item has not yet been consumed will panic.
+// Only Item types that are supposed to be used as start symbols are allowed as an argument.
 func (p *parser) InjectItem(typ ItemType) {
 	if p.injecting {
-		panic("cannot inject multiple items into the token stream")
+		panic("cannot inject multiple Items into the token stream")
 	}
 
 	if typ != 0 && (typ <= startSymbolsStart || typ >= startSymbolsEnd) {
 		panic("cannot inject symbol that isn't start symbol")
 	}
 
-	p.inject = item{typ: typ}
+	p.inject = Item{Typ: typ}
 	p.injecting = true
 }
 
@@ -409,14 +406,14 @@ func (p *parser) expr() Expr {
 	// on the operators' precedence.
 	for {
 		// If the next token is not an operator the expression is done.
-		op := p.peek().typ
+		op := p.peek().Typ
 		if !op.isOperator() {
 			// Check for subquery.
 			if op == LEFT_BRACKET {
 				expr = p.subqueryOrRangeSelector(expr, false)
 				if s, ok := expr.(*SubqueryExpr); ok {
 					// Parse optional offset.
-					if p.peek().typ == OFFSET {
+					if p.peek().Typ == OFFSET {
 						offset := p.offset()
 						s.Offset = offset
 					}
@@ -437,7 +434,7 @@ func (p *parser) expr() Expr {
 
 		returnBool := false
 		// Parse bool modifier.
-		if p.peek().typ == BOOL {
+		if p.peek().Typ == BOOL {
 			if !op.isComparisonOperator() {
 				p.errorf("bool modifier can only be used on comparison operators")
 			}
@@ -456,22 +453,22 @@ func (p *parser) expr() Expr {
 		}
 
 		// Parse ON/IGNORING clause.
-		if p.peek().typ == ON || p.peek().typ == IGNORING {
-			if p.peek().typ == ON {
+		if p.peek().Typ == ON || p.peek().Typ == IGNORING {
+			if p.peek().Typ == ON {
 				vecMatching.On = true
 			}
 			p.next()
 			vecMatching.MatchingLabels = p.labels()
 
 			// Parse grouping.
-			if t := p.peek().typ; t == GROUP_LEFT || t == GROUP_RIGHT {
+			if t := p.peek().Typ; t == GROUP_LEFT || t == GROUP_RIGHT {
 				p.next()
 				if t == GROUP_LEFT {
 					vecMatching.Card = CardManyToOne
 				} else {
 					vecMatching.Card = CardOneToMany
 				}
-				if p.peek().typ == LEFT_PAREN {
+				if p.peek().Typ == LEFT_PAREN {
 					vecMatching.Include = p.labels()
 				}
 			}
@@ -529,19 +526,19 @@ func (p *parser) balance(lhs Expr, op ItemType, rhs Expr, vecMatching *VectorMat
 //		<Vector_selector> | <Matrix_selector> | (+|-) <number_literal> | '(' <expr> ')'
 //
 func (p *parser) unaryExpr() Expr {
-	switch t := p.peek(); t.typ {
+	switch t := p.peek(); t.Typ {
 	case ADD, SUB:
 		p.next()
 		e := p.unaryExpr()
 
 		// Simplify unary expressions for number literals.
 		if nl, ok := e.(*NumberLiteral); ok {
-			if t.typ == SUB {
+			if t.Typ == SUB {
 				nl.Val *= -1
 			}
 			return nl
 		}
-		return &UnaryExpr{Op: t.typ, Expr: e}
+		return &UnaryExpr{Op: t.Typ, Expr: e}
 
 	case LEFT_PAREN:
 		p.next()
@@ -553,12 +550,12 @@ func (p *parser) unaryExpr() Expr {
 	e := p.primaryExpr()
 
 	// Expression might be followed by a range selector.
-	if p.peek().typ == LEFT_BRACKET {
+	if p.peek().Typ == LEFT_BRACKET {
 		e = p.subqueryOrRangeSelector(e, true)
 	}
 
 	// Parse optional offset.
-	if p.peek().typ == OFFSET {
+	if p.peek().Typ == OFFSET {
 		offset := p.offset()
 
 		switch s := e.(type) {
@@ -592,16 +589,16 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 	var erange time.Duration
 	var err error
 
-	erangeStr := p.expect(DURATION, ctx).val
+	erangeStr := p.expect(DURATION, ctx).Val
 	erange, err = parseDuration(erangeStr)
 	if err != nil {
 		p.error(err)
 	}
 
-	var itm item
+	var itm Item
 	if checkRange {
 		itm = p.expectOneOf(RIGHT_BRACKET, COLON, ctx)
-		if itm.typ == RIGHT_BRACKET {
+		if itm.Typ == RIGHT_BRACKET {
 			// Range selector.
 			vs, ok := expr.(*VectorSelector)
 			if !ok {
@@ -621,8 +618,8 @@ func (p *parser) subqueryOrRangeSelector(expr Expr, checkRange bool) Expr {
 	var estep time.Duration
 
 	itm = p.expectOneOf(RIGHT_BRACKET, DURATION, ctx)
-	if itm.typ == DURATION {
-		estepStr := itm.val
+	if itm.Typ == DURATION {
+		estepStr := itm.Val
 		estep, err = parseDuration(estepStr)
 		if err != nil {
 			p.error(err)
@@ -656,29 +653,29 @@ func (p *parser) number(val string) float64 {
 //
 func (p *parser) primaryExpr() Expr {
 	switch t := p.next(); {
-	case t.typ == NUMBER:
-		f := p.number(t.val)
+	case t.Typ == NUMBER:
+		f := p.number(t.Val)
 		return &NumberLiteral{f}
 
-	case t.typ == STRING:
-		return &StringLiteral{p.unquoteString(t.val)}
+	case t.Typ == STRING:
+		return &StringLiteral{p.unquoteString(t.Val)}
 
-	case t.typ == LEFT_BRACE:
+	case t.Typ == LEFT_BRACE:
 		// Metric selector without metric name.
 		p.backup()
 		return p.VectorSelector("")
 
-	case t.typ == IDENTIFIER:
+	case t.Typ == IDENTIFIER:
 		// Check for function call.
-		if p.peek().typ == LEFT_PAREN {
-			return p.call(t.val)
+		if p.peek().Typ == LEFT_PAREN {
+			return p.call(t.Val)
 		}
 		fallthrough // Else metric selector.
 
-	case t.typ == METRIC_IDENTIFIER:
-		return p.VectorSelector(t.val)
+	case t.Typ == METRIC_IDENTIFIER:
+		return p.VectorSelector(t.Val)
 
-	case t.typ.isAggregator():
+	case t.Typ.isAggregator():
 		p.backup()
 		return p.aggrExpr()
 
@@ -698,15 +695,15 @@ func (p *parser) labels() []string {
 	p.expect(LEFT_PAREN, ctx)
 
 	labels := []string{}
-	if p.peek().typ != RIGHT_PAREN {
+	if p.peek().Typ != RIGHT_PAREN {
 		for {
 			id := p.next()
-			if !isLabel(id.val) {
+			if !isLabel(id.Val) {
 				p.errorf("unexpected %s in %s, expected label", id.desc(), ctx)
 			}
-			labels = append(labels, id.val)
+			labels = append(labels, id.Val)
 
-			if p.peek().typ != COMMA {
+			if p.peek().Typ != COMMA {
 				break
 			}
 			p.next()
@@ -726,7 +723,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	const ctx = "aggregation"
 
 	agop := p.next()
-	if !agop.typ.isAggregator() {
+	if !agop.Typ.isAggregator() {
 		p.errorf("expected aggregation operator but got %s", agop)
 	}
 	var grouping []string
@@ -734,7 +731,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 
 	modifiersFirst := false
 
-	if t := p.peek().typ; t == BY || t == WITHOUT {
+	if t := p.peek().Typ; t == BY || t == WITHOUT {
 		if t == WITHOUT {
 			without = true
 		}
@@ -745,7 +742,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 
 	p.expect(LEFT_PAREN, ctx)
 	var param Expr
-	if agop.typ.isAggregatorWithParam() {
+	if agop.Typ.isAggregatorWithParam() {
 		param = p.expr()
 		p.expect(COMMA, ctx)
 	}
@@ -753,7 +750,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	p.expect(RIGHT_PAREN, ctx)
 
 	if !modifiersFirst {
-		if t := p.peek().typ; t == BY || t == WITHOUT {
+		if t := p.peek().Typ; t == BY || t == WITHOUT {
 			if len(grouping) > 0 {
 				p.errorf("aggregation must only contain one grouping clause")
 			}
@@ -766,7 +763,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	}
 
 	return &AggregateExpr{
-		Op:       agop.typ,
+		Op:       agop.Typ,
 		Expr:     e,
 		Param:    param,
 		Grouping: grouping,
@@ -788,7 +785,7 @@ func (p *parser) call(name string) *Call {
 
 	p.expect(LEFT_PAREN, ctx)
 	// Might be call without args.
-	if p.peek().typ == RIGHT_PAREN {
+	if p.peek().Typ == RIGHT_PAREN {
 		p.next() // Consume.
 		return &Call{fn, nil}
 	}
@@ -799,7 +796,7 @@ func (p *parser) call(name string) *Call {
 		args = append(args, e)
 
 		// Terminate if no more arguments.
-		if p.peek().typ != COMMA {
+		if p.peek().Typ != COMMA {
 			break
 		}
 		p.next()
@@ -835,7 +832,7 @@ func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
 	p.expect(LEFT_BRACE, ctx)
 
 	// Check if no matchers are provided.
-	if p.peek().typ == RIGHT_BRACE {
+	if p.peek().Typ == RIGHT_BRACE {
 		p.next()
 		return matchers
 	}
@@ -843,7 +840,7 @@ func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
 	for {
 		label := p.expect(IDENTIFIER, ctx)
 
-		op := p.next().typ
+		op := p.next().Typ
 		if !op.isOperator() {
 			p.errorf("expected label matching operator but got %s", op)
 		}
@@ -857,9 +854,9 @@ func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
 			p.errorf("operator must be one of %q, is %q", operators, op)
 		}
 
-		val := p.unquoteString(p.expect(STRING, ctx).val)
+		val := p.unquoteString(p.expect(STRING, ctx).Val)
 
-		// Map the item to the respective match type.
+		// Map the Item to the respective match type.
 		var matchType labels.MatchType
 		switch op {
 		case EQL:
@@ -871,28 +868,28 @@ func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
 		case NEQ_REGEX:
 			matchType = labels.MatchNotRegexp
 		default:
-			p.errorf("item %q is not a metric match type", op)
+			p.errorf("Item %q is not a metric match type", op)
 		}
 
-		m, err := labels.NewMatcher(matchType, label.val, val)
+		m, err := labels.NewMatcher(matchType, label.Val, val)
 		if err != nil {
 			p.error(err)
 		}
 
 		matchers = append(matchers, m)
 
-		if p.peek().typ == IDENTIFIER {
-			p.errorf("missing comma before next identifier %q", p.peek().val)
+		if p.peek().Typ == IDENTIFIER {
+			p.errorf("missing comma before next identifier %q", p.peek().Val)
 		}
 
 		// Terminate list if last matcher.
-		if p.peek().typ != COMMA {
+		if p.peek().Typ != COMMA {
 			break
 		}
 		p.next()
 
-		// Allow comma after each item in a multi-line listing.
-		if p.peek().typ == RIGHT_BRACE {
+		// Allow comma after each Item in a multi-line listing.
+		if p.peek().Typ == RIGHT_BRACE {
 			break
 		}
 	}
@@ -911,10 +908,10 @@ func (p *parser) metric() labels.Labels {
 	name := ""
 	var m labels.Labels
 
-	t := p.peek().typ
+	t := p.peek().Typ
 	if t == IDENTIFIER || t == METRIC_IDENTIFIER {
-		name = p.next().val
-		t = p.peek().typ
+		name = p.next().Val
+		t = p.peek().Typ
 	}
 	if t != LEFT_BRACE && name == "" {
 		p.errorf("missing metric name or metric selector")
@@ -939,7 +936,7 @@ func (p *parser) offset() time.Duration {
 	p.next()
 	offi := p.expect(DURATION, ctx)
 
-	offset, err := parseDuration(offi.val)
+	offset, err := parseDuration(offi.Val)
 	if err != nil {
 		p.error(err)
 	}
@@ -957,7 +954,7 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 		Name: name,
 	}
 	// Parse label matching if any.
-	if t := p.peek(); t.typ == LEFT_BRACE {
+	if t := p.peek(); t.Typ == LEFT_BRACE {
 		p.generatedParserResult = ret
 
 		p.parseGenerated(START_LABELS, []ItemType{RIGHT_BRACE, EOF})
@@ -1167,11 +1164,11 @@ func (p *parser) parseGenerated(startSymbol ItemType, switchSymbols []ItemType) 
 
 }
 
-func (p *parser) newLabelMatcher(label item, operator item, value item) *labels.Matcher {
-	op := operator.typ
-	val := p.unquoteString(value.val)
+func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.Matcher {
+	op := operator.Typ
+	val := p.unquoteString(value.Val)
 
-	// Map the item to the respective match type.
+	// Map the Item to the respective match type.
 	var matchType labels.MatchType
 	switch op {
 	case EQL:
@@ -1188,7 +1185,7 @@ func (p *parser) newLabelMatcher(label item, operator item, value item) *labels.
 		panic("invalid operator")
 	}
 
-	m, err := labels.NewMatcher(matchType, label.val, val)
+	m, err := labels.NewMatcher(matchType, label.Val, val)
 	if err != nil {
 		p.error(err)
 	}

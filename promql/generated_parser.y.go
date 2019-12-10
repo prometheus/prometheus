@@ -15,7 +15,7 @@ import (
 type yySymType struct {
 	yys      int
 	node     Node
-	item     item
+	item     Item
 	matchers []*labels.Matcher
 	matcher  *labels.Matcher
 }
@@ -652,7 +652,7 @@ yydefault:
 		yyDollar = yyS[yypt-1 : yypt+1]
 //line promql/generated_parser.y:152
 		{
-			yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.val)
+			yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.Val)
 		}
 	}
 	goto yystack /* stack new state and value */

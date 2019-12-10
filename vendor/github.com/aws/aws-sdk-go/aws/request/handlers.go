@@ -23,7 +23,7 @@ type Handlers struct {
 	Complete         HandlerList
 }
 
-// Copy returns of this handler's lists.
+// Copy returns a copy of this handler's lists.
 func (h *Handlers) Copy() Handlers {
 	return Handlers{
 		Validate:         h.Validate.copy(),
@@ -42,7 +42,7 @@ func (h *Handlers) Copy() Handlers {
 	}
 }
 
-// Clear removes callback functions for all handlers
+// Clear removes callback functions for all handlers.
 func (h *Handlers) Clear() {
 	h.Validate.Clear()
 	h.Build.Clear()
