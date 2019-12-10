@@ -65,7 +65,7 @@ class TimeInput extends Component<TimeInputProps> {
         showToday: true,
       },
       sideBySide: true,
-      format: 'YYYY-MM-DD HH:mm',
+      format: 'YYYY-MM-DD HH:mm:ss',
       locale: 'en',
       timeZone: 'UTC',
       defaultDate: this.props.time,
@@ -96,6 +96,7 @@ class TimeInput extends Component<TimeInputProps> {
         </InputGroupAddon>
 
         <Input
+          style={{ paddingRight: 0 }}
           placeholder={this.props.placeholder}
           innerRef={this.timeInputRef}
           onFocus={() => this.$time.datetimepicker('show')}
