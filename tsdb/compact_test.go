@@ -860,6 +860,36 @@ func BenchmarkCompaction(b *testing.B) {
 	}
 }
 
+func BenchmarkCompactionFromHead(b *testing.B) {
+	dir, err := ioutil.TempDir("", "bench_compaction_from_head")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(dir))
+	}()
+	totalSeries := 100000
+	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
+		labelValues := totalSeries / labelNames
+		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
+			h, err := NewHead(nil, nil, nil, 1000)
+			testutil.Ok(b, err)
+			for ln := 0; ln < labelNames; ln++ {
+				app := h.Appender()
+				for lv := 0; lv < labelValues; lv++ {
+					app.Add(labels.FromStrings(fmt.Sprintf("%d", ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
+				}
+				testutil.Ok(b, app.Commit())
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				createBlockFromHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), h)
+			}
+			h.Close()
+		})
+	}
+}
+
 // TestDisableAutoCompactions checks that we can
 // disable and enable the auto compaction.
 // This is needed for unit tests that rely on

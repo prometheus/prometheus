@@ -211,6 +211,7 @@ func TestIndexRW_Postings(t *testing.T) {
 	testutil.Ok(t, iw.AddSeries(4, series[3]))
 
 	err = iw.WriteLabelIndex([]string{"a"}, []string{"1"})
+	testutil.Ok(t, err)
 	err = iw.WriteLabelIndex([]string{"b"}, []string{"1", "2", "3", "4"})
 	testutil.Ok(t, err)
 
@@ -266,6 +267,7 @@ func TestPostingsMany(t *testing.T) {
 		testutil.Ok(t, iw.AddSeries(uint64(i), s))
 	}
 	err = iw.WriteLabelIndex([]string{"foo"}, []string{"bar"})
+	testutil.Ok(t, err)
 	testutil.Ok(t, iw.Close())
 
 	ir, err := NewFileReader(fn)

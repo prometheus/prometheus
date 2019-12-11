@@ -62,7 +62,6 @@ func (m *mockIndexWriter) AddSeries(ref uint64, l labels.Labels, chunks ...chunk
 }
 
 func (mockIndexWriter) WriteLabelIndex(names []string, values []string) error { return nil }
-func (mockIndexWriter) WritePostings() error                                  { return nil }
 func (mockIndexWriter) Close() error                                          { return nil }
 
 type mockBReader struct {

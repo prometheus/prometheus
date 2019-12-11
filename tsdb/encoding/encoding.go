@@ -268,7 +268,7 @@ func (d *Decbuf) Byte() byte {
 	return x
 }
 
-func (d *Decbuf) EatPadding() {
+func (d *Decbuf) ConsumePadding() {
 	if d.E != nil {
 		return
 	}
@@ -279,7 +279,6 @@ func (d *Decbuf) EatPadding() {
 		d.E = ErrInvalidSize
 		return
 	}
-	return
 }
 
 func (d *Decbuf) Err() error  { return d.E }
