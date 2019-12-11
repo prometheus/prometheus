@@ -158,6 +158,14 @@ func NewDecbufUvarintAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Dec
 	return dec
 }
 
+// NewDecbufRaw returns a new decoding buffer of the given length.
+func NewDecbufRaw(bs ByteSlice, length int) Decbuf {
+	if bs.Len() < length {
+		return Decbuf{E: ErrInvalidSize}
+	}
+	return Decbuf{B: bs.Range(0, length)}
+}
+
 func (d *Decbuf) Uvarint() int     { return int(d.Uvarint64()) }
 func (d *Decbuf) Be32int() int     { return int(d.Be32()) }
 func (d *Decbuf) Be64int64() int64 { return int64(d.Be64()) }
@@ -258,6 +266,20 @@ func (d *Decbuf) Byte() byte {
 	x := d.B[0]
 	d.B = d.B[1:]
 	return x
+}
+
+func (d *Decbuf) EatPadding() {
+	if d.E != nil {
+		return
+	}
+	for len(d.B) > 1 && d.B[0] == '\x00' {
+		d.B = d.B[1:]
+	}
+	if len(d.B) < 1 {
+		d.E = ErrInvalidSize
+		return
+	}
+	return
 }
 
 func (d *Decbuf) Err() error  { return d.E }

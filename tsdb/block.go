@@ -54,10 +54,6 @@ type IndexWriter interface {
 	// The passed in values chained tuples of strings of the length of names.
 	WriteLabelIndex(names []string, values []string) error
 
-	// WritePostings writes a postings list for a single label pair.
-	// The Postings here contain refs to the series that were added.
-	WritePostings(name, value string, it index.Postings) error
-
 	// Close writes any finalization and closes the resources associated with
 	// the underlying writer.
 	Close() error
