@@ -538,3 +538,56 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 func (r *AlertingRule) HoldDuration() time.Duration {
 	return r.holdDuration
 }
+
+// Equals return if two alerting rule has the same
+// 1. name
+// 2. expr
+// 3. duration
+// 4. labels
+// 5. annotations
+// 6. externalLabels
+func (r *AlertingRule) Equals(rule Rule) bool {
+	ar, ok := rule.(*AlertingRule)
+	if !ok {
+		return false
+	}
+
+	if strings.Compare(r.name, ar.name) != 0 {
+		return false
+	}
+
+	if strings.Compare(r.vector.String(), ar.vector.String()) != 0 {
+		return false
+	}
+
+	if r.holdDuration != ar.holdDuration {
+		return false
+	}
+
+	if r.labels.Hash() != ar.labels.Hash() {
+		return false
+	}
+
+	if r.annotations.Hash() != ar.annotations.Hash() {
+		return false
+	}
+
+	if len(r.externalLabels) != len(ar.externalLabels) {
+		return false
+	}
+
+	same := true
+	for k, v := range r.externalLabels {
+		av, ok := ar.externalLabels[k]
+		if !ok {
+			same = false
+			break
+		}
+		if strings.Compare(v, av) != 0 {
+			same = false
+			break
+		}
+	}
+
+	return same
+}

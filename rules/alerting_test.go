@@ -289,3 +289,16 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 	}
 	testutil.Equals(t, result, filteredRes)
 }
+
+func TestAlertingRuleEquals(t *testing.T) {
+	expr1, err := promql.ParseExpr(`foo{pool="abc"} > 10`)
+	testutil.Ok(t, err)
+	expr2, err := promql.ParseExpr(`{__name__="foo", pool="abc"} > 10`)
+	testutil.Ok(t, err)
+	r1 := NewAlertingRule("testrule", expr1, 0, labels.FromStrings("pool", "abc"), labels.FromStrings("pool", "abc"), nil, false, nil)
+	r2 := NewAlertingRule("testrule", expr1, 0, labels.FromStrings("pool", "abc"), labels.FromStrings("pool", "abc"), nil, false, nil)
+	r3 := NewAlertingRule("testrule", expr2, 0, labels.FromStrings("pool", "abc"), labels.FromStrings("pool", "abc"), nil, false, nil)
+
+	testutil.Assert(t, r1.Equals(r2), "r1 equals with r2")
+	testutil.Assert(t, !r2.Equals(r3), "r2 does not equal with r3")
+}

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -189,4 +190,29 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	}
 
 	return template.HTML(byt)
+}
+
+// Equals returns if the two rules have same
+// 1. name
+// 2. expr
+// 3. labels
+func (r *RecordingRule) Equals(rule Rule) bool {
+	rr, ok := rule.(*RecordingRule)
+	if !ok {
+		return false
+	}
+
+	if strings.Compare(r.name, rr.name) != 0 {
+		return false
+	}
+
+	if strings.Compare(r.vector.String(), rr.vector.String()) != 0 {
+		return false
+	}
+
+	if r.labels.Hash() != rr.labels.Hash() {
+		return false
+	}
+
+	return true
 }

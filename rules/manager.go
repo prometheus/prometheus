@@ -15,16 +15,18 @@ package rules
 
 import (
 	"context"
+	"fmt"
 	html_template "html/template"
 	"math"
 	"net/url"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -213,6 +215,8 @@ type Rule interface {
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
 	HTMLSnippet(pathPrefix string) html_template.HTML
+	// Equal returns if two rules are the same
+	Equals(rule Rule) bool
 }
 
 // Group is a set of rules that have a logical relation.
@@ -743,6 +747,53 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 }
 
+// Equals return if two groups have the same
+// 1. name
+// 2. file path
+// 3. interval
+// 4. rule set. and the rules are the same
+func (g *Group) Equals(ng *Group) bool {
+	if strings.Compare(g.name, ng.name) != 0 {
+		return false
+	}
+
+	if strings.Compare(g.file, ng.file) != 0 {
+		return false
+	}
+
+	if g.interval != ng.interval {
+		return false
+	}
+
+	if len(g.rules) != len(ng.rules) {
+		return false
+	}
+
+	gm := make(map[string]Rule, len(g.rules))
+	for _, r := range g.rules {
+		gm[r.Name()] = r
+	}
+
+	ngm := make(map[string]Rule, len(ng.rules))
+	for _, r := range ng.rules {
+		ngm[r.Name()] = r
+	}
+
+	same := true
+	for n, nr := range ngm {
+		or, ok := gm[n]
+		if !ok {
+			same = false
+			break
+		}
+		if !nr.Equals(or) {
+			same = false
+			break
+		}
+	}
+	return same
+}
+
 // The Manager manages recording and alerting rules.
 type Manager struct {
 	opts     *ManagerOptions
@@ -836,16 +887,21 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	m.restored = true
 
 	var wg sync.WaitGroup
-
+	fmt.Println(len(groups))
 	for _, newg := range groups {
-		wg.Add(1)
-
 		// If there is an old group with the same identifier, stop it and wait for
 		// it to finish the current iteration. Then copy it into the new group.
 		gn := groupKey(newg.name, newg.file)
 		oldg, ok := m.groups[gn]
 		delete(m.groups, gn)
 
+		// if equal, move it to groups
+		if ok && oldg.Equals(newg) {
+			groups[gn] = oldg
+			continue
+		}
+
+		wg.Add(1)
 		go func(newg *Group) {
 			if ok {
 				oldg.stop()
@@ -866,7 +922,6 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	for _, oldg := range m.groups {
 		oldg.stop()
 	}
-
 	wg.Wait()
 	m.groups = groups
 
