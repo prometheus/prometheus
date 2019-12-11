@@ -296,7 +296,7 @@ func (g *Group) run(ctx context.Context) {
 
 		g.metrics.iterationDuration.Observe(timeSinceStart.Seconds())
 		g.setEvaluationDuration(timeSinceStart)
-		g.setEvaluationTimestamp(start)
+		g.setEvaluationTimestamp(evalTimestamp)
 	}
 
 	// The assumption here is that since the ticker was started after having
@@ -512,7 +512,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				since := time.Since(t)
 				g.metrics.evalDuration.Observe(since.Seconds())
 				rule.SetEvaluationDuration(since)
-				rule.SetEvaluationTimestamp(t)
+				rule.SetEvaluationTimestamp(ts)
 			}(time.Now())
 
 			g.metrics.evalTotal.Inc()
