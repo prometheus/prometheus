@@ -87,6 +87,8 @@ func (l *Linter) Lint() ([]Problem, error) {
 	sort.SliceStable(problems, func(i, j int) bool {
 		if problems[i].Metric < problems[j].Metric {
 			return true
+		} else if problems[i].Metric > problems[j].Metric {
+			return false
 		}
 
 		return problems[i].Text < problems[j].Text
