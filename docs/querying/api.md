@@ -668,6 +668,7 @@ GET /api/v1/metadata
 URL query parameters:
 
 - `limit=<number>`: Maximum number of metrics to return.
+- `metric=<string>`: A metric name to filter metadata for. All metric metadata is retrieved if left empty.
 
 The `data` section of the query result consists of an object where each key is a metric name and each value is a list of unique metadata objects, as exposed for that metric name across all targets.
 
@@ -686,6 +687,30 @@ curl -G http://localhost:9090/api/v1/metadata?limit=2
         "unit": ""
       }
     ],
+    "http_requests_total": [
+      {
+        "type": "counter",
+        "help": "Number of HTTP requests",
+        "unit": ""
+      },
+      {
+        "type": "counter",
+        "help": "Amount of HTTP requests",
+        "unit": ""
+      }
+    ]
+  }
+}
+```
+
+The following example returns metadata only for the metric `http_requests_total`.
+
+```json
+curl -G http://localhost:9090/api/v1/metadata?metric=http_requests_total
+
+{
+  "status": "success",
+  "data": {
     "http_requests_total": [
       {
         "type": "counter",
