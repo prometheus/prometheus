@@ -482,6 +482,9 @@ guarantees as the overarching API v1.
 GET /api/v1/rules
 ```
 
+URL query parameters:
+- `type=alert|record`: return only the alerting rules (e.g. `type=alert`) or the recording rules (e.g. `type=record`). When the parameter is absent or empty, no filtering is done.
+
 ```json
 $ curl http://localhost:9090/api/v1/rules
 
