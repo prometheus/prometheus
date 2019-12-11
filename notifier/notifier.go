@@ -457,6 +457,10 @@ func (n *Manager) DroppedAlertmanagers() []*url.URL {
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
 // It returns true if the alerts could be sent successfully to at least one Alertmanager.
 func (n *Manager) sendAll(alerts ...*Alert) bool {
+	if len(alerts) == 0 {
+		return true
+	}
+
 	begin := time.Now()
 
 	// v1Payload and v2Payload represent 'alerts' marshaled for Alertmanager API
