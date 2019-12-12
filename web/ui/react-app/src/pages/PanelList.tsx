@@ -96,7 +96,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
     });
   };
 
-  onExecuteQuery = (query: string) => {
+  handleExecuteQuery = (query: string) => {
     const isSimpleMetric = this.state.metricNames.indexOf(query) !== -1;
     if (isSimpleMetric || !query.length) {
       return;
@@ -182,7 +182,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
         </Row>
         {panels.map(({ id, options }) => (
           <Panel
-            onExecuteQuery={this.onExecuteQuery}
+            onExecuteQuery={this.handleExecuteQuery}
             key={id}
             options={options}
             onOptionsChanged={opts => this.handleOptionsChanged(id, opts)}
