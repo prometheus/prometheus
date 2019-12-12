@@ -265,15 +265,27 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		jobNames[scfg.JobName] = struct{}{}
 	}
+	rwNames := map[string]struct{}{}
 	for _, rwcfg := range c.RemoteWriteConfigs {
 		if rwcfg == nil {
 			return errors.New("empty or null remote write config section")
 		}
+		// Skip empty names, we fill their name with their config hash in remote write code.
+		if _, ok := rwNames[rwcfg.Name]; ok && rwcfg.Name != "" {
+			return errors.Errorf("found multiple remote write configs with job name %q", rwcfg.Name)
+		}
+		rwNames[rwcfg.Name] = struct{}{}
 	}
+	rrNames := map[string]struct{}{}
 	for _, rrcfg := range c.RemoteReadConfigs {
 		if rrcfg == nil {
 			return errors.New("empty or null remote read config section")
 		}
+		// Skip empty names, we fill their name with their config hash in remote read code.
+		if _, ok := rrNames[rrcfg.Name]; ok && rrcfg.Name != "" {
+			return errors.Errorf("found multiple remote read configs with job name %q", rrcfg.Name)
+		}
+		rrNames[rrcfg.Name] = struct{}{}
 	}
 	return nil
 }
@@ -596,6 +608,7 @@ type RemoteWriteConfig struct {
 	URL                 *config_util.URL  `yaml:"url"`
 	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
 	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
+	Name                string            `yaml:"name,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -654,6 +667,8 @@ type RemoteReadConfig struct {
 	URL           *config_util.URL `yaml:"url"`
 	RemoteTimeout model.Duration   `yaml:"remote_timeout,omitempty"`
 	ReadRecent    bool             `yaml:"read_recent,omitempty"`
+	Name          string           `yaml:"name,omitempty"`
+
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`

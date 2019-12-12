@@ -446,6 +446,10 @@ func (c *TestStorageClient) Name() string {
 	return "teststorageclient"
 }
 
+func (c *TestStorageClient) Endpoint() string {
+	return "http://test-remote.com/1234"
+}
+
 // TestBlockingStorageClient is a queue_manager StorageClient which will block
 // on any calls to Store(), until the request's Context is cancelled, at which
 // point the `numCalls` property will contain a count of how many times Store()
@@ -470,6 +474,10 @@ func (c *TestBlockingStorageClient) NumCalls() uint64 {
 
 func (c *TestBlockingStorageClient) Name() string {
 	return "testblockingstorageclient"
+}
+
+func (c *TestBlockingStorageClient) Endpoint() string {
+	return "http://test-remote-blocking.com/1234"
 }
 
 func BenchmarkSampleDelivery(b *testing.B) {
