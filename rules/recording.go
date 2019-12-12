@@ -18,11 +18,10 @@ import (
 	"fmt"
 	"html/template"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -202,15 +201,15 @@ func (r *RecordingRule) Equals(rule Rule) bool {
 		return false
 	}
 
-	if strings.Compare(r.name, rr.name) != 0 {
+	if r.name != rr.name {
 		return false
 	}
 
-	if strings.Compare(r.vector.String(), rr.vector.String()) != 0 {
+	if r.vector.String() != rr.vector.String() {
 		return false
 	}
 
-	if r.labels.Hash() != rr.labels.Hash() {
+	if labels.Equal(r.labels, rr.labels) {
 		return false
 	}
 

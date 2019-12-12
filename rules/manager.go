@@ -19,7 +19,6 @@ import (
 	"math"
 	"net/url"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -752,11 +751,11 @@ func (g *Group) RestoreForState(ts time.Time) {
 // 3. interval
 // 4. rule set. and the rules are the same
 func (g *Group) Equals(ng *Group) bool {
-	if strings.Compare(g.name, ng.name) != 0 {
+	if g.name != ng.name {
 		return false
 	}
 
-	if strings.Compare(g.file, ng.file) != 0 {
+	if g.file != ng.file {
 		return false
 	}
 

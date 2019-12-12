@@ -552,11 +552,11 @@ func (r *AlertingRule) Equals(rule Rule) bool {
 		return false
 	}
 
-	if strings.Compare(r.name, ar.name) != 0 {
+	if r.name != ar.name {
 		return false
 	}
 
-	if strings.Compare(r.vector.String(), ar.vector.String()) != 0 {
+	if r.vector.String() != ar.vector.String() {
 		return false
 	}
 
@@ -564,11 +564,15 @@ func (r *AlertingRule) Equals(rule Rule) bool {
 		return false
 	}
 
-	if r.labels.Hash() != ar.labels.Hash() {
+	if !labels.Equal(r.labels, ar.labels) {
 		return false
 	}
 
-	if r.annotations.Hash() != ar.annotations.Hash() {
+	if !labels.Equal(r.annotations, ar.annotations) {
+		return false
+	}
+
+	if len(r.externalLabels) != len(ar.externalLabels) {
 		return false
 	}
 
@@ -582,5 +586,5 @@ func (r *AlertingRule) Equals(rule Rule) bool {
 		}
 	}
 
-	return len(r.externalLabels) == len(ar.externalLabels)
+	return true
 }
