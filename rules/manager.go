@@ -765,22 +765,12 @@ func (g *Group) Equals(ng *Group) bool {
 		return false
 	}
 
-	gm := make(map[string]Rule, len(g.rules))
-	for _, r := range g.rules {
-		gm[r.String()] = r
-	}
-
-	ngm := make(map[string]Rule, len(ng.rules))
-	for _, r := range ng.rules {
-		ngm[r.String()] = r
-	}
-
-	for n := range ngm {
-		_, ok := gm[n]
-		if !ok {
+	for i, gr := range g.rules {
+		if gr.String() != ng.rules[i].String() {
 			return false
 		}
 	}
+
 	return true
 }
 
