@@ -1456,16 +1456,6 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 	return nil
 }
 
-func (h *headIndexReader) LabelIndices() ([][]string, error) {
-	h.head.symMtx.RLock()
-	defer h.head.symMtx.RUnlock()
-	res := [][]string{}
-	for s := range h.head.values {
-		res = append(res, []string{s})
-	}
-	return res, nil
-}
-
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool) {
 	// Just using `getOrSet` below would be semantically sufficient, but we'd create
 	// a new series on every sample inserted via Add(), which causes allocations

@@ -138,14 +138,6 @@ func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) 
 	return nil
 }
 
-func (m mockIndex) LabelIndices() ([][]string, error) {
-	res := make([][]string, 0, len(m.labelIndex))
-	for k := range m.labelIndex {
-		res = append(res, []string{k})
-	}
-	return res, nil
-}
-
 func TestIndexRW_Create_Open(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_index_create")
 	testutil.Ok(t, err)
@@ -211,10 +203,8 @@ func TestIndexRW_Postings(t *testing.T) {
 	testutil.Ok(t, iw.AddSeries(3, series[2]))
 	testutil.Ok(t, iw.AddSeries(4, series[3]))
 
-	err = iw.WriteLabelIndex([]string{"a"}, []string{"1"})
-	testutil.Ok(t, err)
-	err = iw.WriteLabelIndex([]string{"b"}, []string{"1", "2", "3", "4"})
-	testutil.Ok(t, err)
+	testutil.Ok(t, iw.WriteLabelIndex([]string{"a"}, []string{"1"}))
+	testutil.Ok(t, iw.WriteLabelIndex([]string{"b"}, []string{"1", "2", "3", "4"}))
 
 	testutil.Ok(t, iw.Close())
 
@@ -235,6 +225,34 @@ func TestIndexRW_Postings(t *testing.T) {
 		testutil.Equals(t, series[i], l)
 	}
 	testutil.Ok(t, p.Err())
+
+	// The label incides are no longer used, so test them by hand here.
+	labelIndices := map[string][]string{}
+	testutil.Ok(t, ReadOffsetTable(ir.b, ir.toc.LabelIndicesTable, func(key []string, off uint64, _ int) error {
+		if len(key) != 1 {
+			return errors.Errorf("unexpected key length for label indices table %d", len(key))
+		}
+
+		d := encoding.NewDecbufAt(ir.b, int(off), castagnoliTable)
+		vals := []string{}
+		nc := d.Be32int()
+		if nc != 1 {
+			return errors.Errorf("unexpected nuumber of label indices table names %d", nc)
+		}
+		for i := d.Be32(); i > 0; i-- {
+			v, err := ir.lookupSymbol(d.Be32())
+			if err != nil {
+				return err
+			}
+			vals = append(vals, v)
+		}
+		labelIndices[key[0]] = vals
+		return d.Err()
+	}))
+	testutil.Equals(t, map[string][]string{
+		"a": []string{"1"},
+		"b": []string{"1", "2", "3", "4"},
+	}, labelIndices)
 
 	testutil.Ok(t, ir.Close())
 }

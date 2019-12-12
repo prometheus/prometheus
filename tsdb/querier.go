@@ -35,11 +35,8 @@ type Querier interface {
 	Select(...*labels.Matcher) (SeriesSet, error)
 
 	// LabelValues returns all potential values for a label name.
+	// It is not safe to use the strings beyond the lifefime of the querier.
 	LabelValues(string) ([]string, error)
-
-	// LabelValuesFor returns all potential values for a label name.
-	// under the constraint of another label.
-	LabelValuesFor(string, labels.Label) ([]string, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	LabelNames() ([]string, error)
@@ -106,10 +103,6 @@ func (q *querier) lvals(qs []Querier, n string) ([]string, error) {
 		return nil, err
 	}
 	return mergeStrings(s1, s2), nil
-}
-
-func (q *querier) LabelValuesFor(string, labels.Label) ([]string, error) {
-	return nil, fmt.Errorf("not implemented")
 }
 
 func (q *querier) Select(ms ...*labels.Matcher) (SeriesSet, error) {

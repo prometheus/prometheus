@@ -471,14 +471,17 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
-	defer q.Close()
+
+	closer := func() {
+		q.Close()
+	}
 
 	vals, warnings, err := q.LabelValues(name)
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 	}
 
-	return apiFuncResult{vals, nil, warnings, nil}
+	return apiFuncResult{vals, nil, warnings, closer}
 }
 
 var (
