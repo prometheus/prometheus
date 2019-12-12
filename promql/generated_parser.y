@@ -155,7 +155,7 @@ label_matcher   :
                 | IDENTIFIER match_op error
                         { yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())}
                 | IDENTIFIER error 
-                        { yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.Val) } 
+                        { yylex.(*parser).errorf("unexpected %v in label matching, expected label matching operator", yylex.(*parser).token.Val) } 
                 | error
                         { yylex.(*parser).errorf("unexpected %v in label matching, expected identifier or \"}\"", yylex.(*parser).token.desc()) }
                 ;
@@ -190,11 +190,11 @@ label_set_item  :
                 IDENTIFIER EQL STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } } 
                 | IDENTIFIER EQL error
-                        { yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())}
+                        { yylex.(*parser).errorf("unexpected %v in label set, expected string", yylex.(*parser).token.desc())}
                 | IDENTIFIER error
-                        { yylex.(*parser).errorf("expected \"=\" but got %s", yylex.(*parser).token.desc())}
+                        { yylex.(*parser).errorf("unexpected %v in label set, expected \"=\"", yylex.(*parser).token.desc())}
                 | error
-                        { yylex.(*parser).errorf("unexpected %s in label matching, expected identifier or \"}\"", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).errorf("unexpected %v in label set, expected identifier or \"}\"", yylex.(*parser).token.desc()) }
                 ;
 
                 

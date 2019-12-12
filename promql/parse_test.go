@@ -936,7 +936,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{gibberish}`,
 		fail:   true,
-		errMsg: "expected label matching operator but got }",
+		errMsg: "unexpected } in label matching, expected label matching operator",
 	}, {
 		input:  `foo{1}`,
 		fail:   true,
