@@ -576,18 +576,15 @@ func (r *AlertingRule) Equals(rule Rule) bool {
 		return false
 	}
 
-	same := true
 	for k, v := range r.externalLabels {
 		av, ok := ar.externalLabels[k]
 		if !ok {
-			same = false
-			break
+			return false
 		}
 		if strings.Compare(v, av) != 0 {
-			same = false
-			break
+			return false
 		}
 	}
 
-	return same
+	return true
 }

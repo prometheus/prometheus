@@ -15,7 +15,6 @@ package rules
 
 import (
 	"context"
-	"fmt"
 	html_template "html/template"
 	"math"
 	"net/url"
@@ -779,19 +778,16 @@ func (g *Group) Equals(ng *Group) bool {
 		ngm[r.Name()] = r
 	}
 
-	same := true
 	for n, nr := range ngm {
 		or, ok := gm[n]
 		if !ok {
-			same = false
-			break
+			return false
 		}
 		if !nr.Equals(or) {
-			same = false
-			break
+			return false
 		}
 	}
-	return same
+	return true
 }
 
 // The Manager manages recording and alerting rules.
@@ -887,7 +883,6 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	m.restored = true
 
 	var wg sync.WaitGroup
-	fmt.Println(len(groups))
 	for _, newg := range groups {
 		// If there is an old group with the same identifier, stop it and wait for
 		// it to finish the current iteration. Then copy it into the new group.
