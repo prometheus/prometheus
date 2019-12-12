@@ -572,10 +572,6 @@ func (r *AlertingRule) Equals(rule Rule) bool {
 		return false
 	}
 
-	if len(r.externalLabels) != len(ar.externalLabels) {
-		return false
-	}
-
 	for k, v := range r.externalLabels {
 		av, ok := ar.externalLabels[k]
 		if !ok {
@@ -586,5 +582,5 @@ func (r *AlertingRule) Equals(rule Rule) bool {
 		}
 	}
 
-	return true
+	return len(r.externalLabels) == len(ar.externalLabels)
 }
