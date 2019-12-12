@@ -10,14 +10,14 @@ import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
 
 interface ExpressionInputProps {
   value: string;
+  onExpressionChange: (expr: string) => void;
   autocompleteSections: { [key: string]: string[] };
-  executeQuery: (expr: string) => void;
+  executeQuery: () => void;
   loading: boolean;
 }
 
 interface ExpressionInputState {
   height: number | string;
-  value: string;
 }
 
 class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
@@ -26,7 +26,6 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   constructor(props: ExpressionInputProps) {
     super(props);
     this.state = {
-      value: props.value,
       height: 'auto',
     };
   }
@@ -46,7 +45,9 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   };
 
   setValue = (value: string) => {
-    this.setState({ value, height: 'auto' }, this.setHeight);
+    const { onExpressionChange } = this.props;
+    onExpressionChange(value);
+    this.setState({ height: 'auto' }, this.setHeight);
   };
 
   componentDidUpdate(prevProps: ExpressionInputProps) {
@@ -57,13 +58,12 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   }
 
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    const { executeQuery } = this.props;
     if (event.key === 'Enter' && !event.shiftKey) {
-      this.executeQuery();
+      executeQuery();
       event.preventDefault();
     }
   };
-
-  executeQuery = () => this.props.executeQuery(this.exprInputRef.current!.value);
 
   getSearchMatches = (input: string, expressions: string[]) => {
     return fuzzy.filter(input.replace(/ /g, ''), expressions, {
@@ -125,7 +125,8 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   };
 
   render() {
-    const { value, height } = this.state;
+    const { executeQuery, value } = this.props;
+    const { height } = this.state;
     return (
       <Downshift onSelect={this.setValue}>
         {downshift => (
@@ -175,7 +176,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                 value={value}
               />
               <InputGroupAddon addonType="append">
-                <Button className="execute-btn" color="primary" onClick={this.executeQuery}>
+                <Button className="execute-btn" color="primary" onClick={executeQuery}>
                   Execute
                 </Button>
               </InputGroupAddon>

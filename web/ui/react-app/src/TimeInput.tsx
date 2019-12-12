@@ -27,7 +27,6 @@ interface TimeInputProps {
   time: number | null; // Timestamp in milliseconds.
   range: number; // Range in seconds.
   placeholder: string;
-
   onChangeTime: (time: number | null) => void;
 }
 

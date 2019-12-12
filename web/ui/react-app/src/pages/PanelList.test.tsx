@@ -1,9 +1,11 @@
 import * as React from 'react';
 import { mount, shallow } from 'enzyme';
-import PanelList from './pages/PanelList';
-import Checkbox from './Checkbox';
+import PanelList from './PanelList';
+import Checkbox from '../Checkbox';
 import { Alert, Button } from 'reactstrap';
-import Panel from './Panel';
+import Panel, { PanelDefaultOptions } from '../Panel';
+import { decodePanelOptionsFromQueryString } from '../utils/urlParams';
+import ExpressionInput from '../ExpressionInput';
 
 describe('PanelList', () => {
   it('renders a query history checkbox', () => {
@@ -36,5 +38,13 @@ describe('PanelList', () => {
     const btn = panelList.find(Button).filterWhere(btn => btn.prop('className') === 'add-panel-btn');
     expect(btn.prop('color')).toEqual('primary');
     expect(btn.children().text()).toEqual('Add Panel');
+  });
+
+  it('updates URL when a query is executed', () => {
+    const panelList = mount(<PanelList />);
+    const instance: any = panelList.instance();
+    const updateURLSpy = jest.spyOn(instance, 'updateURL');
+    instance.handleExecuteQuery('new');
+    expect(updateURLSpy).toHaveBeenCalledTimes(1);
   });
 });
