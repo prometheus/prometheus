@@ -760,7 +760,7 @@ type rangeHead struct {
 	mint, maxt int64
 }
 
-func (h *rangeHead) Index() (IndexReader, error) {
+func (h *rangeHead) Index(mint, maxt int64) (IndexReader, error) { // XXX
 	return h.head.indexRange(h.mint, h.maxt), nil
 }
 
@@ -1196,8 +1196,8 @@ func (h *Head) Tombstones() (tombstones.Reader, error) {
 }
 
 // Index returns an IndexReader against the block.
-func (h *Head) Index() (IndexReader, error) {
-	return h.indexRange(math.MinInt64, math.MaxInt64), nil
+func (h *Head) Index(mint, maxt int64) (IndexReader, error) {
+	return h.indexRange(mint, maxt), nil
 }
 
 func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
@@ -1387,7 +1387,25 @@ func (h *headIndexReader) LabelNames() ([]string, error) {
 func (h *headIndexReader) Postings(name string, values ...string) (index.Postings, error) {
 	res := make([]index.Postings, 0, len(values))
 	for _, value := range values {
-		res = append(res, h.head.postings.Get(name, value))
+		p := h.head.postings.Get(name, value)
+		// Filter out series not in the time range, to avoid
+		// later on building up all the chunk metadata just to
+		// discard it.
+		filtered := []uint64{}
+		for p.Next() {
+			s := h.head.series.getByID(p.At())
+			if s == nil {
+				level.Debug(h.head.logger).Log("msg", "looked up series not found")
+				continue
+			}
+			if s.minTime() <= h.maxt && s.maxTime() >= h.mint {
+				filtered = append(filtered, p.At())
+      }
+		}
+		if p.Err() != nil {
+			return nil, p.Err()
+		}
+		res = append(res, index.NewListPostings(filtered))
 	}
 	return index.Merge(res...), nil
 }

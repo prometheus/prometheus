@@ -171,7 +171,7 @@ func (q *verticalQuerier) sel(qs []Querier, ms []*labels.Matcher) (SeriesSet, er
 
 // NewBlockQuerier returns a querier against the reader.
 func NewBlockQuerier(b BlockReader, mint, maxt int64) (Querier, error) {
-	indexr, err := b.Index()
+	indexr, err := b.Index(mint, maxt)
 	if err != nil {
 		return nil, errors.Wrapf(err, "open index reader")
 	}
