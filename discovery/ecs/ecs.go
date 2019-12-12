@@ -76,6 +76,8 @@ type Discovery struct {
 	ecsCfg *SDConfig
 	port   int
 	limit  int
+
+	tgCache *targetgroup.Group
 }
 
 // NewDiscovery returns a new ECSDiscovery which periodically refreshes its targets.
@@ -88,6 +90,7 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 		port:   cfg.Port,
 		limit:  cfg.Limit,
 		logger: logger,
+		tgCache: &targetgroup.Group{},
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
@@ -103,28 +106,36 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	defer level.Debug(d.logger).Log("msg", "ECS discovery completed")
 
 	var instances []ecs_pop.Instance
+
 	if d.ecsCfg != nil && d.ecsCfg.TagFilters != nil && len(d.ecsCfg.TagFilters) > 0 {
+		// 1. tagFilter situation. query ListTagResources first, then query DiscribeInstances
 		instancesFromListTagResources, queryInstanceErr := d.queryFromListTagResources()
 		if queryInstanceErr != nil {
 			return nil, queryInstanceErr
 		}
 		instances = instancesFromListTagResources
 	} else {
+		// 2. no tagFilter situation. query DiscribeInstances, then do cache double check.
 		instancesFromDiscribeInstances, queryInstanceErr := d.queryFromDescribeInstances()
 		if queryInstanceErr != nil {
 			return nil, queryInstanceErr
 		}
 		instances = instancesFromDiscribeInstances
+
+		instancesFromCacheReCheck := d.getCacheReCheckInstances()
+		level.Info(d.logger).Log("msg", "Found Instances from cache re-check during ECS discovery.", "count", len(instancesFromCacheReCheck))
+		instances = mergeHashInstances(instances, instancesFromCacheReCheck)
 	}
 
 	// build instances list.
 
-	level.Info(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(instances))
+	level.Info(d.logger).Log("msg", "Found Instances from remote during ECS discovery.", "count", len(instances))
 
 	tg := &targetgroup.Group{
 		Source: getConfigRegionId(d.ecsCfg.RegionId),
 	}
 
+	noIpAddressInstanceCount := 0
 	for _, instance := range instances {
 
 		labels := model.LabelSet{
@@ -175,7 +186,8 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 
 		if !isAddressLabelExist {
-			level.Warn(d.logger).Log("msg", "Instance dont have AddressLabel.", "instance: ", fmt.Sprintf("%v", instance))
+			level.Debug(d.logger).Log("msg", "Instance dont have AddressLabel.", "instance: ", fmt.Sprintf("%v", instance))
+			noIpAddressInstanceCount ++
 			continue
 		}
 
@@ -187,8 +199,17 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		tg.Targets = append(tg.Targets, labels)
 	}
 
+	level.Info(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(tg.Targets))
+	if noIpAddressInstanceCount > 0 {
+		level.Info(d.logger).Log("msg", "Found no AddressLabel instances during ECS discovery.", "count", noIpAddressInstanceCount)
+	}
+
+	// cache targetGroup
+	d.tgCache = tg
+
 	return []*targetgroup.Group{tg}, nil
 }
+
 
 func (d *Discovery) filterInstancesIdFromListTagResources(token string) (instanceIdsStr string, nextToken string, err error) {
 
@@ -252,6 +273,7 @@ func (d *Discovery) filterInstancesIdFromListTagResources(token string) (instanc
 	return resourceIdsJsonArrayStr, response.NextToken, nil
 }
 
+// this method's result is merged by cache re-check and new api query. because page type query will lose instances when frequently scale-up and scale-down.
 func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, err error) {
 
 	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
@@ -298,6 +320,7 @@ func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, 
 	if currentTotalCount < currentLimit {
 
 		for pageIndex := 2; currentTotalCount < currentLimit; pageIndex++ {
+			fmt.Println(fmt.Sprintf("pageIndex: %v", pageIndex))
 			if (currentLimit - currentTotalCount) < MAX_PAGE_LIMIT {
 				pageLimit = currentLimit - currentTotalCount
 			}
@@ -307,6 +330,9 @@ func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, 
 			if responseErr != nil {
 				return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
 			}
+
+			fmt.Println(fmt.Sprintf("responsed pageIndex: %v", pageIndex))
+
 			level.Debug(d.logger).Log("msg", "getResponse from describeInstancesResponse.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse, "pageNum: ", pageIndex)
 
 			newInstanceIndex := 0
@@ -330,15 +356,80 @@ func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, 
 	return instances, nil
 }
 
+func (d *Discovery) getCacheReCheckInstances() (retInstanceList []ecs_pop.Instance) {
+
+	// get cache targetGroup's instanceIds, and query DescribeInstances again to double check.
+	// every 50 instance per page.
+
+	retInstanceList = []ecs_pop.Instance{}
+	pageCount := 0
+	instanceIdList := []string{}
+	for tgLabelSetIndex, tgLabelSet := range d.tgCache.Targets  {
+		instanceId := tgLabelSet[ecsLabelInstanceId]
+
+		pageCount ++
+		instanceIdList = append(instanceIdList, string(instanceId))
+
+		// full of one page, or last one of LabelSet Series.
+		if pageCount >= MAX_PAGE_LIMIT || tgLabelSetIndex == (len(d.tgCache.Targets) - 1) {
+
+			// query instances
+			describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
+			describeInstancesRequest.RegionId = getConfigRegionId(d.ecsCfg.RegionId)
+			describeInstancesRequest.PageNumber = requests.NewInteger(1)
+			describeInstancesRequest.PageSize = requests.NewInteger(MAX_PAGE_LIMIT)
+
+			InstanceIdsStrByte, jsonErr := json.Marshal(instanceIdList)
+			if jsonErr != nil {
+				level.Error(d.logger).Log("msg", "getCacheReCheckInstances json parse err.", "instanceIdList: ", instanceIdList, "jsonErr: ", jsonErr)
+				continue
+			}
+			describeInstancesRequest.InstanceIds = string(InstanceIdsStrByte)
+
+			client, clientErr := getEcsClient(d.ecsCfg, d.logger)
+
+			if clientErr != nil {
+				level.Error(d.logger).Log("msg", "getCacheReCheckInstances Get ECS Client err.", "err: ", clientErr)
+				continue
+			}
+
+			describeInstancesResponse, responseErr := client.DescribeInstances(describeInstancesRequest)
+
+			level.Debug(d.logger).Log("msg", "getCacheReCheckInstances getResponse from describeInstancesResponse.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse)
+
+			if responseErr != nil {
+				level.Error(d.logger).Log("msg", "getCacheReCheckInstances describeInstancesResponse err.", "requestId: ", describeInstancesResponse.RequestId, "err: ", responseErr)
+				continue
+			}
+
+			retInstanceList = mergeInstances(retInstanceList, describeInstancesResponse.Instances.Instance)
+
+			// clean page
+			pageCount = 0
+			instanceIdList = []string{}
+		}
+
+	}
+
+	return retInstanceList
+}
+
 func (d *Discovery) queryFromListTagResources() (instances []ecs_pop.Instance, err error) {
 
 	nextToken := "FIRST"
 	var nextTokenInstances []ecs_pop.Instance
 	var getInstancesFromListTagResourcesErr error
 	currentTotalCount := 0
+	originalToken := "INIT"
 	for {
-		if nextToken != "" && nextToken != "ICM="  {
+		if nextToken != "" && nextToken != "ICM=" && originalToken != nextToken {
 			nextToken, nextTokenInstances, getInstancesFromListTagResourcesErr = d.getInstancesFromListTagResources(nextToken, currentTotalCount)
+
+			originalToken = nextToken
+			if len(nextTokenInstances) == 0 {
+				break
+			}
+
 			currentTotalCount = currentTotalCount + len(nextTokenInstances)
 			if getInstancesFromListTagResourcesErr != nil {
 				return nil, getInstancesFromListTagResourcesErr
@@ -356,6 +447,23 @@ func mergeInstances(instances []ecs_pop.Instance, instances2 []ecs_pop.Instance)
 		instances = append(instances, each)
 	}
 	return instances
+}
+
+// hash by instanceId and merge. O(n + m)
+func mergeHashInstances(instances []ecs_pop.Instance, instances2 []ecs_pop.Instance) []ecs_pop.Instance {
+	instanceId_instance := make(map[string]ecs_pop.Instance)
+	for _, each := range instances{
+		instanceId_instance[each.InstanceId] = each
+	}
+	for _, each := range instances2{
+		instanceId_instance[each.InstanceId] = each
+	}
+
+	retInstanceList := []ecs_pop.Instance{}
+	for _, eachInstance := range instanceId_instance {
+		retInstanceList = append(retInstanceList, eachInstance)
+	}
+	return retInstanceList
 }
 
 func (d *Discovery) getInstancesFromListTagResources(token string, currentTotalCount int) (nextToken string, instances []ecs_pop.Instance, err error) {
