@@ -964,7 +964,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
-		errMsg: "metric name must not be set twice: \"foo\" or \"bar\"",
+		errMsg: `metric name must not be set twice: "foo" or "bar"`,
 	}, {
 		input:  `foo{__name__= =}`,
 		fail:   true,
@@ -972,7 +972,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{,}`,
 		fail:   true,
-		errMsg: "unexpected \",\" in label matching, expected identifier or \"}\"",
+		errMsg: `unexpected "," in label matching, expected identifier or "}"`,
 	}, {
 		input:  `foo{__name__ == "bar"}`,
 		fail:   true,
@@ -980,7 +980,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{__name__="bar" lol}`,
 		fail:   true,
-		errMsg: "unexpected identifier \"lol\" in label matching, expected \",\" or \"}\"",
+		errMsg: `unexpected identifier "lol" in label matching, expected "," or "}"`,
 	},
 	// Test matrix selector.
 	{
