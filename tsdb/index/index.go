@@ -610,10 +610,10 @@ func (w *Writer) writePostings() error {
 	}
 	defer f.Close()
 
-	// Write out the special all index.
+	// Write out the special all posting.
 	offsets := []uint32{}
 	d := encoding.NewDecbufRaw(realByteSlice(f.Bytes()), int(w.toc.LabelIndices))
-	d.B = d.B[w.toc.Series:] // dec.Skip not merged yet
+	d.Skip(int(w.toc.Series))
 	for d.Len() > 0 {
 		d.ConsumePadding()
 		startPos := w.toc.LabelIndices - uint64(d.Len())
@@ -622,8 +622,7 @@ func (w *Writer) writePostings() error {
 		}
 		offsets = append(offsets, uint32(startPos/16))
 		// Skip to next series. The 4 is for the CRC32.
-		skip := d.Uvarint() + 4
-		d.B = d.B[skip:]
+		d.Skip(d.Uvarint() + 4)
 		if err := d.Err(); err != nil {
 			return nil
 		}
@@ -643,6 +642,7 @@ func (w *Writer) writePostings() error {
 				break
 			}
 			batchNames = append(batchNames, names[0])
+			c += w.labelNames[names[0]]
 			names = names[1:]
 		}
 
@@ -678,8 +678,7 @@ func (w *Writer) writePostings() error {
 				}
 			}
 			// Skip to next series. The 4 is for the CRC32.
-			skip := l - (startLen - d.Len()) + 4
-			d.B = d.B[skip:]
+			d.Skip(l - (startLen - d.Len()) + 4)
 			if err := d.Err(); err != nil {
 				return nil
 			}
@@ -717,42 +716,20 @@ func (w *Writer) writePosting(name, value string, offs []uint32) error {
 		offset: w.pos,
 	})
 
-	startPos := w.pos
-	// Leave 4 bytes of space for the length, which will be calculated later.
-	if err := w.write([]byte("alen")); err != nil {
-		return err
-	}
-	w.crc32.Reset()
-
 	w.buf1.Reset()
 	w.buf1.PutBE32int(len(offs))
-	w.buf1.WriteToHash(w.crc32)
-	if err := w.write(w.buf1.Get()); err != nil {
-		return err
-	}
 
 	for _, off := range offs {
 		if off > (1<<32)-1 {
 			return errors.Errorf("series offset %d exceeds 4 bytes", off)
 		}
-		w.buf1.Reset()
 		w.buf1.PutBE32(off)
-		w.buf1.WriteToHash(w.crc32)
-		if err := w.write(w.buf1.Get()); err != nil {
-			return err
-		}
 	}
 
-	// Write out the length.
-	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.pos - startPos - 4))
-	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
-	}
-
-	w.buf1.Reset()
-	w.buf1.PutHashSum(w.crc32)
-	return w.write(w.buf1.Get())
+	w.buf2.Reset()
+	w.buf2.PutBE32int(w.buf1.Len())
+	w.buf1.PutHash(w.crc32)
+	return w.write(w.buf2.Get(), w.buf1.Get())
 }
 
 type uint32slice []uint32

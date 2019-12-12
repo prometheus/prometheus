@@ -277,7 +277,6 @@ func (d *Decbuf) ConsumePadding() {
 	}
 	if len(d.B) < 1 {
 		d.E = ErrInvalidSize
-		return
 	}
 }
 
