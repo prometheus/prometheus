@@ -190,28 +190,3 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 
 	return template.HTML(byt)
 }
-
-// Equals returns if the two rules have same
-// 1. name
-// 2. expr
-// 3. labels
-func (r *RecordingRule) Equals(rule Rule) bool {
-	rr, ok := rule.(*RecordingRule)
-	if !ok {
-		return false
-	}
-
-	if r.name != rr.name {
-		return false
-	}
-
-	if r.vector.String() != rr.vector.String() {
-		return false
-	}
-
-	if labels.Equal(r.labels, rr.labels) {
-		return false
-	}
-
-	return true
-}

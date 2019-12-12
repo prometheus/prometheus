@@ -91,13 +91,3 @@ labels:
 	got := rule.HTMLSnippet("/test/prefix")
 	testutil.Assert(t, want == got, "incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
 }
-
-func TestRecordingRuleEquals(t *testing.T) {
-	expr1, err := promql.ParseExpr(`foo{pool="abc"} > 10`)
-	testutil.Ok(t, err)
-	expr2, err := promql.ParseExpr(`{__name__="foo", pool="abc"} > 10`)
-	testutil.Ok(t, err)
-	r1 := NewRecordingRule("testrule", expr1, labels.FromStrings("pool", "abc"))
-	r2 := NewRecordingRule("testrule", expr2, labels.FromStrings("pool", "abc"))
-	testutil.Assert(t, !r1.Equals(r2), "r1 does not equal with r2")
-}

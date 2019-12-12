@@ -24,7 +24,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/opentracing/opentracing-go"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -213,8 +213,6 @@ type Rule interface {
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
 	HTMLSnippet(pathPrefix string) html_template.HTML
-	// Equal returns if two rules are the same
-	Equals(rule Rule) bool
 }
 
 // Group is a set of rules that have a logical relation.
@@ -769,20 +767,17 @@ func (g *Group) Equals(ng *Group) bool {
 
 	gm := make(map[string]Rule, len(g.rules))
 	for _, r := range g.rules {
-		gm[r.Name()] = r
+		gm[r.String()] = r
 	}
 
 	ngm := make(map[string]Rule, len(ng.rules))
 	for _, r := range ng.rules {
-		ngm[r.Name()] = r
+		ngm[r.String()] = r
 	}
 
-	for n, nr := range ngm {
-		or, ok := gm[n]
+	for n := range ngm {
+		_, ok := gm[n]
 		if !ok {
-			return false
-		}
-		if !nr.Equals(or) {
 			return false
 		}
 	}
@@ -916,6 +911,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	for _, oldg := range m.groups {
 		oldg.stop()
 	}
+
 	wg.Wait()
 	m.groups = groups
 
