@@ -2668,3 +2668,25 @@ func TestChunkWriter(t *testing.T) {
 		})
 	}
 }
+
+func TestRangeForTimestamp(t *testing.T) {
+	type args struct {
+		t     int64
+		width int64
+	}
+	tests := []struct {
+		args     args
+		expected int64
+	}{
+		{args{0, 5}, 5},
+		{args{1, 5}, 5},
+		{args{5, 5}, 10},
+		{args{6, 5}, 10},
+		{args{13, 5}, 15},
+		{args{95, 5}, 100},
+	}
+	for _, tt := range tests {
+		got := rangeForTimestamp(tt.args.t, tt.args.width)
+		testutil.Equals(t, tt.expected, got)
+	}
+}
