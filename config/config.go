@@ -432,8 +432,8 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // AlertingConfig configures alerting and alertmanager related configs.
 type AlertingConfig struct {
-	AlertRelabelConfigs []*relabel.Config     `yaml:"alert_relabel_configs,omitempty"`
-	AlertmanagerConfigs []*AlertmanagerConfig `yaml:"alertmanagers,omitempty"`
+	AlertRelabelConfigs []*relabel.Config   `yaml:"alert_relabel_configs,omitempty"`
+	AlertmanagerConfigs AlertmanagerConfigs `yaml:"alertmanagers,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -452,6 +452,18 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		}
 	}
 	return nil
+}
+
+// AlertmanagerConfigs is a slice of *AlertmanagerConfig.
+type AlertmanagerConfigs []*AlertmanagerConfig
+
+// ToMap converts a slice of *AlertmanagerConfig to a map.
+func (a AlertmanagerConfigs) ToMap() map[string]*AlertmanagerConfig {
+	ret := make(map[string]*AlertmanagerConfig)
+	for i := range a {
+		ret[fmt.Sprintf("config-%d", i)] = a[i]
+	}
+	return ret
 }
 
 // AlertmanagerAPIVersion represents a version of the
