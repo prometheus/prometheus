@@ -125,17 +125,10 @@ start           : START_LABELS label_matchers
                      {yylex.(*parser).generatedParserResult.(*VectorSelector).LabelMatchers = $2}
                 | START_LABEL_SET label_set
                      { yylex.(*parser).generatedParserResult = $2 }
-                | error 
-                        { yylex.(*parser).errorf("unknown syntax error after parsing %v", yylex.(*parser).token.desc()) }
+                | error /* If none of the more detailed error messages are triggered, we fall back to this. */
+                        { yylex.(*parser).errorf("unexpected %v", yylex.(*parser).token.desc()) }
                 ;
 
-
-label_match_list:
-                label_match_list COMMA label_matcher
-                        { $$ = append($1, $3)}
-                | label_matcher
-                        { $$ = []*labels.Matcher{$1}}
-                ;
 
 label_matchers  : 
                 LEFT_BRACE label_match_list RIGHT_BRACE
@@ -147,11 +140,22 @@ label_matchers  :
 
                 ;
 
+label_match_list:
+                label_match_list COMMA label_matcher
+                        { $$ = append($1, $3)}
+                | label_matcher
+                        { $$ = []*labels.Matcher{$1}}
+                | label_match_list error
+                        { yylex.(*parser).errorf("unexpected %v in label matching, expected \",\" or \"}\"", yylex.(*parser).token.desc()) }
+                ;
+
 label_matcher   :
                 IDENTIFIER match_op STRING
                         { $$ = yylex.(*parser).newLabelMatcher($1, $2, $3) }
                 | IDENTIFIER match_op error
                         { yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())}
+                | IDENTIFIER error 
+                        { yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.Val) } 
                 | error
                         { yylex.(*parser).errorf("unexpected %v in label matching, expected identifier or \"}\"", yylex.(*parser).token.desc()) }
                 ;
@@ -161,8 +165,6 @@ match_op        :
                 | NEQ {$$=$1}
                 | EQL_REGEX {$$=$1}
                 | NEQ_REGEX {$$=$1}
-                | error 
-                        { yylex.(*parser).errorf("expected label matching operator but got %s", yylex.(*parser).token.Val) } 
                 ;
 
 label_set       :
@@ -180,7 +182,7 @@ label_set_list  :
                 | label_set_item
                         { $$ = []labels.Label{$1} }
                 | label_set_list error
-                        { yylex.(*parser).errorf("unexpected %v in label matching, expected \",\" or \"}\"", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).errorf("unexpected %v in label set, expected \",\" or \"}\"", yylex.(*parser).token.desc()) }
                 
                 ;
 
@@ -192,7 +194,7 @@ label_set_item  :
                 | IDENTIFIER error
                         { yylex.(*parser).errorf("expected \"=\" but got %s", yylex.(*parser).token.desc())}
                 | error
-                        { yylex.(*parser).errorf("unexpected %v in label matching, expected identifier or \"}\"", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).errorf("unexpected %s in label matching, expected identifier or \"}\"", yylex.(*parser).token.desc()) }
                 ;
 
                 

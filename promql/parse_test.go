@@ -965,6 +965,22 @@ var testExpr = []struct {
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
 		errMsg: "metric name must not be set twice: \"foo\" or \"bar\"",
+	}, {
+		input:  `foo{__name__= =}`,
+		fail:   true,
+		errMsg: "unexpected <op:=> in label matching, expected string",
+	}, {
+		input:  `foo{,}`,
+		fail:   true,
+		errMsg: "unexpected \",\" in label matching, expected identifier or \"}\"",
+	}, {
+		input:  `foo{__name__ == "bar"}`,
+		fail:   true,
+		errMsg: "unexpected <op:=> in label matching, expected string",
+	}, {
+		input:  `foo{__name__="bar" lol}`,
+		fail:   true,
+		errMsg: "unexpected identifier \"lol\" in label matching, expected \",\" or \"}\"",
 	},
 	// Test matrix selector.
 	{
@@ -1619,7 +1635,7 @@ func TestParseExpressions(t *testing.T) {
 			testutil.Equals(t, expr, test.expected, "error on input '%s'", test.input)
 		} else {
 			testutil.NotOk(t, err)
-			testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s'", test.input)
+			testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 		}
 	}
 }
