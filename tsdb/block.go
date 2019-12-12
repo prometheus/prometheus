@@ -83,10 +83,6 @@ type IndexReader interface {
 	// Returns ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
 
-	// LabelIndices returns a list of string tuples for which a label value index exists.
-	// NOTE: This is deprecated. Use `LabelNames()` instead.
-	LabelIndices() ([][]string, error)
-
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames() ([]string, error)
 
@@ -463,11 +459,6 @@ func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks
 		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 	return nil
-}
-
-func (r blockIndexReader) LabelIndices() ([][]string, error) {
-	ss, err := r.ir.LabelIndices()
-	return ss, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
 func (r blockIndexReader) LabelNames() ([]string, error) {

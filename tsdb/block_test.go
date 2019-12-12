@@ -264,6 +264,37 @@ func TestBlockSize(t *testing.T) {
 	}
 }
 
+func TestReadIndexFormatV1(t *testing.T) {
+	/* The block here was produced at commit
+	   07ef80820ef1250db82f9544f3fcf7f0f63ccee0 with:
+	db, _ := Open("v1db", nil, nil, nil)
+	app := db.Appender()
+	app.Add(labels.FromStrings("foo", "bar"), 1, 2)
+	app.Add(labels.FromStrings("foo", "baz"), 3, 4)
+	app.Add(labels.FromStrings("foo", "meh"), 1000*3600*4, 4) // Not in the block.
+	app.Commit()
+	db.compact()
+	db.Close()
+	*/
+
+	blockDir := filepath.Join("testdata", "index_format_v1")
+	block, err := OpenBlock(nil, blockDir, nil)
+	testutil.Ok(t, err)
+
+	q, err := NewBlockQuerier(block, 0, 1000)
+	testutil.Ok(t, err)
+	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")),
+		map[string][]tsdbutil.Sample{`{foo="bar"}`: []tsdbutil.Sample{sample{t: 1, v: 2}}})
+
+	q, err = NewBlockQuerier(block, 0, 1000)
+	testutil.Ok(t, err)
+	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.$")),
+		map[string][]tsdbutil.Sample{
+			`{foo="bar"}`: []tsdbutil.Sample{sample{t: 1, v: 2}},
+			`{foo="baz"}`: []tsdbutil.Sample{sample{t: 3, v: 4}},
+		})
+}
+
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []Series) string {
 	return createBlockFromHead(tb, dir, createHead(tb, series))
