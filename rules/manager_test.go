@@ -16,7 +16,6 @@ package rules
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -29,6 +28,7 @@ import (
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
