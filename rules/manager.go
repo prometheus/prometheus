@@ -743,11 +743,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 }
 
-// Equals return if two groups have the same
-// 1. name
-// 2. file path
-// 3. interval
-// 4. rule set. and the rules are the same
+// Equals return if two groups are the same
 func (g *Group) Equals(ng *Group) bool {
 	if g.name != ng.name {
 		return false
