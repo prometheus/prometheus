@@ -108,6 +108,7 @@ button.execute-btn {
 
 .graph-controls .time-input input {
     border-right: none;
+    padding-right: 0;
 }
 
 div.time-input {

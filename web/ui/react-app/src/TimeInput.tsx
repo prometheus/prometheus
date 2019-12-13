@@ -32,19 +32,24 @@ interface TimeInputProps {
 
 class TimeInput extends Component<TimeInputProps> {
   private timeInputRef = React.createRef<HTMLInputElement>();
-  private $time: any | null = null;
+  private $time: any = null;
 
   getBaseTime = (): number => {
     return this.props.time || moment().valueOf();
   };
 
+  calcTimeRange = () => {
+    const { range } = this.props;
+    return range * 1000 + (range > 10 ? 10000 : 0);
+  };
+
   increaseTime = (): void => {
-    const time = this.getBaseTime() + (this.props.range * 1000) / 2;
+    const time = this.getBaseTime() + this.calcTimeRange();
     this.props.onChangeTime(time);
   };
 
   decreaseTime = (): void => {
-    const time = this.getBaseTime() - (this.props.range * 1000) / 2;
+    const time = this.getBaseTime() - this.calcTimeRange();
     this.props.onChangeTime(time);
   };
 
@@ -96,7 +101,6 @@ class TimeInput extends Component<TimeInputProps> {
         </InputGroupAddon>
 
         <Input
-          style={{ paddingRight: 0 }}
           placeholder={this.props.placeholder}
           innerRef={this.timeInputRef}
           onFocus={() => this.$time.datetimepicker('show')}
