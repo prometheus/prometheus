@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -122,4 +123,57 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 			}
 		})
 	}
+}
+
+func BenchmarkQuerierSelect(b *testing.B) {
+	h, err := NewHead(nil, nil, nil, 1000)
+	testutil.Ok(b, err)
+	defer h.Close()
+	app := h.Appender()
+	numSeries := 1000000
+	for i := 0; i < numSeries; i++ {
+		app.Add(labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
+	}
+	testutil.Ok(b, app.Commit())
+
+	bench := func(b *testing.B, br BlockReader) {
+		matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+		for s := 1; s <= numSeries; s *= 10 {
+			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
+				q, err := NewBlockQuerier(br, 0, int64(s-1))
+				testutil.Ok(b, err)
+
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					ss, err := q.Select(matcher)
+					testutil.Ok(b, err)
+					for ss.Next() {
+					}
+					testutil.Ok(b, ss.Err())
+				}
+				q.Close()
+			})
+		}
+	}
+
+	b.Run("Head", func(b *testing.B) {
+		bench(b, h)
+	})
+
+	tmpdir, err := ioutil.TempDir("", "test_benchquerierselect")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(tmpdir))
+	}()
+
+	blockdir := createBlockFromHead(b, tmpdir, h)
+	block, err := OpenBlock(nil, blockdir, nil)
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, block.Close())
+	}()
+
+	b.Run("Block", func(b *testing.B) {
+		bench(b, block)
+	})
 }
