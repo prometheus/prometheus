@@ -15,13 +15,18 @@ package rules
 
 import (
 	"context"
+	"fmt"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"io/ioutil"
 	"math"
+	"os"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -703,18 +708,73 @@ func TestUpdate(t *testing.T) {
 	err := ruleManager.Update(10*time.Second, files, nil)
 	testutil.Ok(t, err)
 	testutil.Assert(t, len(ruleManager.groups) > 0, "expected non-empty rule groups")
-	for _, g := range ruleManager.groups {
+	ogs := map[string]*Group{}
+	for h, g := range ruleManager.groups {
 		g.seriesInPreviousEval = []map[string]labels.Labels{
 			expected,
 		}
+		ogs[h] = g
 	}
 
 	err = ruleManager.Update(10*time.Second, files, nil)
 	testutil.Ok(t, err)
-	for _, g := range ruleManager.groups {
+	for h, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
 			testutil.Equals(t, expected, actual)
 		}
+		// groups are the same because of no updates
+		testutil.Equals(t, ogs[h], g)
+	}
+
+	// groups will be recreated if updated
+	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml")
+	testutil.Assert(t, len(errs) == 0, "file parsing failures")
+
+	tmpFile, err := ioutil.TempFile("", "rules.test.*.yaml")
+	testutil.Ok(t, err)
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil)
+	testutil.Ok(t, err)
+
+	for h, g := range ruleManager.groups {
+		ogs[h] = g
+	}
+
+	// update interval
+	for i, g := range rgs.Groups {
+		if g.Interval != 0 {
+			rgs.Groups[i].Interval = g.Interval * 2
+		} else {
+			rgs.Groups[i].Interval = model.Duration(10)
+		}
+
+	}
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+
+	// change group rules
+	for i, g := range rgs.Groups {
+		for j, r := range g.Rules {
+			rgs.Groups[i].Rules[j].Expr = fmt.Sprintf("%s * 0", r.Expr)
+		}
+	}
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+}
+
+func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
+	bs, err := yaml.Marshal(rgs)
+	testutil.Ok(t, err)
+	tmpFile.Seek(0, 0)
+	_, err = tmpFile.Write(bs)
+	testutil.Ok(t, err)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil)
+	testutil.Ok(t, err)
+	for h, g := range ruleManager.groups {
+		if ogs[h] == g {
+			t.Fail()
+		}
+		ogs[h] = g
 	}
 }
 
