@@ -1,6 +1,8 @@
-import React, { Component } from 'react';
+import React, { FC, Component } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import PathPrefixProps from '../PathPrefixProps';
+import { Alert, Button } from 'reactstrap';
+import { useFetch } from '../utils/useFetch';
 
 interface ServicesState {
   response: Record<string, any>;
@@ -18,59 +20,61 @@ interface LabelProps {
   value: any;
 }
 
-class Services extends Component<RouteComponentProps & PathPrefixProps, ServicesState> {
-  constructor(props: RouteComponentProps & PathPrefixProps) {
-    super(props);
+interface DiscoveredLabels {
+  address: string;
+  metrics_path: string;
+  scheme: string;
+  job: string;
+  my: string;
+  your: string;
+}
 
-    this.state = {
-      response: {},
-      fetchServicesErrorMessage: '',
-      targets: {},
-      labels: {},
-      showMore: false,
-    };
-  }
+interface Labels {
+  instance: string;
+  job: string;
+  my: string;
+  your: string;
+}
 
-  componentDidMount() {
-    fetch(this.props.pathPrefix + '/api/v1/targets')
-      .then(resp => {
-        if (resp.ok) {
-          return resp.json();
-        } else {
-          throw new Error('Unexpected response status when fetching services: ' + resp.statusText); // TODO extract error
-        }
-      })
-      .then(json => {
-        this.setState({ response: json, targets: this.processTargets(json), labels: this.processLabels(json) });
-      })
-      .catch(err => {
-        this.setState({ fetchServicesErrorMessage: err });
-      });
-  }
+interface ActiveTargets {
+  discoveredLabels: DiscoveredLabels[];
+  labels: Labels[];
+  scrapePool: string;
+  scrapeUrl: string;
+  lastError: string;
+  lastScrape: string;
+  lastScrapeDuration: number;
+  health: string;
+}
 
-  isHealthy = (health: string) => {
+interface ServiceMap {
+  activeTargets: ActiveTargets[];
+  droppedTargets: any[];
+}
+
+const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
+  const { response, error } = useFetch<ServiceMap>(`${pathPrefix}/api/v1/targets`);
+  const isHealthy = (health: string) => {
     return health === 'up';
   };
-
-  processTargets = (resp: any) => {
-    const activeTargets = resp.data.activeTargets,
-      targets: any = Object.create({});
+  const processTargets = (response: ActiveTargets[]) => {
+    const activeTargets = response;
+    const targets: any = {};
 
     // Get targets of each type along with the total and active end points
     for (const target of activeTargets) {
-      const name = target.scrapePool,
-        health = target.health;
+      const { scrapePool: name, health } = target;
       if (!targets[name]) {
         targets[name] = {
           total: 1,
           active: 0,
         };
-        if (this.isHealthy(health)) {
+        if (isHealthy(health)) {
           targets[name].active = 1;
         }
       } else {
         targets[name].total++;
-        if (this.isHealthy(health)) {
+        if (isHealthy(health)) {
           targets[name].active++;
         }
       }
@@ -78,48 +82,57 @@ class Services extends Component<RouteComponentProps & PathPrefixProps, Services
     return targets;
   };
 
-  getLabels = (target: any) => {
-    return {
-      discoveredLabels: target.discoveredLabels,
-      labels: target.labels,
-    };
-  };
-
-  processLabels = (resp: any) => {
-    const labels = Object.create({}),
-      activeTargets = resp.data.activeTargets;
+  const processLabels = (response: ActiveTargets[]) => {
+    const labels: any = {};
+    const activeTargets = response;
 
     for (const target of activeTargets) {
       const name = target.scrapePool;
       if (!labels[name]) {
         labels[name] = [];
       }
-      labels[name].push(this.getLabels(target));
+      labels[name].push({
+        discoveredLabels: target.discoveredLabels,
+        labels: target.labels,
+      });
     }
 
     return labels;
   };
+  let targets: any;
+  let labels: any;
 
-  render() {
+  if (error) {
+    return (
+      <Alert color="danger">
+        <strong>Error:</strong> Error fetching Service-Discovery: {error.message}
+      </Alert>
+    );
+  } else if (response.data) {
+    targets = processTargets(response.data.activeTargets);
+    labels = processLabels(response.data.activeTargets);
+    console.warn('targets is ');
+    console.warn(targets);
+
     return (
       <>
         <h2>Service Discovery</h2>
         <ul>
-          {Object.keys(this.state.targets).map((val, i) => (
-            <li key={Object.keys(this.state.targets)[i]}>
+          {Object.keys(targets).map((val, i) => (
+            <li key={targets[val]}>
               <a href={'#' + val}>
                 {' '}
-                {val} ({this.state.targets[val].active} / {this.state.targets[val].total} active targets){' '}
+                {val} ({targets[val].active} / {targets[val].total} active targets){' '}
               </a>
             </li>
           ))}
         </ul>
         <hr />
         <div className="outer-layer">
-          {Object.keys(this.state.labels).map((val: any, i) => {
-            const value = this.state.labels[val];
+          {Object.keys(labels).map((val: any, i) => {
+            const value = labels[val];
             return (
-              <div id={val} key={Object.keys(this.state.labels)[i]} className="label-component">
+              <div id={val} key={Object.keys(labels)[i]} className="label-component">
                 <span className="target-head">
                   {' '}
                   {i + 1}. {val}{' '}
@@ -132,7 +145,8 @@ class Services extends Component<RouteComponentProps & PathPrefixProps, Services
       </>
     );
   }
-}
+  return null;
+};
 
 class Labels extends Component<LabelProps, LabelState> {
   constructor(props: LabelProps) {
@@ -150,15 +164,11 @@ class Labels extends Component<LabelProps, LabelState> {
   render() {
     return (
       <>
-        {!this.state.showMore ? (
-          <button className="btn btn-primary btn-sm" onClick={this.toggleMore}>
-            More
-          </button>
-        ) : (
+        <Button size="sm" color="primary" onClick={this.toggleMore}>
+          {!this.state.showMore ? 'More' : 'Less'}
+        </Button>
+        {this.state.showMore ? (
           <>
-            <button className="btn btn-primary btn-sm" onClick={this.toggleMore}>
-              Less
-            </button>
             <div>
               {Object.keys(this.props.value).map((_, i) => {
                 return (
@@ -190,7 +200,7 @@ class Labels extends Component<LabelProps, LabelState> {
               })}
             </div>
           </>
-        )}
+        ) : null}
       </>
     );
   }
