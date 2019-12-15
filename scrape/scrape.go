@@ -209,7 +209,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
 		cache := newScrapeCache()
-		opts.target.setMetadataStore(cache)
+		opts.target.SetMetadataStore(cache)
 
 		return newScrapeLoop(
 			ctx,
@@ -451,9 +451,9 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		for _, l := range target.Labels() {
 			// existingValue will be empty if l.Name doesn't exist.
 			existingValue := lset.Get(l.Name)
-			// Because setting a label with an empty value is a no-op,
-			// this will only create the prefixed label if necessary.
-			lb.Set(model.ExportedLabelPrefix+l.Name, existingValue)
+			if existingValue != "" {
+				lb.Set(model.ExportedLabelPrefix+l.Name, existingValue)
+			}
 			// It is now safe to set the target label.
 			lb.Set(l.Name, l.Value)
 		}
@@ -794,7 +794,7 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 	c.metaMtx.Unlock()
 }
 
-func (c *scrapeCache) getMetadata(metric string) (MetricMetadata, bool) {
+func (c *scrapeCache) GetMetadata(metric string) (MetricMetadata, bool) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
@@ -810,7 +810,7 @@ func (c *scrapeCache) getMetadata(metric string) (MetricMetadata, bool) {
 	}, true
 }
 
-func (c *scrapeCache) listMetadata() []MetricMetadata {
+func (c *scrapeCache) ListMetadata() []MetricMetadata {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 

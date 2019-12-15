@@ -6,7 +6,7 @@ orbs:
   go: circleci/go@0.2.0
 
 executors:
-  # Whenever the Go version is updated here, .travis.yml and .promu.yml
+  # Whenever the Go version is updated here, .promu.yml
   # should also be updated.
   golang:
     docker:

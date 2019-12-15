@@ -16,7 +16,6 @@ package notifier
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -262,20 +261,13 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 
 	amSets := make(map[string]*alertmanagerSet)
 
-	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
-		ams, err := newAlertmanagerSet(cfg, n.logger)
+	for k, cfg := range conf.AlertingConfig.AlertmanagerConfigs.ToMap() {
+		ams, err := newAlertmanagerSet(cfg, n.logger, n.metrics)
 		if err != nil {
 			return err
 		}
 
-		ams.metrics = n.metrics
-
-		// The config hash is used for the map lookup identifier.
-		b, err := json.Marshal(cfg)
-		if err != nil {
-			return err
-		}
-		amSets[fmt.Sprintf("%x", md5.Sum(b))] = ams
+		amSets[k] = ams
 	}
 
 	n.alertmanagers = amSets
@@ -457,6 +449,10 @@ func (n *Manager) DroppedAlertmanagers() []*url.URL {
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
 // It returns true if the alerts could be sent successfully to at least one Alertmanager.
 func (n *Manager) sendAll(alerts ...*Alert) bool {
+	if len(alerts) == 0 {
+		return true
+	}
+
 	begin := time.Now()
 
 	// v1Payload and v2Payload represent 'alerts' marshaled for Alertmanager API
@@ -634,15 +630,16 @@ type alertmanagerSet struct {
 	logger     log.Logger
 }
 
-func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
+func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager", false)
 	if err != nil {
 		return nil, err
 	}
 	s := &alertmanagerSet{
-		client: client,
-		cfg:    cfg,
-		logger: logger,
+		client:  client,
+		cfg:     cfg,
+		logger:  logger,
+		metrics: metrics,
 	}
 	return s, nil
 }

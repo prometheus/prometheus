@@ -15,6 +15,10 @@ package remote
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -26,6 +30,14 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/storage"
+)
+
+// String constants for instrumentation.
+const (
+	namespace  = "prometheus"
+	subsystem  = "remote_storage"
+	remoteName = "remote_name"
+	endpoint   = "url"
 )
 
 // startTimeCallback is a callback func that return the oldest timestamp stored in a storage.
@@ -67,9 +79,29 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	}
 
 	// Update read clients
+	readHashes := make(map[string]struct{})
 	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
-	for i, rrConf := range conf.RemoteReadConfigs {
-		c, err := NewClient(i, &ClientConfig{
+	for _, rrConf := range conf.RemoteReadConfigs {
+		hash, err := toHash(rrConf)
+		if err != nil {
+			return nil
+		}
+
+		// Don't allow duplicate remote read configs.
+		if _, ok := readHashes[hash]; ok {
+			return fmt.Errorf("duplicate remote read configs are not allowed, found duplicate for URL: %s", rrConf.URL)
+		}
+		readHashes[hash] = struct{}{}
+
+		// Set the queue name to the config hash if the user has not set
+		// a name in their remote write config so we can still differentiate
+		// between queues that have the same remote write endpoint.
+		name := string(hash[:6])
+		if rrConf.Name != "" {
+			name = rrConf.Name
+		}
+
+		c, err := NewClient(name, &ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
@@ -138,4 +170,14 @@ func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
 		})
 	}
 	return ms
+}
+
+// Used for hashing configs and diff'ing hashes in ApplyConfig.
+func toHash(data interface{}) (string, error) {
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	hash := md5.Sum(bytes)
+	return hex.EncodeToString(hash[:]), nil
 }

@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 
 	"errors"
+	"hash/crc32"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -88,14 +89,16 @@ func TestCreateBlock(t *testing.T) {
 func TestCorruptedChunk(t *testing.T) {
 	for name, test := range map[string]struct {
 		corrFunc func(f *os.File) // Func that applies the corruption.
-		expErr   error
+		openErr  error
+		queryErr error
 	}{
 		"invalid header size": {
 			func(f *os.File) {
 				err := f.Truncate(1)
 				testutil.Ok(t, err)
 			},
-			errors.New("invalid chunk header in segment 0: invalid size"),
+			errors.New("invalid segment header in segment 0: invalid size"),
+			nil,
 		},
 		"invalid magic number": {
 			func(f *os.File) {
@@ -111,6 +114,7 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Equals(t, chunks.MagicChunksSize, n)
 			},
 			errors.New("invalid magic number 0"),
+			nil,
 		},
 		"invalid chunk format version": {
 			func(f *os.File) {
@@ -126,6 +130,45 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Equals(t, chunks.ChunksFormatVersionSize, n)
 			},
 			errors.New("invalid chunk format version 0"),
+			nil,
+		},
+		"chunk not enough bytes to read the chunk length": {
+			func(f *os.File) {
+				// Truncate one byte after the segment header.
+				err := f.Truncate(chunks.SegmentHeaderSize + 1)
+				testutil.Ok(t, err)
+			},
+			nil,
+			errors.New("segment doesn't include enough bytes to read the chunk size data field - required:13, available:9"),
+		},
+		"chunk not enough bytes to read the data": {
+			func(f *os.File) {
+				fi, err := f.Stat()
+				testutil.Ok(t, err)
+
+				err = f.Truncate(fi.Size() - 1)
+				testutil.Ok(t, err)
+			},
+			nil,
+			errors.New("segment doesn't include enough bytes to read the chunk - required:26, available:25"),
+		},
+		"checksum mismatch": {
+			func(f *os.File) {
+				fi, err := f.Stat()
+				testutil.Ok(t, err)
+
+				// Get the chunk data end offset.
+				chkEndOffset := int(fi.Size()) - crc32.Size
+
+				// Seek to the last byte of chunk data and modify it.
+				_, err = f.Seek(int64(chkEndOffset-1), 0)
+				testutil.Ok(t, err)
+				n, err := f.Write([]byte("x"))
+				testutil.Ok(t, err)
+				testutil.Equals(t, n, 1)
+			},
+			nil,
+			errors.New("checksum mismatch expected:cfc0526c, actual:34815eae"),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -135,7 +178,8 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Ok(t, os.RemoveAll(tmpdir))
 			}()
 
-			blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 1))
+			series := newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{sample{1, 1}})
+			blockDir := createBlock(t, tmpdir, []Series{series})
 			files, err := sequenceFiles(chunkDir(blockDir))
 			testutil.Ok(t, err)
 			testutil.Assert(t, len(files) > 0, "No chunk created.")
@@ -147,8 +191,21 @@ func TestCorruptedChunk(t *testing.T) {
 			test.corrFunc(f)
 			testutil.Ok(t, f.Close())
 
-			_, err = OpenBlock(nil, blockDir, nil)
-			testutil.Equals(t, test.expErr.Error(), err.Error())
+			// Check open err.
+			b, err := OpenBlock(nil, blockDir, nil)
+			if test.openErr != nil {
+				testutil.Equals(t, test.openErr.Error(), err.Error())
+				return
+			}
+
+			querier, err := NewBlockQuerier(b, 0, 1)
+			testutil.Ok(t, err)
+			set, err := querier.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+			testutil.Ok(t, err)
+
+			// Check query err.
+			testutil.Equals(t, false, set.Next())
+			testutil.Equals(t, test.queryErr.Error(), set.Err().Error())
 		})
 	}
 }
@@ -209,7 +266,10 @@ func TestBlockSize(t *testing.T) {
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []Series) string {
-	head := createHead(tb, series)
+	return createBlockFromHead(tb, dir, createHead(tb, series))
+}
+
+func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil)
 	testutil.Ok(tb, err)
 

@@ -907,7 +907,8 @@ func funcYear(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	})
 }
 
-var functions = map[string]*Function{
+// Functions is a list of all functions supported by PromQL, including their types.
+var Functions = map[string]*Function{
 	"abs": {
 		Name:       "abs",
 		ArgTypes:   []ValueType{ValueTypeVector},
@@ -1197,7 +1198,7 @@ var functions = map[string]*Function{
 
 // getFunction returns a predefined Function object for the given name.
 func getFunction(name string) (*Function, bool) {
-	function, ok := functions[name]
+	function, ok := Functions[name]
 	return function, ok
 }
 

@@ -615,19 +615,19 @@ test_metric 1
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, total)
 
-	md, ok := cache.getMetadata("test_metric")
+	md, ok := cache.GetMetadata("test_metric")
 	testutil.Assert(t, ok, "expected metadata to be present")
 	testutil.Assert(t, textparse.MetricTypeCounter == md.Type, "unexpected metric type")
 	testutil.Equals(t, "some help text", md.Help)
 	testutil.Equals(t, "metric", md.Unit)
 
-	md, ok = cache.getMetadata("test_metric_no_help")
+	md, ok = cache.GetMetadata("test_metric_no_help")
 	testutil.Assert(t, ok, "expected metadata to be present")
 	testutil.Assert(t, textparse.MetricTypeGauge == md.Type, "unexpected metric type")
 	testutil.Equals(t, "", md.Help)
 	testutil.Equals(t, "", md.Unit)
 
-	md, ok = cache.getMetadata("test_metric_no_type")
+	md, ok = cache.GetMetadata("test_metric_no_type")
 	testutil.Assert(t, ok, "expected metadata to be present")
 	testutil.Assert(t, textparse.MetricTypeUnknown == md.Type, "unexpected metric type")
 	testutil.Equals(t, "other help text", md.Help)
@@ -934,6 +934,15 @@ func TestScrapeLoopAppend(t *testing.T) {
 			scrapeLabels:    `metric{n="1"} 0`,
 			discoveryLabels: []string{"n", "2"},
 			expLset:         labels.FromStrings("__name__", "metric", "exported_n", "1", "n", "2"),
+			expValue:        0,
+		}, {
+			// When "honor_labels" is not set
+			// exported label from discovery don't get overwritten
+			title:           "Label name collision",
+			honorLabels:     false,
+			scrapeLabels:    `metric 0`,
+			discoveryLabels: []string{"n", "2", "exported_n", "2"},
+			expLset:         labels.FromStrings("__name__", "metric", "n", "2", "exported_n", "2"),
 			expValue:        0,
 		}, {
 			// Labels with no value need to be removed as these should not be ingested.

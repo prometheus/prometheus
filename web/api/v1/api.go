@@ -276,6 +276,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
 
+	r.Get("/metadata", wrap(api.metricMetadata))
+
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
@@ -688,7 +690,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 
 	metric := r.FormValue("metric")
 
-	var res []metricMetadata
+	res := []metricMetadata{}
 	for _, tt := range api.targetRetriever.TargetsActive() {
 		for _, t := range tt {
 			if limit >= 0 && len(res) >= limit {
@@ -722,9 +724,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			}
 		}
 	}
-	if len(res) == 0 {
-		return apiFuncResult{nil, &apiError{errorNotFound, errors.New("specified metadata not found")}, nil, nil}
-	}
+
 	return apiFuncResult{res, nil, nil, nil}
 }
 
@@ -805,6 +805,73 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 	return apiAlerts
 }
 
+type metadata struct {
+	Type textparse.MetricType `json:"type"`
+	Help string               `json:"help"`
+	Unit string               `json:"unit"`
+}
+
+func (api *API) metricMetadata(r *http.Request) apiFuncResult {
+	metrics := map[string]map[metadata]struct{}{}
+
+	limit := -1
+	if s := r.FormValue("limit"); s != "" {
+		var err error
+		if limit, err = strconv.Atoi(s); err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
+		}
+	}
+
+	metric := r.FormValue("metric")
+
+	for _, tt := range api.targetRetriever.TargetsActive() {
+		for _, t := range tt {
+
+			if metric == "" {
+				for _, mm := range t.MetadataList() {
+					m := metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
+					ms, ok := metrics[mm.Metric]
+
+					if !ok {
+						ms = map[metadata]struct{}{}
+						metrics[mm.Metric] = ms
+					}
+					ms[m] = struct{}{}
+				}
+				continue
+			}
+
+			if md, ok := t.Metadata(metric); ok {
+				m := metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
+				ms, ok := metrics[md.Metric]
+
+				if !ok {
+					ms = map[metadata]struct{}{}
+					metrics[md.Metric] = ms
+				}
+				ms[m] = struct{}{}
+			}
+		}
+	}
+
+	// Put the elements from the pseudo-set into a slice for marshaling.
+	res := map[string][]metadata{}
+
+	for name, set := range metrics {
+		if limit >= 0 && len(res) >= limit {
+			break
+		}
+
+		s := []metadata{}
+		for metadata := range set {
+			s = append(s, metadata)
+		}
+		res[name] = s
+	}
+
+	return apiFuncResult{res, nil, nil, nil}
+}
+
 // RuleDiscovery has info for all rules
 type RuleDiscovery struct {
 	RuleGroups []*RuleGroup `json:"groups"`
@@ -824,6 +891,8 @@ type RuleGroup struct {
 type rule interface{}
 
 type alertingRule struct {
+	// State can be "pending", "firing", "inactive".
+	State       string           `json:"state"`
 	Name        string           `json:"name"`
 	Query       string           `json:"query"`
 	Duration    float64          `json:"duration"`
@@ -849,6 +918,16 @@ type recordingRule struct {
 func (api *API) rules(r *http.Request) apiFuncResult {
 	ruleGroups := api.rulesRetriever.RuleGroups()
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
+	typeParam := strings.ToLower(r.URL.Query().Get("type"))
+
+	if typeParam != "" && typeParam != "alert" && typeParam != "record" {
+		err := errors.Errorf("invalid query parameter type='%v'", typeParam)
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	returnAlerts := typeParam == "" || typeParam == "alert"
+	returnRecording := typeParam == "" || typeParam == "record"
+
 	for i, grp := range ruleGroups {
 		apiRuleGroup := &RuleGroup{
 			Name:     grp.Name(),
@@ -856,7 +935,6 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			Interval: grp.Interval().Seconds(),
 			Rules:    []rule{},
 		}
-
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
 
@@ -864,10 +942,13 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			if r.LastError() != nil {
 				lastError = r.LastError().Error()
 			}
-
 			switch rule := r.(type) {
 			case *rules.AlertingRule:
+				if !returnAlerts {
+					break
+				}
 				enrichedRule = alertingRule{
+					State:       rule.State().String(),
 					Name:        rule.Name(),
 					Query:       rule.Query().String(),
 					Duration:    rule.Duration().Seconds(),
@@ -879,6 +960,9 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					Type:        "alerting",
 				}
 			case *rules.RecordingRule:
+				if !returnRecording {
+					break
+				}
 				enrichedRule = recordingRule{
 					Name:      rule.Name(),
 					Query:     rule.Query().String(),
@@ -891,8 +975,9 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
 				return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 			}
-
-			apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
+			if enrichedRule != nil {
+				apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
+			}
 		}
 		res.RuleGroups[i] = apiRuleGroup
 	}

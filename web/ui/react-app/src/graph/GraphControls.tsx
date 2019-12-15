@@ -4,8 +4,8 @@ import { Button, ButtonGroup, Form, InputGroup, InputGroupAddon, Input } from 'r
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
 
-import TimeInput from './TimeInput';
-import { parseRange, formatRange } from './utils/timeFormat';
+import TimeInput from '../TimeInput';
+import { parseRange, formatRange } from '../utils/timeFormat';
 
 interface GraphControlsProps {
   range: number;

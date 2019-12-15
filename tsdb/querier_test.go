@@ -1376,9 +1376,13 @@ func (m mockIndex) LabelValues(names ...string) (index.StringTuples, error) {
 	return index.NewStringTuples(m.labelIndex[names[0]], 1)
 }
 
-func (m mockIndex) Postings(name, value string) (index.Postings, error) {
-	l := labels.Label{Name: name, Value: value}
-	return index.NewListPostings(m.postings[l]), nil
+func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {
+	res := make([]index.Postings, 0, len(values))
+	for _, value := range values {
+		l := labels.Label{Name: name, Value: value}
+		res = append(res, index.NewListPostings(m.postings[l]))
+	}
+	return index.Merge(res...), nil
 }
 
 func (m mockIndex) SortedPostings(p index.Postings) index.Postings {

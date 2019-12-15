@@ -45,13 +45,13 @@ var scenarios = map[string]struct {
 	"invalid params from the beginning": {
 		params: "match[]=-not-a-valid-metric-name",
 		code:   400,
-		body: `parse error at char 1: vector selector must contain label matchers or metric name
+		body: `1:1: parse error: vector selector must contain label matchers or metric name
 `,
 	},
 	"invalid params somewhere in the middle": {
 		params: "match[]=not-a-valid-metric-name",
 		code:   400,
-		body: `parse error at char 4: could not parse remaining input "-a-valid-metric"...
+		body: `1:4: parse error: could not parse remaining input "-a-valid-metric"...
 `,
 	},
 	"test_metric1": {
