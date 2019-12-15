@@ -4,14 +4,6 @@ import PathPrefixProps from '../PathPrefixProps';
 import { Alert, Button } from 'reactstrap';
 import { useFetch } from '../utils/useFetch';
 
-interface ServicesState {
-  response: Record<string, any>;
-  fetchServicesErrorMessage: string;
-  targets: any;
-  labels: any;
-  showMore: boolean;
-}
-
 interface LabelState {
   showMore: boolean;
 }
@@ -111,15 +103,13 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
   } else if (response.data) {
     targets = processTargets(response.data.activeTargets);
     labels = processLabels(response.data.activeTargets);
-    console.warn('targets is ');
-    console.warn(targets);
 
     return (
       <>
         <h2>Service Discovery</h2>
         <ul>
           {Object.keys(targets).map((val, i) => (
-            <li key={targets[val]}>
+            <li key={i}>
               <a href={'#' + val}>
                 {' '}
                 {val} ({targets[val].active} / {targets[val].total} active targets){' '}
@@ -172,12 +162,12 @@ class Labels extends Component<LabelProps, LabelState> {
             <div>
               {Object.keys(this.props.value).map((_, i) => {
                 return (
-                  <div key={'inner-layer-' + i} className="row inner-layer">
+                  <div key={i} className="row inner-layer">
                     <div className="col-md-6">
                       {i === 0 ? <div className="head">Discovered Labels</div> : null}
-                      <div key={this.props.value[i].discoveredLabels[i] + '-' + i}>
-                        {Object.keys(this.props.value[i].discoveredLabels).map((v, _) => (
-                          <div className="label-style" key={this.props.value[i].discoveredLabels[v]}>
+                      <div>
+                        {Object.keys(this.props.value[i].discoveredLabels).map((v, j) => (
+                          <div className="label-style" key={j}>
                             {' '}
                             {v}={this.props.value[i].discoveredLabels[v]}{' '}
                           </div>
@@ -186,9 +176,9 @@ class Labels extends Component<LabelProps, LabelState> {
                     </div>
                     <div className="col-md-6">
                       {i === 0 ? <div className="head">Target Labels</div> : null}
-                      <div key={this.props.value[i].labels[i] + '-' + i}>
-                        {Object.keys(this.props.value[i].labels).map((v, _) => (
-                          <div className="label-style" key={this.props.value[i].labels[v]}>
+                      <div>
+                        {Object.keys(this.props.value[i].labels).map((v, j) => (
+                          <div className="label-style" key={j}>
                             {' '}
                             {v}={this.props.value[i].labels[v]}{' '}
                           </div>
