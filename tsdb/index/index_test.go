@@ -14,6 +14,7 @@
 package index
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -155,7 +156,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	fn := filepath.Join(dir, indexFilename)
 
 	// An empty index must still result in a readable file.
-	iw, err := NewWriter(fn)
+	iw, err := NewWriter(context.Background(), fn)
 	testutil.Ok(t, err)
 	testutil.Ok(t, iw.Close())
 
@@ -183,7 +184,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	fn := filepath.Join(dir, indexFilename)
 
-	iw, err := NewWriter(fn)
+	iw, err := NewWriter(context.Background(), fn)
 	testutil.Ok(t, err)
 
 	series := []labels.Labels{
@@ -247,7 +248,7 @@ func TestPostingsMany(t *testing.T) {
 
 	fn := filepath.Join(dir, indexFilename)
 
-	iw, err := NewWriter(fn)
+	iw, err := NewWriter(context.Background(), fn)
 	testutil.Ok(t, err)
 
 	// Create a label in the index which has 999 values.
@@ -368,7 +369,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		})
 	}
 
-	iw, err := NewWriter(filepath.Join(dir, indexFilename))
+	iw, err := NewWriter(context.Background(), filepath.Join(dir, indexFilename))
 	testutil.Ok(t, err)
 
 	testutil.Ok(t, iw.AddSymbols(symbols))

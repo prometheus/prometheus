@@ -15,6 +15,7 @@ package index
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"hash"
 	"hash/crc32"
@@ -111,6 +112,7 @@ func newCRC32() hash.Hash32 {
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
+	ctx  context.Context
 	f    *os.File
 	fbuf *bufio.Writer
 	pos  uint64
@@ -176,7 +178,7 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 }
 
 // NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
-func NewWriter(fn string) (*Writer, error) {
+func NewWriter(ctx context.Context, fn string) (*Writer, error) {
 	dir := filepath.Dir(fn)
 
 	df, err := fileutil.OpenDir(dir)
@@ -198,6 +200,7 @@ func NewWriter(fn string) (*Writer, error) {
 	}
 
 	iw := &Writer{
+		ctx:   ctx,
 		f:     f,
 		fbuf:  bufio.NewWriterSize(f, 1<<22),
 		pos:   0,
@@ -256,6 +259,12 @@ func (w *Writer) addPadding(size int) error {
 // ensureStage handles transitions between write stages and ensures that IndexWriter
 // methods are called in an order valid for the implementation.
 func (w *Writer) ensureStage(s indexWriterStage) error {
+	select {
+	case <-w.ctx.Done():
+		return w.ctx.Err()
+	default:
+	}
+
 	if w.stage == s {
 		return nil
 	}
@@ -698,6 +707,11 @@ func (w *Writer) writePostings() error {
 					return err
 				}
 			}
+		}
+		select {
+		case <-w.ctx.Done():
+			return w.ctx.Err()
+		default:
 		}
 
 	}
