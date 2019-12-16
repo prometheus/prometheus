@@ -220,3 +220,47 @@ func BenchmarkRangeQuery(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkParser(b *testing.B) {
+	cases := []string{
+		"a",
+		"metric",
+		"1",
+		"1 >= bool 1",
+		"1 + 2/(3*1)",
+		"foo or bar",
+		"foo and bar unless baz or qux",
+		"bar + on(foo) bla / on(baz, buz) group_right(test) blub",
+		"foo / ignoring(test,blub) group_left(blub) bar",
+		"foo - ignoring(test,blub) group_right(bar,foo) bar",
+		`foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`,
+		`min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
+		"sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
+	}
+	errCases := []string{
+		"(",
+		"}",
+		"1 or 1",
+		"1 or on(bar) foo",
+		"foo unless on(bar) group_left(baz) bar",
+		"test[5d] OFFSET 10s [10m:5s]",
+	}
+
+	for _, c := range cases {
+		b.Run(c, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				ParseMetric(c)
+			}
+		})
+	}
+	for _, c := range errCases {
+		name := fmt.Sprintf("%s (should fail)", c)
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				ParseMetric(c)
+			}
+		})
+	}
+}
