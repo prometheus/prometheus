@@ -26,7 +26,6 @@
     item      Item
     matchers  []*labels.Matcher
     matcher   *labels.Matcher
-    labelSet  []labels.Label
     label     labels.Label
     labels    labels.Labels
 }
@@ -116,8 +115,7 @@
 
 %type <item> match_op metric_identifier
 
-%type <labels> label_set metric
-%type <labelSet> label_set_list
+%type <labels> label_set_list label_set metric
 %type <label> label_set_item    
 
 %start start
