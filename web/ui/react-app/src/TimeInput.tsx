@@ -38,10 +38,7 @@ class TimeInput extends Component<TimeInputProps> {
     return this.props.time || moment().valueOf();
   };
 
-  calcTimeRange = () => {
-    const { range } = this.props;
-    return range * 1000 + (range > 10 ? 10000 : 0);
-  };
+  calcTimeRange = () => (this.props.range * 1000) / 2;
 
   increaseTime = (): void => {
     const time = this.getBaseTime() + this.calcTimeRange();
