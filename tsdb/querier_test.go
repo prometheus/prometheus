@@ -1316,8 +1316,13 @@ func newMockIndex() mockIndex {
 	return ix
 }
 
-func (m mockIndex) Symbols() (map[string]struct{}, error) {
-	return m.symbols, nil
+func (m mockIndex) Symbols() index.StringIter {
+	l := []string{}
+	for s := range m.symbols {
+		l = append(l, s)
+	}
+	sort.Strings(l)
+	return index.NewStringListIter(l)
 }
 
 func (m *mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {

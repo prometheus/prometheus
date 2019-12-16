@@ -650,7 +650,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	var (
 		set         ChunkSeriesSet
-		allSymbols  = make(map[string]struct{}, 1<<16)
+		symbols     index.StringIter
 		closers     = []io.Closer{}
 		overlapping bool
 	)
@@ -700,14 +700,6 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 		closers = append(closers, tombsr)
 
-		symbols, err := indexr.Symbols()
-		if err != nil {
-			return errors.Wrap(err, "read symbols")
-		}
-		for s := range symbols {
-			allSymbols[s] = struct{}{}
-		}
-
 		k, v := index.AllPostingsKey()
 		all, err := indexr.Postings(k, v)
 		if err != nil {
@@ -716,15 +708,18 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		all = indexr.SortedPostings(all)
 
 		s := newCompactionSeriesSet(indexr, chunkr, tombsr, all)
+		syms := indexr.Symbols()
 
 		if i == 0 {
 			set = s
+			symbols = syms
 			continue
 		}
 		set, err = newCompactionMerger(set, s)
 		if err != nil {
 			return err
 		}
+		symbols = newMergedStringIter(symbols, syms)
 	}
 
 	var (
@@ -732,8 +727,13 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		ref    = uint64(0)
 	)
 
-	if err := indexw.AddSymbols(allSymbols); err != nil {
-		return errors.Wrap(err, "add symbols")
+	for symbols.Next() {
+		if err := indexw.AddSymbol(symbols.At()); err != nil {
+			return errors.Wrap(err, "add symbol")
+		}
+	}
+	if symbols.Err() != nil {
+		return errors.Wrap(symbols.Err(), "next symbol")
 	}
 
 	delIter := &deletedIterator{}
@@ -1025,4 +1025,48 @@ func (c *compactionMerger) Err() error {
 
 func (c *compactionMerger) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
 	return c.l, c.c, c.intervals
+}
+
+func newMergedStringIter(a index.StringIter, b index.StringIter) index.StringIter {
+	return &mergedStringIter{a: a, b: b, aok: a.Next(), bok: b.Next()}
+}
+
+type mergedStringIter struct {
+	a        index.StringIter
+	b        index.StringIter
+	aok, bok bool
+	cur      string
+}
+
+func (m *mergedStringIter) Next() bool {
+	if (!m.aok && !m.bok) || (m.Err() != nil) {
+		return false
+	}
+
+	if !m.aok {
+		m.cur = m.b.At()
+		m.bok = m.b.Next()
+	} else if !m.bok {
+		m.cur = m.a.At()
+		m.aok = m.a.Next()
+	} else if m.b.At() > m.a.At() {
+		m.cur = m.a.At()
+		m.aok = m.a.Next()
+	} else if m.a.At() > m.b.At() {
+		m.cur = m.b.At()
+		m.bok = m.b.Next()
+	} else { // Equal.
+		m.cur = m.b.At()
+		m.aok = m.a.Next()
+		m.bok = m.b.Next()
+	}
+
+	return true
+}
+func (m mergedStringIter) At() string { return m.cur }
+func (m mergedStringIter) Err() error {
+	if m.a.Err() != nil {
+		return m.a.Err()
+	}
+	return m.b.Err()
 }

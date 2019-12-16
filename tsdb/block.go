@@ -39,8 +39,8 @@ import (
 // The methods must be called in the order they are specified in.
 type IndexWriter interface {
 	// AddSymbols registers all string symbols that are encountered in series
-	// and other indices.
-	AddSymbols(sym map[string]struct{}) error
+	// and other indices. Symbols must be added in sorted order.
+	AddSymbol(sym string) error
 
 	// AddSeries populates the index writer with a series and its offsets
 	// of chunks that the index can reference.
@@ -61,9 +61,10 @@ type IndexWriter interface {
 
 // IndexReader provides reading access of serialized index data.
 type IndexReader interface {
-	// Symbols returns a set of string symbols that may occur in series' labels
-	// and indices.
-	Symbols() (map[string]struct{}, error)
+	// Symbols return an iterator over sorted string symbols that may occur in
+	// series' labels and indices. It is not safe to use the returned strings
+	// beyond the lifetime of the index reader.
+	Symbols() index.StringIter
 
 	// LabelValues returns sorted possible label values.
 	LabelValues(names ...string) (index.StringTuples, error)
@@ -432,9 +433,8 @@ type blockIndexReader struct {
 	b  *Block
 }
 
-func (r blockIndexReader) Symbols() (map[string]struct{}, error) {
-	s, err := r.ir.Symbols()
-	return s, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+func (r blockIndexReader) Symbols() index.StringIter {
+	return r.ir.Symbols()
 }
 
 func (r blockIndexReader) LabelValues(names ...string) (index.StringTuples, error) {

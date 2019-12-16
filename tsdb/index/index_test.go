@@ -186,15 +186,12 @@ func TestIndexRW_Postings(t *testing.T) {
 		labels.FromStrings("a", "1", "b", "4"),
 	}
 
-	err = iw.AddSymbols(map[string]struct{}{
-		"a": {},
-		"b": {},
-		"1": {},
-		"2": {},
-		"3": {},
-		"4": {},
-	})
-	testutil.Ok(t, err)
+	testutil.Ok(t, iw.AddSymbol("1"))
+	testutil.Ok(t, iw.AddSymbol("2"))
+	testutil.Ok(t, iw.AddSymbol("3"))
+	testutil.Ok(t, iw.AddSymbol("4"))
+	testutil.Ok(t, iw.AddSymbol("a"))
+	testutil.Ok(t, iw.AddSymbol("b"))
 
 	// Postings lists are only written if a series with the respective
 	// reference was added before.
@@ -280,7 +277,14 @@ func TestPostingsMany(t *testing.T) {
 	symbols["i"] = struct{}{}
 	symbols["foo"] = struct{}{}
 	symbols["bar"] = struct{}{}
-	testutil.Ok(t, iw.AddSymbols(symbols))
+	syms := []string{}
+	for s := range symbols {
+		syms = append(syms, s)
+	}
+	sort.Strings(syms)
+	for _, s := range syms {
+		testutil.Ok(t, iw.AddSymbol(s))
+	}
 
 	for i, s := range series {
 		testutil.Ok(t, iw.AddSeries(uint64(i), s))
@@ -390,7 +394,14 @@ func TestPersistence_index_e2e(t *testing.T) {
 	iw, err := NewWriter(context.Background(), filepath.Join(dir, indexFilename))
 	testutil.Ok(t, err)
 
-	testutil.Ok(t, iw.AddSymbols(symbols))
+	syms := []string{}
+	for s := range symbols {
+		syms = append(syms, s)
+	}
+	sort.Strings(syms)
+	for _, s := range syms {
+		testutil.Ok(t, iw.AddSymbol(s))
+	}
 
 	// Population procedure as done by compaction.
 	var (
@@ -479,14 +490,18 @@ func TestPersistence_index_e2e(t *testing.T) {
 		}
 	}
 
-	gotSymbols, err := ir.Symbols()
-	testutil.Ok(t, err)
-
-	testutil.Equals(t, len(mi.symbols), len(gotSymbols))
-	for s := range mi.symbols {
-		_, ok := gotSymbols[s]
-		testutil.Assert(t, ok, "")
+	gotSymbols := []string{}
+	it := ir.Symbols()
+	for it.Next() {
+		gotSymbols = append(gotSymbols, it.At())
 	}
+	testutil.Ok(t, it.Err())
+	expSymbols := []string{}
+	for s := range mi.symbols {
+		expSymbols = append(expSymbols, s)
+	}
+	sort.Strings(expSymbols)
+	testutil.Equals(t, expSymbols, gotSymbols)
 
 	testutil.Ok(t, ir.Close())
 }
