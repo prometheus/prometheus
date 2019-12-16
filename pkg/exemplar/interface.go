@@ -17,6 +17,15 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
+// TsExemplar is an exemplar alongside a timestamp.
+type TsExemplar struct {
+	Ts       int64
+	Exemplar Exemplar
+}
+
+// SeriesExemplar is a time series of exemplar values.
+type SeriesExemplar []TsExemplar
+
 // The following are similar to those of `storage/interfaces.go`:
 // https://github.com/prometheus/prometheus/blob/91d7175eaac18b00e370965f3a8186cc40bf9f55/storage/interface.go#L31-L65
 
@@ -26,9 +35,10 @@ type Exemplars interface {
 	// and timestamp provided (so this can be O(1) lookup).
 	Get(l labels.Labels, t int64) (Exemplar, bool, error)
 
-	// Query is a query to find an exemplars with exact matches on labels
-	// and timestamp ranges provided (this is a range query).
-	Query(l labels.Labels, start, end int64) ([]Exemplar, error)
+	// Query is a query to find an exemplars with partial matches on labels
+	// and timestamp ranges provided (this is a range query). Query returns
+	// a list of SeriesExemplar for each label match.
+	Query(l labels.Labels, start, end int64) ([]SeriesExemplar, error)
 
 	// Add an exemplar, it will be retained based on configuration at
 	// the construction of the exmplar storage.
