@@ -883,6 +883,19 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz",}`,
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: 0,
+			LabelMatchers: []*labels.Matcher{
+				mustLabelMatcher(labels.MatchEqual, "a", "b"),
+				mustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
+				mustLabelMatcher(labels.MatchRegexp, "test", "test"),
+				mustLabelMatcher(labels.MatchNotRegexp, "bar", "baz"),
+				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+			},
+		},
+	}, {
 		input:  `{`,
 		fail:   true,
 		errMsg: "unexpected end of input inside braces",
@@ -923,7 +936,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{gibberish}`,
 		fail:   true,
-		errMsg: "expected label matching operator but got }",
+		errMsg: "unexpected } in label matching, expected label matching operator",
 	}, {
 		input:  `foo{1}`,
 		fail:   true,
@@ -951,7 +964,23 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
-		errMsg: "metric name must not be set twice: \"foo\" or \"bar\"",
+		errMsg: `metric name must not be set twice: "foo" or "bar"`,
+	}, {
+		input:  `foo{__name__= =}`,
+		fail:   true,
+		errMsg: "unexpected <op:=> in label matching, expected string",
+	}, {
+		input:  `foo{,}`,
+		fail:   true,
+		errMsg: `unexpected "," in label matching, expected identifier or "}"`,
+	}, {
+		input:  `foo{__name__ == "bar"}`,
+		fail:   true,
+		errMsg: "unexpected <op:=> in label matching, expected string",
+	}, {
+		input:  `foo{__name__="bar" lol}`,
+		fail:   true,
+		errMsg: `unexpected identifier "lol" in label matching, expected "," or "}"`,
 	},
 	// Test matrix selector.
 	{
@@ -1606,7 +1635,7 @@ func TestParseExpressions(t *testing.T) {
 			testutil.Equals(t, expr, test.expected, "error on input '%s'", test.input)
 		} else {
 			testutil.NotOk(t, err)
-			testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s'", test.input)
+			testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 		}
 	}
 }
