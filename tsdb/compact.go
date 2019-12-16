@@ -569,7 +569,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		}
 	}
 
-	indexw, err := index.NewWriter(filepath.Join(tmp, indexFilename))
+	indexw, err := index.NewWriter(c.ctx, filepath.Join(tmp, indexFilename))
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}
@@ -727,11 +727,9 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 	}
 
-	// We fully rebuild the postings list index from merged series.
 	var (
-		postings = index.NewMemPostings()
-		values   = map[string]stringset{}
-		i        = uint64(0)
+		values = map[string]stringset{}
+		ref    = uint64(0)
 	)
 
 	if err := indexw.AddSymbols(allSymbols); err != nil {
@@ -822,7 +820,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			return errors.Wrap(err, "write chunks")
 		}
 
-		if err := indexw.AddSeries(i, lset, mergedChks...); err != nil {
+		if err := indexw.AddSeries(ref, lset, mergedChks...); err != nil {
 			return errors.Wrap(err, "add series")
 		}
 
@@ -846,9 +844,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 			valset.set(l.Value)
 		}
-		postings.Add(i, lset)
 
-		i++
+		ref++
 	}
 	if set.Err() != nil {
 		return errors.Wrap(set.Err(), "iterate compaction set")
@@ -866,11 +863,6 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 	}
 
-	for _, l := range postings.SortedKeys() {
-		if err := indexw.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value)); err != nil {
-			return errors.Wrap(err, "write postings")
-		}
-	}
 	return nil
 }
 

@@ -15,6 +15,7 @@ package index
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"hash"
 	"hash/crc32"
@@ -111,6 +112,7 @@ func newCRC32() hash.Hash32 {
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
+	ctx  context.Context
 	f    *os.File
 	fbuf *bufio.Writer
 	pos  uint64
@@ -119,17 +121,18 @@ type Writer struct {
 	stage indexWriterStage
 
 	// Reusable memory.
-	buf1    encoding.Encbuf
-	buf2    encoding.Encbuf
-	uint32s []uint32
+	buf1 encoding.Encbuf
+	buf2 encoding.Encbuf
 
-	symbols       map[string]uint32     // symbol offsets
-	seriesOffsets map[uint64]uint64     // offsets of series
-	labelIndexes  []labelIndexHashEntry // label index offsets
-	postings      []postingsHashEntry   // postings lists offsets
+	symbols        map[string]uint32 // symbol offsets
+	reverseSymbols map[uint32]string
+	labelIndexes   []labelIndexHashEntry // label index offsets
+	postings       []postingsHashEntry   // postings lists offsets
+	labelNames     map[string]uint64     // label names, and their usage
 
 	// Hold last series to validate that clients insert new series in order.
 	lastSeries labels.Labels
+	lastRef    uint64
 
 	crc32 hash.Hash
 
@@ -175,7 +178,7 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 }
 
 // NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
-func NewWriter(fn string) (*Writer, error) {
+func NewWriter(ctx context.Context, fn string) (*Writer, error) {
 	dir := filepath.Dir(fn)
 
 	df, err := fileutil.OpenDir(dir)
@@ -197,20 +200,19 @@ func NewWriter(fn string) (*Writer, error) {
 	}
 
 	iw := &Writer{
+		ctx:   ctx,
 		f:     f,
 		fbuf:  bufio.NewWriterSize(f, 1<<22),
 		pos:   0,
 		stage: idxStageNone,
 
 		// Reusable memory.
-		buf1:    encoding.Encbuf{B: make([]byte, 0, 1<<22)},
-		buf2:    encoding.Encbuf{B: make([]byte, 0, 1<<22)},
-		uint32s: make([]uint32, 0, 1<<15),
+		buf1: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
+		buf2: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 
 		// Caches.
-		symbols:       make(map[string]uint32, 1<<13),
-		seriesOffsets: make(map[uint64]uint64, 1<<16),
-		crc32:         newCRC32(),
+		labelNames: make(map[string]uint64, 1<<8),
+		crc32:      newCRC32(),
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
@@ -257,6 +259,12 @@ func (w *Writer) addPadding(size int) error {
 // ensureStage handles transitions between write stages and ensures that IndexWriter
 // methods are called in an order valid for the implementation.
 func (w *Writer) ensureStage(s indexWriterStage) error {
+	select {
+	case <-w.ctx.Done():
+		return w.ctx.Err()
+	default:
+	}
+
 	if w.stage == s {
 		return nil
 	}
@@ -274,10 +282,12 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 	case idxStageLabelIndex:
 		w.toc.LabelIndices = w.pos
 
-	case idxStagePostings:
-		w.toc.Postings = w.pos
-
 	case idxStageDone:
+		w.toc.Postings = w.pos
+		if err := w.writePostings(); err != nil {
+			return err
+		}
+
 		w.toc.LabelIndicesTable = w.pos
 		if err := w.writeLabelIndexesOffsetTable(); err != nil {
 			return err
@@ -312,8 +322,8 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 		return errors.Errorf("out-of-order series added with label set %q", lset)
 	}
 
-	if _, ok := w.seriesOffsets[ref]; ok {
-		return errors.Errorf("series with reference %d already added", ref)
+	if ref < w.lastRef && len(w.lastSeries) != 0 {
+		return errors.Errorf("series with reference greater than %d already added", ref)
 	}
 	// We add padding to 16 bytes to increase the addressable space we get through 4 byte
 	// series references.
@@ -324,7 +334,6 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	if w.pos%16 != 0 {
 		return errors.Errorf("series write not 16-byte aligned at %d", w.pos)
 	}
-	w.seriesOffsets[ref] = w.pos / 16
 
 	w.buf2.Reset()
 	w.buf2.PutUvarint(len(lset))
@@ -335,6 +344,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", l.Name)
 		}
+		w.labelNames[l.Name]++
 		w.buf2.PutUvarint32(index)
 
 		index, ok = w.symbols[l.Value]
@@ -374,6 +384,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	}
 
 	w.lastSeries = append(w.lastSeries[:0], lset...)
+	w.lastRef = ref
 
 	return nil
 }
@@ -405,9 +416,11 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 	}
 
 	w.symbols = make(map[string]uint32, len(symbols))
+	w.reverseSymbols = make(map[uint32]string, len(symbols))
 
 	for index, s := range symbols {
 		w.symbols[s] = uint32(index)
+		w.reverseSymbols[uint32(index)] = s
 		w.buf1.Reset()
 		w.buf1.PutUvarintStr(s)
 		w.buf1.WriteToHash(w.crc32)
@@ -590,11 +603,122 @@ func (w *Writer) writeTOC() error {
 	return w.write(w.buf1.Get())
 }
 
-func (w *Writer) WritePostings(name, value string, it Postings) error {
-	if err := w.ensureStage(idxStagePostings); err != nil {
-		return errors.Wrap(err, "ensure stage")
+func (w *Writer) writePostings() error {
+	names := make([]string, 0, len(w.labelNames))
+	for n := range w.labelNames {
+		names = append(names, n)
 	}
+	sort.Strings(names)
 
+	if err := w.fbuf.Flush(); err != nil {
+		return err
+	}
+	f, err := fileutil.OpenMmapFile(w.f.Name())
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Write out the special all posting.
+	offsets := []uint32{}
+	d := encoding.NewDecbufRaw(realByteSlice(f.Bytes()), int(w.toc.LabelIndices))
+	d.Skip(int(w.toc.Series))
+	for d.Len() > 0 {
+		d.ConsumePadding()
+		startPos := w.toc.LabelIndices - uint64(d.Len())
+		if startPos%16 != 0 {
+			return errors.Errorf("series not 16-byte aligned at %d", startPos)
+		}
+		offsets = append(offsets, uint32(startPos/16))
+		// Skip to next series. The 4 is for the CRC32.
+		d.Skip(d.Uvarint() + 4)
+		if err := d.Err(); err != nil {
+			return nil
+		}
+	}
+	if err := w.writePosting("", "", offsets); err != nil {
+		return err
+	}
+	maxPostings := uint64(len(offsets)) // No label name can have more postings than this.
+
+	for len(names) > 0 {
+		batchNames := []string{}
+		var c uint64
+		// Try to bunch up label names into one loop, but avoid
+		// using more memory than a single label name can.
+		for len(names) > 0 {
+			if w.labelNames[names[0]]+c > maxPostings {
+				break
+			}
+			batchNames = append(batchNames, names[0])
+			c += w.labelNames[names[0]]
+			names = names[1:]
+		}
+
+		nameSymbols := map[uint32]struct{}{}
+		for _, name := range batchNames {
+			nameSymbols[w.symbols[name]] = struct{}{}
+		}
+		// Label name -> label value -> positions.
+		postings := map[uint32]map[uint32][]uint32{}
+
+		d := encoding.NewDecbufRaw(realByteSlice(f.Bytes()), int(w.toc.LabelIndices))
+		d.Skip(int(w.toc.Series))
+		for d.Len() > 0 {
+			d.ConsumePadding()
+			startPos := w.toc.LabelIndices - uint64(d.Len())
+			l := d.Uvarint() // Length of this series in bytes.
+			startLen := d.Len()
+
+			// See if label names we want are in the series.
+			numLabels := d.Uvarint()
+			for i := 0; i < numLabels; i++ {
+				lno := uint32(d.Uvarint())
+				lvo := uint32(d.Uvarint())
+
+				if _, ok := nameSymbols[lno]; ok {
+					if _, ok := postings[lno]; !ok {
+						postings[lno] = map[uint32][]uint32{}
+					}
+					if _, ok := postings[lno][lvo]; !ok {
+						postings[lno][lvo] = []uint32{}
+					}
+					postings[lno][lvo] = append(postings[lno][lvo], uint32(startPos/16))
+				}
+			}
+			// Skip to next series. The 4 is for the CRC32.
+			d.Skip(l - (startLen - d.Len()) + 4)
+			if err := d.Err(); err != nil {
+				return nil
+			}
+		}
+
+		for _, name := range batchNames {
+			// Write out postings for this label name.
+			values := make([]uint32, 0, len(postings[w.symbols[name]]))
+			for v := range postings[w.symbols[name]] {
+				values = append(values, v)
+
+			}
+			// Symbol numbers are in order, so the strings will also be in order.
+			sort.Sort(uint32slice(values))
+			for _, v := range values {
+				if err := w.writePosting(name, w.reverseSymbols[v], postings[w.symbols[name]][v]); err != nil {
+					return err
+				}
+			}
+		}
+		select {
+		case <-w.ctx.Done():
+			return w.ctx.Err()
+		default:
+		}
+
+	}
+	return nil
+}
+
+func (w *Writer) writePosting(name, value string, offs []uint32) error {
 	// Align beginning to 4 bytes for more efficient postings list scans.
 	if err := w.addPadding(4); err != nil {
 		return err
@@ -606,60 +730,20 @@ func (w *Writer) WritePostings(name, value string, it Postings) error {
 		offset: w.pos,
 	})
 
-	// Order of the references in the postings list does not imply order
-	// of the series references within the persisted block they are mapped to.
-	// We have to sort the new references again.
-	refs := w.uint32s[:0]
-
-	for it.Next() {
-		offset, ok := w.seriesOffsets[it.At()]
-		if !ok {
-			return errors.Errorf("%p series for reference %d not found", w, it.At())
-		}
-		if offset > (1<<32)-1 {
-			return errors.Errorf("series offset %d exceeds 4 bytes", offset)
-		}
-		refs = append(refs, uint32(offset))
-	}
-	if err := it.Err(); err != nil {
-		return err
-	}
-	sort.Sort(uint32slice(refs))
-
-	startPos := w.pos
-	// Leave 4 bytes of space for the length, which will be calculated later.
-	if err := w.write([]byte("alen")); err != nil {
-		return err
-	}
-	w.crc32.Reset()
-
 	w.buf1.Reset()
-	w.buf1.PutBE32int(len(refs))
-	w.buf1.WriteToHash(w.crc32)
-	if err := w.write(w.buf1.Get()); err != nil {
-		return err
-	}
+	w.buf1.PutBE32int(len(offs))
 
-	for _, r := range refs {
-		w.buf1.Reset()
-		w.buf1.PutBE32(r)
-		w.buf1.WriteToHash(w.crc32)
-		if err := w.write(w.buf1.Get()); err != nil {
-			return err
+	for _, off := range offs {
+		if off > (1<<32)-1 {
+			return errors.Errorf("series offset %d exceeds 4 bytes", off)
 		}
-	}
-	w.uint32s = refs
-
-	// Write out the length.
-	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.pos - startPos - 4))
-	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
+		w.buf1.PutBE32(off)
 	}
 
-	w.buf1.Reset()
-	w.buf1.PutHashSum(w.crc32)
-	return w.write(w.buf1.Get())
+	w.buf2.Reset()
+	w.buf2.PutBE32int(w.buf1.Len())
+	w.buf1.PutHash(w.crc32)
+	return w.write(w.buf2.Get(), w.buf1.Get())
 }
 
 type uint32slice []uint32

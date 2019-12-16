@@ -14,6 +14,7 @@
 package index
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -49,6 +50,7 @@ func newMockIndex() mockIndex {
 		postings:   make(map[labels.Label][]uint64),
 		symbols:    make(map[string]struct{}),
 	}
+	ix.postings[allPostingsKey] = []uint64{}
 	return ix
 }
 
@@ -63,7 +65,12 @@ func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta)
 	for _, lbl := range l {
 		m.symbols[lbl.Name] = struct{}{}
 		m.symbols[lbl.Value] = struct{}{}
+		if _, ok := m.postings[lbl]; !ok {
+			m.postings[lbl] = []uint64{}
+		}
+		m.postings[lbl] = append(m.postings[lbl], ref)
 	}
+	m.postings[allPostingsKey] = append(m.postings[allPostingsKey], ref)
 
 	s := series{l: l}
 	// Actual chunk data is not stored in the index.
@@ -86,19 +93,6 @@ func (m mockIndex) WriteLabelIndex(names []string, values []string) error {
 	return nil
 }
 
-func (m mockIndex) WritePostings(name, value string, it Postings) error {
-	l := labels.Label{Name: name, Value: value}
-	if _, ok := m.postings[l]; ok {
-		return errors.Errorf("postings for %s already added", l)
-	}
-	ep, err := ExpandPostings(it)
-	if err != nil {
-		return err
-	}
-	m.postings[l] = ep
-	return nil
-}
-
 func (m mockIndex) Close() error {
 	return nil
 }
@@ -116,7 +110,7 @@ func (m mockIndex) Postings(name string, values ...string) (Postings, error) {
 	p := []Postings{}
 	for _, value := range values {
 		l := labels.Label{Name: name, Value: value}
-		p = append(p, NewListPostings(m.postings[l]))
+		p = append(p, m.SortedPostings(NewListPostings(m.postings[l])))
 	}
 	return Merge(p...), nil
 }
@@ -162,7 +156,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	fn := filepath.Join(dir, indexFilename)
 
 	// An empty index must still result in a readable file.
-	iw, err := NewWriter(fn)
+	iw, err := NewWriter(context.Background(), fn)
 	testutil.Ok(t, err)
 	testutil.Ok(t, iw.Close())
 
@@ -190,7 +184,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	fn := filepath.Join(dir, indexFilename)
 
-	iw, err := NewWriter(fn)
+	iw, err := NewWriter(context.Background(), fn)
 	testutil.Ok(t, err)
 
 	series := []labels.Labels{
@@ -217,7 +211,9 @@ func TestIndexRW_Postings(t *testing.T) {
 	testutil.Ok(t, iw.AddSeries(3, series[2]))
 	testutil.Ok(t, iw.AddSeries(4, series[3]))
 
-	err = iw.WritePostings("a", "1", newListPostings(1, 2, 3, 4))
+	err = iw.WriteLabelIndex([]string{"a"}, []string{"1"})
+	testutil.Ok(t, err)
+	err = iw.WriteLabelIndex([]string{"b"}, []string{"1", "2", "3", "4"})
 	testutil.Ok(t, err)
 
 	testutil.Ok(t, iw.Close())
@@ -252,7 +248,7 @@ func TestPostingsMany(t *testing.T) {
 
 	fn := filepath.Join(dir, indexFilename)
 
-	iw, err := NewWriter(fn)
+	iw, err := NewWriter(context.Background(), fn)
 	testutil.Ok(t, err)
 
 	// Create a label in the index which has 999 values.
@@ -271,9 +267,8 @@ func TestPostingsMany(t *testing.T) {
 	for i, s := range series {
 		testutil.Ok(t, iw.AddSeries(uint64(i), s))
 	}
-	for i, s := range series {
-		testutil.Ok(t, iw.WritePostings("i", s.Get("i"), newListPostings(uint64(i))))
-	}
+	err = iw.WriteLabelIndex([]string{"foo"}, []string{"bar"})
+	testutil.Ok(t, err)
 	testutil.Ok(t, iw.Close())
 
 	ir, err := NewFileReader(fn)
@@ -374,7 +369,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		})
 	}
 
-	iw, err := NewWriter(filepath.Join(dir, indexFilename))
+	iw, err := NewWriter(context.Background(), filepath.Join(dir, indexFilename))
 	testutil.Ok(t, err)
 
 	testutil.Ok(t, iw.AddSymbols(symbols))
@@ -414,20 +409,6 @@ func TestPersistence_index_e2e(t *testing.T) {
 		testutil.Ok(t, mi.WriteLabelIndex([]string{k}, vals))
 	}
 
-	all := make([]uint64, len(lbls))
-	for i := range all {
-		all[i] = uint64(i)
-	}
-	err = iw.WritePostings("", "", newListPostings(all...))
-	testutil.Ok(t, err)
-	testutil.Ok(t, mi.WritePostings("", "", newListPostings(all...)))
-
-	for _, l := range postings.SortedKeys() {
-		err := iw.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value))
-		testutil.Ok(t, err)
-		mi.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value))
-	}
-
 	err = iw.Close()
 	testutil.Ok(t, err)
 
@@ -457,7 +438,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 			testutil.Equals(t, explset, lset)
 			testutil.Equals(t, expchks, chks)
 		}
-		testutil.Assert(t, expp.Next() == false, "Unexpected Next() for "+p.Name+" "+p.Value)
+		testutil.Assert(t, expp.Next() == false, "Expected no more postings for %q=%q", p.Name, p.Value)
 		testutil.Ok(t, gotp.Err())
 	}
 
