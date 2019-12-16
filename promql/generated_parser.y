@@ -15,6 +15,8 @@
     package promql
 
     import (
+        "sort"
+
         "github.com/prometheus/prometheus/pkg/labels"
     )
 %}
@@ -106,14 +108,15 @@
 // Start symbols for the generated parser.
 %token START_LABELS
 %token START_LABEL_SET
+%token START_METRIC
 %token	startSymbolsEnd
 
 %type <matchers> label_matchers label_match_list
 %type <matcher> label_matcher
 
-%type <item> match_op
+%type <item> match_op metric_identifier
 
-%type <labels> label_set
+%type <labels> label_set metric
 %type <labelSet> label_set_list
 %type <label> label_set_item    
 
@@ -123,7 +126,9 @@
 
 start           : START_LABELS label_matchers
                      {yylex.(*parser).generatedParserResult.(*VectorSelector).LabelMatchers = $2}
-                | START_LABEL_SET label_set
+                | START_LABEL_SET label_set 
+                     { yylex.(*parser).generatedParserResult = $2 }
+                | START_METRIC metric
                      { yylex.(*parser).generatedParserResult = $2 }
                 | error /* If none of the more detailed error messages are triggered, we fall back to this. */
                         { yylex.(*parser).errorf("unexpected %v", yylex.(*parser).token.desc()) }
@@ -167,12 +172,29 @@ match_op        :
                 | NEQ_REGEX {$$=$1}
                 ;
 
+
+metric          :
+                metric_identifier label_set
+                        { $$ = append($2, labels.Label{Name: labels.MetricName, Value: $1.Val}); sort.Sort($$) }
+                | label_set 
+                        {$$ = $1}
+                | error
+                        { yylex.(*parser).errorf("missing metric name or metric selector")}
+                ;
+
+metric_identifier
+                :
+                METRIC_IDENTIFIER {$$=$1}
+                | IDENTIFIER      {$$=$1}
+
 label_set       :
                 LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
                 | LEFT_BRACE label_set_list COMMA RIGHT_BRACE
                         { $$ = labels.New($2...) }
                 | LEFT_BRACE RIGHT_BRACE
+                        { $$ = labels.New() }
+                | /* empty */
                         { $$ = labels.New() }
                 ;
 
