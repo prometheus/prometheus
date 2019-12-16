@@ -73,11 +73,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 	p := newParser(input)
 	defer p.recover(&err)
 
-	m = p.metric()
-	if p.peek().Typ != EOF {
-		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
-	}
-	return m, nil
+	return p.parseGenerated(START_METRIC, []ItemType{RIGHT_BRACE, EOF}).(labels.Labels), nil
 }
 
 // ParseMetricSelector parses the provided textual metric selector into a list of
