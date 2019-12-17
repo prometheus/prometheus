@@ -1339,16 +1339,17 @@ func (h *headIndexReader) Close() error {
 	return nil
 }
 
-func (h *headIndexReader) Symbols() (map[string]struct{}, error) {
+func (h *headIndexReader) Symbols() index.StringIter {
 	h.head.symMtx.RLock()
-	defer h.head.symMtx.RUnlock()
-
-	res := make(map[string]struct{}, len(h.head.symbols))
+	res := make([]string, 0, len(h.head.symbols))
 
 	for s := range h.head.symbols {
-		res[s] = struct{}{}
+		res = append(res, s)
 	}
-	return res, nil
+	h.head.symMtx.RUnlock()
+
+	sort.Strings(res)
+	return index.NewStringListIter(res)
 }
 
 // LabelValues returns the possible label values

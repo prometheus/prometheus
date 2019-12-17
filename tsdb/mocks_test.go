@@ -24,7 +24,7 @@ type mockIndexWriter struct {
 	series []seriesSamples
 }
 
-func (mockIndexWriter) AddSymbols(sym map[string]struct{}) error { return nil }
+func (mockIndexWriter) AddSymbol(sym string) error { return nil }
 func (m *mockIndexWriter) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
 	i := -1
 	for j, s := range m.series {

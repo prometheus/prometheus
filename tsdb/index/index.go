@@ -123,11 +123,14 @@ type Writer struct {
 	buf1 encoding.Encbuf
 	buf2 encoding.Encbuf
 
-	symbols        map[string]uint32 // symbol offsets
-	reverseSymbols map[uint32]string
-	labelIndexes   []labelIndexHashEntry // label index offsets
-	postings       []postingsHashEntry   // postings lists offsets
-	labelNames     map[string]uint64     // label names, and their usage
+	numSymbols int
+	symbols    *Symbols
+	symbolFile *fileutil.MmapFile
+	lastSymbol string
+
+	labelIndexes []labelIndexHashEntry // label index offsets
+	postings     []postingsHashEntry   // postings lists offsets
+	labelNames   map[string]uint64     // label names, and their usage
 
 	// Hold last series to validate that clients insert new series in order.
 	lastSeries labels.Labels
@@ -275,7 +278,13 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 	switch s {
 	case idxStageSymbols:
 		w.toc.Symbols = w.pos
+		if err := w.startSymbols(); err != nil {
+			return err
+		}
 	case idxStageSeries:
+		if err := w.finishSymbols(); err != nil {
+			return err
+		}
 		w.toc.Series = w.pos
 
 	case idxStageLabelIndex:
@@ -339,16 +348,16 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 
 	for _, l := range lset {
 		// here we have an index for the symbol file if v2, otherwise it's an offset
-		index, ok := w.symbols[l.Name]
-		if !ok {
-			return errors.Errorf("symbol entry for %q does not exist", l.Name)
+		index, err := w.symbols.ReverseLookup(l.Name)
+		if err != nil {
+			return errors.Errorf("symbol entry for %q does not exist, %v", l.Name, err)
 		}
 		w.labelNames[l.Name]++
 		w.buf2.PutUvarint32(index)
 
-		index, ok = w.symbols[l.Value]
-		if !ok {
-			return errors.Errorf("symbol entry for %q does not exist", l.Value)
+		index, err = w.symbols.ReverseLookup(l.Value)
+		if err != nil {
+			return errors.Errorf("symbol entry for %q does not exist, %v", l.Value, err)
 		}
 		w.buf2.PutUvarint32(index)
 	}
@@ -388,56 +397,64 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	return nil
 }
 
-func (w *Writer) AddSymbols(sym map[string]struct{}) error {
+func (w *Writer) startSymbols() error {
+	// We are at w.toc.Symbols.
+	// Leave 4 bytes of space for the length, and another 4 for the number of symbols
+	// which will both be calculated later.
+	return w.write([]byte("alenblen"))
+}
+
+func (w *Writer) AddSymbol(sym string) error {
 	if err := w.ensureStage(idxStageSymbols); err != nil {
 		return err
 	}
-	// Generate sorted list of strings we will store as reference table.
-	symbols := make([]string, 0, len(sym))
-
-	for s := range sym {
-		symbols = append(symbols, s)
+	if w.numSymbols != 0 && sym <= w.lastSymbol {
+		return errors.Errorf("symbol %q out-of-order", sym)
 	}
-	sort.Strings(symbols)
-
-	startPos := w.pos
-	// Leave 4 bytes of space for the length, which will be calculated later.
-	if err := w.write([]byte("alen")); err != nil {
-		return err
-	}
-	w.crc32.Reset()
-
+	w.lastSymbol = sym
+	w.numSymbols++
 	w.buf1.Reset()
-	w.buf1.PutBE32int(len(symbols))
-	w.buf1.WriteToHash(w.crc32)
-	if err := w.write(w.buf1.Get()); err != nil {
-		return err
-	}
-
-	w.symbols = make(map[string]uint32, len(symbols))
-	w.reverseSymbols = make(map[uint32]string, len(symbols))
-
-	for index, s := range symbols {
-		w.symbols[s] = uint32(index)
-		w.reverseSymbols[uint32(index)] = s
-		w.buf1.Reset()
-		w.buf1.PutUvarintStr(s)
-		w.buf1.WriteToHash(w.crc32)
-		if err := w.write(w.buf1.Get()); err != nil {
-			return err
-		}
-	}
-
-	// Write out the length.
-	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.pos - startPos - 4))
-	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
-	}
-
-	w.buf1.Reset()
-	w.buf1.PutHashSum(w.crc32)
+	w.buf1.PutUvarintStr(sym)
 	return w.write(w.buf1.Get())
+}
+
+func (w *Writer) finishSymbols() error {
+	// Write out the length and symbol count.
+	w.buf1.Reset()
+	w.buf1.PutBE32int(int(w.pos - w.toc.Symbols - 4))
+	w.buf1.PutBE32int(int(w.numSymbols))
+	if err := w.writeAt(w.buf1.Get(), w.toc.Symbols); err != nil {
+		return err
+	}
+
+	hashPos := w.pos
+	// Leave space for the hash. We can only calculate it
+	// now that the number of symbols is known, so mmap and do it from there.
+	if err := w.write([]byte("hash")); err != nil {
+		return err
+	}
+	if err := w.fbuf.Flush(); err != nil {
+		return err
+	}
+
+	var err error
+	w.symbolFile, err = fileutil.OpenMmapFile(w.f.Name())
+	if err != nil {
+		return err
+	}
+	hash := crc32.Checksum(w.symbolFile.Bytes()[w.toc.Symbols+4:hashPos], castagnoliTable)
+	w.buf1.Reset()
+	w.buf1.PutBE32(hash)
+	if err := w.writeAt(w.buf1.Get(), hashPos); err != nil {
+		return err
+	}
+
+	// Load in the symbol table efficiently for the rest of the index writing.
+	w.symbols, err = NewSymbols(realByteSlice(w.symbolFile.Bytes()), FormatV2, int(w.toc.Symbols))
+	if err != nil {
+		return errors.Wrap(err, "read symbols")
+	}
+	return nil
 }
 
 func (w *Writer) WriteLabelIndex(names []string, values []string) error {
@@ -481,12 +498,12 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 
 	// here we have an index for the symbol file if v2, otherwise it's an offset
 	for _, v := range valt.entries {
-		index, ok := w.symbols[v]
-		if !ok {
-			return errors.Errorf("symbol entry for %q does not exist", v)
+		sid, err := w.symbols.ReverseLookup(v)
+		if err != nil {
+			return errors.Errorf("symbol entry for %q does not exist: %v", v, err)
 		}
 		w.buf1.Reset()
-		w.buf1.PutBE32(index)
+		w.buf1.PutBE32(sid)
 		w.buf1.WriteToHash(w.crc32)
 		if err := w.write(w.buf1.Get()); err != nil {
 			return err
@@ -585,7 +602,7 @@ func (w *Writer) writePostingsOffsetTable() error {
 	return w.write(w.buf1.Get())
 }
 
-const indexTOCLen = 6*8 + 4
+const indexTOCLen = 6*8 + crc32.Size
 
 func (w *Writer) writeTOC() error {
 	w.buf1.Reset()
@@ -629,8 +646,8 @@ func (w *Writer) writePostings() error {
 			return errors.Errorf("series not 16-byte aligned at %d", startPos)
 		}
 		offsets = append(offsets, uint32(startPos/16))
-		// Skip to next series. The 4 is for the CRC32.
-		d.Skip(d.Uvarint() + 4)
+		// Skip to next series.
+		d.Skip(d.Uvarint() + crc32.Size)
 		if err := d.Err(); err != nil {
 			return nil
 		}
@@ -654,9 +671,13 @@ func (w *Writer) writePostings() error {
 			names = names[1:]
 		}
 
-		nameSymbols := map[uint32]struct{}{}
+		nameSymbols := map[uint32]string{}
 		for _, name := range batchNames {
-			nameSymbols[w.symbols[name]] = struct{}{}
+			sid, err := w.symbols.ReverseLookup(name)
+			if err != nil {
+				return err
+			}
+			nameSymbols[sid] = name
 		}
 		// Label name -> label value -> positions.
 		postings := map[uint32]map[uint32][]uint32{}
@@ -679,14 +700,11 @@ func (w *Writer) writePostings() error {
 					if _, ok := postings[lno]; !ok {
 						postings[lno] = map[uint32][]uint32{}
 					}
-					if _, ok := postings[lno][lvo]; !ok {
-						postings[lno][lvo] = []uint32{}
-					}
 					postings[lno][lvo] = append(postings[lno][lvo], uint32(startPos/16))
 				}
 			}
-			// Skip to next series. The 4 is for the CRC32.
-			d.Skip(l - (startLen - d.Len()) + 4)
+			// Skip to next series.
+			d.Skip(l - (startLen - d.Len()) + crc32.Size)
 			if err := d.Err(); err != nil {
 				return nil
 			}
@@ -694,15 +712,23 @@ func (w *Writer) writePostings() error {
 
 		for _, name := range batchNames {
 			// Write out postings for this label name.
-			values := make([]uint32, 0, len(postings[w.symbols[name]]))
-			for v := range postings[w.symbols[name]] {
+			sid, err := w.symbols.ReverseLookup(name)
+			if err != nil {
+				return err
+			}
+			values := make([]uint32, 0, len(postings[sid]))
+			for v := range postings[sid] {
 				values = append(values, v)
 
 			}
 			// Symbol numbers are in order, so the strings will also be in order.
 			sort.Sort(uint32slice(values))
 			for _, v := range values {
-				if err := w.writePosting(name, w.reverseSymbols[v], postings[w.symbols[name]][v]); err != nil {
+				value, err := w.symbols.Lookup(v)
+				if err != nil {
+					return err
+				}
+				if err := w.writePosting(name, value, postings[sid][v]); err != nil {
 					return err
 				}
 			}
@@ -765,6 +791,11 @@ func (w *Writer) Close() error {
 	if err := w.ensureStage(idxStageDone); err != nil {
 		return err
 	}
+	if w.symbolFile != nil {
+		if err := w.symbolFile.Close(); err != nil {
+			return err
+		}
+	}
 	if err := w.fbuf.Flush(); err != nil {
 		return err
 	}
@@ -780,6 +811,18 @@ type StringTuples interface {
 	Len() int
 	// At returns the tuple at position i.
 	At(i int) ([]string, error)
+}
+
+// StringIter iterates over a sorted list of strings.
+type StringIter interface {
+	// Next advances the iterator and returns true if another value was found.
+	Next() bool
+
+	// At returns the value at the current iterator position.
+	At() string
+
+	// Err returns the last error of the iterator.
+	Err() error
 }
 
 type Reader struct {
@@ -1038,6 +1081,9 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 }
 
 func (s Symbols) ReverseLookup(sym string) (uint32, error) {
+	if len(s.offsets) == 0 {
+		return 0, errors.Errorf("unknown symbol %q - no symbols", sym)
+	}
 	i := sort.Search(len(s.offsets), func(i int) bool {
 		// Any decoding errors here will be lost, however
 		// we already read through all of this at startup.
@@ -1077,23 +1123,42 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 	return uint32(s.bs.Len() - lastLen), nil
 }
 
-func (s Symbols) All() (map[string]struct{}, error) {
-	d := encoding.NewDecbufAt(s.bs, s.off, castagnoliTable)
-	cnt := d.Be32int()
-	res := make(map[string]struct{}, cnt)
-	for d.Err() == nil && cnt > 0 {
-		res[d.UvarintStr()] = struct{}{}
-		cnt--
-	}
-	if d.Err() != nil {
-		return nil, d.Err()
-	}
-	return res, nil
-}
-
 func (s Symbols) Size() int {
 	return len(s.offsets) * 8
 }
+
+func (s Symbols) Iter() StringIter {
+	d := encoding.NewDecbufAt(s.bs, s.off, castagnoliTable)
+	cnt := d.Be32int()
+	return &symbolsIter{
+		d:   d,
+		cnt: cnt,
+	}
+}
+
+// symbolsIter implements StringIter.
+type symbolsIter struct {
+	d   encoding.Decbuf
+	cnt int
+	cur string
+	err error
+}
+
+func (s *symbolsIter) Next() bool {
+	if s.cnt == 0 || s.err != nil {
+		return false
+	}
+	s.cur = yoloString(s.d.UvarintBytes())
+	s.cnt--
+	if s.d.Err() != nil {
+		s.err = s.d.Err()
+		return false
+	}
+	return true
+}
+
+func (s symbolsIter) At() string { return s.cur }
+func (s symbolsIter) Err() error { return s.err }
 
 // ReadOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
@@ -1137,9 +1202,9 @@ func (r *Reader) lookupSymbol(o uint32) (string, error) {
 	return r.symbols.Lookup(o)
 }
 
-// Symbols returns a set of symbols that exist within the index.
-func (r *Reader) Symbols() (map[string]struct{}, error) {
-	return r.symbols.All()
+// Symbols returns an iterator over the symbols that exist within the index.
+func (r *Reader) Symbols() StringIter {
+	return r.symbols.Iter()
 }
 
 // SymbolTableSize returns the symbol table size in bytes.
@@ -1358,6 +1423,28 @@ func (t *stringTuples) Less(i, j int) bool {
 	}
 	return false
 }
+
+// NewStringListIterator returns a StringIter for the given sorted list of strings.
+func NewStringListIter(s []string) StringIter {
+	return &stringListIter{l: s}
+}
+
+// symbolsIter implements StringIter.
+type stringListIter struct {
+	l   []string
+	cur string
+}
+
+func (s *stringListIter) Next() bool {
+	if len(s.l) == 0 {
+		return false
+	}
+	s.cur = s.l[0]
+	s.l = s.l[1:]
+	return true
+}
+func (s stringListIter) At() string { return s.cur }
+func (s stringListIter) Err() error { return nil }
 
 // Decoder provides decoding methods for the v1 and v2 index file format.
 //
