@@ -34,7 +34,7 @@ export function parseTime(timeText: string): number {
 }
 
 export function formatTime(time: number): string {
-  return moment.utc(time).format('YYYY-MM-DD HH:mm');
+  return moment.utc(time).format('YYYY-MM-DD HH:mm:ss');
 }
 
 export const now = (): number => moment().valueOf();

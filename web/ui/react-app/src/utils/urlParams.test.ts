@@ -27,7 +27,7 @@ const panels: any = [
   },
 ];
 const query =
-  '?g0.expr=rate(node_cpu_seconds_total%7Bmode%3D%22system%22%7D%5B1m%5D)&g0.tab=0&g0.stacked=0&g0.range_input=1h&g0.end_input=2019-10-25%2023%3A37&g0.moment_input=2019-10-25%2023%3A37&g1.expr=node_filesystem_avail_bytes&g1.tab=1&g1.stacked=0&g1.range_input=1h';
+  '?g0.expr=rate(node_cpu_seconds_total%7Bmode%3D%22system%22%7D%5B1m%5D)&g0.tab=0&g0.stacked=0&g0.range_input=1h&g0.end_input=2019-10-25%2023%3A37%3A00&g0.moment_input=2019-10-25%2023%3A37%3A00&g1.expr=node_filesystem_avail_bytes&g1.tab=1&g1.stacked=0&g1.range_input=1h';
 
 describe('decodePanelOptionsFromQueryString', () => {
   it('returns [] when query is empty', () => {

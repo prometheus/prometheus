@@ -32,19 +32,21 @@ interface TimeInputProps {
 
 class TimeInput extends Component<TimeInputProps> {
   private timeInputRef = React.createRef<HTMLInputElement>();
-  private $time: any | null = null;
+  private $time: any = null;
 
   getBaseTime = (): number => {
     return this.props.time || moment().valueOf();
   };
 
+  calcShiftRange = () => (this.props.range * 1000) / 2;
+
   increaseTime = (): void => {
-    const time = this.getBaseTime() + (this.props.range * 1000) / 2;
+    const time = this.getBaseTime() + this.calcShiftRange();
     this.props.onChangeTime(time);
   };
 
   decreaseTime = (): void => {
-    const time = this.getBaseTime() - (this.props.range * 1000) / 2;
+    const time = this.getBaseTime() - this.calcShiftRange();
     this.props.onChangeTime(time);
   };
 
@@ -65,7 +67,7 @@ class TimeInput extends Component<TimeInputProps> {
         showToday: true,
       },
       sideBySide: true,
-      format: 'YYYY-MM-DD HH:mm',
+      format: 'YYYY-MM-DD HH:mm:ss',
       locale: 'en',
       timeZone: 'UTC',
       defaultDate: this.props.time,

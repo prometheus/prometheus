@@ -98,7 +98,7 @@ button.execute-btn {
     margin-bottom: 10px;
 }
 
-.graph-controls input {
+.graph-controls input, .table-controls input {
     text-align: center;
 }
 
@@ -106,27 +106,23 @@ button.execute-btn {
     width: 50px;
 }
 
-.graph-controls .time-input input {
+.time-input input {
     border-right: none;
 }
 
-div.time-input {
-    width: 240px !important;
-}
-
-.table-controls input {
-    text-align: center;
+.time-input {
+    width: 270px !important;
 }
 
 .graph-controls input.resolution-input {
     width: 90px;
 }
 
-.graph-controls .time-input, .graph-controls .resolution-input, .graph-controls .stacked-input {
+.graph-controls > :not(:first-child) {
     margin-left: 20px;
 }
 
-.graph-controls .clear-time-btn {
+    .graph-controls .clear-time-btn, .table-controls .clear-time-btn {
     background: #fff;
     border-left: none;
     border-top: 1px solid #ced4da;
