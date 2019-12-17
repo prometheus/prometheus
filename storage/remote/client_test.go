@@ -75,9 +75,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		testutil.Ok(t, err)
 
 		err = c.Store(context.Background(), []byte{})
-		if !testutil.ErrorEqual(err, test.err) {
-			t.Errorf("%d. Unexpected error; want %v, got %v", i, test.err, err)
-		}
+		testutil.ErrorEqual(t, err, test.err, "unexpected error in test %d", i)
 
 		server.Close()
 	}
