@@ -674,28 +674,7 @@ func (p *parser) primaryExpr() Expr {
 //		'(' <label_name>, ... ')'
 //
 func (p *parser) labels() []string {
-	const ctx = "grouping opts"
-
-	p.expect(LEFT_PAREN, ctx)
-
-	labels := []string{}
-	if p.peek().Typ != RIGHT_PAREN {
-		for {
-			id := p.next()
-			if !isLabel(id.Val) {
-				p.errorf("unexpected %s in %s, expected label", id.desc(), ctx)
-			}
-			labels = append(labels, id.Val)
-
-			if p.peek().Typ != COMMA {
-				break
-			}
-			p.next()
-		}
-	}
-	p.expect(RIGHT_PAREN, ctx)
-
-	return labels
+	return p.parseGenerated(START_GROUPING_LABELS, []ItemType{RIGHT_PAREN, EOF}).([]string)
 }
 
 // aggrExpr parses an aggregation expression.
