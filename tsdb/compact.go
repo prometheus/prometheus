@@ -722,11 +722,6 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		symbols = newMergedStringIter(symbols, syms)
 	}
 
-	var (
-		values = map[string]stringset{}
-		ref    = uint64(0)
-	)
-
 	for symbols.Next() {
 		if err := indexw.AddSymbol(symbols.At()); err != nil {
 			return errors.Wrap(err, "add symbol")
@@ -737,6 +732,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	delIter := &deletedIterator{}
+	ref := uint64(0)
 	for set.Next() {
 		select {
 		case <-c.ctx.Done():
@@ -836,31 +832,10 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 		}
 
-		for _, l := range lset {
-			valset, ok := values[l.Name]
-			if !ok {
-				valset = stringset{}
-				values[l.Name] = valset
-			}
-			valset.set(l.Value)
-		}
-
 		ref++
 	}
 	if set.Err() != nil {
 		return errors.Wrap(set.Err(), "iterate compaction set")
-	}
-
-	s := make([]string, 0, 256)
-	for n, v := range values {
-		s = s[:0]
-
-		for x := range v {
-			s = append(s, x)
-		}
-		if err := indexw.WriteLabelIndex([]string{n}, s); err != nil {
-			return errors.Wrap(err, "write label index")
-		}
 	}
 
 	return nil

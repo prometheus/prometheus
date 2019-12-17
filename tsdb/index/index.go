@@ -70,8 +70,6 @@ const (
 	idxStageNone indexWriterStage = iota
 	idxStageSymbols
 	idxStageSeries
-	idxStageLabelIndex
-	idxStagePostings
 	idxStageDone
 )
 
@@ -83,10 +81,6 @@ func (s indexWriterStage) String() string {
 		return "symbols"
 	case idxStageSeries:
 		return "series"
-	case idxStageLabelIndex:
-		return "label index"
-	case idxStagePostings:
-		return "postings"
 	case idxStageDone:
 		return "done"
 	}
@@ -132,9 +126,9 @@ type Writer struct {
 	symbolFile *fileutil.MmapFile
 	lastSymbol string
 
-	labelIndexes []labelIndexHashEntry // label index offsets
-	postings     []postingsHashEntry   // postings lists offsets
-	labelNames   map[string]uint64     // label names, and their usage
+	labelIndexes []labelIndexHashEntry          // Label index offsets.
+	labelValues  map[string]map[uint32]struct{} // Label names, and their values's symbol indexes.
+	labelNames   map[string]uint64              // Label names, and their usage.
 
 	// Hold last series to validate that clients insert new series in order.
 	lastSeries labels.Labels
@@ -221,9 +215,9 @@ func NewWriter(ctx context.Context, fn string) (*Writer, error) {
 		buf1: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 		buf2: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 
-		// Caches.
-		labelNames: make(map[string]uint64, 1<<8),
-		crc32:      newCRC32(),
+		labelNames:  make(map[string]uint64, 1<<8),
+		labelValues: make(map[string]map[uint32]struct{}, 1<<8),
+		crc32:       newCRC32(),
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
@@ -346,10 +340,12 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 		}
 		w.toc.Series = w.f.pos
 
-	case idxStageLabelIndex:
-		w.toc.LabelIndices = w.f.pos
-
 	case idxStageDone:
+		w.toc.LabelIndices = w.f.pos
+		if err := w.writeLabelIndices(); err != nil {
+			return err
+		}
+
 		w.toc.Postings = w.f.pos
 		if err := w.writePostings(); err != nil {
 			return err
@@ -419,6 +415,11 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 			return errors.Errorf("symbol entry for %q does not exist, %v", l.Value, err)
 		}
 		w.buf2.PutUvarint32(index)
+
+		if _, ok := w.labelValues[l.Name]; !ok {
+			w.labelValues[l.Name] = map[uint32]struct{}{}
+		}
+		w.labelValues[l.Name][index] = struct{}{}
 	}
 
 	w.buf2.PutUvarint(len(chunks))
@@ -516,27 +517,34 @@ func (w *Writer) finishSymbols() error {
 	return nil
 }
 
-func (w *Writer) WriteLabelIndex(names []string, values []string) error {
-	if len(values)%len(names) != 0 {
-		return errors.Errorf("invalid value list length %d for %d names", len(values), len(names))
+func (w *Writer) writeLabelIndices() error {
+	names := make([]string, 0, len(w.labelValues))
+	for n := range w.labelValues {
+		names = append(names, n)
 	}
-	if err := w.ensureStage(idxStageLabelIndex); err != nil {
-		return errors.Wrap(err, "ensure stage")
-	}
+	sort.Strings(names)
 
-	valt, err := NewStringTuples(values, len(names))
-	if err != nil {
-		return err
+	for _, n := range names {
+		values := make([]uint32, 0, len(w.labelValues[n]))
+		for v := range w.labelValues[n] {
+			values = append(values, v)
+		}
+		sort.Sort(uint32slice(values))
+		if err := w.writeLabelIndex(n, values); err != nil {
+			return err
+		}
 	}
-	sort.Sort(valt)
+	return nil
+}
 
+func (w *Writer) writeLabelIndex(name string, values []uint32) error {
 	// Align beginning to 4 bytes for more efficient index list scans.
 	if err := w.addPadding(4); err != nil {
 		return err
 	}
 
 	w.labelIndexes = append(w.labelIndexes, labelIndexHashEntry{
-		keys:   names,
+		keys:   []string{name},
 		offset: w.f.pos,
 	})
 
@@ -548,21 +556,16 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 	w.crc32.Reset()
 
 	w.buf1.Reset()
-	w.buf1.PutBE32int(len(names))
-	w.buf1.PutBE32int(valt.Len())
+	w.buf1.PutBE32int(1) // Number of names.
+	w.buf1.PutBE32int(len(values))
 	w.buf1.WriteToHash(w.crc32)
 	if err := w.write(w.buf1.Get()); err != nil {
 		return err
 	}
 
-	// here we have an index for the symbol file if v2, otherwise it's an offset
-	for _, v := range valt.entries {
-		sid, err := w.symbols.ReverseLookup(v)
-		if err != nil {
-			return errors.Errorf("symbol entry for %q does not exist: %v", v, err)
-		}
+	for _, v := range values {
 		w.buf1.Reset()
-		w.buf1.PutBE32(sid)
+		w.buf1.PutBE32(v)
 		w.buf1.WriteToHash(w.crc32)
 		if err := w.write(w.buf1.Get()); err != nil {
 			return err

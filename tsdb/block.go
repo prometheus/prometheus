@@ -50,10 +50,6 @@ type IndexWriter interface {
 	// are added later.
 	AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error
 
-	// WriteLabelIndex serializes an index from label names to values.
-	// The passed in values chained tuples of strings of the length of names.
-	WriteLabelIndex(names []string, values []string) error
-
 	// Close writes any finalization and closes the resources associated with
 	// the underlying writer.
 	Close() error
