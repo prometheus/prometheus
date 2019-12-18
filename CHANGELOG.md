@@ -11,8 +11,8 @@
 * [ENHANCEMENT] Remote write: Added config option to name remote target which is added as another label dimension to `prometheus_remote_storage_*` metrics. #6043
 * [ENHANCEMENT] promql: Improved PromQL parser performance. #6356
 * [ENHANCEMENT] React UI: Implemented missing pages like `/targets` #6276, TSDB status page #6267 and many other fixes and performance improvements.
+* [ENHANCEMENT] promql: Prometheus now accepts spaces between time range and square bracket. e.g `[ 5m]` #6065
 * [BUGFIX] Config: Fixed alertmanager configuration to not miss targets when configurations are similar. #6455
-* [BUGFIX] promql: Prometheus now accepts spaces between time range and square bracket. e.g `[ 5m]` #6065
 * [BUGFIX] Remote write: Value of `prometheus_remote_storage_shards_desired` gauge shows raw value of desired shards and it's updated correctly. #6378
 * [BUGFIX] Rules: Prometheus now fails the evaluation of rules and alerts where metric results collide with labels specified in `labels` field. #6469
 * [BUGFIX] API: Targets Metadata API `/targets/metadata` now accepts empty `match_targets` parameter as in the spec. #6303
