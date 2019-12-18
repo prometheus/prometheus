@@ -301,11 +301,33 @@ func (p *parser) error(err error) {
 	panic(perr)
 }
 
+// unexpected creates a parser error complaining about an unexpected lexer item.
+// The item that is presented as unexpected is always the last item produced
+// by the lexer.
+func (p *parser) unexpected(context string, expected string) {
+	var errMsg strings.Builder
+
+	errMsg.WriteString("unexpected ")
+	errMsg.WriteString(p.token.desc())
+
+	if context != "" {
+		errMsg.WriteString(" in ")
+		errMsg.WriteString(context)
+	}
+
+	if expected != "" {
+		errMsg.WriteString(", expected ")
+		errMsg.WriteString(expected)
+	}
+
+	p.error(errors.New(errMsg.String()))
+}
+
 // expect consumes the next token and guarantees it has the required type.
 func (p *parser) expect(exp ItemType, context string) Item {
 	token := p.next()
 	if token.Typ != exp {
-		p.errorf("unexpected %s in %s, expected %s", token.desc(), context, exp.desc())
+		p.unexpected(context, exp.desc())
 	}
 	return token
 }
@@ -314,7 +336,8 @@ func (p *parser) expect(exp ItemType, context string) Item {
 func (p *parser) expectOneOf(exp1, exp2 ItemType, context string) Item {
 	token := p.next()
 	if token.Typ != exp1 && token.Typ != exp2 {
-		p.errorf("unexpected %s in %s, expected %s or %s", token.desc(), context, exp1.desc(), exp2.desc())
+		expected := exp1.desc() + " or " + exp2.desc()
+		p.unexpected(context, expected)
 	}
 	return token
 }
