@@ -1149,7 +1149,7 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 	// Create a WAL checkpoint, and compare sizes.
-	first, last, err := db.Head().wal.Segments()
+	first, last, err := wal.Segments(db.Head().wal.Dir())
 	testutil.Ok(t, err)
 	_, err = wal.Checkpoint(db.Head().wal, first, last-1, func(x uint64) bool { return false }, 0)
 	testutil.Ok(t, err)

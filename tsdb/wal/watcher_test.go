@@ -134,7 +134,7 @@ func TestTailSamples(t *testing.T) {
 			}
 
 			// Start read after checkpoint, no more data written.
-			first, last, err := w.Segments()
+			first, last, err := Segments(w.Dir())
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
@@ -213,7 +213,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			}
 			testutil.Ok(t, w.Log(recs...))
 
-			_, _, err = w.Segments()
+			_, _, err = Segments(w.Dir())
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
@@ -300,7 +300,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			_, _, err = w.Segments()
+			_, _, err = Segments(w.Dir())
 			testutil.Ok(t, err)
 			wt := newWriteToMock()
 			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
@@ -364,7 +364,7 @@ func TestReadCheckpoint(t *testing.T) {
 			w.Truncate(32)
 
 			// Start read after checkpoint, no more data written.
-			_, _, err = w.Segments()
+			_, _, err = Segments(w.Dir())
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
@@ -505,7 +505,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				}
 			}
 
-			_, _, err = w.Segments()
+			_, _, err = Segments(w.Dir())
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()

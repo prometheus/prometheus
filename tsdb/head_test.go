@@ -1274,19 +1274,19 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	}
 
 	add(0)
-	_, last, err := wlog.Segments()
+	_, last, err := wal.Segments(wlog.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 0, last)
 
 	add(1)
 	testutil.Ok(t, h.Truncate(1))
-	_, last, err = wlog.Segments()
+	_, last, err = wal.Segments(wlog.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, last)
 
 	add(2)
 	testutil.Ok(t, h.Truncate(2))
-	_, last, err = wlog.Segments()
+	_, last, err = wal.Segments(wlog.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 2, last)
 }
