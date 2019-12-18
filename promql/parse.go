@@ -15,10 +15,8 @@ package promql
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +25,6 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -150,102 +147,6 @@ func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue
 	values = result.values
 
 	return
-}
-
-// parseSeriesDesc parses a description of a time series into its metric and value sequence.
-func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err error) {
-	defer p.recover(&err)
-
-	m = p.metric()
-
-	const ctx = "series values"
-	for {
-		for p.peek().Typ == SPACE {
-			p.next()
-		}
-		if p.peek().Typ == EOF {
-			break
-		}
-
-		// Extract blanks.
-		if p.peek().Typ == BLANK {
-			p.next()
-			times := uint64(1)
-			if p.peek().Typ == TIMES {
-				p.next()
-				times, err = strconv.ParseUint(p.expect(NUMBER, ctx).Val, 10, 64)
-				if err != nil {
-					p.errorf("invalid repetition in %s: %s", ctx, err)
-				}
-			}
-			for i := uint64(0); i < times; i++ {
-				vals = append(vals, sequenceValue{omitted: true})
-			}
-			// This is to ensure that there is a space between this and the next number.
-			// This is especially required if the next number is negative.
-			if t := p.expectOneOf(SPACE, EOF, ctx).Typ; t == EOF {
-				break
-			}
-			continue
-		}
-
-		// Extract values.
-		sign := 1.0
-		if t := p.peek().Typ; t == SUB || t == ADD {
-			if p.next().Typ == SUB {
-				sign = -1
-			}
-		}
-		var k float64
-		if t := p.peek().Typ; t == NUMBER {
-			k = sign * p.number(p.expect(NUMBER, ctx).Val)
-		} else if t == IDENTIFIER && p.peek().Val == "stale" {
-			p.next()
-			k = math.Float64frombits(value.StaleNaN)
-		} else {
-			p.errorf("expected number or 'stale' in %s but got %s (value: %s)", ctx, t.desc(), p.peek())
-		}
-		vals = append(vals, sequenceValue{
-			value: k,
-		})
-
-		// If there are no offset repetitions specified, proceed with the next value.
-		if t := p.peek(); t.Typ == SPACE {
-			// This ensures there is a space between every value.
-			continue
-		} else if t.Typ == EOF {
-			break
-		} else if t.Typ != ADD && t.Typ != SUB {
-			p.errorf("expected next value or relative expansion in %s but got %s (value: %s)", ctx, t.desc(), p.peek())
-		}
-
-		// Expand the repeated offsets into values.
-		sign = 1.0
-		if p.next().Typ == SUB {
-			sign = -1.0
-		}
-		offset := sign * p.number(p.expect(NUMBER, ctx).Val)
-		p.expect(TIMES, ctx)
-
-		times, err := strconv.ParseUint(p.expect(NUMBER, ctx).Val, 10, 64)
-		if err != nil {
-			p.errorf("invalid repetition in %s: %s", ctx, err)
-		}
-
-		for i := uint64(0); i < times; i++ {
-			k += offset
-			vals = append(vals, sequenceValue{
-				value: k,
-			})
-		}
-		// This is to ensure that there is a space between this expanding notation
-		// and the next number. This is especially required if the next number
-		// is negative.
-		if t := p.expectOneOf(SPACE, EOF, ctx).Typ; t == EOF {
-			break
-		}
-	}
-	return m, vals, nil
 }
 
 // typecheck checks correct typing of the parsed statements or expression.
@@ -805,41 +706,6 @@ func (p *parser) call(name string) *Call {
 	p.expect(RIGHT_PAREN, ctx)
 
 	return &Call{Func: fn, Args: args}
-}
-
-// labelSet parses a set of label matchers
-//
-//		'{' [ <labelname> '=' <match_string>, ... ] '}'
-//
-func (p *parser) labelSet() labels.Labels {
-	return p.parseGenerated(START_LABEL_SET, []ItemType{RIGHT_BRACE, EOF}).(labels.Labels)
-}
-
-// metric parses a metric.
-//
-//		<label_set>
-//		<metric_identifier> [<label_set>]
-//
-func (p *parser) metric() labels.Labels {
-	name := ""
-	var m labels.Labels
-
-	t := p.peek().Typ
-	if t == IDENTIFIER || t == METRIC_IDENTIFIER {
-		name = p.next().Val
-		t = p.peek().Typ
-	}
-	if t != LEFT_BRACE && name == "" {
-		p.errorf("missing metric name or metric selector")
-	}
-	if t == LEFT_BRACE {
-		m = p.labelSet()
-	}
-	if name != "" {
-		m = append(m, labels.Label{Name: labels.MetricName, Value: name})
-		sort.Sort(m)
-	}
-	return m
 }
 
 // offset parses an offset modifier.
