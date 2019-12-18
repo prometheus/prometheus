@@ -134,7 +134,7 @@ start           : START_LABELS label_matchers
                 | START_GROUPING_LABELS grouping_labels
                      { yylex.(*parser).generatedParserResult = $2 }
                 | error /* If none of the more detailed error messages are triggered, we fall back to this. */
-                        { yylex.(*parser).errorf("unexpected %v", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).unexpected("","") }
                 ;
 
 
@@ -154,18 +154,18 @@ label_match_list:
                 | label_matcher
                         { $$ = []*labels.Matcher{$1}}
                 | label_match_list error
-                        { yylex.(*parser).errorf("unexpected %v in label matching, expected \",\" or \"}\"", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).unexpected("label matching", "\",\" or \"}\"") }
                 ;
 
 label_matcher   :
                 IDENTIFIER match_op STRING
                         { $$ = yylex.(*parser).newLabelMatcher($1, $2, $3) }
                 | IDENTIFIER match_op error
-                        { yylex.(*parser).errorf("unexpected %v in label matching, expected string", yylex.(*parser).token.desc())}
+                        { yylex.(*parser).unexpected("label matching", "string")}
                 | IDENTIFIER error 
-                        { yylex.(*parser).errorf("unexpected %v in label matching, expected label matching operator", yylex.(*parser).token.Val) } 
+                        { yylex.(*parser).unexpected("label matching", "label matching operator") } 
                 | error
-                        { yylex.(*parser).errorf("unexpected %v in label matching, expected identifier or \"}\"", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).unexpected("label matching", "identifier or \"}\"")}
                 ;
 
 match_op        :
@@ -207,7 +207,7 @@ label_set_list  :
                 | label_set_item
                         { $$ = []labels.Label{$1} }
                 | label_set_list error
-                        { yylex.(*parser).errorf("unexpected %v in label set, expected \",\" or \"}\"", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).unexpected("label set", "\",\" or \"}\"", ) }
                 
                 ;
 
@@ -215,11 +215,11 @@ label_set_item  :
                 IDENTIFIER EQL STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } } 
                 | IDENTIFIER EQL error
-                        { yylex.(*parser).errorf("unexpected %v in label set, expected string", yylex.(*parser).token.desc())}
+                        { yylex.(*parser).unexpected("label set", "string")}
                 | IDENTIFIER error
-                        { yylex.(*parser).errorf("unexpected %v in label set, expected \"=\"", yylex.(*parser).token.desc())}
+                        { yylex.(*parser).unexpected("label set", "\"=\"")}
                 | error
-                        { yylex.(*parser).errorf("unexpected %v in label set, expected identifier or \"}\"", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).unexpected("label set", "identifier or \"}\"") }
                 ;
 
 grouping_labels :
@@ -228,7 +228,7 @@ grouping_labels :
                 | LEFT_PAREN RIGHT_PAREN
                         { $$ = []string{} }
                 | error
-                        { yylex.(*parser).errorf("unexpected %v in grouping opts, expected \"(\"", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).unexpected("grouping opts", "\"(\"") }
                 ;
 
 
@@ -238,19 +238,19 @@ grouping_label_list:
                 | grouping_label
                         { $$ = []string{$1.Val} }
                 | grouping_label_list error
-                        { yylex.(*parser).errorf("unexpected %v in grouping opts, expected \",\" or \"}\"", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).unexpected("grouping opts", "\",\" or \"}\"") }
                 ;
 
 grouping_label  :
                 maybe_label
                         {
                         if !isLabel($1.Val) {
-                                yylex.(*parser).errorf("unexpected %s in grouping opts, expected label", $1.desc())
+                                yylex.(*parser).unexpected("grouping opts", "label")
                         }
                         $$ = $1
                         }
                 | error
-                        { yylex.(*parser).errorf("unexpected %s in grouping opts, expected label", yylex.(*parser).token.desc()) }
+                        { yylex.(*parser).unexpected("grouping opts", "label") }
                 ;
 
 
