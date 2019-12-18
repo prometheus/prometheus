@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -90,4 +91,31 @@ labels:
 
 	got := rule.HTMLSnippet("/test/prefix")
 	testutil.Assert(t, want == got, "incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
+}
+
+// TestRuleEvalDuplicate tests for duplicate labels in recorded metrics, see #5529.
+func TestRuleEvalDuplicate(t *testing.T) {
+	storage := teststorage.New(t)
+	defer storage.Close()
+
+	opts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+
+	engine := promql.NewEngine(opts)
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	now := time.Now()
+
+	expr, _ := promql.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
+	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
+	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
+	testutil.NotOk(t, err)
+	e := fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
+	testutil.ErrorEqual(t, e, err)
 }

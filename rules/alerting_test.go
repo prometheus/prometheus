@@ -14,6 +14,8 @@
 package rules
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -288,4 +291,38 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		}
 	}
 	testutil.Equals(t, result, filteredRes)
+}
+
+func TestAlertingRuleDuplicate(t *testing.T) {
+	storage := teststorage.New(t)
+	defer storage.Close()
+
+	opts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+
+	engine := promql.NewEngine(opts)
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	now := time.Now()
+
+	expr, _ := promql.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
+	rule := NewAlertingRule(
+		"foo",
+		expr,
+		time.Minute,
+		labels.FromStrings("test", "test"),
+		nil,
+		nil,
+		true, log.NewNopLogger(),
+	)
+	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
+	testutil.NotOk(t, err)
+	e := fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
+	testutil.ErrorEqual(t, e, err)
 }

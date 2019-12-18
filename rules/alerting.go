@@ -311,6 +311,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	resultFPs := map[uint64]struct{}{}
 
 	var vec promql.Vector
+	var alerts = make(map[uint64]*Alert, len(res))
 	for _, smpl := range res {
 		// Provide the alert information to the template.
 		l := make(map[string]string, len(smpl.Metric))
@@ -361,21 +362,34 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		h := lbs.Hash()
 		resultFPs[h] = struct{}{}
 
-		// Check whether we already have alerting state for the identifying label set.
-		// Update the last value and annotations if so, create a new alert entry otherwise.
-		if alert, ok := r.active[h]; ok && alert.State != StateInactive {
-			alert.Value = smpl.V
-			alert.Annotations = annotations
-			continue
+		if _, ok := alerts[h]; ok {
+			err = fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
+			// We have already acquired the lock above hence using SetHealth and
+			// SetLastError will deadlock.
+			r.health = HealthBad
+			r.lastError = err
+			return nil, err
 		}
 
-		r.active[h] = &Alert{
+		alerts[h] = &Alert{
 			Labels:      lbs,
 			Annotations: annotations,
 			ActiveAt:    ts,
 			State:       StatePending,
 			Value:       smpl.V,
 		}
+	}
+
+	for h, a := range alerts {
+		// Check whether we already have alerting state for the identifying label set.
+		// Update the last value and annotations if so, create a new alert entry otherwise.
+		if alert, ok := r.active[h]; ok && alert.State != StateInactive {
+			alert.Value = a.Value
+			alert.Annotations = a.Annotations
+			continue
+		}
+
+		r.active[h] = a
 	}
 
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.

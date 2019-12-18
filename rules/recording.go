@@ -93,6 +93,16 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 		sample.Metric = lb.Labels()
 	}
+
+	// Check that the rule does not produce identical metrics after applying
+	// labels.
+	if vector.ContainsSameLabelset() {
+		err = fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
+		rule.SetHealth(HealthBad)
+		rule.SetLastError(err)
+		return nil, err
+	}
+
 	rule.SetHealth(HealthGood)
 	rule.SetLastError(err)
 	return vector, nil
