@@ -123,6 +123,10 @@ func (i ItemType) isRightAssociative() bool {
 
 type ItemType int
 
+// This is a list of all keywords in PromQL.
+// When changing this list, make sure to also change
+// the maybe_label grammar rule in the generated parser
+// to avoid misinterpretation of labels as keywords.
 var key = map[string]ItemType{
 	// Operators.
 	"and":    LAND,
