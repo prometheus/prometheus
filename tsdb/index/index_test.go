@@ -83,16 +83,6 @@ func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta)
 	return nil
 }
 
-func (m mockIndex) WriteLabelIndex(names []string, values []string) error {
-	// TODO support composite indexes
-	if len(names) != 1 {
-		return errors.New("composite indexes not supported yet")
-	}
-	sort.Strings(values)
-	m.labelIndex[names[0]] = values
-	return nil
-}
-
 func (m mockIndex) Close() error {
 	return nil
 }
@@ -200,9 +190,6 @@ func TestIndexRW_Postings(t *testing.T) {
 	testutil.Ok(t, iw.AddSeries(3, series[2]))
 	testutil.Ok(t, iw.AddSeries(4, series[3]))
 
-	testutil.Ok(t, iw.WriteLabelIndex([]string{"a"}, []string{"1"}))
-	testutil.Ok(t, iw.WriteLabelIndex([]string{"b"}, []string{"1", "2", "3", "4"}))
-
 	testutil.Ok(t, iw.Close())
 
 	ir, err := NewFileReader(fn)
@@ -289,8 +276,6 @@ func TestPostingsMany(t *testing.T) {
 	for i, s := range series {
 		testutil.Ok(t, iw.AddSeries(uint64(i), s))
 	}
-	err = iw.WriteLabelIndex([]string{"foo"}, []string{"bar"})
-	testutil.Ok(t, err)
 	testutil.Ok(t, iw.Close())
 
 	ir, err := NewFileReader(fn)
@@ -425,17 +410,6 @@ func TestPersistence_index_e2e(t *testing.T) {
 			valset[l.Value] = struct{}{}
 		}
 		postings.Add(uint64(i), s.labels)
-	}
-
-	for k, v := range values {
-		var vals []string
-		for e := range v {
-			vals = append(vals, e)
-		}
-		sort.Strings(vals)
-
-		testutil.Ok(t, iw.WriteLabelIndex([]string{k}, vals))
-		testutil.Ok(t, mi.WriteLabelIndex([]string{k}, vals))
 	}
 
 	err = iw.Close()
