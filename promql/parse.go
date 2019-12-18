@@ -131,12 +131,25 @@ func (v sequenceValue) String() string {
 	return fmt.Sprintf("%f", v.value)
 }
 
+type parseSeriesDescResult struct {
+	labels labels.Labels
+	values []sequenceValue
+}
+
 // parseSeriesDesc parses the description of a time series.
-func parseSeriesDesc(input string) (labels.Labels, []sequenceValue, error) {
+func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue, err error) {
+
 	p := newParser(input)
 	p.lex.seriesDesc = true
 
-	return p.parseSeriesDesc()
+	defer p.recover(&err)
+
+	result := p.parseGenerated(START_SERIES_DESCRIPTION, []ItemType{EOF}).(*parseSeriesDescResult)
+
+	labels = result.labels
+	values = result.values
+
+	return
 }
 
 // parseSeriesDesc parses a description of a time series into its metric and value sequence.

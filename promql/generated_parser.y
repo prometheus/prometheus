@@ -15,9 +15,12 @@
     package promql
 
     import (
+        "math"
         "sort"
+        "strconv"
 
         "github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/value"
     )
 %}
 
@@ -29,6 +32,9 @@
     label     labels.Label
     labels    labels.Labels
     strings   []string
+    series    []sequenceValue
+    uint      uint64
+    float     float64
 }
 
 
@@ -110,6 +116,7 @@
 %token START_LABEL_SET
 %token START_METRIC
 %token START_GROUPING_LABELS
+%token START_SERIES_DESCRIPTION
 %token	startSymbolsEnd
 
 %type <matchers> label_matchers label_match_list
@@ -120,6 +127,9 @@
 %type <labels> label_set_list label_set metric
 %type <label> label_set_item    
 %type <strings> grouping_labels  grouping_label_list
+%type <series> series_values series_item
+%type <uint> uint
+%type <float> series_value signed_number number
 
 %start start
 
@@ -133,6 +143,8 @@ start           : START_LABELS label_matchers
                      { yylex.(*parser).generatedParserResult = $2 }
                 | START_GROUPING_LABELS grouping_labels
                      { yylex.(*parser).generatedParserResult = $2 }
+                | START_SERIES_DESCRIPTION { yylex.(*parser).generatedParserResult = &parseSeriesDescResult{}} series_description
+                | start EOF
                 | error /* If none of the more detailed error messages are triggered, we fall back to this. */
                         { yylex.(*parser).unexpected("","") }
                 ;
@@ -281,6 +293,91 @@ maybe_label     :
                 | GROUP_LEFT
                 | GROUP_RIGHT
                 | BOOL
+                ;
+
+series_description:
+                metric series_values
+                        {
+                        yylex.(*parser).generatedParserResult = &parseSeriesDescResult{
+                                labels: $1,
+                                values: $2,
+                        }
+                        }
+                ;
+
+series_values   :
+                /*empty*/
+                        { $$ = []sequenceValue{} }
+                | series_values SPACE series_item
+                        { $$ = append($1, $3...) }
+                | series_values SPACE
+                        { $$ = $1 }
+                ;
+
+series_item     :
+                BLANK
+                        { $$ = []sequenceValue{{omitted: true}}}
+                | BLANK TIMES uint
+                        {
+                        $$ = []sequenceValue{}
+                        for i:=uint64(0); i < $3; i++{
+                                $$ = append($$, sequenceValue{omitted: true})
+                        }
+                        }
+                | series_value
+                        { $$ = []sequenceValue{{value: $1}}}
+                | series_value TIMES uint
+                        {
+                        $$ = []sequenceValue{}
+                        for i:=uint64(0); i <= $3; i++{
+                                $$ = append($$, sequenceValue{value: $1})
+                        }
+                        }
+                | series_value signed_number TIMES uint
+                        {
+                        $$ = []sequenceValue{}
+                        for i:=uint64(0); i <= $4; i++{
+                                $$ = append($$, sequenceValue{value: $1})
+                                $1 += $2
+                        }
+                        }
+uint            :
+                NUMBER
+                        {
+                        var err error
+                        $$, err = strconv.ParseUint($1.Val, 10, 64)
+                        if err != nil {
+                                yylex.(*parser).errorf("invalid repitition in series values: %s", err)
+                        }
+                        }
+                ;
+
+signed_number   :
+                ADD number
+                        { $$ = $2 }
+                | SUB number
+                        { $$ = -$2 }
+                ;
+
+series_value    :
+                IDENTIFIER
+                        {
+                        if $1.Val != "stale" {
+                                yylex.(*parser).unexpected("series values", "number or \"stale\"")
+                        }
+                        $$ = math.Float64frombits(value.StaleNaN)
+                        }
+                | number
+                        { $$ = $1 }
+                | signed_number
+                        { $$ = $1 }
+                ;
+
+
+
+number          :
+                NUMBER
+                        {$$ = yylex.(*parser).number($1.Val) }
                 ;
 
 %%
