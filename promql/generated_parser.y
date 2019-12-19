@@ -143,7 +143,7 @@ start           : START_LABELS label_matchers
                      { yylex.(*parser).generatedParserResult = $2 }
                 | START_GROUPING_LABELS grouping_labels
                      { yylex.(*parser).generatedParserResult = $2 }
-                | START_SERIES_DESCRIPTION { yylex.(*parser).generatedParserResult = &seriesDescription{}} series_description
+                | START_SERIES_DESCRIPTION series_description
                 | start EOF
                 | error /* If none of the more detailed error messages are triggered, we fall back to this. */
                         { yylex.(*parser).unexpected("","") }
@@ -193,8 +193,8 @@ metric          :
                         { $$ = append($2, labels.Label{Name: labels.MetricName, Value: $1.Val}); sort.Sort($$) }
                 | label_set 
                         {$$ = $1}
-                | error
-                        { yylex.(*parser).errorf("missing metric name or metric selector")}
+              /*| error
+                        { yylex.(*parser).errorf("missing metric name or metric selector")} */
                 ;
 
 metric_identifier
