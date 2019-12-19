@@ -743,7 +743,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 }
 
-// Equals return if two groups are the same
+// Equals return if two groups are the same.
 func (g *Group) Equals(ng *Group) bool {
 	if g.name != ng.name {
 		return false

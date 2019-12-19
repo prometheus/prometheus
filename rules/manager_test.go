@@ -742,7 +742,7 @@ func TestUpdate(t *testing.T) {
 		ogs[h] = g
 	}
 
-	// Update interval and reload
+	// Update interval and reload.
 	for i, g := range rgs.Groups {
 		if g.Interval != 0 {
 			rgs.Groups[i].Interval = g.Interval * 2
@@ -753,7 +753,7 @@ func TestUpdate(t *testing.T) {
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 
-	// Change group rules and reload
+	// Change group rules and reload.
 	for i, g := range rgs.Groups {
 		for j, r := range g.Rules {
 			rgs.Groups[i].Rules[j].Expr = fmt.Sprintf("%s * 0", r.Expr)
