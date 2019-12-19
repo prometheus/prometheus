@@ -263,7 +263,7 @@ type StorageSeries struct {
 	series Series
 }
 
-// NewStorageSeries returns a StorageSeries fromfor series.
+// NewStorageSeries returns a StorageSeries from a Series.
 func NewStorageSeries(series Series) *StorageSeries {
 	return &StorageSeries{
 		series: series,
