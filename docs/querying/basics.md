@@ -74,18 +74,14 @@ name:
 
     http_requests_total
 
-It is possible to filter these time series further by appending a set of labels
-to match in curly braces (`{}`).
+It is possible to filter these time series further by appending a comma separated list of label
+matchers in curly braces (`{}`).
 
 This example selects only those time series with the `http_requests_total`
 metric name that also have the `job` label set to `prometheus` and their
 `group` label set to `canary`:
 
     http_requests_total{job="prometheus",group="canary"}
-
-The list of label matchers may include a trailing comma:
-
-    http_requests_total{job="prometheus",group="canary",}
 
 It is also possible to negatively match a label value, or to match label values
 against regular expressions. The following label matching operators exist:
