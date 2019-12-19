@@ -16,6 +16,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/discovery/ecs"
 	"reflect"
 	"sync"
 	"time"
@@ -407,6 +408,11 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	for _, c := range cfg.AzureSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return azure.NewDiscovery(c, log.With(m.logger, "discovery", "azure")), nil
+		})
+	}
+	for _, c := range cfg.AliyunSDConfigs {
+		add(c, func() (Discoverer, error) {
+			return ecs.NewDiscovery(c, log.With(m.logger, "discovery", "ecs")), nil
 		})
 	}
 	for _, c := range cfg.TritonSDConfigs {
