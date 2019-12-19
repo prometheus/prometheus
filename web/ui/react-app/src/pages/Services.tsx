@@ -1,4 +1,4 @@
-import React, { FC, Component } from 'react';
+import React, { FC, Component, useState } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import PathPrefixProps from '../PathPrefixProps';
 import { Alert, Button } from 'reactstrap';
@@ -138,7 +138,57 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
   return null;
 };
 
-class Labels extends Component<LabelProps, LabelState> {
+const Labels: FC<RouteComponentProps & LabelProps> = ({ value }) => {
+  const [showMore, doToggle] = useState(false);
+
+  const toggleMore = () => {
+    doToggle(!showMore);
+  };
+
+  return (
+    <>
+        <Button size="sm" color="primary" onClick={toggleMore}>
+          {showMore ? 'More' : 'Less'}
+        </Button>
+        {showMore ? (
+          <>
+            <div>
+              {Object.keys(value).map((_, i) => {
+                return (
+                  <div key={i} className="row inner-layer">
+                    <div className="col-md-6">
+                      {i === 0 ? <div className="head">Discovered Labels</div> : null}
+                      <div>
+                        {Object.keys(value[i].discoveredLabels).map((v, j) => (
+                          <div className="label-style" key={j}>
+                            {' '}
+                            {v}={value[i].discoveredLabels[v]}{' '}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      {i === 0 ? <div className="head">Target Labels</div> : null}
+                      <div>
+                        {Object.keys(value[i].labels).map((v, j) => (
+                          <div className="label-style" key={j}>
+                            {' '}
+                            {v}={value[i].labels[v]}{' '}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+      </>
+  );
+};
+
+class Labels_ extends Component<LabelProps, LabelState> {
   constructor(props: LabelProps) {
     super(props);
 
