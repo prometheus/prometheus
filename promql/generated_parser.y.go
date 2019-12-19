@@ -183,7 +183,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyInitialStackSize = 16
 
-//line promql/generated_parser.y:383
+//line promql/generated_parser.y:385
 
 //line yacctab:1
 var yyExca = [...]int{
@@ -199,51 +199,56 @@ var yyExca = [...]int{
 	5, 31,
 	24, 31,
 	-2, 0,
+	-1, 63,
+	1, 72,
+	5, 72,
+	24, 72,
+	-2, 0,
 }
 
 const yyPrivate = 57344
 
-const yyLast = 159
+const yyLast = 160
 
 var yyAct = [...]int{
 
-	107, 97, 98, 38, 36, 25, 68, 96, 39, 40,
-	30, 90, 103, 7, 92, 101, 100, 110, 102, 13,
-	99, 12, 94, 108, 89, 77, 101, 100, 99, 10,
-	75, 8, 41, 42, 43, 62, 22, 1, 69, 70,
-	73, 88, 63, 74, 71, 72, 44, 45, 46, 47,
-	48, 49, 50, 51, 52, 53, 54, 76, 95, 55,
-	56, 21, 57, 58, 59, 60, 61, 93, 20, 85,
-	38, 83, 81, 34, 19, 39, 40, 66, 35, 2,
-	3, 4, 5, 6, 91, 87, 84, 64, 28, 37,
-	65, 15, 14, 67, 23, 11, 9, 80, 104, 41,
-	42, 43, 105, 106, 109, 78, 33, 0, 0, 0,
-	79, 111, 0, 44, 45, 46, 47, 48, 49, 50,
-	51, 52, 53, 54, 0, 0, 55, 56, 0, 57,
-	58, 59, 60, 61, 32, 27, 0, 16, 0, 31,
-	26, 0, 18, 17, 86, 82, 12, 32, 27, 0,
-	0, 0, 31, 26, 0, 0, 0, 29, 24,
+	108, 98, 99, 38, 36, 30, 25, 77, 39, 40,
+	97, 91, 104, 13, 93, 102, 101, 111, 103, 7,
+	109, 90, 100, 100, 86, 95, 12, 75, 8, 102,
+	101, 10, 41, 42, 43, 68, 63, 73, 89, 76,
+	74, 85, 82, 62, 22, 1, 44, 45, 46, 47,
+	48, 49, 50, 51, 52, 53, 54, 96, 94, 55,
+	56, 81, 57, 58, 59, 60, 61, 69, 70, 34,
+	80, 38, 84, 71, 72, 21, 39, 40, 78, 35,
+	88, 66, 20, 79, 92, 2, 3, 4, 5, 6,
+	19, 64, 15, 28, 65, 37, 11, 14, 67, 105,
+	41, 42, 43, 106, 107, 110, 23, 33, 9, 0,
+	0, 0, 112, 0, 44, 45, 46, 47, 48, 49,
+	50, 51, 52, 53, 54, 0, 0, 55, 56, 0,
+	57, 58, 59, 60, 61, 32, 27, 0, 16, 0,
+	31, 26, 0, 18, 17, 87, 83, 12, 32, 27,
+	0, 0, 0, 31, 26, 0, 0, 0, 29, 24,
 }
 var yyPact = [...]int{
 
-	11, 26, 18, 10, 135, 59, -1000, -1000, -1000, -1000,
-	146, -1000, 145, -1000, 10, -1000, -1000, -1000, -1000, -1000,
-	68, -1000, 135, 75, -1000, -1000, 4, -1000, 28, -1000,
-	-1000, 23, -1000, -1000, 95, -1000, -1000, -1000, -1000, -1000,
+	17, 23, 20, 15, 136, 73, -1000, -1000, -1000, -1000,
+	147, -1000, 146, -1000, 15, -1000, -1000, -1000, -1000, -1000,
+	69, -1000, 136, 79, -1000, -1000, 33, -1000, 25, -1000,
+	-1000, 5, -1000, -1000, 68, -1000, -1000, -1000, -1000, -1000,
 	-1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000,
 	-1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000,
-	-1000, -1000, -1000, -1000, -1000, 133, -1000, 67, -1000, -1000,
-	-1000, -1000, -1000, -1000, 132, -1000, 22, -1000, -1000, 1,
+	-1000, -1000, -1000, 40, -1000, 134, -1000, 22, -1000, -1000,
+	-1000, -1000, -1000, -1000, 133, -1000, 19, -1000, -1000, 1,
 	-1000, -10, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000,
-	-1000, -1000, 0, -1000, -5, -11, -1000, -1000, -1000, -1000,
-	8, 8, 3, 3, -6, -1000, -1000, -1000, -1000, -1000,
-	3, -1000,
+	-1000, -1000, -1000, 3, -1000, -5, -11, -1000, -1000, -1000,
+	-1000, 2, 2, 0, 0, -6, -1000, -1000, -1000, -1000,
+	-1000, 0, -1000,
 }
 var yyPgo = [...]int{
 
-	0, 96, 94, 5, 93, 92, 4, 89, 88, 91,
-	19, 10, 74, 73, 72, 67, 0, 58, 2, 1,
-	37, 36, 35,
+	0, 108, 106, 6, 98, 97, 4, 95, 93, 92,
+	13, 5, 90, 69, 61, 58, 0, 57, 2, 1,
+	45, 44, 43,
 }
 var yyR1 = [...]int{
 
@@ -254,8 +259,8 @@ var yyR1 = [...]int{
 	12, 12, 12, 13, 13, 13, 6, 6, 7, 7,
 	7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
 	7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-	7, 22, 14, 14, 14, 15, 15, 15, 15, 15,
-	16, 18, 18, 17, 17, 17, 19,
+	7, 22, 14, 14, 14, 14, 15, 15, 15, 15,
+	15, 16, 18, 18, 17, 17, 17, 19,
 }
 var yyR2 = [...]int{
 
@@ -266,8 +271,8 @@ var yyR2 = [...]int{
 	4, 2, 1, 3, 1, 2, 1, 1, 1, 1,
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 2, 0, 3, 2, 1, 3, 1, 3, 4,
-	1, 2, 2, 1, 1, 1, 1,
+	1, 2, 0, 3, 2, 1, 1, 3, 1, 3,
+	4, 1, 2, 2, 1, 1, 1, 1,
 }
 var yyChk = [...]int{
 
@@ -279,10 +284,10 @@ var yyChk = [...]int{
 	51, 52, 53, 54, 55, 58, 59, 61, 62, 63,
 	64, 65, -22, -10, 12, 15, 2, -4, 2, 34,
 	35, 40, 41, 12, 15, 2, 34, 2, 10, 15,
-	2, -14, 12, -3, 19, 2, 12, -11, 19, 2,
-	10, -6, 24, -15, 22, -17, 7, -19, -18, 20,
-	27, 26, 23, 23, -18, -19, -19, -16, 20, -16,
-	23, -16,
+	2, -14, 2, 12, -3, 19, 2, 12, -11, 19,
+	2, 10, -6, 24, -15, 22, -17, 7, -19, -18,
+	20, 27, 26, 23, 23, -18, -19, -19, -16, 20,
+	-16, 23, -16,
 }
 var yyDef = [...]int{
 
@@ -292,12 +297,12 @@ var yyDef = [...]int{
 	33, 0, 38, 23, 0, 41, 44, 46, 47, 48,
 	49, 50, 51, 52, 53, 54, 55, 56, 57, 58,
 	59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
-	69, 70, 6, 72, 9, 0, 14, 0, 17, 19,
+	69, 70, 6, -2, 9, 0, 14, 0, 17, 19,
 	20, 21, 22, 28, 0, 34, 0, 37, 39, 0,
-	45, 71, 10, 12, 15, 16, 29, 32, 35, 36,
-	40, 43, 74, 73, 75, 77, 83, 84, 85, 86,
-	0, 0, 0, 0, 0, 81, 82, 76, 80, 78,
-	0, 79,
+	45, 71, 75, 10, 12, 15, 16, 29, 32, 35,
+	36, 40, 43, 74, 73, 76, 78, 84, 85, 86,
+	87, 0, 0, 0, 0, 0, 82, 83, 77, 81,
+	79, 0, 80,
 }
 var yyTok1 = [...]int{
 
@@ -958,37 +963,43 @@ yydefault:
 		}
 	case 75:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:319
+//line promql/generated_parser.y:316
+		{
+			yylex.(*parser).unexpected("series values", "")
+		}
+	case 76:
+		yyDollar = yyS[yypt-1 : yypt+1]
+//line promql/generated_parser.y:321
 		{
 			yyVAL.series = []sequenceValue{{omitted: true}}
 		}
-	case 76:
+	case 77:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:321
+//line promql/generated_parser.y:323
 		{
 			yyVAL.series = []sequenceValue{}
 			for i := uint64(0); i < yyDollar[3].uint; i++ {
 				yyVAL.series = append(yyVAL.series, sequenceValue{omitted: true})
 			}
 		}
-	case 77:
+	case 78:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:328
+//line promql/generated_parser.y:330
 		{
 			yyVAL.series = []sequenceValue{{value: yyDollar[1].float}}
 		}
-	case 78:
+	case 79:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line promql/generated_parser.y:330
+//line promql/generated_parser.y:332
 		{
 			yyVAL.series = []sequenceValue{}
 			for i := uint64(0); i <= yyDollar[3].uint; i++ {
 				yyVAL.series = append(yyVAL.series, sequenceValue{value: yyDollar[1].float})
 			}
 		}
-	case 79:
+	case 80:
 		yyDollar = yyS[yypt-4 : yypt+1]
-//line promql/generated_parser.y:337
+//line promql/generated_parser.y:339
 		{
 			yyVAL.series = []sequenceValue{}
 			for i := uint64(0); i <= yyDollar[4].uint; i++ {
@@ -996,9 +1007,9 @@ yydefault:
 				yyDollar[1].float += yyDollar[2].float
 			}
 		}
-	case 80:
+	case 81:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:346
+//line promql/generated_parser.y:348
 		{
 			var err error
 			yyVAL.uint, err = strconv.ParseUint(yyDollar[1].item.Val, 10, 64)
@@ -1006,32 +1017,26 @@ yydefault:
 				yylex.(*parser).errorf("invalid repitition in series values: %s", err)
 			}
 		}
-	case 81:
-		yyDollar = yyS[yypt-2 : yypt+1]
-//line promql/generated_parser.y:357
-		{
-			yyVAL.float = yyDollar[2].float
-		}
 	case 82:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/generated_parser.y:359
 		{
-			yyVAL.float = -yyDollar[2].float
+			yyVAL.float = yyDollar[2].float
 		}
 	case 83:
+		yyDollar = yyS[yypt-2 : yypt+1]
+//line promql/generated_parser.y:361
+		{
+			yyVAL.float = -yyDollar[2].float
+		}
+	case 84:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:364
+//line promql/generated_parser.y:366
 		{
 			if yyDollar[1].item.Val != "stale" {
 				yylex.(*parser).unexpected("series values", "number or \"stale\"")
 			}
 			yyVAL.float = math.Float64frombits(value.StaleNaN)
-		}
-	case 84:
-		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:371
-		{
-			yyVAL.float = yyDollar[1].float
 		}
 	case 85:
 		yyDollar = yyS[yypt-1 : yypt+1]
@@ -1041,7 +1046,13 @@ yydefault:
 		}
 	case 86:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line promql/generated_parser.y:380
+//line promql/generated_parser.y:375
+		{
+			yyVAL.float = yyDollar[1].float
+		}
+	case 87:
+		yyDollar = yyS[yypt-1 : yypt+1]
+//line promql/generated_parser.y:382
 		{
 			yyVAL.float = yylex.(*parser).number(yyDollar[1].item.Val)
 		}
