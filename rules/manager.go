@@ -864,13 +864,14 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 
 	var wg sync.WaitGroup
 	for _, newg := range groups {
-		// If there is an old group with the same identifier, stop it and wait for
-		// it to finish the current iteration. Then copy it into the new group.
+		// If there is an old group with the same identifier,
+		// check if new group equals with the old group, if yes then skip it.
+		// If not equals, stop it and wait for it to finish the current iteration.
+		// Then copy it into the new group.
 		gn := groupKey(newg.name, newg.file)
 		oldg, ok := m.groups[gn]
 		delete(m.groups, gn)
 
-		// if equal, move it to groups
 		if ok && oldg.Equals(newg) {
 			groups[gn] = oldg
 			continue

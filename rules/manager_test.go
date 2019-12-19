@@ -722,11 +722,11 @@ func TestUpdate(t *testing.T) {
 		for _, actual := range g.seriesInPreviousEval {
 			testutil.Equals(t, expected, actual)
 		}
-		// groups are the same because of no updates
+		// Groups are the same because of no updates.
 		testutil.Equals(t, ogs[h], g)
 	}
 
-	// groups will be recreated if updated
+	// Groups will be recreated if updated.
 	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml")
 	testutil.Assert(t, len(errs) == 0, "file parsing failures")
 
@@ -742,7 +742,7 @@ func TestUpdate(t *testing.T) {
 		ogs[h] = g
 	}
 
-	// update interval
+	// Update interval and reload
 	for i, g := range rgs.Groups {
 		if g.Interval != 0 {
 			rgs.Groups[i].Interval = g.Interval * 2
@@ -753,7 +753,7 @@ func TestUpdate(t *testing.T) {
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 
-	// change group rules
+	// Change group rules and reload
 	for i, g := range rgs.Groups {
 		for j, r := range g.Rules {
 			rgs.Groups[i].Rules[j].Expr = fmt.Sprintf("%s * 0", r.Expr)
