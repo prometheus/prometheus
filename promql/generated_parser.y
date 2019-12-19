@@ -143,7 +143,7 @@ start           : START_LABELS label_matchers
                      { yylex.(*parser).generatedParserResult = $2 }
                 | START_GROUPING_LABELS grouping_labels
                      { yylex.(*parser).generatedParserResult = $2 }
-                | START_SERIES_DESCRIPTION { yylex.(*parser).generatedParserResult = &parseSeriesDescResult{}} series_description
+                | START_SERIES_DESCRIPTION { yylex.(*parser).generatedParserResult = &seriesDescription{}} series_description
                 | start EOF
                 | error /* If none of the more detailed error messages are triggered, we fall back to this. */
                         { yylex.(*parser).unexpected("","") }
@@ -298,7 +298,7 @@ maybe_label     :
 series_description:
                 metric series_values
                         {
-                        yylex.(*parser).generatedParserResult = &parseSeriesDescResult{
+                        yylex.(*parser).generatedParserResult = &seriesDescription{
                                 labels: $1,
                                 values: $2,
                         }

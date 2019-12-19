@@ -128,7 +128,7 @@ func (v sequenceValue) String() string {
 	return fmt.Sprintf("%f", v.value)
 }
 
-type parseSeriesDescResult struct {
+type seriesDescription struct {
 	labels labels.Labels
 	values []sequenceValue
 }
@@ -141,7 +141,7 @@ func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue
 
 	defer p.recover(&err)
 
-	result := p.parseGenerated(START_SERIES_DESCRIPTION, []ItemType{EOF}).(*parseSeriesDescResult)
+	result := p.parseGenerated(START_SERIES_DESCRIPTION, []ItemType{EOF}).(*seriesDescription)
 
 	labels = result.labels
 	values = result.values
