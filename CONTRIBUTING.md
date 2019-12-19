@@ -2,6 +2,8 @@
 
 Prometheus uses GitHub to manage reviews of pull requests.
 
+* If you are new to open source contribution see: [Steps to Open Source](#steps-to-open-source)
+
 * If you are a new contributor see: [Steps to Contribute](#steps-to-contribute)
 
 * If you have a trivial fix or improvement, go ahead and create a pull request,
@@ -20,6 +22,14 @@ Prometheus uses GitHub to manage reviews of pull requests.
   Environments](https://peter.bourgon.org/go-in-production/#formatting-and-style).
 
 * Be sure to sign off on the [DCO](https://github.com/probot/dco#how-it-works)
+
+## Steps to Open Source
+
+First Step to contribute in any open-source software involves :
+
+* Setting-up of environment : Whole code-base of the Prometheus is primarily written in Go. So, having a proper environment to work upon or to play with Go is necessary and for setting up one you can go through [Setting Up Go Environment](https://golang.org/doc/install). 
+
+* Understanding the language which being used : There are numerous tutorials and references available for Go language from basic to advance level like [Official Tour of Go](https://tour.golang.org/welcome/1) , from YouTube, etc. There are various packages which might come handy during working in Go Environment like for example, godoc for documentation, glint for code style listing, gofmt for code formatting and so on. For more available packages, you can go to [Go available packages](https://golang.org/pkg/). For Go syntax or other language based issues, you can always refer to [Go Forum](https://forum.golangbridge.org/).
 
 
 ## Steps to Contribute
