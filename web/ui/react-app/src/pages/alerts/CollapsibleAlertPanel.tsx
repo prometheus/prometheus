@@ -14,6 +14,9 @@ const alertColors: RuleStatus<string> = {
   firing: 'danger',
   pending: 'warning',
   inactive: 'success',
+  unknown: 'primary',
+  err: 'danger',
+  ok: 'success',
 };
 
 const createExpressionLink = (expr: string) => {
@@ -25,9 +28,15 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
 
   return (
     <>
-      <Alert fade={false} onClick={() => toggle(!open)} color={alertColors[rule.state]} style={{ cursor: 'pointer' }}>
+      <Alert
+        fade={false}
+        onClick={() => toggle(!open)}
+        color={alertColors[rule.health === 'ok' ? rule.state : rule.health]}
+        style={{ cursor: 'pointer' }}
+      >
         <FontAwesomeIcon icon={open ? faChevronDown : faChevronRight} fixedWidth />
-        <strong>{rule.name}</strong> ({`${rule.alerts.length} active`})
+        <strong>{rule.name}</strong> ({rule.alerts.length} active){rule.health === 'unknown' ? ' (unknown)' : ''}
+        {rule.health === 'err' ? ' (failing)' : ''}
       </Alert>
       <Collapse isOpen={open} className="mb-2">
         <pre style={{ background: '#f5f5f5', padding: 15 }}>

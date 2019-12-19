@@ -14,6 +14,9 @@ const Alerts: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) 
     inactive: 0,
     pending: 0,
     firing: 0,
+    unknown: 0,
+    err: 0,
+    ok: 0,
   };
 
   if (response.data && response.data.groups) {

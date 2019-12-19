@@ -10,7 +10,7 @@ export interface Rule {
   alerts: Alert[];
   annotations: Record<string, string>;
   duration: number;
-  health: string;
+  health: RuleState;
   labels: Record<string, string>;
   name: string;
   query: string;
@@ -22,6 +22,9 @@ export interface RuleStatus<T> {
   firing: T;
   pending: T;
   inactive: T;
+  unknown: T;
+  err: T;
+  ok: T;
 }
 
 export interface AlertsProps {
@@ -35,6 +38,7 @@ interface Alert {
   value: string;
   annotations: Record<string, string>;
   activeAt: string;
+  health: string;
 }
 
 interface RuleGroup {
@@ -49,6 +53,9 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     firing: true,
     pending: true,
     inactive: true,
+    unknown: false,
+    err: false,
+    ok: false,
   });
   const [showAnnotations, setShowAnnotations] = useState(false);
 
@@ -111,11 +118,15 @@ const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
       return {
         ...acc,
         [r.state]: acc[r.state] + r.alerts.length,
+        [r.health]: acc[r.health] + 1,
       };
     },
     {
       firing: 0,
       pending: 0,
+      unknown: 0,
+      err: 0,
+      ok: 0,
     }
   );
 
@@ -126,6 +137,8 @@ const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
         {isPresent(statesCounter.inactive) && <Badge color="success">inactive</Badge>}
         {statesCounter.pending > 0 && <Badge color="warning">pending ({statesCounter.pending})</Badge>}
         {statesCounter.firing > 0 && <Badge color="danger">firing ({statesCounter.firing})</Badge>}
+        {statesCounter.unknown > 0 && <Badge color="primary">unknown</Badge>}
+        {statesCounter.err > 0 && <Badge color="danger">error</Badge>}
       </div>
     </div>
   );
