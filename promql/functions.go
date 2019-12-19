@@ -507,6 +507,19 @@ func funcAbsent(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 		})
 }
 
+// === absent_over_time(Vector ValueTypeMatrix) Vector ===
+// This function does the opposite than the end result and its result is inverted
+// by the engine after its call.
+func funcAbsentOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+	if len(vals[0].(Matrix)) == 0 {
+		return enh.out
+	}
+	return append(enh.out,
+		Sample{
+			Point: Point{V: 1},
+		})
+}
+
 func simpleFunc(vals []Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
 		enh.out = append(enh.out, Sample{
@@ -931,6 +944,12 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 		Call:       funcAbsent,
+	},
+	"absent_over_time": {
+		Name:       "absent_over_time",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+		Call:       funcAbsentOverTime,
 	},
 	"avg_over_time": {
 		Name:       "avg_over_time",

@@ -1074,6 +1074,36 @@ func (ev *evaluator) eval(expr Expr) Value {
 				putPointSlice(ss.Points)
 			}
 		}
+
+		// absent_over_time requires to invert the matrix; for any timestamp
+		// in the result, we output 1 if there is no value in the current matrix.
+		// Otherwise we don't output any points.
+		if e.Func.Name == "absent_over_time" {
+			found := map[int64]struct{}{}
+			for _, s := range mat {
+				for _, p := range s.Points {
+					found[p.T] = struct{}{}
+				}
+			}
+
+			newp := []Point{}
+			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+				if _, ok := found[ts]; !ok {
+					newp = append(newp, Point{T: ts, V: 1})
+				}
+			}
+			mat = Matrix{}
+			// Series without points are invalid and panic.
+			if len(newp) > 0 {
+				mat = append(mat,
+					Series{
+						Metric: createLabelsFromExpr(e.Args[0]),
+						Points: newp,
+					},
+				)
+			}
+		}
+
 		if mat.ContainsSameLabelset() {
 			ev.errorf("vector cannot contain metrics with the same labelset")
 		}
@@ -1214,6 +1244,28 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 func durationToInt64Millis(d time.Duration) int64 {
 	return int64(d / time.Millisecond)
+}
+
+func createLabelsFromExpr(expr Expr) labels.Labels {
+	m := labels.Labels{}
+	empty := []string{}
+	if ms, ok := expr.(*MatrixSelector); ok {
+		for _, ma := range ms.LabelMatchers {
+			if ma.Name == labels.MetricName {
+				continue
+			}
+			if ma.Type == labels.MatchEqual && !m.Has(ma.Name) {
+				m = labels.NewBuilder(m).Set(ma.Name, ma.Value).Labels()
+			} else {
+				empty = append(empty, ma.Name)
+			}
+		}
+	}
+
+	for _, v := range empty {
+		m = labels.NewBuilder(m).Set(v, "").Labels()
+	}
+	return m
 }
 
 // vectorSelector evaluates a *VectorSelector expression.

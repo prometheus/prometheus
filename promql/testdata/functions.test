@@ -546,3 +546,58 @@ eval instant at 1m max_over_time(data[1m])
 	{type="some_nan2"} 2
 	{type="some_nan3"} 1
 	{type="only_nan"} NaN
+
+clear
+
+# Testdata for absent_over_time()
+eval instant at 1m absent_over_time(http_requests[5m])
+    {} 1
+
+eval instant at 1m absent_over_time(http_requests{handler="/foo"}[5m])
+    {handler="/foo"} 1
+
+eval instant at 1m absent_over_time(http_requests{handler!="/foo"}[5m])
+    {} 1
+
+eval instant at 1m absent_over_time(http_requests{handler="/foo", handler="/bar", handler="/foobar"}[5m])
+    {} 1
+
+eval instant at 1m absent_over_time(http_requests{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
+    {instance="127.0.0.1"} 1
+
+load 1m
+	http_requests{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
+	http_requests{path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
+	httpd_handshake_failures_total{instance="127.0.0.1",job="node"}	1+1x15
+	httpd_log_lines_total{instance="127.0.0.1",job="node"}	1
+
+eval instant at 5m absent_over_time(http_requests[5m])
+
+eval instant at 0m absent_over_time(httpd_log_lines_total[30s])
+
+eval instant at 1m absent_over_time(httpd_log_lines_total[30s])
+    {} 1
+
+eval instant at 15m absent_over_time(http_requests[5m])
+
+eval instant at 16m absent_over_time(http_requests[5m])
+    {} 1
+
+eval instant at 16m absent_over_time(http_requests[6m])
+
+eval instant at 16m absent_over_time(httpd_handshake_failures_total[1m])
+
+eval instant at 16m absent_over_time({instance="127.0.0.1"}[5m])
+
+eval instant at 16m absent_over_time({instance="127.0.0.1"}[5m])
+
+eval instant at 21m absent_over_time({instance="127.0.0.1"}[5m])
+    {instance="127.0.0.1"} 1
+
+eval instant at 21m absent_over_time({instance="127.0.0.1"}[20m])
+
+eval instant at 21m absent_over_time({job="grok"}[20m])
+    {job="grok"} 1
+
+eval instant at 30m absent_over_time({instance="127.0.0.1"}[5m:5s])
+    {} 1

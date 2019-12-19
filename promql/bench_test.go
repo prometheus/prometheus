@@ -111,6 +111,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "rate(a_X[1d])",
 		},
+		{
+			expr: "absent_over_time(h_X[1d])",
+		},
 		// Unary operators.
 		{
 			expr: "-a_X",
