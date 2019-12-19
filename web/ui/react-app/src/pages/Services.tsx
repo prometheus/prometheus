@@ -1,16 +1,9 @@
-import React, { FC, Component, useState } from 'react';
+import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import PathPrefixProps from '../PathPrefixProps';
-import { Alert, Button } from 'reactstrap';
+import { Alert } from 'reactstrap';
 import { useFetch } from '../utils/useFetch';
-
-interface LabelState {
-  showMore: boolean;
-}
-
-interface LabelProps {
-  value: any;
-}
+import Labels from './Labels';
 
 interface DiscoveredLabels {
   address: string;
@@ -46,31 +39,27 @@ interface ServiceMap {
 
 const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const { response, error } = useFetch<ServiceMap>(`${pathPrefix}/api/v1/targets`);
-  const isHealthy = (health: string) => {
-    return health === 'up';
-  };
-  const processTargets = (response: ActiveTargets[]) => {
-    const activeTargets = response;
+  const processTargets = (response: ServiceMap) => {
+    const activeTargets = response.activeTargets;
     const targets: any = {};
 
     // Get targets of each type along with the total and active end points
     for (const target of activeTargets) {
-      const { scrapePool: name, health } = target;
+      const { scrapePool: name } = target;
       if (!targets[name]) {
         targets[name] = {
-          total: 1,
+          total: 0,
           active: 0,
         };
-        if (isHealthy(health)) {
-          targets[name].active = 1;
-        }
-      } else {
-        targets[name].total++;
-        if (isHealthy(health)) {
-          targets[name].active++;
-        }
       }
+      targets[name].total++;
+      targets[name].active++;
     }
+    for (const target of response.droppedTargets) {
+      const { scrapePool: name } = target;
+      targets[name].total++;
+    }
+
     return targets;
   };
 
@@ -101,7 +90,7 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
       </Alert>
     );
   } else if (response.data) {
-    targets = processTargets(response.data.activeTargets);
+    targets = processTargets(response.data);
     labels = processLabels(response.data.activeTargets);
 
     return (
@@ -137,113 +126,5 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
   }
   return null;
 };
-
-const Labels: FC<RouteComponentProps & LabelProps> = ({ value }) => {
-  const [showMore, doToggle] = useState(false);
-
-  const toggleMore = () => {
-    doToggle(!showMore);
-  };
-
-  return (
-    <>
-        <Button size="sm" color="primary" onClick={toggleMore}>
-          {showMore ? 'More' : 'Less'}
-        </Button>
-        {showMore ? (
-          <>
-            <div>
-              {Object.keys(value).map((_, i) => {
-                return (
-                  <div key={i} className="row inner-layer">
-                    <div className="col-md-6">
-                      {i === 0 ? <div className="head">Discovered Labels</div> : null}
-                      <div>
-                        {Object.keys(value[i].discoveredLabels).map((v, j) => (
-                          <div className="label-style" key={j}>
-                            {' '}
-                            {v}={value[i].discoveredLabels[v]}{' '}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      {i === 0 ? <div className="head">Target Labels</div> : null}
-                      <div>
-                        {Object.keys(value[i].labels).map((v, j) => (
-                          <div className="label-style" key={j}>
-                            {' '}
-                            {v}={value[i].labels[v]}{' '}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        ) : null}
-      </>
-  );
-};
-
-class Labels_ extends Component<LabelProps, LabelState> {
-  constructor(props: LabelProps) {
-    super(props);
-
-    this.state = {
-      showMore: false,
-    };
-  }
-
-  toggleMore = () => {
-    this.setState({ showMore: !this.state.showMore });
-  };
-
-  render() {
-    return (
-      <>
-        <Button size="sm" color="primary" onClick={this.toggleMore}>
-          {!this.state.showMore ? 'More' : 'Less'}
-        </Button>
-        {this.state.showMore ? (
-          <>
-            <div>
-              {Object.keys(this.props.value).map((_, i) => {
-                return (
-                  <div key={i} className="row inner-layer">
-                    <div className="col-md-6">
-                      {i === 0 ? <div className="head">Discovered Labels</div> : null}
-                      <div>
-                        {Object.keys(this.props.value[i].discoveredLabels).map((v, j) => (
-                          <div className="label-style" key={j}>
-                            {' '}
-                            {v}={this.props.value[i].discoveredLabels[v]}{' '}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      {i === 0 ? <div className="head">Target Labels</div> : null}
-                      <div>
-                        {Object.keys(this.props.value[i].labels).map((v, j) => (
-                          <div className="label-style" key={j}>
-                            {' '}
-                            {v}={this.props.value[i].labels[v]}{' '}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        ) : null}
-      </>
-    );
-  }
-}
 
 export default Services;
