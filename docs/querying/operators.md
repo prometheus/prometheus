@@ -205,7 +205,7 @@ or
 
     <aggr-op>([parameter,] <vector expression>) [without|by (<label list>)]
 
-`label_list` is a list of unquoted labels that may include a trailing comma, i.e.
+`label list` is a list of unquoted labels that may include a trailing comma, i.e.
 both `(label1, label2)` and `(label1, label2,)` are valid syntax.
 
 `without` removes the listed labels from the result vector, while
