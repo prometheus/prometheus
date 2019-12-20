@@ -159,7 +159,7 @@ func funcIrate(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return instantValue(vals, enh.out, true)
 }
 
-// === idelta(node model.ValMatric) Vector ===
+// === idelta(node model.ValMatrix) Vector ===
 func funcIdelta(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return instantValue(vals, enh.out, false)
 }
