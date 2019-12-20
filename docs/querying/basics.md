@@ -74,8 +74,8 @@ name:
 
     http_requests_total
 
-It is possible to filter these time series further by appending a set of labels
-to match in curly braces (`{}`).
+It is possible to filter these time series further by appending a comma separated list of label
+matchers in curly braces (`{}`).
 
 This example selects only those time series with the `http_requests_total`
 metric name that also have the `job` label set to `prometheus` and their
