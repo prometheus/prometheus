@@ -36,8 +36,8 @@ absent(sum(nonexistent{job="myjob"}))
 # => {}
 ```
 
-In the second example, `absent()` tries to be smart about deriving labels of the
-1-element output vector from the input vector.
+In the first two examples, `absent()` tries to be smart about deriving labels
+of the 1-element output vector from the input vector.
 
 ## `ceil()`
 
