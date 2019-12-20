@@ -25,7 +25,7 @@
 %}
 
 %union {
-    node      Node
+    node      Expr
     item      Item
     matchers  []*labels.Matcher
     matcher   *labels.Matcher
@@ -35,6 +35,7 @@
     series    []sequenceValue
     uint      uint64
     float     float64
+    string    string
 }
 
 
@@ -116,12 +117,13 @@
 %token START_METRIC
 %token START_GROUPING_LABELS
 %token START_SERIES_DESCRIPTION
+%token START_EXPRESSION
 %token	startSymbolsEnd
 
 %type <matchers> label_matchers label_match_list
 %type <matcher> label_matcher
 
-%type <item> match_op metric_identifier grouping_label maybe_label
+%type <item> match_op metric_identifier grouping_label maybe_label unary_op
 
 %type <labels> label_set_list label_set metric
 %type <label> label_set_item    
@@ -129,6 +131,8 @@
 %type <series> series_values series_item
 %type <uint> uint
 %type <float> series_value signed_number number
+%type <node>  paren_expr unary_expr binary_expr offset_expr number_literal string_literal vector_selector matrix_selector subquery_expr function_call aggregate_expr expr
+%type <string> string
 
 %start start
 
@@ -141,11 +145,125 @@ start           : START_LABELS label_matchers
                 | START_GROUPING_LABELS grouping_labels
                      { yylex.(*parser).generatedParserResult = $2 }
                 | START_SERIES_DESCRIPTION series_description
+                | START_EXPRESSION expr
+                     { yylex.(*parser).generatedParserResult = $2 }
                 | start EOF
                 | error /* If none of the more detailed error messages are triggered, we fall back to this. */
                         { yylex.(*parser).unexpected("","") }
                 ;
 
+expr            :
+                /* empty */
+                        { yylex.(*parser).errorf("No expression found in input"); $$ = nil }
+                | paren_expr
+                | unary_expr
+                | binary_expr
+                | offset_expr
+                | number_literal
+                | string_literal
+                | vector_selector
+                | matrix_selector
+                | subquery_expr
+                | function_call
+                | aggregate_expr
+                ;
+
+unary_expr      :
+                unary_op expr
+                        {
+                        if nl, ok := $2.(*NumberLiteral); ok {
+                                if $1.Typ == SUB {
+                                        nl.Val *= -1
+                                }
+                                $$ = nl
+                        } else {
+                                $$ = &UnaryExpr{Op: $1.Typ, Expr: $2}
+                        }
+                        }
+                ;
+
+unary_op        :
+                ADD
+                | SUB
+                ;
+
+binary_expr     :
+                expr POW bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr MUL bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr DIV bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr MOD bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr ADD bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr SUB bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr EQL bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr NEQ bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr LTE bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr LSS bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr GTE bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr GTR bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr LAND bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) } 
+                | expr LUNLESS bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) } 
+                | expr LOR bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) } 
+                ;
+
+binop_modifiers :
+                bool_modifier on_or_ignoring group_modifier
+
+bool_modifier   :
+                / * empty */
+                BOOL
+                ;
+
+on_or_ignoring  :
+                /* empty */
+                | IGNORING grouping_labels
+                | ON grouping_labels
+                ;
+
+group_modifier  :
+                /* empty */
+                | GROUP_LEFT grouping_labels
+                | GROUP_RIGHT grouping_labels
+                ;
+
+
+paren_expr      : LEFT_PAREN expr RIGHT_PAREN
+                        { $$ = &ParenExpr{Expr: $2} }
+                ;
+
+
+primary_expr    :
+                number_literal
+                ;
+
+number_literal  :
+                number
+                        { $$ = &NumberLiteral{$1}}
+                ;
+
+string_literal  :
+                string
+                        { $$ = &StringLiteral{$1}}
+                ;
+
+string          :
+                STRING
+                        { $$ = yylex.(*parser).unquoteString{$1.Val} }
+                ;
 
 label_matchers  : 
                 LEFT_BRACE label_match_list RIGHT_BRACE

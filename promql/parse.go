@@ -442,6 +442,17 @@ func (p *parser) balance(lhs Expr, op ItemType, rhs Expr, vecMatching *VectorMat
 	}
 }
 
+func (p *parser) newBinaryExpression(lhs Expr, op Item, rhs Expr, returnBool bool) {
+	if returnBool && !op.Typ.isComparisonOperator() {
+		p.errorf("bool modifier can only be used on comparison operators")
+	}
+
+	if op.Typ.isComparisonOperator() && !returnBool && rhs.Type() == ValueTypeScalar && lhs.Type() == ValueTypeScalar {
+		p.errorf("comparisons between scalars must use BOOL modifier")
+	}
+
+}
+
 // unaryExpr parses a unary expression.
 //
 //		<Vector_selector> | <Matrix_selector> | (+|-) <number_literal> | '(' <expr> ')'
@@ -471,11 +482,13 @@ func (p *parser) unaryExpr() Expr {
 	e := p.primaryExpr()
 
 	// Expression might be followed by a range selector.
+	// TODO
 	if p.peek().Typ == LEFT_BRACKET {
 		e = p.subqueryOrRangeSelector(e, true)
 	}
 
 	// Parse optional offset.
+	// TODO
 	if p.peek().Typ == OFFSET {
 		offset := p.offset()
 
