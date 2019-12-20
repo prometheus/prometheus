@@ -250,7 +250,7 @@ func BenchmarkParser(b *testing.B) {
 		b.Run(c, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				ParseMetric(c)
+				ParseExpr(c)
 			}
 		})
 	}
@@ -259,7 +259,7 @@ func BenchmarkParser(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				ParseMetric(c)
+				ParseExpr(c)
 			}
 		})
 	}
