@@ -1168,7 +1168,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 			//		PromQL: VectorSelector: pointsNeededSize: 13700; Size: 0.22M
 			//		PromQL: VectorSelector: pointsOverAllocRatio: 309x
 			if len(ss.Points) == 0 {
-				// If we don't have any points, simply kill it, but may be unnecessary.
+				// If we don't have any points, kill it and put overallocated slice back to pool.
+				if cap(ss.Points) > 0 {
+					putPointSlice(ss.Points)
+				}
 				ss.Points = make([]Point, 0)
 			} else {
 				// Don't bother with shrinking/realloc if we are less than 2x overallocated.
@@ -1178,6 +1181,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				if pointsOverallocRatio > pointsOverallocLimit {
 					pointsCopy := make([]Point, len(ss.Points))
 					copy(pointsCopy, ss.Points)
+					putPointSlice(ss.Points)  // return to pool for reuse in the next loop iteration
 					ss.Points = pointsCopy
 				}
 			}
