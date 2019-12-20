@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -1798,7 +1797,6 @@ func TestParseSeries(t *testing.T) {
 		testutil.Assert(t, err != errUnexpected, "unexpected error occurred")
 
 		if !test.fail {
-			fmt.Println(test.input)
 			testutil.Ok(t, err)
 			testutil.Equals(t, test.expectedMetric, metric, "error on input '%s'", test.input)
 			testutil.Equals(t, test.expectedValues, vals, "error in input '%s'", test.input)

@@ -113,7 +113,6 @@
 %token	startSymbolsStart
 // Start symbols for the generated parser.
 %token START_LABELS
-%token START_LABEL_SET
 %token START_METRIC
 %token START_GROUPING_LABELS
 %token START_SERIES_DESCRIPTION
@@ -137,8 +136,6 @@
 
 start           : START_LABELS label_matchers
                      {yylex.(*parser).generatedParserResult.(*VectorSelector).LabelMatchers = $2}
-                | START_LABEL_SET label_set 
-                     { yylex.(*parser).generatedParserResult = $2 }
                 | START_METRIC metric
                      { yylex.(*parser).generatedParserResult = $2 }
                 | START_GROUPING_LABELS grouping_labels
