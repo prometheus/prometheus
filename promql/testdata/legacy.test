@@ -264,6 +264,15 @@ eval instant at 50m absent(nonexistent)
 eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
 	{instance="testinstance", job="testjob"} 1
 
+eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",foo="bar"})
+	{foo="bar"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",foo="bar"})
+	{foo="bar"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
+	{foo="bar"} 1
+
 eval instant at 50m absent(http_requests)
 
 eval instant at 50m absent(sum(http_requests))

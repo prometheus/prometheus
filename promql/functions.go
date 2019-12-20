@@ -480,15 +480,26 @@ func funcAbsent(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	if len(vals[0].(Vector)) > 0 {
 		return enh.out
 	}
-	m := []labels.Label{}
+	m := labels.Labels{}
+	empty := []string{}
 
 	if vs, ok := args[0].(*VectorSelector); ok {
 		for _, ma := range vs.LabelMatchers {
-			if ma.Type == labels.MatchEqual && ma.Name != labels.MetricName {
-				m = append(m, labels.Label{Name: ma.Name, Value: ma.Value})
+			if ma.Name == labels.MetricName {
+				continue
+			}
+			if ma.Type == labels.MatchEqual && !m.Has(ma.Name) {
+				m = labels.NewBuilder(m).Set(ma.Name, ma.Value).Labels()
+			} else {
+				empty = append(empty, ma.Name)
 			}
 		}
 	}
+
+	for _, v := range empty {
+		m = labels.NewBuilder(m).Set(v, "").Labels()
+	}
+
 	return append(enh.out,
 		Sample{
 			Metric: labels.New(m...),
