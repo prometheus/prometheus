@@ -1171,9 +1171,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 				// If we don't have any points, simply kill it, but may be unnecessary.
 				ss.Points = make([]Point, 0)
 			} else {
-				// Don't bother with shrinking/realloc if we are less than 20% overallocated.
+				// Don't bother with shrinking/realloc if we are less than 2x overallocated.
 				// It's an arbitrary number at this point.
-				pointsOverallocLimit := 1.2
+				const pointsOverallocLimit float64 = 2.0
 				pointsOverallocRatio := float64(cap(ss.Points)) / float64(len(ss.Points))
 				if pointsOverallocRatio > pointsOverallocLimit {
 					pointsCopy := make([]Point, len(ss.Points))
