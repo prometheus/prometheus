@@ -12,16 +12,16 @@
 // limitations under the License.
 
 %{
-    package promql
+package promql
 
-    import (
+import (
         "math"
         "sort"
         "strconv"
 
         "github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/value"
-    )
+        "github.com/prometheus/prometheus/pkg/value"
+)
 %}
 
 %union {
@@ -190,8 +190,6 @@ metric          :
                         { $$ = append($2, labels.Label{Name: labels.MetricName, Value: $1.Val}); sort.Sort($$) }
                 | label_set 
                         {$$ = $1}
-              /*| error
-                        { yylex.(*parser).errorf("missing metric name or metric selector")} */
                 ;
 
 metric_identifier
@@ -292,6 +290,7 @@ maybe_label     :
                 | BOOL
                 ;
 
+// The series description grammar is only used inside unit tests.
 series_description:
                 metric series_values
                         {
