@@ -30,7 +30,7 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
     <div className="label-component">
       <span className="target-head"> {name} </span>
       <Button size="sm" color="primary" onClick={toggleMore}>
-        {showMore ? 'show more' : 'show less'}
+        {showMore ? 'show less' : 'show more'}
       </Button>
       {showMore ? (
         <Table striped={true} bordered={true}>
