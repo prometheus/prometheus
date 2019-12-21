@@ -909,11 +909,13 @@ type alertingRule struct {
 }
 
 type recordingRule struct {
-	Name      string           `json:"name"`
-	Query     string           `json:"query"`
-	Labels    labels.Labels    `json:"labels,omitempty"`
-	Health    rules.RuleHealth `json:"health"`
-	LastError string           `json:"lastError,omitempty"`
+	Name           string           `json:"name"`
+	Query          string           `json:"query"`
+	Labels         labels.Labels    `json:"labels,omitempty"`
+	Health         rules.RuleHealth `json:"health"`
+	LastError      string           `json:"lastError,omitempty"`
+	EvaluationTime time.Duration    `json:"evaluation-time"`
+	LastEvaluation int              `json:"last-evaluation"`
 	// Type of a recordingRule is always "recording".
 	Type string `json:"type"`
 }
@@ -967,12 +969,14 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					break
 				}
 				enrichedRule = recordingRule{
-					Name:      rule.Name(),
-					Query:     rule.Query().String(),
-					Labels:    rule.Labels(),
-					Health:    rule.Health(),
-					LastError: lastError,
-					Type:      "recording",
+					Name:           rule.Name(),
+					Query:          rule.Query().String(),
+					Labels:         rule.Labels(),
+					Health:         rule.Health(),
+					LastError:      lastError,
+					EvaluationTime: rule.GetEvaluationDuration(),
+					LastEvaluation: rule.GetEvaluationTimestamp().Second(),
+					Type:           "recording",
 				}
 			default:
 				err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
