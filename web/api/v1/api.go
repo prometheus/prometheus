@@ -887,8 +887,9 @@ type RuleGroup struct {
 	// In order to preserve rule ordering, while exposing type (alerting or recording)
 	// specific properties, both alerting and recording rules are exposed in the
 	// same array.
-	Rules    []rule  `json:"rules"`
-	Interval float64 `json:"interval"`
+	Rules          []rule  `json:"rules"`
+	Interval       float64 `json:"interval"`
+	EvaluationTime int64   `json:"evaluationTime"`
 }
 
 type rule interface{}
@@ -914,8 +915,8 @@ type recordingRule struct {
 	Labels         labels.Labels    `json:"labels,omitempty"`
 	Health         rules.RuleHealth `json:"health"`
 	LastError      string           `json:"lastError,omitempty"`
-	EvaluationTime time.Duration    `json:"evaluation-time"`
-	LastEvaluation int              `json:"last-evaluation"`
+	EvaluationTime int64            `json:"evaluationTime"`
+	LastEvaluation string           `json:"lastEvaluation"`
 	// Type of a recordingRule is always "recording".
 	Type string `json:"type"`
 }
@@ -935,10 +936,11 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 	for i, grp := range ruleGroups {
 		apiRuleGroup := &RuleGroup{
-			Name:     grp.Name(),
-			File:     grp.File(),
-			Interval: grp.Interval().Seconds(),
-			Rules:    []rule{},
+			Name:           grp.Name(),
+			File:           grp.File(),
+			Interval:       grp.Interval().Seconds(),
+			Rules:          []rule{},
+			EvaluationTime: grp.GetEvaluationDuration().Microseconds(),
 		}
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
@@ -974,10 +976,11 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					Labels:         rule.Labels(),
 					Health:         rule.Health(),
 					LastError:      lastError,
-					EvaluationTime: rule.GetEvaluationDuration(),
-					LastEvaluation: rule.GetEvaluationTimestamp().Second(),
+					EvaluationTime: rule.GetEvaluationDuration().Microseconds(),
+					LastEvaluation: time.Now().Sub(rule.GetEvaluationTimestamp()).String(),
 					Type:           "recording",
 				}
+				fmt.Println(enrichedRule)
 			default:
 				err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
 				return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}

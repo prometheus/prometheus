@@ -219,3 +219,7 @@ button.execute-btn {
     margin-right: 5px;
     max-height: 20px;
 }
+
+.rules-head {
+    font-weight: 600;
+}
