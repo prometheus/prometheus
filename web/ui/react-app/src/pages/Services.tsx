@@ -3,7 +3,7 @@ import { RouteComponentProps } from '@reach/router';
 import PathPrefixProps from '../PathPrefixProps';
 import { Alert } from 'reactstrap';
 import { useFetch } from '../utils/useFetch';
-import Labels from './Labels';
+import { LabelsTable } from './LabelsTable';
 
 interface DiscoveredLabels {
   address: string;
@@ -116,7 +116,7 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
                   {' '}
                   {i + 1}. {val}{' '}
                 </span>
-                <Labels value={value} />
+                <LabelsTable value={value} />
               </div>
             );
           })}
