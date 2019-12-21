@@ -386,6 +386,10 @@ func CheckMetrics() int {
 
 // QueryInstant performs an instant query against a Prometheus server.
 func QueryInstant(url, query string, p printer) int {
+	if !strings.Contains(url, "http") {
+		url = "http://" + url
+	}
+
 	config := api.Config{
 		Address: url,
 	}
