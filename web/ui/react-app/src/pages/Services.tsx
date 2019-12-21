@@ -14,16 +14,9 @@ interface DiscoveredLabels {
   your: string;
 }
 
-interface Labels {
-  instance: string;
-  job: string;
-  my: string;
-  your: string;
-}
-
 interface ActiveTargets {
   discoveredLabels: DiscoveredLabels[];
-  labels: Labels[];
+  labels: any;
   scrapePool: string;
   scrapeUrl: string;
   lastError: string;
@@ -40,6 +33,7 @@ interface ServiceMap {
 const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const { response, error } = useFetch<ServiceMap>(`${pathPrefix}/api/v1/targets`);
   const processTargets = (response: ServiceMap) => {
+    console.warn(response);
     const activeTargets = response.activeTargets;
     const targets: any = {};
 
@@ -107,20 +101,10 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
           ))}
         </ul>
         <hr />
-        <div className="outer-layer">
-          {Object.keys(labels).map((val: any, i) => {
-            const value = labels[val];
-            return (
-              <div id={val} key={Object.keys(labels)[i]} className="label-component">
-                <span className="target-head">
-                  {' '}
-                  {i + 1}. {val}{' '}
-                </span>
-                <LabelsTable value={value} />
-              </div>
-            );
-          })}
-        </div>
+        {Object.keys(labels).map((val: any, i) => {
+          const value = labels[val];
+          return <LabelsTable value={value} name={val} key={Object.keys(labels)[i]} />;
+        })}
       </>
     );
   }

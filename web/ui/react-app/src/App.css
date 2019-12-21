@@ -217,35 +217,19 @@ div.time-input {
     font-size: large;
 }
 
-.outer-layer {
-    padding: 2%;
+.label-component {
+    margin-bottom: 1%;
 }
 
-.inner-layer {
-    background-color: #f5f5f5;
-    border: 1px solid #f1f1f1;
-    padding: 1%;
+.table-outer-layer {
+    margin: 1%;
+    margin-right: 5%;
 }
 
 .head {
     font-weight: 600;
     margin-bottom: 2%;
     border-bottom: 1px solid #DEE2E6;
-}
-
-.label-style {
-    font-weight: 600;
-    font-size: 11px;
-    color: #fff;
-    background-color: #007BFF;
-    margin: 1px;
-    padding: 1px;
-    display: table;
-}
-
-.btn-sd-style {
-    padding: 1px;
-    font-size: 10px;
 }
 
 .status-badges {

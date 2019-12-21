@@ -4,9 +4,22 @@ import { Button, Badge, Table } from 'reactstrap';
 
 interface LabelProps {
   value: Record<string, Record<string, string>>[];
+  name: string;
 }
 
-export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value }) => {
+const printLabels = (labels: Record<string, string>) => {
+  return Object.entries(labels).map(([key, value]) => {
+    return (
+      <div key={key}>
+        <Badge color="primary" className="mr-1">
+          {`${key}="${value}"`}
+        </Badge>
+      </div>
+    );
+  });
+};
+
+export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name }) => {
   const [showMore, doToggle] = useState(false);
 
   const toggleMore = () => {
@@ -14,13 +27,14 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value }) => 
   };
 
   return (
-    <>
+    <div className="label-component">
+      <span className="target-head"> {name} </span>
       <Button size="sm" color="primary" onClick={toggleMore}>
-        {showMore ? 'More' : 'Less'}
+        {showMore ? 'show more' : 'show less'}
       </Button>
       {showMore ? (
-        <Table striped={true} className="table-head">
-          <thead>
+        <Table striped={true} bordered={true}>
+          <thead className="table-outer-layer">
             <tr>
               <th>Discovered Labels</th>
               <th>Target Labels</th>
@@ -30,34 +44,14 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value }) => 
             {value.map((_, i) => {
               return (
                 <tr key={i}>
-                  <td>
-                    {Object.entries(value[i].discoveredLabels).map(([key, value], i) => {
-                      return (
-                        <div className="label-style" key={i}>
-                          <Badge color="primary" className={`mr-1 ${key}`} key={i}>
-                            {`${key}="${value}"`}
-                          </Badge>
-                        </div>
-                      );
-                    })}
-                  </td>
-                  <td>
-                    {Object.entries(value[i].labels).map(([key, value], i) => {
-                      return (
-                        <div className="label-style" key={i}>
-                          <Badge color="primary" className={`mr-1 ${key}`} key={i}>
-                            {`${key}="${value}"`}
-                          </Badge>
-                        </div>
-                      );
-                    })}
-                  </td>
+                  <td>{printLabels(value[i].discoveredLabels)}</td>
+                  <td>{printLabels(value[i].labels)}</td>
                 </tr>
               );
             })}
           </tbody>
         </Table>
       ) : null}
-    </>
+    </div>
   );
 };
