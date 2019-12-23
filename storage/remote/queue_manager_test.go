@@ -624,7 +624,6 @@ func TestCalculateDesiredShards(t *testing.T) {
 	}
 
 	ts := time.Duration(0)
-	m.startedAt = startedAt
 	for ; ts < 120*time.Second; ts += shardUpdateDuration {
 		addSamples(inputRate*int64(shardUpdateDuration/time.Second), ts)
 		m.numShards = m.calculateDesiredShards()
