@@ -3,6 +3,10 @@
 /*.yaml
 /*.yml
 *.exe
+.cache
+*.sw*
+.idea/
+.vscode
 
 /prometheus
 /promtool
