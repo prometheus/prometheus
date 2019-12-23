@@ -18,6 +18,7 @@
         "math"
         "sort"
         "strconv"
+        "time"
 
         "github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -36,6 +37,7 @@
     uint      uint64
     float     float64
     string    string
+    duration  time.Duration
 }
 
 
@@ -127,12 +129,13 @@
 
 %type <labels> label_set_list label_set metric
 %type <label> label_set_item    
-%type <strings> grouping_labels  grouping_label_list
+%type <strings> grouping_labels grouping_label_list maybe_grouping_labels
 %type <series> series_values series_item
 %type <uint> uint
 %type <float> series_value signed_number number
-%type <node>  paren_expr unary_expr binary_expr offset_expr number_literal string_literal vector_selector matrix_selector subquery_expr function_call aggregate_expr expr
+%type <node>  paren_expr unary_expr binary_expr offset_expr number_literal string_literal vector_selector matrix_selector subquery_expr function_call aggregate_expr expr bin_modifier group_modifiers bool_modifier on_or_ignoring vector_selector matrix_selector subquery_expr function_call aggregate_expr function_call_args
 %type <string> string
+%type <duration> duration maybe_duration
 
 %start start
 
@@ -220,26 +223,56 @@ binary_expr     :
                         { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) } 
                 ;
 
-binop_modifiers :
-                bool_modifier on_or_ignoring group_modifier
+// Using left recursion for the modifier rules, helps to keep the parser stack small and 
+// reduces allocations
+
+bin_modifier    :
+                group_modifiers
+                ;
 
 bool_modifier   :
-                / * empty */
-                BOOL
+                /* empty */
+                        { $$ = &VectorMatching{} }
+                | BOOL
+                        { $$ = &VectorMatching{ReturnBool: true} }
                 ;
 
 on_or_ignoring  :
-                /* empty */
-                | IGNORING grouping_labels
-                | ON grouping_labels
+                bool_modifier /* empty */
+                | bool_modifier IGNORING grouping_labels
+                        {
+                        $$ = $1
+                        $$.MatchingLabels = $2
+                        } 
+                | bool_modifier ON grouping_labels
+                        {
+                        $$ = $1
+                        $$.MatchingLabels = $2
+                        $$.On = true
+                        } 
                 ;
 
-group_modifier  :
-                /* empty */
-                | GROUP_LEFT grouping_labels
-                | GROUP_RIGHT grouping_labels
+group_modifiers:
+                on_or_ignoring /* empty */
+                | on_or_ignoring GROUP_LEFT maybe_grouping_labels
+                        {
+                        $$ = $1
+                        $$.Card = CardManyToOne
+                        $$.Include = $3
+                        }
+                | on_or_ignoring GROUP_RIGHT maybe_grouping_labels
+                        {
+                        $$ = $1
+                        $$.Card = CardOneToMany
+                        $$.Include = $3
+                        }
                 ;
 
+maybe_grouping_labels:
+                /* empty */
+                        { $$ = nil }
+                | grouping_labels
+                ;
 
 paren_expr      : LEFT_PAREN expr RIGHT_PAREN
                         { $$ = &ParenExpr{Expr: $2} }
@@ -408,6 +441,111 @@ maybe_label     :
                 | GROUP_LEFT
                 | GROUP_RIGHT
                 | BOOL
+                ;
+
+offset_expr:
+            expr OFFSET DURATION
+                    {
+                    offset = parseDuration($3.Val)
+                    yylex.(*parser).addOffset($1, offset)
+                    $$ = $1
+                    }
+            ;
+
+vector_selector:
+                metric_identifier label_matchers
+                        { $$ = &VectorSelector{Name: $1, LabelMatchers:$2} }
+                | metric_identifier 
+                        { $$ = &VectorSelector{Name: $1} }
+                | label_matchers
+                        { $$ = &VectorSelector{LabelMatchers:$1} }
+                ;
+
+matrix_selector :
+                vector_selector LEFT_BRACKET duration RIGHT_BRACKET
+                        {
+                        $$ = $1
+                        $$.Range = $3 
+                        }
+                ;
+
+subquery_expr   :
+                expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
+                        {
+                        $$ = &SubqueryExpr{
+                                Expr:  $1,
+                                Range: $3,
+                                Step:  $5,
+                        }
+                        }
+                ;
+                        
+
+maybe_duration  :
+                /* empty */
+                        {$$ = 0}
+                | duration
+                ;
+
+duration        :
+                DURATION
+                        {
+                        $$, err := parseDuration($1)
+                        if err != nil {
+                                yylex.(*parser).error(err)
+                        }
+                        }
+                ;
+                
+function_call   :
+                IDENTIFIER LEFT_PAREN function_call_args RIGHT_PAREN
+                        {
+                        $$ = newCall($1, $3)
+                        }
+                ;
+
+function_call_args:
+                function_call_args COMMA expr
+                        { $$ = append($1, $3}
+                | expr
+                        { $$ = Expressions{$1}}
+                ;
+
+// TODO param support
+// Consider unifying calls and aggregate expressions
+aggregate_expr  :
+                aggregate_op aggregate_modifier expr
+                        {
+                        $$ = $2
+                        $$.Op = $1.Typ
+                        $$.Expr = $3
+                        }
+                | aggregate_op expr aggregate_modifier
+                        {
+                        $$ = $3
+                        $$.Op = $1.Typ
+                        $$.Expr = $2
+                        }
+                | aggregate_op expr
+                ;
+
+aggregate_op    :
+                AVG
+                | COUNT
+                | SUM
+                | MIN
+                | MAX
+                | STDDEV
+                | STDVAR
+                | TOPK
+                | BOTTOMK
+                | COUNT_VALUES
+                | QUANTILE
+                ;
+
+aggregate_modifier:
+                BY grouping_labels
+                | WITHOUT grouping_labels
                 ;
 
 series_description:

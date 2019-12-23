@@ -987,3 +987,16 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 
 	return m
 }
+
+func (p *parser) addOffset(e Node, offset time.Duration) {
+	switch s := e.(type) {
+	case *VectorSelector:
+		s.Offset = offset
+	case *MatrixSelector:
+		s.Offset = offset
+	case *SubqueryExpr:
+		s.Offset = offset
+	default:
+		p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
+	}
+}
