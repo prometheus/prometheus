@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -644,7 +645,7 @@ func TestBaseChunkSeries(t *testing.T) {
 
 		i := 0
 		for bcs.Next() {
-			lset, chks, _ := bcs.At()
+			lset, chks, _, _ := bcs.At()
 
 			idx := tc.expIdxs[i]
 
@@ -663,8 +664,9 @@ type itSeries struct {
 	si SeriesIterator
 }
 
-func (s itSeries) Iterator() SeriesIterator { return s.si }
-func (s itSeries) Labels() labels.Labels    { return labels.Labels{} }
+func (s itSeries) Iterator() SeriesIterator       { return s.si }
+func (s itSeries) Labels() labels.Labels          { return labels.Labels{} }
+func (s itSeries) Exemplars() []exemplar.Exemplar { return nil }
 
 func TestSeriesIterator(t *testing.T) {
 	itcases := []struct {
@@ -1161,8 +1163,8 @@ func (m *mockChunkSeriesSet) Next() bool {
 	return m.i < len(m.l)
 }
 
-func (m *mockChunkSeriesSet) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
-	return m.l[m.i], m.cm[m.i], nil
+func (m *mockChunkSeriesSet) At() (labels.Labels, []chunks.Meta, tombstones.Intervals, []exemplar.Exemplar) {
+	return m.l[m.i], m.cm[m.i], nil, nil
 }
 
 func (m *mockChunkSeriesSet) Err() error {
@@ -1402,7 +1404,7 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta, exemplars *[]exemplar.Exemplar) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return ErrNotFound
@@ -1423,8 +1425,9 @@ func (m mockIndex) LabelNames() ([]string, error) {
 }
 
 type mockSeries struct {
-	labels   func() labels.Labels
-	iterator func() SeriesIterator
+	labels    func() labels.Labels
+	iterator  func() SeriesIterator
+	exemplars func() []exemplar.Exemplar
 }
 
 func newSeries(l map[string]string, s []tsdbutil.Sample) Series {
@@ -1433,8 +1436,9 @@ func newSeries(l map[string]string, s []tsdbutil.Sample) Series {
 		iterator: func() SeriesIterator { return newListSeriesIterator(s) },
 	}
 }
-func (m *mockSeries) Labels() labels.Labels    { return m.labels() }
-func (m *mockSeries) Iterator() SeriesIterator { return m.iterator() }
+func (m *mockSeries) Labels() labels.Labels          { return m.labels() }
+func (m *mockSeries) Iterator() SeriesIterator       { return m.iterator() }
+func (m *mockSeries) Exemplars() []exemplar.Exemplar { return m.exemplars() }
 
 type listSeriesIterator struct {
 	list []tsdbutil.Sample
@@ -1466,6 +1470,10 @@ func (it *listSeriesIterator) Seek(t int64) bool {
 	})
 
 	return it.idx < len(it.list)
+}
+
+func (it *listSeriesIterator) Exemplars() []exemplar.Exemplar {
+	return nil
 }
 
 func (it *listSeriesIterator) Err() error {
@@ -2059,7 +2067,7 @@ func TestPostingsForMatchers(t *testing.T) {
 
 		for p.Next() {
 			lbls := labels.Labels{}
-			testutil.Ok(t, ir.Series(p.At(), &lbls, &[]chunks.Meta{}))
+			testutil.Ok(t, ir.Series(p.At(), &lbls, &[]chunks.Meta{}, nil))
 			if _, ok := exp[lbls.String()]; !ok {
 				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
 			} else {
@@ -2220,4 +2228,38 @@ func benchQuery(b *testing.B, expExpansions int, q Querier, selectors labels.Sel
 		testutil.Equals(b, expExpansions, actualExpansions)
 		testutil.Ok(b, ss.Err())
 	}
+}
+
+func TestReadExemplarsFromHead(t *testing.T) {
+	h, err := NewHead(nil, nil, nil, 1000)
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
+
+	app := h.Appender()
+	app.Add(labels.FromStrings("n", "1"), 0, 0)
+	app.Add(labels.FromStrings("n", "1", "i", "a"), 0, 0)
+	app.Add(labels.FromStrings("n", "1", "i", "b"), 0, 0)
+	app.Add(labels.FromStrings("n", "2"), 0, 0)
+	app.Add(labels.FromStrings("n", "2.5"), 0, 0)
+	testutil.Ok(t, app.Commit())
+
+	testutil.Ok(t, app.AddExemplar(labels.FromStrings("n", "1"), 0, exemplar.Exemplar{Labels: labels.FromStrings("traceId", "asdf")}))
+	testutil.Ok(t, app.AddExemplar(labels.FromStrings("n", "1", "i", "a"), 0, exemplar.Exemplar{Labels: labels.FromStrings("traceId", "qwerty")}))
+
+	q, err := NewBlockQuerier(&rangeHead{
+		head: h,
+		mint: h.MinTime(),
+		maxt: h.MaxTime(),
+	}, math.MinInt64, math.MaxInt64)
+
+	m := labels.Matcher{
+		Type:  labels.MatchEqual,
+		Name:  "n",
+		Value: "1",
+	}
+	exemplars, err := q.Exemplars(&m)
+	testutil.Ok(t, err)
+	testutil.Assert(t, len(exemplars) == 2, "not enough exemplars found: found %d", len(exemplars))
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -78,7 +79,7 @@ type IndexReader interface {
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
 	// Returns ErrNotFound if the ref does not resolve to a known series.
-	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
+	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta, exemplars *[]exemplar.Exemplar) error
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames() ([]string, error)
@@ -450,8 +451,8 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return r.ir.SortedPostings(p)
 }
 
-func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
-	if err := r.ir.Series(ref, lset, chks); err != nil {
+func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta, _ *[]exemplar.Exemplar) error {
+	if err := r.ir.Series(ref, lset, chks, nil); err != nil {
 		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 	return nil
@@ -510,7 +511,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 
 Outer:
 	for p.Next() {
-		err := ir.Series(p.At(), &lset, &chks)
+		err := ir.Series(p.At(), &lset, &chks, nil)
 		if err != nil {
 			return err
 		}

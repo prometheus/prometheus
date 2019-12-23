@@ -34,6 +34,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -114,6 +115,8 @@ type Appender interface {
 
 	// Rollback rolls back all modifications made in the appender so far.
 	Rollback() error
+
+	AddExemplar(l labels.Labels, t int64, e exemplar.Exemplar) error
 }
 
 // DB handles reads and writes of time series falling into

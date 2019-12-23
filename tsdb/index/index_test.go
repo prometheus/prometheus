@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -198,11 +199,13 @@ func TestIndexRW_Postings(t *testing.T) {
 	p, err := ir.Postings("a", "1")
 	testutil.Ok(t, err)
 
-	var l labels.Labels
-	var c []chunks.Meta
-
+	var (
+		l         labels.Labels
+		c         []chunks.Meta
+		exemplars []exemplar.Exemplar
+	)
 	for i := 0; p.Next(); i++ {
-		err := ir.Series(p.At(), &l, &c)
+		err := ir.Series(p.At(), &l, &c, &exemplars)
 
 		testutil.Ok(t, err)
 		testutil.Equals(t, 0, len(c))
@@ -317,10 +320,13 @@ func TestPostingsMany(t *testing.T) {
 		testutil.Ok(t, err)
 
 		got := []string{}
-		var lbls labels.Labels
-		var metas []chunks.Meta
+		var (
+			lbls      labels.Labels
+			metas     []chunks.Meta
+			exemplars []exemplar.Exemplar
+		)
 		for it.Next() {
-			testutil.Ok(t, ir.Series(it.At(), &lbls, &metas))
+			testutil.Ok(t, ir.Series(it.At(), &lbls, &metas, &exemplars))
 			got = append(got, lbls.Get("i"))
 		}
 		testutil.Ok(t, it.Err())
@@ -425,15 +431,18 @@ func TestPersistence_index_e2e(t *testing.T) {
 		expp, err := mi.Postings(p.Name, p.Value)
 		testutil.Ok(t, err)
 
-		var lset, explset labels.Labels
-		var chks, expchks []chunks.Meta
+		var (
+			lset, explset labels.Labels
+			chks, expchks []chunks.Meta
+			exemplars     []exemplar.Exemplar
+		)
 
 		for gotp.Next() {
 			testutil.Assert(t, expp.Next() == true, "")
 
 			ref := gotp.At()
 
-			err := ir.Series(ref, &lset, &chks)
+			err := ir.Series(ref, &lset, &chks, &exemplars)
 			testutil.Ok(t, err)
 
 			err = mi.Series(expp.At(), &explset, &expchks)

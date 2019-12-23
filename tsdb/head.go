@@ -28,6 +28,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -755,6 +756,7 @@ func (h *Head) initTime(t int64) (initialized bool) {
 	return true
 }
 
+// implements BlockReader
 type rangeHead struct {
 	head       *Head
 	mint, maxt int64
@@ -831,6 +833,13 @@ func (a *initAppender) Rollback() error {
 		return nil
 	}
 	return a.app.Rollback()
+}
+
+func (a *initAppender) AddExemplar(l labels.Labels, t int64, e exemplar.Exemplar) error {
+	if a.app == nil {
+		return nil
+	}
+	return a.app.AddExemplar(l, t, e)
 }
 
 // Appender returns a new Appender on the database.
@@ -1043,6 +1052,22 @@ func (a *headAppender) Rollback() error {
 	// to log them to the WAL in any case.
 	a.samples = nil
 	return a.log()
+}
+
+func (a *headAppender) AddExemplar(l labels.Labels, t int64, e exemplar.Exemplar) error {
+	if t < a.minValidTime {
+		return ErrOutOfBounds
+	}
+
+	// Ensure no empty labels have gotten through.
+	l = l.WithoutEmpty()
+
+	s, _ := a.head.getOrCreate(l.Hash(), l)
+	success := s.appendExemplar(t, e)
+	if !success {
+		return errors.Errorf("failed to append exemplar: %+v", e)
+	}
+	return nil
 }
 
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given
@@ -1422,7 +1447,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 }
 
 // Series returns the series for the given reference.
-func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
+func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks.Meta, exemplars *[]exemplar.Exemplar) error {
 	s := h.head.series.getByID(ref)
 
 	if s == nil {
@@ -1435,6 +1460,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 	defer s.Unlock()
 
 	*chks = (*chks)[:0]
+	*exemplars = (*exemplars)[:0]
 
 	for i, c := range s.chunks {
 		// Do not expose chunks that are outside of the specified range.
@@ -1452,7 +1478,9 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 			MaxTime: maxTime,
 			Ref:     packChunkID(s.ref, uint64(s.chunkID(i))),
 		})
+
 	}
+	*exemplars = append(*exemplars, s.exemplars...)
 
 	return nil
 }
@@ -1690,6 +1718,7 @@ type memSeries struct {
 	lset         labels.Labels
 	chunks       []*memChunk
 	headChunk    *memChunk
+	exemplars    []exemplar.Exemplar
 	chunkRange   int64
 	firstChunkID int
 
@@ -1859,6 +1888,22 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	s.sampleBuf[3] = sample{t: t, v: v}
 
 	return true, chunkCreated
+}
+
+func (s *memSeries) appendExemplar(t int64, e exemplar.Exemplar) bool {
+	c := s.head()
+
+	// Out of order exemplar. We may not need to do this, as wherever head.append is called from
+	// we can check if that succeeded, and if not don't attempt to append the exemplar.
+	// if c.maxTime > t {
+	// 	fmt.Printf("ts: %d max time: %d\n", t, c.maxTime)
+	// 	return false
+	// }
+
+	s.exemplars = append(s.exemplars, e)
+	c.maxTime = t
+
+	return true
 }
 
 // computeChunkEndTime estimates the end timestamp based the beginning of a chunk,

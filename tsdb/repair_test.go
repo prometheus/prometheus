@@ -82,7 +82,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 		t.Logf("next ID %d", p.At())
 
 		var lset labels.Labels
-		testutil.NotOk(t, r.Series(p.At(), &lset, nil))
+		testutil.NotOk(t, r.Series(p.At(), &lset, nil, nil))
 	}
 	testutil.Ok(t, p.Err())
 	testutil.Ok(t, r.Close())
@@ -111,7 +111,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 		var lset labels.Labels
 		var chks []chunks.Meta
-		testutil.Ok(t, r.Series(p.At(), &lset, &chks))
+		testutil.Ok(t, r.Series(p.At(), &lset, &chks, nil))
 		res = append(res, lset)
 	}
 

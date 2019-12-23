@@ -29,6 +29,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -740,7 +741,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		default:
 		}
 
-		lset, chks, dranges := set.At() // The chunks here are not fully deleted.
+		lset, chks, dranges, _ := set.At() // The chunks here are not fully deleted.
 		if overlapping {
 			// If blocks are overlapping, it is possible to have unsorted chunks.
 			sort.Slice(chks, func(i, j int) bool {
@@ -874,7 +875,7 @@ func (c *compactionSeriesSet) Next() bool {
 		return false
 	}
 
-	if err = c.index.Series(c.p.At(), &c.l, &c.c); err != nil {
+	if err = c.index.Series(c.p.At(), &c.l, &c.c, nil); err != nil {
 		c.err = errors.Wrapf(err, "get series %d", c.p.At())
 		return false
 	}
@@ -911,8 +912,8 @@ func (c *compactionSeriesSet) Err() error {
 	return c.p.Err()
 }
 
-func (c *compactionSeriesSet) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
-	return c.l, c.c, c.intervals
+func (c *compactionSeriesSet) At() (labels.Labels, []chunks.Meta, tombstones.Intervals, []exemplar.Exemplar) {
+	return c.l, c.c, c.intervals, nil
 }
 
 type compactionMerger struct {
@@ -944,8 +945,8 @@ func (c *compactionMerger) compare() int {
 	if !c.bok {
 		return -1
 	}
-	a, _, _ := c.a.At()
-	b, _, _ := c.b.At()
+	a, _, _, _ := c.a.At()
+	b, _, _, _ := c.b.At()
 	return labels.Compare(a, b)
 }
 
@@ -960,21 +961,21 @@ func (c *compactionMerger) Next() bool {
 
 	d := c.compare()
 	if d > 0 {
-		lset, chks, c.intervals = c.b.At()
+		lset, chks, c.intervals, _ = c.b.At()
 		c.l = append(c.l[:0], lset...)
 		c.c = append(c.c[:0], chks...)
 
 		c.bok = c.b.Next()
 	} else if d < 0 {
-		lset, chks, c.intervals = c.a.At()
+		lset, chks, c.intervals, _ = c.a.At()
 		c.l = append(c.l[:0], lset...)
 		c.c = append(c.c[:0], chks...)
 
 		c.aok = c.a.Next()
 	} else {
 		// Both sets contain the current series. Chain them into a single one.
-		l, ca, ra := c.a.At()
-		_, cb, rb := c.b.At()
+		l, ca, ra, _ := c.a.At()
+		_, cb, rb, _ := c.b.At()
 
 		for _, r := range rb {
 			ra = ra.Add(r)
@@ -998,8 +999,8 @@ func (c *compactionMerger) Err() error {
 	return c.b.Err()
 }
 
-func (c *compactionMerger) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
-	return c.l, c.c, c.intervals
+func (c *compactionMerger) At() (labels.Labels, []chunks.Meta, tombstones.Intervals, []exemplar.Exemplar) {
+	return c.l, c.c, c.intervals, nil
 }
 
 func newMergedStringIter(a index.StringIter, b index.StringIter) index.StringIter {

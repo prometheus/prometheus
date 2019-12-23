@@ -1433,7 +1433,7 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 		chunkCount := 0
 
 		for p.Next() {
-			err = r.Series(p.At(), &lset, &chks)
+			err = r.Series(p.At(), &lset, &chks, nil)
 			testutil.Ok(t, err)
 			for _, c := range chks {
 				testutil.Assert(t, meta.MinTime <= c.MinTime && c.MaxTime <= meta.MaxTime,

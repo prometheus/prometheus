@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -41,6 +42,8 @@ type Querier interface {
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	LabelNames() ([]string, error)
 
+	Exemplars(...*labels.Matcher) ([][]exemplar.Exemplar, error)
+
 	// Close releases the resources of the Querier.
 	Close() error
 }
@@ -52,6 +55,9 @@ type Series interface {
 
 	// Iterator returns a new iterator of the data of the series.
 	Iterator() SeriesIterator
+
+	// Exemplars returns exemplars for the series.
+	Exemplars() []exemplar.Exemplar
 }
 
 // querier aggregates querying results from time blocks within
@@ -123,6 +129,19 @@ func (q *querier) Select(ms ...*labels.Matcher) (SeriesSet, error) {
 	return NewMergedSeriesSet(ss), nil
 }
 
+func (q *querier) Exemplars(ms ...*labels.Matcher) ([][]exemplar.Exemplar, error) {
+	var exemplars [][]exemplar.Exemplar
+	ss, err := q.Select(ms...)
+	if err != nil {
+		return nil, err
+	}
+	// ss = ss.(baseChunkSeries)
+	for ss.Next() {
+		exemplars = append(exemplars, ss.At().Exemplars())
+	}
+	return exemplars, nil
+}
+
 func (q *querier) Close() error {
 	var merr tsdb_errors.MultiError
 
@@ -160,6 +179,11 @@ func (q *verticalQuerier) sel(qs []Querier, ms []*labels.Matcher) (SeriesSet, er
 		return nil, err
 	}
 	return newMergedVerticalSeriesSet(a, b), nil
+}
+
+// Exemplars is a no-op for vertialQuerier.
+func (q *verticalQuerier) Exemplars(...*labels.Matcher) ([][]exemplar.Exemplar, error) {
+	return nil, nil
 }
 
 // NewBlockQuerier returns a querier against the reader.
@@ -240,6 +264,20 @@ func (q *blockQuerier) LabelNames() ([]string, error) {
 
 func (q *blockQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (q *blockQuerier) Exemplars(ms ...*labels.Matcher) ([][]exemplar.Exemplar, error) {
+	var exemplars [][]exemplar.Exemplar
+	ss, err := q.Select(ms...)
+	if err != nil {
+		return nil, err
+	}
+	for ss.Next() {
+		if len(ss.At().Exemplars()) > 0 {
+			exemplars = append(exemplars, ss.At().Exemplars())
+		}
+	}
+	return exemplars, nil
 }
 
 func (q *blockQuerier) Close() error {
@@ -691,7 +729,7 @@ func (s *mergedVerticalSeriesSet) Next() bool {
 // actual series itself.
 type ChunkSeriesSet interface {
 	Next() bool
-	At() (labels.Labels, []chunks.Meta, tombstones.Intervals)
+	At() (labels.Labels, []chunks.Meta, tombstones.Intervals, []exemplar.Exemplar)
 	Err() error
 }
 
@@ -705,6 +743,7 @@ type baseChunkSeries struct {
 	lset      labels.Labels
 	chks      []chunks.Meta
 	intervals tombstones.Intervals
+	exemplars []exemplar.Exemplar
 	err       error
 }
 
@@ -725,22 +764,24 @@ func LookupChunkSeries(ir IndexReader, tr tombstones.Reader, ms ...*labels.Match
 	}, nil
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
-	return s.lset, s.chks, s.intervals
+func (s *baseChunkSeries) At() (labels.Labels, []chunks.Meta, tombstones.Intervals, []exemplar.Exemplar) {
+	return s.lset, s.chks, s.intervals, s.exemplars
 }
 
 func (s *baseChunkSeries) Err() error { return s.err }
 
 func (s *baseChunkSeries) Next() bool {
 	var (
-		lset     = make(labels.Labels, len(s.lset))
-		chkMetas = make([]chunks.Meta, len(s.chks))
-		err      error
+		lset      = make(labels.Labels, len(s.lset))
+		chkMetas  = make([]chunks.Meta, len(s.chks))
+		exemplars = make([]exemplar.Exemplar, len(s.exemplars))
+		err       error
 	)
 
 	for s.p.Next() {
+		s.exemplars = nil
 		ref := s.p.At()
-		if err := s.index.Series(ref, &lset, &chkMetas); err != nil {
+		if err := s.index.Series(ref, &lset, &chkMetas, &exemplars); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.
 			if errors.Cause(err) == ErrNotFound {
 				continue
@@ -751,6 +792,10 @@ func (s *baseChunkSeries) Next() bool {
 
 		s.lset = lset
 		s.chks = chkMetas
+		if len(exemplars) > 0 {
+			s.exemplars = exemplars
+		}
+
 		s.intervals, err = s.tombstones.Get(s.p.At())
 		if err != nil {
 			s.err = errors.Wrap(err, "get tombstones")
@@ -783,6 +828,7 @@ func (s *baseChunkSeries) Next() bool {
 type populatedChunkSeries struct {
 	set        ChunkSeriesSet
 	chunks     ChunkReader
+	exemplars  []exemplar.Exemplar
 	mint, maxt int64
 
 	err       error
@@ -791,15 +837,15 @@ type populatedChunkSeries struct {
 	intervals tombstones.Intervals
 }
 
-func (s *populatedChunkSeries) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
-	return s.lset, s.chks, s.intervals
+func (s *populatedChunkSeries) At() (labels.Labels, []chunks.Meta, tombstones.Intervals, []exemplar.Exemplar) {
+	return s.lset, s.chks, s.intervals, s.exemplars
 }
 
 func (s *populatedChunkSeries) Err() error { return s.err }
 
 func (s *populatedChunkSeries) Next() bool {
 	for s.set.Next() {
-		lset, chks, dranges := s.set.At()
+		lset, chks, dranges, exemplars := s.set.At()
 
 		for len(chks) > 0 {
 			if chks[0].MaxTime >= s.mint {
@@ -838,6 +884,7 @@ func (s *populatedChunkSeries) Next() bool {
 		s.lset = lset
 		s.chks = chks
 		s.intervals = dranges
+		s.exemplars = exemplars
 
 		return true
 	}
@@ -858,12 +905,13 @@ type blockSeriesSet struct {
 
 func (s *blockSeriesSet) Next() bool {
 	for s.set.Next() {
-		lset, chunks, dranges := s.set.At()
+		lset, chunks, dranges, exemplars := s.set.At()
 		s.cur = &chunkSeries{
-			labels: lset,
-			chunks: chunks,
-			mint:   s.mint,
-			maxt:   s.maxt,
+			labels:    lset,
+			chunks:    chunks,
+			exemplars: exemplars,
+			mint:      s.mint,
+			maxt:      s.maxt,
 
 			intervals: dranges,
 		}
@@ -881,8 +929,9 @@ func (s *blockSeriesSet) Err() error { return s.err }
 // chunkSeries is a series that is backed by a sequence of chunks holding
 // time series data.
 type chunkSeries struct {
-	labels labels.Labels
-	chunks []chunks.Meta // in-order chunk refs
+	labels    labels.Labels
+	chunks    []chunks.Meta // in-order chunk refs
+	exemplars []exemplar.Exemplar
 
 	mint, maxt int64
 
@@ -895,6 +944,10 @@ func (s *chunkSeries) Labels() labels.Labels {
 
 func (s *chunkSeries) Iterator() SeriesIterator {
 	return newChunkSeriesIterator(s.chunks, s.intervals, s.mint, s.maxt)
+}
+
+func (s *chunkSeries) Exemplars() []exemplar.Exemplar {
+	return s.exemplars
 }
 
 // SeriesIterator iterates over the data of a time series.
@@ -923,6 +976,10 @@ func (s *chainedSeries) Labels() labels.Labels {
 
 func (s *chainedSeries) Iterator() SeriesIterator {
 	return newChainedSeriesIterator(s.series...)
+}
+
+func (s *chainedSeries) Exemplars() []exemplar.Exemplar {
+	return nil
 }
 
 // chainedSeriesIterator implements a series iterator over a list
@@ -994,6 +1051,10 @@ func (s *verticalChainedSeries) Labels() labels.Labels {
 
 func (s *verticalChainedSeries) Iterator() SeriesIterator {
 	return newVerticalMergeSeriesIterator(s.series...)
+}
+
+func (s *verticalChainedSeries) Exemplars() []exemplar.Exemplar {
+	return nil
 }
 
 // verticalMergeSeriesIterator implements a series iterator over a list

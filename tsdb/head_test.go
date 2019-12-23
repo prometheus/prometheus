@@ -27,6 +27,7 @@ import (
 
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -528,7 +529,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 					// Getting the actual samples.
 					actSamples := make([]sample, 0)
 					for css.Next() {
-						lblsAct, chkMetas, intv := css.At()
+						lblsAct, chkMetas, intv, _ := css.At()
 						testutil.Equals(t, labels.Labels{lblDefault}, lblsAct)
 						testutil.Equals(t, 0, len(intv))
 
@@ -974,6 +975,84 @@ func TestMemSeries_append(t *testing.T) {
 	}
 }
 
+func TestMemSeries_appendExemplar(t *testing.T) {
+	s := newMemSeries(labels.Labels{}, 1, 500)
+
+	firstSample := sample{
+		998,
+		1,
+	}
+	firstExemplar := exemplar.Exemplar{
+		Labels: labels.Labels{
+			labels.Label{
+				Name:  "traceID",
+				Value: "qwerty",
+			},
+		},
+		Value: 0.1,
+		HasTs: false,
+	}
+	secondSample := sample{
+		999,
+		1,
+	}
+	secondExemplar := exemplar.Exemplar{
+		Labels: labels.Labels{
+			labels.Label{
+				Name:  "traceID",
+				Value: "asdf",
+			},
+		},
+		Value: 0.5,
+		HasTs: false,
+	}
+
+	// Add first two samples at the very end of a chunk range and the next two
+	// on and after it.
+	// New chunk must correctly be cut at 1000.
+	ok, chunkCreated := s.append(firstSample.T(), firstSample.V())
+	testutil.Assert(t, ok, "append failed")
+	testutil.Assert(t, chunkCreated, "first sample created chunk")
+
+	ok = s.appendExemplar(firstSample.T()-1, firstExemplar)
+	testutil.Assert(t, !ok, "appendExemplar should have failed, timestamp was before minTime")
+
+	ok = s.appendExemplar(firstSample.T(), firstExemplar)
+	testutil.Assert(t, ok, "appendExemplar failed for ts 998")
+
+	ok, chunkCreated = s.append(secondSample.T(), secondSample.V())
+	testutil.Assert(t, ok, "append failed")
+	testutil.Assert(t, !chunkCreated, "second sample should use same chunk")
+
+	ok = s.appendExemplar(secondSample.T(), secondExemplar)
+	testutil.Assert(t, ok, "appendExemplar failed for ts 999")
+
+	// ok, chunkCreated = s.append(1000, 3)
+	// testutil.Assert(t, ok, "append failed")
+	// testutil.Assert(t, chunkCreated, "expected new chunk on boundary")
+
+	// ok, chunkCreated = s.append(1001, 4)
+	// testutil.Assert(t, ok, "append failed")
+	// testutil.Assert(t, !chunkCreated, "second sample should use same chunk")
+
+	// testutil.Assert(t, s.chunks[0].minTime == 998 && s.chunks[0].maxTime == 999, "wrong chunk range")
+	// testutil.Assert(t, s.chunks[1].minTime == 1000 && s.chunks[1].maxTime == 1001, "wrong chunk range")
+
+	// // Fill the range [1000,2000) with many samples. Intermediate chunks should be cut
+	// // at approximately 120 samples per chunk.
+	// for i := 1; i < 1000; i++ {
+	// 	ok, _ := s.append(1001+int64(i), float64(i))
+	// 	testutil.Assert(t, ok, "append failed")
+	// }
+
+	// testutil.Assert(t, len(s.chunks) > 7, "expected intermediate chunks")
+
+	// // All chunks but the first and last should now be moderately full.
+	// for i, c := range s.chunks[1 : len(s.chunks)-1] {
+	// 	testutil.Assert(t, c.chunk.NumSamples() > 100, "unexpected small chunk %d of length %d", i, c.chunk.NumSamples())
+	// }
+}
+
 func TestGCChunkAccess(t *testing.T) {
 	// Put a chunk, select it. GC it and then access it.
 	h, err := NewHead(nil, nil, nil, 1000)
@@ -990,10 +1069,11 @@ func TestGCChunkAccess(t *testing.T) {
 
 	idx := h.indexRange(0, 1500)
 	var (
-		lset   labels.Labels
-		chunks []chunks.Meta
+		lset      labels.Labels
+		chunks    []chunks.Meta
+		exemplars []exemplar.Exemplar
 	)
-	testutil.Ok(t, idx.Series(1, &lset, &chunks))
+	testutil.Ok(t, idx.Series(1, &lset, &chunks, &exemplars))
 
 	testutil.Equals(t, labels.Labels{{
 		Name: "a", Value: "1",
@@ -1030,10 +1110,11 @@ func TestGCSeriesAccess(t *testing.T) {
 
 	idx := h.indexRange(0, 2000)
 	var (
-		lset   labels.Labels
-		chunks []chunks.Meta
+		lset      labels.Labels
+		chunks    []chunks.Meta
+		exemplars []exemplar.Exemplar
 	)
-	testutil.Ok(t, idx.Series(1, &lset, &chunks))
+	testutil.Ok(t, idx.Series(1, &lset, &chunks, &exemplars))
 
 	testutil.Equals(t, labels.Labels{{
 		Name: "a", Value: "1",
