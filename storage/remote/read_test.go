@@ -15,14 +15,97 @@ package remote
 
 import (
 	"context"
+	"io/ioutil"
+	"net/url"
+	"os"
 	"reflect"
 	"sort"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestNoDuplicateReadConfigs(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestNoDuplicateReadConfigs")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	cfg1 := config.RemoteReadConfig{
+		Name: "write-1",
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+	}
+	cfg2 := config.RemoteReadConfig{
+		Name: "write-2",
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+	}
+	cfg3 := config.RemoteReadConfig{
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+	}
+
+	type testcase struct {
+		cfgs []*config.RemoteReadConfig
+		err  bool
+	}
+
+	cases := []testcase{
+		{ // Duplicates but with different names, we should not get an error.
+			cfgs: []*config.RemoteReadConfig{
+				&cfg1,
+				&cfg2,
+			},
+			err: false,
+		},
+		{ // Duplicates but one with no name, we should not get an error.
+			cfgs: []*config.RemoteReadConfig{
+				&cfg1,
+				&cfg3,
+			},
+			err: false,
+		},
+		{ // Duplicates both with no name, we should get an error.
+			cfgs: []*config.RemoteReadConfig{
+				&cfg3,
+				&cfg3,
+			},
+			err: true,
+		},
+	}
+
+	for _, tc := range cases {
+		s := NewStorage(nil, prometheus.DefaultRegisterer, nil, dir, defaultFlushDeadline)
+		conf := &config.Config{
+			GlobalConfig:      config.DefaultGlobalConfig,
+			RemoteReadConfigs: tc.cfgs,
+		}
+		err := s.ApplyConfig(conf)
+		gotError := err != nil
+		testutil.Equals(t, tc.err, gotError)
+
+		err = s.Close()
+		testutil.Ok(t, err)
+	}
+}
 
 func TestExternalLabelsQuerierSelect(t *testing.T) {
 	matchers := []*labels.Matcher{

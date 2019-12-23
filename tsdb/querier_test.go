@@ -1316,8 +1316,13 @@ func newMockIndex() mockIndex {
 	return ix
 }
 
-func (m mockIndex) Symbols() (map[string]struct{}, error) {
-	return m.symbols, nil
+func (m mockIndex) Symbols() index.StringIter {
+	l := []string{}
+	for s := range m.symbols {
+		l = append(l, s)
+	}
+	sort.Strings(l)
+	return index.NewStringListIter(l)
 }
 
 func (m *mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
@@ -1376,9 +1381,13 @@ func (m mockIndex) LabelValues(names ...string) (index.StringTuples, error) {
 	return index.NewStringTuples(m.labelIndex[names[0]], 1)
 }
 
-func (m mockIndex) Postings(name, value string) (index.Postings, error) {
-	l := labels.Label{Name: name, Value: value}
-	return index.NewListPostings(m.postings[l]), nil
+func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {
+	res := make([]index.Postings, 0, len(values))
+	for _, value := range values {
+		l := labels.Label{Name: name, Value: value}
+		res = append(res, index.NewListPostings(m.postings[l]))
+	}
+	return index.Merge(res...), nil
 }
 
 func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
@@ -1402,14 +1411,6 @@ func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) 
 	*chks = append((*chks)[:0], s.chunks...)
 
 	return nil
-}
-
-func (m mockIndex) LabelIndices() ([][]string, error) {
-	res := make([][]string, 0, len(m.labelIndex))
-	for k := range m.labelIndex {
-		res = append(res, []string{k})
-	}
-	return res, nil
 }
 
 func (m mockIndex) LabelNames() ([]string, error) {

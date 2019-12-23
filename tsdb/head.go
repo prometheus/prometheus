@@ -1339,16 +1339,17 @@ func (h *headIndexReader) Close() error {
 	return nil
 }
 
-func (h *headIndexReader) Symbols() (map[string]struct{}, error) {
+func (h *headIndexReader) Symbols() index.StringIter {
 	h.head.symMtx.RLock()
-	defer h.head.symMtx.RUnlock()
-
-	res := make(map[string]struct{}, len(h.head.symbols))
+	res := make([]string, 0, len(h.head.symbols))
 
 	for s := range h.head.symbols {
-		res[s] = struct{}{}
+		res = append(res, s)
 	}
-	return res, nil
+	h.head.symMtx.RUnlock()
+
+	sort.Strings(res)
+	return index.NewStringListIter(res)
 }
 
 // LabelValues returns the possible label values
@@ -1383,9 +1384,13 @@ func (h *headIndexReader) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-// Postings returns the postings list iterator for the label pair.
-func (h *headIndexReader) Postings(name, value string) (index.Postings, error) {
-	return h.head.postings.Get(name, value), nil
+// Postings returns the postings list iterator for the label pairs.
+func (h *headIndexReader) Postings(name string, values ...string) (index.Postings, error) {
+	res := make([]index.Postings, 0, len(values))
+	for _, value := range values {
+		res = append(res, h.head.postings.Get(name, value))
+	}
+	return index.Merge(res...), nil
 }
 
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
@@ -1450,16 +1455,6 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 	}
 
 	return nil
-}
-
-func (h *headIndexReader) LabelIndices() ([][]string, error) {
-	h.head.symMtx.RLock()
-	defer h.head.symMtx.RUnlock()
-	res := [][]string{}
-	for s := range h.head.values {
-		res = append(res, []string{s})
-	}
-	return res, nil
 }
 
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool) {

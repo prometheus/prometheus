@@ -139,12 +139,10 @@ func init() {
 
 	var (
 		clientGoRequestMetricAdapterInstance     = clientGoRequestMetricAdapter{}
-		clientGoCacheMetricsProviderInstance     = clientGoCacheMetricsProvider{}
 		clientGoWorkqueueMetricsProviderInstance = clientGoWorkqueueMetricsProvider{}
 	)
 
 	clientGoRequestMetricAdapterInstance.Register(prometheus.DefaultRegisterer)
-	clientGoCacheMetricsProviderInstance.Register(prometheus.DefaultRegisterer)
 	clientGoWorkqueueMetricsProviderInstance.Register(prometheus.DefaultRegisterer)
 
 }

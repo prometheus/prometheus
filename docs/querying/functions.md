@@ -36,8 +36,8 @@ absent(sum(nonexistent{job="myjob"}))
 # => {}
 ```
 
-In the second example, `absent()` tries to be smart about deriving labels of the
-1-element output vector from the input vector.
+In the first two examples, `absent()` tries to be smart about deriving labels
+of the 1-element output vector from the input vector.
 
 ## `ceil()`
 
@@ -178,8 +178,6 @@ more trends in the data is considered. Both `sf` and `tf` must be between 0 and
 for each of the given times in UTC. Returned values are from 0 to 23.
 
 ## `idelta()`
-
-`idelta(v range-vector)`
 
 `idelta(v range-vector)` calculates the difference between the last two samples
 in the range vector `v`, returning an instant vector with the given deltas and

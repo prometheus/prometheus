@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -25,7 +24,7 @@ type mockIndexWriter struct {
 	series []seriesSamples
 }
 
-func (mockIndexWriter) AddSymbols(sym map[string]struct{}) error { return nil }
+func (mockIndexWriter) AddSymbol(sym string) error { return nil }
 func (m *mockIndexWriter) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
 	i := -1
 	for j, s := range m.series {
@@ -62,9 +61,8 @@ func (m *mockIndexWriter) AddSeries(ref uint64, l labels.Labels, chunks ...chunk
 	return nil
 }
 
-func (mockIndexWriter) WriteLabelIndex(names []string, values []string) error     { return nil }
-func (mockIndexWriter) WritePostings(name, value string, it index.Postings) error { return nil }
-func (mockIndexWriter) Close() error                                              { return nil }
+func (mockIndexWriter) WriteLabelIndex(names []string, values []string) error { return nil }
+func (mockIndexWriter) Close() error                                          { return nil }
 
 type mockBReader struct {
 	ir   IndexReader

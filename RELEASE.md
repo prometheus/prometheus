@@ -19,7 +19,8 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.12          | 2019-08-14                                 | Julius Volz (GitHub: @juliusv)              |
 | v2.13          | 2019-09-25                                 | Krasi Georgiev (GitHub: @krasi-georgiev)    |
 | v2.14          | 2019-11-06                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
-| v2.15          | 2019-12-18                                 | **searching for volunteer**                 |
+| v2.15          | 2019-12-18                                 | Bartek Plotka (GitHub: @bwplotka)           |
+| v2.16          | 2020-01-29                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -76,7 +77,7 @@ You can do the tagging on the commandline:
 ```bash
 $ tag=$(< VERSION)
 $ git tag -s "v${tag}" -m "v${tag}"
-$ git push --tags
+$ git push origin "v${tag}"
 ```
 
 Signing a tag with a GPG key is appreciated, but in case you can't add a GPG key to your Github account using the following [procedure](https://help.github.com/articles/generating-a-gpg-key/), you can replace the `-s` flag by `-a` flag of the `git tag` command to only annotate the tag without signing.

@@ -2,8 +2,8 @@ import { formatTime, parseTime, formatRange, parseRange, humanizeDuration, forma
 
 describe('formatTime', () => {
   it('returns a time string representing the time in seconds', () => {
-    expect(formatTime(1572049380000)).toEqual('2019-10-26 00:23');
-    expect(formatTime(0)).toEqual('1970-01-01 00:00');
+    expect(formatTime(1572049380000)).toEqual('2019-10-26 00:23:00');
+    expect(formatTime(0)).toEqual('1970-01-01 00:00:00');
   });
 });
 

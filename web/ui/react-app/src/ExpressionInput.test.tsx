@@ -23,6 +23,7 @@ describe('ExpressionInput', () => {
       'Metric Names': metricNames,
     },
     executeQuery: (): void => {},
+    onExpressionChange: (): void => {},
     loading: false,
   };
 
@@ -62,7 +63,7 @@ describe('ExpressionInput', () => {
     expect(input.prop('type')).toEqual('textarea');
     expect(input.prop('rows')).toEqual('1');
     expect(input.prop('placeholder')).toEqual('Expression (press Shift+Enter for newlines)');
-    expect(expressionInput.state('value')).toEqual('node_cpu');
+    expect(input.prop('value')).toEqual('node_cpu');
   });
 
   describe('when autosuggest is closed', () => {
@@ -94,6 +95,14 @@ describe('ExpressionInput', () => {
       instance.handleInput();
       expect(stateSpy).toHaveBeenCalled();
     });
+    it('should call onExpressionChange', () => {
+      const spyOnExpressionChange = jest.fn();
+      const props = { ...expressionInputProps, onExpressionChange: spyOnExpressionChange };
+      const wrapper = mount(<ExpressionInput {...props} />);
+      const input = wrapper.find(Input);
+      input.simulate('input', { target: { value: 'prometheus_engine_' } });
+      expect(spyOnExpressionChange).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('onSelect', () => {
@@ -101,7 +110,18 @@ describe('ExpressionInput', () => {
       const instance: any = expressionInput.instance();
       const stateSpy = jest.spyOn(instance, 'setState');
       instance.setValue('foo');
-      expect(stateSpy).toHaveBeenCalledWith({ value: 'foo', height: 'auto' }, expect.anything());
+      expect(stateSpy).toHaveBeenCalledWith({ height: 'auto' }, expect.anything());
+    });
+  });
+
+  describe('onClick', () => {
+    it('executes the query', () => {
+      const spyExecuteQuery = jest.fn();
+      const props = { ...expressionInputProps, executeQuery: spyExecuteQuery };
+      const wrapper = mount(<ExpressionInput {...props} />);
+      const btn = wrapper.find(Button).filterWhere(btn => btn.hasClass('execute-btn'));
+      btn.simulate('click');
+      expect(spyExecuteQuery).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -445,6 +446,10 @@ func (c *TestStorageClient) Name() string {
 	return "teststorageclient"
 }
 
+func (c *TestStorageClient) Endpoint() string {
+	return "http://test-remote.com/1234"
+}
+
 // TestBlockingStorageClient is a queue_manager StorageClient which will block
 // on any calls to Store(), until the request's Context is cancelled, at which
 // point the `numCalls` property will contain a count of how many times Store()
@@ -469,6 +474,10 @@ func (c *TestBlockingStorageClient) NumCalls() uint64 {
 
 func (c *TestBlockingStorageClient) Name() string {
 	return "testblockingstorageclient"
+}
+
+func (c *TestBlockingStorageClient) Endpoint() string {
+	return "http://test-remote-blocking.com/1234"
 }
 
 func BenchmarkSampleDelivery(b *testing.B) {
@@ -531,7 +540,7 @@ func BenchmarkStartup(b *testing.B) {
 		m := NewQueueManager(nil, logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
 			config.DefaultQueueConfig, nil, nil, c, 1*time.Minute)
-		m.watcher.StartTime = math.MaxInt64
+		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
 		err := m.watcher.Run()
 		testutil.Ok(b, err)

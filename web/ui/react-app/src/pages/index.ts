@@ -1,4 +1,4 @@
-import Alerts from './Alerts';
+import Alerts from './alerts/Alerts';
 import Config from './Config';
 import Flags from './Flags';
 import Rules from './Rules';

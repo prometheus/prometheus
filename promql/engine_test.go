@@ -213,8 +213,12 @@ func TestQueryError(t *testing.T) {
 // paramCheckerQuerier implements storage.Querier which checks the start and end times
 // in params.
 type paramCheckerQuerier struct {
-	start int64
-	end   int64
+	start    int64
+	end      int64
+	grouping []string
+	by       bool
+	selRange int64
+	function string
 
 	t *testing.T
 }
@@ -222,6 +226,10 @@ type paramCheckerQuerier struct {
 func (q *paramCheckerQuerier) Select(sp *storage.SelectParams, _ ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	testutil.Equals(q.t, q.start, sp.Start)
 	testutil.Equals(q.t, q.end, sp.End)
+	testutil.Equals(q.t, q.grouping, sp.Grouping)
+	testutil.Equals(q.t, q.by, sp.By)
+	testutil.Equals(q.t, q.selRange, sp.Range)
+	testutil.Equals(q.t, q.function, sp.Func)
 
 	return errSeriesSet{err: nil}, nil, nil
 }
@@ -256,6 +264,11 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart int64
 		paramEnd   int64
+
+		paramGrouping []string
+		paramBy       bool
+		paramRange    int64
+		paramFunc     string
 	}{{
 		query: "foo",
 		start: 10,
@@ -268,12 +281,14 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 80, // 200 - 120
 		paramEnd:   200,
+		paramRange: 120000,
 	}, {
 		query: "foo[2m] offset 2m",
 		start: 300,
 
 		paramStart: 60,
 		paramEnd:   180,
+		paramRange: 120000,
 	}, {
 		query: "foo[2m:1s]",
 		start: 300,
@@ -286,18 +301,21 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 175, // 300 - 120 - 5
 		paramEnd:   300,
+		paramFunc:  "count_over_time",
 	}, {
 		query: "count_over_time(foo[2m:1s] offset 10s)",
 		start: 300,
 
 		paramStart: 165, // 300 - 120 - 5 - 10
 		paramEnd:   300,
+		paramFunc:  "count_over_time",
 	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)",
 		start: 300,
 
 		paramStart: 155, // 300 - 120 - 5 - 10 - 10
 		paramEnd:   290,
+		paramFunc:  "count_over_time",
 	}, {
 		// Range queries now.
 		query: "foo",
@@ -313,6 +331,8 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 80, // 200 - 120
 		paramEnd:   500,
+		paramRange: 120000,
+		paramFunc:  "rate",
 	}, {
 		query: "rate(foo[2m] offset 2m)",
 		start: 300,
@@ -320,6 +340,8 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 60,
 		paramEnd:   380,
+		paramRange: 120000,
+		paramFunc:  "rate",
 	}, {
 		query: "rate(foo[2m:1s])",
 		start: 300,
@@ -327,6 +349,7 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 175, // 300 - 120 - 5
 		paramEnd:   500,
+		paramFunc:  "rate",
 	}, {
 		query: "count_over_time(foo[2m:1s])",
 		start: 300,
@@ -334,6 +357,7 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 175, // 300 - 120 - 5
 		paramEnd:   500,
+		paramFunc:  "count_over_time",
 	}, {
 		query: "count_over_time(foo[2m:1s] offset 10s)",
 		start: 300,
@@ -341,6 +365,7 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 165, // 300 - 120 - 5 - 10
 		paramEnd:   500,
+		paramFunc:  "count_over_time",
 	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)",
 		start: 300,
@@ -348,12 +373,59 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 155, // 300 - 120 - 5 - 10 - 10
 		paramEnd:   490,
+		paramFunc:  "count_over_time",
+	}, {
+		query: "sum by (dim1) (foo)",
+		start: 10,
+
+		paramStart:    5,
+		paramEnd:      10,
+		paramGrouping: []string{"dim1"},
+		paramBy:       true,
+		paramFunc:     "sum",
+	}, {
+		query: "sum without (dim1) (foo)",
+		start: 10,
+
+		paramStart:    5,
+		paramEnd:      10,
+		paramGrouping: []string{"dim1"},
+		paramBy:       false,
+		paramFunc:     "sum",
+	}, {
+		query: "sum by (dim1) (avg_over_time(foo[1s]))",
+		start: 10,
+
+		paramStart:    9,
+		paramEnd:      10,
+		paramGrouping: nil,
+		paramBy:       false,
+		paramRange:    1000,
+		paramFunc:     "avg_over_time",
+	}, {
+		query: "sum by (dim1) (max by (dim2) (foo))",
+		start: 10,
+
+		paramStart:    5,
+		paramEnd:      10,
+		paramGrouping: []string{"dim2"},
+		paramBy:       true,
+		paramFunc:     "max",
+	}, {
+		query: "(max by (dim1) (foo))[5s:1s]",
+		start: 10,
+
+		paramStart:    0,
+		paramEnd:      10,
+		paramGrouping: []string{"dim1"},
+		paramBy:       true,
+		paramFunc:     "max",
 	}}
 
 	for _, tc := range cases {
 		engine := NewEngine(opts)
 		queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-			return &paramCheckerQuerier{start: tc.paramStart * 1000, end: tc.paramEnd * 1000, t: t}, nil
+			return &paramCheckerQuerier{start: tc.paramStart * 1000, end: tc.paramEnd * 1000, grouping: tc.paramGrouping, by: tc.paramBy, selRange: tc.paramRange, function: tc.paramFunc, t: t}, nil
 		})
 
 		var (

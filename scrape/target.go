@@ -58,7 +58,7 @@ type Target struct {
 	lastScrape         time.Time
 	lastScrapeDuration time.Duration
 	health             TargetHealth
-	metadata           metricMetadataStore
+	metadata           MetricMetadataStore
 }
 
 // NewTarget creates a reasonably configured target for querying.
@@ -75,9 +75,9 @@ func (t *Target) String() string {
 	return t.URL().String()
 }
 
-type metricMetadataStore interface {
-	listMetadata() []MetricMetadata
-	getMetadata(metric string) (MetricMetadata, bool)
+type MetricMetadataStore interface {
+	ListMetadata() []MetricMetadata
+	GetMetadata(metric string) (MetricMetadata, bool)
 }
 
 // MetricMetadata is a piece of metadata for a metric.
@@ -95,7 +95,7 @@ func (t *Target) MetadataList() []MetricMetadata {
 	if t.metadata == nil {
 		return nil
 	}
-	return t.metadata.listMetadata()
+	return t.metadata.ListMetadata()
 }
 
 // Metadata returns type and help metadata for the given metric.
@@ -106,10 +106,10 @@ func (t *Target) Metadata(metric string) (MetricMetadata, bool) {
 	if t.metadata == nil {
 		return MetricMetadata{}, false
 	}
-	return t.metadata.getMetadata(metric)
+	return t.metadata.GetMetadata(metric)
 }
 
-func (t *Target) setMetadataStore(s metricMetadataStore) {
+func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	t.metadata = s

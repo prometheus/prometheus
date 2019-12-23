@@ -73,6 +73,7 @@ var expectedConf = &Config{
 		{
 			URL:           mustParseURL("http://remote1/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
+			Name:          "drop_expensive",
 			WriteRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
@@ -88,6 +89,7 @@ var expectedConf = &Config{
 			URL:           mustParseURL("http://remote2/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
 			QueueConfig:   DefaultQueueConfig,
+			Name:          "rw_tls",
 			HTTPClientConfig: config_util.HTTPClientConfig{
 				TLSConfig: config_util.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
@@ -102,11 +104,13 @@ var expectedConf = &Config{
 			URL:           mustParseURL("http://remote1/read"),
 			RemoteTimeout: model.Duration(1 * time.Minute),
 			ReadRecent:    true,
+			Name:          "default",
 		},
 		{
 			URL:              mustParseURL("http://remote3/read"),
 			RemoteTimeout:    model.Duration(1 * time.Minute),
 			ReadRecent:       false,
+			Name:             "read_special",
 			RequiredMatchers: model.LabelSet{"job": "special"},
 			HTTPClientConfig: config_util.HTTPClientConfig{
 				TLSConfig: config_util.TLSConfig{
@@ -825,6 +829,12 @@ var expectedErrors = []struct {
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
+	}, {
+		filename: "remote_write_dup.bad.yml",
+		errMsg:   `found multiple remote write configs with job name "queue1"`,
+	}, {
+		filename: "remote_read_dup.bad.yml",
+		errMsg:   `found multiple remote read configs with job name "queue1"`,
 	},
 	{
 		filename: "ec2_filters_empty_values.bad.yml",

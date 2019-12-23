@@ -14,11 +14,13 @@ rule_files:
 
 remote_write:
   - url: http://remote1/push
+    name: drop_expensive
     write_relabel_configs:
     - source_labels: [__name__]
       regex:         expensive.*
       action:        drop
   - url: http://remote2/push
+    name: rw_tls
     tls_config:
       cert_file: valid_cert_file
       key_file: valid_key_file
@@ -26,8 +28,10 @@ remote_write:
 remote_read:
   - url: http://remote1/read
     read_recent: true
+    name: default
   - url: http://remote3/read
     read_recent: false
+    name: read_special
     required_matchers:
       job: special
     tls_config:
