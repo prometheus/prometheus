@@ -1,3 +1,22 @@
+## 2.15.0 / 2019-12-23
+
+* [CHANGE] Discovery: Removed `prometheus_sd_kubernetes_cache_*` metrics. Additionally `prometheus_sd_kubernetes_workqueue_latency_seconds` and `prometheus_sd_kubernetes_workqueue_work_duration_seconds` metrics now show correct values in seconds. #6393
+* [CHANGE] Remote write: Changed `query` label on `prometheus_remote_storage_*` metrics to `remote_name` and `url`. #6043
+* [FEATURE] API: Added new endpoint for exposing per metric metadata `/metadata`. #6420 #6442
+* [ENHANCEMENT] TSDB: Significantly reduced memory footprint of loaded TSDB blocks. #6418 #6461
+* [ENHANCEMENT] TSDB: Significantly optimized what we buffer during compaction which should result in lower memory footprint during compaction. #6422 #6452 #6468 #6475
+* [ENHANCEMENT] TSDB: Improve replay latency. #6230
+* [ENHANCEMENT] TSDB: WAL size is now used for size based retention calculation. #5886
+* [ENHANCEMENT] Remote read: Added query grouping and range hints to the remote read request #6401
+* [ENHANCEMENT] Remote write: Added `prometheus_remote_storage_sent_bytes_total` counter per queue. #6344
+* [ENHANCEMENT] promql: Improved PromQL parser performance. #6356
+* [ENHANCEMENT] React UI: Implemented missing pages like `/targets` #6276, TSDB status page #6267 and many other fixes and performance improvements.
+* [ENHANCEMENT] promql: Prometheus now accepts spaces between time range and square bracket. e.g `[ 5m]` #6065
+* [BUGFIX] Config: Fixed alertmanager configuration to not miss targets when configurations are similar. #6455
+* [BUGFIX] Remote write: Value of `prometheus_remote_storage_shards_desired` gauge shows raw value of desired shards and it's updated correctly. #6378
+* [BUGFIX] Rules: Prometheus now fails the evaluation of rules and alerts where metric results collide with labels specified in `labels` field. #6469
+* [BUGFIX] API: Targets Metadata API `/targets/metadata` now accepts empty `match_targets` parameter as in the spec. #6303
+
 ## 2.14.0 / 2019-11-11
 
 * [SECURITY/BUGFIX] UI: Ensure warnings from the API are escaped. #6279
