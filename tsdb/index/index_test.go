@@ -480,7 +480,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	testutil.Ok(t, ir.Close())
 }
 
-func TestDecbufUvariantWithInvalidBuffer(t *testing.T) {
+func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
 	db := encoding.NewDecbufUvarintAt(b, 0, castagnoliTable)
