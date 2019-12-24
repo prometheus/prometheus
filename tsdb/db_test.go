@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -2485,9 +2486,9 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	testutil.Equals(t, 1000.0, sum)
 }
 
-// TestChunkWriter ensures that chunk segment are cut at the set segment size and
+// TestChunkWriter_ReadAfterWrite ensures that chunk segment are cut at the set segment size and
 // that the resulted segments includes the expected chunks data.
-func TestChunkWriter(t *testing.T) {
+func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
 	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2}})
 	chk3 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3}})
@@ -2611,22 +2612,19 @@ func TestChunkWriter(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-			tmpdir, err := ioutil.TempDir("", "test_chunk_witer")
+			tempDir, err := ioutil.TempDir("", "test_chunk_writer")
 			testutil.Ok(t, err)
-			defer func() {
-				testutil.Ok(t, os.RemoveAll(tmpdir))
-			}()
+			defer func() { testutil.Ok(t, os.RemoveAll(tempDir)) }()
 
-			chunkw, err := chunks.NewWriterWithSegSize(tmpdir, chunks.SegmentHeaderSize+int64(test.segmentSize))
+			chunkw, err := chunks.NewWriterWithSegSize(tempDir, chunks.SegmentHeaderSize+int64(test.segmentSize))
 			testutil.Ok(t, err)
 
 			for _, chks := range test.chks {
-				chunkw.WriteChunks(chks...)
+				testutil.Ok(t, chunkw.WriteChunks(chks...))
 			}
-
 			testutil.Ok(t, chunkw.Close())
 
-			files, err := ioutil.ReadDir(tmpdir)
+			files, err := ioutil.ReadDir(tempDir)
 			testutil.Ok(t, err)
 			testutil.Equals(t, test.expSegmentsCount, len(files), "expected segments count mismatch")
 
@@ -2655,7 +2653,7 @@ func TestChunkWriter(t *testing.T) {
 			testutil.Equals(t, sizeExp, sizeAct)
 
 			// Check the content of the chunks.
-			r, err := chunks.NewDirReader(tmpdir, nil)
+			r, err := chunks.NewDirReader(tempDir, nil)
 			testutil.Ok(t, err)
 
 			for _, chks := range test.chks {
@@ -2666,5 +2664,45 @@ func TestChunkWriter(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestChunkReader_ConcurrentReads checks that the chunk result can be read concurrently.
+// Regression test for https://github.com/prometheus/prometheus/pull/6514.
+func TestChunkReader_ConcurrentReads(t *testing.T) {
+	chks := []chunks.Meta{
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5}}),
+	}
+
+	tempDir, err := ioutil.TempDir("", "test_chunk_writer")
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, os.RemoveAll(tempDir)) }()
+
+	chunkw, err := chunks.NewWriter(tempDir)
+	testutil.Ok(t, err)
+
+	testutil.Ok(t, chunkw.WriteChunks(chks...))
+	testutil.Ok(t, chunkw.Close())
+
+	r, err := chunks.NewDirReader(tempDir, nil)
+	testutil.Ok(t, err)
+
+	var wg sync.WaitGroup
+	for _, chk := range chks {
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func(chunk chunks.Meta) {
+				defer wg.Done()
+
+				chkAct, err := r.Chunk(chunk.Ref)
+				testutil.Ok(t, err)
+				testutil.Equals(t, chunk.Chunk.Bytes(), chkAct.Bytes())
+			}(chk)
+		}
+		wg.Wait()
 	}
 }
