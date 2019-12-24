@@ -468,7 +468,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 
 * [FEATURE] New Service Discovery UI showing labels before and after relabelling.
 * [FEATURE] New Admin APIs added to v1 to delete, snapshot and remove tombstones.
-* [ENHANCEMENT] The graph UI autcomplete now includes your previous queries.
+* [ENHANCEMENT] The graph UI autocomplete now includes your previous queries.
 * [ENHANCEMENT] Federation is now much faster for large numbers of series.
 * [ENHANCEMENT] Added new metrics to measure rule timings.
 * [ENHANCEMENT] Rule evaluation times added to the rules UI.
