@@ -379,7 +379,7 @@ func TestSegmentMetric(t *testing.T) {
 }
 
 func TestCompression(t *testing.T) {
-	boostrap := func(compressed bool) string {
+	bootstrap := func(compressed bool) string {
 		const (
 			segmentSize = pageSize
 			recordSize  = (pageSize / 2) - recordHeaderSize
@@ -401,11 +401,11 @@ func TestCompression(t *testing.T) {
 		return dirPath
 	}
 
-	dirCompressed := boostrap(true)
+	dirCompressed := bootstrap(true)
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dirCompressed))
 	}()
-	dirUnCompressed := boostrap(false)
+	dirUnCompressed := bootstrap(false)
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dirUnCompressed))
 	}()
