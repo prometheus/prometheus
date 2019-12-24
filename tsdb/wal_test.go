@@ -422,7 +422,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			// Weird hack to check order of reads.
 			i := 0
-			samplf := func(s []record.RefSample) {
+			samplef := func(s []record.RefSample) {
 				if i == 0 {
 					testutil.Equals(t, []record.RefSample{{T: 1, V: 2}}, s)
 					i++
@@ -431,7 +431,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 				}
 			}
 
-			testutil.Ok(t, r.Read(serf, samplf, nil))
+			testutil.Ok(t, r.Read(serf, samplef, nil))
 
 			testutil.Ok(t, w2.LogSamples([]record.RefSample{{T: 99, V: 100}}))
 			testutil.Ok(t, w2.Close())
@@ -444,7 +444,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			r = w3.Reader()
 
 			i = 0
-			testutil.Ok(t, r.Read(serf, samplf, nil))
+			testutil.Ok(t, r.Read(serf, samplef, nil))
 		})
 	}
 }
