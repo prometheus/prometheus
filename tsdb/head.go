@@ -848,7 +848,7 @@ func (h *Head) Appender() Appender {
 func (h *Head) appender() *headAppender {
 	return &headAppender{
 		head: h,
-		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
+		// Set the minimum valid time to whichever is greater the head min valid time or the compaction window.
 		// This ensures that no samples will be added within the compaction window to avoid races.
 		minValidTime: max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2),
 		mint:         math.MaxInt64,
