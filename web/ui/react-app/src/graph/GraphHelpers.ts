@@ -58,7 +58,7 @@ export const getHoverColor = (color: string, opacity: number, stacked: boolean) 
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
   }
   /*
-    Unfortunetly flot doesn't take into consideration
+    Unfortunately flot doesn't take into consideration
     the alpha value when adjusting the color on the stacked series.
     TODO: find better way to set the opacity.
   */
