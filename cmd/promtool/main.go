@@ -68,6 +68,7 @@ func main() {
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
 	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
+
 	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
 
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
@@ -124,7 +125,12 @@ func main() {
 		os.Exit(CheckMetrics())
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(*queryServer, *queryExpr, p))
+		{
+			if !strings.Contains(*queryServer, "http") {
+				*queryServer = "http://" + *queryServer
+			}
+			os.Exit(QueryInstant(*queryServer, *queryExpr, p))
+		}
 
 	case queryRangeCmd.FullCommand():
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
@@ -386,10 +392,6 @@ func CheckMetrics() int {
 
 // QueryInstant performs an instant query against a Prometheus server.
 func QueryInstant(url, query string, p printer) int {
-	if !strings.Contains(url, "http") {
-		url = "http://" + url
-	}
-
 	config := api.Config{
 		Address: url,
 	}
