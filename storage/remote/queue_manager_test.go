@@ -577,3 +577,81 @@ func TestProcessExternalLabels(t *testing.T) {
 		testutil.Equals(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
 	}
 }
+
+func TestCalculateDesiredShards(t *testing.T) {
+	c := NewTestStorageClient()
+	cfg := config.DefaultQueueConfig
+
+	dir, err := ioutil.TempDir("", "TestCalculateDesiredShards")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
+	m := NewQueueManager(nil, nil, dir, samplesIn, cfg, nil, nil, c, defaultFlushDeadline)
+
+	// Need to start the queue manager so the proper metrics are initialized.
+	// However we can stop it right away since we don't need to do any actual
+	// processing.
+	m.Start()
+	m.Stop()
+
+	inputRate := int64(50000)
+	var pendingSamples int64
+
+	// Two minute startup, no samples are sent.
+	startedAt := time.Now().Add(-2 * time.Minute)
+
+	// helper function for adding samples.
+	addSamples := func(s int64, ts time.Duration) {
+		pendingSamples += s
+		samplesIn.incr(s)
+		samplesIn.tick()
+
+		highestTimestamp.Set(float64(startedAt.Add(ts).Unix()))
+	}
+
+	// helper function for sending samples.
+	sendSamples := func(s int64, ts time.Duration) {
+		pendingSamples -= s
+		m.samplesOut.incr(s)
+		m.samplesOutDuration.incr(int64(m.numShards) * int64(shardUpdateDuration))
+
+		// highest sent is how far back pending samples would be at our input rate.
+		highestSent := startedAt.Add(ts - time.Duration(pendingSamples/inputRate)*time.Second)
+		m.highestSentTimestampMetric.Set(float64(highestSent.Unix()))
+
+		atomic.StoreInt64(&m.lastSendTimestamp, time.Now().Unix())
+	}
+
+	ts := time.Duration(0)
+	m.startedAt = startedAt
+	for ; ts < 120*time.Second; ts += shardUpdateDuration {
+		addSamples(inputRate*int64(shardUpdateDuration/time.Second), ts)
+		m.numShards = m.calculateDesiredShards()
+		testutil.Equals(t, 1, m.numShards)
+	}
+
+	// Assume 100ms per request, or 10 requests per second per shard.
+	// Shard calculation should never drop below barely keeping up.
+	minShards := int(inputRate) / cfg.MaxSamplesPerSend / 10
+	// This test should never go above 200 shards, that would be more resources than needed.
+	maxShards := 200
+
+	for ; ts < 15*time.Minute; ts += shardUpdateDuration {
+		sin := inputRate * int64(shardUpdateDuration/time.Second)
+		addSamples(sin, ts)
+
+		sout := int64(m.numShards*cfg.MaxSamplesPerSend) * int64(shardUpdateDuration/(100*time.Millisecond))
+		// You can't send samples that don't exist so cap at the number of pending samples.
+		if sout > pendingSamples {
+			sout = pendingSamples
+		}
+		sendSamples(sout, ts)
+
+		t.Log("desiredShards", m.numShards, "pendingSamples", pendingSamples)
+		m.numShards = m.calculateDesiredShards()
+		testutil.Assert(t, m.numShards >= minShards, "Shards are too low. desiredShards=%d, minShards=%d, t_seconds=%d", m.numShards, minShards, ts/time.Second)
+		testutil.Assert(t, m.numShards <= maxShards, "Shards are too high. desiredShards=%d, maxShards=%d, t_seconds=%d", m.numShards, maxShards, ts/time.Second)
+	}
+	testutil.Assert(t, pendingSamples == 0, "Remote write never caught up, there are still %d pending samples.", pendingSamples)
+}
