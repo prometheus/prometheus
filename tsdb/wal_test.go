@@ -162,7 +162,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 		iterations = 5
 		stepSize   = 5
 	)
-	// Generate testing data. It does not make semantical sense but
+	// Generate testing data. It does not make semantic sense but
 	// for the purpose of this test.
 	series, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), numMetrics)
 	testutil.Ok(t, err)
@@ -373,7 +373,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			// Generate testing data. It does not make semantical sense but
+			// Generate testing data. It does not make semantic sense but
 			// for the purpose of this test.
 			dir, err := ioutil.TempDir("", "test_corrupted")
 			testutil.Ok(t, err)
