@@ -112,7 +112,7 @@ type WALReader interface {
 // the truncation threshold can be compacted.
 type segmentFile struct {
 	*os.File
-	maxTime   int64  // highest tombstone or sample timpstamp in segment
+	maxTime   int64  // highest tombstone or sample timestamp in segment
 	minSeries uint64 // lowerst series ID in segment
 }
 
