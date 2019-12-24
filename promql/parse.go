@@ -962,7 +962,7 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 	case NEQ_REGEX:
 		matchType = labels.MatchNotRegexp
 	default:
-		// This should never happen, since the error should have been chaught
+		// This should never happen, since the error should have been caught
 		// by the generated parser.
 		panic("invalid operator")
 	}
