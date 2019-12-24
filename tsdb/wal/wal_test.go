@@ -302,7 +302,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		err = w.Repair(corruptionErr)
 		testutil.Ok(t, err)
 
-		// Ensure that we have a completely clean slate after reapiring.
+		// Ensure that we have a completely clean slate after repairing.
 		testutil.Equals(t, w.segment.Index(), 1) // We corrupted segment 0.
 		testutil.Equals(t, w.donePages, 0)
 
