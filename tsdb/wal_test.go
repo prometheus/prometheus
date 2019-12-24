@@ -450,7 +450,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 }
 
 func TestMigrateWAL_Empty(t *testing.T) {
-	// The migration proecedure must properly deal with a zero-length segment,
+	// The migration procedure must properly deal with a zero-length segment,
 	// which is valid in the new format.
 	dir, err := ioutil.TempDir("", "walmigrate")
 	testutil.Ok(t, err)
