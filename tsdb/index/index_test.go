@@ -221,7 +221,7 @@ func TestIndexRW_Postings(t *testing.T) {
 		vals := []string{}
 		nc := d.Be32int()
 		if nc != 1 {
-			return errors.Errorf("unexpected nuumber of label indices table names %d", nc)
+			return errors.Errorf("unexpected number of label indices table names %d", nc)
 		}
 		for i := d.Be32(); i > 0; i-- {
 			v, err := ir.lookupSymbol(d.Be32())
