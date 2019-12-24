@@ -1255,7 +1255,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 }
 
 func TestNewWalSegmentOnTruncate(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_wal_segemnts")
+	dir, err := ioutil.TempDir("", "test_wal_segements")
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
