@@ -1,3 +1,7 @@
+## 2.15.1 / 2019-12-25
+
+* [BUGFIX] Fixed race on concurrent queries against same data. #6512
+
 ## 2.15.0 / 2019-12-23
 
 * [CHANGE] Discovery: Removed `prometheus_sd_kubernetes_cache_*` metrics. Additionally `prometheus_sd_kubernetes_workqueue_latency_seconds` and `prometheus_sd_kubernetes_workqueue_work_duration_seconds` metrics now show correct values in seconds. #6393
