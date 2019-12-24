@@ -90,7 +90,7 @@ type Head struct {
 
 	cardinalityMutex      sync.Mutex
 	cardinalityCache      *index.PostingsStats // posting stats cache which will expire after 30sec
-	lastPostingsStatsCall time.Duration        // last posting stats call (PostgingsCardinalityStats()) time for caching
+	lastPostingsStatsCall time.Duration        // last posting stats call (PostingsCardinalityStats()) time for caching
 }
 
 type headMetrics struct {
