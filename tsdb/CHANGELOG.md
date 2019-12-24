@@ -67,7 +67,7 @@
 
 ## 0.5.0
 
- - [FEATURE] Time-ovelapping blocks are now allowed. [#370](https://github.com/prometheus/tsdb/pull/370)
+ - [FEATURE] Time-overlapping blocks are now allowed. [#370](https://github.com/prometheus/tsdb/pull/370)
    - Disabled by default and can be enabled via `AllowOverlappingBlock` option.
    - Added `MergeChunks` function in `chunkenc/xor.go` to merge 2 time-overlapping chunks.
    - Added `MergeOverlappingChunks` function in `chunks/chunks.go` to merge multiple time-overlapping Chunk Metas.
