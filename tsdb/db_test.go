@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -2663,6 +2664,23 @@ func TestChunkWriter(t *testing.T) {
 					chkAct, err := r.Chunk(chkExp.Ref)
 					testutil.Ok(t, err)
 					testutil.Equals(t, chkExp.Chunk.Bytes(), chkAct.Bytes())
+				}
+			}
+
+			// Check that the chunk result can be read concurrently.
+			for _, chks := range test.chks {
+				for _, chkExp := range chks {
+					var wg sync.WaitGroup
+					for i := 0; i < 100; i += 1 {
+						wg.Add(1)
+						go func() {
+							defer wg.Done()
+							chkAct, err := r.Chunk(chkExp.Ref)
+							testutil.Ok(t, err)
+							testutil.Equals(t, chkExp.Chunk.Bytes(), chkAct.Bytes())
+						}()
+					}
+					wg.Wait()
 				}
 			}
 		})
