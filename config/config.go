@@ -299,6 +299,8 @@ type GlobalConfig struct {
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
+	// File to which PromQL queries are logged.
+	QueryLogFile string `yaml:"query_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
 }
@@ -349,7 +351,8 @@ func (c *GlobalConfig) isZero() bool {
 	return c.ExternalLabels == nil &&
 		c.ScrapeInterval == 0 &&
 		c.ScrapeTimeout == 0 &&
-		c.EvaluationInterval == 0
+		c.EvaluationInterval == 0 &&
+		c.QueryLogFile == ""
 }
 
 // ScrapeConfig configures a scraping unit for Prometheus.

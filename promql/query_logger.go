@@ -80,7 +80,7 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 
 func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, error) {
 
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 	if err != nil {
 		level.Error(logger).Log("msg", "Error opening query log file", "file", filename, "err", err)
 		return nil, err

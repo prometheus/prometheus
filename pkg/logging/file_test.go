@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,34 +14,35 @@
 package logging
 
 import (
+	"errors"
+	"io/ioutil"
+	"os"
+	"regexp"
 	"testing"
-	"time"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-type counter int
-
-func (c *counter) Log(keyvals ...interface{}) error {
-	(*c)++
-	return nil
-}
-
-func TestDedupe(t *testing.T) {
-	var c counter
-	d := Dedupe(&c, 100*time.Millisecond)
-	defer d.Stop()
-
-	// Log 10 times quickly, ensure they are deduped.
-	for i := 0; i < 10; i++ {
-		err := d.Log("msg", "hello")
-		testutil.Ok(t, err)
-	}
-	testutil.Equals(t, 1, int(c))
-
-	// Wait, then log again, make sure it is logged.
-	time.Sleep(200 * time.Millisecond)
-	err := d.Log("msg", "hello")
+func TestJSONFileLogger_basic(t *testing.T) {
+	f, err := ioutil.TempFile("", "")
 	testutil.Ok(t, err)
-	testutil.Equals(t, 2, int(c))
+	defer f.Close()
+
+	l, err := NewJSONFileLogger(f.Name())
+	testutil.Ok(t, err)
+	testutil.Assert(t, l != nil, "logger can't be nil")
+
+	l.Log("test", "yes")
+	r := make([]byte, 1024)
+	_, err = f.Read(r)
+	testutil.Ok(t, err)
+	result, err := regexp.Match(`^{"test":"yes","ts":"[^"]+"}\n`, r)
+	testutil.Ok(t, err)
+	testutil.Assert(t, result, "unexpected content: %s", r)
+
+	err = l.Close()
+	testutil.Ok(t, err)
+
+	err = l.file.Close()
+	testutil.Assert(t, errors.Is(err, os.ErrClosed), "file was not closed")
 }

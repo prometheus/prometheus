@@ -66,6 +66,10 @@ global:
   external_labels:
     [ <labelname>: <labelvalue> ... ]
 
+  # File to which PromQL queries are logged.
+  # Reloading the configuration will reopen the file.
+  [ query_log_file: <string> ]
+
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:
