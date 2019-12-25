@@ -109,6 +109,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 			expr: "changes(a_X[1d])",
 		},
 		{
+			expr: "delta(a_X[1d])",
+		},
+		{
 			expr: "rate(a_X[1d])",
 		},
 		// Unary operators.

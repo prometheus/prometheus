@@ -81,11 +81,15 @@ func extrapolatedRate(vals []Value, args Expressions, enh *EvalNodeHelper, isCou
 			counterCorrection float64
 			lastValue         float64
 		)
-		for _, sample := range samples.Points {
-			if isCounter && sample.V < lastValue {
-				counterCorrection += lastValue
+		if isCounter {
+			for _, sample := range samples.Points {
+				if sample.V < lastValue {
+					counterCorrection += lastValue
+				}
+				lastValue = sample.V
 			}
-			lastValue = sample.V
+		} else {
+			lastValue = samples.Points[len(samples.Points)-1].V
 		}
 		resultValue := lastValue - samples.Points[0].V + counterCorrection
 
