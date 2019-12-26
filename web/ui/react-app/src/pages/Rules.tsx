@@ -28,17 +28,10 @@ interface RulesMap {
 
 const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const { response, error } = useFetch<RulesMap>(`${pathPrefix}/api/v1/rules`);
-  console.warn('response ', response);
-  const getMaximumTimeEvaluation = (rules: Rule[]) => {
-    let max = -1;
-    for (const rule of rules) {
-      max = parseFloat(rule.lastEvaluation) > max ? parseFloat(rule.lastEvaluation) : max;
-    }
-    return max;
-  };
   const roundUp = (n: number) => {
     return Math.floor(n * 100) / 100;
   };
+
   if (error) {
     return (
       <Alert color="danger">
