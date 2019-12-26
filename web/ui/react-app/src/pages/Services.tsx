@@ -72,7 +72,7 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
       }
       labels[name].push({
         discoveredLabels: target.discoveredLabels,
-        labels: { 'dropped': 'yes' },
+        labels: { dropped: 'yes' },
       });
     }
 

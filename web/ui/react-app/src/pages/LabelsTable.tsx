@@ -48,12 +48,11 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
               return (
                 <tr key={i}>
                   <td>{formatLabels(value[i].discoveredLabels)}</td>
-                  { value[i].labels.hasOwnProperty('dropped')  ? (
-                    <td style={{ fontWeight: 'bold' }}>Dropped</td> 
-                    ) : (
-                      <td>{formatLabels(value[i].labels)}</td>
-                    )
-                  }
+                  {value[i].labels.hasOwnProperty('dropped') ? (
+                    <td style={{ fontWeight: 'bold' }}>Dropped</td>
+                  ) : (
+                    <td>{formatLabels(value[i].labels)}</td>
+                  )}
                 </tr>
               );
             })}
