@@ -1249,16 +1249,23 @@ func durationToInt64Millis(d time.Duration) int64 {
 func createLabelsFromExpr(expr Expr) labels.Labels {
 	m := labels.Labels{}
 	empty := []string{}
-	if ms, ok := expr.(*MatrixSelector); ok {
-		for _, ma := range ms.LabelMatchers {
-			if ma.Name == labels.MetricName {
-				continue
-			}
-			if ma.Type == labels.MatchEqual && !m.Has(ma.Name) {
-				m = labels.NewBuilder(m).Set(ma.Name, ma.Value).Labels()
-			} else {
-				empty = append(empty, ma.Name)
-			}
+	lm := make([]*labels.Matcher, 0)
+
+	switch n := expr.(type) {
+	case *VectorSelector:
+		lm = n.LabelMatchers
+	case *MatrixSelector:
+		lm = n.LabelMatchers
+	}
+
+	for _, ma := range lm {
+		if ma.Name == labels.MetricName {
+			continue
+		}
+		if ma.Type == labels.MatchEqual && !m.Has(ma.Name) {
+			m = labels.NewBuilder(m).Set(ma.Name, ma.Value).Labels()
+		} else {
+			empty = append(empty, ma.Name)
 		}
 	}
 
