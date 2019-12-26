@@ -212,6 +212,10 @@ div.time-input {
     margin-bottom: 20px;
 }
 
+.label-button-style {
+    margin-bottom: 1%;
+}
+
 .target-head {
     font-weight: 700;
     font-size: large;
@@ -219,17 +223,6 @@ div.time-input {
 
 .label-component {
     margin-bottom: 1%;
-}
-
-.table-outer-layer {
-    margin: 1%;
-    margin-right: 5%;
-}
-
-.head {
-    font-weight: 600;
-    margin-bottom: 2%;
-    border-bottom: 1px solid #DEE2E6;
 }
 
 .status-badges {

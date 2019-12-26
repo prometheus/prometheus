@@ -1,13 +1,14 @@
 import React, { FC, useState } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Button, Badge, Table } from 'reactstrap';
+import { targetLabels } from './Services';
 
 interface LabelProps {
-  value: Record<string, Record<string, string>>[];
+  value: targetLabels[];
   name: string;
 }
 
-const printLabels = (labels: Record<string, string>) => {
+const formatLabels = (labels: Record<string, string>) => {
   return Object.entries(labels).map(([key, value]) => {
     return (
       <div key={key}>
@@ -20,21 +21,23 @@ const printLabels = (labels: Record<string, string>) => {
 };
 
 export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name }) => {
-  const [showMore, doToggle] = useState(false);
+  const [showMore, setShowMore] = useState(false);
 
-  const toggleMore = () => {
-    doToggle(!showMore);
+  const toggleShowMore = () => {
+    setShowMore(!showMore);
   };
 
   return (
     <div className="label-component">
-      <span className="target-head"> {name} </span>
-      <Button size="sm" color="primary" onClick={toggleMore}>
-        {showMore ? 'show less' : 'show more'}
-      </Button>
+      <div className="label-button-style">
+        <span className="target-head"> {name} </span>
+        <Button size="sm" color="primary" onClick={toggleShowMore}>
+          {showMore ? 'show less' : 'show more'}
+        </Button>
+      </div>
       {showMore ? (
         <Table striped={true} bordered={true}>
-          <thead className="table-outer-layer">
+          <thead>
             <tr>
               <th>Discovered Labels</th>
               <th>Target Labels</th>
@@ -44,8 +47,8 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
             {value.map((_, i) => {
               return (
                 <tr key={i}>
-                  <td>{printLabels(value[i].discoveredLabels)}</td>
-                  <td>{printLabels(value[i].labels)}</td>
+                  <td>{formatLabels(value[i].discoveredLabels)}</td>
+                  <td>{formatLabels(value[i].labels)}</td>
                 </tr>
               );
             })}

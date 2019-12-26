@@ -1,44 +1,31 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import PathPrefixProps from '../PathPrefixProps';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { Alert } from 'reactstrap';
 import { useFetch } from '../utils/useFetch';
 import { LabelsTable } from './LabelsTable';
+import { Target, Labels } from './targets/target';
 
-interface DiscoveredLabels {
-  address: string;
-  metrics_path: string;
-  scheme: string;
-  job: string;
-  my: string;
-  your: string;
-}
-
-interface ActiveTargets {
-  discoveredLabels: DiscoveredLabels[];
-  labels: any;
-  scrapePool: string;
-  scrapeUrl: string;
-  lastError: string;
-  lastScrape: string;
-  lastScrapeDuration: number;
-  health: string;
-}
-
+// TODO: Deduplicate with https://github.com/prometheus/prometheus/blob/213a8fe89a7308e73f22888a963cbf9375217cd6/web/ui/react-app/src/pages/targets/ScrapePoolList.tsx#L11-L14
 interface ServiceMap {
-  activeTargets: ActiveTargets[];
+  activeTargets: Target[];
   droppedTargets: any[];
+}
+
+export interface targetLabels {
+  discoveredLabels: Labels;
+  labels: Labels;
 }
 
 const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const { response, error } = useFetch<ServiceMap>(`${pathPrefix}/api/v1/targets`);
-  const processTargets = (response: ServiceMap) => {
-    console.warn(response);
-    const activeTargets = response.activeTargets;
+  const processSummary = (response: ServiceMap) => {
     const targets: any = {};
 
     // Get targets of each type along with the total and active end points
-    for (const target of activeTargets) {
+    for (const target of response.activeTargets) {
       const { scrapePool: name } = target;
       if (!targets[name]) {
         targets[name] = {
@@ -51,17 +38,22 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
     }
     for (const target of response.droppedTargets) {
       const { scrapePool: name } = target;
+      if (!targets[name]) {
+        targets[name] = {
+          total: 0,
+          active: 0,
+        };
+      }
       targets[name].total++;
     }
 
     return targets;
   };
 
-  const processLabels = (response: ActiveTargets[]) => {
-    const labels: any = {};
-    const activeTargets = response;
+  const processTargets = (response: Target[]) => {
+    const labels: Record<string, targetLabels[]> = {};
 
-    for (const target of activeTargets) {
+    for (const target of response) {
       const name = target.scrapePool;
       if (!labels[name]) {
         labels[name] = [];
@@ -74,8 +66,6 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
 
     return labels;
   };
-  let targets: any;
-  let labels: any;
 
   if (error) {
     return (
@@ -84,8 +74,8 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
       </Alert>
     );
   } else if (response.data) {
-    targets = processTargets(response.data);
-    labels = processLabels(response.data.activeTargets);
+    const targets = processSummary(response.data);
+    const labels = processTargets(response.data.activeTargets);
 
     return (
       <>
@@ -108,7 +98,7 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
       </>
     );
   }
-  return null;
+  return <FontAwesomeIcon icon={faSpinner} spin />;
 };
 
 export default Services;
