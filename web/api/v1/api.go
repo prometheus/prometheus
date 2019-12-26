@@ -890,6 +890,7 @@ type RuleGroup struct {
 	Rules          []rule  `json:"rules"`
 	Interval       float64 `json:"interval"`
 	EvaluationTime int64   `json:"evaluationTime"`
+	LastEvaluation string  `json:"lastEvaluation"`
 }
 
 type rule interface{}
@@ -914,7 +915,7 @@ type recordingRule struct {
 	Query          string           `json:"query"`
 	Labels         labels.Labels    `json:"labels,omitempty"`
 	Health         rules.RuleHealth `json:"health"`
-	LastError      string           `json:"lastError,omitempty"`
+	LastError      string           `json:"lastError"`
 	EvaluationTime int64            `json:"evaluationTime"`
 	LastEvaluation string           `json:"lastEvaluation"`
 	// Type of a recordingRule is always "recording".
@@ -941,6 +942,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			Interval:       grp.Interval().Seconds(),
 			Rules:          []rule{},
 			EvaluationTime: grp.GetEvaluationDuration().Microseconds(),
+			LastEvaluation: time.Since(grp.GetEvaluationTimestamp()).String(),
 		}
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
@@ -977,7 +979,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					Health:         rule.Health(),
 					LastError:      lastError,
 					EvaluationTime: rule.GetEvaluationDuration().Microseconds(),
-					LastEvaluation: time.Now().Sub(rule.GetEvaluationTimestamp()).String(),
+					LastEvaluation: time.Since(rule.GetEvaluationTimestamp()).String(),
 					Type:           "recording",
 				}
 				fmt.Println(enrichedRule)
