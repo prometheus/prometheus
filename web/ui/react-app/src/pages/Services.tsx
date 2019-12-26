@@ -6,7 +6,7 @@ import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { Alert } from 'reactstrap';
 import { useFetch } from '../utils/useFetch';
 import { LabelsTable } from './LabelsTable';
-import { Target, Labels } from './targets/target';
+import { Target, Labels, DroppedTargets } from './targets/target';
 
 // TODO: Deduplicate with https://github.com/prometheus/prometheus/blob/213a8fe89a7308e73f22888a963cbf9375217cd6/web/ui/react-app/src/pages/targets/ScrapePoolList.tsx#L11-L14
 interface ServiceMap {
@@ -14,13 +14,14 @@ interface ServiceMap {
   droppedTargets: any[];
 }
 
-export interface targetLabels {
+export interface TargetLabels {
   discoveredLabels: Labels;
   labels: Labels;
 }
 
 const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const { response, error } = useFetch<ServiceMap>(`${pathPrefix}/api/v1/targets`);
+
   const processSummary = (response: ServiceMap) => {
     const targets: any = {};
 
@@ -37,7 +38,7 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
       targets[name].active++;
     }
     for (const target of response.droppedTargets) {
-      const { scrapePool: name } = target;
+      const { job: name } = target.discoveredLabels;
       if (!targets[name]) {
         targets[name] = {
           total: 0,
@@ -50,8 +51,8 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
     return targets;
   };
 
-  const processTargets = (response: Target[]) => {
-    const labels: Record<string, targetLabels[]> = {};
+  const processTargets = (response: Target[], dropped: DroppedTargets[]) => {
+    const labels: Record<string, TargetLabels[]> = {};
 
     for (const target of response) {
       const name = target.scrapePool;
@@ -61,6 +62,17 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
       labels[name].push({
         discoveredLabels: target.discoveredLabels,
         labels: target.labels,
+      });
+    }
+
+    for (const target of dropped) {
+      const { job: name } = target.discoveredLabels;
+      if (!labels[name]) {
+        labels[name] = [];
+      }
+      labels[name].push({
+        discoveredLabels: target.discoveredLabels,
+        labels: { 'dropped': 'yes' },
       });
     }
 
@@ -75,7 +87,7 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
     );
   } else if (response.data) {
     const targets = processSummary(response.data);
-    const labels = processTargets(response.data.activeTargets);
+    const labels = processTargets(response.data.activeTargets, response.data.droppedTargets);
 
     return (
       <>

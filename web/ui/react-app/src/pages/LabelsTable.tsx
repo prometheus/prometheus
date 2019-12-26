@@ -1,14 +1,14 @@
 import React, { FC, useState } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Button, Badge, Table } from 'reactstrap';
-import { targetLabels } from './Services';
+import { TargetLabels } from './Services';
 
 interface LabelProps {
-  value: targetLabels[];
+  value: TargetLabels[];
   name: string;
 }
 
-const formatLabels = (labels: Record<string, string>) => {
+const formatLabels = (labels: Record<string, string> | string) => {
   return Object.entries(labels).map(([key, value]) => {
     return (
       <div key={key}>
@@ -48,7 +48,12 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
               return (
                 <tr key={i}>
                   <td>{formatLabels(value[i].discoveredLabels)}</td>
-                  <td>{formatLabels(value[i].labels)}</td>
+                  { value[i].labels.hasOwnProperty('dropped')  ? (
+                    <td style={{ fontWeight: 'bold' }}>Dropped</td> 
+                    ) : (
+                      <td>{formatLabels(value[i].labels)}</td>
+                    )
+                  }
                 </tr>
               );
             })}
