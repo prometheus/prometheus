@@ -28,7 +28,7 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
   };
 
   return (
-    <div className="label-component">
+    <>
       <div className="mb-2">
         <span className="target-head"> {name} </span>
         <Button size="sm" color="primary" onClick={toggleShowMore}>
@@ -59,6 +59,6 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
           </tbody>
         </Table>
       ) : null}
-    </div>
+    </>
   );
 };
