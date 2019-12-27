@@ -29,14 +29,14 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
 
   return (
     <div className="label-component">
-      <div className="label-button-style">
+      <div className="mb-2">
         <span className="target-head"> {name} </span>
         <Button size="sm" color="primary" onClick={toggleShowMore}>
           {showMore ? 'show less' : 'show more'}
         </Button>
       </div>
       {showMore ? (
-        <Table striped={true} bordered={true}>
+        <Table striped={true} bordered={true} size="sm">
           <thead>
             <tr>
               <th>Discovered Labels</th>
@@ -48,7 +48,7 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
               return (
                 <tr key={i}>
                   <td>{formatLabels(value[i].discoveredLabels)}</td>
-                  {value[i].labels.hasOwnProperty('dropped') ? (
+                  {value[i].isDropped ? (
                     <td style={{ fontWeight: 'bold' }}>Dropped</td>
                   ) : (
                     <td>{formatLabels(value[i].labels)}</td>

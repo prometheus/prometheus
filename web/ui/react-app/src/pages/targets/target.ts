@@ -13,7 +13,7 @@ export interface Target {
   health: string;
 }
 
-export interface DroppedTargets {
+export interface DroppedTarget {
   discoveredLabels: Labels;
 }
 

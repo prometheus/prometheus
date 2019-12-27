@@ -6,17 +6,18 @@ import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { Alert } from 'reactstrap';
 import { useFetch } from '../utils/useFetch';
 import { LabelsTable } from './LabelsTable';
-import { Target, Labels, DroppedTargets } from './targets/target';
+import { Target, Labels, DroppedTarget } from './targets/target';
 
 // TODO: Deduplicate with https://github.com/prometheus/prometheus/blob/213a8fe89a7308e73f22888a963cbf9375217cd6/web/ui/react-app/src/pages/targets/ScrapePoolList.tsx#L11-L14
 interface ServiceMap {
   activeTargets: Target[];
-  droppedTargets: any[];
+  droppedTargets: DroppedTarget[];
 }
 
 export interface TargetLabels {
   discoveredLabels: Labels;
   labels: Labels;
+  isDropped: boolean;
 }
 
 const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
@@ -51,7 +52,7 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
     return targets;
   };
 
-  const processTargets = (response: Target[], dropped: DroppedTargets[]) => {
+  const processTargets = (response: Target[], dropped: DroppedTarget[]) => {
     const labels: Record<string, TargetLabels[]> = {};
 
     for (const target of response) {
@@ -62,6 +63,7 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
       labels[name].push({
         discoveredLabels: target.discoveredLabels,
         labels: target.labels,
+        isDropped: false,
       });
     }
 
@@ -72,7 +74,8 @@ const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => 
       }
       labels[name].push({
         discoveredLabels: target.discoveredLabels,
-        labels: { dropped: 'yes' },
+        isDropped: true,
+        labels: {},
       });
     }
 
