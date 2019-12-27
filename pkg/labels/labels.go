@@ -109,7 +109,7 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 	}
 
 	for _, v := range ls {
-		if _, ok := nameSet[v.Name]; on == ok {
+		if _, ok := nameSet[v.Name]; on == ok && (on || v.Name != MetricName) {
 			matchedLabels = append(matchedLabels, v)
 		}
 	}
