@@ -1,8 +1,11 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import PathPrefixProps from '../PathPrefixProps';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { Alert, Table } from 'reactstrap';
 import { useFetch } from '../utils/useFetch';
+import { Link } from '@reach/router';
 
 interface Rule {
   name: string;
@@ -49,7 +52,9 @@ const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
               <thead>
                 <tr>
                   <td colSpan={3}>
-                    <h2>{g.name}</h2>
+                    <a href={'#' + g.name}>
+                      <h2>{g.name}</h2>
+                    </a>
                   </td>
                   <td>
                     <h2>{roundUp(parseFloat(g.lastEvaluation))}s ago</h2>
@@ -67,23 +72,27 @@ const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
                   <td className="rules-head">Last Evaluation</td>
                   <td className="rules-head">Evaluation Time</td>
                 </tr>
-                {groups.map((g, _) => {
-                  return g.rules.map((r, i) => {
-                    return (
-                      <tr key={i}>
-                        <td>
-                          record: {r.name} <br />
-                          expr: {r.query}
-                        </td>
-                        <td>
-                          <Alert style={{ display: 'inline-table' }}>{r.health.toUpperCase()}</Alert>
-                        </td>
-                        <td>{r.lastError.length !== 0 ? r.lastError : null}</td>
-                        <td>{roundUp(parseFloat(r.lastEvaluation))}s ago</td>
-                        <td>{r.evaluationTime}us ago</td>
-                      </tr>
-                    );
-                  });
+                {g.rules.map((r, i) => {
+                  return (
+                    <tr key={i}>
+                      <td>
+                        <span className="rules-head">record:</span> {r.name} <br />
+                        <span className="rules-head">expr:</span>
+                        <Link
+                          style={{ marginLeft: '3%' }}
+                          to={`${pathPrefix}/new/graph?g0.expr=${r.query}&g0.tab=1&g0.stacked=0&g0.range_input=1h`}
+                        >
+                          {r.query}
+                        </Link>
+                      </td>
+                      <td>
+                        <Alert style={{ display: 'inline-table' }}>{r.health.toUpperCase()}</Alert>
+                      </td>
+                      <td>{r.lastError.length !== 0 ? r.lastError : null}</td>
+                      <td>{roundUp(parseFloat(r.lastEvaluation))}s ago</td>
+                      <td>{r.evaluationTime}us ago</td>
+                    </tr>
+                  );
                 })}
               </tbody>
             </Table>
@@ -93,7 +102,7 @@ const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
     );
   }
 
-  return null;
+  return <FontAwesomeIcon icon={faSpinner} spin />;
 };
 
 export default Rules;
