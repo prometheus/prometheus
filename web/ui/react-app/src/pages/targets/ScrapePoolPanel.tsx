@@ -14,6 +14,19 @@ interface PanelProps {
   targetGroup: ScrapePool;
 }
 
+export const ToggleButtonProps = {
+  children: '',
+  color: 'primary',
+  onClick: (): void => {},
+  size: 'xs',
+  style: {
+    padding: '0.3em 0.3em 0.25em 0.3em',
+    fontSize: '0.375em',
+    marginLeft: '1em',
+    verticalAlign: 'baseline',
+  },
+};
+
 export const columns = ['Endpoint', 'State', 'Labels', 'Last Scrape', 'Scrape Duration', 'Error'];
 
 const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
@@ -24,18 +37,8 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
     href: `#${id}`,
     id,
   };
-  const btnProps = {
-    children: `show ${expanded ? 'less' : 'more'}`,
-    color: 'primary',
-    onClick: (): void => setOptions({ expanded: !expanded }),
-    size: 'xs',
-    style: {
-      padding: '0.3em 0.3em 0.25em 0.3em',
-      fontSize: '0.375em',
-      marginLeft: '1em',
-      verticalAlign: 'baseline',
-    },
-  };
+  ToggleButtonProps.onClick = (): void => setOptions({ expanded: !expanded });
+  ToggleButtonProps.children = `show ${expanded ? 'less' : 'more'}`;
 
   return (
     <div className={styles.container}>
@@ -43,7 +46,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
         <a className={styles[modifier]} {...anchorProps}>
           {`${scrapePool} (${targetGroup.upCount}/${targetGroup.targets.length} up)`}
         </a>
-        <Button {...btnProps} />
+        <Button {...ToggleButtonProps} />
       </h3>
       <Collapse isOpen={expanded}>
         <Table className={styles.table} size="sm" bordered hover striped>

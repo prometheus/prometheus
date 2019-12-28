@@ -2,6 +2,7 @@ import React, { FC, useState } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Button, Badge, Table } from 'reactstrap';
 import { TargetLabels } from './Services';
+import { ToggleButtonProps } from './targets/ScrapePoolPanel';
 
 interface LabelProps {
   value: TargetLabels[];
@@ -23,20 +24,21 @@ const formatLabels = (labels: Record<string, string> | string) => {
 export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name }) => {
   const [showMore, setShowMore] = useState(false);
 
-  const toggleShowMore = () => {
+  ToggleButtonProps.onClick = (): void => {
     setShowMore(!showMore);
   };
+  ToggleButtonProps.children = `show ${showMore ? 'less' : 'more'}`;
 
   return (
     <>
-      <div className="mb-2">
-        <span className="target-head"> {name} </span>
-        <Button size="sm" color="primary" onClick={toggleShowMore}>
-          {showMore ? 'show less' : 'show more'}
-        </Button>
+      <div>
+        <h3>
+          <span className="target-head">{name}</span>
+          <Button {...ToggleButtonProps} />
+        </h3>
       </div>
       {showMore ? (
-        <Table striped={true} bordered={true} size="sm">
+        <Table size="sm" bordered hover striped>
           <thead>
             <tr>
               <th>Discovered Labels</th>
