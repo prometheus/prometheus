@@ -415,6 +415,19 @@ func funcMinOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
 	})
 }
 
+// === last_over_time(Matrix ValueTypeMatrix) Vector ===
+func funcLastOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
+		last := values[0]
+		for _, v := range values {
+			if !math.IsNaN(v.V) && (v.T > last.T || math.IsNaN(last.V)) {
+				last = v
+			}
+		}
+		return last.V
+	})
+}
+
 // === sum_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcSumOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
@@ -1092,6 +1105,12 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 		Call:       funcMinOverTime,
+	},
+	"last_over_time": {
+		Name:       "last_over_time",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+		Call:       funcLastOverTime,
 	},
 	"minute": {
 		Name:       "minute",

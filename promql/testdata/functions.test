@@ -546,3 +546,10 @@ eval instant at 1m max_over_time(data[1m])
 	{type="some_nan2"} 2
 	{type="some_nan3"} 1
 	{type="only_nan"} NaN
+
+eval instant at 1m last_over_time(data[1m])
+	{type="numbers"} 3
+	{type="some_nan"} 0
+	{type="some_nan2"} 1
+	{type="some_nan3"} 1
+	{type="only_nan"} NaN

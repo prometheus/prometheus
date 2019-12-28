@@ -1507,6 +1507,30 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: `last_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`,
+		expected: &Call{
+			Func: mustGetFunction("last_over_time"),
+			Args: Expressions{
+				&SubqueryExpr{
+					Expr: &Call{
+						Func: mustGetFunction("rate"),
+						Args: Expressions{
+							&MatrixSelector{
+								Name:  "foo",
+								Range: 2 * time.Second,
+								LabelMatchers: []*labels.Matcher{
+									mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+									mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+								},
+							},
+						},
+					},
+					Range: 5 * time.Minute,
+					Step:  5 * time.Second,
+				},
+			},
+		},
+	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 		expected: &SubqueryExpr{
 			Expr: &Call{
