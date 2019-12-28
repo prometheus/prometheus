@@ -34,7 +34,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	template_text "text/template"
 	"time"
 
@@ -295,7 +294,6 @@ func New(logger log.Logger, o *Options) *Handler {
 			return *h.config
 		},
 		o.Flags,
-		h.testReady,
 		func() api_v1.TSDBAdmin {
 			return h.options.TSDB()
 		},
@@ -318,29 +316,27 @@ func New(logger log.Logger, o *Options) *Handler {
 		router = router.WithPrefix(o.RoutePrefix)
 	}
 
-	readyf := h.testReady
-
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/graph"), http.StatusFound)
 	})
 
-	router.Get("/alerts", readyf(h.alerts))
-	router.Get("/graph", readyf(h.graph))
-	router.Get("/status", readyf(h.status))
-	router.Get("/flags", readyf(h.flags))
-	router.Get("/config", readyf(h.serveConfig))
-	router.Get("/rules", readyf(h.rules))
-	router.Get("/targets", readyf(h.targets))
-	router.Get("/version", readyf(h.version))
-	router.Get("/service-discovery", readyf(h.serviceDiscovery))
+	router.Get("/alerts", h.alerts)
+	router.Get("/graph", h.graph)
+	router.Get("/status", h.status)
+	router.Get("/flags", h.flags)
+	router.Get("/config", h.serveConfig)
+	router.Get("/rules", h.rules)
+	router.Get("/targets", h.targets)
+	router.Get("/version", h.version)
+	router.Get("/service-discovery", h.serviceDiscovery)
 
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
 
-	router.Get("/federate", readyf(httputil.CompressionHandler{
+	router.Get("/federate", httputil.CompressionHandler{
 		Handler: http.HandlerFunc(h.federation),
-	}.ServeHTTP))
+	}.ServeHTTP)
 
-	router.Get("/consoles/*filepath", readyf(h.consoles))
+	router.Get("/consoles/*filepath", h.consoles)
 
 	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
@@ -425,10 +421,10 @@ func New(logger log.Logger, o *Options) *Handler {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Prometheus is Healthy.\n")
 	})
-	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/-/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Prometheus is Ready.\n")
-	}))
+	})
 
 	return h
 }
@@ -461,34 +457,6 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 		req.URL.Path = "/debug/pprof/" + subpath
 		pprof.Index(w, req)
 	}
-}
-
-// Ready sets Handler to be ready.
-func (h *Handler) Ready() {
-	atomic.StoreUint32(&h.ready, 1)
-}
-
-// Verifies whether the server is ready or not.
-func (h *Handler) isReady() bool {
-	ready := atomic.LoadUint32(&h.ready)
-	return ready > 0
-}
-
-// Checks if server is ready, calls f if it is, returns 503 if it is not.
-func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if h.isReady() {
-			f(w, r)
-		} else {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, "Service Unavailable")
-		}
-	}
-}
-
-// Checks if server is ready, calls f if it is, returns 503 if it is not.
-func (h *Handler) testReadyHandler(f http.Handler) http.HandlerFunc {
-	return h.testReady(f.ServeHTTP)
 }
 
 // Quit returns the receive-only quit channel.
@@ -534,8 +502,6 @@ func (h *Handler) Run(ctx context.Context) error {
 		return err
 	}
 
-	hhFunc := h.testReadyHandler(hh)
-
 	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 	})
@@ -555,7 +521,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			httputil.SetCORS(w, h.options.CORSOrigin, r)
-			hhFunc(w, r)
+			hh.ServeHTTP(w, r)
 		}),
 	))
 

@@ -212,9 +212,6 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 
-	// Set to ready.
-	webHandler.Ready()
-
 	resp, err = http.Get("http://localhost:9090/-/healthy")
 
 	testutil.Ok(t, err)
@@ -347,9 +344,6 @@ func TestRoutePrefix(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 
-	// Set to ready.
-	webHandler.Ready()
-
 	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/healthy")
 
 	testutil.Ok(t, err)
@@ -394,7 +388,6 @@ func TestDebugHandler(t *testing.T) {
 			RoutePrefix: tc.prefix,
 		}
 		handler := New(nil, opts)
-		handler.Ready()
 
 		w := httptest.NewRecorder()
 
@@ -428,7 +421,6 @@ func TestHTTPMetrics(t *testing.T) {
 	counter := handler.metrics.requestCounter
 	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 
-	handler.Ready()
 	for range [2]int{} {
 		code = getReady()
 		testutil.Equals(t, http.StatusOK, code)

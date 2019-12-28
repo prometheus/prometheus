@@ -613,7 +613,6 @@ func main() {
 
 				reloadReady.Close()
 
-				webHandler.Ready()
 				level.Info(logger).Log("msg", "Server is ready to receive web requests.")
 				<-cancel
 				return nil
@@ -691,6 +690,7 @@ func main() {
 		// Web handler.
 		g.Add(
 			func() error {
+				<-reloadReady.C
 				if err := webHandler.Run(ctxWeb); err != nil {
 					return errors.Wrapf(err, "error starting web server")
 				}

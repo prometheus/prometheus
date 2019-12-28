@@ -174,7 +174,6 @@ type API struct {
 	now                   func() time.Time
 	config                func() config.Config
 	flagsMap              map[string]string
-	ready                 func(http.HandlerFunc) http.HandlerFunc
 
 	db                        func() TSDBAdmin
 	enableAdmin               bool
@@ -200,7 +199,6 @@ func NewAPI(
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
-	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() TSDBAdmin,
 	enableAdmin bool,
 	logger log.Logger,
@@ -221,7 +219,6 @@ func NewAPI(
 		now:                       time.Now,
 		config:                    configFunc,
 		flagsMap:                  flagsMap,
-		ready:                     readyFunc,
 		db:                        db,
 		enableAdmin:               enableAdmin,
 		rulesRetriever:            rr,
@@ -252,9 +249,9 @@ func (api *API) Register(r *route.Router) {
 				result.finalizer()
 			}
 		})
-		return api.ready(httputil.CompressionHandler{
+		return httputil.CompressionHandler{
 			Handler: hf,
-		}.ServeHTTP)
+		}.ServeHTTP
 	}
 
 	r.Options("/*path", wrap(api.options))
@@ -283,7 +280,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
-	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
+	r.Post("/read", http.HandlerFunc(api.remoteRead))
 
 	r.Get("/alerts", wrap(api.alerts))
 	r.Get("/rules", wrap(api.rules))

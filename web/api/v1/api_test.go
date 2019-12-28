@@ -306,7 +306,6 @@ func TestEndpoints(t *testing.T) {
 			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
 			config:                func() config.Config { return samplePrometheusCfg },
-			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr,
 		}
 
@@ -370,7 +369,6 @@ func TestEndpoints(t *testing.T) {
 			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
 			config:                func() config.Config { return samplePrometheusCfg },
-			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr,
 		}
 
@@ -2045,7 +2043,6 @@ func TestAdminEndpoints(t *testing.T) {
 					}
 					return nil
 				},
-				ready:       func(f http.HandlerFunc) http.HandlerFunc { return f },
 				enableAdmin: tc.enableAdmin,
 			}
 			defer func() {
@@ -2262,7 +2259,7 @@ func TestParseDuration(t *testing.T) {
 
 func TestOptionsMethod(t *testing.T) {
 	r := route.New()
-	api := &API{ready: func(f http.HandlerFunc) http.HandlerFunc { return f }}
+	api := &API{}
 	api.Register(r)
 
 	s := httptest.NewServer(r)
