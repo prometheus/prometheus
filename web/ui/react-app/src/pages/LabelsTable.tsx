@@ -1,6 +1,6 @@
 import React, { FC, useState } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import { Button, Badge, Table } from 'reactstrap';
+import { Badge, Table } from 'reactstrap';
 import { TargetLabels } from './Services';
 import { ToggleButton } from './targets/ToggleButton';
 
@@ -29,7 +29,12 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
       <div>
         <h3>
           <span className="target-head">{name}</span>
-          <ToggleButton child={`show ${showMore ? 'less' : 'more'}`} onClick={(): void => { setShowMore(!showMore); }} />
+          <ToggleButton
+            child={`show ${showMore ? 'less' : 'more'}`}
+            onClick={(): void => {
+              setShowMore(!showMore);
+            }}
+          />
         </h3>
       </div>
       {showMore ? (

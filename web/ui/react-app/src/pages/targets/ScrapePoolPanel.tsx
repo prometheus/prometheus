@@ -1,6 +1,6 @@
 import React, { FC } from 'react';
 import { ScrapePool, getColor } from './target';
-import { Button, Collapse, Table, Badge } from 'reactstrap';
+import { Collapse, Table, Badge } from 'reactstrap';
 import styles from './ScrapePoolPanel.module.css';
 import { Target } from './target';
 import EndpointLink from './EndpointLink';
@@ -32,7 +32,10 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
         <a className={styles[modifier]} {...anchorProps}>
           {`${scrapePool} (${targetGroup.upCount}/${targetGroup.targets.length} up)`}
         </a>
-        <ToggleButton child={`show ${expanded ? 'less' : 'more'}`} onClick={(): void => setOptions({ expanded: !expanded })} />
+        <ToggleButton
+          child={`show ${expanded ? 'less' : 'more'}`}
+          onClick={(): void => setOptions({ expanded: !expanded })}
+        />
       </h3>
       <Collapse isOpen={expanded}>
         <Table className={styles.table} size="sm" bordered hover striped>

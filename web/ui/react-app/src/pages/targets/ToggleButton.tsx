@@ -22,7 +22,5 @@ const ToggleButtonProps = {
 export const ToggleButton: FC<ToggleProps> = ({ child, onClick }) => {
   ToggleButtonProps.onClick = onClick;
   ToggleButtonProps.children = child;
-  return (
-    <Button {...ToggleButtonProps} />
-  );
+  return <Button {...ToggleButtonProps} />;
 };
