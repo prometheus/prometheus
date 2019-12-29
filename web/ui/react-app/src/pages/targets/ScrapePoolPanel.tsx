@@ -8,24 +8,12 @@ import TargetLabels from './TargetLabels';
 import { formatRelative, humanizeDuration } from '../../utils/timeFormat';
 import { now } from 'moment';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { ToggleButton } from './ToggleButton';
 
 interface PanelProps {
   scrapePool: string;
   targetGroup: ScrapePool;
 }
-
-export const ToggleButtonProps = {
-  children: '',
-  color: 'primary',
-  onClick: (): void => {},
-  size: 'xs',
-  style: {
-    padding: '0.3em 0.3em 0.25em 0.3em',
-    fontSize: '0.375em',
-    marginLeft: '1em',
-    verticalAlign: 'baseline',
-  },
-};
 
 export const columns = ['Endpoint', 'State', 'Labels', 'Last Scrape', 'Scrape Duration', 'Error'];
 
@@ -37,8 +25,6 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
     href: `#${id}`,
     id,
   };
-  ToggleButtonProps.onClick = (): void => setOptions({ expanded: !expanded });
-  ToggleButtonProps.children = `show ${expanded ? 'less' : 'more'}`;
 
   return (
     <div className={styles.container}>
@@ -46,7 +32,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
         <a className={styles[modifier]} {...anchorProps}>
           {`${scrapePool} (${targetGroup.upCount}/${targetGroup.targets.length} up)`}
         </a>
-        <Button {...ToggleButtonProps} />
+        <ToggleButton child={`show ${expanded ? 'less' : 'more'}`} onClick={(): void => setOptions({ expanded: !expanded })} />
       </h3>
       <Collapse isOpen={expanded}>
         <Table className={styles.table} size="sm" bordered hover striped>
