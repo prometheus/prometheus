@@ -5,11 +5,11 @@ interface ToggleProps {
   onClick(): void;
 }
 
-export const ExpandableButton: FC<ToggleProps> = ({ children, onClick }) => {
-  const [expanded, setExpanded] = useState(false);
+export const ToggleMoreLess: FC<ToggleProps> = ({ children, onClick }) => {
+  const [showMoreLess, toggleMoreLess] = useState(false);
   const event = () => {
     onClick();
-    setExpanded(!expanded);
+    toggleMoreLess(!showMoreLess);
   };
   return (
     <h3>
@@ -25,7 +25,7 @@ export const ExpandableButton: FC<ToggleProps> = ({ children, onClick }) => {
         }}
         color="primary"
       >
-        show {expanded ? 'less' : 'more'}
+        show {showMoreLess ? 'less' : 'more'}
       </Button>
     </h3>
   );

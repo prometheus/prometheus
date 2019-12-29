@@ -8,7 +8,7 @@ import TargetLabels from './TargetLabels';
 import { formatRelative, humanizeDuration } from '../../utils/timeFormat';
 import { now } from 'moment';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { ExpandableButton } from './ExpandableButton';
+import { ToggleMoreLess } from './ToggleMoreLess';
 
 interface PanelProps {
   scrapePool: string;
@@ -28,13 +28,11 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
 
   return (
     <div className={styles.container}>
-      <h3>
-        <ExpandableButton onClick={(): void => setOptions({ expanded: !expanded })}>
-          <a className={styles[modifier]} {...anchorProps}>
-            {`${scrapePool} (${targetGroup.upCount}/${targetGroup.targets.length} up)`}
-          </a>
-        </ExpandableButton>
-      </h3>
+      <ToggleMoreLess onClick={(): void => setOptions({ expanded: !expanded })}>
+        <a className={styles[modifier]} {...anchorProps}>
+          {`${scrapePool} (${targetGroup.upCount}/${targetGroup.targets.length} up)`}
+        </a>
+      </ToggleMoreLess>
       <Collapse isOpen={expanded}>
         <Table className={styles.table} size="sm" bordered hover striped>
           <thead>

@@ -2,7 +2,7 @@ import React, { FC, useState } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Badge, Table } from 'reactstrap';
 import { TargetLabels } from './Services';
-import { ExpandableButton } from './targets/ExpandableButton';
+import { ToggleMoreLess } from './targets/ToggleMoreLess';
 
 interface LabelProps {
   value: TargetLabels[];
@@ -28,13 +28,13 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
     <>
       <div>
         <h3>
-          <ExpandableButton
+          <ToggleMoreLess
             onClick={(): void => {
               setShowMore(!showMore);
             }}
           >
             <span className="target-head">{name}</span>
-          </ExpandableButton>
+          </ToggleMoreLess>
         </h3>
       </div>
       {showMore ? (
