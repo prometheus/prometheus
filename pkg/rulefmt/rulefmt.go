@@ -46,19 +46,23 @@ type RuleGroups struct {
 	Groups []RuleGroup `yaml:"groups"`
 }
 
+type ruleGroups struct {
+	Groups []yaml.Node `yaml:"groups"`
+}
+
 // Validate validates all rules in the rule groups.
 func (g *RuleGroups) Validate() (errs []error) {
 	set := map[string]struct{}{}
 
-	for _, g := range g.Groups {
+	for j, g := range g.Groups {
 		if g.Name == "" {
-			errs = append(errs, errors.Errorf("Groupname should not be empty"))
+			errs = append(errs, errors.Errorf("Groupname should not be empty, line: %d, column: %d", grpsTmp.Groups[j].Line, grpsTmp.Groups[j].Column))
 		}
 
 		if _, ok := set[g.Name]; ok {
 			errs = append(
 				errs,
-				errors.Errorf("groupname: \"%s\" is repeated in the same file", g.Name),
+				errors.Errorf("groupname: \"%s\" is repeated in the same file, line: %d, column: %d", g.Name, grpsTmp.Groups[j].Line, grpsTmp.Groups[j].Column),
 			)
 		}
 
@@ -118,7 +122,11 @@ func (r *RuleNode) Validate() (errs []error) {
 		errs = append(errs, errors.Errorf("only one of 'record' and 'alert' must be set, lines: %d %d, columns: %d %d", r.Record.Line, r.Alert.Line, r.Record.Column, r.Alert.Column))
 	}
 	if r.Record.Value == "" && r.Alert.Value == "" {
-		errs = append(errs, errors.Errorf("one of 'record' or 'alert' must be set, lines: %d %d, columns: %d %d", r.Record.Line, r.Alert.Line, r.Record.Column, r.Alert.Column))
+		if r.Record.Value == "0" {
+			errs = append(errs, errors.Errorf("one of 'record' or 'alert' must be set, lines: %d, columns: %d", r.Alert.Line, r.Alert.Column))
+		} else {
+			errs = append(errs, errors.Errorf("one of 'record' or 'alert' must be set, lines: %d, columns: %d", r.Record.Line, r.Record.Column))
+		}
 	}
 
 	if r.Expr.Value == "" {
@@ -205,10 +213,13 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 	return errs
 }
 
+var grpsTmp ruleGroups
+
 // Parse parses and validates a set of rules.
 func Parse(content []byte) (*RuleGroups, []error) {
 	var groups RuleGroups
-	if err := yaml.Unmarshal(content, &groups); err != nil {
+	err := yaml.Unmarshal(content, &grpsTmp)
+	if err = yaml.Unmarshal(content, &groups); err != nil {
 		return nil, []error{err}
 	}
 	return &groups, groups.Validate()
