@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { shallow } from 'enzyme';
 import { Button } from 'reactstrap';
 import { ToggleMoreLess } from './ToggleMoreLess';
@@ -6,7 +6,9 @@ import { ToggleMoreLess } from './ToggleMoreLess';
 describe('ToggleMoreLess', () => {
   const showMoreValue = false;
   const defaultProps = {
-    event: (): void => { tggleBtn.setProps({ showMore: !showMoreValue }) },
+    event: (): void => {
+      tggleBtn.setProps({ showMore: !showMoreValue });
+    },
     showMore: showMoreValue,
   };
   const tggleBtn = shallow(<ToggleMoreLess {...defaultProps} />);

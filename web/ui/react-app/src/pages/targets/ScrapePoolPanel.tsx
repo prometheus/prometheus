@@ -28,10 +28,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
 
   return (
     <div className={styles.container}>
-      <ToggleMoreLess
-       event={(): void => setOptions({ expanded: !expanded })}
-      showMore={expanded}
-       >
+      <ToggleMoreLess event={(): void => setOptions({ expanded: !expanded })} showMore={expanded}>
         <a className={styles[modifier]} {...anchorProps}>
           {`${scrapePool} (${targetGroup.upCount}/${targetGroup.targets.length} up)`}
         </a>
