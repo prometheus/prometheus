@@ -111,7 +111,7 @@ type RuleNode struct {
 	Record      yaml.Node         `yaml:"record,omitempty"`
 	Alert       yaml.Node         `yaml:"alert,omitempty"`
 	Expr        yaml.Node         `yaml:"expr"`
-	For         model.Duration       `yaml:"for,omitempty"`
+	For         model.Duration    `yaml:"for,omitempty"`
 	Labels      map[string]string `yaml:"labels,omitempty"`
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
