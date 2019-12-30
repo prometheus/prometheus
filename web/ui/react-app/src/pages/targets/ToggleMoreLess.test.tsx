@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { shallow } from 'enzyme';
 import { Button } from 'reactstrap';
 import { ToggleMoreLess } from './ToggleMoreLess';
 
 describe('ToggleMoreLess', () => {
+  const showMoreValue = false;
   const defaultProps = {
-    onClick: (): void => {},
+    event: (): void => { tggleBtn.setProps({ showMore: !showMoreValue }) },
+    showMore: showMoreValue,
   };
   const tggleBtn = shallow(<ToggleMoreLess {...defaultProps} />);
 
@@ -17,7 +19,7 @@ describe('ToggleMoreLess', () => {
     expect(btn.render().text()).toEqual('show more');
   });
 
-  it('renders a show less btn if clicked', async () => {
+  it('renders a show less btn if clicked', () => {
     tggleBtn.find(Button).simulate('click');
     expect(
       tggleBtn

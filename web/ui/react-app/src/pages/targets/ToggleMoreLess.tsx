@@ -1,16 +1,12 @@
 import React, { FC, useState } from 'react';
 import { Button } from 'reactstrap';
 
-interface ToggleProps {
-  onClick(): void;
+interface ToggleMoreLessProps {
+  event(): void;
+  showMore: boolean;
 }
 
-export const ToggleMoreLess: FC<ToggleProps> = ({ children, onClick }) => {
-  const [showMoreLess, toggleMoreLess] = useState(false);
-  const event = () => {
-    onClick();
-    toggleMoreLess(!showMoreLess);
-  };
+export const ToggleMoreLess: FC<ToggleMoreLessProps> = ({ children, event, showMore }) => {
   return (
     <h3>
       {children}
@@ -25,7 +21,7 @@ export const ToggleMoreLess: FC<ToggleProps> = ({ children, onClick }) => {
         }}
         color="primary"
       >
-        show {showMoreLess ? 'less' : 'more'}
+        show {showMore ? 'less' : 'more'}
       </Button>
     </h3>
   );

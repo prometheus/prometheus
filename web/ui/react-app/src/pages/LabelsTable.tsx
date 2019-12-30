@@ -27,15 +27,14 @@ export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name 
   return (
     <>
       <div>
-        <h3>
-          <ToggleMoreLess
-            onClick={(): void => {
-              setShowMore(!showMore);
-            }}
-          >
-            <span className="target-head">{name}</span>
-          </ToggleMoreLess>
-        </h3>
+        <ToggleMoreLess
+          event={(): void => {
+            setShowMore(!showMore);
+          }}
+          showMore={showMore}
+        >
+          <span className="target-head">{name}</span>
+        </ToggleMoreLess>
       </div>
       {showMore ? (
         <Table size="sm" bordered hover striped>
