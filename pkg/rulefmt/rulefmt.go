@@ -115,27 +115,27 @@ type RuleNode struct {
 // Validate the rule and return a list of encountered errors.
 func (r *RuleNode) Validate() (errs []error) {
 	if r.Record.Value != "" && r.Alert.Value != "" {
-		errs = append(errs, errors.Errorf("only one of 'record' and 'alert' must be set"))
+		errs = append(errs, errors.Errorf("only one of 'record' and 'alert' must be set, lines: %d %d, columns: %d %d", r.Record.Line, r.Alert.Line, r.Record.Column, r.Alert.Column))
 	}
 	if r.Record.Value == "" && r.Alert.Value == "" {
-		errs = append(errs, errors.Errorf("one of 'record' or 'alert' must be set"))
+		errs = append(errs, errors.Errorf("one of 'record' or 'alert' must be set, lines: %d %d, columns: %d %d", r.Record.Line, r.Alert.Line, r.Record.Column, r.Alert.Column))
 	}
 
 	if r.Expr.Value == "" {
 		fmt.Println(r.Expr.Line)
-		errs = append(errs, errors.Errorf("field 'expr' must be set in rule, line: %d column: %d", r.Expr.Line, r.Expr.Column))
+		errs = append(errs, errors.Errorf("field 'expr' must be set in rule, line: %d, column: %d", r.Expr.Line, r.Expr.Column))
 	} else if _, err := promql.ParseExpr(r.Expr.Value); err != nil {
-		errs = append(errs, errors.Wrapf(err, "could not parse expression, line: %d column: %d", r.Expr.Line, r.Expr.Column))
+		errs = append(errs, errors.Wrapf(err, "could not parse expression, line: %d, column: %d", r.Expr.Line, r.Expr.Column))
 	}
 	if r.Record.Value != "" {
 		if len(r.Annotations) > 0 {
-			errs = append(errs, errors.Errorf("invalid field 'annotations' in recording rule, line: %d column: %d", r.Record.Line, r.Record.Column))
+			errs = append(errs, errors.Errorf("invalid field 'annotations' in recording rule, line: %d, column: %d", r.Record.Line, r.Record.Column))
 		}
 		if r.For != 0 {
 			errs = append(errs, errors.Errorf("invalid field 'for' in recording rule"))
 		}
 		if !model.IsValidMetricName(model.LabelValue(r.Record.Value)) {
-			errs = append(errs, errors.Errorf("invalid recording rule name: %s, line: %d column: %d", r.Record.Value, r.Record.Line, r.Record.Column))
+			errs = append(errs, errors.Errorf("invalid recording rule name: %s, line: %d, column: %d", r.Record.Value, r.Record.Line, r.Record.Column))
 		}
 	}
 

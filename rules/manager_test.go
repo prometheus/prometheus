@@ -756,7 +756,7 @@ func TestUpdate(t *testing.T) {
 	// Change group rules and reload.
 	for i, g := range rgs.Groups {
 		for j, r := range g.Rules {
-			rgs.Groups[i].Rules[j].Expr.Value = fmt.Sprintf("%s * 0", r.Expr.Value)
+			rgs.Groups[i].Rules[j].Expr.SetString(fmt.Sprintf("%s * 0", r.Expr.Value))
 		}
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
@@ -769,7 +769,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 	_, err = tmpFile.Write(bs)
 	testutil.Ok(t, err)
 	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil)
-	testutil.Ok(t, err)
+	testutil.NotOk(t, err)
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
 			t.Fail()
