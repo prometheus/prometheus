@@ -15,13 +15,14 @@ package rulefmt
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -66,10 +67,10 @@ func (g *RuleGroups) Validate() (errs []error) {
 		for i, r := range g.Rules {
 			for _, err := range r.Validate() {
 				var ruleName string
-				if r.Alert != "" {
-					ruleName = r.Alert
+				if r.Alert.Value != "" {
+					ruleName = r.Alert.Value
 				} else {
-					ruleName = r.Record
+					ruleName = r.Record.Value
 				}
 				errs = append(errs, &Error{
 					Group:    g.Name,
@@ -88,7 +89,7 @@ func (g *RuleGroups) Validate() (errs []error) {
 type RuleGroup struct {
 	Name     string         `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
-	Rules    []Rule         `yaml:"rules"`
+	Rules    []RuleNode     `yaml:"rules"`
 }
 
 // Rule describes an alerting or recording rule.
@@ -101,29 +102,40 @@ type Rule struct {
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
+// RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
+type RuleNode struct {
+	Record      yaml.Node         `yaml:"record,omitempty"`
+	Alert       yaml.Node         `yaml:"alert,omitempty"`
+	Expr        yaml.Node         `yaml:"expr"`
+	For         model.Duration       `yaml:"for,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
+}
+
 // Validate the rule and return a list of encountered errors.
-func (r *Rule) Validate() (errs []error) {
-	if r.Record != "" && r.Alert != "" {
+func (r *RuleNode) Validate() (errs []error) {
+	if r.Record.Value != "" && r.Alert.Value != "" {
 		errs = append(errs, errors.Errorf("only one of 'record' and 'alert' must be set"))
 	}
-	if r.Record == "" && r.Alert == "" {
+	if r.Record.Value == "" && r.Alert.Value == "" {
 		errs = append(errs, errors.Errorf("one of 'record' or 'alert' must be set"))
 	}
 
-	if r.Expr == "" {
-		errs = append(errs, errors.Errorf("field 'expr' must be set in rule"))
-	} else if _, err := promql.ParseExpr(r.Expr); err != nil {
-		errs = append(errs, errors.Wrap(err, "could not parse expression"))
+	if r.Expr.Value == "" {
+		fmt.Println(r.Expr.Line)
+		errs = append(errs, errors.Errorf("field 'expr' must be set in rule, line: %d column: %d", r.Expr.Line, r.Expr.Column))
+	} else if _, err := promql.ParseExpr(r.Expr.Value); err != nil {
+		errs = append(errs, errors.Wrapf(err, "could not parse expression, line: %d column: %d", r.Expr.Line, r.Expr.Column))
 	}
-	if r.Record != "" {
+	if r.Record.Value != "" {
 		if len(r.Annotations) > 0 {
-			errs = append(errs, errors.Errorf("invalid field 'annotations' in recording rule"))
+			errs = append(errs, errors.Errorf("invalid field 'annotations' in recording rule, line: %d column: %d", r.Record.Line, r.Record.Column))
 		}
 		if r.For != 0 {
 			errs = append(errs, errors.Errorf("invalid field 'for' in recording rule"))
 		}
-		if !model.IsValidMetricName(model.LabelValue(r.Record)) {
-			errs = append(errs, errors.Errorf("invalid recording rule name: %s", r.Record))
+		if !model.IsValidMetricName(model.LabelValue(r.Record.Value)) {
+			errs = append(errs, errors.Errorf("invalid recording rule name: %s, line: %d column: %d", r.Record.Value, r.Record.Line, r.Record.Column))
 		}
 	}
 
@@ -148,8 +160,8 @@ func (r *Rule) Validate() (errs []error) {
 
 // testTemplateParsing checks if the templates used in labels and annotations
 // of the alerting rules are parsed correctly.
-func testTemplateParsing(rl *Rule) (errs []error) {
-	if rl.Alert == "" {
+func testTemplateParsing(rl *RuleNode) (errs []error) {
+	if rl.Alert.Value == "" {
 		// Not an alerting rule.
 		return errs
 	}
@@ -165,7 +177,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 		tmpl := template.NewTemplateExpander(
 			context.TODO(),
 			strings.Join(append(defs, text), ""),
-			"__alert_"+rl.Alert,
+			"__alert_"+rl.Alert.Value,
 			tmplData,
 			model.Time(timestamp.FromTime(time.Now())),
 			nil,
@@ -196,7 +208,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 // Parse parses and validates a set of rules.
 func Parse(content []byte) (*RuleGroups, []error) {
 	var groups RuleGroups
-	if err := yaml.UnmarshalStrict(content, &groups); err != nil {
+	if err := yaml.Unmarshal(content, &groups); err != nil {
 		return nil, []error{err}
 	}
 	return &groups, groups.Validate()

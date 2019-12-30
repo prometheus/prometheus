@@ -756,7 +756,7 @@ func TestUpdate(t *testing.T) {
 	// Change group rules and reload.
 	for i, g := range rgs.Groups {
 		for j, r := range g.Rules {
-			rgs.Groups[i].Rules[j].Expr = fmt.Sprintf("%s * 0", r.Expr)
+			rgs.Groups[i].Rules[j].Expr.Value = fmt.Sprintf("%s * 0", r.Expr.Value)
 		}
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
