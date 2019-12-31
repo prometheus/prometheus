@@ -6,10 +6,10 @@ require (
 	github.com/Azure/go-autorest v11.2.8+incompatible
 	github.com/OneOfOne/xxhash v1.2.5 // indirect
 	github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf
-	github.com/aliyun/alibaba-cloud-sdk-go v0.0.0-20190815064209-a314889ae184
+	github.com/aliyun/alibaba-cloud-sdk-go v1.60.310
 	github.com/aws/aws-sdk-go v1.15.24
 	github.com/cespare/xxhash v1.1.0
-	github.com/denverdino/aliyungo v0.0.0-20190813100059-a3900ffe3b5d
+	github.com/denverdino/aliyungo v0.0.0-20191227032621-df38c6fa730c
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/edsrzf/mmap-go v1.0.0
 	github.com/evanphx/json-patch v4.1.0+incompatible // indirect
@@ -17,7 +17,6 @@ require (
 	github.com/go-logfmt/logfmt v0.4.0
 	github.com/go-openapi/strfmt v0.19.0
 	github.com/gogo/protobuf v1.2.1
-	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4 // indirect
 	github.com/golang/snappy v0.0.1
 	github.com/google/pprof v0.0.0-20180605153948-8b03ce837f34
