@@ -444,6 +444,8 @@ gopkg.in/fsnotify/fsnotify.v1
 gopkg.in/inf.v0
 # gopkg.in/yaml.v2 v2.2.2
 gopkg.in/yaml.v2
+# gopkg.in/yaml.v3 v3.0.0-20191120175047-4206685974f2
+gopkg.in/yaml.v3
 # k8s.io/api v0.0.0-20190813020757-36bff7324fb7
 k8s.io/api/admissionregistration/v1beta1
 k8s.io/api/apps/v1
