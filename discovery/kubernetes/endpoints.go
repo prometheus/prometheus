@@ -124,7 +124,7 @@ func (e *Endpoints) enqueue(obj interface{}) {
 }
 
 // Run implements the Discoverer interface.
-func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+func (e *Endpoints) run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer e.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), e.endpointsInf.HasSynced, e.serviceInf.HasSynced, e.podInf.HasSynced) {

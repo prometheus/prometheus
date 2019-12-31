@@ -71,7 +71,7 @@ func (s *Service) enqueue(obj interface{}) {
 }
 
 // Run implements the Discoverer interface.
-func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+func (s *Service) run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer s.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), s.informer.HasSynced) {

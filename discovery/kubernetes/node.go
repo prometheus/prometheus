@@ -75,7 +75,7 @@ func (n *Node) enqueue(obj interface{}) {
 }
 
 // Run implements the Discoverer interface.
-func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+func (n *Node) run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer n.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), n.informer.HasSynced) {

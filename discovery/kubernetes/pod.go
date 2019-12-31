@@ -78,7 +78,7 @@ func (p *Pod) enqueue(obj interface{}) {
 }
 
 // Run implements the Discoverer interface.
-func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+func (p *Pod) run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer p.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), p.informer.HasSynced) {

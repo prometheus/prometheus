@@ -149,7 +149,7 @@ func init() {
 
 // This is only for internal use.
 type discoverer interface {
-	Run(ctx context.Context, up chan<- []*targetgroup.Group)
+	run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
 
 // Discovery implements the discoverer interface for discovering
@@ -340,7 +340,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		wg.Add(1)
 		go func(d discoverer) {
 			defer wg.Done()
-			d.Run(ctx, ch)
+			d.run(ctx, ch)
 		}(dd)
 	}
 

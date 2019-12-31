@@ -66,7 +66,7 @@ func (i *Ingress) enqueue(obj interface{}) {
 }
 
 // Run implements the Discoverer interface.
-func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+func (i *Ingress) run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer i.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), i.informer.HasSynced) {
