@@ -47,7 +47,7 @@ func TestSampleDelivery(t *testing.T) {
 	// Let's create an even number of send batches so we don't run into the
 	// batch timeout case.
 	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
-	samples, series := createTimeseries(n)
+	samples, series := createTimeseries(n, n)
 
 	c := NewTestStorageClient()
 	c.expectSamples(samples[:len(samples)/2], series)
@@ -78,7 +78,7 @@ func TestSampleDelivery(t *testing.T) {
 func TestSampleDeliveryTimeout(t *testing.T) {
 	// Let's send one less sample than batch size, and wait the timeout duration
 	n := 9
-	samples, series := createTimeseries(n)
+	samples, series := createTimeseries(n, n)
 	c := NewTestStorageClient()
 
 	cfg := config.DefaultQueueConfig
@@ -151,7 +151,8 @@ func TestShutdown(t *testing.T) {
 
 	metrics := newQueueManagerMetrics(nil)
 	m := NewQueueManager(nil, metrics, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, deadline)
-	samples, series := createTimeseries(2 * config.DefaultQueueConfig.MaxSamplesPerSend)
+	n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
+	samples, series := createTimeseries(n, n)
 	m.StoreSeries(series, 0)
 	m.Start()
 
@@ -203,7 +204,7 @@ func TestSeriesReset(t *testing.T) {
 func TestReshard(t *testing.T) {
 	size := 10 // Make bigger to find more races.
 	n := config.DefaultQueueConfig.Capacity * size
-	samples, series := createTimeseries(n)
+	samples, series := createTimeseries(n, n)
 
 	c := NewTestStorageClient()
 	c.expectSamples(samples, series)
@@ -335,20 +336,22 @@ func TestCalculateDesiredsShards(t *testing.T) {
 	}
 }
 
-func createTimeseries(n int) ([]record.RefSample, []record.RefSeries) {
-	samples := make([]record.RefSample, 0, n)
-	series := make([]record.RefSeries, 0, n)
-	for i := 0; i < n; i++ {
-		name := fmt.Sprintf("test_metric_%d", i)
-		samples = append(samples, record.RefSample{
-			Ref: uint64(i),
-			T:   int64(i),
-			V:   float64(i),
-		})
-		series = append(series, record.RefSeries{
-			Ref:    uint64(i),
-			Labels: labels.Labels{{Name: "__name__", Value: name}},
-		})
+func createTimeseries(numSamples, numSeries int) ([]record.RefSample, []record.RefSeries) {
+	samples := make([]record.RefSample, 0, numSamples)
+	series := make([]record.RefSeries, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		for j := 0; j < numSamples; j++ {
+			name := fmt.Sprintf("test_metric_%d", i)
+			samples = append(samples, record.RefSample{
+				Ref: uint64(i),
+				T:   int64(j),
+				V:   float64(i),
+			})
+			series = append(series, record.RefSeries{
+				Ref:    uint64(i),
+				Labels: labels.Labels{{Name: "__name__", Value: name}},
+			})
+		}
 	}
 	return samples, series
 }
@@ -493,7 +496,7 @@ func BenchmarkSampleDelivery(b *testing.B) {
 	// Let's create an even number of send batches so we don't run into the
 	// batch timeout case.
 	n := config.DefaultQueueConfig.MaxSamplesPerSend * 10
-	samples, series := createTimeseries(n)
+	samples, series := createTimeseries(n, n)
 
 	c := NewTestStorageClient()
 
