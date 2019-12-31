@@ -408,10 +408,10 @@ func (c *TestStorageClient) waitForExpectedSamples(tb testing.TB) {
 	}
 }
 
-func (c *TestStorageClient) expectSampleCount(ss []record.RefSample) {
+func (c *TestStorageClient) expectSampleCount(numSamples int) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
-	c.wg.Add(len(ss))
+	c.wg.Add(numSamples)
 }
 
 func (c *TestStorageClient) waitForExpectedSampleCount() {
@@ -518,7 +518,7 @@ func BenchmarkSampleDelivery(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c.expectSampleCount(samples)
+		c.expectSampleCount(len(samples))
 		m.Append(samples)
 		c.waitForExpectedSampleCount()
 	}
