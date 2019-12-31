@@ -368,6 +368,7 @@ func getSeriesNameFromRef(r record.RefSeries) string {
 type TestStorageClient struct {
 	receivedSamples map[string][]prompb.Sample
 	expectedSamples map[string][]prompb.Sample
+	withWaitGroup   bool
 	wg              sync.WaitGroup
 	mtx             sync.Mutex
 	buf             []byte
@@ -375,12 +376,16 @@ type TestStorageClient struct {
 
 func NewTestStorageClient() *TestStorageClient {
 	return &TestStorageClient{
+		withWaitGroup:   true,
 		receivedSamples: map[string][]prompb.Sample{},
 		expectedSamples: map[string][]prompb.Sample{},
 	}
 }
 
 func (c *TestStorageClient) expectSamples(ss []record.RefSample, series []record.RefSeries) {
+	if !c.withWaitGroup {
+		return
+	}
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -398,6 +403,9 @@ func (c *TestStorageClient) expectSamples(ss []record.RefSample, series []record
 }
 
 func (c *TestStorageClient) waitForExpectedSamples(tb testing.TB) {
+	if !c.withWaitGroup {
+		return
+	}
 	c.wg.Wait()
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
@@ -409,12 +417,18 @@ func (c *TestStorageClient) waitForExpectedSamples(tb testing.TB) {
 }
 
 func (c *TestStorageClient) expectSampleCount(numSamples int) {
+	if !c.withWaitGroup {
+		return
+	}
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	c.wg.Add(numSamples)
 }
 
 func (c *TestStorageClient) waitForExpectedSampleCount() {
+	if !c.withWaitGroup {
+		return
+	}
 	c.wg.Wait()
 }
 
@@ -450,7 +464,9 @@ func (c *TestStorageClient) Store(_ context.Context, req []byte) error {
 			c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], sample)
 		}
 	}
-	c.wg.Add(-count)
+	if c.withWaitGroup {
+		c.wg.Add(-count)
+	}
 	return nil
 }
 
