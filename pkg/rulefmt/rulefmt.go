@@ -218,8 +218,9 @@ var grpsTmp ruleGroups
 // Parse parses and validates a set of rules.
 func Parse(content []byte) (*RuleGroups, []error) {
 	var groups RuleGroups
-	err := yaml.Unmarshal(content, &grpsTmp)
-	if err = yaml.Unmarshal(content, &groups); err != nil {
+	err := yaml.Unmarshal(content, &groups)
+	_err := yaml.Unmarshal(content, &grpsTmp)
+	if err != nil || _err != nil {
 		return nil, []error{err}
 	}
 	return &groups, groups.Validate()
