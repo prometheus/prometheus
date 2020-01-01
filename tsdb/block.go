@@ -63,7 +63,7 @@ type IndexReader interface {
 	Symbols() index.StringIter
 
 	// LabelValues returns sorted possible label values.
-	LabelValues(names ...string) (index.StringTuples, error)
+	LabelValues(name string) (index.StringTuples, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -433,8 +433,8 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) LabelValues(names ...string) (index.StringTuples, error) {
-	st, err := r.ir.LabelValues(names...)
+func (r blockIndexReader) LabelValues(name string) (index.StringTuples, error) {
+	st, err := r.ir.LabelValues(name)
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 

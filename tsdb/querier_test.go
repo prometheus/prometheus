@@ -250,10 +250,6 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 		}
 	}
 
-	for l, vs := range lblIdx {
-		testutil.Ok(t, mi.WriteLabelIndex([]string{l}, vs.slice()))
-	}
-
 	testutil.Ok(t, postings.Iter(func(l labels.Label, p index.Postings) error {
 		return mi.WritePostings(l.Name, l.Value, p)
 	}))
@@ -1300,18 +1296,16 @@ type series struct {
 }
 
 type mockIndex struct {
-	series     map[uint64]series
-	labelIndex map[string][]string
-	postings   map[labels.Label][]uint64
-	symbols    map[string]struct{}
+	series   map[uint64]series
+	postings map[labels.Label][]uint64
+	symbols  map[string]struct{}
 }
 
 func newMockIndex() mockIndex {
 	ix := mockIndex{
-		series:     make(map[uint64]series),
-		labelIndex: make(map[string][]string),
-		postings:   make(map[labels.Label][]uint64),
-		symbols:    make(map[string]struct{}),
+		series:   make(map[uint64]series),
+		postings: make(map[labels.Label][]uint64),
+		symbols:  make(map[string]struct{}),
 	}
 	return ix
 }
@@ -1345,16 +1339,6 @@ func (m *mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta
 	return nil
 }
 
-func (m mockIndex) WriteLabelIndex(names []string, values []string) error {
-	// TODO support composite indexes
-	if len(names) != 1 {
-		return errors.New("composite indexes not supported yet")
-	}
-	sort.Strings(values)
-	m.labelIndex[names[0]] = values
-	return nil
-}
-
 func (m mockIndex) WritePostings(name, value string, it index.Postings) error {
 	l := labels.Label{Name: name, Value: value}
 	if _, ok := m.postings[l]; ok {
@@ -1372,13 +1356,14 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) LabelValues(names ...string) (index.StringTuples, error) {
-	// TODO support composite indexes
-	if len(names) != 1 {
-		return nil, errors.New("composite indexes not supported yet")
+func (m mockIndex) LabelValues(name string) (index.StringTuples, error) {
+	values := []string{}
+	for l := range m.postings {
+		if l.Name == name {
+			values = append(values, l.Value)
+		}
 	}
-
-	return index.NewStringTuples(m.labelIndex[names[0]], 1)
+	return index.NewStringTuples(values)
 }
 
 func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {
@@ -1414,12 +1399,16 @@ func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) 
 }
 
 func (m mockIndex) LabelNames() ([]string, error) {
-	labelNames := make([]string, 0, len(m.labelIndex))
-	for name := range m.labelIndex {
-		labelNames = append(labelNames, name)
+	names := map[string]struct{}{}
+	for l := range m.postings {
+		names[l.Name] = struct{}{}
 	}
-	sort.Strings(labelNames)
-	return labelNames, nil
+	l := make([]string, 0, len(names))
+	for name := range names {
+		l = append(l, name)
+	}
+	sort.Strings(l)
+	return l, nil
 }
 
 type mockSeries struct {

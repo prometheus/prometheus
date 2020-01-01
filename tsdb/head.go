@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -1353,20 +1352,16 @@ func (h *headIndexReader) Symbols() index.StringIter {
 }
 
 // LabelValues returns the possible label values
-func (h *headIndexReader) LabelValues(names ...string) (index.StringTuples, error) {
-	if len(names) != 1 {
-		return nil, encoding.ErrInvalidSize
-	}
-
+func (h *headIndexReader) LabelValues(name string) (index.StringTuples, error) {
 	h.head.symMtx.RLock()
-	sl := make([]string, 0, len(h.head.values[names[0]]))
-	for s := range h.head.values[names[0]] {
+	sl := make([]string, 0, len(h.head.values[name]))
+	for s := range h.head.values[name] {
 		sl = append(sl, s)
 	}
 	h.head.symMtx.RUnlock()
 	sort.Strings(sl)
 
-	return index.NewStringTuples(sl, len(names))
+	return index.NewStringTuples(sl)
 }
 
 // LabelNames returns all the unique label names present in the head.
