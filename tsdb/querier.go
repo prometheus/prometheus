@@ -225,11 +225,11 @@ func (q *blockQuerier) LabelValues(name string) ([]string, error) {
 	res := make([]string, 0, tpls.Len())
 
 	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
+		val, err := tpls.At(i)
 		if err != nil {
 			return nil, err
 		}
-		res = append(res, vals[0])
+		res = append(res, val)
 	}
 	return res, nil
 }
@@ -419,12 +419,12 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 
 	var res []string
 	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
+		val, err := tpls.At(i)
 		if err != nil {
 			return nil, err
 		}
-		if m.Matches(vals[0]) {
-			res = append(res, vals[0])
+		if m.Matches(val) {
+			res = append(res, val)
 		}
 	}
 
@@ -444,13 +444,13 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 
 	var res []string
 	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
+		val, err := tpls.At(i)
 		if err != nil {
 			return nil, err
 		}
 
-		if !m.Matches(vals[0]) {
-			res = append(res, vals[0])
+		if !m.Matches(val) {
+			res = append(res, val)
 		}
 	}
 

@@ -37,18 +37,16 @@ type series struct {
 }
 
 type mockIndex struct {
-	series     map[uint64]series
-	labelIndex map[string][]string
-	postings   map[labels.Label][]uint64
-	symbols    map[string]struct{}
+	series   map[uint64]series
+	postings map[labels.Label][]uint64
+	symbols  map[string]struct{}
 }
 
 func newMockIndex() mockIndex {
 	ix := mockIndex{
-		series:     make(map[uint64]series),
-		labelIndex: make(map[string][]string),
-		postings:   make(map[labels.Label][]uint64),
-		symbols:    make(map[string]struct{}),
+		series:   make(map[uint64]series),
+		postings: make(map[labels.Label][]uint64),
+		symbols:  make(map[string]struct{}),
 	}
 	ix.postings[allPostingsKey] = []uint64{}
 	return ix
@@ -87,13 +85,14 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) LabelValues(names ...string) (StringTuples, error) {
-	// TODO support composite indexes
-	if len(names) != 1 {
-		return nil, errors.New("composite indexes not supported yet")
+func (m mockIndex) LabelValues(name string) (StringTuples, error) {
+	values := []string{}
+	for l := range m.postings {
+		if l.Name == name {
+			values = append(values, l.Value)
+		}
 	}
-
-	return NewStringTuples(m.labelIndex[names[0]], 1)
+	return NewStringTuples(values)
 }
 
 func (m mockIndex) Postings(name string, values ...string) (Postings, error) {
@@ -446,8 +445,13 @@ func TestPersistence_index_e2e(t *testing.T) {
 		testutil.Ok(t, gotp.Err())
 	}
 
-	for k, v := range mi.labelIndex {
-		tplsExp, err := NewStringTuples(v, 1)
+	labelPairs := map[string][]string{}
+	for l := range mi.postings {
+		labelPairs[l.Name] = append(labelPairs[l.Name], l.Value)
+	}
+	for k, v := range labelPairs {
+		sort.Strings(v)
+		tplsExp, err := NewStringTuples(v)
 		testutil.Ok(t, err)
 
 		tplsRes, err := ir.LabelValues(k)

@@ -26,7 +26,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"unsafe"
 
 	"github.com/pkg/errors"
@@ -999,7 +998,7 @@ type StringTuples interface {
 	// Total number of tuples in the list.
 	Len() int
 	// At returns the tuple at position i.
-	At(i int) ([]string, error)
+	At(i int) (string, error)
 }
 
 // StringIter iterates over a sorted list of strings.
@@ -1422,15 +1421,12 @@ func (r *Reader) SymbolTableSize() uint64 {
 	return uint64(r.symbols.Size())
 }
 
-// LabelValues returns value tuples that exist for the given label name tuples.
+// LabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) LabelValues(names ...string) (StringTuples, error) {
-	if len(names) != 1 {
-		return nil, errors.Errorf("only one label name supported")
-	}
+func (r *Reader) LabelValues(name string) (StringTuples, error) {
 	if r.version == FormatV1 {
-		e, ok := r.postingsV1[names[0]]
+		e, ok := r.postingsV1[name]
 		if !ok {
 			return emptyStringTuples{}, nil
 		}
@@ -1442,7 +1438,7 @@ func (r *Reader) LabelValues(names ...string) (StringTuples, error) {
 		return NewStringTuples(values, 1)
 
 	}
-	e, ok := r.postings[names[0]]
+	e, ok := r.postings[name]
 	if !ok {
 		return emptyStringTuples{}, nil
 	}
@@ -1477,13 +1473,13 @@ func (r *Reader) LabelValues(names ...string) (StringTuples, error) {
 	if d.Err() != nil {
 		return nil, errors.Wrap(d.Err(), "get postings offset entry")
 	}
-	return NewStringTuples(values, 1)
+	return NewStringTuples(values)
 }
 
 type emptyStringTuples struct{}
 
-func (emptyStringTuples) At(i int) ([]string, error) { return nil, nil }
-func (emptyStringTuples) Len() int                   { return 0 }
+func (emptyStringTuples) At(i int) (string, error) { return "", nil }
+func (emptyStringTuples) Len() int                 { return 0 }
 
 // Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
 func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
@@ -1626,47 +1622,24 @@ func (r *Reader) LabelNames() ([]string, error) {
 }
 
 type stringTuples struct {
-	length  int      // tuple length
 	entries []string // flattened tuple entries
-	swapBuf []string
 }
 
-func NewStringTuples(entries []string, length int) (*stringTuples, error) {
-	if len(entries)%length != 0 {
-		return nil, errors.Wrap(encoding.ErrInvalidSize, "string tuple list")
-	}
+func NewStringTuples(entries []string) (*stringTuples, error) {
 	return &stringTuples{
 		entries: entries,
-		length:  length,
 	}, nil
 }
 
-func (t *stringTuples) Len() int                   { return len(t.entries) / t.length }
-func (t *stringTuples) At(i int) ([]string, error) { return t.entries[i : i+t.length], nil }
+func (t *stringTuples) Len() int                 { return len(t.entries) }
+func (t *stringTuples) At(i int) (string, error) { return t.entries[i], nil }
 
 func (t *stringTuples) Swap(i, j int) {
-	if t.swapBuf == nil {
-		t.swapBuf = make([]string, t.length)
-	}
-	copy(t.swapBuf, t.entries[i:i+t.length])
-	for k := 0; k < t.length; k++ {
-		t.entries[i+k] = t.entries[j+k]
-		t.entries[j+k] = t.swapBuf[k]
-	}
+	t.entries[i], t.entries[j] = t.entries[j], t.entries[i]
 }
 
 func (t *stringTuples) Less(i, j int) bool {
-	for k := 0; k < t.length; k++ {
-		d := strings.Compare(t.entries[i+k], t.entries[j+k])
-
-		if d < 0 {
-			return true
-		}
-		if d > 0 {
-			return false
-		}
-	}
-	return false
+	return t.entries[i] < t.entries[j]
 }
 
 // NewStringListIterator returns a StringIter for the given sorted list of strings.
