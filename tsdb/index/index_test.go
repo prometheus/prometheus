@@ -85,14 +85,14 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) LabelValues(name string) (StringTuples, error) {
+func (m mockIndex) LabelValues(name string) ([]string, error) {
 	values := []string{}
 	for l := range m.postings {
 		if l.Name == name {
 			values = append(values, l.Value)
 		}
 	}
-	return NewStringTuples(values)
+	return values, nil
 }
 
 func (m mockIndex) Postings(name string, values ...string) (Postings, error) {
@@ -451,21 +451,13 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 	for k, v := range labelPairs {
 		sort.Strings(v)
-		tplsExp, err := NewStringTuples(v)
+
+		res, err := ir.LabelValues(k)
 		testutil.Ok(t, err)
 
-		tplsRes, err := ir.LabelValues(k)
-		testutil.Ok(t, err)
-
-		testutil.Equals(t, tplsExp.Len(), tplsRes.Len())
-		for i := 0; i < tplsExp.Len(); i++ {
-			strsExp, err := tplsExp.At(i)
-			testutil.Ok(t, err)
-
-			strsRes, err := tplsRes.At(i)
-			testutil.Ok(t, err)
-
-			testutil.Equals(t, strsExp, strsRes)
+		testutil.Equals(t, len(v), len(res))
+		for i := 0; i < len(v); i++ {
+			testutil.Equals(t, v[i], res[i])
 		}
 	}
 
