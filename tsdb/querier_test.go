@@ -1356,14 +1356,15 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) LabelValues(name string) (index.StringTuples, error) {
+func (m mockIndex) LabelValues(name string) ([]string, error) {
 	values := []string{}
 	for l := range m.postings {
 		if l.Name == name {
 			values = append(values, l.Value)
 		}
 	}
-	return index.NewStringTuples(values)
+	sort.Strings(values)
+	return values, nil
 }
 
 func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {

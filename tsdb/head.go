@@ -1352,7 +1352,7 @@ func (h *headIndexReader) Symbols() index.StringIter {
 }
 
 // LabelValues returns the possible label values
-func (h *headIndexReader) LabelValues(name string) (index.StringTuples, error) {
+func (h *headIndexReader) LabelValues(name string) ([]string, error) {
 	h.head.symMtx.RLock()
 	sl := make([]string, 0, len(h.head.values[name]))
 	for s := range h.head.values[name] {
@@ -1360,8 +1360,7 @@ func (h *headIndexReader) LabelValues(name string) (index.StringTuples, error) {
 	}
 	h.head.symMtx.RUnlock()
 	sort.Strings(sl)
-
-	return index.NewStringTuples(sl)
+	return sl, nil
 }
 
 // LabelNames returns all the unique label names present in the head.
