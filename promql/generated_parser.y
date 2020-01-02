@@ -477,8 +477,13 @@ vector_selector:
 matrix_selector :
                 vector_selector LEFT_BRACKET duration RIGHT_BRACKET
                         {
-                        $$ = $1
-                        $$.(*MatrixSelector).Range = $3 
+                        vs := $1.(*VectorSelector)
+                        $$ = &MatrixSelector{
+                                Name: vs.Name,
+                                Offset: vs.Offset,
+                                LabelMatchers: vs.LabelMatchers,
+                                Range: $3,
+                        }
                         }
                 ;
 
