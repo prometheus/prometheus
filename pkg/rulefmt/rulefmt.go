@@ -35,7 +35,7 @@ type Error struct {
 	Rule     int
 	RuleName string
 	Err      error
-	Node 	yaml.Node
+	Node     yaml.Node
 }
 
 func (err *Error) Error() string {
@@ -82,7 +82,7 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 					Rule:     i,
 					RuleName: ruleName.Value,
 					Err:      err,
-					Node: ruleName,
+					Node:     ruleName,
 				})
 			}
 		}
