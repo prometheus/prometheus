@@ -140,6 +140,17 @@
 
 %start start
 
+// Operators listed with increasing precedence
+%left LOR
+%left LAND LUNLESS
+%left EQL NEQ LTE LSS GTE GTR
+%left ADD SUB
+%left MUL DIV MOD
+%left POW
+
+// This prevents parsing of multiple offset modifiers for a single vector selector
+%nonassoc OFFSET
+
 %%
 
 start           : START_LABELS label_matchers
@@ -162,8 +173,8 @@ expr            :
                 /* empty */
                         { yylex.(*parser).errorf("No expression found in input"); $$ = nil }
                 | paren_expr
-                | unary_expr
                 | binary_expr
+                | unary_expr
                 | offset_expr
                 | number_literal
                 | string_literal
