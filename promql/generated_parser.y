@@ -186,7 +186,8 @@ expr            :
                 ;
 
 unary_expr      :
-                unary_op expr
+                /* gives the rule the same prec as POW, not a perfect solution */
+                unary_op expr %prec POW
                         {
                         if nl, ok := $2.(*NumberLiteral); ok {
                                 if $1.Typ == SUB {
@@ -480,7 +481,7 @@ vector_selector:
                 metric_identifier label_matchers
                         { $$ = &VectorSelector{Name: $1.Val, LabelMatchers:$2} }
                 | metric_identifier 
-                        { $$ = &VectorSelector{Name: $1.Val} }
+                        { $$ = &VectorSelector{Name: $1.Val, LabelMatchers: []*labels.Matcher{}} }
                 | label_matchers
                         { $$ = &VectorSelector{LabelMatchers:$1} }
                 ;
