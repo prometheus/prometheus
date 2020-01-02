@@ -482,14 +482,15 @@ func funcAbsent(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	}
 	return append(enh.out,
 		Sample{
-			Metric: createLabelsFromExpr(args[0]),
+			Metric: createLabelsForAbsentFunction(args[0]),
 			Point:  Point{V: 1},
 		})
 }
 
 // === absent_over_time(Vector ValueTypeMatrix) Vector ===
-// This function does the opposite than the end result and its result is inverted
-// by the engine after its call.
+// As this function has a matrix as argument, it does not get all the Series.
+// This function will return 1 if the matrix has at least one element.
+// Then, the engine post-processes the results to get the expected output.
 func funcAbsentOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	if len(vals[0].(Matrix)) == 0 {
 		return enh.out
@@ -1268,4 +1269,35 @@ func (s *vectorByReverseValueHeap) Pop() interface{} {
 	el := old[n-1]
 	*s = old[0 : n-1]
 	return el
+}
+
+// createLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
+// in a given expression. It is used in the absent functions.
+func createLabelsForAbsentFunction(expr Expr) labels.Labels {
+	m := labels.Labels{}
+	empty := []string{}
+	lm := make([]*labels.Matcher, 0)
+
+	switch n := expr.(type) {
+	case *VectorSelector:
+		lm = n.LabelMatchers
+	case *MatrixSelector:
+		lm = n.LabelMatchers
+	}
+
+	for _, ma := range lm {
+		if ma.Name == labels.MetricName {
+			continue
+		}
+		if ma.Type == labels.MatchEqual && !m.Has(ma.Name) {
+			m = labels.NewBuilder(m).Set(ma.Name, ma.Value).Labels()
+		} else {
+			empty = append(empty, ma.Name)
+		}
+	}
+
+	for _, v := range empty {
+		m = labels.NewBuilder(m).Set(v, "").Labels()
+	}
+	return m
 }

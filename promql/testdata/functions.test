@@ -570,6 +570,7 @@ load 1m
 	http_requests{path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
 	httpd_handshake_failures_total{instance="127.0.0.1",job="node"}	1+1x15
 	httpd_log_lines_total{instance="127.0.0.1",job="node"}	1
+	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
 
 eval instant at 5m absent_over_time(http_requests[5m])
 
@@ -601,3 +602,8 @@ eval instant at 21m absent_over_time({job="grok"}[20m])
 
 eval instant at 30m absent_over_time({instance="127.0.0.1"}[5m:5s])
     {} 1
+
+eval instant at 5m absent_over_time({job="ingress"}[4m])
+
+eval instant at 10m absent_over_time({job="ingress"}[4m])
+	{job="ingress"} 1
