@@ -51,18 +51,18 @@ type ruleGroups struct {
 }
 
 // Validate validates all rules in the rule groups.
-func (g *RuleGroups) Validate() (errs []error) {
+func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 	set := map[string]struct{}{}
 
 	for j, g := range g.Groups {
 		if g.Name == "" {
-			errs = append(errs, errors.Errorf("Groupname should not be empty, line: %d, column: %d", grpsTmp.Groups[j].Line, grpsTmp.Groups[j].Column))
+			errs = append(errs, errors.Errorf("Groupname should not be empty, line: %d, column: %d", node.Groups[j].Line, node.Groups[j].Column))
 		}
 
 		if _, ok := set[g.Name]; ok {
 			errs = append(
 				errs,
-				errors.Errorf("groupname: \"%s\" is repeated in the same file, line: %d, column: %d", g.Name, grpsTmp.Groups[j].Line, grpsTmp.Groups[j].Column),
+				errors.Errorf("groupname: \"%s\" is repeated in the same file, line: %d, column: %d", g.Name, node.Groups[j].Line, node.Groups[j].Column),
 			)
 		}
 
@@ -213,17 +213,18 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 	return errs
 }
 
-var grpsTmp ruleGroups
-
 // Parse parses and validates a set of rules.
 func Parse(content []byte) (*RuleGroups, []error) {
-	var groups RuleGroups
+	var (
+		groups RuleGroups
+		node   ruleGroups
+	)
 	err := yaml.Unmarshal(content, &groups)
-	_err := yaml.Unmarshal(content, &grpsTmp)
+	_err := yaml.Unmarshal(content, &node)
 	if err != nil || _err != nil {
 		return nil, []error{err}
 	}
-	return &groups, groups.Validate()
+	return &groups, groups.Validate(node)
 }
 
 // ParseFile reads and parses rules from a file.
