@@ -125,7 +125,7 @@
 %type <matchers> label_matchers label_match_list
 %type <matcher> label_matcher
 
-%type <item> match_op metric_identifier grouping_label maybe_label unary_op
+%type <item> match_op metric_identifier grouping_label maybe_label unary_op aggregate_op
 
 %type <labels> label_set_list label_set metric
 %type <label> label_set_item    
@@ -133,7 +133,7 @@
 %type <series> series_values series_item
 %type <uint> uint
 %type <float> series_value signed_number number
-%type <node>  paren_expr unary_expr binary_expr offset_expr number_literal string_literal vector_selector matrix_selector subquery_expr function_call aggregate_expr expr bin_modifier group_modifiers bool_modifier on_or_ignoring vector_selector matrix_selector subquery_expr function_call aggregate_expr function_call_args
+%type <node>  paren_expr unary_expr binary_expr offset_expr number_literal string_literal vector_selector matrix_selector subquery_expr function_call aggregate_expr expr bin_modifier group_modifiers bool_modifier on_or_ignoring vector_selector matrix_selector subquery_expr function_call aggregate_expr function_call_args aggregate_modifier
 %type <string> string
 %type <duration> duration maybe_duration
 
@@ -506,9 +506,9 @@ function_call   :
 
 function_call_args:
                 function_call_args COMMA expr
-                        { $$ = append($1, $3}
+                        { $$ = append($1, $3) }
                 | expr
-                        { $$ = Expressions{$1}}
+                        { $$ = Expressions{$1} }
                 ;
 
 // TODO param support
@@ -527,6 +527,12 @@ aggregate_expr  :
                         $$.Expr = $2
                         }
                 | aggregate_op expr
+                        {
+                        $$ = &AggregateExpr{
+                                Op: $1.Typ,
+                                Expr: $2,
+                        }
+                        }
                 ;
 
 aggregate_op    :
@@ -545,7 +551,18 @@ aggregate_op    :
 
 aggregate_modifier:
                 BY grouping_labels
+                        {
+                        $$ = &AggregateExpr{
+                                Grouping: $2,
+                        }
+                        }
                 | WITHOUT grouping_labels
+                        {
+                        $$ = &AggregateExpr{
+                                Grouping: $2,
+                                Without:  true,
+                        }
+                        }
                 ;
 
 series_description:
