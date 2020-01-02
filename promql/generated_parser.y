@@ -216,11 +216,11 @@ binary_expr     :
                 | expr GTR bin_modifier expr
                         { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
                 | expr LAND bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) } 
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
                 | expr LUNLESS bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) } 
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
                 | expr LOR bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) } 
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
                 ;
 
 // Using left recursion for the modifier rules, helps to keep the parser stack small and 
@@ -232,9 +232,18 @@ bin_modifier    :
 
 bool_modifier   :
                 /* empty */
-                        { $$ = &VectorMatching{} }
+                        { $$ = &BinaryExpr{
+                        VectorMatching: &VectorMatching{},
+                        Card: CardOneToOne,
+                        }
+                        }
                 | BOOL
-                        { $$ = &VectorMatching{ReturnBool: true} }
+                        { $$ = &BinaryExpr{
+                        VectorMatching: &VectorMatching{},
+                        Card: CardOneToOne,
+                        ReturnBool:     true,
+                        }
+                        }
                 ;
 
 on_or_ignoring  :
@@ -242,13 +251,13 @@ on_or_ignoring  :
                 | bool_modifier IGNORING grouping_labels
                         {
                         $$ = $1
-                        $$.MatchingLabels = $2
+                        $$.VectorMatching.MatchingLabels = $2
                         } 
                 | bool_modifier ON grouping_labels
                         {
                         $$ = $1
-                        $$.MatchingLabels = $2
-                        $$.On = true
+                        $$.VectorMatching.MatchingLabels = $2
+                        $$.VectorMatching.On = true
                         } 
                 ;
 
@@ -257,14 +266,14 @@ group_modifiers:
                 | on_or_ignoring GROUP_LEFT maybe_grouping_labels
                         {
                         $$ = $1
-                        $$.Card = CardManyToOne
-                        $$.Include = $3
+                        $$.VectorMatching.Card = CardManyToOne
+                        $$.VectorMatching.Include = $3
                         }
                 | on_or_ignoring GROUP_RIGHT maybe_grouping_labels
                         {
                         $$ = $1
-                        $$.Card = CardOneToMany
-                        $$.Include = $3
+                        $$.VectorMatching.Card = CardOneToMany
+                        $$.VectorMatching.Include = $3
                         }
                 ;
 

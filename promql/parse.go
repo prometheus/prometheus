@@ -442,7 +442,7 @@ func (p *parser) balance(lhs Expr, op ItemType, rhs Expr, vecMatching *VectorMat
 	}
 }
 
-func (p *parser) newBinaryExpression(lhs Expr, op Item, rhs Expr, returnBool bool) {
+func (p *parser) newBinaryExpression(lhs Expr, op Item, rhs Expr) {
 	if returnBool && !op.Typ.isComparisonOperator() {
 		p.errorf("bool modifier can only be used on comparison operators")
 	}
