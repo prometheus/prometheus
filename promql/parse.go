@@ -442,15 +442,22 @@ func (p *parser) balance(lhs Expr, op ItemType, rhs Expr, vecMatching *VectorMat
 	}
 }
 
-func (p *parser) newBinaryExpression(lhs Expr, op Item, rhs Expr) {
-	if returnBool && !op.Typ.isComparisonOperator() {
+func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node) *BinaryExpr {
+	ret := modifiers.(*BinaryExpr)
+
+	ret.LHS = lhs.(Expr)
+	ret.RHS = rhs.(Expr)
+	ret.Op = op.Typ
+
+	if ret.ReturnBool && !op.Typ.isComparisonOperator() {
 		p.errorf("bool modifier can only be used on comparison operators")
 	}
 
-	if op.Typ.isComparisonOperator() && !returnBool && rhs.Type() == ValueTypeScalar && lhs.Type() == ValueTypeScalar {
+	if op.Typ.isComparisonOperator() && !ret.ReturnBool && ret.RHS.Type() == ValueTypeScalar && ret.LHS.Type() == ValueTypeScalar {
 		p.errorf("comparisons between scalars must use BOOL modifier")
 	}
 
+	return ret
 }
 
 // unaryExpr parses a unary expression.

@@ -26,7 +26,7 @@
 %}
 
 %union {
-    node      Expr
+    node      Node
     item      Item
     matchers  []*labels.Matcher
     matcher   *labels.Matcher
@@ -180,7 +180,7 @@ unary_expr      :
                                 }
                                 $$ = nl
                         } else {
-                                $$ = &UnaryExpr{Op: $1.Typ, Expr: $2}
+                                $$ = &UnaryExpr{Op: $1.Typ, Expr: $2.(Expr)}
                         }
                         }
                 ;
@@ -233,14 +233,12 @@ bin_modifier    :
 bool_modifier   :
                 /* empty */
                         { $$ = &BinaryExpr{
-                        VectorMatching: &VectorMatching{},
-                        Card: CardOneToOne,
+                        VectorMatching: &VectorMatching{Card: CardOneToOne},
                         }
                         }
                 | BOOL
                         { $$ = &BinaryExpr{
-                        VectorMatching: &VectorMatching{},
-                        Card: CardOneToOne,
+                        VectorMatching: &VectorMatching{Card: CardOneToOne},
                         ReturnBool:     true,
                         }
                         }
@@ -251,13 +249,13 @@ on_or_ignoring  :
                 | bool_modifier IGNORING grouping_labels
                         {
                         $$ = $1
-                        $$.VectorMatching.MatchingLabels = $2
+                        $$.(*BinaryExpr).VectorMatching.MatchingLabels = $3
                         } 
                 | bool_modifier ON grouping_labels
                         {
                         $$ = $1
-                        $$.VectorMatching.MatchingLabels = $2
-                        $$.VectorMatching.On = true
+                        $$.(*BinaryExpr).VectorMatching.MatchingLabels = $3
+                        $$.(*BinaryExpr).VectorMatching.On = true
                         } 
                 ;
 
@@ -266,14 +264,14 @@ group_modifiers:
                 | on_or_ignoring GROUP_LEFT maybe_grouping_labels
                         {
                         $$ = $1
-                        $$.VectorMatching.Card = CardManyToOne
-                        $$.VectorMatching.Include = $3
+                        $$.(*BinaryExpr).VectorMatching.Card = CardManyToOne
+                        $$.(*BinaryExpr).VectorMatching.Include = $3
                         }
                 | on_or_ignoring GROUP_RIGHT maybe_grouping_labels
                         {
                         $$ = $1
-                        $$.VectorMatching.Card = CardOneToMany
-                        $$.VectorMatching.Include = $3
+                        $$.(*BinaryExpr).VectorMatching.Card = CardOneToMany
+                        $$.(*BinaryExpr).VectorMatching.Include = $3
                         }
                 ;
 
@@ -284,7 +282,7 @@ maybe_grouping_labels:
                 ;
 
 paren_expr      : LEFT_PAREN expr RIGHT_PAREN
-                        { $$ = &ParenExpr{Expr: $2} }
+                        { $$ = &ParenExpr{Expr: $2.(Expr)} }
                 ;
 
 
@@ -304,7 +302,7 @@ string_literal  :
 
 string          :
                 STRING
-                        { $$ = yylex.(*parser).unquoteString{$1.Val} }
+                        { $$ = yylex.(*parser).unquoteString($1.Val) }
                 ;
 
 label_matchers  : 
@@ -453,19 +451,22 @@ maybe_label     :
                 ;
 
 offset_expr:
-            expr OFFSET DURATION
-                    {
-                    offset = parseDuration($3.Val)
-                    yylex.(*parser).addOffset($1, offset)
-                    $$ = $1
-                    }
-            ;
+                expr OFFSET DURATION
+                        {
+                        offset, err := parseDuration($3.Val)
+                        if err != nil {
+                                yylex.(*parser).error(err)
+                        }
+                        yylex.(*parser).addOffset($1, offset)
+                        $$ = $1
+                        }
+                ;
 
 vector_selector:
                 metric_identifier label_matchers
-                        { $$ = &VectorSelector{Name: $1, LabelMatchers:$2} }
+                        { $$ = &VectorSelector{Name: $1.Val, LabelMatchers:$2} }
                 | metric_identifier 
-                        { $$ = &VectorSelector{Name: $1} }
+                        { $$ = &VectorSelector{Name: $1.Val} }
                 | label_matchers
                         { $$ = &VectorSelector{LabelMatchers:$1} }
                 ;
@@ -474,7 +475,7 @@ matrix_selector :
                 vector_selector LEFT_BRACKET duration RIGHT_BRACKET
                         {
                         $$ = $1
-                        $$.Range = $3 
+                        $$.(*MatrixSelector).Range = $3 
                         }
                 ;
 
@@ -482,7 +483,7 @@ subquery_expr   :
                 expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                         {
                         $$ = &SubqueryExpr{
-                                Expr:  $1,
+                                Expr:  $1.(Expr),
                                 Range: $3,
                                 Step:  $5,
                         }
@@ -499,7 +500,8 @@ maybe_duration  :
 duration        :
                 DURATION
                         {
-                        $$, err := parseDuration($1)
+                        var err error
+                        $$, err = parseDuration($1.Val)
                         if err != nil {
                                 yylex.(*parser).error(err)
                         }
@@ -509,15 +511,22 @@ duration        :
 function_call   :
                 IDENTIFIER LEFT_PAREN function_call_args RIGHT_PAREN
                         {
-                        $$ = newCall($1, $3)
+                        fn, exist := getFunction($1.Val)
+                        if !exist{
+                                yylex.(*parser).errorf("unknown function with name %q", $1.Val)
+                        } 
+                        $$ = &Call{
+                                Func: fn,
+                                Args: $3.(Expressions),
+                        }
                         }
                 ;
 
 function_call_args:
                 function_call_args COMMA expr
-                        { $$ = append($1, $3) }
+                        { $$ = append($1.(Expressions), $3.(Expr)) }
                 | expr
-                        { $$ = Expressions{$1} }
+                        { $$ = Expressions{$1.(Expr)} }
                 ;
 
 // TODO param support
@@ -526,20 +535,20 @@ aggregate_expr  :
                 aggregate_op aggregate_modifier expr
                         {
                         $$ = $2
-                        $$.Op = $1.Typ
-                        $$.Expr = $3
+                        $$.(*AggregateExpr).Op = $1.Typ
+                        $$.(*AggregateExpr).Expr = $3.(Expr)
                         }
                 | aggregate_op expr aggregate_modifier
                         {
                         $$ = $3
-                        $$.Op = $1.Typ
-                        $$.Expr = $2
+                        $$.(*AggregateExpr).Op = $1.Typ
+                        $$.(*AggregateExpr).Expr = $2.(Expr)
                         }
                 | aggregate_op expr
                         {
                         $$ = &AggregateExpr{
                                 Op: $1.Typ,
-                                Expr: $2,
+                                Expr: $2.(Expr),
                         }
                         }
                 ;
