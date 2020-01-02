@@ -57,6 +57,12 @@ var (
 	// emptyTombstoneReader is a no-op Tombstone Reader.
 	// This is used by head to satisfy the Tombstones() function call.
 	emptyTombstoneReader = tombstones.NewMemTombstones()
+
+	// TODO: ensure this is initialized everytime and in tests too
+	crw *chunks.HeadReadWriter
+	// TODO: put these 2 back into the pool near after crw.Chunk call
+	chunkPool    chunkenc.Pool
+	memChunkPool sync.Pool
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -276,6 +282,21 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		deleted:    map[uint64]int{},
 	}
 	h.metrics = newHeadMetrics(h, r)
+
+	chunkPool = chunkenc.NewPool()
+	memChunkPool = sync.Pool{
+		New: func() interface{} {
+			return &memChunk{}
+		},
+	}
+
+	if wal != nil {
+		var err error
+		crw, err = chunks.NewHeadReadWriter(chunkDir(wal.Dir()), chunkPool)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return h, nil
 }
@@ -1099,6 +1120,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 // chunkRewrite re-writes the chunks which overlaps with deleted ranges
 // and removes the samples in the deleted ranges.
 // Chunks is deleted if no samples are left at the end.
+// TODO: use tombstones. This will be removed.
 func (h *Head) chunkRewrite(ref uint64, dranges tombstones.Intervals) (err error) {
 	if len(dranges) == 0 {
 		return nil
@@ -1107,7 +1129,7 @@ func (h *Head) chunkRewrite(ref uint64, dranges tombstones.Intervals) (err error
 	ms := h.series.getByID(ref)
 	ms.Lock()
 	defer ms.Unlock()
-	if len(ms.chunks) == 0 {
+	if len(ms.mmappedChunks) == 0 {
 		return nil
 	}
 
@@ -1300,6 +1322,7 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	}
 
 	s.Lock()
+	// TODO: put back into the pool
 	c := s.chunk(int(cid))
 
 	// This means that the chunk has been garbage collected or is outside
@@ -1436,21 +1459,22 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 
 	*chks = (*chks)[:0]
 
-	for i, c := range s.chunks {
+	for i, c := range s.mmappedChunks {
 		// Do not expose chunks that are outside of the specified range.
 		if !c.OverlapsClosedInterval(h.mint, h.maxt) {
 			continue
 		}
-		// Set the head chunks as open (being appended to).
-		maxTime := c.maxTime
-		if s.headChunk == c {
-			maxTime = math.MaxInt64
-		}
-
 		*chks = append(*chks, chunks.Meta{
 			MinTime: c.minTime,
-			MaxTime: maxTime,
+			MaxTime: c.maxTime,
 			Ref:     packChunkID(s.ref, uint64(s.chunkID(i))),
+		})
+	}
+	if s.headChunk.OverlapsClosedInterval(h.mint, h.maxt) {
+		*chks = append(*chks, chunks.Meta{
+			MinTime: s.headChunk.minTime,
+			MaxTime: math.MaxInt64, // Set the head chunks as open (being appended to).
+			Ref:     packChunkID(s.ref, uint64(s.chunkID(len(s.mmappedChunks)))),
 		})
 	}
 
@@ -1593,7 +1617,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 				series.Lock()
 				rmChunks += series.truncateChunksBefore(mint)
 
-				if len(series.chunks) > 0 || series.pendingCommit {
+				if len(series.mmappedChunks) > 0 || series.headChunk != nil || series.pendingCommit {
 					series.Unlock()
 					continue
 				}
@@ -1686,9 +1710,10 @@ func (s sample) V() float64 {
 type memSeries struct {
 	sync.Mutex
 
-	ref          uint64
-	lset         labels.Labels
-	chunks       []*memChunk
+	ref           uint64
+	lset          labels.Labels
+	mmappedChunks []*mmappedChunk
+	// chunks        []*mmappedChunk
 	headChunk    *memChunk
 	chunkRange   int64
 	firstChunkID int
@@ -1711,10 +1736,13 @@ func newMemSeries(lset labels.Labels, id uint64, chunkRange int64) *memSeries {
 }
 
 func (s *memSeries) minTime() int64 {
-	if len(s.chunks) == 0 {
-		return math.MinInt64
+	if len(s.mmappedChunks) > 0 {
+		return s.mmappedChunks[0].minTime
 	}
-	return s.chunks[0].minTime
+	if s.headChunk != nil {
+		return s.headChunk.minTime
+	}
+	return math.MinInt64
 }
 
 func (s *memSeries) maxTime() int64 {
@@ -1726,30 +1754,46 @@ func (s *memSeries) maxTime() int64 {
 }
 
 func (s *memSeries) cut(mint int64) *memChunk {
-	c := &memChunk{
-		chunk:   chunkenc.NewXORChunk(),
-		minTime: mint,
-		maxTime: math.MinInt64,
+	if s.headChunk != nil {
+		chunkRef, err := crw.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk)
+		if err != nil {
+			panic(err)
+		}
+		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
+			ref:     chunkRef,
+			minTime: s.headChunk.minTime,
+			maxTime: s.headChunk.maxTime,
+		})
 	}
-	s.chunks = append(s.chunks, c)
-	s.headChunk = c
+	if s.headChunk == nil {
+		s.headChunk = &memChunk{
+			chunk:   chunkenc.NewXORChunk(),
+			minTime: mint,
+			maxTime: math.MinInt64,
+		}
+	} else {
+		s.headChunk.chunk = chunkenc.NewXORChunk()
+		s.headChunk.minTime = mint
+		s.headChunk.maxTime = math.MinInt64
+	}
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
 	s.nextAt = rangeForTimestamp(mint, s.chunkRange)
 
-	app, err := c.chunk.Appender()
+	app, err := s.headChunk.chunk.Appender()
 	if err != nil {
 		panic(err)
 	}
 	s.app = app
-	return c
+	return s.headChunk
 }
 
+// TODO: this should be removed with tombstones
 func (s *memSeries) chunksMetas() []chunks.Meta {
-	metas := make([]chunks.Meta, 0, len(s.chunks))
-	for _, chk := range s.chunks {
-		metas = append(metas, chunks.Meta{Chunk: chk.chunk, MinTime: chk.minTime, MaxTime: chk.maxTime})
+	metas := make([]chunks.Meta, 0, len(s.mmappedChunks))
+	for _, chk := range s.mmappedChunks {
+		metas = append(metas, chunks.Meta{MinTime: chk.minTime, MaxTime: chk.maxTime})
 	}
 	return metas
 }
@@ -1757,7 +1801,7 @@ func (s *memSeries) chunksMetas() []chunks.Meta {
 // reset re-initialises all the variable in the memSeries except 'lset', 'ref',
 // and 'chunkRange', like how it would appear after 'newMemSeries(...)'.
 func (s *memSeries) reset() {
-	s.chunks = nil
+	s.mmappedChunks = nil
 	s.headChunk = nil
 	s.firstChunkID = 0
 	s.nextAt = math.MinInt64
@@ -1789,10 +1833,22 @@ func (s *memSeries) appendable(t int64, v float64) error {
 
 func (s *memSeries) chunk(id int) *memChunk {
 	ix := id - s.firstChunkID
-	if ix < 0 || ix >= len(s.chunks) {
+	if ix < 0 || ix > len(s.mmappedChunks) {
 		return nil
 	}
-	return s.chunks[ix]
+	if ix == len(s.mmappedChunks) {
+		return s.headChunk
+	}
+	// TODO: put this back into the pool.
+	chk, err := crw.Chunk(s.mmappedChunks[ix].ref)
+	if err != nil {
+		panic(err)
+	}
+	mc := memChunkPool.Get().(*memChunk)
+	mc.chunk = chk
+	mc.minTime = s.mmappedChunks[ix].minTime
+	mc.maxTime = s.mmappedChunks[ix].maxTime
+	return mc
 }
 
 func (s *memSeries) chunkID(pos int) int {
@@ -1801,22 +1857,22 @@ func (s *memSeries) chunkID(pos int) int {
 
 // truncateChunksBefore removes all chunks from the series that have not timestamp
 // at or after mint. Chunk IDs remain unchanged.
+// TODO: fix the logic
 func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 	var k int
-	for i, c := range s.chunks {
+	for i, c := range s.mmappedChunks {
 		if c.maxTime >= mint {
 			break
 		}
 		k = i + 1
 	}
-	s.chunks = append(s.chunks[:0], s.chunks[k:]...)
+	s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[k:]...)
 	s.firstChunkID += k
-	if len(s.chunks) == 0 {
+	if s.headChunk.maxTime < mint {
 		s.headChunk = nil
-	} else {
-		s.headChunk = s.chunks[len(s.chunks)-1]
+		s.firstChunkID++
+		k++
 	}
-
 	return k
 }
 
@@ -1873,6 +1929,7 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 }
 
 func (s *memSeries) iterator(id int, it chunkenc.Iterator) chunkenc.Iterator {
+	// TODO: Put back into the pool
 	c := s.chunk(id)
 	// TODO(fabxc): Work around! A querier may have retrieved a pointer to a series' chunk,
 	// which got then garbage collected before it got accessed.
@@ -1881,7 +1938,7 @@ func (s *memSeries) iterator(id int, it chunkenc.Iterator) chunkenc.Iterator {
 		return chunkenc.NewNopIterator()
 	}
 
-	if id-s.firstChunkID < len(s.chunks)-1 {
+	if id-s.firstChunkID < len(s.mmappedChunks) {
 		return c.chunk.Iterator(it)
 	}
 	// Serve the last 4 samples for the last chunk from the sample buffer
@@ -1959,4 +2016,14 @@ func (ss stringset) slice() []string {
 	}
 	sort.Strings(slice)
 	return slice
+}
+
+type mmappedChunk struct {
+	ref              uint64
+	minTime, maxTime int64
+}
+
+// Returns true if the chunk overlaps [mint, maxt].
+func (mc *mmappedChunk) OverlapsClosedInterval(mint, maxt int64) bool {
+	return mc.minTime <= maxt && mint <= mc.maxTime
 }

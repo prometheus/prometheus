@@ -21,6 +21,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -45,6 +46,7 @@ type HeadReadWriter struct {
 	curFileStartTime time.Time
 	curFileSequence  int
 	wbuf             *bufio.Writer
+	wbufLock         sync.Mutex
 	n                int64 // Bytes written in current segment.
 	buf              [8]byte
 	segmentTime      time.Duration
@@ -180,6 +182,47 @@ func closeAllFromMap(cs map[int]io.Closer) error {
 	return merr.Err()
 }
 
+// IterateAllChunks iterates on all the chunks in it's byte slices in the order of the segment file sequence
+// and runs the provided function on each chunk. It returns on the first error encountered.
+func (w *HeadReadWriter) IterateAllChunks(f func(seriesRef, chunkRef uint64, mint, maxt int64) error) error {
+	// Iterate files in ascending order.
+	seqs := make([]int, 0, len(w.bs))
+	for seg := range w.bs {
+		seqs = append(seqs, seg)
+	}
+	sort.Ints(seqs)
+
+	for _, seq := range seqs {
+		bs := w.bs[seq]
+		sliceLen := bs.Len()
+		idx := HeadSegmentHeaderSize
+		for idx < sliceLen {
+			if sliceLen-idx < 25 {
+				return errors.Errorf("segment doesn't include enough bytes to read the chunk header - required:%v, available:%v", idx+25, sliceLen)
+			}
+
+			seriesRef := binary.BigEndian.Uint64(bs.Range(idx, idx+8))
+
+			idx += 8
+			mint := int64(binary.BigEndian.Uint64(bs.Range(idx, idx+8)))
+
+			idx += 8
+			maxt := int64(binary.BigEndian.Uint64(bs.Range(idx, idx+8)))
+
+			chunkRef := uint64(seq)<<32 | uint64(idx)
+			if err := f(seriesRef, chunkRef, mint, maxt); err != nil {
+				return err
+			}
+
+			idx++ // Skip encoding.
+			// Skip the data.
+			dataLen, n := binary.Varint(bs.Range(idx, idx+MaxChunkLengthFieldSize))
+			idx += n + int(dataLen)
+		}
+	}
+
+	return nil
+}
 func (w *HeadReadWriter) Close() error {
 	w.bsMtx.Lock()
 	defer w.bsMtx.Unlock()
@@ -197,9 +240,12 @@ func (w *HeadReadWriter) Close() error {
 }
 
 // WriteChunk writes chunk in the following format:
-// | Series Ref <8B> | MinT <8B> | MaxT <8B> | Chunk Encoding <1B> | Chunk Data Length <2B> | Chunk Data |
+// | Series Ref <8B> | MinT <8B> | MaxT <8B> | Chunk Encoding <1B> | Chunk Data Length <varint> | Chunk Data |
 // The returned chunk ref is the reference from where the chunk encoding starts for the chunk.
 func (w *HeadReadWriter) WriteChunk(seriesRef uint64, mint, maxt int64, chk chunkenc.Chunk) (chunkRef uint64, err error) {
+	w.wbufLock.Lock()
+	defer w.wbufLock.Unlock()
+
 	if w.shouldCutSegment(len(chk.Bytes())) {
 		if err := w.cut(); err != nil {
 			return 0, err
@@ -244,14 +290,14 @@ func (w *HeadReadWriter) WriteChunk(seriesRef uint64, mint, maxt int64, chk chun
 		return 0, err
 	}
 
-	return chunkRef, err
+	return chunkRef, w.wbuf.Flush()
 }
 
 func (w *HeadReadWriter) shouldCutSegment(chunkLength int) bool {
 	return w.n == 0 || // First segment
 		// TODO: tune this boolean, cutting a segment for only 1 chunk would be inefficient.
 		(time.Now().Sub(w.curFileStartTime) > w.segmentTime && w.n > HeadSegmentHeaderSize) || // Time duration reached for the existing file.
-		w.n+int64(chunkLength+27) >= math.MaxInt64 // mmap limit for 64 bit. This cannot happen, system will crash before it.
+		w.n+int64(chunkLength+27) >= math.MaxInt32 // mmap limit for 64 bit. This cannot happen, system will crash before it.
 }
 
 func (w *HeadReadWriter) seq() int {
@@ -303,7 +349,7 @@ func (w *HeadReadWriter) cut() (err error) {
 	if w.wbuf != nil {
 		w.wbuf.Reset(f)
 	} else {
-		w.wbuf = bufio.NewWriterSize(f, 8*1024*1024)
+		w.wbuf = bufio.NewWriterSize(f, 1024)
 	}
 
 	if oldFile != nil {
@@ -324,7 +370,7 @@ func (w *HeadReadWriter) cut() (err error) {
 	}
 	// Setting size to the max int64 as that is the highest value accepted by mmap for a 64 bit system.
 	// Sorry 32 bit systems.
-	mmapFile, err := fileutil.OpenMmapFileWithSize(f.Name(), math.MaxInt64)
+	mmapFile, err := fileutil.OpenMmapFileWithSize(f.Name(), math.MaxInt32)
 	if err != nil {
 		return err
 	}
