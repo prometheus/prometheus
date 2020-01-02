@@ -1,5 +1,5 @@
 import React, { FC, useState, Fragment } from 'react';
-import { ButtonGroup, Button, Row, Badge } from 'reactstrap';
+import { Row, Badge } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../Checkbox';
 import { isPresent } from '../../utils/func';
@@ -44,6 +44,8 @@ interface RuleGroup {
   interval: number;
 }
 
+const alertKinds: RuleState[] = ['inactive', 'pending', 'firing'];
+
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   const [state, setState] = useState<RuleStatus<boolean>>({
     firing: true,
@@ -61,17 +63,6 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
 
   return (
     <>
-      <ButtonGroup className="mb-3">
-        <Button active={state.inactive} onClick={toggle('inactive')} color="primary">
-          Inactive ({statsCount.inactive})
-        </Button>
-        <Button active={state.pending} onClick={toggle('pending')} color="primary">
-          Pending ({statsCount.pending})
-        </Button>
-        <Button active={state.firing} onClick={toggle('firing')} color="primary">
-          Firing ({statsCount.firing})
-        </Button>
-      </ButtonGroup>
       <Row className="mb-2">
         <Checkbox
           id="show-annotations"
@@ -80,6 +71,20 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
         >
           Show annotations
         </Checkbox>
+        {alertKinds.map((alertKind, i) => {
+          return (
+            <Checkbox
+              defaultChecked
+              id={`${alertKind}-toggler`}
+              wrapperStyles={{ margin: '0 0 0 15px' }}
+              onClick={toggle(alertKind)}
+            >
+              <Badge color={['success', 'warning', 'danger'][i]} className="text-capitalize">
+                {alertKind} ({statsCount[alertKind]})
+              </Badge>
+            </Checkbox>
+          );
+        })}
       </Row>
       {groups.map((group, i) => {
         return (
