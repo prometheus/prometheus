@@ -518,37 +518,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 				testutil.Ok(t, err)
 				defer reloadedHead.Close()
 				testutil.Ok(t, reloadedHead.Init(0))
-				for _, h := range []*Head{head, reloadedHead} {
-					indexr, err := h.Index()
-					testutil.Ok(t, err)
-					// Use an emptyTombstoneReader explicitly to get all the samples.
-					css, err := LookupChunkSeries(indexr, emptyTombstoneReader, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
-					testutil.Ok(t, err)
-
-					// Getting the actual samples.
-					actSamples := make([]sample, 0)
-					for css.Next() {
-						lblsAct, chkMetas, intv := css.At()
-						testutil.Equals(t, labels.Labels{lblDefault}, lblsAct)
-						testutil.Equals(t, 0, len(intv))
-
-						chunkr, err := h.Chunks()
-						testutil.Ok(t, err)
-						var ii chunkenc.Iterator
-						for _, meta := range chkMetas {
-							chk, err := chunkr.Chunk(meta.Ref)
-							testutil.Ok(t, err)
-							ii = chk.Iterator(ii)
-							for ii.Next() {
-								t, v := ii.At()
-								actSamples = append(actSamples, sample{t: t, v: v})
-							}
-						}
-					}
-
-					testutil.Ok(t, css.Err())
-					testutil.Equals(t, c.smplsExp, actSamples)
-				}
 
 				// Compare the query results for both heads - before and after the reload.
 				expSeriesSet := newMockSeriesSet([]Series{
@@ -566,24 +535,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 					testutil.Ok(t, err)
 					actSeriesSet, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, err)
-
-					lns, err := q.LabelNames()
-					testutil.Ok(t, err)
-					lvs, err := q.LabelValues(lblDefault.Name)
-					testutil.Ok(t, err)
-					// When all samples are deleted we expect that no labels should exist either.
-					if len(c.smplsExp) == 0 {
-						testutil.Equals(t, 0, len(lns))
-						testutil.Equals(t, 0, len(lvs))
-						testutil.Assert(t, actSeriesSet.Next() == false, "")
-						testutil.Ok(t, h.Close())
-						continue
-					} else {
-						testutil.Equals(t, 1, len(lns))
-						testutil.Equals(t, 1, len(lvs))
-						testutil.Equals(t, lblDefault.Name, lns[0])
-						testutil.Equals(t, lblDefault.Value, lvs[0])
-					}
 
 					for {
 						eok, rok := expSeriesSet.Next(), actSeriesSet.Next()
@@ -608,45 +559,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestDeleteUntilCurMax(t *testing.T) {
-	numSamples := int64(10)
-	hb, err := NewHead(nil, nil, nil, 1000000)
-	testutil.Ok(t, err)
-	defer hb.Close()
-	app := hb.Appender()
-	smpls := make([]float64, numSamples)
-	for i := int64(0); i < numSamples; i++ {
-		smpls[i] = rand.Float64()
-		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
-		testutil.Ok(t, err)
-	}
-	testutil.Ok(t, app.Commit())
-	testutil.Ok(t, hb.Delete(0, 10000, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
-
-	// Test the series have been deleted.
-	q, err := NewBlockQuerier(hb, 0, 100000)
-	testutil.Ok(t, err)
-	res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	testutil.Ok(t, err)
-	testutil.Assert(t, !res.Next(), "series didn't get deleted")
-
-	// Add again and test for presence.
-	app = hb.Appender()
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 11, 1)
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
-	q, err = NewBlockQuerier(hb, 0, 100000)
-	testutil.Ok(t, err)
-	res, err = q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	testutil.Ok(t, err)
-	testutil.Assert(t, res.Next(), "series don't exist")
-	exps := res.At()
-	it := exps.Iterator()
-	ressmpls, err := expandSeriesIterator(it)
-	testutil.Ok(t, err)
-	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, ressmpls)
 }
 
 func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
