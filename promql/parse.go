@@ -57,11 +57,13 @@ func (e *ParseErr) Error() string {
 func ParseExpr(input string) (Expr, error) {
 	p := newParser(input)
 
-	expr, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
+	var err error
+
+	defer p.recover(&err)
+
+	expr := p.parseGenerated(START_EXPRESSION, []ItemType{EOF}).(Expr)
 	err = p.typecheck(expr)
+
 	return expr, err
 }
 
@@ -70,7 +72,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 	p := newParser(input)
 	defer p.recover(&err)
 
-	return p.parseGenerated(START_METRIC, []ItemType{RIGHT_BRACE, EOF}).(labels.Labels), nil
+	return p.parseGenerated(START_METRIC, []ItemType{EOF}).(labels.Labels), nil
 }
 
 // ParseMetricSelector parses the provided textual metric selector into a list of
@@ -79,15 +81,7 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	p := newParser(input)
 	defer p.recover(&err)
 
-	name := ""
-	if t := p.peek().Typ; t == METRIC_IDENTIFIER || t == IDENTIFIER {
-		name = p.next().Val
-	}
-	vs := p.VectorSelector(name)
-	if p.peek().Typ != EOF {
-		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
-	}
-	return vs.LabelMatchers, nil
+	return p.parseGenerated(START_METRIC_SELECTOR, []ItemType{EOF}).(*VectorSelector).LabelMatchers, nil
 }
 
 // newParser returns a new parser.
@@ -96,23 +90,6 @@ func newParser(input string) *parser {
 		lex: Lex(input),
 	}
 	return p
-}
-
-// parseExpr parses a single expression from the input.
-func (p *parser) parseExpr() (expr Expr, err error) {
-	defer p.recover(&err)
-
-	for p.peek().Typ != EOF {
-		if expr != nil {
-			p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
-		}
-		expr = p.expr()
-	}
-
-	if expr == nil {
-		p.errorf("no expression found in input")
-	}
-	return
 }
 
 // sequenceValue is an omittable value in a sequence of time series values.

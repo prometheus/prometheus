@@ -120,6 +120,7 @@
 %token START_GROUPING_LABELS
 %token START_SERIES_DESCRIPTION
 %token START_EXPRESSION
+%token START_METRIC_SELECTOR
 %token	startSymbolsEnd
 
 %type <matchers> label_matchers label_match_list
@@ -149,6 +150,8 @@ start           : START_LABELS label_matchers
                      { yylex.(*parser).generatedParserResult = $2 }
                 | START_SERIES_DESCRIPTION series_description
                 | START_EXPRESSION expr
+                     { yylex.(*parser).generatedParserResult = $2 }
+                | START_METRIC_SELECTOR vector_selector 
                      { yylex.(*parser).generatedParserResult = $2 }
                 | start EOF
                 | error /* If none of the more detailed error messages are triggered, we fall back to this. */
