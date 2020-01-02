@@ -299,7 +299,7 @@ func TestHandlerRelabel(t *testing.T) {
 	testutil.Ok(t, alertsEqual(expected, h.queue))
 }
 
-func TestHandlerQueueing(t *testing.T) {
+func TestHandlerQueuing(t *testing.T) {
 	var (
 		expectedc = make(chan []*Alert)
 		called    = make(chan struct{})

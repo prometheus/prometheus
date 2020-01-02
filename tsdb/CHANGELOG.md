@@ -5,7 +5,7 @@
  - [FEATURE] Added `DBReadOnly` to allow opening a database in read only mode.
     - `DBReadOnly.Blocks()` exposes a slice of `BlockReader`s.
     - `BlockReader` interface - removed MinTime/MaxTime methods and now exposes the full block meta via `Meta()`.
- - [FEATURE] `chunckenc.Chunk.Iterator` method now takes a `chunckenc.Iterator` interface as an argument for reuse.
+ - [FEATURE] `chunkenc.Chunk.Iterator` method now takes a `chunkenc.Iterator` interface as an argument for reuse.
 
 ## 0.9.1
 
@@ -67,7 +67,7 @@
 
 ## 0.5.0
 
- - [FEATURE] Time-ovelapping blocks are now allowed. [#370](https://github.com/prometheus/tsdb/pull/370)
+ - [FEATURE] Time-overlapping blocks are now allowed. [#370](https://github.com/prometheus/tsdb/pull/370)
    - Disabled by default and can be enabled via `AllowOverlappingBlock` option.
    - Added `MergeChunks` function in `chunkenc/xor.go` to merge 2 time-overlapping chunks.
    - Added `MergeOverlappingChunks` function in `chunks/chunks.go` to merge multiple time-overlapping Chunk Metas.
@@ -100,7 +100,7 @@
 ## 0.3.0
 
  - [CHANGE] `LastCheckpoint()` used to return just the segment name and now it returns the full relative path.
- - [CHANGE] `NewSegmentsRangeReader()` can now read over miltiple wal ranges by using the new `SegmentRange{}` struct.
+ - [CHANGE] `NewSegmentsRangeReader()` can now read over multiple wal ranges by using the new `SegmentRange{}` struct.
  - [CHANGE] `CorruptionErr{}` now also exposes the Segment `Dir` which is added when displaying any errors.
  - [CHANGE] `Head.Init()` is changed to `Head.Init(minValidTime int64)`
  - [CHANGE] `SymbolTable()` renamed to `SymbolTableSize()` to make the name consistent with the  `Block{ symbolTableSize uint64 }` field.

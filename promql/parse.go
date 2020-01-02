@@ -305,7 +305,7 @@ func (p *parser) Lex(lval *yySymType) int {
 // Error is expected by the yyLexer interface of the yacc generated parser.
 //
 // It is a no-op since the parsers error routines are triggered
-// by mechanisms that allow more fine grained control
+// by mechanisms that allow more fine-grained control
 // For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Error(e string) {
 }
@@ -962,7 +962,7 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 	case NEQ_REGEX:
 		matchType = labels.MatchNotRegexp
 	default:
-		// This should never happen, since the error should have been chaught
+		// This should never happen, since the error should have been caught
 		// by the generated parser.
 		panic("invalid operator")
 	}

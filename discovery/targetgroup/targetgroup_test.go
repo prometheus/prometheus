@@ -70,15 +70,15 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 	}
 
 	tests := []struct {
-		expectedYaml  string
-		expectetedErr error
-		group         Group
+		expectedYaml string
+		expectedErr  error
+		group        Group
 	}{
 		{
 			// labels should be omitted if empty.
-			group:         Group{},
-			expectedYaml:  "targets: []\n",
-			expectetedErr: nil,
+			group:        Group{},
+			expectedYaml: "targets: []\n",
+			expectedErr:  nil,
 		},
 		{
 			// targets only exposes addresses.
@@ -86,14 +86,14 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 				model.LabelSet{"__address__": "localhost:9090"},
 				model.LabelSet{"__address__": "localhost:9091"}},
 				Labels: model.LabelSet{"foo": "bar", "bar": "baz"}},
-			expectedYaml:  "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
-			expectetedErr: nil,
+			expectedYaml: "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
+			expectedErr:  nil,
 		},
 	}
 
 	for _, test := range tests {
 		actual, err := test.group.MarshalYAML()
-		testutil.Equals(t, test.expectetedErr, err)
+		testutil.Equals(t, test.expectedErr, err)
 		testutil.Equals(t, test.expectedYaml, string(marshal(actual)))
 	}
 }

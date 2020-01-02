@@ -2135,7 +2135,7 @@ func BenchmarkQueries(b *testing.B) {
 		for _, q := range queryTypes {
 			// Can't run a check for error here as some of these will fail as
 			// queryTypes is using the same slice for the different block queriers
-			// and would have been closed in the previous iterration.
+			// and would have been closed in the previous iteration.
 			q.Close()
 		}
 	}()

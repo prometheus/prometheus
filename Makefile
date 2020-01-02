@@ -54,7 +54,7 @@ react-app-lint:
 
 .PHONY: react-app-lint-fix
 react-app-lint-fix: 
-	@echo ">> running React app linting and fixing errors where possibe"
+	@echo ">> running React app linting and fixing errors where possible"
 	cd $(REACT_APP_PATH) && yarn lint
 
 .PHONY: react-app-test

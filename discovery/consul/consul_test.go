@@ -181,7 +181,7 @@ const (
 "NodeMeta": {"rack_name": "2304"},
 "ServiceID": "test",
 "ServiceName": "test",
-"ServiceMeta": {"version":"1.0.0","environment":"stagging"},
+"ServiceMeta": {"version":"1.0.0","environment":"staging"},
 "ServiceTags": ["tag1"],
 "ServicePort": 3341,
 "CreateIndex": 1,

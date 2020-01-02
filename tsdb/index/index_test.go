@@ -221,7 +221,7 @@ func TestIndexRW_Postings(t *testing.T) {
 		vals := []string{}
 		nc := d.Be32int()
 		if nc != 1 {
-			return errors.Errorf("unexpected nuumber of label indices table names %d", nc)
+			return errors.Errorf("unexpected number of label indices table names %d", nc)
 		}
 		for i := d.Be32(); i > 0; i-- {
 			v, err := ir.lookupSymbol(d.Be32())
@@ -480,7 +480,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	testutil.Ok(t, ir.Close())
 }
 
-func TestDecbufUvariantWithInvalidBuffer(t *testing.T) {
+func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
 	db := encoding.NewDecbufUvarintAt(b, 0, castagnoliTable)
