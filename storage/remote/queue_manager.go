@@ -526,7 +526,8 @@ func (t *QueueManager) calculateDesiredShards() int {
 		samplesPendingRate = samplesInRate*samplesKeptRatio - samplesOutRate
 		highestSent        = t.highestSentTimestampMetric.Get()
 		highestRecv        = highestTimestamp.Get()
-		samplesPending     = (highestRecv - highestSent) * samplesInRate * samplesKeptRatio
+		delay              = highestRecv - highestSent
+		samplesPending     = delay * samplesInRate * samplesKeptRatio
 	)
 
 	if samplesOutRate <= 0 {
@@ -577,6 +578,12 @@ func (t *QueueManager) calculateDesiredShards() int {
 	}
 
 	numShards := int(math.Ceil(desiredShards))
+	// Do not downshard if we are more than ten seconds back.
+	if numShards < t.numShards && delay > 10.0 {
+		level.Debug(t.logger).Log("msg", "Not downsharding due to being too far behind")
+		return t.numShards
+	}
+
 	if numShards > t.cfg.MaxShards {
 		numShards = t.cfg.MaxShards
 	} else if numShards < t.cfg.MinShards {
