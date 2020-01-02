@@ -301,10 +301,6 @@ paren_expr      : LEFT_PAREN expr RIGHT_PAREN
                 ;
 
 
-primary_expr    :
-                number_literal
-                ;
-
 number_literal  :
                 number
                         { $$ = &NumberLiteral{$1}}
