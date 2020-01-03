@@ -44,7 +44,11 @@ interface RuleGroup {
   interval: number;
 }
 
-const alertKinds: RuleState[] = ['inactive', 'pending', 'firing'];
+const stateColorTuples: Array<[RuleState, 'success' | 'warning' | 'danger']> = [
+  ['inactive', 'success'],
+  ['pending', 'warning'],
+  ['firing', 'danger'],
+];
 
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   const [state, setState] = useState<RuleStatus<boolean>>({
@@ -71,16 +75,16 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
         >
           Show annotations
         </Checkbox>
-        {alertKinds.map((alertKind, i) => {
+        {stateColorTuples.map(([state, color]) => {
           return (
             <Checkbox
               defaultChecked
-              id={`${alertKind}-toggler`}
+              id={`${state}-toggler`}
               wrapperStyles={{ margin: '0 0 0 15px' }}
-              onClick={toggle(alertKind)}
+              onClick={toggle(state)}
             >
-              <Badge color={['success', 'warning', 'danger'][i]} className="text-capitalize">
-                {alertKind} ({statsCount[alertKind]})
+              <Badge color={color} className="text-capitalize">
+                {state} ({statsCount[state]})
               </Badge>
             </Checkbox>
           );
