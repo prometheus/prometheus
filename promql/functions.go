@@ -1283,10 +1283,10 @@ func createLabelsForAbsentFunction(expr Expr) labels.Labels {
 		lm = n.LabelMatchers
 	case *MatrixSelector:
 		lm = n.LabelMatchers
-	case *SubqueryExpr, *Call, *AggregateExpr:
+	case *SubqueryExpr, *Call, *AggregateExpr, *UnaryExpr, *BinaryExpr:
 		return m
 	default:
-		panic(errors.Errorf("unsupported type %s", n.Type()))
+		panic(errors.Errorf("unexpected type %s for absent function", n.Type()))
 	}
 
 	for _, ma := range lm {
