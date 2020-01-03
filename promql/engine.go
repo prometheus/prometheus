@@ -1090,7 +1090,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 
 			found := map[int64]struct{}{}
-			newp := []Point{}
 
 			for i, s := range mat {
 				for _, p := range s.Points {
@@ -1101,6 +1100,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				}
 			}
 
+			newp := make([]Point, 0, steps-len(found))
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 				if _, ok := found[ts]; !ok {
 					newp = append(newp, Point{T: ts, V: 1})
