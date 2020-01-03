@@ -562,6 +562,9 @@ eval instant at 1m absent_over_time(http_requests{handler!="/foo"}[5m])
 eval instant at 1m absent_over_time(http_requests{handler="/foo", handler="/bar", handler="/foobar"}[5m])
     {} 1
 
+eval instant at 1m absent_over_time(rate(nonexistant[5m])[5m:])
+    {} 1
+
 eval instant at 1m absent_over_time(http_requests{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
     {instance="127.0.0.1"} 1
 
@@ -573,6 +576,8 @@ load 1m
 	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
 
 eval instant at 5m absent_over_time(http_requests[5m])
+
+eval instant at 5m absent_over_time(rate(http_requests[5m])[5m:1m])
 
 eval instant at 0m absent_over_time(httpd_log_lines_total[30s])
 

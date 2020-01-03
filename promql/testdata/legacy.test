@@ -280,6 +280,12 @@ eval instant at 50m absent(sum(http_requests))
 eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
 	{} 1
 
+eval instant at 50m absent(max(nonexistant))
+	{} 1
+
+eval instant at 50m absent(rate(nonexistant[5m]))
+	{} 1
+
 eval instant at 50m http_requests{group="production",job="api-server"} offset 5m
 	http_requests{group="production", instance="0", job="api-server"} 90
 	http_requests{group="production", instance="1", job="api-server"} 180
