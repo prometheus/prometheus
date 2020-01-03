@@ -1077,9 +1077,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 		putPointSlice(points)
 
-		// absent_over_time requires to invert the matrix; for any timestamp
-		// in the result, we output 1 if there is no value in the current matrix.
-		// Otherwise we don't output any points.
+		// The absent_over_time function returns 0 or 1 Series. So far, the Matrix
+		// contains multiple series. The following code will create a new Series
+		// with values of 1 for the timestamps where no Series has value.
 		if e.Func.Name == "absent_over_time" {
 			found := map[int64]struct{}{}
 			steps := int(1 + (ev.endTimestamp-ev.startTimestamp)/ev.interval)
