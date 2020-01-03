@@ -192,17 +192,19 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "bad number or duration syntax: \"0de\"",
 	}, {
-		input:  "1 /",
-		fail:   true,
-		errMsg: "no valid expression found",
-	}, {
-		input:  "*1",
-		fail:   true,
-		errMsg: "no valid expression found",
-	}, {
+		/*
+				input:  "1 /",
+				fail:   true,
+				errMsg: "no valid expression found",
+			}, {
+				input:  "*1",
+				fail:   true,
+				errMsg: "no valid expression found",
+			}, {
+		*/
 		input:  "(1))",
 		fail:   true,
-		errMsg: "could not parse remaining input \")\"...",
+		errMsg: "unexpected \")\"",
 	}, {
 		input:  "((1)",
 		fail:   true,
@@ -234,11 +236,11 @@ var testExpr = []struct {
 	}, {
 		input:  "1 !~ 1",
 		fail:   true,
-		errMsg: "could not parse remaining input \"!~ 1\"...",
+		errMsg: `unexpected character after '!': '~'`,
 	}, {
 		input:  "1 =~ 1",
 		fail:   true,
-		errMsg: "could not parse remaining input \"=~ 1\"...",
+		errMsg: `unexpected character after '=': '~'`,
 	}, {
 		input:  `-"string"`,
 		fail:   true,
@@ -250,7 +252,7 @@ var testExpr = []struct {
 	}, {
 		input:  `*test`,
 		fail:   true,
-		errMsg: "no valid expression found",
+		errMsg: "unexpected <op:*>",
 	}, {
 		input:  "1 offset 1d",
 		fail:   true,
@@ -258,7 +260,7 @@ var testExpr = []struct {
 	}, {
 		input:  "a - on(b) ignoring(c) d",
 		fail:   true,
-		errMsg: "1:11: parse error: no valid expression found",
+		errMsg: "1:11: parse error: unexpected <ignoring>",
 	},
 	// Vector binary operations.
 	{
