@@ -1081,15 +1081,22 @@ func (ev *evaluator) eval(expr Expr) Value {
 		// contains multiple series. The following code will create a new series
 		// with values of 1 for the timestamps where no series has value.
 		if e.Func.Name == "absent_over_time" {
-			found := map[int64]struct{}{}
 			steps := int(1 + (ev.endTimestamp-ev.startTimestamp)/ev.interval)
+			// Iterate once to look for a complete series.
+			for _, s := range mat {
+				if len(s.Points) == steps {
+					return Matrix{}
+				}
+			}
+
+			found := map[int64]struct{}{}
 			newp := []Point{}
 
-			for _, s := range mat {
+			for i, s := range mat {
 				for _, p := range s.Points {
 					found[p.T] = struct{}{}
 				}
-				if len(found) == steps {
+				if i > 0 && len(found) == steps {
 					return Matrix{}
 				}
 			}
