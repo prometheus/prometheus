@@ -168,10 +168,12 @@ var testExpr = []struct {
 		input:  "# just a comment\n\n",
 		fail:   true,
 		errMsg: "no expression found in input",
-	}, {
-		input:  "1+",
-		fail:   true,
-		errMsg: "no valid expression found",
+		/*
+			}, {
+				input:  "1+",
+				fail:   true,
+				errMsg: "no valid expression found",
+		*/
 	}, {
 		input:  ".",
 		fail:   true,
@@ -179,11 +181,11 @@ var testExpr = []struct {
 	}, {
 		input:  "2.5.",
 		fail:   true,
-		errMsg: "could not parse remaining input \".\"...",
+		errMsg: "unexpected character: '.'",
 	}, {
 		input:  "100..4",
 		fail:   true,
-		errMsg: "could not parse remaining input \".4\"...",
+		errMsg: `unexpected number ".4"`,
 	}, {
 		input:  "0deadbeef",
 		fail:   true,
@@ -191,15 +193,15 @@ var testExpr = []struct {
 	}, {
 		input:  "1 /",
 		fail:   true,
-		errMsg: "no valid expression found",
+		errMsg: "unexpected end of input",
 	}, {
 		input:  "*1",
 		fail:   true,
-		errMsg: "no valid expression found",
+		errMsg: "unexpected <op:*>",
 	}, {
 		input:  "(1))",
 		fail:   true,
-		errMsg: "could not parse remaining input \")\"...",
+		errMsg: "unexpected \")\"",
 	}, {
 		input:  "((1)",
 		fail:   true,
@@ -231,11 +233,11 @@ var testExpr = []struct {
 	}, {
 		input:  "1 !~ 1",
 		fail:   true,
-		errMsg: "could not parse remaining input \"!~ 1\"...",
+		errMsg: `unexpected character after '!': '~'`,
 	}, {
 		input:  "1 =~ 1",
 		fail:   true,
-		errMsg: "could not parse remaining input \"=~ 1\"...",
+		errMsg: `unexpected character after '=': '~'`,
 	}, {
 		input:  `-"string"`,
 		fail:   true,
@@ -247,7 +249,7 @@ var testExpr = []struct {
 	}, {
 		input:  `*test`,
 		fail:   true,
-		errMsg: "no valid expression found",
+		errMsg: "unexpected <op:*>",
 	}, {
 		input:  "1 offset 1d",
 		fail:   true,
@@ -255,7 +257,7 @@ var testExpr = []struct {
 	}, {
 		input:  "a - on(b) ignoring(c) d",
 		fail:   true,
-		errMsg: "1:11: parse error: no valid expression found",
+		errMsg: "1:11: parse error: unexpected <ignoring>",
 	},
 	// Vector binary operations.
 	{
@@ -910,7 +912,7 @@ var testExpr = []struct {
 	}, {
 		input:  `some}`,
 		fail:   true,
-		errMsg: "could not parse remaining input \"}\"...",
+		errMsg: "unexpected character: '}'",
 	}, {
 		input:  `some_metric{a=b}`,
 		fail:   true,
@@ -944,7 +946,7 @@ var testExpr = []struct {
 	}, {
 		input:  `{}`,
 		fail:   true,
-		errMsg: "vector selector must contain label matchers or metric name",
+		errMsg: "vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `{x=""}`,
 		fail:   true,
@@ -1086,11 +1088,11 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric OFFSET 1m[5m]`,
 		fail:   true,
-		errMsg: "1:25: parse error: unexpected \"]\" in subquery selector, expected \":\"",
+		errMsg: "1:25: parse error: no offset modifiers allowed before range selector",
 	}, {
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
-		errMsg: "1:15: parse error: unexpected \"]\" in subquery selector, expected \":\"",
+		errMsg: "1:15: parse error: matrix selectors only allowed for vector selectors",
 	},
 	// Test aggregation.
 	{
@@ -1267,39 +1269,39 @@ var testExpr = []struct {
 	}, {
 		input:  `sum some_metric by (test)`,
 		fail:   true,
-		errMsg: "unexpected identifier \"some_metric\" in aggregation, expected \"(\"",
+		errMsg: "unexpected identifier \"some_metric\" in aggregation",
 	}, {
 		input:  `sum (some_metric) by test`,
 		fail:   true,
-		errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
+		errMsg: "unexpected identifier \"test\" in grouping opts",
 	}, {
 		input:  `sum (some_metric) by test`,
 		fail:   true,
-		errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
+		errMsg: "unexpected identifier \"test\" in grouping opts",
 	}, {
 		input:  `sum () by (test)`,
 		fail:   true,
-		errMsg: "no valid expression found",
+		errMsg: "no arguments for aggregate expression provided",
 	}, {
 		input:  "MIN keep_common (some_metric)",
 		fail:   true,
-		errMsg: "1:5: parse error: unexpected identifier \"keep_common\" in aggregation, expected \"(\"",
+		errMsg: "1:5: parse error: unexpected identifier \"keep_common\" in aggregation",
 	}, {
 		input:  "MIN (some_metric) keep_common",
 		fail:   true,
-		errMsg: "could not parse remaining input \"keep_common\"...",
+		errMsg: `unexpected identifier "keep_common"`,
 	}, {
 		input:  `sum (some_metric) without (test) by (test)`,
 		fail:   true,
-		errMsg: "could not parse remaining input \"by (test)\"...",
+		errMsg: "unexpected <by>",
 	}, {
 		input:  `sum without (test) (some_metric) by (test)`,
 		fail:   true,
-		errMsg: "could not parse remaining input \"by (test)\"...",
+		errMsg: "unexpected <by>",
 	}, {
 		input:  `topk(some_metric)`,
 		fail:   true,
-		errMsg: "1:17: parse error: unexpected \")\" in aggregation, expected \",\"",
+		errMsg: "wrong number of arguments for aggregate expression provided, expected 2, got 1",
 	}, {
 		input:  `topk(some_metric, other_metric)`,
 		fail:   true,
@@ -1314,6 +1316,7 @@ var testExpr = []struct {
 		input: "time()",
 		expected: &Call{
 			Func: mustGetFunction("time"),
+			Args: Expressions{},
 		},
 	}, {
 		input: `floor(some_metric{foo!="bar"})`,
@@ -1399,15 +1402,15 @@ var testExpr = []struct {
 	{
 		input:  "-=",
 		fail:   true,
-		errMsg: `no valid expression found`,
+		errMsg: `unexpected "="`,
 	}, {
 		input:  "++-++-+-+-<",
 		fail:   true,
-		errMsg: `no valid expression found`,
+		errMsg: `unexpected <op:<>`,
 	}, {
 		input:  "e-+=/(0)",
 		fail:   true,
-		errMsg: `no valid expression found`,
+		errMsg: `unexpected "="`,
 	},
 	// String quoting and escape sequence interpretation tests.
 	{
@@ -1443,7 +1446,7 @@ var testExpr = []struct {
 	}, {
 		input:  "`\\``",
 		fail:   true,
-		errMsg: "could not parse remaining input",
+		errMsg: "unterminated raw string",
 	}, {
 		input:  `"\`,
 		fail:   true,
@@ -1651,7 +1654,7 @@ var testExpr = []struct {
 	}, {
 		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
 		fail:   true,
-		errMsg: "1:27: parse error: could not parse remaining input \"[10m:5s]\"...",
+		errMsg: `1:35: parse error: subquery is only allowed on instant vector, got matrix in "(foo + bar{nm=\"val\"})[5m:][10m:5s]" instead`,
 	},
 }
 

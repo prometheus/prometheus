@@ -18,6 +18,7 @@ import (
         "math"
         "sort"
         "strconv"
+        "time"
 
         "github.com/prometheus/prometheus/pkg/labels"
         "github.com/prometheus/prometheus/pkg/value"
@@ -35,6 +36,8 @@ import (
     series    []sequenceValue
     uint      uint64
     float     float64
+    string    string
+    duration  time.Duration
 }
 
 
@@ -116,21 +119,37 @@ import (
 %token START_METRIC
 %token START_GROUPING_LABELS
 %token START_SERIES_DESCRIPTION
+%token START_EXPRESSION
+%token START_METRIC_SELECTOR
 %token	startSymbolsEnd
 
 %type <matchers> label_matchers label_match_list
 %type <matcher> label_matcher
 
-%type <item> match_op metric_identifier grouping_label maybe_label
+%type <item> match_op metric_identifier grouping_label maybe_label unary_op aggregate_op
 
 %type <labels> label_set_list label_set metric
 %type <label> label_set_item    
-%type <strings> grouping_labels  grouping_label_list
+%type <strings> grouping_labels grouping_label_list maybe_grouping_labels
 %type <series> series_values series_item
 %type <uint> uint
 %type <float> series_value signed_number number
+%type <node>  paren_expr unary_expr binary_expr offset_expr number_literal string_literal vector_selector matrix_selector subquery_expr function_call aggregate_expr expr bin_modifier group_modifiers bool_modifier on_or_ignoring vector_selector matrix_selector subquery_expr function_call aggregate_expr function_call_args aggregate_modifier function_call_body
+%type <string> string
+%type <duration> duration maybe_duration
 
 %start start
+
+// Operators listed with increasing precedence
+%left LOR
+%left LAND LUNLESS
+%left EQL NEQ LTE LSS GTE GTR
+%left ADD SUB
+%left MUL DIV MOD
+%right POW
+
+// This prevents parsing of multiple offset modifiers for a single vector selector
+%nonassoc OFFSET
 
 %%
 
@@ -141,11 +160,161 @@ start           : START_LABELS label_matchers
                 | START_GROUPING_LABELS grouping_labels
                      { yylex.(*parser).generatedParserResult = $2 }
                 | START_SERIES_DESCRIPTION series_description
+                | START_EXPRESSION /* empty */ EOF
+                        { yylex.(*parser).errorf("no expression found in input")}
+                | START_EXPRESSION expr
+                     { yylex.(*parser).generatedParserResult = $2 }
+                | START_METRIC_SELECTOR vector_selector 
+                     { yylex.(*parser).generatedParserResult = $2 }
                 | start EOF
                 | error /* If none of the more detailed error messages are triggered, we fall back to this. */
                         { yylex.(*parser).unexpected("","") }
                 ;
 
+expr            :
+                paren_expr
+                | binary_expr
+                | unary_expr
+                | offset_expr
+                | number_literal
+                | string_literal
+                | vector_selector
+                | matrix_selector
+                | subquery_expr
+                | function_call
+                | aggregate_expr
+                ;
+
+unary_expr      :
+                /* gives the rule the same prec as POW, not a perfect solution */
+                unary_op expr %prec POW
+                        {
+                        if nl, ok := $2.(*NumberLiteral); ok {
+                                if $1.Typ == SUB {
+                                        nl.Val *= -1
+                                }
+                                $$ = nl
+                        } else {
+                                $$ = &UnaryExpr{Op: $1.Typ, Expr: $2.(Expr)}
+                        }
+                        }
+                ;
+
+unary_op        :
+                ADD
+                | SUB
+                ;
+
+binary_expr     :
+                expr POW bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr MUL bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr DIV bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr MOD bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr ADD bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr SUB bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr EQL bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr NEQ bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr LTE bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr LSS bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr GTE bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr GTR bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr LAND bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr LUNLESS bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                | expr LOR bin_modifier expr
+                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+                ;
+
+// Using left recursion for the modifier rules, helps to keep the parser stack small and 
+// reduces allocations
+
+bin_modifier    :
+                group_modifiers
+                ;
+
+bool_modifier   :
+                /* empty */
+                        { $$ = &BinaryExpr{
+                        VectorMatching: &VectorMatching{Card: CardOneToOne},
+                        }
+                        }
+                | BOOL
+                        { $$ = &BinaryExpr{
+                        VectorMatching: &VectorMatching{Card: CardOneToOne},
+                        ReturnBool:     true,
+                        }
+                        }
+                ;
+
+on_or_ignoring  :
+                bool_modifier /* empty */
+                | bool_modifier IGNORING grouping_labels
+                        {
+                        $$ = $1
+                        $$.(*BinaryExpr).VectorMatching.MatchingLabels = $3
+                        } 
+                | bool_modifier ON grouping_labels
+                        {
+                        $$ = $1
+                        $$.(*BinaryExpr).VectorMatching.MatchingLabels = $3
+                        $$.(*BinaryExpr).VectorMatching.On = true
+                        } 
+                ;
+
+group_modifiers:
+                on_or_ignoring /* empty */
+                | on_or_ignoring GROUP_LEFT maybe_grouping_labels
+                        {
+                        $$ = $1
+                        $$.(*BinaryExpr).VectorMatching.Card = CardManyToOne
+                        $$.(*BinaryExpr).VectorMatching.Include = $3
+                        }
+                | on_or_ignoring GROUP_RIGHT maybe_grouping_labels
+                        {
+                        $$ = $1
+                        $$.(*BinaryExpr).VectorMatching.Card = CardOneToMany
+                        $$.(*BinaryExpr).VectorMatching.Include = $3
+                        }
+                ;
+
+maybe_grouping_labels:
+                /* empty */
+                        { $$ = nil }
+                | grouping_labels
+                ;
+
+paren_expr      : LEFT_PAREN expr RIGHT_PAREN
+                        { $$ = &ParenExpr{Expr: $2.(Expr)} }
+                ;
+
+
+number_literal  :
+                number
+                        { $$ = &NumberLiteral{$1}}
+                ;
+
+string_literal  :
+                string
+                        { $$ = &StringLiteral{$1}}
+                ;
+
+string          :
+                STRING
+                        { $$ = yylex.(*parser).unquoteString($1.Val) }
+                ;
 
 label_matchers  : 
                 LEFT_BRACE label_match_list RIGHT_BRACE
@@ -191,6 +360,7 @@ metric          :
                 | label_set 
                         {$$ = $1}
                 ;
+
 
 metric_identifier
                 :
@@ -291,6 +461,154 @@ maybe_label     :
                 ;
 
 // The series description grammar is only used inside unit tests.
+offset_expr:
+                expr OFFSET DURATION
+                        {
+                        offset, err := parseDuration($3.Val)
+                        if err != nil {
+                                yylex.(*parser).error(err)
+                        }
+                        yylex.(*parser).addOffset($1, offset)
+                        $$ = $1
+                        }
+                | expr OFFSET error
+                        { yylex.(*parser).unexpected("offset", "duration") }
+                ;
+
+vector_selector:
+                metric_identifier label_matchers
+                        { $$ = yylex.(*parser).newVectorSelector($1.Val, $2) }
+                | metric_identifier 
+                        { $$ = yylex.(*parser).newVectorSelector($1.Val, nil) }
+                | label_matchers
+                        { $$ = yylex.(*parser).newVectorSelector("", $1) }
+                ;
+
+matrix_selector :
+                expr LEFT_BRACKET duration RIGHT_BRACKET
+                        {
+                        vs, ok := $1.(*VectorSelector)
+                        if !ok{
+                                yylex.(*parser).errorf("matrix selectors only allowed for vector selectors")
+                        }
+                        if vs.Offset != 0{
+                                yylex.(*parser).errorf("no offset modifiers allowed before range selector")
+                        }
+                        $$ = &MatrixSelector{
+                                Name: vs.Name,
+                                Offset: vs.Offset,
+                                LabelMatchers: vs.LabelMatchers,
+                                Range: $3,
+                        }
+                        }
+                ;
+
+subquery_expr   :
+                expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
+                        {
+                        $$ = &SubqueryExpr{
+                                Expr:  $1.(Expr),
+                                Range: $3,
+                                Step:  $5,
+                        }
+                        }
+                | expr LEFT_BRACKET duration COLON error
+                        { yylex.(*parser).unexpected("subquery selector", "duration or \"]\"") }
+                | expr LEFT_BRACKET duration error
+                        { yylex.(*parser).unexpected("subquery selector", "\":\"") }
+                | expr LEFT_BRACKET error
+                        { yylex.(*parser).unexpected("subquery selector", "duration") }
+                ;
+                        
+
+maybe_duration  :
+                /* empty */
+                        {$$ = 0}
+                | duration
+                ;
+
+duration        :
+                DURATION
+                        {
+                        var err error
+                        $$, err = parseDuration($1.Val)
+                        if err != nil {
+                                yylex.(*parser).error(err)
+                        }
+                        }
+                ;
+                
+function_call   :
+                IDENTIFIER function_call_body
+                        {
+                        fn, exist := getFunction($1.Val)
+                        if !exist{
+                                yylex.(*parser).errorf("unknown function with name %q", $1.Val)
+                        } 
+                        $$ = &Call{
+                                Func: fn,
+                                Args: $2.(Expressions),
+                        }
+                        }
+                ;
+
+function_call_body:
+                LEFT_PAREN function_call_args RIGHT_PAREN
+                        { $$ = $2 }
+                | LEFT_PAREN RIGHT_PAREN
+                        {$$ = Expressions{}}
+                ;
+
+function_call_args:
+                function_call_args COMMA expr
+                        { $$ = append($1.(Expressions), $3.(Expr)) }
+                | expr 
+                        { $$ = Expressions{$1.(Expr)} }
+                ;
+
+// TODO param support
+// Consider unifying calls and aggregate expressions
+aggregate_expr  :
+                aggregate_op aggregate_modifier function_call_body
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $3) }
+                | aggregate_op function_call_body aggregate_modifier
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $3, $2) }
+                | aggregate_op function_call_body
+                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
+                | aggregate_op error
+                        { yylex.(*parser).unexpected("aggregation","") }
+                ;
+
+aggregate_op    :
+                AVG
+                | COUNT
+                | SUM
+                | MIN
+                | MAX
+                | STDDEV
+                | STDVAR
+                | TOPK
+                | BOTTOMK
+                | COUNT_VALUES
+                | QUANTILE
+                ;
+
+aggregate_modifier:
+                BY grouping_labels
+                        {
+                        $$ = &AggregateExpr{
+                                Grouping: $2,
+                        }
+                        }
+                | WITHOUT grouping_labels
+                        {
+                        $$ = &AggregateExpr{
+                                Grouping: $2,
+                                Without:  true,
+                        }
+                        }
+                ;
+
 series_description:
                 metric series_values
                         {
