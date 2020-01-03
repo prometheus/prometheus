@@ -1324,6 +1324,7 @@ var testExpr = []struct {
 		input: "time()",
 		expected: &Call{
 			Func: mustGetFunction("time"),
+			Args: Expressions{},
 		},
 	}, {
 		input: `floor(some_metric{foo!="bar"})`,
