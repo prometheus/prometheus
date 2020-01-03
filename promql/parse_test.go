@@ -1410,15 +1410,15 @@ var testExpr = []struct {
 	{
 		input:  "-=",
 		fail:   true,
-		errMsg: `no valid expression found`,
+		errMsg: `unexpected "="`,
 	}, {
 		input:  "++-++-+-+-<",
 		fail:   true,
-		errMsg: `no valid expression found`,
+		errMsg: `unexpected <op:<>`,
 	}, {
 		input:  "e-+=/(0)",
 		fail:   true,
-		errMsg: `no valid expression found`,
+		errMsg: `unexpected "="`,
 	},
 	// String quoting and escape sequence interpretation tests.
 	{
@@ -1454,7 +1454,7 @@ var testExpr = []struct {
 	}, {
 		input:  "`\\``",
 		fail:   true,
-		errMsg: "could not parse remaining input",
+		errMsg: "unterminated raw string",
 	}, {
 		input:  `"\`,
 		fail:   true,
