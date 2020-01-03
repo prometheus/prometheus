@@ -323,6 +323,14 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node
 		ret.VectorMatching.Card = CardManyToMany
 	}
 
+	for _, l1 := range ret.VectorMatching.MatchingLabels {
+		for _, l2 := range ret.VectorMatching.Include {
+			if l1 == l2 && ret.VectorMatching.On {
+				p.errorf("label %q must not occur in ON and GROUP clause at once", l1)
+			}
+		}
+	}
+
 	return ret
 }
 
