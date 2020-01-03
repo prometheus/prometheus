@@ -1286,27 +1286,30 @@ var testExpr = []struct {
 		*/
 		input:  `sum () by (test)`,
 		fail:   true,
-		errMsg: "no valid expression found",
+		errMsg: "no arguments for aggregate expression provided",
 	}, {
-		input:  "MIN keep_common (some_metric)",
-		fail:   true,
-		errMsg: "1:5: parse error: unexpected identifier \"keep_common\" in aggregation, expected \"(\"",
-	}, {
+		/*
+				input:  "MIN keep_common (some_metric)",
+				fail:   true,
+				errMsg: "1:5: parse error: unexpected identifier \"keep_common\" in aggregation, expected \"(\"",
+
+			}, {
+		*/
 		input:  "MIN (some_metric) keep_common",
 		fail:   true,
-		errMsg: "could not parse remaining input \"keep_common\"...",
+		errMsg: `unexpected identifier "keep_common"`,
 	}, {
 		input:  `sum (some_metric) without (test) by (test)`,
 		fail:   true,
-		errMsg: "could not parse remaining input \"by (test)\"...",
+		errMsg: "unexpected <by>",
 	}, {
 		input:  `sum without (test) (some_metric) by (test)`,
 		fail:   true,
-		errMsg: "could not parse remaining input \"by (test)\"...",
+		errMsg: "unexpected <by>",
 	}, {
 		input:  `topk(some_metric)`,
 		fail:   true,
-		errMsg: "1:17: parse error: unexpected \")\" in aggregation, expected \",\"",
+		errMsg: "wrong number of arguments for aggregate expression provided, expected 2, got 1",
 	}, {
 		input:  `topk(some_metric, other_metric)`,
 		fail:   true,
