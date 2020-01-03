@@ -151,27 +151,6 @@ func (p *parser) next() Item {
 	return p.token
 }
 
-// peek returns but does not consume the next token.
-func (p *parser) peek() Item {
-	if p.peeking {
-		return p.token
-	}
-	p.peeking = true
-
-	t := p.lex.NextItem()
-	// Skip comments.
-	for t.Typ == COMMENT {
-		t = p.lex.NextItem()
-	}
-	p.token = t
-	return p.token
-}
-
-// backup backs the input stream up one token.
-func (p *parser) backup() {
-	p.peeking = true
-}
-
 // errorf formats the error and terminates processing.
 func (p *parser) errorf(format string, args ...interface{}) {
 	p.error(errors.Errorf(format, args...))
@@ -210,25 +189,6 @@ func (p *parser) unexpected(context string, expected string) {
 	}
 
 	p.error(errors.New(errMsg.String()))
-}
-
-// expect consumes the next token and guarantees it has the required type.
-func (p *parser) expect(exp ItemType, context string) Item {
-	token := p.next()
-	if token.Typ != exp {
-		p.unexpected(context, exp.desc())
-	}
-	return token
-}
-
-// expectOneOf consumes the next token and guarantees it has one of the required types.
-func (p *parser) expectOneOf(exp1, exp2 ItemType, context string) Item {
-	token := p.next()
-	if token.Typ != exp1 && token.Typ != exp2 {
-		expected := exp1.desc() + " or " + exp2.desc()
-		p.unexpected(context, expected)
-	}
-	return token
 }
 
 var errUnexpected = errors.New("unexpected error")

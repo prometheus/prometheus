@@ -89,38 +89,6 @@ func (i ItemType) isSetOperator() bool {
 // LowestPrec is a constant for operator precedence in expressions.
 const LowestPrec = 0 // Non-operators.
 
-// Precedence returns the operator precedence of the binary
-// operator op. If op is not a binary operator, the result
-// is LowestPrec.
-func (i ItemType) precedence() int {
-	switch i {
-	case LOR:
-		return 1
-	case LAND, LUNLESS:
-		return 2
-	case EQL, NEQ, LTE, LSS, GTE, GTR:
-		return 3
-	case ADD, SUB:
-		return 4
-	case MUL, DIV, MOD:
-		return 5
-	case POW:
-		return 6
-	default:
-		return LowestPrec
-	}
-}
-
-func (i ItemType) isRightAssociative() bool {
-	switch i {
-	case POW:
-		return true
-	default:
-		return false
-	}
-
-}
-
 type ItemType int
 
 // This is a list of all keywords in PromQL.
