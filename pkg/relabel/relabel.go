@@ -15,10 +15,10 @@ package relabel
 
 import (
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
-	"encoding/json"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
