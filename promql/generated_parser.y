@@ -472,6 +472,8 @@ offset_expr:
                         yylex.(*parser).addOffset($1, offset)
                         $$ = $1
                         }
+                | expr OFFSET error
+                        { yylex.(*parser).unexpected("offset", "duration") }
                 ;
 
 vector_selector:
