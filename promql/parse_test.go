@@ -169,10 +169,12 @@ var testExpr = []struct {
 		input:  "# just a comment\n\n",
 		fail:   true,
 		errMsg: "no expression found in input",
-	}, {
-		input:  "1+",
-		fail:   true,
-		errMsg: "no valid expression found",
+		/*
+			}, {
+				input:  "1+",
+				fail:   true,
+				errMsg: "no valid expression found",
+		*/
 	}, {
 		input:  ".",
 		fail:   true,
@@ -180,11 +182,11 @@ var testExpr = []struct {
 	}, {
 		input:  "2.5.",
 		fail:   true,
-		errMsg: "could not parse remaining input \".\"...",
+		errMsg: "unexpected character: '.'",
 	}, {
 		input:  "100..4",
 		fail:   true,
-		errMsg: "could not parse remaining input \".4\"...",
+		errMsg: `unexpected number ".4"`,
 	}, {
 		input:  "0deadbeef",
 		fail:   true,
