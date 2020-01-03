@@ -15,7 +15,6 @@ package relabel
 
 import (
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -175,12 +174,6 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 		return re.original, nil
 	}
 	return nil, nil
-}
-
-// MarshalJSON implements the json.Marshaler interface.
-func (re Regexp) MarshalJSON() ([]byte, error) {
-	m, err := json.Marshal(re.original)
-	return m, err
 }
 
 // Process returns a relabeled copy of the given label set. The relabel configurations
