@@ -1270,18 +1270,20 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `unexpected "," in grouping opts, expected label`,
 	}, {
-		input:  `sum some_metric by (test)`,
-		fail:   true,
-		errMsg: "unexpected identifier \"some_metric\" in aggregation, expected \"(\"",
-	}, {
-		input:  `sum (some_metric) by test`,
-		fail:   true,
-		errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
-	}, {
-		input:  `sum (some_metric) by test`,
-		fail:   true,
-		errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
-	}, {
+		/*
+				input:  `sum some_metric by (test)`,
+				fail:   true,
+				errMsg: "unexpected identifier \"some_metric\" in aggregation, expected \"(\"",
+			}, {
+				input:  `sum (some_metric) by test`,
+				fail:   true,
+				errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
+			}, {
+				input:  `sum (some_metric) by test`,
+				fail:   true,
+				errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
+			}, {
+		*/
 		input:  `sum () by (test)`,
 		fail:   true,
 		errMsg: "no valid expression found",

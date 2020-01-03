@@ -369,6 +369,40 @@ func (p *parser) newVectorSelector(name string, labelMatchers []*labels.Matcher)
 	return ret
 }
 
+func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *AggregateExpr) {
+	ret = modifier.(*AggregateExpr)
+	arguments := args.(Expressions)
+
+	ret.Op = op.Typ
+
+	if len(arguments) == 0 {
+		p.errorf("no arguments for aggregate expression provided")
+
+		// Currently p.errorf() panics, so this return is not needed
+		// at the moment.
+		// However, this behaviour is likely to be changed in the
+		// future. In case of having non-panicking errors this
+		// return prevents invalid array accesses
+		return
+	}
+
+	desiredArgs := 1
+	if ret.Op.isAggregatorWithParam() {
+		desiredArgs = 2
+
+		ret.Param = arguments[0]
+	}
+
+	if len(arguments) != desiredArgs {
+		p.errorf("wrong number of arguments for aggregate expression provided, expected %d, got %d", desiredArgs, len(arguments))
+		return
+	}
+
+	ret.Expr = arguments[desiredArgs-1]
+
+	return ret
+}
+
 // number parses a number.
 func (p *parser) number(val string) float64 {
 	n, err := strconv.ParseInt(val, 0, 64)

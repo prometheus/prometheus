@@ -557,25 +557,14 @@ function_call_args:
 // TODO param support
 // Consider unifying calls and aggregate expressions
 aggregate_expr  :
-                aggregate_op aggregate_modifier expr
-                        {
-                        $$ = $2
-                        $$.(*AggregateExpr).Op = $1.Typ
-                        $$.(*AggregateExpr).Expr = $3.(Expr)
-                        }
-                | aggregate_op expr aggregate_modifier
-                        {
-                        $$ = $3
-                        $$.(*AggregateExpr).Op = $1.Typ
-                        $$.(*AggregateExpr).Expr = $2.(Expr)
-                        }
-                | aggregate_op expr
-                        {
-                        $$ = &AggregateExpr{
-                                Op: $1.Typ,
-                                Expr: $2.(Expr),
-                        }
-                        }
+                aggregate_op aggregate_modifier LEFT_PAREN function_call_args RIGHT_PAREN
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $4) }
+                | aggregate_op LEFT_PAREN function_call_args RIGHT_PAREN aggregate_modifier
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $5, $3) }
+                | aggregate_op LEFT_PAREN function_call_args RIGHT_PAREN
+                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $3) }
+                | aggregate_op error
+                        { yylex.(*parser).unexpected("aggregation","") }
                 ;
 
 aggregate_op    :
