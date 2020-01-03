@@ -927,7 +927,7 @@ mainLoop:
 		// we still call sl.append to trigger stale markers.
 		total, added, seriesAdded, appErr := sl.append(b, contentType, start)
 		if appErr != nil {
-			level.Warn(sl.l).Log("msg", "append failed", "err", appErr)
+			level.Warn(sl.l).Log("msg", "append failed", "err", appErr, "total", total, "added", added)
 			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
 			if _, _, _, err := sl.append([]byte{}, "", start); err != nil {
