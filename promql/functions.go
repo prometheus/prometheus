@@ -1276,8 +1276,8 @@ func (s *vectorByReverseValueHeap) Pop() interface{} {
 func createLabelsForAbsentFunction(expr Expr) labels.Labels {
 	m := labels.Labels{}
 	empty := []string{}
-	lm := make([]*labels.Matcher, 0)
 
+	var lm []*labels.Matcher
 	switch n := expr.(type) {
 	case *VectorSelector:
 		lm = n.LabelMatchers
