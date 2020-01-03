@@ -134,7 +134,7 @@
 %type <series> series_values series_item
 %type <uint> uint
 %type <float> series_value signed_number number
-%type <node>  paren_expr unary_expr binary_expr offset_expr number_literal string_literal vector_selector matrix_selector subquery_expr function_call aggregate_expr expr bin_modifier group_modifiers bool_modifier on_or_ignoring vector_selector matrix_selector subquery_expr function_call aggregate_expr function_call_args aggregate_modifier
+%type <node>  paren_expr unary_expr binary_expr offset_expr number_literal string_literal vector_selector matrix_selector subquery_expr function_call aggregate_expr expr bin_modifier group_modifiers bool_modifier on_or_ignoring vector_selector matrix_selector subquery_expr function_call aggregate_expr function_call_args aggregate_modifier function_call_body
 %type <string> string
 %type <duration> duration maybe_duration
 
@@ -534,7 +534,7 @@ duration        :
                 ;
                 
 function_call   :
-                IDENTIFIER LEFT_PAREN function_call_args RIGHT_PAREN
+                IDENTIFIER function_call_body
                         {
                         fn, exist := getFunction($1.Val)
                         if !exist{
@@ -542,9 +542,16 @@ function_call   :
                         } 
                         $$ = &Call{
                                 Func: fn,
-                                Args: $3.(Expressions),
+                                Args: $2.(Expressions),
                         }
                         }
+                ;
+
+function_call_body:
+                LEFT_PAREN function_call_args RIGHT_PAREN
+                        { $$ = $2 }
+                | LEFT_PAREN RIGHT_PAREN
+                        {$$ = Expressions{}}
                 ;
 
 function_call_args:
@@ -552,19 +559,17 @@ function_call_args:
                         { $$ = append($1.(Expressions), $3.(Expr)) }
                 | expr 
                         { $$ = Expressions{$1.(Expr)} }
-                | /* empty */
-                        { $$ = Expressions{} }
                 ;
 
 // TODO param support
 // Consider unifying calls and aggregate expressions
 aggregate_expr  :
-                aggregate_op aggregate_modifier LEFT_PAREN function_call_args RIGHT_PAREN
-                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $4) }
-                | aggregate_op LEFT_PAREN function_call_args RIGHT_PAREN aggregate_modifier
-                        { $$ = yylex.(*parser).newAggregateExpr($1, $5, $3) }
-                | aggregate_op LEFT_PAREN function_call_args RIGHT_PAREN
-                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $3) }
+                aggregate_op aggregate_modifier function_call_body
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $3) }
+                | aggregate_op function_call_body aggregate_modifier
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $3, $2) }
+                | aggregate_op function_call_body
+                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
                 | aggregate_op error
                         { yylex.(*parser).unexpected("aggregation","") }
                 ;
