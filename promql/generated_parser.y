@@ -146,7 +146,7 @@
 %left EQL NEQ LTE LSS GTE GTR
 %left ADD SUB
 %left MUL DIV MOD
-%left POW
+%right POW
 
 // This prevents parsing of multiple offset modifiers for a single vector selector
 %nonassoc OFFSET
