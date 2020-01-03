@@ -486,9 +486,15 @@ vector_selector:
                 ;
 
 matrix_selector :
-                vector_selector LEFT_BRACKET duration RIGHT_BRACKET
+                expr LEFT_BRACKET duration RIGHT_BRACKET
                         {
-                        vs := $1.(*VectorSelector)
+                        vs, ok := $1.(*VectorSelector)
+                        if !ok{
+                                yylex.(*parser).errorf("matrix selectors only allowed for vector selectors")
+                        }
+                        if vs.Offset != 0{
+                                yylex.(*parser).errorf("no offset modifiers allowed before range selector")
+                        }
                         $$ = &MatrixSelector{
                                 Name: vs.Name,
                                 Offset: vs.Offset,

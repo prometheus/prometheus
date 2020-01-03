@@ -1091,11 +1091,11 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric OFFSET 1m[5m]`,
 		fail:   true,
-		errMsg: "1:25: parse error: unexpected \"]\" in subquery selector, expected \":\"",
+		errMsg: "1:25: parse error: no offset modifiers allowed before range selector",
 	}, {
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
-		errMsg: "1:15: parse error: unexpected \"]\" in subquery selector, expected \":\"",
+		errMsg: "1:15: parse error: matrix selectors only allowed for vector selectors",
 	},
 	// Test aggregation.
 	{
@@ -1662,7 +1662,7 @@ var testExpr = []struct {
 	}, {
 		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
 		fail:   true,
-		errMsg: "1:27: parse error: could not parse remaining input \"[10m:5s]\"...",
+		errMsg: `1:35: parse error: subquery is only allowed on instant vector, got matrix in "(foo + bar{nm=\"val\"})[5m:][10m:5s]" instead`,
 	},
 }
 
