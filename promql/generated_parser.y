@@ -476,23 +476,11 @@ offset_expr:
 
 vector_selector:
                 metric_identifier label_matchers
-                        {
-                        nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, $1.Val)
-                        if err != nil{
-                                panic(err)
-                        }
-                        $$ = &VectorSelector{Name: $1.Val, LabelMatchers:append($2,nameMatcher)}
-                        }
+                        { $$ = yylex.(*parser).newVectorSelector($1.Val, $2) }
                 | metric_identifier 
-                        {
-                        nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, $1.Val)
-                        if err != nil{
-                                panic(err)
-                        }
-                        $$ = &VectorSelector{Name: $1.Val, LabelMatchers: []*labels.Matcher{nameMatcher}} 
-                        }
+                        { $$ = yylex.(*parser).newVectorSelector($1.Val, nil) }
                 | label_matchers
-                        { $$ = &VectorSelector{LabelMatchers:$1} }
+                        { $$ = yylex.(*parser).newVectorSelector("", $1) }
                 ;
 
 matrix_selector :

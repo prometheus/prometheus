@@ -949,7 +949,7 @@ var testExpr = []struct {
 	}, {
 		input:  `{}`,
 		fail:   true,
-		errMsg: "vector selector must contain label matchers or metric name",
+		errMsg: "vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `{x=""}`,
 		fail:   true,

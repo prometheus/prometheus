@@ -334,6 +334,41 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node
 	return ret
 }
 
+func (p *parser) newVectorSelector(name string, labelMatchers []*labels.Matcher) *VectorSelector {
+	ret := &VectorSelector{LabelMatchers: labelMatchers}
+
+	if name != "" {
+		ret.Name = name
+
+		for _, m := range ret.LabelMatchers {
+			if m.Name == labels.MetricName {
+				p.errorf("metric name must not be set twice: %q or %q", name, m.Value)
+			}
+		}
+
+		nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, name)
+		if err != nil {
+			panic(err) // Must not happen with labels.MatchEqual
+		}
+		ret.LabelMatchers = append(ret.LabelMatchers, nameMatcher)
+	}
+
+	// A Vector selector must contain at least one non-empty matcher to prevent
+	// implicit selection of all metrics (e.g. by a typo).
+	notEmpty := false
+	for _, lm := range ret.LabelMatchers {
+		if !lm.Matches("") {
+			notEmpty = true
+			break
+		}
+	}
+	if !notEmpty {
+		p.errorf("vector selector must contain at least one non-empty matcher")
+	}
+
+	return ret
+}
+
 // number parses a number.
 func (p *parser) number(val string) float64 {
 	n, err := strconv.ParseInt(val, 0, 64)
