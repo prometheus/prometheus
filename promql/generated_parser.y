@@ -507,6 +507,12 @@ subquery_expr   :
                                 Step:  $5,
                         }
                         }
+                | expr LEFT_BRACKET duration COLON error
+                        { yylex.(*parser).unexpected("subquery selector", "duration or \"]\"") }
+                | expr LEFT_BRACKET duration error
+                        { yylex.(*parser).unexpected("subquery selector", "\":\"") }
+                | expr LEFT_BRACKET error
+                        { yylex.(*parser).unexpected("subquery selector", "duration") }
                 ;
                         
 
