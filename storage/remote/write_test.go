@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -73,6 +74,42 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 		},
 		QueueConfig: config.DefaultQueueConfig,
 	}
+	cfg4 := config.RemoteWriteConfig{
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+		WriteRelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels: model.LabelNames{"__name__"},
+				Separator:    ";",
+				Regex:        relabel.MustNewRegexp("regex1.*"),
+				Replacement:  "$1",
+				Action:       relabel.Drop,
+			},
+		},
+		QueueConfig: config.DefaultQueueConfig,
+	}
+	cfg5 := config.RemoteWriteConfig{
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+		WriteRelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels: model.LabelNames{"__name__"},
+				Separator:    ";",
+				Regex:        relabel.MustNewRegexp("regex2.*"),
+				Replacement:  "$1",
+				Action:       relabel.Drop,
+			},
+		},
+		QueueConfig: config.DefaultQueueConfig,
+	}
 
 	type testcase struct {
 		cfgs []*config.RemoteWriteConfig
@@ -107,6 +144,13 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 				&cfg3,
 			},
 			err: true,
+		},
+		{ // Non-duplicates due to differing regex.
+			cfgs: []*config.RemoteWriteConfig{
+				&cfg4,
+				&cfg5,
+			},
+			err: false,
 		},
 	}
 
