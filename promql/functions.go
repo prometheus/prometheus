@@ -1275,7 +1275,6 @@ func (s *vectorByReverseValueHeap) Pop() interface{} {
 // in a given expression. It is used in the absent functions.
 func createLabelsForAbsentFunction(expr Expr) labels.Labels {
 	m := labels.Labels{}
-	empty := []string{}
 
 	var lm []*labels.Matcher
 	switch n := expr.(type) {
@@ -1283,12 +1282,11 @@ func createLabelsForAbsentFunction(expr Expr) labels.Labels {
 		lm = n.LabelMatchers
 	case *MatrixSelector:
 		lm = n.LabelMatchers
-	case *SubqueryExpr, *Call, *AggregateExpr, *UnaryExpr, *BinaryExpr:
-		return m
 	default:
-		panic(errors.Errorf("unexpected type %s for absent function", n.Type()))
+		return m
 	}
 
+	empty := []string{}
 	for _, ma := range lm {
 		if ma.Name == labels.MetricName {
 			continue
