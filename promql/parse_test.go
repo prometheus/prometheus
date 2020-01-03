@@ -915,7 +915,7 @@ var testExpr = []struct {
 	}, {
 		input:  `some}`,
 		fail:   true,
-		errMsg: "could not parse remaining input \"}\"...",
+		errMsg: "unexpected character: '}'",
 	}, {
 		input:  `some_metric{a=b}`,
 		fail:   true,
