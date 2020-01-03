@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -192,16 +191,14 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "bad number or duration syntax: \"0de\"",
 	}, {
-		/*
-				input:  "1 /",
-				fail:   true,
-				errMsg: "no valid expression found",
-			}, {
-				input:  "*1",
-				fail:   true,
-				errMsg: "no valid expression found",
-			}, {
-		*/
+		input:  "1 /",
+		fail:   true,
+		errMsg: "unexpected end of input",
+	}, {
+		input:  "*1",
+		fail:   true,
+		errMsg: "unexpected <op:*>",
+	}, {
 		input:  "(1))",
 		fail:   true,
 		errMsg: "unexpected \")\"",
@@ -1270,31 +1267,26 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `unexpected "," in grouping opts, expected label`,
 	}, {
-		/*
-				input:  `sum some_metric by (test)`,
-				fail:   true,
-				errMsg: "unexpected identifier \"some_metric\" in aggregation, expected \"(\"",
-			}, {
-				input:  `sum (some_metric) by test`,
-				fail:   true,
-				errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
-			}, {
-				input:  `sum (some_metric) by test`,
-				fail:   true,
-				errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
-			}, {
-		*/
+		input:  `sum some_metric by (test)`,
+		fail:   true,
+		errMsg: "unexpected identifier \"some_metric\" in aggregation",
+	}, {
+		input:  `sum (some_metric) by test`,
+		fail:   true,
+		errMsg: "unexpected identifier \"test\" in grouping opts",
+	}, {
+		input:  `sum (some_metric) by test`,
+		fail:   true,
+		errMsg: "unexpected identifier \"test\" in grouping opts",
+	}, {
 		input:  `sum () by (test)`,
 		fail:   true,
 		errMsg: "no arguments for aggregate expression provided",
 	}, {
-		/*
-				input:  "MIN keep_common (some_metric)",
-				fail:   true,
-				errMsg: "1:5: parse error: unexpected identifier \"keep_common\" in aggregation, expected \"(\"",
-
-			}, {
-		*/
+		input:  "MIN keep_common (some_metric)",
+		fail:   true,
+		errMsg: "1:5: parse error: unexpected identifier \"keep_common\" in aggregation",
+	}, {
 		input:  "MIN (some_metric) keep_common",
 		fail:   true,
 		errMsg: `unexpected identifier "keep_common"`,
@@ -1668,7 +1660,6 @@ var testExpr = []struct {
 
 func TestParseExpressions(t *testing.T) {
 	for _, test := range testExpr {
-		fmt.Println(test.input)
 		expr, err := ParseExpr(test.input)
 
 		// Unexpected errors are always caused by a bug.
