@@ -492,9 +492,6 @@ func funcAbsent(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 // This function will return 1 if the matrix has at least one element.
 // Then, the engine post-processes the results to get the expected output.
 func funcAbsentOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
-	if len(vals[0].(Matrix)) == 0 {
-		return enh.out
-	}
 	return append(enh.out,
 		Sample{
 			Point: Point{V: 1},
