@@ -68,12 +68,12 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   return (
     <>
       <div className="mb-2 d-flex">
-        {stateColorTuples.map(([state, color], i) => {
+        {stateColorTuples.map(([state, color]) => {
           return (
             <Checkbox
               defaultChecked
+              wrapperStyles={{ margin: '0 15px 0 0' }}
               id={`${state}-toggler`}
-              wrapperStyles={{ margin: i === 0 ? 0 : '0 0 0 15px' }}
               onClick={toggle(state)}
             >
               <Badge color={color} className="text-capitalize">

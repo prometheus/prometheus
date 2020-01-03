@@ -13,7 +13,14 @@ input[type='checkbox']:checked + label {
 }
 
 [for$='-toggler'] {
-    line-height: 1.6;
+    line-height: 1.5;
+    font-size: 1rem;
+}
+[for$='-toggler'].custom-control-label::before,
+[for$='-toggler'].custom-control-label::after {
+    left: -1.3rem;
+    width: 1.1rem;
+    height: 1.1rem;
 }
 
 .capitalize-title::first-letter {
