@@ -319,6 +319,10 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node
 		p.errorf("comparisons between scalars must use BOOL modifier")
 	}
 
+	if op.Typ.isSetOperator() && ret.VectorMatching.Card == CardOneToOne {
+		ret.VectorMatching.Card = CardManyToMany
+	}
+
 	return ret
 }
 
