@@ -1089,12 +1089,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 				for _, p := range s.Points {
 					found[p.T] = struct{}{}
 				}
-			}
-
-			mat = Matrix{}
-
-			if len(found) == steps {
-				return mat
+				if len(found) == steps {
+					return Matrix{}
+				}
 			}
 
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
@@ -1103,12 +1100,12 @@ func (ev *evaluator) eval(expr Expr) Value {
 				}
 			}
 
-			return append(mat,
+			return Matrix{
 				Series{
 					Metric: createLabelsForAbsentFunction(e.Args[0]),
 					Points: newp,
 				},
-			)
+			}
 		}
 
 		if mat.ContainsSameLabelset() {
