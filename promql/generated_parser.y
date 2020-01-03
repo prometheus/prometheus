@@ -160,6 +160,8 @@ start           : START_LABELS label_matchers
                 | START_GROUPING_LABELS grouping_labels
                      { yylex.(*parser).generatedParserResult = $2 }
                 | START_SERIES_DESCRIPTION series_description
+                | START_EXPRESSION /* empty */ EOF
+                        { yylex.(*parser).errorf("no expression found in input")}
                 | START_EXPRESSION expr
                      { yylex.(*parser).generatedParserResult = $2 }
                 | START_METRIC_SELECTOR vector_selector 
@@ -170,9 +172,7 @@ start           : START_LABELS label_matchers
                 ;
 
 expr            :
-                /* empty */
-                        { yylex.(*parser).errorf("No expression found in input"); $$ = nil }
-                | paren_expr
+                paren_expr
                 | binary_expr
                 | unary_expr
                 | offset_expr
@@ -363,6 +363,7 @@ metric          :
                         { yylex.(*parser).errorf("missing metric name or metric selector")} */
                 ;
 
+
 metric_identifier
                 :
                 METRIC_IDENTIFIER {$$=$1}
@@ -475,9 +476,21 @@ offset_expr:
 
 vector_selector:
                 metric_identifier label_matchers
-                        { $$ = &VectorSelector{Name: $1.Val, LabelMatchers:$2} }
+                        {
+                        nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, $1.Val)
+                        if err != nil{
+                                panic(err)
+                        }
+                        $$ = &VectorSelector{Name: $1.Val, LabelMatchers:append($2,nameMatcher)}
+                        }
                 | metric_identifier 
-                        { $$ = &VectorSelector{Name: $1.Val, LabelMatchers: []*labels.Matcher{}} }
+                        {
+                        nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, $1.Val)
+                        if err != nil{
+                                panic(err)
+                        }
+                        $$ = &VectorSelector{Name: $1.Val, LabelMatchers: []*labels.Matcher{nameMatcher}} 
+                        }
                 | label_matchers
                         { $$ = &VectorSelector{LabelMatchers:$1} }
                 ;

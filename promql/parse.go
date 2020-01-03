@@ -54,14 +54,12 @@ func (e *ParseErr) Error() string {
 }
 
 // ParseExpr returns the expression parsed from the input.
-func ParseExpr(input string) (Expr, error) {
+func ParseExpr(input string) (expr Expr, err error) {
 	p := newParser(input)
-
-	var err error
 
 	defer p.recover(&err)
 
-	expr := p.parseGenerated(START_EXPRESSION, []ItemType{EOF}).(Expr)
+	expr = p.parseGenerated(START_EXPRESSION, []ItemType{EOF}).(Expr)
 	err = p.typecheck(expr)
 
 	return expr, err
