@@ -1,5 +1,5 @@
 import React, { FC, useState, Fragment } from 'react';
-import { Row, Badge } from 'reactstrap';
+import { Badge } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../Checkbox';
 import { isPresent } from '../../utils/func';
@@ -67,20 +67,13 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
 
   return (
     <>
-      <Row className="mb-2">
-        <Checkbox
-          id="show-annotations"
-          wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
-          onClick={() => setShowAnnotations(!showAnnotations)}
-        >
-          Show annotations
-        </Checkbox>
-        {stateColorTuples.map(([state, color]) => {
+      <div className="mb-2 d-flex">
+        {stateColorTuples.map(([state, color], i) => {
           return (
             <Checkbox
               defaultChecked
               id={`${state}-toggler`}
-              wrapperStyles={{ margin: '0 0 0 15px' }}
+              wrapperStyles={{ margin: i === 0 ? 0 : '0 0 0 15px' }}
               onClick={toggle(state)}
             >
               <Badge color={color} className="text-capitalize">
@@ -89,7 +82,14 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
             </Checkbox>
           );
         })}
-      </Row>
+        <Checkbox
+          id="show-annotations"
+          wrapperStyles={{ margin: '0 0 0 auto' }}
+          onClick={() => setShowAnnotations(!showAnnotations)}
+        >
+          Show annotations
+        </Checkbox>
+      </div>
       {groups.map((group, i) => {
         return (
           <Fragment key={i}>

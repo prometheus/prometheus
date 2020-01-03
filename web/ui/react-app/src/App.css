@@ -12,6 +12,10 @@ input[type='checkbox']:checked + label {
   line-height: 1.8;
 }
 
+[for$='-toggler'] {
+    line-height: 1.6;
+}
+
 .capitalize-title::first-letter {
     text-transform: capitalize;
 }
