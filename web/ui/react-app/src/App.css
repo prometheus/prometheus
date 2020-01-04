@@ -8,19 +8,18 @@ input[type='checkbox']:checked + label {
 
 .custom-control-label {
   cursor: pointer;
-  font-size: 0.875rem;
-  line-height: 1.8;
 }
 
-[for$='-toggler'] {
-  line-height: 1.5;
-  font-size: 1rem;
+.togglers-wrapper .form-group {
+  margin-bottom: 0.5rem;
 }
+
 [for$='-toggler'].custom-control-label::before,
 [for$='-toggler'].custom-control-label::after {
+  top: 0.28rem;
   left: -1.3rem;
-  width: 1.1rem;
-  height: 1.1rem;
+  width: 1.12rem;
+  height: 1.12rem;
 }
 
 .capitalize-title::first-letter {

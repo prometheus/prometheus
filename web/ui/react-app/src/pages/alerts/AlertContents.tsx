@@ -67,15 +67,10 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
 
   return (
     <>
-      <div className="mb-2 d-flex">
+      <div className="d-flex togglers-wrapper">
         {stateColorTuples.map(([state, color]) => {
           return (
-            <Checkbox
-              defaultChecked
-              wrapperStyles={{ margin: '0 15px 0 0' }}
-              id={`${state}-toggler`}
-              onClick={toggle(state)}
-            >
+            <Checkbox wrapperStyles={{ marginRight: 10 }} defaultChecked id={`${state}-toggler`} onClick={toggle(state)}>
               <Badge color={color} className="text-capitalize">
                 {state} ({statsCount[state]})
               </Badge>
@@ -83,11 +78,11 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
           );
         })}
         <Checkbox
-          id="show-annotations"
-          wrapperStyles={{ margin: '0 0 0 auto' }}
+          wrapperStyles={{ marginLeft: 'auto' }}
+          id="show-annotations-toggler"
           onClick={() => setShowAnnotations(!showAnnotations)}
         >
-          Show annotations
+          <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
         </Checkbox>
       </div>
       {groups.map((group, i) => {
