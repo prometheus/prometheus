@@ -131,10 +131,9 @@ func extrapolatedRate(vals []Value, args Expressions, enh *EvalNodeHelper, isCou
 		resultValue = resultValue / ms.Range.Seconds()
 	}
 
-	enh.out = append(enh.out, Sample{
+	return append(enh.out, Sample{
 		Point: Point{V: resultValue},
 	})
-	return enh.out
 }
 
 // === delta(Matrix ValueTypeMatrix) Vector ===
