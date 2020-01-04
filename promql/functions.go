@@ -163,40 +163,38 @@ func funcIdelta(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 }
 
 func instantValue(vals []Value, out Vector, isRate bool) Vector {
-	for _, samples := range vals[0].(Matrix) {
-		// No sense in trying to compute a rate without at least two points. Drop
-		// this Vector element.
-		if len(samples.Points) < 2 {
-			continue
-		}
-
-		lastSample := samples.Points[len(samples.Points)-1]
-		previousSample := samples.Points[len(samples.Points)-2]
-
-		var resultValue float64
-		if isRate && lastSample.V < previousSample.V {
-			// Counter reset.
-			resultValue = lastSample.V
-		} else {
-			resultValue = lastSample.V - previousSample.V
-		}
-
-		sampledInterval := lastSample.T - previousSample.T
-		if sampledInterval == 0 {
-			// Avoid dividing by 0.
-			continue
-		}
-
-		if isRate {
-			// Convert to per-second.
-			resultValue /= float64(sampledInterval) / 1000
-		}
-
-		out = append(out, Sample{
-			Point: Point{V: resultValue},
-		})
+	samples := vals[0].(Matrix)[0]
+	// No sense in trying to compute a rate without at least two points. Drop
+	// this Vector element.
+	if len(samples.Points) < 2 {
+		return out
 	}
-	return out
+
+	lastSample := samples.Points[len(samples.Points)-1]
+	previousSample := samples.Points[len(samples.Points)-2]
+
+	var resultValue float64
+	if isRate && lastSample.V < previousSample.V {
+		// Counter reset.
+		resultValue = lastSample.V
+	} else {
+		resultValue = lastSample.V - previousSample.V
+	}
+
+	sampledInterval := lastSample.T - previousSample.T
+	if sampledInterval == 0 {
+		// Avoid dividing by 0.
+		return out
+	}
+
+	if isRate {
+		// Convert to per-second.
+		resultValue /= float64(sampledInterval) / 1000
+	}
+
+	return append(out, Sample{
+		Point: Point{V: resultValue},
+	})
 }
 
 // Calculate the trend value at the given index i in raw data d.
