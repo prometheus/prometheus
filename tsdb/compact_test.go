@@ -870,7 +870,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
 		labelValues := totalSeries / labelNames
 		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
-			h, err := NewHead(nil, nil, nil, 1000)
+			h, err := NewHead(nil, nil, nil, 1000, nil)
 			testutil.Ok(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender()

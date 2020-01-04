@@ -68,6 +68,8 @@ const (
 	HeaderMintOffset = SegmentHeaderSize
 	// HeaderMaxtOffset is the offset where the first byte of MaxT for segment file exists.
 	HeaderMaxtOffset = HeaderMintOffset + 8
+	// MaxSegmentSize is the max size of a segment file.
+	MaxSegmentSize = math.MaxInt32
 )
 
 // NewHeadReadWriter returns a new writer against the given directory
@@ -297,7 +299,7 @@ func (w *HeadReadWriter) shouldCutSegment(chunkLength int) bool {
 	return w.n == 0 || // First segment
 		// TODO: tune this boolean, cutting a segment for only 1 chunk would be inefficient.
 		(time.Now().Sub(w.curFileStartTime) > w.segmentTime && w.n > HeadSegmentHeaderSize) || // Time duration reached for the existing file.
-		w.n+int64(chunkLength+27) >= math.MaxInt32 // mmap limit for 64 bit. This cannot happen, system will crash before it.
+		w.n+int64(chunkLength+27) >= MaxSegmentSize
 }
 
 func (w *HeadReadWriter) seq() int {
@@ -370,7 +372,7 @@ func (w *HeadReadWriter) cut() (err error) {
 	}
 	// Setting size to the max int64 as that is the highest value accepted by mmap for a 64 bit system.
 	// Sorry 32 bit systems.
-	mmapFile, err := fileutil.OpenMmapFileWithSize(f.Name(), math.MaxInt32)
+	mmapFile, err := fileutil.OpenMmapFileWithSize(f.Name(), int(MaxSegmentSize))
 	if err != nil {
 		return err
 	}

@@ -61,7 +61,7 @@ var (
 	// TODO: ensure this is initialized everytime and in tests too
 	crw *chunks.HeadReadWriter
 	// TODO: put these 2 back into the pool near after crw.Chunk call
-	chunkPool    chunkenc.Pool
+	// chunkPool    chunkenc.Pool
 	memChunkPool sync.Pool
 )
 
@@ -262,7 +262,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 }
 
 // NewHead opens the head block in dir.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64, pool chunkenc.Pool) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -283,7 +283,9 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 	}
 	h.metrics = newHeadMetrics(h, r)
 
-	chunkPool = chunkenc.NewPool()
+	if pool == nil {
+		pool = chunkenc.NewPool()
+	}
 	memChunkPool = sync.Pool{
 		New: func() interface{} {
 			return &memChunk{}
@@ -292,7 +294,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 
 	if wal != nil {
 		var err error
-		crw, err = chunks.NewHeadReadWriter(chunkDir(wal.Dir()), chunkPool)
+		crw, err = chunks.NewHeadReadWriter(chunkDir(wal.Dir()), pool)
 		if err != nil {
 			return nil, err
 		}
@@ -1323,7 +1325,13 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 
 	s.Lock()
 	// TODO: put back into the pool
-	c := s.chunk(int(cid))
+	c, garbageCollect := s.chunk(int(cid))
+	defer func() {
+		if garbageCollect {
+			c.chunk = nil
+			memChunkPool.Put(c)
+		}
+	}()
 
 	// This means that the chunk has been garbage collected or is outside
 	// the specified range.
@@ -1831,13 +1839,13 @@ func (s *memSeries) appendable(t int64, v float64) error {
 	return nil
 }
 
-func (s *memSeries) chunk(id int) *memChunk {
+func (s *memSeries) chunk(id int) (chunk *memChunk, garbageCollect bool) {
 	ix := id - s.firstChunkID
 	if ix < 0 || ix > len(s.mmappedChunks) {
-		return nil
+		return nil, false
 	}
 	if ix == len(s.mmappedChunks) {
-		return s.headChunk
+		return s.headChunk, false
 	}
 	// TODO: put this back into the pool.
 	chk, err := crw.Chunk(s.mmappedChunks[ix].ref)
@@ -1848,7 +1856,7 @@ func (s *memSeries) chunk(id int) *memChunk {
 	mc.chunk = chk
 	mc.minTime = s.mmappedChunks[ix].minTime
 	mc.maxTime = s.mmappedChunks[ix].maxTime
-	return mc
+	return mc, true
 }
 
 func (s *memSeries) chunkID(pos int) int {
@@ -1930,7 +1938,13 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 
 func (s *memSeries) iterator(id int, it chunkenc.Iterator) chunkenc.Iterator {
 	// TODO: Put back into the pool
-	c := s.chunk(id)
+	c, garbageCollect := s.chunk(id)
+	defer func() {
+		if garbageCollect {
+			c.chunk = nil
+			memChunkPool.Put(c)
+		}
+	}()
 	// TODO(fabxc): Work around! A querier may have retrieved a pointer to a series' chunk,
 	// which got then garbage collected before it got accessed.
 	// We must ensure to not garbage collect as long as any readers still hold a reference.

@@ -314,7 +314,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 }
 
 func createHead(tb testing.TB, series []Series) *Head {
-	head, err := NewHead(nil, nil, nil, 2*60*60*1000)
+	head, err := NewHead(nil, nil, nil, 2*60*60*1000, nil)
 	testutil.Ok(tb, err)
 	defer head.Close()
 
