@@ -280,6 +280,7 @@ func TestPostingsMany(t *testing.T) {
 
 	ir, err := NewFileReader(fn)
 	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, ir.Close()) }()
 
 	cases := []struct {
 		in []string

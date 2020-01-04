@@ -511,11 +511,11 @@ func (w *Writer) finishSymbols() error {
 		return err
 	}
 
-	var err error
-	w.symbolFile, err = fileutil.OpenMmapFile(w.f.name)
+	sf, err := fileutil.OpenMmapFile(w.f.name)
 	if err != nil {
 		return err
 	}
+	w.symbolFile = sf
 	hash := crc32.Checksum(w.symbolFile.Bytes()[w.toc.Symbols+4:hashPos], castagnoliTable)
 	w.buf1.Reset()
 	w.buf1.PutBE32(hash)
@@ -700,7 +700,11 @@ func (w *Writer) writePostingsOffsetTable() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if f != nil {
+			f.Close()
+		}
+	}()
 	d := encoding.NewDecbufRaw(realByteSlice(f.Bytes()), int(w.fPO.pos))
 	cnt := w.cntPO
 	for d.Err() == nil && cnt > 0 {
@@ -720,6 +724,10 @@ func (w *Writer) writePostingsOffsetTable() error {
 	}
 
 	// Cleanup temporary file.
+	if err := f.Close(); err != nil {
+		return err
+	}
+	f = nil
 	if err := w.fPO.close(); err != nil {
 		return err
 	}
@@ -962,9 +970,9 @@ type labelIndexHashEntry struct {
 }
 
 func (w *Writer) Close() error {
-	if err := w.ensureStage(idxStageDone); err != nil {
-		return err
-	}
+	// Even if this fails, we need to close all the files.
+	ensureErr := w.ensureStage(idxStageDone)
+
 	if w.symbolFile != nil {
 		if err := w.symbolFile.Close(); err != nil {
 			return err
@@ -980,7 +988,10 @@ func (w *Writer) Close() error {
 			return err
 		}
 	}
-	return w.f.close()
+	if err := w.f.close(); err != nil {
+		return err
+	}
+	return ensureErr
 }
 
 // StringTuples provides access to a sorted list of string tuples.
