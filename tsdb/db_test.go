@@ -2655,6 +2655,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 			// Check the content of the chunks.
 			r, err := chunks.NewDirReader(tempDir, nil)
 			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, r.Close()) }()
 
 			for _, chks := range test.chks {
 				for _, chkExp := range chks {
@@ -2705,4 +2706,5 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 		}
 		wg.Wait()
 	}
+	testutil.Ok(t, r.Close())
 }
