@@ -130,7 +130,11 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
         throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
 
-    fetch(`${this.props.pathPrefix}${path}?${params}`, { cache: 'no-store', signal: abortController.signal })
+    fetch(`${this.props.pathPrefix}${path}?${params}`, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      signal: abortController.signal,
+    })
       .then(resp => resp.json())
       .then(json => {
         if (json.status !== 'success') {
