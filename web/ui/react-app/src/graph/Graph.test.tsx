@@ -97,7 +97,7 @@ describe('Graph', () => {
       spyState.mockReset();
       mockPlot.mockReset();
     });
-    it('should trigger state update when new data is recieved', () => {
+    it('should trigger state update when new data is received', () => {
       graph.setProps({ data: { result: [{ values: [{}], metric: {} }] } });
       expect(spyState).toHaveBeenCalledWith(
         {

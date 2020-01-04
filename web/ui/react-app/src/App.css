@@ -208,6 +208,11 @@ button.execute-btn {
     margin-bottom: 20px;
 }
 
+.target-head {
+    font-weight: 700;
+    font-size: large;
+}
+
 .status-badges {
     display: flex;
     justify-content: space-between;

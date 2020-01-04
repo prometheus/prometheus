@@ -456,16 +456,14 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 type Reader struct {
 	// The underlying bytes holding the encoded series data.
 	// Each slice holds the data for a different segment.
-	bs    []ByteSlice
-	cs    []io.Closer // Closers for resources behind the byte slices.
-	size  int64       // The total size of bytes in the reader.
-	pool  chunkenc.Pool
-	crc32 hash.Hash
-	buf   [binary.MaxVarintLen32]byte
+	bs   []ByteSlice
+	cs   []io.Closer // Closers for resources behind the byte slices.
+	size int64       // The total size of bytes in the reader.
+	pool chunkenc.Pool
 }
 
 func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
-	cr := Reader{pool: pool, bs: bs, cs: cs, crc32: newCRC32()}
+	cr := Reader{pool: pool, bs: bs, cs: cs}
 	var totalSize int64
 
 	for i, b := range cr.bs {
@@ -541,6 +539,7 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		// Get the lower 4 bytes.
 		// These contain the segment offset where the data for this chunk starts.
 		chkStart = int((ref << 32) >> 32)
+		chkCRC32 = newCRC32()
 	)
 
 	if sgmIndex >= len(s.bs) {
@@ -569,12 +568,12 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEnd, sgmBytes.Len())
 	}
 
-	sum := sgmBytes.Range(chkEnd-crc32.Size, chkEnd)
-	s.crc32.Reset()
-	if _, err := s.crc32.Write(sgmBytes.Range(chkEncStart, chkDataEnd)); err != nil {
+	sum := sgmBytes.Range(chkDataEnd, chkEnd)
+	if _, err := chkCRC32.Write(sgmBytes.Range(chkEncStart, chkDataEnd)); err != nil {
 		return nil, err
 	}
-	if act := s.crc32.Sum(s.buf[:0]); !bytes.Equal(act, sum) {
+
+	if act := chkCRC32.Sum(nil); !bytes.Equal(act, sum) {
 		return nil, errors.Errorf("checksum mismatch expected:%x, actual:%x", sum, act)
 	}
 

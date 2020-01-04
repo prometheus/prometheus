@@ -644,9 +644,9 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Assert(t, res.Next(), "series don't exist")
 	exps := res.At()
 	it := exps.Iterator()
-	ressmpls, err := expandSeriesIterator(it)
+	resSamples, err := expandSeriesIterator(it)
 	testutil.Ok(t, err)
-	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, ressmpls)
+	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, resSamples)
 }
 
 func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
@@ -1255,7 +1255,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 }
 
 func TestNewWalSegmentOnTruncate(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_wal_segemnts")
+	dir, err := ioutil.TempDir("", "test_wal_segements")
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
