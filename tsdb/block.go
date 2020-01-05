@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -156,6 +157,9 @@ type BlockMeta struct {
 
 	// Version of the index format.
 	Version int `json:"version"`
+
+	// Version of Prometheus at the time the block was written.
+	PrometheusVersion string `json:"prometheus_version"`
 }
 
 // BlockStats contains stats about contents of a block.
@@ -214,6 +218,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 
 func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error) {
 	meta.Version = metaVersion1
+	meta.PrometheusVersion = version.Version
 
 	// Make any changes to the file appear atomic.
 	path := filepath.Join(dir, metaFilename)
