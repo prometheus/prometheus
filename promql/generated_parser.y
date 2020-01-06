@@ -264,8 +264,7 @@ bool_modifier   :
                 ;
 
 on_or_ignoring  :
-                bool_modifier /* empty */
-                | bool_modifier IGNORING grouping_labels
+                bool_modifier IGNORING grouping_labels
                         {
                         $$ = $1
                         $$.(*BinaryExpr).VectorMatching.MatchingLabels = $3
@@ -279,7 +278,8 @@ on_or_ignoring  :
                 ;
 
 group_modifiers:
-                on_or_ignoring /* empty */
+                bool_modifier /* empty */
+                | on_or_ignoring /* empty */
                 | on_or_ignoring GROUP_LEFT maybe_grouping_labels
                         {
                         $$ = $1

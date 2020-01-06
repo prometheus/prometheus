@@ -786,6 +786,10 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "vector matching only allowed between instant vectors",
 	}, {
+		input:  "foo + group_left(baz) bar",
+		fail:   true,
+		errMsg: "unexpected <group_left>",
+	}, {
 		input:  "foo and on(bar) group_left(baz) bar",
 		fail:   true,
 		errMsg: "no grouping allowed for \"and\" operation",
