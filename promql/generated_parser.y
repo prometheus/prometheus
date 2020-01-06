@@ -144,42 +144,24 @@ unary_expr      :
                         }
                 ;
 
-unary_op        :
-                ADD
-                | SUB
-                ;
+unary_op        : ADD | SUB;
 
-binary_expr     :
-                expr POW bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr MUL bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr DIV bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr MOD bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr ADD bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr SUB bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr EQL bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr NEQ bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr LTE bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr LSS bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr GTE bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr GTR bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr LAND bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr LUNLESS bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
-                | expr LOR bin_modifier expr
-                        { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4)} 
+// Operator precedence only works, if each of those is listed separately.
+binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr DIV     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr EQL     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr GTE     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr GTR     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr LAND    bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr LOR     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr LSS     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr LTE     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr LUNLESS bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr MOD     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr MUL     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr NEQ     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr POW     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr SUB     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 ;
 
 // Using left recursion for the modifier rules, helps to keep the parser stack small and 
