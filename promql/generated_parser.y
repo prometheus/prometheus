@@ -116,17 +116,17 @@ start           :
                 ;
 
 expr            :
-                paren_expr
+                aggregate_expr
                 | binary_expr
-                | unary_expr
-                | offset_expr
-                | number_literal
-                | string_literal
-                | vector_selector
-                | matrix_selector
-                | subquery_expr
                 | function_call
-                | aggregate_expr
+                | matrix_selector
+                | number_literal
+                | offset_expr
+                | paren_expr
+                | string_literal
+                | subquery_expr
+                | unary_expr
+                | vector_selector
                 ;
 
 unary_expr      :
@@ -377,32 +377,8 @@ grouping_label  :
                 ;
 
 
-/* inside of grouping options label names can be recognized as keywords by the lexer */
-maybe_label     :
-                IDENTIFIER
-                | METRIC_IDENTIFIER
-                | LAND
-                | LOR
-                | LUNLESS
-                | AVG
-                | COUNT
-                | SUM
-                | MIN
-                | MAX
-                | STDDEV
-                | STDVAR
-                | TOPK
-                | BOTTOMK
-                | COUNT_VALUES
-                | QUANTILE
-                | OFFSET
-                | BY
-                | ON
-                | IGNORING
-                | GROUP_LEFT
-                | GROUP_RIGHT
-                | BOOL
-                ;
+// inside of grouping options label names can be recognized as keywords by the lexer.
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK;
 
 // The series description grammar is only used inside unit tests.
 offset_expr:
@@ -526,17 +502,7 @@ aggregate_expr  :
                 ;
 
 aggregate_op    :
-                AVG
-                | COUNT
-                | SUM
-                | MIN
-                | MAX
-                | STDDEV
-                | STDVAR
-                | TOPK
-                | BOTTOMK
-                | COUNT_VALUES
-                | QUANTILE
+                AVG | BOTTOMK | COUNT | COUNT_VALUES | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK
                 ;
 
 aggregate_modifier:
