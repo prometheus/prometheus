@@ -1,6 +1,11 @@
+## 2.15.2 / 2020-01-06
+
+* [BUGFIX] TSDB: Fixed support for TSDB blocks built with Prometheus before 2.1.0. #6564
+* [BUGFIX] TSDB: Fixed block compaction issues on Windows. #6547
+
 ## 2.15.1 / 2019-12-25
 
-* [BUGFIX] Fixed race on concurrent queries against same data. #6512
+* [BUGFIX] TSDB: Fixed race on concurrent queries against same data. #6512
 
 ## 2.15.0 / 2019-12-23
 
