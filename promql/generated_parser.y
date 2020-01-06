@@ -421,7 +421,7 @@ grouping_label_list:
                 | grouping_label
                         { $$ = []string{$1.Val} }
                 | grouping_label_list error
-                        { yylex.(*parser).unexpected("grouping opts", "\",\" or \"}\"") }
+                        { yylex.(*parser).unexpected("grouping opts", "\",\" or \")\"") }
                 ;
 
 grouping_label  :

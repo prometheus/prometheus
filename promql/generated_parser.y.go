@@ -1227,7 +1227,7 @@ yydefault:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/generated_parser.y:424
 		{
-			yylex.(*parser).unexpected("grouping opts", "\",\" or \"}\"")
+			yylex.(*parser).unexpected("grouping opts", "\",\" or \")\"")
 		}
 	case 90:
 		yyDollar = yyS[yypt-1 : yypt+1]
