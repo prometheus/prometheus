@@ -129,22 +129,39 @@ expr            :
                 | vector_selector
                 ;
 
-unary_expr      :
-                /* gives the rule the same prec as POW, not a perfect solution */
-                unary_op expr %prec POW
+/*
+ * Aggregations.
+ */
+
+aggregate_expr  : aggregate_op aggregate_modifier function_call_body
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $3) }
+                | aggregate_op function_call_body aggregate_modifier
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $3, $2) }
+                | aggregate_op function_call_body
+                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
+                | aggregate_op error
+                        { yylex.(*parser).unexpected("aggregation","") }
+                ;
+
+aggregate_modifier:
+                BY grouping_labels
                         {
-                        if nl, ok := $2.(*NumberLiteral); ok {
-                                if $1.Typ == SUB {
-                                        nl.Val *= -1
-                                }
-                                $$ = nl
-                        } else {
-                                $$ = &UnaryExpr{Op: $1.Typ, Expr: $2.(Expr)}
+                        $$ = &AggregateExpr{
+                                Grouping: $2,
+                        }
+                        }
+                | WITHOUT grouping_labels
+                        {
+                        $$ = &AggregateExpr{
+                                Grouping: $2,
+                                Without:  true,
                         }
                         }
                 ;
 
-unary_op        : ADD | SUB;
+/*
+ * Binary expressions.
+ */
 
 // Operator precedence only works, if each of those is listed separately.
 binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
@@ -210,34 +227,160 @@ group_modifiers: bool_modifier /* empty */
                         }
                 ;
 
-maybe_grouping_labels:
-                /* empty */
-                        { $$ = nil }
-                | grouping_labels
+
+grouping_labels : LEFT_PAREN grouping_label_list RIGHT_PAREN
+                        { $$ = $2 }
+                | LEFT_PAREN grouping_label_list COMMA RIGHT_PAREN
+                        { $$ = $2 }
+                | LEFT_PAREN RIGHT_PAREN
+                        { $$ = []string{} }
+                | error
+                        { yylex.(*parser).unexpected("grouping opts", "\"(\"") }
                 ;
+
+
+grouping_label_list:
+                grouping_label_list COMMA grouping_label
+                        { $$ = append($1, $3.Val) }
+                | grouping_label
+                        { $$ = []string{$1.Val} }
+                | grouping_label_list error
+                        { yylex.(*parser).unexpected("grouping opts", "\",\" or \")\"") }
+                ;
+
+grouping_label  : maybe_label
+                        {
+                        if !isLabel($1.Val) {
+                                yylex.(*parser).unexpected("grouping opts", "label")
+                        }
+                        $$ = $1
+                        }
+                | error
+                        { yylex.(*parser).unexpected("grouping opts", "label") }
+                ;
+
+/*
+ * Function calls.
+ */
+                
+function_call   : IDENTIFIER function_call_body
+                        {
+                        fn, exist := getFunction($1.Val)
+                        if !exist{
+                                yylex.(*parser).errorf("unknown function with name %q", $1.Val)
+                        } 
+                        $$ = &Call{
+                                Func: fn,
+                                Args: $2.(Expressions),
+                        }
+                        }
+                ;
+
+function_call_body: LEFT_PAREN function_call_args RIGHT_PAREN
+                        { $$ = $2 }
+                | LEFT_PAREN RIGHT_PAREN
+                        {$$ = Expressions{}}
+                ;
+
+function_call_args: function_call_args COMMA expr
+                        { $$ = append($1.(Expressions), $3.(Expr)) }
+                | expr 
+                        { $$ = Expressions{$1.(Expr)} }
+                ;
+
+/*
+ * Expressions inside parentheses.
+ */
 
 paren_expr      : LEFT_PAREN expr RIGHT_PAREN
                         { $$ = &ParenExpr{Expr: $2.(Expr)} }
                 ;
 
+/*
+ * Offset modifiers.
+ */
 
-number_literal  :
-                number
-                        { $$ = &NumberLiteral{$1}}
+offset_expr: expr OFFSET duration
+                        {
+                        yylex.(*parser).addOffset($1, $3)
+                        $$ = $1
+                        }
+                | expr OFFSET error
+                        { yylex.(*parser).unexpected("offset", "duration") }
                 ;
 
-string_literal  :
-                string
-                        { $$ = &StringLiteral{$1}}
+/*
+ * Subquery and range selectors.
+ */
+
+matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
+                        {
+                        vs, ok := $1.(*VectorSelector)
+                        if !ok{
+                                yylex.(*parser).errorf("matrix selectors only allowed for vector selectors")
+                        }
+                        if vs.Offset != 0{
+                                yylex.(*parser).errorf("no offset modifiers allowed before range selector")
+                        }
+                        $$ = &MatrixSelector{
+                                Name: vs.Name,
+                                Offset: vs.Offset,
+                                LabelMatchers: vs.LabelMatchers,
+                                Range: $3,
+                        }
+                        }
                 ;
 
-string          :
-                STRING
-                        { $$ = yylex.(*parser).unquoteString($1.Val) }
+subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
+                        {
+                        $$ = &SubqueryExpr{
+                                Expr:  $1.(Expr),
+                                Range: $3,
+                                Step:  $5,
+                        }
+                        }
+                | expr LEFT_BRACKET duration COLON duration error
+                        { yylex.(*parser).unexpected("subquery selector", "\"]\"") }
+                | expr LEFT_BRACKET duration COLON error
+                        { yylex.(*parser).unexpected("subquery selector", "duration or \"]\"") }
+                | expr LEFT_BRACKET duration error
+                        { yylex.(*parser).unexpected("subquery or matrix selector", "\":\" or \"]\"") }
+                | expr LEFT_BRACKET error
+                        { yylex.(*parser).unexpected("subquery selector", "duration") }
                 ;
 
-label_matchers  : 
-                LEFT_BRACE label_match_list RIGHT_BRACE
+/*
+ * Unary expressions.
+ */
+
+unary_expr      :
+                /* gives the rule the same prec as POW, not a perfect solution */
+                unary_op expr %prec POW
+                        {
+                        if nl, ok := $2.(*NumberLiteral); ok {
+                                if $1.Typ == SUB {
+                                        nl.Val *= -1
+                                }
+                                $$ = nl
+                        } else {
+                                $$ = &UnaryExpr{Op: $1.Typ, Expr: $2.(Expr)}
+                        }
+                        }
+                ;
+
+/*
+ * Vector selectors.
+ */
+
+vector_selector: metric_identifier label_matchers
+                        { $$ = yylex.(*parser).newVectorSelector($1.Val, $2) }
+                | metric_identifier 
+                        { $$ = yylex.(*parser).newVectorSelector($1.Val, nil) }
+                | label_matchers
+                        { $$ = yylex.(*parser).newVectorSelector("", $1) }
+                ;
+
+label_matchers  : LEFT_BRACE label_match_list RIGHT_BRACE
                         { $$ = $2 }
                 | LEFT_BRACE label_match_list COMMA RIGHT_BRACE
                         { $$ = $2 }
@@ -263,8 +406,10 @@ label_matcher   : IDENTIFIER match_op STRING
                 | error
                         { yylex.(*parser).unexpected("label matching", "identifier or \"}\"")}
                 ;
-
-match_op        : EQL | NEQ | EQL_REGEX | NEQ_REGEX ;
+                        
+/*
+ * Metric descriptions.
+ */
 
 metric          : metric_identifier label_set
                         { $$ = append($2, labels.Label{Name: labels.MetricName, Value: $1.Val}); sort.Sort($$) }
@@ -304,167 +449,9 @@ label_set_item  : IDENTIFIER EQL STRING
                         { yylex.(*parser).unexpected("label set", "identifier or \"}\"") }
                 ;
 
-grouping_labels : LEFT_PAREN grouping_label_list RIGHT_PAREN
-                        { $$ = $2 }
-                | LEFT_PAREN grouping_label_list COMMA RIGHT_PAREN
-                        { $$ = $2 }
-                | LEFT_PAREN RIGHT_PAREN
-                        { $$ = []string{} }
-                | error
-                        { yylex.(*parser).unexpected("grouping opts", "\"(\"") }
-                ;
-
-
-grouping_label_list:
-                grouping_label_list COMMA grouping_label
-                        { $$ = append($1, $3.Val) }
-                | grouping_label
-                        { $$ = []string{$1.Val} }
-                | grouping_label_list error
-                        { yylex.(*parser).unexpected("grouping opts", "\",\" or \")\"") }
-                ;
-
-grouping_label  : maybe_label
-                        {
-                        if !isLabel($1.Val) {
-                                yylex.(*parser).unexpected("grouping opts", "label")
-                        }
-                        $$ = $1
-                        }
-                | error
-                        { yylex.(*parser).unexpected("grouping opts", "label") }
-                ;
-
-
-// inside of grouping options label names can be recognized as keywords by the lexer.
-maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK;
-
-// The series description grammar is only used inside unit tests.
-offset_expr: expr OFFSET DURATION
-                        {
-                        offset, err := parseDuration($3.Val)
-                        if err != nil {
-                                yylex.(*parser).error(err)
-                        }
-                        yylex.(*parser).addOffset($1, offset)
-                        $$ = $1
-                        }
-                | expr OFFSET error
-                        { yylex.(*parser).unexpected("offset", "duration") }
-                ;
-
-vector_selector: metric_identifier label_matchers
-                        { $$ = yylex.(*parser).newVectorSelector($1.Val, $2) }
-                | metric_identifier 
-                        { $$ = yylex.(*parser).newVectorSelector($1.Val, nil) }
-                | label_matchers
-                        { $$ = yylex.(*parser).newVectorSelector("", $1) }
-                ;
-
-matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
-                        {
-                        vs, ok := $1.(*VectorSelector)
-                        if !ok{
-                                yylex.(*parser).errorf("matrix selectors only allowed for vector selectors")
-                        }
-                        if vs.Offset != 0{
-                                yylex.(*parser).errorf("no offset modifiers allowed before range selector")
-                        }
-                        $$ = &MatrixSelector{
-                                Name: vs.Name,
-                                Offset: vs.Offset,
-                                LabelMatchers: vs.LabelMatchers,
-                                Range: $3,
-                        }
-                        }
-                ;
-
-subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
-                        {
-                        $$ = &SubqueryExpr{
-                                Expr:  $1.(Expr),
-                                Range: $3,
-                                Step:  $5,
-                        }
-                        }
-                | expr LEFT_BRACKET duration COLON duration error
-                        { yylex.(*parser).unexpected("subquery selector", "\"]\"") }
-                | expr LEFT_BRACKET duration COLON error
-                        { yylex.(*parser).unexpected("subquery selector", "duration or \"]\"") }
-                | expr LEFT_BRACKET duration error
-                        { yylex.(*parser).unexpected("subquery or matrix selector", "\":\" or \"]\"") }
-                | expr LEFT_BRACKET error
-                        { yylex.(*parser).unexpected("subquery selector", "duration") }
-                ;
-                        
-
-maybe_duration  : /* empty */
-                        {$$ = 0}
-                | duration
-                ;
-
-duration        : DURATION
-                        {
-                        var err error
-                        $$, err = parseDuration($1.Val)
-                        if err != nil {
-                                yylex.(*parser).error(err)
-                        }
-                        }
-                ;
-                
-function_call   : IDENTIFIER function_call_body
-                        {
-                        fn, exist := getFunction($1.Val)
-                        if !exist{
-                                yylex.(*parser).errorf("unknown function with name %q", $1.Val)
-                        } 
-                        $$ = &Call{
-                                Func: fn,
-                                Args: $2.(Expressions),
-                        }
-                        }
-                ;
-
-function_call_body: LEFT_PAREN function_call_args RIGHT_PAREN
-                        { $$ = $2 }
-                | LEFT_PAREN RIGHT_PAREN
-                        {$$ = Expressions{}}
-                ;
-
-function_call_args: function_call_args COMMA expr
-                        { $$ = append($1.(Expressions), $3.(Expr)) }
-                | expr 
-                        { $$ = Expressions{$1.(Expr)} }
-                ;
-
-aggregate_expr  : aggregate_op aggregate_modifier function_call_body
-                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $3) }
-                | aggregate_op function_call_body aggregate_modifier
-                        { $$ = yylex.(*parser).newAggregateExpr($1, $3, $2) }
-                | aggregate_op function_call_body
-                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
-                | aggregate_op error
-                        { yylex.(*parser).unexpected("aggregation","") }
-                ;
-
-aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK ;
-
-aggregate_modifier:
-                BY grouping_labels
-                        {
-                        $$ = &AggregateExpr{
-                                Grouping: $2,
-                        }
-                        }
-                | WITHOUT grouping_labels
-                        {
-                        $$ = &AggregateExpr{
-                                Grouping: $2,
-                                Without:  true,
-                        }
-                        }
-                ;
+/*
+ * Series descriptions (only used by unit tests).
+ */
 
 series_description: metric series_values
                         {
@@ -511,18 +498,6 @@ series_item     : BLANK
                                 $1 += $2
                         }
                         }
-uint            : NUMBER
-                        {
-                        var err error
-                        $$, err = strconv.ParseUint($1.Val, 10, 64)
-                        if err != nil {
-                                yylex.(*parser).errorf("invalid repetition in series values: %s", err)
-                        }
-                        }
-                ;
-
-signed_number   : ADD number { $$ = $2 }
-                | SUB number { $$ = -$2 }
                 ;
 
 series_value    : IDENTIFIER
@@ -538,6 +513,68 @@ series_value    : IDENTIFIER
 
 
 
+
+/*
+ * Keyword lists.
+ */
+
+aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK ;
+
+// inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK;
+
+unary_op        : ADD | SUB;
+
+match_op        : EQL | NEQ | EQL_REGEX | NEQ_REGEX ;
+
+/*
+ * Literals.
+ */
+
+number_literal  : number { $$ = &NumberLiteral{$1}} ;
+
 number          : NUMBER { $$ = yylex.(*parser).number($1.Val) } ;
+
+signed_number   : ADD number { $$ = $2 }
+                | SUB number { $$ = -$2 }
+                ;
+
+uint            : NUMBER
+                        {
+                        var err error
+                        $$, err = strconv.ParseUint($1.Val, 10, 64)
+                        if err != nil {
+                                yylex.(*parser).errorf("invalid repetition in series values: %s", err)
+                        }
+                        }
+                ;
+
+duration        : DURATION
+                        {
+                        var err error
+                        $$, err = parseDuration($1.Val)
+                        if err != nil {
+                                yylex.(*parser).error(err)
+                        }
+                        }
+                ;
+
+
+string_literal  : string { $$ = &StringLiteral{$1}} ;
+
+string          : STRING { $$ = yylex.(*parser).unquoteString($1.Val) } ;
+
+/*
+ * Wrappers for optional arguments.
+ */
+
+maybe_duration  : /* empty */
+                        {$$ = 0}
+                | duration
+                ;
+
+maybe_grouping_labels: /* empty */ { $$ = nil }
+                | grouping_labels
+                ;
 
 %%
