@@ -102,14 +102,14 @@ import (
 
 start           : 
                 START_METRIC metric
-                     { yylex.(*parser).generatedParserResult = $2 }
+                        { yylex.(*parser).generatedParserResult = $2 }
                 | START_SERIES_DESCRIPTION series_description
                 | START_EXPRESSION /* empty */ EOF
                         { yylex.(*parser).errorf("no expression found in input")}
                 | START_EXPRESSION expr
-                     { yylex.(*parser).generatedParserResult = $2 }
+                        { yylex.(*parser).generatedParserResult = $2 }
                 | START_METRIC_SELECTOR vector_selector 
-                     { yylex.(*parser).generatedParserResult = $2 }
+                        { yylex.(*parser).generatedParserResult = $2 }
                 | start EOF
                 | error /* If none of the more detailed error messages are triggered, we fall back to this. */
                         { yylex.(*parser).unexpected("","") }
@@ -166,13 +166,9 @@ binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinar
 
 // Using left recursion for the modifier rules, helps to keep the parser stack small and 
 // reduces allocations
+bin_modifier    : group_modifiers;
 
-bin_modifier    :
-                group_modifiers
-                ;
-
-bool_modifier   :
-                /* empty */
+bool_modifier   : /* empty */
                         { $$ = &BinaryExpr{
                         VectorMatching: &VectorMatching{Card: CardOneToOne},
                         }
@@ -185,8 +181,7 @@ bool_modifier   :
                         }
                 ;
 
-on_or_ignoring  :
-                bool_modifier IGNORING grouping_labels
+on_or_ignoring  : bool_modifier IGNORING grouping_labels
                         {
                         $$ = $1
                         $$.(*BinaryExpr).VectorMatching.MatchingLabels = $3
@@ -199,8 +194,7 @@ on_or_ignoring  :
                         } 
                 ;
 
-group_modifiers:
-                bool_modifier /* empty */
+group_modifiers: bool_modifier /* empty */
                 | on_or_ignoring /* empty */
                 | on_or_ignoring GROUP_LEFT maybe_grouping_labels
                         {
@@ -252,8 +246,7 @@ label_matchers  :
 
                 ;
 
-label_match_list:
-                label_match_list COMMA label_matcher
+label_match_list: label_match_list COMMA label_matcher
                         { $$ = append($1, $3)}
                 | label_matcher
                         { $$ = []*labels.Matcher{$1}}
@@ -261,8 +254,7 @@ label_match_list:
                         { yylex.(*parser).unexpected("label matching", "\",\" or \"}\"") }
                 ;
 
-label_matcher   :
-                IDENTIFIER match_op STRING
+label_matcher   : IDENTIFIER match_op STRING
                         { $$ = yylex.(*parser).newLabelMatcher($1, $2, $3) }
                 | IDENTIFIER match_op error
                         { yylex.(*parser).unexpected("label matching", "string")}
@@ -272,29 +264,18 @@ label_matcher   :
                         { yylex.(*parser).unexpected("label matching", "identifier or \"}\"")}
                 ;
 
-match_op        :
-                EQL {$$ =$1}
-                | NEQ {$$=$1}
-                | EQL_REGEX {$$=$1}
-                | NEQ_REGEX {$$=$1}
-                ;
+match_op        : EQL | NEQ | EQL_REGEX | NEQ_REGEX ;
 
-
-metric          :
-                metric_identifier label_set
+metric          : metric_identifier label_set
                         { $$ = append($2, labels.Label{Name: labels.MetricName, Value: $1.Val}); sort.Sort($$) }
                 | label_set 
                         {$$ = $1}
                 ;
 
 
-metric_identifier
-                :
-                METRIC_IDENTIFIER {$$=$1}
-                | IDENTIFIER      {$$=$1}
+metric_identifier: METRIC_IDENTIFIER | IDENTIFIER;
 
-label_set       :
-                LEFT_BRACE label_set_list RIGHT_BRACE
+label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
                 | LEFT_BRACE label_set_list COMMA RIGHT_BRACE
                         { $$ = labels.New($2...) }
@@ -304,8 +285,7 @@ label_set       :
                         { $$ = labels.New() }
                 ;
 
-label_set_list  :
-                label_set_list COMMA label_set_item
+label_set_list  : label_set_list COMMA label_set_item
                         { $$ = append($1, $3) }
                 | label_set_item
                         { $$ = []labels.Label{$1} }
@@ -314,8 +294,7 @@ label_set_list  :
                 
                 ;
 
-label_set_item  :
-                IDENTIFIER EQL STRING
+label_set_item  : IDENTIFIER EQL STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } } 
                 | IDENTIFIER EQL error
                         { yylex.(*parser).unexpected("label set", "string")}
@@ -325,8 +304,7 @@ label_set_item  :
                         { yylex.(*parser).unexpected("label set", "identifier or \"}\"") }
                 ;
 
-grouping_labels :
-                LEFT_PAREN grouping_label_list RIGHT_PAREN
+grouping_labels : LEFT_PAREN grouping_label_list RIGHT_PAREN
                         { $$ = $2 }
                 | LEFT_PAREN grouping_label_list COMMA RIGHT_PAREN
                         { $$ = $2 }
@@ -346,8 +324,7 @@ grouping_label_list:
                         { yylex.(*parser).unexpected("grouping opts", "\",\" or \")\"") }
                 ;
 
-grouping_label  :
-                maybe_label
+grouping_label  : maybe_label
                         {
                         if !isLabel($1.Val) {
                                 yylex.(*parser).unexpected("grouping opts", "label")
@@ -363,8 +340,7 @@ grouping_label  :
 maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK;
 
 // The series description grammar is only used inside unit tests.
-offset_expr:
-                expr OFFSET DURATION
+offset_expr: expr OFFSET DURATION
                         {
                         offset, err := parseDuration($3.Val)
                         if err != nil {
@@ -377,8 +353,7 @@ offset_expr:
                         { yylex.(*parser).unexpected("offset", "duration") }
                 ;
 
-vector_selector:
-                metric_identifier label_matchers
+vector_selector: metric_identifier label_matchers
                         { $$ = yylex.(*parser).newVectorSelector($1.Val, $2) }
                 | metric_identifier 
                         { $$ = yylex.(*parser).newVectorSelector($1.Val, nil) }
@@ -386,8 +361,7 @@ vector_selector:
                         { $$ = yylex.(*parser).newVectorSelector("", $1) }
                 ;
 
-matrix_selector :
-                expr LEFT_BRACKET duration RIGHT_BRACKET
+matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         {
                         vs, ok := $1.(*VectorSelector)
                         if !ok{
@@ -405,8 +379,7 @@ matrix_selector :
                         }
                 ;
 
-subquery_expr   :
-                expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
+subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                         {
                         $$ = &SubqueryExpr{
                                 Expr:  $1.(Expr),
@@ -425,14 +398,12 @@ subquery_expr   :
                 ;
                         
 
-maybe_duration  :
-                /* empty */
+maybe_duration  : /* empty */
                         {$$ = 0}
                 | duration
                 ;
 
-duration        :
-                DURATION
+duration        : DURATION
                         {
                         var err error
                         $$, err = parseDuration($1.Val)
@@ -442,8 +413,7 @@ duration        :
                         }
                 ;
                 
-function_call   :
-                IDENTIFIER function_call_body
+function_call   : IDENTIFIER function_call_body
                         {
                         fn, exist := getFunction($1.Val)
                         if !exist{
@@ -456,24 +426,19 @@ function_call   :
                         }
                 ;
 
-function_call_body:
-                LEFT_PAREN function_call_args RIGHT_PAREN
+function_call_body: LEFT_PAREN function_call_args RIGHT_PAREN
                         { $$ = $2 }
                 | LEFT_PAREN RIGHT_PAREN
                         {$$ = Expressions{}}
                 ;
 
-function_call_args:
-                function_call_args COMMA expr
+function_call_args: function_call_args COMMA expr
                         { $$ = append($1.(Expressions), $3.(Expr)) }
                 | expr 
                         { $$ = Expressions{$1.(Expr)} }
                 ;
 
-// TODO param support
-// Consider unifying calls and aggregate expressions
-aggregate_expr  :
-                aggregate_op aggregate_modifier function_call_body
+aggregate_expr  : aggregate_op aggregate_modifier function_call_body
                         { $$ = yylex.(*parser).newAggregateExpr($1, $2, $3) }
                 | aggregate_op function_call_body aggregate_modifier
                         { $$ = yylex.(*parser).newAggregateExpr($1, $3, $2) }
@@ -483,9 +448,7 @@ aggregate_expr  :
                         { yylex.(*parser).unexpected("aggregation","") }
                 ;
 
-aggregate_op    :
-                AVG | BOTTOMK | COUNT | COUNT_VALUES | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK
-                ;
+aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK ;
 
 aggregate_modifier:
                 BY grouping_labels
@@ -503,8 +466,7 @@ aggregate_modifier:
                         }
                 ;
 
-series_description:
-                metric series_values
+series_description: metric series_values
                         {
                         yylex.(*parser).generatedParserResult = &seriesDescription{
                                 labels: $1,
@@ -513,8 +475,7 @@ series_description:
                         }
                 ;
 
-series_values   :
-                /*empty*/
+series_values   : /*empty*/
                         { $$ = []sequenceValue{} }
                 | series_values SPACE series_item
                         { $$ = append($1, $3...) }
@@ -524,8 +485,7 @@ series_values   :
                         { yylex.(*parser).unexpected("series values", "") }
                 ;
 
-series_item     :
-                BLANK
+series_item     : BLANK
                         { $$ = []sequenceValue{{omitted: true}}}
                 | BLANK TIMES uint
                         {
@@ -551,8 +511,7 @@ series_item     :
                                 $1 += $2
                         }
                         }
-uint            :
-                NUMBER
+uint            : NUMBER
                         {
                         var err error
                         $$, err = strconv.ParseUint($1.Val, 10, 64)
@@ -562,15 +521,11 @@ uint            :
                         }
                 ;
 
-signed_number   :
-                ADD number
-                        { $$ = $2 }
-                | SUB number
-                        { $$ = -$2 }
+signed_number   : ADD number { $$ = $2 }
+                | SUB number { $$ = -$2 }
                 ;
 
-series_value    :
-                IDENTIFIER
+series_value    : IDENTIFIER
                         {
                         if $1.Val != "stale" {
                                 yylex.(*parser).unexpected("series values", "number or \"stale\"")
@@ -578,16 +533,11 @@ series_value    :
                         $$ = math.Float64frombits(value.StaleNaN)
                         }
                 | number
-                        { $$ = $1 }
                 | signed_number
-                        { $$ = $1 }
                 ;
 
 
 
-number          :
-                NUMBER
-                        {$$ = yylex.(*parser).number($1.Val) }
-                ;
+number          : NUMBER { $$ = yylex.(*parser).number($1.Val) } ;
 
 %%
