@@ -140,7 +140,7 @@ import (
 
 %start start
 
-// Operators listed with increasing precedence
+// Operators are listed with increasing precedence.
 %left LOR
 %left LAND LUNLESS
 %left EQL NEQ LTE LSS GTE GTR
@@ -148,8 +148,12 @@ import (
 %left MUL DIV MOD
 %right POW
 
-// Offset modifiers do not have associativity
+// Offset modifiers do not have associativity.
 %nonassoc OFFSET
+
+// This ensures that it is always attempted to parse range or subquery selectors when a left
+// bracket is encountered.
+%right LEFT_BRACKET
 
 %%
 
