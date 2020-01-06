@@ -41,86 +41,27 @@ import (
 }
 
 
-%token <item> ERROR 
-%token <item> EOF
-%token <item> COMMENT
-%token <item> IDENTIFIER
-%token <item> METRIC_IDENTIFIER
-%token <item> LEFT_PAREN
-%token <item> RIGHT_PAREN
-%token <item> LEFT_BRACE
-%token <item> RIGHT_BRACE
-%token <item> LEFT_BRACKET
-%token <item> RIGHT_BRACKET
-%token <item> COMMA
-%token <item> ASSIGN
-%token <item> COLON
-%token <item> SEMICOLON
-%token <item> STRING
-%token <item> NUMBER
-%token <item> DURATION
-%token <item> BLANK
-%token <item> TIMES
-%token <item> SPACE
+%token <item> ASSIGN BLANK COLON COMMA COMMENT DURATION EOF ERROR IDENTIFIER LEFT_BRACE LEFT_BRACKET LEFT_PAREN METRIC_IDENTIFIER NUMBER RIGHT_BRACE RIGHT_BRACKET RIGHT_PAREN SEMICOLON SPACE STRING TIMES
 
-%token	operatorsStart
 // Operators.
-%token <item> SUB
-%token <item> ADD
-%token <item> MUL
-%token <item> MOD
-%token <item> DIV
-%token <item> LAND
-%token <item> LOR
-%token <item> LUNLESS
-%token <item> EQL
-%token <item> NEQ
-%token <item> LTE
-%token <item> LSS
-%token <item> GTE
-%token <item> GTR
-%token <item> EQL_REGEX
-%token <item> NEQ_REGEX
-%token <item> POW
+%token	operatorsStart
+%token <item> ADD DIV EQL EQL_REGEX GTE GTR LAND LOR LSS LTE LUNLESS MOD MUL NEQ NEQ_REGEX POW SUB
 %token	operatorsEnd
 
-%token	aggregatorsStart
 // Aggregators.
-%token <item> AVG
-%token <item> COUNT
-%token <item> SUM
-%token <item> MIN
-%token <item> MAX
-%token <item> STDDEV
-%token <item> STDVAR
-%token <item> TOPK
-%token <item> BOTTOMK
-%token <item> COUNT_VALUES
-%token <item> QUANTILE
+%token	aggregatorsStart
+%token <item> AVG BOTTOMK COUNT COUNT_VALUES MAX MIN QUANTILE STDDEV STDVAR SUM TOPK
 %token	aggregatorsEnd
 
-%token	keywordsStart
 // Keywords.
-%token <item> OFFSET
-%token <item> BY
-%token <item> WITHOUT
-%token <item> ON
-%token <item> IGNORING
-%token <item> GROUP_LEFT
-%token <item> GROUP_RIGHT
-%token <item> BOOL
-
+%token	keywordsStart
+%token <item> BOOL BY GROUP_LEFT GROUP_RIGHT IGNORING OFFSET ON WITHOUT
 %token keywordsEnd
 
 
-%token	startSymbolsStart
 // Start symbols for the generated parser.
-%token START_LABELS
-%token START_METRIC
-%token START_GROUPING_LABELS
-%token START_SERIES_DESCRIPTION
-%token START_EXPRESSION
-%token START_METRIC_SELECTOR
+%token	startSymbolsStart
+%token START_LABELS START_METRIC START_GROUPING_LABELS START_SERIES_DESCRIPTION START_EXPRESSION START_METRIC_SELECTOR
 %token	startSymbolsEnd
 
 %type <matchers> label_match_list label_matchers
