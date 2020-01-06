@@ -61,9 +61,11 @@ import (
 
 // Start symbols for the generated parser.
 %token	startSymbolsStart
-%token START_LABELS START_METRIC START_GROUPING_LABELS START_SERIES_DESCRIPTION START_EXPRESSION START_METRIC_SELECTOR
+%token START_METRIC START_SERIES_DESCRIPTION START_EXPRESSION START_METRIC_SELECTOR
 %token	startSymbolsEnd
 
+
+// Type definitions for grammar rules.
 %type <matchers> label_match_list label_matchers
 %type <matcher> label_matcher
 
@@ -98,11 +100,8 @@ import (
 
 %%
 
-start           : START_LABELS label_matchers
-                     {yylex.(*parser).generatedParserResult.(*VectorSelector).LabelMatchers = $2}
-                | START_METRIC metric
-                     { yylex.(*parser).generatedParserResult = $2 }
-                | START_GROUPING_LABELS grouping_labels
+start           : 
+                START_METRIC metric
                      { yylex.(*parser).generatedParserResult = $2 }
                 | START_SERIES_DESCRIPTION series_description
                 | START_EXPRESSION /* empty */ EOF
