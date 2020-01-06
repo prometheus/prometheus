@@ -123,18 +123,18 @@ import (
 %token START_METRIC_SELECTOR
 %token	startSymbolsEnd
 
-%type <matchers> label_matchers label_match_list
+%type <matchers> label_match_list label_matchers
 %type <matcher> label_matcher
 
-%type <item> match_op metric_identifier grouping_label maybe_label unary_op aggregate_op
+%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op
 
-%type <labels> label_set_list label_set metric
-%type <label> label_set_item    
-%type <strings> grouping_labels grouping_label_list maybe_grouping_labels
-%type <series> series_values series_item
+%type <labels> label_set label_set_list metric
+%type <label> label_set_item
+%type <strings> grouping_label_list grouping_labels maybe_grouping_labels
+%type <series> series_item series_values
 %type <uint> uint
-%type <float> series_value signed_number number
-%type <node>  paren_expr unary_expr binary_expr offset_expr number_literal string_literal vector_selector matrix_selector subquery_expr function_call aggregate_expr expr bin_modifier group_modifiers bool_modifier on_or_ignoring vector_selector matrix_selector subquery_expr function_call aggregate_expr function_call_args aggregate_modifier function_call_body
+%type <float> number series_value signed_number
+%type <node> aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 %type <string> string
 %type <duration> duration maybe_duration
 
@@ -143,7 +143,7 @@ import (
 // Operators are listed with increasing precedence.
 %left LOR
 %left LAND LUNLESS
-%left EQL NEQ LTE LSS GTE GTR
+%left EQL GTE GTR LSS LTE NEQ
 %left ADD SUB
 %left MUL DIV MOD
 %right POW
