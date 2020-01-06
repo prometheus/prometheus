@@ -1505,7 +1505,7 @@ yydefault:
 			var err error
 			yyVAL.uint, err = strconv.ParseUint(yyDollar[1].item.Val, 10, 64)
 			if err != nil {
-				yylex.(*parser).errorf("invalid repitition in series values: %s", err)
+				yylex.(*parser).errorf("invalid repetition in series values: %s", err)
 			}
 		}
 	case 162:

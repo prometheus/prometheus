@@ -669,7 +669,7 @@ uint            :
                         var err error
                         $$, err = strconv.ParseUint($1.Val, 10, 64)
                         if err != nil {
-                                yylex.(*parser).errorf("invalid repitition in series values: %s", err)
+                                yylex.(*parser).errorf("invalid repetition in series values: %s", err)
                         }
                         }
                 ;
