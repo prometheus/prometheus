@@ -511,11 +511,11 @@ func (w *Writer) finishSymbols() error {
 		return err
 	}
 
-	var err error
-	w.symbolFile, err = fileutil.OpenMmapFile(w.f.name)
+	sf, err := fileutil.OpenMmapFile(w.f.name)
 	if err != nil {
 		return err
 	}
+	w.symbolFile = sf
 	hash := crc32.Checksum(w.symbolFile.Bytes()[w.toc.Symbols+4:hashPos], castagnoliTable)
 	w.buf1.Reset()
 	w.buf1.PutBE32(hash)
@@ -700,7 +700,11 @@ func (w *Writer) writePostingsOffsetTable() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if f != nil {
+			f.Close()
+		}
+	}()
 	d := encoding.NewDecbufRaw(realByteSlice(f.Bytes()), int(w.fPO.pos))
 	cnt := w.cntPO
 	for d.Err() == nil && cnt > 0 {
@@ -720,6 +724,10 @@ func (w *Writer) writePostingsOffsetTable() error {
 	}
 
 	// Cleanup temporary file.
+	if err := f.Close(); err != nil {
+		return err
+	}
+	f = nil
 	if err := w.fPO.close(); err != nil {
 		return err
 	}
@@ -962,9 +970,9 @@ type labelIndexHashEntry struct {
 }
 
 func (w *Writer) Close() error {
-	if err := w.ensureStage(idxStageDone); err != nil {
-		return err
-	}
+	// Even if this fails, we need to close all the files.
+	ensureErr := w.ensureStage(idxStageDone)
+
 	if w.symbolFile != nil {
 		if err := w.symbolFile.Close(); err != nil {
 			return err
@@ -980,7 +988,10 @@ func (w *Writer) Close() error {
 			return err
 		}
 	}
-	return w.f.close()
+	if err := w.f.close(); err != nil {
+		return err
+	}
+	return ensureErr
 }
 
 // StringTuples provides access to a sorted list of string tuples.
@@ -1013,6 +1024,8 @@ type Reader struct {
 	// Map of LabelName to a list of some LabelValues's position in the offset table.
 	// The first and last values for each name are always present.
 	postings map[string][]postingOffset
+	// For the v1 format, labelname -> labelvalue -> offset.
+	postingsV1 map[string]map[string]uint64
 
 	symbols     *Symbols
 	nameSymbols map[uint32]string // Cache of the label name symbol lookups,
@@ -1102,45 +1115,64 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		return nil, errors.Wrap(err, "read symbols")
 	}
 
-	var lastKey []string
-	lastOff := 0
-	valueCount := 0
-	// For the postings offset table we keep every label name but only every nth
-	// label value (plus the first and last one), to save memory.
-	if err := ReadOffsetTable(r.b, r.toc.PostingsTable, func(key []string, _ uint64, off int) error {
-		if len(key) != 2 {
-			return errors.Errorf("unexpected key length for posting table %d", len(key))
-		}
-		if _, ok := r.postings[key[0]]; !ok {
-			// Next label name.
-			r.postings[key[0]] = []postingOffset{}
-			if lastKey != nil {
-				// Always include last value for each label name.
-				r.postings[lastKey[0]] = append(r.postings[lastKey[0]], postingOffset{value: lastKey[1], off: lastOff})
+	if r.version == FormatV1 {
+		// Earlier V1 formats don't have a sorted postings offset table, so
+		// load the whole offset table into memory.
+		r.postingsV1 = map[string]map[string]uint64{}
+		if err := ReadOffsetTable(r.b, r.toc.PostingsTable, func(key []string, off uint64, _ int) error {
+			if len(key) != 2 {
+				return errors.Errorf("unexpected key length for posting table %d", len(key))
 			}
-			lastKey = nil
-			valueCount = 0
+			if _, ok := r.postingsV1[key[0]]; !ok {
+				r.postingsV1[key[0]] = map[string]uint64{}
+				r.postings[key[0]] = nil // Used to get a list of labelnames in places.
+			}
+			r.postingsV1[key[0]][key[1]] = off
+			return nil
+		}); err != nil {
+			return nil, errors.Wrap(err, "read postings table")
 		}
-		if valueCount%32 == 0 {
-			r.postings[key[0]] = append(r.postings[key[0]], postingOffset{value: key[1], off: off})
-			lastKey = nil
-		} else {
-			lastKey = key
-			lastOff = off
+	} else {
+		var lastKey []string
+		lastOff := 0
+		valueCount := 0
+		// For the postings offset table we keep every label name but only every nth
+		// label value (plus the first and last one), to save memory.
+		if err := ReadOffsetTable(r.b, r.toc.PostingsTable, func(key []string, _ uint64, off int) error {
+			if len(key) != 2 {
+				return errors.Errorf("unexpected key length for posting table %d", len(key))
+			}
+			if _, ok := r.postings[key[0]]; !ok {
+				// Next label name.
+				r.postings[key[0]] = []postingOffset{}
+				if lastKey != nil {
+					// Always include last value for each label name.
+					r.postings[lastKey[0]] = append(r.postings[lastKey[0]], postingOffset{value: lastKey[1], off: lastOff})
+				}
+				lastKey = nil
+				valueCount = 0
+			}
+			if valueCount%32 == 0 {
+				r.postings[key[0]] = append(r.postings[key[0]], postingOffset{value: key[1], off: off})
+				lastKey = nil
+			} else {
+				lastKey = key
+				lastOff = off
+			}
+			valueCount++
+			return nil
+		}); err != nil {
+			return nil, errors.Wrap(err, "read postings table")
 		}
-		valueCount++
-		return nil
-	}); err != nil {
-		return nil, errors.Wrap(err, "read postings table")
-	}
-	if lastKey != nil {
-		r.postings[lastKey[0]] = append(r.postings[lastKey[0]], postingOffset{value: lastKey[1], off: lastOff})
-	}
-	// Trim any extra space in the slices.
-	for k, v := range r.postings {
-		l := make([]postingOffset, len(v))
-		copy(l, v)
-		r.postings[k] = l
+		if lastKey != nil {
+			r.postings[lastKey[0]] = append(r.postings[lastKey[0]], postingOffset{value: lastKey[1], off: lastOff})
+		}
+		// Trim any extra space in the slices.
+		for k, v := range r.postings {
+			l := make([]postingOffset, len(v))
+			copy(l, v)
+			r.postings[k] = l
+		}
 	}
 
 	r.nameSymbols = make(map[uint32]string, len(r.postings))
@@ -1397,6 +1429,19 @@ func (r *Reader) LabelValues(names ...string) (StringTuples, error) {
 	if len(names) != 1 {
 		return nil, errors.Errorf("only one label name supported")
 	}
+	if r.version == FormatV1 {
+		e, ok := r.postingsV1[names[0]]
+		if !ok {
+			return emptyStringTuples{}, nil
+		}
+		values := make([]string, 0, len(e))
+		for k := range e {
+			values = append(values, k)
+		}
+		sort.Strings(values)
+		return NewStringTuples(values, 1)
+
+	}
 	e, ok := r.postings[names[0]]
 	if !ok {
 		return emptyStringTuples{}, nil
@@ -1456,6 +1501,28 @@ func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) err
 }
 
 func (r *Reader) Postings(name string, values ...string) (Postings, error) {
+	if r.version == FormatV1 {
+		e, ok := r.postingsV1[name]
+		if !ok {
+			return EmptyPostings(), nil
+		}
+		res := make([]Postings, 0, len(values))
+		for _, v := range values {
+			postingsOff, ok := e[v]
+			if !ok {
+				continue
+			}
+			// Read from the postings table.
+			d := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
+			_, p, err := r.dec.Postings(d.Get())
+			if err != nil {
+				return nil, errors.Wrap(err, "decode postings")
+			}
+			res = append(res, p)
+		}
+		return Merge(res...), nil
+	}
+
 	e, ok := r.postings[name]
 	if !ok {
 		return EmptyPostings(), nil
