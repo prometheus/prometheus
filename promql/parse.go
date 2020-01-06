@@ -577,14 +577,25 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 }
 
 func (p *parser) addOffset(e Node, offset time.Duration) {
+	var offsetp *time.Duration
+
 	switch s := e.(type) {
 	case *VectorSelector:
-		s.Offset = offset
+		offsetp = &s.Offset
 	case *MatrixSelector:
-		s.Offset = offset
+		offsetp = &s.Offset
 	case *SubqueryExpr:
-		s.Offset = offset
+		offsetp = &s.Offset
 	default:
 		p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
+		return
 	}
+
+	// it is already ensured by parseDuration func that there never will be a zero offset modifier
+	if *offsetp != 0 {
+		p.errorf("offset may not be set multiple times")
+	} else {
+		*offsetp = offset
+	}
+
 }

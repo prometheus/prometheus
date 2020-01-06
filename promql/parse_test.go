@@ -255,6 +255,10 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "offset modifier must be preceded by an instant or range selector",
 	}, {
+		input:  "foo offset 1s offset 2s",
+		fail:   true,
+		errMsg: "offset may not be set multiple times",
+	}, {
 		input:  "a - on(b) ignoring(c) d",
 		fail:   true,
 		errMsg: "1:11: parse error: unexpected <ignoring>",
