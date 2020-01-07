@@ -15,7 +15,6 @@ package rulefmt
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"strings"
 	"time"
@@ -34,12 +33,19 @@ type Error struct {
 	Group    string
 	Rule     int
 	RuleName string
-	Err      error
-	Node     yaml.Node
+	Err      WrapError
+}
+
+// WrapError wraps error with the yaml node which can be used to represent
+// the line and column numbers of the error.
+type WrapError struct {
+	err     error
+	node    yaml.Node
+	nodeAlt yaml.Node
 }
 
 func (err *Error) Error() string {
-	return errors.Wrapf(err.Err, "%d:%d group %q, rule %d, %q", err.Node.Line, err.Node.Column, err.Group, err.Rule, err.RuleName).Error()
+	return errors.Wrapf(err.Err.err, "%d:%d: group %q, rule %d, %q", err.Err.node.Line, err.Err.node.Line, err.Group, err.Rule, err.RuleName).Error()
 }
 
 // RuleGroups is a set of rule groups that are typically exposed in a file.
@@ -57,13 +63,13 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 
 	for j, g := range g.Groups {
 		if g.Name == "" {
-			errs = append(errs, errors.Errorf("%d:%d Groupname should not be empty", node.Groups[j].Line, node.Groups[j].Column))
+			errs = append(errs, errors.Errorf("%d:%d: Groupname should not be empty", node.Groups[j].Line, node.Groups[j].Column))
 		}
 
 		if _, ok := set[g.Name]; ok {
 			errs = append(
 				errs,
-				errors.Errorf("%d:%d groupname: \"%s\" is repeated in the same file", node.Groups[j].Line, node.Groups[j].Column, g.Name),
+				errors.Errorf("%d:%d: groupname: \"%s\" is repeated in the same file", node.Groups[j].Line, node.Groups[j].Column, g.Name),
 			)
 		}
 
@@ -82,7 +88,6 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 					Rule:     i,
 					RuleName: ruleName.Value,
 					Err:      err,
-					Node:     ruleName,
 				})
 			}
 		}
@@ -119,53 +124,83 @@ type RuleNode struct {
 }
 
 // Validate the rule and return a list of encountered errors.
-func (r *RuleNode) Validate() (errs []error) {
+func (r *RuleNode) Validate() (errs []WrapError) {
 	if r.Record.Value != "" && r.Alert.Value != "" {
-		errs = append(errs, errors.Errorf("%d:%d %d:%d only one of 'record' and 'alert' must be set", r.Record.Column, r.Alert.Column, r.Record.Line, r.Alert.Line))
+		errs = append(errs, WrapError{
+			err:     errors.Errorf("only one of 'record' and 'alert' must be set"),
+			node:    r.Record,
+			nodeAlt: r.Alert,
+		})
 	}
 	if r.Record.Value == "" && r.Alert.Value == "" {
 		if r.Record.Value == "0" {
-			errs = append(errs, errors.Errorf("%d:%d one of 'record' or 'alert' must be set", r.Alert.Line, r.Alert.Column))
+			errs = append(errs, WrapError{
+				err:  errors.Errorf("one of 'record' or 'alert' must be set"),
+				node: r.Alert,
+			})
 		} else {
-			errs = append(errs, errors.Errorf("%d:%d one of 'record' or 'alert' must be set", r.Record.Line, r.Record.Column))
+			errs = append(errs, WrapError{
+				err:  errors.Errorf("one of 'record' or 'alert' must be set"),
+				node: r.Record,
+			})
 		}
 	}
 
 	if r.Expr.Value == "" {
-		fmt.Println(r.Expr.Line)
-		errs = append(errs, errors.Errorf("%d:%d field 'expr' must be set in rule", r.Expr.Line, r.Expr.Column))
+		errs = append(errs, WrapError{
+			err:  errors.Errorf("field 'expr' must be set in rule"),
+			node: r.Expr,
+		})
 	} else if _, err := promql.ParseExpr(r.Expr.Value); err != nil {
-		errs = append(errs, errors.Wrapf(err, "%d:%d could not parse expression", r.Expr.Line, r.Expr.Column))
+		errs = append(errs, WrapError{
+			err:  errors.Wrapf(err, "could not parse expression"),
+			node: r.Expr,
+		})
 	}
 	if r.Record.Value != "" {
 		if len(r.Annotations) > 0 {
-			errs = append(errs, errors.Errorf("%d:%d invalid field 'annotations' in recording rule", r.Record.Line, r.Record.Column))
+			errs = append(errs, WrapError{
+				err:  errors.Errorf("invalid field 'annotations' in recording rule"),
+				node: r.Record,
+			})
 		}
 		if r.For != 0 {
-			errs = append(errs, errors.Errorf("%d:%d invalid field 'for' in recording rule", r.Record.Line, r.Record.Column))
+			errs = append(errs, WrapError{
+				err:  errors.Errorf("invalid field 'for' in recording rule"),
+				node: r.Record,
+			})
 		}
 		if !model.IsValidMetricName(model.LabelValue(r.Record.Value)) {
-			errs = append(errs, errors.Errorf("%d:%d invalid recording rule name: %s", r.Record.Line, r.Record.Column, r.Record.Value))
+			errs = append(errs, WrapError{
+				err:  errors.Errorf("invalid recording rule name: %s", r.Record.Value),
+				node: r.Record,
+			})
 		}
 	}
 
 	for k, v := range r.Labels {
 		if !model.LabelName(k).IsValid() {
-			errs = append(errs, errors.Errorf("invalid label name: %s", k))
+			errs = append(errs, WrapError{
+				err: errors.Errorf("invalid label name: %s", k),
+			})
 		}
 
 		if !model.LabelValue(v).IsValid() {
-			errs = append(errs, errors.Errorf("invalid label value: %s", v))
+			errs = append(errs, WrapError{
+				err: errors.Errorf("invalid label value: %s", v),
+			})
 		}
 	}
 
 	for k := range r.Annotations {
 		if !model.LabelName(k).IsValid() {
-			errs = append(errs, errors.Errorf("invalid annotation name: %s", k))
+			errs = append(errs, WrapError{
+				err: errors.Errorf("invalid annotation name: %s", k),
+			})
 		}
 	}
 
-	return append(errs, testTemplateParsing(r)...)
+	return
 }
 
 // testTemplateParsing checks if the templates used in labels and annotations
