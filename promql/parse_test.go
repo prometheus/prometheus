@@ -1103,7 +1103,7 @@ var testExpr = []struct {
 	}, {
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
-		errMsg: "1:15: parse error: matrix selectors only allowed for vector selectors",
+		errMsg: "1:15: parse error: range selectors only allowed for vector selectors",
 	},
 	// Test aggregation.
 	{

@@ -1115,7 +1115,7 @@ yydefault:
 		{
 			vs, ok := yyDollar[1].node.(*VectorSelector)
 			if !ok {
-				yylex.(*parser).errorf("matrix selectors only allowed for vector selectors")
+				yylex.(*parser).errorf("range selectors only allowed for vector selectors")
 			}
 			if vs.Offset != 0 {
 				yylex.(*parser).errorf("no offset modifiers allowed before range selector")
@@ -1153,7 +1153,7 @@ yydefault:
 		yyDollar = yyS[yypt-4 : yypt+1]
 //line promql/generated_parser.y:351
 		{
-			yylex.(*parser).unexpected("subquery or matrix selector", "\":\" or \"]\"")
+			yylex.(*parser).unexpected("subquery or range selector", "\":\" or \"]\"")
 		}
 	case 71:
 		yyDollar = yyS[yypt-3 : yypt+1]

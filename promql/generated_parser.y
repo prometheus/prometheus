@@ -321,7 +321,7 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         {
                         vs, ok := $1.(*VectorSelector)
                         if !ok{
-                                yylex.(*parser).errorf("matrix selectors only allowed for vector selectors")
+                                yylex.(*parser).errorf("range selectors only allowed for vector selectors")
                         }
                         if vs.Offset != 0{
                                 yylex.(*parser).errorf("no offset modifiers allowed before range selector")
@@ -348,7 +348,7 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                 | expr LEFT_BRACKET duration COLON error
                         { yylex.(*parser).unexpected("subquery selector", "duration or \"]\"") }
                 | expr LEFT_BRACKET duration error
-                        { yylex.(*parser).unexpected("subquery or matrix selector", "\":\" or \"]\"") }
+                        { yylex.(*parser).unexpected("subquery or range selector", "\":\" or \"]\"") }
                 | expr LEFT_BRACKET error
                         { yylex.(*parser).unexpected("subquery selector", "duration") }
                 ;
