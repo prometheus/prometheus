@@ -334,11 +334,6 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 }
 
-// UnsetQueryLogger disables the query logger.
-func (ng *Engine) UnsetQueryLogger() error {
-	return ng.SetQueryLogger(nil)
-}
-
 // SetQueryLogger sets the query logger.
 func (ng *Engine) SetQueryLogger(l QueryLogger) error {
 	ng.queryLoggerLock.Lock()

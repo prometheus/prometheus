@@ -423,7 +423,7 @@ func main() {
 		webHandler.ApplyConfig,
 		func(cfg *config.Config) error {
 			if cfg.GlobalConfig.QueryLogFile == "" {
-				return queryEngine.UnsetQueryLogger()
+				return queryEngine.SetQueryLogger(nil)
 			}
 
 			l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
