@@ -438,8 +438,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 			if err != nil {
 				f = append(f, "error", err)
 			}
-			switch eq := q.Statement().(type) {
-			case *EvalStmt:
+			if eq, ok := q.Statement().(*EvalStmt); ok {
 				f = append(f,
 					"start", formatDate(eq.Start),
 					"end", formatDate(eq.End),
