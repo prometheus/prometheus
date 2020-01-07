@@ -444,9 +444,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, 
 			default:
 				panic(errors.Errorf("can't log %v", eq))
 			}
-			for k, v := range q.Stats().ToMap() {
-				f = append(f, k, strconv.FormatFloat(v, 'f', -1, 64))
-			}
+			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
 			if origin := ctx.Value(queryOrigin); origin != nil {
 				for k, v := range origin.(map[string]string) {
 					f = append(f, k, v)

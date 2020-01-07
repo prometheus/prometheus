@@ -65,15 +65,6 @@ func NewTimerGroup() *TimerGroup {
 	return &TimerGroup{timers: map[fmt.Stringer]*Timer{}}
 }
 
-// ToMap returns a map with the timers and their durations.
-func (t *TimerGroup) ToMap() map[string]float64 {
-	m := map[string]float64{}
-	for k, v := range t.timers {
-		m[k.String()] = v.Duration()
-	}
-	return m
-}
-
 // GetTimer gets (and creates, if necessary) the Timer for a given code section.
 func (t *TimerGroup) GetTimer(name fmt.Stringer) *Timer {
 	if timer, exists := t.timers[name]; exists {
