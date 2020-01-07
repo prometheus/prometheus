@@ -77,6 +77,7 @@ type engineMetrics struct {
 	currentQueries       prometheus.Gauge
 	maxConcurrentQueries prometheus.Gauge
 	queryLogEnabled      prometheus.Gauge
+	queryLogFailures     prometheus.Counter
 	queryQueueTime       prometheus.Summary
 	queryPrepareTime     prometheus.Summary
 	queryInnerEval       prometheus.Summary
@@ -263,6 +264,12 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:      "query_log_enabled",
 			Help:      "State of the query log.",
 		}),
+		queryLogFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "query_log_failures_total",
+			Help:      "The number of query log failures.",
+		}),
 		maxConcurrentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -309,6 +316,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.currentQueries,
 			metrics.maxConcurrentQueries,
 			metrics.queryLogEnabled,
+			metrics.queryLogFailures,
 			metrics.queryQueueTime,
 			metrics.queryPrepareTime,
 			metrics.queryInnerEval,
@@ -451,6 +459,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, 
 				}
 			}
 			if err := l.Log(f...); err != nil {
+				ng.metrics.queryLogFailures.Inc()
 				level.Error(ng.logger).Log("msg", "can't log query", "err", err)
 			}
 		}
