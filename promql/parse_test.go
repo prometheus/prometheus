@@ -171,12 +171,10 @@ var testExpr = []struct {
 		input:  "# just a comment\n\n",
 		fail:   true,
 		errMsg: "no expression found in input",
-		/*
-			}, {
-				input:  "1+",
-				fail:   true,
-				errMsg: "no valid expression found",
-		*/
+	}, {
+		input:  "1+",
+		fail:   true,
+		errMsg: "unexpected end of input",
 	}, {
 		input:  ".",
 		fail:   true,
