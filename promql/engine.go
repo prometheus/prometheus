@@ -445,10 +445,6 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 					"end", formatDate(eq.End),
 					"step", eq.Interval.String(),
 				)
-			case testStmt:
-				f = append(f, "test", "yes")
-			default:
-				panic(errors.Errorf("can't log %v", eq))
 			}
 			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
 			if origin := ctx.Value(queryOrigin); origin != nil {
