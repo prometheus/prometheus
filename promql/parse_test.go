@@ -1097,11 +1097,11 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric OFFSET 1m[5m]`,
 		fail:   true,
-		errMsg: "1:25: parse error: no offset modifiers allowed before range selector",
+		errMsg: "1:25: parse error: no offset modifiers allowed before range",
 	}, {
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
-		errMsg: "1:15: parse error: range selectors only allowed for vector selectors",
+		errMsg: "1:15: parse error: ranges only allowed for vector selectors",
 	},
 	// Test aggregation.
 	{
