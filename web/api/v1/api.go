@@ -1486,5 +1486,5 @@ func contextFromRequest(ctx context.Context, r *http.Request) (context.Context, 
 	if err != nil {
 		return ctx, err
 	}
-	return promql.NewOriginContext(ctx, map[string]string{"client_ip": ip}), nil
+	return promql.NewOriginContext(ctx, map[string]string{"clientIP": ip}), nil
 }
