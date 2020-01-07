@@ -91,6 +91,10 @@ import (
 %left MUL DIV MOD
 %right POW
 
+// Fake token for giving unary expressions maximal precendence
+%token PREC_MAX
+%nonassoc PREC_MAX
+
 // Offset modifiers do not have associativity.
 %nonassoc OFFSET
 
@@ -354,8 +358,8 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
  */
 
 unary_expr      :
-                /* gives the rule the same prec as POW, not a perfect solution */
-                unary_op expr %prec POW
+                /* gives the rule the same prec as POW. This has the effect that unary opts are always evaluated with highest precedence */
+                unary_op expr %prec PREC_MAX
                         {
                         if nl, ok := $2.(*NumberLiteral); ok {
                                 if $1.Typ == SUB {
