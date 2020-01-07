@@ -424,7 +424,7 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 //
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
-func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, error) {
+func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnings, err error) {
 	ng.metrics.currentQueries.Inc()
 	defer ng.metrics.currentQueries.Dec()
 
@@ -435,6 +435,9 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, 
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
 			f := []interface{}{"query", q.q}
+			if err != nil {
+				f = append(f, "error", err)
+			}
 			switch eq := q.Statement().(type) {
 			case *EvalStmt:
 				f = append(f,

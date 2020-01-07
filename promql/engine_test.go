@@ -1150,7 +1150,7 @@ func TestQueryLogger_basic(t *testing.T) {
 	engine.SetQueryLogger(f1)
 	queryExec()
 	for i, field := range []string{"query", "test statement"} {
-		testutil.Assert(t, f1.logs[i].(string) == field, "expected %v as first key, got %v", field, f1.logs[i])
+		testutil.Assert(t, f1.logs[i].(string) == field, "expected %v as key, got %v", field, f1.logs[i])
 	}
 
 	l := len(f1.logs)
@@ -1159,7 +1159,7 @@ func TestQueryLogger_basic(t *testing.T) {
 
 	// Test that we close the query logger when unsetting
 	testutil.Assert(t, !f1.closed, "expected f1 to be open, got closed")
-	engine.UnsetQueryLogger()
+	engine.SetQueryLogger(nil)
 	testutil.Assert(t, f1.closed, "expected f1 to be closed, got open")
 	queryExec()
 
@@ -1201,6 +1201,35 @@ func TestQueryLogger_fields(t *testing.T) {
 	expected := []string{"foo", "bar"}
 	for i, field := range expected {
 		v := f1.logs[len(f1.logs)-len(expected)+i].(string)
-		testutil.Assert(t, field == v, "expected %v as first key, got %v", field, v)
+		testutil.Assert(t, field == v, "expected %v as key, got %v", field, v)
+	}
+}
+
+func TestQueryLogger_error(t *testing.T) {
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	f1 := NewFakeQueryLogger()
+	engine.SetQueryLogger(f1)
+
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	ctx = NewOriginContext(ctx, map[string]string{"foo": "bar"})
+	defer cancelCtx()
+	testErr := errors.New("failure")
+	query := engine.newTestQuery(func(ctx context.Context) error {
+		return testErr
+	})
+
+	res := query.Exec(ctx)
+	testutil.NotOk(t, res.Err, "query should have failed")
+
+	for i, field := range []interface{}{"query", "test statement", "error", testErr} {
+		testutil.Assert(t, f1.logs[i] == field, "expected %v as key, got %v", field, f1.logs[i])
 	}
 }
