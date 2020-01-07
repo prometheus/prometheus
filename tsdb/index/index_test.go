@@ -209,7 +209,7 @@ func TestIndexRW_Postings(t *testing.T) {
 	}
 	testutil.Ok(t, p.Err())
 
-	// The label incides are no longer used, so test them by hand here.
+	// The label indices are no longer used, so test them by hand here.
 	labelIndices := map[string][]string{}
 	testutil.Ok(t, ReadOffsetTable(ir.b, ir.toc.LabelIndicesTable, func(key []string, off uint64, _ int) error {
 		if len(key) != 1 {

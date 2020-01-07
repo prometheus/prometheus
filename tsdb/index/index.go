@@ -1160,6 +1160,9 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		}
 		// Trim any extra space in the slices.
 		for k, v := range r.postings {
+			if len(v) == cap(v) {
+				continue
+			}
 			l := make([]postingOffset, len(v))
 			copy(l, v)
 			r.postings[k] = l

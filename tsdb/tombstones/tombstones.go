@@ -317,12 +317,10 @@ func (itvs Intervals) Add(n Interval) Intervals {
 		}
 
 		if n.Mint < r.Mint {
-			newRange := make(Intervals, i, len(itvs[:i])+1)
-			copy(newRange, itvs[:i])
-			newRange = append(newRange, n)
-			newRange = append(newRange, itvs[i:]...)
-
-			return newRange
+			itvs = append(itvs, Interval{})
+			copy(itvs[i+1:], itvs[i:])
+			itvs[i] = n
+			return itvs
 		}
 	}
 
