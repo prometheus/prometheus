@@ -29,9 +29,8 @@ import (
 )
 
 type parser struct {
-	lex     *Lexer
-	token   Item
-	peeking bool
+	lex   *Lexer
+	token Item
 
 	inject    Item
 	injecting bool
@@ -134,16 +133,12 @@ func (p *parser) typecheck(node Node) (err error) {
 
 // next returns the next token.
 func (p *parser) next() Item {
-	if !p.peeking {
-		t := p.lex.NextItem()
-		// Skip comments.
-		for t.Typ == COMMENT {
-			t = p.lex.NextItem()
-		}
-		p.token = t
+	t := p.lex.NextItem()
+	// Skip comments.
+	for t.Typ == COMMENT {
+		t = p.lex.NextItem()
 	}
-
-	p.peeking = false
+	p.token = t
 
 	if p.token.Typ == ERROR {
 		p.errorf("%s", p.token.Val)
