@@ -35,6 +35,16 @@ eval instant at 50m - - - SUM(http_requests) BY (job)
 eval instant at 50m - - - 1
   -1
 
+eval instant at 50m -2^---1*3
+  -0.75
+
+eval instant at 50m 2/-2^---1*3+2
+  5
+
+eval instant at 50m -10^3 * - SUM(http_requests) BY (job) ^ -1
+	{job="api-server"} 1
+	{job="app-server"} 0.38461538461538464
+
 eval instant at 50m 1000 / SUM(http_requests) BY (job)
 	{job="api-server"} 1
 	{job="app-server"} 0.38461538461538464
