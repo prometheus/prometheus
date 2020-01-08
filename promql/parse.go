@@ -206,7 +206,6 @@ func (p *parser) recover(errp *error) {
 	} else if e != nil {
 		*errp = e.(error)
 	}
-	p.lex.close()
 }
 
 // Lex is expected by the yyLexer interface of the yacc generated parser.
