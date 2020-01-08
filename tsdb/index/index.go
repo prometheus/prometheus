@@ -1234,17 +1234,13 @@ func NewSymbols(bs ByteSlice, version int, off int) (*Symbols, error) {
 		version: version,
 		off:     off,
 	}
-	if off == 0 {
-		// Only happens in some tests.
-		return nil, nil
-	}
 	d := encoding.NewDecbufAt(bs, off, castagnoliTable)
 	var (
 		origLen = d.Len()
 		cnt     = d.Be32int()
 		basePos = off + 4
 	)
-	s.offsets = make([]int, 0, cnt/symbolFactor)
+	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
 	for d.Err() == nil && s.seen < cnt {
 		if s.seen%symbolFactor == 0 {
 			s.offsets = append(s.offsets, basePos+origLen-d.Len())
@@ -1262,8 +1258,9 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 	d := encoding.Decbuf{
 		B: s.bs.Range(0, s.bs.Len()),
 	}
+
 	if s.version == FormatV2 {
-		if int(o) > s.seen {
+		if int(o) >= s.seen {
 			return "", errors.Errorf("unknown symbol offset %d", o)
 		}
 		d.Skip(s.offsets[int(o/symbolFactor)])

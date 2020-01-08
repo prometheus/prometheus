@@ -16,6 +16,7 @@ package index
 import (
 	"context"
 	"fmt"
+	"hash/crc32"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -504,4 +505,51 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 
 	// dir.Close will fail on Win if idxName fd is not closed on error path.
 	dir.Close()
+}
+
+func TestSymbols(t *testing.T) {
+	buf := encoding.Encbuf{}
+
+	// Add prefix to the buffer to simulate symbols as part of larger buffer.
+	buf.PutUvarintStr("something")
+
+	symbolsStart := buf.Len()
+	buf.PutBE32int(204) // Length of symbols table.
+	buf.PutBE32int(100) // Number of symbols.
+	for i := 0; i < 100; i++ {
+		// i represents index in unicode characters table.
+		buf.PutUvarintStr(string(i)) // Symbol.
+	}
+	checksum := crc32.Checksum(buf.Get()[symbolsStart+4:], castagnoliTable)
+	buf.PutBE32(checksum) // Check sum at the end.
+
+	s, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, symbolsStart)
+	testutil.Ok(t, err)
+
+	// We store only 4 offsets to symbols.
+	testutil.Equals(t, 32, s.Size())
+
+	for i := 99; i >= 0; i-- {
+		s, err := s.Lookup(uint32(i))
+		testutil.Ok(t, err)
+		testutil.Equals(t, string(i), s)
+	}
+	_, err = s.Lookup(100)
+	testutil.NotOk(t, err)
+
+	for i := 99; i >= 0; i-- {
+		r, err := s.ReverseLookup(string(i))
+		testutil.Ok(t, err)
+		testutil.Equals(t, uint32(i), r)
+	}
+	_, err = s.ReverseLookup(string(100))
+	testutil.NotOk(t, err)
+
+	iter := s.Iter()
+	i := 0
+	for iter.Next() {
+		testutil.Equals(t, string(i), iter.At())
+		i++
+	}
+	testutil.Ok(t, iter.Err())
 }
