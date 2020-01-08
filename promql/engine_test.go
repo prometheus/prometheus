@@ -1143,7 +1143,7 @@ func TestQueryLogger_basic(t *testing.T) {
 		testutil.Ok(t, res.Err)
 	}
 
-	// Query works without query log initalized
+	// Query works without query log initalized.
 	queryExec()
 
 	f1 := NewFakeQueryLogger()
@@ -1157,13 +1157,13 @@ func TestQueryLogger_basic(t *testing.T) {
 	queryExec()
 	testutil.Assert(t, 2*l == len(f1.logs), "expected %d fields in logs, got %v", 2*l, len(f1.logs))
 
-	// Test that we close the query logger when unsetting
+	// Test that we close the query logger when unsetting it.
 	testutil.Assert(t, !f1.closed, "expected f1 to be open, got closed")
 	engine.SetQueryLogger(nil)
 	testutil.Assert(t, f1.closed, "expected f1 to be closed, got open")
 	queryExec()
 
-	// Test that we close the query logger when swapping
+	// Test that we close the query logger when swapping.
 	f2 := NewFakeQueryLogger()
 	f3 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f2)
