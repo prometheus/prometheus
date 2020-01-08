@@ -36,8 +36,6 @@ type parser struct {
 	inject    Item
 	injecting bool
 
-	switchSymbols []ItemType
-
 	generatedParserResult interface{}
 }
 
@@ -59,7 +57,7 @@ func ParseExpr(input string) (expr Expr, err error) {
 
 	defer p.recover(&err)
 
-	expr = p.parseGenerated(START_EXPRESSION, []ItemType{EOF}).(Expr)
+	expr = p.parseGenerated(START_EXPRESSION).(Expr)
 	err = p.typecheck(expr)
 
 	return expr, err
@@ -70,7 +68,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 	p := newParser(input)
 	defer p.recover(&err)
 
-	return p.parseGenerated(START_METRIC, []ItemType{EOF}).(labels.Labels), nil
+	return p.parseGenerated(START_METRIC).(labels.Labels), nil
 }
 
 // ParseMetricSelector parses the provided textual metric selector into a list of
@@ -79,7 +77,7 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	p := newParser(input)
 	defer p.recover(&err)
 
-	return p.parseGenerated(START_METRIC_SELECTOR, []ItemType{EOF}).(*VectorSelector).LabelMatchers, nil
+	return p.parseGenerated(START_METRIC_SELECTOR).(*VectorSelector).LabelMatchers, nil
 }
 
 // newParser returns a new parser.
@@ -116,7 +114,7 @@ func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue
 
 	defer p.recover(&err)
 
-	result := p.parseGenerated(START_SERIES_DESCRIPTION, []ItemType{EOF}).(*seriesDescription)
+	result := p.parseGenerated(START_SERIES_DESCRIPTION).(*seriesDescription)
 
 	labels = result.labels
 	values = result.values
@@ -228,10 +226,8 @@ func (p *parser) Lex(lval *yySymType) int {
 
 	typ := lval.item.Typ
 
-	for _, t := range p.switchSymbols {
-		if t == typ {
-			p.InjectItem(0)
-		}
+	if typ == EOF {
+		p.InjectItem(0)
 	}
 
 	return int(typ)
@@ -532,14 +528,8 @@ func parseDuration(ds string) (time.Duration, error) {
 // parseGenerated invokes the yacc generated parser.
 // The generated parser gets the provided startSymbol injected into
 // the lexer stream, based on which grammar will be used.
-//
-// The generated parser will consume the lexer Stream until one of the
-// tokens listed in switchSymbols is encountered. switchSymbols
-// should at least contain EOF
-func (p *parser) parseGenerated(startSymbol ItemType, switchSymbols []ItemType) interface{} {
+func (p *parser) parseGenerated(startSymbol ItemType) interface{} {
 	p.InjectItem(startSymbol)
-
-	p.switchSymbols = switchSymbols
 
 	yyParse(p)
 
