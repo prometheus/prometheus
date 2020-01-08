@@ -190,10 +190,8 @@ func (q *query) Exec(ctx context.Context) *Result {
 	}
 
 	// Log query in active log.
-	var queryIndex int
 	if q.ng.activeQueryTracker != nil {
-		queryIndex = q.ng.activeQueryTracker.Insert(q.q)
-		// Delete query from active log.
+		queryIndex := q.ng.activeQueryTracker.Insert(q.q)
 		defer q.ng.activeQueryTracker.Delete(queryIndex)
 	}
 
