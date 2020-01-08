@@ -29,11 +29,12 @@ import (
 )
 
 type parser struct {
-	lex   *Lexer
-	token Item
+	lex *Lexer
 
-	inject    Item
+	inject    ItemType
 	injecting bool
+
+	yyParser yyParserImpl
 
 	generatedParserResult interface{}
 }
@@ -129,21 +130,6 @@ func (p *parser) typecheck(node Node) (err error) {
 	return nil
 }
 
-// next returns the next token.
-func (p *parser) next() Item {
-	t := p.lex.NextItem()
-	// Skip comments.
-	for t.Typ == COMMENT {
-		t = p.lex.NextItem()
-	}
-	p.token = t
-
-	if p.token.Typ == ERROR {
-		p.errorf("%s", p.token.Val)
-	}
-	return p.token
-}
-
 // errorf formats the error and terminates processing.
 func (p *parser) errorf(format string, args ...interface{}) {
 	p.error(errors.Errorf(format, args...))
@@ -169,7 +155,7 @@ func (p *parser) unexpected(context string, expected string) {
 	var errMsg strings.Builder
 
 	errMsg.WriteString("unexpected ")
-	errMsg.WriteString(p.token.desc())
+	errMsg.WriteString(p.yyParser.lval.item.desc())
 
 	if context != "" {
 		errMsg.WriteString(" in ")
@@ -211,16 +197,28 @@ func (p *parser) recover(errp *error) {
 //
 // For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Lex(lval *yySymType) int {
+	var typ ItemType
+
 	if p.injecting {
-		lval.item = p.inject
 		p.injecting = false
+		return int(p.inject)
 	} else {
-		lval.item = p.next()
+		// Skip comments.
+		for {
+			p.lex.NextItem(&lval.item)
+			typ = lval.item.Typ
+			if typ != COMMENT {
+				break
+			}
+		}
 	}
 
-	typ := lval.item.Typ
+	if typ == ERROR {
+		p.errorf("%s", lval.item.Val)
+	}
 
 	if typ == EOF {
+		lval.item.Typ = EOF
 		p.InjectItem(0)
 	}
 
@@ -251,7 +249,7 @@ func (p *parser) InjectItem(typ ItemType) {
 		panic("cannot inject symbol that isn't start symbol")
 	}
 
-	p.inject = Item{Typ: typ}
+	p.inject = typ
 	p.injecting = true
 }
 func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node) *BinaryExpr {
@@ -525,7 +523,7 @@ func parseDuration(ds string) (time.Duration, error) {
 func (p *parser) parseGenerated(startSymbol ItemType) interface{} {
 	p.InjectItem(startSymbol)
 
-	yyParse(p)
+	p.yyParser.Parse(p)
 
 	return p.generatedParserResult
 

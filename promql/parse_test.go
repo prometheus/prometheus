@@ -233,7 +233,7 @@ var testExpr = []struct {
 	}, {
 		input:  "(1))",
 		fail:   true,
-		errMsg: "unexpected \")\"",
+		errMsg: "unexpected right parenthesis ')'",
 	}, {
 		input:  "((1)",
 		fail:   true,
