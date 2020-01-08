@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -341,6 +342,11 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
+	ctx, err = contextFromRequest(ctx, r)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
@@ -409,6 +415,11 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	ctx, err = contextFromRequest(ctx, r)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
 	}
 
 	res := qry.Exec(ctx)
@@ -1468,4 +1479,12 @@ func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 
 func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 	return false
+}
+
+func contextFromRequest(ctx context.Context, r *http.Request) (context.Context, error) {
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return ctx, err
+	}
+	return promql.NewOriginContext(ctx, map[string]string{"clientIP": ip}), nil
 }

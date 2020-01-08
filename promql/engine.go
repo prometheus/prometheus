@@ -76,6 +76,8 @@ func GetDefaultEvaluationInterval() int64 {
 type engineMetrics struct {
 	currentQueries       prometheus.Gauge
 	maxConcurrentQueries prometheus.Gauge
+	queryLogEnabled      prometheus.Gauge
+	queryLogFailures     prometheus.Counter
 	queryQueueTime       prometheus.Summary
 	queryPrepareTime     prometheus.Summary
 	queryInnerEval       prometheus.Summary
@@ -112,6 +114,13 @@ func (e ErrStorage) Error() string {
 	return e.Err.Error()
 }
 
+// QueryLogger is an interface that can be used to log all the queries logged
+// by the engine.
+type QueryLogger interface {
+	Log(...interface{}) error
+	Close() error
+}
+
 // A Query is derived from an a raw query string and can be run against an engine
 // it is associated with.
 type Query interface {
@@ -146,6 +155,10 @@ type query struct {
 	ng *Engine
 }
 
+type queryCtx int
+
+var queryOrigin queryCtx
+
 // Statement implements the Query interface.
 func (q *query) Statement() Statement {
 	return q.stmt
@@ -177,18 +190,14 @@ func (q *query) Exec(ctx context.Context) *Result {
 	}
 
 	// Log query in active log.
-	var queryIndex int
 	if q.ng.activeQueryTracker != nil {
-		queryIndex = q.ng.activeQueryTracker.Insert(q.q)
+		queryIndex := q.ng.activeQueryTracker.Insert(q.q)
+		defer q.ng.activeQueryTracker.Delete(queryIndex)
 	}
 
 	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
 
-	// Delete query from active log.
-	if q.ng.activeQueryTracker != nil {
-		q.ng.activeQueryTracker.Delete(queryIndex)
-	}
 	return &Result{Err: err, Value: res, Warnings: warnings}
 }
 
@@ -230,6 +239,8 @@ type Engine struct {
 	gate               *gate.Gate
 	maxSamplesPerQuery int
 	activeQueryTracker *ActiveQueryTracker
+	queryLogger        QueryLogger
+	queryLoggerLock    sync.RWMutex
 }
 
 // NewEngine returns a new engine.
@@ -244,6 +255,18 @@ func NewEngine(opts EngineOpts) *Engine {
 			Subsystem: subsystem,
 			Name:      "queries",
 			Help:      "The current number of queries being executed or waiting.",
+		}),
+		queryLogEnabled: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "query_log_enabled",
+			Help:      "State of the query log.",
+		}),
+		queryLogFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "query_log_failures_total",
+			Help:      "The number of query log failures.",
 		}),
 		maxConcurrentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -290,6 +313,8 @@ func NewEngine(opts EngineOpts) *Engine {
 		opts.Reg.MustRegister(
 			metrics.currentQueries,
 			metrics.maxConcurrentQueries,
+			metrics.queryLogEnabled,
+			metrics.queryLogFailures,
 			metrics.queryQueueTime,
 			metrics.queryPrepareTime,
 			metrics.queryInnerEval,
@@ -305,6 +330,31 @@ func NewEngine(opts EngineOpts) *Engine {
 		maxSamplesPerQuery: opts.MaxSamples,
 		activeQueryTracker: opts.ActiveQueryTracker,
 	}
+}
+
+// SetQueryLogger sets the query logger.
+func (ng *Engine) SetQueryLogger(l QueryLogger) error {
+	ng.queryLoggerLock.Lock()
+	defer ng.queryLoggerLock.Unlock()
+
+	if ng.queryLogger != nil {
+		// An error closing the old file descriptor should
+		// not make reload fail; only log a warning.
+		err := ng.queryLogger.Close()
+		if err != nil {
+			level.Warn(ng.logger).Log("msg", "error while closing the previous query log file", "err", err)
+		}
+	}
+
+	ng.queryLogger = l
+
+	if l != nil {
+		ng.metrics.queryLogEnabled.Set(1)
+	} else {
+		ng.metrics.queryLogEnabled.Set(0)
+	}
+
+	return nil
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
@@ -372,12 +422,40 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 //
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
-func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, error) {
+func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnings, err error) {
 	ng.metrics.currentQueries.Inc()
 	defer ng.metrics.currentQueries.Dec()
 
 	ctx, cancel := context.WithTimeout(ctx, ng.timeout)
 	q.cancel = cancel
+
+	defer func() {
+		ng.queryLoggerLock.RLock()
+		if l := ng.queryLogger; l != nil {
+			f := []interface{}{"query", q.q}
+			if err != nil {
+				f = append(f, "error", err)
+			}
+			if eq, ok := q.Statement().(*EvalStmt); ok {
+				f = append(f,
+					"start", formatDate(eq.Start),
+					"end", formatDate(eq.End),
+					"step", eq.Interval.String(),
+				)
+			}
+			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
+			if origin := ctx.Value(queryOrigin); origin != nil {
+				for k, v := range origin.(map[string]string) {
+					f = append(f, k, v)
+				}
+			}
+			if err := l.Log(f...); err != nil {
+				ng.metrics.queryLogFailures.Inc()
+				level.Error(ng.logger).Log("msg", "can't log query", "err", err)
+			}
+		}
+		ng.queryLoggerLock.RUnlock()
+	}()
 
 	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
 	defer execSpanTimer.Finish()
@@ -2000,6 +2078,11 @@ func shouldDropMetricName(op ItemType) bool {
 	}
 }
 
+// NewOriginContext returns a new context with data about the origin attached.
+func NewOriginContext(ctx context.Context, data map[string]string) context.Context {
+	return context.WithValue(ctx, queryOrigin, data)
+}
+
 // documentedType returns the internal type to the equivalent
 // user facing terminology as defined in the documentation.
 func documentedType(t ValueType) string {
@@ -2011,4 +2094,8 @@ func documentedType(t ValueType) string {
 	default:
 		return string(t)
 	}
+}
+
+func formatDate(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }
