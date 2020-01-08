@@ -103,8 +103,39 @@ var testExpr = []struct {
 		input:    "1 <= bool 1",
 		expected: &BinaryExpr{LTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
-		input:    "-1^2",
-		expected: &BinaryExpr{POW, &NumberLiteral{-1}, &NumberLiteral{2}, nil, false},
+		input: "-1^2",
+		expected: &UnaryExpr{
+			Op: SUB,
+			Expr: &BinaryExpr{
+				Op:  POW,
+				LHS: &NumberLiteral{1},
+				RHS: &NumberLiteral{2},
+			},
+		},
+	}, {
+		input: "-1*2",
+		expected: &BinaryExpr{
+			Op:  MUL,
+			LHS: &NumberLiteral{-1},
+			RHS: &NumberLiteral{2},
+		},
+	}, {
+		input: "-1+2",
+		expected: &BinaryExpr{
+			Op:  ADD,
+			LHS: &NumberLiteral{-1},
+			RHS: &NumberLiteral{2},
+		},
+	}, {
+		input: "-1^-2",
+		expected: &UnaryExpr{
+			Op: SUB,
+			Expr: &BinaryExpr{
+				Op:  POW,
+				LHS: &NumberLiteral{1},
+				RHS: &NumberLiteral{-2},
+			},
+		},
 	}, {
 		input: "+1 + -2 * 1",
 		expected: &BinaryExpr{
