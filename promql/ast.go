@@ -109,10 +109,6 @@ type Call struct {
 type MatrixSelector struct {
 	VectorSelector *VectorSelector
 	Range          time.Duration
-
-	// The unexpanded seriesSet populated at query preparation time.
-	unexpandedSeriesSet storage.SeriesSet
-	series              []storage.Series
 }
 
 // SubqueryExpr represents a subquery.
