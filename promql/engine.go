@@ -641,6 +641,11 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 	var warnings storage.Warnings
 
+	// Whenever a MatrixSelector is evaluated this variable is set to the corresponding range.
+	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
+	// the variable.
+	var evalRange time.Duration
+
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		var wrn storage.Warnings
@@ -660,7 +665,16 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		switch n := node.(type) {
 		case *VectorSelector:
-			params.Start = params.Start - durationMilliseconds(LookbackDelta)
+			if evalRange == 0 {
+				params.Start = params.Start - durationMilliseconds(LookbackDelta)
+			} else {
+				params.Range = durationMilliseconds(evalRange)
+				// For all matrix queries we want to ensure that we have (end-start) + range selected
+				// this way we have `range` data before the start time
+				params.Start = params.Start - durationMilliseconds(evalRange)
+				evalRange = 0
+			}
+
 			params.Func = extractFuncFromPath(path)
 			params.By, params.Grouping = extractGroupsFromPath(path)
 			if n.Offset > 0 {
@@ -678,24 +692,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			n.unexpandedSeriesSet = set
 
 		case *MatrixSelector:
-			params.Func = extractFuncFromPath(path)
-			params.Range = durationMilliseconds(n.Range)
-			// For all matrix queries we want to ensure that we have (end-start) + range selected
-			// this way we have `range` data before the start time
-			params.Start = params.Start - durationMilliseconds(n.Range)
-			if n.VectorSelector.Offset > 0 {
-				offsetMilliseconds := durationMilliseconds(n.VectorSelector.Offset)
-				params.Start = params.Start - offsetMilliseconds
-				params.End = params.End - offsetMilliseconds
-			}
-
-			set, wrn, err = querier.Select(params, n.VectorSelector.LabelMatchers...)
-			warnings = append(warnings, wrn...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
-			}
-			n.VectorSelector.unexpandedSeriesSet = set
+			evalRange = n.Range
 		}
 		return nil
 	})
