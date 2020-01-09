@@ -1812,7 +1812,7 @@ func TestFindSetMatches(t *testing.T) {
 }
 
 func TestPostingsForMatchers(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 1000)
+	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, h.Close())

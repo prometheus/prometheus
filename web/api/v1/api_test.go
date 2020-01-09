@@ -1875,7 +1875,7 @@ func (f *fakeDB) Dir() string {
 }
 func (f *fakeDB) Snapshot(dir string, withHead bool) error { return f.err }
 func (f *fakeDB) Head() *tsdb.Head {
-	h, _ := tsdb.NewHead(nil, nil, nil, 1000)
+	h, _ := tsdb.NewHead(nil, nil, nil, 1000, tsdb.DefaultStripeSize)
 	return h
 }
 

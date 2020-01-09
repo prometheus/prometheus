@@ -41,7 +41,7 @@ import (
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 
-	h, err := NewHead(nil, nil, nil, 10000)
+	h, err := NewHead(nil, nil, nil, 10000, DefaultStripeSize)
 	testutil.Ok(b, err)
 	defer h.Close()
 
@@ -171,7 +171,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 
 				// Load the WAL.
 				for i := 0; i < b.N; i++ {
-					h, err := NewHead(nil, nil, w, 1000)
+					h, err := NewHead(nil, nil, w, 10000, DefaultStripeSize)
 					testutil.Ok(b, err)
 					h.Init(0)
 				}
@@ -218,7 +218,7 @@ func TestHead_ReadWAL(t *testing.T) {
 			defer w.Close()
 			populateTestWAL(t, w, entries)
 
-			head, err := NewHead(nil, nil, w, 1000)
+			head, err := NewHead(nil, nil, w, 10000, DefaultStripeSize)
 			testutil.Ok(t, err)
 
 			testutil.Ok(t, head.Init(math.MinInt64))
@@ -259,7 +259,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	w, err := wal.New(nil, nil, dir, false)
 	testutil.Ok(t, err)
 
-	head, err := NewHead(nil, nil, w, 1000)
+	head, err := NewHead(nil, nil, w, 10000, DefaultStripeSize)
 	testutil.Ok(t, err)
 
 	testutil.Ok(t, head.Init(0))
@@ -283,7 +283,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	w, err = wal.New(nil, nil, dir, false)
 	testutil.Ok(t, err)
 
-	head, err = NewHead(nil, nil, w, 1000)
+	head, err = NewHead(nil, nil, w, 10000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	testutil.Ok(t, head.Init(0))
 	defer head.Close()
@@ -295,7 +295,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 }
 
 func TestHead_Truncate(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 1000)
+	h, err := NewHead(nil, nil, nil, 10000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -432,7 +432,7 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 			defer w.Close()
 			populateTestWAL(t, w, entries)
 
-			head, err := NewHead(nil, nil, w, 1000)
+			head, err := NewHead(nil, nil, w, 1000, DefaultStripeSize)
 			testutil.Ok(t, err)
 
 			testutil.Ok(t, head.Init(math.MinInt64))
@@ -493,7 +493,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				testutil.Ok(t, err)
 				defer w.Close()
 
-				head, err := NewHead(nil, nil, w, 1000)
+				head, err := NewHead(nil, nil, w, 1000, DefaultStripeSize)
 				testutil.Ok(t, err)
 				defer head.Close()
 
@@ -514,7 +514,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				reloadedW, err := wal.New(nil, nil, w.Dir(), compress) // Use a new wal to ensure deleted samples are gone even after a reload.
 				testutil.Ok(t, err)
 				defer reloadedW.Close()
-				reloadedHead, err := NewHead(nil, nil, reloadedW, 1000)
+				reloadedHead, err := NewHead(nil, nil, reloadedW, 1000, DefaultStripeSize)
 				testutil.Ok(t, err)
 				defer reloadedHead.Close()
 				testutil.Ok(t, reloadedHead.Init(0))
@@ -612,7 +612,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 func TestDeleteUntilCurMax(t *testing.T) {
 	numSamples := int64(10)
-	hb, err := NewHead(nil, nil, nil, 1000000)
+	hb, err := NewHead(nil, nil, nil, 1000000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer hb.Close()
 	app := hb.Appender()
@@ -660,7 +660,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 
 	// Enough samples to cause a checkpoint.
 	numSamples := 10000
-	hb, err := NewHead(nil, nil, wlog, int64(numSamples)*10)
+	hb, err := NewHead(nil, nil, wlog, int64(numSamples)*10, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer hb.Close()
 	for i := 0; i < numSamples; i++ {
@@ -754,7 +754,7 @@ func TestDelete_e2e(t *testing.T) {
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
-	hb, err := NewHead(nil, nil, nil, 100000)
+	hb, err := NewHead(nil, nil, nil, 100000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer hb.Close()
 	app := hb.Appender()
@@ -976,7 +976,7 @@ func TestMemSeries_append(t *testing.T) {
 
 func TestGCChunkAccess(t *testing.T) {
 	// Put a chunk, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000)
+	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -1016,7 +1016,7 @@ func TestGCChunkAccess(t *testing.T) {
 
 func TestGCSeriesAccess(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000)
+	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -1057,7 +1057,7 @@ func TestGCSeriesAccess(t *testing.T) {
 }
 
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 1000)
+	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -1084,7 +1084,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 }
 
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 1000)
+	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -1126,7 +1126,7 @@ func TestHead_LogRollback(t *testing.T) {
 			w, err := wal.New(nil, nil, dir, compress)
 			testutil.Ok(t, err)
 			defer w.Close()
-			h, err := NewHead(nil, nil, w, 1000)
+			h, err := NewHead(nil, nil, w, 1000, DefaultStripeSize)
 			testutil.Ok(t, err)
 
 			app := h.Appender()
@@ -1214,7 +1214,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 						testutil.Ok(t, w.Log(test.rec))
 					}
 
-					h, err := NewHead(nil, nil, w, 1)
+					h, err := NewHead(nil, nil, w, 1, DefaultStripeSize)
 					testutil.Ok(t, err)
 					testutil.Equals(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 					initErr := h.Init(math.MinInt64)
@@ -1263,7 +1263,7 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
 	testutil.Ok(t, err)
 
-	h, err := NewHead(nil, nil, wlog, 1000)
+	h, err := NewHead(nil, nil, wlog, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 	add := func(ts int64) {

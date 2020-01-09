@@ -57,6 +57,7 @@ var DefaultOptions = &Options{
 	NoLockfile:             false,
 	AllowOverlappingBlocks: false,
 	WALCompression:         false,
+	StripeSize:             DefaultStripeSize,
 }
 
 // Options of the DB storage.
@@ -89,6 +90,9 @@ type Options struct {
 
 	// WALCompression will turn on Snappy compression for records on the WAL.
 	WALCompression bool
+
+	// StripeSize is the size in entries of the series hash map. Reducing the size will save memory but impact perfomance.
+	StripeSize int
 }
 
 // Appender allows appending a batch of data. It must be completed with a
@@ -308,7 +312,7 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 	if err != nil {
 		return err
 	}
-	head, err := NewHead(nil, db.logger, w, 1)
+	head, err := NewHead(nil, db.logger, w, 1, DefaultStripeSize)
 	if err != nil {
 		return err
 	}
@@ -355,7 +359,7 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (Querier, error) {
 		blocks[i] = b
 	}
 
-	head, err := NewHead(nil, db.logger, nil, 1)
+	head, err := NewHead(nil, db.logger, nil, 1, DefaultStripeSize)
 	if err != nil {
 		return nil, err
 	}
@@ -370,7 +374,7 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (Querier, error) {
 		if err != nil {
 			return nil, err
 		}
-		head, err = NewHead(nil, db.logger, w, 1)
+		head, err = NewHead(nil, db.logger, w, 1, DefaultStripeSize)
 		if err != nil {
 			return nil, err
 		}
@@ -487,6 +491,9 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	if opts == nil {
 		opts = DefaultOptions
 	}
+	if opts.StripeSize <= 0 {
+		opts.StripeSize = DefaultStripeSize
+	}
 	// Fixup bad format written by Prometheus 2.1.
 	if err := repairBadIndexVersion(l, dir); err != nil {
 		return nil, err
@@ -548,7 +555,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		}
 	}
 
-	db.head, err = NewHead(r, l, wlog, opts.BlockRanges[0])
+	db.head, err = NewHead(r, l, wlog, opts.BlockRanges[0], opts.StripeSize)
 	if err != nil {
 		return nil, err
 	}
