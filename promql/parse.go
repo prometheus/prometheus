@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -28,13 +29,19 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
+var yaccPool = sync.Pool{
+	New: func() interface{} {
+		return &yyParserImpl{}
+	},
+}
+
 type parser struct {
 	lex *Lexer
 
 	inject    ItemType
 	injecting bool
 
-	yyParser yyParserImpl
+	yyParser *yyParserImpl
 
 	generatedParserResult interface{}
 }
@@ -54,7 +61,7 @@ func (e *ParseErr) Error() string {
 // ParseExpr returns the expression parsed from the input.
 func ParseExpr(input string) (expr Expr, err error) {
 	p := newParser(input)
-
+	defer yaccPool.Put(p.yyParser)
 	defer p.recover(&err)
 
 	expr = p.parseGenerated(START_EXPRESSION).(Expr)
@@ -66,6 +73,7 @@ func ParseExpr(input string) (expr Expr, err error) {
 // ParseMetric parses the input into a metric
 func ParseMetric(input string) (m labels.Labels, err error) {
 	p := newParser(input)
+	defer yaccPool.Put(p.yyParser)
 	defer p.recover(&err)
 
 	return p.parseGenerated(START_METRIC).(labels.Labels), nil
@@ -75,6 +83,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 // label matchers.
 func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	p := newParser(input)
+	defer yaccPool.Put(p.yyParser)
 	defer p.recover(&err)
 
 	return p.parseGenerated(START_METRIC_SELECTOR).(*VectorSelector).LabelMatchers, nil
@@ -83,7 +92,8 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 // newParser returns a new parser.
 func newParser(input string) *parser {
 	p := &parser{
-		lex: Lex(input),
+		lex:      Lex(input),
+		yyParser: yaccPool.Get().(*yyParserImpl),
 	}
 	return p
 }
@@ -112,6 +122,7 @@ func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue
 	p := newParser(input)
 	p.lex.seriesDesc = true
 
+	defer yaccPool.Put(p.yyParser)
 	defer p.recover(&err)
 
 	result := p.parseGenerated(START_SERIES_DESCRIPTION).(*seriesDescription)
