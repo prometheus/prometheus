@@ -311,17 +311,16 @@ func (l *Lexer) linePosition() int {
 // back a nil pointer that will be the next state, terminating l.NextItem.
 func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
 	*l.itemp = Item{ERROR, l.start, fmt.Sprintf(format, args...)}
-
 	l.scannedItem = true
 
 	return nil
 }
 
-// NextItem writes the next item to the provided address
+// NextItem writes the next item to the provided address.
 func (l *Lexer) NextItem(itemp *Item) {
 	l.scannedItem = false
-
 	l.itemp = itemp
+
 	if l.state != nil {
 		for !l.scannedItem {
 			l.state = l.state(l)
@@ -329,6 +328,7 @@ func (l *Lexer) NextItem(itemp *Item) {
 	} else {
 		l.emit(EOF)
 	}
+
 	l.lastPos = l.itemp.Pos
 }
 
