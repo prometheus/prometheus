@@ -287,6 +287,12 @@ func (g *Group) run(ctx context.Context) {
 		return
 	}
 
+	ctx = promql.NewOriginContext(ctx, map[string]string{
+		"groupFile":          g.File(),
+		"groupName":          g.Name(),
+		"evaluationInterval": g.Interval().String(),
+	})
+
 	iter := func() {
 		g.metrics.iterationsScheduled.Inc()
 
@@ -612,7 +618,6 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			g.staleSeries = nil
 		}
 	}
-
 }
 
 // RestoreForState restores the 'for' state of the alerts
