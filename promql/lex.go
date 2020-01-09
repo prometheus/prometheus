@@ -332,7 +332,7 @@ func (l *Lexer) NextItem(itemp *Item) {
 	l.lastPos = l.itemp.Pos
 }
 
-// lex creates a new scanner for the input string.
+// Lex creates a new scanner for the input string.
 func Lex(input string) *Lexer {
 	l := &Lexer{
 		input: input,
