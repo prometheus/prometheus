@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -342,7 +341,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	ctx, err = contextFromRequest(ctx, r)
+	ctx, err = httputil.ContextFromRequest(ctx, r)
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), nil, nil}
 	}
@@ -417,7 +416,7 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	ctx, err = contextFromRequest(ctx, r)
+	ctx, err = httputil.ContextFromRequest(ctx, r)
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), nil, nil}
 	}
@@ -1479,12 +1478,4 @@ func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 
 func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 	return false
-}
-
-func contextFromRequest(ctx context.Context, r *http.Request) (context.Context, error) {
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return ctx, err
-	}
-	return promql.NewOriginContext(ctx, map[string]string{"clientIP": ip}), nil
 }
