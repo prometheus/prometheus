@@ -423,14 +423,16 @@ func main() {
 		webHandler.ApplyConfig,
 		func(cfg *config.Config) error {
 			if cfg.GlobalConfig.QueryLogFile == "" {
-				return queryEngine.SetQueryLogger(nil)
+				queryEngine.SetQueryLogger(nil)
+				return nil
 			}
 
 			l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
 			if err != nil {
 				return err
 			}
-			return queryEngine.SetQueryLogger(l)
+			queryEngine.SetQueryLogger(l)
+			return nil
 		},
 		// The Scrape and notifier managers need to reload before the Discovery manager as
 		// they need to read the most updated config when receiving the new targets list.

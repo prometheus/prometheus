@@ -133,7 +133,7 @@ func TestMMapFile(t *testing.T) {
 	}
 }
 
-func TestParseBrokenJson(t *testing.T) {
+func TestParseBrokenJSON(t *testing.T) {
 	for _, tc := range []struct {
 		b []byte
 
@@ -161,7 +161,7 @@ func TestParseBrokenJson(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			ok, out := parseBrokenJson(tc.b)
+			ok, out := parseBrokenJSON(tc.b)
 			if tc.ok != ok {
 				t.Fatalf("expected %t, got %t", tc.ok, ok)
 				return

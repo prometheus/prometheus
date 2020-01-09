@@ -333,7 +333,7 @@ func NewEngine(opts EngineOpts) *Engine {
 }
 
 // SetQueryLogger sets the query logger.
-func (ng *Engine) SetQueryLogger(l QueryLogger) error {
+func (ng *Engine) SetQueryLogger(l QueryLogger) {
 	ng.queryLoggerLock.Lock()
 	defer ng.queryLoggerLock.Unlock()
 
@@ -353,8 +353,6 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) error {
 	} else {
 		ng.metrics.queryLogEnabled.Set(0)
 	}
-
-	return nil
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
