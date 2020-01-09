@@ -625,8 +625,8 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			if maxOffset < n.Range+subqOffset {
 				maxOffset = n.Range + subqOffset
 			}
-			if n.Offset+n.Range+subqOffset > maxOffset {
-				maxOffset = n.Offset + n.Range + subqOffset
+			if n.VectorSelector.Offset+n.Range+subqOffset > maxOffset {
+				maxOffset = n.VectorSelector.Offset + n.Range + subqOffset
 			}
 		}
 		return nil
@@ -683,13 +683,13 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			// For all matrix queries we want to ensure that we have (end-start) + range selected
 			// this way we have `range` data before the start time
 			params.Start = params.Start - durationMilliseconds(n.Range)
-			if n.Offset > 0 {
-				offsetMilliseconds := durationMilliseconds(n.Offset)
+			if n.VectorSelector.Offset > 0 {
+				offsetMilliseconds := durationMilliseconds(n.VectorSelector.Offset)
 				params.Start = params.Start - offsetMilliseconds
 				params.End = params.End - offsetMilliseconds
 			}
 
-			set, wrn, err = querier.Select(params, n.LabelMatchers...)
+			set, wrn, err = querier.Select(params, n.VectorSelector.LabelMatchers...)
 			warnings = append(warnings, wrn...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
@@ -1002,8 +1002,10 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 func (ev *evaluator) evalSubquery(subq *SubqueryExpr) *MatrixSelector {
 	val := ev.eval(subq).(Matrix)
 	ms := &MatrixSelector{
-		Range:  subq.Range,
-		Offset: subq.Offset,
+		Range: subq.Range,
+		VectorSelector: &VectorSelector{
+			Offset: subq.Offset,
+		},
 		series: make([]storage.Series, 0, len(val)),
 	}
 	for _, s := range val {
@@ -1089,7 +1091,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		sel := e.Args[matrixArgIndex].(*MatrixSelector)
 		checkForSeriesSetExpansion(ev.ctx, sel)
 		mat := make(Matrix, 0, len(sel.series)) // Output matrix.
-		offset := durationMilliseconds(sel.Offset)
+		offset := durationMilliseconds(sel.VectorSelector.Offset)
 		selRange := durationMilliseconds(sel.Range)
 		stepRange := selRange
 		if stepRange > ev.interval {
@@ -1411,7 +1413,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 	checkForSeriesSetExpansion(ev.ctx, node)
 
 	var (
-		offset = durationMilliseconds(node.Offset)
+		offset = durationMilliseconds(node.VectorSelector.Offset)
 		maxt   = ev.startTimestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
 		matrix = make(Matrix, 0, len(node.series))

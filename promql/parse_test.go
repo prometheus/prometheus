@@ -1028,63 +1028,76 @@ var testExpr = []struct {
 	{
 		input: "test[5s]",
 		expected: &MatrixSelector{
-			Name:   "test",
-			Offset: 0,
-			Range:  5 * time.Second,
-			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+			VectorSelector: &VectorSelector{
+				Name:   "test",
+				Offset: 0,
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+				},
 			},
+
+			Range: 5 * time.Second,
 		},
 	}, {
 		input: "test[5m]",
 		expected: &MatrixSelector{
-			Name:   "test",
-			Offset: 0,
-			Range:  5 * time.Minute,
-			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+			VectorSelector: &VectorSelector{
+				Name:   "test",
+				Offset: 0,
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+				},
 			},
+			Range: 5 * time.Minute,
 		},
 	}, {
 		input: "test[5h] OFFSET 5m",
 		expected: &MatrixSelector{
-			Name:   "test",
-			Offset: 5 * time.Minute,
-			Range:  5 * time.Hour,
-			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+			VectorSelector: &VectorSelector{
+				Name:   "test",
+				Offset: 5 * time.Minute,
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+				},
 			},
+			Range: 5 * time.Hour,
 		},
 	}, {
 		input: "test[5d] OFFSET 10s",
 		expected: &MatrixSelector{
-			Name:   "test",
-			Offset: 10 * time.Second,
-			Range:  5 * 24 * time.Hour,
-			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+			VectorSelector: &VectorSelector{
+				Name:   "test",
+				Offset: 10 * time.Second,
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+				},
 			},
+			Range: 5 * 24 * time.Hour,
 		},
 	}, {
 		input: "test[5w] offset 2w",
 		expected: &MatrixSelector{
-			Name:   "test",
-			Offset: 14 * 24 * time.Hour,
-			Range:  5 * 7 * 24 * time.Hour,
-			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+			VectorSelector: &VectorSelector{
+				Name:   "test",
+				Offset: 14 * 24 * time.Hour,
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+				},
 			},
+			Range: 5 * 7 * 24 * time.Hour,
 		},
 	}, {
 		input: `test{a="b"}[5y] OFFSET 3d`,
 		expected: &MatrixSelector{
-			Name:   "test",
-			Offset: 3 * 24 * time.Hour,
-			Range:  5 * 365 * 24 * time.Hour,
-			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, "a", "b"),
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+			VectorSelector: &VectorSelector{
+				Name:   "test",
+				Offset: 3 * 24 * time.Hour,
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, "a", "b"),
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+				},
 			},
+			Range: 5 * 365 * 24 * time.Hour,
 		},
 	}, {
 		input:  `foo[5mm]`,
@@ -1378,9 +1391,11 @@ var testExpr = []struct {
 			Func: mustGetFunction("rate"),
 			Args: Expressions{
 				&MatrixSelector{
-					Name: "some_metric",
-					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					VectorSelector: &VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						},
 					},
 					Range: 5 * time.Minute,
 				},
@@ -1535,12 +1550,14 @@ var testExpr = []struct {
 						Func: mustGetFunction("rate"),
 						Args: Expressions{
 							&MatrixSelector{
-								Name:  "foo",
-								Range: 2 * time.Second,
-								LabelMatchers: []*labels.Matcher{
-									mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-									mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+								VectorSelector: &VectorSelector{
+									Name: "foo",
+									LabelMatchers: []*labels.Matcher{
+										mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+										mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+									},
 								},
+								Range: 2 * time.Second,
 							},
 						},
 					},
@@ -1560,12 +1577,14 @@ var testExpr = []struct {
 							Func: mustGetFunction("rate"),
 							Args: Expressions{
 								&MatrixSelector{
-									Name:  "foo",
-									Range: 2 * time.Second,
-									LabelMatchers: []*labels.Matcher{
-										mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-										mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+									VectorSelector: &VectorSelector{
+										Name: "foo",
+										LabelMatchers: []*labels.Matcher{
+											mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+											mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+										},
 									},
+									Range: 2 * time.Second,
 								},
 							},
 						},
@@ -1587,12 +1606,14 @@ var testExpr = []struct {
 							Func: mustGetFunction("rate"),
 							Args: Expressions{
 								&MatrixSelector{
-									Name:  "foo",
-									Range: 2 * time.Second,
-									LabelMatchers: []*labels.Matcher{
-										mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-										mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+									VectorSelector: &VectorSelector{
+										Name: "foo",
+										LabelMatchers: []*labels.Matcher{
+											mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+											mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+										},
 									},
+									Range: 2 * time.Second,
 								},
 							},
 						},

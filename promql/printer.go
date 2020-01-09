@@ -112,14 +112,15 @@ func (node *Call) String() string {
 }
 
 func (node *MatrixSelector) String() string {
-	vecSelector := &VectorSelector{
-		Name:          node.Name,
-		LabelMatchers: node.LabelMatchers,
-	}
+	vecSelector := node.VectorSelector
 	offset := ""
-	if node.Offset != time.Duration(0) {
-		offset = fmt.Sprintf(" offset %s", model.Duration(node.Offset))
+	if vecSelector.Offset != time.Duration(0) {
+		offset = fmt.Sprintf(" offset %s", model.Duration(vecSelector.Offset))
 	}
+
+	// Do not print the offset twice.
+	vecSelector.Offset = 0
+
 	return fmt.Sprintf("%s[%s]%s", vecSelector.String(), model.Duration(node.Range), offset)
 }
 

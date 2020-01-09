@@ -488,8 +488,10 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		if ty != ValueTypeVector {
 			p.errorf("subquery is only allowed on instant vector, got %s in %q instead", ty, n.String())
 		}
+	case *MatrixSelector:
+		p.checkType(n.VectorSelector)
 
-	case *NumberLiteral, *MatrixSelector, *StringLiteral, *VectorSelector:
+	case *NumberLiteral, *StringLiteral, *VectorSelector:
 		// Nothing to do for terminals.
 
 	default:
@@ -565,7 +567,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	case *VectorSelector:
 		offsetp = &s.Offset
 	case *MatrixSelector:
-		offsetp = &s.Offset
+		offsetp = &s.VectorSelector.Offset
 	case *SubqueryExpr:
 		offsetp = &s.Offset
 	default:
