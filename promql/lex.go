@@ -327,7 +327,7 @@ func (l *Lexer) NextItem() Item {
 	return Item
 }
 
-// lex creates a new scanner for the input string.
+// Lex creates a new scanner for the input string.
 func Lex(input string) *Lexer {
 	l := &Lexer{
 		input: input,
