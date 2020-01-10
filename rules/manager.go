@@ -288,9 +288,8 @@ func (g *Group) run(ctx context.Context) {
 	}
 
 	ctx = promql.NewOriginContext(ctx, map[string]string{
-		"groupFile":          g.File(),
-		"groupName":          g.Name(),
-		"evaluationInterval": g.Interval().String(),
+		"groupFile": g.File(),
+		"groupName": g.Name(),
 	})
 
 	iter := func() {
