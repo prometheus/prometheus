@@ -107,6 +107,8 @@ type BinaryExpr struct {
 type Call struct {
 	Func *Function   // The function that was called.
 	Args Expressions // Arguments used in the call.
+
+	positionRange PositionRange
 }
 
 // MatrixSelector represents a Matrix selection.
@@ -355,11 +357,8 @@ func (e *AggregateExpr) PositionRange() PositionRange {
 func (e *BinaryExpr) PositionRange() PositionRange {
 	return mergeRanges(e.LHS, e.RHS)
 }
-func (*Call) PositionRange() PositionRange {
-	return PositionRange{
-		Start: -1,
-		End:   -1,
-	}
+func (e *Call) PositionRange() PositionRange {
+	return e.positionRange
 }
 func (*EvalStmt) PositionRange() PositionRange {
 	return PositionRange{
