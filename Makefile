@@ -66,7 +66,7 @@ react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
 test: common-test react-app-test
 
 .PHONY: integration-test
-integration-test: build
+integration-test:
 	cd integration && $(GO) test -tags integration
 
 .PHONY: npm_licenses

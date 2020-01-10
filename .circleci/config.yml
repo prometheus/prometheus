@@ -55,12 +55,8 @@ jobs:
 
     steps:
     - prometheus/setup_environment
-    - go/load-cache:
-        key: v1
-    - restore_cache:
-        keys:
-        - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
-        - v1-npm-deps-
+    - attach_workspace:
+        at: /build/prometheus
     - run:
         command: make integration-test
         environment:
@@ -109,6 +105,7 @@ workflows:
           tags:
             only: /.*/
     - integration_test:
+        requires: test
         filters:
           tags:
             only: /.*/
