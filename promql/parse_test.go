@@ -1035,8 +1035,8 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 			},
-
-			Range: 5 * time.Second,
+			Range:  5 * time.Second,
+			EndPos: 8,
 		},
 	}, {
 		input: "test[5m]",
@@ -1048,7 +1048,8 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 			},
-			Range: 5 * time.Minute,
+			Range:  5 * time.Minute,
+			EndPos: 8,
 		},
 	}, {
 		input: "test[5h] OFFSET 5m",
@@ -1060,7 +1061,8 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 			},
-			Range: 5 * time.Hour,
+			Range:  5 * time.Hour,
+			EndPos: 18,
 		},
 	}, {
 		input: "test[5d] OFFSET 10s",
@@ -1072,7 +1074,8 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 			},
-			Range: 5 * 24 * time.Hour,
+			Range:  5 * 24 * time.Hour,
+			EndPos: 19,
 		},
 	}, {
 		input: "test[5w] offset 2w",
@@ -1084,7 +1087,8 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 			},
-			Range: 5 * 7 * 24 * time.Hour,
+			Range:  5 * 7 * 24 * time.Hour,
+			EndPos: 18,
 		},
 	}, {
 		input: `test{a="b"}[5y] OFFSET 3d`,
@@ -1097,7 +1101,8 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 			},
-			Range: 5 * 365 * 24 * time.Hour,
+			Range:  5 * 365 * 24 * time.Hour,
+			EndPos: 25,
 		},
 	}, {
 		input:  `foo[5mm]`,
@@ -1457,7 +1462,8 @@ var testExpr = []struct {
 							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 						},
 					},
-					Range: 5 * time.Minute,
+					Range:  5 * time.Minute,
+					EndPos: 20,
 				},
 			},
 			positionRange: PositionRange{
@@ -1629,7 +1635,8 @@ var testExpr = []struct {
 										mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 									},
 								},
-								Range: 2 * time.Second,
+								Range:  2 * time.Second,
+								EndPos: 37,
 							},
 						},
 						positionRange: PositionRange{
@@ -1664,7 +1671,8 @@ var testExpr = []struct {
 											mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 										},
 									},
-									Range: 2 * time.Second,
+									Range:  2 * time.Second,
+									EndPos: 37,
 								},
 							},
 							positionRange: PositionRange{
@@ -1701,7 +1709,8 @@ var testExpr = []struct {
 											mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 										},
 									},
-									Range: 2 * time.Second,
+									Range:  2 * time.Second,
+									EndPos: 37,
 								},
 							},
 							positionRange: PositionRange{
