@@ -30,7 +30,8 @@ jobs:
         - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         - v1-npm-deps-
     - run:
-        command: make
+        # TODO revert
+        command: make build
         environment:
           # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
           GOGC: "20"
@@ -39,7 +40,6 @@ jobs:
           # don't limit this to the number of allocated cores, the job is
           # likely to get OOMed and killed.
           GOOPTS: "-p 2"
-    - prometheus/check_proto
     - prometheus/store_artifact:
         file: prometheus
     - prometheus/store_artifact:
@@ -109,39 +109,6 @@ workflows:
         filters:
           tags:
             only: /.*/
-    - test_windows:
-        filters:
-          tags:
-            only: /.*/
-    - fuzzit_regression:
-        filters:
-          tags:
-            only: /.*/
-    - prometheus/build:
-        name: build
-        filters:
-          tags:
-            only: /.*/
-    - prometheus/publish_master:
-        context: org-context
-        requires:
-        - test
-        - build
-        filters:
-          branches:
-            only: master
-        image: circleci/golang:1-node
-    - prometheus/publish_release:
-        context: org-context
-        requires:
-        - test
-        - build
-        filters:
-          tags:
-            only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
-          branches:
-            ignore: /.*/
-        image: circleci/golang:1-node
   nightly:
     triggers:
       - schedule:
