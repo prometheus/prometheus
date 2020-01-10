@@ -41,6 +41,9 @@ type parser struct {
 	inject    ItemType
 	injecting bool
 
+	// Position of the last closing brace bracket or parentheses scanned.
+	lastClosing Pos
+
 	yyParser yyParserImpl
 
 	generatedParserResult interface{}
@@ -229,13 +232,15 @@ func (p *parser) Lex(lval *yySymType) int {
 		}
 	}
 
-	if typ == ERROR {
-		p.errorf("%s", lval.item.Val)
-	}
+	switch typ {
 
-	if typ == EOF {
+	case ERROR:
+		p.errorf("%s", lval.item.Val)
+	case EOF:
 		lval.item.Typ = EOF
 		p.InjectItem(0)
+	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET:
+		p.lastClosing = lval.item.Pos
 	}
 
 	return int(typ)
@@ -363,6 +368,11 @@ func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *Aggre
 	}
 
 	ret.Expr = arguments[desiredArgs-1]
+
+	ret.postionRange = PositionRange{
+		Start: op.Pos,
+		End:   p.lastClosing + 1,
+	}
 
 	return ret
 }
