@@ -330,13 +330,13 @@ type PositionRange struct {
 	End   Pos
 }
 
-// mergeRanges is a helper function that merges two PostionRanges
+// mergeRanges is a helper function the PostionRanges of two Nodes
 // Note that the arguments must already be in the same order as they
 // occur in the input string.
-func mergeRanges(first PositionRange, last PositionRange) PositionRange {
+func mergeRanges(first Node, last Node) PositionRange {
 	return PositionRange{
-		Start: first.Start,
-		End:   last.End,
+		Start: first.PositionRange().Start,
+		End:   last.PositionRange().End,
 	}
 }
 
@@ -352,11 +352,8 @@ func (i *Item) PositionRange() PositionRange {
 func (e *AggregateExpr) PositionRange() PositionRange {
 	return e.positionRange
 }
-func (*BinaryExpr) PositionRange() PositionRange {
-	return PositionRange{
-		Start: -1,
-		End:   -1,
-	}
+func (e *BinaryExpr) PositionRange() PositionRange {
+	return mergeRanges(e.LHS, e.RHS)
 }
 func (*Call) PositionRange() PositionRange {
 	return PositionRange{
