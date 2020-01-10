@@ -425,6 +425,7 @@ unary_expr      :
                                 if $1.Typ == SUB {
                                         nl.Val *= -1
                                 }
+                                nl.positionRange.Start = $1.Pos
                                 $$ = nl
                         } else {
                                 $$ = &UnaryExpr{Op: $1.Typ, Expr: $2.(Expr)}
