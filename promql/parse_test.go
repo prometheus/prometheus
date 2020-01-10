@@ -1422,6 +1422,10 @@ var testExpr = []struct {
 		expected: &Call{
 			Func: mustGetFunction("time"),
 			Args: Expressions{},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   6,
+			},
 		},
 	}, {
 		input: `floor(some_metric{foo!="bar"})`,
@@ -1435,6 +1439,10 @@ var testExpr = []struct {
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 				},
+			},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   30,
 			},
 		},
 	}, {
@@ -1452,6 +1460,10 @@ var testExpr = []struct {
 					Range: 5 * time.Minute,
 				},
 			},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   21,
+			},
 		},
 	}, {
 		input: "round(some_metric)",
@@ -1464,6 +1476,10 @@ var testExpr = []struct {
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 				},
+			},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   18,
 			},
 		},
 	}, {
@@ -1478,6 +1494,10 @@ var testExpr = []struct {
 					},
 				},
 				&NumberLiteral{5},
+			},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   21,
 			},
 		},
 	}, {
@@ -1612,10 +1632,18 @@ var testExpr = []struct {
 								Range: 2 * time.Second,
 							},
 						},
+						positionRange: PositionRange{
+							Start: 14,
+							End:   38,
+						},
 					},
 					Range: 5 * time.Minute,
 					Step:  5 * time.Second,
 				},
+			},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   46,
 			},
 		},
 	}, {
@@ -1639,9 +1667,17 @@ var testExpr = []struct {
 									Range: 2 * time.Second,
 								},
 							},
+							positionRange: PositionRange{
+								Start: 14,
+								End:   38,
+							},
 						},
 						Range: 5 * time.Minute,
 					},
+				},
+				positionRange: PositionRange{
+					Start: 0,
+					End:   44,
 				},
 			},
 			Range: 4 * time.Minute,
@@ -1668,10 +1704,18 @@ var testExpr = []struct {
 									Range: 2 * time.Second,
 								},
 							},
+							positionRange: PositionRange{
+								Start: 14,
+								End:   38,
+							},
 						},
 						Range:  5 * time.Minute,
 						Offset: 4 * time.Minute,
 					},
+				},
+				positionRange: PositionRange{
+					Start: 0,
+					End:   54,
 				},
 			},
 			Range: 4 * time.Minute,
