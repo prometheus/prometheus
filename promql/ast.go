@@ -115,6 +115,8 @@ type Call struct {
 type MatrixSelector struct {
 	VectorSelector *VectorSelector
 	Range          time.Duration
+
+	EndPos Pos
 }
 
 // SubqueryExpr represents a subquery.
@@ -374,10 +376,10 @@ func (e Expressions) PositionRange() PositionRange {
 		return mergeRanges(e[0], e[len(e)-1])
 	}
 }
-func (*MatrixSelector) PositionRange() PositionRange {
+func (e *MatrixSelector) PositionRange() PositionRange {
 	return PositionRange{
-		Start: -1,
-		End:   -1,
+		Start: e.VectorSelector.PositionRange().Start,
+		End:   e.EndPos,
 	}
 }
 func (*SubqueryExpr) PositionRange() PositionRange {
