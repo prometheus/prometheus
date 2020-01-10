@@ -65,6 +65,10 @@ react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
 .PHONY: test
 test: common-test react-app-test
 
+.PHONY: integration-test
+integration-test: build
+	cd integration && $(GO) test -tags integration
+
 .PHONY: npm_licenses
 npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
 	@echo ">> bundling npm licenses"

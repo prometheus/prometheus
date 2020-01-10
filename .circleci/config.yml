@@ -50,6 +50,28 @@ jobs:
         key: v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         paths:
         - web/ui/react-app/node_modules
+  integration_test:
+    executor: golang
+
+    steps:
+    - prometheus/setup_environment
+    - go/load-cache:
+        key: v1
+    - restore_cache:
+        keys:
+        - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        - v1-npm-deps-
+    - run:
+        command: make integration-test
+        environment:
+          # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
+          GOGC: "20"
+          # By default Go uses GOMAXPROCS but a Circle CI executor has many
+          # cores (> 30) while the CPU and RAM resources are throttled. If we
+          # don't limit this to the number of allocated cores, the job is
+          # likely to get OOMed and killed.
+          GOOPTS: "-p 2"
+          GOMAXPROCS: "2"
   test_windows:
     executor: win/default
     working_directory: /go/src/github.com/prometheus/prometheus
