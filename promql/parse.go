@@ -41,7 +41,8 @@ type parser struct {
 	inject    ItemType
 	injecting bool
 
-	// Position of the last closing brace bracket or parentheses scanned.
+	// Everytime a Item is lexed that could be the end
+	// of certain Expression it's end position is stored here
 	lastClosing Pos
 
 	yyParser yyParserImpl
@@ -239,8 +240,8 @@ func (p *parser) Lex(lval *yySymType) int {
 	case EOF:
 		lval.item.Typ = EOF
 		p.InjectItem(0)
-	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET:
-		p.lastClosing = lval.item.Pos
+	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET, DURATION:
+		p.lastClosing = lval.item.Pos + Pos(len(lval.item.Val))
 	}
 
 	return int(typ)
@@ -371,7 +372,7 @@ func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *Aggre
 
 	ret.positionRange = PositionRange{
 		Start: op.Pos,
-		End:   p.lastClosing + 1,
+		End:   p.lastClosing,
 	}
 
 	return ret
@@ -594,7 +595,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		offsetp = &s.Offset
 	case *MatrixSelector:
 		offsetp = &s.VectorSelector.Offset
-		s.EndPos = p.yyParser.lval.item.Pos
+		s.EndPos = p.lastClosing
 	case *SubqueryExpr:
 		offsetp = &s.Offset
 	default:

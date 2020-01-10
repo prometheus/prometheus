@@ -335,7 +335,7 @@ function_call   : IDENTIFIER function_call_body
                                 Args: $2.(Expressions),
                                 positionRange: PositionRange{
                                         Start: $1.Pos,
-                                        End:   yylex.(*parser).lastClosing + 1,
+                                        End:   yylex.(*parser).lastClosing,
                                 },
                         }
                         }
@@ -390,7 +390,7 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         $$ = &MatrixSelector{
                                 VectorSelector: vs,
                                 Range: $3,
-                                EndPos: yylex.(*parser).lastClosing + 1,
+                                EndPos: yylex.(*parser).lastClosing,
                         }
                         }
                 ;
