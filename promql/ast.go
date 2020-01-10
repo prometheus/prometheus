@@ -44,12 +44,6 @@ type Node interface {
 	PositionRange() PositionRange
 }
 
-// PositionRange describes a position in the input string of the parser.
-type PositionRange struct {
-	Start Pos
-	End   Pos
-}
-
 // Statement is a generic interface for all statements.
 type Statement interface {
 	Node
@@ -88,11 +82,12 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
-	Op       ItemType // The used aggregation operation.
-	Expr     Expr     // The Vector expression over which is aggregated.
-	Param    Expr     // Parameter used by some aggregators.
-	Grouping []string // The labels by which to group the Vector.
-	Without  bool     // Whether to drop the given labels rather than keep them.
+	Op           ItemType // The used aggregation operation.
+	Expr         Expr     // The Vector expression over which is aggregated.
+	Param        Expr     // Parameter used by some aggregators.
+	Grouping     []string // The labels by which to group the Vector.
+	Without      bool     // Whether to drop the given labels rather than keep them.
+	postionRange PositionRange
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -326,6 +321,31 @@ func Children(node Node) []Node {
 		return []Node{}
 	default:
 		panic(errors.Errorf("promql.Children: unhandled node type %T", node))
+	}
+}
+
+// PositionRange describes a position in the input string of the parser.
+type PositionRange struct {
+	Start Pos
+	End   Pos
+}
+
+// mergeRanges is a helper function that merges two PostionRanges
+// Note that the arguments must already be in the same order as they
+// occur in the input string.
+func mergeRanges(first PositionRange, last PositionRange) PositionRange {
+	return PositionRange{
+		Start: first.Start,
+		End:   last.End,
+	}
+}
+
+// Item implement the Node interface
+// This makes it possible to call mergeRanges on them
+func (i *Item) PositionRange() PositionRange {
+	return PositionRange{
+		Start: i.Pos,
+		End:   i.Pos + Pos(len(i.Val)),
 	}
 }
 
