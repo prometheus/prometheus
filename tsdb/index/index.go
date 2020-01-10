@@ -298,7 +298,7 @@ func (fw *FileWriter) WriteAt(buf []byte, pos uint64) error {
 	return err
 }
 
-// addPadding adds zero byte padding until the file size is a multiple size.
+// AddPadding adds zero byte padding until the file size is a multiple size.
 func (fw *FileWriter) AddPadding(size int) error {
 	p := fw.pos % uint64(size)
 	if p == 0 {
