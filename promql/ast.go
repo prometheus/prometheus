@@ -39,6 +39,15 @@ type Node interface {
 	// String representation of the node that returns the given node when parsed
 	// as part of a valid query.
 	String() string
+
+	// PositionRange returns the position of the AST Node in the query string.
+	PositionRange() PositionRange
+}
+
+// PositionRange describes a position in the input string of the parser.
+type PositionRange struct {
+	Start Pos
+	End   Pos
 }
 
 // Statement is a generic interface for all statements.
@@ -317,5 +326,78 @@ func Children(node Node) []Node {
 		return []Node{}
 	default:
 		panic(errors.Errorf("promql.Children: unhandled node type %T", node))
+	}
+}
+
+func (*AggregateExpr) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (*BinaryExpr) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (*Call) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (*EvalStmt) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (Expressions) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (*MatrixSelector) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (*SubqueryExpr) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (*NumberLiteral) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (*ParenExpr) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (*StringLiteral) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (*UnaryExpr) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
+func (*VectorSelector) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
 	}
 }
