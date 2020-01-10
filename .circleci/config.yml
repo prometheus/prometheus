@@ -39,6 +39,7 @@ jobs:
           # don't limit this to the number of allocated cores, the job is
           # likely to get OOMed and killed.
           GOOPTS: "-p 2"
+          GOMAXPROCS: "2"
     - prometheus/check_proto
     - prometheus/store_artifact:
         file: prometheus
