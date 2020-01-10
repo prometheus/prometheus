@@ -6,7 +6,7 @@ import PathPrefixProps from '../../PathPrefixProps';
 
 import './Config.css';
 import { withStatusIndicator } from '../../common/withStatusIndicator';
-import { useFetch } from '../../common/hooks/useFetch';
+import { useFetch } from '../../hooks/useFetch';
 
 type YamlConfig = { yaml?: string };
 

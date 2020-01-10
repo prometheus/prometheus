@@ -4,7 +4,7 @@ import PathPrefixProps from '../../PathPrefixProps';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { Alert } from 'reactstrap';
-import { useFetch } from '../../common/hooks/useFetch';
+import { useFetch } from '../../hooks/useFetch';
 import { LabelsTable } from './LabelsTable';
 import { Target, Labels, DroppedTarget } from '../targets/target';
 

@@ -2,7 +2,7 @@ import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../common/withStatusIndicator';
-import { useFetch } from '../../common/hooks/useFetch';
+import { useFetch } from '../../hooks/useFetch';
 import PathPrefixProps from '../../PathPrefixProps';
 
 interface FlagMap {
