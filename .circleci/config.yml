@@ -30,9 +30,8 @@ jobs:
         - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         - v1-npm-deps-
     - run:
-        # TODO revert
-        command: make build
-        environment:
+        command: make
+        environment: &GoEnv
           # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
           GOGC: "20"
           # By default Go uses GOMAXPROCS but a Circle CI executor has many
@@ -40,6 +39,11 @@ jobs:
           # don't limit this to the number of allocated cores, the job is
           # likely to get OOMed and killed.
           GOOPTS: "-p 2"
+    - run:
+        command: make integration-test
+        environment: *GoEnv
+          GOMAXPROCS: "2"
+    - prometheus/check_proto
     - prometheus/store_artifact:
         file: prometheus
     - prometheus/store_artifact:
@@ -50,24 +54,6 @@ jobs:
         key: v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         paths:
         - web/ui/react-app/node_modules
-  integration_test:
-    executor: golang
-
-    steps:
-    - prometheus/setup_environment
-    - attach_workspace:
-        at: .
-    - run:
-        command: make integration-test
-        environment:
-          # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
-          GOGC: "20"
-          # By default Go uses GOMAXPROCS but a Circle CI executor has many
-          # cores (> 30) while the CPU and RAM resources are throttled. If we
-          # don't limit this to the number of allocated cores, the job is
-          # likely to get OOMed and killed.
-          GOOPTS: "-p 2"
-          GOMAXPROCS: "2"
   test_windows:
     executor: win/default
     working_directory: /go/src/github.com/prometheus/prometheus
@@ -104,11 +90,39 @@ workflows:
         filters:
           tags:
             only: /.*/
-    - integration_test:
-        requires: [test]
+    - test_windows:
         filters:
           tags:
             only: /.*/
+    - fuzzit_regression:
+        filters:
+          tags:
+            only: /.*/
+    - prometheus/build:
+        name: build
+        filters:
+          tags:
+            only: /.*/
+    - prometheus/publish_master:
+        context: org-context
+        requires:
+        - test
+        - build
+        filters:
+          branches:
+            only: master
+        image: circleci/golang:1-node
+    - prometheus/publish_release:
+        context: org-context
+        requires:
+        - test
+        - build
+        filters:
+          tags:
+            only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
+          branches:
+            ignore: /.*/
+        image: circleci/golang:1-node
   nightly:
     triggers:
       - schedule:
