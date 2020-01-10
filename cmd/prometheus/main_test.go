@@ -30,8 +30,6 @@ import (
 )
 
 var promPath string
-var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
-var promData = filepath.Join(os.TempDir(), "data")
 
 func TestMain(m *testing.M) {
 	flag.Parse()
@@ -58,7 +56,6 @@ func TestMain(m *testing.M) {
 
 	exitCode := m.Run()
 	os.Remove(promPath)
-	os.RemoveAll(promData)
 	os.Exit(exitCode)
 }
 
