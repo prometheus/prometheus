@@ -369,7 +369,7 @@ func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *Aggre
 
 	ret.Expr = arguments[desiredArgs-1]
 
-	ret.postionRange = PositionRange{
+	ret.positionRange = PositionRange{
 		Start: op.Pos,
 		End:   p.lastClosing + 1,
 	}

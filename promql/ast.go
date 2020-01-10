@@ -82,12 +82,12 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
-	Op           ItemType // The used aggregation operation.
-	Expr         Expr     // The Vector expression over which is aggregated.
-	Param        Expr     // Parameter used by some aggregators.
-	Grouping     []string // The labels by which to group the Vector.
-	Without      bool     // Whether to drop the given labels rather than keep them.
-	postionRange PositionRange
+	Op            ItemType // The used aggregation operation.
+	Expr          Expr     // The Vector expression over which is aggregated.
+	Param         Expr     // Parameter used by some aggregators.
+	Grouping      []string // The labels by which to group the Vector.
+	Without       bool     // Whether to drop the given labels rather than keep them.
+	positionRange PositionRange
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -349,11 +349,8 @@ func (i *Item) PositionRange() PositionRange {
 	}
 }
 
-func (*AggregateExpr) PositionRange() PositionRange {
-	return PositionRange{
-		Start: -1,
-		End:   -1,
-	}
+func (e *AggregateExpr) PositionRange() PositionRange {
+	return e.positionRange
 }
 func (*BinaryExpr) PositionRange() PositionRange {
 	return PositionRange{

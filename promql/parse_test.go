@@ -1159,6 +1159,10 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{"foo"},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   25,
+			},
 		},
 	}, {
 		input: "avg by (foo)(some_metric)",
@@ -1171,6 +1175,10 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{"foo"},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   25,
+			},
 		},
 	}, {
 		input: "max by (foo)(some_metric)",
@@ -1183,6 +1191,10 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{"foo"},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   25,
+			},
 		},
 	}, {
 		input: "sum without (foo) (some_metric)",
@@ -1196,6 +1208,10 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{"foo"},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   31,
+			},
 		},
 	}, {
 		input: "sum (some_metric) without (foo)",
@@ -1209,6 +1225,10 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{"foo"},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   31,
+			},
 		},
 	}, {
 		input: "stddev(some_metric)",
@@ -1219,6 +1239,10 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
+			},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   19,
 			},
 		},
 	}, {
@@ -1232,6 +1256,10 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{"foo"},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   28,
+			},
 		},
 	}, {
 		input: "sum by ()(some_metric)",
@@ -1244,6 +1272,10 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   22,
+			},
 		},
 	}, {
 		input: "sum by (foo,bar,)(some_metric)",
@@ -1256,6 +1288,10 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{"foo", "bar"},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   30,
+			},
 		},
 	}, {
 		input: "sum by (foo,)(some_metric)",
@@ -1268,6 +1304,10 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{"foo"},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   26,
+			},
 		},
 	}, {
 		input: "topk(5, some_metric)",
@@ -1280,6 +1320,10 @@ var testExpr = []struct {
 				},
 			},
 			Param: &NumberLiteral{5},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   20,
+			},
 		},
 	}, {
 		input: "count_values(\"value\", some_metric)",
@@ -1292,6 +1336,10 @@ var testExpr = []struct {
 				},
 			},
 			Param: &StringLiteral{"value"},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   34,
+			},
 		},
 	}, {
 		// Test usage of keywords as label names.
@@ -1306,6 +1354,10 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{"and", "by", "avg", "count", "alert", "annotations"},
+			positionRange: PositionRange{
+				Start: 0,
+				End:   65,
+			},
 		},
 	}, {
 		input:  "sum without(==)(some_metric)",
@@ -1638,6 +1690,10 @@ var testExpr = []struct {
 					},
 				},
 				Grouping: []string{"and", "by", "avg", "count", "alert", "annotations"},
+				positionRange: PositionRange{
+					Start: 0,
+					End:   65,
+				},
 			},
 			Range: 30 * time.Minute,
 			Step:  10 * time.Second,
