@@ -1,6 +1,6 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import PathPrefixProps from '../../PathPrefixProps';
+import PathPrefixProps from '../../types/PathPrefixProps';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { Alert } from 'reactstrap';

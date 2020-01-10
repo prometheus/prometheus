@@ -3,7 +3,7 @@ import { FilterData } from './Filter';
 import { useFetch } from '../../hooks/useFetch';
 import { ScrapePool, groupTargets, Target } from './target';
 import ScrapePoolPanel from './ScrapePoolPanel';
-import PathPrefixProps from '../../PathPrefixProps';
+import PathPrefixProps from '../../types/PathPrefixProps';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { Alert } from 'reactstrap';

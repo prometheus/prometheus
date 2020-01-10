@@ -3,7 +3,7 @@ import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../common/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
-import PathPrefixProps from '../../PathPrefixProps';
+import PathPrefixProps from '../../types/PathPrefixProps';
 
 const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
 

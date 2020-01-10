@@ -1,6 +1,6 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import PathPrefixProps from '../../PathPrefixProps';
+import PathPrefixProps from '../../types/PathPrefixProps';
 import { Alert } from 'reactstrap';
 
 const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => (

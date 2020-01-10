@@ -2,7 +2,7 @@ import React, { useState, FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Button } from 'reactstrap';
 import CopyToClipboard from 'react-copy-to-clipboard';
-import PathPrefixProps from '../../PathPrefixProps';
+import PathPrefixProps from '../../types/PathPrefixProps';
 
 import './Config.css';
 import { withStatusIndicator } from '../../common/withStatusIndicator';
