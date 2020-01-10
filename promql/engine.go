@@ -623,8 +623,8 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			if maxOffset < n.Range+subqOffset {
 				maxOffset = n.Range + subqOffset
 			}
-			if n.Offset+n.Range+subqOffset > maxOffset {
-				maxOffset = n.Offset + n.Range + subqOffset
+			if m := n.VectorSelector.Offset + n.Range + subqOffset; m > maxOffset {
+				maxOffset = m
 			}
 		}
 		return nil
@@ -638,6 +638,11 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 	}
 
 	var warnings storage.Warnings
+
+	// Whenever a MatrixSelector is evaluated this variable is set to the corresponding range.
+	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
+	// the variable.
+	var evalRange time.Duration
 
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
@@ -658,7 +663,16 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		switch n := node.(type) {
 		case *VectorSelector:
-			params.Start = params.Start - durationMilliseconds(LookbackDelta)
+			if evalRange == 0 {
+				params.Start = params.Start - durationMilliseconds(LookbackDelta)
+			} else {
+				params.Range = durationMilliseconds(evalRange)
+				// For all matrix queries we want to ensure that we have (end-start) + range selected
+				// this way we have `range` data before the start time
+				params.Start = params.Start - durationMilliseconds(evalRange)
+				evalRange = 0
+			}
+
 			params.Func = extractFuncFromPath(path)
 			params.By, params.Grouping = extractGroupsFromPath(path)
 			if n.Offset > 0 {
@@ -676,24 +690,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			n.unexpandedSeriesSet = set
 
 		case *MatrixSelector:
-			params.Func = extractFuncFromPath(path)
-			params.Range = durationMilliseconds(n.Range)
-			// For all matrix queries we want to ensure that we have (end-start) + range selected
-			// this way we have `range` data before the start time
-			params.Start = params.Start - durationMilliseconds(n.Range)
-			if n.Offset > 0 {
-				offsetMilliseconds := durationMilliseconds(n.Offset)
-				params.Start = params.Start - offsetMilliseconds
-				params.End = params.End - offsetMilliseconds
-			}
-
-			set, wrn, err = querier.Select(params, n.LabelMatchers...)
-			warnings = append(warnings, wrn...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
-			}
-			n.unexpandedSeriesSet = set
+			evalRange = n.Range
 		}
 		return nil
 	})
@@ -734,14 +731,7 @@ func extractGroupsFromPath(p []Node) (bool, []string) {
 func checkForSeriesSetExpansion(ctx context.Context, expr Expr) {
 	switch e := expr.(type) {
 	case *MatrixSelector:
-		if e.series == nil {
-			series, err := expandSeriesSet(ctx, e.unexpandedSeriesSet)
-			if err != nil {
-				panic(err)
-			} else {
-				e.series = series
-			}
-		}
+		checkForSeriesSetExpansion(ctx, e.VectorSelector)
 	case *VectorSelector:
 		if e.series == nil {
 			series, err := expandSeriesSet(ctx, e.unexpandedSeriesSet)
@@ -1000,12 +990,14 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 func (ev *evaluator) evalSubquery(subq *SubqueryExpr) *MatrixSelector {
 	val := ev.eval(subq).(Matrix)
 	ms := &MatrixSelector{
-		Range:  subq.Range,
-		Offset: subq.Offset,
-		series: make([]storage.Series, 0, len(val)),
+		Range: subq.Range,
+		VectorSelector: &VectorSelector{
+			Offset: subq.Offset,
+			series: make([]storage.Series, 0, len(val)),
+		},
 	}
 	for _, s := range val {
-		ms.series = append(ms.series, NewStorageSeries(s))
+		ms.VectorSelector.series = append(ms.VectorSelector.series, NewStorageSeries(s))
 	}
 	return ms
 }
@@ -1085,9 +1077,11 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 
 		sel := e.Args[matrixArgIndex].(*MatrixSelector)
+		selVS := sel.VectorSelector
+
 		checkForSeriesSetExpansion(ev.ctx, sel)
-		mat := make(Matrix, 0, len(sel.series)) // Output matrix.
-		offset := durationMilliseconds(sel.Offset)
+		mat := make(Matrix, 0, len(selVS.series)) // Output matrix.
+		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
 		stepRange := selRange
 		if stepRange > ev.interval {
@@ -1100,17 +1094,17 @@ func (ev *evaluator) eval(expr Expr) Value {
 		enh := &EvalNodeHelper{out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
-		for i, s := range sel.series {
+		for i, s := range selVS.series {
 			points = points[:0]
 			it.Reset(s.Iterator())
 			ss := Series{
 				// For all range vector functions, the only change to the
 				// output labels is dropping the metric name so just do
 				// it once here.
-				Metric: dropMetricName(sel.series[i].Labels()),
+				Metric: dropMetricName(selVS.series[i].Labels()),
 				Points: getPointSlice(numSteps),
 			}
-			inMatrix[0].Metric = sel.series[i].Labels()
+			inMatrix[0].Metric = selVS.series[i].Labels()
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 				step++
 				// Set the non-matrix arguments.
@@ -1409,20 +1403,22 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 	checkForSeriesSetExpansion(ev.ctx, node)
 
 	var (
-		offset = durationMilliseconds(node.Offset)
+		offset = durationMilliseconds(node.VectorSelector.Offset)
 		maxt   = ev.startTimestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
-		matrix = make(Matrix, 0, len(node.series))
+		matrix = make(Matrix, 0, len(node.VectorSelector.series))
 	)
 
 	it := storage.NewBuffer(durationMilliseconds(node.Range))
-	for i, s := range node.series {
+	series := node.VectorSelector.series
+
+	for i, s := range series {
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
 		it.Reset(s.Iterator())
 		ss := Series{
-			Metric: node.series[i].Labels(),
+			Metric: series[i].Labels(),
 		}
 
 		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(16))

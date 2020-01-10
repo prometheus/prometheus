@@ -107,14 +107,8 @@ type Call struct {
 
 // MatrixSelector represents a Matrix selection.
 type MatrixSelector struct {
-	Name          string
-	Range         time.Duration
-	Offset        time.Duration
-	LabelMatchers []*labels.Matcher
-
-	// The unexpanded seriesSet populated at query preparation time.
-	unexpandedSeriesSet storage.SeriesSet
-	series              []storage.Series
+	VectorSelector *VectorSelector
+	Range          time.Duration
 }
 
 // SubqueryExpr represents a subquery.
@@ -316,7 +310,9 @@ func Children(node Node) []Node {
 		return []Node{n.Expr}
 	case *UnaryExpr:
 		return []Node{n.Expr}
-	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
+	case *MatrixSelector:
+		return []Node{n.VectorSelector}
+	case *NumberLiteral, *StringLiteral, *VectorSelector:
 		// nothing to do
 		return []Node{}
 	default:

@@ -384,9 +384,7 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                                 yylex.(*parser).errorf("no offset modifiers allowed before range")
                         }
                         $$ = &MatrixSelector{
-                                Name: vs.Name,
-                                Offset: vs.Offset,
-                                LabelMatchers: vs.LabelMatchers,
+                                VectorSelector: vs,
                                 Range: $3,
                         }
                         }

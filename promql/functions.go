@@ -67,8 +67,8 @@ func extrapolatedRate(vals []Value, args Expressions, enh *EvalNodeHelper, isCou
 
 	var (
 		samples    = vals[0].(Matrix)[0]
-		rangeStart = enh.ts - durationMilliseconds(ms.Range+ms.Offset)
-		rangeEnd   = enh.ts - durationMilliseconds(ms.Offset)
+		rangeStart = enh.ts - durationMilliseconds(ms.Range+ms.VectorSelector.Offset)
+		rangeEnd   = enh.ts - durationMilliseconds(ms.VectorSelector.Offset)
 	)
 
 	// No sense in trying to compute a rate without at least two points. Drop
@@ -1243,7 +1243,7 @@ func createLabelsForAbsentFunction(expr Expr) labels.Labels {
 	case *VectorSelector:
 		lm = n.LabelMatchers
 	case *MatrixSelector:
-		lm = n.LabelMatchers
+		lm = n.VectorSelector.LabelMatchers
 	default:
 		return m
 	}
