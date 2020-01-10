@@ -594,6 +594,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		offsetp = &s.Offset
 	case *MatrixSelector:
 		offsetp = &s.VectorSelector.Offset
+		s.EndPos = p.yyParser.lval.item.Pos
 	case *SubqueryExpr:
 		offsetp = &s.Offset
 	default:

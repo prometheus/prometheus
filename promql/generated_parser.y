@@ -390,6 +390,7 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         $$ = &MatrixSelector{
                                 VectorSelector: vs,
                                 Range: $3,
+                                EndPos: yylex.(*parser).lastClosing + 1,
                         }
                         }
                 ;
