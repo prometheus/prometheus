@@ -108,6 +108,10 @@ workflows:
         filters:
           tags:
             only: /.*/
+    - integration_test:
+        filters:
+          tags:
+            only: /.*/
     - test_windows:
         filters:
           tags:
