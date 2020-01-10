@@ -360,11 +360,8 @@ func (e *BinaryExpr) PositionRange() PositionRange {
 func (e *Call) PositionRange() PositionRange {
 	return e.positionRange
 }
-func (*EvalStmt) PositionRange() PositionRange {
-	return PositionRange{
-		Start: -1,
-		End:   -1,
-	}
+func (e *EvalStmt) PositionRange() PositionRange {
+	return e.Expr.PositionRange()
 }
 func (Expressions) PositionRange() PositionRange {
 	return PositionRange{
