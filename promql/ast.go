@@ -130,6 +130,8 @@ type SubqueryExpr struct {
 // NumberLiteral represents a number.
 type NumberLiteral struct {
 	Val float64
+
+	positionRange PositionRange
 }
 
 // ParenExpr wraps an expression so it cannot be disassembled as a consequence
@@ -388,11 +390,8 @@ func (*SubqueryExpr) PositionRange() PositionRange {
 		End:   -1,
 	}
 }
-func (*NumberLiteral) PositionRange() PositionRange {
-	return PositionRange{
-		Start: -1,
-		End:   -1,
-	}
+func (e *NumberLiteral) PositionRange() PositionRange {
+	return e.positionRange
 }
 func (*ParenExpr) PositionRange() PositionRange {
 	return PositionRange{

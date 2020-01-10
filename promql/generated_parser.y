@@ -595,7 +595,14 @@ match_op        : EQL | NEQ | EQL_REGEX | NEQ_REGEX ;
  * Literals.
  */
 
-number_literal  : number { $$ = &NumberLiteral{$1}} ;
+number_literal  : NUMBER 
+                        {
+                        $$ = &NumberLiteral{
+                                Val:           yylex.(*parser).number($1.Val),
+                                positionRange: $1.PositionRange(),
+                        }
+                        }
+                ;
 
 number          : NUMBER { $$ = yylex.(*parser).number($1.Val) } ;
 
