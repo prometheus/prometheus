@@ -25,10 +25,14 @@ type ctxParam int
 
 var pathParam ctxParam
 
+// ContextWithPath returns a new context with the given path to be used later
+// when logging the query.
 func ContextWithPath(ctx context.Context, path string) context.Context {
 	return context.WithValue(ctx, pathParam, path)
 }
 
+// ContextFromRequest returns a new context from a requests with identifiers of
+// the request to be used later when logging the query.
 func ContextFromRequest(ctx context.Context, r *http.Request) (context.Context, error) {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
