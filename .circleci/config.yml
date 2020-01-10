@@ -105,7 +105,7 @@ workflows:
           tags:
             only: /.*/
     - integration_test:
-        requires: test
+        requires: [test]
         filters:
           tags:
             only: /.*/
