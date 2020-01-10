@@ -56,7 +56,7 @@ jobs:
     steps:
     - prometheus/setup_environment
     - attach_workspace:
-        at: /build
+        at: .
     - run:
         command: make integration-test
         environment:
