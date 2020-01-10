@@ -333,6 +333,10 @@ function_call   : IDENTIFIER function_call_body
                         $$ = &Call{
                                 Func: fn,
                                 Args: $2.(Expressions),
+                                positionRange: PositionRange{
+                                        Start: $1.Pos,
+                                        End:   yylex.(*parser).lastClosing + 1,
+                                },
                         }
                         }
                 ;
