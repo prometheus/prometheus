@@ -1,6 +1,6 @@
 import React, { FC } from 'react';
 import { FilterData } from './Filter';
-import { useFetch } from '../../utils/useFetch';
+import { useFetch } from '../../common/hooks/useFetch';
 import { ScrapePool, groupTargets, Target } from './target';
 import ScrapePoolPanel from './ScrapePoolPanel';
 import PathPrefixProps from '../../PathPrefixProps';

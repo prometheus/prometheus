@@ -3,8 +3,8 @@ import React, { PureComponent } from 'react';
 import ReactResizeDetector from 'react-resize-detector';
 
 import { Legend } from './Legend';
-import { Metric, QueryParams } from '../types/types';
-import { isPresent } from '../utils/func';
+import { Metric, QueryParams } from '../../types/types';
+import { isPresent } from '../../utils/func';
 import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
 
 require('../vendor/flot/jquery.flot');

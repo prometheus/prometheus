@@ -3,11 +3,11 @@ import { RouteComponentProps } from '@reach/router';
 
 import { Alert, Button, Col, Row } from 'reactstrap';
 
-import Panel, { PanelOptions, PanelDefaultOptions } from '../Panel';
-import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from '../utils/urlParams';
-import Checkbox from '../Checkbox';
-import PathPrefixProps from '../PathPrefixProps';
-import { generateID } from '../utils/func';
+import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
+import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from '../../utils/urlParams';
+import Checkbox from '../../common/Checkbox';
+import PathPrefixProps from '../../PathPrefixProps';
+import { generateID } from '../../utils/func';
 
 export type MetricGroup = { title: string; items: string[] };
 export type PanelMeta = { key: string; options: PanelOptions; id: string };

@@ -1,8 +1,8 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import PathPrefixProps from '../../PathPrefixProps';
-import { useFetch } from '../../utils/useFetch';
-import { withStatusIndicator } from '../../withStatusIndicator';
+import { useFetch } from '../../common/hooks/useFetch';
+import { withStatusIndicator } from '../../common/withStatusIndicator';
 import AlertsContent, { RuleStatus, AlertsProps } from './AlertContents';
 
 const AlertsWithStatusIndicator = withStatusIndicator(AlertsContent);

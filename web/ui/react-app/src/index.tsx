@@ -1,4 +1,4 @@
-import './globals';
+import './config/globals';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import App from './App';

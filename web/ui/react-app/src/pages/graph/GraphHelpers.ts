@@ -1,7 +1,7 @@
 import $ from 'jquery';
 
-import { escapeHTML } from '../utils/html';
-import { Metric } from '../types/types';
+import { escapeHTML } from '../../utils/html';
+import { Metric } from '../../types/types';
 import { GraphProps, GraphSeries } from './Graph';
 
 export const formatValue = (y: number | null): string => {

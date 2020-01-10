@@ -7,8 +7,8 @@ import EndpointLink from './EndpointLink';
 import TargetLabels from './TargetLabels';
 import { formatRelative, humanizeDuration } from '../../utils/timeFormat';
 import { now } from 'moment';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { ToggleMoreLess } from './ToggleMoreLess';
+import { useLocalStorage } from '../../common/hooks/useLocalStorage';
+import { ToggleMoreLess } from '../../common/ToggleMoreLess';
 
 interface PanelProps {
   scrapePool: string;

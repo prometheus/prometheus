@@ -1,5 +1,5 @@
 import React, { PureComponent, SyntheticEvent } from 'react';
-import SeriesName from '../SeriesName';
+import SeriesName from './SeriesName';
 import { GraphSeries } from './Graph';
 
 interface LegendProps {

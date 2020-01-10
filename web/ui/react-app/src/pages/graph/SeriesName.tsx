@@ -1,5 +1,5 @@
 import React, { FC } from 'react';
-import metricToSeriesName from './MetricFormat';
+import metricToSeriesName from '../../utils/MetricFormat';
 
 interface SeriesNameProps {
   labels: { [key: string]: string } | null;

@@ -1,5 +1,5 @@
 import React, { FC } from 'react';
-import Navigation from './Navbar';
+import Navigation from './common/Navbar';
 import { Container } from 'reactstrap';
 
 import './App.css';

@@ -2,7 +2,7 @@ import React, { FC, useState } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Badge, Table } from 'reactstrap';
 import { TargetLabels } from './Services';
-import { ToggleMoreLess } from './targets/ToggleMoreLess';
+import { ToggleMoreLess } from '../../common/ToggleMoreLess';
 
 interface LabelProps {
   value: TargetLabels[];

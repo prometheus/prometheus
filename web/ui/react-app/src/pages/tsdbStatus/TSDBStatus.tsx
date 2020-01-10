@@ -3,8 +3,8 @@ import { RouteComponentProps } from '@reach/router';
 import { Alert, Table } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
-import { useFetch } from '../utils/useFetch';
-import PathPrefixProps from '../PathPrefixProps';
+import { useFetch } from '../../common/hooks/useFetch';
+import PathPrefixProps from '../../PathPrefixProps';
 
 export interface Stats {
   name: string;

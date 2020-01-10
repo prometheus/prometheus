@@ -2,11 +2,11 @@ import React, { useState, FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Button } from 'reactstrap';
 import CopyToClipboard from 'react-copy-to-clipboard';
-import PathPrefixProps from '../PathPrefixProps';
+import PathPrefixProps from '../../PathPrefixProps';
 
 import './Config.css';
-import { withStatusIndicator } from '../withStatusIndicator';
-import { useFetch } from '../utils/useFetch';
+import { withStatusIndicator } from '../../common/withStatusIndicator';
+import { useFetch } from '../../common/hooks/useFetch';
 
 type YamlConfig = { yaml?: string };
 

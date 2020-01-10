@@ -5,13 +5,13 @@ import { Alert, Button, Col, Nav, NavItem, NavLink, Row, TabContent, TabPane } f
 import moment from 'moment-timezone';
 
 import ExpressionInput from './ExpressionInput';
-import GraphControls from './graph/GraphControls';
-import { GraphTabContent } from './graph/GraphTabContent';
+import GraphControls from './GraphControls';
+import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
-import PathPrefixProps from './PathPrefixProps';
-import { QueryParams } from './types/types';
+import PathPrefixProps from '../../PathPrefixProps';
+import { QueryParams } from '../../types/types';
 
 interface PanelProps {
   options: PanelOptions;

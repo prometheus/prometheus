@@ -1,5 +1,5 @@
 import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, parseOption, toQueryString } from './urlParams';
-import { PanelType } from '../Panel';
+import { PanelType } from '../pages/graph/Panel';
 import moment from 'moment';
 
 const panels: any = [

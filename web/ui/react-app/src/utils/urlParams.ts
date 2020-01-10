@@ -1,7 +1,7 @@
 import { parseRange, parseTime, formatRange, formatTime } from './timeFormat';
-import { PanelOptions, PanelType, PanelDefaultOptions } from '../Panel';
+import { PanelOptions, PanelType, PanelDefaultOptions } from '../pages/graph/Panel';
 import { generateID, byEmptyString, isPresent } from './func';
-import { PanelMeta } from '../pages/PanelList';
+import { PanelMeta } from '../pages/graph/PanelList';
 
 const paramFormat = /^g\d+\..+=.+$/;
 

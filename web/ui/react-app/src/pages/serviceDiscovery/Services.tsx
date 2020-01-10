@@ -1,12 +1,12 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import PathPrefixProps from '../PathPrefixProps';
+import PathPrefixProps from '../../PathPrefixProps';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { Alert } from 'reactstrap';
-import { useFetch } from '../utils/useFetch';
+import { useFetch } from '../../common/hooks/useFetch';
 import { LabelsTable } from './LabelsTable';
-import { Target, Labels, DroppedTarget } from './targets/target';
+import { Target, Labels, DroppedTarget } from '../targets/target';
 
 // TODO: Deduplicate with https://github.com/prometheus/prometheus/blob/213a8fe89a7308e73f22888a963cbf9375217cd6/web/ui/react-app/src/pages/targets/ScrapePoolList.tsx#L11-L14
 interface ServiceMap {

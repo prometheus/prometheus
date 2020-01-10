@@ -1,11 +1,11 @@
 import * as React from 'react';
 import { mount, shallow } from 'enzyme';
 import PanelList from './PanelList';
-import Checkbox from '../Checkbox';
+import Checkbox from '../../common/Checkbox';
 import { Alert, Button } from 'reactstrap';
-import Panel, { PanelDefaultOptions } from '../Panel';
-import { decodePanelOptionsFromQueryString } from '../utils/urlParams';
-import ExpressionInput from '../ExpressionInput';
+import Panel, { PanelDefaultOptions } from './Panel';
+import { decodePanelOptionsFromQueryString } from '../../utils/urlParams';
+import ExpressionInput from './ExpressionInput';
 
 describe('PanelList', () => {
   it('renders a query history checkbox', () => {

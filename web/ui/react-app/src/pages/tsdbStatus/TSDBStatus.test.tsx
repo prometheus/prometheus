@@ -4,7 +4,7 @@ import { act } from 'react-dom/test-utils';
 import { Alert, Table } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
-import { TSDBStatus } from '.';
+import { TSDBStatus } from '..';
 import { TSDBMap } from './TSDBStatus';
 
 const fakeTSDBStatusResponse: {

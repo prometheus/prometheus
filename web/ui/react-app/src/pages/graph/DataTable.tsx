@@ -3,7 +3,7 @@ import React, { FC, ReactNode } from 'react';
 import { Alert, Table } from 'reactstrap';
 
 import SeriesName from './SeriesName';
-import { Metric } from './types/types';
+import { Metric } from '../../types/types';
 
 export interface QueryResult {
   data:

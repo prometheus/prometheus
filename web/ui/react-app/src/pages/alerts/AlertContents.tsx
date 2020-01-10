@@ -1,7 +1,7 @@
 import React, { FC, useState, Fragment } from 'react';
 import { Badge } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
-import Checkbox from '../../Checkbox';
+import Checkbox from '../../common/Checkbox';
 import { isPresent } from '../../utils/func';
 
 export type RuleState = keyof RuleStatus<any>;

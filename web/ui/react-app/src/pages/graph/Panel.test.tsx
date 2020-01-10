@@ -2,11 +2,11 @@ import * as React from 'react';
 import { mount, shallow } from 'enzyme';
 import Panel, { PanelOptions, PanelType } from './Panel';
 import ExpressionInput from './ExpressionInput';
-import GraphControls from './graph/GraphControls';
+import GraphControls from './GraphControls';
 import { NavLink, TabPane } from 'reactstrap';
 import TimeInput from './TimeInput';
 import DataTable from './DataTable';
-import { GraphTabContent } from './graph/GraphTabContent';
+import { GraphTabContent } from './GraphTabContent';
 
 const defaultProps = {
   options: {
