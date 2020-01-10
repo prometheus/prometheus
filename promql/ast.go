@@ -363,10 +363,15 @@ func (e *Call) PositionRange() PositionRange {
 func (e *EvalStmt) PositionRange() PositionRange {
 	return e.Expr.PositionRange()
 }
-func (Expressions) PositionRange() PositionRange {
-	return PositionRange{
-		Start: -1,
-		End:   -1,
+func (e Expressions) PositionRange() PositionRange {
+	if len(e) == 0 {
+		// Position undefined
+		return PositionRange{
+			Start: -1,
+			End:   -1,
+		}
+	} else {
+		return mergeRanges(e[0], e[len(e)-1])
 	}
 }
 func (*MatrixSelector) PositionRange() PositionRange {
