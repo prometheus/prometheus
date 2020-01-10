@@ -254,8 +254,10 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	m := newMetrics(o.Registerer)
 	router := route.New().
-		WithInstrumentation(m.instrumentHandler).
-		WithInstrumentation(setPathWithPrefix(""))
+		WithInstrumentation(combineInstrumentations(
+			m.instrumentHandler,
+			setPathWithPrefix(""),
+		))
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -550,8 +552,10 @@ func (h *Handler) Run(ctx context.Context) error {
 		level.Info(h.logger).Log("msg", "router prefix", "prefix", h.options.RoutePrefix)
 	}
 	av1 := route.New().
-		WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1")).
-		WithInstrumentation(setPathWithPrefix(apiPath + "/v1"))
+		WithInstrumentation(combineInstrumentations(
+			h.metrics.instrumentHandlerWithPrefix("/api/v1"),
+			setPathWithPrefix(apiPath+"/v1"),
+		))
 	h.apiV1.Register(av1)
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
@@ -1112,6 +1116,15 @@ type AlertByStateCount struct {
 	Inactive int32
 	Pending  int32
 	Firing   int32
+}
+
+func combineInstrumentations(fs ...func(handlerName string, handler http.HandlerFunc) http.HandlerFunc) func(string, http.HandlerFunc) http.HandlerFunc {
+	return func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+		for _, f := range fs {
+			handler = f(handlerName, handler)
+		}
+		return handler
+	}
 }
 
 func setPathWithPrefix(prefix string) func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
