@@ -3,7 +3,7 @@ import { Button, InputGroup, InputGroupAddon, InputGroupText, Input } from 'reac
 
 import Downshift, { ControllerStateAndHelpers } from 'downshift';
 import fuzzy from 'fuzzy';
-import SanitizeHTML from './components/SanitizeHTML';
+import sanitizeHTML from 'sanitize-html';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
@@ -88,7 +88,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                     <li className="autosuggest-dropdown-header">{title}</li>
                     {matches
                       .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
-                      .map(({ original, string }) => {
+                      .map(({ original, string: text }) => {
                         const itemProps = downshift.getItemProps({
                           key: original,
                           index,
@@ -98,9 +98,11 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                           },
                         });
                         return (
-                          <SanitizeHTML key={title} tag="li" {...itemProps} allowedTags={['strong']}>
-                            {string}
-                          </SanitizeHTML>
+                          <li
+                            key={title}
+                            {...itemProps}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHTML(text, { allowedTags: ['strong'] }) }}
+                          />
                         );
                       })}
                   </ul>,

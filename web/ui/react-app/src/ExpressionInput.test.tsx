@@ -5,7 +5,6 @@ import Downshift from 'downshift';
 import { Button, InputGroup, InputGroupAddon, Input } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
-import SanitizeHTML from './components/SanitizeHTML';
 
 const getKeyEvent = (key: string): React.KeyboardEvent<HTMLInputElement> =>
   ({
@@ -71,7 +70,6 @@ describe('ExpressionInput', () => {
       const downshift = expressionInput.find(Downshift);
       const input = downshift.find(Input);
       downshift.setState({ isOpen: false });
-      const onKeyDown = input.prop('onKeyDown');
       ['Home', 'End', 'ArrowUp', 'ArrowDown'].forEach(key => {
         const event = getKeyEvent(key);
         input.simulate('keydown', event);
@@ -230,7 +228,7 @@ describe('ExpressionInput', () => {
       setTimeout(() => {
         const ul = downshift.find('ul');
         expect(ul.prop('className')).toEqual('card list-group');
-        const items = ul.find(SanitizeHTML);
+        const items = ul.find('li');
         expect(items.map(item => item.text()).join(', ')).toEqual(
           'node_cpu_guest_seconds_total, node_cpu_seconds_total, instance:node_cpu_utilisation:rate1m'
         );
