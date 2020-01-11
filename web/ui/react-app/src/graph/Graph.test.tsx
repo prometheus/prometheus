@@ -104,7 +104,7 @@ describe('Graph', () => {
           chartData: [
             {
               color: 'rgb(237,194,64)',
-              data: [[1572128592000, 0]],
+              data: [[1572128592000, null]],
               index: 0,
               labels: {},
             },

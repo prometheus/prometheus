@@ -155,7 +155,7 @@ export const getColors = (data: { resultType: string; result: Array<{ metric: Me
   });
 };
 
-export const normalizeData = ({ stacked, queryParams, data }: GraphProps): GraphSeries[] => {
+export const normalizeData = ({ queryParams, data }: GraphProps): GraphSeries[] => {
   const colors = getColors(data);
   const { startTime, endTime, resolution } = queryParams!;
   return data.result.map(({ values, metric }, index) => {
@@ -167,13 +167,10 @@ export const normalizeData = ({ stacked, queryParams, data }: GraphProps): Graph
       // Allow for floating point inaccuracy.
       const currentValue = values[pos];
       if (values.length > pos && currentValue[0] < t + resolution / 100) {
-        data.push([currentValue[0] * 1000, parseValue(currentValue[1], stacked)]);
+        data.push([currentValue[0] * 1000, parseValue(currentValue[1])]);
         pos++;
       } else {
-        // TODO: Flot has problems displaying intermittent "null" values when stacked,
-        // resort to 0 now. In Grafana this works for some reason, figure out how they
-        // do it.
-        data.push([t * 1000, stacked ? 0 : null]);
+        data.push([t * 1000, null]);
       }
     }
 
@@ -186,16 +183,9 @@ export const normalizeData = ({ stacked, queryParams, data }: GraphProps): Graph
   });
 };
 
-export const parseValue = (value: string, stacked: boolean) => {
+export const parseValue = (value: string) => {
   const val = parseFloat(value);
-  if (isNaN(val)) {
-    // "+Inf", "-Inf", "+Inf" will be parsed into NaN by parseFloat(). They
-    // can't be graphed, so show them as gaps (null).
-
-    // TODO: Flot has problems displaying intermittent "null" values when stacked,
-    // resort to 0 now. In Grafana this works for some reason, figure out how they
-    // do it.
-    return stacked ? 0 : null;
-  }
-  return val;
+  // "+Inf", "-Inf", "+Inf" will be parsed into NaN by parseFloat(). They
+  // can't be graphed, so show them as gaps (null).
+  return isNaN(val) ? null : val;
 };
