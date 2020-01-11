@@ -25,7 +25,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -762,14 +762,40 @@ func TestUpdate(t *testing.T) {
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 }
 
+func formatRules(r *rulefmt.RuleGroups) rulefmt.RuleGroupsTest {
+	grps := r.Groups
+	tmp := []rulefmt.RuleGroupTest{}
+	for _, g := range grps {
+		rtmp := []rulefmt.Rule{}
+		for _, r := range g.Rules {
+			rtmp = append(rtmp, rulefmt.Rule{
+				Record:      r.Record.Value,
+				Alert:       r.Alert.Value,
+				Expr:        r.Expr.Value,
+				For:         r.For,
+				Labels:      r.Labels,
+				Annotations: r.Annotations,
+			})
+		}
+		tmp = append(tmp, rulefmt.RuleGroupTest{
+			Name:     g.Name,
+			Interval: g.Interval,
+			Rules:    rtmp,
+		})
+	}
+	return rulefmt.RuleGroupsTest{
+		Groups: tmp,
+	}
+}
+
 func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
-	bs, err := yaml.Marshal(rgs)
+	bs, err := yaml.Marshal(formatRules(rgs))
 	testutil.Ok(t, err)
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	testutil.Ok(t, err)
 	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil)
-	testutil.NotOk(t, err)
+	testutil.Ok(t, err)
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
 			t.Fail()
