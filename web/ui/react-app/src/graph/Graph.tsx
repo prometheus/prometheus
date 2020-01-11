@@ -10,6 +10,7 @@ import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
 require('../vendor/jquery.flot');
 require('../vendor/jquery.flot.stack');
 require('../vendor/jquery.flot.time');
+require('../vendor/jquery.flot.crosshair');
 require('jquery.flot.tooltip');
 
 export interface GraphProps {
