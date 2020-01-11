@@ -1,5 +1,5 @@
 import { formatValue, getColors, parseValue, getOptions } from './GraphHelpers';
-require('flot'); // need for $.colors
+require('../vendor/jquery.flot'); // need for $.colors
 
 describe('GraphHelpers', () => {
   describe('formatValue', () => {
