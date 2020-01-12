@@ -12,7 +12,7 @@ import {
   DropdownMenu,
   DropdownItem,
 } from 'reactstrap';
-import PathPrefixProps from '../types/PathPrefixProps';
+import PathPrefixProps from './types/PathPrefixProps';
 
 const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
   const [isOpen, setIsOpen] = useState(false);

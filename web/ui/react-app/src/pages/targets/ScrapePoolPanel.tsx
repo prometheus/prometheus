@@ -8,7 +8,7 @@ import TargetLabels from './TargetLabels';
 import { formatRelative, humanizeDuration } from '../../utils/timeFormat';
 import { now } from 'moment';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { ToggleMoreLess } from '../../common/ToggleMoreLess';
+import { ToggleMoreLess } from '../../components/ToggleMoreLess';
 
 interface PanelProps {
   scrapePool: string;

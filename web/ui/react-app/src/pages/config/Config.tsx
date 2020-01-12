@@ -5,7 +5,7 @@ import CopyToClipboard from 'react-copy-to-clipboard';
 import PathPrefixProps from '../../types/PathPrefixProps';
 
 import './Config.css';
-import { withStatusIndicator } from '../../common/withStatusIndicator';
+import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
 
 type YamlConfig = { yaml?: string };

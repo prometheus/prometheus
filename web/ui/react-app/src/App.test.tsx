@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { shallow } from 'enzyme';
 import App from './App';
-import Navigation from './common/Navbar';
+import Navigation from './Navbar';
 import { Container } from 'reactstrap';
 import { Router } from '@reach/router';
 import { Alerts, Config, Flags, Rules, Services, Status, Targets, TSDBStatus, PanelList } from './pages';

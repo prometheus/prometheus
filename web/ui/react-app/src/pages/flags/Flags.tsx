@@ -1,7 +1,7 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
-import { withStatusIndicator } from '../../common/withStatusIndicator';
+import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
 import PathPrefixProps from '../../types/PathPrefixProps';
 

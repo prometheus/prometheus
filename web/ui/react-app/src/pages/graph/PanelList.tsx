@@ -5,7 +5,7 @@ import { Alert, Button, Col, Row } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import { decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from '../../utils/urlParams';
-import Checkbox from '../../common/Checkbox';
+import Checkbox from '../../components/Checkbox';
 import PathPrefixProps from '../../types/PathPrefixProps';
 import { generateID } from '../../utils/func';
 
