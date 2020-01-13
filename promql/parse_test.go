@@ -347,7 +347,7 @@ var testExpr = []struct {
 					positionRange: PositionRange{Start: 4, End: 5},
 				},
 				RHS: &ParenExpr{
-					&BinaryExpr{
+					Expr: &BinaryExpr{
 						Op: MUL,
 						LHS: &NumberLiteral{
 							Val:           3,
@@ -358,6 +358,7 @@ var testExpr = []struct {
 							positionRange: PositionRange{Start: 9, End: 10},
 						},
 					},
+					positionRange: PositionRange{Start: 6, End: 11},
 				},
 			},
 		},
@@ -2035,6 +2036,10 @@ var testExpr = []struct {
 						},
 					},
 				},
+				positionRange: PositionRange{
+					Start: 0,
+					End:   21,
+				},
 			},
 			Range:  5 * time.Minute,
 			EndPos: 26,
@@ -2061,6 +2066,10 @@ var testExpr = []struct {
 							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 						},
 					},
+				},
+				positionRange: PositionRange{
+					Start: 0,
+					End:   21,
 				},
 			},
 			Range:  5 * time.Minute,
