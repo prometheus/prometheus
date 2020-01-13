@@ -155,15 +155,15 @@ type dbMetrics struct {
 	symbolTableSize      prometheus.GaugeFunc
 	reloads              prometheus.Counter
 	reloadsFailed        prometheus.Counter
-	compactionsTriggered prometheus.Counter
 	compactionsFailed    prometheus.Counter
-	timeRetentionCount   prometheus.Counter
+	compactionsTriggered prometheus.Counter
 	compactionsSkipped   prometheus.Counter
+	sizeRetentionCount   prometheus.Counter
+	timeRetentionCount   prometheus.Counter
 	startTime            prometheus.GaugeFunc
 	tombCleanTimer       prometheus.Histogram
 	blocksBytes          prometheus.Gauge
 	maxBytes             prometheus.Gauge
-	sizeRetentionCount   prometheus.Counter
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -248,14 +248,15 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.symbolTableSize,
 			m.reloads,
 			m.reloadsFailed,
-			m.timeRetentionCount,
-			m.compactionsTriggered,
 			m.compactionsFailed,
+			m.compactionsTriggered,
+			m.compactionsSkipped,
+			m.sizeRetentionCount,
+			m.timeRetentionCount,
 			m.startTime,
 			m.tombCleanTimer,
 			m.blocksBytes,
 			m.maxBytes,
-			m.sizeRetentionCount,
 		)
 	}
 	return m
