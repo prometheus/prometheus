@@ -41,9 +41,8 @@ type parser struct {
 	inject    ItemType
 	injecting bool
 
-	// Everytime a Item is lexed that could be the end or beginning
+	// Everytime a Item is lexed that could be the end
 	// of certain expressions it's end position is stored here
-	lastOpening Pos
 	lastClosing Pos
 
 	yyParser yyParserImpl
@@ -241,8 +240,6 @@ func (p *parser) Lex(lval *yySymType) int {
 	case EOF:
 		lval.item.Typ = EOF
 		p.InjectItem(0)
-	case LEFT_BRACE, LEFT_PAREN, LEFT_BRACKET:
-		p.lastClosing = lval.item.Pos
 	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET, DURATION:
 		p.lastClosing = lval.item.Pos + Pos(len(lval.item.Val))
 	}
@@ -307,37 +304,26 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node
 	return ret
 }
 
-func (p *parser) newVectorSelector(nameItem Item, labelMatchers []*labels.Matcher) *VectorSelector {
-	ret := &VectorSelector{
-		LabelMatchers: labelMatchers,
-		positionRange: PositionRange{
-			Start: nameItem.Pos,
-			End:   p.lastClosing,
-		},
-	}
+func (p *parser) assembleVectorSelector(vs *VectorSelector) {
+	if vs.Name != "" {
 
-	name := nameItem.Val
-
-	if name != "" {
-		ret.Name = name
-
-		for _, m := range ret.LabelMatchers {
+		for _, m := range vs.LabelMatchers {
 			if m.Name == labels.MetricName {
-				p.errorf("metric name must not be set twice: %q or %q", name, m.Value)
+				p.errorf("metric name must not be set twice: %q or %q", vs.Name, m.Value)
 			}
 		}
 
-		nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, name)
+		nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, vs.Name)
 		if err != nil {
 			panic(err) // Must not happen with labels.MatchEqual
 		}
-		ret.LabelMatchers = append(ret.LabelMatchers, nameMatcher)
+		vs.LabelMatchers = append(vs.LabelMatchers, nameMatcher)
 	}
 
 	// A Vector selector must contain at least one non-empty matcher to prevent
 	// implicit selection of all metrics (e.g. by a typo).
 	notEmpty := false
-	for _, lm := range ret.LabelMatchers {
+	for _, lm := range vs.LabelMatchers {
 		if !lm.Matches("") {
 			notEmpty = true
 			break
@@ -347,9 +333,7 @@ func (p *parser) newVectorSelector(nameItem Item, labelMatchers []*labels.Matche
 		p.errorf("vector selector must contain at least one non-empty matcher")
 	}
 
-	fmt.Printf("%+v\n", ret.PositionRange())
-
-	return ret
+	fmt.Printf("%+v\n", vs.PositionRange())
 }
 
 func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *AggregateExpr) {
@@ -602,16 +586,18 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 
 func (p *parser) addOffset(e Node, offset time.Duration) {
 	var offsetp *time.Duration
+	var endPosp *Pos
 
 	switch s := e.(type) {
 	case *VectorSelector:
 		offsetp = &s.Offset
+		endPosp = &s.positionRange.End
 	case *MatrixSelector:
 		offsetp = &s.VectorSelector.Offset
-		s.EndPos = p.lastClosing
+		endPosp = &s.EndPos
 	case *SubqueryExpr:
 		offsetp = &s.Offset
-		s.EndPos = p.lastClosing
+		endPosp = &s.EndPos
 	default:
 		p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
 		return
@@ -623,5 +609,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	} else {
 		*offsetp = offset
 	}
+
+	*endPosp = p.lastClosing
 
 }
