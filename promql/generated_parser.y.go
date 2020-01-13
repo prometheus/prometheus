@@ -1174,7 +1174,7 @@ yydefault:
 				nl.positionRange.Start = yyDollar[1].item.Pos
 				yyVAL.node = nl
 			} else {
-				yyVAL.node = &UnaryExpr{Op: yyDollar[1].item.Typ, Expr: yyDollar[2].node.(Expr)}
+				yyVAL.node = &UnaryExpr{Op: yyDollar[1].item.Typ, Expr: yyDollar[2].node.(Expr), startPos: yyDollar[1].item.Pos}
 			}
 		}
 	case 73:

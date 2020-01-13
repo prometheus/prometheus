@@ -428,7 +428,7 @@ unary_expr      :
                                 nl.positionRange.Start = $1.Pos
                                 $$ = nl
                         } else {
-                                $$ = &UnaryExpr{Op: $1.Typ, Expr: $2.(Expr)}
+                                $$ = &UnaryExpr{Op: $1.Typ, Expr: $2.(Expr), startPos: $1.Pos}
                         }
                         }
                 ;
