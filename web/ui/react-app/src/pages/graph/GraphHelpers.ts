@@ -1,6 +1,6 @@
 import $ from 'jquery';
 
-import { escapeHTML } from '../../utils/html';
+import { escapeHTML } from '../../utils';
 import { Metric } from '../../types/types';
 import { GraphProps, GraphSeries } from './Graph';
 

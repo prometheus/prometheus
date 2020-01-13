@@ -2,7 +2,7 @@ import React from 'react';
 import { Alert } from 'reactstrap';
 import Graph from './Graph';
 import { QueryParams } from '../../types/types';
-import { isPresent } from '../../utils/func';
+import { isPresent } from '../../utils';
 
 export const GraphTabContent = ({
   data,

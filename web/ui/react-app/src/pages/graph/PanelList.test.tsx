@@ -3,9 +3,7 @@ import { mount, shallow } from 'enzyme';
 import PanelList from './PanelList';
 import Checkbox from '../../components/Checkbox';
 import { Alert, Button } from 'reactstrap';
-import Panel, { PanelDefaultOptions } from './Panel';
-import { decodePanelOptionsFromQueryString } from '../../utils/urlParams';
-import ExpressionInput from './ExpressionInput';
+import Panel from './Panel';
 
 describe('PanelList', () => {
   it('renders a query history checkbox', () => {

@@ -4,7 +4,7 @@ import ReactResizeDetector from 'react-resize-detector';
 
 import { Legend } from './Legend';
 import { Metric, QueryParams } from '../../types/types';
-import { isPresent } from '../../utils/func';
+import { isPresent } from '../../utils';
 import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
 
 require('../vendor/flot/jquery.flot');

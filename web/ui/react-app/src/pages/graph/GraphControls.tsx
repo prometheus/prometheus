@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
 
 import TimeInput from './TimeInput';
-import { parseRange, formatRange } from '../../utils/timeFormat';
+import { parseRange, formatRange } from '../../utils';
 
 interface GraphControlsProps {
   range: number;
