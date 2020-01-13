@@ -28,7 +28,8 @@ import (
 	"strings"
 	"time"
 	"unsafe"
-
+	"encoding/json"
+	"io/ioutil"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
@@ -287,6 +288,11 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/alerts", wrap(api.alerts))
 	r.Get("/rules", wrap(api.rules))
+
+	r.Post("/alertRule", wrap(api.newAlert))
+	r.Put("/alertRule", wrap(api.modifyAlert))
+	r.Del("/alertRule", wrap(api.deleteAlert))
+	r.Post("/ruleList", wrap(api.ruleList))
 
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
@@ -918,6 +924,98 @@ type recordingRule struct {
 	Type string `json:"type"`
 }
 
+
+func (api *API) ruleList(r *http.Request) apiFuncResult {
+    body, err := ioutil.ReadAll(r.Body)
+    if err != nil {
+        level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+    }
+ 
+    var a rules.RuleJson
+    if err = json.Unmarshal(body, &a); err != nil {
+        level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+    }
+
+	result := rules.ListAlert(&a)
+
+	return apiFuncResult{result, nil, nil, nil}
+}
+
+func (api *API) deleteAlert(r *http.Request) apiFuncResult {
+    body, err := ioutil.ReadAll(r.Body)
+    if err != nil {
+        level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+    }
+ 
+    var a rules.RuleJson
+    if err = json.Unmarshal(body, &a); err != nil {
+        level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+    }
+
+	err = rules.DeleteAlert(&a)
+	if err == nil {
+		res := map[string]string{ "result":"","success":"true" }
+		return apiFuncResult{res, nil, nil, nil}
+	} else {
+        level.Error(api.logger).Log("msg", "error deal", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}		
+	}
+}
+
+
+func (api *API) modifyAlert(r *http.Request) apiFuncResult {
+
+    body, err := ioutil.ReadAll(r.Body)
+    if err != nil {
+        level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+    }
+ 
+    var a rules.RuleJson
+    if err = json.Unmarshal(body, &a); err != nil {
+        level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+    }
+
+	err = rules.ModifyAlert(&a)
+	if err == nil {
+		res := map[string]string{ "result":"","success":"true" }
+		return apiFuncResult{res, nil, nil, nil}
+	} else {
+        level.Error(api.logger).Log("msg", "error deal", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}		
+	}
+}
+
+
+
+func (api *API) newAlert(r *http.Request) apiFuncResult {
+
+    body, err := ioutil.ReadAll(r.Body)
+    if err != nil {
+        level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+    }
+ 
+    var a rules.RuleJson
+    if err = json.Unmarshal(body, &a); err != nil {
+        level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+    }
+
+	err = rules.AddRule(&a)
+	if err == nil {
+		res := map[string]string{ "result":"","success":"true" }
+		return apiFuncResult{res, nil, nil, nil}
+	} else {
+        level.Error(api.logger).Log("msg", "error deal", "err", err)
+        return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}		
+	}
+}
 func (api *API) rules(r *http.Request) apiFuncResult {
 	ruleGroups := api.rulesRetriever.RuleGroups()
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}

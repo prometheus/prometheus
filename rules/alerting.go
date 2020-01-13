@@ -48,6 +48,8 @@ const (
 	alertNameLabel = "alertname"
 	// AlertStateLabel is the label name indicating the state of an alert.
 	alertStateLabel = "alertstate"
+
+	STRFOR = "2018-04-23 12:24:51"
 )
 
 // AlertState denotes the state of an active alert.
@@ -92,6 +94,8 @@ type Alert struct {
 	ResolvedAt time.Time
 	LastSentAt time.Time
 	ValidUntil time.Time
+	Send bool
+	ResolvedSend bool
 }
 
 func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
@@ -113,6 +117,8 @@ type AlertingRule struct {
 	name string
 	// The vector expression from which to generate alerts.
 	vector promql.Expr
+
+	forDuration time.Duration
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
@@ -144,7 +150,7 @@ type AlertingRule struct {
 
 // NewAlertingRule constructs a new AlertingRule.
 func NewAlertingRule(
-	name string, vec promql.Expr, hold time.Duration,
+	name string, vec promql.Expr, forDuration time.Duration,hold time.Duration,
 	labels, annotations, externalLabels labels.Labels,
 	restored bool, logger log.Logger,
 ) *AlertingRule {
@@ -156,6 +162,7 @@ func NewAlertingRule(
 	return &AlertingRule{
 		name:           name,
 		vector:         vec,
+		forDuration:    forDuration,
 		holdDuration:   hold,
 		labels:         labels,
 		annotations:    annotations,
@@ -164,6 +171,27 @@ func NewAlertingRule(
 		active:         map[uint64]*Alert{},
 		logger:         logger,
 		restored:       restored,
+	}
+}
+
+func (r *AlertingRule) GetActive() map[uint64]*Alert {
+	tmp := map[uint64]*Alert{}
+	for k,_ := range r.active {
+		tmp[k] = r.active[k]
+	}
+	return tmp
+}
+
+func (r *AlertingRule) SetActive(tmp map[uint64]*Alert,name string)  {
+	r.active = tmp
+	for k,_ := range r.active {
+		v := r.active[k]
+		for index,_ := range v.Labels {
+			lv := v.Labels[index]
+			if lv.Name == labels.AlertName {
+				v.Labels[index].Value = name
+			}
+		}
 	}
 }
 
@@ -292,6 +320,168 @@ func (r *AlertingRule) SetRestored(restored bool) {
 // resolvedRetention is the duration for which a resolved alert instance
 // is kept in memory state and consequently repeatedly sent to the AlertManager.
 const resolvedRetention = 15 * time.Minute
+
+func (r *AlertingRule) EvalC(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
+	res, err := query(ctx, r.vector.String(), ts)
+	if err != nil {
+		r.SetHealth(HealthBad)
+		r.SetLastError(err)
+		return nil, err
+	}
+
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	// Create pending alerts for any new vector elements in the alert expression
+	// or update the expression value for existing elements.
+	resultFPs := map[uint64]struct{}{}
+
+	var vec promql.Vector
+
+	for _, smpl := range res {
+
+		// Provide the alert information to the template.
+		l := make(map[string]string, len(smpl.Metric))
+		for _, lbl := range smpl.Metric {
+			l[lbl.Name] = lbl.Value
+		}
+
+		tmplData := template.AlertTemplateData(l, r.externalLabels, smpl.V)
+		// Inject some convenience variables that are easier to remember for users
+		// who are not used to Go's templating system.
+		defs := []string{
+			"{{$labels := .Labels}}",
+			"{{$externalLabels := .ExternalLabels}}",
+			"{{$value := .Value}}",
+		}
+
+		expand := func(text string) string {
+			tmpl := template.NewTemplateExpander(
+				ctx,
+				strings.Join(append(defs, text), ""),
+				"__alert_"+r.Name(),
+				tmplData,
+				model.Time(timestamp.FromTime(ts)),
+				template.QueryFunc(query),
+				externalURL,
+			)
+			result, err := tmpl.Expand()
+			if err != nil {
+				result = fmt.Sprintf("<error expanding template: %s>", err)
+				level.Warn(r.logger).Log("msg", "Expanding alert template failed", "err", err, "data", tmplData)
+			}
+			return result
+		}
+
+		lb := labels.NewBuilder(smpl.Metric).Del(labels.MetricName)
+
+		for _, l := range r.labels {
+			lb.Set(l.Name, expand(l.Value))
+		}
+
+		annotations := make(labels.Labels, 0, len(r.annotations))
+		for _, a := range r.annotations {
+			annotations = append(annotations, labels.Label{Name: a.Name, Value: expand(a.Value)})
+		}
+
+		lbs := lb.Labels()
+		h := lbs.Hash()
+
+		lb.Set(labels.AlertName, r.Name())
+		lbs = lb.Labels()
+
+		resultFPs[h] = struct{}{}
+
+		// Check whether we already have alerting state for the identifying label set.
+		// Update the last value and annotations if so, create a new alert entry otherwise.
+		if alert, ok := r.active[h]; ok && alert.State != StateInactive {
+			alert.Value = smpl.V
+			alert.Annotations = annotations
+			continue
+		}
+
+		if alert, ok := r.active[h]; ok && alert.State == StateInactive {
+			alert.Value = smpl.V
+			alert.Annotations = annotations
+			alert.State = StatePending
+			alert.LastSentAt,_ = time.Parse( STRFOR, STRFOR)
+			alert.ActiveAt = ts
+			alert.ResolvedAt,_ = time.Parse( STRFOR, STRFOR)
+			alert.ResolvedSend = false
+			continue
+		}
+
+		r.active[h] = &Alert{
+			Labels:      lbs,
+			Annotations: annotations,
+			ActiveAt:    ts,
+			State:       StatePending,
+			Value:       smpl.V,
+		}
+	}
+
+	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
+	for fp, a := range r.active {
+
+		 _, ok := resultFPs[fp]
+
+		 if !ok {
+
+		 	if a.State == StateInactive || a.State == StatePending{
+				delete(r.active, fp)
+				continue
+			}
+
+			if a.State == StateFiring {
+				a.State = StateInactive
+				a.ResolvedAt = ts
+				a.Send = true
+				a.ResolvedSend = false
+			}
+		}
+
+		if a.State == StatePending {
+			if  ts.Sub(a.ActiveAt) >= r.forDuration {
+				a.State = StateFiring
+				a.FiredAt = ts
+			} else {
+				a.Send = false
+			}
+		}
+
+		if a.State == StateFiring  {
+			if ts.Sub(a.LastSentAt) < r.holdDuration {
+				a.Send = false
+				continue
+			} else {
+				a.Send = true
+				continue
+			}
+		}
+
+		if a.State == StateInactive && a.ResolvedSend == true{
+			a.Send = false
+			delete(r.active, fp)
+			continue
+		}
+
+		if a.State == StateInactive && a.ResolvedSend == false{
+			a.ResolvedSend = true
+			a.Send = true
+		}
+
+		if r.restored {
+			vec = append(vec, r.sample(a, ts))
+			vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.Unix())))
+		}
+	}
+
+	// We have already acquired the lock above hence using SetHealth and
+	// SetLastError will deadlock.
+	r.health = HealthGood
+	r.lastError = err
+	return vec, nil
+}
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
@@ -477,6 +667,18 @@ func (r *AlertingRule) ForEachActiveAlert(f func(*Alert)) {
 	for _, a := range r.active {
 		f(a)
 	}
+}
+
+func (r *AlertingRule) sendAlertsC(ctx context.Context, ts time.Time, resendDelay time.Duration, interval time.Duration, notifyFunc NotifyFunc) {
+	alerts := make([]*Alert, 0)
+	r.ForEachActiveAlert(func(alert *Alert) {
+		if alert.Send == true {
+			alert.LastSentAt = ts
+			anew := *alert
+			alerts = append(alerts, &anew)
+		}
+	})
+	notifyFunc(ctx, r.vector.String(), alerts...)
 }
 
 func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay time.Duration, interval time.Duration, notifyFunc NotifyFunc) {

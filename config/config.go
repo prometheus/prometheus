@@ -140,6 +140,8 @@ type Config struct {
 
 	// original is the input from which the config was parsed.
 	original string
+
+	MysqlRuleConfig MysqlRuleConfig `yaml:"rule_mysql_config"`
 }
 
 // resolveFilepaths joins all relative paths in a configuration
@@ -301,6 +303,14 @@ type GlobalConfig struct {
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
+}
+
+type MysqlRuleConfig struct {
+	Host string `yaml:"host"`
+	Port string `yaml:"port"`
+	Db   string `yaml:"db"`
+	User string `yaml:"user"`
+	Passwd string `yaml:"password"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

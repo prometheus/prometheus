@@ -455,6 +455,9 @@ func main() {
 				cfg.GlobalConfig.ExternalLabels,
 			)
 		},
+		func(cfg *config.Config) error {
+			return ruleManager.StartRule(cfg.MysqlRuleConfig,cfg.GlobalConfig.ExternalLabels)
+		},
 	}
 
 	prometheus.MustRegister(configSuccess)
@@ -820,10 +823,13 @@ func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 		var res []*notifier.Alert
 
 		for _, alert := range alerts {
+			ss := alert.State.String()
 			a := &notifier.Alert{
 				StartsAt:     alert.FiredAt,
 				Labels:       alert.Labels,
 				Annotations:  alert.Annotations,
+				Value:        alert.Value,
+				Status:        ss,
 				GeneratorURL: externalURL + strutil.TableLinkForExpression(expr),
 			}
 			if !alert.ResolvedAt.IsZero() {

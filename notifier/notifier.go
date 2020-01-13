@@ -67,6 +67,9 @@ type Alert struct {
 	// Extra key/value information which does not define alert identity.
 	Annotations labels.Labels `json:"annotations"`
 
+	Value float64
+
+	Status string
 	// The known time range for this alert. Both ends are optional.
 	StartsAt     time.Time `json:"startsAt,omitempty"`
 	EndsAt       time.Time `json:"endsAt,omitempty"`

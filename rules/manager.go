@@ -28,7 +28,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -192,6 +192,12 @@ type Rule interface {
 	Labels() labels.Labels
 	// eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
+	
+	EvalC(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
+
+	GetActive() map[uint64]*Alert
+	SetActive(map[uint64]*Alert, string)
+
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// SetLastErr sets the current error experienced by the rule.
@@ -779,6 +785,8 @@ type Manager struct {
 	restored bool
 
 	logger log.Logger
+
+	MysqlALert *MysqlALert
 }
 
 // Appendable returns an Appender.
@@ -826,6 +834,11 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	o.Metrics.iterationsMissed.Inc()
 	return m
+}
+
+func (m *Manager) StartRule(cfg config.MysqlRuleConfig, externalLabels  labels.Labels) error {
+	m.MysqlALert = NewMysqlALert(m.opts,cfg,m.MysqlALert,externalLabels)
+	return nil
 }
 
 // Run starts processing of the rule manager.
@@ -936,6 +949,7 @@ func (m *Manager) LoadGroups(
 					rules = append(rules, NewAlertingRule(
 						r.Alert,
 						expr,
+						time.Duration(r.For),
 						time.Duration(r.For),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),

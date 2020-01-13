@@ -71,6 +71,18 @@ func (rule *RecordingRule) Labels() labels.Labels {
 	return rule.labels
 }
 
+func (r *RecordingRule) GetActive() map[uint64]*Alert {
+	tmp := map[uint64]*Alert{}
+	return tmp
+}
+
+func (r *RecordingRule) SetActive(tmp map[uint64]*Alert,name string)  {
+}
+
+func (rule *RecordingRule) EvalC(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
+	return nil, nil
+}
+
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
 func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
 	vector, err := query(ctx, rule.vector.String(), ts)
