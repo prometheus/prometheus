@@ -233,6 +233,13 @@ eval instant at 5m count_values("version", version)
 	{version="7"} 2
 	{version="8"} 2
 
+
+eval instant at 5m count_values(((("version"))), version)
+       {version="6"} 5
+       {version="7"} 2
+       {version="8"} 2
+
+
 eval instant at 5m count_values without (instance)("version", version)
 	{job="api-server", group="production", version="6"} 3
 	{job="api-server", group="canary", version="8"} 2
