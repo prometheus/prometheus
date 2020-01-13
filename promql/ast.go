@@ -139,7 +139,8 @@ type NumberLiteral struct {
 // ParenExpr wraps an expression so it cannot be disassembled as a consequence
 // of operator precedence.
 type ParenExpr struct {
-	Expr Expr
+	Expr          Expr
+	positionRange PositionRange
 }
 
 // StringLiteral represents a string.
@@ -395,11 +396,8 @@ func (e *SubqueryExpr) PositionRange() PositionRange {
 func (e *NumberLiteral) PositionRange() PositionRange {
 	return e.positionRange
 }
-func (*ParenExpr) PositionRange() PositionRange {
-	return PositionRange{
-		Start: -1,
-		End:   -1,
-	}
+func (e *ParenExpr) PositionRange() PositionRange {
+	return e.positionRange
 }
 func (*StringLiteral) PositionRange() PositionRange {
 	return PositionRange{

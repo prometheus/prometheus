@@ -1096,7 +1096,7 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 //line promql/generated_parser.y:361
 		{
-			yyVAL.node = &ParenExpr{Expr: yyDollar[2].node.(Expr)}
+			yyVAL.node = &ParenExpr{Expr: yyDollar[2].node.(Expr), positionRange: mergeRanges(&yyDollar[1].item, &yyDollar[3].item)}
 		}
 	case 64:
 		yyDollar = yyS[yypt-3 : yypt+1]

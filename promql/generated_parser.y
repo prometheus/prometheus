@@ -358,7 +358,7 @@ function_call_args: function_call_args COMMA expr
  */
 
 paren_expr      : LEFT_PAREN expr RIGHT_PAREN
-                        { $$ = &ParenExpr{Expr: $2.(Expr)} }
+                        { $$ = &ParenExpr{Expr: $2.(Expr), positionRange: mergeRanges(&$1, &$3)} }
                 ;
 
 /*
