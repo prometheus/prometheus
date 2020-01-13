@@ -861,7 +861,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 			// Skip to next series.
 			d.Skip(l - (startLen - d.Len()) + crc32.Size)
 			if err := d.Err(); err != nil {
-				return nil
+				return err
 			}
 		}
 
