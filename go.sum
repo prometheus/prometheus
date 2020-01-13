@@ -333,8 +333,6 @@ github.com/simonpasquier/klog-gokit v0.1.0 h1:l3GGzgwlUF4vC1ApCOEsMsV+6nJPM01VoV
 github.com/simonpasquier/klog-gokit v0.1.0/go.mod h1:4lorAA0CyDox4KO34BrvNAJk8J2Ma/M9Q2BDkR38vSI=
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
-github.com/slrtbtfs/prometheus v2.5.0+incompatible h1:N6m9IoYp6m1dtEgEOuhul959egDQ/JXoPUWQHvCCeAk=
-github.com/slrtbtfs/prometheus v2.5.0+incompatible/go.mod h1:gMzPp53v0KKaVsG3p7sRKGryLVWaPuvkfzUB+heZjDo=
 github.com/soheilhy/cmux v0.1.4 h1:0HKaf1o97UwFjHH9o5XsHUOF+tqmdA7KEzXLpiyaw0E=
 github.com/soheilhy/cmux v0.1.4/go.mod h1:IM3LyeVVIOuxMH7sFAkER9+bJ4dT7Ms6E4xg4kGIyLM=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72 h1:qLC7fQah7D6K1B0ujays3HV9gkFtllcxhzImRR7ArPQ=
