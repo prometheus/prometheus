@@ -388,7 +388,7 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         $$ = &MatrixSelector{
                                 VectorSelector: vs,
                                 Range: $3,
-                                EndPos: yylex.(*parser).lastClosing,
+                                endPos: yylex.(*parser).lastClosing,
                         }
                         }
                 ;
@@ -400,7 +400,7 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                                 Range: $3,
                                 Step:  $5,
                                 
-                                EndPos: $6.Pos + 1,
+                                endPos: $6.Pos + 1,
                         }
                         }
                 | expr LEFT_BRACKET duration COLON duration error

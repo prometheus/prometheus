@@ -1124,7 +1124,7 @@ yydefault:
 			yyVAL.node = &MatrixSelector{
 				VectorSelector: vs,
 				Range:          yyDollar[3].duration,
-				EndPos:         yylex.(*parser).lastClosing,
+				endPos:         yylex.(*parser).lastClosing,
 			}
 		}
 	case 67:
@@ -1136,7 +1136,7 @@ yydefault:
 				Range: yyDollar[3].duration,
 				Step:  yyDollar[5].duration,
 
-				EndPos: yyDollar[6].item.Pos + 1,
+				endPos: yyDollar[6].item.Pos + 1,
 			}
 		}
 	case 68:

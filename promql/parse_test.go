@@ -1503,7 +1503,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:  5 * time.Second,
-			EndPos: 8,
+			endPos: 8,
 		},
 	}, {
 		input: "test[5m]",
@@ -1520,7 +1520,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:  5 * time.Minute,
-			EndPos: 8,
+			endPos: 8,
 		},
 	}, {
 		input: "test[5h] OFFSET 5m",
@@ -1537,7 +1537,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:  5 * time.Hour,
-			EndPos: 18,
+			endPos: 18,
 		},
 	}, {
 		input: "test[5d] OFFSET 10s",
@@ -1554,7 +1554,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:  5 * 24 * time.Hour,
-			EndPos: 19,
+			endPos: 19,
 		},
 	}, {
 		input: "test[5w] offset 2w",
@@ -1571,7 +1571,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:  5 * 7 * 24 * time.Hour,
-			EndPos: 18,
+			endPos: 18,
 		},
 	}, {
 		input: `test{a="b"}[5y] OFFSET 3d`,
@@ -1589,7 +1589,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:  5 * 365 * 24 * time.Hour,
-			EndPos: 25,
+			endPos: 25,
 		},
 	}, {
 		input:  `foo[5mm]`,
@@ -2022,7 +2022,7 @@ var testExpr = []struct {
 						},
 					},
 					Range:  5 * time.Minute,
-					EndPos: 20,
+					endPos: 20,
 				},
 			},
 			positionRange: PositionRange{
@@ -2189,7 +2189,7 @@ var testExpr = []struct {
 			},
 			Range:  10 * time.Minute,
 			Step:   6 * time.Second,
-			EndPos: 22,
+			endPos: 22,
 		},
 	}, {
 		input: `foo[10m:]`,
@@ -2205,7 +2205,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:  10 * time.Minute,
-			EndPos: 9,
+			endPos: 9,
 		},
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`,
@@ -2229,7 +2229,7 @@ var testExpr = []struct {
 									},
 								},
 								Range:  2 * time.Second,
-								EndPos: 37,
+								endPos: 37,
 							},
 						},
 						positionRange: PositionRange{
@@ -2240,7 +2240,7 @@ var testExpr = []struct {
 					Range: 5 * time.Minute,
 					Step:  5 * time.Second,
 
-					EndPos: 45,
+					endPos: 45,
 				},
 			},
 			positionRange: PositionRange{
@@ -2271,7 +2271,7 @@ var testExpr = []struct {
 										},
 									},
 									Range:  2 * time.Second,
-									EndPos: 37,
+									endPos: 37,
 								},
 							},
 							positionRange: PositionRange{
@@ -2280,7 +2280,7 @@ var testExpr = []struct {
 							},
 						},
 						Range:  5 * time.Minute,
-						EndPos: 43,
+						endPos: 43,
 					},
 				},
 				positionRange: PositionRange{
@@ -2290,7 +2290,7 @@ var testExpr = []struct {
 			},
 			Range:  4 * time.Minute,
 			Step:   3 * time.Second,
-			EndPos: 51,
+			endPos: 51,
 		},
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 4m)[4m:3s]`,
@@ -2315,7 +2315,7 @@ var testExpr = []struct {
 										},
 									},
 									Range:  2 * time.Second,
-									EndPos: 37,
+									endPos: 37,
 								},
 							},
 							positionRange: PositionRange{
@@ -2325,7 +2325,7 @@ var testExpr = []struct {
 						},
 						Range:  5 * time.Minute,
 						Offset: 4 * time.Minute,
-						EndPos: 53,
+						endPos: 53,
 					},
 				},
 				positionRange: PositionRange{
@@ -2335,7 +2335,7 @@ var testExpr = []struct {
 			},
 			Range:  4 * time.Minute,
 			Step:   3 * time.Second,
-			EndPos: 61,
+			endPos: 61,
 		},
 	}, {
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
@@ -2361,7 +2361,7 @@ var testExpr = []struct {
 			},
 			Range:  30 * time.Minute,
 			Step:   10 * time.Second,
-			EndPos: 75,
+			endPos: 75,
 		},
 	}, {
 		input: `some_metric OFFSET 1m [10m:5s]`,
@@ -2379,7 +2379,7 @@ var testExpr = []struct {
 			},
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
-			EndPos: 30,
+			endPos: 30,
 		},
 	}, {
 		input: `(foo + bar{nm="val"})[5m:]`,
@@ -2418,7 +2418,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:  5 * time.Minute,
-			EndPos: 26,
+			endPos: 26,
 		},
 	}, {
 		input: `(foo + bar{nm="val"})[5m:] offset 10m`,
@@ -2458,7 +2458,7 @@ var testExpr = []struct {
 			},
 			Range:  5 * time.Minute,
 			Offset: 10 * time.Minute,
-			EndPos: 37,
+			endPos: 37,
 		},
 	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",

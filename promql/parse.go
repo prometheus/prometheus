@@ -592,10 +592,10 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		endPosp = &s.positionRange.End
 	case *MatrixSelector:
 		offsetp = &s.VectorSelector.Offset
-		endPosp = &s.EndPos
+		endPosp = &s.endPos
 	case *SubqueryExpr:
 		offsetp = &s.Offset
-		endPosp = &s.EndPos
+		endPosp = &s.endPos
 	default:
 		p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
 		return
