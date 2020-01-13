@@ -332,8 +332,6 @@ func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	if !notEmpty {
 		p.errorf("vector selector must contain at least one non-empty matcher")
 	}
-
-	fmt.Printf("%+v\n", vs.PositionRange())
 }
 
 func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *AggregateExpr) {
