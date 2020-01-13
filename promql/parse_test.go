@@ -413,6 +413,18 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: " +some_metric",
+		expected: &UnaryExpr{
+			Op: ADD,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+				},
+			},
+			startPos: 1,
+		},
+	}, {
 		input:  "",
 		fail:   true,
 		errMsg: "no expression found in input",

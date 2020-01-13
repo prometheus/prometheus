@@ -154,6 +154,8 @@ type StringLiteral struct {
 type UnaryExpr struct {
 	Op   ItemType
 	Expr Expr
+
+	startPos Pos
 }
 
 // VectorSelector represents a Vector selection.
@@ -403,10 +405,10 @@ func (e *ParenExpr) PositionRange() PositionRange {
 func (e *StringLiteral) PositionRange() PositionRange {
 	return e.positionRange
 }
-func (*UnaryExpr) PositionRange() PositionRange {
+func (e *UnaryExpr) PositionRange() PositionRange {
 	return PositionRange{
-		Start: -1,
-		End:   -1,
+		Start: e.startPos,
+		End:   e.Expr.PositionRange().End,
 	}
 }
 func (*VectorSelector) PositionRange() PositionRange {
