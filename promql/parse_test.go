@@ -321,7 +321,8 @@ var testExpr = []struct {
 				positionRange: PositionRange{Start: 0, End: 2},
 			},
 			RHS: &BinaryExpr{
-				Op: MUL, LHS: &NumberLiteral{
+				Op: MUL,
+				LHS: &NumberLiteral{
 					Val:           -2,
 					positionRange: PositionRange{Start: 5, End: 7},
 				},
@@ -334,14 +335,30 @@ var testExpr = []struct {
 	}, {
 		input: "1 + 2/(3*1)",
 		expected: &BinaryExpr{
-			Op:  ADD,
-			LHS: &NumberLiteral{Val: 1},
+			Op: ADD,
+			LHS: &NumberLiteral{
+				Val:           1,
+				positionRange: PositionRange{Start: 0, End: 1},
+			},
 			RHS: &BinaryExpr{
-				Op:  DIV,
-				LHS: &NumberLiteral{Val: 2},
-				RHS: &ParenExpr{&BinaryExpr{
-					Op: MUL, LHS: &NumberLiteral{Val: 3}, RHS: &NumberLiteral{Val: 1},
-				}},
+				Op: DIV,
+				LHS: &NumberLiteral{
+					Val:           2,
+					positionRange: PositionRange{Start: 4, End: 5},
+				},
+				RHS: &ParenExpr{
+					&BinaryExpr{
+						Op: MUL,
+						LHS: &NumberLiteral{
+							Val:           3,
+							positionRange: PositionRange{Start: 7, End: 8},
+						},
+						RHS: &NumberLiteral{
+							Val:           1,
+							positionRange: PositionRange{Start: 9, End: 10},
+						},
+					},
+				},
 			},
 		},
 	}, {
@@ -349,12 +366,26 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op:         LSS,
 			ReturnBool: true,
-			LHS:        &NumberLiteral{Val: 1},
+			LHS: &NumberLiteral{
+				Val:           1,
+				positionRange: PositionRange{Start: 0, End: 1},
+			},
 			RHS: &BinaryExpr{
-				Op:  SUB,
-				LHS: &NumberLiteral{Val: 2},
+				Op: SUB,
+				LHS: &NumberLiteral{
+					Val:           2,
+					positionRange: PositionRange{Start: 9, End: 10},
+				},
 				RHS: &BinaryExpr{
-					Op: MUL, LHS: &NumberLiteral{Val: 1}, RHS: &NumberLiteral{Val: 2},
+					Op: MUL,
+					LHS: &NumberLiteral{
+						Val:           1,
+						positionRange: PositionRange{Start: 13, End: 14},
+					},
+					RHS: &NumberLiteral{
+						Val:           2,
+						positionRange: PositionRange{Start: 17, End: 18},
+					},
 				},
 			},
 		},
@@ -510,7 +541,10 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 			},
-			RHS: &NumberLiteral{Val: 1},
+			RHS: &NumberLiteral{
+				Val:           1,
+				positionRange: PositionRange{Start: 7, End: 8},
+			},
 		},
 	}, {
 		input: "foo == bool 1",
@@ -522,14 +556,20 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 			},
-			RHS:        &NumberLiteral{Val: 1},
+			RHS: &NumberLiteral{
+				Val:           1,
+				positionRange: PositionRange{Start: 12, End: 13},
+			},
 			ReturnBool: true,
 		},
 	}, {
 		input: "2.5 / bar",
 		expected: &BinaryExpr{
-			Op:  DIV,
-			LHS: &NumberLiteral{Val: 2.5},
+			Op: DIV,
+			LHS: &NumberLiteral{
+				Val:           2.5,
+				positionRange: PositionRange{Start: 0, End: 3},
+			},
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
@@ -1510,7 +1550,13 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 			},
-			Param: &NumberLiteral{Val: 5},
+			Param: &NumberLiteral{
+				Val: 5,
+				positionRange: PositionRange{
+					Start: 5,
+					End:   6,
+				},
+			},
 			positionRange: PositionRange{
 				Start: 0,
 				End:   20,
@@ -1685,7 +1731,13 @@ var testExpr = []struct {
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 				},
-				&NumberLiteral{Val: 5},
+				&NumberLiteral{
+					Val: 5,
+					positionRange: PositionRange{
+						Start: 19,
+						End:   20,
+					},
+				},
 			},
 			positionRange: PositionRange{
 				Start: 0,
