@@ -42,7 +42,7 @@ type parser struct {
 	injecting bool
 
 	// Everytime a Item is lexed that could be the end
-	// of certain expressions it's end position is stored here
+	// of certain expressions its end position is stored here.
 	lastClosing Pos
 
 	yyParser yyParserImpl
