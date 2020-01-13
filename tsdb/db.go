@@ -567,7 +567,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
-		level.Warn(db.logger).Log("msg", "encountered WAL read error, attempting repair", "err", err)
+		level.Warn(db.logger).Log("msg", "encountered WAL read error, attempting repair", "err", initErr)
 		if err := wlog.Repair(initErr); err != nil {
 			return nil, errors.Wrap(err, "repair corrupted WAL")
 		}
