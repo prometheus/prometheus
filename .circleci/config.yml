@@ -2,7 +2,7 @@
 version: 2.1
 
 orbs:
-  prometheus: prometheus/prometheus@0.3.0
+  prometheus: prometheus/prometheus@0.4.0
   go: circleci/go@0.2.0
   win: circleci/windows@2.3.0
 
