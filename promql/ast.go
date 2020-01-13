@@ -167,6 +167,8 @@ type VectorSelector struct {
 	// The unexpanded seriesSet populated at query preparation time.
 	unexpandedSeriesSet storage.SeriesSet
 	series              []storage.Series
+
+	positionRange PositionRange
 }
 
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
@@ -411,9 +413,6 @@ func (e *UnaryExpr) PositionRange() PositionRange {
 		End:   e.Expr.PositionRange().End,
 	}
 }
-func (*VectorSelector) PositionRange() PositionRange {
-	return PositionRange{
-		Start: -1,
-		End:   -1,
-	}
+func (e *VectorSelector) PositionRange() PositionRange {
+	return e.positionRange
 }

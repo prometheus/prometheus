@@ -438,11 +438,11 @@ unary_expr      :
  */
 
 vector_selector: metric_identifier label_matchers
-                        { $$ = yylex.(*parser).newVectorSelector($1.Val, $2) }
+                        { $$ = yylex.(*parser).newVectorSelector($1, $2) }
                 | metric_identifier 
-                        { $$ = yylex.(*parser).newVectorSelector($1.Val, nil) }
+                        { $$ = yylex.(*parser).newVectorSelector($1, nil) }
                 | label_matchers
-                        { $$ = yylex.(*parser).newVectorSelector("", $1) }
+                        { $$ = yylex.(*parser).newVectorSelector(Item{Pos: yylex.(*parser).lastOpening}, $1) }
                 ;
 
 label_matchers  : LEFT_BRACE label_match_list RIGHT_BRACE

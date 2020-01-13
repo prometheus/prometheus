@@ -1181,19 +1181,19 @@ yydefault:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/generated_parser.y:441
 		{
-			yyVAL.node = yylex.(*parser).newVectorSelector(yyDollar[1].item.Val, yyDollar[2].matchers)
+			yyVAL.node = yylex.(*parser).newVectorSelector(yyDollar[1].item, yyDollar[2].matchers)
 		}
 	case 74:
 		yyDollar = yyS[yypt-1 : yypt+1]
 //line promql/generated_parser.y:443
 		{
-			yyVAL.node = yylex.(*parser).newVectorSelector(yyDollar[1].item.Val, nil)
+			yyVAL.node = yylex.(*parser).newVectorSelector(yyDollar[1].item, nil)
 		}
 	case 75:
 		yyDollar = yyS[yypt-1 : yypt+1]
 //line promql/generated_parser.y:445
 		{
-			yyVAL.node = yylex.(*parser).newVectorSelector("", yyDollar[1].matchers)
+			yyVAL.node = yylex.(*parser).newVectorSelector(Item{Pos: yylex.(*parser).lastOpening}, yyDollar[1].matchers)
 		}
 	case 76:
 		yyDollar = yyS[yypt-3 : yypt+1]
