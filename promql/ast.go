@@ -125,6 +125,8 @@ type SubqueryExpr struct {
 	Range  time.Duration
 	Offset time.Duration
 	Step   time.Duration
+
+	EndPos Pos
 }
 
 // NumberLiteral represents a number.
@@ -384,10 +386,10 @@ func (e *MatrixSelector) PositionRange() PositionRange {
 		End:   e.EndPos,
 	}
 }
-func (*SubqueryExpr) PositionRange() PositionRange {
+func (e *SubqueryExpr) PositionRange() PositionRange {
 	return PositionRange{
-		Start: -1,
-		End:   -1,
+		Start: e.Expr.PositionRange().Start,
+		End:   e.EndPos,
 	}
 }
 func (e *NumberLiteral) PositionRange() PositionRange {
