@@ -1564,7 +1564,7 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: "count_values(\"value\", some_metric)",
+		input: `count_values("value", some_metric)`,
 		expected: &AggregateExpr{
 			Op: COUNT_VALUES,
 			Expr: &VectorSelector{
@@ -1573,7 +1573,13 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 			},
-			Param: &StringLiteral{"value"},
+			Param: &StringLiteral{
+				Val: "value",
+				positionRange: PositionRange{
+					Start: 13,
+					End:   20,
+				},
+			},
 			positionRange: PositionRange{
 				Start: 0,
 				End:   34,
@@ -1788,32 +1794,38 @@ var testExpr = []struct {
 	{
 		input: `"double-quoted string \" with escaped quote"`,
 		expected: &StringLiteral{
-			Val: "double-quoted string \" with escaped quote",
+			Val:           "double-quoted string \" with escaped quote",
+			positionRange: PositionRange{Start: 0, End: 44},
 		},
 	}, {
 		input: `'single-quoted string \' with escaped quote'`,
 		expected: &StringLiteral{
-			Val: "single-quoted string ' with escaped quote",
+			Val:           "single-quoted string ' with escaped quote",
+			positionRange: PositionRange{Start: 0, End: 44},
 		},
 	}, {
 		input: "`backtick-quoted string`",
 		expected: &StringLiteral{
-			Val: "backtick-quoted string",
+			Val:           "backtick-quoted string",
+			positionRange: PositionRange{Start: 0, End: 24},
 		},
 	}, {
 		input: `"\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺"`,
 		expected: &StringLiteral{
-			Val: "\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺",
+			Val:           "\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺",
+			positionRange: PositionRange{Start: 0, End: 62},
 		},
 	}, {
 		input: `'\a\b\f\n\r\t\v\\\' - \xFF\377\u1234\U00010111\U0001011111☺'`,
 		expected: &StringLiteral{
-			Val: "\a\b\f\n\r\t\v\\' - \xFF\377\u1234\U00010111\U0001011111☺",
+			Val:           "\a\b\f\n\r\t\v\\' - \xFF\377\u1234\U00010111\U0001011111☺",
+			positionRange: PositionRange{Start: 0, End: 62},
 		},
 	}, {
 		input: "`" + `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺` + "`",
 		expected: &StringLiteral{
-			Val: `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺`,
+			Val:           `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺`,
+			positionRange: PositionRange{Start: 0, End: 64},
 		},
 	}, {
 		input:  "`\\``",

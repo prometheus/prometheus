@@ -145,7 +145,8 @@ type ParenExpr struct {
 
 // StringLiteral represents a string.
 type StringLiteral struct {
-	Val string
+	Val           string
+	positionRange PositionRange
 }
 
 // UnaryExpr represents a unary operation on another expression.
@@ -399,11 +400,8 @@ func (e *NumberLiteral) PositionRange() PositionRange {
 func (e *ParenExpr) PositionRange() PositionRange {
 	return e.positionRange
 }
-func (*StringLiteral) PositionRange() PositionRange {
-	return PositionRange{
-		Start: -1,
-		End:   -1,
-	}
+func (e *StringLiteral) PositionRange() PositionRange {
+	return e.positionRange
 }
 func (*UnaryExpr) PositionRange() PositionRange {
 	return PositionRange{
