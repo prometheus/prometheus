@@ -84,7 +84,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	for _, rrConf := range conf.RemoteReadConfigs {
 		hash, err := toHash(rrConf)
 		if err != nil {
-			return nil
+			return err
 		}
 
 		// Don't allow duplicate remote read configs.
