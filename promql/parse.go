@@ -598,6 +598,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		s.EndPos = p.lastClosing
 	case *SubqueryExpr:
 		offsetp = &s.Offset
+		s.EndPos = p.lastClosing
 	default:
 		p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
 		return
