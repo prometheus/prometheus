@@ -399,6 +399,10 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
+				positionRange: PositionRange{
+					Start: 1,
+					End:   11,
+				},
 			},
 		},
 	}, {
@@ -410,6 +414,10 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
+				positionRange: PositionRange{
+					Start: 1,
+					End:   11,
+				},
 			},
 		},
 	}, {
@@ -420,6 +428,10 @@ var testExpr = []struct {
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+				},
+				positionRange: PositionRange{
+					Start: 2,
+					End:   12,
 				},
 			},
 			startPos: 1,

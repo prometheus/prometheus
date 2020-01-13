@@ -41,8 +41,9 @@ type parser struct {
 	inject    ItemType
 	injecting bool
 
-	// Everytime a Item is lexed that could be the end
-	// of certain Expression it's end position is stored here
+	// Everytime a Item is lexed that could be the end or beginning
+	// of certain expressions it's end position is stored here
+	lastOpening Pos
 	lastClosing Pos
 
 	yyParser yyParserImpl
@@ -240,6 +241,8 @@ func (p *parser) Lex(lval *yySymType) int {
 	case EOF:
 		lval.item.Typ = EOF
 		p.InjectItem(0)
+	case LEFT_BRACE, LEFT_PAREN, LEFT_BRACKET:
+		p.lastClosing = lval.item.Pos
 	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET, DURATION:
 		p.lastClosing = lval.item.Pos + Pos(len(lval.item.Val))
 	}
@@ -304,8 +307,16 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node
 	return ret
 }
 
-func (p *parser) newVectorSelector(name string, labelMatchers []*labels.Matcher) *VectorSelector {
-	ret := &VectorSelector{LabelMatchers: labelMatchers}
+func (p *parser) newVectorSelector(nameItem Item, labelMatchers []*labels.Matcher) *VectorSelector {
+	ret := &VectorSelector{
+		LabelMatchers: labelMatchers,
+		positionRange: PositionRange{
+			Start: nameItem.Pos,
+			End:   p.lastClosing,
+		},
+	}
+
+	name := nameItem.Val
 
 	if name != "" {
 		ret.Name = name
@@ -335,6 +346,8 @@ func (p *parser) newVectorSelector(name string, labelMatchers []*labels.Matcher)
 	if !notEmpty {
 		p.errorf("vector selector must contain at least one non-empty matcher")
 	}
+
+	fmt.Printf("%+v\n", ret.PositionRange())
 
 	return ret
 }
