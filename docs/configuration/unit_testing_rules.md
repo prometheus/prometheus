@@ -25,6 +25,11 @@ rule_files:
 # optional, default = 1m
 evaluation_interval: <duration>
 
+# optional, default = 0m
+# By default the time is mocked and starts from 0 timestamp.
+# Here you can add start time offset duration to shift the evaluation.
+start_time_offset: <duration>
+
 # The order in which group names are listed below will be the order of evaluation of
 # rule groups (at a given evaluation time). The order is guaranteed only for the groups mentioned below.
 # All the groups need not be mentioned below.

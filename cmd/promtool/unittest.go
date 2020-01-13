@@ -79,7 +79,7 @@ func ruleUnitTest(filename string) []error {
 	}
 
 	// Bounds for evaluating the rules.
-	mint := time.Unix(0, 0)
+	mint := time.Unix(0, 0).Add(unitTestInp.StartTimeOffset)
 	maxd := unitTestInp.maxEvalTime()
 	maxt := mint.Add(maxd)
 	// Rounding off to nearest Eval time (> maxt).
@@ -115,6 +115,7 @@ func ruleUnitTest(filename string) []error {
 type unitTestFile struct {
 	RuleFiles          []string      `yaml:"rule_files"`
 	EvaluationInterval time.Duration `yaml:"evaluation_interval,omitempty"`
+	StartTimeOffset    time.Duration `yaml:"start_time_offset,omitempty"`
 	GroupEvalOrder     []string      `yaml:"group_eval_order"`
 	Tests              []testGroup   `yaml:"tests"`
 }
