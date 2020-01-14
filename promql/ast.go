@@ -345,7 +345,7 @@ type PositionRange struct {
 }
 
 // mergeRanges is a helper function the PostionRanges of two Nodes
-// Note that the arguments must already be in the same order as they
+// Note that the arguments must be in the same order as they
 // occur in the input string.
 func mergeRanges(first Node, last Node) PositionRange {
 	return PositionRange{
@@ -354,8 +354,8 @@ func mergeRanges(first Node, last Node) PositionRange {
 	}
 }
 
-// Item implement the Node interface
-// This makes it possible to call mergeRanges on them
+// Item implements the Node interface.
+// This makes it possible to call mergeRanges on them.
 func (i *Item) PositionRange() PositionRange {
 	return PositionRange{
 		Start: i.Pos,
@@ -377,7 +377,7 @@ func (e *EvalStmt) PositionRange() PositionRange {
 }
 func (e Expressions) PositionRange() PositionRange {
 	if len(e) == 0 {
-		// Position undefined
+		// Position undefined.
 		return PositionRange{
 			Start: -1,
 			End:   -1,
