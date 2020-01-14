@@ -36,86 +36,86 @@ var testExpr = []struct {
 	{
 		input: "1",
 		expected: &NumberLiteral{
-			Val:           1,
-			positionRange: PositionRange{Start: 0, End: 1},
+			Val:      1,
+			PosRange: PositionRange{Start: 0, End: 1},
 		},
 	}, {
 		input: "+Inf",
 		expected: &NumberLiteral{
-			Val:           math.Inf(1),
-			positionRange: PositionRange{Start: 0, End: 4},
+			Val:      math.Inf(1),
+			PosRange: PositionRange{Start: 0, End: 4},
 		},
 	}, {
 		input: "-Inf",
 		expected: &NumberLiteral{
-			Val:           math.Inf(-1),
-			positionRange: PositionRange{Start: 0, End: 4},
+			Val:      math.Inf(-1),
+			PosRange: PositionRange{Start: 0, End: 4},
 		},
 	}, {
 		input: ".5",
 		expected: &NumberLiteral{
-			Val:           0.5,
-			positionRange: PositionRange{Start: 0, End: 2},
+			Val:      0.5,
+			PosRange: PositionRange{Start: 0, End: 2},
 		},
 	}, {
 		input: "5.",
 		expected: &NumberLiteral{
-			Val:           5,
-			positionRange: PositionRange{Start: 0, End: 2},
+			Val:      5,
+			PosRange: PositionRange{Start: 0, End: 2},
 		},
 	}, {
 		input: "123.4567",
 		expected: &NumberLiteral{
-			Val:           123.4567,
-			positionRange: PositionRange{Start: 0, End: 8},
+			Val:      123.4567,
+			PosRange: PositionRange{Start: 0, End: 8},
 		},
 	}, {
 		input: "5e-3",
 		expected: &NumberLiteral{
-			Val:           0.005,
-			positionRange: PositionRange{Start: 0, End: 4},
+			Val:      0.005,
+			PosRange: PositionRange{Start: 0, End: 4},
 		},
 	}, {
 		input: "5e3",
 		expected: &NumberLiteral{
-			Val:           5000,
-			positionRange: PositionRange{Start: 0, End: 3},
+			Val:      5000,
+			PosRange: PositionRange{Start: 0, End: 3},
 		},
 	}, {
 		input: "0xc",
 		expected: &NumberLiteral{
-			Val:           12,
-			positionRange: PositionRange{Start: 0, End: 3},
+			Val:      12,
+			PosRange: PositionRange{Start: 0, End: 3},
 		},
 	}, {
 		input: "0755",
 		expected: &NumberLiteral{
-			Val:           493,
-			positionRange: PositionRange{Start: 0, End: 4},
+			Val:      493,
+			PosRange: PositionRange{Start: 0, End: 4},
 		},
 	}, {
 		input: "+5.5e-3",
 		expected: &NumberLiteral{
-			Val:           0.0055,
-			positionRange: PositionRange{Start: 0, End: 7},
+			Val:      0.0055,
+			PosRange: PositionRange{Start: 0, End: 7},
 		},
 	}, {
 		input: "-0755",
 		expected: &NumberLiteral{
-			Val:           -493,
-			positionRange: PositionRange{Start: 0, End: 5},
+			Val:      -493,
+			PosRange: PositionRange{Start: 0, End: 5},
 		},
 	}, {
 		input: "1 + 1",
 		expected: &BinaryExpr{
 			Op: ADD,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 4, End: 5},
+				Val:      1,
+				PosRange: PositionRange{Start: 4, End: 5},
 			},
 		},
 	}, {
@@ -123,12 +123,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: SUB,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 4, End: 5},
+				Val:      1,
+				PosRange: PositionRange{Start: 4, End: 5},
 			},
 		},
 	}, {
@@ -136,12 +136,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: MUL,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 4, End: 5},
+				Val:      1,
+				PosRange: PositionRange{Start: 4, End: 5},
 			},
 		},
 	}, {
@@ -149,12 +149,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: MOD,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 4, End: 5},
+				Val:      1,
+				PosRange: PositionRange{Start: 4, End: 5},
 			},
 		},
 	}, {
@@ -162,12 +162,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: DIV,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 4, End: 5},
+				Val:      1,
+				PosRange: PositionRange{Start: 4, End: 5},
 			},
 		},
 	}, {
@@ -175,12 +175,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: EQL,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 10, End: 11},
+				Val:      1,
+				PosRange: PositionRange{Start: 10, End: 11},
 			},
 			ReturnBool: true,
 		},
@@ -189,12 +189,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: NEQ,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 10, End: 11},
+				Val:      1,
+				PosRange: PositionRange{Start: 10, End: 11},
 			},
 			ReturnBool: true,
 		},
@@ -203,12 +203,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: GTR,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 9, End: 10},
+				Val:      1,
+				PosRange: PositionRange{Start: 9, End: 10},
 			},
 			ReturnBool: true,
 		},
@@ -217,12 +217,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: GTE,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 10, End: 11},
+				Val:      1,
+				PosRange: PositionRange{Start: 10, End: 11},
 			},
 			ReturnBool: true,
 		},
@@ -231,12 +231,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: LSS,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 9, End: 10},
+				Val:      1,
+				PosRange: PositionRange{Start: 9, End: 10},
 			},
 			ReturnBool: true,
 		},
@@ -245,12 +245,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: LTE,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 10, End: 11},
+				Val:      1,
+				PosRange: PositionRange{Start: 10, End: 11},
 			},
 			ReturnBool: true,
 		},
@@ -261,12 +261,12 @@ var testExpr = []struct {
 			Expr: &BinaryExpr{
 				Op: POW,
 				LHS: &NumberLiteral{
-					Val:           1,
-					positionRange: PositionRange{Start: 1, End: 2},
+					Val:      1,
+					PosRange: PositionRange{Start: 1, End: 2},
 				},
 				RHS: &NumberLiteral{
-					Val:           2,
-					positionRange: PositionRange{Start: 3, End: 4},
+					Val:      2,
+					PosRange: PositionRange{Start: 3, End: 4},
 				},
 			},
 		},
@@ -275,12 +275,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: MUL,
 			LHS: &NumberLiteral{
-				Val:           -1,
-				positionRange: PositionRange{Start: 0, End: 2},
+				Val:      -1,
+				PosRange: PositionRange{Start: 0, End: 2},
 			},
 			RHS: &NumberLiteral{
-				Val:           2,
-				positionRange: PositionRange{Start: 3, End: 4},
+				Val:      2,
+				PosRange: PositionRange{Start: 3, End: 4},
 			},
 		},
 	}, {
@@ -288,12 +288,12 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: ADD,
 			LHS: &NumberLiteral{
-				Val:           -1,
-				positionRange: PositionRange{Start: 0, End: 2},
+				Val:      -1,
+				PosRange: PositionRange{Start: 0, End: 2},
 			},
 			RHS: &NumberLiteral{
-				Val:           2,
-				positionRange: PositionRange{Start: 3, End: 4},
+				Val:      2,
+				PosRange: PositionRange{Start: 3, End: 4},
 			},
 		},
 	}, {
@@ -303,12 +303,12 @@ var testExpr = []struct {
 			Expr: &BinaryExpr{
 				Op: POW,
 				LHS: &NumberLiteral{
-					Val:           1,
-					positionRange: PositionRange{Start: 1, End: 2},
+					Val:      1,
+					PosRange: PositionRange{Start: 1, End: 2},
 				},
 				RHS: &NumberLiteral{
-					Val:           -2,
-					positionRange: PositionRange{Start: 3, End: 5},
+					Val:      -2,
+					PosRange: PositionRange{Start: 3, End: 5},
 				},
 			},
 		},
@@ -317,18 +317,18 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: ADD,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 2},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 2},
 			},
 			RHS: &BinaryExpr{
 				Op: MUL,
 				LHS: &NumberLiteral{
-					Val:           -2,
-					positionRange: PositionRange{Start: 5, End: 7},
+					Val:      -2,
+					PosRange: PositionRange{Start: 5, End: 7},
 				},
 				RHS: &NumberLiteral{
-					Val:           1,
-					positionRange: PositionRange{Start: 10, End: 11},
+					Val:      1,
+					PosRange: PositionRange{Start: 10, End: 11},
 				},
 			},
 		},
@@ -337,28 +337,28 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: ADD,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &BinaryExpr{
 				Op: DIV,
 				LHS: &NumberLiteral{
-					Val:           2,
-					positionRange: PositionRange{Start: 4, End: 5},
+					Val:      2,
+					PosRange: PositionRange{Start: 4, End: 5},
 				},
 				RHS: &ParenExpr{
 					Expr: &BinaryExpr{
 						Op: MUL,
 						LHS: &NumberLiteral{
-							Val:           3,
-							positionRange: PositionRange{Start: 7, End: 8},
+							Val:      3,
+							PosRange: PositionRange{Start: 7, End: 8},
 						},
 						RHS: &NumberLiteral{
-							Val:           1,
-							positionRange: PositionRange{Start: 9, End: 10},
+							Val:      1,
+							PosRange: PositionRange{Start: 9, End: 10},
 						},
 					},
-					positionRange: PositionRange{Start: 6, End: 11},
+					PosRange: PositionRange{Start: 6, End: 11},
 				},
 			},
 		},
@@ -368,24 +368,24 @@ var testExpr = []struct {
 			Op:         LSS,
 			ReturnBool: true,
 			LHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 0, End: 1},
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
 			},
 			RHS: &BinaryExpr{
 				Op: SUB,
 				LHS: &NumberLiteral{
-					Val:           2,
-					positionRange: PositionRange{Start: 9, End: 10},
+					Val:      2,
+					PosRange: PositionRange{Start: 9, End: 10},
 				},
 				RHS: &BinaryExpr{
 					Op: MUL,
 					LHS: &NumberLiteral{
-						Val:           1,
-						positionRange: PositionRange{Start: 13, End: 14},
+						Val:      1,
+						PosRange: PositionRange{Start: 13, End: 14},
 					},
 					RHS: &NumberLiteral{
-						Val:           2,
-						positionRange: PositionRange{Start: 17, End: 18},
+						Val:      2,
+						PosRange: PositionRange{Start: 17, End: 18},
 					},
 				},
 			},
@@ -399,7 +399,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 1,
 					End:   12,
 				},
@@ -414,7 +414,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 1,
 					End:   12,
 				},
@@ -429,7 +429,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 2,
 					End:   13,
 				},
@@ -547,7 +547,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -557,7 +557,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 6,
 					End:   9,
 				},
@@ -573,14 +573,14 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 7, End: 8},
+				Val:      1,
+				PosRange: PositionRange{Start: 7, End: 8},
 			},
 		},
 	}, {
@@ -592,14 +592,14 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
 			},
 			RHS: &NumberLiteral{
-				Val:           1,
-				positionRange: PositionRange{Start: 12, End: 13},
+				Val:      1,
+				PosRange: PositionRange{Start: 12, End: 13},
 			},
 			ReturnBool: true,
 		},
@@ -608,15 +608,15 @@ var testExpr = []struct {
 		expected: &BinaryExpr{
 			Op: DIV,
 			LHS: &NumberLiteral{
-				Val:           2.5,
-				positionRange: PositionRange{Start: 0, End: 3},
+				Val:      2.5,
+				PosRange: PositionRange{Start: 0, End: 3},
 			},
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 6,
 					End:   9,
 				},
@@ -631,7 +631,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -641,7 +641,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 8,
 					End:   11,
 				},
@@ -657,7 +657,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -667,7 +667,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 7,
 					End:   10,
 				},
@@ -683,7 +683,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -693,7 +693,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 11,
 					End:   14,
 				},
@@ -712,7 +712,7 @@ var testExpr = []struct {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 0,
 						End:   3,
 					},
@@ -722,7 +722,7 @@ var testExpr = []struct {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 6,
 						End:   9,
 					},
@@ -736,7 +736,7 @@ var testExpr = []struct {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bla"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 13,
 						End:   16,
 					},
@@ -746,7 +746,7 @@ var testExpr = []struct {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "blub"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 21,
 						End:   25,
 					},
@@ -769,7 +769,7 @@ var testExpr = []struct {
 						LabelMatchers: []*labels.Matcher{
 							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 						},
-						positionRange: PositionRange{
+						PosRange: PositionRange{
 							Start: 0,
 							End:   3,
 						},
@@ -779,7 +779,7 @@ var testExpr = []struct {
 						LabelMatchers: []*labels.Matcher{
 							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 						},
-						positionRange: PositionRange{
+						PosRange: PositionRange{
 							Start: 8,
 							End:   11,
 						},
@@ -791,7 +791,7 @@ var testExpr = []struct {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "baz"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 19,
 						End:   22,
 					},
@@ -803,7 +803,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "qux"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 26,
 					End:   29,
 				},
@@ -820,7 +820,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -832,7 +832,7 @@ var testExpr = []struct {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bla"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 14,
 						End:   17,
 					},
@@ -842,7 +842,7 @@ var testExpr = []struct {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "blub"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 51,
 						End:   55,
 					},
@@ -869,7 +869,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -879,7 +879,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 20,
 					End:   23,
 				},
@@ -899,7 +899,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -909,7 +909,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 31,
 					End:   34,
 				},
@@ -929,7 +929,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -939,7 +939,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 22,
 					End:   25,
 				},
@@ -959,7 +959,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -969,7 +969,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 13,
 					End:   16,
 				},
@@ -989,7 +989,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -999,7 +999,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 28,
 					End:   31,
 				},
@@ -1018,7 +1018,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -1028,7 +1028,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 19,
 					End:   22,
 				},
@@ -1047,7 +1047,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -1057,7 +1057,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "baz"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 19,
 					End:   22,
 				},
@@ -1077,7 +1077,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -1087,7 +1087,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 36,
 					End:   39,
 				},
@@ -1108,7 +1108,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -1118,7 +1118,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 43,
 					End:   46,
 				},
@@ -1138,7 +1138,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -1148,7 +1148,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 42,
 					End:   45,
 				},
@@ -1168,7 +1168,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -1178,7 +1178,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 41,
 					End:   44,
 				},
@@ -1199,7 +1199,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
@@ -1209,7 +1209,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 47,
 					End:   50,
 				},
@@ -1306,7 +1306,7 @@ var testExpr = []struct {
 			LabelMatchers: []*labels.Matcher{
 				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   3,
 			},
@@ -1319,7 +1319,7 @@ var testExpr = []struct {
 			LabelMatchers: []*labels.Matcher{
 				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   13,
 			},
@@ -1333,7 +1333,7 @@ var testExpr = []struct {
 				mustLabelMatcher(labels.MatchEqual, "a", "bc"),
 				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo:bar"),
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   15,
 			},
@@ -1347,7 +1347,7 @@ var testExpr = []struct {
 				mustLabelMatcher(labels.MatchEqual, "NaN", "bc"),
 				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   13,
 			},
@@ -1361,7 +1361,7 @@ var testExpr = []struct {
 				mustLabelMatcher(labels.MatchEqual, "bar", "}"),
 				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   12,
 			},
@@ -1378,7 +1378,7 @@ var testExpr = []struct {
 				mustLabelMatcher(labels.MatchNotRegexp, "bar", "baz"),
 				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   48,
 			},
@@ -1395,7 +1395,7 @@ var testExpr = []struct {
 				mustLabelMatcher(labels.MatchNotRegexp, "bar", "baz"),
 				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   49,
 			},
@@ -1497,13 +1497,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   4,
 				},
 			},
 			Range:  5 * time.Second,
-			endPos: 8,
+			EndPos: 8,
 		},
 	}, {
 		input: "test[5m]",
@@ -1514,13 +1514,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   4,
 				},
 			},
 			Range:  5 * time.Minute,
-			endPos: 8,
+			EndPos: 8,
 		},
 	}, {
 		input: "test[5h] OFFSET 5m",
@@ -1531,13 +1531,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   4,
 				},
 			},
 			Range:  5 * time.Hour,
-			endPos: 18,
+			EndPos: 18,
 		},
 	}, {
 		input: "test[5d] OFFSET 10s",
@@ -1548,13 +1548,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   4,
 				},
 			},
 			Range:  5 * 24 * time.Hour,
-			endPos: 19,
+			EndPos: 19,
 		},
 	}, {
 		input: "test[5w] offset 2w",
@@ -1565,13 +1565,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   4,
 				},
 			},
 			Range:  5 * 7 * 24 * time.Hour,
-			endPos: 18,
+			EndPos: 18,
 		},
 	}, {
 		input: `test{a="b"}[5y] OFFSET 3d`,
@@ -1583,13 +1583,13 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, "a", "b"),
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   11,
 				},
 			},
 			Range:  5 * 365 * 24 * time.Hour,
-			endPos: 25,
+			EndPos: 25,
 		},
 	}, {
 		input:  `foo[5mm]`,
@@ -1649,13 +1649,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 13,
 					End:   24,
 				},
 			},
 			Grouping: []string{"foo"},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   25,
 			},
@@ -1669,13 +1669,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 13,
 					End:   24,
 				},
 			},
 			Grouping: []string{"foo"},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   25,
 			},
@@ -1689,13 +1689,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 13,
 					End:   24,
 				},
 			},
 			Grouping: []string{"foo"},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   25,
 			},
@@ -1710,13 +1710,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 19,
 					End:   30,
 				},
 			},
 			Grouping: []string{"foo"},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   31,
 			},
@@ -1731,13 +1731,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 5,
 					End:   16,
 				},
 			},
 			Grouping: []string{"foo"},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   31,
 			},
@@ -1751,12 +1751,12 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 7,
 					End:   18,
 				},
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   19,
 			},
@@ -1770,13 +1770,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 16,
 					End:   27,
 				},
 			},
 			Grouping: []string{"foo"},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   28,
 			},
@@ -1790,13 +1790,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 10,
 					End:   21,
 				},
 			},
 			Grouping: []string{},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   22,
 			},
@@ -1810,13 +1810,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 18,
 					End:   29,
 				},
 			},
 			Grouping: []string{"foo", "bar"},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   30,
 			},
@@ -1830,13 +1830,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 14,
 					End:   25,
 				},
 			},
 			Grouping: []string{"foo"},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   26,
 			},
@@ -1850,19 +1850,19 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 8,
 					End:   19,
 				},
 			},
 			Param: &NumberLiteral{
 				Val: 5,
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 5,
 					End:   6,
 				},
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   20,
 			},
@@ -1876,19 +1876,19 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 22,
 					End:   33,
 				},
 			},
 			Param: &StringLiteral{
 				Val: "value",
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 13,
 					End:   20,
 				},
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   34,
 			},
@@ -1904,13 +1904,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 53,
 					End:   64,
 				},
 			},
 			Grouping: []string{"and", "by", "avg", "count", "alert", "annotations"},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   65,
 			},
@@ -1978,7 +1978,7 @@ var testExpr = []struct {
 		expected: &Call{
 			Func: mustGetFunction("time"),
 			Args: Expressions{},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   6,
 			},
@@ -1994,13 +1994,13 @@ var testExpr = []struct {
 						mustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 6,
 						End:   29,
 					},
 				},
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   30,
 			},
@@ -2016,16 +2016,16 @@ var testExpr = []struct {
 						LabelMatchers: []*labels.Matcher{
 							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 						},
-						positionRange: PositionRange{
+						PosRange: PositionRange{
 							Start: 5,
 							End:   16,
 						},
 					},
 					Range:  5 * time.Minute,
-					endPos: 20,
+					EndPos: 20,
 				},
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   21,
 			},
@@ -2040,13 +2040,13 @@ var testExpr = []struct {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 6,
 						End:   17,
 					},
 				},
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   18,
 			},
@@ -2061,20 +2061,20 @@ var testExpr = []struct {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 6,
 						End:   17,
 					},
 				},
 				&NumberLiteral{
 					Val: 5,
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 19,
 						End:   20,
 					},
 				},
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   21,
 			},
@@ -2122,38 +2122,38 @@ var testExpr = []struct {
 	{
 		input: `"double-quoted string \" with escaped quote"`,
 		expected: &StringLiteral{
-			Val:           "double-quoted string \" with escaped quote",
-			positionRange: PositionRange{Start: 0, End: 44},
+			Val:      "double-quoted string \" with escaped quote",
+			PosRange: PositionRange{Start: 0, End: 44},
 		},
 	}, {
 		input: `'single-quoted string \' with escaped quote'`,
 		expected: &StringLiteral{
-			Val:           "single-quoted string ' with escaped quote",
-			positionRange: PositionRange{Start: 0, End: 44},
+			Val:      "single-quoted string ' with escaped quote",
+			PosRange: PositionRange{Start: 0, End: 44},
 		},
 	}, {
 		input: "`backtick-quoted string`",
 		expected: &StringLiteral{
-			Val:           "backtick-quoted string",
-			positionRange: PositionRange{Start: 0, End: 24},
+			Val:      "backtick-quoted string",
+			PosRange: PositionRange{Start: 0, End: 24},
 		},
 	}, {
 		input: `"\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺"`,
 		expected: &StringLiteral{
-			Val:           "\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺",
-			positionRange: PositionRange{Start: 0, End: 62},
+			Val:      "\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺",
+			PosRange: PositionRange{Start: 0, End: 62},
 		},
 	}, {
 		input: `'\a\b\f\n\r\t\v\\\' - \xFF\377\u1234\U00010111\U0001011111☺'`,
 		expected: &StringLiteral{
-			Val:           "\a\b\f\n\r\t\v\\' - \xFF\377\u1234\U00010111\U0001011111☺",
-			positionRange: PositionRange{Start: 0, End: 62},
+			Val:      "\a\b\f\n\r\t\v\\' - \xFF\377\u1234\U00010111\U0001011111☺",
+			PosRange: PositionRange{Start: 0, End: 62},
 		},
 	}, {
 		input: "`" + `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺` + "`",
 		expected: &StringLiteral{
-			Val:           `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺`,
-			positionRange: PositionRange{Start: 0, End: 64},
+			Val:      `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺`,
+			PosRange: PositionRange{Start: 0, End: 64},
 		},
 	}, {
 		input:  "`\\``",
@@ -2182,14 +2182,14 @@ var testExpr = []struct {
 					mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   14,
 				},
 			},
 			Range:  10 * time.Minute,
 			Step:   6 * time.Second,
-			endPos: 22,
+			EndPos: 22,
 		},
 	}, {
 		input: `foo[10m:]`,
@@ -2199,13 +2199,13 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   3,
 				},
 			},
 			Range:  10 * time.Minute,
-			endPos: 9,
+			EndPos: 9,
 		},
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`,
@@ -2223,16 +2223,16 @@ var testExpr = []struct {
 										mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 										mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 									},
-									positionRange: PositionRange{
+									PosRange: PositionRange{
 										Start: 19,
 										End:   33,
 									},
 								},
 								Range:  2 * time.Second,
-								endPos: 37,
+								EndPos: 37,
 							},
 						},
-						positionRange: PositionRange{
+						PosRange: PositionRange{
 							Start: 14,
 							End:   38,
 						},
@@ -2240,10 +2240,10 @@ var testExpr = []struct {
 					Range: 5 * time.Minute,
 					Step:  5 * time.Second,
 
-					endPos: 45,
+					EndPos: 45,
 				},
 			},
-			positionRange: PositionRange{
+			PosRange: PositionRange{
 				Start: 0,
 				End:   46,
 			},
@@ -2265,32 +2265,32 @@ var testExpr = []struct {
 											mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 											mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 										},
-										positionRange: PositionRange{
+										PosRange: PositionRange{
 											Start: 19,
 											End:   33,
 										},
 									},
 									Range:  2 * time.Second,
-									endPos: 37,
+									EndPos: 37,
 								},
 							},
-							positionRange: PositionRange{
+							PosRange: PositionRange{
 								Start: 14,
 								End:   38,
 							},
 						},
 						Range:  5 * time.Minute,
-						endPos: 43,
+						EndPos: 43,
 					},
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   44,
 				},
 			},
 			Range:  4 * time.Minute,
 			Step:   3 * time.Second,
-			endPos: 51,
+			EndPos: 51,
 		},
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 4m)[4m:3s]`,
@@ -2309,33 +2309,33 @@ var testExpr = []struct {
 											mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 											mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 										},
-										positionRange: PositionRange{
+										PosRange: PositionRange{
 											Start: 19,
 											End:   33,
 										},
 									},
 									Range:  2 * time.Second,
-									endPos: 37,
+									EndPos: 37,
 								},
 							},
-							positionRange: PositionRange{
+							PosRange: PositionRange{
 								Start: 14,
 								End:   38,
 							},
 						},
 						Range:  5 * time.Minute,
 						Offset: 4 * time.Minute,
-						endPos: 53,
+						EndPos: 53,
 					},
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   54,
 				},
 			},
 			Range:  4 * time.Minute,
 			Step:   3 * time.Second,
-			endPos: 61,
+			EndPos: 61,
 		},
 	}, {
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
@@ -2348,20 +2348,20 @@ var testExpr = []struct {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
-					positionRange: PositionRange{
+					PosRange: PositionRange{
 						Start: 53,
 						End:   64,
 					},
 				},
 				Grouping: []string{"and", "by", "avg", "count", "alert", "annotations"},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   65,
 				},
 			},
 			Range:  30 * time.Minute,
 			Step:   10 * time.Second,
-			endPos: 75,
+			EndPos: 75,
 		},
 	}, {
 		input: `some_metric OFFSET 1m [10m:5s]`,
@@ -2371,7 +2371,7 @@ var testExpr = []struct {
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   21,
 				},
@@ -2379,7 +2379,7 @@ var testExpr = []struct {
 			},
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
-			endPos: 30,
+			EndPos: 30,
 		},
 	}, {
 		input: `(foo + bar{nm="val"})[5m:]`,
@@ -2395,7 +2395,7 @@ var testExpr = []struct {
 						LabelMatchers: []*labels.Matcher{
 							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 						},
-						positionRange: PositionRange{
+						PosRange: PositionRange{
 							Start: 1,
 							End:   4,
 						},
@@ -2406,19 +2406,19 @@ var testExpr = []struct {
 							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
 							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 						},
-						positionRange: PositionRange{
+						PosRange: PositionRange{
 							Start: 7,
 							End:   20,
 						},
 					},
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   21,
 				},
 			},
 			Range:  5 * time.Minute,
-			endPos: 26,
+			EndPos: 26,
 		},
 	}, {
 		input: `(foo + bar{nm="val"})[5m:] offset 10m`,
@@ -2434,7 +2434,7 @@ var testExpr = []struct {
 						LabelMatchers: []*labels.Matcher{
 							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 						},
-						positionRange: PositionRange{
+						PosRange: PositionRange{
 							Start: 1,
 							End:   4,
 						},
@@ -2445,20 +2445,20 @@ var testExpr = []struct {
 							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
 							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 						},
-						positionRange: PositionRange{
+						PosRange: PositionRange{
 							Start: 7,
 							End:   20,
 						},
 					},
 				},
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: 0,
 					End:   21,
 				},
 			},
 			Range:  5 * time.Minute,
 			Offset: 10 * time.Minute,
-			endPos: 37,
+			EndPos: 37,
 		},
 	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",

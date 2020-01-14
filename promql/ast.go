@@ -82,12 +82,12 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
-	Op            ItemType // The used aggregation operation.
-	Expr          Expr     // The Vector expression over which is aggregated.
-	Param         Expr     // Parameter used by some aggregators.
-	Grouping      []string // The labels by which to group the Vector.
-	Without       bool     // Whether to drop the given labels rather than keep them.
-	positionRange PositionRange
+	Op       ItemType // The used aggregation operation.
+	Expr     Expr     // The Vector expression over which is aggregated.
+	Param    Expr     // Parameter used by some aggregators.
+	Grouping []string // The labels by which to group the Vector.
+	Without  bool     // Whether to drop the given labels rather than keep them.
+	PosRange PositionRange
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -108,7 +108,7 @@ type Call struct {
 	Func *Function   // The function that was called.
 	Args Expressions // Arguments used in the call.
 
-	positionRange PositionRange
+	PosRange PositionRange
 }
 
 // MatrixSelector represents a Matrix selection.
@@ -116,7 +116,7 @@ type MatrixSelector struct {
 	VectorSelector *VectorSelector
 	Range          time.Duration
 
-	endPos Pos
+	EndPos Pos
 }
 
 // SubqueryExpr represents a subquery.
@@ -126,27 +126,27 @@ type SubqueryExpr struct {
 	Offset time.Duration
 	Step   time.Duration
 
-	endPos Pos
+	EndPos Pos
 }
 
 // NumberLiteral represents a number.
 type NumberLiteral struct {
 	Val float64
 
-	positionRange PositionRange
+	PosRange PositionRange
 }
 
 // ParenExpr wraps an expression so it cannot be disassembled as a consequence
 // of operator precedence.
 type ParenExpr struct {
-	Expr          Expr
-	positionRange PositionRange
+	Expr     Expr
+	PosRange PositionRange
 }
 
 // StringLiteral represents a string.
 type StringLiteral struct {
-	Val           string
-	positionRange PositionRange
+	Val      string
+	PosRange PositionRange
 }
 
 // UnaryExpr represents a unary operation on another expression.
@@ -168,7 +168,7 @@ type VectorSelector struct {
 	unexpandedSeriesSet storage.SeriesSet
 	series              []storage.Series
 
-	positionRange PositionRange
+	PosRange PositionRange
 }
 
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
@@ -364,13 +364,13 @@ func (i *Item) PositionRange() PositionRange {
 }
 
 func (e *AggregateExpr) PositionRange() PositionRange {
-	return e.positionRange
+	return e.PosRange
 }
 func (e *BinaryExpr) PositionRange() PositionRange {
 	return mergeRanges(e.LHS, e.RHS)
 }
 func (e *Call) PositionRange() PositionRange {
-	return e.positionRange
+	return e.PosRange
 }
 func (e *EvalStmt) PositionRange() PositionRange {
 	return e.Expr.PositionRange()
@@ -389,23 +389,23 @@ func (e Expressions) PositionRange() PositionRange {
 func (e *MatrixSelector) PositionRange() PositionRange {
 	return PositionRange{
 		Start: e.VectorSelector.PositionRange().Start,
-		End:   e.endPos,
+		End:   e.EndPos,
 	}
 }
 func (e *SubqueryExpr) PositionRange() PositionRange {
 	return PositionRange{
 		Start: e.Expr.PositionRange().Start,
-		End:   e.endPos,
+		End:   e.EndPos,
 	}
 }
 func (e *NumberLiteral) PositionRange() PositionRange {
-	return e.positionRange
+	return e.PosRange
 }
 func (e *ParenExpr) PositionRange() PositionRange {
-	return e.positionRange
+	return e.PosRange
 }
 func (e *StringLiteral) PositionRange() PositionRange {
-	return e.positionRange
+	return e.PosRange
 }
 func (e *UnaryExpr) PositionRange() PositionRange {
 	return PositionRange{
@@ -414,5 +414,5 @@ func (e *UnaryExpr) PositionRange() PositionRange {
 	}
 }
 func (e *VectorSelector) PositionRange() PositionRange {
-	return e.positionRange
+	return e.PosRange
 }

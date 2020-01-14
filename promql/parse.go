@@ -365,7 +365,7 @@ func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *Aggre
 
 	ret.Expr = arguments[desiredArgs-1]
 
-	ret.positionRange = PositionRange{
+	ret.PosRange = PositionRange{
 		Start: op.Pos,
 		End:   p.lastClosing,
 	}
@@ -589,13 +589,13 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	switch s := e.(type) {
 	case *VectorSelector:
 		offsetp = &s.Offset
-		endPosp = &s.positionRange.End
+		endPosp = &s.PosRange.End
 	case *MatrixSelector:
 		offsetp = &s.VectorSelector.Offset
-		endPosp = &s.endPos
+		endPosp = &s.EndPos
 	case *SubqueryExpr:
 		offsetp = &s.Offset
-		endPosp = &s.endPos
+		endPosp = &s.EndPos
 	default:
 		p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
 		return

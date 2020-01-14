@@ -331,7 +331,7 @@ function_call   : IDENTIFIER function_call_body
                         $$ = &Call{
                                 Func: fn,
                                 Args: $2.(Expressions),
-                                positionRange: PositionRange{
+                                PosRange: PositionRange{
                                         Start: $1.Pos,
                                         End:   yylex.(*parser).lastClosing,
                                 },
@@ -356,7 +356,7 @@ function_call_args: function_call_args COMMA expr
  */
 
 paren_expr      : LEFT_PAREN expr RIGHT_PAREN
-                        { $$ = &ParenExpr{Expr: $2.(Expr), positionRange: mergeRanges(&$1, &$3)} }
+                        { $$ = &ParenExpr{Expr: $2.(Expr), PosRange: mergeRanges(&$1, &$3)} }
                 ;
 
 /*
@@ -388,7 +388,7 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         $$ = &MatrixSelector{
                                 VectorSelector: vs,
                                 Range: $3,
-                                endPos: yylex.(*parser).lastClosing,
+                                EndPos: yylex.(*parser).lastClosing,
                         }
                         }
                 ;
@@ -400,7 +400,7 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                                 Range: $3,
                                 Step:  $5,
                                 
-                                endPos: $6.Pos + 1,
+                                EndPos: $6.Pos + 1,
                         }
                         }
                 | expr LEFT_BRACKET duration COLON duration error
@@ -425,7 +425,7 @@ unary_expr      :
                                 if $1.Typ == SUB {
                                         nl.Val *= -1
                                 }
-                                nl.positionRange.Start = $1.Pos
+                                nl.PosRange.Start = $1.Pos
                                 $$ = nl
                         } else {
                                 $$ = &UnaryExpr{Op: $1.Typ, Expr: $2.(Expr), startPos: $1.Pos}
@@ -440,7 +440,7 @@ unary_expr      :
 vector_selector: metric_identifier label_matchers
                         { 
                         vs := $2.(*VectorSelector)
-                        vs.positionRange = mergeRanges(&$1, vs) 
+                        vs.PosRange = mergeRanges(&$1, vs) 
                         vs.Name = $1.Val
                         yylex.(*parser).assembleVectorSelector(vs)
                         $$ = vs
@@ -450,7 +450,7 @@ vector_selector: metric_identifier label_matchers
                         vs := &VectorSelector{
                                 Name: $1.Val,
                                 LabelMatchers: []*labels.Matcher{},
-                                positionRange: $1.PositionRange(),
+                                PosRange: $1.PositionRange(),
                         }
                         yylex.(*parser).assembleVectorSelector(vs)
                         $$ = vs
@@ -467,21 +467,21 @@ label_matchers  : LEFT_BRACE label_match_list RIGHT_BRACE
                         {
                         $$ = &VectorSelector{
                                 LabelMatchers: $2,
-                                positionRange: mergeRanges(&$1, &$3),
+                                PosRange: mergeRanges(&$1, &$3),
                         }
                         }
                 | LEFT_BRACE label_match_list COMMA RIGHT_BRACE
                         {
                         $$ = &VectorSelector{
                                 LabelMatchers: $2,
-                                positionRange: mergeRanges(&$1, &$4),
+                                PosRange: mergeRanges(&$1, &$4),
                         }
                         }
                 | LEFT_BRACE RIGHT_BRACE
                         {
                         $$ = &VectorSelector{
                                 LabelMatchers: []*labels.Matcher{},
-                                positionRange: mergeRanges(&$1, &$2),
+                                PosRange: mergeRanges(&$1, &$2),
                         }
                         }
                 ;
@@ -632,7 +632,7 @@ number_literal  : NUMBER
                         {
                         $$ = &NumberLiteral{
                                 Val:           yylex.(*parser).number($1.Val),
-                                positionRange: $1.PositionRange(),
+                                PosRange: $1.PositionRange(),
                         }
                         }
                 ;
@@ -668,7 +668,7 @@ string_literal  : STRING
                         {
                         $$ = &StringLiteral{
                                 Val: yylex.(*parser).unquoteString($1.Val),
-                                positionRange: $1.PositionRange(),
+                                PosRange: $1.PositionRange(),
                         }
                         }
                         ;

@@ -1061,7 +1061,7 @@ yydefault:
 			yyVAL.node = &Call{
 				Func: fn,
 				Args: yyDollar[2].node.(Expressions),
-				positionRange: PositionRange{
+				PosRange: PositionRange{
 					Start: yyDollar[1].item.Pos,
 					End:   yylex.(*parser).lastClosing,
 				},
@@ -1095,7 +1095,7 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 //line promql/generated_parser.y:359
 		{
-			yyVAL.node = &ParenExpr{Expr: yyDollar[2].node.(Expr), positionRange: mergeRanges(&yyDollar[1].item, &yyDollar[3].item)}
+			yyVAL.node = &ParenExpr{Expr: yyDollar[2].node.(Expr), PosRange: mergeRanges(&yyDollar[1].item, &yyDollar[3].item)}
 		}
 	case 64:
 		yyDollar = yyS[yypt-3 : yypt+1]
@@ -1124,7 +1124,7 @@ yydefault:
 			yyVAL.node = &MatrixSelector{
 				VectorSelector: vs,
 				Range:          yyDollar[3].duration,
-				endPos:         yylex.(*parser).lastClosing,
+				EndPos:         yylex.(*parser).lastClosing,
 			}
 		}
 	case 67:
@@ -1136,7 +1136,7 @@ yydefault:
 				Range: yyDollar[3].duration,
 				Step:  yyDollar[5].duration,
 
-				endPos: yyDollar[6].item.Pos + 1,
+				EndPos: yyDollar[6].item.Pos + 1,
 			}
 		}
 	case 68:
@@ -1171,7 +1171,7 @@ yydefault:
 				if yyDollar[1].item.Typ == SUB {
 					nl.Val *= -1
 				}
-				nl.positionRange.Start = yyDollar[1].item.Pos
+				nl.PosRange.Start = yyDollar[1].item.Pos
 				yyVAL.node = nl
 			} else {
 				yyVAL.node = &UnaryExpr{Op: yyDollar[1].item.Typ, Expr: yyDollar[2].node.(Expr), startPos: yyDollar[1].item.Pos}
@@ -1182,7 +1182,7 @@ yydefault:
 //line promql/generated_parser.y:441
 		{
 			vs := yyDollar[2].node.(*VectorSelector)
-			vs.positionRange = mergeRanges(&yyDollar[1].item, vs)
+			vs.PosRange = mergeRanges(&yyDollar[1].item, vs)
 			vs.Name = yyDollar[1].item.Val
 			yylex.(*parser).assembleVectorSelector(vs)
 			yyVAL.node = vs
@@ -1194,7 +1194,7 @@ yydefault:
 			vs := &VectorSelector{
 				Name:          yyDollar[1].item.Val,
 				LabelMatchers: []*labels.Matcher{},
-				positionRange: yyDollar[1].item.PositionRange(),
+				PosRange:      yyDollar[1].item.PositionRange(),
 			}
 			yylex.(*parser).assembleVectorSelector(vs)
 			yyVAL.node = vs
@@ -1213,7 +1213,7 @@ yydefault:
 		{
 			yyVAL.node = &VectorSelector{
 				LabelMatchers: yyDollar[2].matchers,
-				positionRange: mergeRanges(&yyDollar[1].item, &yyDollar[3].item),
+				PosRange:      mergeRanges(&yyDollar[1].item, &yyDollar[3].item),
 			}
 		}
 	case 77:
@@ -1222,7 +1222,7 @@ yydefault:
 		{
 			yyVAL.node = &VectorSelector{
 				LabelMatchers: yyDollar[2].matchers,
-				positionRange: mergeRanges(&yyDollar[1].item, &yyDollar[4].item),
+				PosRange:      mergeRanges(&yyDollar[1].item, &yyDollar[4].item),
 			}
 		}
 	case 78:
@@ -1231,7 +1231,7 @@ yydefault:
 		{
 			yyVAL.node = &VectorSelector{
 				LabelMatchers: []*labels.Matcher{},
-				positionRange: mergeRanges(&yyDollar[1].item, &yyDollar[2].item),
+				PosRange:      mergeRanges(&yyDollar[1].item, &yyDollar[2].item),
 			}
 		}
 	case 79:
@@ -1442,8 +1442,8 @@ yydefault:
 //line promql/generated_parser.y:632
 		{
 			yyVAL.node = &NumberLiteral{
-				Val:           yylex.(*parser).number(yyDollar[1].item.Val),
-				positionRange: yyDollar[1].item.PositionRange(),
+				Val:      yylex.(*parser).number(yyDollar[1].item.Val),
+				PosRange: yyDollar[1].item.PositionRange(),
 			}
 		}
 	case 155:
@@ -1489,8 +1489,8 @@ yydefault:
 //line promql/generated_parser.y:668
 		{
 			yyVAL.node = &StringLiteral{
-				Val:           yylex.(*parser).unquoteString(yyDollar[1].item.Val),
-				positionRange: yyDollar[1].item.PositionRange(),
+				Val:      yylex.(*parser).unquoteString(yyDollar[1].item.Val),
+				PosRange: yyDollar[1].item.PositionRange(),
 			}
 		}
 	case 161:
