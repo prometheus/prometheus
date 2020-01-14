@@ -1,10 +1,9 @@
 import * as React from 'react';
-import { mount, shallow, ReactWrapper } from 'enzyme';
+import { mount, ReactWrapper } from 'enzyme';
 import { act } from 'react-dom/test-utils';
-import { Alert, Table } from 'reactstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner } from '@fortawesome/free-solid-svg-icons';
-import { TSDBStatus } from '..';
+import { Table } from 'reactstrap';
+
+import TSDBStatus from './TSDBStatus';
 import { TSDBMap } from './TSDBStatus';
 
 const fakeTSDBStatusResponse: {
@@ -47,33 +46,6 @@ const fakeTSDBStatusResponse: {
 describe('TSDB Stats', () => {
   beforeEach(() => {
     fetchMock.resetMocks();
-  });
-
-  it('before data is returned', () => {
-    const tsdbStatus = shallow(<TSDBStatus />);
-    const icon = tsdbStatus.find(FontAwesomeIcon);
-    expect(icon.prop('icon')).toEqual(faSpinner);
-    expect(icon.prop('spin')).toBeTruthy();
-  });
-
-  describe('when an error is returned', () => {
-    it('displays an alert', async () => {
-      const mock = fetchMock.mockReject(new Error('error loading tsdb status'));
-
-      let page: any;
-      await act(async () => {
-        page = mount(<TSDBStatus pathPrefix="/path/prefix" />);
-      });
-      page.update();
-
-      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
-        cache: 'no-cache',
-        credentials: 'same-origin',
-      });
-      const alert = page.find(Alert);
-      expect(alert.prop('color')).toBe('danger');
-      expect(alert.text()).toContain('error loading tsdb status');
-    });
   });
 
   describe('Table Data Validation', () => {
