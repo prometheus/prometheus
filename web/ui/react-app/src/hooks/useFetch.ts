@@ -11,7 +11,7 @@ export interface FetchState<T> {
 export const useFetch = <T extends {}>(url: string, options?: RequestInit): FetchState<T> => {
   const [response, setResponse] = useState<APIResponse<T>>({ status: 'start fetching' });
   const [error, setError] = useState<Error>();
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
     const fetchData = async () => {
