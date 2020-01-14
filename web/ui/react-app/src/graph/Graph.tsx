@@ -7,11 +7,10 @@ import { Metric, QueryParams } from '../types/types';
 import { isPresent } from '../utils/func';
 import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
 
-require('flot');
-require('flot/source/jquery.flot.crosshair');
-require('flot/source/jquery.flot.legend');
-require('flot/source/jquery.flot.time');
-require('flot/source/jquery.canvaswrapper');
+require('../vendor/flot/jquery.flot');
+require('../vendor/flot/jquery.flot.stack');
+require('../vendor/flot/jquery.flot.time');
+require('../vendor/flot/jquery.flot.crosshair');
 require('jquery.flot.tooltip');
 
 export interface GraphProps {

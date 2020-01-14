@@ -1,5 +1,5 @@
 import { formatValue, getColors, parseValue, getOptions } from './GraphHelpers';
-require('flot'); // need for $.colors
+require('../vendor/flot/jquery.flot'); // need for $.colors
 
 describe('GraphHelpers', () => {
   describe('formatValue', () => {
@@ -88,13 +88,13 @@ describe('GraphHelpers', () => {
   });
   describe('parseValue', () => {
     it('should parse number properly', () => {
-      expect(parseValue('12.3e', true)).toEqual(12.3);
+      expect(parseValue('12.3e')).toEqual(12.3);
     });
     it('should return 0 if value is NaN and stacked prop is true', () => {
-      expect(parseValue('asd', true)).toEqual(0);
+      expect(parseValue('asd')).toEqual(null);
     });
     it('should return null if value is NaN and stacked prop is false', () => {
-      expect(parseValue('asd', false)).toBeNull();
+      expect(parseValue('asd')).toBeNull();
     });
   });
   describe('Plot options', () => {
