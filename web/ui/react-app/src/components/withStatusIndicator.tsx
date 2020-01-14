@@ -9,7 +9,7 @@ interface StatusIndicatorProps {
   customErrorMsg?: JSX.Element;
 }
 
-export const withStatusIndicator = <T extends {}>(Component: ComponentType<T>): FC<StatusIndicatorProps & T> => ({
+export const withStatusIndicator = <T extends {}>(Component: ComponentType<T>): FC<StatusIndicatorProps & Partial<T>> => ({
   error,
   isLoading,
   customErrorMsg,
