@@ -849,8 +849,6 @@ func (h *Handler) serveConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(("rules below"))
-	fmt.Println(h.ruleManager.RuleGroups()[0])
 	h.executeTemplate(w, "rules.html", h.ruleManager)
 }
 

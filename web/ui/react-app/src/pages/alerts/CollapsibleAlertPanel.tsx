@@ -1,7 +1,8 @@
 import React, { FC, useState, Fragment } from 'react';
 import { Link } from '@reach/router';
 import { Alert, Collapse, Table, Badge } from 'reactstrap';
-import { Rule, RuleStatus } from './AlertContents';
+import { RuleStatus } from './AlertContents';
+import { Rule } from '../../types/types';
 import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 

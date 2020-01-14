@@ -3,20 +3,9 @@ import { ButtonGroup, Button, Row, Badge } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../Checkbox';
 import { isPresent } from '../../utils/func';
+import { Rule } from '../../types/types';
 
 export type RuleState = keyof RuleStatus<any>;
-
-export interface Rule {
-  alerts: Alert[];
-  annotations: Record<string, string>;
-  duration: number;
-  health: string;
-  labels: Record<string, string>;
-  name: string;
-  query: string;
-  state: RuleState;
-  type: string;
-}
 
 export interface RuleStatus<T> {
   firing: T;
@@ -29,7 +18,7 @@ export interface AlertsProps {
   statsCount: RuleStatus<number>;
 }
 
-interface Alert {
+export interface Alert {
   labels: Record<string, string>;
   state: RuleState;
   value: string;
