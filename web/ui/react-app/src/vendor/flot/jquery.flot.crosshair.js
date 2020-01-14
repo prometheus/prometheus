@@ -1,3 +1,14 @@
+/**
+ *
+ * THIS FILE WAS COPIED INTO PROMETHEUS FROM GRAFANA'S VENDORED FORK OF FLOT
+ * (LIVING AT https://github.com/grafana/grafana/tree/master/public/vendor/flot),
+ * WHICH CONTAINS FIXES FOR DISPLAYING NULL VALUES IN STACKED GRAPHS. THE ORIGINAL
+ * FLOT CODE WAS LICENSED UNDER THE MIT LICENSE AS STATED BELOW. ADDITIONAL
+ * CHANGES HAVE BEEN CONTRIBUTED TO THE GRAFANA FORK UNDER AN APACHE 2 LICENSE, SEE
+ * https://github.com/grafana/grafana/blob/master/license.
+ *
+ */
+
 /* eslint-disable prefer-spread */
 /* eslint-disable no-loop-func */
 /* eslint-disable @typescript-eslint/no-this-alias */
@@ -67,17 +78,6 @@ The plugin also adds four public methods:
 
     Free the crosshair to move again after locking it.
 */
-
-/**
- *
- * THIS FILE WAS COPIED INTO PROMETHEUS FROM GRAFANA'S VENDORED FORK OF FLOT
- * (LIVING AT HTTPS://GITHUB.COM/GRAFANA/GRAFANA/TREE/MASTER/PUBLIC/VENDOR/FLOT),
- * WHICH CONTAINS FIXES FOR DISPLAYING NULL VALUES IN STACKED GRAPHS. THE ORIGINAL
- * FLOT CODE WAS LICENSED UNDER THE MIT LICENSE AS REPRODUCED BELOW. ADDITIONAL
- * CHANGES HAVE BEEN CONTRIBUTED TO THE GRAFANA FORK UNDER AN APACHE 2 LICENSE, SEE
- * HTTPS://GITHUB.COM/GRAFANA/GRAFANA/BLOB/MASTER/LICENSE.
- *
- */
 
 (function($) {
   const options = {
