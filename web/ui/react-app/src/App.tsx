@@ -5,7 +5,7 @@ import { Container } from 'reactstrap';
 import './App.css';
 import { Router, Redirect } from '@reach/router';
 import { Alerts, Config, Flags, Rules, Services, Status, Targets, TSDBStatus, PanelList } from './pages';
-import PathPrefixProps from './PathPrefixProps';
+import PathPrefixProps from './types/PathPrefixProps';
 
 const App: FC<PathPrefixProps> = ({ pathPrefix }) => {
   return (
