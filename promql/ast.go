@@ -344,7 +344,7 @@ type PositionRange struct {
 	End   Pos
 }
 
-// mergeRanges is a helper function the PostionRanges of two Nodes
+// mergeRanges is a helper function to merge the PositionRanges of two Nodes.
 // Note that the arguments must be in the same order as they
 // occur in the input string.
 func mergeRanges(first Node, last Node) PositionRange {
