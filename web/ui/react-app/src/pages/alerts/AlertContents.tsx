@@ -1,8 +1,8 @@
 import React, { FC, useState, Fragment } from 'react';
-import { ButtonGroup, Button, Row, Badge } from 'reactstrap';
+import { Badge } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
-import Checkbox from '../../Checkbox';
-import { isPresent } from '../../utils/func';
+import Checkbox from '../../components/Checkbox';
+import { isPresent } from '../../utils';
 import { Rule } from '../../types/types';
 
 export type RuleState = keyof RuleStatus<any>;
@@ -33,6 +33,12 @@ interface RuleGroup {
   interval: number;
 }
 
+const stateColorTuples: Array<[RuleState, 'success' | 'warning' | 'danger']> = [
+  ['inactive', 'success'],
+  ['pending', 'warning'],
+  ['firing', 'danger'],
+];
+
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   const [state, setState] = useState<RuleStatus<boolean>>({
     firing: true,
@@ -50,26 +56,24 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
 
   return (
     <>
-      <ButtonGroup className="mb-3">
-        <Button active={state.inactive} onClick={toggle('inactive')} color="primary">
-          Inactive ({statsCount.inactive})
-        </Button>
-        <Button active={state.pending} onClick={toggle('pending')} color="primary">
-          Pending ({statsCount.pending})
-        </Button>
-        <Button active={state.firing} onClick={toggle('firing')} color="primary">
-          Firing ({statsCount.firing})
-        </Button>
-      </ButtonGroup>
-      <Row className="mb-2">
+      <div className="d-flex togglers-wrapper">
+        {stateColorTuples.map(([state, color]) => {
+          return (
+            <Checkbox wrapperStyles={{ marginRight: 10 }} defaultChecked id={`${state}-toggler`} onClick={toggle(state)}>
+              <Badge color={color} className="text-capitalize">
+                {state} ({statsCount[state]})
+              </Badge>
+            </Checkbox>
+          );
+        })}
         <Checkbox
-          id="show-annotations"
-          wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
+          wrapperStyles={{ marginLeft: 'auto' }}
+          id="show-annotations-toggler"
           onClick={() => setShowAnnotations(!showAnnotations)}
         >
-          Show annotations
+          <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
         </Checkbox>
-      </Row>
+      </div>
       {groups.map((group, i) => {
         return (
           <Fragment key={i}>

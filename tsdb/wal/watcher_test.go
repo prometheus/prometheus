@@ -427,6 +427,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 					}
 				}
 			}
+			testutil.Ok(t, w.Close())
 
 			// At this point we should have at least 6 segments, lets create a checkpoint dir of the first 5.
 			checkpointDir := dir + "/wal/checkpoint.000004"

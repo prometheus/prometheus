@@ -290,7 +290,7 @@ func TestPreferLocalStorageFilter(t *testing.T) {
 		}
 
 		if test.querier != q {
-			t.Errorf("%d. expected quierer %+v, got %+v", i, test.querier, q)
+			t.Errorf("%d. expected querier %+v, got %+v", i, test.querier, q)
 		}
 	}
 }
@@ -315,7 +315,7 @@ func TestRequiredMatchersFilter(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(want, have) {
-		t.Errorf("expected quierer %+v, got %+v", want, have)
+		t.Errorf("expected querier %+v, got %+v", want, have)
 	}
 }
 

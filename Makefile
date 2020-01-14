@@ -12,7 +12,7 @@
 # limitations under the License.
 
 # Needs to be defined before including Makefile.common to auto-generate targets
-DOCKER_ARCHS ?= amd64 armv7 arm64
+DOCKER_ARCHS ?= amd64 armv7 arm64 s390x
 
 REACT_APP_PATH = web/ui/react-app
 REACT_APP_SOURCE_FILES = $(wildcard $(REACT_APP_PATH)/public/* $(REACT_APP_PATH)/src/* $(REACT_APP_PATH)/tsconfig.json)
@@ -54,7 +54,7 @@ react-app-lint:
 
 .PHONY: react-app-lint-fix
 react-app-lint-fix: 
-	@echo ">> running React app linting and fixing errors where possibe"
+	@echo ">> running React app linting and fixing errors where possible"
 	cd $(REACT_APP_PATH) && yarn lint
 
 .PHONY: react-app-test

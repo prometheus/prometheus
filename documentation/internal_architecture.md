@@ -132,6 +132,6 @@ Internally it works like the scrape discovery manager.
 
 Prometheus serves its web UI and API on port `9090` by default. The web UI is available at `/` and serves a human-usable interface for running expression queries, inspecting active alerts, or getting other insight into the status of the Prometheus server.
 
-The web API is served under `/api/v1` and allows programmatical [querying, metadata, and server status inspection](https://prometheus.io/docs/prometheus/latest/querying/api/).
+The web API is served under `/api/v1` and allows programmatic [querying, metadata, and server status inspection](https://prometheus.io/docs/prometheus/latest/querying/api/).
 
 [Console templates](https://prometheus.io/docs/visualization/consoles/), which allow Prometheus to serve user-defined HTML templates that have access to TSDB data, are served under `/consoles` when console templates are present and configured.

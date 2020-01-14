@@ -559,17 +559,9 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 			return err
 		}
 		var cumulativeLength uint64
-
-		for i := 0; i < values.Len(); i++ {
-			value, err := values.At(i)
-			if err != nil {
-				return err
-			}
-			for _, str := range value {
-				cumulativeLength += uint64(len(str))
-			}
+		for _, str := range values {
+			cumulativeLength += uint64(len(str))
 		}
-
 		postingInfos = append(postingInfos, postingInfo{n, cumulativeLength})
 	}
 
@@ -582,7 +574,7 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 		if err != nil {
 			return err
 		}
-		postingInfos = append(postingInfos, postingInfo{n, uint64(lv.Len())})
+		postingInfos = append(postingInfos, postingInfo{n, uint64(len(lv))})
 	}
 	fmt.Printf("\nHighest cardinality labels:\n")
 	printInfo(postingInfos)
@@ -592,25 +584,19 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 	if err != nil {
 		return err
 	}
-	for i := 0; i < lv.Len(); i++ {
-		names, err := lv.At(i)
+	for _, n := range lv {
+		postings, err := ir.Postings("__name__", n)
 		if err != nil {
 			return err
 		}
-		for _, n := range names {
-			postings, err := ir.Postings("__name__", n)
-			if err != nil {
-				return err
-			}
-			count := 0
-			for postings.Next() {
-				count++
-			}
-			if postings.Err() != nil {
-				return postings.Err()
-			}
-			postingInfos = append(postingInfos, postingInfo{n, uint64(count)})
+		count := 0
+		for postings.Next() {
+			count++
 		}
+		if postings.Err() != nil {
+			return postings.Err()
+		}
+		postingInfos = append(postingInfos, postingInfo{n, uint64(count)})
 	}
 	fmt.Printf("\nHighest cardinality metric names:\n")
 	printInfo(postingInfos)

@@ -20,10 +20,6 @@ describe('ScrapePoolPanel', () => {
   });
 
   describe('Header', () => {
-    it('renders an h3', () => {
-      expect(scrapePoolPanel.find('h3')).toHaveLength(1);
-    });
-
     it('renders an anchor with up count and danger color if upCount < targetsCount', () => {
       const anchor = scrapePoolPanel.find('a');
       expect(anchor).toHaveLength(1);
@@ -47,14 +43,6 @@ describe('ScrapePoolPanel', () => {
       expect(anchor.prop('className')).toEqual('normal');
     });
 
-    it('renders a show less btn if expanded', () => {
-      const btn = scrapePoolPanel.find(Button);
-      expect(btn).toHaveLength(1);
-      expect(btn.prop('color')).toEqual('primary');
-      expect(btn.prop('size')).toEqual('xs');
-      expect(btn.render().text()).toEqual('show less');
-    });
-
     it('renders a show more btn if collapsed', () => {
       const props = {
         scrapePool: 'prometheus',
@@ -67,7 +55,6 @@ describe('ScrapePoolPanel', () => {
 
       const btn = scrapePoolPanel.find(Button);
       btn.simulate('click');
-      expect(btn.render().text()).toEqual('show more');
       const collapse = scrapePoolPanel.find(Collapse);
       expect(collapse.prop('isOpen')).toBe(false);
     });

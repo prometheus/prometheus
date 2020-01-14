@@ -341,6 +341,11 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
+	ctx, err = httputil.ContextFromRequest(ctx, r)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
@@ -409,6 +414,11 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	ctx, err = httputil.ContextFromRequest(ctx, r)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
 	}
 
 	res := qry.Exec(ctx)

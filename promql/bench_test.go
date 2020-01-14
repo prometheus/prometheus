@@ -5,7 +5,7 @@
 //
 // http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, softwar
+// Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
@@ -110,6 +110,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			expr: "rate(a_X[1d])",
+		},
+		{
+			expr: "absent_over_time(a_X[1d])",
 		},
 		// Unary operators.
 		{
@@ -250,7 +253,7 @@ func BenchmarkParser(b *testing.B) {
 		b.Run(c, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				ParseMetric(c)
+				ParseExpr(c)
 			}
 		})
 	}
@@ -259,7 +262,7 @@ func BenchmarkParser(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				ParseMetric(c)
+				ParseExpr(c)
 			}
 		})
 	}

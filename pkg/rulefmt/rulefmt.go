@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/prometheus/template"
 )
 
-// Error represents semantical errors on parsing rule groups.
+// Error represents semantic errors on parsing rule groups.
 type Error struct {
 	Group    string
 	Rule     int

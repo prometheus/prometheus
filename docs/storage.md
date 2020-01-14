@@ -77,7 +77,7 @@ If your local storage becomes corrupted for whatever reason, your best bet is to
 
 If both time and size retention policies are specified, whichever policy triggers first will be used at that instant.
 
-Expired block cleanup happens on a background schedule. It may take up to two hours remove expired blocks. Expired blocks must be fully expired before they are cleaned up.
+Expired block cleanup happens on a background schedule. It may take up to two hours to remove expired blocks. Expired blocks must be fully expired before they are cleaned up.
 
 ## Remote storage integrations
 

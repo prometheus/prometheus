@@ -63,7 +63,7 @@ type IndexReader interface {
 	Symbols() index.StringIter
 
 	// LabelValues returns sorted possible label values.
-	LabelValues(names ...string) (index.StringTuples, error)
+	LabelValues(name string) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -85,14 +85,6 @@ type IndexReader interface {
 
 	// Close releases the underlying resources of the reader.
 	Close() error
-}
-
-// StringTuples provides access to a sorted list of string tuples.
-type StringTuples interface {
-	// Total number of tuples in the list.
-	Len() int
-	// At returns the tuple at position i.
-	At(i int) ([]string, error)
 }
 
 // ChunkWriter serializes a time block of chunked series data.
@@ -433,8 +425,8 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) LabelValues(names ...string) (index.StringTuples, error) {
-	st, err := r.ir.LabelValues(names...)
+func (r blockIndexReader) LabelValues(name string) ([]string, error) {
+	st, err := r.ir.LabelValues(name)
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 

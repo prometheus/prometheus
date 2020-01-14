@@ -13,13 +13,15 @@
 
 package labels
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
+)
 
 func mustNewMatcher(t *testing.T, mType MatchType, value string) *Matcher {
 	m, err := NewMatcher(mType, "", value)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	return m
 }
 
@@ -82,8 +84,36 @@ func TestMatcher(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		if test.matcher.Matches(test.value) != test.match {
-			t.Fatalf("Unexpected match result for matcher %v and value %q; want %v, got %v", test.matcher, test.value, test.match, !test.match)
-		}
+		testutil.Equals(t, test.matcher.Matches(test.value), test.match)
+	}
+}
+
+func TestInverse(t *testing.T) {
+	tests := []struct {
+		matcher  *Matcher
+		expected *Matcher
+	}{
+		{
+			matcher:  &Matcher{Type: MatchEqual, Name: "name1", Value: "value1"},
+			expected: &Matcher{Type: MatchNotEqual, Name: "name1", Value: "value1"},
+		},
+		{
+			matcher:  &Matcher{Type: MatchNotEqual, Name: "name2", Value: "value2"},
+			expected: &Matcher{Type: MatchEqual, Name: "name2", Value: "value2"},
+		},
+		{
+			matcher:  &Matcher{Type: MatchRegexp, Name: "name3", Value: "value3"},
+			expected: &Matcher{Type: MatchNotRegexp, Name: "name3", Value: "value3"},
+		},
+		{
+			matcher:  &Matcher{Type: MatchNotRegexp, Name: "name4", Value: "value4"},
+			expected: &Matcher{Type: MatchRegexp, Name: "name4", Value: "value4"},
+		},
+	}
+
+	for _, test := range tests {
+		result, err := test.matcher.Inverse()
+		testutil.Ok(t, err)
+		testutil.Equals(t, test.expected.Type, result.Type)
 	}
 }

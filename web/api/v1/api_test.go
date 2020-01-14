@@ -1466,9 +1466,12 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 		if m == http.MethodPost {
 			r, err := http.NewRequest(m, "http://example.com", strings.NewReader(q.Encode()))
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			r.RemoteAddr = "127.0.0.1:20201"
 			return r, err
 		}
-		return http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
+		r, err := http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
+		r.RemoteAddr = "127.0.0.1:20201"
+		return r, err
 	}
 
 	for i, test := range tests {

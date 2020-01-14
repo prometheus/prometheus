@@ -15,6 +15,8 @@ package labels
 
 import (
 	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestLabels_MatchLabels(t *testing.T) {
@@ -45,60 +47,105 @@ func TestLabels_MatchLabels(t *testing.T) {
 		},
 	}
 
-	providedNames := []string{
-		"__name__",
-		"alertname",
-		"alertstate",
-		"instance",
+	tests := []struct {
+		providedNames []string
+		on            bool
+		expected      Labels
+	}{
+		// on = true, explicitly including metric name in matching.
+		{
+			providedNames: []string{
+				"__name__",
+				"alertname",
+				"alertstate",
+				"instance",
+			},
+			on: true,
+			expected: Labels{
+				{
+					Name:  "__name__",
+					Value: "ALERTS",
+				},
+				{
+					Name:  "alertname",
+					Value: "HTTPRequestRateLow",
+				},
+				{
+					Name:  "alertstate",
+					Value: "pending",
+				},
+				{
+					Name:  "instance",
+					Value: "0",
+				},
+			},
+		},
+		// on = false, explicitly excluding metric name from matching.
+		{
+			providedNames: []string{
+				"__name__",
+				"alertname",
+				"alertstate",
+				"instance",
+			},
+			on: false,
+			expected: Labels{
+				{
+					Name:  "job",
+					Value: "app-server",
+				},
+				{
+					Name:  "severity",
+					Value: "critical",
+				},
+			},
+		},
+		// on = true, explicitly excluding metric name from matching.
+		{
+			providedNames: []string{
+				"alertname",
+				"alertstate",
+				"instance",
+			},
+			on: true,
+			expected: Labels{
+				{
+					Name:  "alertname",
+					Value: "HTTPRequestRateLow",
+				},
+				{
+					Name:  "alertstate",
+					Value: "pending",
+				},
+				{
+					Name:  "instance",
+					Value: "0",
+				},
+			},
+		},
+		// on = false, implicitly excluding metric name from matching.
+		{
+			providedNames: []string{
+				"alertname",
+				"alertstate",
+				"instance",
+			},
+			on: false,
+			expected: Labels{
+				{
+					Name:  "job",
+					Value: "app-server",
+				},
+				{
+					Name:  "severity",
+					Value: "critical",
+				},
+			},
+		},
 	}
 
-	got := labels.MatchLabels(true, providedNames...)
-	expected := Labels{
-		{
-			Name:  "__name__",
-			Value: "ALERTS",
-		},
-		{
-			Name:  "alertname",
-			Value: "HTTPRequestRateLow",
-		},
-		{
-			Name:  "alertstate",
-			Value: "pending",
-		},
-		{
-			Name:  "instance",
-			Value: "0",
-		},
-	}
-
-	assertSlice(t, got, expected)
-
-	// Now try with 'on' set to false.
-	got = labels.MatchLabels(false, providedNames...)
-
-	expected = Labels{
-		{
-			Name:  "job",
-			Value: "app-server",
-		},
-		{
-			Name:  "severity",
-			Value: "critical",
-		},
-	}
-
-	assertSlice(t, got, expected)
-}
-
-func assertSlice(t *testing.T, got, expected Labels) {
-	if len(expected) != len(got) {
-		t.Errorf("expected the length of matched label names to be %d, but got %d", len(expected), len(got))
-	}
-
-	for i, expectedLabel := range expected {
-		if expectedLabel.Name != got[i].Name {
-			t.Errorf("expected to get Label with name %s, but got %s instead", expectedLabel.Name, got[i].Name)
-		}
+	for i, test := range tests {
+		got := labels.MatchLabels(test.on, test.providedNames...)
+		testutil.Equals(t, test.expected, got, "unexpected labelset for test case %d", i)
 	}
 }
