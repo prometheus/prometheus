@@ -434,7 +434,7 @@ var testExpr = []struct {
 					End:   13,
 				},
 			},
-			startPos: 1,
+			StartPos: 1,
 		},
 	}, {
 		input:  "",
