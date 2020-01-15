@@ -174,12 +174,12 @@ func (p *parser) typecheck(node Node) (err error) {
 	return nil
 }
 
-// errorf formats the error and terminates processing.
+// failf formats the error and terminates processing.
 func (p *parser) failf(positionRange PositionRange, format string, args ...interface{}) {
 	p.fail(positionRange, errors.Errorf(format, args...))
 }
 
-// error terminates processing.
+// fail terminates processing.
 func (p *parser) fail(positionRange PositionRange, err error) {
 	perr := &ParseErr{
 		PositionRange: positionRange,
