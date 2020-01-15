@@ -58,7 +58,7 @@ type ParseErr struct {
 	Err           error
 	Query         string
 
-	// A additional line offset to be added. Only used inside unit tests.
+	// An additional line offset to be added. Only used inside unit tests.
 	lineOffset int
 }
 
