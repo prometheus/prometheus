@@ -276,7 +276,7 @@ scrape_configs:
 		ch = make(chan struct{}, 1)
 	)
 
-	scrapeManager := NewManager(nil, nil)
+	scrapeManager := NewManager(nil, nil, nil)
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
 		return noopLoop()
@@ -338,7 +338,7 @@ scrape_configs:
 }
 
 func TestManagerTargetsUpdates(t *testing.T) {
-	m := NewManager(nil, nil)
+	m := NewManager(nil, nil, nil)
 
 	ts := make(chan map[string][]*targetgroup.Group)
 	go m.Run(ts)
@@ -390,7 +390,7 @@ global:
 		return cfg
 	}
 
-	scrapeManager := NewManager(nil, nil)
+	scrapeManager := NewManager(nil, nil, nil)
 
 	// Load the first config.
 	cfg1 := getConfig("ha1")

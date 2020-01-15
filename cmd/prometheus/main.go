@@ -57,6 +57,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -123,6 +124,7 @@ func main() {
 		queryConcurrency    int
 		queryMaxSamples     int
 		RemoteFlushDeadline model.Duration
+		ExemplarsLimit      int
 
 		prometheusURL   string
 		corsRegexString string
@@ -230,6 +232,9 @@ func main() {
 
 	a.Flag("storage.remote.read-max-bytes-in-frame", "Maximum number of bytes in a single frame for streaming remote read response types before marshalling. Note that client might have limit on frame size as well. 1MB as recommended by protobuf by default.").
 		Default("1048576").IntVar(&cfg.web.RemoteReadBytesInFrame)
+
+	a.Flag("storage.exemplars.exemplars-limit", "Maximum number of exemplars to store in in-memory exemplar storage total.").
+		Default("100000").IntVar(&cfg.ExemplarsLimit)
 
 	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"for\" state of alert.").
 		Default("1h").SetValue(&cfg.outageTolerance)
@@ -368,10 +373,11 @@ func main() {
 	level.Info(logger).Log("vm_limits", prom_runtime.VMLimits())
 
 	var (
-		localStorage  = &readyStorage{}
-		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
+		localStorage    = &readyStorage{}
+		scraper         = &readyScrapeManager{}
+		remoteStorage   = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
+		fanoutStorage   = storage.NewFanout(logger, localStorage, remoteStorage)
+		exemplarStorage = tsdb.NewCircularExemplarStorage(cfg.ExemplarsLimit)
 	)
 
 	var (
@@ -386,7 +392,7 @@ func main() {
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
 		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
 
-		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage, exemplarStorage)
 
 		opts = promql.EngineOpts{
 			Logger:                   log.With(logger, "component", "query engine"),
@@ -439,6 +445,7 @@ func main() {
 	}
 
 	cfg.web.Flags = map[string]string{}
+	cfg.web.ExemplarStorage = exemplarStorage
 
 	// Exclude kingpin default flags to expose only Prometheus ones.
 	boilerplateFlags := kingpin.New("", "").Version("")
@@ -756,6 +763,7 @@ func main() {
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
+				exemplarStorage.SetSecondaries(db.ExemplarAppender(nil))
 				close(dbOpen)
 				<-cancel
 				return nil
@@ -1053,6 +1061,13 @@ func (n notReadyAppender) Add(l labels.Labels, t int64, v float64) (uint64, erro
 }
 
 func (n notReadyAppender) AddFast(ref uint64, t int64, v float64) error { return tsdb.ErrNotReady }
+
+func (n notReadyAppender) AddExemplar(l labels.Labels, t int64, e exemplar.Exemplar) error {
+	return tsdb.ErrNotReady
+}
+func (n notReadyAppender) AddExemplarFast(ref uint64, t int64, v float64, e exemplar.Exemplar) error {
+	return tsdb.ErrNotReady
+}
 
 func (n notReadyAppender) Commit() error { return tsdb.ErrNotReady }
 

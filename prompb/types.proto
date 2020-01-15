@@ -43,10 +43,17 @@ message Sample {
   int64 timestamp = 2;
 }
 
+message Exemplar {
+  repeated Label labels = 1 [(gogoproto.nullable) = false];
+  double value = 2;
+  int64 timestamp = 3;
+}
+
 // TimeSeries represents samples and labels for a single time series.
 message TimeSeries {
   repeated Label labels   = 1 [(gogoproto.nullable) = false];
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars=3 [(gogoproto.nullable) = false];
 }
 
 message Label {

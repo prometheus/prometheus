@@ -38,6 +38,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/pool"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -224,7 +225,7 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, exemplarApp storage.ExemplarAppendable, jitterSeed uint64, logger log.Logger) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -266,6 +267,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func(ctx context.Context) storage.Appender { return appender(app.Appender(ctx), opts.limit) },
+			func() storage.ExemplarAppender { return exemplarApp.Appender() },
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
@@ -701,6 +703,7 @@ type scrapeLoop struct {
 	forcedErrMtx    sync.Mutex
 
 	appender            func(ctx context.Context) storage.Appender
+	exemplarAppender    func() storage.ExemplarAppender
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
@@ -963,6 +966,7 @@ func newScrapeLoop(ctx context.Context,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
 	appender func(ctx context.Context) storage.Appender,
+	exemplarAppender func() storage.ExemplarAppender,
 	cache *scrapeCache,
 	jitterSeed uint64,
 	honorTimestamps bool,
@@ -981,6 +985,7 @@ func newScrapeLoop(ctx context.Context,
 		buffers:             buffers,
 		cache:               cache,
 		appender:            appender,
+		exemplarAppender:    exemplarAppender,
 		sampleMutator:       sampleMutator,
 		reportSampleMutator: reportSampleMutator,
 		stopped:             make(chan struct{}),
@@ -1250,10 +1255,12 @@ type appendErrors struct {
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	var (
+		exemplarApp    = sl.exemplarAppender()
 		p              = textparse.New(b, contentType)
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
 		sampleLimitErr error
+		e              exemplar.Exemplar
 	)
 
 	defer func() {
@@ -1310,8 +1317,20 @@ loop:
 		if ok {
 			err = app.AddFast(ce.ref, t, v)
 			_, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
+			switch err {
+			case nil:
+				if tp == nil {
+					sl.cache.trackStaleness(ce.hash, ce.lset)
+				}
+				if hasExemplar := p.Exemplar(&e); hasExemplar {
+					if err := exemplarApp.AddExemplar(ce.lset, t, e); err != nil {
+						if err != storage.ErrDuplicateExemplar {
+							level.Debug(sl.l).Log("msg", "unexpected error", "error", err, "seriesLabels", ce.lset, "exemplar", e)
+						}
+					}
+				}
 			// In theory this should never happen.
-			if err == storage.ErrNotFound {
+			case storage.ErrNotFound:
 				ok = false
 			}
 		}
@@ -1339,10 +1358,23 @@ loop:
 			var ref uint64
 			ref, err = app.Add(lset, t, v)
 			sampleAdded, err = sl.checkAddError(nil, met, tp, err, &sampleLimitErr, &appErrs)
-			if err != nil {
-				if err != storage.ErrNotFound {
-					level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
+
+			switch err {
+			case nil:
+				// todo: This smells funny.
+				if hasExemplar := p.Exemplar(&e); hasExemplar {
+					if err := exemplarApp.AddExemplar(lset, t, e); err != nil {
+						if err == storage.ErrDuplicateExemplar {
+							level.Debug(sl.l).Log("msg", "Duplicate exemplar", "seriesLabels", lset, "exemplar", e)
+						} else {
+							level.Debug(sl.l).Log("msg", "unexpected error", "error", err, "seriesLabels", lset, "exemplar", e)
+						}
+					}
 				}
+			case storage.ErrNotFound:
+				break
+			default:
+				level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
 				break loop
 			}
 
@@ -1399,7 +1431,6 @@ func yoloString(b []byte) string {
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
 // whether the caller should continue to process more samples, and any sample limit errors.
-
 func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr *error, appErrs *appendErrors) (bool, error) {
 	switch errors.Cause(err) {
 	case nil:

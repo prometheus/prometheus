@@ -30,6 +30,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
+
+	// "github.com/prometheus/prometheus/pkg/exemplar"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/prompb"
@@ -466,10 +469,50 @@ outer:
 			default:
 			}
 
-			if t.shards.enqueue(s.Ref, sample{
+			if t.shards.enqueue(s.Ref, rwSample{
 				labels: lbls,
 				t:      s.T,
 				v:      s.V,
+			}) {
+				continue outer
+			}
+
+			t.metrics.enqueueRetriesTotal.Inc()
+			time.Sleep(time.Duration(backoff))
+			backoff = backoff * 2
+			if backoff > t.cfg.MaxBackoff {
+				backoff = t.cfg.MaxBackoff
+			}
+		}
+	}
+	return true
+}
+
+func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
+outer:
+	for _, e := range exemplars {
+		t.seriesMtx.Lock()
+		lbls, ok := t.seriesLabels[e.Ref]
+		if !ok {
+			// todo: metric to track dropped exemplars?
+			t.seriesMtx.Unlock()
+			continue
+		}
+		t.seriesMtx.Unlock()
+		// This will only loop if the queues are being resharded.
+		backoff := t.cfg.MinBackoff
+		for {
+			select {
+			case <-t.quit:
+				return false
+			default:
+			}
+
+			if t.shards.enqueue(e.Ref, rwExemplar{
+				seriesLabels: lbls,
+				labels:       e.Labels,
+				t:            e.T,
+				v:            e.V,
 			}) {
 				continue outer
 			}
@@ -782,17 +825,24 @@ func (t *QueueManager) newShards() *shards {
 	return s
 }
 
-type sample struct {
+type rwSample struct {
 	labels labels.Labels
 	t      int64
 	v      float64
+}
+
+type rwExemplar struct {
+	seriesLabels labels.Labels
+	labels       labels.Labels
+	t            int64
+	v            float64
 }
 
 type shards struct {
 	mtx sync.RWMutex // With the WAL, this is never actually contended.
 
 	qm     *QueueManager
-	queues []chan sample
+	queues []chan interface{}
 
 	// Emulate a wait group with a channel and an atomic int, as you
 	// cannot select on a wait group.
@@ -816,9 +866,9 @@ func (s *shards) start(n int) {
 	s.qm.metrics.pendingSamples.Set(0)
 	s.qm.metrics.numShards.Set(float64(n))
 
-	newQueues := make([]chan sample, n)
+	newQueues := make([]chan interface{}, n)
 	for i := 0; i < n; i++ {
-		newQueues[i] = make(chan sample, s.qm.cfg.Capacity)
+		newQueues[i] = make(chan interface{}, s.qm.cfg.Capacity)
 	}
 
 	s.queues = newQueues
@@ -868,7 +918,7 @@ func (s *shards) stop() {
 
 // enqueue a sample.  If we are currently in the process of shutting down or resharding,
 // will return false; in this case, you should back off and retry.
-func (s *shards) enqueue(ref uint64, sample sample) bool {
+func (s *shards) enqueue(ref uint64, sample interface{}) bool {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
@@ -888,7 +938,7 @@ func (s *shards) enqueue(ref uint64, sample sample) bool {
 	}
 }
 
-func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
+func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface{}) {
 	defer func() {
 		if s.running.Dec() == 0 {
 			close(s.done)
@@ -943,10 +993,21 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 			// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-			pendingSamples[nPending].Labels = labelsToLabelsProto(sample.labels, pendingSamples[nPending].Labels)
-			pendingSamples[nPending].Samples[0].Timestamp = sample.t
-			pendingSamples[nPending].Samples[0].Value = sample.v
-			nPending++
+			switch s := sample.(type) {
+			case rwSample:
+				pendingSamples[nPending].Labels = labelsToLabelsProto(s.labels, pendingSamples[nPending].Labels)
+				pendingSamples[nPending].Samples[0].Timestamp = s.t
+				pendingSamples[nPending].Samples[0].Value = s.v
+				nPending++
+			case rwExemplar:
+				pendingSamples[nPending].Labels = labelsToLabelsProto(s.seriesLabels, pendingSamples[nPending].Labels)
+				pendingSamples[nPending].Exemplars = append(pendingSamples[nPending].Exemplars[:0], prompb.Exemplar{
+					Labels:    labelsToLabelsProto(s.labels, nil),
+					Value:     s.v,
+					Timestamp: s.t,
+				})
+				nPending++
+			}
 
 			if nPending >= max {
 				s.sendSamples(ctx, pendingSamples, &buf)

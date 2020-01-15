@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -46,6 +47,9 @@ var (
 	// ErrInvalidSample is returned if an appended sample is not valid and can't
 	// be ingested.
 	ErrInvalidSample = errors.New("invalid sample")
+	// ErrInvalidSample is returned if an appended sample is not valid and can't
+	// be ingested.
+	ErrInvalidExemplar = errors.New("invalid exemplar")
 	// ErrAppenderClosed is returned if an appender has already be successfully
 	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
@@ -60,13 +64,14 @@ type Head struct {
 	lastWALTruncationTime atomic.Int64
 	lastSeriesID          atomic.Uint64
 
-	metrics      *headMetrics
-	wal          *wal.WAL
-	logger       log.Logger
-	appendPool   sync.Pool
-	seriesPool   sync.Pool
-	bytesPool    sync.Pool
-	memChunkPool sync.Pool
+	metrics       *headMetrics
+	wal           *wal.WAL
+	logger        log.Logger
+	appendPool    sync.Pool
+	exemplarsPool sync.Pool
+	seriesPool    sync.Pool
+	bytesPool     sync.Pool
+	memChunkPool  sync.Pool
 
 	// All series addressable by their ID or hash.
 	series         *stripeSeries
@@ -1034,6 +1039,20 @@ func (a *initAppender) AddFast(ref uint64, t int64, v float64) error {
 	return a.app.AddFast(ref, t, v)
 }
 
+func (a *initAppender) AddExemplar(l labels.Labels, t int64, e exemplar.Exemplar) error {
+	if a.app == nil {
+		return storage.ErrNotFound
+	}
+	return a.app.AddExemplar(l, t, e)
+}
+
+func (a *initAppender) AddExemplarFast(ref uint64, t int64, v float64, e exemplar.Exemplar) error {
+	if a.app == nil {
+		return storage.ErrNotFound
+	}
+	return a.app.AddExemplarFast(ref, t, v, e)
+}
+
 func (a *initAppender) Commit() error {
 	if a.app == nil {
 		return nil
@@ -1073,6 +1092,7 @@ func (h *Head) appender() *headAppender {
 		maxt:                  math.MinInt64,
 		samples:               h.getAppendBuffer(),
 		sampleSeries:          h.getSeriesBuffer(),
+		exemplars:             h.getExemplarBuffer(),
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 	}
@@ -1102,6 +1122,19 @@ func (h *Head) getAppendBuffer() []record.RefSample {
 func (h *Head) putAppendBuffer(b []record.RefSample) {
 	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.appendPool.Put(b[:0])
+}
+
+func (h *Head) getExemplarBuffer() []record.RefExemplar {
+	b := h.exemplarsPool.Get()
+	if b == nil {
+		return make([]record.RefExemplar, 0, 512)
+	}
+	return b.([]record.RefExemplar)
+}
+
+func (h *Head) putExemplarBuffer(b []record.RefExemplar) {
+	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+	h.exemplarsPool.Put(b[:0])
 }
 
 func (h *Head) getSeriesBuffer() []*memSeries {
@@ -1137,6 +1170,7 @@ type headAppender struct {
 
 	series       []record.RefSeries
 	samples      []record.RefSample
+	exemplars    []record.RefExemplar
 	sampleSeries []*memSeries
 
 	appendID, cleanupAppendIDsBelow uint64
@@ -1211,6 +1245,75 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 	return nil
 }
 
+func (a *headAppender) AddExemplar(lset labels.Labels, t int64, e exemplar.Exemplar) error {
+	if t < a.minValidTime {
+		a.head.metrics.outOfBoundSamples.Inc()
+		return storage.ErrOutOfBounds
+	}
+
+	// Ensure no empty labels have gotten through.
+	lset = lset.WithoutEmpty()
+
+	if len(lset) == 0 {
+		return errors.Wrap(ErrInvalidExemplar, "empty labelset")
+	}
+
+	if l, dup := lset.HasDuplicateLabelNames(); dup {
+		return errors.Wrap(ErrInvalidExemplar, fmt.Sprintf(`label name "%s" is not unique`, l))
+	}
+
+	s, created, err := a.head.getOrCreate(lset.Hash(), lset)
+	if err != nil {
+		return err
+	}
+
+	// in theory the series should never be created as a result of an AddExemplar call, I think
+	if created {
+		a.series = append(a.series, record.RefSeries{
+			Ref:    s.ref,
+			Labels: lset,
+		})
+	}
+	return a.AddExemplarFast(s.ref, t, e.Value, e)
+}
+
+func (a *headAppender) AddExemplarFast(ref uint64, t int64, v float64, e exemplar.Exemplar) error {
+	if t < a.minValidTime {
+		// todo metric for exemplar out of bounds? or use sample out of bounds?
+		return storage.ErrOutOfBounds
+	}
+
+	s := a.head.series.getByID(ref)
+	if s == nil {
+		return errors.Wrap(storage.ErrNotFound, "unknown series")
+	}
+	s.Lock()
+	if err := s.appendable(t, v); err != nil {
+		s.Unlock()
+		if err == storage.ErrOutOfOrderSample {
+			a.head.metrics.outOfOrderSamples.Inc()
+		}
+		return err
+	}
+	s.pendingCommit = true
+	s.Unlock()
+
+	if t < a.mint {
+		a.mint = t
+	}
+	if t > a.maxt {
+		a.maxt = t
+	}
+
+	a.exemplars = append(a.exemplars, record.RefExemplar{
+		Ref:    ref,
+		T:      e.Ts,
+		V:      e.Value,
+		Labels: e.Labels,
+	})
+	return nil
+}
+
 func (a *headAppender) log() error {
 	if a.head.wal == nil {
 		return nil
@@ -1238,6 +1341,14 @@ func (a *headAppender) log() error {
 			return errors.Wrap(err, "log samples")
 		}
 	}
+	if len(a.exemplars) > 0 {
+		rec = enc.Exemplars(a.exemplars, buf)
+		buf = rec[:0]
+
+		if err := a.head.wal.Log(rec); err != nil {
+			return errors.Wrap(err, "log exemplars")
+		}
+	}
 	return nil
 }
 
@@ -1255,6 +1366,7 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.putAppendBuffer(a.samples)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
+	defer a.head.putExemplarBuffer(a.exemplars)
 	defer a.head.iso.closeAppend(a.appendID)
 
 	total := len(a.samples)
@@ -1301,6 +1413,7 @@ func (a *headAppender) Rollback() (err error) {
 		series.Unlock()
 	}
 	a.head.putAppendBuffer(a.samples)
+	a.head.putExemplarBuffer(a.exemplars)
 	a.samples = nil
 
 	// Series are created in the head memory regardless of rollback. Thus we have

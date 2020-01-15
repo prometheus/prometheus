@@ -592,6 +592,10 @@ func (ng *Engine) subqueryOffsetRange(path []parser.Node) (time.Duration, time.D
 	return subqOffset, subqRange
 }
 
+func (ng *Engine) FindMinTime(s *parser.EvalStmt) time.Time {
+	return ng.findMinTime(s)
+}
+
 func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 	var maxOffset time.Duration
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {

@@ -21,6 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -2847,4 +2848,39 @@ func TestRecoverParserError(t *testing.T) {
 	defer p.recover(&err)
 
 	panic(e)
+}
+
+func TestExtractSelectors(t *testing.T) {
+	for _, tc := range [...]struct {
+		input    string
+		expected []string
+	}{
+		{
+			"foo",
+			[]string{`{__name__="foo"}`},
+		},
+		{
+			`foo{bar="baz"}`,
+			[]string{`{bar="baz", __name__="foo"}`},
+		},
+		{
+			`foo{bar="baz"} / flip{flop="flap"}`,
+			[]string{`{bar="baz", __name__="foo"}`, `{flop="flap", __name__="flip"}`},
+		},
+	} {
+		expr, err := ParseExpr(tc.input)
+		assert.NoError(t, err)
+
+		var expected [][]*labels.Matcher
+		for _, s := range tc.expected {
+			selector, err := ParseMetricSelector(s)
+			assert.NoError(t, err)
+
+			expected = append(expected, selector)
+		}
+
+		actual, err := ExtractSelectors(expr)
+		assert.NoError(t, err)
+		assert.Equal(t, expected, actual)
+	}
 }

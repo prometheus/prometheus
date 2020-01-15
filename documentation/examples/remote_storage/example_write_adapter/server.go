@@ -56,6 +56,14 @@ func main() {
 			for _, s := range ts.Samples {
 				fmt.Printf("  %f %d\n", s.Value, s.Timestamp)
 			}
+
+			for _, e := range ts.Exemplars {
+				m := make(model.Metric, len(e.Labels))
+				for _, l := range e.Labels {
+					m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+				}
+				fmt.Printf("  %+v %f %d\n", m, e.Value, e.Timestamp)
+			}
 		}
 	})
 

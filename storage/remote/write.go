@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -223,6 +224,14 @@ func (t *timestampTracker) Add(_ labels.Labels, ts int64, _ float64) (uint64, er
 func (t *timestampTracker) AddFast(_ uint64, ts int64, v float64) error {
 	_, err := t.Add(nil, ts, v)
 	return err
+}
+
+func (t *timestampTracker) AddExemplar(_ labels.Labels, _ int64, _ exemplar.Exemplar) error {
+	return nil
+}
+
+func (t *timestampTracker) AddExemplarFast(_ uint64, _ int64, _ float64, _ exemplar.Exemplar) error {
+	return nil
 }
 
 // Commit implements storage.Appender.

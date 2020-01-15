@@ -16,6 +16,7 @@ package scrape
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -28,10 +29,24 @@ func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 
 type nopAppender struct{}
 
-func (a nopAppender) Add(labels.Labels, int64, float64) (uint64, error) { return 0, nil }
-func (a nopAppender) AddFast(uint64, int64, float64) error              { return nil }
-func (a nopAppender) Commit() error                                     { return nil }
-func (a nopAppender) Rollback() error                                   { return nil }
+func (a nopAppender) Add(labels.Labels, int64, float64) (uint64, error)               { return 0, nil }
+func (a nopAppender) AddFast(uint64, int64, float64) error                            { return nil }
+func (a nopAppender) AddExemplar(labels.Labels, int64, exemplar.Exemplar) error       { return nil }
+func (a nopAppender) AddExemplarFast(uint64, int64, float64, exemplar.Exemplar) error { return nil }
+func (a nopAppender) Commit() error                                                   { return nil }
+func (a nopAppender) Rollback() error                                                 { return nil }
+
+type nopExemplarAppendable struct{}
+
+func (ea nopExemplarAppendable) Appender() storage.ExemplarAppender {
+	return nopExemplarAppender{}
+}
+
+type nopExemplarAppender struct{}
+
+func (ea nopExemplarAppender) AddExemplar(l labels.Labels, t int64, e exemplar.Exemplar) error {
+	return nil
+}
 
 type sample struct {
 	metric labels.Labels
@@ -87,6 +102,14 @@ func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64
 	}
 	a.mapper[ref] = m
 	return ref, nil
+}
+
+func (a *collectResultAppender) AddExemplar(l labels.Labels, t int64, e exemplar.Exemplar) error {
+	return nil
+}
+
+func (a *collectResultAppender) AddExemplarFast(ref uint64, t int64, v float64, e exemplar.Exemplar) error {
+	return nil
 }
 
 func (a *collectResultAppender) Commit() error {

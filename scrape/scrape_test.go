@@ -33,16 +33,19 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -54,8 +57,9 @@ func TestMain(m *testing.M) {
 func TestNewScrapePool(t *testing.T) {
 	var (
 		app   = &nopAppendable{}
+		eApp  = &nopExemplarAppendable{}
 		cfg   = &config.ScrapeConfig{}
-		sp, _ = newScrapePool(cfg, app, 0, nil)
+		sp, _ = newScrapePool(cfg, app, eApp, 0, nil)
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -71,8 +75,9 @@ func TestNewScrapePool(t *testing.T) {
 
 func TestDroppedTargetsList(t *testing.T) {
 	var (
-		app = &nopAppendable{}
-		cfg = &config.ScrapeConfig{
+		app  = &nopAppendable{}
+		eApp = &nopExemplarAppendable{}
+		cfg  = &config.ScrapeConfig{
 			JobName:        "dropMe",
 			ScrapeInterval: model.Duration(1),
 			RelabelConfigs: []*relabel.Config{
@@ -90,7 +95,7 @@ func TestDroppedTargetsList(t *testing.T) {
 				},
 			},
 		}
-		sp, _                  = newScrapePool(cfg, app, 0, nil)
+		sp, _                  = newScrapePool(cfg, app, eApp, 0, nil)
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
@@ -446,7 +451,8 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
-	sp, _ := newScrapePool(cfg, app, 0, nil)
+	eApp := &nopExemplarAppendable{}
+	sp, _ := newScrapePool(cfg, app, eApp, 0, nil)
 
 	loop := sp.newLoop(scrapeLoopOptions{
 		target: &Target{},
@@ -482,12 +488,16 @@ func TestScrapePoolAppender(t *testing.T) {
 }
 
 func TestScrapePoolRaces(t *testing.T) {
+	var (
+		app  = &nopAppendable{}
+		eApp = &nopExemplarAppendable{}
+	)
 	interval, _ := model.ParseDuration("500ms")
 	timeout, _ := model.ParseDuration("1s")
 	newConfig := func() *config.ScrapeConfig {
 		return &config.ScrapeConfig{ScrapeInterval: interval, ScrapeTimeout: timeout}
 	}
-	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil)
+	sp, _ := newScrapePool(newConfig(), app, eApp, 0, nil)
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{
@@ -574,7 +584,7 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 		nil, nil,
 		nopMutator,
 		nopMutator,
-		nil, nil, 0,
+		nil, nil, nil, 0,
 		true,
 	)
 
@@ -625,10 +635,11 @@ func nopMutator(l labels.Labels) labels.Labels { return l }
 
 func TestScrapeLoopStop(t *testing.T) {
 	var (
-		signal   = make(chan struct{}, 1)
-		appender = &collectResultAppender{}
-		scraper  = &testScraper{}
-		app      = func(ctx context.Context) storage.Appender { return appender }
+		signal      = make(chan struct{}, 1)
+		appender    = &collectResultAppender{}
+		scraper     = &testScraper{}
+		app         = func(ctx context.Context) storage.Appender { return appender }
+		exemplarApp = func() storage.ExemplarAppender { return nopExemplarAppender{} }
 	)
 
 	sl := newScrapeLoop(context.Background(),
@@ -637,6 +648,7 @@ func TestScrapeLoopStop(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		exemplarApp,
 		nil,
 		0,
 		true,
@@ -693,8 +705,9 @@ func TestScrapeLoopRun(t *testing.T) {
 		signal = make(chan struct{}, 1)
 		errc   = make(chan error)
 
-		scraper = &testScraper{}
-		app     = func(ctx context.Context) storage.Appender { return &nopAppender{} }
+		scraper     = &testScraper{}
+		app         = func(ctx context.Context) storage.Appender { return &nopAppender{} }
+		exemplarApp = func() storage.ExemplarAppender { return nopExemplarAppender{} }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -704,6 +717,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		exemplarApp,
 		nil,
 		0,
 		true,
@@ -751,6 +765,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		exemplarApp,
 		nil,
 		0,
 		true,
@@ -802,6 +817,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -852,6 +868,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return nopAppender{} },
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		cache,
 		0,
 		true,
@@ -901,6 +918,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		s.Appender,
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -927,9 +945,10 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (
-		signal  = make(chan struct{}, 1)
-		scraper = &testScraper{}
-		app     = func(ctx context.Context) storage.Appender { return appender }
+		signal      = make(chan struct{}, 1)
+		scraper     = &testScraper{}
+		app         = func(ctx context.Context) storage.Appender { return appender }
+		exemplarApp = func() storage.ExemplarAppender { return nopExemplarAppender{} }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -939,6 +958,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		exemplarApp,
 		nil,
 		0,
 		true,
@@ -980,10 +1000,11 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (
-		signal     = make(chan struct{}, 1)
-		scraper    = &testScraper{}
-		app        = func(ctx context.Context) storage.Appender { return appender }
-		numScrapes = 0
+		signal      = make(chan struct{}, 1)
+		scraper     = &testScraper{}
+		app         = func(ctx context.Context) storage.Appender { return appender }
+		exemplarApp = func() storage.ExemplarAppender { return nopExemplarAppender{} }
+		numScrapes  = 0
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -993,6 +1014,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		exemplarApp,
 		nil,
 		0,
 		true,
@@ -1039,9 +1061,10 @@ func TestScrapeLoopCache(t *testing.T) {
 
 	appender := &collectResultAppender{}
 	var (
-		signal  = make(chan struct{}, 1)
-		scraper = &testScraper{}
-		app     = func(ctx context.Context) storage.Appender { appender.next = s.Appender(ctx); return appender }
+		signal      = make(chan struct{}, 1)
+		scraper     = &testScraper{}
+		app         = func(ctx context.Context) storage.Appender { appender.next = s.Appender(ctx); return appender }
+		exemplarApp = func() storage.ExemplarAppender { return nopExemplarAppender{} }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1051,6 +1074,7 @@ func TestScrapeLoopCache(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		exemplarApp,
 		nil,
 		0,
 		true,
@@ -1113,9 +1137,10 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 
 	appender := &collectResultAppender{next: sapp}
 	var (
-		signal  = make(chan struct{}, 1)
-		scraper = &testScraper{}
-		app     = func(ctx context.Context) storage.Appender { return appender }
+		signal      = make(chan struct{}, 1)
+		scraper     = &testScraper{}
+		app         = func(ctx context.Context) storage.Appender { return appender }
+		exemplarApp = func() storage.ExemplarAppender { return nopExemplarAppender{} }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1125,6 +1150,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		exemplarApp,
 		nil,
 		0,
 		true,
@@ -1231,6 +1257,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 				return mutateReportSampleLabels(l, discoveryLabels)
 			},
 			func(ctx context.Context) storage.Appender { return app },
+			func() storage.ExemplarAppender { return nopExemplarAppender{} },
 			nil,
 			0,
 			true,
@@ -1272,6 +1299,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -1321,6 +1349,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		},
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -1390,6 +1419,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { capp.next = s.Appender(ctx); return capp },
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -1430,6 +1460,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -1473,6 +1504,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -1499,11 +1531,98 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	require.Equal(t, want, app.result, "Appended samples not as expected")
 }
 
+func TestScrapeLoopAppendExemplar(t *testing.T) {
+	type sampleWithExemplar struct {
+		sample
+		e exemplar.Exemplar
+	}
+
+	tests := []struct {
+		title           string
+		scrapeLabels    string
+		discoveryLabels []string
+		expLset         labels.Labels
+		expValue        float64
+		exemplar        exemplar.Exemplar
+	}{
+		// {
+		// 	title:           "Metric without exemplars",
+		// 	scrapeLabels:    "metric_total{n=\"1\"} 0\n# EOF",
+		// 	discoveryLabels: []string{"n", "2"},
+		// 	expLset:         labels.FromStrings("__name__", "metric_total", "exported_n", "1", "n", "2"),
+		// 	expValue:        0,
+		// 	exemplar:        exemplar.Exemplar{},
+		// }, {
+		{
+			title:           "Metric with exemplars",
+			scrapeLabels:    "metric_total{n=\"1\"} 0 # {a=\"abc\"} 1.0\n# EOF",
+			discoveryLabels: []string{"n", "2"},
+			expLset:         labels.FromStrings("__name__", "metric_total", "exported_n", "1", "n", "2"),
+			expValue:        0,
+			exemplar:        exemplar.Exemplar{Labels: labels.FromStrings("a", "abc"), Value: 1},
+		}, {
+			title:           "Metric with exemplars and TS",
+			scrapeLabels:    "metric_total{n=\"1\"} 0 # {a=\"abc\"} 1.0 10000\n# EOF",
+			discoveryLabels: []string{"n", "2"},
+			expLset:         labels.FromStrings("__name__", "metric_total", "exported_n", "1", "n", "2"),
+			expValue:        0,
+			exemplar:        exemplar.Exemplar{Labels: labels.FromStrings("a", "abc"), Value: 1, Ts: 10000000, HasTs: true},
+		},
+	}
+
+	for _, test := range tests {
+		app := &collectResultAppender{}
+		exemplarApp := tsdb.NewCircularExemplarStorage(5)
+
+		discoveryLabels := &Target{
+			labels: labels.FromStrings(test.discoveryLabels...),
+		}
+
+		sl := newScrapeLoop(context.Background(),
+			nil, nil, nil,
+			func(l labels.Labels) labels.Labels {
+				return mutateSampleLabels(l, discoveryLabels, false, nil)
+			},
+			func(l labels.Labels) labels.Labels {
+				return mutateReportSampleLabels(l, discoveryLabels)
+			},
+			func(ctx context.Context) storage.Appender { return app },
+			func() storage.ExemplarAppender { return exemplarApp },
+			nil,
+			0,
+			true,
+		)
+
+		now := time.Now()
+
+		_, _, _, err := sl.append(app, []byte(test.scrapeLabels), "application/openmetrics-text", now)
+		assert.NoError(t, err)
+
+		expected := []sampleWithExemplar{
+			{
+				sample: sample{
+					metric: test.expLset,
+					t:      timestamp.FromTime(now),
+					v:      test.expValue,
+				},
+				e: test.exemplar,
+			},
+		}
+
+		e, err := exemplarApp.Select(0, math.MaxInt64, test.expLset)
+		assert.NoError(t, err)
+
+		t.Logf("Test:%s", test.title)
+		assert.Equal(t, expected[0].e, e[0])
+	}
+}
+
 func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 	var (
-		scraper  = &testScraper{}
-		appender = &collectResultAppender{}
-		app      = func(ctx context.Context) storage.Appender { return appender }
+		scraper     = &testScraper{}
+		appender    = &collectResultAppender{}
+		app         = func(ctx context.Context) storage.Appender { return appender }
+		exemplarApp = func() storage.ExemplarAppender { return nopExemplarAppender{} }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1513,6 +1632,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		exemplarApp,
 		nil,
 		0,
 		true,
@@ -1529,9 +1649,10 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 
 func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 	var (
-		scraper  = &testScraper{}
-		appender = &collectResultAppender{}
-		app      = func(ctx context.Context) storage.Appender { return appender }
+		scraper     = &testScraper{}
+		appender    = &collectResultAppender{}
+		app         = func(ctx context.Context) storage.Appender { return appender }
+		exemplarApp = func() storage.ExemplarAppender { return nopExemplarAppender{} }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1541,6 +1662,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		exemplarApp,
 		nil,
 		0,
 		true,
@@ -1586,6 +1708,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -1623,6 +1746,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 				maxTime:  timestamp.FromTime(time.Now().Add(10 * time.Minute)),
 			}
 		},
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -1811,6 +1935,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return capp },
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil, 0,
 		true,
 	)
@@ -1844,6 +1969,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return capp },
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil, 0,
 		false,
 	)
@@ -1875,6 +2001,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		s.Appender,
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -1925,6 +2052,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 		},
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -2013,14 +2141,15 @@ func TestReusableConfig(t *testing.T) {
 
 func TestReuseScrapeCache(t *testing.T) {
 	var (
-		app = &nopAppendable{}
-		cfg = &config.ScrapeConfig{
+		app  = &nopAppendable{}
+		eApp = &nopExemplarAppendable{}
+		cfg  = &config.ScrapeConfig{
 			JobName:        "Prometheus",
 			ScrapeTimeout:  model.Duration(5 * time.Second),
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil)
+		sp, _ = newScrapePool(cfg, app, eApp, 0, nil)
 		t1    = &Target{
 			discoveredLabels: labels.Labels{
 				labels.Label{
@@ -2142,6 +2271,7 @@ func TestScrapeAddFast(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		s.Appender,
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,
@@ -2167,14 +2297,16 @@ func TestScrapeAddFast(t *testing.T) {
 
 func TestReuseCacheRace(t *testing.T) {
 	var (
-		app = &nopAppendable{}
-		cfg = &config.ScrapeConfig{
+		app  = &nopAppendable{}
+		eApp = &nopExemplarAppendable{}
+		cfg  = &config.ScrapeConfig{
 			JobName:        "Prometheus",
 			ScrapeTimeout:  model.Duration(5 * time.Second),
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil)
+
+		sp, _ = newScrapePool(cfg, app, eApp, 0, nil)
 		t1    = &Target{
 			discoveredLabels: labels.Labels{
 				labels.Label{
@@ -2225,6 +2357,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		s.Appender,
+		func() storage.ExemplarAppender { return nopExemplarAppender{} },
 		nil,
 		0,
 		true,

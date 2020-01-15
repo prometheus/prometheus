@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -74,6 +75,15 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		{Ref: 13, Intervals: tombstones.Intervals{{Mint: -1000, Maxt: -11}}},
 		{Ref: 13, Intervals: tombstones.Intervals{{Mint: 5000, Maxt: 1000}}},
 	}, decTstones)
+
+	exemplars := []RefExemplar{
+		{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("traceID", "qwerty")},
+		{Ref: 123, T: -1231, V: -123, Labels: labels.FromStrings("traceID", "asdf")},
+		{Ref: 2, T: 0, V: 99999, Labels: labels.FromStrings("traceID", "zxcv")},
+	}
+	decExemplars, err := dec.Exemplars(enc.Exemplars(exemplars, nil), nil)
+	assert.NoError(t, err)
+	assert.Equal(t, exemplars, decExemplars)
 }
 
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
@@ -117,6 +127,16 @@ func TestRecord_Corrupted(t *testing.T) {
 		_, err := dec.Tombstones(corrupted, nil)
 		require.Equal(t, err, encoding.ErrInvalidSize)
 	})
+
+	t.Run("Test corrupted exemplar record", func(t *testing.T) {
+		exemplars := []RefExemplar{
+			{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("traceID", "asdf")},
+		}
+
+		corrupted := enc.Exemplars(exemplars, nil)[:8]
+		_, err := dec.Exemplars(corrupted, nil)
+		assert.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+	})
 }
 
 func TestRecord_Type(t *testing.T) {
@@ -134,6 +154,10 @@ func TestRecord_Type(t *testing.T) {
 	tstones := []tombstones.Stone{{Ref: 1, Intervals: tombstones.Intervals{{Mint: 1, Maxt: 2}}}}
 	recordType = dec.Type(enc.Tombstones(tstones, nil))
 	require.Equal(t, Tombstones, recordType)
+
+	exemplars := []RefExemplar{{Ref: 123, T: 12345, V: 1.2345, Labels: labels.FromStrings("traceID", "qwerty123456")}}
+	recordType = dec.Type(enc.Exemplars(exemplars, nil))
+	assert.Equal(t, Exemplars, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)
