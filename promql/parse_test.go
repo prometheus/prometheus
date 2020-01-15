@@ -495,7 +495,7 @@ var testExpr = []struct {
 	}, {
 		input:  "1 == 1",
 		fail:   true,
-		errMsg: "1:7: parse error: comparisons between scalars must use BOOL modifier",
+		errMsg: "1:3: parse error: comparisons between scalars must use BOOL modifier",
 	}, {
 		input:  "1 or 1",
 		fail:   true,
@@ -1633,11 +1633,11 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric OFFSET 1m[5m]`,
 		fail:   true,
-		errMsg: "1:25: parse error: no offset modifiers allowed before range",
+		errMsg: "1:22: parse error: no offset modifiers allowed before range",
 	}, {
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
-		errMsg: "1:15: parse error: ranges only allowed for vector selectors",
+		errMsg: "1:12: parse error: ranges only allowed for vector selectors",
 	},
 	// Test aggregation.
 	{
@@ -1966,11 +1966,11 @@ var testExpr = []struct {
 	}, {
 		input:  `topk(some_metric, other_metric)`,
 		fail:   true,
-		errMsg: "1:32: parse error: expected type scalar in aggregation parameter, got instant vector",
+		errMsg: "1:6: parse error: expected type scalar in aggregation parameter, got instant vector",
 	}, {
 		input:  `count_values(5, other_metric)`,
 		fail:   true,
-		errMsg: "1:30: parse error: expected type string in aggregation parameter, got scalar",
+		errMsg: "1:14: parse error: expected type string in aggregation parameter, got scalar",
 	},
 	// Test function calls.
 	{
@@ -2463,11 +2463,11 @@ var testExpr = []struct {
 	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",
 		fail:   true,
-		errMsg: "1:29: parse error: subquery is only allowed on instant vector, got matrix in \"test[5d] offset 10s[10m:5s]\"",
+		errMsg: "1:1: parse error: subquery is only allowed on instant vector, got matrix in \"test[5d] offset 10s[10m:5s]\"",
 	}, {
 		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
 		fail:   true,
-		errMsg: `1:35: parse error: subquery is only allowed on instant vector, got matrix in "(foo + bar{nm=\"val\"})[5m:][10m:5s]" instead`,
+		errMsg: `1:1: parse error: subquery is only allowed on instant vector, got matrix in "(foo + bar{nm=\"val\"})[5m:][10m:5s]" instead`,
 	},
 }
 

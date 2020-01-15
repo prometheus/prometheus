@@ -291,23 +291,6 @@ func (l *Lexer) acceptRun(valid string) {
 	l.backup()
 }
 
-// lineNumber reports which line we're on, based on the position of
-// the previous Item returned by NextItem. Doing it this way
-// means we don't have to worry about peek double counting.
-func (l *Lexer) lineNumber() int {
-	return 1 + strings.Count(l.input[:l.lastPos], "\n")
-}
-
-// linePosition reports at which character in the current line
-// we are on.
-func (l *Lexer) linePosition() int {
-	lb := strings.LastIndex(l.input[:l.lastPos], "\n")
-	if lb == -1 {
-		return 1 + int(l.lastPos)
-	}
-	return 1 + int(l.lastPos) - lb
-}
-
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.NextItem.
 func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
