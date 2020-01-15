@@ -58,11 +58,6 @@ type RuleGroups struct {
 	Groups []RuleGroup `yaml:"groups"`
 }
 
-// RuleGroupsTest for running tests over rules.
-type RuleGroupsTest struct {
-	Groups []RuleGroupTest `yaml:"groups"`
-}
-
 type ruleGroups struct {
 	Groups []yaml.Node `yaml:"groups"`
 }
@@ -111,13 +106,6 @@ type RuleGroup struct {
 	Name     string         `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
 	Rules    []RuleNode     `yaml:"rules"`
-}
-
-// RuleGroupTest forms a testing struct for running tests over rules.
-type RuleGroupTest struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Rules    []Rule         `yaml:"rules"`
 }
 
 // Rule describes an alerting or recording rule.

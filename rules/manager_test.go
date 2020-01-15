@@ -762,9 +762,21 @@ func TestUpdate(t *testing.T) {
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 }
 
-func formatRules(r *rulefmt.RuleGroups) rulefmt.RuleGroupsTest {
+// ruleGroupsTest for running tests over rules.
+type ruleGroupsTest struct {
+	Groups []ruleGroupTest `yaml:"groups"`
+}
+
+// ruleGroupTest forms a testing struct for running tests over rules.
+type ruleGroupTest struct {
+	Name     string         `yaml:"name"`
+	Interval model.Duration `yaml:"interval,omitempty"`
+	Rules    []rulefmt.Rule `yaml:"rules"`
+}
+
+func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 	grps := r.Groups
-	tmp := []rulefmt.RuleGroupTest{}
+	tmp := []ruleGroupTest{}
 	for _, g := range grps {
 		rtmp := []rulefmt.Rule{}
 		for _, r := range g.Rules {
@@ -777,13 +789,13 @@ func formatRules(r *rulefmt.RuleGroups) rulefmt.RuleGroupsTest {
 				Annotations: r.Annotations,
 			})
 		}
-		tmp = append(tmp, rulefmt.RuleGroupTest{
+		tmp = append(tmp, ruleGroupTest{
 			Name:     g.Name,
 			Interval: g.Interval,
 			Rules:    rtmp,
 		})
 	}
-	return rulefmt.RuleGroupsTest{
+	return ruleGroupsTest{
 		Groups: tmp,
 	}
 }
