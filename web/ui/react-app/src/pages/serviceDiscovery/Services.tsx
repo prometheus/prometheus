@@ -101,6 +101,7 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
     </>
   );
 };
+ServiceDiscoveryContent.displayName = 'ServiceDiscoveryContent';
 
 const ServicesWithStatusIndicator = withStatusIndicator(ServiceDiscoveryContent);
 

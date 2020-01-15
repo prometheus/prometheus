@@ -61,6 +61,7 @@ export const TSDBStatusContent: FC<TSDBMap> = ({
     </div>
   );
 };
+TSDBStatusContent.displayName = 'TSDBStatusContent';
 
 const TSDBStatusContentWithStatusIndicator = withStatusIndicator(TSDBStatusContent);
 

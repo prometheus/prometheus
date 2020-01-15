@@ -14,7 +14,7 @@ interface StatusConfig {
 type StatusPageState = { [k: string]: string };
 
 interface StatusPageProps {
-  data?: StatusPageState[];
+  data: StatusPageState[];
 }
 
 export const statusConfig: StatusConfig = {
@@ -56,7 +56,7 @@ export const statusConfig: StatusConfig = {
   droppedAlertmanagers: { skip: true },
 };
 
-export const StatusContent: FC<StatusPageProps> = ({ data = [] }) => {
+export const StatusContent: FC<StatusPageProps> = ({ data }) => {
   return (
     <>
       {data.map((statuses, i) => {
