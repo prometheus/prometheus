@@ -17,10 +17,10 @@ import "github.com/prometheus/prometheus/pkg/labels"
 
 // Exemplar is additional information associated with a time series.
 type Exemplar struct {
-	Labels labels.Labels
-	Value  float64
-	HasTs  bool
-	Ts     int64
+	Labels labels.Labels `json:"labels"`
+	Value  float64       `json:"value"`
+	Ts     int64         `json:"timestamp"`
+	HasTs  bool          `json:"hasTimestamp"`
 }
 
 type QueryResult struct {
