@@ -794,7 +794,7 @@ yydefault:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/generated_parser.y:167
 		{
-			yylex.(*parser).errorf(PositionRange{}, "no expression found in input")
+			yylex.(*parser).failf(PositionRange{}, "no expression found in input")
 		}
 	case 4:
 		yyDollar = yyS[yypt-2 : yypt+1]
@@ -1056,7 +1056,7 @@ yydefault:
 		{
 			fn, exist := getFunction(yyDollar[1].item.Val)
 			if !exist {
-				yylex.(*parser).errorf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				yylex.(*parser).failf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
 			}
 			yyVAL.node = &Call{
 				Func: fn,
@@ -1124,7 +1124,7 @@ yydefault:
 
 			if errMsg != "" {
 				errRange := mergeRanges(&yyDollar[2].item, &yyDollar[4].item)
-				yylex.(*parser).errorf(errRange, errMsg)
+				yylex.(*parser).failf(errRange, errMsg)
 			}
 
 			yyVAL.node = &MatrixSelector{
@@ -1477,7 +1477,7 @@ yydefault:
 			var err error
 			yyVAL.uint, err = strconv.ParseUint(yyDollar[1].item.Val, 10, 64)
 			if err != nil {
-				yylex.(*parser).errorf(yyDollar[1].item.PositionRange(), "invalid repetition in series values: %s", err)
+				yylex.(*parser).failf(yyDollar[1].item.PositionRange(), "invalid repetition in series values: %s", err)
 			}
 		}
 	case 159:
@@ -1487,7 +1487,7 @@ yydefault:
 			var err error
 			yyVAL.duration, err = parseDuration(yyDollar[1].item.Val)
 			if err != nil {
-				yylex.(*parser).error(yyDollar[1].item.PositionRange(), err)
+				yylex.(*parser).fail(yyDollar[1].item.PositionRange(), err)
 			}
 		}
 	case 160:
