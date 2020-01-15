@@ -52,7 +52,7 @@ func TestStorageLifecycle(t *testing.T) {
 		},
 	}
 
-	s.ApplyConfig(conf)
+	testutil.Ok(t, s.ApplyConfig(conf))
 
 	// make sure remote write has a queue.
 	testutil.Equals(t, 1, len(s.rws.queues))
@@ -74,13 +74,13 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 	}
-	s.ApplyConfig(conf)
+	testutil.Ok(t, s.ApplyConfig(conf))
 	testutil.Equals(t, 0, len(s.queryables))
 
 	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
 		&config.DefaultRemoteReadConfig,
 	}
-	s.ApplyConfig(conf)
+	testutil.Ok(t, s.ApplyConfig(conf))
 	testutil.Equals(t, 1, len(s.queryables))
 
 	err = s.Close()
