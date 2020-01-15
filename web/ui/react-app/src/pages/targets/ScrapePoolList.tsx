@@ -11,7 +11,7 @@ interface ScrapePoolListProps {
   activeTargets: Target[];
 }
 
-export const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ filter, activeTargets }) => {
+export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ filter, activeTargets }) => {
   const targetGroups = groupTargets(activeTargets);
   const { showHealthy, showUnhealthy } = filter;
   return (
@@ -26,8 +26,9 @@ export const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ filter, activeT
     </>
   );
 };
+ScrapePoolContent.displayName = 'ScrapePoolContent';
 
-const ScrapePoolListWithStatusIndicator = withStatusIndicator(ScrapePoolListContent);
+const ScrapePoolListWithStatusIndicator = withStatusIndicator(ScrapePoolContent);
 
 const ScrapePoolList: FC<{ filter: FilterData } & PathPrefixProps> = ({ pathPrefix, filter }) => {
   const { response, error, isLoading } = useFetch<ScrapePoolListProps>(`${pathPrefix}/api/v1/targets?state=active`);
@@ -37,13 +38,8 @@ const ScrapePoolList: FC<{ filter: FilterData } & PathPrefixProps> = ({ pathPref
     <ScrapePoolListWithStatusIndicator
       {...response.data}
       filter={filter}
-      error={badResponse ? new Error() : error}
+      error={badResponse ? new Error(responseStatus) : error}
       isLoading={isLoading}
-      customErrorMsg={
-        <>
-          <strong>Error fetching targets:</strong> {badResponse ? responseStatus : error && error.message}
-        </>
-      }
     />
   );
 };
