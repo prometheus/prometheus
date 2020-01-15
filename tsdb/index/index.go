@@ -995,10 +995,25 @@ func (w *Writer) Close() error {
 			return err
 		}
 	}
+<<<<<<< HEAD
 	if err := w.f.Close(); err != nil {
 		return err
 	}
 	return ensureErr
+=======
+	if err := w.f.close(); err != nil {
+		return err
+	}
+	return ensureErr
+}
+
+// StringTuples provides access to a sorted list of string tuples.
+type StringTuples interface {
+	// Total number of tuples in the list.
+	Len() int
+	// At returns the tuple at position i.
+	At(i int) ([]string, error)
+>>>>>>> origin/release-2.15
 }
 
 // StringIter iterates over a sorted list of strings.
@@ -1150,6 +1165,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 				}
 				lastKey = nil
 				valueCount = 0
+<<<<<<< HEAD
 			}
 			if valueCount%32 == 0 {
 				r.postings[key[0]] = append(r.postings[key[0]], postingOffset{value: key[1], off: off})
@@ -1158,6 +1174,16 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 				lastKey = key
 				lastOff = off
 			}
+=======
+			}
+			if valueCount%32 == 0 {
+				r.postings[key[0]] = append(r.postings[key[0]], postingOffset{value: key[1], off: off})
+				lastKey = nil
+			} else {
+				lastKey = key
+				lastOff = off
+			}
+>>>>>>> origin/release-2.15
 			valueCount++
 			return nil
 		}); err != nil {
@@ -1435,7 +1461,24 @@ func (r *Reader) LabelValues(name string) ([]string, error) {
 		return values, nil
 
 	}
+<<<<<<< HEAD
 	e, ok := r.postings[name]
+=======
+	if r.version == FormatV1 {
+		e, ok := r.postingsV1[names[0]]
+		if !ok {
+			return emptyStringTuples{}, nil
+		}
+		values := make([]string, 0, len(e))
+		for k := range e {
+			values = append(values, k)
+		}
+		sort.Strings(values)
+		return NewStringTuples(values, 1)
+
+	}
+	e, ok := r.postings[names[0]]
+>>>>>>> origin/release-2.15
 	if !ok {
 		return nil, nil
 	}
