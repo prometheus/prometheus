@@ -54,12 +54,36 @@ type parser struct {
 // If the parsing input was a single line, line will be 0 and omitted
 // from the error string.
 type ParseErr struct {
-	Line, Pos int
-	Err       error
+	PositionRange PositionRange
+	Err           error
+	Query         string
+
+	// A additional line offset to be added. Only used inside unit tests.
+	lineOffset int
 }
 
 func (e *ParseErr) Error() string {
-	return fmt.Sprintf("%d:%d: parse error: %s", e.Line+1, e.Pos, e.Err)
+	pos := int(e.PositionRange.Start)
+	lastLineBreak := -1
+	line := e.lineOffset + 1
+
+	var positionStr string
+
+	if pos < 0 || pos > len(e.Query) {
+		positionStr = "invalid position:"
+	} else {
+
+		for i, c := range e.Query[:e.PositionRange.Start] {
+			if c == '\n' {
+				lastLineBreak = i
+				line++
+			}
+		}
+
+		col := pos - lastLineBreak
+		positionStr = fmt.Sprintf("%d:%d:", line, col)
+	}
+	return fmt.Sprintf("%s parse error: %s", positionStr, e.Err)
 }
 
 // ParseExpr returns the expression parsed from the input.
@@ -158,12 +182,9 @@ func (p *parser) errorf(format string, args ...interface{}) {
 // error terminates processing.
 func (p *parser) error(err error) {
 	perr := &ParseErr{
-		Line: p.lex.lineNumber(),
-		Pos:  p.lex.linePosition(),
-		Err:  err,
-	}
-	if strings.Count(strings.TrimSpace(p.lex.input), "\n") == 0 {
-		perr.Line = 0
+		PositionRange: p.yyParser.lval.item.PositionRange(),
+		Err:           err,
+		Query:         p.lex.input,
 	}
 	panic(perr)
 }
