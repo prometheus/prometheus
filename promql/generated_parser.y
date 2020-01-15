@@ -164,7 +164,7 @@ start           :
                         { yylex.(*parser).generatedParserResult = $2 }
                 | START_SERIES_DESCRIPTION series_description
                 | START_EXPRESSION /* empty */ EOF
-                        { yylex.(*parser).errorf("no expression found in input")}
+                        { yylex.(*parser).errorf(PositionRange{}, "no expression found in input")}
                 | START_EXPRESSION expr
                         { yylex.(*parser).generatedParserResult = $2 }
                 | START_METRIC_SELECTOR vector_selector 
@@ -326,7 +326,7 @@ function_call   : IDENTIFIER function_call_body
                         {
                         fn, exist := getFunction($1.Val)
                         if !exist{
-                                yylex.(*parser).errorf("unknown function with name %q", $1.Val)
+                                yylex.(*parser).errorf($1.PositionRange(),"unknown function with name %q", $1.Val)
                         } 
                         $$ = &Call{
                                 Func: fn,
@@ -378,13 +378,19 @@ offset_expr: expr OFFSET duration
 
 matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         {
+                        var errMsg string
                         vs, ok := $1.(*VectorSelector)
                         if !ok{
-                                yylex.(*parser).errorf("ranges only allowed for vector selectors")
+                                errMsg = "ranges only allowed for vector selectors"
+                        } else if vs.Offset != 0{
+                                errMsg = "no offset modifiers allowed before range"
                         }
-                        if vs.Offset != 0{
-                                yylex.(*parser).errorf("no offset modifiers allowed before range")
+
+                        if errMsg != ""{
+                                errRange := mergeRanges(&$2, &$4)
+                                yylex.(*parser).errorf(errRange, errMsg)
                         }
+
                         $$ = &MatrixSelector{
                                 VectorSelector: vs,
                                 Range: $3,
@@ -648,7 +654,7 @@ uint            : NUMBER
                         var err error
                         $$, err = strconv.ParseUint($1.Val, 10, 64)
                         if err != nil {
-                                yylex.(*parser).errorf("invalid repetition in series values: %s", err)
+                                yylex.(*parser).errorf($1.PositionRange(), "invalid repetition in series values: %s", err)
                         }
                         }
                 ;
@@ -658,7 +664,7 @@ duration        : DURATION
                         var err error
                         $$, err = parseDuration($1.Val)
                         if err != nil {
-                                yylex.(*parser).error(err)
+                                yylex.(*parser).error($1.PositionRange(), err)
                         }
                         }
                 ;
