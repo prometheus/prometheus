@@ -37,7 +37,7 @@ const (
 )
 
 func TestTargetLabels(t *testing.T) {
-	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
+	target := newTestTarget("example.com:80", 0, labels.FromStrings(model.JobLabel, "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
 	got := target.Labels()
 	if !reflect.DeepEqual(want, got) {
