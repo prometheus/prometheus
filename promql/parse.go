@@ -48,11 +48,10 @@ type parser struct {
 	yyParser yyParserImpl
 
 	generatedParserResult interface{}
+	parseErrors           ParseErrors
 }
 
 // ParseErr wraps a parsing error with line and position context.
-// If the parsing input was a single line, line will be 0 and omitted
-// from the error string.
 type ParseErr struct {
 	PositionRange PositionRange
 	Err           error
@@ -86,14 +85,43 @@ func (e *ParseErr) Error() string {
 	return fmt.Sprintf("%s parse error: %s", positionStr, e.Err)
 }
 
+type ParseErrors []ParseErr
+
+// Since producing multiple error messages might look weird when combined with error wrapping,
+// only the first error produced by the parser is included in the error string.
+// If getting the full error list is desired, it is recommended to typecast the error returned
+// by the parser to ParseErrors and work with the underlying slice.
+func (errs ParseErrors) Error() string {
+	if len(errs) != 0 {
+		return errs[0].Error()
+	} else {
+		// Should never happen
+		// Panicking while printing an error seems like a bad idea, so the
+		// situation is explained in the error message instead.
+		return "error contains no error message"
+	}
+}
+
 // ParseExpr returns the expression parsed from the input.
 func ParseExpr(input string) (expr Expr, err error) {
 	p := newParser(input)
 	defer parserPool.Put(p)
 	defer p.recover(&err)
 
-	expr = p.parseGenerated(START_EXPRESSION).(Expr)
-	err = p.typecheck(expr)
+	parseResult := p.parseGenerated(START_EXPRESSION)
+
+	if parseResult != nil {
+		expr = parseResult.(Expr)
+	}
+
+	// Only typecheck when there are no syntax errors.
+	if len(p.parseErrors) == 0 {
+		p.checkType(expr)
+	}
+
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors
+	}
 
 	return expr, err
 }
@@ -104,7 +132,16 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 	defer parserPool.Put(p)
 	defer p.recover(&err)
 
-	return p.parseGenerated(START_METRIC).(labels.Labels), nil
+	parseResult := p.parseGenerated(START_METRIC)
+	if parseResult != nil {
+		m = parseResult.(labels.Labels)
+	}
+
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors
+	}
+
+	return m, err
 }
 
 // ParseMetricSelector parses the provided textual metric selector into a list of
@@ -114,7 +151,16 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	defer parserPool.Put(p)
 	defer p.recover(&err)
 
-	return p.parseGenerated(START_METRIC_SELECTOR).(*VectorSelector).LabelMatchers, nil
+	parseResult := p.parseGenerated(START_METRIC_SELECTOR)
+	if parseResult != nil {
+		m = parseResult.(*VectorSelector).LabelMatchers
+	}
+
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors
+	}
+
+	return m, err
 }
 
 // newParser returns a new parser.
@@ -122,6 +168,7 @@ func newParser(input string) *parser {
 	p := parserPool.Get().(*parser)
 
 	p.injecting = false
+	p.parseErrors = nil
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
@@ -151,27 +198,26 @@ type seriesDescription struct {
 
 // parseSeriesDesc parses the description of a time series.
 func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue, err error) {
-
 	p := newParser(input)
 	p.lex.seriesDesc = true
 
 	defer parserPool.Put(p)
 	defer p.recover(&err)
 
-	result := p.parseGenerated(START_SERIES_DESCRIPTION).(*seriesDescription)
+	parseResult := p.parseGenerated(START_SERIES_DESCRIPTION)
+	if parseResult != nil {
+		result := parseResult.(*seriesDescription)
 
-	labels = result.labels
-	values = result.values
+		labels = result.labels
+		values = result.values
 
-	return
-}
+	}
 
-// typecheck checks correct typing of the parsed statements or expression.
-func (p *parser) typecheck(node Node) (err error) {
-	defer p.recover(&err)
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors
+	}
 
-	p.checkType(node)
-	return nil
+	return labels, values, err
 }
 
 // failf formats the error and terminates processing.
@@ -181,12 +227,13 @@ func (p *parser) failf(positionRange PositionRange, format string, args ...inter
 
 // fail terminates processing.
 func (p *parser) fail(positionRange PositionRange, err error) {
-	perr := &ParseErr{
+	perr := ParseErr{
 		PositionRange: positionRange,
 		Err:           err,
 		Query:         p.lex.input,
 	}
-	panic(perr)
+
+	p.parseErrors = append(p.parseErrors, perr)
 }
 
 // unexpected creates a parser error complaining about an unexpected lexer item.
@@ -258,6 +305,7 @@ func (p *parser) Lex(lval *yySymType) int {
 
 	case ERROR:
 		p.failf(lval.item.PositionRange(), "%s", lval.item.Val)
+		p.InjectItem(0)
 	case EOF:
 		lval.item.Typ = EOF
 		p.InjectItem(0)
@@ -340,7 +388,7 @@ func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	if vs.Name != "" {
 
 		for _, m := range vs.LabelMatchers {
-			if m.Name == labels.MetricName {
+			if m != nil && m.Name == labels.MetricName {
 				p.failf(vs.PositionRange(), "metric name must not be set twice: %q or %q", vs.Name, m.Value)
 			}
 		}
@@ -356,7 +404,7 @@ func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	// implicit selection of all metrics (e.g. by a typo).
 	notEmpty := false
 	for _, lm := range vs.LabelMatchers {
-		if !lm.Matches("") {
+		if lm != nil && !lm.Matches("") {
 			notEmpty = true
 			break
 		}

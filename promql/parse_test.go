@@ -1964,6 +1964,10 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "wrong number of arguments for aggregate expression provided, expected 2, got 1",
 	}, {
+		input:  `topk(some_metric,)`,
+		fail:   true,
+		errMsg: "trailing commas not allowed in function call args",
+	}, {
 		input:  `topk(some_metric, other_metric)`,
 		fail:   true,
 		errMsg: "1:6: parse error: expected type scalar in aggregation parameter, got instant vector",
