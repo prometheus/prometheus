@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -2487,7 +2486,6 @@ func TestParseExpressions(t *testing.T) {
 			testutil.Ok(t, err)
 			testutil.Equals(t, expr, test.expected, "error on input '%s'", test.input)
 		} else {
-			fmt.Println(test.input)
 			testutil.NotOk(t, err)
 			testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 		}

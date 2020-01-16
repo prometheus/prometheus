@@ -87,15 +87,17 @@ func (e *ParseErr) Error() string {
 
 type ParseErrors []ParseErr
 
-// Since producing multiple Error messages might look weird when combined with error wrapping,
+// Since producing multiple error messages might look weird when combined with error wrapping,
 // only the first error produced by the parser is included in the error string.
 // If getting the full error list is desired, it is recommended to typecast the error returned
-// by the parser to ParseErrors.
+// by the parser to ParseErrors and work with the underlying slice.
 func (errs ParseErrors) Error() string {
 	if len(errs) != 0 {
 		return errs[0].Error()
 	} else {
-		// Should never happen, but panicking while printing an error doesn't seem like a good idea.
+		// Should never happen
+		// Panicking while printing an error seems like a bad idea, so the
+		// situation is explained in the error message instead.
 		return "error contains no error message"
 	}
 }
@@ -112,7 +114,7 @@ func ParseExpr(input string) (expr Expr, err error) {
 		expr = parseResult.(Expr)
 	}
 
-	// Only typecheck when there are no syntax errors
+	// Only typecheck when there are no syntax errors.
 	if len(p.parseErrors) == 0 {
 		p.checkType(expr)
 	}
