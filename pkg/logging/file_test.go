@@ -14,10 +14,10 @@
 package logging
 
 import (
-	"errors"
 	"io/ioutil"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/prometheus/util/testutil"
@@ -32,7 +32,8 @@ func TestJSONFileLogger_basic(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Assert(t, l != nil, "logger can't be nil")
 
-	l.Log("test", "yes")
+	err = l.Log("test", "yes")
+	testutil.Ok(t, err)
 	r := make([]byte, 1024)
 	_, err = f.Read(r)
 	testutil.Ok(t, err)
@@ -44,5 +45,40 @@ func TestJSONFileLogger_basic(t *testing.T) {
 	testutil.Ok(t, err)
 
 	err = l.file.Close()
-	testutil.Assert(t, errors.Is(err, os.ErrClosed), "file was not closed")
+	testutil.NotOk(t, err)
+	testutil.Assert(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
+}
+
+func TestJSONFileLogger_parallel(t *testing.T) {
+	f, err := ioutil.TempFile("", "")
+	testutil.Ok(t, err)
+	defer f.Close()
+
+	l, err := NewJSONFileLogger(f.Name())
+	testutil.Ok(t, err)
+	testutil.Assert(t, l != nil, "logger can't be nil")
+
+	err = l.Log("test", "yes")
+	testutil.Ok(t, err)
+
+	l2, err := NewJSONFileLogger(f.Name())
+	testutil.Ok(t, err)
+	testutil.Assert(t, l != nil, "logger can't be nil")
+
+	err = l2.Log("test", "yes")
+	testutil.Ok(t, err)
+
+	err = l.Close()
+	testutil.Ok(t, err)
+
+	err = l.file.Close()
+	testutil.NotOk(t, err)
+	testutil.Assert(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
+
+	err = l2.Close()
+	testutil.Ok(t, err)
+
+	err = l2.file.Close()
+	testutil.NotOk(t, err)
+	testutil.Assert(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
 }

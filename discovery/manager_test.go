@@ -69,7 +69,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 				"tp1": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     5 * time.Millisecond,
+						interval:     5 * timescale,
 					},
 				},
 			},
@@ -83,19 +83,19 @@ func TestTargetUpdatesOrder(t *testing.T) {
 				"tp1": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     5 * time.Millisecond,
+						interval:     5 * timescale,
 					},
 				},
 				"tp2": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     200 * time.Millisecond,
+						interval:     200 * timescale,
 					},
 				},
 				"tp3": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     100 * time.Millisecond,
+						interval:     100 * timescale,
 					},
 				},
 			},
@@ -160,7 +160,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "3"}},
 							},
 						},
-						interval: 10 * time.Millisecond,
+						interval: 10 * timescale,
 					},
 				},
 			},
@@ -218,7 +218,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{},
 							},
 						},
-						interval: 10 * time.Millisecond,
+						interval: 10 * timescale,
 					},
 				},
 			},
@@ -277,7 +277,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 						},
-						interval: 10 * time.Millisecond,
+						interval: 10 * timescale,
 					},
 				},
 			},
@@ -323,7 +323,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
-						interval: 10 * time.Millisecond,
+						interval: 10 * timescale,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -336,7 +336,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
-						interval: 500 * time.Millisecond,
+						interval: 500 * timescale,
 					},
 				},
 				"tp2": {
@@ -351,7 +351,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "6"}},
 							},
 						},
-						interval: 100 * time.Millisecond,
+						interval: 100 * timescale,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -364,7 +364,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "8"}},
 							},
 						},
-						interval: 10 * time.Millisecond,
+						interval: 10 * timescale,
 					},
 				},
 			},
@@ -474,7 +474,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
-						interval: 10 * time.Millisecond,
+						interval: 10 * timescale,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -487,7 +487,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
-						interval: 150 * time.Millisecond,
+						interval: 150 * timescale,
 					},
 				},
 				"tp2": {
@@ -502,7 +502,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "6"}},
 							},
 						},
-						interval: 200 * time.Millisecond,
+						interval: 200 * timescale,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -515,7 +515,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "8"}},
 							},
 						},
-						interval: 100 * time.Millisecond,
+						interval: 100 * timescale,
 					},
 				},
 			},
@@ -594,7 +594,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
-						interval: 30 * time.Millisecond,
+						interval: 30 * timescale,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -607,7 +607,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{},
 							},
 						},
-						interval: 10 * time.Millisecond,
+						interval: 10 * timescale,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -620,7 +620,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
-						interval: 300 * time.Millisecond,
+						interval: 300 * timescale,
 					},
 				},
 			},
@@ -666,7 +666,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			defer cancel()
 
 			discoveryManager := NewManager(ctx, log.NewNopLogger())
-			discoveryManager.updatert = 100 * time.Millisecond
+			discoveryManager.updatert = 100 * timescale
 
 			var totalUpdatesCount int
 			provUpdates := make(chan []*targetgroup.Group)
@@ -754,7 +754,7 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
-	discoveryManager.updatert = 100 * time.Millisecond
+	discoveryManager.updatert = 100 * timescale
 	go discoveryManager.Run()
 
 	c := map[string]sd_config.ServiceDiscoveryConfig{
@@ -811,7 +811,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
-	discoveryManager.updatert = 100 * time.Millisecond
+	discoveryManager.updatert = 100 * timescale
 	go discoveryManager.Run()
 
 	c := map[string]sd_config.ServiceDiscoveryConfig{
@@ -876,7 +876,7 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, nil)
-	discoveryManager.updatert = 100 * time.Millisecond
+	discoveryManager.updatert = 100 * timescale
 	go discoveryManager.Run()
 
 	c := map[string]sd_config.ServiceDiscoveryConfig{
@@ -932,7 +932,7 @@ scrape_configs:
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
-	discoveryManager.updatert = 100 * time.Millisecond
+	discoveryManager.updatert = 100 * timescale
 	go discoveryManager.Run()
 
 	c := map[string]sd_config.ServiceDiscoveryConfig{
@@ -954,7 +954,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
-	discoveryManager.updatert = 100 * time.Millisecond
+	discoveryManager.updatert = 100 * timescale
 	go discoveryManager.Run()
 
 	c := map[string]sd_config.ServiceDiscoveryConfig{
@@ -1012,7 +1012,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 }
 
 func TestCoordinationWithReceiver(t *testing.T) {
-	updateDelay := 100 * time.Millisecond
+	updateDelay := 100 * timescale
 
 	type expect struct {
 		delay time.Duration
