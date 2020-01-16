@@ -107,6 +107,7 @@ type headMetrics struct {
 	samplesAppended         prometheus.Counter
 	walTruncateDuration     prometheus.Summary
 	walCorruptionsTotal     prometheus.Counter
+	walWritesFailed         prometheus.Counter
 	headTruncateFail        prometheus.Counter
 	headTruncateTotal       prometheus.Counter
 	checkpointDeleteFail    prometheus.Counter
@@ -178,6 +179,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "prometheus_tsdb_wal_corruptions_total",
 		Help: "Total number of WAL corruptions.",
 	})
+	m.walWritesFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_wal_writes_failed",
+		Help: "Total number of WAL write failures.",
+	})
 	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_samples_appended_total",
 		Help: "Total number of appended samples.",
@@ -222,6 +227,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.gcDuration,
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
+			m.walWritesFailed,
 			m.samplesAppended,
 			m.headTruncateFail,
 			m.headTruncateTotal,
@@ -1000,6 +1006,7 @@ func (a *headAppender) Commit() error {
 	defer a.head.putSeriesBuffer(a.sampleSeries)
 
 	if err := a.log(); err != nil {
+		a.head.metrics.walWritesFailed.Inc()
 		return errors.Wrap(err, "write to WAL")
 	}
 
