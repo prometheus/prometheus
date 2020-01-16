@@ -84,7 +84,7 @@ func (e *ParseErr) Error() string {
 		col := pos - lastLineBreak
 		positionStr = fmt.Sprintf("%d:%d:", line, col)
 	}
-	return fmt.Sprintf("%s parse error: %s", positionStr, e.Err)
+	return fmt.Sprintf("%s parse error: %s\n", positionStr, e.Err)
 }
 
 // ParseExpr returns the expression parsed from the input.
