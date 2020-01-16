@@ -48,12 +48,10 @@ type parser struct {
 	yyParser yyParserImpl
 
 	generatedParserResult interface{}
-	parseErrors           []*ParseErr
+	parseErrors           ParseErrors
 }
 
 // ParseErr wraps a parsing error with line and position context.
-// If the parsing input was a single line, line will be 0 and omitted
-// from the error string.
 type ParseErr struct {
 	PositionRange PositionRange
 	Err           error
@@ -87,6 +85,21 @@ func (e *ParseErr) Error() string {
 	return fmt.Sprintf("%s parse error: %s", positionStr, e.Err)
 }
 
+type ParseErrors []ParseErr
+
+// Since producing multiple Error messages might look weird when combined with error wrapping,
+// only the first error produced by the parser is included in the error string.
+// If getting the full error list is desired, it is recommended to typecast the error returned
+// by the parser to ParseErrors.
+func (errs ParseErrors) Error() string {
+	if len(errs) != 0 {
+		return errs[0].Error()
+	} else {
+		// Should never happen, but panicking while printing an error doesn't seem like a good idea.
+		return "error contains no error message"
+	}
+}
+
 // ParseExpr returns the expression parsed from the input.
 func ParseExpr(input string) (expr Expr, err error) {
 	p := newParser(input)
@@ -98,13 +111,14 @@ func ParseExpr(input string) (expr Expr, err error) {
 	if parseResult != nil {
 		expr = parseResult.(Expr)
 	}
+
 	// Only typecheck when there are no syntax errors
-	if p.parseErrors == nil {
-		err = p.typecheck(expr)
+	if len(p.parseErrors) == 0 {
+		p.checkType(expr)
 	}
 
 	if len(p.parseErrors) != 0 {
-		err = p.parseErrors[0]
+		err = p.parseErrors
 	}
 
 	return expr, err
@@ -116,13 +130,13 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 	defer parserPool.Put(p)
 	defer p.recover(&err)
 
-	if len(p.parseErrors) != 0 {
-		err = p.parseErrors[0]
-	}
-
 	parseResult := p.parseGenerated(START_METRIC)
 	if parseResult != nil {
 		m = parseResult.(labels.Labels)
+	}
+
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors
 	}
 
 	return
@@ -141,7 +155,7 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	}
 
 	if len(p.parseErrors) != 0 {
-		err = p.parseErrors[0]
+		err = p.parseErrors
 	}
 
 	return
@@ -196,19 +210,12 @@ func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue
 		values = result.values
 
 	}
+
 	if len(p.parseErrors) != 0 {
-		err = p.parseErrors[0]
+		err = p.parseErrors
 	}
 
 	return
-}
-
-// typecheck checks correct typing of the parsed statements or expression.
-func (p *parser) typecheck(node Node) (err error) {
-	defer p.recover(&err)
-
-	p.checkType(node)
-	return nil
 }
 
 // failf formats the error and terminates processing.
@@ -218,7 +225,7 @@ func (p *parser) failf(positionRange PositionRange, format string, args ...inter
 
 // fail terminates processing.
 func (p *parser) fail(positionRange PositionRange, err error) {
-	perr := &ParseErr{
+	perr := ParseErr{
 		PositionRange: positionRange,
 		Err:           err,
 		Query:         p.lex.input,
