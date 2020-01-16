@@ -226,7 +226,7 @@ button.execute-btn {
   font-size: large;
 }
 
-.status-badges {
+.group-info {
   display: flex;
   justify-content: space-between;
   margin-bottom: 10px;
