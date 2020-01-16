@@ -51,17 +51,17 @@ const stateColorTuples: Array<[RuleState, 'success' | 'warning' | 'danger']> = [
 ];
 
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
-  const [state, setState] = useState<RuleStatus<boolean>>({
+  const [filter, setFilter] = useState<RuleStatus<boolean>>({
     firing: true,
     pending: true,
     inactive: true,
   });
   const [showAnnotations, setShowAnnotations] = useState(false);
 
-  const toggle = (ruleState: RuleState) => () => {
-    setState({
-      ...state,
-      [ruleState]: !state[ruleState],
+  const toggleFilter = (ruleState: RuleState) => () => {
+    setFilter({
+      ...filter,
+      [ruleState]: !filter[ruleState],
     });
   };
 
@@ -70,46 +70,57 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
       <div className="d-flex togglers-wrapper">
         {stateColorTuples.map(([state, color]) => {
           return (
-            <Checkbox wrapperStyles={{ marginRight: 10 }} defaultChecked id={`${state}-toggler`} onClick={toggle(state)}>
+            <Checkbox
+              key={color}
+              wrapperStyles={{ marginRight: 10 }}
+              defaultChecked
+              id={`${state}-toggler`}
+              onClick={toggleFilter(state)}
+            >
               <Badge color={color} className="text-capitalize">
                 {state} ({statsCount[state]})
               </Badge>
             </Checkbox>
           );
         })}
-        <Checkbox
-          wrapperStyles={{ marginLeft: 'auto' }}
-          id="show-annotations-toggler"
-          onClick={() => setShowAnnotations(!showAnnotations)}
-        >
-          <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
-        </Checkbox>
+        {/* hide if all filters are off */}
+        {Object.values(filter).some(Boolean) && (
+          <Checkbox
+            wrapperStyles={{ marginLeft: 'auto' }}
+            id="show-annotations-toggler"
+            defaultChecked={showAnnotations}
+            onClick={() => setShowAnnotations(!showAnnotations)}
+          >
+            <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
+          </Checkbox>
+        )}
       </div>
       {groups.map((group, i) => {
-        return (
+        const hasFilterOn = group.rules.some(rule => filter[rule.state]);
+        return hasFilterOn ? (
           <Fragment key={i}>
-            <StatusBadges rules={group.rules}>
+            <GroupInfo rules={group.rules}>
               {group.file} > {group.name}
-            </StatusBadges>
+            </GroupInfo>
             {group.rules.map((rule, j) => {
               return (
-                state[rule.state] && (
+                filter[rule.state] && (
                   <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotations} rule={rule} />
                 )
               );
             })}
           </Fragment>
-        );
+        ) : null;
       })}
     </>
   );
 };
 
-interface StatusBadgesProps {
+interface GroupInfoProps {
   rules: Rule[];
 }
 
-const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
+export const GroupInfo: FC<GroupInfoProps> = ({ rules, children }) => {
   const statesCounter = rules.reduce<any>(
     (acc, r) => {
       return {
@@ -124,7 +135,7 @@ const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
   );
 
   return (
-    <div className="status-badges border rounded-sm" style={{ lineHeight: 1.1 }}>
+    <div className="group-info border rounded-sm" style={{ lineHeight: 1.1 }}>
       {children}
       <div className="badges-wrapper">
         {isPresent(statesCounter.inactive) && <Badge color="success">inactive</Badge>}
