@@ -141,7 +141,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 		err = p.parseErrors
 	}
 
-	return
+	return m, err
 }
 
 // ParseMetricSelector parses the provided textual metric selector into a list of
@@ -160,7 +160,7 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 		err = p.parseErrors
 	}
 
-	return
+	return m, err
 }
 
 // newParser returns a new parser.
@@ -217,7 +217,7 @@ func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue
 		err = p.parseErrors
 	}
 
-	return
+	return labels, values, err
 }
 
 // failf formats the error and terminates processing.
