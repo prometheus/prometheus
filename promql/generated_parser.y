@@ -199,7 +199,7 @@ aggregate_expr  : aggregate_op aggregate_modifier function_call_body
                 | aggregate_op function_call_body
                         { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
                 | aggregate_op error
-                        { yylex.(*parser).unexpected("aggregation","") }
+                        { yylex.(*parser).unexpected("aggregation",""); $$ = &AggregateExpr{} }
                 ;
 
 aggregate_modifier:
@@ -294,7 +294,7 @@ grouping_labels : LEFT_PAREN grouping_label_list RIGHT_PAREN
                 | LEFT_PAREN RIGHT_PAREN
                         { $$ = []string{} }
                 | error
-                        { yylex.(*parser).unexpected("grouping opts", "\"(\"") }
+                        { yylex.(*parser).unexpected("grouping opts", "\"(\""); $$ = []string{} }
                 ;
 
 
@@ -304,7 +304,7 @@ grouping_label_list:
                 | grouping_label
                         { $$ = []string{$1.Val} }
                 | grouping_label_list error
-                        { yylex.(*parser).unexpected("grouping opts", "\",\" or \")\"") }
+                        { yylex.(*parser).unexpected("grouping opts", "\",\" or \")\""); $$ = $1 }
                 ;
 
 grouping_label  : maybe_label
@@ -369,7 +369,7 @@ offset_expr: expr OFFSET duration
                         $$ = $1
                         }
                 | expr OFFSET error
-                        { yylex.(*parser).unexpected("offset", "duration") }
+                        { yylex.(*parser).unexpected("offset", "duration"); $$ = $1 }
                 ;
 
 /*
@@ -410,13 +410,13 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                         }
                         }
                 | expr LEFT_BRACKET duration COLON duration error
-                        { yylex.(*parser).unexpected("subquery selector", "\"]\"") }
+                        { yylex.(*parser).unexpected("subquery selector", "\"]\""); $$ = $1 }
                 | expr LEFT_BRACKET duration COLON error
-                        { yylex.(*parser).unexpected("subquery selector", "duration or \"]\"") }
+                        { yylex.(*parser).unexpected("subquery selector", "duration or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET duration error
-                        { yylex.(*parser).unexpected("subquery or range", "\":\" or \"]\"") }
+                        { yylex.(*parser).unexpected("subquery or range", "\":\" or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET error
-                        { yylex.(*parser).unexpected("subquery selector", "duration") }
+                        { yylex.(*parser).unexpected("subquery selector", "duration"); $$ = $1 }
                 ;
 
 /*
@@ -493,21 +493,27 @@ label_matchers  : LEFT_BRACE label_match_list RIGHT_BRACE
                 ;
 
 label_match_list: label_match_list COMMA label_matcher
-                        { $$ = append($1, $3)}
+                        { 
+                        if $1 != nil{
+                                $$ = append($1, $3)
+                        } else {
+                                $$ = $1
+                        }
+                        }
                 | label_matcher
                         { $$ = []*labels.Matcher{$1}}
                 | label_match_list error
-                        { yylex.(*parser).unexpected("label matching", "\",\" or \"}\"") }
+                        { yylex.(*parser).unexpected("label matching", "\",\" or \"}\""); $$ = $1 }
                 ;
 
 label_matcher   : IDENTIFIER match_op STRING
-                        { $$ = yylex.(*parser).newLabelMatcher($1, $2, $3) }
+                        { $$ = yylex.(*parser).newLabelMatcher($1, $2, $3);  }
                 | IDENTIFIER match_op error
-                        { yylex.(*parser).unexpected("label matching", "string")}
+                        { yylex.(*parser).unexpected("label matching", "string"); $$ = nil}
                 | IDENTIFIER error 
-                        { yylex.(*parser).unexpected("label matching", "label matching operator") } 
+                        { yylex.(*parser).unexpected("label matching", "label matching operator"); $$ = nil } 
                 | error
-                        { yylex.(*parser).unexpected("label matching", "identifier or \"}\"")}
+                        { yylex.(*parser).unexpected("label matching", "identifier or \"}\""); $$ = nil}
                 ;
                         
 /*
@@ -538,7 +544,7 @@ label_set_list  : label_set_list COMMA label_set_item
                 | label_set_item
                         { $$ = []labels.Label{$1} }
                 | label_set_list error
-                        { yylex.(*parser).unexpected("label set", "\",\" or \"}\"", ) }
+                        { yylex.(*parser).unexpected("label set", "\",\" or \"}\"", ); $$ = $1 }
                 
                 ;
 

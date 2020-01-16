@@ -48,6 +48,7 @@ type parser struct {
 	yyParser yyParserImpl
 
 	generatedParserResult interface{}
+	parseErrors           []*ParseErr
 }
 
 // ParseErr wraps a parsing error with line and position context.
@@ -92,8 +93,19 @@ func ParseExpr(input string) (expr Expr, err error) {
 	defer parserPool.Put(p)
 	defer p.recover(&err)
 
-	expr = p.parseGenerated(START_EXPRESSION).(Expr)
-	err = p.typecheck(expr)
+	parseResult := p.parseGenerated(START_EXPRESSION)
+
+	if parseResult != nil {
+		expr = parseResult.(Expr)
+	}
+	// Only typecheck when there are no syntax errors
+	if len(p.parseErrors) == 0 {
+		err = p.typecheck(expr)
+	}
+
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors[0]
+	}
 
 	return expr, err
 }
@@ -103,6 +115,10 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 	p := newParser(input)
 	defer parserPool.Put(p)
 	defer p.recover(&err)
+
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors[0]
+	}
 
 	return p.parseGenerated(START_METRIC).(labels.Labels), nil
 }
@@ -114,6 +130,10 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	defer parserPool.Put(p)
 	defer p.recover(&err)
 
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors[0]
+	}
+
 	return p.parseGenerated(START_METRIC_SELECTOR).(*VectorSelector).LabelMatchers, nil
 }
 
@@ -122,6 +142,7 @@ func newParser(input string) *parser {
 	p := parserPool.Get().(*parser)
 
 	p.injecting = false
+	p.parseErrors = nil
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
@@ -151,7 +172,6 @@ type seriesDescription struct {
 
 // parseSeriesDesc parses the description of a time series.
 func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue, err error) {
-
 	p := newParser(input)
 	p.lex.seriesDesc = true
 
@@ -162,6 +182,10 @@ func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue
 
 	labels = result.labels
 	values = result.values
+
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors[0]
+	}
 
 	return
 }
@@ -186,7 +210,8 @@ func (p *parser) fail(positionRange PositionRange, err error) {
 		Err:           err,
 		Query:         p.lex.input,
 	}
-	panic(perr)
+
+	p.parseErrors = append(p.parseErrors, perr)
 }
 
 // unexpected creates a parser error complaining about an unexpected lexer item.
@@ -258,6 +283,7 @@ func (p *parser) Lex(lval *yySymType) int {
 
 	case ERROR:
 		p.failf(lval.item.PositionRange(), "%s", lval.item.Val)
+		p.InjectItem(0)
 	case EOF:
 		lval.item.Typ = EOF
 		p.InjectItem(0)
@@ -340,7 +366,7 @@ func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	if vs.Name != "" {
 
 		for _, m := range vs.LabelMatchers {
-			if m.Name == labels.MetricName {
+			if m != nil && m.Name == labels.MetricName {
 				p.failf(vs.PositionRange(), "metric name must not be set twice: %q or %q", vs.Name, m.Value)
 			}
 		}
@@ -356,7 +382,7 @@ func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	// implicit selection of all metrics (e.g. by a typo).
 	notEmpty := false
 	for _, lm := range vs.LabelMatchers {
-		if !lm.Matches("") {
+		if lm != nil && !lm.Matches("") {
 			notEmpty = true
 			break
 		}
