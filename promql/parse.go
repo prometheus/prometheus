@@ -99,7 +99,7 @@ func ParseExpr(input string) (expr Expr, err error) {
 		expr = parseResult.(Expr)
 	}
 	// Only typecheck when there are no syntax errors
-	if len(p.parseErrors) == 0 {
+	if p.parseErrors == nil {
 		err = p.typecheck(expr)
 	}
 
@@ -120,7 +120,12 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 		err = p.parseErrors[0]
 	}
 
-	return p.parseGenerated(START_METRIC).(labels.Labels), nil
+	parseResult := p.parseGenerated(START_METRIC)
+	if parseResult != nil {
+		m = parseResult.(labels.Labels)
+	}
+
+	return
 }
 
 // ParseMetricSelector parses the provided textual metric selector into a list of
@@ -134,7 +139,12 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 		err = p.parseErrors[0]
 	}
 
-	return p.parseGenerated(START_METRIC_SELECTOR).(*VectorSelector).LabelMatchers, nil
+	parseResult := p.parseGenerated(START_METRIC_SELECTOR)
+	if parseResult != nil {
+		m = parseResult.(*VectorSelector).LabelMatchers
+	}
+
+	return
 }
 
 // newParser returns a new parser.
@@ -178,11 +188,14 @@ func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue
 	defer parserPool.Put(p)
 	defer p.recover(&err)
 
-	result := p.parseGenerated(START_SERIES_DESCRIPTION).(*seriesDescription)
+	parseResult := p.parseGenerated(START_SERIES_DESCRIPTION)
+	if parseResult != nil {
+		result := parseResult.(*seriesDescription)
 
-	labels = result.labels
-	values = result.values
+		labels = result.labels
+		values = result.values
 
+	}
 	if len(p.parseErrors) != 0 {
 		err = p.parseErrors[0]
 	}
