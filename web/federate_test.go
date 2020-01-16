@@ -45,7 +45,7 @@ var scenarios = map[string]struct {
 	"invalid params from the beginning": {
 		params: "match[]=-not-a-valid-metric-name",
 		code:   400,
-		body: `1:4: parse error: unexpected <op:->
+		body: `1:1: parse error: unexpected <op:->
 `,
 	},
 	"invalid params somewhere in the middle": {

@@ -84,7 +84,7 @@ func (e *ParseErr) Error() string {
 		col := pos - lastLineBreak
 		positionStr = fmt.Sprintf("%d:%d:", line, col)
 	}
-	return fmt.Sprintf("%s parse error: %s\n", positionStr, e.Err)
+	return fmt.Sprintf("%s parse error: %s", positionStr, e.Err)
 }
 
 // ParseExpr returns the expression parsed from the input.
@@ -135,13 +135,13 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	defer parserPool.Put(p)
 	defer p.recover(&err)
 
-	if len(p.parseErrors) != 0 {
-		err = p.parseErrors[0]
-	}
-
 	parseResult := p.parseGenerated(START_METRIC_SELECTOR)
 	if parseResult != nil {
 		m = parseResult.(*VectorSelector).LabelMatchers
+	}
+
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors[0]
 	}
 
 	return
