@@ -349,6 +349,11 @@ function_call_args: function_call_args COMMA expr
                         { $$ = append($1.(Expressions), $3.(Expr)) }
                 | expr 
                         { $$ = Expressions{$1.(Expr)} }
+                | function_call_args COMMA
+                        {
+                        yylex.(*parser).failf($2.PositionRange(), "trailing commas not allowed in function call args")
+                        $$ = $1
+                        }
                 ;
 
 /*
