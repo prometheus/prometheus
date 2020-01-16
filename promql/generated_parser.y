@@ -199,7 +199,7 @@ aggregate_expr  : aggregate_op aggregate_modifier function_call_body
                 | aggregate_op function_call_body
                         { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
                 | aggregate_op error
-                        { yylex.(*parser).unexpected("aggregation",""); $$ = &AggregateExpr{} }
+                        { yylex.(*parser).unexpected("aggregation",""); $$ = nil }
                 ;
 
 aggregate_modifier:
@@ -294,7 +294,7 @@ grouping_labels : LEFT_PAREN grouping_label_list RIGHT_PAREN
                 | LEFT_PAREN RIGHT_PAREN
                         { $$ = []string{} }
                 | error
-                        { yylex.(*parser).unexpected("grouping opts", "\"(\""); $$ = []string{} }
+                        { yylex.(*parser).unexpected("grouping opts", "\"(\""); $$ = nil }
                 ;
 
 
@@ -315,7 +315,7 @@ grouping_label  : maybe_label
                         $$ = $1
                         }
                 | error
-                        { yylex.(*parser).unexpected("grouping opts", "label") }
+                        { yylex.(*parser).unexpected("grouping opts", "label"); $$ = Item{} }
                 ;
 
 /*
@@ -551,11 +551,11 @@ label_set_list  : label_set_list COMMA label_set_item
 label_set_item  : IDENTIFIER EQL STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } } 
                 | IDENTIFIER EQL error
-                        { yylex.(*parser).unexpected("label set", "string")}
+                        { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
                 | IDENTIFIER error
-                        { yylex.(*parser).unexpected("label set", "\"=\"")}
+                        { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
                 | error
-                        { yylex.(*parser).unexpected("label set", "identifier or \"}\"") }
+                        { yylex.(*parser).unexpected("label set", "identifier or \"}\""); $$ = labels.Label{} }
                 ;
 
 /*
@@ -578,7 +578,7 @@ series_values   : /*empty*/
                 | series_values SPACE
                         { $$ = $1 }
                 | error
-                        { yylex.(*parser).unexpected("series values", "") }
+                        { yylex.(*parser).unexpected("series values", ""); $$ = nil }
                 ;
 
 series_item     : BLANK

@@ -837,7 +837,7 @@ yydefault:
 //line promql/generated_parser.y:202
 		{
 			yylex.(*parser).unexpected("aggregation", "")
-			yyVAL.node = &AggregateExpr{}
+			yyVAL.node = nil
 		}
 	case 23:
 		yyDollar = yyS[yypt-2 : yypt+1]
@@ -1017,7 +1017,7 @@ yydefault:
 //line promql/generated_parser.y:297
 		{
 			yylex.(*parser).unexpected("grouping opts", "\"(\"")
-			yyVAL.strings = []string{}
+			yyVAL.strings = nil
 		}
 	case 53:
 		yyDollar = yyS[yypt-3 : yypt+1]
@@ -1052,6 +1052,7 @@ yydefault:
 //line promql/generated_parser.y:318
 		{
 			yylex.(*parser).unexpected("grouping opts", "label")
+			yyVAL.item = Item{}
 		}
 	case 58:
 		yyDollar = yyS[yypt-2 : yypt+1]
@@ -1365,18 +1366,21 @@ yydefault:
 //line promql/generated_parser.y:554
 		{
 			yylex.(*parser).unexpected("label set", "string")
+			yyVAL.label = labels.Label{}
 		}
 	case 99:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/generated_parser.y:556
 		{
 			yylex.(*parser).unexpected("label set", "\"=\"")
+			yyVAL.label = labels.Label{}
 		}
 	case 100:
 		yyDollar = yyS[yypt-1 : yypt+1]
 //line promql/generated_parser.y:558
 		{
 			yylex.(*parser).unexpected("label set", "identifier or \"}\"")
+			yyVAL.label = labels.Label{}
 		}
 	case 101:
 		yyDollar = yyS[yypt-2 : yypt+1]
@@ -1410,6 +1414,7 @@ yydefault:
 //line promql/generated_parser.y:581
 		{
 			yylex.(*parser).unexpected("series values", "")
+			yyVAL.series = nil
 		}
 	case 106:
 		yyDollar = yyS[yypt-1 : yypt+1]
