@@ -71,7 +71,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
         {stateColorTuples.map(([state, color]) => {
           return (
             <Checkbox
-              key={color}
+              key={state}
               wrapperStyles={{ marginRight: 10 }}
               defaultChecked
               id={`${state}-toggler`}
@@ -83,17 +83,13 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
             </Checkbox>
           );
         })}
-        {/* hide if all filters are off */}
-        {Object.values(filter).some(Boolean) && (
-          <Checkbox
-            wrapperStyles={{ marginLeft: 'auto' }}
-            id="show-annotations-toggler"
-            defaultChecked={showAnnotations}
-            onClick={() => setShowAnnotations(!showAnnotations)}
-          >
-            <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
-          </Checkbox>
-        )}
+        <Checkbox
+          wrapperStyles={{ marginLeft: 'auto' }}
+          id="show-annotations-toggler"
+          onClick={() => setShowAnnotations(!showAnnotations)}
+        >
+          <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
+        </Checkbox>
       </div>
       {groups.map((group, i) => {
         const hasFilterOn = group.rules.some(rule => filter[rule.state]);
