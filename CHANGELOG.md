@@ -86,6 +86,10 @@
 * [BUGFIX] Fix error propagation in WAL watcher helper functions. #5741
 * [BUGFIX] Correctly handle empty labels from alert templates. #5845
 
+## 2.11.2 / 2019-08-14
+
+* [BUGFIX/SECURITY] Fix a Stored DOM XSS vulnerability with query history. #5888
+
 ## 2.11.1 / 2019-07-10
 
 * [BUGFIX] Fix potential panic when prometheus is watching multiple zookeeper paths. #5749
