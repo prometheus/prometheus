@@ -517,7 +517,6 @@ func (w *WAL) flushPage(clear bool) error {
 	}
 	n, err := w.segment.Write(p.buf[p.flushed:p.alloc])
 	if err != nil {
-		w.metrics.writesFailed.Inc()
 		return err
 	}
 	p.flushed += n
@@ -582,6 +581,7 @@ func (w *WAL) Log(recs ...[]byte) error {
 	// a bit of extra logic here frees them from that overhead.
 	for i, r := range recs {
 		if err := w.log(r, i == len(recs)-1); err != nil {
+			w.metrics.writesFailed.Inc()
 			return err
 		}
 	}
