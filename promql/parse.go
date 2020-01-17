@@ -355,12 +355,6 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node
 
 func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	if vs.Name != "" {
-		for _, m := range vs.LabelMatchers {
-			if m != nil && m.Name == labels.MetricName {
-				p.failf(vs.PositionRange(), "metric name must not be set twice: %q or %q", vs.Name, m.Value)
-			}
-		}
-
 		nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, vs.Name)
 		if err != nil {
 			panic(err) // Must not happen with labels.MatchEqual
@@ -594,6 +588,17 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		}
 		if !notEmpty {
 			p.failf(n.PositionRange(), "vector selector must contain at least one non-empty matcher")
+		}
+
+		if n.Name != "" {
+			// In this case the last LabelMatcher is checking for the metric name
+			// set outside the braces. This checks if the name has already been set
+			// previously
+			for _, m := range n.LabelMatchers[0 : len(n.LabelMatchers)-1] {
+				if m != nil && m.Name == labels.MetricName {
+					p.failf(n.PositionRange(), "metric name must not be set twice: %q or %q", n.Name, m.Value)
+				}
+			}
 		}
 
 	case *NumberLiteral, *StringLiteral:
