@@ -40,6 +40,7 @@ const ScrapePoolList: FC<{ filter: FilterData } & PathPrefixProps> = ({ pathPref
       filter={filter}
       error={badResponse ? new Error(responseStatus) : error}
       isLoading={isLoading}
+      componentTitle="Targets information"
     />
   );
 };

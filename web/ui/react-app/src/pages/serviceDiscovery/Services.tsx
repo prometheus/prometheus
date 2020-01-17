@@ -107,7 +107,14 @@ const ServicesWithStatusIndicator = withStatusIndicator(ServiceDiscoveryContent)
 
 const ServiceDiscovery: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const { response, error, isLoading } = useFetch<ServiceMap>(`${pathPrefix}/api/v1/targets`);
-  return <ServicesWithStatusIndicator {...response.data} error={error} isLoading={isLoading} />;
+  return (
+    <ServicesWithStatusIndicator
+      {...response.data}
+      error={error}
+      isLoading={isLoading}
+      componentTitle="Service Discovery information"
+    />
+  );
 };
 
 export default ServiceDiscovery;

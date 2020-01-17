@@ -5,19 +5,15 @@ import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
 import PathPrefixProps from '../../types/PathPrefixProps';
 
-const sectionTitles = ['Runtime Information', 'Build Information', 'Alertmanagers'];
-
-interface StatusConfig {
-  [k: string]: { title?: string; customizeValue?: (v: any, key: string) => any; customRow?: boolean; skip?: boolean };
-}
-
-type StatusPageState = { [k: string]: string };
-
 interface StatusPageProps {
-  data: StatusPageState[];
+  data: Record<string, string>;
+  title: string;
 }
 
-export const statusConfig: StatusConfig = {
+export const statusConfig: Record<
+  string,
+  { title?: string; customizeValue?: (v: any, key: string) => any; customRow?: boolean; skip?: boolean }
+> = {
   startTime: { title: 'Start time', customizeValue: (v: string) => new Date(v).toUTCString() },
   CWD: { title: 'Working directory' },
   reloadConfigSuccess: {
@@ -56,37 +52,31 @@ export const statusConfig: StatusConfig = {
   droppedAlertmanagers: { skip: true },
 };
 
-export const StatusContent: FC<StatusPageProps> = ({ data }) => {
+export const StatusContent: FC<StatusPageProps> = ({ data, title }) => {
   return (
     <>
-      {data.map((statuses, i) => {
-        return (
-          <Fragment key={i}>
-            <h2>{sectionTitles[i]}</h2>
-            <Table className="h-auto" size="sm" bordered striped>
-              <tbody>
-                {Object.entries(statuses).map(([k, v]) => {
-                  const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
-                  if (skip) {
-                    return null;
-                  }
-                  if (customRow) {
-                    return customizeValue(v, k);
-                  }
-                  return (
-                    <tr key={k}>
-                      <th className="capitalize-title" style={{ width: '35%' }}>
-                        {title}
-                      </th>
-                      <td className="text-break">{customizeValue(v, title)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
-          </Fragment>
-        );
-      })}
+      <h2>{title}</h2>
+      <Table className="h-auto" size="sm" bordered striped>
+        <tbody>
+          {Object.entries(data).map(([k, v]) => {
+            const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
+            if (skip) {
+              return null;
+            }
+            if (customRow) {
+              return customizeValue(v, k);
+            }
+            return (
+              <tr key={k}>
+                <th className="capitalize-title" style={{ width: '35%' }}>
+                  {title}
+                </th>
+                <td className="text-break">{customizeValue(v, title)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </Table>
     </>
   );
 };
@@ -96,21 +86,26 @@ StatusContent.displayName = 'Status';
 
 const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
   const path = `${pathPrefix}/api/v1`;
-  const status = useFetch<StatusPageState>(`${path}/status/runtimeinfo`);
-  const runtime = useFetch<StatusPageState>(`${path}/status/buildinfo`);
-  const build = useFetch<StatusPageState>(`${path}/alertmanagers`);
-
-  let data;
-  if (status.response.data && runtime.response.data && build.response.data) {
-    data = [status.response.data, runtime.response.data, build.response.data];
-  }
 
   return (
-    <StatusWithStatusIndicator
-      data={data}
-      isLoading={status.isLoading || runtime.isLoading || build.isLoading}
-      error={status.error || runtime.error || build.error}
-    />
+    <>
+      {[
+        { fetchResult: useFetch<Record<string, string>>(`${path}/status/runtimeinfo`), title: 'Runtime Information' },
+        { fetchResult: useFetch<Record<string, string>>(`${path}/status/buildinfo`), title: 'Build Information' },
+        { fetchResult: useFetch<Record<string, string>>(`${path}/alertmanagers`), title: 'Alertmanagers' },
+      ].map(({ fetchResult, title }) => {
+        const { response, isLoading, error } = fetchResult;
+        return (
+          <StatusWithStatusIndicator
+            data={response.data}
+            title={title}
+            isLoading={isLoading}
+            error={error}
+            componentTitle={title}
+          />
+        );
+      })}
+    </>
   );
 };
 
