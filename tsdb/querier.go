@@ -218,20 +218,7 @@ func (q *blockQuerier) Select(ms ...*labels.Matcher) (SeriesSet, error) {
 }
 
 func (q *blockQuerier) LabelValues(name string) ([]string, error) {
-	tpls, err := q.index.LabelValues(name)
-	if err != nil {
-		return nil, err
-	}
-	res := make([]string, 0, tpls.Len())
-
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, vals[0])
-	}
-	return res, nil
+	return q.index.LabelValues(name)
 }
 
 func (q *blockQuerier) LabelNames() ([]string, error) {
@@ -412,19 +399,15 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 		}
 	}
 
-	tpls, err := ix.LabelValues(m.Name)
+	vals, err := ix.LabelValues(m.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	var res []string
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			return nil, err
-		}
-		if m.Matches(vals[0]) {
-			res = append(res, vals[0])
+	for _, val := range vals {
+		if m.Matches(val) {
+			res = append(res, val)
 		}
 	}
 
@@ -437,20 +420,15 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
 func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
-	tpls, err := ix.LabelValues(m.Name)
+	vals, err := ix.LabelValues(m.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	var res []string
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			return nil, err
-		}
-
-		if !m.Matches(vals[0]) {
-			res = append(res, vals[0])
+	for _, val := range vals {
+		if !m.Matches(val) {
+			res = append(res, val)
 		}
 	}
 

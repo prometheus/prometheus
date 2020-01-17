@@ -1124,7 +1124,7 @@ func TestSizeRetention(t *testing.T) {
 	// Test that registered size matches the actual disk size.
 	testutil.Ok(t, db.reload())                                         // Reload the db to register the new db size.
 	testutil.Equals(t, len(blocks), len(db.Blocks()))                   // Ensure all blocks are registered.
-	blockSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
+	blockSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err := db.Head().wal.Size()
 	testutil.Ok(t, err)
 	// Expected size should take into account block size + WAL size
@@ -1138,7 +1138,7 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Ok(t, err)
 	_, err = wal.Checkpoint(db.Head().wal, first, last-1, func(x uint64) bool { return false }, 0)
 	testutil.Ok(t, err)
-	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
+	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
 	testutil.Ok(t, err)
 	expSize = blockSize + walSize
@@ -1160,11 +1160,11 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Ok(t, err)
 	// Expected size should take into account block size + WAL size
 	expSize = blockSize + walSize
-	actRetentCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
+	actRetentionCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
 	actSize, err = fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
 
-	testutil.Equals(t, 1, actRetentCount, "metric retention count mismatch")
+	testutil.Equals(t, 1, actRetentionCount, "metric retention count mismatch")
 	testutil.Equals(t, actSize, expSize, "metric db size doesn't match actual disk size")
 	testutil.Assert(t, expSize <= sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
 	testutil.Equals(t, len(blocks)-1, len(actBlocks), "new block count should be decreased from:%v to:%v", len(blocks), len(blocks)-1)
@@ -2639,6 +2639,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 			// Check the content of the chunks.
 			r, err := chunks.NewDirReader(tempDir, nil)
 			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, r.Close()) }()
 
 			for _, chks := range test.chks {
 				for _, chkExp := range chks {
@@ -2689,4 +2690,5 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 		}
 		wg.Wait()
 	}
+	testutil.Ok(t, r.Close())
 }

@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"github.com/prometheus/prometheus/promql"
@@ -420,6 +421,19 @@ func main() {
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
+		func(cfg *config.Config) error {
+			if cfg.GlobalConfig.QueryLogFile == "" {
+				queryEngine.SetQueryLogger(nil)
+				return nil
+			}
+
+			l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
+			if err != nil {
+				return err
+			}
+			queryEngine.SetQueryLogger(l)
+			return nil
+		},
 		// The Scrape and notifier managers need to reload before the Discovery manager as
 		// they need to read the most updated config when receiving the new targets list.
 		scrapeManager.ApplyConfig,

@@ -20,7 +20,6 @@
     "bootstrap": "^4.2.1",
     "downshift": "^3.2.2",
     "enzyme-to-json": "^3.4.3",
-    "flot": "^3.2.13",
     "fuzzy": "^0.1.3",
     "i": "^0.3.6",
     "jest-fetch-mock": "^2.1.2",
@@ -45,7 +44,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test",
+    "test": "react-scripts test --runInBand",
     "test:debug": "react-scripts --inspect-brk test --runInBand --no-cache",
     "eject": "react-scripts eject",
     "lint:ci": "eslint --quiet \"src/**/*.{ts,tsx}\"",

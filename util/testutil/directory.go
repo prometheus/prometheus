@@ -133,7 +133,7 @@ func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
 	return
 }
 
-// DirHash returns a hash of all files attribites and their content within a directory.
+// DirHash returns a hash of all files attributes and their content within a directory.
 func DirHash(t *testing.T, path string) []byte {
 	hash := sha256.New()
 	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {

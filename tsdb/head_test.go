@@ -583,6 +583,48 @@ func TestHeadDeleteSimple(t *testing.T) {
 	}
 }
 
+func TestDeleteUntilCurMax(t *testing.T) {
+	numSamples := int64(10)
+	hb, err := NewHead(nil, nil, nil, 1000000)
+	testutil.Ok(t, err)
+	defer hb.Close()
+	app := hb.Appender()
+	smpls := make([]float64, numSamples)
+	for i := int64(0); i < numSamples; i++ {
+		smpls[i] = rand.Float64()
+		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, app.Commit())
+	testutil.Ok(t, hb.Delete(0, 10000, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+
+	// Test the series returns no samples. The series is cleared only after compaction.
+	q, err := NewBlockQuerier(hb, 0, 100000)
+	testutil.Ok(t, err)
+	res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	testutil.Ok(t, err)
+	testutil.Assert(t, res.Next(), "series is not present")
+	s := res.At()
+	it := s.Iterator()
+	testutil.Assert(t, !it.Next(), "expected no samples")
+
+	// Add again and test for presence.
+	app = hb.Appender()
+	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 11, 1)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	q, err = NewBlockQuerier(hb, 0, 100000)
+	testutil.Ok(t, err)
+	res, err = q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	testutil.Ok(t, err)
+	testutil.Assert(t, res.Next(), "series don't exist")
+	exps := res.At()
+	it = exps.Iterator()
+	resSamples, err := expandSeriesIterator(it)
+	testutil.Ok(t, err)
+	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, resSamples)
+}
+
 func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_delete_wal")
 	testutil.Ok(t, err)
@@ -1189,7 +1231,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 }
 
 func TestNewWalSegmentOnTruncate(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_wal_segemnts")
+	dir, err := ioutil.TempDir("", "test_wal_segements")
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))

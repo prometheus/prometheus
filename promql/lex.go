@@ -89,38 +89,6 @@ func (i ItemType) isSetOperator() bool {
 // LowestPrec is a constant for operator precedence in expressions.
 const LowestPrec = 0 // Non-operators.
 
-// Precedence returns the operator precedence of the binary
-// operator op. If op is not a binary operator, the result
-// is LowestPrec.
-func (i ItemType) precedence() int {
-	switch i {
-	case LOR:
-		return 1
-	case LAND, LUNLESS:
-		return 2
-	case EQL, NEQ, LTE, LSS, GTE, GTR:
-		return 3
-	case ADD, SUB:
-		return 4
-	case MUL, DIV, MOD:
-		return 5
-	case POW:
-		return 6
-	default:
-		return LowestPrec
-	}
-}
-
-func (i ItemType) isRightAssociative() bool {
-	switch i {
-	case POW:
-		return true
-	default:
-		return false
-	}
-
-}
-
 type ItemType int
 
 // This is a list of all keywords in PromQL.
@@ -245,17 +213,19 @@ const eof = -1
 type stateFn func(*Lexer) stateFn
 
 // Pos is the position in a string.
+// Negative numbers indicate undefined positions.
 type Pos int
 
 // Lexer holds the state of the scanner.
 type Lexer struct {
-	input   string  // The string being scanned.
-	state   stateFn // The next lexing function to enter.
-	pos     Pos     // Current position in the input.
-	start   Pos     // Start position of this Item.
-	width   Pos     // Width of last rune read from input.
-	lastPos Pos     // Position of most recent Item returned by NextItem.
-	Items   []Item  // Slice buffer of scanned Items.
+	input       string  // The string being scanned.
+	state       stateFn // The next lexing function to enter.
+	pos         Pos     // Current position in the input.
+	start       Pos     // Start position of this Item.
+	width       Pos     // Width of last rune read from input.
+	lastPos     Pos     // Position of most recent Item returned by NextItem.
+	itemp       *Item   // Pointer to where the next scanned item should be placed.
+	scannedItem bool    // Set to true every time an item is scanned.
 
 	parenDepth  int  // Nesting depth of ( ) exprs.
 	braceOpen   bool // Whether a { is opened.
@@ -294,8 +264,9 @@ func (l *Lexer) backup() {
 
 // emit passes an Item back to the client.
 func (l *Lexer) emit(t ItemType) {
-	l.Items = append(l.Items, Item{t, l.start, l.input[l.start:l.pos]})
+	*l.itemp = Item{t, l.start, l.input[l.start:l.pos]}
 	l.start = l.pos
+	l.scannedItem = true
 }
 
 // ignore skips over the pending input before this point.
@@ -320,66 +291,38 @@ func (l *Lexer) acceptRun(valid string) {
 	l.backup()
 }
 
-// lineNumber reports which line we're on, based on the position of
-// the previous Item returned by NextItem. Doing it this way
-// means we don't have to worry about peek double counting.
-func (l *Lexer) lineNumber() int {
-	return 1 + strings.Count(l.input[:l.lastPos], "\n")
-}
-
-// linePosition reports at which character in the current line
-// we are on.
-func (l *Lexer) linePosition() int {
-	lb := strings.LastIndex(l.input[:l.lastPos], "\n")
-	if lb == -1 {
-		return 1 + int(l.lastPos)
-	}
-	return 1 + int(l.lastPos) - lb
-}
-
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.NextItem.
 func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
-	l.Items = append(l.Items, Item{ERROR, l.start, fmt.Sprintf(format, args...)})
+	*l.itemp = Item{ERROR, l.start, fmt.Sprintf(format, args...)}
+	l.scannedItem = true
+
 	return nil
 }
 
-// NextItem returns the next Item from the input.
-func (l *Lexer) NextItem() Item {
-	for len(l.Items) == 0 {
-		if l.state != nil {
+// NextItem writes the next item to the provided address.
+func (l *Lexer) NextItem(itemp *Item) {
+	l.scannedItem = false
+	l.itemp = itemp
+
+	if l.state != nil {
+		for !l.scannedItem {
 			l.state = l.state(l)
-		} else {
-			l.emit(EOF)
 		}
+	} else {
+		l.emit(EOF)
 	}
-	Item := l.Items[0]
-	l.Items = l.Items[1:]
-	l.lastPos = Item.Pos
-	return Item
+
+	l.lastPos = l.itemp.Pos
 }
 
-// lex creates a new scanner for the input string.
+// Lex creates a new scanner for the input string.
 func Lex(input string) *Lexer {
 	l := &Lexer{
 		input: input,
 		state: lexStatements,
 	}
 	return l
-}
-
-// run runs the state machine for the lexer.
-func (l *Lexer) run() {
-	for l.state = lexStatements; l.state != nil; {
-		l.state = l.state(l)
-	}
-}
-
-// Release resources used by lexer.
-func (l *Lexer) close() {
-	for range l.Items {
-		// Consume.
-	}
 }
 
 // lineComment is the character that starts a line comment.
@@ -481,7 +424,7 @@ func lexStatements(l *Lexer) stateFn {
 	case r == '{':
 		l.emit(LEFT_BRACE)
 		l.braceOpen = true
-		return lexInsideBraces(l)
+		return lexInsideBraces
 	case r == '[':
 		if l.bracketOpen {
 			return l.errorf("unexpected left bracket %q", r)
@@ -598,14 +541,14 @@ func lexValueSequence(l *Lexer) stateFn {
 // package of the Go standard library to work for Prometheus-style strings.
 // None of the actual escaping/quoting logic was changed in this function - it
 // was only modified to integrate with our lexer.
-func lexEscape(l *Lexer) {
+func lexEscape(l *Lexer) stateFn {
 	var n int
 	var base, max uint32
 
 	ch := l.next()
 	switch ch {
 	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', l.stringOpen:
-		return
+		return lexString
 	case '0', '1', '2', '3', '4', '5', '6', '7':
 		n, base, max = 3, 8, 255
 	case 'x':
@@ -619,8 +562,10 @@ func lexEscape(l *Lexer) {
 		n, base, max = 8, 16, unicode.MaxRune
 	case eof:
 		l.errorf("escape sequence not terminated")
+		return lexString
 	default:
 		l.errorf("unknown escape sequence %#U", ch)
+		return lexString
 	}
 
 	var x uint32
@@ -629,8 +574,10 @@ func lexEscape(l *Lexer) {
 		if d >= base {
 			if ch == eof {
 				l.errorf("escape sequence not terminated")
+				return lexString
 			}
 			l.errorf("illegal character %#U in escape sequence", ch)
+			return lexString
 		}
 		x = x*base + d
 		ch = l.next()
@@ -640,6 +587,7 @@ func lexEscape(l *Lexer) {
 	if x > max || 0xD800 <= x && x < 0xE000 {
 		l.errorf("escape sequence is an invalid Unicode code point")
 	}
+	return lexString
 }
 
 // digitVal returns the digit value of a rune or 16 in case the rune does not
@@ -670,9 +618,10 @@ Loop:
 	for {
 		switch l.next() {
 		case '\\':
-			lexEscape(l)
+			return lexEscape
 		case utf8.RuneError:
-			return l.errorf("invalid UTF-8 rune")
+			l.errorf("invalid UTF-8 rune")
+			return lexString
 		case eof, '\n':
 			return l.errorf("unterminated quoted string")
 		case l.stringOpen:
@@ -689,9 +638,11 @@ Loop:
 	for {
 		switch l.next() {
 		case utf8.RuneError:
-			return l.errorf("invalid UTF-8 rune")
+			l.errorf("invalid UTF-8 rune")
+			return lexRawString
 		case eof:
-			return l.errorf("unterminated raw string")
+			l.errorf("unterminated raw string")
+			return lexRawString
 		case l.stringOpen:
 			break Loop
 		}

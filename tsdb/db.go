@@ -155,15 +155,15 @@ type dbMetrics struct {
 	symbolTableSize      prometheus.GaugeFunc
 	reloads              prometheus.Counter
 	reloadsFailed        prometheus.Counter
-	compactionsTriggered prometheus.Counter
 	compactionsFailed    prometheus.Counter
-	timeRetentionCount   prometheus.Counter
+	compactionsTriggered prometheus.Counter
 	compactionsSkipped   prometheus.Counter
+	sizeRetentionCount   prometheus.Counter
+	timeRetentionCount   prometheus.Counter
 	startTime            prometheus.GaugeFunc
 	tombCleanTimer       prometheus.Histogram
 	blocksBytes          prometheus.Gauge
 	maxBytes             prometheus.Gauge
-	sizeRetentionCount   prometheus.Counter
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -248,14 +248,15 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.symbolTableSize,
 			m.reloads,
 			m.reloadsFailed,
-			m.timeRetentionCount,
-			m.compactionsTriggered,
 			m.compactionsFailed,
+			m.compactionsTriggered,
+			m.compactionsSkipped,
+			m.sizeRetentionCount,
+			m.timeRetentionCount,
 			m.startTime,
 			m.tombCleanTimer,
 			m.blocksBytes,
 			m.maxBytes,
-			m.sizeRetentionCount,
 		)
 	}
 	return m
@@ -566,7 +567,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
-		level.Warn(db.logger).Log("msg", "encountered WAL read error, attempting repair", "err", err)
+		level.Warn(db.logger).Log("msg", "encountered WAL read error, attempting repair", "err", initErr)
 		if err := wlog.Repair(initErr); err != nil {
 			return nil, errors.Wrap(err, "repair corrupted WAL")
 		}
@@ -910,34 +911,34 @@ func (db *DB) deletableBlocks(blocks []*Block) map[ulid.ULID]*Block {
 	return deletable
 }
 
-func (db *DB) beyondTimeRetention(blocks []*Block) (deleteable map[ulid.ULID]*Block) {
+func (db *DB) beyondTimeRetention(blocks []*Block) (deletable map[ulid.ULID]*Block) {
 	// Time retention is disabled or no blocks to work with.
 	if len(db.blocks) == 0 || db.opts.RetentionDuration == 0 {
 		return
 	}
 
-	deleteable = make(map[ulid.ULID]*Block)
+	deletable = make(map[ulid.ULID]*Block)
 	for i, block := range blocks {
 		// The difference between the first block and this block is larger than
-		// the retention period so any blocks after that are added as deleteable.
+		// the retention period so any blocks after that are added as deletable.
 		if i > 0 && blocks[0].Meta().MaxTime-block.Meta().MaxTime > int64(db.opts.RetentionDuration) {
 			for _, b := range blocks[i:] {
-				deleteable[b.meta.ULID] = b
+				deletable[b.meta.ULID] = b
 			}
 			db.metrics.timeRetentionCount.Inc()
 			break
 		}
 	}
-	return deleteable
+	return deletable
 }
 
-func (db *DB) beyondSizeRetention(blocks []*Block) (deleteable map[ulid.ULID]*Block) {
+func (db *DB) beyondSizeRetention(blocks []*Block) (deletable map[ulid.ULID]*Block) {
 	// Size retention is disabled or no blocks to work with.
 	if len(db.blocks) == 0 || db.opts.MaxBytes <= 0 {
 		return
 	}
 
-	deleteable = make(map[ulid.ULID]*Block)
+	deletable = make(map[ulid.ULID]*Block)
 
 	walSize, _ := db.Head().wal.Size()
 	// Initializing size counter with WAL size,
@@ -948,13 +949,13 @@ func (db *DB) beyondSizeRetention(blocks []*Block) (deleteable map[ulid.ULID]*Bl
 		if blocksSize > db.opts.MaxBytes {
 			// Add this and all following blocks for deletion.
 			for _, b := range blocks[i:] {
-				deleteable[b.meta.ULID] = b
+				deletable[b.meta.ULID] = b
 			}
 			db.metrics.sizeRetentionCount.Inc()
 			break
 		}
 	}
-	return deleteable
+	return deletable
 }
 
 // deleteBlocks closes and deletes blocks from the disk.
