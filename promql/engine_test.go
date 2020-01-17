@@ -18,8 +18,8 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
-	"strings"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 

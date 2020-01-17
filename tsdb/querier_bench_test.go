@@ -136,30 +136,21 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	}
 	testutil.Ok(b, app.Commit())
 
-	emptyHead, err := NewHead(nil, nil, nil, 1000)
-	testutil.Ok(b, err)
-	defer emptyHead.Close()
-
-	bench := func(b *testing.B, br BlockReader, multiBlock bool) {
+	bench := func(b *testing.B, br BlockReader, sorted bool) {
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
 		for s := 1; s <= numSeries; s *= 10 {
 			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
-				bq, err := NewBlockQuerier(br, 0, int64(s-1))
+				q, err := NewBlockQuerier(br, 0, int64(s-1))
 				testutil.Ok(b, err)
-				blocks := []Querier{bq}
-
-				if multiBlock {
-					// Passing more than one block to the querier will trigger
-					// sorting of the returned series.
-					bq, err := NewBlockQuerier(emptyHead, 0, int64(s-1))
-					testutil.Ok(b, err)
-					blocks = append(blocks, bq)
-				}
-				q := &querier{blocks: blocks}
 
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					ss, err := q.Select(matcher)
+					var ss SeriesSet
+					if sorted {
+						ss, err = q.SelectSorted(matcher)
+					} else {
+						ss, err = q.Select(matcher)
+					}
 					testutil.Ok(b, err)
 					for ss.Next() {
 					}
