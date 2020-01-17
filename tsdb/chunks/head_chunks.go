@@ -193,7 +193,6 @@ func (w *HeadReadWriter) IterateAllChunks(f func(seriesRef, chunkRef uint64, min
 		seqs = append(seqs, seg)
 	}
 	sort.Ints(seqs)
-
 	for _, seq := range seqs {
 		bs := w.bs[seq]
 		sliceLen := bs.Len()
@@ -218,7 +217,7 @@ func (w *HeadReadWriter) IterateAllChunks(f func(seriesRef, chunkRef uint64, min
 
 			idx++ // Skip encoding.
 			// Skip the data.
-			dataLen, n := binary.Varint(bs.Range(idx, idx+MaxChunkLengthFieldSize))
+			dataLen, n := binary.Uvarint(bs.Range(idx, idx+MaxChunkLengthFieldSize))
 			idx += n + int(dataLen)
 		}
 	}
@@ -386,14 +385,14 @@ func (w *HeadReadWriter) cut() (err error) {
 
 // Truncate deletes the segment files which are strictly below the mint.
 // mint should be in seconds.
-func (w *HeadReadWriter) Truncate(mint uint64) error {
+func (w *HeadReadWriter) Truncate(mint int64) error {
 	var removedFiles []int
 
 	w.bsMtx.RLock()
 	for seq, bs := range w.bs {
 		b := bs.Range(HeaderMaxtOffset, HeaderMaxtOffset+8)
 		maxt := binary.BigEndian.Uint64(b)
-		if maxt < mint {
+		if maxt != 0 && int64(maxt) < mint {
 			removedFiles = append(removedFiles, seq)
 		}
 	}
