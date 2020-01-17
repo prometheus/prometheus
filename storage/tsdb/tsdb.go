@@ -250,6 +250,14 @@ func (q querier) Select(_ *storage.SelectParams, ms ...*labels.Matcher) (storage
 	return seriesSet{set: set}, nil, nil
 }
 
+func (q querier) SelectSorted(_ *storage.SelectParams, ms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	set, err := q.q.SelectSorted(ms...)
+	if err != nil {
+		return nil, nil, err
+	}
+	return seriesSet{set: set}, nil, nil
+}
+
 func (q querier) LabelValues(name string) ([]string, storage.Warnings, error) {
 	v, err := q.q.LabelValues(name)
 	return v, nil, err

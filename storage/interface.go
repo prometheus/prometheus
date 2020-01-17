@@ -54,6 +54,9 @@ type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
 	Select(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
 
+	// SelectSorted returns a sorted set of series that matches the given label matchers.
+	SelectSorted(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
+
 	// LabelValues returns all potential values for a label name.
 	LabelValues(name string) ([]string, Warnings, error)
 

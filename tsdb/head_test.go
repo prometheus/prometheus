@@ -790,7 +790,7 @@ func TestDelete_e2e(t *testing.T) {
 			q, err := NewBlockQuerier(hb, 0, 100000)
 			testutil.Ok(t, err)
 			defer q.Close()
-			ss, err := q.Select(del.ms...)
+			ss, err := q.SelectSorted(del.ms...)
 			testutil.Ok(t, err)
 			// Build the mockSeriesSet.
 			matchedSeries := make([]Series, 0, len(matched))
