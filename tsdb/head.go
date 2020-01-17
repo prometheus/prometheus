@@ -180,7 +180,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Help: "Total number of WAL corruptions.",
 	})
 	m.walWritesFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_wal_writes_failed",
+		Name: "prometheus_tsdb_wal_writes_failed_total",
 		Help: "Total number of WAL write failures.",
 	})
 	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
