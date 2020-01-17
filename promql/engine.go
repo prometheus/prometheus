@@ -638,7 +638,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			if maxOffset < n.Range+subqOffset {
 				maxOffset = n.Range + subqOffset
 			}
-			if m := n.VectorSelector.Offset + n.Range + subqOffset; m > maxOffset {
+			if m := n.VectorSelector.(*VectorSelector).Offset + n.Range + subqOffset; m > maxOffset {
 				maxOffset = m
 			}
 		}
@@ -1004,15 +1004,16 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
 func (ev *evaluator) evalSubquery(subq *SubqueryExpr) *MatrixSelector {
 	val := ev.eval(subq).(Matrix)
+	vs := &VectorSelector{
+		Offset: subq.Offset,
+		series: make([]storage.Series, 0, len(val)),
+	}
 	ms := &MatrixSelector{
-		Range: subq.Range,
-		VectorSelector: &VectorSelector{
-			Offset: subq.Offset,
-			series: make([]storage.Series, 0, len(val)),
-		},
+		Range:          subq.Range,
+		VectorSelector: vs,
 	}
 	for _, s := range val {
-		ms.VectorSelector.series = append(ms.VectorSelector.series, NewStorageSeries(s))
+		vs.series = append(vs.series, NewStorageSeries(s))
 	}
 	return ms
 }
@@ -1095,7 +1096,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 
 		sel := e.Args[matrixArgIndex].(*MatrixSelector)
-		selVS := sel.VectorSelector
+		selVS := sel.VectorSelector.(*VectorSelector)
 
 		checkForSeriesSetExpansion(ev.ctx, sel)
 		mat := make(Matrix, 0, len(selVS.series)) // Output matrix.
@@ -1422,15 +1423,17 @@ func putPointSlice(p []Point) {
 func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 	checkForSeriesSetExpansion(ev.ctx, node)
 
+	vs := node.VectorSelector.(*VectorSelector)
+
 	var (
-		offset = durationMilliseconds(node.VectorSelector.Offset)
+		offset = durationMilliseconds(vs.Offset)
 		maxt   = ev.startTimestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
-		matrix = make(Matrix, 0, len(node.VectorSelector.series))
+		matrix = make(Matrix, 0, len(vs.series))
 	)
 
 	it := storage.NewBuffer(durationMilliseconds(node.Range))
-	series := node.VectorSelector.series
+	series := vs.series
 
 	for i, s := range series {
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {

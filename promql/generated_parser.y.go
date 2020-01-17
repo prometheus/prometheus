@@ -794,7 +794,7 @@ yydefault:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/generated_parser.y:167
 		{
-			yylex.(*parser).failf(PositionRange{}, "no expression found in input")
+			yylex.(*parser).addParseErrf(PositionRange{}, "no expression found in input")
 		}
 	case 4:
 		yyDollar = yyS[yypt-2 : yypt+1]
@@ -1060,7 +1060,7 @@ yydefault:
 		{
 			fn, exist := getFunction(yyDollar[1].item.Val)
 			if !exist {
-				yylex.(*parser).failf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
 			}
 			yyVAL.node = &Call{
 				Func: fn,
@@ -1099,7 +1099,7 @@ yydefault:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/generated_parser.y:353
 		{
-			yylex.(*parser).failf(yyDollar[2].item.PositionRange(), "trailing commas not allowed in function call args")
+			yylex.(*parser).addParseErrf(yyDollar[2].item.PositionRange(), "trailing commas not allowed in function call args")
 			yyVAL.node = yyDollar[1].node
 		}
 	case 64:
@@ -1136,11 +1136,11 @@ yydefault:
 
 			if errMsg != "" {
 				errRange := mergeRanges(&yyDollar[2].item, &yyDollar[4].item)
-				yylex.(*parser).failf(errRange, errMsg)
+				yylex.(*parser).addParseErrf(errRange, errMsg)
 			}
 
 			yyVAL.node = &MatrixSelector{
-				VectorSelector: vs,
+				VectorSelector: yyDollar[1].node.(Expr),
 				Range:          yyDollar[3].duration,
 				EndPos:         yylex.(*parser).lastClosing,
 			}
@@ -1506,7 +1506,7 @@ yydefault:
 			var err error
 			yyVAL.uint, err = strconv.ParseUint(yyDollar[1].item.Val, 10, 64)
 			if err != nil {
-				yylex.(*parser).failf(yyDollar[1].item.PositionRange(), "invalid repetition in series values: %s", err)
+				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "invalid repetition in series values: %s", err)
 			}
 		}
 	case 160:
@@ -1516,7 +1516,7 @@ yydefault:
 			var err error
 			yyVAL.duration, err = parseDuration(yyDollar[1].item.Val)
 			if err != nil {
-				yylex.(*parser).fail(yyDollar[1].item.PositionRange(), err)
+				yylex.(*parser).addParseErr(yyDollar[1].item.PositionRange(), err)
 			}
 		}
 	case 161:

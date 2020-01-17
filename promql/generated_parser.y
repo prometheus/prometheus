@@ -40,7 +40,7 @@ import (
 }
 
 
-%token <item> 
+%token <item>
 ASSIGN
 BLANK
 COLON
@@ -159,15 +159,15 @@ START_METRIC_SELECTOR
 
 %%
 
-start           : 
+start           :
                 START_METRIC metric
                         { yylex.(*parser).generatedParserResult = $2 }
                 | START_SERIES_DESCRIPTION series_description
                 | START_EXPRESSION /* empty */ EOF
-                        { yylex.(*parser).failf(PositionRange{}, "no expression found in input")}
+                        { yylex.(*parser).addParseErrf(PositionRange{}, "no expression found in input")}
                 | START_EXPRESSION expr
                         { yylex.(*parser).generatedParserResult = $2 }
-                | START_METRIC_SELECTOR vector_selector 
+                | START_METRIC_SELECTOR vector_selector
                         { yylex.(*parser).generatedParserResult = $2 }
                 | start EOF
                 | error /* If none of the more detailed error messages are triggered, we fall back to this. */
@@ -240,7 +240,7 @@ binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinar
                 | expr SUB     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 ;
 
-// Using left recursion for the modifier rules, helps to keep the parser stack small and 
+// Using left recursion for the modifier rules, helps to keep the parser stack small and
 // reduces allocations
 bin_modifier    : group_modifiers;
 
@@ -261,13 +261,13 @@ on_or_ignoring  : bool_modifier IGNORING grouping_labels
                         {
                         $$ = $1
                         $$.(*BinaryExpr).VectorMatching.MatchingLabels = $3
-                        } 
+                        }
                 | bool_modifier ON grouping_labels
                         {
                         $$ = $1
                         $$.(*BinaryExpr).VectorMatching.MatchingLabels = $3
                         $$.(*BinaryExpr).VectorMatching.On = true
-                        } 
+                        }
                 ;
 
 group_modifiers: bool_modifier /* empty */
@@ -321,13 +321,13 @@ grouping_label  : maybe_label
 /*
  * Function calls.
  */
-                
+
 function_call   : IDENTIFIER function_call_body
                         {
                         fn, exist := getFunction($1.Val)
                         if !exist{
-                                yylex.(*parser).failf($1.PositionRange(),"unknown function with name %q", $1.Val)
-                        } 
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                        }
                         $$ = &Call{
                                 Func: fn,
                                 Args: $2.(Expressions),
@@ -347,11 +347,11 @@ function_call_body: LEFT_PAREN function_call_args RIGHT_PAREN
 
 function_call_args: function_call_args COMMA expr
                         { $$ = append($1.(Expressions), $3.(Expr)) }
-                | expr 
+                | expr
                         { $$ = Expressions{$1.(Expr)} }
                 | function_call_args COMMA
                         {
-                        yylex.(*parser).failf($2.PositionRange(), "trailing commas not allowed in function call args")
+                        yylex.(*parser).addParseErrf($2.PositionRange(), "trailing commas not allowed in function call args")
                         $$ = $1
                         }
                 ;
@@ -393,11 +393,11 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
 
                         if errMsg != ""{
                                 errRange := mergeRanges(&$2, &$4)
-                                yylex.(*parser).failf(errRange, errMsg)
+                                yylex.(*parser).addParseErrf(errRange, errMsg)
                         }
 
                         $$ = &MatrixSelector{
-                                VectorSelector: vs,
+                                VectorSelector: $1.(Expr),
                                 Range: $3,
                                 EndPos: yylex.(*parser).lastClosing,
                         }
@@ -410,7 +410,7 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                                 Expr:  $1.(Expr),
                                 Range: $3,
                                 Step:  $5,
-                                
+
                                 EndPos: $6.Pos + 1,
                         }
                         }
@@ -430,7 +430,7 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
 
 unary_expr      :
                 /* gives the rule the same precedence as MUL. This aligns with mathematical conventions */
-                unary_op expr %prec MUL 
+                unary_op expr %prec MUL
                         {
                         if nl, ok := $2.(*NumberLiteral); ok {
                                 if $1.Typ == SUB {
@@ -449,15 +449,15 @@ unary_expr      :
  */
 
 vector_selector: metric_identifier label_matchers
-                        { 
+                        {
                         vs := $2.(*VectorSelector)
-                        vs.PosRange = mergeRanges(&$1, vs) 
+                        vs.PosRange = mergeRanges(&$1, vs)
                         vs.Name = $1.Val
                         yylex.(*parser).assembleVectorSelector(vs)
                         $$ = vs
                         }
-                | metric_identifier 
-                        { 
+                | metric_identifier
+                        {
                         vs := &VectorSelector{
                                 Name: $1.Val,
                                 LabelMatchers: []*labels.Matcher{},
@@ -467,7 +467,7 @@ vector_selector: metric_identifier label_matchers
                         $$ = vs
                         }
                 | label_matchers
-                        { 
+                        {
                         vs := $1.(*VectorSelector)
                         yylex.(*parser).assembleVectorSelector(vs)
                         $$ = vs
@@ -498,7 +498,7 @@ label_matchers  : LEFT_BRACE label_match_list RIGHT_BRACE
                 ;
 
 label_match_list: label_match_list COMMA label_matcher
-                        { 
+                        {
                         if $1 != nil{
                                 $$ = append($1, $3)
                         } else {
@@ -515,19 +515,19 @@ label_matcher   : IDENTIFIER match_op STRING
                         { $$ = yylex.(*parser).newLabelMatcher($1, $2, $3);  }
                 | IDENTIFIER match_op error
                         { yylex.(*parser).unexpected("label matching", "string"); $$ = nil}
-                | IDENTIFIER error 
-                        { yylex.(*parser).unexpected("label matching", "label matching operator"); $$ = nil } 
+                | IDENTIFIER error
+                        { yylex.(*parser).unexpected("label matching", "label matching operator"); $$ = nil }
                 | error
                         { yylex.(*parser).unexpected("label matching", "identifier or \"}\""); $$ = nil}
                 ;
-                        
+
 /*
  * Metric descriptions.
  */
 
 metric          : metric_identifier label_set
                         { $$ = append($2, labels.Label{Name: labels.MetricName, Value: $1.Val}); sort.Sort($$) }
-                | label_set 
+                | label_set
                         {$$ = $1}
                 ;
 
@@ -550,11 +550,11 @@ label_set_list  : label_set_list COMMA label_set_item
                         { $$ = []labels.Label{$1} }
                 | label_set_list error
                         { yylex.(*parser).unexpected("label set", "\",\" or \"}\"", ); $$ = $1 }
-                
+
                 ;
 
 label_set_item  : IDENTIFIER EQL STRING
-                        { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } } 
+                        { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
                 | IDENTIFIER EQL error
                         { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
                 | IDENTIFIER error
@@ -645,7 +645,7 @@ match_op        : EQL | NEQ | EQL_REGEX | NEQ_REGEX ;
  * Literals.
  */
 
-number_literal  : NUMBER 
+number_literal  : NUMBER
                         {
                         $$ = &NumberLiteral{
                                 Val:           yylex.(*parser).number($1.Val),
@@ -665,7 +665,7 @@ uint            : NUMBER
                         var err error
                         $$, err = strconv.ParseUint($1.Val, 10, 64)
                         if err != nil {
-                                yylex.(*parser).failf($1.PositionRange(), "invalid repetition in series values: %s", err)
+                                yylex.(*parser).addParseErrf($1.PositionRange(), "invalid repetition in series values: %s", err)
                         }
                         }
                 ;
@@ -675,7 +675,7 @@ duration        : DURATION
                         var err error
                         $$, err = parseDuration($1.Val)
                         if err != nil {
-                                yylex.(*parser).fail($1.PositionRange(), err)
+                                yylex.(*parser).addParseErr($1.PositionRange(), err)
                         }
                         }
                 ;
