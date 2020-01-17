@@ -116,7 +116,7 @@ func ParseExpr(input string) (expr Expr, err error) {
 
 	// Only typecheck when there are no syntax errors.
 	if len(p.parseErrors) == 0 {
-		p.checkType(expr)
+		p.checkAST(expr)
 	}
 
 	if len(p.parseErrors) != 0 {
@@ -414,7 +414,7 @@ func (p *parser) number(val string) float64 {
 // expectType checks the type of the node and raises an error if it
 // is not of the expected type.
 func (p *parser) expectType(node Node, want ValueType, context string) {
-	t := p.checkType(node)
+	t := p.checkAST(node)
 	if t != want {
 		p.failf(node.PositionRange(), "expected type %s in %s, got %s", documentedType(want), context, documentedType(t))
 	}
@@ -425,7 +425,7 @@ func (p *parser) expectType(node Node, want ValueType, context string) {
 //
 // Some of these checks are redundant as the parsing stage does not allow
 // them, but the costs are small and might reveal errors when making changes.
-func (p *parser) checkType(node Node) (typ ValueType) {
+func (p *parser) checkAST(node Node) (typ ValueType) {
 	// For expressions the type is determined by their Type function.
 	// Lists do not have a type but are not invalid either.
 	switch n := node.(type) {
@@ -441,14 +441,14 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 	// errors in case of bad typing.
 	switch n := node.(type) {
 	case *EvalStmt:
-		ty := p.checkType(n.Expr)
+		ty := p.checkAST(n.Expr)
 		if ty == ValueTypeNone {
 			p.failf(n.Expr.PositionRange(), "evaluation statement must have a valid expression type but got %s", documentedType(ty))
 		}
 
 	case Expressions:
 		for _, e := range n {
-			ty := p.checkType(e)
+			ty := p.checkAST(e)
 			if ty == ValueTypeNone {
 				p.failf(e.PositionRange(), "expression must have a valid expression type but got %s", documentedType(ty))
 			}
@@ -466,8 +466,8 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		}
 
 	case *BinaryExpr:
-		lt := p.checkType(n.LHS)
-		rt := p.checkType(n.RHS)
+		lt := p.checkAST(n.LHS)
+		rt := p.checkAST(n.RHS)
 
 		// opRange returns the PositionRange of the operator part of the BinaryExpr.
 		// This is made a function instead of a variable, so it is lazily evaluated on demand.
@@ -554,23 +554,23 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		}
 
 	case *ParenExpr:
-		p.checkType(n.Expr)
+		p.checkAST(n.Expr)
 
 	case *UnaryExpr:
 		if n.Op != ADD && n.Op != SUB {
 			p.failf(n.PositionRange(), "only + and - operators allowed for unary expressions")
 		}
-		if t := p.checkType(n.Expr); t != ValueTypeScalar && t != ValueTypeVector {
+		if t := p.checkAST(n.Expr); t != ValueTypeScalar && t != ValueTypeVector {
 			p.failf(n.PositionRange(), "unary expression only allowed on expressions of type scalar or instant vector, got %q", documentedType(t))
 		}
 
 	case *SubqueryExpr:
-		ty := p.checkType(n.Expr)
+		ty := p.checkAST(n.Expr)
 		if ty != ValueTypeVector {
 			p.failf(n.PositionRange(), "subquery is only allowed on instant vector, got %s in %q instead", ty, n.String())
 		}
 	case *MatrixSelector:
-		p.checkType(n.VectorSelector)
+		p.checkAST(n.VectorSelector)
 
 	case *VectorSelector:
 		// A Vector selector must contain at least one non-empty matcher to prevent
