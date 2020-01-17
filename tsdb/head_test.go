@@ -454,8 +454,9 @@ func TestHeadDeleteSimple(t *testing.T) {
 	lblDefault := labels.Label{Name: "a", Value: "b"}
 
 	cases := []struct {
-		dranges  tombstones.Intervals
-		smplsExp []sample
+		dranges    tombstones.Intervals
+		addSamples []sample // Samples to add after delete.
+		smplsExp   []sample
 	}{
 		{
 			dranges:  tombstones.Intervals{{Mint: 0, Maxt: 3}},
@@ -476,6 +477,18 @@ func TestHeadDeleteSimple(t *testing.T) {
 		{ // This case is to ensure that labels and symbols are deleted.
 			dranges:  tombstones.Intervals{{Mint: 0, Maxt: 9}},
 			smplsExp: buildSmpls([]int64{}),
+		},
+		{
+			dranges:    tombstones.Intervals{{Mint: 1, Maxt: 3}},
+			addSamples: buildSmpls([]int64{11, 13, 15}),
+			smplsExp:   buildSmpls([]int64{0, 4, 5, 6, 7, 8, 9, 11, 13, 15}),
+		},
+		{
+			// After delete, the appended samples in the deleted range should be visible
+			// as the tombstones are clamped to head min/max time.
+			dranges:    tombstones.Intervals{{Mint: 7, Maxt: 20}},
+			addSamples: buildSmpls([]int64{11, 13, 15}),
+			smplsExp:   buildSmpls([]int64{0, 1, 2, 3, 4, 5, 6, 11, 13, 15}),
 		},
 	}
 
@@ -509,6 +522,15 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, r := range c.dranges {
 					testutil.Ok(t, head.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value)))
 				}
+
+				// Add more samples.
+				app = head.Appender()
+				for _, smpl := range c.addSamples {
+					_, err = app.Add(labels.Labels{lblDefault}, smpl.t, smpl.v)
+					testutil.Ok(t, err)
+
+				}
+				testutil.Ok(t, app.Commit())
 
 				// Compare the samples for both heads - before and after the reload.
 				reloadedW, err := wal.New(nil, nil, w.Dir(), compress) // Use a new wal to ensure deleted samples are gone even after a reload.
