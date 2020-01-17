@@ -164,7 +164,7 @@ start           :
                         { yylex.(*parser).generatedParserResult = $2 }
                 | START_SERIES_DESCRIPTION series_description
                 | START_EXPRESSION /* empty */ EOF
-                        { yylex.(*parser).failf(PositionRange{}, "no expression found in input")}
+                        { yylex.(*parser).addParseErrf(PositionRange{}, "no expression found in input")}
                 | START_EXPRESSION expr
                         { yylex.(*parser).generatedParserResult = $2 }
                 | START_METRIC_SELECTOR vector_selector 
@@ -326,7 +326,7 @@ function_call   : IDENTIFIER function_call_body
                         {
                         fn, exist := getFunction($1.Val)
                         if !exist{
-                                yylex.(*parser).failf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
                         } 
                         $$ = &Call{
                                 Func: fn,
@@ -351,7 +351,7 @@ function_call_args: function_call_args COMMA expr
                         { $$ = Expressions{$1.(Expr)} }
                 | function_call_args COMMA
                         {
-                        yylex.(*parser).failf($2.PositionRange(), "trailing commas not allowed in function call args")
+                        yylex.(*parser).addParseErrf($2.PositionRange(), "trailing commas not allowed in function call args")
                         $$ = $1
                         }
                 ;
@@ -393,7 +393,7 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
 
                         if errMsg != ""{
                                 errRange := mergeRanges(&$2, &$4)
-                                yylex.(*parser).failf(errRange, errMsg)
+                                yylex.(*parser).addParseErrf(errRange, errMsg)
                         }
 
                         $$ = &MatrixSelector{
@@ -665,7 +665,7 @@ uint            : NUMBER
                         var err error
                         $$, err = strconv.ParseUint($1.Val, 10, 64)
                         if err != nil {
-                                yylex.(*parser).failf($1.PositionRange(), "invalid repetition in series values: %s", err)
+                                yylex.(*parser).addParseErrf($1.PositionRange(), "invalid repetition in series values: %s", err)
                         }
                         }
                 ;
@@ -675,7 +675,7 @@ duration        : DURATION
                         var err error
                         $$, err = parseDuration($1.Val)
                         if err != nil {
-                                yylex.(*parser).fail($1.PositionRange(), err)
+                                yylex.(*parser).addParseErr($1.PositionRange(), err)
                         }
                         }
                 ;
