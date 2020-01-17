@@ -220,12 +220,12 @@ func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue
 	return labels, values, err
 }
 
-// failf formats the error and terminates processing.
+// failf formats the error and and appends it to the list of parsing errors.
 func (p *parser) failf(positionRange PositionRange, format string, args ...interface{}) {
 	p.fail(positionRange, errors.Errorf(format, args...))
 }
 
-// fail terminates processing.
+// fail appends the provided error to the list of parsing errors.
 func (p *parser) fail(positionRange PositionRange, err error) {
 	perr := ParseErr{
 		PositionRange: positionRange,
@@ -367,16 +367,17 @@ func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *Aggre
 	ret = modifier.(*AggregateExpr)
 	arguments := args.(Expressions)
 
+	ret.PosRange = PositionRange{
+		Start: op.Pos,
+		End:   p.lastClosing,
+	}
+
 	ret.Op = op.Typ
 
 	if len(arguments) == 0 {
 		p.failf(ret.PositionRange(), "no arguments for aggregate expression provided")
 
-		// Currently p.failf() panics, so this return is not needed
-		// at the moment.
-		// However, this behaviour is likely to be changed in the
-		// future. In case of having non-panicking errors this
-		// return prevents invalid array accesses
+		// Prevents invalid array accesses.
 		return
 	}
 
@@ -393,11 +394,6 @@ func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *Aggre
 	}
 
 	ret.Expr = arguments[desiredArgs-1]
-
-	ret.PosRange = PositionRange{
-		Start: op.Pos,
-		End:   p.lastClosing,
-	}
 
 	return ret
 }
