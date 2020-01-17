@@ -197,3 +197,7 @@ export const toQueryString = ({ key, options }: PanelMeta) => {
 export const encodePanelOptionsToQueryString = (panels: PanelMeta[]) => {
   return `?${panels.map(toQueryString).join('&')}`;
 };
+
+export const roundUp = (n: number) => {
+  return Math.floor(n * 100) / 100;
+};

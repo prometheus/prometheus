@@ -7,7 +7,7 @@ import { Alert, Table } from 'reactstrap';
 import { useFetch } from '../../hooks/useFetch';
 import { Link } from '@reach/router';
 import { Rule } from '../../types/types';
-import { formatRelative } from '../../utils';
+import { formatRelative, roundUp } from '../../utils';
 import { now } from 'moment';
 
 interface RuleGroup {
@@ -27,10 +27,10 @@ interface MapProps {
   term: string;
 }
 
-const Maps: FC<RouteComponentProps & MapProps> = ({ term, map }) => {
+const AlertRuleMaps: FC<RouteComponentProps & MapProps> = ({ term, map }) => {
   return (
     <div>
-      <span className="rules-head">{term}:</span>
+      <strong>{term}:</strong>
       <div style={{ marginLeft: '3%' }}>
         {Object.entries(map).map(([key, value], i) => (
           <div key={i}>
@@ -44,10 +44,6 @@ const Maps: FC<RouteComponentProps & MapProps> = ({ term, map }) => {
 
 const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const { response, error } = useFetch<RulesMap>(`${pathPrefix}/api/v1/rules`);
-  console.warn(response);
-  const roundUp = (n: number) => {
-    return Math.floor(n * 100) / 100;
-  };
 
   if (error) {
     return (
@@ -62,7 +58,7 @@ const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
         <h2>Rules</h2>
         {groups.map((g, i) => {
           return (
-            <Table size="sm" striped={true} bordered={true} key={i}>
+            <Table size="sm" striped bordered key={i}>
               <thead>
                 <tr>
                   <td colSpan={3}>
@@ -79,21 +75,21 @@ const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="rules-head">Rule</td>
-                  <td className="rules-head">State</td>
-                  <td className="rules-head">Error</td>
-                  <td className="rules-head">Last Evaluation</td>
-                  <td className="rules-head">Evaluation Time</td>
+                <tr className="font-weight-bold">
+                  <td>Rule</td>
+                  <td>State</td>
+                  <td>Error</td>
+                  <td>Last Evaluation</td>
+                  <td>Evaluation Time</td>
                 </tr>
                 {g.rules.map((r, i) => {
                   return (
                     <tr key={i}>
-                      {r.hasOwnProperty('alerts') ? (
+                      {r.alerts ? (
                         <td>
-                          <span className="rules-head">alert:</span>
+                          <strong>alert:</strong>
                           <Link
-                            style={{ marginLeft: '3%' }}
+                            className="ml-4"
                             to={encodeURI(
                               `${pathPrefix}/new/graph?g0.expr=ALERTS{alertname="${r.name}"}&g0.tab=1&g0.stacked=0&g0.range_input=1h`
                             )}
@@ -103,31 +99,35 @@ const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
                           <br />
                           <span className="rules-head">expr:</span>
                           <Link
-                            style={{ marginLeft: '3%' }}
-                            to={`${pathPrefix}/new/graph?g0.expr=${r.query}&g0.tab=1&g0.stacked=0&g0.range_input=1h`}
+                            className="ml-4"
+                            to={encodeURI(
+                              `${pathPrefix}/new/graph?g0.expr=${r.query}&g0.tab=1&g0.stacked=0&g0.range_input=1h`
+                            )}
                           >
                             {r.query}
                           </Link>{' '}
                           <br />
-                          <Maps map={r.labels} term="labels" />
-                          <Maps map={r.annotations} term="annotations" />
+                          <AlertRuleMaps map={r.labels} term="labels" />
+                          <AlertRuleMaps map={r.annotations} term="annotations" />
                         </td>
                       ) : (
                         <td>
                           <span className="rules-head">record:</span> {r.name} <br />
                           <span className="rules-head">expr:</span>
                           <Link
-                            style={{ marginLeft: '3%' }}
-                            to={`${pathPrefix}/new/graph?g0.expr=${r.query}&g0.tab=1&g0.stacked=0&g0.range_input=1h`}
+                            className="ml-4"
+                            to={encodeURI(
+                              `${pathPrefix}/new/graph?g0.expr=${r.query}&g0.tab=1&g0.stacked=0&g0.range_input=1h`
+                            )}
                           >
                             {r.query}
                           </Link>
                         </td>
                       )}
                       <td>
-                        <Alert style={{ display: 'inline-table' }}>{r.health.toUpperCase()}</Alert>
+                        <Alert className="d-inline-block p-1 text-uppercase">{r.health.toUpperCase()}</Alert>
                       </td>
-                      <td>{r.hasOwnProperty('lastError') ? r.lastError : null}</td>
+                      <td>{r.lastError}</td>
                       <td>{formatRelative(r.lastEvaluation, now())} ago</td>
                       <td>{roundUp(parseFloat(r.evaluationTime) * 1000)}ms ago</td>
                     </tr>
