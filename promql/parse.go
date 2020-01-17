@@ -355,7 +355,6 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node
 
 func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	if vs.Name != "" {
-
 		for _, m := range vs.LabelMatchers {
 			if m != nil && m.Name == labels.MetricName {
 				p.failf(vs.PositionRange(), "metric name must not be set twice: %q or %q", vs.Name, m.Value)
@@ -367,19 +366,6 @@ func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 			panic(err) // Must not happen with labels.MatchEqual
 		}
 		vs.LabelMatchers = append(vs.LabelMatchers, nameMatcher)
-	}
-
-	// A Vector selector must contain at least one non-empty matcher to prevent
-	// implicit selection of all metrics (e.g. by a typo).
-	notEmpty := false
-	for _, lm := range vs.LabelMatchers {
-		if lm != nil && !lm.Matches("") {
-			notEmpty = true
-			break
-		}
-	}
-	if !notEmpty {
-		p.failf(vs.PositionRange(), "vector selector must contain at least one non-empty matcher")
 	}
 }
 
@@ -596,7 +582,21 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 	case *MatrixSelector:
 		p.checkType(n.VectorSelector)
 
-	case *NumberLiteral, *StringLiteral, *VectorSelector:
+	case *VectorSelector:
+		// A Vector selector must contain at least one non-empty matcher to prevent
+		// implicit selection of all metrics (e.g. by a typo).
+		notEmpty := false
+		for _, lm := range n.LabelMatchers {
+			if lm != nil && !lm.Matches("") {
+				notEmpty = true
+				break
+			}
+		}
+		if !notEmpty {
+			p.failf(n.PositionRange(), "vector selector must contain at least one non-empty matcher")
+		}
+
+	case *NumberLiteral, *StringLiteral:
 		// Nothing to do for terminals.
 
 	default:
