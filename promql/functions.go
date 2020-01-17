@@ -64,11 +64,12 @@ func funcTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 // the result as either per-second (if isRate is true) or overall.
 func extrapolatedRate(vals []Value, args Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
 	ms := args[0].(*MatrixSelector)
+	vs := ms.VectorSelector.(*VectorSelector)
 
 	var (
 		samples    = vals[0].(Matrix)[0]
-		rangeStart = enh.ts - durationMilliseconds(ms.Range+ms.VectorSelector.Offset)
-		rangeEnd   = enh.ts - durationMilliseconds(ms.VectorSelector.Offset)
+		rangeStart = enh.ts - durationMilliseconds(ms.Range+vs.Offset)
+		rangeEnd   = enh.ts - durationMilliseconds(vs.Offset)
 	)
 
 	// No sense in trying to compute a rate without at least two points. Drop
@@ -1243,7 +1244,7 @@ func createLabelsForAbsentFunction(expr Expr) labels.Labels {
 	case *VectorSelector:
 		lm = n.LabelMatchers
 	case *MatrixSelector:
-		lm = n.VectorSelector.LabelMatchers
+		lm = n.VectorSelector.(*VectorSelector).LabelMatchers
 	default:
 		return m
 	}

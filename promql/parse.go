@@ -675,7 +675,9 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		offsetp = &s.Offset
 		endPosp = &s.PosRange.End
 	case *MatrixSelector:
-		offsetp = &s.VectorSelector.Offset
+		if vs, ok := s.VectorSelector.(*VectorSelector); ok {
+			offsetp = &vs.Offset
+		}
 		endPosp = &s.EndPos
 	case *SubqueryExpr:
 		offsetp = &s.Offset
@@ -688,7 +690,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	// it is already ensured by parseDuration func that there never will be a zero offset modifier
 	if *offsetp != 0 {
 		p.failf(e.PositionRange(), "offset may not be set multiple times")
-	} else {
+	} else if offsetp != nil {
 		*offsetp = offset
 	}
 

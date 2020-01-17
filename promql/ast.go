@@ -113,7 +113,9 @@ type Call struct {
 
 // MatrixSelector represents a Matrix selection.
 type MatrixSelector struct {
-	VectorSelector *VectorSelector
+	// It is safe to assume that this is an VectorSelector
+	// if the parser hasn't returned an error
+	VectorSelector Expr
 	Range          time.Duration
 
 	EndPos Pos

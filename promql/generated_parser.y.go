@@ -1140,7 +1140,7 @@ yydefault:
 			}
 
 			yyVAL.node = &MatrixSelector{
-				VectorSelector: vs,
+				VectorSelector: yyDollar[1].node.(Expr),
 				Range:          yyDollar[3].duration,
 				EndPos:         yylex.(*parser).lastClosing,
 			}
