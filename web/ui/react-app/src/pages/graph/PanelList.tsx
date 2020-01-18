@@ -109,7 +109,6 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
     );
     localStorage.setItem('history', JSON.stringify(extendedItems.slice(0, 50)));
     this.updatePastQueries();
-    this.updateURL();
   };
 
   updateURL() {
@@ -119,7 +118,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
 
   handleOptionsChanged = (id: string, options: PanelOptions) => {
     const updatedPanels = this.state.panels.map(p => (id === p.id ? { ...p, options } : p));
-    this.setState({ panels: updatedPanels });
+    this.setState({ panels: updatedPanels }, this.updateURL);
   };
 
   addPanel = () => {

@@ -37,12 +37,4 @@ describe('PanelList', () => {
     expect(btn.prop('color')).toEqual('primary');
     expect(btn.children().text()).toEqual('Add Panel');
   });
-
-  it('updates URL when a query is executed', () => {
-    const panelList = mount(<PanelList />);
-    const instance: any = panelList.instance();
-    const updateURLSpy = jest.spyOn(instance, 'updateURL');
-    instance.handleExecuteQuery('new');
-    expect(updateURLSpy).toHaveBeenCalledTimes(1);
-  });
 });
