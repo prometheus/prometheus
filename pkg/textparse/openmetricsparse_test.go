@@ -443,6 +443,10 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			err:   "expected label name or left brace, got \"EQUAL\"",
 		},
 		{
+			input: "custom_metric_total{a=\"a\":} 1\nEOF",
+			err:   "expected comma or left brace, got \"INVALID\"",
+		},
+		{
 			input: "foo 1_2\n\n# EOF\n",
 			err:   "unsupported character in float",
 		},
