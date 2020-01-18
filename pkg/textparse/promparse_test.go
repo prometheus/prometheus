@@ -226,6 +226,10 @@ func TestPromParseErrors(t *testing.T) {
 			err:   "expected label value, got \"INVALID\"",
 		},
 		{
+			input: "a{b=\"c\",b=\"d\"} 1\n",
+			err:   "duplicate label \"b\"",
+		},
+		{
 			input: "a{b=\n",
 			err:   "expected label value, got \"INVALID\"",
 		},

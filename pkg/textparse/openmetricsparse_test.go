@@ -498,6 +498,10 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			input: `custom_metric_total 1 # {aa=\"\xff\"} 9.0`,
 			err:   "expected label value, got \"INVALID\"",
 		},
+		{
+			input: "custom_metric_total{b=\"c\",b=\"d\"} 1\nEOF",
+			err:   "duplicate label \"b\"",
+		},
 	}
 
 	for i, c := range cases {

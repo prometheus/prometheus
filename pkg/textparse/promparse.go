@@ -17,6 +17,7 @@
 package textparse
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -370,12 +371,20 @@ func (p *PromParser) Next() (Entry, error) {
 }
 
 func (p *PromParser) parseLVals() error {
+	labels := [][]byte{}
 	t := p.nextToken()
 	for {
 		switch t {
 		case tBraceClose:
 			return nil
 		case tLName:
+			label := p.l.b[p.l.start:p.l.i]
+			for _, l := range labels {
+				if bytes.Compare(l, label) == 0 {
+					return errors.Errorf(`duplicate label "%s"`, string(l))
+				}
+			}
+			labels = append(labels, label)
 		default:
 			return parseError("expected label name", t)
 		}

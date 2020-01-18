@@ -411,6 +411,7 @@ func (p *OpenMetricsParser) parseComment() error {
 }
 
 func (p *OpenMetricsParser) parseLVals() ([]int, error) {
+	var labels [][]byte
 	var offsets []int
 	first := true
 	for {
@@ -435,10 +436,17 @@ func (p *OpenMetricsParser) parseLVals() ([]int, error) {
 				return nil, parseError("expected label name or left brace", t)
 			}
 			return nil, parseError("expected comma or left brace", t)
-
 		}
 		first = false
 		// t is now a label name.
+
+		label := p.l.b[p.l.start:p.l.i]
+		for _, l := range labels {
+			if bytes.Compare(l, label) == 0 {
+				return nil, errors.Errorf(`duplicate label "%s"`, string(l))
+			}
+		}
+		labels = append(labels, label)
 
 		offsets = append(offsets, p.l.start, p.l.i)
 
