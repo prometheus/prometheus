@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -228,15 +230,15 @@ type API interface {
 	// Flags returns the flag values that Prometheus was launched with.
 	Flags(ctx context.Context) (FlagsResult, error)
 	// LabelNames returns all the unique label names present in the block in sorted order.
-	LabelNames(ctx context.Context) ([]string, api.Warnings, error)
+	LabelNames(ctx context.Context) ([]string, Warnings, error)
 	// LabelValues performs a query for the values of the given label.
-	LabelValues(ctx context.Context, label string) (model.LabelValues, api.Warnings, error)
+	LabelValues(ctx context.Context, label string) (model.LabelValues, Warnings, error)
 	// Query performs a query for the given time.
-	Query(ctx context.Context, query string, ts time.Time) (model.Value, api.Warnings, error)
+	Query(ctx context.Context, query string, ts time.Time) (model.Value, Warnings, error)
 	// QueryRange performs a query for the given range.
-	QueryRange(ctx context.Context, query string, r Range) (model.Value, api.Warnings, error)
+	QueryRange(ctx context.Context, query string, r Range) (model.Value, Warnings, error)
 	// Series finds series by label matchers.
-	Series(ctx context.Context, matches []string, startTime time.Time, endTime time.Time) ([]model.LabelSet, api.Warnings, error)
+	Series(ctx context.Context, matches []string, startTime time.Time, endTime time.Time) ([]model.LabelSet, Warnings, error)
 	// Snapshot creates a snapshot of all current data into snapshots/<datetime>-<rand>
 	// under the TSDB's data directory and returns the directory as response.
 	Snapshot(ctx context.Context, skipHead bool) (SnapshotResult, error)
@@ -515,11 +517,15 @@ func (qr *queryResult) UnmarshalJSON(b []byte) error {
 //
 // It is safe to use the returned API from multiple goroutines.
 func NewAPI(c api.Client) API {
-	return &httpAPI{client: apiClient{c}}
+	return &httpAPI{
+		client: &apiClientImpl{
+			client: c,
+		},
+	}
 }
 
 type httpAPI struct {
-	client api.Client
+	client apiClient
 }
 
 func (h *httpAPI) Alerts(ctx context.Context) (AlertsResult, error) {
@@ -624,7 +630,7 @@ func (h *httpAPI) Flags(ctx context.Context) (FlagsResult, error) {
 	return res, json.Unmarshal(body, &res)
 }
 
-func (h *httpAPI) LabelNames(ctx context.Context) ([]string, api.Warnings, error) {
+func (h *httpAPI) LabelNames(ctx context.Context) ([]string, Warnings, error) {
 	u := h.client.URL(epLabels, nil)
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -638,7 +644,7 @@ func (h *httpAPI) LabelNames(ctx context.Context) ([]string, api.Warnings, error
 	return labelNames, w, json.Unmarshal(body, &labelNames)
 }
 
-func (h *httpAPI) LabelValues(ctx context.Context, label string) (model.LabelValues, api.Warnings, error) {
+func (h *httpAPI) LabelValues(ctx context.Context, label string) (model.LabelValues, Warnings, error) {
 	u := h.client.URL(epLabelValues, map[string]string{"name": label})
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -652,7 +658,7 @@ func (h *httpAPI) LabelValues(ctx context.Context, label string) (model.LabelVal
 	return labelValues, w, json.Unmarshal(body, &labelValues)
 }
 
-func (h *httpAPI) Query(ctx context.Context, query string, ts time.Time) (model.Value, api.Warnings, error) {
+func (h *httpAPI) Query(ctx context.Context, query string, ts time.Time) (model.Value, Warnings, error) {
 	u := h.client.URL(epQuery, nil)
 	q := u.Query()
 
@@ -661,7 +667,7 @@ func (h *httpAPI) Query(ctx context.Context, query string, ts time.Time) (model.
 		q.Set("time", formatTime(ts))
 	}
 
-	_, body, warnings, err := api.DoGetFallback(h.client, ctx, u, q)
+	_, body, warnings, err := h.client.DoGetFallback(ctx, u, q)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -670,7 +676,7 @@ func (h *httpAPI) Query(ctx context.Context, query string, ts time.Time) (model.
 	return model.Value(qres.v), warnings, json.Unmarshal(body, &qres)
 }
 
-func (h *httpAPI) QueryRange(ctx context.Context, query string, r Range) (model.Value, api.Warnings, error) {
+func (h *httpAPI) QueryRange(ctx context.Context, query string, r Range) (model.Value, Warnings, error) {
 	u := h.client.URL(epQueryRange, nil)
 	q := u.Query()
 
@@ -679,7 +685,7 @@ func (h *httpAPI) QueryRange(ctx context.Context, query string, r Range) (model.
 	q.Set("end", formatTime(r.End))
 	q.Set("step", strconv.FormatFloat(r.Step.Seconds(), 'f', -1, 64))
 
-	_, body, warnings, err := api.DoGetFallback(h.client, ctx, u, q)
+	_, body, warnings, err := h.client.DoGetFallback(ctx, u, q)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -689,7 +695,7 @@ func (h *httpAPI) QueryRange(ctx context.Context, query string, r Range) (model.
 	return model.Value(qres.v), warnings, json.Unmarshal(body, &qres)
 }
 
-func (h *httpAPI) Series(ctx context.Context, matches []string, startTime time.Time, endTime time.Time) ([]model.LabelSet, api.Warnings, error) {
+func (h *httpAPI) Series(ctx context.Context, matches []string, startTime time.Time, endTime time.Time) ([]model.LabelSet, Warnings, error) {
 	u := h.client.URL(epSeries, nil)
 	q := u.Query()
 
@@ -796,10 +802,19 @@ func (h *httpAPI) TargetsMetadata(ctx context.Context, matchTarget string, metri
 	return res, json.Unmarshal(body, &res)
 }
 
+// Warnings is an array of non critical errors
+type Warnings []string
+
 // apiClient wraps a regular client and processes successful API responses.
 // Successful also includes responses that errored at the API level.
-type apiClient struct {
-	api.Client
+type apiClient interface {
+	URL(ep string, args map[string]string) *url.URL
+	Do(context.Context, *http.Request) (*http.Response, []byte, Warnings, error)
+	DoGetFallback(ctx context.Context, u *url.URL, args url.Values) (*http.Response, []byte, Warnings, error)
+}
+
+type apiClientImpl struct {
+	client api.Client
 }
 
 type apiResponse struct {
@@ -825,17 +840,21 @@ func errorTypeAndMsgFor(resp *http.Response) (ErrorType, string) {
 	return ErrBadResponse, fmt.Sprintf("bad response code %d", resp.StatusCode)
 }
 
-func (c apiClient) Do(ctx context.Context, req *http.Request) (*http.Response, []byte, api.Warnings, error) {
-	resp, body, warnings, err := c.Client.Do(ctx, req)
+func (h *apiClientImpl) URL(ep string, args map[string]string) *url.URL {
+	return h.client.URL(ep, args)
+}
+
+func (h *apiClientImpl) Do(ctx context.Context, req *http.Request) (*http.Response, []byte, Warnings, error) {
+	resp, body, err := h.client.Do(ctx, req)
 	if err != nil {
-		return resp, body, warnings, err
+		return resp, body, nil, err
 	}
 
 	code := resp.StatusCode
 
 	if code/100 != 2 && !apiError(code) {
 		errorType, errorMsg := errorTypeAndMsgFor(resp)
-		return resp, body, warnings, &Error{
+		return resp, body, nil, &Error{
 			Type:   errorType,
 			Msg:    errorMsg,
 			Detail: string(body),
@@ -846,7 +865,7 @@ func (c apiClient) Do(ctx context.Context, req *http.Request) (*http.Response, [
 
 	if http.StatusNoContent != code {
 		if jsonErr := json.Unmarshal(body, &result); jsonErr != nil {
-			return resp, body, warnings, &Error{
+			return resp, body, nil, &Error{
 				Type: ErrBadResponse,
 				Msg:  jsonErr.Error(),
 			}
@@ -867,8 +886,33 @@ func (c apiClient) Do(ctx context.Context, req *http.Request) (*http.Response, [
 		}
 	}
 
-	return resp, []byte(result.Data), warnings, err
+	return resp, []byte(result.Data), result.Warnings, err
 
+}
+
+// DoGetFallback will attempt to do the request as-is, and on a 405 it will fallback to a GET request.
+func (h *apiClientImpl) DoGetFallback(ctx context.Context, u *url.URL, args url.Values) (*http.Response, []byte, Warnings, error) {
+	req, err := http.NewRequest(http.MethodPost, u.String(), strings.NewReader(args.Encode()))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, body, warnings, err := h.Do(ctx, req)
+	if resp != nil && resp.StatusCode == http.StatusMethodNotAllowed {
+		u.RawQuery = args.Encode()
+		req, err = http.NewRequest(http.MethodGet, u.String(), nil)
+		if err != nil {
+			return nil, nil, warnings, err
+		}
+
+	} else {
+		if err != nil {
+			return resp, body, warnings, err
+		}
+		return resp, body, warnings, nil
+	}
+	return h.Do(ctx, req)
 }
 
 func formatTime(t time.Time) string {
