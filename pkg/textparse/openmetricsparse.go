@@ -442,7 +442,7 @@ func (p *OpenMetricsParser) parseLVals() ([]int, error) {
 
 		label := p.l.b[p.l.start:p.l.i]
 		for _, l := range labels {
-			if bytes.Compare(l, label) == 0 {
+			if bytes.Equal(l, label) {
 				return nil, errors.Errorf(`duplicate label "%s"`, string(l))
 			}
 		}
