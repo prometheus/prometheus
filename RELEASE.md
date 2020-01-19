@@ -52,6 +52,29 @@ If a bug fix got accidentally merged into master after non-bug-fix changes in ma
 
 Maintaining the release branches for older minor releases happens on a best effort basis.
 
+### Updating dependencies
+
+A few days before a major or minor release, consider updating the dependencies:
+
+```
+export GO111MODULE=on
+go get -u ./...
+go mod tidy
+go mod vendor
+git add go.mod go.sum vendor
+```
+
+Then create a pull request against the master branch.
+
+Note that after a dependency update, you should look out for any weirdness that
+might have happened. Such weirdnesses include but are not limited to: flaky
+tests, differences in resource usage, panic.
+
+In case of doubt or issues that can't be solved in a reasonable amount of time,
+you can skip the dependency update or only update select dependencies. In such a
+case, you have to create an issue or pull request in the GitHub project for
+later follow-up.
+
 ### Prepare your release
 
 For a patch release, work in the branch of the minor release you want to patch.
@@ -103,4 +126,3 @@ The following changes to the above procedures apply:
 * Tick the _This is a pre-release_ box when drafting the release in the Github UI.
 * Still update `CHANGELOG.md`, but when you cut the final release later, merge all the changes from the pre-releases into the one final update.
 * Run the benchmark for 3 days using the `/benchmark x.y.z` command, `x.y.z` being the latest stable patch release of the previous minor release series.
-
