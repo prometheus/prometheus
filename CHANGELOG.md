@@ -12,7 +12,6 @@
 * [CHANGE] Discovery: Removed `prometheus_sd_kubernetes_cache_*` metrics. Additionally `prometheus_sd_kubernetes_workqueue_latency_seconds` and `prometheus_sd_kubernetes_workqueue_work_duration_seconds` metrics now show correct values in seconds. #6393
 * [CHANGE] Remote write: Changed `query` label on `prometheus_remote_storage_*` metrics to `remote_name` and `url`. #6043
 * [FEATURE] API: Added new endpoint for exposing per metric metadata `/metadata`. #6420 #6442
-* [FEATURE] API: Added new endpoint for exposing tsdb status `/status/tsdb`. #6281
 * [ENHANCEMENT] TSDB: Significantly reduced memory footprint of loaded TSDB blocks. #6418 #6461
 * [ENHANCEMENT] TSDB: Significantly optimized what we buffer during compaction which should result in lower memory footprint during compaction. #6422 #6452 #6468 #6475
 * [ENHANCEMENT] TSDB: Improve replay latency. #6230
