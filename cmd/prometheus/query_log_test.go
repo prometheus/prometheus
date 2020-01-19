@@ -47,7 +47,7 @@ type queryLogTest struct {
 	port           int      // Used in --web.listen-address.
 	cwd            string   // Directory where the test is running. Required to find the rules in testdata.
 	configFile     *os.File // The configuration file.
-	enabledAtStart bool     // Wheter query log is enabled at startup.
+	enabledAtStart bool     // Whether query log is enabled at startup.
 }
 
 // skip checks if the test is needed and the prerequisites are met.
@@ -186,7 +186,7 @@ func (p *queryLogTest) String() string {
 	return name
 }
 
-// params returns specific the command ling parameters of this test.
+// params returns the specific command line parameters of this test.
 func (p *queryLogTest) params() []string {
 	s := []string{}
 	if p.prefix != "" {
@@ -215,11 +215,11 @@ func (p *queryLogTest) exactQueryCount() bool {
 	return p.origin != ruleOrigin
 }
 
-// run launches the scenarion of this query log test.
+// run launches the scenario of this query log test.
 func (p *queryLogTest) run(t *testing.T) {
 	p.skip(t)
 
-	// setup temporary files for this test
+	// Setup temporary files for this test.
 	queryLogFile, err := ioutil.TempFile("", "query")
 	testutil.Ok(t, err)
 	defer os.Remove(queryLogFile.Name())
