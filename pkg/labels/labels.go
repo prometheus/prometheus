@@ -200,6 +200,20 @@ func (ls Labels) Has(name string) bool {
 	return false
 }
 
+// HasDuplicateLabels returns whether ls has duplicate label names.
+// It assumes that the labelset is sorted.
+func (ls Labels) HasDuplicateLabelNames() (string, bool) {
+	for i, l := range ls {
+		if i == 0 {
+			continue
+		}
+		if l.Name == ls[i-1].Name {
+			return l.Name, true
+		}
+	}
+	return "", false
+}
+
 // WithoutEmpty returns the labelset without empty labels.
 // May return the same labelset.
 func (ls Labels) WithoutEmpty() Labels {
