@@ -53,6 +53,10 @@ var (
 	// writable time range.
 	ErrOutOfBounds = errors.New("out of bounds")
 
+	// ErrInvalidSample is returned if an appended sample is not valid and can't
+	// be ingested.
+	ErrInvalidSample = errors.New("invalid sample")
+
 	// emptyTombstoneReader is a no-op Tombstone Reader.
 	// This is used by head to satisfy the Tombstones() function call.
 	emptyTombstoneReader = tombstones.NewMemTombstones()
@@ -920,6 +924,10 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 
 	// Ensure no empty labels have gotten through.
 	lset = lset.WithoutEmpty()
+
+	if l, dup := lset.HasDuplicateLabelNames(); dup {
+		return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
+	}
 
 	s, created := a.head.getOrCreate(lset.Hash(), lset)
 	if created {
