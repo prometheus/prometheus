@@ -315,7 +315,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	for fp, oldLoop := range sp.loops {
 		var cache *scrapeCache
 		if oc := oldLoop.getCache(); reuseCache && oc != nil {
-			cache = oldLoop.getCache()
+			cache = oc
 		} else {
 			cache = newScrapeCache()
 		}
