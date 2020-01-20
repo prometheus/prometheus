@@ -316,22 +316,6 @@ Outer:
 			newSeries(map[string]string{"a": "b"}, expSamples),
 		})
 
-		lns, err := q.LabelNames()
-		testutil.Ok(t, err)
-		lvs, err := q.LabelValues("a")
-		testutil.Ok(t, err)
-		if len(expSamples) == 0 {
-			testutil.Equals(t, 0, len(lns))
-			testutil.Equals(t, 0, len(lvs))
-			testutil.Assert(t, res.Next() == false, "")
-			continue
-		} else {
-			testutil.Equals(t, 1, len(lns))
-			testutil.Equals(t, 1, len(lvs))
-			testutil.Equals(t, "a", lns[0])
-			testutil.Equals(t, "b", lvs[0])
-		}
-
 		for {
 			eok, rok := expss.Next(), res.Next()
 			testutil.Equals(t, eok, rok)
