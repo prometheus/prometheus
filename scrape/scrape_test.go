@@ -1726,20 +1726,28 @@ func TestReuseScrapeCache(t *testing.T) {
 		},
 	}
 
+	cacheAddr := func(sp *scrapePool) map[uint64]string {
+		r := make(map[uint64]string)
+		for fp, l := range sp.loops {
+			r[fp] = fmt.Sprintf("%p", l.getCache())
+		}
+		return r
+	}
+
 	for i, s := range steps {
-		loops := sp.loops
+		initCacheAddr := cacheAddr(sp)
 		sp.reload(s.newConfig)
-		for fp, oldLoop := range loops {
+		for fp, newCacheAddr := range cacheAddr(sp) {
 			if s.keep {
-				// We don't use testutil.Equals as we don't want to use reflect, just
-				// compare pointers.
-				testutil.Assert(t, oldLoop.getCache() == sp.loops[fp].getCache(), "step %d: old cache and new cache are not the same", i)
+				testutil.Assert(t, initCacheAddr[fp] == newCacheAddr, "step %d: old cache and new cache are not the same", i)
 			} else {
-				testutil.Assert(t, oldLoop.getCache() != sp.loops[fp].getCache(), "step %d: old cache and new cache are the same", i)
+				testutil.Assert(t, initCacheAddr[fp] != newCacheAddr, "step %d: old cache and new cache are the same", i)
 			}
-			oldLoop = sp.loops[fp]
-			sp.reload(s.newConfig)
-			testutil.Assert(t, oldLoop.getCache() == sp.loops[fp].getCache(), "step %d: reloading the exact config invalidates the cache", i)
+		}
+		initCacheAddr = cacheAddr(sp)
+		sp.reload(s.newConfig)
+		for fp, newCacheAddr := range cacheAddr(sp) {
+			testutil.Assert(t, initCacheAddr[fp] == newCacheAddr, "step %d: reloading the exact config invalidates the cache", i)
 		}
 	}
 }

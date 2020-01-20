@@ -1351,8 +1351,5 @@ func reusableCache(r, l *config.ScrapeConfig) bool {
 	if r == nil || l == nil {
 		return false
 	}
-	fmt.Printf("%v\n", zeroConfig(r))
-	fmt.Printf("%v\n", zeroConfig(l))
-	fmt.Printf("%v\n", reflect.DeepEqual(zeroConfig(r), zeroConfig(l)))
 	return reflect.DeepEqual(zeroConfig(r), zeroConfig(l))
 }
