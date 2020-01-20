@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -298,6 +299,11 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.validateLastQuery(t, ql)
 	qc = len(ql)
 
+	// The last part of the test can not succeed on Windows because you can't
+	// rename files used by other processes.
+	if runtime.GOOS == "windows" {
+		return
+	}
 	// Move the file, Prometheus should still write to the old file.
 	newFile, err := ioutil.TempFile("", "newLoc")
 	testutil.Ok(t, err)
