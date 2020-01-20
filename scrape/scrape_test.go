@@ -1691,6 +1691,39 @@ func TestReuseScrapeCache(t *testing.T) {
 				MetricsPath:    "/metrics2",
 			},
 		},
+		{
+			keep: true,
+			newConfig: &config.ScrapeConfig{
+				JobName:        "Prometheus",
+				SampleLimit:    400,
+				ScrapeInterval: model.Duration(5 * time.Second),
+				ScrapeTimeout:  model.Duration(15 * time.Second),
+				MetricsPath:    "/metrics2",
+			},
+		},
+		{
+			keep: true,
+			newConfig: &config.ScrapeConfig{
+				JobName:         "Prometheus",
+				HonorTimestamps: false,
+				SampleLimit:     400,
+				ScrapeInterval:  model.Duration(5 * time.Second),
+				ScrapeTimeout:   model.Duration(15 * time.Second),
+				MetricsPath:     "/metrics2",
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:         "Prometheus",
+				HonorTimestamps: false,
+				HonorLabels:     true,
+				SampleLimit:     400,
+				ScrapeInterval:  model.Duration(5 * time.Second),
+				ScrapeTimeout:   model.Duration(15 * time.Second),
+				MetricsPath:     "/metrics2",
+			},
+		},
 	}
 
 	for i, s := range steps {
