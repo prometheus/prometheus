@@ -57,7 +57,7 @@ func NotOk(tb TB, err error, a ...interface{}) {
 	if err == nil {
 		if len(a) != 0 {
 			format := a[0].(string)
-			tb.Fatalf("\033[31m"+format+": expected error, got none\033[39m", a...)
+			tb.Fatalf("\033[31m"+format+": expected error, got none\033[39m", a[1:]...)
 		}
 		tb.Fatalf("\033[31mexpected error, got none\033[39m")
 	}
