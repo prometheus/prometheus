@@ -95,7 +95,7 @@ func (t Timers) Swap(i, j int) {
 }
 
 func (s byCreationTimeSorter) Less(i, j int) bool {
-	fmt.Printf("i: %v / j: %v\n", s.Timers[i].created, s.Timers[j])
+	fmt.Printf("i: %v / j: %v\n", s.Timers[i].created, s.Timers[j].created)
 	return s.Timers[i].created.Before(s.Timers[j].created)
 }
 
