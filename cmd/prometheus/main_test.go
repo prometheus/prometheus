@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -197,7 +198,16 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 
 	for size, expectedExitStatus := range map[string]int{"9MB": 1, "257MB": 1, "10": 2, "1GB": 1, "12MB": 0} {
 		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig)
-		err := prom.Start()
+
+		// Log stderr in case of failure.
+		stderr, err := prom.StderrPipe()
+		testutil.Ok(t, err)
+		go func() {
+			slurp, _ := ioutil.ReadAll(stderr)
+			t.Log(string(slurp))
+		}()
+
+		err = prom.Start()
 		testutil.Ok(t, err)
 
 		if expectedExitStatus == 0 {

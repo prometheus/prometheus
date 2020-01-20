@@ -27,7 +27,8 @@ func stopProcess(p *os.Process) {
 	p.Signal(os.Interrupt)
 }
 
-// As soon as prometheus starts responding to http request should be able to accept Interrupt signals for a graceful shutdown.
+// As soon as prometheus starts responding to http request it should be able to
+// accept Interrupt signals for a graceful shutdown.
 func TestStartupInterrupt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
@@ -50,7 +51,8 @@ func TestStartupInterrupt(t *testing.T) {
 
 Loop:
 	for x := 0; x < 10; x++ {
-		// error=nil means prometheus has started so can send the interrupt signal and wait for the grace shutdown.
+		// error=nil means prometheus has started so we can send the interrupt
+		// signal and wait for the graceful shutdown.
 		if _, err := http.Get("http://localhost:9090/graph"); err == nil {
 			startedOk = true
 			prom.Process.Signal(os.Interrupt)

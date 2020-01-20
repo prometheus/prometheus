@@ -83,3 +83,44 @@ func TestQueryStatsWithSpanTimers(t *testing.T) {
 		t.Fatalf("Expected timings with one non-zero entry, but got %s.", actual)
 	}
 }
+
+func TestTimerGroup(t *testing.T) {
+	tg := NewTimerGroup()
+	execTotalTimer := tg.GetTimer(ExecTotalTime)
+	if tg.GetTimer(ExecTotalTime).String() != "Exec total time: 0s" {
+		t.Fatalf("Expected string %s, but got %s", "", execTotalTimer.String())
+	}
+	time.Sleep(10 * time.Millisecond)
+	execQueueTimer := tg.GetTimer(ExecQueueTime)
+	if tg.GetTimer(ExecQueueTime).String() != "Exec queue wait time: 0s" {
+		t.Fatalf("Expected string %s, but got %s", "", execQueueTimer.String())
+	}
+	time.Sleep(10 * time.Millisecond)
+	innerEvalTimer := tg.GetTimer(InnerEvalTime)
+	if tg.GetTimer(InnerEvalTime).String() != "Inner eval time: 0s" {
+		t.Fatalf("Expected string %s, but got %s", "", innerEvalTimer.String())
+	}
+	time.Sleep(10 * time.Millisecond)
+	queryPreparationTimer := tg.GetTimer(QueryPreparationTime)
+	if tg.GetTimer(QueryPreparationTime).String() != "Query preparation time: 0s" {
+		t.Fatalf("Expected string %s, but got %s", "", queryPreparationTimer.String())
+	}
+	time.Sleep(10 * time.Millisecond)
+	resultSortTimer := tg.GetTimer(ResultSortTime)
+	if tg.GetTimer(ResultSortTime).String() != "Result sorting time: 0s" {
+		t.Fatalf("Expected string %s, but got %s", "", resultSortTimer.String())
+	}
+	time.Sleep(10 * time.Millisecond)
+	evalTotalTimer := tg.GetTimer(EvalTotalTime)
+	if tg.GetTimer(EvalTotalTime).String() != "Eval total time: 0s" {
+		t.Fatalf("Expected string %s, but got %s", "", evalTotalTimer.String())
+	}
+
+	actual := tg.String()
+	expected := "Exec total time: 0s\nExec queue wait time: 0s\nInner eval time: 0s\nQuery preparation time: 0s\nResult sorting time: 0s\nEval total time: 0s\n"
+
+	if actual != expected {
+		t.Fatalf("Expected timerGroup string %s, but got %s.", expected, actual)
+	}
+
+}
