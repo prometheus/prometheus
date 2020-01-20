@@ -301,6 +301,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	// Move the file, Prometheus should still write to the old file.
 	newFile, err := ioutil.TempFile("", "newLoc")
 	testutil.Ok(t, err)
+	testutil.Ok(t, newFile.Close())
 	defer os.Remove(newFile.Name())
 	testutil.Ok(t, os.Rename(queryLogFile.Name(), newFile.Name()))
 	ql = readQueryLog(t, newFile.Name())
