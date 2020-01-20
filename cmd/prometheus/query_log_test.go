@@ -248,7 +248,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	testutil.Ok(t, prom.Start())
 
 	defer func() {
-		prom.Process.Signal(os.Interrupt)
+		prom.Process.Kill()
 		prom.Wait()
 	}()
 	testutil.Ok(t, p.waitForPrometheus())

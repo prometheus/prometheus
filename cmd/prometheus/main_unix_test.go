@@ -23,10 +23,6 @@ import (
 	"time"
 )
 
-func stopProcess(p *os.Process) {
-	p.Signal(os.Interrupt)
-}
-
 // As soon as prometheus starts responding to http request it should be able to
 // accept Interrupt signals for a graceful shutdown.
 func TestStartupInterrupt(t *testing.T) {

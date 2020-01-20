@@ -217,7 +217,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 			case err := <-done:
 				t.Errorf("prometheus should be still running: %v", err)
 			case <-time.After(5 * time.Second):
-				stopProcess(prom.Process)
+				prom.Process.Kill()
 			}
 			continue
 		}
