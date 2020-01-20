@@ -66,7 +66,10 @@ describe('TSDB Stats', () => {
       });
       page.update();
 
-      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', undefined);
+      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
+        cache: 'no-cache',
+        credentials: 'same-origin',
+      });
       const alert = page.find(Alert);
       expect(alert.prop('color')).toBe('danger');
       expect(alert.text()).toContain('error loading tsdb status');
@@ -101,7 +104,10 @@ describe('TSDB Stats', () => {
       });
       page.update();
 
-      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', undefined);
+      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
+        cache: 'no-cache',
+        credentials: 'same-origin',
+      });
 
       for (let i = 0; i < tables.length; i++) {
         const data = tables[i].data;

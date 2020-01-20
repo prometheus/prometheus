@@ -34,7 +34,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
 
   componentDidMount() {
     !this.state.panels.length && this.addPanel();
-    fetch(`${this.props.pathPrefix}/api/v1/label/__name__/values`, { cache: 'no-store' })
+    fetch(`${this.props.pathPrefix}/api/v1/label/__name__/values`, { cache: 'no-store', credentials: 'same-origin' })
       .then(resp => {
         if (resp.ok) {
           return resp.json();
@@ -48,7 +48,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
       .catch(error => this.setState({ fetchMetricsError: error.message }));
 
     const browserTime = new Date().getTime() / 1000;
-    fetch(`${this.props.pathPrefix}/api/v1/query?query=time()`, { cache: 'no-store' })
+    fetch(`${this.props.pathPrefix}/api/v1/query?query=time()`, { cache: 'no-store', credentials: 'same-origin' })
       .then(resp => {
         if (resp.ok) {
           return resp.json();
