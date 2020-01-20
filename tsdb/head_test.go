@@ -1231,7 +1231,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 }
 
 func TestNewWalSegmentOnTruncate(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_wal_segements")
+	dir, err := ioutil.TempDir("", "test_wal_segments")
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
@@ -1265,4 +1265,29 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	_, last, err = wlog.Segments()
 	testutil.Ok(t, err)
 	testutil.Equals(t, 2, last)
+}
+
+func TestAddDuplicateLabelName(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test_duplicate_label_name")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, wlog, 1000)
+	testutil.Ok(t, err)
+	defer h.Close()
+
+	add := func(labels labels.Labels, labelName string) {
+		app := h.Appender()
+		_, err = app.Add(labels, 0, 0)
+		testutil.NotOk(t, err)
+		testutil.Equals(t, fmt.Sprintf(`label name "%s" is not unique: invalid sample`, labelName), err.Error())
+	}
+
+	add(labels.Labels{{Name: "a", Value: "c"}, {Name: "a", Value: "b"}}, "a")
+	add(labels.Labels{{Name: "a", Value: "c"}, {Name: "a", Value: "c"}}, "a")
+	add(labels.Labels{{Name: "__name__", Value: "up"}, {Name: "job", Value: "prometheus"}, {Name: "le", Value: "500"}, {Name: "le", Value: "400"}, {Name: "unit", Value: "s"}}, "le")
 }

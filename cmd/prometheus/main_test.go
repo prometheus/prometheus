@@ -15,7 +15,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -31,35 +30,23 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-var promPath string
+var promPath = os.Args[0]
 var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
 var promData = filepath.Join(os.TempDir(), "data")
 
 func TestMain(m *testing.M) {
-	flag.Parse()
-	if testing.Short() {
-		os.Exit(m.Run())
+	for i, arg := range os.Args {
+		if arg == "-test.main" {
+			os.Args = append(os.Args[:i], os.Args[i+1:]...)
+			main()
+			return
+		}
 	}
+
 	// On linux with a global proxy the tests will fail as the go client(http,grpc) tries to connect through the proxy.
 	os.Setenv("no_proxy", "localhost,127.0.0.1,0.0.0.0,:")
 
-	var err error
-	promPath, err = os.Getwd()
-	if err != nil {
-		fmt.Printf("can't get current dir :%s \n", err)
-		os.Exit(1)
-	}
-	promPath = filepath.Join(promPath, "prometheus")
-
-	build := exec.Command("go", "build", "-o", promPath)
-	output, err := build.CombinedOutput()
-	if err != nil {
-		fmt.Printf("compilation error :%s \n", output)
-		os.Exit(1)
-	}
-
 	exitCode := m.Run()
-	os.Remove(promPath)
 	os.RemoveAll(promData)
 	os.Exit(exitCode)
 }
@@ -70,7 +57,7 @@ func TestStartupInterrupt(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	prom := exec.Command(promPath, "--config.file="+promConfig, "--storage.tsdb.path="+promData)
+	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+promData)
 	err := prom.Start()
 	if err != nil {
 		t.Errorf("execution error: %v", err)
@@ -170,7 +157,7 @@ func TestFailedStartupExitCode(t *testing.T) {
 	fakeInputFile := "fake-input-file"
 	expectedExitStatus := 1
 
-	prom := exec.Command(promPath, "--config.file="+fakeInputFile)
+	prom := exec.Command(promPath, "-test.main", "--config.file="+fakeInputFile)
 	err := prom.Run()
 	testutil.NotOk(t, err)
 
@@ -258,7 +245,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 	}
 
 	for size, expectedExitStatus := range map[string]int{"9MB": 1, "257MB": 1, "10": 2, "1GB": 1, "12MB": 0} {
-		prom := exec.Command(promPath, "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig)
+		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig)
 		err := prom.Start()
 		testutil.Ok(t, err)
 

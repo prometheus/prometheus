@@ -52,6 +52,10 @@ var (
 	// ErrOutOfBounds is returned if an appended sample is out of the
 	// writable time range.
 	ErrOutOfBounds = errors.New("out of bounds")
+
+	// ErrInvalidSample is returned if an appended sample is not valid and can't
+	// be ingested.
+	ErrInvalidSample = errors.New("invalid sample")
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -907,6 +911,10 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 
 	// Ensure no empty labels have gotten through.
 	lset = lset.WithoutEmpty()
+
+	if l, dup := lset.HasDuplicateLabelNames(); dup {
+		return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
+	}
 
 	s, created := a.head.getOrCreate(lset.Hash(), lset)
 	if created {

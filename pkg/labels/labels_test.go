@@ -149,3 +149,29 @@ func TestLabels_MatchLabels(t *testing.T) {
 		testutil.Equals(t, test.expected, got, "unexpected labelset for test case %d", i)
 	}
 }
+
+func TestLabels_HasDuplicateLabelNames(t *testing.T) {
+	cases := []struct {
+		Input     Labels
+		Duplicate bool
+		LabelName string
+	}{
+		{
+			Input:     FromMap(map[string]string{"__name__": "up", "hostname": "localhost"}),
+			Duplicate: false,
+		}, {
+			Input: append(
+				FromMap(map[string]string{"__name__": "up", "hostname": "localhost"}),
+				FromMap(map[string]string{"hostname": "127.0.0.1"})...,
+			),
+			Duplicate: true,
+			LabelName: "hostname",
+		},
+	}
+
+	for i, c := range cases {
+		l, d := c.Input.HasDuplicateLabelNames()
+		testutil.Equals(t, c.Duplicate, d, "test %d: incorrect duplicate bool", i)
+		testutil.Equals(t, c.LabelName, l, "test %d: incorrect label name", i)
+	}
+}
