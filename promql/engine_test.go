@@ -16,6 +16,7 @@ package promql
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,7 +107,9 @@ func TestQueryTimeout(t *testing.T) {
 	testutil.NotOk(t, res.Err, "expected timeout error but got none")
 
 	var e ErrQueryTimeout
-	testutil.Assert(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
+	// TODO: when circleci-windows moves to go 1.13:
+	// testutil.Assert(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
+	testutil.Assert(t, strings.HasPrefix(res.Err.Error(), e.Error()), "expected timeout error but got: %s", res.Err)
 }
 
 const errQueryCanceled = ErrQueryCanceled("test statement execution")
@@ -496,7 +499,9 @@ func TestEngineShutdown(t *testing.T) {
 	testutil.NotOk(t, res2.Err, "expected error on querying with canceled context but got none")
 
 	var e ErrQueryCanceled
-	testutil.Assert(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
+	// TODO: when circleci-windows moves to go 1.13:
+	// testutil.Assert(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
+	testutil.Assert(t, strings.HasPrefix(res2.Err.Error(), e.Error()), "expected cancellation error but got: %s", res2.Err)
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {
@@ -1098,5 +1103,138 @@ func TestSubquerySelector(t *testing.T) {
 			testutil.Equals(t, res.Err, c.Result.Err)
 			testutil.Equals(t, res.Value, c.Result.Value)
 		}
+	}
+}
+
+type FakeQueryLogger struct {
+	closed bool
+	logs   []interface{}
+}
+
+func NewFakeQueryLogger() *FakeQueryLogger {
+	return &FakeQueryLogger{
+		closed: false,
+		logs:   make([]interface{}, 0),
+	}
+}
+
+func (f *FakeQueryLogger) Close() error {
+	f.closed = true
+	return nil
+}
+
+func (f *FakeQueryLogger) Log(l ...interface{}) error {
+	f.logs = append(f.logs, l...)
+	return nil
+}
+
+func TestQueryLogger_basic(t *testing.T) {
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	queryExec := func() {
+		ctx, cancelCtx := context.WithCancel(context.Background())
+		defer cancelCtx()
+		query := engine.newTestQuery(func(ctx context.Context) error {
+			return contextDone(ctx, "test statement execution")
+		})
+		res := query.Exec(ctx)
+		testutil.Ok(t, res.Err)
+	}
+
+	// Query works without query log initalized.
+	queryExec()
+
+	f1 := NewFakeQueryLogger()
+	engine.SetQueryLogger(f1)
+	queryExec()
+	for i, field := range []string{"query", "test statement"} {
+		testutil.Assert(t, f1.logs[i].(string) == field, "expected %v as key, got %v", field, f1.logs[i])
+	}
+
+	l := len(f1.logs)
+	queryExec()
+	testutil.Assert(t, 2*l == len(f1.logs), "expected %d fields in logs, got %v", 2*l, len(f1.logs))
+
+	// Test that we close the query logger when unsetting it.
+	testutil.Assert(t, !f1.closed, "expected f1 to be open, got closed")
+	engine.SetQueryLogger(nil)
+	testutil.Assert(t, f1.closed, "expected f1 to be closed, got open")
+	queryExec()
+
+	// Test that we close the query logger when swapping.
+	f2 := NewFakeQueryLogger()
+	f3 := NewFakeQueryLogger()
+	engine.SetQueryLogger(f2)
+	testutil.Assert(t, !f2.closed, "expected f2 to be open, got closed")
+	queryExec()
+	engine.SetQueryLogger(f3)
+	testutil.Assert(t, f2.closed, "expected f2 to be closed, got open")
+	testutil.Assert(t, !f3.closed, "expected f3 to be open, got closed")
+	queryExec()
+}
+
+func TestQueryLogger_fields(t *testing.T) {
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	f1 := NewFakeQueryLogger()
+	engine.SetQueryLogger(f1)
+
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	ctx = NewOriginContext(ctx, map[string]string{"foo": "bar"})
+	defer cancelCtx()
+	query := engine.newTestQuery(func(ctx context.Context) error {
+		return contextDone(ctx, "test statement execution")
+	})
+
+	res := query.Exec(ctx)
+	testutil.Ok(t, res.Err)
+
+	expected := []string{"foo", "bar"}
+	for i, field := range expected {
+		v := f1.logs[len(f1.logs)-len(expected)+i].(string)
+		testutil.Assert(t, field == v, "expected %v as key, got %v", field, v)
+	}
+}
+
+func TestQueryLogger_error(t *testing.T) {
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	f1 := NewFakeQueryLogger()
+	engine.SetQueryLogger(f1)
+
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	ctx = NewOriginContext(ctx, map[string]string{"foo": "bar"})
+	defer cancelCtx()
+	testErr := errors.New("failure")
+	query := engine.newTestQuery(func(ctx context.Context) error {
+		return testErr
+	})
+
+	res := query.Exec(ctx)
+	testutil.NotOk(t, res.Err, "query should have failed")
+
+	for i, field := range []interface{}{"query", "test statement", "error", testErr} {
+		testutil.Assert(t, f1.logs[i] == field, "expected %v as key, got %v", field, f1.logs[i])
 	}
 }

@@ -20,7 +20,8 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.13          | 2019-09-25                                 | Krasi Georgiev (GitHub: @krasi-georgiev)    |
 | v2.14          | 2019-11-06                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
 | v2.15          | 2019-12-18                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.16          | 2020-01-29                                 | **searching for volunteer**                 |
+| v2.16          | 2020-01-29                                 | Callum Styan (GitHub: @cstyan)              |
+| v2.17          | 2020-03-11                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -50,6 +51,29 @@ The usual flow is to merge new features and changes into the master branch and t
 If a bug fix got accidentally merged into master after non-bug-fix changes in master, the bug-fix commits have to be cherry-picked into the release branch, which then have to be merged back into master. Try to avoid that situation.
 
 Maintaining the release branches for older minor releases happens on a best effort basis.
+
+### Updating dependencies
+
+A few days before a major or minor release, consider updating the dependencies:
+
+```
+export GO111MODULE=on
+go get -u ./...
+go mod tidy
+go mod vendor
+git add go.mod go.sum vendor
+```
+
+Then create a pull request against the master branch.
+
+Note that after a dependency update, you should look out for any weirdness that
+might have happened. Such weirdnesses include but are not limited to: flaky
+tests, differences in resource usage, panic.
+
+In case of doubt or issues that can't be solved in a reasonable amount of time,
+you can skip the dependency update or only update select dependencies. In such a
+case, you have to create an issue or pull request in the GitHub project for
+later follow-up.
 
 ### Prepare your release
 
@@ -102,4 +126,3 @@ The following changes to the above procedures apply:
 * Tick the _This is a pre-release_ box when drafting the release in the Github UI.
 * Still update `CHANGELOG.md`, but when you cut the final release later, merge all the changes from the pre-releases into the one final update.
 * Run the benchmark for 3 days using the `/benchmark x.y.z` command, `x.y.z` being the latest stable patch release of the previous minor release series.
-

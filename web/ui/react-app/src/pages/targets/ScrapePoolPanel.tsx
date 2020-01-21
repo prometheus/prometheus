@@ -5,10 +5,10 @@ import styles from './ScrapePoolPanel.module.css';
 import { Target } from './target';
 import EndpointLink from './EndpointLink';
 import TargetLabels from './TargetLabels';
-import { formatRelative, humanizeDuration } from '../../utils/timeFormat';
 import { now } from 'moment';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { ToggleMoreLess } from './ToggleMoreLess';
+import { ToggleMoreLess } from '../../components/ToggleMoreLess';
+import { formatRelative, humanizeDuration } from '../../utils';
 
 interface PanelProps {
   scrapePool: string;

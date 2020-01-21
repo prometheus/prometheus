@@ -118,6 +118,11 @@ func TestAddingNewIntervals(t *testing.T) {
 			new:   Interval{11, 14},
 			exp:   Intervals{{5, 20}, {25, 30}},
 		},
+		{
+			exist: Intervals{{5, 10}, {12, 20}, {25, 30}},
+			new:   Interval{1, 3},
+			exp:   Intervals{{1, 3}, {5, 10}, {12, 20}, {25, 30}},
+		},
 	}
 
 	for _, c := range cases {

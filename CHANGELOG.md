@@ -1,6 +1,11 @@
+## 2.15.2 / 2020-01-06
+
+* [BUGFIX] TSDB: Fixed support for TSDB blocks built with Prometheus before 2.1.0. #6564
+* [BUGFIX] TSDB: Fixed block compaction issues on Windows. #6547
+
 ## 2.15.1 / 2019-12-25
 
-* [BUGFIX] Fixed race on concurrent queries against same data. #6512
+* [BUGFIX] TSDB: Fixed race on concurrent queries against same data. #6512
 
 ## 2.15.0 / 2019-12-23
 
@@ -14,7 +19,7 @@
 * [ENHANCEMENT] Remote read: Added query grouping and range hints to the remote read request #6401
 * [ENHANCEMENT] Remote write: Added `prometheus_remote_storage_sent_bytes_total` counter per queue. #6344
 * [ENHANCEMENT] promql: Improved PromQL parser performance. #6356
-* [ENHANCEMENT] React UI: Implemented missing pages like `/targets` #6276, TSDB status page #6267 and many other fixes and performance improvements.
+* [ENHANCEMENT] React UI: Implemented missing pages like `/targets` #6276, TSDB status page #6281 #6267 and many other fixes and performance improvements.
 * [ENHANCEMENT] promql: Prometheus now accepts spaces between time range and square bracket. e.g `[ 5m]` #6065
 * [BUGFIX] Config: Fixed alertmanager configuration to not miss targets when configurations are similar. #6455
 * [BUGFIX] Remote write: Value of `prometheus_remote_storage_shards_desired` gauge shows raw value of desired shards and it's updated correctly. #6378
@@ -80,6 +85,10 @@
 * [BUGFIX] Only check last directory when discovering checkpoint number. #5756
 * [BUGFIX] Fix error propagation in WAL watcher helper functions. #5741
 * [BUGFIX] Correctly handle empty labels from alert templates. #5845
+
+## 2.11.2 / 2019-08-14
+
+* [BUGFIX/SECURITY] Fix a Stored DOM XSS vulnerability with query history. #5888
 
 ## 2.11.1 / 2019-07-10
 

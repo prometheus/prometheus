@@ -2,8 +2,9 @@
 version: 2.1
 
 orbs:
-  prometheus: prometheus/prometheus@0.3.0
+  prometheus: prometheus/prometheus@0.4.0
   go: circleci/go@0.2.0
+  win: circleci/windows@2.3.0
 
 executors:
   # Whenever the Go version is updated here, .promu.yml
@@ -38,6 +39,7 @@ jobs:
           # don't limit this to the number of allocated cores, the job is
           # likely to get OOMed and killed.
           GOOPTS: "-p 2"
+          GOMAXPROCS: "2"
     - prometheus/check_proto
     - prometheus/store_artifact:
         file: prometheus
@@ -49,6 +51,19 @@ jobs:
         key: v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         paths:
         - web/ui/react-app/node_modules
+  test_windows:
+    executor: win/default
+    working_directory: /go/src/github.com/prometheus/prometheus
+    steps:
+    - checkout
+    - run:
+        shell: bash
+        command: |
+          (cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
+          go test -mod=vendor -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
+        environment:
+          GOGC: "20"
+          GOOPTS: "-p 2 -mod=vendor"
   fuzzit_regression:
     executor: fuzzit
     working_directory: /go/src/github.com/prometheus/prometheus
@@ -75,6 +90,10 @@ workflows:
   prometheus:
     jobs:
     - test:
+        filters:
+          tags:
+            only: /.*/
+    - test_windows:
         filters:
           tags:
             only: /.*/
