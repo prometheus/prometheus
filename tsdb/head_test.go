@@ -1322,3 +1322,91 @@ func TestAddDuplicateLabelName(t *testing.T) {
 	add(labels.Labels{{Name: "a", Value: "c"}, {Name: "a", Value: "c"}}, "a")
 	add(labels.Labels{{Name: "__name__", Value: "up"}, {Name: "job", Value: "prometheus"}, {Name: "le", Value: "500"}, {Name: "le", Value: "400"}, {Name: "unit", Value: "s"}}, "le")
 }
+
+func TestHeadSeriesWithTimeBoundaries(t *testing.T) {
+	h, err := NewHead(nil, nil, nil, 15, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer h.Close()
+	app := h.Appender()
+
+	s1, err := app.Add(labels.FromStrings("foo1", "bar"), 2, 0)
+	testutil.Ok(t, err)
+	for ts := int64(3); ts < 13; ts++ {
+		err = app.AddFast(s1, ts, 0)
+		testutil.Ok(t, err)
+	}
+	s2, err := app.Add(labels.FromStrings("foo2", "bar"), 5, 0)
+	testutil.Ok(t, err)
+	for ts := int64(6); ts < 11; ts++ {
+		err = app.AddFast(s2, ts, 0)
+		testutil.Ok(t, err)
+	}
+	s3, err := app.Add(labels.FromStrings("foo3", "bar"), 5, 0)
+	testutil.Ok(t, err)
+	err = app.AddFast(s3, 6, 0)
+	testutil.Ok(t, err)
+	_, err = app.Add(labels.FromStrings("foo4", "bar"), 9, 0)
+	testutil.Ok(t, err)
+
+	testutil.Ok(t, app.Commit())
+
+	cases := []struct {
+		mint         int64
+		maxt         int64
+		seriesCount  int
+		samplesCount int
+	}{
+		// foo1 ..00000000000..
+		// foo2 .....000000....
+		// foo3 .....00........
+		// foo4 .........0.....
+		{mint: 0, maxt: 0, seriesCount: 0, samplesCount: 0},
+		{mint: 0, maxt: 1, seriesCount: 0, samplesCount: 0},
+		{mint: 0, maxt: 2, seriesCount: 1, samplesCount: 1},
+		{mint: 2, maxt: 2, seriesCount: 1, samplesCount: 1},
+		{mint: 0, maxt: 4, seriesCount: 1, samplesCount: 3},
+		{mint: 0, maxt: 5, seriesCount: 3, samplesCount: 6},
+		{mint: 0, maxt: 6, seriesCount: 3, samplesCount: 9},
+		{mint: 0, maxt: 7, seriesCount: 3, samplesCount: 11},
+		{mint: 0, maxt: 8, seriesCount: 3, samplesCount: 13},
+		{mint: 0, maxt: 9, seriesCount: 4, samplesCount: 16},
+		{mint: 0, maxt: 10, seriesCount: 4, samplesCount: 18},
+		{mint: 0, maxt: 11, seriesCount: 4, samplesCount: 19},
+		{mint: 0, maxt: 12, seriesCount: 4, samplesCount: 20},
+		{mint: 0, maxt: 13, seriesCount: 4, samplesCount: 20},
+		{mint: 0, maxt: 14, seriesCount: 4, samplesCount: 20},
+		{mint: 2, maxt: 14, seriesCount: 4, samplesCount: 20},
+		{mint: 3, maxt: 14, seriesCount: 4, samplesCount: 19},
+		{mint: 4, maxt: 14, seriesCount: 4, samplesCount: 18},
+		{mint: 8, maxt: 9, seriesCount: 3, samplesCount: 5},
+		{mint: 9, maxt: 9, seriesCount: 3, samplesCount: 3},
+		{mint: 6, maxt: 9, seriesCount: 4, samplesCount: 10},
+		{mint: 11, maxt: 11, seriesCount: 1, samplesCount: 1},
+		{mint: 11, maxt: 12, seriesCount: 1, samplesCount: 2},
+		{mint: 11, maxt: 14, seriesCount: 1, samplesCount: 2},
+		{mint: 12, maxt: 14, seriesCount: 1, samplesCount: 1},
+	}
+
+	for i, c := range cases {
+		matcher := labels.MustNewMatcher(labels.MatchEqual, "", "")
+		q, err := NewBlockQuerier(h, c.mint, c.maxt)
+		testutil.Ok(t, err)
+
+		seriesCount := 0
+		samplesCount := 0
+		ss, _, err := q.Select(nil, matcher)
+		testutil.Ok(t, err)
+		for ss.Next() {
+			i := ss.At().Iterator()
+			for i.Next() {
+				samplesCount++
+			}
+			seriesCount++
+		}
+		testutil.Ok(t, ss.Err())
+		testutil.Equals(t, c.seriesCount, seriesCount, "test series %d", i)
+		testutil.Equals(t, c.samplesCount, samplesCount, "test samples %d", i)
+		q.Close()
+	}
+
+}

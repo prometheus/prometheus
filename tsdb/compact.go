@@ -683,7 +683,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 		}
 
-		indexr, err := b.Index(math.MinInt64, math.MaxInt64)
+		indexr, err := b.Index(math.MinInt64, globalMaxt)
 		if err != nil {
 			return errors.Wrapf(err, "open index reader for block %s", b)
 		}

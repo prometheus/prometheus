@@ -49,7 +49,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 		},
 		// Ensures that the page buffer is big enough to fit
 		// an entire page size without panicking.
-		// https://github.com/prometheus/prometheus/tsdb/pull/414
+		// https://github.com/prometheus/tsdb/pull/414
 		"bad_header": {
 			1,
 			func(f *os.File) {

@@ -111,7 +111,8 @@ type ChunkReader interface {
 
 // BlockReader provides reading access to a data block.
 type BlockReader interface {
-	// Index returns an IndexReader over the block's data.
+	// Index returns an IndexReader over the block's data within the specified
+	// timeframe.
 	Index(mint, maxt int64) (IndexReader, error)
 
 	// Chunks returns a ChunkReader over the block's data.

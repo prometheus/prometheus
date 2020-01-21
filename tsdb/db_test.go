@@ -1384,7 +1384,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	}, OverlappingBlocks(nc1))
 }
 
-// Regression test for https://github.com/prometheus/prometheus/tsdb/issues/347
+// Regression test for https://github.com/prometheus/tsdb/issues/347
 func TestChunkAtBlockBoundary(t *testing.T) {
 	db, closeFn := openTestDB(t, nil, nil)
 	defer func() {
@@ -1411,7 +1411,7 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 	testutil.Ok(t, err)
 
 	for _, block := range db.Blocks() {
-		r, err := block.Index()
+		r, err := block.Index(math.MinInt64, math.MaxInt64)
 		testutil.Ok(t, err)
 		defer r.Close()
 
@@ -1761,7 +1761,7 @@ func TestDB_LabelNames(t *testing.T) {
 		appendSamples(db, 0, 4, tst.sampleLabels1)
 
 		// Testing head.
-		headIndexr, err := db.head.Index()
+		headIndexr, err := db.head.Index(math.MinInt64, math.MaxInt64)
 		testutil.Ok(t, err)
 		labelNames, err := headIndexr.LabelNames()
 		testutil.Ok(t, err)
@@ -1774,7 +1774,7 @@ func TestDB_LabelNames(t *testing.T) {
 		// All blocks have same label names, hence check them individually.
 		// No need to aggregate and check.
 		for _, b := range db.Blocks() {
-			blockIndexr, err := b.Index()
+			blockIndexr, err := b.Index(math.MinInt64, math.MaxInt64)
 			testutil.Ok(t, err)
 			labelNames, err = blockIndexr.LabelNames()
 			testutil.Ok(t, err)
