@@ -30,6 +30,7 @@ import (
 
 	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -1666,6 +1667,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				},
 			},
 		}
+		proxyURL, _ = url.Parse("http://localhost:2128")
 	)
 	sp.sync([]*Target{t1})
 
@@ -1702,10 +1704,10 @@ func TestReuseScrapeCache(t *testing.T) {
 			},
 		},
 		{
-			keep: true,
+			keep: false,
 			newConfig: &config.ScrapeConfig{
 				JobName:         "Prometheus",
-				HonorTimestamps: false,
+				HonorTimestamps: true,
 				SampleLimit:     400,
 				ScrapeInterval:  model.Duration(5 * time.Second),
 				ScrapeTimeout:   model.Duration(15 * time.Second),
@@ -1713,10 +1715,24 @@ func TestReuseScrapeCache(t *testing.T) {
 			},
 		},
 		{
+			keep: true,
+			newConfig: &config.ScrapeConfig{
+				JobName:         "Prometheus",
+				HonorTimestamps: true,
+				SampleLimit:     400,
+				HTTPClientConfig: config_util.HTTPClientConfig{
+					ProxyURL: config_util.URL{URL: proxyURL},
+				},
+				ScrapeInterval: model.Duration(5 * time.Second),
+				ScrapeTimeout:  model.Duration(15 * time.Second),
+				MetricsPath:    "/metrics2",
+			},
+		},
+		{
 			keep: false,
 			newConfig: &config.ScrapeConfig{
 				JobName:         "Prometheus",
-				HonorTimestamps: false,
+				HonorTimestamps: true,
 				HonorLabels:     true,
 				SampleLimit:     400,
 				ScrapeInterval:  model.Duration(5 * time.Second),

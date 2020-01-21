@@ -1337,7 +1337,6 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 func zeroConfig(c *config.ScrapeConfig) *config.ScrapeConfig {
 	z := *c
 	// We zero out the fields that for sure don't affect scrape.
-	z.HonorTimestamps = false
 	z.ScrapeInterval = 0
 	z.ScrapeTimeout = 0
 	z.SampleLimit = 0
