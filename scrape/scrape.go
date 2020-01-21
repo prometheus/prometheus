@@ -133,6 +133,20 @@ var (
 			Help: "How many times a scrape cache was flushed due to getting big while scrapes are failing.",
 		},
 	)
+	targetMetadataCacheBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_metadata_cache_bytes",
+			Help: "The number of bytes that are currently used for storing metric metadata of a target",
+		},
+		[]string{"scrape_job"},
+	)
+	targetMetadataCacheEntries = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_metadata_cache_entries",
+			Help: "Total number of metric metadata entries in the cache",
+		},
+		[]string{"scrape_job"},
+	)
 )
 
 func init() {
@@ -149,6 +163,8 @@ func init() {
 	prometheus.MustRegister(targetScrapeSampleOutOfOrder)
 	prometheus.MustRegister(targetScrapeSampleOutOfBounds)
 	prometheus.MustRegister(targetScrapeCacheFlushForced)
+	prometheus.MustRegister(targetMetadataCacheBytes)
+	prometheus.MustRegister(targetMetadataCacheEntries)
 }
 
 // scrapePool manages scrapes for sets of targets.
@@ -217,6 +233,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 		opts.target.SetMetadataStore(cache)
 
 		return newScrapeLoop(
+			cfg.JobName,
 			ctx,
 			opts.scraper,
 			log.With(logger, "target", opts.target),
@@ -604,6 +621,8 @@ type cacheEntry struct {
 }
 
 type scrapeLoop struct {
+	jobName string
+
 	scraper         scraper
 	l               log.Logger
 	cache           *scrapeCache
@@ -658,6 +677,11 @@ type metaEntry struct {
 	unit     string
 }
 
+func (m *metaEntry) size() int {
+	// The field lastIter although part of the struct it is not metadata.
+	return len(m.help) + len(m.unit) + len(m.typ)
+}
+
 func newScrapeCache() *scrapeCache {
 	return &scrapeCache{
 		series:        map[string]*cacheEntry{},
@@ -668,7 +692,7 @@ func newScrapeCache() *scrapeCache {
 	}
 }
 
-func (c *scrapeCache) iterDone(flushCache bool) {
+func (c *scrapeCache) iterDone(flushCache bool, jobName string) {
 	c.metaMtx.Lock()
 	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
 	c.metaMtx.Unlock()
@@ -700,12 +724,18 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 			}
 		}
 		c.metaMtx.Lock()
+		var metaSize int
 		for m, e := range c.metadata {
 			// Keep metadata around for 10 scrapes after its metric disappeared.
 			if c.iter-e.lastIter > 10 {
 				delete(c.metadata, m)
+				continue
 			}
+			metaSize += len(m) + e.size()
 		}
+
+		targetMetadataCacheBytes.WithLabelValues(jobName).Set(float64(metaSize))
+		targetMetadataCacheEntries.WithLabelValues(jobName).Set(float64(len(c.metadata)))
 		c.metaMtx.Unlock()
 
 		c.iter++
@@ -842,7 +872,8 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 	return res
 }
 
-func newScrapeLoop(ctx context.Context,
+func newScrapeLoop(jn string,
+	ctx context.Context,
 	sc scraper,
 	l log.Logger,
 	buffers *pool.Pool,
@@ -863,6 +894,7 @@ func newScrapeLoop(ctx context.Context,
 		cache = newScrapeCache()
 	}
 	sl := &scrapeLoop{
+		jobName:             jn,
 		scraper:             sc,
 		buffers:             buffers,
 		cache:               cache,
@@ -1211,7 +1243,7 @@ loop:
 
 	// Only perform cache cleaning if the scrape was not empty.
 	// An empty scrape (usually) is used to indicate a failed scrape.
-	sl.cache.iterDone(len(b) > 0)
+	sl.cache.iterDone(len(b) > 0, sl.jobName)
 
 	return total, added, seriesAdded, nil
 }

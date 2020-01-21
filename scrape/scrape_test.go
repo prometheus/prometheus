@@ -371,7 +371,8 @@ func TestScrapePoolRaces(t *testing.T) {
 func TestScrapeLoopStopBeforeRun(t *testing.T) {
 	scraper := &testScraper{}
 
-	sl := newScrapeLoop(context.Background(),
+	sl := newScrapeLoop("prom",
+		context.Background(),
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -434,7 +435,8 @@ func TestScrapeLoopStop(t *testing.T) {
 	)
 	defer close(signal)
 
-	sl := newScrapeLoop(context.Background(),
+	sl := newScrapeLoop("prom",
+		context.Background(),
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -501,7 +503,8 @@ func TestScrapeLoopRun(t *testing.T) {
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop("prom",
+		ctx,
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -548,7 +551,8 @@ func TestScrapeLoopRun(t *testing.T) {
 	}
 
 	ctx, cancel = context.WithCancel(context.Background())
-	sl = newScrapeLoop(ctx,
+	sl = newScrapeLoop("prom",
+		ctx,
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -598,7 +602,8 @@ func TestScrapeLoopMetadata(t *testing.T) {
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop("prom",
+		ctx,
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -648,7 +653,8 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 	testutil.Ok(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop("prom",
+		ctx,
 		&testScraper{},
 		nil, nil,
 		nopMutator,
@@ -683,7 +689,8 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop("prom",
+		ctx,
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -738,7 +745,8 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop("prom",
+		ctx,
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -800,7 +808,8 @@ func TestScrapeLoopCache(t *testing.T) {
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop("prom",
+		ctx,
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -878,7 +887,8 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop("prom",
+		ctx,
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -981,7 +991,8 @@ func TestScrapeLoopAppend(t *testing.T) {
 			labels: labels.FromStrings(test.discoveryLabels...),
 		}
 
-		sl := newScrapeLoop(context.Background(),
+		sl := newScrapeLoop("prom",
+			context.Background(),
 			nil, nil, nil,
 			func(l labels.Labels) labels.Labels {
 				return mutateSampleLabels(l, discoveryLabels, test.honorLabels, nil)
@@ -1024,7 +1035,8 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	resApp := &collectResultAppender{}
 	app := &limitAppender{Appender: resApp, limit: 1}
 
-	sl := newScrapeLoop(context.Background(),
+	sl := newScrapeLoop("prom",
+		context.Background(),
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
@@ -1080,7 +1092,8 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 
 	capp := &collectResultAppender{next: app}
 
-	sl := newScrapeLoop(context.Background(),
+	sl := newScrapeLoop("prom",
+		context.Background(),
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
@@ -1116,7 +1129,8 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 func TestScrapeLoopAppendStaleness(t *testing.T) {
 	app := &collectResultAppender{}
 
-	sl := newScrapeLoop(context.Background(),
+	sl := newScrapeLoop("prom",
+		context.Background(),
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
@@ -1155,7 +1169,8 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 
 func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	app := &collectResultAppender{}
-	sl := newScrapeLoop(context.Background(),
+	sl := newScrapeLoop("prom",
+		context.Background(),
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
@@ -1190,7 +1205,8 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop("prom",
+		ctx,
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -1218,7 +1234,8 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop("prom",
+		ctx,
 		scraper,
 		nil, nil,
 		nopMutator,
@@ -1263,7 +1280,8 @@ func (app *errorAppender) AddFast(lset labels.Labels, ref uint64, t int64, v flo
 func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T) {
 	app := &errorAppender{}
 
-	sl := newScrapeLoop(context.Background(),
+	sl := newScrapeLoop("prom",
+		context.Background(),
 		nil,
 		nil, nil,
 		nopMutator,
@@ -1293,7 +1311,8 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 
 func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	app := &collectResultAppender{}
-	sl := newScrapeLoop(context.Background(),
+	sl := newScrapeLoop("prom",
+		context.Background(),
 		nil,
 		nil, nil,
 		nopMutator,
@@ -1485,7 +1504,8 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 
 	capp := &collectResultAppender{next: app}
 
-	sl := newScrapeLoop(context.Background(),
+	sl := newScrapeLoop("prom",
+		context.Background(),
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
@@ -1517,7 +1537,8 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 
 	capp := &collectResultAppender{next: app}
 
-	sl := newScrapeLoop(context.Background(),
+	sl := newScrapeLoop("prom",
+		context.Background(),
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
@@ -1548,7 +1569,8 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	testutil.Ok(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop("prom",
+		ctx,
 		&testScraper{},
 		nil, nil,
 		nopMutator,
