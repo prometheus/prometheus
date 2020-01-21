@@ -1,115 +1,60 @@
-import React, { Component, ChangeEvent } from 'react';
+import React, { ChangeEvent, FC, useState, useEffect } from 'react';
 import { RouteComponentProps } from '@reach/router';
 
-import { Alert, Button, Col, Row } from 'reactstrap';
+import { Alert, Button } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import Checkbox from '../../components/Checkbox';
 import PathPrefixProps from '../../types/PathPrefixProps';
-import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from '../../utils';
+import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, callAll } from '../../utils';
+import { withStatusIndicator } from '../../components/withStatusIndicator';
 
-export type MetricGroup = { title: string; items: string[] };
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
 
-interface PanelListState {
+export const isHistoryEnabled: () => boolean = () => JSON.parse(localStorage.getItem('enable-query-history') || 'false');
+
+export const getHistoryItems: () => string[] = () => JSON.parse(localStorage.getItem('history') || '[]');
+
+export const updateURL = (nextPanels: PanelMeta[]) => {
+  const query = encodePanelOptionsToQueryString(nextPanels);
+  window.history.pushState({}, '', query);
+};
+
+interface PanelListProps extends PathPrefixProps, RouteComponentProps {
   panels: PanelMeta[];
+  metrics: string[];
+  onExecuteQuery: () => void;
   pastQueries: string[];
-  metricNames: string[];
-  fetchMetricsError: string | null;
-  timeDriftError: string | null;
   useLocalTime: boolean;
 }
 
-class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelListState> {
-  constructor(props: RouteComponentProps & PathPrefixProps) {
-    super(props);
+export const PanelListContent: FC<PanelListProps> = ({
+  metrics = [],
+  useLocalTime,
+  pathPrefix,
+  pastQueries,
+  onExecuteQuery,
+  ...rest
+}) => {
+  const [panels, setPanels] = useState(rest.panels);
 
-    this.state = {
-      panels: decodePanelOptionsFromQueryString(window.location.search),
-      pastQueries: [],
-      metricNames: [],
-      fetchMetricsError: null,
-      timeDriftError: null,
-      useLocalTime: this.useLocalTime(),
-    };
-  }
-
-  componentDidMount() {
-    !this.state.panels.length && this.addPanel();
-    fetch(`${this.props.pathPrefix}/api/v1/label/__name__/values`, { cache: 'no-store', credentials: 'same-origin' })
-      .then(resp => {
-        if (resp.ok) {
-          return resp.json();
-        } else {
-          throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
-        }
-      })
-      .then(json => {
-        this.setState({ metricNames: json.data });
-      })
-      .catch(error => this.setState({ fetchMetricsError: error.message }));
-
-    const browserTime = new Date().getTime() / 1000;
-    fetch(`${this.props.pathPrefix}/api/v1/query?query=time()`, { cache: 'no-store', credentials: 'same-origin' })
-      .then(resp => {
-        if (resp.ok) {
-          return resp.json();
-        } else {
-          throw new Error('Unexpected response status when fetching metric names: ' + resp.statusText); // TODO extract error
-        }
-      })
-      .then(json => {
-        const serverTime = json.data.result[0];
-        const delta = Math.abs(browserTime - serverTime);
-
-        if (delta >= 30) {
-          throw new Error(
-            'Detected ' +
-              delta +
-              ' seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.'
-          );
-        }
-      })
-      .catch(error => this.setState({ timeDriftError: error.message }));
-
+  useEffect(() => {
+    !panels.length && addPanel();
     window.onpopstate = () => {
       const panels = decodePanelOptionsFromQueryString(window.location.search);
       if (panels.length > 0) {
-        this.setState({ panels });
+        setPanels(panels);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    this.updatePastQueries();
-  }
-
-  isHistoryEnabled = () => JSON.parse(localStorage.getItem('enable-query-history') || 'false') as boolean;
-
-  getHistoryItems = () => JSON.parse(localStorage.getItem('history') || '[]') as string[];
-
-  toggleQueryHistory = (e: ChangeEvent<HTMLInputElement>) => {
-    localStorage.setItem('enable-query-history', `${e.target.checked}`);
-    this.updatePastQueries();
-  };
-
-  updatePastQueries = () => {
-    this.setState({
-      pastQueries: this.isHistoryEnabled() ? this.getHistoryItems() : [],
-    });
-  };
-
-  useLocalTime = () => JSON.parse(localStorage.getItem('use-local-time') || 'false') as boolean;
-
-  toggleUseLocalTime = (e: ChangeEvent<HTMLInputElement>) => {
-    localStorage.setItem('use-local-time', `${e.target.checked}`);
-    this.setState({ useLocalTime: e.target.checked });
-  };
-
-  handleExecuteQuery = (query: string) => {
-    const isSimpleMetric = this.state.metricNames.indexOf(query) !== -1;
+  const handleExecuteQuery = (query: string) => {
+    const isSimpleMetric = metrics.indexOf(query) !== -1;
     if (isSimpleMetric || !query.length) {
       return;
     }
-    const historyItems = this.getHistoryItems();
+    const historyItems = getHistoryItems();
     const extendedItems = historyItems.reduce(
       (acc, metric) => {
         return metric === query ? acc : [...acc, metric]; // Prevent adding query twice.
@@ -117,103 +62,139 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
       [query]
     );
     localStorage.setItem('history', JSON.stringify(extendedItems.slice(0, 50)));
-    this.updatePastQueries();
+    onExecuteQuery();
   };
 
-  updateURL() {
-    const query = encodePanelOptionsToQueryString(this.state.panels);
-    window.history.pushState({}, '', query);
-  }
-
-  handleOptionsChanged = (id: string, options: PanelOptions) => {
-    const updatedPanels = this.state.panels.map(p => (id === p.id ? { ...p, options } : p));
-    this.setState({ panels: updatedPanels }, this.updateURL);
-  };
-
-  addPanel = () => {
-    const { panels } = this.state;
-    const nextPanels = [
+  const addPanel = () => {
+    callAll(setPanels, updateURL)([
       ...panels,
       {
         id: generateID(),
         key: `${panels.length}`,
         options: PanelDefaultOptions,
       },
-    ];
-    this.setState({ panels: nextPanels }, this.updateURL);
+    ]);
   };
 
-  removePanel = (id: string) => {
-    this.setState(
-      {
-        panels: this.state.panels.reduce<PanelMeta[]>((acc, panel) => {
-          return panel.id !== id ? [...acc, { ...panel, key: `${acc.length}` }] : acc;
-        }, []),
-      },
-      this.updateURL
-    );
+  return (
+    <>
+      {panels.map(({ id, options }) => (
+        <Panel
+          onExecuteQuery={handleExecuteQuery}
+          key={id}
+          options={options}
+          onOptionsChanged={opts =>
+            callAll(setPanels, updateURL)(panels.map(p => (id === p.id ? { ...p, options: opts } : p)))
+          }
+          removePanel={() =>
+            callAll(setPanels, updateURL)(
+              panels.reduce<PanelMeta[]>(
+                (acc, panel) => (panel.id !== id ? [...acc, { ...panel, key: `${acc.length}` }] : acc),
+                []
+              )
+            )
+          }
+          useLocalTime={useLocalTime}
+          metricNames={metrics}
+          pastQueries={pastQueries}
+          pathPrefix={pathPrefix}
+        />
+      ))}
+      <Button color="primary" onClick={addPanel}>
+        Add Panel
+      </Button>
+    </>
+  );
+};
+
+const PanelsWithStatus = withStatusIndicator<PanelListProps>(PanelListContent);
+
+const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
+  const [metricNames, setMetricNames] = useState<string[]>([]);
+  const [pastQueries, setPastQueries] = useState<string[]>([]);
+  const [timeDriftError, setTimeDriftError] = useState();
+  const [fetchMetricsError, setFetchMetricsError] = useState();
+  const [useLocalTime, setUseLocalTime] = useState();
+
+  useEffect(() => {
+    (async () => {
+      const metricsResponse = await fetch(`${pathPrefix}/api/v1/label/__name__/values`, { cache: 'no-store' });
+      if (metricsResponse.ok) {
+        const json = await metricsResponse.json();
+        setMetricNames(json.data);
+      } else {
+        setFetchMetricsError(
+          `Error fetching metrics list: Unexpected response status when fetching metric names: ${metricsResponse.statusText}`
+        );
+      }
+
+      const browserTime = new Date().getTime() / 1000;
+      const timeResponse = await fetch(`${pathPrefix}/api/v1/query?query=time()`, {
+        cache: 'no-store',
+      });
+      if (timeResponse.ok) {
+        const json = await timeResponse.json();
+        const serverTime = json.data.result[0];
+        const delta = Math.abs(browserTime - serverTime);
+        if (delta >= 30) {
+          setTimeDriftError(
+            `Error fetching server time: Detected ${delta} seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.`
+          );
+        }
+      } else {
+        setTimeDriftError('Unexpected response status when fetching server time:' + timeResponse.statusText);
+      }
+      updatePastQueries();
+    })();
+  }, [pathPrefix]);
+
+  const toggleQueryHistory = (e: ChangeEvent<HTMLInputElement>) => {
+    localStorage.setItem('enable-query-history', `${e.target.checked}`);
+    updatePastQueries();
   };
 
-  render() {
-    const { metricNames, pastQueries, timeDriftError, fetchMetricsError, panels } = this.state;
-    const { pathPrefix } = this.props;
-    return (
-      <>
-        <Row className="mb-2">
-          <Checkbox
-            id="query-history-checkbox"
-            wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
-            onChange={this.toggleQueryHistory}
-            defaultChecked={this.isHistoryEnabled()}
-          >
-            Enable query history
-          </Checkbox>
-          <Checkbox
-            id="use-local-time-checkbox"
-            wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
-            onChange={this.toggleUseLocalTime}
-            defaultChecked={this.useLocalTime()}
-          >
-            Use local time
-          </Checkbox>
-        </Row>
-        <Row>
-          <Col>
-            {timeDriftError && (
-              <Alert color="danger">
-                <strong>Warning:</strong> Error fetching server time: {timeDriftError}
-              </Alert>
-            )}
-          </Col>
-        </Row>
-        <Row>
-          <Col>
-            {fetchMetricsError && (
-              <Alert color="danger">
-                <strong>Warning:</strong> Error fetching metrics list: {fetchMetricsError}
-              </Alert>
-            )}
-          </Col>
-        </Row>
-        {panels.map(({ id, options }) => (
-          <Panel
-            onExecuteQuery={this.handleExecuteQuery}
-            key={id}
-            options={options}
-            onOptionsChanged={opts => this.handleOptionsChanged(id, opts)}
-            useLocalTime={this.state.useLocalTime}
-            removePanel={() => this.removePanel(id)}
-            metricNames={metricNames}
-            pastQueries={pastQueries}
-            pathPrefix={pathPrefix}
-          />
-        ))}
-        <Button color="primary" className="add-panel-btn" onClick={this.addPanel}>
-          Add Panel
-        </Button>
-      </>
-    );
-  }
-}
+  const updatePastQueries = () => {
+    setPastQueries(isHistoryEnabled() ? getHistoryItems() : []);
+  };
+
+  const toggleUseLocalTime = (e: ChangeEvent<HTMLInputElement>) => {
+    localStorage.setItem('use-local-time', `${e.target.checked}`);
+    setUseLocalTime(e.target.checked);
+  };
+
+  return (
+    <>
+      <Checkbox id="history-checkbox" onChange={toggleQueryHistory} defaultChecked={isHistoryEnabled()}>
+        Enable query history
+      </Checkbox>
+      <Checkbox
+        id="use-local-time-checkbox"
+        onChange={toggleUseLocalTime}
+        defaultChecked={JSON.parse(localStorage.getItem('use-local-time') || 'false')}
+      >
+        Use local time
+      </Checkbox>
+      {timeDriftError && (
+        <Alert color="danger">
+          <strong>Warning:</strong> {timeDriftError}
+        </Alert>
+      )}
+      {fetchMetricsError && (
+        <Alert color="danger">
+          <strong>Warning:</strong> {fetchMetricsError}
+        </Alert>
+      )}
+      <PanelsWithStatus
+        isLoading={!timeDriftError && !fetchMetricsError && metricNames.length === 0}
+        panels={decodePanelOptionsFromQueryString(window.location.search)}
+        pathPrefix={pathPrefix}
+        useLocalTime={useLocalTime}
+        metrics={metricNames}
+        onExecuteQuery={updatePastQueries}
+        pastQueries={pastQueries}
+      />
+    </>
+  );
+};
 
 export default PanelList;
