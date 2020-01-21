@@ -85,9 +85,8 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", userAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
-	httpReq = httpReq.WithContext(ctx)
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
