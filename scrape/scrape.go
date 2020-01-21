@@ -1344,7 +1344,7 @@ func zeroConfig(c *config.ScrapeConfig) *config.ScrapeConfig {
 	return &z
 }
 
-// reusableCache compares two scrape config and tells wheter the cache is stoll
+// reusableCache compares two scrape config and tells wheter the cache is still
 // valid.
 func reusableCache(r, l *config.ScrapeConfig) bool {
 	if r == nil || l == nil {
