@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -303,7 +304,16 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []Series) string {
-	return createBlockFromHead(tb, dir, createHead(tb, series))
+	tempDir, err := ioutil.TempDir("", "block_test")
+	testutil.Ok(tb, err)
+	defer func() {
+		testutil.Ok(tb, os.RemoveAll(tempDir))
+	}()
+	head := createHead(tb, series, tempDir)
+	defer func() {
+		testutil.Ok(tb, head.Close())
+	}()
+	return createBlockFromHead(tb, dir, head)
 }
 
 func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
@@ -319,10 +329,12 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	return filepath.Join(dir, ulid.String())
 }
 
-func createHead(tb testing.TB, series []Series) *Head {
-	head, err := NewHead(nil, nil, nil, 2*60*60*1000, nil)
+func createHead(tb testing.TB, series []Series, dir string) *Head {
+	wlog, err := wal.New(nil, nil, dir, false)
 	testutil.Ok(tb, err)
-	defer head.Close()
+
+	head, err := NewHead(nil, nil, wlog, 2*60*60*1000, nil)
+	testutil.Ok(tb, err)
 
 	app := head.Appender()
 	for _, s := range series {
@@ -343,6 +355,7 @@ func createHead(tb testing.TB, series []Series) *Head {
 	}
 	err = app.Commit()
 	testutil.Ok(tb, err)
+
 	return head
 }
 

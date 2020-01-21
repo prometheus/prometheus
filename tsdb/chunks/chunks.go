@@ -492,10 +492,6 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 	return &cr, nil
 }
 
-func verifySegmentBytes(bs []ByteSlice, chunkFormat int) (totalSize int64, err error) {
-	return totalSize, nil
-}
-
 // NewDirReader returns a new Reader against sequentially numbered files in the
 // given directory.
 func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {

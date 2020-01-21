@@ -1754,48 +1754,50 @@ func TestDB_LabelNames(t *testing.T) {
 		err := app.Commit()
 		testutil.Ok(t, err)
 	}
-	for _, tst := range tests {
-		db, delete := openTestDB(t, nil)
-		defer func() {
-			testutil.Ok(t, db.Close())
-			delete()
-		}()
+	for i, tst := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			db, delete := openTestDB(t, nil)
+			defer func() {
+				testutil.Ok(t, db.Close())
+				delete()
+			}()
 
-		appendSamples(db, 0, 4, tst.sampleLabels1)
+			appendSamples(db, 0, 4, tst.sampleLabels1)
 
-		// Testing head.
-		headIndexr, err := db.head.Index()
-		testutil.Ok(t, err)
-		labelNames, err := headIndexr.LabelNames()
-		testutil.Ok(t, err)
-		testutil.Equals(t, tst.exp1, labelNames)
-		testutil.Ok(t, headIndexr.Close())
-
-		// Testing disk.
-		err = db.Compact()
-		testutil.Ok(t, err)
-		// All blocks have same label names, hence check them individually.
-		// No need to aggregate and check.
-		for _, b := range db.Blocks() {
-			blockIndexr, err := b.Index()
+			// Testing head.
+			headIndexr, err := db.head.Index()
 			testutil.Ok(t, err)
-			labelNames, err = blockIndexr.LabelNames()
+			labelNames, err := headIndexr.LabelNames()
 			testutil.Ok(t, err)
 			testutil.Equals(t, tst.exp1, labelNames)
-			testutil.Ok(t, blockIndexr.Close())
-		}
+			testutil.Ok(t, headIndexr.Close())
 
-		// Adding more samples to head with new label names
-		// so that we can test (head+disk).LabelNames() (the union).
-		appendSamples(db, 5, 9, tst.sampleLabels2)
+			// Testing disk.
+			err = db.Compact()
+			testutil.Ok(t, err)
+			// All blocks have same label names, hence check them individually.
+			// No need to aggregate and check.
+			for _, b := range db.Blocks() {
+				blockIndexr, err := b.Index()
+				testutil.Ok(t, err)
+				labelNames, err = blockIndexr.LabelNames()
+				testutil.Ok(t, err)
+				testutil.Equals(t, tst.exp1, labelNames)
+				testutil.Ok(t, blockIndexr.Close())
+			}
 
-		// Testing DB (union).
-		q, err := db.Querier(math.MinInt64, math.MaxInt64)
-		testutil.Ok(t, err)
-		labelNames, err = q.LabelNames()
-		testutil.Ok(t, err)
-		testutil.Ok(t, q.Close())
-		testutil.Equals(t, tst.exp2, labelNames)
+			// Adding more samples to head with new label names
+			// so that we can test (head+disk).LabelNames() (the union).
+			appendSamples(db, 5, 9, tst.sampleLabels2)
+
+			// Testing DB (union).
+			q, err := db.Querier(math.MinInt64, math.MaxInt64)
+			testutil.Ok(t, err)
+			labelNames, err = q.LabelNames()
+			testutil.Ok(t, err)
+			testutil.Ok(t, q.Close())
+			testutil.Equals(t, tst.exp2, labelNames)
+		})
 	}
 }
 

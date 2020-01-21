@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -30,7 +31,15 @@ const (
 )
 
 func BenchmarkPostingsForMatchers(b *testing.B) {
-	h, err := NewHead(nil, nil, nil, 1000, nil)
+	dir, err := ioutil.TempDir("", "benchmark_postings")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(b, err)
+
+	h, err := NewHead(nil, nil, wlog, 1000, nil)
 	testutil.Ok(b, err)
 	defer func() {
 		testutil.Ok(b, h.Close())
@@ -126,7 +135,15 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 }
 
 func BenchmarkQuerierSelect(b *testing.B) {
-	h, err := NewHead(nil, nil, nil, 1000, nil)
+	dir, err := ioutil.TempDir("", "benchmark_query_select")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(b, err)
+
+	h, err := NewHead(nil, nil, wlog, 1000, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
 	app := h.Appender()

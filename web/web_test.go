@@ -92,7 +92,6 @@ func TestGlobalURL(t *testing.T) {
 }
 
 func TestReadyAndHealthy(t *testing.T) {
-	t.Parallel()
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
 
 	testutil.Ok(t, err)
@@ -282,7 +281,6 @@ func TestReadyAndHealthy(t *testing.T) {
 }
 
 func TestRoutePrefix(t *testing.T) {
-	t.Parallel()
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
 
 	testutil.Ok(t, err)
@@ -409,8 +407,6 @@ func TestDebugHandler(t *testing.T) {
 }
 
 func TestHTTPMetrics(t *testing.T) {
-	t.Parallel()
-
 	handler := New(nil, &Options{RoutePrefix: "/"})
 	getReady := func() int {
 		t.Helper()

@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -242,9 +243,9 @@ func TestHead_ReadWAL(t *testing.T) {
 				testutil.Ok(t, c.Err())
 				return x
 			}
-			testutil.Equals(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil)))
-			testutil.Equals(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil)))
-			testutil.Equals(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0, nil)))
+			testutil.Equals(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil, head.chunkReadWriter)))
+			testutil.Equals(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil, head.chunkReadWriter)))
+			testutil.Equals(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0, nil, head.chunkReadWriter)))
 		})
 	}
 }
@@ -295,7 +296,15 @@ func TestHead_WALMultiRef(t *testing.T) {
 }
 
 func TestHead_Truncate(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 1000, nil)
+	dir, err := ioutil.TempDir("", "wal_rollback")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	w, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, w, 1000, nil)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -371,11 +380,26 @@ func TestHead_Truncate(t *testing.T) {
 // Validate various behaviors brought on by firstChunkID accounting for
 // garbage collected chunks.
 func TestMemSeries_truncateChunks(t *testing.T) {
-	// TODO: init HeadReadWriter
+	dir, err := ioutil.TempDir("", "truncate_chunks")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	// This is usually taken from the Head, but passing manually here.
+	chunkReadWriter, err := chunks.NewHeadReadWriter(chunkDir(dir), chunkenc.NewPool())
+	testutil.Ok(t, err)
+
+	// Initialise the global pool.
+	memChunkPool = sync.Pool{
+		New: func() interface{} {
+			return &memChunk{}
+		},
+	}
+
 	s := newMemSeries(labels.FromStrings("a", "b"), 1, 2000)
 
 	for i := 0; i < 4000; i += 5 {
-		ok, _ := s.append(int64(i), float64(i))
+		ok, _ := s.append(int64(i), float64(i), chunkReadWriter)
 		testutil.Assert(t, ok == true, "sample append failed")
 	}
 
@@ -383,28 +407,28 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	// that the ID of the last chunk still gives us the same chunk afterwards.
 	countBefore := len(s.mmappedChunks) + 1 // +1 for the head chunk.
 	lastID := s.chunkID(countBefore - 1)
-	lastChunk, _ := s.chunk(lastID)
+	lastChunk, _ := s.chunk(lastID, chunkReadWriter)
 
-	chk, _ := s.chunk(0)
+	chk, _ := s.chunk(0, chunkReadWriter)
 	testutil.Assert(t, chk != nil, "")
 	testutil.Assert(t, lastChunk != nil, "")
 
 	s.truncateChunksBefore(2000)
 
 	testutil.Equals(t, int64(2000), s.mmappedChunks[0].minTime)
-	chk, _ = s.chunk(0)
+	chk, _ = s.chunk(0, chunkReadWriter)
 	testutil.Assert(t, chk == nil, "first chunks not gone")
 	testutil.Equals(t, countBefore/2, len(s.mmappedChunks)+1) // +1 for the head chunk.
-	chk, _ = s.chunk(lastID)
+	chk, _ = s.chunk(lastID, chunkReadWriter)
 	testutil.Equals(t, lastChunk, chk)
 
 	// Validate that the series' sample buffer is applied correctly to the last chunk
 	// after truncation.
-	it1 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil)
+	it1 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkReadWriter)
 	_, ok := it1.(*memSafeIterator)
 	testutil.Assert(t, ok == true, "")
 
-	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)-1), nil)
+	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)-1), nil, chunkReadWriter)
 	_, ok = it2.(*memSafeIterator)
 	testutil.Assert(t, ok == false, "non-last chunk incorrectly wrapped with sample buffer")
 }
@@ -588,8 +612,16 @@ func TestHeadDeleteSimple(t *testing.T) {
 }
 
 func TestDeleteUntilCurMax(t *testing.T) {
+	dir, err := ioutil.TempDir("", "del_cur_max")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(t, err)
+
 	numSamples := int64(10)
-	hb, err := NewHead(nil, nil, nil, 1000000, nil)
+	hb, err := NewHead(nil, nil, wlog, 1000000, nil)
 	testutil.Ok(t, err)
 	defer hb.Close()
 	app := hb.Appender()
@@ -730,11 +762,14 @@ func TestDelete_e2e(t *testing.T) {
 	for _, l := range lbls {
 		seriesMap[labels.New(l...).String()] = []tsdbutil.Sample{}
 	}
-	dir, _ := ioutil.TempDir("", "test")
+	dir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
-	hb, err := NewHead(nil, nil, nil, 100000, nil)
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
+	testutil.Ok(t, err)
+	hb, err := NewHead(nil, nil, wlog, 100000, nil)
 	testutil.Ok(t, err)
 	defer hb.Close()
 	app := hb.Appender()
@@ -915,24 +950,33 @@ func TestComputeChunkEndTime(t *testing.T) {
 }
 
 func TestMemSeries_append(t *testing.T) {
+	dir, err := ioutil.TempDir("", "append")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	// This is usually taken from the Head, but passing manually here.
+	chunkReadWriter, err := chunks.NewHeadReadWriter(chunkDir(dir), chunkenc.NewPool())
+	testutil.Ok(t, err)
+
 	s := newMemSeries(labels.Labels{}, 1, 500)
 
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
 	// New chunk must correctly be cut at 1000.
-	ok, chunkCreated := s.append(998, 1)
+	ok, chunkCreated := s.append(998, 1, chunkReadWriter)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, chunkCreated, "first sample created chunk")
 
-	ok, chunkCreated = s.append(999, 2)
+	ok, chunkCreated = s.append(999, 2, chunkReadWriter)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, !chunkCreated, "second sample should use same chunk")
 
-	ok, chunkCreated = s.append(1000, 3)
+	ok, chunkCreated = s.append(1000, 3, chunkReadWriter)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, chunkCreated, "expected new chunk on boundary")
 
-	ok, chunkCreated = s.append(1001, 4)
+	ok, chunkCreated = s.append(1001, 4, chunkReadWriter)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, !chunkCreated, "second sample should use same chunk")
 
@@ -943,7 +987,7 @@ func TestMemSeries_append(t *testing.T) {
 	// Fill the range [1000,2000) with many samples. Intermediate chunks should be cut
 	// at approximately 120 samples per chunk.
 	for i := 1; i < 1000; i++ {
-		ok, _ := s.append(1001+int64(i), float64(i))
+		ok, _ := s.append(1001+int64(i), float64(i), chunkReadWriter)
 		testutil.Assert(t, ok, "append failed")
 	}
 
@@ -957,18 +1001,40 @@ func TestMemSeries_append(t *testing.T) {
 }
 
 func TestGCChunkAccess(t *testing.T) {
+	// Create a WAL for Head so that chunks are written to tem dir
+	// and doesnt populate project dir on test failure.
+	dir, err := ioutil.TempDir("", "wal_rollback")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	w, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(t, err)
+
 	// Put a chunk, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, nil)
+	h, err := NewHead(nil, nil, w, 1000, nil)
 	testutil.Ok(t, err)
 	defer h.Close()
 
 	h.initTime(0)
 
 	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
-	s.mmappedChunks = []*mmappedChunk{
-		{minTime: 0, maxTime: 999},
-		{minTime: 1000, maxTime: 1999},
-	}
+
+	// Appending 2 samples for the first chunk.
+	ok, chunkCreated := s.append(0, 0, h.chunkReadWriter)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, chunkCreated, "chunks was not created")
+	ok, chunkCreated = s.append(999, 999, h.chunkReadWriter)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, !chunkCreated, "chunks was created")
+
+	// A new chunks should be created here as it's beyond the chunk range.
+	ok, chunkCreated = s.append(1000, 1000, h.chunkReadWriter)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, chunkCreated, "chunks was not created")
+	ok, chunkCreated = s.append(1999, 1999, h.chunkReadWriter)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, !chunkCreated, "chunks was created")
 
 	idx := h.indexRange(0, 1500)
 	var (
@@ -997,18 +1063,40 @@ func TestGCChunkAccess(t *testing.T) {
 }
 
 func TestGCSeriesAccess(t *testing.T) {
+	// Create a WAL for Head so that chunks are written to tem dir
+	// and doesnt populate project dir on test failure.
+	dir, err := ioutil.TempDir("", "wal_rollback")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	w, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(t, err)
+
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, nil)
+	h, err := NewHead(nil, nil, w, 1000, nil)
 	testutil.Ok(t, err)
 	defer h.Close()
 
 	h.initTime(0)
 
 	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
-	s.mmappedChunks = []*mmappedChunk{
-		{minTime: 0, maxTime: 999},
-		{minTime: 1000, maxTime: 1999},
-	}
+
+	// Appending 2 samples for the first chunk.
+	ok, chunkCreated := s.append(0, 0, h.chunkReadWriter)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, chunkCreated, "chunks was not created")
+	ok, chunkCreated = s.append(999, 999, h.chunkReadWriter)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, !chunkCreated, "chunks was created")
+
+	// A new chunks should be created here as it's beyond the chunk range.
+	ok, chunkCreated = s.append(1000, 1000, h.chunkReadWriter)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, chunkCreated, "chunks was not created")
+	ok, chunkCreated = s.append(1999, 1999, h.chunkReadWriter)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, !chunkCreated, "chunks was created")
 
 	idx := h.indexRange(0, 2000)
 	var (
@@ -1039,7 +1127,15 @@ func TestGCSeriesAccess(t *testing.T) {
 }
 
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 1000, nil)
+	dir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, wlog, 1000, nil)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -1066,7 +1162,15 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 }
 
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 1000, nil)
+	dir, err := ioutil.TempDir("", "del_cur_max")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, wlog, 1000, nil)
 	testutil.Ok(t, err)
 	defer h.Close()
 

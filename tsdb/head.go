@@ -57,10 +57,7 @@ var (
 	// be ingested.
 	ErrInvalidSample = errors.New("invalid sample")
 
-	// TODO: ensure this is initialized everytime and in tests too
-	crw *chunks.HeadReadWriter
-	// TODO: put these 2 back into the pool near after crw.Chunk call
-	// chunkPool    chunkenc.Pool
+	// memChunkPool is the pool used by the chunk read/writer.
 	memChunkPool sync.Pool
 )
 
@@ -98,6 +95,9 @@ type Head struct {
 	cardinalityMutex      sync.Mutex
 	cardinalityCache      *index.PostingsStats // posting stats cache which will expire after 30sec
 	lastPostingsStatsCall time.Duration        // last posting stats call (PostingsCardinalityStats()) time for caching
+
+	// chunkReadWriter is used to write and ready Head chunks to/from disk.
+	chunkReadWriter *chunks.HeadReadWriter
 }
 
 type headMetrics struct {
@@ -299,7 +299,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		chkDirRoot = wal.Dir()
 	}
 	var err error
-	crw, err = chunks.NewHeadReadWriter(chunkDir(chkDirRoot), pool)
+	h.chunkReadWriter, err = chunks.NewHeadReadWriter(chunkDir(chkDirRoot), pool)
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +328,7 @@ func (h *Head) processWALSamples(
 				unknownRefs++
 				continue
 			}
-			_, chunkCreated := ms.append(s.T, s.V)
+			_, chunkCreated := ms.append(s.T, s.V, h.chunkReadWriter)
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
@@ -645,8 +645,7 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	unknownRefs := 0
-	// TODO(codesome): new segment files should not be created on startup.
-	if err := crw.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64) error {
+	if err := h.chunkReadWriter.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64) error {
 		ms := refSeries[seriesRef]
 		if ms == nil {
 			unknownRefs++
@@ -654,7 +653,7 @@ func (h *Head) Init(minValidTime int64) error {
 		}
 
 		if len(ms.mmappedChunks) > 0 {
-			if ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime < mint {
+			if ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
 				return errors.Errorf("out of sequence m-mapped chunk for series %s", ms.lset.String())
 			}
 		}
@@ -784,7 +783,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
 
 	// Truncate the chunk m-mapper.
-	if err := crw.Truncate(mint); err != nil {
+	if err := h.chunkReadWriter.Truncate(mint); err != nil {
 		return errors.Wrap(err, "truncate chunks.HeadReadWriter")
 	}
 
@@ -1133,7 +1132,7 @@ func (a *headAppender) Commit() error {
 	for i, s := range a.samples {
 		series = a.sampleSeries[i]
 		series.Lock()
-		ok, chunkCreated := series.append(s.T, s.V)
+		ok, chunkCreated := series.append(s.T, s.V, a.head.chunkReadWriter)
 		series.pendingCommit = false
 		series.Unlock()
 
@@ -1342,6 +1341,9 @@ func (h *Head) compactable() bool {
 
 // Close flushes the WAL and closes the head.
 func (h *Head) Close() error {
+	if err := h.chunkReadWriter.Close(); err != nil {
+		return err
+	}
 	if h.wal == nil {
 		return nil
 	}
@@ -1384,8 +1386,7 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	}
 
 	s.Lock()
-	// TODO: put back into the pool
-	c, garbageCollect := s.chunk(int(cid))
+	c, garbageCollect := s.chunk(int(cid), h.head.chunkReadWriter)
 	defer func() {
 		if garbageCollect {
 			c.chunk = nil
@@ -1402,21 +1403,23 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	s.Unlock()
 
 	return &safeChunk{
-		Chunk: c.chunk,
-		s:     s,
-		cid:   int(cid),
+		Chunk:           c.chunk,
+		s:               s,
+		cid:             int(cid),
+		chunkReadWriter: h.head.chunkReadWriter,
 	}, nil
 }
 
 type safeChunk struct {
 	chunkenc.Chunk
-	s   *memSeries
-	cid int
+	s               *memSeries
+	cid             int
+	chunkReadWriter *chunks.HeadReadWriter
 }
 
 func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 	c.s.Lock()
-	it := c.s.iterator(c.cid, reuseIter)
+	it := c.s.iterator(c.cid, reuseIter, c.chunkReadWriter)
 	c.s.Unlock()
 	return it
 }
@@ -1815,10 +1818,9 @@ func (s *memSeries) maxTime() int64 {
 	return c.maxTime
 }
 
-// TODO(codesome): If mmapped chunk already exists, take care of the mint
-func (s *memSeries) cut(mint int64) *memChunk {
+func (s *memSeries) cut(mint int64, chunkReadWriter *chunks.HeadReadWriter) *memChunk {
 	if s.headChunk != nil {
-		chunkRef, err := crw.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk)
+		chunkRef, err := chunkReadWriter.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk)
 		if err != nil {
 			panic(err)
 		}
@@ -1867,7 +1869,7 @@ func (s *memSeries) appendable(t int64, v float64) error {
 	return nil
 }
 
-func (s *memSeries) chunk(id int) (chunk *memChunk, garbageCollect bool) {
+func (s *memSeries) chunk(id int, chunkReadWriter *chunks.HeadReadWriter) (chunk *memChunk, garbageCollect bool) {
 	ix := id - s.firstChunkID
 	if ix < 0 || ix > len(s.mmappedChunks) {
 		return nil, false
@@ -1875,8 +1877,7 @@ func (s *memSeries) chunk(id int) (chunk *memChunk, garbageCollect bool) {
 	if ix == len(s.mmappedChunks) {
 		return s.headChunk, false
 	}
-	// TODO: put this back into the pool.
-	chk, err := crw.Chunk(s.mmappedChunks[ix].ref)
+	chk, err := chunkReadWriter.Chunk(s.mmappedChunks[ix].ref)
 	if err != nil {
 		panic(err)
 	}
@@ -1893,9 +1894,15 @@ func (s *memSeries) chunkID(pos int) int {
 
 // truncateChunksBefore removes all chunks from the series that have not timestamp
 // at or after mint. Chunk IDs remain unchanged.
-// TODO: fix the logic
 func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 	var k int
+	if s.headChunk != nil && s.headChunk.maxTime < mint {
+		// If head chunk is truncated, we can truncate all mmapped chunks.
+		s.headChunk = nil
+		s.mmappedChunks = nil
+		s.firstChunkID += 1 + len(s.mmappedChunks)
+		k = 1 + len(s.mmappedChunks)
+	}
 	if len(s.mmappedChunks) > 0 {
 		for i, c := range s.mmappedChunks {
 			if c.maxTime >= mint {
@@ -1906,16 +1913,11 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[k:]...)
 		s.firstChunkID += k
 	}
-	if s.headChunk != nil && s.headChunk.maxTime < mint {
-		s.headChunk = nil
-		s.firstChunkID++
-		k++
-	}
 	return k
 }
 
 // append adds the sample (t, v) to the series.
-func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
+func (s *memSeries) append(t int64, v float64, chunkReadWriter *chunks.HeadReadWriter) (success, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
 	// the time range within which we have to decompress all samples.
@@ -1928,7 +1930,7 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
 			return false, chunkCreated
 		}
-		c = s.cut(t)
+		c = s.cut(t, chunkReadWriter)
 		chunkCreated = true
 	}
 	numSamples := c.chunk.NumSamples()
@@ -1944,7 +1946,7 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
 	}
 	if t >= s.nextAt {
-		c = s.cut(t)
+		c = s.cut(t, chunkReadWriter)
 		chunkCreated = true
 	}
 	s.app.Append(t, v)
@@ -1970,9 +1972,8 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/a
 }
 
-func (s *memSeries) iterator(id int, it chunkenc.Iterator) chunkenc.Iterator {
-	// TODO: Put back into the pool
-	c, garbageCollect := s.chunk(id)
+func (s *memSeries) iterator(id int, it chunkenc.Iterator, chunkReadWriter *chunks.HeadReadWriter) chunkenc.Iterator {
+	c, garbageCollect := s.chunk(id, chunkReadWriter)
 	defer func() {
 		if garbageCollect {
 			c.chunk = nil

@@ -69,6 +69,7 @@ const (
 	// HeaderMaxtOffset is the offset where the first byte of MaxT for segment file exists.
 	HeaderMaxtOffset = HeaderMintOffset + 8
 	// MaxSegmentSize is the max size of a segment file.
+	// Setting size to the max int32 as setting it to max int 64 crashes 64 systems too.
 	MaxSegmentSize = math.MaxInt32
 )
 
@@ -108,7 +109,18 @@ func newHeadReadWriter(dir string, segmentTime time.Duration, pool chunkenc.Pool
 
 // NewDirReader returns a new Reader against sequentially numbered files in the
 // given directory.
-func (w *HeadReadWriter) initReader() error {
+func (w *HeadReadWriter) initReader() (err error) {
+	bs := map[int]ByteSlice{}
+	cs := map[int]io.Closer{}
+	defer func() {
+		if err != nil {
+			var merr tsdb_errors.MultiError
+			merr.Add(err)
+			merr.Add(closeAllFromMap(cs))
+			err = merr
+		}
+	}()
+
 	files, err := sequenceFilesMap(w.dirFile.Name())
 	if err != nil {
 		return err
@@ -117,17 +129,10 @@ func (w *HeadReadWriter) initReader() error {
 		w.pool = chunkenc.NewPool()
 	}
 
-	bs := map[int]ByteSlice{}
-	cs := map[int]io.Closer{}
-	var (
-		merr tsdb_errors.MultiError
-	)
 	for seq, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
-			merr.Add(errors.Wrap(err, "mmap files"))
-			merr.Add(closeAllFromMap(cs))
-			return merr
+			return errors.Wrap(err, "mmap files")
 		}
 		cs[seq] = f
 		bs[seq] = realByteSlice(f.Bytes())
@@ -151,11 +156,7 @@ func (w *HeadReadWriter) initReader() error {
 		}
 		w.size += int64(b.Len())
 	}
-	if err != nil {
-		merr.Add(err)
-		merr.Add(closeAllFromMap(cs))
-		return merr
-	}
+
 	return nil
 }
 
@@ -198,17 +199,18 @@ func (w *HeadReadWriter) IterateAllChunks(f func(seriesRef, chunkRef uint64, min
 		sliceLen := bs.Len()
 		idx := HeadSegmentHeaderSize
 		for idx < sliceLen {
-			if sliceLen-idx < 25 {
+			if sliceLen-idx < 30 {
 				return errors.Errorf("segment doesn't include enough bytes to read the chunk header - required:%v, available:%v", idx+25, sliceLen)
 			}
 
 			seriesRef := binary.BigEndian.Uint64(bs.Range(idx, idx+8))
-
 			idx += 8
+
 			mint := int64(binary.BigEndian.Uint64(bs.Range(idx, idx+8)))
-
 			idx += 8
+
 			maxt := int64(binary.BigEndian.Uint64(bs.Range(idx, idx+8)))
+			idx += 8
 
 			chunkRef := uint64(seq)<<32 | uint64(idx)
 			if err := f(seriesRef, chunkRef, mint, maxt); err != nil {
@@ -297,7 +299,7 @@ func (w *HeadReadWriter) WriteChunk(seriesRef uint64, mint, maxt int64, chk chun
 func (w *HeadReadWriter) shouldCutSegment(chunkLength int) bool {
 	return w.n == 0 || // First segment
 		// TODO: tune this boolean, cutting a segment for only 1 chunk would be inefficient.
-		(time.Now().Sub(w.curFileStartTime) > w.segmentTime && w.n > HeadSegmentHeaderSize) || // Time duration reached for the existing file.
+		(time.Since(w.curFileStartTime) > w.segmentTime && w.n > HeadSegmentHeaderSize) || // Time duration reached for the existing file.
 		w.n+int64(chunkLength+27) >= MaxSegmentSize
 }
 
@@ -369,8 +371,7 @@ func (w *HeadReadWriter) cut() (err error) {
 		w.bs[oldSeq] = realByteSlice(newTailFile.Bytes())
 		w.bsMtx.Unlock()
 	}
-	// Setting size to the max int64 as that is the highest value accepted by mmap for a 64 bit system.
-	// Sorry 32 bit systems.
+
 	mmapFile, err := fileutil.OpenMmapFileWithSize(f.Name(), int(MaxSegmentSize))
 	if err != nil {
 		return err

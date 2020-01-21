@@ -14,17 +14,28 @@
 package tsdb
 
 import (
+	"io/ioutil"
+	"os"
 	"strconv"
 	"sync/atomic"
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
+	dir, err := ioutil.TempDir("", "head_stripe_series")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(b, err)
+
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, nil)
+	h, err := NewHead(nil, nil, wlog, 1000, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
 
@@ -34,8 +45,16 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 }
 
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
+	dir, err := ioutil.TempDir("", "head_stripe_series")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(b, err)
+
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, nil)
+	h, err := NewHead(nil, nil, wlog, 1000, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
 
