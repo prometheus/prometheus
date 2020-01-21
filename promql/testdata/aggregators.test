@@ -17,6 +17,10 @@ eval instant at 50m SUM BY (group) (http_requests{job="api-server"})
   {group="canary"} 700
   {group="production"} 300
 
+eval instant at 50m SUM BY (group) (((http_requests{job="api-server"})))
+  {group="canary"} 700
+  {group="production"} 300
+
 # Test alternative "by"-clause order.
 eval instant at 50m sum by (group) (http_requests{job="api-server"})
   {group="canary"} 700
@@ -160,6 +164,11 @@ eval_ordered instant at 50m topk(3, http_requests)
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="1", job="app-server"} 600
 
+eval_ordered instant at 50m topk((3), (http_requests))
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="production", instance="1", job="app-server"} 600
+
 eval_ordered instant at 50m topk(5, http_requests{group="canary",job="app-server"})
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
@@ -233,6 +242,13 @@ eval instant at 5m count_values("version", version)
 	{version="7"} 2
 	{version="8"} 2
 
+
+eval instant at 5m count_values(((("version"))), version)
+       {version="6"} 5
+       {version="7"} 2
+       {version="8"} 2
+
+
 eval instant at 5m count_values without (instance)("version", version)
 	{job="api-server", group="production", version="6"} 3
 	{job="api-server", group="canary", version="8"} 2
@@ -273,6 +289,12 @@ eval instant at 1m quantile without(point)(0.8, data)
 
 # Bug #5276.
 eval instant at 1m quantile without(point)(scalar(foo), data)
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
+
+
+eval instant at 1m quantile without(point)((scalar(foo)), data)
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8

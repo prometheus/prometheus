@@ -197,9 +197,11 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Equals(t, test.openErr.Error(), err.Error())
 				return
 			}
+			defer func() { testutil.Ok(t, b.Close()) }()
 
 			querier, err := NewBlockQuerier(b, 0, 1)
 			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, querier.Close()) }()
 			set, err := querier.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 			testutil.Ok(t, err)
 
@@ -265,16 +267,20 @@ func TestBlockSize(t *testing.T) {
 }
 
 func TestReadIndexFormatV1(t *testing.T) {
-	/* The block here was produced at commit
-	   07ef80820ef1250db82f9544f3fcf7f0f63ccee0 with:
-	db, _ := Open("v1db", nil, nil, nil)
-	app := db.Appender()
-	app.Add(labels.FromStrings("foo", "bar"), 1, 2)
-	app.Add(labels.FromStrings("foo", "baz"), 3, 4)
-	app.Add(labels.FromStrings("foo", "meh"), 1000*3600*4, 4) // Not in the block.
-	app.Commit()
-	db.compact()
-	db.Close()
+	/* The block here was produced at the commit
+	    706602daed1487f7849990678b4ece4599745905 used in 2.0.0 with:
+	   db, _ := Open("v1db", nil, nil, nil)
+	   app := db.Appender()
+	   app.Add(labels.FromStrings("foo", "bar"), 1, 2)
+	   app.Add(labels.FromStrings("foo", "baz"), 3, 4)
+	   app.Add(labels.FromStrings("foo", "meh"), 1000*3600*4, 4) // Not in the block.
+	   // Make sure we've enough values for the lack of sorting of postings offsets to show up.
+	   for i := 0; i < 100; i++ {
+	     app.Add(labels.FromStrings("bar", strconv.FormatInt(int64(i), 10)), 0, 0)
+	   }
+	   app.Commit()
+	   db.compact()
+	   db.Close()
 	*/
 
 	blockDir := filepath.Join("testdata", "index_format_v1")
@@ -288,7 +294,7 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 	q, err = NewBlockQuerier(block, 0, 1000)
 	testutil.Ok(t, err)
-	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.$")),
+	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")),
 		map[string][]tsdbutil.Sample{
 			`{foo="bar"}`: []tsdbutil.Sample{sample{t: 1, v: 2}},
 			`{foo="baz"}`: []tsdbutil.Sample{sample{t: 3, v: 4}},

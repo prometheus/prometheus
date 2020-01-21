@@ -697,13 +697,25 @@ func TestLexer(t *testing.T) {
 					input:      test.input,
 					seriesDesc: test.seriesDesc,
 				}
-				l.run()
 
-				out := l.Items
+				var out []Item
+
+				for l.state = lexStatements; l.state != nil; {
+					out = append(out, Item{})
+
+					l.NextItem(&out[len(out)-1])
+				}
 
 				lastItem := out[len(out)-1]
 				if test.fail {
-					if lastItem.Typ != ERROR {
+					hasError := false
+					for _, item := range out {
+						if item.Typ == ERROR {
+							hasError = true
+						}
+
+					}
+					if !hasError {
 						t.Logf("%d: input %q", i, test.input)
 						t.Fatalf("expected lexing error but did not fail")
 					}

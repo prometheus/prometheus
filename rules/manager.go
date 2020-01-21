@@ -287,6 +287,11 @@ func (g *Group) run(ctx context.Context) {
 		return
 	}
 
+	ctx = promql.NewOriginContext(ctx, map[string]string{
+		"groupFile": g.File(),
+		"groupName": g.Name(),
+	})
+
 	iter := func() {
 		g.metrics.iterationsScheduled.Inc()
 
@@ -612,7 +617,6 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			g.staleSeries = nil
 		}
 	}
-
 }
 
 // RestoreForState restores the 'for' state of the alerts
@@ -927,14 +931,14 @@ func (m *Manager) LoadGroups(
 
 			rules := make([]Rule, 0, len(rg.Rules))
 			for _, r := range rg.Rules {
-				expr, err := promql.ParseExpr(r.Expr)
+				expr, err := promql.ParseExpr(r.Expr.Value)
 				if err != nil {
 					return nil, []error{errors.Wrap(err, fn)}
 				}
 
-				if r.Alert != "" {
+				if r.Alert.Value != "" {
 					rules = append(rules, NewAlertingRule(
-						r.Alert,
+						r.Alert.Value,
 						expr,
 						time.Duration(r.For),
 						labels.FromMap(r.Labels),
@@ -946,7 +950,7 @@ func (m *Manager) LoadGroups(
 					continue
 				}
 				rules = append(rules, NewRecordingRule(
-					r.Record,
+					r.Record.Value,
 					expr,
 					labels.FromMap(r.Labels),
 				))

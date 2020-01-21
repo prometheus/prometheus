@@ -13,6 +13,10 @@ export interface Target {
   health: string;
 }
 
+export interface DroppedTarget {
+  discoveredLabels: Labels;
+}
+
 export interface ScrapePool {
   upCount: number;
   targets: Target[];

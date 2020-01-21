@@ -80,6 +80,7 @@ func (t *testRunner) copyFileTo(src string, name string) string {
 	_, err = io.Copy(newf, f)
 	testutil.Ok(t, err)
 	testutil.Ok(t, f.Close())
+	testutil.Ok(t, newf.Close())
 
 	dst := filepath.Join(t.dir, name)
 	err = os.Rename(newf.Name(), dst)

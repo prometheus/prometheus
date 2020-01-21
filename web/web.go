@@ -253,7 +253,9 @@ func New(logger log.Logger, o *Options) *Handler {
 	}
 
 	m := newMetrics(o.Registerer)
-	router := route.New().WithInstrumentation(m.instrumentHandler)
+	router := route.New().
+		WithInstrumentation(m.instrumentHandler).
+		WithInstrumentation(setPathWithPrefix(""))
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -542,13 +544,15 @@ func (h *Handler) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.Handle("/", h.router)
 
-	av1 := route.New().WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1"))
-	h.apiV1.Register(av1)
 	apiPath := "/api"
 	if h.options.RoutePrefix != "/" {
 		apiPath = h.options.RoutePrefix + apiPath
 		level.Info(h.logger).Log("msg", "router prefix", "prefix", h.options.RoutePrefix)
 	}
+	av1 := route.New().
+		WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1")).
+		WithInstrumentation(setPathWithPrefix(apiPath + "/v1"))
+	h.apiV1.Register(av1)
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
 
@@ -643,6 +647,12 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx, err = httputil.ContextFromRequest(ctx, r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	// Provide URL parameters as a map for easy use. Advanced users may have need for
 	// parameters beyond the first, so provide RawParams.
 	rawParams, err := url.ParseQuery(r.URL.RawQuery)
@@ -685,7 +695,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tmpl := template.NewTemplateExpander(
-		h.context,
+		ctx,
 		strings.Join(append(defs, string(text)), ""),
 		"__console_"+name,
 		data,
@@ -1102,4 +1112,12 @@ type AlertByStateCount struct {
 	Inactive int32
 	Pending  int32
 	Firing   int32
+}
+
+func setPathWithPrefix(prefix string) func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			handler(w, r.WithContext(httputil.ContextWithPath(r.Context(), prefix+r.URL.Path)))
+		}
+	}
 }

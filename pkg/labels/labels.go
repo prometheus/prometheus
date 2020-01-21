@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/cespare/xxhash"
 )
@@ -109,7 +108,7 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 	}
 
 	for _, v := range ls {
-		if _, ok := nameSet[v.Name]; on == ok {
+		if _, ok := nameSet[v.Name]; on == ok && (on || v.Name != MetricName) {
 			matchedLabels = append(matchedLabels, v)
 		}
 	}
@@ -201,6 +200,20 @@ func (ls Labels) Has(name string) bool {
 	return false
 }
 
+// HasDuplicateLabels returns whether ls has duplicate label names.
+// It assumes that the labelset is sorted.
+func (ls Labels) HasDuplicateLabelNames() (string, bool) {
+	for i, l := range ls {
+		if i == 0 {
+			continue
+		}
+		if l.Name == ls[i-1].Name {
+			return l.Name, true
+		}
+	}
+	return "", false
+}
+
 // WithoutEmpty returns the labelset without empty labels.
 // May return the same labelset.
 func (ls Labels) WithoutEmpty() Labels {
@@ -285,11 +298,19 @@ func Compare(a, b Labels) int {
 	}
 
 	for i := 0; i < l; i++ {
-		if d := strings.Compare(a[i].Name, b[i].Name); d != 0 {
-			return d
+		if a[i].Name != b[i].Name {
+			if a[i].Name < b[i].Name {
+				return -1
+			} else {
+				return 1
+			}
 		}
-		if d := strings.Compare(a[i].Value, b[i].Value); d != 0 {
-			return d
+		if a[i].Value != b[i].Value {
+			if a[i].Value < b[i].Value {
+				return -1
+			} else {
+				return 1
+			}
 		}
 	}
 	// If all labels so far were in common, the set with fewer labels comes first.

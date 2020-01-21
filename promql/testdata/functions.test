@@ -48,6 +48,11 @@ eval instant at 50m changes(http_requests[50m])
 	{path="/bar"} 9
 	{path="/biz"} 1
 
+eval instant at 50m changes((http_requests[50m]))
+	{path="/foo"} 8
+	{path="/bar"} 9
+	{path="/biz"} 1
+
 eval instant at 50m changes(nonexistent_metric[50m])
 
 clear
@@ -207,6 +212,10 @@ eval instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "non-matc
   testmetric{src="source-value-10",dst="original-destination-value"} 0
   testmetric{src="source-value-20",dst="original-destination-value"} 1
 
+eval instant at 0m label_replace((((testmetric))), (("dst")), (("value-$1")), (("src")), (("non-matching-regex")))
+  testmetric{src="source-value-10",dst="original-destination-value"} 0
+  testmetric{src="source-value-20",dst="original-destination-value"} 1
+
 # label_replace drops labels that are set to empty values.
 eval instant at 0m label_replace(testmetric, "dst", "", "dst", ".*")
   testmetric{src="source-value-10"} 0
@@ -234,6 +243,9 @@ eval instant at 5s timestamp(metric)
   {} 0
 
 eval instant at 10s timestamp(metric)
+  {} 10
+
+eval instant at 10s timestamp(((metric)))
   {} 10
 
 # Tests for label_join.
@@ -304,6 +316,11 @@ eval instant at 0m clamp_min(test_clamp, -25)
 	{src="clamp-c"}	100
 
 eval instant at 0m clamp_max(clamp_min(test_clamp, -20), 70)
+	{src="clamp-a"}	-20
+	{src="clamp-b"}	0
+	{src="clamp-c"}	70
+
+eval instant at 0m clamp_max((clamp_min(test_clamp, (-20))), (70))
 	{src="clamp-a"}	-20
 	{src="clamp-b"}	0
 	{src="clamp-c"}	70
@@ -393,6 +410,9 @@ eval instant at 1m stdvar_over_time(metric[1m])
 eval instant at 1m stddev_over_time(metric[1m])
   {} 3.249615
 
+eval instant at 1m stddev_over_time((metric[1m]))
+  {} 3.249615
+
 # Tests for stddev_over_time and stdvar_over_time #4927.
 clear
 load 10s
@@ -443,6 +463,11 @@ eval instant at 1m quantile_over_time(-1, data[1m])
 	{test="uneven samples"} -Inf
 
 eval instant at 1m quantile_over_time(2, data[1m])
+	{test="two samples"} +Inf
+	{test="three samples"} +Inf
+	{test="uneven samples"} +Inf
+
+eval instant at 1m (quantile_over_time(2, (data[1m])))
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
@@ -546,3 +571,69 @@ eval instant at 1m max_over_time(data[1m])
 	{type="some_nan2"} 2
 	{type="some_nan3"} 1
 	{type="only_nan"} NaN
+
+clear
+
+# Testdata for absent_over_time()
+eval instant at 1m absent_over_time(http_requests[5m])
+    {} 1
+
+eval instant at 1m absent_over_time(http_requests{handler="/foo"}[5m])
+    {handler="/foo"} 1
+
+eval instant at 1m absent_over_time(http_requests{handler!="/foo"}[5m])
+    {} 1
+
+eval instant at 1m absent_over_time(http_requests{handler="/foo", handler="/bar", handler="/foobar"}[5m])
+    {} 1
+
+eval instant at 1m absent_over_time(rate(nonexistant[5m])[5m:])
+    {} 1
+
+eval instant at 1m absent_over_time(http_requests{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
+    {instance="127.0.0.1"} 1
+
+load 1m
+	http_requests{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
+	http_requests{path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
+	httpd_handshake_failures_total{instance="127.0.0.1",job="node"}	1+1x15
+	httpd_log_lines_total{instance="127.0.0.1",job="node"}	1
+	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
+
+eval instant at 5m absent_over_time(http_requests[5m])
+
+eval instant at 5m absent_over_time(rate(http_requests[5m])[5m:1m])
+
+eval instant at 0m absent_over_time(httpd_log_lines_total[30s])
+
+eval instant at 1m absent_over_time(httpd_log_lines_total[30s])
+    {} 1
+
+eval instant at 15m absent_over_time(http_requests[5m])
+
+eval instant at 16m absent_over_time(http_requests[5m])
+    {} 1
+
+eval instant at 16m absent_over_time(http_requests[6m])
+
+eval instant at 16m absent_over_time(httpd_handshake_failures_total[1m])
+
+eval instant at 16m absent_over_time({instance="127.0.0.1"}[5m])
+
+eval instant at 16m absent_over_time({instance="127.0.0.1"}[5m])
+
+eval instant at 21m absent_over_time({instance="127.0.0.1"}[5m])
+    {instance="127.0.0.1"} 1
+
+eval instant at 21m absent_over_time({instance="127.0.0.1"}[20m])
+
+eval instant at 21m absent_over_time({job="grok"}[20m])
+    {job="grok"} 1
+
+eval instant at 30m absent_over_time({instance="127.0.0.1"}[5m:5s])
+    {} 1
+
+eval instant at 5m absent_over_time({job="ingress"}[4m])
+
+eval instant at 10m absent_over_time({job="ingress"}[4m])
+	{job="ingress"} 1

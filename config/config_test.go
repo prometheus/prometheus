@@ -57,6 +57,7 @@ var expectedConf = &Config{
 		ScrapeInterval:     model.Duration(15 * time.Second),
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval: model.Duration(30 * time.Second),
+		QueryLogFile:       "",
 
 		ExternalLabels: labels.Labels{
 			{Name: "foo", Value: "bar"},

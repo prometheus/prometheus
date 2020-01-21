@@ -236,7 +236,7 @@ The following example returns all series that match either of the selectors
 `up` or `process_start_time_seconds{job="prometheus"}`:
 
 ```json
-$ curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode='match[]=up' --data-urlencode='match[]=process_start_time_seconds{job="prometheus"}'
+$ curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode 'match[]=up' --data-urlencode 'match[]=process_start_time_seconds{job="prometheus"}'
 {
    "status" : "success",
    "data" : [
@@ -871,6 +871,8 @@ $ curl http://localhost:9090/api/v1/status/buildinfo
 
 **NOTE**: The exact returned build properties may change without notice between Prometheus versions.
 
+*New in v2.14*
+
 ### TSDB Stats
 
 The following endpoint returns various cardinality statistics about the Prometheus TSDB:
@@ -932,7 +934,7 @@ $ curl http://localhost:9090/api/v1/status/tsdb
 }
 ```
 
-*New in v2.14*
+*New in v2.15*
 
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
