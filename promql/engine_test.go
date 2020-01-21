@@ -99,7 +99,7 @@ func TestQueryTimeout(t *testing.T) {
 	defer cancelCtx()
 
 	query := engine.newTestQuery(func(ctx context.Context) error {
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		return contextDone(ctx, "test statement execution")
 	})
 
