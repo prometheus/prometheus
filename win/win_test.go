@@ -7,9 +7,19 @@ import (
 )
 
 func TestWindowsClock(t *testing.T) {
-	n := time.Now()
+	var ds []time.Duration
+	for i := 0; i < 10; i++ {
+		ds = append(ds, timediff())
+	}
+	fmt.Printf("%v\n", ds)
+}
 
-	for time.Now().Before(n.Add(1 * time.Second)) {
-		fmt.Printf("%v\n", time.Now())
+func timediff() time.Duration {
+	t0 := time.Now()
+	for {
+		t := time.Now()
+		if t != t0 {
+			return t.Sub(t0)
+		}
 	}
 }
