@@ -45,6 +45,8 @@ Generic placeholders are defined as follows:
 
 The other placeholders are specified separately.
 
+Also you can use env value to specify as format of `$(VALUE)`, matching the regular expression `\$\(([a-zA-Z_0-9]+)\)`.
+
 A valid example file can be found [here](/config/testdata/conf.good.yml).
 
 The global configuration specifies parameters that are valid in all other configuration
