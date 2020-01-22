@@ -11,14 +11,28 @@ func TestWindowsClock(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		ds = append(ds, timediff())
 	}
-	fmt.Printf("%v\n", ds)
+	fmt.Printf("using != %v\n", ds)
 	var ds2 []time.Duration
 	for i := 0; i < 10; i++ {
 		ds2 = append(ds2, timeprintdiff())
 	}
-	fmt.Printf("%v\n", ds2)
+	fmt.Printf("using fmt.Sprintf %v\n", ds2)
+	var ds3 []time.Duration
+	for i := 0; i < 10; i++ {
+		ds3 = append(ds3, timediffafter())
+	}
+	fmt.Printf("using After %v\n", ds3)
 }
 
+func timediffafter() time.Duration {
+	t0 := time.Now()
+	for {
+		t := time.Now()
+		if t.After(t0) {
+			return t.Sub(t0)
+		}
+	}
+}
 func timediff() time.Duration {
 	t0 := time.Now()
 	for {
