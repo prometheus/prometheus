@@ -14,7 +14,7 @@ func TestWindowsClock(t *testing.T) {
 	fmt.Printf("%v\n", ds)
 	var ds2 []time.Duration
 	for i := 0; i < 10; i++ {
-		ds2 = append(ds, timeprintdiff())
+		ds2 = append(ds2, timeprintdiff())
 	}
 	fmt.Printf("%v\n", ds2)
 }
