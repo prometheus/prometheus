@@ -183,7 +183,7 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 			model.AddressLabel:       lv(addr),
 			servicePortNameLabel:     lv(port.Name),
 			servicePortProtocolLabel: lv(string(port.Protocol)),
-			serviceType:              lv(svc.Spec.Type),
+			serviceType:              lv(string(svc.Spec.Type)),
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeExternalName {
