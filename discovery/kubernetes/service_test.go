@@ -112,7 +112,7 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
 						"__address__":                          "testservice.default.svc:30900",
-						"__meta_kubernetes_service_type":          "ClusterIP",
+						"__meta_kubernetes_service_type":       "ClusterIP",
 						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
 						"__meta_kubernetes_service_port_name":  "testport",
 					},
@@ -177,16 +177,16 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
 						"__address__":                          "testservice.default.svc:30900",
-						"__meta_kubernetes_service_type":          "ClusterIP",
+						"__meta_kubernetes_service_type":       "ClusterIP",
 						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
 						"__meta_kubernetes_service_port_name":  "testport0",
 					},
 					{
 						"__meta_kubernetes_service_port_protocol": "UDP",
-						"__address__":                             "testservice.default.svc:30901",
-						"__meta_kubernetes_service_type":          "ClusterIP",
-						"__meta_kubernetes_service_cluster_ip":    "10.0.0.1",
-						"__meta_kubernetes_service_port_name":     "testport1",
+						"__address__":                          "testservice.default.svc:30901",
+						"__meta_kubernetes_service_type":       "ClusterIP",
+						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
+						"__meta_kubernetes_service_port_name":  "testport1",
 					},
 				},
 				Labels: model.LabelSet{
@@ -222,7 +222,7 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
 						"__address__":                          "testservice.ns1.svc:30900",
-						"__meta_kubernetes_service_type":          "ClusterIP",
+						"__meta_kubernetes_service_type":       "ClusterIP",
 						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
 						"__meta_kubernetes_service_port_name":  "testport",
 					},
@@ -238,7 +238,7 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
 						"__address__":                          "testservice.ns2.svc:30900",
-						"__meta_kubernetes_service_type":          "ClusterIP",
+						"__meta_kubernetes_service_type":       "ClusterIP",
 						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
 						"__meta_kubernetes_service_port_name":  "testport",
 					},
