@@ -146,6 +146,7 @@ const (
 	servicePortProtocolLabel       = metaLabelPrefix + "service_port_protocol"
 	serviceClusterIPLabel          = metaLabelPrefix + "service_cluster_ip"
 	serviceExternalNameLabel       = metaLabelPrefix + "service_external_name"
+	serviceType                    = metaLabelPrefix + "service_type"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
@@ -182,6 +183,7 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 			model.AddressLabel:       lv(addr),
 			servicePortNameLabel:     lv(port.Name),
 			servicePortProtocolLabel: lv(string(port.Protocol)),
+			serviceType:              lv(svc.Spec.Type),
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeExternalName {
