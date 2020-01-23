@@ -136,7 +136,7 @@ var (
 	targetMetadataCacheBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "prometheus_target_metadata_cache_bytes",
-			Help: "The number of bytes that are currently used for storing metric metadata of a target",
+			Help: "The number of bytes that are currently used for storing metric metadata in the cache",
 		},
 		[]string{"scrape_job"},
 	)
