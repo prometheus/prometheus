@@ -39,6 +39,7 @@ jobs:
           # don't limit this to the number of allocated cores, the job is
           # likely to get OOMed and killed.
           GOOPTS: "-p 2"
+          GOMAXPROCS: "2"
     - prometheus/check_proto
     - prometheus/store_artifact:
         file: prometheus
@@ -55,8 +56,14 @@ jobs:
     working_directory: /go/src/github.com/prometheus/prometheus
     steps:
     - checkout
-    # TSDB is where the most risk is Windows wise, so only test there for now.
-    - run: go test ./tsdb/...
+    - run:
+        shell: bash
+        command: |
+          (cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
+          go test -mod=vendor -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
+        environment:
+          GOGC: "20"
+          GOOPTS: "-p 2 -mod=vendor"
   fuzzit_regression:
     executor: fuzzit
     working_directory: /go/src/github.com/prometheus/prometheus

@@ -316,22 +316,6 @@ Outer:
 			newSeries(map[string]string{"a": "b"}, expSamples),
 		})
 
-		lns, err := q.LabelNames()
-		testutil.Ok(t, err)
-		lvs, err := q.LabelValues("a")
-		testutil.Ok(t, err)
-		if len(expSamples) == 0 {
-			testutil.Equals(t, 0, len(lns))
-			testutil.Equals(t, 0, len(lvs))
-			testutil.Assert(t, res.Next() == false, "")
-			continue
-		} else {
-			testutil.Equals(t, 1, len(lns))
-			testutil.Equals(t, 1, len(lvs))
-			testutil.Equals(t, "a", lns[0])
-			testutil.Equals(t, "b", lvs[0])
-		}
-
 		for {
 			eok, rok := expss.Next(), res.Next()
 			testutil.Equals(t, eok, rok)
@@ -1412,7 +1396,7 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 	err := app.Commit()
 	testutil.Ok(t, err)
 
-	err = db.compact()
+	err = db.Compact()
 	testutil.Ok(t, err)
 
 	for _, block := range db.Blocks() {
@@ -1467,7 +1451,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	err := app.Commit()
 	testutil.Ok(t, err)
 
-	err = db.compact()
+	err = db.Compact()
 	testutil.Ok(t, err)
 
 	testutil.Assert(t, len(db.blocks) >= 3, "invalid test, less than three blocks in DB")
@@ -1613,7 +1597,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 	defaultMatcher := labels.MustNewMatcher(labels.MatchRegexp, "", ".*")
 
 	t.Run("Test no blocks after compact with empty head.", func(t *testing.T) {
-		testutil.Ok(t, db.compact())
+		testutil.Ok(t, db.Compact())
 		actBlocks, err := blockDirs(db.Dir())
 		testutil.Ok(t, err)
 		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
@@ -1631,7 +1615,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
-		testutil.Ok(t, db.compact())
+		testutil.Ok(t, db.Compact())
 		testutil.Equals(t, 1, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 
 		actBlocks, err := blockDirs(db.Dir())
@@ -1653,7 +1637,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 
-		testutil.Ok(t, db.compact())
+		testutil.Ok(t, db.Compact())
 		testutil.Equals(t, 2, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 		actBlocks, err = blockDirs(db.Dir())
 		testutil.Ok(t, err)
@@ -1674,7 +1658,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 		testutil.Ok(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
-		testutil.Ok(t, db.compact())
+		testutil.Ok(t, db.Compact())
 		testutil.Equals(t, 3, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 		testutil.Equals(t, oldBlocks, db.Blocks())
 	})
@@ -1693,7 +1677,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, db.reload())                                      // Reload the db to register the new blocks.
 		testutil.Equals(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
 		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
-		testutil.Ok(t, db.compact())
+		testutil.Ok(t, db.Compact())
 		testutil.Equals(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here once for each block that have tombstones")
 
 		actBlocks, err := blockDirs(db.Dir())
@@ -1776,7 +1760,7 @@ func TestDB_LabelNames(t *testing.T) {
 		testutil.Ok(t, headIndexr.Close())
 
 		// Testing disk.
-		err = db.compact()
+		err = db.Compact()
 		testutil.Ok(t, err)
 		// All blocks have same label names, hence check them individually.
 		// No need to aggregate and check.
@@ -1823,7 +1807,7 @@ func TestCorrectNumTombstones(t *testing.T) {
 	}
 	testutil.Ok(t, app.Commit())
 
-	err := db.compact()
+	err := db.Compact()
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, len(db.blocks))
 
@@ -2189,7 +2173,7 @@ func TestVerticalCompaction(t *testing.T) {
 			// Vertical compaction.
 			lc := db.compactor.(*LeveledCompactor)
 			testutil.Equals(t, 0, int(prom_testutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count should be still 0 here")
-			err = db.compact()
+			err = db.Compact()
 			testutil.Ok(t, err)
 			testutil.Equals(t, c.expBlockNum, len(db.Blocks()), "Wrong number of blocks [after compact]")
 

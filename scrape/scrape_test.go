@@ -30,6 +30,7 @@ import (
 
 	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -142,6 +143,10 @@ func (l *testLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 func (l *testLoop) stop() {
 	l.stopFunc()
+}
+
+func (l *testLoop) getCache() *scrapeCache {
+	return nil
 }
 
 func TestScrapePoolStop(t *testing.T) {
@@ -917,7 +922,6 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 }
 
 func TestScrapeLoopAppend(t *testing.T) {
-
 	tests := []struct {
 		title           string
 		honorLabels     bool
@@ -1534,4 +1538,232 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 		},
 	}
 	testutil.Equals(t, want, capp.result, "Appended samples not as expected")
+}
+
+func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
+	s := teststorage.New(t)
+	defer s.Close()
+
+	app, err := s.Appender()
+	testutil.Ok(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx,
+		&testScraper{},
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		func() storage.Appender { return app },
+		nil,
+		0,
+		true,
+	)
+	defer cancel()
+
+	// We add a good and a bad metric to check that both are discarded.
+	_, _, _, err = sl.append([]byte("test_metric{le=\"500\"} 1\ntest_metric{le=\"600\",le=\"700\"} 1\n"), "", time.Time{})
+	testutil.NotOk(t, err)
+
+	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
+	testutil.Ok(t, err)
+	series, _, err := q.Select(&storage.SelectParams{}, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+	testutil.Ok(t, err)
+	testutil.Equals(t, false, series.Next(), "series found in tsdb")
+
+	// We add a good metric to check that it is recorded.
+	_, _, _, err = sl.append([]byte("test_metric{le=\"500\"} 1\n"), "", time.Time{})
+	testutil.Ok(t, err)
+
+	q, err = s.Querier(ctx, time.Time{}.UnixNano(), 0)
+	testutil.Ok(t, err)
+	series, _, err = q.Select(&storage.SelectParams{}, labels.MustNewMatcher(labels.MatchEqual, "le", "500"))
+	testutil.Ok(t, err)
+	testutil.Equals(t, true, series.Next(), "series not found in tsdb")
+	testutil.Equals(t, false, series.Next(), "more than one series found in tsdb")
+}
+
+func TestReusableConfig(t *testing.T) {
+	variants := []*config.ScrapeConfig{
+		&config.ScrapeConfig{
+			JobName:       "prometheus",
+			ScrapeTimeout: model.Duration(15 * time.Second),
+		},
+		&config.ScrapeConfig{
+			JobName:       "httpd",
+			ScrapeTimeout: model.Duration(15 * time.Second),
+		},
+		&config.ScrapeConfig{
+			JobName:       "prometheus",
+			ScrapeTimeout: model.Duration(5 * time.Second),
+		},
+		&config.ScrapeConfig{
+			JobName:     "prometheus",
+			MetricsPath: "/metrics",
+		},
+		&config.ScrapeConfig{
+			JobName:     "prometheus",
+			MetricsPath: "/metrics2",
+		},
+		&config.ScrapeConfig{
+			JobName:       "prometheus",
+			ScrapeTimeout: model.Duration(5 * time.Second),
+			MetricsPath:   "/metrics2",
+		},
+		&config.ScrapeConfig{
+			JobName:        "prometheus",
+			ScrapeInterval: model.Duration(5 * time.Second),
+			MetricsPath:    "/metrics2",
+		},
+		&config.ScrapeConfig{
+			JobName:        "prometheus",
+			ScrapeInterval: model.Duration(5 * time.Second),
+			SampleLimit:    1000,
+			MetricsPath:    "/metrics2",
+		},
+	}
+
+	match := [][]int{
+		[]int{0, 2},
+		[]int{4, 5},
+		[]int{4, 6},
+		[]int{4, 7},
+		[]int{5, 6},
+		[]int{5, 7},
+		[]int{6, 7},
+	}
+	noMatch := [][]int{
+		[]int{1, 2},
+		[]int{0, 4},
+		[]int{3, 4},
+	}
+
+	for i, m := range match {
+		testutil.Equals(t, true, reusableCache(variants[m[0]], variants[m[1]]), "match test %d", i)
+		testutil.Equals(t, true, reusableCache(variants[m[1]], variants[m[0]]), "match test %d", i)
+		testutil.Equals(t, true, reusableCache(variants[m[1]], variants[m[1]]), "match test %d", i)
+		testutil.Equals(t, true, reusableCache(variants[m[0]], variants[m[0]]), "match test %d", i)
+	}
+	for i, m := range noMatch {
+		testutil.Equals(t, false, reusableCache(variants[m[0]], variants[m[1]]), "not match test %d", i)
+		testutil.Equals(t, false, reusableCache(variants[m[1]], variants[m[0]]), "not match test %d", i)
+	}
+}
+
+func TestReuseScrapeCache(t *testing.T) {
+	var (
+		app = &nopAppendable{}
+		cfg = &config.ScrapeConfig{
+			JobName:        "Prometheus",
+			ScrapeTimeout:  model.Duration(5 * time.Second),
+			ScrapeInterval: model.Duration(5 * time.Second),
+			MetricsPath:    "/metrics",
+		}
+		sp, _ = newScrapePool(cfg, app, 0, nil)
+		t1    = &Target{
+			discoveredLabels: labels.Labels{
+				labels.Label{
+					Name:  "labelNew",
+					Value: "nameNew",
+				},
+			},
+		}
+		proxyURL, _ = url.Parse("http://localhost:2128")
+	)
+	sp.sync([]*Target{t1})
+
+	steps := []struct {
+		keep      bool
+		newConfig *config.ScrapeConfig
+	}{
+		{
+			keep: true,
+			newConfig: &config.ScrapeConfig{
+				JobName:        "Prometheus",
+				ScrapeInterval: model.Duration(5 * time.Second),
+				ScrapeTimeout:  model.Duration(5 * time.Second),
+				MetricsPath:    "/metrics",
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:        "Prometheus",
+				ScrapeInterval: model.Duration(5 * time.Second),
+				ScrapeTimeout:  model.Duration(15 * time.Second),
+				MetricsPath:    "/metrics2",
+			},
+		},
+		{
+			keep: true,
+			newConfig: &config.ScrapeConfig{
+				JobName:        "Prometheus",
+				SampleLimit:    400,
+				ScrapeInterval: model.Duration(5 * time.Second),
+				ScrapeTimeout:  model.Duration(15 * time.Second),
+				MetricsPath:    "/metrics2",
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:         "Prometheus",
+				HonorTimestamps: true,
+				SampleLimit:     400,
+				ScrapeInterval:  model.Duration(5 * time.Second),
+				ScrapeTimeout:   model.Duration(15 * time.Second),
+				MetricsPath:     "/metrics2",
+			},
+		},
+		{
+			keep: true,
+			newConfig: &config.ScrapeConfig{
+				JobName:         "Prometheus",
+				HonorTimestamps: true,
+				SampleLimit:     400,
+				HTTPClientConfig: config_util.HTTPClientConfig{
+					ProxyURL: config_util.URL{URL: proxyURL},
+				},
+				ScrapeInterval: model.Duration(5 * time.Second),
+				ScrapeTimeout:  model.Duration(15 * time.Second),
+				MetricsPath:    "/metrics2",
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:         "Prometheus",
+				HonorTimestamps: true,
+				HonorLabels:     true,
+				SampleLimit:     400,
+				ScrapeInterval:  model.Duration(5 * time.Second),
+				ScrapeTimeout:   model.Duration(15 * time.Second),
+				MetricsPath:     "/metrics2",
+			},
+		},
+	}
+
+	cacheAddr := func(sp *scrapePool) map[uint64]string {
+		r := make(map[uint64]string)
+		for fp, l := range sp.loops {
+			r[fp] = fmt.Sprintf("%p", l.getCache())
+		}
+		return r
+	}
+
+	for i, s := range steps {
+		initCacheAddr := cacheAddr(sp)
+		sp.reload(s.newConfig)
+		for fp, newCacheAddr := range cacheAddr(sp) {
+			if s.keep {
+				testutil.Assert(t, initCacheAddr[fp] == newCacheAddr, "step %d: old cache and new cache are not the same", i)
+			} else {
+				testutil.Assert(t, initCacheAddr[fp] != newCacheAddr, "step %d: old cache and new cache are the same", i)
+			}
+		}
+		initCacheAddr = cacheAddr(sp)
+		sp.reload(s.newConfig)
+		for fp, newCacheAddr := range cacheAddr(sp) {
+			testutil.Assert(t, initCacheAddr[fp] == newCacheAddr, "step %d: reloading the exact config invalidates the cache", i)
+		}
+	}
 }

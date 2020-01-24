@@ -28,6 +28,7 @@ interface PanelState {
   loading: boolean;
   error: string | null;
   stats: QueryStats | null;
+  exprInputValue: string;
 }
 
 export interface PanelOptions {
@@ -65,6 +66,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
       loading: false,
       error: null,
       stats: null,
+      exprInputValue: props.options.expr,
     };
   }
 
@@ -85,9 +87,12 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
   }
 
   executeQuery = (): void => {
-    const { expr } = this.props.options;
+    const { exprInputValue: expr } = this.state;
     const queryStart = Date.now();
     this.props.onExecuteQuery(expr);
+    if (this.props.options.expr !== expr) {
+      this.setOptions({ expr });
+    }
     if (expr === '') {
       return;
     }
@@ -125,7 +130,11 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
         throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
 
-    fetch(`${this.props.pathPrefix}${path}?${params}`, { cache: 'no-store', signal: abortController.signal })
+    fetch(`${this.props.pathPrefix}${path}?${params}`, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      signal: abortController.signal,
+    })
       .then(resp => resp.json())
       .then(json => {
         if (json.status !== 'success') {
@@ -177,7 +186,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
   }
 
   handleExpressionChange = (expr: string): void => {
-    this.setOptions({ expr: expr });
+    this.setState({ exprInputValue: expr });
   };
 
   handleChangeRange = (range: number): void => {
@@ -215,7 +224,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
         <Row>
           <Col>
             <ExpressionInput
-              value={options.expr}
+              value={this.state.exprInputValue}
               onExpressionChange={this.handleExpressionChange}
               executeQuery={this.executeQuery}
               loading={this.state.loading}

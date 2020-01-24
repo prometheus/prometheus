@@ -116,7 +116,7 @@ func ParseExpr(input string) (expr Expr, err error) {
 
 	// Only typecheck when there are no syntax errors.
 	if len(p.parseErrors) == 0 {
-		p.checkType(expr)
+		p.checkAST(expr)
 	}
 
 	if len(p.parseErrors) != 0 {
@@ -220,13 +220,13 @@ func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue
 	return labels, values, err
 }
 
-// failf formats the error and terminates processing.
-func (p *parser) failf(positionRange PositionRange, format string, args ...interface{}) {
-	p.fail(positionRange, errors.Errorf(format, args...))
+// addParseErrf formats the error and and appends it to the list of parsing errors.
+func (p *parser) addParseErrf(positionRange PositionRange, format string, args ...interface{}) {
+	p.addParseErr(positionRange, errors.Errorf(format, args...))
 }
 
-// fail terminates processing.
-func (p *parser) fail(positionRange PositionRange, err error) {
+// addParseErr appends the provided error to the list of parsing errors.
+func (p *parser) addParseErr(positionRange PositionRange, err error) {
 	perr := ParseErr{
 		PositionRange: positionRange,
 		Err:           err,
@@ -255,7 +255,7 @@ func (p *parser) unexpected(context string, expected string) {
 		errMsg.WriteString(expected)
 	}
 
-	p.fail(p.yyParser.lval.item.PositionRange(), errors.New(errMsg.String()))
+	p.addParseErr(p.yyParser.lval.item.PositionRange(), errors.New(errMsg.String()))
 }
 
 var errUnexpected = errors.New("unexpected error")
@@ -304,7 +304,7 @@ func (p *parser) Lex(lval *yySymType) int {
 	switch typ {
 
 	case ERROR:
-		p.failf(lval.item.PositionRange(), "%s", lval.item.Val)
+		p.addParseErrf(lval.item.PositionRange(), "%s", lval.item.Val)
 		p.InjectItem(0)
 	case EOF:
 		lval.item.Typ = EOF
@@ -355,31 +355,11 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node
 
 func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	if vs.Name != "" {
-
-		for _, m := range vs.LabelMatchers {
-			if m != nil && m.Name == labels.MetricName {
-				p.failf(vs.PositionRange(), "metric name must not be set twice: %q or %q", vs.Name, m.Value)
-			}
-		}
-
 		nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, vs.Name)
 		if err != nil {
 			panic(err) // Must not happen with labels.MatchEqual
 		}
 		vs.LabelMatchers = append(vs.LabelMatchers, nameMatcher)
-	}
-
-	// A Vector selector must contain at least one non-empty matcher to prevent
-	// implicit selection of all metrics (e.g. by a typo).
-	notEmpty := false
-	for _, lm := range vs.LabelMatchers {
-		if lm != nil && !lm.Matches("") {
-			notEmpty = true
-			break
-		}
-	}
-	if !notEmpty {
-		p.failf(vs.PositionRange(), "vector selector must contain at least one non-empty matcher")
 	}
 }
 
@@ -387,16 +367,17 @@ func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *Aggre
 	ret = modifier.(*AggregateExpr)
 	arguments := args.(Expressions)
 
+	ret.PosRange = PositionRange{
+		Start: op.Pos,
+		End:   p.lastClosing,
+	}
+
 	ret.Op = op.Typ
 
 	if len(arguments) == 0 {
-		p.failf(ret.PositionRange(), "no arguments for aggregate expression provided")
+		p.addParseErrf(ret.PositionRange(), "no arguments for aggregate expression provided")
 
-		// Currently p.failf() panics, so this return is not needed
-		// at the moment.
-		// However, this behaviour is likely to be changed in the
-		// future. In case of having non-panicking errors this
-		// return prevents invalid array accesses
+		// Prevents invalid array accesses.
 		return
 	}
 
@@ -408,16 +389,11 @@ func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *Aggre
 	}
 
 	if len(arguments) != desiredArgs {
-		p.failf(ret.PositionRange(), "wrong number of arguments for aggregate expression provided, expected %d, got %d", desiredArgs, len(arguments))
+		p.addParseErrf(ret.PositionRange(), "wrong number of arguments for aggregate expression provided, expected %d, got %d", desiredArgs, len(arguments))
 		return
 	}
 
 	ret.Expr = arguments[desiredArgs-1]
-
-	ret.PosRange = PositionRange{
-		Start: op.Pos,
-		End:   p.lastClosing,
-	}
 
 	return ret
 }
@@ -430,7 +406,7 @@ func (p *parser) number(val string) float64 {
 		f, err = strconv.ParseFloat(val, 64)
 	}
 	if err != nil {
-		p.failf(p.yyParser.lval.item.PositionRange(), "error parsing number: %s", err)
+		p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing number: %s", err)
 	}
 	return f
 }
@@ -438,18 +414,14 @@ func (p *parser) number(val string) float64 {
 // expectType checks the type of the node and raises an error if it
 // is not of the expected type.
 func (p *parser) expectType(node Node, want ValueType, context string) {
-	t := p.checkType(node)
+	t := p.checkAST(node)
 	if t != want {
-		p.failf(node.PositionRange(), "expected type %s in %s, got %s", documentedType(want), context, documentedType(t))
+		p.addParseErrf(node.PositionRange(), "expected type %s in %s, got %s", documentedType(want), context, documentedType(t))
 	}
 }
 
-// check the types of the children of each node and raise an error
-// if they do not form a valid node.
-//
-// Some of these checks are redundant as the parsing stage does not allow
-// them, but the costs are small and might reveal errors when making changes.
-func (p *parser) checkType(node Node) (typ ValueType) {
+// checkAST checks the sanity of the provided AST. This includes type checking.
+func (p *parser) checkAST(node Node) (typ ValueType) {
 	// For expressions the type is determined by their Type function.
 	// Lists do not have a type but are not invalid either.
 	switch n := node.(type) {
@@ -458,28 +430,28 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 	case Expr:
 		typ = n.Type()
 	default:
-		p.failf(node.PositionRange(), "unknown node type: %T", node)
+		p.addParseErrf(node.PositionRange(), "unknown node type: %T", node)
 	}
 
 	// Recursively check correct typing for child nodes and raise
 	// errors in case of bad typing.
 	switch n := node.(type) {
 	case *EvalStmt:
-		ty := p.checkType(n.Expr)
+		ty := p.checkAST(n.Expr)
 		if ty == ValueTypeNone {
-			p.failf(n.Expr.PositionRange(), "evaluation statement must have a valid expression type but got %s", documentedType(ty))
+			p.addParseErrf(n.Expr.PositionRange(), "evaluation statement must have a valid expression type but got %s", documentedType(ty))
 		}
 
 	case Expressions:
 		for _, e := range n {
-			ty := p.checkType(e)
+			ty := p.checkAST(e)
 			if ty == ValueTypeNone {
-				p.failf(e.PositionRange(), "expression must have a valid expression type but got %s", documentedType(ty))
+				p.addParseErrf(e.PositionRange(), "expression must have a valid expression type but got %s", documentedType(ty))
 			}
 		}
 	case *AggregateExpr:
 		if !n.Op.isAggregator() {
-			p.failf(n.PositionRange(), "aggregation operator expected in aggregation expression but got %q", n.Op)
+			p.addParseErrf(n.PositionRange(), "aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
 		p.expectType(n.Expr, ValueTypeVector, "aggregation expression")
 		if n.Op == TOPK || n.Op == BOTTOMK || n.Op == QUANTILE {
@@ -490,8 +462,8 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		}
 
 	case *BinaryExpr:
-		lt := p.checkType(n.LHS)
-		rt := p.checkType(n.RHS)
+		lt := p.checkAST(n.LHS)
+		rt := p.checkAST(n.RHS)
 
 		// opRange returns the PositionRange of the operator part of the BinaryExpr.
 		// This is made a function instead of a variable, so it is lazily evaluated on demand.
@@ -505,11 +477,11 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		}
 
 		if n.ReturnBool && !n.Op.isComparisonOperator() {
-			p.failf(opRange(), "bool modifier can only be used on comparison operators")
+			p.addParseErrf(opRange(), "bool modifier can only be used on comparison operators")
 		}
 
 		if n.Op.isComparisonOperator() && !n.ReturnBool && n.RHS.Type() == ValueTypeScalar && n.LHS.Type() == ValueTypeScalar {
-			p.failf(opRange(), "comparisons between scalars must use BOOL modifier")
+			p.addParseErrf(opRange(), "comparisons between scalars must use BOOL modifier")
 		}
 
 		if n.Op.isSetOperator() && n.VectorMatching.Card == CardOneToOne {
@@ -519,54 +491,54 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		for _, l1 := range n.VectorMatching.MatchingLabels {
 			for _, l2 := range n.VectorMatching.Include {
 				if l1 == l2 && n.VectorMatching.On {
-					p.failf(opRange(), "label %q must not occur in ON and GROUP clause at once", l1)
+					p.addParseErrf(opRange(), "label %q must not occur in ON and GROUP clause at once", l1)
 				}
 			}
 		}
 
 		if !n.Op.isOperator() {
-			p.failf(n.PositionRange(), "binary expression does not support operator %q", n.Op)
+			p.addParseErrf(n.PositionRange(), "binary expression does not support operator %q", n.Op)
 		}
 		if lt != ValueTypeScalar && lt != ValueTypeVector {
-			p.failf(n.LHS.PositionRange(), "binary expression must contain only scalar and instant vector types")
+			p.addParseErrf(n.LHS.PositionRange(), "binary expression must contain only scalar and instant vector types")
 		}
 		if rt != ValueTypeScalar && rt != ValueTypeVector {
-			p.failf(n.RHS.PositionRange(), "binary expression must contain only scalar and instant vector types")
+			p.addParseErrf(n.RHS.PositionRange(), "binary expression must contain only scalar and instant vector types")
 		}
 
 		if (lt != ValueTypeVector || rt != ValueTypeVector) && n.VectorMatching != nil {
 			if len(n.VectorMatching.MatchingLabels) > 0 {
-				p.failf(n.PositionRange(), "vector matching only allowed between instant vectors")
+				p.addParseErrf(n.PositionRange(), "vector matching only allowed between instant vectors")
 			}
 			n.VectorMatching = nil
 		} else {
 			// Both operands are Vectors.
 			if n.Op.isSetOperator() {
 				if n.VectorMatching.Card == CardOneToMany || n.VectorMatching.Card == CardManyToOne {
-					p.failf(n.PositionRange(), "no grouping allowed for %q operation", n.Op)
+					p.addParseErrf(n.PositionRange(), "no grouping allowed for %q operation", n.Op)
 				}
 				if n.VectorMatching.Card != CardManyToMany {
-					p.failf(n.PositionRange(), "set operations must always be many-to-many")
+					p.addParseErrf(n.PositionRange(), "set operations must always be many-to-many")
 				}
 			}
 		}
 
 		if (lt == ValueTypeScalar || rt == ValueTypeScalar) && n.Op.isSetOperator() {
-			p.failf(n.PositionRange(), "set operator %q not allowed in binary scalar expression", n.Op)
+			p.addParseErrf(n.PositionRange(), "set operator %q not allowed in binary scalar expression", n.Op)
 		}
 
 	case *Call:
 		nargs := len(n.Func.ArgTypes)
 		if n.Func.Variadic == 0 {
 			if nargs != len(n.Args) {
-				p.failf(n.PositionRange(), "expected %d argument(s) in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
+				p.addParseErrf(n.PositionRange(), "expected %d argument(s) in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
 			}
 		} else {
 			na := nargs - 1
 			if na > len(n.Args) {
-				p.failf(n.PositionRange(), "expected at least %d argument(s) in call to %q, got %d", na, n.Func.Name, len(n.Args))
+				p.addParseErrf(n.PositionRange(), "expected at least %d argument(s) in call to %q, got %d", na, n.Func.Name, len(n.Args))
 			} else if nargsmax := na + n.Func.Variadic; n.Func.Variadic > 0 && nargsmax < len(n.Args) {
-				p.failf(n.PositionRange(), "expected at most %d argument(s) in call to %q, got %d", nargsmax, n.Func.Name, len(n.Args))
+				p.addParseErrf(n.PositionRange(), "expected at most %d argument(s) in call to %q, got %d", nargsmax, n.Func.Name, len(n.Args))
 			}
 		}
 
@@ -578,29 +550,54 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		}
 
 	case *ParenExpr:
-		p.checkType(n.Expr)
+		p.checkAST(n.Expr)
 
 	case *UnaryExpr:
 		if n.Op != ADD && n.Op != SUB {
-			p.failf(n.PositionRange(), "only + and - operators allowed for unary expressions")
+			p.addParseErrf(n.PositionRange(), "only + and - operators allowed for unary expressions")
 		}
-		if t := p.checkType(n.Expr); t != ValueTypeScalar && t != ValueTypeVector {
-			p.failf(n.PositionRange(), "unary expression only allowed on expressions of type scalar or instant vector, got %q", documentedType(t))
+		if t := p.checkAST(n.Expr); t != ValueTypeScalar && t != ValueTypeVector {
+			p.addParseErrf(n.PositionRange(), "unary expression only allowed on expressions of type scalar or instant vector, got %q", documentedType(t))
 		}
 
 	case *SubqueryExpr:
-		ty := p.checkType(n.Expr)
+		ty := p.checkAST(n.Expr)
 		if ty != ValueTypeVector {
-			p.failf(n.PositionRange(), "subquery is only allowed on instant vector, got %s in %q instead", ty, n.String())
+			p.addParseErrf(n.PositionRange(), "subquery is only allowed on instant vector, got %s in %q instead", ty, n.String())
 		}
 	case *MatrixSelector:
-		p.checkType(n.VectorSelector)
+		p.checkAST(n.VectorSelector)
 
-	case *NumberLiteral, *StringLiteral, *VectorSelector:
+	case *VectorSelector:
+		// A Vector selector must contain at least one non-empty matcher to prevent
+		// implicit selection of all metrics (e.g. by a typo).
+		notEmpty := false
+		for _, lm := range n.LabelMatchers {
+			if lm != nil && !lm.Matches("") {
+				notEmpty = true
+				break
+			}
+		}
+		if !notEmpty {
+			p.addParseErrf(n.PositionRange(), "vector selector must contain at least one non-empty matcher")
+		}
+
+		if n.Name != "" {
+			// In this case the last LabelMatcher is checking for the metric name
+			// set outside the braces. This checks if the name has already been set
+			// previously
+			for _, m := range n.LabelMatchers[0 : len(n.LabelMatchers)-1] {
+				if m != nil && m.Name == labels.MetricName {
+					p.addParseErrf(n.PositionRange(), "metric name must not be set twice: %q or %q", n.Name, m.Value)
+				}
+			}
+		}
+
+	case *NumberLiteral, *StringLiteral:
 		// Nothing to do for terminals.
 
 	default:
-		p.failf(n.PositionRange(), "unknown node type: %T", node)
+		p.addParseErrf(n.PositionRange(), "unknown node type: %T", node)
 	}
 	return
 }
@@ -608,7 +605,7 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 func (p *parser) unquoteString(s string) string {
 	unquoted, err := strutil.Unquote(s)
 	if err != nil {
-		p.failf(p.yyParser.lval.item.PositionRange(), "error unquoting string %q: %s", s, err)
+		p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error unquoting string %q: %s", s, err)
 	}
 	return unquoted
 }
@@ -659,7 +656,7 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 
 	m, err := labels.NewMatcher(matchType, label.Val, val)
 	if err != nil {
-		p.fail(mergeRanges(&label, &value), err)
+		p.addParseErr(mergeRanges(&label, &value), err)
 	}
 
 	return m
@@ -674,20 +671,22 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		offsetp = &s.Offset
 		endPosp = &s.PosRange.End
 	case *MatrixSelector:
-		offsetp = &s.VectorSelector.Offset
+		if vs, ok := s.VectorSelector.(*VectorSelector); ok {
+			offsetp = &vs.Offset
+		}
 		endPosp = &s.EndPos
 	case *SubqueryExpr:
 		offsetp = &s.Offset
 		endPosp = &s.EndPos
 	default:
-		p.failf(e.PositionRange(), "offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
 		return
 	}
 
 	// it is already ensured by parseDuration func that there never will be a zero offset modifier
 	if *offsetp != 0 {
-		p.failf(e.PositionRange(), "offset may not be set multiple times")
-	} else {
+		p.addParseErrf(e.PositionRange(), "offset may not be set multiple times")
+	} else if offsetp != nil {
 		*offsetp = offset
 	}
 

@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"math"
 	"net/http"
+	"reflect"
 	"sync"
 	"time"
 	"unsafe"
@@ -176,6 +177,7 @@ type scrapeLoopOptions struct {
 	honorLabels     bool
 	honorTimestamps bool
 	mrc             []*relabel.Config
+	cache           *scrapeCache
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -208,7 +210,10 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
-		cache := newScrapeCache()
+		cache := opts.cache
+		if cache == nil {
+			cache = newScrapeCache()
+		}
 		opts.target.SetMetadataStore(cache)
 
 		return newScrapeLoop(
@@ -291,6 +296,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		targetScrapePoolReloadsFailed.Inc()
 		return errors.Wrap(err, "error creating HTTP client")
 	}
+
+	reuseCache := reusableCache(sp.config, cfg)
 	sp.config = cfg
 	oldClient := sp.client
 	sp.client = client
@@ -306,6 +313,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	)
 
 	for fp, oldLoop := range sp.loops {
+		var cache *scrapeCache
+		if oc := oldLoop.getCache(); reuseCache && oc != nil {
+			cache = oc
+		} else {
+			cache = newScrapeCache()
+		}
 		var (
 			t       = sp.activeTargets[fp]
 			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout}
@@ -316,6 +329,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				honorLabels:     honorLabels,
 				honorTimestamps: honorTimestamps,
 				mrc:             mrc,
+				cache:           cache,
 			})
 		)
 		wg.Add(1)
@@ -579,6 +593,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 type loop interface {
 	run(interval, timeout time.Duration, errc chan<- error)
 	stop()
+	getCache() *scrapeCache
 }
 
 type cacheEntry struct {
@@ -1016,6 +1031,10 @@ func (sl *scrapeLoop) stop() {
 	<-sl.stopped
 }
 
+func (sl *scrapeLoop) getCache() *scrapeCache {
+	return sl.cache
+}
+
 func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	var (
 		app            = sl.appender()
@@ -1311,4 +1330,25 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	default:
 		return err
 	}
+}
+
+// zeroConfig returns a new scrape config that only contains configuration items
+// that alter metrics.
+func zeroConfig(c *config.ScrapeConfig) *config.ScrapeConfig {
+	z := *c
+	// We zero out the fields that for sure don't affect scrape.
+	z.ScrapeInterval = 0
+	z.ScrapeTimeout = 0
+	z.SampleLimit = 0
+	z.HTTPClientConfig = config_util.HTTPClientConfig{}
+	return &z
+}
+
+// reusableCache compares two scrape config and tells wheter the cache is still
+// valid.
+func reusableCache(r, l *config.ScrapeConfig) bool {
+	if r == nil || l == nil {
+		return false
+	}
+	return reflect.DeepEqual(zeroConfig(r), zeroConfig(l))
 }
