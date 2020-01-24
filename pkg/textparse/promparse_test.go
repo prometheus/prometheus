@@ -209,7 +209,7 @@ testmetric{label="\"bar\""} 1`
 
 		i++
 	}
-	testutil.Equals(t, len(exp), i)
+	testutil.Equals(t, i, len(exp))
 }
 
 func TestPromParseErrors(t *testing.T) {
