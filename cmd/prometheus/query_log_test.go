@@ -147,6 +147,7 @@ func (p *queryLogTest) queryString() string {
 func (p *queryLogTest) validateLastQuery(t *testing.T, ql []queryLogLine) {
 	q := ql[len(ql)-1]
 	testutil.Equals(t, p.queryString(), q.Params.Query)
+	testutil.Equals(t, 0, q.Params.Step)
 
 	if p.origin != ruleOrigin {
 		host := p.host
@@ -347,6 +348,7 @@ func (p *queryLogTest) run(t *testing.T) {
 type queryLogLine struct {
 	Params struct {
 		Query string `json:"query"`
+		Step  int    `json:"step"`
 	} `json:"params"`
 	Request struct {
 		Path     string `json:"path"`

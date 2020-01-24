@@ -437,12 +437,12 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 	defer func() {
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
-			params := make(map[string]string, 4)
+			params := make(map[string]interface{}, 4)
 			params["query"] = q.q
 			if eq, ok := q.Statement().(*EvalStmt); ok {
 				params["start"] = formatDate(eq.Start)
 				params["end"] = formatDate(eq.End)
-				params["step"] = eq.Interval.String()
+				params["step"] = eq.Interval
 			}
 			f := []interface{}{"params", params}
 			if err != nil {
