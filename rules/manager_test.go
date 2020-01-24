@@ -945,10 +945,10 @@ func TestMetricsUpdate(t *testing.T) {
 		},
 	}
 
-	for _, c := range cases {
+	for i, c := range cases {
 		err := ruleManager.Update(time.Second, c.files, nil)
 		testutil.Ok(t, err)
 		time.Sleep(2 * time.Second)
-		testutil.Equals(t, c.metrics, countMetrics(), "invalid count of metrics prefixed by prometheus_rule_group_")
+		testutil.Equals(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
 	}
 }
