@@ -3,11 +3,11 @@ import { RouteComponentProps } from '@reach/router';
 import PathPrefixProps from '../../types/PathPrefixProps';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
-import { Alert, Table } from 'reactstrap';
+import { Alert, Table, Badge } from 'reactstrap';
 import { useFetch } from '../../hooks/useFetch';
 import { Link } from '@reach/router';
 import { Rule } from '../../types/types';
-import { formatRelative, roundUp } from '../../utils';
+import { formatRelative, createExpressionLink, humanizeDuration } from '../../utils';
 import { now } from 'moment';
 
 interface RuleGroup {
@@ -27,23 +27,33 @@ interface MapProps {
   term: string;
 }
 
-const AlertRuleMaps: FC<RouteComponentProps & MapProps> = ({ term, map }) => {
+const GraphExpressionLink: FC<{ expr: string; title: string } & PathPrefixProps> = props => {
   return (
-    <div>
-      <strong>{term}:</strong>
-      <div style={{ marginLeft: '3%' }}>
-        {Object.entries(map).map(([key, value], i) => (
-          <div key={i}>
-            {key}: {value}
-          </div>
-        ))}
-      </div>
-    </div>
+    <>
+      <strong>{props.title}:</strong>
+      <Link className="ml-4" to={createExpressionLink(props.expr)}>
+        {props.expr}
+      </Link>
+      <br />
+    </>
   );
 };
 
 const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const { response, error } = useFetch<RulesMap>(`${pathPrefix}/api/v1/rules`);
+
+  const getBadgeColor = (state: string) => {
+    switch (state) {
+      case 'ok':
+        return 'success';
+
+      case 'err':
+        return 'danger';
+
+      case 'unknown':
+        return 'warning';
+    }
+  };
 
   if (error) {
     return (
@@ -58,19 +68,19 @@ const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
         <h2>Rules</h2>
         {groups.map((g, i) => {
           return (
-            <Table size="sm" striped bordered key={i}>
+            <Table bordered key={i}>
               <thead>
                 <tr>
                   <td colSpan={3}>
                     <a href={'#' + g.name}>
-                      <h2>{g.name}</h2>
+                      <h2 id={g.name}>{g.name}</h2>
                     </a>
                   </td>
                   <td>
                     <h2>{formatRelative(g.lastEvaluation, now())} ago</h2>
                   </td>
                   <td>
-                    <h2>{roundUp(parseFloat(g.evaluationTime) * 1000)}ms</h2>
+                    <h2>{humanizeDuration(parseFloat(g.evaluationTime) * 1000)}</h2>
                   </td>
                 </tr>
               </thead>
@@ -86,50 +96,38 @@ const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
                   return (
                     <tr key={i}>
                       {r.alerts ? (
-                        <td>
-                          <strong>alert:</strong>
-                          <Link
-                            className="ml-4"
-                            to={encodeURI(
-                              `${pathPrefix}/new/graph?g0.expr=ALERTS{alertname="${r.name}"}&g0.tab=1&g0.stacked=0&g0.range_input=1h`
-                            )}
-                          >
-                            {r.name}
-                          </Link>
-                          <br />
-                          <span className="rules-head">expr:</span>
-                          <Link
-                            className="ml-4"
-                            to={encodeURI(
-                              `${pathPrefix}/new/graph?g0.expr=${r.query}&g0.tab=1&g0.stacked=0&g0.range_input=1h`
-                            )}
-                          >
-                            {r.query}
-                          </Link>{' '}
-                          <br />
-                          <AlertRuleMaps map={r.labels} term="labels" />
-                          <AlertRuleMaps map={r.annotations} term="annotations" />
+                        <td style={{ backgroundColor: '#F5F5F5' }}>
+                          <GraphExpressionLink title="alert" expr={r.name} />
+                          <GraphExpressionLink title="expr" expr={r.query} />
+                          <div>
+                            <strong>labels:</strong>
+                            {Object.entries(r.labels).map(([key, value]) => (
+                              <div className="ml-4" key={key}>
+                                {key}: {value}
+                              </div>
+                            ))}
+                          </div>
+                          <div>
+                            <strong>annotations:</strong>
+                            {Object.entries(r.annotations).map(([key, value]) => (
+                              <div className="ml-4" key={key}>
+                                {key}: {value}
+                              </div>
+                            ))}
+                          </div>
                         </td>
                       ) : (
-                        <td>
-                          <span className="rules-head">record:</span> {r.name} <br />
-                          <span className="rules-head">expr:</span>
-                          <Link
-                            className="ml-4"
-                            to={encodeURI(
-                              `${pathPrefix}/new/graph?g0.expr=${r.query}&g0.tab=1&g0.stacked=0&g0.range_input=1h`
-                            )}
-                          >
-                            {r.query}
-                          </Link>
+                        <td style={{ backgroundColor: '#F5F5F5' }}>
+                          <GraphExpressionLink title="record" expr={r.name} />
+                          <GraphExpressionLink title="expr" expr={r.query} />
                         </td>
                       )}
                       <td>
-                        <Alert className="d-inline-block p-1 text-uppercase">{r.health.toUpperCase()}</Alert>
+                        <Badge color={getBadgeColor(r.health)}>{r.health.toUpperCase()}</Badge>
                       </td>
-                      <td>{r.lastError}</td>
+                      <td>{r.lastError ? <Alert color="danger">{r.lastError}</Alert> : null}</td>
                       <td>{formatRelative(r.lastEvaluation, now())} ago</td>
-                      <td>{roundUp(parseFloat(r.evaluationTime) * 1000)}ms ago</td>
+                      <td>{humanizeDuration(parseFloat(r.evaluationTime) * 1000)}</td>
                     </tr>
                   );
                 })}
