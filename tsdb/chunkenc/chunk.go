@@ -49,6 +49,7 @@ type Chunk interface {
 	// be re-used or a new iterator can be allocated.
 	Iterator(Iterator) Iterator
 	NumSamples() int
+	Compact()
 }
 
 // Appender adds sample pairs to a chunk.
