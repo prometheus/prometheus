@@ -107,7 +107,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
           dateTime = dateTime.utc();
         }
         return `
-            <div class="date">${dateTime.format('YYYY-MM-DD HH:mm:ss z')}</div>
+            <div class="date">${dateTime.format('YYYY-MM-DD HH:mm:ss Z z')}</div>
             <div>
               <span class="detail-swatch" style="background-color: ${color}" />
               <span>${labels.__name__ || 'value'}: <strong>${yval}</strong></span>
