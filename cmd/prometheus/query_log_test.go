@@ -146,28 +146,24 @@ func (p *queryLogTest) queryString() string {
 // test parameters.
 func (p *queryLogTest) validateLastQuery(t *testing.T, ql []queryLogLine) {
 	q := ql[len(ql)-1]
-	params := q["params"].(map[string]interface{})
-	testutil.Equals(t, p.queryString(), params["query"].(string))
+	testutil.Equals(t, p.queryString(), q.Params.Query)
 
-	var request map[string]interface{}
 	if p.origin != ruleOrigin {
-		request = q["httpRequest"].(map[string]interface{})
 		host := p.host
 		if host == "[::1]" {
 			host = "::1"
 		}
-		testutil.Equals(t, request["clientIP"].(string), host)
+		testutil.Equals(t, host, q.Request.ClientIP)
 	}
 
 	switch p.origin {
 	case apiOrigin:
-		testutil.Equals(t, request["path"].(string), p.prefix+"/api/v1/query")
+		testutil.Equals(t, p.prefix+"/api/v1/query", q.Request.Path)
 	case consoleOrigin:
-		testutil.Equals(t, request["path"].(string), p.prefix+"/consoles/test.html")
+		testutil.Equals(t, p.prefix+"/consoles/test.html", q.Request.Path)
 	case ruleOrigin:
-		rule := q["ruleGroup"].(map[string]interface{})
-		testutil.Equals(t, rule["name"].(string), "querylogtest")
-		testutil.Equals(t, rule["file"].(string), filepath.Join(p.cwd, "testdata", "rules", "test.yml"))
+		testutil.Equals(t, "querylogtest", q.RuleGroup.Name)
+		testutil.Equals(t, filepath.Join(p.cwd, "testdata", "rules", "test.yml"), q.RuleGroup.File)
 	default:
 		panic("unknown origin")
 	}
@@ -348,7 +344,19 @@ func (p *queryLogTest) run(t *testing.T) {
 	}
 }
 
-type queryLogLine map[string]interface{}
+type queryLogLine struct {
+	Params struct {
+		Query string `json:"query"`
+	} `json:"params"`
+	Request struct {
+		Path     string `json:"path"`
+		ClientIP string `json:"clientIP"`
+	} `json:"httpRequest"`
+	RuleGroup struct {
+		File string `json:"file"`
+		Name string `json:"name"`
+	} `json:"ruleGroup"`
+}
 
 // readQueryLog unmarshal a json-formatted query log into query log lines.
 func readQueryLog(t *testing.T, path string) []queryLogLine {
