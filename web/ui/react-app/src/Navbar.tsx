@@ -14,9 +14,14 @@ import {
 } from 'reactstrap';
 import PathPrefixProps from './types/PathPrefixProps';
 
-const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
+interface NavigationProps {
+  extraNavItem: React.ReactNode;
+}
+
+const Navigation: FC<PathPrefixProps & NavigationProps> = ({ pathPrefix, extraNavItem }) => {
   const [isOpen, setIsOpen] = useState(false);
   const toggle = () => setIsOpen(!isOpen);
+
   return (
     <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} />
@@ -70,6 +75,7 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
             <NavLink href={`${pathPrefix}/`}>Classic UI</NavLink>
           </NavItem>
         </Nav>
+        {extraNavItem}
       </Collapse>
     </Navbar>
   );

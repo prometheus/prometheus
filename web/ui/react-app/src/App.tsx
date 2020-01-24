@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import React, { FC, useState } from 'react';
 import Navigation from './Navbar';
 import { Container } from 'reactstrap';
 
@@ -8,9 +8,11 @@ import { Alerts, Config, Flags, Rules, Services, Status, Targets, TSDBStatus, Pa
 import PathPrefixProps from './types/PathPrefixProps';
 
 const App: FC<PathPrefixProps> = ({ pathPrefix }) => {
+  const [extraNavItem, setExtraNavItem] = useState<React.ReactNode>(null);
+
   return (
     <>
-      <Navigation pathPrefix={pathPrefix} />
+      <Navigation pathPrefix={pathPrefix} extraNavItem={extraNavItem} />
       <Container fluid style={{ paddingTop: 70 }}>
         <Router basepath={`${pathPrefix}/new`}>
           <Redirect from="/" to={`${pathPrefix}/new/graph`} />
@@ -19,7 +21,7 @@ const App: FC<PathPrefixProps> = ({ pathPrefix }) => {
             NOTE: Any route added here needs to also be added to the list of
             React-handled router paths ("reactRouterPaths") in /web/web.go.
           */}
-          <PanelList path="/graph" pathPrefix={pathPrefix} />
+          <PanelList path="/graph" pathPrefix={pathPrefix} setExtraNavItem={setExtraNavItem} />
           <Alerts path="/alerts" pathPrefix={pathPrefix} />
           <Config path="/config" pathPrefix={pathPrefix} />
           <Flags path="/flags" pathPrefix={pathPrefix} />

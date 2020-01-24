@@ -1,15 +1,21 @@
-import React, { Component, ChangeEvent } from 'react';
+import React, { Component, ChangeEvent, CSSProperties } from 'react';
 import { RouteComponentProps } from '@reach/router';
 
-import { Alert, Button, Col, Row } from 'reactstrap';
+import { Alert, Button, Col, Row, DropdownToggle, DropdownMenu, UncontrolledDropdown } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import Checkbox from '../../components/Checkbox';
 import PathPrefixProps from '../../types/PathPrefixProps';
 import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString } from '../../utils';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faCog } from '@fortawesome/free-solid-svg-icons';
 
 export type MetricGroup = { title: string; items: string[] };
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
+
+interface PanelListProps {
+  setExtraNavItem: (item: React.ReactNode) => void;
+}
 
 interface PanelListState {
   panels: PanelMeta[];
@@ -20,8 +26,8 @@ interface PanelListState {
   useLocalTime: boolean;
 }
 
-class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelListState> {
-  constructor(props: RouteComponentProps & PathPrefixProps) {
+class PanelList extends Component<RouteComponentProps & PathPrefixProps & PanelListProps, PanelListState> {
+  constructor(props: RouteComponentProps & PathPrefixProps & PanelListProps) {
     super(props);
 
     this.state = {
@@ -35,6 +41,8 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
   }
 
   componentDidMount() {
+    this.props.setExtraNavItem(this.panelSettingsDropdown());
+
     !this.state.panels.length && this.addPanel();
     fetch(`${this.props.pathPrefix}/api/v1/label/__name__/values`, { cache: 'no-store', credentials: 'same-origin' })
       .then(resp => {
@@ -80,6 +88,10 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
     };
 
     this.updatePastQueries();
+  }
+
+  componentWillUnmount() {
+    this.props.setExtraNavItem(null);
   }
 
   isHistoryEnabled = () => JSON.parse(localStorage.getItem('enable-query-history') || 'false') as boolean;
@@ -154,15 +166,18 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
     );
   };
 
-  render() {
-    const { metricNames, pastQueries, timeDriftError, fetchMetricsError, panels } = this.state;
-    const { pathPrefix } = this.props;
+  panelSettingsDropdown() {
+    const wrapperStyles: CSSProperties = { margin: '3px 15px', alignSelf: 'center', whiteSpace: 'nowrap' };
+
     return (
-      <>
-        <Row className="mb-2">
+      <UncontrolledDropdown className="float-right">
+        <DropdownToggle>
+          <FontAwesomeIcon icon={faCog} fixedWidth />
+        </DropdownToggle>
+        <DropdownMenu right>
           <Checkbox
             id="query-history-checkbox"
-            wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
+            wrapperStyles={wrapperStyles}
             onChange={this.toggleQueryHistory}
             defaultChecked={this.isHistoryEnabled()}
           >
@@ -170,13 +185,22 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
           </Checkbox>
           <Checkbox
             id="use-local-time-checkbox"
-            wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
+            wrapperStyles={wrapperStyles}
             onChange={this.toggleUseLocalTime}
             defaultChecked={this.useLocalTime()}
           >
             Use local time
           </Checkbox>
-        </Row>
+        </DropdownMenu>
+      </UncontrolledDropdown>
+    );
+  }
+
+  render() {
+    const { metricNames, pastQueries, timeDriftError, fetchMetricsError, panels } = this.state;
+    const { pathPrefix } = this.props;
+    return (
+      <>
         <Row>
           <Col>
             {timeDriftError && (
