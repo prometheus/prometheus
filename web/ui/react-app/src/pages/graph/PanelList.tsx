@@ -17,6 +17,7 @@ interface PanelListState {
   metricNames: string[];
   fetchMetricsError: string | null;
   timeDriftError: string | null;
+  useLocalTime: boolean;
 }
 
 class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelListState> {
@@ -29,6 +30,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
       metricNames: [],
       fetchMetricsError: null,
       timeDriftError: null,
+      useLocalTime: this.useLocalTime(),
     };
   }
 
@@ -95,6 +97,13 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
     });
   };
 
+  useLocalTime = () => JSON.parse(localStorage.getItem('use-local-time') || 'false') as boolean;
+
+  toggleUseLocalTime = (e: ChangeEvent<HTMLInputElement>) => {
+    localStorage.setItem('use-local-time', `${e.target.checked}`);
+    this.setState({ useLocalTime: e.target.checked });
+  };
+
   handleExecuteQuery = (query: string) => {
     const isSimpleMetric = this.state.metricNames.indexOf(query) !== -1;
     if (isSimpleMetric || !query.length) {
@@ -159,6 +168,14 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
           >
             Enable query history
           </Checkbox>
+          <Checkbox
+            id="use-local-time-checkbox"
+            wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
+            onChange={this.toggleUseLocalTime}
+            defaultChecked={this.useLocalTime()}
+          >
+            Use local time
+          </Checkbox>
         </Row>
         <Row>
           <Col>
@@ -184,6 +201,7 @@ class PanelList extends Component<RouteComponentProps & PathPrefixProps, PanelLi
             key={id}
             options={options}
             onOptionsChanged={opts => this.handleOptionsChanged(id, opts)}
+            useLocalTime={this.state.useLocalTime}
             removePanel={() => this.removePanel(id)}
             metricNames={metricNames}
             pastQueries={pastQueries}
