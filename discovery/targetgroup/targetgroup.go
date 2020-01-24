@@ -108,7 +108,7 @@ func (tg *Group) MarshalJSON() ([]byte, error) {
 
 	// return `"labels":[]` if LabelSet is empty, would be `"labels":null` instead
 	if g.Labels == nil {
-		g.Labels = make(model.LabelSet, 0)
+		g.Labels = make(model.LabelSet)
 	}
 
 	return json.Marshal(g)
