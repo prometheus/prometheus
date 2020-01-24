@@ -1154,7 +1154,7 @@ func TestQueryLogger_basic(t *testing.T) {
 	f1 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f1)
 	queryExec()
-	for i, field := range []interface{}{"params", map[string]string{"query": "test statement"}} {
+	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}} {
 		testutil.Equals(t, field, f1.logs[i])
 	}
 
@@ -1234,7 +1234,7 @@ func TestQueryLogger_error(t *testing.T) {
 	res := query.Exec(ctx)
 	testutil.NotOk(t, res.Err, "query should have failed")
 
-	for i, field := range []interface{}{"params", map[string]string{"query": "test statement"}, "error", testErr} {
+	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}, "error", testErr} {
 		testutil.Equals(t, f1.logs[i], field)
 	}
 }
