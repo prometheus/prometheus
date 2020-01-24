@@ -23,6 +23,36 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func TestTargetGroupJSONMarshal(t *testing.T) {
+	tests := []struct {
+		expectedJSON string
+		expectedErr  error
+		group        Group
+	}{
+		{
+			// labels should be omitted if empty.
+			group:        Group{},
+			expectedJSON: `{"targets":[],"labels":{}}`,
+			expectedErr:  nil,
+		},
+		{
+			// targets only exposes addresses.
+			group: Group{Targets: []model.LabelSet{
+				model.LabelSet{"__address__": "localhost:9090"},
+				model.LabelSet{"__address__": "localhost:9091"}},
+				Labels: model.LabelSet{"foo": "bar", "bar": "baz"}},
+			expectedJSON: `{"targets":["localhost:9090","localhost:9091"],"labels":{"bar":"baz","foo":"bar"}}`,
+			expectedErr:  nil,
+		},
+	}
+
+	for _, test := range tests {
+		actual, err := test.group.MarshalJSON()
+		testutil.Equals(t, test.expectedErr, err)
+		testutil.Equals(t, test.expectedJSON, string(actual))
+	}
+}
+
 func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 	tests := []struct {
 		json          string
