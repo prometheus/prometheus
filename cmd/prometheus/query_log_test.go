@@ -146,24 +146,30 @@ func (p *queryLogTest) queryString() string {
 // test parameters.
 func (p *queryLogTest) validateLastQuery(t *testing.T, ql []queryLogLine) {
 	q := ql[len(ql)-1]
-	testutil.Equals(t, q["query"].(string), p.queryString())
-	switch p.origin {
-	case consoleOrigin:
-		testutil.Equals(t, q["path"].(string), p.prefix+"/consoles/test.html")
-	case apiOrigin:
-		testutil.Equals(t, q["path"].(string), p.prefix+"/api/v1/query")
-	case ruleOrigin:
-		testutil.Equals(t, q["groupName"].(string), "querylogtest")
-		testutil.Equals(t, q["groupFile"].(string), filepath.Join(p.cwd, "testdata", "rules", "test.yml"))
-	default:
-		panic("unknown origin")
-	}
+	params := q["params"].(map[string]interface{})
+	testutil.Equals(t, p.queryString(), params["query"].(string))
+
+	var request map[string]interface{}
 	if p.origin != ruleOrigin {
+		request = q["httpRequest"].(map[string]interface{})
 		host := p.host
 		if host == "[::1]" {
 			host = "::1"
 		}
-		testutil.Equals(t, q["clientIP"].(string), host)
+		testutil.Equals(t, request["clientIP"].(string), host)
+	}
+
+	switch p.origin {
+	case apiOrigin:
+		testutil.Equals(t, request["path"].(string), p.prefix+"/api/v1/query")
+	case consoleOrigin:
+		testutil.Equals(t, request["path"].(string), p.prefix+"/consoles/test.html")
+	case ruleOrigin:
+		rule := q["ruleGroup"].(map[string]interface{})
+		testutil.Equals(t, rule["name"].(string), "querylogtest")
+		testutil.Equals(t, rule["file"].(string), filepath.Join(p.cwd, "testdata", "rules", "test.yml"))
+	default:
+		panic("unknown origin")
 	}
 }
 

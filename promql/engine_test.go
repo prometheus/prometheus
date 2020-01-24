@@ -1154,13 +1154,13 @@ func TestQueryLogger_basic(t *testing.T) {
 	f1 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f1)
 	queryExec()
-	for i, field := range []string{"query", "test statement"} {
-		testutil.Assert(t, f1.logs[i].(string) == field, "expected %v as key, got %v", field, f1.logs[i])
+	for i, field := range []interface{}{"params", map[string]string{"query": "test statement"}} {
+		testutil.Equals(t, field, f1.logs[i])
 	}
 
 	l := len(f1.logs)
 	queryExec()
-	testutil.Assert(t, 2*l == len(f1.logs), "expected %d fields in logs, got %v", 2*l, len(f1.logs))
+	testutil.Equals(t, 2*l, len(f1.logs))
 
 	// Test that we close the query logger when unsetting it.
 	testutil.Assert(t, !f1.closed, "expected f1 to be open, got closed")
@@ -1194,7 +1194,7 @@ func TestQueryLogger_fields(t *testing.T) {
 	engine.SetQueryLogger(f1)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	ctx = NewOriginContext(ctx, map[string]string{"foo": "bar"})
+	ctx = NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
 	defer cancelCtx()
 	query := engine.newTestQuery(func(ctx context.Context) error {
 		return contextDone(ctx, "test statement execution")
@@ -1206,7 +1206,7 @@ func TestQueryLogger_fields(t *testing.T) {
 	expected := []string{"foo", "bar"}
 	for i, field := range expected {
 		v := f1.logs[len(f1.logs)-len(expected)+i].(string)
-		testutil.Assert(t, field == v, "expected %v as key, got %v", field, v)
+		testutil.Equals(t, field, v)
 	}
 }
 
@@ -1224,7 +1224,7 @@ func TestQueryLogger_error(t *testing.T) {
 	engine.SetQueryLogger(f1)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	ctx = NewOriginContext(ctx, map[string]string{"foo": "bar"})
+	ctx = NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
 	defer cancelCtx()
 	testErr := errors.New("failure")
 	query := engine.newTestQuery(func(ctx context.Context) error {
@@ -1234,7 +1234,7 @@ func TestQueryLogger_error(t *testing.T) {
 	res := query.Exec(ctx)
 	testutil.NotOk(t, res.Err, "query should have failed")
 
-	for i, field := range []interface{}{"query", "test statement", "error", testErr} {
-		testutil.Assert(t, f1.logs[i] == field, "expected %v as key, got %v", field, f1.logs[i])
+	for i, field := range []interface{}{"params", map[string]string{"query": "test statement"}, "error", testErr} {
+		testutil.Equals(t, f1.logs[i], field)
 	}
 }

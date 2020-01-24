@@ -287,9 +287,11 @@ func (g *Group) run(ctx context.Context) {
 		return
 	}
 
-	ctx = promql.NewOriginContext(ctx, map[string]string{
-		"groupFile": g.File(),
-		"groupName": g.Name(),
+	ctx = promql.NewOriginContext(ctx, map[string]interface{}{
+		"ruleGroup": map[string]string{
+			"file": g.File(),
+			"name": g.Name(),
+		},
 	})
 
 	iter := func() {
