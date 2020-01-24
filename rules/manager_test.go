@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v2"
 
@@ -873,4 +874,81 @@ func TestNotify(t *testing.T) {
 	// Resolution alert sent right away
 	group.Eval(ctx, time.Unix(6, 0))
 	testutil.Equals(t, 1, len(lastNotified))
+}
+
+func TestMetricsUpdate(t *testing.T) {
+	files := []string{"fixtures/rules.yaml", "fixtures/rules2.yaml"}
+	metricNames := []string{
+		"prometheus_rule_group_interval_seconds",
+		"prometheus_rule_group_last_duration_seconds",
+		"prometheus_rule_group_last_evaluation_timestamp_seconds",
+		"prometheus_rule_group_rules",
+	}
+
+	storage := teststorage.New(t)
+	registry := prometheus.NewRegistry()
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+		Registerer: registry,
+	})
+	ruleManager.Run()
+	defer ruleManager.Stop()
+
+	countMetrics := func() int {
+		ms, err := registry.Gather()
+		testutil.Ok(t, err)
+		var metrics int
+		for _, m := range ms {
+			s := m.GetName()
+			for _, n := range metricNames {
+				if s == n {
+					metrics += len(m.Metric)
+					break
+				}
+			}
+		}
+		return metrics
+	}
+
+	cases := []struct {
+		files   []string
+		metrics int
+	}{
+		{
+			files:   files,
+			metrics: 8,
+		},
+		{
+			files:   files[:1],
+			metrics: 4,
+		},
+		{
+			files:   files[:0],
+			metrics: 0,
+		},
+		{
+			files:   files[1:],
+			metrics: 4,
+		},
+	}
+
+	for _, c := range cases {
+		err := ruleManager.Update(time.Second, c.files, nil)
+		testutil.Ok(t, err)
+		time.Sleep(2 * time.Second)
+		testutil.Equals(t, c.metrics, countMetrics(), "invalid count of metrics prefixed by prometheus_rule_group_")
+	}
 }
