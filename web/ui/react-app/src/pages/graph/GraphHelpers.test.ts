@@ -144,7 +144,7 @@ describe('GraphHelpers', () => {
           series: { labels: { foo: '1', bar: '2' }, color: '' },
         } as any)
       ).toEqual(`
-            <div class="date">1970-01-19 04:42:08 UTC</div>
+            <div class="date">1970-01-19 04:42:08 +00:00</div>
             <div>
               <span class="detail-swatch" style="background-color: " />
               <span>value: <strong>1572128592</strong></span>
@@ -161,7 +161,7 @@ describe('GraphHelpers', () => {
           series: { labels: { foo: '1', bar: '2' }, color: '' },
         } as any)
       ).toEqual(`
-            <div class="date">1970-01-18 23:42:08 EST</div>
+            <div class="date">1970-01-18 23:42:08 -05:00</div>
             <div>
               <span class="detail-swatch" style="background-color: " />
               <span>value: <strong>1572128592</strong></span>
