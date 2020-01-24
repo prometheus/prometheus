@@ -730,7 +730,7 @@ func TestLexer(t *testing.T) {
 				testutil.Equals(t, lastItem, eofItem, "%d: input %q", i, test.input)
 
 				out = out[:len(out)-1]
-				testutil.Equals(t, out, test.expected, "%d: input %q", i, test.input)
+				testutil.Equals(t, test.expected, out, "%d: input %q", i, test.input)
 			}
 		})
 	}
