@@ -1,5 +1,5 @@
 import React, { FC, useState } from 'react';
-import { Link } from '@reach/router';
+import { Link, navigate } from '@reach/router';
 import {
   Collapse,
   Navbar,
@@ -31,7 +31,13 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
             </NavLink>
           </NavItem>
           <NavItem>
-            <NavLink tag={Link} to={`${pathPrefix}/new/graph`}>
+            <NavLink tag={Link} to={`${pathPrefix}/new/graph`} onClick={(e) => {
+              e.preventDefault()
+              if (window.location.pathname === `${pathPrefix}/new/graph`) {
+                return
+              }
+              navigate(`${pathPrefix}/new/graph${window.location.search}`)
+            }}>
               Graph
             </NavLink>
           </NavItem>
@@ -67,7 +73,7 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
             <NavLink href="https://prometheus.io/docs/prometheus/latest/getting_started/">Help</NavLink>
           </NavItem>
           <NavItem>
-            <NavLink href={`${pathPrefix}/`}>Classic UI</NavLink>
+            <NavLink href={`${pathPrefix}/graph${window.location.search}`}>Classic UI</NavLink>
           </NavItem>
         </Nav>
       </Collapse>
