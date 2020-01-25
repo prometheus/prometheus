@@ -1,14 +1,13 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import PathPrefixProps from '../../types/PathPrefixProps';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { Alert, Table, Badge } from 'reactstrap';
-import { useFetch } from '../../hooks/useFetch';
+import { useFetch, APIResponse } from '../../hooks/useFetch';
 import { Link } from '@reach/router';
 import { Rule } from '../../types/types';
 import { formatRelative, createExpressionLink, humanizeDuration } from '../../utils';
 import { now } from 'moment';
+import { withStatusIndicator } from '../../components/withStatusIndicator';
 
 interface RuleGroup {
   name: string;
@@ -22,9 +21,8 @@ interface RulesMap {
   groups: RuleGroup[];
 }
 
-interface MapProps {
-  map: Record<string, string>;
-  term: string;
+interface RulesContentProps {
+  response: APIResponse<RulesMap>;
 }
 
 const GraphExpressionLink: FC<{ expr: string; title: string } & PathPrefixProps> = props => {
@@ -39,9 +37,7 @@ const GraphExpressionLink: FC<{ expr: string; title: string } & PathPrefixProps>
   );
 };
 
-const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const { response, error } = useFetch<RulesMap>(`${pathPrefix}/api/v1/rules`);
-
+const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ response }) => {
   const getBadgeColor = (state: string) => {
     switch (state) {
       case 'ok':
@@ -55,13 +51,7 @@ const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
     }
   };
 
-  if (error) {
-    return (
-      <Alert color="danger">
-        <strong>Error:</strong> Error fetching Rules: {error.message}
-      </Alert>
-    );
-  } else if (response.data) {
+  if (response.data) {
     const groups: RuleGroup[] = response.data.groups;
     return (
       <>
@@ -139,7 +129,15 @@ const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
     );
   }
 
-  return <FontAwesomeIcon icon={faSpinner} spin />;
+  return null;
+};
+
+const RulesWithStatusIndicator = withStatusIndicator(RulesContent);
+
+const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
+  const { response, error, isLoading } = useFetch<RulesMap>(`${pathPrefix}/api/v1/rules`);
+
+  return <RulesWithStatusIndicator response={response} error={error} isLoading={isLoading} />;
 };
 
 export default Rules;
