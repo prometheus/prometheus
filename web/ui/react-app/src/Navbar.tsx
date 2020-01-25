@@ -31,17 +31,7 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
             </NavLink>
           </NavItem>
           <NavItem>
-            <NavLink
-              tag={Link}
-              to={`${pathPrefix}/new/graph`}
-              onClick={e => {
-                e.preventDefault();
-                if (window.location.pathname === `${pathPrefix}/new/graph`) {
-                  return;
-                }
-                navigate(`${pathPrefix}/new/graph${window.location.search}`);
-              }}
-            >
+            <NavLink tag={Link} to={`${pathPrefix}/new/graph`}>
               Graph
             </NavLink>
           </NavItem>
