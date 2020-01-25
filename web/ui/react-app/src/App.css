@@ -239,5 +239,12 @@ button.execute-btn {
 }
 
 .rules-head {
-    font-weight: 600;
+  font-weight: 600;
+}
+
+.rule_cell {
+  white-space: pre-wrap;
+  background-color: #F5F5F5;
+  display: block;
+  font-family: monospace;
 }
