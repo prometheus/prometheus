@@ -1,0 +1,412 @@
+{
+  "auth": {
+    "oauth2": {
+      "scopes": {
+        "https://www.googleapis.com/auth/devstorage.full_control": {
+          "description": "Manage your data and permissions in Google Cloud Storage"
+        },
+        "https://www.googleapis.com/auth/devstorage.read_only": {
+          "description": "View your data in Google Cloud Storage"
+        },
+        "https://www.googleapis.com/auth/devstorage.read_write": {
+          "description": "Manage your data in Google Cloud Storage"
+        },
+        "https://www.googleapis.com/auth/prediction": {
+          "description": "Manage your data in the Google Prediction API"
+        }
+      }
+    }
+  },
+  "basePath": "/prediction/v1.3/",
+  "baseUrl": "https://www.googleapis.com/prediction/v1.3/",
+  "batchPath": "batch/prediction/v1.3",
+  "description": "Lets you access a cloud hosted machine learning service that makes it easy to build smart apps",
+  "discoveryVersion": "v1",
+  "documentationLink": "https://developers.google.com/prediction/docs/developer-guide",
+  "etag": "\"-iA1DTNe4s-I6JZXPt1t1Ypy8IU/cYlCW_mo2Sbrsx6lIgVnF3W-L9s\"",
+  "icons": {
+    "x16": "https://www.google.com/images/icons/feature/predictionapi-16.png",
+    "x32": "https://www.google.com/images/icons/feature/predictionapi-32.png"
+  },
+  "id": "prediction:v1.3",
+  "kind": "discovery#restDescription",
+  "name": "prediction",
+  "ownerDomain": "google.com",
+  "ownerName": "Google",
+  "parameters": {
+    "alt": {
+      "default": "json",
+      "description": "Data format for the response.",
+      "enum": [
+        "json"
+      ],
+      "enumDescriptions": [
+        "Responses with Content-Type of application/json"
+      ],
+      "location": "query",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Selector specifying which fields to include in a partial response.",
+      "location": "query",
+      "type": "string"
+    },
+    "key": {
+      "description": "API key. Your API key identifies your project and provides you with API access, quota, and reports. Required unless you provide an OAuth 2.0 token.",
+      "location": "query",
+      "type": "string"
+    },
+    "oauth_token": {
+      "description": "OAuth 2.0 token for the current user.",
+      "location": "query",
+      "type": "string"
+    },
+    "prettyPrint": {
+      "default": "true",
+      "description": "Returns response with indentations and line breaks.",
+      "location": "query",
+      "type": "boolean"
+    },
+    "quotaUser": {
+      "description": "Available to use for quota purposes for server-side applications. Can be any arbitrary string assigned to a user, but should not exceed 40 characters. Overrides userIp if both are provided.",
+      "location": "query",
+      "type": "string"
+    },
+    "userIp": {
+      "description": "IP address of the site where the request originates. Use this if you want to enforce per-user limits.",
+      "location": "query",
+      "type": "string"
+    }
+  },
+  "protocol": "rest",
+  "resources": {
+    "hostedmodels": {
+      "methods": {
+        "predict": {
+          "description": "Submit input and request an output against a hosted model",
+          "httpMethod": "POST",
+          "id": "prediction.hostedmodels.predict",
+          "parameterOrder": [
+            "hostedModelName"
+          ],
+          "parameters": {
+            "hostedModelName": {
+              "description": "The name of a hosted model",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "hostedmodels/{hostedModelName}/predict",
+          "request": {
+            "$ref": "Input"
+          },
+          "response": {
+            "$ref": "Output"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        }
+      }
+    },
+    "training": {
+      "methods": {
+        "delete": {
+          "description": "Delete a trained model",
+          "httpMethod": "DELETE",
+          "id": "prediction.training.delete",
+          "parameterOrder": [
+            "data"
+          ],
+          "parameters": {
+            "data": {
+              "description": "mybucket/mydata resource in Google Storage",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "training/{data}",
+          "scopes": [
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        },
+        "get": {
+          "description": "Check training status of your model",
+          "httpMethod": "GET",
+          "id": "prediction.training.get",
+          "parameterOrder": [
+            "data"
+          ],
+          "parameters": {
+            "data": {
+              "description": "mybucket/mydata resource in Google Storage",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "training/{data}",
+          "response": {
+            "$ref": "Training"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        },
+        "insert": {
+          "description": "Begin training your model",
+          "httpMethod": "POST",
+          "id": "prediction.training.insert",
+          "path": "training",
+          "request": {
+            "$ref": "Training"
+          },
+          "response": {
+            "$ref": "Training"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/devstorage.full_control",
+            "https://www.googleapis.com/auth/devstorage.read_only",
+            "https://www.googleapis.com/auth/devstorage.read_write",
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        },
+        "predict": {
+          "description": "Submit data and request a prediction",
+          "httpMethod": "POST",
+          "id": "prediction.training.predict",
+          "parameterOrder": [
+            "data"
+          ],
+          "parameters": {
+            "data": {
+              "description": "mybucket/mydata resource in Google Storage",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "training/{data}/predict",
+          "request": {
+            "$ref": "Input"
+          },
+          "response": {
+            "$ref": "Output"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        },
+        "update": {
+          "description": "Add new data to a trained model",
+          "httpMethod": "PUT",
+          "id": "prediction.training.update",
+          "parameterOrder": [
+            "data"
+          ],
+          "parameters": {
+            "data": {
+              "description": "mybucket/mydata resource in Google Storage",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "training/{data}",
+          "request": {
+            "$ref": "Update"
+          },
+          "response": {
+            "$ref": "Training"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        }
+      }
+    }
+  },
+  "revision": "20160511",
+  "rootUrl": "https://www.googleapis.com/",
+  "schemas": {
+    "Input": {
+      "id": "Input",
+      "properties": {
+        "input": {
+          "description": "Input to the model for a prediction",
+          "properties": {
+            "csvInstance": {
+              "description": "A list of input features, these can be strings or doubles.",
+              "items": {
+                "type": "any"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "Output": {
+      "id": "Output",
+      "properties": {
+        "id": {
+          "description": "The unique name for the predictive model.",
+          "type": "string"
+        },
+        "kind": {
+          "default": "prediction#output",
+          "description": "What kind of resource this is.",
+          "type": "string"
+        },
+        "outputLabel": {
+          "description": "The most likely class [Categorical models only].",
+          "type": "string"
+        },
+        "outputMulti": {
+          "description": "A list of classes with their estimated probabilities [Categorical models only].",
+          "items": {
+            "properties": {
+              "label": {
+                "description": "The class label.",
+                "type": "string"
+              },
+              "score": {
+                "description": "The probability of the class.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "outputValue": {
+          "description": "The estimated regression value [Regression models only].",
+          "format": "double",
+          "type": "number"
+        },
+        "selfLink": {
+          "description": "A URL to re-request this resource.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Training": {
+      "id": "Training",
+      "properties": {
+        "id": {
+          "description": "The unique name for the predictive model.",
+          "type": "string"
+        },
+        "kind": {
+          "default": "prediction#training",
+          "description": "What kind of resource this is.",
+          "type": "string"
+        },
+        "modelInfo": {
+          "description": "Model metadata.",
+          "properties": {
+            "classWeightedAccuracy": {
+              "description": "Estimated accuracy of model taking utility weights into account [Categorical models only].",
+              "format": "double",
+              "type": "number"
+            },
+            "classificationAccuracy": {
+              "description": "A number between 0.0 and 1.0, where 1.0 is 100% accurate. This is an estimate, based on the amount and quality of the training data, of the estimated prediction accuracy. You can use this is a guide to decide whether the results are accurate enough for your needs. This estimate will be more reliable if your real input data is similar to your training data [Categorical models only].",
+              "format": "double",
+              "type": "number"
+            },
+            "confusionMatrix": {
+              "additionalProperties": {
+                "additionalProperties": {
+                  "description": "The pair {predicted_label, count}.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "description": "The true class label.",
+                "type": "object"
+              },
+              "description": "An output confusion matrix. This shows an estimate for how this model will do in predictions. This is first indexed by the true class label. For each true class label, this provides a pair {predicted_label, count}, where count is the estimated number of times the model will predict the predicted label given the true label. Will not output if more then 100 classes [Categorical models only].",
+              "type": "object"
+            },
+            "confusionMatrixRowTotals": {
+              "additionalProperties": {
+                "description": "The true class associated with how many instances it had",
+                "format": "double",
+                "type": "number"
+              },
+              "description": "A list of the confusion matrix row totals",
+              "type": "object"
+            },
+            "meanSquaredError": {
+              "description": "An estimated mean squared error. The can be used to measure the quality of the predicted model [Regression models only].",
+              "format": "double",
+              "type": "number"
+            },
+            "modelType": {
+              "description": "Type of predictive model (CLASSIFICATION or REGRESSION)",
+              "type": "string"
+            },
+            "numberClasses": {
+              "description": "Number of classes in the trained model [Categorical models only].",
+              "format": "int64",
+              "type": "string"
+            },
+            "numberInstances": {
+              "description": "Number of valid data instances used in the trained model.",
+              "format": "int64",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "selfLink": {
+          "description": "A URL to re-request this resource.",
+          "type": "string"
+        },
+        "trainingStatus": {
+          "description": "The current status of the training job. This can be one of following: RUNNING; DONE; ERROR; ERROR: TRAINING JOB NOT FOUND",
+          "type": "string"
+        },
+        "utility": {
+          "description": "A class weighting function, which allows the importance weights for classes to be specified [Categorical models only].",
+          "items": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "description": "Class label (string).",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Update": {
+      "id": "Update",
+      "properties": {
+        "classLabel": {
+          "description": "The true class label of this instance",
+          "type": "string"
+        },
+        "csvInstance": {
+          "description": "The input features for this instance",
+          "items": {
+            "type": "any"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "servicePath": "prediction/v1.3/",
+  "title": "Prediction API",
+  "version": "v1.3"
+}

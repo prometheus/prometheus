@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 267 274">
+  <g fill="none" fill-rule="evenodd" transform="translate(2)">
+    <rect width="13" height="5" x="126" y="210" fill="#B03C44" rx="2.5"/>
+    <rect width="19" height="5" x="123" y="198" fill="#B03C44" rx="2.5"/>
+    <rect width="25" height="5" x="120" y="186" fill="#B03C44" rx="2.5"/>
+    <rect width="19" height="5" x="216.282" y="188.098" fill="#B03C44" transform="rotate(-20 225.782 190.598)" rx="2.5"/>
+    <rect width="25" height="5" x="209.101" y="177.124" fill="#B03C44" transform="rotate(-20 221.6 179.624)" rx="2.5"/>
+    <rect width="19" height="5" x="30.718" y="188.098" fill="#B03C44" transform="rotate(20 40.218 190.598)" rx="2.5"/>
+    <rect width="25" height="5" x="32.101" y="177.124" fill="#B03C44" transform="rotate(20 44.6 179.624)" rx="2.5"/>
+    <ellipse cx="132.5" cy="151" stroke="#B03C44" stroke-width="4" rx="109.5" ry="26"/>
+    <path fill="#B03C44" d="M78 7.995C78 3.58 81.58 0 85.993 0h93.014C183.42 0 187 3.584 187 7.995v99.01c0 4.415-3.58 7.995-7.993 7.995H85.993C81.58 115 78 111.416 78 107.005V7.995zM133 132c-5.5 0-11-17-11-17h22s-5.5 17-11 17zm2.8-67l2.5-17.3V18h-12.2v29.7l2.5 17.3h7.2zM126 86.6h12.4v-14H126v14z"/>
+    <circle cx="24" cy="224" r="24" stroke="#AAA" stroke-width="4"/>
+    <circle cx="133" cy="248" r="24" stroke="#AAA" stroke-width="4"/>
+    <circle cx="239" cy="225" r="24" stroke="#AAA" stroke-width="4"/>
+  </g>
+</svg>

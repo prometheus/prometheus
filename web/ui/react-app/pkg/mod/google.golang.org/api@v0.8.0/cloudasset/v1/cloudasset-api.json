@@ -1,0 +1,699 @@
+{
+  "auth": {
+    "oauth2": {
+      "scopes": {
+        "https://www.googleapis.com/auth/cloud-platform": {
+          "description": "View and manage your data across Google Cloud Platform services"
+        }
+      }
+    }
+  },
+  "basePath": "",
+  "baseUrl": "https://cloudasset.googleapis.com/",
+  "batchPath": "batch",
+  "canonicalName": "Cloud Asset",
+  "description": "The cloud asset API manages the history and inventory of cloud resources.",
+  "discoveryVersion": "v1",
+  "documentationLink": "https://cloud.google.com/resource-manager/docs/cloud-asset-inventory/quickstart-cloud-asset-inventory",
+  "fullyEncodeReservedExpansion": true,
+  "icons": {
+    "x16": "http://www.google.com/images/icons/product/search-16.gif",
+    "x32": "http://www.google.com/images/icons/product/search-32.gif"
+  },
+  "id": "cloudasset:v1",
+  "kind": "discovery#restDescription",
+  "name": "cloudasset",
+  "ownerDomain": "google.com",
+  "ownerName": "Google",
+  "parameters": {
+    "$.xgafv": {
+      "description": "V1 error format.",
+      "enum": [
+        "1",
+        "2"
+      ],
+      "enumDescriptions": [
+        "v1 error format",
+        "v2 error format"
+      ],
+      "location": "query",
+      "type": "string"
+    },
+    "access_token": {
+      "description": "OAuth access token.",
+      "location": "query",
+      "type": "string"
+    },
+    "alt": {
+      "default": "json",
+      "description": "Data format for response.",
+      "enum": [
+        "json",
+        "media",
+        "proto"
+      ],
+      "enumDescriptions": [
+        "Responses with Content-Type of application/json",
+        "Media download with context-dependent Content-Type",
+        "Responses with Content-Type of application/x-protobuf"
+      ],
+      "location": "query",
+      "type": "string"
+    },
+    "callback": {
+      "description": "JSONP",
+      "location": "query",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Selector specifying which fields to include in a partial response.",
+      "location": "query",
+      "type": "string"
+    },
+    "key": {
+      "description": "API key. Your API key identifies your project and provides you with API access, quota, and reports. Required unless you provide an OAuth 2.0 token.",
+      "location": "query",
+      "type": "string"
+    },
+    "oauth_token": {
+      "description": "OAuth 2.0 token for the current user.",
+      "location": "query",
+      "type": "string"
+    },
+    "prettyPrint": {
+      "default": "true",
+      "description": "Returns response with indentations and line breaks.",
+      "location": "query",
+      "type": "boolean"
+    },
+    "quotaUser": {
+      "description": "Available to use for quota purposes for server-side applications. Can be any arbitrary string assigned to a user, but should not exceed 40 characters.",
+      "location": "query",
+      "type": "string"
+    },
+    "uploadType": {
+      "description": "Legacy upload protocol for media (e.g. \"media\", \"multipart\").",
+      "location": "query",
+      "type": "string"
+    },
+    "upload_protocol": {
+      "description": "Upload protocol for media (e.g. \"raw\", \"multipart\").",
+      "location": "query",
+      "type": "string"
+    }
+  },
+  "protocol": "rest",
+  "resources": {
+    "operations": {
+      "methods": {
+        "get": {
+          "description": "Gets the latest state of a long-running operation.  Clients can use this\nmethod to poll the operation result at intervals as recommended by the API\nservice.",
+          "flatPath": "v1/{v1Id}/{v1Id1}/operations/{operationsId}/{operationsId1}",
+          "httpMethod": "GET",
+          "id": "cloudasset.operations.get",
+          "parameterOrder": [
+            "name"
+          ],
+          "parameters": {
+            "name": {
+              "description": "The name of the operation resource.",
+              "location": "path",
+              "pattern": "^[^/]+/[^/]+/operations/[^/]+/.+$",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "v1/{+name}",
+          "response": {
+            "$ref": "Operation"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform"
+          ]
+        }
+      }
+    },
+    "v1": {
+      "methods": {
+        "batchGetAssetsHistory": {
+          "description": "Batch gets the update history of assets that overlap a time window.\nFor RESOURCE content, this API outputs history with asset in both\nnon-delete or deleted status.\nFor IAM_POLICY content, this API outputs history when the asset and its\nattached IAM POLICY both exist. This can create gaps in the output history.\nIf a specified asset does not exist, this API returns an INVALID_ARGUMENT\nerror.",
+          "flatPath": "v1/{v1Id}/{v1Id1}:batchGetAssetsHistory",
+          "httpMethod": "GET",
+          "id": "cloudasset.batchGetAssetsHistory",
+          "parameterOrder": [
+            "parent"
+          ],
+          "parameters": {
+            "assetNames": {
+              "description": "A list of the full names of the assets. For example:\n`//compute.googleapis.com/projects/my_project_123/zones/zone1/instances/instance1`.\nSee [Resource\nNames](https://cloud.google.com/apis/design/resource_names#full_resource_name)\nand [Resource Name\nFormat](https://cloud.google.com/resource-manager/docs/cloud-asset-inventory/resource-name-format)\nfor more info.\n\nThe request becomes a no-op if the asset name list is empty, and the max\nsize of the asset name list is 100 in one request.",
+              "location": "query",
+              "repeated": true,
+              "type": "string"
+            },
+            "contentType": {
+              "description": "Required. The content type.",
+              "enum": [
+                "CONTENT_TYPE_UNSPECIFIED",
+                "RESOURCE",
+                "IAM_POLICY",
+                "ORG_POLICY"
+              ],
+              "location": "query",
+              "type": "string"
+            },
+            "parent": {
+              "description": "Required. The relative name of the root asset. It can only be an\norganization number (such as \"organizations/123\"), a project ID (such as\n\"projects/my-project-id\")\", or a project number (such as \"projects/12345\").",
+              "location": "path",
+              "pattern": "^[^/]+/[^/]+$",
+              "required": true,
+              "type": "string"
+            },
+            "readTimeWindow.endTime": {
+              "description": "End time of the time window (inclusive).\nCurrent timestamp if not specified.",
+              "format": "google-datetime",
+              "location": "query",
+              "type": "string"
+            },
+            "readTimeWindow.startTime": {
+              "description": "Start time of the time window (exclusive).",
+              "format": "google-datetime",
+              "location": "query",
+              "type": "string"
+            }
+          },
+          "path": "v1/{+parent}:batchGetAssetsHistory",
+          "response": {
+            "$ref": "BatchGetAssetsHistoryResponse"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform"
+          ]
+        },
+        "exportAssets": {
+          "description": "Exports assets with time and resource types to a given Cloud Storage\nlocation. The output format is newline-delimited JSON.\nThis API implements the google.longrunning.Operation API allowing you\nto keep track of the export.",
+          "flatPath": "v1/{v1Id}/{v1Id1}:exportAssets",
+          "httpMethod": "POST",
+          "id": "cloudasset.exportAssets",
+          "parameterOrder": [
+            "parent"
+          ],
+          "parameters": {
+            "parent": {
+              "description": "Required. The relative name of the root asset. This can only be an\norganization number (such as \"organizations/123\"), a project ID (such as\n\"projects/my-project-id\"), or a project number (such as \"projects/12345\"),\nor a folder number (such as \"folders/123\").",
+              "location": "path",
+              "pattern": "^[^/]+/[^/]+$",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "v1/{+parent}:exportAssets",
+          "request": {
+            "$ref": "ExportAssetsRequest"
+          },
+          "response": {
+            "$ref": "Operation"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform"
+          ]
+        }
+      }
+    }
+  },
+  "revision": "20190709",
+  "rootUrl": "https://cloudasset.googleapis.com/",
+  "schemas": {
+    "Asset": {
+      "description": "Cloud asset. This includes all Google Cloud Platform resources,\nCloud IAM policies, and other non-GCP assets.",
+      "id": "Asset",
+      "properties": {
+        "assetType": {
+          "description": "Type of the asset. Example: \"compute.googleapis.com/Disk\".",
+          "type": "string"
+        },
+        "iamPolicy": {
+          "$ref": "Policy",
+          "description": "Representation of the actual Cloud IAM policy set on a cloud resource. For\neach resource, there must be at most one Cloud IAM policy set on it."
+        },
+        "name": {
+          "description": "The full name of the asset. For example:\n`//compute.googleapis.com/projects/my_project_123/zones/zone1/instances/instance1`.\nSee [Resource\nNames](https://cloud.google.com/apis/design/resource_names#full_resource_name)\nfor more information.",
+          "type": "string"
+        },
+        "orgPolicy": {
+          "description": "Representation of the Cloud Organization Policy set on an asset. For each\nasset, there could be multiple Organization policies with different\nconstraints.",
+          "items": {
+            "$ref": "GoogleCloudOrgpolicyV1Policy"
+          },
+          "type": "array"
+        },
+        "resource": {
+          "$ref": "Resource",
+          "description": "Representation of the resource."
+        }
+      },
+      "type": "object"
+    },
+    "AuditConfig": {
+      "description": "Specifies the audit configuration for a service.\nThe configuration determines which permission types are logged, and what\nidentities, if any, are exempted from logging.\nAn AuditConfig must have one or more AuditLogConfigs.\n\nIf there are AuditConfigs for both `allServices` and a specific service,\nthe union of the two AuditConfigs is used for that service: the log_types\nspecified in each AuditConfig are enabled, and the exempted_members in each\nAuditLogConfig are exempted.\n\nExample Policy with multiple AuditConfigs:\n\n    {\n      \"audit_configs\": [\n        {\n          \"service\": \"allServices\"\n          \"audit_log_configs\": [\n            {\n              \"log_type\": \"DATA_READ\",\n              \"exempted_members\": [\n                \"user:jose@example.com\"\n              ]\n            },\n            {\n              \"log_type\": \"DATA_WRITE\",\n            },\n            {\n              \"log_type\": \"ADMIN_READ\",\n            }\n          ]\n        },\n        {\n          \"service\": \"sampleservice.googleapis.com\"\n          \"audit_log_configs\": [\n            {\n              \"log_type\": \"DATA_READ\",\n            },\n            {\n              \"log_type\": \"DATA_WRITE\",\n              \"exempted_members\": [\n                \"user:aliya@example.com\"\n              ]\n            }\n          ]\n        }\n      ]\n    }\n\nFor sampleservice, this policy enables DATA_READ, DATA_WRITE and ADMIN_READ\nlogging. It also exempts jose@example.com from DATA_READ logging, and\naliya@example.com from DATA_WRITE logging.",
+      "id": "AuditConfig",
+      "properties": {
+        "auditLogConfigs": {
+          "description": "The configuration for logging of each type of permission.",
+          "items": {
+            "$ref": "AuditLogConfig"
+          },
+          "type": "array"
+        },
+        "service": {
+          "description": "Specifies a service that will be enabled for audit logging.\nFor example, `storage.googleapis.com`, `cloudsql.googleapis.com`.\n`allServices` is a special value that covers all services.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AuditLogConfig": {
+      "description": "Provides the configuration for logging a type of permissions.\nExample:\n\n    {\n      \"audit_log_configs\": [\n        {\n          \"log_type\": \"DATA_READ\",\n          \"exempted_members\": [\n            \"user:jose@example.com\"\n          ]\n        },\n        {\n          \"log_type\": \"DATA_WRITE\",\n        }\n      ]\n    }\n\nThis enables 'DATA_READ' and 'DATA_WRITE' logging, while exempting\njose@example.com from DATA_READ logging.",
+      "id": "AuditLogConfig",
+      "properties": {
+        "exemptedMembers": {
+          "description": "Specifies the identities that do not cause logging for this type of\npermission.\nFollows the same format of Binding.members.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ignoreChildExemptions": {
+          "description": "Specifies whether principals can be exempted for the same LogType in\nlower-level resource policies. If true, any lower-level exemptions will\nbe ignored.",
+          "type": "boolean"
+        },
+        "logType": {
+          "description": "The log type that this config enables.",
+          "enum": [
+            "LOG_TYPE_UNSPECIFIED",
+            "ADMIN_READ",
+            "DATA_WRITE",
+            "DATA_READ"
+          ],
+          "enumDescriptions": [
+            "Default case. Should never be this.",
+            "Admin reads. Example: CloudIAM getIamPolicy",
+            "Data writes. Example: CloudSQL Users create",
+            "Data reads. Example: CloudSQL Users list"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "BatchGetAssetsHistoryResponse": {
+      "description": "Batch get assets history response.",
+      "id": "BatchGetAssetsHistoryResponse",
+      "properties": {
+        "assets": {
+          "description": "A list of assets with valid time windows.",
+          "items": {
+            "$ref": "TemporalAsset"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Binding": {
+      "description": "Associates `members` with a `role`.",
+      "id": "Binding",
+      "properties": {
+        "condition": {
+          "$ref": "Expr",
+          "description": "The condition that is associated with this binding.\nNOTE: An unsatisfied condition will not allow user access via current\nbinding. Different bindings, including their conditions, are examined\nindependently."
+        },
+        "members": {
+          "description": "Specifies the identities requesting access for a Cloud Platform resource.\n`members` can have the following values:\n\n* `allUsers`: A special identifier that represents anyone who is\n   on the internet; with or without a Google account.\n\n* `allAuthenticatedUsers`: A special identifier that represents anyone\n   who is authenticated with a Google account or a service account.\n\n* `user:{emailid}`: An email address that represents a specific Google\n   account. For example, `alice@example.com` .\n\n\n* `serviceAccount:{emailid}`: An email address that represents a service\n   account. For example, `my-other-app@appspot.gserviceaccount.com`.\n\n* `group:{emailid}`: An email address that represents a Google group.\n   For example, `admins@example.com`.\n\n\n* `domain:{domain}`: The G Suite domain (primary) that represents all the\n   users of that domain. For example, `google.com` or `example.com`.\n\n",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "role": {
+          "description": "Role that is assigned to `members`.\nFor example, `roles/viewer`, `roles/editor`, or `roles/owner`.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ExportAssetsRequest": {
+      "description": "Export asset request.",
+      "id": "ExportAssetsRequest",
+      "properties": {
+        "assetTypes": {
+          "description": "A list of asset types of which to take a snapshot for. For example:\n\"compute.googleapis.com/Disk\". If specified, only matching assets will be\nreturned. See [Introduction to Cloud Asset\nInventory](https://cloud.google.com/resource-manager/docs/cloud-asset-inventory/overview)\nfor all supported asset types.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "contentType": {
+          "description": "Asset content type. If not specified, no content but the asset name will be\nreturned.",
+          "enum": [
+            "CONTENT_TYPE_UNSPECIFIED",
+            "RESOURCE",
+            "IAM_POLICY",
+            "ORG_POLICY"
+          ],
+          "enumDescriptions": [
+            "Unspecified content type.",
+            "Resource metadata.",
+            "The actual IAM policy set on a resource.",
+            "The Cloud Organization Policy set on an asset."
+          ],
+          "type": "string"
+        },
+        "outputConfig": {
+          "$ref": "OutputConfig",
+          "description": "Required. Output configuration indicating where the results will be output\nto. All results will be in newline delimited JSON format."
+        },
+        "readTime": {
+          "description": "Timestamp to take an asset snapshot. This can only be set to a timestamp\nbetween 2018-10-02 UTC (inclusive) and the current time. If not specified,\nthe current time will be used. Due to delays in resource data collection\nand indexing, there is a volatile window during which running the same\nquery may get different results.",
+          "format": "google-datetime",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Expr": {
+      "description": "Represents an expression text. Example:\n\n    title: \"User account presence\"\n    description: \"Determines whether the request has a user account\"\n    expression: \"size(request.user) \u003e 0\"",
+      "id": "Expr",
+      "properties": {
+        "description": {
+          "description": "An optional description of the expression. This is a longer text which\ndescribes the expression, e.g. when hovered over it in a UI.",
+          "type": "string"
+        },
+        "expression": {
+          "description": "Textual representation of an expression in\nCommon Expression Language syntax.\n\nThe application context of the containing message determines which\nwell-known feature set of CEL is supported.",
+          "type": "string"
+        },
+        "location": {
+          "description": "An optional string indicating the location of the expression for error\nreporting, e.g. a file name and a position in the file.",
+          "type": "string"
+        },
+        "title": {
+          "description": "An optional title for the expression, i.e. a short string describing\nits purpose. This can be used e.g. in UIs which allow to enter the\nexpression.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GcsDestination": {
+      "description": "A Cloud Storage location.",
+      "id": "GcsDestination",
+      "properties": {
+        "uri": {
+          "description": "The uri of the Cloud Storage object. It's the same uri that is used by\ngsutil. For example: \"gs://bucket_name/object_name\". See [Viewing and\nEditing Object\nMetadata](https://cloud.google.com/storage/docs/viewing-editing-metadata)\nfor more information.",
+          "type": "string"
+        },
+        "uriPrefix": {
+          "description": "The uri prefix of all generated Cloud Storage objects. For example:\n\"gs://bucket_name/object_name_prefix\". Each object uri is in format:\n\"gs://bucket_name/object_name_prefix/\u003casset type\u003e/\u003cshard number\u003e and only\ncontains assets for that type. \u003cshard number\u003e starts from 0. For example:\n\"gs://bucket_name/object_name_prefix/compute.googleapis.com/Disk/0\" is\nthe first shard of output objects containing all\ncompute.googleapis.com/Disk assets. An INVALID_ARGUMENT error will be\nreturned if file with the same name \"gs://bucket_name/object_name_prefix\"\nalready exists.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GoogleCloudOrgpolicyV1BooleanPolicy": {
+      "description": "Used in `policy_type` to specify how `boolean_policy` will behave at this\nresource.",
+      "id": "GoogleCloudOrgpolicyV1BooleanPolicy",
+      "properties": {
+        "enforced": {
+          "description": "If `true`, then the `Policy` is enforced. If `false`, then any\nconfiguration is acceptable.\n\nSuppose you have a `Constraint`\n`constraints/compute.disableSerialPortAccess` with `constraint_default`\nset to `ALLOW`. A `Policy` for that `Constraint` exhibits the following\nbehavior:\n  - If the `Policy` at this resource has enforced set to `false`, serial\n    port connection attempts will be allowed.\n  - If the `Policy` at this resource has enforced set to `true`, serial\n    port connection attempts will be refused.\n  - If the `Policy` at this resource is `RestoreDefault`, serial port\n    connection attempts will be allowed.\n  - If no `Policy` is set at this resource or anywhere higher in the\n    resource hierarchy, serial port connection attempts will be allowed.\n  - If no `Policy` is set at this resource, but one exists higher in the\n    resource hierarchy, the behavior is as if the`Policy` were set at\n    this resource.\n\nThe following examples demonstrate the different possible layerings:\n\nExample 1 (nearest `Constraint` wins):\n  `organizations/foo` has a `Policy` with:\n    {enforced: false}\n  `projects/bar` has no `Policy` set.\nThe constraint at `projects/bar` and `organizations/foo` will not be\nenforced.\n\nExample 2 (enforcement gets replaced):\n  `organizations/foo` has a `Policy` with:\n    {enforced: false}\n  `projects/bar` has a `Policy` with:\n    {enforced: true}\nThe constraint at `organizations/foo` is not enforced.\nThe constraint at `projects/bar` is enforced.\n\nExample 3 (RestoreDefault):\n  `organizations/foo` has a `Policy` with:\n    {enforced: true}\n  `projects/bar` has a `Policy` with:\n    {RestoreDefault: {}}\nThe constraint at `organizations/foo` is enforced.\nThe constraint at `projects/bar` is not enforced, because\n`constraint_default` for the `Constraint` is `ALLOW`.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "GoogleCloudOrgpolicyV1ListPolicy": {
+      "description": "Used in `policy_type` to specify how `list_policy` behaves at this\nresource.\n\n`ListPolicy` can define specific values and subtrees of Cloud Resource\nManager resource hierarchy (`Organizations`, `Folders`, `Projects`) that\nare allowed or denied by setting the `allowed_values` and `denied_values`\nfields. This is achieved by using the `under:` and optional `is:` prefixes.\nThe `under:` prefix is used to denote resource subtree values.\nThe `is:` prefix is used to denote specific values, and is required only\nif the value contains a \":\". Values prefixed with \"is:\" are treated the\nsame as values with no prefix.\nAncestry subtrees must be in one of the following formats:\n    - “projects/\u003cproject-id\u003e”, e.g. “projects/tokyo-rain-123”\n    - “folders/\u003cfolder-id\u003e”, e.g. “folders/1234”\n    - “organizations/\u003corganization-id\u003e”, e.g. “organizations/1234”\nThe `supports_under` field of the associated `Constraint`  defines whether\nancestry prefixes can be used. You can set `allowed_values` and\n`denied_values` in the same `Policy` if `all_values` is\n`ALL_VALUES_UNSPECIFIED`. `ALLOW` or `DENY` are used to allow or deny all\nvalues. If `all_values` is set to either `ALLOW` or `DENY`,\n`allowed_values` and `denied_values` must be unset.",
+      "id": "GoogleCloudOrgpolicyV1ListPolicy",
+      "properties": {
+        "allValues": {
+          "description": "The policy all_values state.",
+          "enum": [
+            "ALL_VALUES_UNSPECIFIED",
+            "ALLOW",
+            "DENY"
+          ],
+          "enumDescriptions": [
+            "Indicates that allowed_values or denied_values must be set.",
+            "A policy with this set allows all values.",
+            "A policy with this set denies all values."
+          ],
+          "type": "string"
+        },
+        "allowedValues": {
+          "description": "List of values allowed  at this resource. Can only be set if `all_values`\nis set to `ALL_VALUES_UNSPECIFIED`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deniedValues": {
+          "description": "List of values denied at this resource. Can only be set if `all_values`\nis set to `ALL_VALUES_UNSPECIFIED`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inheritFromParent": {
+          "description": "Determines the inheritance behavior for this `Policy`.\n\nBy default, a `ListPolicy` set at a resource supercedes any `Policy` set\nanywhere up the resource hierarchy. However, if `inherit_from_parent` is\nset to `true`, then the values from the effective `Policy` of the parent\nresource are inherited, meaning the values set in this `Policy` are\nadded to the values inherited up the hierarchy.\n\nSetting `Policy` hierarchies that inherit both allowed values and denied\nvalues isn't recommended in most circumstances to keep the configuration\nsimple and understandable. However, it is possible to set a `Policy` with\n`allowed_values` set that inherits a `Policy` with `denied_values` set.\nIn this case, the values that are allowed must be in `allowed_values` and\nnot present in `denied_values`.\n\nFor example, suppose you have a `Constraint`\n`constraints/serviceuser.services`, which has a `constraint_type` of\n`list_constraint`, and with `constraint_default` set to `ALLOW`.\nSuppose that at the Organization level, a `Policy` is applied that\nrestricts the allowed API activations to {`E1`, `E2`}. Then, if a\n`Policy` is applied to a project below the Organization that has\n`inherit_from_parent` set to `false` and field all_values set to DENY,\nthen an attempt to activate any API will be denied.\n\nThe following examples demonstrate different possible layerings for\n`projects/bar` parented by `organizations/foo`:\n\nExample 1 (no inherited values):\n  `organizations/foo` has a `Policy` with values:\n    {allowed_values: “E1” allowed_values:”E2”}\n  `projects/bar` has `inherit_from_parent` `false` and values:\n    {allowed_values: \"E3\" allowed_values: \"E4\"}\nThe accepted values at `organizations/foo` are `E1`, `E2`.\nThe accepted values at `projects/bar` are `E3`, and `E4`.\n\nExample 2 (inherited values):\n  `organizations/foo` has a `Policy` with values:\n    {allowed_values: “E1” allowed_values:”E2”}\n  `projects/bar` has a `Policy` with values:\n    {value: “E3” value: ”E4” inherit_from_parent: true}\nThe accepted values at `organizations/foo` are `E1`, `E2`.\nThe accepted values at `projects/bar` are `E1`, `E2`, `E3`, and `E4`.\n\nExample 3 (inheriting both allowed and denied values):\n  `organizations/foo` has a `Policy` with values:\n    {allowed_values: \"E1\" allowed_values: \"E2\"}\n  `projects/bar` has a `Policy` with:\n    {denied_values: \"E1\"}\nThe accepted values at `organizations/foo` are `E1`, `E2`.\nThe value accepted at `projects/bar` is `E2`.\n\nExample 4 (RestoreDefault):\n  `organizations/foo` has a `Policy` with values:\n    {allowed_values: “E1” allowed_values:”E2”}\n  `projects/bar` has a `Policy` with values:\n    {RestoreDefault: {}}\nThe accepted values at `organizations/foo` are `E1`, `E2`.\nThe accepted values at `projects/bar` are either all or none depending on\nthe value of `constraint_default` (if `ALLOW`, all; if\n`DENY`, none).\n\nExample 5 (no policy inherits parent policy):\n  `organizations/foo` has no `Policy` set.\n  `projects/bar` has no `Policy` set.\nThe accepted values at both levels are either all or none depending on\nthe value of `constraint_default` (if `ALLOW`, all; if\n`DENY`, none).\n\nExample 6 (ListConstraint allowing all):\n  `organizations/foo` has a `Policy` with values:\n    {allowed_values: “E1” allowed_values: ”E2”}\n  `projects/bar` has a `Policy` with:\n    {all: ALLOW}\nThe accepted values at `organizations/foo` are `E1`, E2`.\nAny value is accepted at `projects/bar`.\n\nExample 7 (ListConstraint allowing none):\n  `organizations/foo` has a `Policy` with values:\n    {allowed_values: “E1” allowed_values: ”E2”}\n  `projects/bar` has a `Policy` with:\n    {all: DENY}\nThe accepted values at `organizations/foo` are `E1`, E2`.\nNo value is accepted at `projects/bar`.\n\nExample 10 (allowed and denied subtrees of Resource Manager hierarchy):\nGiven the following resource hierarchy\n  O1-\u003e{F1, F2}; F1-\u003e{P1}; F2-\u003e{P2, P3},\n  `organizations/foo` has a `Policy` with values:\n    {allowed_values: \"under:organizations/O1\"}\n  `projects/bar` has a `Policy` with:\n    {allowed_values: \"under:projects/P3\"}\n    {denied_values: \"under:folders/F2\"}\nThe accepted values at `organizations/foo` are `organizations/O1`,\n  `folders/F1`, `folders/F2`, `projects/P1`, `projects/P2`,\n  `projects/P3`.\nThe accepted values at `projects/bar` are `organizations/O1`,\n  `folders/F1`, `projects/P1`.",
+          "type": "boolean"
+        },
+        "suggestedValue": {
+          "description": "Optional. The Google Cloud Console will try to default to a configuration\nthat matches the value specified in this `Policy`. If `suggested_value`\nis not set, it will inherit the value specified higher in the hierarchy,\nunless `inherit_from_parent` is `false`.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GoogleCloudOrgpolicyV1Policy": {
+      "description": "Defines a Cloud Organization `Policy` which is used to specify `Constraints`\nfor configurations of Cloud Platform resources.",
+      "id": "GoogleCloudOrgpolicyV1Policy",
+      "properties": {
+        "booleanPolicy": {
+          "$ref": "GoogleCloudOrgpolicyV1BooleanPolicy",
+          "description": "For boolean `Constraints`, whether to enforce the `Constraint` or not."
+        },
+        "constraint": {
+          "description": "The name of the `Constraint` the `Policy` is configuring, for example,\n`constraints/serviceuser.services`.\n\nImmutable after creation.",
+          "type": "string"
+        },
+        "etag": {
+          "description": "An opaque tag indicating the current version of the `Policy`, used for\nconcurrency control.\n\nWhen the `Policy` is returned from either a `GetPolicy` or a\n`ListOrgPolicy` request, this `etag` indicates the version of the current\n`Policy` to use when executing a read-modify-write loop.\n\nWhen the `Policy` is returned from a `GetEffectivePolicy` request, the\n`etag` will be unset.\n\nWhen the `Policy` is used in a `SetOrgPolicy` method, use the `etag` value\nthat was returned from a `GetOrgPolicy` request as part of a\nread-modify-write loop for concurrency control. Not setting the `etag`in a\n`SetOrgPolicy` request will result in an unconditional write of the\n`Policy`.",
+          "format": "byte",
+          "type": "string"
+        },
+        "listPolicy": {
+          "$ref": "GoogleCloudOrgpolicyV1ListPolicy",
+          "description": "List of values either allowed or disallowed."
+        },
+        "restoreDefault": {
+          "$ref": "GoogleCloudOrgpolicyV1RestoreDefault",
+          "description": "Restores the default behavior of the constraint; independent of\n`Constraint` type."
+        },
+        "updateTime": {
+          "description": "The time stamp the `Policy` was previously updated. This is set by the\nserver, not specified by the caller, and represents the last time a call to\n`SetOrgPolicy` was made for that `Policy`. Any value set by the client will\nbe ignored.",
+          "format": "google-datetime",
+          "type": "string"
+        },
+        "version": {
+          "description": "Version of the `Policy`. Default version is 0;",
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "GoogleCloudOrgpolicyV1RestoreDefault": {
+      "description": "Ignores policies set above this resource and restores the\n`constraint_default` enforcement behavior of the specific `Constraint` at\nthis resource.\n\nSuppose that `constraint_default` is set to `ALLOW` for the\n`Constraint` `constraints/serviceuser.services`. Suppose that organization\nfoo.com sets a `Policy` at their Organization resource node that restricts\nthe allowed service activations to deny all service activations. They\ncould then set a `Policy` with the `policy_type` `restore_default` on\nseveral experimental projects, restoring the `constraint_default`\nenforcement of the `Constraint` for only those projects, allowing those\nprojects to have all services activated.",
+      "id": "GoogleCloudOrgpolicyV1RestoreDefault",
+      "properties": {},
+      "type": "object"
+    },
+    "Operation": {
+      "description": "This resource represents a long-running operation that is the result of a\nnetwork API call.",
+      "id": "Operation",
+      "properties": {
+        "done": {
+          "description": "If the value is `false`, it means the operation is still in progress.\nIf `true`, the operation is completed, and either `error` or `response` is\navailable.",
+          "type": "boolean"
+        },
+        "error": {
+          "$ref": "Status",
+          "description": "The error result of the operation in case of failure or cancellation."
+        },
+        "metadata": {
+          "additionalProperties": {
+            "description": "Properties of the object. Contains field @type with type URL.",
+            "type": "any"
+          },
+          "description": "Service-specific metadata associated with the operation.  It typically\ncontains progress information and common metadata such as create time.\nSome services might not provide such metadata.  Any method that returns a\nlong-running operation should document the metadata type, if any.",
+          "type": "object"
+        },
+        "name": {
+          "description": "The server-assigned name, which is only unique within the same service that\noriginally returns it. If you use the default HTTP mapping, the\n`name` should be a resource name ending with `operations/{unique_id}`.",
+          "type": "string"
+        },
+        "response": {
+          "additionalProperties": {
+            "description": "Properties of the object. Contains field @type with type URL.",
+            "type": "any"
+          },
+          "description": "The normal response of the operation in case of success.  If the original\nmethod returns no data on success, such as `Delete`, the response is\n`google.protobuf.Empty`.  If the original method is standard\n`Get`/`Create`/`Update`, the response should be the resource.  For other\nmethods, the response should have the type `XxxResponse`, where `Xxx`\nis the original method name.  For example, if the original method name\nis `TakeSnapshot()`, the inferred response type is\n`TakeSnapshotResponse`.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "OutputConfig": {
+      "description": "Output configuration for export assets destination.",
+      "id": "OutputConfig",
+      "properties": {
+        "gcsDestination": {
+          "$ref": "GcsDestination",
+          "description": "Destination on Cloud Storage."
+        }
+      },
+      "type": "object"
+    },
+    "Policy": {
+      "description": "Defines an Identity and Access Management (IAM) policy. It is used to\nspecify access control policies for Cloud Platform resources.\n\n\nA `Policy` consists of a list of `bindings`. A `binding` binds a list of\n`members` to a `role`, where the members can be user accounts, Google groups,\nGoogle domains, and service accounts. A `role` is a named list of permissions\ndefined by IAM.\n\n**JSON Example**\n\n    {\n      \"bindings\": [\n        {\n          \"role\": \"roles/owner\",\n          \"members\": [\n            \"user:mike@example.com\",\n            \"group:admins@example.com\",\n            \"domain:google.com\",\n            \"serviceAccount:my-other-app@appspot.gserviceaccount.com\"\n          ]\n        },\n        {\n          \"role\": \"roles/viewer\",\n          \"members\": [\"user:sean@example.com\"]\n        }\n      ]\n    }\n\n**YAML Example**\n\n    bindings:\n    - members:\n      - user:mike@example.com\n      - group:admins@example.com\n      - domain:google.com\n      - serviceAccount:my-other-app@appspot.gserviceaccount.com\n      role: roles/owner\n    - members:\n      - user:sean@example.com\n      role: roles/viewer\n\n\nFor a description of IAM and its features, see the\n[IAM developer's guide](https://cloud.google.com/iam/docs).",
+      "id": "Policy",
+      "properties": {
+        "auditConfigs": {
+          "description": "Specifies cloud audit logging configuration for this policy.",
+          "items": {
+            "$ref": "AuditConfig"
+          },
+          "type": "array"
+        },
+        "bindings": {
+          "description": "Associates a list of `members` to a `role`.\n`bindings` with no members will result in an error.",
+          "items": {
+            "$ref": "Binding"
+          },
+          "type": "array"
+        },
+        "etag": {
+          "description": "`etag` is used for optimistic concurrency control as a way to help\nprevent simultaneous updates of a policy from overwriting each other.\nIt is strongly suggested that systems make use of the `etag` in the\nread-modify-write cycle to perform policy updates in order to avoid race\nconditions: An `etag` is returned in the response to `getIamPolicy`, and\nsystems are expected to put that etag in the request to `setIamPolicy` to\nensure that their change will be applied to the same version of the policy.\n\nIf no `etag` is provided in the call to `setIamPolicy`, then the existing\npolicy is overwritten.",
+          "format": "byte",
+          "type": "string"
+        },
+        "version": {
+          "description": "Deprecated.",
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "Resource": {
+      "description": "Representation of a cloud resource.",
+      "id": "Resource",
+      "properties": {
+        "data": {
+          "additionalProperties": {
+            "description": "Properties of the object.",
+            "type": "any"
+          },
+          "description": "The content of the resource, in which some sensitive fields are scrubbed\naway and may not be present.",
+          "type": "object"
+        },
+        "discoveryDocumentUri": {
+          "description": "The URL of the discovery document containing the resource's JSON schema.\nFor example:\n`\"https://www.googleapis.com/discovery/v1/apis/compute/v1/rest\"`.\nIt will be left unspecified for resources without a discovery-based API,\nsuch as Cloud Bigtable.",
+          "type": "string"
+        },
+        "discoveryName": {
+          "description": "The JSON schema name listed in the discovery document.\nExample: \"Project\". It will be left unspecified for resources (such as\nCloud Bigtable) without a discovery-based API.",
+          "type": "string"
+        },
+        "parent": {
+          "description": "The full name of the immediate parent of this resource. See\n[Resource\nNames](https://cloud.google.com/apis/design/resource_names#full_resource_name)\nfor more information.\n\nFor GCP assets, it is the parent resource defined in the [Cloud IAM policy\nhierarchy](https://cloud.google.com/iam/docs/overview#policy_hierarchy).\nFor example:\n`\"//cloudresourcemanager.googleapis.com/projects/my_project_123\"`.\n\nFor third-party assets, it is up to the users to define.",
+          "type": "string"
+        },
+        "resourceUrl": {
+          "description": "The REST URL for accessing the resource. An HTTP GET operation using this\nURL returns the resource itself.\nExample:\n`https://cloudresourcemanager.googleapis.com/v1/projects/my-project-123`.\nIt will be left unspecified for resources without a REST API.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The API version. Example: \"v1\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Status": {
+      "description": "The `Status` type defines a logical error model that is suitable for\ndifferent programming environments, including REST APIs and RPC APIs. It is\nused by [gRPC](https://github.com/grpc). Each `Status` message contains\nthree pieces of data: error code, error message, and error details.\n\nYou can find out more about this error model and how to work with it in the\n[API Design Guide](https://cloud.google.com/apis/design/errors).",
+      "id": "Status",
+      "properties": {
+        "code": {
+          "description": "The status code, which should be an enum value of google.rpc.Code.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "details": {
+          "description": "A list of messages that carry the error details.  There is a common set of\nmessage types for APIs to use.",
+          "items": {
+            "additionalProperties": {
+              "description": "Properties of the object. Contains field @type with type URL.",
+              "type": "any"
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "message": {
+          "description": "A developer-facing error message, which should be in English. Any\nuser-facing error message should be localized and sent in the\ngoogle.rpc.Status.details field, or localized by the client.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "TemporalAsset": {
+      "description": "Temporal asset. In addition to the asset, the temporal asset includes the\nstatus of the asset and valid from and to time of it.",
+      "id": "TemporalAsset",
+      "properties": {
+        "asset": {
+          "$ref": "Asset",
+          "description": "Asset."
+        },
+        "deleted": {
+          "description": "If the asset is deleted or not.",
+          "type": "boolean"
+        },
+        "window": {
+          "$ref": "TimeWindow",
+          "description": "The time window when the asset data and state was observed."
+        }
+      },
+      "type": "object"
+    },
+    "TimeWindow": {
+      "description": "A time window of (start_time, end_time].",
+      "id": "TimeWindow",
+      "properties": {
+        "endTime": {
+          "description": "End time of the time window (inclusive).\nCurrent timestamp if not specified.",
+          "format": "google-datetime",
+          "type": "string"
+        },
+        "startTime": {
+          "description": "Start time of the time window (exclusive).",
+          "format": "google-datetime",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "servicePath": "",
+  "title": "Cloud Asset API",
+  "version": "v1",
+  "version_module": true
+}

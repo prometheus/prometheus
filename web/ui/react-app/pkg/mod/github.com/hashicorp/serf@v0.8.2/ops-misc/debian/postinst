@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -e
+
+case "$1" in
+    configure|reconfigure)
+        adduser --system --disabled-password --disabled-login --home /nonexistent \
+       	    --no-create-home --quiet --force-badname --group _serf
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

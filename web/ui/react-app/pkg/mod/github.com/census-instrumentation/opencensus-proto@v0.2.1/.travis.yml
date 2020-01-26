@@ -1,0 +1,44 @@
+sudo: required
+dist: trusty
+
+matrix:
+  include:
+  - language: java
+    jdk: oraclejdk8
+    env: BUILD=BAZEL
+
+  - language: java
+    jdk: oraclejdk8
+    env: BUILD=GRADLE
+
+install:
+  - case "$BUILD" in
+      "BAZEL")
+        curl -LO "https://github.com/bazelbuild/bazel/releases/download/0.26.0/bazel_0.26.0-linux-x86_64.deb" ;
+        sudo dpkg -i bazel_*.deb ;
+        sudo apt-get install -f ;
+        bazel version ;;
+    esac
+
+script:
+  - case "$BUILD" in
+      "BAZEL")
+        cd src ;
+        bazel build --show_result=100 ... ;;
+      "GRADLE")
+        ./gradlew clean assemble --stacktrace ;
+        ./gradlew check --stacktrace ;;
+      *)
+        echo "Missing case $BUILD" ;
+        exit 1 ;;
+    esac
+
+before_cache:
+  - rm -f $HOME/.gradle/caches/modules-2/modules-2.lock
+
+cache:
+  directories:
+    - $HOME/.gradle
+    - $HOME/.gradle/caches/
+    - $HOME/.gradle/wrapper/
+    - $HOME/bazel-cache/

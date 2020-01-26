@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "api_client.go",
+        "api_response.go",
+        "configuration.go",
+        "examplepb_unannotated_simple_message.go",
+        "unannotated_echo_service_api.go",
+    ],
+    importpath = "github.com/grpc-ecosystem/grpc-gateway/examples/clients/unannotatedecho",
+    deps = ["@in_gopkg_resty_v1//:go_default_library"],
+)

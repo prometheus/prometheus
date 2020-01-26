@@ -1,0 +1,42 @@
+svg.logo {
+  &.color {
+    opacity: 1.0;
+
+    path.text {
+      fill: $black;
+      opacity: 1.0;
+    }
+
+    g.circles {
+      fill: $serf-red;
+      opacity: 1.0;
+    }
+
+    g.lines {
+      fill: $serf-red;
+      opacity: 1.0;
+    }
+  }
+
+  // The default logo class is the colored version
+  @extend .color;
+
+  &.white {
+    opacity: 1.0;
+
+    path.text {
+      fill: $white;
+      opacity: 1.0;
+    }
+
+    g.circles {
+      fill: $white;
+      opacity: 1.0;
+    }
+
+    g.lines {
+      fill: $white;
+      opacity: 0.7;
+    }
+  }
+}

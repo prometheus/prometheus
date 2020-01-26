@@ -1,0 +1,15 @@
+_output/
+.idea
+
+# Bazel.
+bazel-bin
+bazel-genfiles
+bazel-grpc-gateway
+bazel-out
+bazel-testlogs
+
+# Go vendor directory
+vendor
+
+# Generated travis files
+.travis.yml

@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "api_client.go",
+        "api_response.go",
+        "configuration.go",
+        "examplepb_repeated_response_body_out.go",
+        "examplepb_repeated_response_body_out_response.go",
+        "examplepb_repeated_response_strings.go",
+        "examplepb_response_body_message.go",
+        "examplepb_response_body_message_response.go",
+        "examplepb_response_body_out.go",
+        "examplepb_response_body_out_response.go",
+        "examplepb_response_body_req.go",
+        "response_body_service_api.go",
+        "response_response_type.go",
+    ],
+    importpath = "github.com/grpc-ecosystem/grpc-gateway/examples/clients/responsebody",
+    visibility = ["//visibility:public"],
+    deps = ["@in_gopkg_resty_v1//:go_default_library"],
+)

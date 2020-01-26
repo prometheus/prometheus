@@ -1,0 +1,18 @@
+# Serf Agent (Upstart unit)
+description "Serf Agent"
+start on (local-filesystems and net-device-up IFACE!=lo)
+stop on runlevel [06]
+
+env SERF=/usr/bin/serf
+env SERFCONFIG=/etc/serf
+
+setuid _serf
+setgid _serf
+
+# Serf emits log messages to stdout, and upstart will write that to
+# /var/log/upstart/serf.log
+exec $SERF agent -config-dir $SERFCONFIG
+
+respawn
+respawn limit 10 10
+kill timeout 10

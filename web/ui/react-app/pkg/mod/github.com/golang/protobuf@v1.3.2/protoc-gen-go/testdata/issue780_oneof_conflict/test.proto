@@ -1,0 +1,9 @@
+syntax = "proto2";
+
+package oneoftest;
+
+message Foo {
+	oneof bar {
+		string get_bar = 1;
+	}
+}

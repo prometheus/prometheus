@@ -1,0 +1,26 @@
+diff --git a/validate/BUILD b/validate/BUILD
+index af8c6c1..939d997 100644
+--- a/validate/BUILD
++++ b/validate/BUILD
+@@ -31,7 +31,7 @@ py_proto_library(
+ 
+ go_proto_library(
+     name = "go_default_library",
+-    importpath = "github.com/lyft/protoc-gen-validate/validate",
++    importpath = "google.golang.org/grpc/balancer/xds/internal/proto/validate",
+     proto = ":validate_proto",
+     visibility = ["//visibility:public"],
+ )
+diff --git a/validate/validate.proto b/validate/validate.proto
+index 1c5e04a..7f5d4b0 100644
+--- a/validate/validate.proto
++++ b/validate/validate.proto
+@@ -1,7 +1,7 @@
+ syntax = "proto2";
+ package validate;
+ 
+-option go_package = "github.com/lyft/protoc-gen-validate/validate";
++option go_package = "google.golang.org/grpc/balancer/xds/internal/proto/validate";
+ option java_package = "com.lyft.pgv.validate";
+ 
+ import "google/protobuf/descriptor.proto";

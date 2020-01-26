@@ -1,0 +1,98 @@
+{
+  "version": "2.0",
+  "service": "Elastic Inference public APIs.",
+  "operations": {
+    "ListTagsForResource": "Returns all tags of an Elastic Inference Accelerator.",
+    "TagResource": "Adds the specified tag(s) to an Elastic Inference Accelerator.",
+    "UntagResource": "Removes the specified tag(s) from an Elastic Inference Accelerator."
+  },
+  "shapes": {
+    "BadRequestException": {
+      "base": "Raised when a malformed input has been provided to the API.",
+      "refs": {
+      }
+    },
+    "InternalServerException": {
+      "base": "Raised when an unexpected error occurred during request processing.",
+      "refs": {
+      }
+    },
+    "ListTagsForResourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTagsForResourceResult": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ResourceARN": {
+      "base": null,
+      "refs": {
+        "ListTagsForResourceRequest$resourceArn": "The ARN of the Elastic Inference Accelerator to list the tags for.",
+        "TagResourceRequest$resourceArn": "The ARN of the Elastic Inference Accelerator to tag.",
+        "UntagResourceRequest$resourceArn": "The ARN of the Elastic Inference Accelerator to untag."
+      }
+    },
+    "ResourceNotFoundException": {
+      "base": "Raised when the requested resource cannot be found.",
+      "refs": {
+      }
+    },
+    "String": {
+      "base": null,
+      "refs": {
+        "BadRequestException$message": null,
+        "InternalServerException$message": null,
+        "ResourceNotFoundException$message": null
+      }
+    },
+    "TagKey": {
+      "base": null,
+      "refs": {
+        "TagKeyList$member": null,
+        "TagMap$key": null
+      }
+    },
+    "TagKeyList": {
+      "base": null,
+      "refs": {
+        "UntagResourceRequest$tagKeys": "The list of tags to remove from the Elastic Inference Accelerator."
+      }
+    },
+    "TagMap": {
+      "base": null,
+      "refs": {
+        "ListTagsForResourceResult$tags": "The tags of the Elastic Inference Accelerator.",
+        "TagResourceRequest$tags": "The tags to add to the Elastic Inference Accelerator."
+      }
+    },
+    "TagResourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "TagResourceResult": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "TagValue": {
+      "base": null,
+      "refs": {
+        "TagMap$value": null
+      }
+    },
+    "UntagResourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UntagResourceResult": {
+      "base": null,
+      "refs": {
+      }
+    }
+  }
+}

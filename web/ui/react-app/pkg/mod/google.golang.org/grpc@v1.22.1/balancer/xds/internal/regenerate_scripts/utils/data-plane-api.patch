@@ -1,0 +1,31 @@
+diff --git a/bazel/api_build_system.bzl b/bazel/api_build_system.bzl
+index c68ccbd..e6cc8cb 100644
+--- a/bazel/api_build_system.bzl
++++ b/bazel/api_build_system.bzl
+@@ -7,7 +7,7 @@ _PY_SUFFIX = "_py"
+ _CC_SUFFIX = "_cc"
+ _GO_PROTO_SUFFIX = "_go_proto"
+ _GO_GRPC_SUFFIX = "_go_grpc"
+-_GO_IMPORTPATH_PREFIX = "github.com/envoyproxy/data-plane-api/api/"
++_GO_IMPORTPATH_PREFIX = "google.golang.org/grpc/balancer/xds/internal/proto/"
+ 
+ def _Suffix(d, suffix):
+     return d + suffix
+@@ -42,7 +42,7 @@ def api_py_proto_library(name, srcs = [], deps = [], has_services = 0):
+ def api_go_proto_library(name, proto, deps = []):
+     go_proto_library(
+         name = _Suffix(name, _GO_PROTO_SUFFIX),
+-        importpath = _Suffix(_GO_IMPORTPATH_PREFIX, name),
++        importpath = _Suffix(_GO_IMPORTPATH_PREFIX + native.package_name() + "/", name),
+         proto = proto,
+         visibility = ["//visibility:public"],
+         deps = deps + [
+@@ -60,7 +60,7 @@ def api_go_proto_library(name, proto, deps = []):
+ def api_go_grpc_library(name, proto, deps = []):
+     go_grpc_library(
+         name = _Suffix(name, _GO_GRPC_SUFFIX),
+-        importpath = _Suffix(_GO_IMPORTPATH_PREFIX, name),
++        importpath = _Suffix(_GO_IMPORTPATH_PREFIX + native.package_name() + "/", name),
+         proto = proto,
+         visibility = ["//visibility:public"],
+         deps = deps + [

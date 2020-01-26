@@ -1,0 +1,24 @@
+#footer {
+  padding-top: 50px;
+
+  ul.footer-links {
+    li {
+      a {
+        color: $footer-link-color;
+        font-size: $footer-font-size;
+        font-family: $font-family-open-sans;
+        text-decoration: none;
+
+        &:hover, &:focus, &:active {
+          background-color: transparent;
+          color: $footer-link-color-hover;
+          outline: 0;
+        }
+
+        @media (max-width: 992px) {
+          text-align: center;
+        }
+      }
+    }
+  }
+}

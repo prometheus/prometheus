@@ -1,0 +1,22 @@
+version: '2'
+services:
+  etcd:
+    image: quay.io/coreos/etcd
+    ports:
+      - "2379:2379"
+    command: /usr/local/bin/etcd -advertise-client-urls http://0.0.0.0:2379,http://0.0.0.0:4001 -listen-client-urls "http://0.0.0.0:2379,http://0.0.0.0:4001"
+  consul:
+    image: progrium/consul
+    ports:
+      - "8500:8500"
+    command: -server -bootstrap
+  zk:
+    image: zookeeper
+    ports:
+      - "2181:2181"
+  eureka:
+    image: springcloud/eureka
+    environment:
+      eureka.server.responseCacheUpdateIntervalMs: 1000
+    ports:
+      - "8761:8761"

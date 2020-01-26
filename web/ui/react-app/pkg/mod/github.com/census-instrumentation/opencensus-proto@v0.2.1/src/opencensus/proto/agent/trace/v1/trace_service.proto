@@ -1,0 +1,87 @@
+// Copyright 2018, OpenCensus Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+// NOTE: This proto is experimental and is subject to change at this point.
+// Please do not use it at the moment.
+
+package opencensus.proto.agent.trace.v1;
+
+import "opencensus/proto/agent/common/v1/common.proto";
+import "opencensus/proto/resource/v1/resource.proto";
+import "opencensus/proto/trace/v1/trace.proto";
+import "opencensus/proto/trace/v1/trace_config.proto";
+
+option java_multiple_files = true;
+option java_package = "io.opencensus.proto.agent.trace.v1";
+option java_outer_classname = "TraceServiceProto";
+
+option go_package = "github.com/census-instrumentation/opencensus-proto/gen-go/agent/trace/v1";
+
+option ruby_package = "OpenCensus.Proto.Agent.Trace.V1";
+
+// Service that can be used to push spans and configs between one Application
+// instrumented with OpenCensus and an agent, or between an agent and a
+// central collector or config service (in this case spans and configs are
+// sent/received to/from multiple Applications).
+service TraceService {
+  // After initialization, this RPC must be kept alive for the entire life of
+  // the application. The agent pushes configs down to applications via a
+  // stream.
+  rpc Config(stream CurrentLibraryConfig) returns (stream UpdatedLibraryConfig) {}
+
+  // For performance reasons, it is recommended to keep this RPC
+  // alive for the entire life of the application.
+  rpc Export(stream ExportTraceServiceRequest) returns (stream ExportTraceServiceResponse) {}
+}
+
+message CurrentLibraryConfig {
+  // This is required only in the first message on the stream or if the
+  // previous sent CurrentLibraryConfig message has a different Node (e.g.
+  // when the same RPC is used to configure multiple Applications).
+  opencensus.proto.agent.common.v1.Node node = 1;
+
+  // Current configuration.
+  opencensus.proto.trace.v1.TraceConfig config = 2;
+}
+
+message UpdatedLibraryConfig {
+  // This field is ignored when the RPC is used to configure only one Application.
+  // This is required only in the first message on the stream or if the
+  // previous sent UpdatedLibraryConfig message has a different Node.
+  opencensus.proto.agent.common.v1.Node node = 1;
+
+  // Requested updated configuration.
+  opencensus.proto.trace.v1.TraceConfig config = 2;
+}
+
+message ExportTraceServiceRequest {
+  // This is required only in the first message on the stream or if the
+  // previous sent ExportTraceServiceRequest message has a different Node (e.g.
+  // when the same RPC is used to send Spans from multiple Applications).
+  opencensus.proto.agent.common.v1.Node node = 1;
+
+  // A list of Spans that belong to the last received Node.
+  repeated opencensus.proto.trace.v1.Span spans = 2;
+
+  // The resource for the spans in this message that do not have an explicit
+  // resource set.
+  // If unset, the most recently set resource in the RPC stream applies. It is
+  // valid to never be set within a stream, e.g. when no resource info is known.
+  opencensus.proto.resource.v1.Resource resource = 3;
+}
+
+message ExportTraceServiceResponse {
+}

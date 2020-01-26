@@ -1,0 +1,58 @@
+// Copyright 2018, OpenCensus Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package opencensus.proto.agent.metrics.v1;
+
+import "opencensus/proto/agent/common/v1/common.proto";
+import "opencensus/proto/metrics/v1/metrics.proto";
+import "opencensus/proto/resource/v1/resource.proto";
+
+option java_multiple_files = true;
+option java_package = "io.opencensus.proto.agent.metrics.v1";
+option java_outer_classname = "MetricsServiceProto";
+
+option go_package = "github.com/census-instrumentation/opencensus-proto/gen-go/agent/metrics/v1";
+
+option ruby_package = "OpenCensus.Proto.Agent.Metrics.V1";
+
+// Service that can be used to push metrics between one Application
+// instrumented with OpenCensus and an agent, or between an agent and a
+// central collector.
+service MetricsService {
+  // For performance reasons, it is recommended to keep this RPC
+  // alive for the entire life of the application.
+  rpc Export(stream ExportMetricsServiceRequest) returns (stream ExportMetricsServiceResponse) {}
+}
+
+message ExportMetricsServiceRequest {
+  // This is required only in the first message on the stream or if the
+  // previous sent ExportMetricsServiceRequest message has a different Node (e.g.
+  // when the same RPC is used to send Metrics from multiple Applications).
+  opencensus.proto.agent.common.v1.Node node = 1;
+
+  // A list of metrics that belong to the last received Node.
+  repeated opencensus.proto.metrics.v1.Metric metrics = 2;
+
+  // The resource for the metrics in this message that do not have an explicit
+  // resource set.
+  // If unset, the most recently set resource in the RPC stream applies. It is
+  // valid to never be set within a stream, e.g. when no resource info is known
+  // at all or when all sent metrics have an explicit resource set.
+  opencensus.proto.resource.v1.Resource resource = 3;
+}
+
+message ExportMetricsServiceResponse {
+}

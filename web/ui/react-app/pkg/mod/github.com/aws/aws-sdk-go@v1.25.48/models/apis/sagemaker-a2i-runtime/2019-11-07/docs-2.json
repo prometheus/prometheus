@@ -1,0 +1,236 @@
+{
+  "version": "2.0",
+  "service": "<p>Amazon Augmented AI (Augmented AI) (Preview) is a service that adds human judgment to any machine learning application. Human reviewers can take over when an AI application can't evaluate data with a high degree of confidence.</p> <p>From fraudulent bank transaction identification to document processing to image analysis, machine learning models can be trained to make decisions as well as or better than a human. Nevertheless, some decisions require contextual interpretation, such as when you need to decide whether an image is appropriate for a given audience. Content moderation guidelines are nuanced and highly dependent on context, and they vary between countries. When trying to apply AI in these situations, you can be forced to choose between \"ML only\" systems with unacceptably high error rates or \"human only\" systems that are expensive and difficult to scale, and that slow down decision making.</p> <p>This API reference includes information about API actions and data types you can use to interact with Augmented AI programmatically. </p> <p>You can create a flow definition against the Augmented AI API. Provide the Amazon Resource Name (ARN) of a flow definition to integrate AI service APIs, such as <code>Textract.AnalyzeDocument</code> and <code>Rekognition.DetectModerationLabels</code>. These AI services, in turn, invoke the <a>StartHumanLoop</a> API, which evaluates conditions under which humans will be invoked. If humans are required, Augmented AI creates a human loop. Results of human work are available asynchronously in Amazon Simple Storage Service (Amazon S3). You can use Amazon CloudWatch Events to detect human work results.</p> <p>You can find additional Augmented AI API documentation in the following reference guides: <a href=\"https://aws.amazon.com/rekognition/latest/dg/API_Reference.html\">Amazon Rekognition</a>, <a href=\"https://aws.amazon.com/sagemaker/latest/dg/API_Reference.html\">Amazon SageMaker</a>, and <a href=\"https://aws.amazon.com/textract/latest/dg/API_Reference.html\">Amazon Textract</a>.</p>",
+  "operations": {
+    "DeleteHumanLoop": "<p>Deletes the specified human loop for a flow definition.</p>",
+    "DescribeHumanLoop": "<p>Returns information about the specified human loop.</p>",
+    "ListHumanLoops": "<p>Returns information about human loops, given the specified parameters.</p>",
+    "StartHumanLoop": "<p>Starts a human loop, provided that at least one activation condition is met.</p>",
+    "StopHumanLoop": "<p>Stops the specified human loop.</p>"
+  },
+  "shapes": {
+    "Boolean": {
+      "base": null,
+      "refs": {
+        "HumanLoopActivationReason$ConditionsMatched": "<p>True if the specified conditions were matched to trigger the human loop.</p>"
+      }
+    },
+    "ContentClassifier": {
+      "base": null,
+      "refs": {
+        "ContentClassifiers$member": null
+      }
+    },
+    "ContentClassifiers": {
+      "base": null,
+      "refs": {
+        "HumanReviewDataAttributes$ContentClassifiers": "<p>Declares that your content is free of personally identifiable information or adult content. Amazon SageMaker may restrict the Amazon Mechanical Turk workers that can view your task based on this information.</p>"
+      }
+    },
+    "DeleteHumanLoopRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteHumanLoopResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeHumanLoopRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeHumanLoopResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "FailureReason": {
+      "base": null,
+      "refs": {
+        "HumanLoopSummary$FailureReason": "<p>The reason why the human loop failed. A failure reason is returned only when the status of the human loop is <code>Failed</code>.</p>",
+        "InternalServerException$Message": null,
+        "ResourceNotFoundException$Message": null,
+        "ServiceQuotaExceededException$Message": null,
+        "ThrottlingException$Message": null,
+        "ValidationException$Message": null
+      }
+    },
+    "FlowDefinitionArn": {
+      "base": null,
+      "refs": {
+        "DescribeHumanLoopResponse$FlowDefinitionArn": "<p>The Amazon Resource Name (ARN) of the flow definition.</p>",
+        "HumanLoopSummary$FlowDefinitionArn": "<p>The Amazon Resource Name (ARN) of the flow definition.</p>",
+        "StartHumanLoopRequest$FlowDefinitionArn": "<p>The Amazon Resource Name (ARN) of the flow definition.</p>"
+      }
+    },
+    "HumanLoopActivationReason": {
+      "base": "<p>Contains information about why a human loop was triggered. If at least one activation reason is evaluated to be true, the human loop is activated.</p>",
+      "refs": {
+        "HumanLoopActivationResults$HumanLoopActivationReason": "<p>An object containing information about why a human loop was triggered.</p>"
+      }
+    },
+    "HumanLoopActivationResults": {
+      "base": "<p>Information about the corresponding flow definition's human loop activation condition evaluation. Null if <code>StartHumanLoop</code> was invoked directly.</p>",
+      "refs": {
+        "StartHumanLoopResponse$HumanLoopActivationResults": "<p>An object containing information about the human loop activation.</p>"
+      }
+    },
+    "HumanLoopArn": {
+      "base": null,
+      "refs": {
+        "DescribeHumanLoopResponse$HumanLoopArn": "<p>The Amazon Resource Name (ARN) of the human loop.</p>",
+        "StartHumanLoopResponse$HumanLoopArn": "<p>The Amazon Resource Name (ARN) of the human loop.</p>"
+      }
+    },
+    "HumanLoopInputContent": {
+      "base": "<p>An object containing the input.</p>",
+      "refs": {
+        "DescribeHumanLoopResponse$HumanLoopInput": "<p>An object containing information about the human loop input.</p>",
+        "StartHumanLoopRequest$HumanLoopInput": "<p>An object containing information about the human loop.</p>"
+      }
+    },
+    "HumanLoopName": {
+      "base": null,
+      "refs": {
+        "DeleteHumanLoopRequest$HumanLoopName": "<p>The name of the human loop you want to delete.</p>",
+        "DescribeHumanLoopRequest$HumanLoopName": "<p>The name of the human loop.</p>",
+        "DescribeHumanLoopResponse$HumanLoopName": "<p>The name of the human loop.</p>",
+        "HumanLoopSummary$HumanLoopName": "<p>The name of the human loop.</p>",
+        "StartHumanLoopRequest$HumanLoopName": "<p>The name of the human loop.</p>",
+        "StopHumanLoopRequest$HumanLoopName": "<p>The name of the human loop you want to stop.</p>"
+      }
+    },
+    "HumanLoopOutputContent": {
+      "base": "<p>Information about where the human output will be stored.</p>",
+      "refs": {
+        "DescribeHumanLoopResponse$HumanLoopOutput": "<p>An object containing information about the output of the human loop.</p>"
+      }
+    },
+    "HumanLoopStatus": {
+      "base": null,
+      "refs": {
+        "DescribeHumanLoopResponse$HumanLoopStatus": "<p>The status of the human loop. Valid values:</p>",
+        "HumanLoopSummary$HumanLoopStatus": "<p>The status of the human loop. Valid values:</p>"
+      }
+    },
+    "HumanLoopSummaries": {
+      "base": null,
+      "refs": {
+        "ListHumanLoopsResponse$HumanLoopSummaries": "<p>An array of objects containing information about the human loops.</p>"
+      }
+    },
+    "HumanLoopSummary": {
+      "base": "<p>Summary information about the human loop.</p>",
+      "refs": {
+        "HumanLoopSummaries$member": null
+      }
+    },
+    "HumanReviewDataAttributes": {
+      "base": "<p>Attributes of the data specified by the customer. Use these to describe the data to be labeled.</p>",
+      "refs": {
+        "StartHumanLoopRequest$DataAttributes": "<p>Attributes of the data specified by the customer.</p>"
+      }
+    },
+    "InputContent": {
+      "base": null,
+      "refs": {
+        "HumanLoopInputContent$InputContent": "<p>Serialized input from the human loop.</p>"
+      }
+    },
+    "InternalServerException": {
+      "base": "<p>Your request could not be processed.</p>",
+      "refs": {
+      }
+    },
+    "ListHumanLoopsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListHumanLoopsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "MaxResults": {
+      "base": null,
+      "refs": {
+        "ListHumanLoopsRequest$MaxResults": "<p>The total number of items to return. If the total number of available items is more than the value specified in <code>MaxResults</code>, then a <code>NextToken</code> will be provided in the output that you can use to resume pagination.</p>"
+      }
+    },
+    "NextToken": {
+      "base": null,
+      "refs": {
+        "ListHumanLoopsRequest$NextToken": "<p>A token to resume pagination.</p>",
+        "ListHumanLoopsResponse$NextToken": "<p>A token to resume pagination.</p>"
+      }
+    },
+    "ResourceNotFoundException": {
+      "base": "<p>We were unable to find the requested resource.</p>",
+      "refs": {
+      }
+    },
+    "ServiceQuotaExceededException": {
+      "base": "<p>You have exceeded your service quota. To perform the requested action, remove some of the relevant resources, or request a service quota increase.</p>",
+      "refs": {
+      }
+    },
+    "SortOrder": {
+      "base": null,
+      "refs": {
+        "ListHumanLoopsRequest$SortOrder": "<p>An optional value that specifies whether you want the results sorted in <code>Ascending</code> or <code>Descending</code> order.</p>"
+      }
+    },
+    "StartHumanLoopRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "StartHumanLoopResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "StopHumanLoopRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "StopHumanLoopResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "String": {
+      "base": null,
+      "refs": {
+        "DescribeHumanLoopResponse$FailureReason": "<p>The reason why a human loop has failed. The failure reason is returned when the human loop status is <code>Failed</code>.</p>",
+        "DescribeHumanLoopResponse$FailureCode": "<p>A failure code denoting a specific type of failure.</p>",
+        "HumanLoopActivationResults$HumanLoopActivationConditionsEvaluationResults": "<p>A copy of the human loop activation conditions of the flow definition, augmented with the results of evaluating those conditions on the input provided to the <code>StartHumanLoop</code> operation.</p>",
+        "HumanLoopOutputContent$OutputS3Uri": "<p>The location of the Amazon S3 object where Amazon Augmented AI stores your human loop output. The output is stored at the following location: <code>s3://S3OutputPath/HumanLoopName/CreationTime/output.json</code>.</p>"
+      }
+    },
+    "ThrottlingException": {
+      "base": "<p>Your request has exceeded the allowed amount of requests.</p>",
+      "refs": {
+      }
+    },
+    "Timestamp": {
+      "base": null,
+      "refs": {
+        "DescribeHumanLoopResponse$CreationTimestamp": "<p>The timestamp when Amazon Augmented AI created the human loop.</p>",
+        "HumanLoopSummary$CreationTime": "<p>When Amazon Augmented AI created the human loop.</p>",
+        "ListHumanLoopsRequest$CreationTimeAfter": "<p>(Optional) The timestamp of the date when you want the human loops to begin. For example, <code>1551000000</code>.</p>",
+        "ListHumanLoopsRequest$CreationTimeBefore": "<p>(Optional) The timestamp of the date before which you want the human loops to begin. For example, <code>1550000000</code>.</p>"
+      }
+    },
+    "ValidationException": {
+      "base": "<p>Your request was not valid. Check the syntax and try again.</p>",
+      "refs": {
+      }
+    }
+  }
+}

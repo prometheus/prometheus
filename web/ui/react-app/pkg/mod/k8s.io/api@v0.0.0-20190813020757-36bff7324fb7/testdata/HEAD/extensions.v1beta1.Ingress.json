@@ -1,0 +1,82 @@
+{
+  "kind": "Ingress",
+  "apiVersion": "extensions/v1beta1",
+  "metadata": {
+    "name": "2",
+    "generateName": "3",
+    "namespace": "4",
+    "selfLink": "5",
+    "uid": "7",
+    "resourceVersion": "11042405498087606203",
+    "generation": 8071137005907523419,
+    "creationTimestamp": null,
+    "deletionGracePeriodSeconds": -4955867275792137171,
+    "labels": {
+      "7": "8"
+    },
+    "annotations": {
+      "9": "10"
+    },
+    "ownerReferences": [
+      {
+        "apiVersion": "11",
+        "kind": "12",
+        "name": "13",
+        "uid": "Dz廔ȇ{sŊƏp",
+        "controller": false,
+        "blockOwnerDeletion": true
+      }
+    ],
+    "finalizers": [
+      "14"
+    ],
+    "clusterName": "15",
+    "managedFields": [
+      {
+        "manager": "16",
+        "operation": "鐊唊飙Ş-U圴÷a/ɔ}摁(湗Ć]",
+        "apiVersion": "17"
+      }
+    ]
+  },
+  "spec": {
+    "backend": {
+      "serviceName": "18",
+      "servicePort": "19"
+    },
+    "tls": [
+      {
+        "hosts": [
+          "20"
+        ],
+        "secretName": "21"
+      }
+    ],
+    "rules": [
+      {
+        "host": "22",
+        "http": {
+          "paths": [
+            {
+              "path": "23",
+              "backend": {
+                "serviceName": "24",
+                "servicePort": "25"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "status": {
+    "loadBalancer": {
+      "ingress": [
+        {
+          "ip": "26",
+          "hostname": "27"
+        }
+      ]
+    }
+  }
+}

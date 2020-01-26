@@ -1,0 +1,57 @@
+workspace(name = "envoy_api")
+
+local_repository(
+    name = "com_lyft_protoc_gen_validate",
+    path = "../protoc-gen-validate",
+)
+
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "io_bazel_rules_go",
+    urls = ["https://github.com/bazelbuild/rules_go/releases/download/0.17.1/rules_go-0.17.1.tar.gz"],
+    sha256 = "6776d68ebb897625dead17ae510eac3d5f6342367327875210df44dbe2aeeb19",
+)
+
+git_repository(
+    name = "com_github_golang_protobuf",
+    remote = "https://github.com/golang/protobuf",
+    commit = "aa810b61a9c79d51363740d207bb46cf8e620ed5",
+    shallow_since = "1534281267 -0700",
+    patches = [
+        "@io_bazel_rules_go//third_party:com_github_golang_protobuf-gazelle.patch",
+        "@io_bazel_rules_go//third_party:com_github_golang_protobuf-extras.patch",
+    ],
+    patch_args = ["-p1"],
+)
+
+load("//bazel:repositories.bzl", "api_dependencies")
+
+api_dependencies()
+
+load("@io_bazel_rules_go//go:deps.bzl", "go_rules_dependencies", "go_register_toolchains")
+go_rules_dependencies()
+go_register_toolchains()
+
+http_archive(
+    name = "bazel_gazelle",
+    urls = ["https://github.com/bazelbuild/bazel-gazelle/releases/download/0.17.0/bazel-gazelle-0.17.0.tar.gz"],
+    sha256 = "3c681998538231a2d24d0c07ed5a7658cb72bfb5fd4bf9911157c0e9ac6a2687",
+)
+
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
+gazelle_dependencies()
+
+bind(
+    name = "six",
+    actual = "@six_archive//:six",
+)
+
+http_archive(
+    name = "six_archive",
+    sha256 = "105f8d68616f8248e24bf0e9372ef04d3cc10104f1980f54d57b2ce73a5ad56a",
+    build_file = "@com_google_protobuf//:six.BUILD",
+    url = "https://pypi.python.org/packages/source/s/six/six-1.10.0.tar.gz#md5=34eed507548117b2ab523ab14b2f8b55",
+)
+

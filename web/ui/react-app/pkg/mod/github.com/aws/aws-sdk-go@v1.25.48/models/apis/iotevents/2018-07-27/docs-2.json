@@ -1,0 +1,765 @@
+{
+  "version": "2.0",
+  "service": "<p>AWS IoT Events monitors your equipment or device fleets for failures or changes in operation, and triggers actions when such events occur. AWS IoT Events API commands enable you to create, read, update and delete inputs and detector models, and to list their versions.</p>",
+  "operations": {
+    "CreateDetectorModel": "<p>Creates a detector model.</p>",
+    "CreateInput": "<p>Creates an input.</p>",
+    "DeleteDetectorModel": "<p>Deletes a detector model. Any active instances of the detector model are also deleted.</p>",
+    "DeleteInput": "<p>Deletes an input.</p>",
+    "DescribeDetectorModel": "<p>Describes a detector model. If the <code>\"version\"</code> parameter is not specified, information about the latest version is returned.</p>",
+    "DescribeInput": "<p>Describes an input.</p>",
+    "DescribeLoggingOptions": "<p>Retrieves the current settings of the AWS IoT Events logging options.</p>",
+    "ListDetectorModelVersions": "<p>Lists all the versions of a detector model. Only the metadata associated with each detector model version is returned.</p>",
+    "ListDetectorModels": "<p>Lists the detector models you have created. Only the metadata associated with each detector model is returned.</p>",
+    "ListInputs": "<p>Lists the inputs you have created.</p>",
+    "ListTagsForResource": "<p>Lists the tags (metadata) you have assigned to the resource.</p>",
+    "PutLoggingOptions": "<p>Sets or updates the AWS IoT Events logging options.</p> <p>If you update the value of any <code>\"loggingOptions\"</code> field, it takes up to one minute for the change to take effect. Also, if you change the policy attached to the role you specified in the <code>\"roleArn\"</code> field (for example, to correct an invalid policy) it takes up to five minutes for that change to take effect.</p>",
+    "TagResource": "<p>Adds to or modifies the tags of the given resource. Tags are metadata that can be used to manage a resource.</p>",
+    "UntagResource": "<p>Removes the given tags (metadata) from the resource.</p>",
+    "UpdateDetectorModel": "<p>Updates a detector model. Detectors (instances) spawned by the previous version are deleted and then re-created as new inputs arrive.</p>",
+    "UpdateInput": "<p>Updates an input.</p>"
+  },
+  "shapes": {
+    "Action": {
+      "base": "<p>An action to be performed when the <code>\"condition\"</code> is TRUE.</p>",
+      "refs": {
+        "Actions$member": null
+      }
+    },
+    "Actions": {
+      "base": null,
+      "refs": {
+        "Event$actions": "<p>The actions to be performed.</p>",
+        "TransitionEvent$actions": "<p>The actions to be performed.</p>"
+      }
+    },
+    "AmazonResourceName": {
+      "base": null,
+      "refs": {
+        "CreateDetectorModelRequest$roleArn": "<p>The ARN of the role that grants permission to AWS IoT Events to perform its operations.</p>",
+        "DetectorModelConfiguration$roleArn": "<p>The ARN of the role that grants permission to AWS IoT Events to perform its operations.</p>",
+        "DetectorModelVersionSummary$roleArn": "<p>The ARN of the role that grants the detector model permission to perform its tasks.</p>",
+        "LambdaAction$functionArn": "<p>The ARN of the AWS Lambda function which is executed.</p>",
+        "ListTagsForResourceRequest$resourceArn": "<p>The ARN of the resource.</p>",
+        "LoggingOptions$roleArn": "<p>The ARN of the role that grants permission to AWS IoT Events to perform logging.</p>",
+        "SNSTopicPublishAction$targetArn": "<p>The ARN of the Amazon SNS target where the message is sent.</p>",
+        "TagResourceRequest$resourceArn": "<p>The ARN of the resource.</p>",
+        "UntagResourceRequest$resourceArn": "<p>The ARN of the resource.</p>",
+        "UpdateDetectorModelRequest$roleArn": "<p>The ARN of the role that grants permission to AWS IoT Events to perform its operations.</p>"
+      }
+    },
+    "Attribute": {
+      "base": "<p>The attributes from the JSON payload that are made available by the input. Inputs are derived from messages sent to the AWS IoT Events system using <code>BatchPutMessage</code>. Each such message contains a JSON payload, and those attributes (and their paired values) specified here are available for use in the <code>condition</code> expressions used by detectors. </p>",
+      "refs": {
+        "Attributes$member": null
+      }
+    },
+    "AttributeJsonPath": {
+      "base": null,
+      "refs": {
+        "Attribute$jsonPath": "<p>An expression that specifies an attribute-value pair in a JSON structure. Use this to specify an attribute from the JSON payload that is made available by the input. Inputs are derived from messages sent to the AWS IoT Events system (<code>BatchPutMessage</code>). Each such message contains a JSON payload, and the attribute (and its paired value) specified here are available for use in the <code>\"condition\"</code> expressions used by detectors. </p> <p>Syntax: <code>&lt;field-name&gt;.&lt;field-name&gt;...</code> </p>",
+        "CreateDetectorModelRequest$key": "<p>The input attribute key used to identify a device or system to create a detector (an instance of the detector model) and then to route each input received to the appropriate detector (instance). This parameter uses a JSON-path expression to specify the attribute-value pair in the message payload of each input that is used to identify the device associated with the input.</p>",
+        "DetectorModelConfiguration$key": "<p>The input attribute key used to identify a device or system to create a detector (an instance of the detector model) and then to route each input received to the appropriate detector (instance). This parameter uses a JSON-path expression to specify the attribute-value pair in the message payload of each input that is used to identify the device associated with the input.</p>"
+      }
+    },
+    "Attributes": {
+      "base": null,
+      "refs": {
+        "InputDefinition$attributes": "<p>The attributes from the JSON payload that are made available by the input. Inputs are derived from messages sent to the AWS IoT Events system using <code>BatchPutMessage</code>. Each such message contains a JSON payload, and those attributes (and their paired values) specified here are available for use in the <code>\"condition\"</code> expressions used by detectors that monitor this input. </p>"
+      }
+    },
+    "ClearTimerAction": {
+      "base": "<p>Information needed to clear the timer.</p>",
+      "refs": {
+        "Action$clearTimer": "<p>Information needed to clear the timer.</p>"
+      }
+    },
+    "Condition": {
+      "base": null,
+      "refs": {
+        "Event$condition": "<p>[Optional] The Boolean expression that when TRUE causes the <code>\"actions\"</code> to be performed. If not present, the actions are performed (=TRUE); if the expression result is not a Boolean value, the actions are NOT performed (=FALSE).</p>",
+        "TransitionEvent$condition": "<p>[Required] A Boolean expression that when TRUE causes the actions to be performed and the <code>\"nextState\"</code> to be entered.</p>"
+      }
+    },
+    "CreateDetectorModelRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateDetectorModelResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateInputRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateInputResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteDetectorModelRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteDetectorModelResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteInputRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteInputResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeliveryStreamName": {
+      "base": null,
+      "refs": {
+        "FirehoseAction$deliveryStreamName": "<p>The name of the Kinesis Data Firehose delivery stream where the data is written.</p>"
+      }
+    },
+    "DescribeDetectorModelRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDetectorModelResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeInputRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeInputResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeLoggingOptionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeLoggingOptionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DetectorDebugOption": {
+      "base": "<p>The detector model and the specific detectors (instances) for which the logging level is given.</p>",
+      "refs": {
+        "DetectorDebugOptions$member": null
+      }
+    },
+    "DetectorDebugOptions": {
+      "base": null,
+      "refs": {
+        "LoggingOptions$detectorDebugOptions": "<p>Information that identifies those detector models and their detectors (instances) for which the logging level is given.</p>"
+      }
+    },
+    "DetectorModel": {
+      "base": "<p>Information about the detector model.</p>",
+      "refs": {
+        "DescribeDetectorModelResponse$detectorModel": "<p>Information about the detector model.</p>"
+      }
+    },
+    "DetectorModelArn": {
+      "base": null,
+      "refs": {
+        "DetectorModelConfiguration$detectorModelArn": "<p>The ARN of the detector model.</p>",
+        "DetectorModelVersionSummary$detectorModelArn": "<p>The ARN of the detector model version.</p>"
+      }
+    },
+    "DetectorModelConfiguration": {
+      "base": "<p>Information about how the detector model is configured.</p>",
+      "refs": {
+        "CreateDetectorModelResponse$detectorModelConfiguration": "<p>Information about how the detector model is configured.</p>",
+        "DetectorModel$detectorModelConfiguration": "<p>Information about how the detector is configured.</p>",
+        "UpdateDetectorModelResponse$detectorModelConfiguration": "<p>Information about how the detector model is configured.</p>"
+      }
+    },
+    "DetectorModelDefinition": {
+      "base": "<p>Information that defines how a detector operates.</p>",
+      "refs": {
+        "CreateDetectorModelRequest$detectorModelDefinition": "<p>Information that defines how the detectors operate.</p>",
+        "DetectorModel$detectorModelDefinition": "<p>Information that defines how a detector operates.</p>",
+        "UpdateDetectorModelRequest$detectorModelDefinition": "<p>Information that defines how a detector operates.</p>"
+      }
+    },
+    "DetectorModelDescription": {
+      "base": null,
+      "refs": {
+        "CreateDetectorModelRequest$detectorModelDescription": "<p>A brief description of the detector model.</p>",
+        "DetectorModelConfiguration$detectorModelDescription": "<p>A brief description of the detector model.</p>",
+        "DetectorModelSummary$detectorModelDescription": "<p>A brief description of the detector model.</p>",
+        "UpdateDetectorModelRequest$detectorModelDescription": "<p>A brief description of the detector model.</p>"
+      }
+    },
+    "DetectorModelName": {
+      "base": null,
+      "refs": {
+        "CreateDetectorModelRequest$detectorModelName": "<p>The name of the detector model.</p>",
+        "DeleteDetectorModelRequest$detectorModelName": "<p>The name of the detector model to be deleted.</p>",
+        "DescribeDetectorModelRequest$detectorModelName": "<p>The name of the detector model.</p>",
+        "DetectorDebugOption$detectorModelName": "<p>The name of the detector model.</p>",
+        "DetectorModelConfiguration$detectorModelName": "<p>The name of the detector model.</p>",
+        "DetectorModelSummary$detectorModelName": "<p>The name of the detector model.</p>",
+        "DetectorModelVersionSummary$detectorModelName": "<p>The name of the detector model.</p>",
+        "ListDetectorModelVersionsRequest$detectorModelName": "<p>The name of the detector model whose versions are returned.</p>",
+        "UpdateDetectorModelRequest$detectorModelName": "<p>The name of the detector model that is updated.</p>"
+      }
+    },
+    "DetectorModelSummaries": {
+      "base": null,
+      "refs": {
+        "ListDetectorModelsResponse$detectorModelSummaries": "<p>Summary information about the detector models.</p>"
+      }
+    },
+    "DetectorModelSummary": {
+      "base": "<p>Information about the detector model.</p>",
+      "refs": {
+        "DetectorModelSummaries$member": null
+      }
+    },
+    "DetectorModelVersion": {
+      "base": null,
+      "refs": {
+        "DescribeDetectorModelRequest$detectorModelVersion": "<p>The version of the detector model.</p>",
+        "DetectorModelConfiguration$detectorModelVersion": "<p>The version of the detector model.</p>",
+        "DetectorModelVersionSummary$detectorModelVersion": "<p>The ID of the detector model version.</p>"
+      }
+    },
+    "DetectorModelVersionStatus": {
+      "base": null,
+      "refs": {
+        "DetectorModelConfiguration$status": "<p>The status of the detector model.</p>",
+        "DetectorModelVersionSummary$status": "<p>The status of the detector model version.</p>"
+      }
+    },
+    "DetectorModelVersionSummaries": {
+      "base": null,
+      "refs": {
+        "ListDetectorModelVersionsResponse$detectorModelVersionSummaries": "<p>Summary information about the detector model versions.</p>"
+      }
+    },
+    "DetectorModelVersionSummary": {
+      "base": "<p>Information about the detector model version.</p>",
+      "refs": {
+        "DetectorModelVersionSummaries$member": null
+      }
+    },
+    "EvaluationMethod": {
+      "base": null,
+      "refs": {
+        "CreateDetectorModelRequest$evaluationMethod": "<p>When set to <code>SERIAL</code>, variables are updated and event conditions evaluated in the order that the events are defined. When set to <code>BATCH</code>, variables are updated and events performed only after all event conditions are evaluated.</p>",
+        "DetectorModelConfiguration$evaluationMethod": "<p>When set to <code>SERIAL</code>, variables are updated and event conditions evaluated in the order that the events are defined. When set to <code>BATCH</code>, variables are updated and events performed only after all event conditions are evaluated.</p>",
+        "DetectorModelVersionSummary$evaluationMethod": "<p>When set to <code>SERIAL</code>, variables are updated and event conditions evaluated in the order that the events are defined. When set to <code>BATCH</code>, variables are updated and events performed only after all event conditions are evaluated.</p>",
+        "UpdateDetectorModelRequest$evaluationMethod": "<p>When set to <code>SERIAL</code>, variables are updated and event conditions evaluated in the order that the events are defined. When set to <code>BATCH</code>, variables are updated and events performed only after all event conditions are evaluated.</p>"
+      }
+    },
+    "Event": {
+      "base": "<p>Specifies the <code>\"actions\"</code> to be performed when the <code>\"condition\"</code> evaluates to TRUE.</p>",
+      "refs": {
+        "Events$member": null
+      }
+    },
+    "EventName": {
+      "base": null,
+      "refs": {
+        "Event$eventName": "<p>The name of the event.</p>",
+        "TransitionEvent$eventName": "<p>The name of the transition event.</p>"
+      }
+    },
+    "Events": {
+      "base": null,
+      "refs": {
+        "OnEnterLifecycle$events": "<p>Specifies the actions that are performed when the state is entered and the <code>\"condition\"</code> is TRUE.</p>",
+        "OnExitLifecycle$events": "<p>Specifies the <code>\"actions\"</code> that are performed when the state is exited and the <code>\"condition\"</code> is TRUE.</p>",
+        "OnInputLifecycle$events": "<p>Specifies the actions performed when the <code>\"condition\"</code> evaluates to TRUE.</p>"
+      }
+    },
+    "FirehoseAction": {
+      "base": "<p>Sends information about the detector model instance and the event which triggered the action to a Kinesis Data Firehose delivery stream.</p>",
+      "refs": {
+        "Action$firehose": "<p>Sends information about the detector model instance and the event which triggered the action to a Kinesis Data Firehose delivery stream.</p>"
+      }
+    },
+    "FirehoseSeparator": {
+      "base": null,
+      "refs": {
+        "FirehoseAction$separator": "<p>A character separator that is used to separate records written to the Kinesis Data Firehose delivery stream. Valid values are: '\\n' (newline), '\\t' (tab), '\\r\\n' (Windows newline), ',' (comma).</p>"
+      }
+    },
+    "Input": {
+      "base": "<p>Information about the input.</p>",
+      "refs": {
+        "DescribeInputResponse$input": "<p>Information about the input.</p>"
+      }
+    },
+    "InputArn": {
+      "base": null,
+      "refs": {
+        "InputConfiguration$inputArn": "<p>The ARN of the input.</p>",
+        "InputSummary$inputArn": "<p>The ARN of the input.</p>"
+      }
+    },
+    "InputConfiguration": {
+      "base": "<p>Information about the configuration of an input.</p>",
+      "refs": {
+        "CreateInputResponse$inputConfiguration": "<p>Information about the configuration of the input.</p>",
+        "Input$inputConfiguration": "<p>Information about the configuration of an input.</p>",
+        "UpdateInputResponse$inputConfiguration": "<p>Information about the configuration of the input.</p>"
+      }
+    },
+    "InputDefinition": {
+      "base": "<p>The definition of the input.</p>",
+      "refs": {
+        "CreateInputRequest$inputDefinition": "<p>The definition of the input.</p>",
+        "Input$inputDefinition": "<p>The definition of the input.</p>",
+        "UpdateInputRequest$inputDefinition": "<p>The definition of the input.</p>"
+      }
+    },
+    "InputDescription": {
+      "base": null,
+      "refs": {
+        "CreateInputRequest$inputDescription": "<p>A brief description of the input.</p>",
+        "InputConfiguration$inputDescription": "<p>A brief description of the input.</p>",
+        "InputSummary$inputDescription": "<p>A brief description of the input.</p>",
+        "UpdateInputRequest$inputDescription": "<p>A brief description of the input.</p>"
+      }
+    },
+    "InputName": {
+      "base": null,
+      "refs": {
+        "CreateInputRequest$inputName": "<p>The name you want to give to the input.</p>",
+        "DeleteInputRequest$inputName": "<p>The name of the input to delete.</p>",
+        "DescribeInputRequest$inputName": "<p>The name of the input.</p>",
+        "InputConfiguration$inputName": "<p>The name of the input.</p>",
+        "InputSummary$inputName": "<p>The name of the input.</p>",
+        "IotEventsAction$inputName": "<p>The name of the AWS IoT Events input where the data is sent.</p>",
+        "UpdateInputRequest$inputName": "<p>The name of the input you want to update.</p>"
+      }
+    },
+    "InputStatus": {
+      "base": null,
+      "refs": {
+        "InputConfiguration$status": "<p>The status of the input.</p>",
+        "InputSummary$status": "<p>The status of the input.</p>"
+      }
+    },
+    "InputSummaries": {
+      "base": null,
+      "refs": {
+        "ListInputsResponse$inputSummaries": "<p>Summary information about the inputs.</p>"
+      }
+    },
+    "InputSummary": {
+      "base": "<p>Information about the input.</p>",
+      "refs": {
+        "InputSummaries$member": null
+      }
+    },
+    "InternalFailureException": {
+      "base": "<p>An internal failure occurred.</p>",
+      "refs": {
+      }
+    },
+    "InvalidRequestException": {
+      "base": "<p>The request was invalid.</p>",
+      "refs": {
+      }
+    },
+    "IotEventsAction": {
+      "base": "<p>Sends an IoT Events input, passing in information about the detector model instance and the event which triggered the action.</p>",
+      "refs": {
+        "Action$iotEvents": "<p>Sends an IoT Events input, passing in information about the detector model instance and the event which triggered the action.</p>"
+      }
+    },
+    "IotTopicPublishAction": {
+      "base": "<p>Information required to publish the MQTT message via the AWS IoT message broker.</p>",
+      "refs": {
+        "Action$iotTopicPublish": "<p>Publishes an MQTT message with the given topic to the AWS IoT message broker.</p>"
+      }
+    },
+    "KeyValue": {
+      "base": null,
+      "refs": {
+        "DetectorDebugOption$keyValue": "<p>The value of the input attribute key used to create the detector (the instance of the detector model).</p>"
+      }
+    },
+    "LambdaAction": {
+      "base": "<p>Calls an AWS Lambda function, passing in information about the detector model instance and the event which triggered the action.</p>",
+      "refs": {
+        "Action$lambda": "<p>Calls an AWS Lambda function, passing in information about the detector model instance and the event which triggered the action.</p>"
+      }
+    },
+    "LimitExceededException": {
+      "base": "<p>A limit was exceeded.</p>",
+      "refs": {
+      }
+    },
+    "ListDetectorModelVersionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListDetectorModelVersionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListDetectorModelsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListDetectorModelsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListInputsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListInputsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTagsForResourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTagsForResourceResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "LoggingEnabled": {
+      "base": null,
+      "refs": {
+        "LoggingOptions$enabled": "<p>If TRUE, logging is enabled for AWS IoT Events.</p>"
+      }
+    },
+    "LoggingLevel": {
+      "base": null,
+      "refs": {
+        "LoggingOptions$level": "<p>The logging level.</p>"
+      }
+    },
+    "LoggingOptions": {
+      "base": "<p>The values of the AWS IoT Events logging options.</p>",
+      "refs": {
+        "DescribeLoggingOptionsResponse$loggingOptions": "<p>The current settings of the AWS IoT Events logging options.</p>",
+        "PutLoggingOptionsRequest$loggingOptions": "<p>The new values of the AWS IoT Events logging options.</p>"
+      }
+    },
+    "MQTTTopic": {
+      "base": null,
+      "refs": {
+        "IotTopicPublishAction$mqttTopic": "<p>The MQTT topic of the message.</p>"
+      }
+    },
+    "MaxResults": {
+      "base": null,
+      "refs": {
+        "ListDetectorModelVersionsRequest$maxResults": "<p>The maximum number of results to return at one time.</p>",
+        "ListDetectorModelsRequest$maxResults": "<p>The maximum number of results to return at one time.</p>",
+        "ListInputsRequest$maxResults": "<p>The maximum number of results to return at one time.</p>"
+      }
+    },
+    "NextToken": {
+      "base": null,
+      "refs": {
+        "ListDetectorModelVersionsRequest$nextToken": "<p>The token for the next set of results.</p>",
+        "ListDetectorModelVersionsResponse$nextToken": "<p>A token to retrieve the next set of results, or <code>null</code> if there are no additional results.</p>",
+        "ListDetectorModelsRequest$nextToken": "<p>The token for the next set of results.</p>",
+        "ListDetectorModelsResponse$nextToken": "<p>A token to retrieve the next set of results, or <code>null</code> if there are no additional results.</p>",
+        "ListInputsRequest$nextToken": "<p>The token for the next set of results.</p>",
+        "ListInputsResponse$nextToken": "<p>A token to retrieve the next set of results, or <code>null</code> if there are no additional results.</p>"
+      }
+    },
+    "OnEnterLifecycle": {
+      "base": "<p>When entering this state, perform these <code>actions</code> if the <code>condition</code> is TRUE.</p>",
+      "refs": {
+        "State$onEnter": "<p>When entering this state, perform these <code>\"actions\"</code> if the <code>\"condition\"</code> is TRUE.</p>"
+      }
+    },
+    "OnExitLifecycle": {
+      "base": "<p>When exiting this state, perform these <code>\"actions\"</code> if the specified <code>\"condition\"</code> is TRUE.</p>",
+      "refs": {
+        "State$onExit": "<p>When exiting this state, perform these <code>\"actions\"</code> if the specified <code>\"condition\"</code> is TRUE.</p>"
+      }
+    },
+    "OnInputLifecycle": {
+      "base": "<p>Specifies the actions performed when the <code>\"condition\"</code> evaluates to TRUE.</p>",
+      "refs": {
+        "State$onInput": "<p>When an input is received and the <code>\"condition\"</code> is TRUE, perform the specified <code>\"actions\"</code>.</p>"
+      }
+    },
+    "PutLoggingOptionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "QueueUrl": {
+      "base": null,
+      "refs": {
+        "SqsAction$queueUrl": "<p>The URL of the Amazon SQS queue where the data is written.</p>"
+      }
+    },
+    "ResetTimerAction": {
+      "base": "<p>Information needed to reset the timer.</p>",
+      "refs": {
+        "Action$resetTimer": "<p>Information needed to reset the timer.</p>"
+      }
+    },
+    "ResourceAlreadyExistsException": {
+      "base": "<p>The resource already exists.</p>",
+      "refs": {
+      }
+    },
+    "ResourceInUseException": {
+      "base": "<p>The resource is in use.</p>",
+      "refs": {
+      }
+    },
+    "ResourceNotFoundException": {
+      "base": "<p>The resource was not found.</p>",
+      "refs": {
+      }
+    },
+    "SNSTopicPublishAction": {
+      "base": "<p>Information required to publish the Amazon SNS message.</p>",
+      "refs": {
+        "Action$sns": "<p>Sends an Amazon SNS message.</p>"
+      }
+    },
+    "Seconds": {
+      "base": null,
+      "refs": {
+        "SetTimerAction$seconds": "<p>The number of seconds until the timer expires. The minimum value is 60 seconds to ensure accuracy.</p>"
+      }
+    },
+    "ServiceUnavailableException": {
+      "base": "<p>The service is currently unavailable.</p>",
+      "refs": {
+      }
+    },
+    "SetTimerAction": {
+      "base": "<p>Information needed to set the timer.</p>",
+      "refs": {
+        "Action$setTimer": "<p>Information needed to set the timer.</p>"
+      }
+    },
+    "SetVariableAction": {
+      "base": "<p>Information about the variable and its new value.</p>",
+      "refs": {
+        "Action$setVariable": "<p>Sets a variable to a specified value.</p>"
+      }
+    },
+    "SqsAction": {
+      "base": "<p>Sends information about the detector model instance and the event which triggered the action to an Amazon SQS queue.</p>",
+      "refs": {
+        "Action$sqs": "<p>Sends information about the detector model instance and the event which triggered the action to an Amazon SQS queue.</p>"
+      }
+    },
+    "State": {
+      "base": "<p>Information that defines a state of a detector.</p>",
+      "refs": {
+        "States$member": null
+      }
+    },
+    "StateName": {
+      "base": null,
+      "refs": {
+        "DetectorModelDefinition$initialStateName": "<p>The state that is entered at the creation of each detector (instance).</p>",
+        "State$stateName": "<p>The name of the state.</p>",
+        "TransitionEvent$nextState": "<p>The next state to enter.</p>"
+      }
+    },
+    "States": {
+      "base": null,
+      "refs": {
+        "DetectorModelDefinition$states": "<p>Information about the states of the detector.</p>"
+      }
+    },
+    "Tag": {
+      "base": "<p>Metadata that can be used to manage the resource.</p>",
+      "refs": {
+        "Tags$member": null
+      }
+    },
+    "TagKey": {
+      "base": null,
+      "refs": {
+        "Tag$key": "<p>The tag's key.</p>",
+        "TagKeys$member": null
+      }
+    },
+    "TagKeys": {
+      "base": null,
+      "refs": {
+        "UntagResourceRequest$tagKeys": "<p>A list of the keys of the tags to be removed from the resource.</p>"
+      }
+    },
+    "TagResourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "TagResourceResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "TagValue": {
+      "base": null,
+      "refs": {
+        "Tag$value": "<p>The tag's value.</p>"
+      }
+    },
+    "Tags": {
+      "base": null,
+      "refs": {
+        "CreateDetectorModelRequest$tags": "<p>Metadata that can be used to manage the detector model.</p>",
+        "CreateInputRequest$tags": "<p>Metadata that can be used to manage the input.</p>",
+        "ListTagsForResourceResponse$tags": "<p>The list of tags assigned to the resource.</p>",
+        "TagResourceRequest$tags": "<p>The new or modified tags for the resource.</p>"
+      }
+    },
+    "ThrottlingException": {
+      "base": "<p>The request could not be completed due to throttling.</p>",
+      "refs": {
+      }
+    },
+    "TimerName": {
+      "base": null,
+      "refs": {
+        "ClearTimerAction$timerName": "<p>The name of the timer to clear.</p>",
+        "ResetTimerAction$timerName": "<p>The name of the timer to reset.</p>",
+        "SetTimerAction$timerName": "<p>The name of the timer.</p>"
+      }
+    },
+    "Timestamp": {
+      "base": null,
+      "refs": {
+        "DetectorModelConfiguration$creationTime": "<p>The time the detector model was created.</p>",
+        "DetectorModelConfiguration$lastUpdateTime": "<p>The time the detector model was last updated.</p>",
+        "DetectorModelSummary$creationTime": "<p>The time the detector model was created.</p>",
+        "DetectorModelVersionSummary$creationTime": "<p>The time the detector model version was created.</p>",
+        "DetectorModelVersionSummary$lastUpdateTime": "<p>The last time the detector model version was updated.</p>",
+        "InputConfiguration$creationTime": "<p>The time the input was created.</p>",
+        "InputConfiguration$lastUpdateTime": "<p>The last time the input was updated.</p>",
+        "InputSummary$creationTime": "<p>The time the input was created.</p>",
+        "InputSummary$lastUpdateTime": "<p>The last time the input was updated.</p>"
+      }
+    },
+    "TransitionEvent": {
+      "base": "<p>Specifies the actions performed and the next state entered when a <code>\"condition\"</code> evaluates to TRUE.</p>",
+      "refs": {
+        "TransitionEvents$member": null
+      }
+    },
+    "TransitionEvents": {
+      "base": null,
+      "refs": {
+        "OnInputLifecycle$transitionEvents": "<p>Specifies the actions performed, and the next state entered, when a <code>\"condition\"</code> evaluates to TRUE.</p>"
+      }
+    },
+    "UnsupportedOperationException": {
+      "base": "<p>The requested operation is not supported.</p>",
+      "refs": {
+      }
+    },
+    "UntagResourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UntagResourceResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDetectorModelRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDetectorModelResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateInputRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateInputResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UseBase64": {
+      "base": null,
+      "refs": {
+        "SqsAction$useBase64": "<p>Set this to TRUE if you want the data to be Base-64 encoded before it is written to the queue. Otherwise, set this to FALSE.</p>"
+      }
+    },
+    "VariableName": {
+      "base": null,
+      "refs": {
+        "SetVariableAction$variableName": "<p>The name of the variable.</p>"
+      }
+    },
+    "VariableValue": {
+      "base": null,
+      "refs": {
+        "SetVariableAction$value": "<p>The new value of the variable.</p>"
+      }
+    },
+    "errorMessage": {
+      "base": null,
+      "refs": {
+        "InternalFailureException$message": "<p>The message for the exception.</p>",
+        "InvalidRequestException$message": "<p>The message for the exception.</p>",
+        "LimitExceededException$message": "<p>The message for the exception.</p>",
+        "ResourceAlreadyExistsException$message": "<p>The message for the exception.</p>",
+        "ResourceInUseException$message": "<p>The message for the exception.</p>",
+        "ResourceNotFoundException$message": "<p>The message for the exception.</p>",
+        "ServiceUnavailableException$message": "<p>The message for the exception.</p>",
+        "ThrottlingException$message": "<p>The message for the exception.</p>",
+        "UnsupportedOperationException$message": "<p>The message for the exception.</p>"
+      }
+    },
+    "resourceArn": {
+      "base": null,
+      "refs": {
+        "ResourceAlreadyExistsException$resourceArn": "<p>The ARN of the resource.</p>"
+      }
+    },
+    "resourceId": {
+      "base": null,
+      "refs": {
+        "ResourceAlreadyExistsException$resourceId": "<p>The ID of the resource.</p>"
+      }
+    }
+  }
+}

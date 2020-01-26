@@ -1,0 +1,83 @@
+---
+description: |-
+  Serf is a decentralized solution for cluster membership, failure detection, and orchestration. Lightweight and highly available.
+---
+
+<header>
+  <div class="container hero">
+    <div class="row">
+      <div class="col-md-offset-2 col-md-8">
+        <%= inline_svg "logo-text.svg", height: 120, class: "logo" %>
+
+        <h1>Decentralized Cluster Membership, Failure Detection, and Orchestration.</h1>
+
+        <a class="button primary" href="/intro/index.html">Get Started</a>
+        <a class="button" href="/downloads.html">Download <%= latest_version %></a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="features" class="marketing">
+  <div class="container">
+    <div class="row">
+      <div class="col-sm-4 feature-icon">
+        <%= inline_svg "gossip-protocol.svg", width: 200 %>
+      </div>
+      <div class="col-sm-8">
+        <h2>Gossip-based Membership</h2>
+        <p>
+          Serf relies on an efficient and lightweight gossip protocol to
+          communicate with nodes. The Serf agents periodically exchange
+          messages with each other in much the same way that a zombie
+          apocalypse would occur: it starts with one zombie but soon infects
+          everyone. In practice, the gossip is <a
+          href="/docs/internals/simulator.html">very fast and extremely
+          efficient.</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="marketing">
+  <div class="container">
+    <div class="row">
+      <div class="col-sm-8">
+        <h2>Failure Detection</h2>
+        <p>
+          Serf is able to quickly detect failed members and notify the rest
+          of the cluster. This failure detection is built into the heart of
+          the gossip protocol used by Serf. Like humans in a zombie
+          apocalypse, everybody checks their peers for infection and quickly
+          alerts the other living humans. Serf relies on a random probing
+          technique which is proven to efficiently scale to clusters of any
+          size.
+        </p>
+      </div>
+      <div class="col-sm-4 feature-icon">
+        <%= inline_svg "failure-detection.svg", width: 200 %>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="marketing">
+  <div class="container">
+    <div class="row">
+      <div class="col-sm-4 feature-icon">
+        <%= inline_svg "custom-event.svg", width: 200 %>
+      </div>
+      <div class="col-sm-8">
+        <h2>Custom Events</h2>
+        <p>
+          In addition to managing membership, Serf can broadcast custom events
+          and queries. These can be used to trigger deploys, restart
+          processes, spread tales of human heroism, and anything else you may
+          want. The event system is flexible and lightweight, making it easy
+          for application developers and sysadmins alike to leverage.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

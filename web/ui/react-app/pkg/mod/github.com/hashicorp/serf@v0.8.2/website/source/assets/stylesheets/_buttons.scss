@@ -1,0 +1,37 @@
+.button {
+  background: $button-background;
+  border: 1px solid $button-font-color;
+  box-shadow: 3px 4px 0 rgba(0,0,0,0.1);
+  color: $button-font-color;
+  display: inline-block;
+  font-family: $button-font-family;
+  font-size: $button-font-size;
+  font-weight: $button-font-weight;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+  padding: 10px 30px;
+  text-transform: uppercase;
+  text-decoration: none;
+
+  &:hover,
+  &:active,
+  &:focus {
+    text-decoration: none;
+  }
+
+  &:hover {
+    background: $button-font-color;
+    border: 1px solid $button-font-color;
+    color: $button-background;
+  }
+
+  &.primary {
+    background: $button-primary-background;
+    border: 1px solid darken($button-primary-background, 5%);
+    color: $button-primary-font-color;
+
+    &:hover {
+      background: lighten($button-primary-background, 5%);
+    }
+  }
+}

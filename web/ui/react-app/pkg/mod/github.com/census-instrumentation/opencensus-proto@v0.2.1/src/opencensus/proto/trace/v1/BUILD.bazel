@@ -1,0 +1,98 @@
+# Copyright 2017, OpenCensus Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+package(default_visibility = ["//visibility:public"])
+
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@com_google_protobuf//:protobuf.bzl", "py_proto_library")
+
+proto_library(
+    name = "trace_proto",
+    srcs = ["trace.proto"],
+    deps = [
+        "@com_google_protobuf//:timestamp_proto",
+        "@com_google_protobuf//:wrappers_proto",
+        "//opencensus/proto/resource/v1:resource_proto",
+    ],
+)
+
+proto_library(
+    name = "trace_config_proto",
+    srcs = ["trace_config.proto"],
+)
+
+cc_proto_library(
+    name = "trace_proto_cc",
+    deps = [":trace_proto"],
+)
+
+cc_proto_library(
+    name = "trace_config_proto_cc",
+    deps = [":trace_config_proto"],
+)
+
+java_proto_library(
+    name = "trace_proto_java",
+    deps = [":trace_proto"],
+)
+
+java_proto_library(
+    name = "trace_config_proto_java",
+    deps = [":trace_config_proto"],
+)
+
+go_proto_library(
+    name = "trace_proto_go",
+    proto = ":trace_proto",
+    importpath = "github.com/census-instrumentation/opencensus-proto/gen-go/trace/v1",
+    deps = [
+        "@com_github_golang_protobuf//ptypes/timestamp:go_default_library",
+        "@com_github_golang_protobuf//ptypes/wrappers:go_default_library",
+        "//opencensus/proto/resource/v1:resource_proto_go",
+    ],
+)
+
+go_proto_library(
+    name = "trace_config_proto_go",
+    proto = ":trace_config_proto",
+    importpath = "github.com/census-instrumentation/opencensus-proto/gen-go/trace/v1",
+)
+
+py_proto_library(
+    name = "trace_proto_py",
+    srcs = ["trace.proto"],
+    deps = [
+        "@com_google_protobuf//:protobuf_python",
+        "//opencensus/proto/resource/v1:resource_proto_py",
+    ],
+)
+
+py_proto_library(
+    name = "trace_config_proto_py",
+    srcs = ["trace_config.proto"],
+)
+
+# This a workaround because `trace_proto_go` and `trace_config_proto_go` have
+# the same importpath, and so cause a compile issue if both are depended on
+# directly by another `go_proto_library` (such as `trace_service_proto_go`).
+# See: https://github.com/bazelbuild/rules_go/issues/1841
+go_library(
+    name = "trace_and_config_proto_go",
+    srcs = [],
+    embed = [
+        ":trace_proto_go",
+        ":trace_config_proto_go",
+    ]
+)

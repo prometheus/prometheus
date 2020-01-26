@@ -1,0 +1,100 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: jfbrandhorst/grpc-gateway-build-env:1.12
+    working_directory: /src/grpc-gateway
+    steps:
+      - checkout
+      - run: go build ./...
+  test:
+    docker:
+      - image: jfbrandhorst/grpc-gateway-build-env:1.12
+    working_directory: /src/grpc-gateway
+    environment:
+      GLOG_logtostderr: '1'
+    steps:
+      - checkout
+      - run: go test -race -coverprofile=coverage.txt ./...
+      - run: bash <(curl -s https://codecov.io/bash)
+  node_test:
+    docker:
+      - image: jfbrandhorst/grpc-gateway-build-env:1.12
+    working_directory: /src/grpc-gateway
+    steps:
+      - checkout
+      - run: go mod vendor
+      - run: >
+          . $HOME/.nvm/nvm.sh &&
+          cd examples/browser &&
+          npm install gulp-cli &&
+          npm install &&
+          ./node_modules/.bin/gulp
+  generate:
+    docker:
+      - image: jfbrandhorst/grpc-gateway-build-env:1.12
+    working_directory: /src/grpc-gateway
+    steps:
+      - checkout
+      - run: make realclean
+      - run: make examples SWAGGER_CODEGEN="${SWAGGER_CODEGEN}" # Set in Docker image
+      - run: go mod tidy
+      - run: git diff --exit-code
+  lint:
+    docker:
+      - image: jfbrandhorst/grpc-gateway-build-env:1.12
+    working_directory: /src/grpc-gateway
+    steps:
+      - checkout
+      - run: go get golang.org/x/lint/golint
+      - run: make lint
+  bazel:
+    docker:
+      - image: l.gcr.io/google/bazel:latest
+    working_directory: /src/grpc-gateway
+    steps:
+      - checkout
+      - run:
+          name: Create Bazel config file (.bazelrc)
+          command: |
+            cat > .bazelrc << EOF
+            startup --output_base $HOME/.cache/_grpc_gateway_bazel
+            build --test_output errors
+            build --features race
+            EOF
+      - run:
+          name: Check that Bazel BUILD files are up-to-date
+          command: 'bazel run //:gazelle -- --mode=diff ||
+            (echo "ERROR: Bazel files out-of-date, please run \`bazel run :gazelle\`" >&2; exit 1)'
+      - run:
+          name: Run tests with Bazel
+          command: bazel test //...
+      - run:
+          name: Check formatting of Bazel BUILD files
+          command: 'bazel run //:buildifier_check ||
+            (echo "ERROR: Bazel files not formatted, please run \`bazel run :buildifier\`" >&2; exit 1)'
+          when: always
+  release:
+    docker:
+      - image: jfbrandhorst/grpc-gateway-build-env:1.12
+    working_directory: /src/grpc-gateway
+    steps:
+      - checkout
+      - run: go mod vendor
+      - run: curl -sL https://git.io/goreleaser | bash
+workflows:
+  version: 2
+  all:
+    jobs:
+      - build
+      - test
+      - node_test
+      - generate
+      - lint
+      - bazel
+      - release:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /v[0-9]+(\.[0-9]+)*(-.*)*/

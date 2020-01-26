@@ -1,0 +1,36 @@
+# Gradle
+.gradle
+build
+gen_gradle
+protobuf-gradle-plugin.i*
+gradle.properties
+local.properties
+
+# Bazel
+bazel-*
+
+# Maven
+target
+
+# IntelliJ IDEA
+.idea
+*.iml
+
+# Eclipse
+.classpath
+.project
+.settings
+bin
+
+# OS X
+.DS_Store
+
+# Emacs
+*~
+\#*\#
+
+# VS Code
+.vscode
+
+# Other
+TAGS

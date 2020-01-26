@@ -1,0 +1,13 @@
+<% wrap_layout :layout do %>
+<div class="container">
+  <div class="row">
+    <div id="docs-sidebar" class="col-sm-4 col-md-3 col-xs-12 hidden-print" role="complementary">
+      <%= yield_content :sidebar %>
+    </div>
+
+    <div id="inner" class="col-sm-8 col-md-9 col-xs-12" role="main">
+      <%= yield %>
+    </div>
+  </div>
+</div>
+<% end %>

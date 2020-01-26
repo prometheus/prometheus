@@ -1,0 +1,177 @@
+{
+  "version": "2.0",
+  "service": "<p>You can use the Amazon Elastic Block Store (EBS) direct APIs to directly read the data on your EBS snapshots, and identify the difference between two snapshots. You can view the details of blocks in an EBS snapshot, compare the block difference between two snapshots, and directly access the data in a snapshot. If you’re an independent software vendor (ISV) who offers backup services for EBS, the EBS direct APIs makes it easier and more cost-effective to track incremental changes on your EBS volumes via EBS snapshots. This can be done without having to create new volumes from EBS snapshots, and then use EC2 instances to compare the differences.</p> <p>This API reference provides detailed information about the actions, data types, parameters, and errors of the EBS direct APIs. For more information about the elements that make up the EBS direct APIs, and examples of how to use them effectively, see <a href=\"https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-accessing-snapshot.html\">Accessing the Contents of an EBS Snapshot</a>. For more information about how to use the EBS direct APIs, see the <a href=\"https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-accessing-snapshots.html\">EBS direct APIs User Guide</a>. To view the currently supported AWS Regions and endpoints for the EBS direct APIs, see <a href=\"https://docs.aws.amazon.com/general/latest/gr/rande.html#ebs_region\">AWS Service Endpoints</a> in the <i>AWS General Reference</i>.</p>",
+  "operations": {
+    "GetSnapshotBlock": "<p>Returns the data in a block in an Amazon Elastic Block Store snapshot.</p>",
+    "ListChangedBlocks": "<p>Returns the block indexes and block tokens for blocks that are different between two Amazon Elastic Block Store snapshots of the same volume/snapshot lineage.</p>",
+    "ListSnapshotBlocks": "<p>Returns the block indexes and block tokens for blocks in an Amazon Elastic Block Store snapshot.</p>"
+  },
+  "shapes": {
+    "Block": {
+      "base": "<p>A block of data in an Amazon Elastic Block Store snapshot.</p>",
+      "refs": {
+        "Blocks$member": null
+      }
+    },
+    "BlockData": {
+      "base": null,
+      "refs": {
+        "GetSnapshotBlockResponse$BlockData": "<p>The data content of the block.</p>"
+      }
+    },
+    "BlockIndex": {
+      "base": null,
+      "refs": {
+        "Block$BlockIndex": "<p>The block index.</p>",
+        "ChangedBlock$BlockIndex": "<p>The block index.</p>",
+        "GetSnapshotBlockRequest$BlockIndex": "<p>The block index of the block from which to get data.</p> <p>Obtain the <code>block index</code> by running the <code>list changed blocks</code> or <code>list snapshot blocks</code> operations.</p>",
+        "ListChangedBlocksRequest$StartingBlockIndex": "<p>The block index from which the comparison should start.</p> <p>The list in the response will start from this block index or the next valid block index in the snapshots.</p>",
+        "ListSnapshotBlocksRequest$StartingBlockIndex": "<p>The block index from which the list should start. The list in the response will start from this block index or the next valid block index in the snapshot.</p>"
+      }
+    },
+    "BlockSize": {
+      "base": null,
+      "refs": {
+        "ListChangedBlocksResponse$BlockSize": "<p>The size of the block.</p>",
+        "ListSnapshotBlocksResponse$BlockSize": "<p>The size of the block.</p>"
+      }
+    },
+    "BlockToken": {
+      "base": null,
+      "refs": {
+        "Block$BlockToken": "<p>The block token for the block index.</p>",
+        "ChangedBlock$FirstBlockToken": "<p>The block token for the block index of the <code>first snapshot ID</code> specified in the <code>list changed blocks</code> operation. This value is absent if the first snapshot does not have the changed block that is on the second snapshot.</p>",
+        "ChangedBlock$SecondBlockToken": "<p>The block token for the block index of the <code>second snapshot ID</code> specified in the <code>list changed blocks</code> operation.</p>",
+        "GetSnapshotBlockRequest$BlockToken": "<p>The block token of the block from which to get data.</p> <p>Obtain the <code>block token</code> by running the <code>list changed blocks</code> or <code>list snapshot blocks</code> operations.</p>"
+      }
+    },
+    "Blocks": {
+      "base": null,
+      "refs": {
+        "ListSnapshotBlocksResponse$Blocks": "<p>An array of objects containing information about the blocks.</p>"
+      }
+    },
+    "ChangedBlock": {
+      "base": "<p>A block of data in an Amazon Elastic Block Store snapshot that is different from another snapshot of the same volume/snapshot lineage.</p>",
+      "refs": {
+        "ChangedBlocks$member": null
+      }
+    },
+    "ChangedBlocks": {
+      "base": null,
+      "refs": {
+        "ListChangedBlocksResponse$ChangedBlocks": "<p>An array of objects containing information about the changed blocks.</p>"
+      }
+    },
+    "Checksum": {
+      "base": null,
+      "refs": {
+        "GetSnapshotBlockResponse$Checksum": "<p>The checksum generated for the block.</p>"
+      }
+    },
+    "ChecksumAlgorithm": {
+      "base": null,
+      "refs": {
+        "GetSnapshotBlockResponse$ChecksumAlgorithm": "<p>The algorithm used to generate the checksum for the block, such as SHA256.</p>"
+      }
+    },
+    "DataLength": {
+      "base": null,
+      "refs": {
+        "GetSnapshotBlockResponse$DataLength": "<p>The size of the data in the block.</p>"
+      }
+    },
+    "ErrorMessage": {
+      "base": null,
+      "refs": {
+        "ResourceNotFoundException$Message": null,
+        "ValidationException$Message": null
+      }
+    },
+    "GetSnapshotBlockRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "GetSnapshotBlockResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListChangedBlocksRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListChangedBlocksResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListSnapshotBlocksRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListSnapshotBlocksResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "MaxResults": {
+      "base": null,
+      "refs": {
+        "ListChangedBlocksRequest$MaxResults": "<p>The number of results to return.</p>",
+        "ListSnapshotBlocksRequest$MaxResults": "<p>The number of results to return.</p>"
+      }
+    },
+    "PageToken": {
+      "base": null,
+      "refs": {
+        "ListChangedBlocksRequest$NextToken": "<p>The token to request the next page of results.</p>",
+        "ListChangedBlocksResponse$NextToken": "<p>The token to use to retrieve the next page of results. This value is null when there are no more results to return.</p>",
+        "ListSnapshotBlocksRequest$NextToken": "<p>The token to request the next page of results.</p>",
+        "ListSnapshotBlocksResponse$NextToken": "<p>The token to use to retrieve the next page of results. This value is null when there are no more results to return.</p>"
+      }
+    },
+    "ResourceNotFoundException": {
+      "base": "<p>The specified resource does not exist.</p>",
+      "refs": {
+      }
+    },
+    "SnapshotId": {
+      "base": null,
+      "refs": {
+        "GetSnapshotBlockRequest$SnapshotId": "<p>The ID of the snapshot containing the block from which to get data.</p>",
+        "ListChangedBlocksRequest$FirstSnapshotId": "<p>The ID of the first snapshot to use for the comparison.</p>",
+        "ListChangedBlocksRequest$SecondSnapshotId": "<p>The ID of the second snapshot to use for the comparison.</p>",
+        "ListSnapshotBlocksRequest$SnapshotId": "<p>The ID of the snapshot from which to get block indexes and block tokens.</p>"
+      }
+    },
+    "TimeStamp": {
+      "base": null,
+      "refs": {
+        "ListChangedBlocksResponse$ExpiryTime": "<p>The time when the <code>block token</code> expires.</p>",
+        "ListSnapshotBlocksResponse$ExpiryTime": "<p>The time when the <code>block token</code> expires.</p>"
+      }
+    },
+    "ValidationException": {
+      "base": "<p>The input fails to satisfy the constraints of the EBS direct APIs.</p>",
+      "refs": {
+      }
+    },
+    "ValidationExceptionReason": {
+      "base": null,
+      "refs": {
+        "ValidationException$Reason": "<p>The reason for the validation exception.</p>"
+      }
+    },
+    "VolumeSize": {
+      "base": null,
+      "refs": {
+        "ListChangedBlocksResponse$VolumeSize": "<p>The size of the volume in GB.</p>",
+        "ListSnapshotBlocksResponse$VolumeSize": "<p>The size of the volume in GB.</p>"
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+---
+layout: false
+noindex: true
+---
+
+User-agent: *
+Disallow: /404
+Disallow: /500

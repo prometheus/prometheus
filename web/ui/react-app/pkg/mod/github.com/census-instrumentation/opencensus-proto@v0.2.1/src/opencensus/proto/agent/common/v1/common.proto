@@ -1,0 +1,101 @@
+// Copyright 2018, OpenCensus Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+// NOTE: This proto is experimental and is subject to change at this point.
+// Please do not use it at the moment.
+
+package opencensus.proto.agent.common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_package = "io.opencensus.proto.agent.common.v1";
+option java_outer_classname = "CommonProto";
+
+option go_package = "github.com/census-instrumentation/opencensus-proto/gen-go/agent/common/v1";
+
+option ruby_package = "OpenCensus.Proto.Agent.Common.V1";
+
+// Identifier metadata of the Node that produces the span or tracing data.
+// Note, this is not the metadata about the Node or service that is described by associated spans.
+// In the future we plan to extend the identifier proto definition to support
+// additional information (e.g cloud id, etc.)
+message Node {
+  // Identifier that uniquely identifies a process within a VM/container.
+  ProcessIdentifier identifier = 1;
+
+  // Information on the OpenCensus Library that initiates the stream.
+  LibraryInfo library_info = 2;
+
+  // Additional information on service.
+  ServiceInfo service_info = 3;
+
+  // Additional attributes.
+  map<string, string> attributes = 4;
+
+  // TODO(songya): Add more identifiers in the future as needed, like cloud
+  // identifiers.
+}
+
+// Identifier that uniquely identifies a process within a VM/container.
+message ProcessIdentifier {
+
+  // The host name. Usually refers to the machine/container name.
+  // For example: os.Hostname() in Go, socket.gethostname() in Python.
+  string host_name = 1;
+
+  // Process id.
+  uint32 pid = 2;
+
+  // Start time of this ProcessIdentifier. Represented in epoch time.
+  google.protobuf.Timestamp start_timestamp = 3;
+}
+
+// Information on OpenCensus Library.
+message LibraryInfo {
+
+  enum Language {
+    LANGUAGE_UNSPECIFIED = 0;
+    CPP = 1;
+    C_SHARP = 2;
+    ERLANG = 3;
+    GO_LANG = 4;
+    JAVA = 5;
+    NODE_JS = 6;
+    PHP = 7;
+    PYTHON = 8;
+    RUBY = 9;
+    WEB_JS = 10;
+  }
+
+  // Language of OpenCensus Library.
+  Language language = 1;
+
+  // Version of Agent exporter of Library.
+  string exporter_version = 2;
+
+  // Version of OpenCensus Library.
+  string core_library_version = 3;
+}
+
+// Additional service information.
+message ServiceInfo {
+
+  // Name of the service.
+  string name = 1;
+
+  // TODO(songya): add more fields as needed.
+}

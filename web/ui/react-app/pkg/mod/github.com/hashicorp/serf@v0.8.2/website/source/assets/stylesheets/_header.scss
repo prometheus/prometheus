@@ -1,0 +1,78 @@
+#header {
+  background: $header-background-color;
+
+  .navbar-toggle {
+    height: $header-height;
+    margin: 0;
+    padding-right: 15px;
+    border-radius: 0;
+
+    .icon-bar {
+      border: 1px solid $white;
+      border-radius: 0;
+    }
+  }
+
+  .navbar-brand {
+    display: block;
+    margin: 0;
+    padding: 0;
+
+    a {
+      display: flex;
+      align-items: center;
+      height: $header-height;
+      line-height: $header-height;
+
+      svg.logo {
+        transition: opacity 0.15s ease-in-out;
+        @extend svg.logo.white;
+
+        &:hover, &:focus, &:active {
+          opacity: 0.6;
+          outline: 0;
+          text-decoration: none;
+        }
+      }
+    }
+  }
+
+  ul.nav {
+    li {
+      a {
+        color: $header-link-color;
+        font-size: $header-font-size;
+        font-family: $font-family-open-sans;
+        font-weight: $font-weight-bold;
+        height: $header-height;
+        line-height: $header-height;
+        padding: 0 10px;
+        margin: 0;
+        text-decoration: none;
+
+        &:hover, &:focus, &:active {
+          background-color: transparent;
+          color: $header-link-color-hover;
+          outline: 0;
+
+          svg {
+            fill: $header-link-color-hover;
+          }
+        }
+
+        svg {
+          fill: $header-link-color;
+          position: relative;
+          top: 2px;
+          width: 14px;
+          height: 14px;
+          margin-right: 3px;
+        }
+      }
+    }
+  }
+
+  .buttons {
+    margin-top: 2px;
+  }
+}

@@ -1,0 +1,271 @@
+apiVersion: settings.k8s.io/v1alpha1
+kind: PodPreset
+metadata:
+  annotations:
+    "9": "10"
+  clusterName: "15"
+  creationTimestamp: null
+  deletionGracePeriodSeconds: -4955867275792137171
+  finalizers:
+  - "14"
+  generateName: "3"
+  generation: 8071137005907523419
+  labels:
+    "7": "8"
+  managedFields:
+  - apiVersion: "17"
+    manager: "16"
+    operation: 鐊唊飙Ş-U圴÷a/ɔ}摁(湗Ć]
+  name: "2"
+  namespace: "4"
+  ownerReferences:
+  - apiVersion: "11"
+    blockOwnerDeletion: true
+    controller: false
+    kind: "12"
+    name: "13"
+    uid: Dz廔ȇ{sŊƏp
+  resourceVersion: "11042405498087606203"
+  selfLink: "5"
+  uid: "7"
+spec:
+  env:
+  - name: "24"
+    value: "25"
+    valueFrom:
+      configMapKeyRef:
+        key: "31"
+        name: "30"
+        optional: false
+      fieldRef:
+        apiVersion: "26"
+        fieldPath: "27"
+      resourceFieldRef:
+        containerName: "28"
+        divisor: "91"
+        resource: "29"
+      secretKeyRef:
+        key: "33"
+        name: "32"
+        optional: true
+  envFrom:
+  - configMapRef:
+      name: "35"
+      optional: true
+    prefix: "34"
+    secretRef:
+      name: "36"
+      optional: false
+  selector:
+    matchExpressions:
+    - key: p503---477-49p---o61---4fy--9---7--9-9s-0-u5lj2--10pq-0-7-9-2-0/fP81.-.9Vdx.TB_M-H_5_.t..bG0
+      operator: In
+      values:
+      - D07.a_.y_y_o0_5qN2_---_M.N_._a6.9bHjdH.-.5_.I8__n
+    matchLabels:
+      8---jop9641lg.p-g8c2-k-912e5-c-e63-n-3n/E9.8ThjT9s-j41-0-6p-JFHn7y-74.-0MUORQQ.N2.3: 68._bQw.-dG6c-.6--_x.--0wmZk1_8._3s_-_Bq.m_4
+  volumeMounts:
+  - mountPath: "143"
+    mountPropagation: 腿ħ缶.蒅!a
+    name: "142"
+    readOnly: true
+    subPath: "144"
+    subPathExpr: "145"
+  volumes:
+  - awsElasticBlockStore:
+      fsType: "42"
+      partition: 1686297225
+      readOnly: true
+      volumeID: "41"
+    azureDisk:
+      cachingMode: 穠C]躢|)黰eȪ嵛4$%Qɰ
+      diskName: "105"
+      diskURI: "106"
+      fsType: "107"
+      kind: Ï抴ŨfZhUʎ浵ɲõTo&蕭k
+      readOnly: false
+    azureFile:
+      readOnly: true
+      secretName: "91"
+      shareName: "92"
+    cephfs:
+      monitors:
+      - "76"
+      path: "77"
+      readOnly: true
+      secretFile: "79"
+      secretRef:
+        name: "80"
+      user: "78"
+    cinder:
+      fsType: "74"
+      secretRef:
+        name: "75"
+      volumeID: "73"
+    configMap:
+      defaultMode: -958191807
+      items:
+      - key: "94"
+        mode: -513127725
+        path: "95"
+      name: "93"
+      optional: true
+    csi:
+      driver: "137"
+      fsType: "138"
+      nodePublishSecretRef:
+        name: "141"
+      readOnly: true
+      volumeAttributes:
+        "139": "140"
+    downwardAPI:
+      defaultMode: 1169718433
+      items:
+      - fieldRef:
+          apiVersion: "84"
+          fieldPath: "85"
+        mode: 345648859
+        path: "83"
+        resourceFieldRef:
+          containerName: "86"
+          divisor: "965"
+          resource: "87"
+    emptyDir:
+      sizeLimit: "700"
+    fc:
+      fsType: "89"
+      lun: -460478410
+      targetWWNs:
+      - "88"
+      wwids:
+      - "90"
+    flexVolume:
+      driver: "68"
+      fsType: "69"
+      options:
+        "71": "72"
+      secretRef:
+        name: "70"
+    flocker:
+      datasetName: "81"
+      datasetUUID: "82"
+    gcePersistentDisk:
+      fsType: "40"
+      partition: -1215463021
+      pdName: "39"
+      readOnly: true
+    gitRepo:
+      directory: "45"
+      repository: "43"
+      revision: "44"
+    glusterfs:
+      endpoints: "58"
+      path: "59"
+    hostPath:
+      path: "38"
+      type: 3fƻfʣ繡楙¯ĦE
+    iscsi:
+      fsType: "54"
+      initiatorName: "57"
+      iqn: "52"
+      iscsiInterface: "53"
+      lun: -388204860
+      portals:
+      - "55"
+      readOnly: true
+      secretRef:
+        name: "56"
+      targetPortal: "51"
+    name: "37"
+    nfs:
+      path: "50"
+      readOnly: true
+      server: "49"
+    persistentVolumeClaim:
+      claimName: "60"
+    photonPersistentDisk:
+      fsType: "109"
+      pdID: "108"
+    portworxVolume:
+      fsType: "124"
+      readOnly: true
+      volumeID: "123"
+    projected:
+      defaultMode: 1366821517
+      sources:
+      - configMap:
+          items:
+          - key: "119"
+            mode: -1120128337
+            path: "120"
+          name: "118"
+          optional: false
+        downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: "114"
+              fieldPath: "115"
+            mode: -1996616480
+            path: "113"
+            resourceFieldRef:
+              containerName: "116"
+              divisor: "85"
+              resource: "117"
+        secret:
+          items:
+          - key: "111"
+            mode: -163325250
+            path: "112"
+          name: "110"
+          optional: false
+        serviceAccountToken:
+          audience: "121"
+          expirationSeconds: -1239370187818888272
+          path: "122"
+    quobyte:
+      group: "103"
+      registry: "100"
+      tenant: "104"
+      user: "102"
+      volume: "101"
+    rbd:
+      fsType: "63"
+      image: "62"
+      keyring: "66"
+      monitors:
+      - "61"
+      pool: "64"
+      readOnly: true
+      secretRef:
+        name: "67"
+      user: "65"
+    scaleIO:
+      fsType: "132"
+      gateway: "125"
+      protectionDomain: "128"
+      secretRef:
+        name: "127"
+      sslEnabled: true
+      storageMode: "130"
+      storagePool: "129"
+      system: "126"
+      volumeName: "131"
+    secret:
+      defaultMode: -999327618
+      items:
+      - key: "47"
+        mode: -815194340
+        path: "48"
+      optional: false
+      secretName: "46"
+    storageos:
+      fsType: "135"
+      secretRef:
+        name: "136"
+      volumeName: "133"
+      volumeNamespace: "134"
+    vsphereVolume:
+      fsType: "97"
+      storagePolicyID: "99"
+      storagePolicyName: "98"
+      volumePath: "96"

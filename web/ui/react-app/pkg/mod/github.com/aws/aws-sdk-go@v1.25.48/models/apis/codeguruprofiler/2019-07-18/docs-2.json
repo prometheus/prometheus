@@ -1,0 +1,327 @@
+{
+  "version": "2.0",
+  "service": "<p>Example service documentation.</p>",
+  "operations": {
+    "ConfigureAgent": "<p>Provides the configuration to use for an agent of the profiling group.</p>",
+    "CreateProfilingGroup": "<p>Create a profiling group.</p>",
+    "DeleteProfilingGroup": "<p>Delete a profiling group.</p>",
+    "DescribeProfilingGroup": "<p>Describe a profiling group.</p>",
+    "GetProfile": "<p>Get the aggregated profile of a profiling group for the specified time range. If the requested time range does not align with the available aggregated profiles, it will be expanded to attain alignment. If aggregated profiles are available only for part of the period requested, the profile is returned from the earliest available to the latest within the requested time range. For instance, if the requested time range is from 00:00 to 00:20 and the available profiles are from 00:15 to 00:25, then the returned profile will be from 00:15 to 00:20.</p>",
+    "ListProfileTimes": "<p>List the start times of the available aggregated profiles of a profiling group for an aggregation period within the specified time range.</p>",
+    "ListProfilingGroups": "<p>List profiling groups in the account.</p>",
+    "PostAgentProfile": "<p>Submit profile collected by an agent belonging to a profiling group for aggregation.</p>",
+    "UpdateProfilingGroup": "<p>Update a profiling group.</p>"
+  },
+  "shapes": {
+    "AgentConfiguration": {
+      "base": "<p>The configuration for the agent to use.</p>",
+      "refs": {
+        "ConfigureAgentResponse$configuration": "<p>The configuration for the agent to use.</p>"
+      }
+    },
+    "AgentOrchestrationConfig": {
+      "base": "<p>Configuration to orchestrate agents to create and report agent profiles of the profiling group. Agents are orchestrated if they follow the agent orchestration protocol.</p>",
+      "refs": {
+        "CreateProfilingGroupRequest$agentOrchestrationConfig": null,
+        "ProfilingGroupDescription$agentOrchestrationConfig": null,
+        "UpdateProfilingGroupRequest$agentOrchestrationConfig": "<p>Remote configuration to configure the agents of the profiling group.</p>"
+      }
+    },
+    "AgentProfile": {
+      "base": "<p>The profile collected by an agent for a time range.</p>",
+      "refs": {
+        "PostAgentProfileRequest$agentProfile": null
+      }
+    },
+    "AggregatedProfile": {
+      "base": "<p>The profile representing the aggregation of agent profiles of the profiling group for a time range.</p>",
+      "refs": {
+        "GetProfileResponse$profile": null
+      }
+    },
+    "AggregatedProfileTime": {
+      "base": "<p>The time range of an aggregated profile.</p>",
+      "refs": {
+        "ProfilingStatus$latestAggregatedProfile": "<p>The time range of latest aggregated profile available.</p>"
+      }
+    },
+    "AggregationPeriod": {
+      "base": "<p>Periods of time used for aggregation of profiles, represented using ISO 8601 format.</p>",
+      "refs": {
+        "AggregatedProfileTime$period": "<p>The aggregation period of the aggregated profile.</p>",
+        "ListProfileTimesRequest$period": "<p>The aggregation period to list the profiles for.</p>"
+      }
+    },
+    "Boolean": {
+      "base": null,
+      "refs": {
+        "AgentConfiguration$shouldProfile": "<p>Specifies if the profiling should be enabled by the agent.</p>",
+        "AgentOrchestrationConfig$profilingEnabled": "<p>If the agents should be enabled to create and report profiles.</p>",
+        "ListProfilingGroupsRequest$includeDescription": "<p>If set to true, returns the full description of the profiling groups instead of the names. Defaults to false.</p>"
+      }
+    },
+    "ClientToken": {
+      "base": "<p>Client token for the request.</p>",
+      "refs": {
+        "CreateProfilingGroupRequest$clientToken": null,
+        "PostAgentProfileRequest$profileToken": "<p>Client generated token to deduplicate the agent profile during aggregation.</p>"
+      }
+    },
+    "ConfigureAgentRequest": {
+      "base": "<p>Request for ConfigureAgent operation.</p>",
+      "refs": {
+      }
+    },
+    "ConfigureAgentResponse": {
+      "base": "<p>Response for ConfigureAgent operation.</p>",
+      "refs": {
+      }
+    },
+    "ConflictException": {
+      "base": "<p>Request can can cause an inconsistent state for the resource.</p>",
+      "refs": {
+      }
+    },
+    "CreateProfilingGroupRequest": {
+      "base": "<p>Request for CreateProfilingGroup operation.</p>",
+      "refs": {
+      }
+    },
+    "CreateProfilingGroupResponse": {
+      "base": "<p>Response for CreateProfilingGroup operation.</p>",
+      "refs": {
+      }
+    },
+    "DeleteProfilingGroupRequest": {
+      "base": "<p>Request for DeleteProfilingGroup operation.</p>",
+      "refs": {
+      }
+    },
+    "DeleteProfilingGroupResponse": {
+      "base": "<p>Response for DeleteProfilingGroup operation.</p>",
+      "refs": {
+      }
+    },
+    "DescribeProfilingGroupRequest": {
+      "base": "<p>Request for DescribeProfilingGroup operation.</p>",
+      "refs": {
+      }
+    },
+    "DescribeProfilingGroupResponse": {
+      "base": "<p>Response for DescribeProfilingGroup operation.</p>",
+      "refs": {
+      }
+    },
+    "FleetInstanceId": {
+      "base": "<p>Identifier of the instance of compute fleet being profiled by the agent. For instance, host name in EC2, task id for ECS, function name for AWS Lambda</p>",
+      "refs": {
+        "ConfigureAgentRequest$fleetInstanceId": null
+      }
+    },
+    "GetProfileRequest": {
+      "base": "<p>Request for GetProfile operation.</p>",
+      "refs": {
+      }
+    },
+    "GetProfileResponse": {
+      "base": "<p>Response for GetProfile operation.</p>",
+      "refs": {
+      }
+    },
+    "Integer": {
+      "base": null,
+      "refs": {
+        "AgentConfiguration$periodInSeconds": "<p>Specifies the period to follow the configuration (to profile or not) and call back to get a new configuration.</p>"
+      }
+    },
+    "InternalServerException": {
+      "base": "<p>Unexpected error during processing of request.</p>",
+      "refs": {
+      }
+    },
+    "ListProfileTimesRequest": {
+      "base": "<p>Request for ListProfileTimes operation.</p>",
+      "refs": {
+      }
+    },
+    "ListProfileTimesResponse": {
+      "base": "<p>Response for ListProfileTimes operation.</p>",
+      "refs": {
+      }
+    },
+    "ListProfilingGroupsRequest": {
+      "base": "<p>Request for ListProfilingGroups operation.</p>",
+      "refs": {
+      }
+    },
+    "ListProfilingGroupsResponse": {
+      "base": "<p>Response for ListProfilingGroups operation.</p>",
+      "refs": {
+      }
+    },
+    "MaxDepth": {
+      "base": "<p>Limit the max depth of the profile.</p>",
+      "refs": {
+        "GetProfileRequest$maxDepth": null
+      }
+    },
+    "MaxResults": {
+      "base": "<p>Upper bound on the number of results to list in a single call.</p>",
+      "refs": {
+        "ListProfileTimesRequest$maxResults": null,
+        "ListProfilingGroupsRequest$maxResults": null
+      }
+    },
+    "OrderBy": {
+      "base": null,
+      "refs": {
+        "ListProfileTimesRequest$orderBy": "<p>The order (ascending or descending by start time of the profile) to list the profiles by. Defaults to TIMESTAMP_DESCENDING.</p>"
+      }
+    },
+    "PaginationToken": {
+      "base": "<p>Token for paginating results.</p>",
+      "refs": {
+        "ListProfileTimesRequest$nextToken": null,
+        "ListProfileTimesResponse$nextToken": null,
+        "ListProfilingGroupsRequest$nextToken": null,
+        "ListProfilingGroupsResponse$nextToken": null
+      }
+    },
+    "Period": {
+      "base": "<p>Periods of time represented using <a href=\"https://en.wikipedia.org/wiki/ISO_8601#Durations\">ISO 8601 format</a>.</p>",
+      "refs": {
+        "GetProfileRequest$period": "<p>The period of the profile to get. Exactly two of <code>startTime</code>, <code>period</code> and <code>endTime</code> must be specified. Must be positive and the overall time range to be in the past and not larger than a week.</p>"
+      }
+    },
+    "PostAgentProfileRequest": {
+      "base": "<p>Request for PostAgentProfile operation.</p>",
+      "refs": {
+      }
+    },
+    "PostAgentProfileResponse": {
+      "base": "<p>Response for PostAgentProfile operation.</p>",
+      "refs": {
+      }
+    },
+    "ProfileTime": {
+      "base": "<p>Periods of time used for aggregation of profiles, represented using ISO 8601 format.</p>",
+      "refs": {
+        "ProfileTimes$member": null
+      }
+    },
+    "ProfileTimes": {
+      "base": "<p>List of profile times.</p>",
+      "refs": {
+        "ListProfileTimesResponse$profileTimes": "<p>List of start times of the available profiles for the aggregation period in the specified time range.</p>"
+      }
+    },
+    "ProfilingGroupArn": {
+      "base": "<p>The ARN of the profiling group.</p>",
+      "refs": {
+        "ProfilingGroupDescription$arn": null
+      }
+    },
+    "ProfilingGroupDescription": {
+      "base": "<p>The description of a profiling group.</p>",
+      "refs": {
+        "CreateProfilingGroupResponse$profilingGroup": null,
+        "DescribeProfilingGroupResponse$profilingGroup": null,
+        "ProfilingGroupDescriptions$member": null,
+        "UpdateProfilingGroupResponse$profilingGroup": null
+      }
+    },
+    "ProfilingGroupDescriptions": {
+      "base": "<p>List of profiling group descriptions.</p>",
+      "refs": {
+        "ListProfilingGroupsResponse$profilingGroups": null
+      }
+    },
+    "ProfilingGroupName": {
+      "base": "<p>The name of the profiling group.</p>",
+      "refs": {
+        "ConfigureAgentRequest$profilingGroupName": null,
+        "CreateProfilingGroupRequest$profilingGroupName": null,
+        "DeleteProfilingGroupRequest$profilingGroupName": null,
+        "DescribeProfilingGroupRequest$profilingGroupName": null,
+        "GetProfileRequest$profilingGroupName": null,
+        "ListProfileTimesRequest$profilingGroupName": null,
+        "PostAgentProfileRequest$profilingGroupName": null,
+        "ProfilingGroupDescription$name": null,
+        "ProfilingGroupNames$member": null,
+        "UpdateProfilingGroupRequest$profilingGroupName": null
+      }
+    },
+    "ProfilingGroupNames": {
+      "base": "<p>List of profiling group names.</p>",
+      "refs": {
+        "ListProfilingGroupsResponse$profilingGroupNames": null
+      }
+    },
+    "ProfilingStatus": {
+      "base": "<p>The status of profiling of a profiling group.</p>",
+      "refs": {
+        "ProfilingGroupDescription$profilingStatus": null
+      }
+    },
+    "ResourceNotFoundException": {
+      "base": "<p>Request references a resource which does not exist.</p>",
+      "refs": {
+      }
+    },
+    "ServiceQuotaExceededException": {
+      "base": "<p>Request would cause a service quota to be exceeded.</p>",
+      "refs": {
+      }
+    },
+    "String": {
+      "base": null,
+      "refs": {
+        "ConflictException$message": null,
+        "GetProfileRequest$accept": "<p>The format of the profile to return. Supports application/json or application/x-amzn-ion. Defaults to application/x-amzn-ion.</p>",
+        "GetProfileResponse$contentEncoding": "<p>The content encoding of the profile in the payload.</p>",
+        "GetProfileResponse$contentType": "<p>The content type of the profile in the payload. Will be application/json or application/x-amzn-ion based on Accept header in the request.</p>",
+        "InternalServerException$message": null,
+        "PostAgentProfileRequest$contentType": "<p>The content type of the agent profile in the payload. Recommended to send the profile gzipped with content-type application/octet-stream. Other accepted values are application/x-amzn-ion and application/json for unzipped Ion and JSON respectively.</p>",
+        "ResourceNotFoundException$message": null,
+        "ServiceQuotaExceededException$message": null,
+        "ThrottlingException$message": null,
+        "ValidationException$message": null
+      }
+    },
+    "ThrottlingException": {
+      "base": "<p>Request was denied due to request throttling.</p>",
+      "refs": {
+      }
+    },
+    "Timestamp": {
+      "base": null,
+      "refs": {
+        "AggregatedProfileTime$start": "<p>The start time of the aggregated profile.</p>",
+        "GetProfileRequest$endTime": "<p>The end time of the profile to get. Either period or endTime must be specified. Must be greater than start and the overall time range to be in the past and not larger than a week.</p>",
+        "GetProfileRequest$startTime": "<p>The start time of the profile to get.</p>",
+        "ListProfileTimesRequest$endTime": "<p>The end time of the time range to list profiles until.</p>",
+        "ListProfileTimesRequest$startTime": "<p>The start time of the time range to list the profiles from.</p>",
+        "ProfileTime$start": "<p>The start time of the profile.</p>",
+        "ProfilingGroupDescription$createdAt": "<p>The timestamp of when the profiling group was created.</p>",
+        "ProfilingGroupDescription$updatedAt": "<p>The timestamp of when the profiling group was last updated.</p>",
+        "ProfilingStatus$latestAgentOrchestratedAt": "<p>Timestamp of when the last interaction of the agent with configureAgent API for orchestration.</p>",
+        "ProfilingStatus$latestAgentProfileReportedAt": "<p>Timestamp of when the latest agent profile was successfully reported.</p>"
+      }
+    },
+    "UpdateProfilingGroupRequest": {
+      "base": "<p>Request for UpdateProfilingGroup operation.</p>",
+      "refs": {
+      }
+    },
+    "UpdateProfilingGroupResponse": {
+      "base": "<p>Response for UpdateProfilingGroup operation.</p>",
+      "refs": {
+      }
+    },
+    "ValidationException": {
+      "base": "<p>The input fails to satisfy the constraints of the API.</p>",
+      "refs": {
+      }
+    }
+  }
+}

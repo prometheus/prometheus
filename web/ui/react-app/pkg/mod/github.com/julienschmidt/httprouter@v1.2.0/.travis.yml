@@ -1,0 +1,18 @@
+sudo: false
+language: go
+go:
+  - 1.7
+  - 1.8
+  - 1.9
+  - "1.10"
+  - tip
+before_install:
+  - go get golang.org/x/tools/cmd/cover
+  - go get github.com/mattn/goveralls
+  - go get github.com/golang/lint/golint
+script:
+  - go test -v -covermode=count -coverprofile=coverage.out
+  - go vet ./...
+  - test -z "$(gofmt -d -s . | tee /dev/stderr)"
+  - test -z "$(golint ./... | tee /dev/stderr)"
+  - $HOME/gopath/bin/goveralls  -coverprofile=coverage.out -service=travis-ci

@@ -1,0 +1,26 @@
+#page-docs-internals-simulator {
+  h5 {
+    font-family: $font-family-klavika;
+    font-size: 18px;
+    font-weight: $font-weight-bold;
+    margin: 50px 0 10px 0;
+    text-transform: uppercase;
+  }
+
+  input.simulator-input {
+    border: 1px solid #DDDDDD;
+    box-sizing: border-box;
+    outline: 0;
+    padding: 10px 15px;
+    margin: 0 5px 0 0;
+    text-align: right;
+    width: 75px;
+
+    &:hover,
+    &:focus,
+    &:active {
+      border: 1px solid #AAAAAA;
+      outline: 0;
+    }
+  }
+}

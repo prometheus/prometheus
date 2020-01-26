@@ -1,0 +1,117 @@
+<% wrap_layout :inner do %>
+  <% content_for :sidebar do %>
+    <ul class="nav docs-sidenav">
+      <li<%= sidebar_current("docs-home") %>>
+        <a href="/docs/index.html">Documentation Home</a>
+      </li>
+
+      <li<%= sidebar_current("docs-upgrading") %>>
+        <a href="/docs/upgrading.html">Upgrading and Compatibility</a>
+        <ul class="nav">
+          <li<%= sidebar_current("docs-upgrading-upgrading") %>>
+            <a href="/docs/upgrading.html">Upgrading Serf</a>
+          </li>
+          <li<%= sidebar_current("docs-upgrading-compat") %>>
+            <a href="/docs/compatibility.html">Compatibility Promise</a>
+          </li>
+        </ul>
+      </li>
+
+      <li<%= sidebar_current("docs-internals") %>>
+        <a href="/docs/internals/index.html">Serf Internals</a>
+        <ul class="nav">
+          <li<%= sidebar_current("docs-internals-gossip") %>>
+            <a href="/docs/internals/gossip.html">Gossip Protocol</a>
+          </li>
+          <li<%= sidebar_current("docs-internals-coordinates") %>>
+            <a href="/docs/internals/coordinates.html">Network Coordinates</a>
+          </li>
+          <li<%= sidebar_current("docs-internals-security") %>>
+            <a href="/docs/internals/security.html">Security Model</a>
+          </li>
+          <li<%= sidebar_current("docs-internals-simulator") %>>
+            <a href="/docs/internals/simulator.html">Convergence Simulator</a>
+          </li>
+        </ul>
+      </li>
+
+      <li<%= sidebar_current("docs-commands") %>>
+        <a href="/docs/commands/index.html">Commands (CLI)</a>
+        <ul class="nav">
+          <li<%= sidebar_current("docs-commands-agent") %>>
+            <a href="/docs/commands/agent.html">agent</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-event") %>>
+            <a href="/docs/commands/event.html">event</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-forceleave") %>>
+            <a href="/docs/commands/force-leave.html">force-leave</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-info") %>>
+            <a href="/docs/commands/info.html">info</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-join") %>>
+            <a href="/docs/commands/join.html">join</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-keys") %>>
+            <a href="/docs/commands/keys.html">keys</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-keygen") %>>
+            <a href="/docs/commands/keygen.html">keygen</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-leave") %>>
+            <a href="/docs/commands/leave.html">leave</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-members") %>>
+            <a href="/docs/commands/members.html">members</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-monitor") %>>
+            <a href="/docs/commands/monitor.html">monitor</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-query") %>>
+            <a href="/docs/commands/query.html">query</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-reachability") %>>
+            <a href="/docs/commands/reachability.html">reachability</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-rtt") %>>
+            <a href="/docs/commands/rtt.html">rtt</a>
+          </li>
+          <li<%= sidebar_current("docs-commands-tags") %>>
+            <a href="/docs/commands/tags.html">tags</a>
+          </li>
+        </ul>
+      </li>
+
+      <li<%= sidebar_current("docs-agent") %>>
+        <a href="/docs/agent/basics.html">Serf Agent</a>
+        <ul class="nav">
+          <li<%= sidebar_current("docs-agent-running") %>>
+            <a href="/docs/agent/basics.html">Running and Stopping</a>
+          </li>
+          <li<%= sidebar_current("docs-agent-config") %>>
+            <a href="/docs/agent/options.html">Configuration</a>
+          </li>
+          <li<%= sidebar_current("docs-agent-events") %>>
+            <a href="/docs/agent/event-handlers.html">Event Handlers</a>
+          </li>
+          <li<%= sidebar_current("docs-agent-encryption") %>>
+            <a href="/docs/agent/encryption.html">Encryption</a>
+          </li>
+          <li<%= sidebar_current("docs-agent-rpc") %>>
+            <a href="/docs/agent/rpc.html">RPC Protocol</a>
+          </li>
+          <li<%= sidebar_current("docs-agent-telemetry") %>>
+            <a href="/docs/agent/telemetry.html">Telemetry</a>
+          </li>
+        </ul>
+      </li>
+
+      <li<%= sidebar_current("docs-recipes") %>>
+        <a href="/docs/recipes.html">Recipes</a>
+      </li>
+    </ul>
+  <% end %>
+
+  <%= yield %>
+<% end %>

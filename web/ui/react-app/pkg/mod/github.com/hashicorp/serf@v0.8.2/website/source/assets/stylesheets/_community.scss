@@ -1,0 +1,22 @@
+#inner {
+  .people {
+    margin-top: 30px;
+
+    .person {
+      &:after {
+        display: block;
+        clear: both;
+        content: ' ';
+      }
+
+      img {
+        width: 125px;
+        margin: auto auto;
+      }
+
+      .bio {
+        padding-left: 150px;
+      }
+    }
+  }
+}

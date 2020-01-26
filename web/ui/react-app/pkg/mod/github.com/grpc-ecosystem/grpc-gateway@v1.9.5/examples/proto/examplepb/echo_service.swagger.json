@@ -1,0 +1,507 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Echo Service",
+    "description": "Echo Service API consists of a single service which returns\na message.",
+    "version": "version not set"
+  },
+  "schemes": [
+    "http",
+    "https"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/example/echo/{id}": {
+      "post": {
+        "summary": "Echo method receives a simple message and returns it.",
+        "description": "The message posted as the id parameter will also be\nreturned.",
+        "operationId": "Echo",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/examplepbSimpleMessage"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "Id represents the message identifier.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "EchoService"
+        ]
+      }
+    },
+    "/v1/example/echo/{id}/{num}": {
+      "get": {
+        "summary": "Echo method receives a simple message and returns it.",
+        "description": "The message posted as the id parameter will also be\nreturned.",
+        "operationId": "Echo2",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/examplepbSimpleMessage"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "Id represents the message identifier.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "num",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "line_num",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "status.progress",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "status.note",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "en",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "no.progress",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "no.note",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "EchoService"
+        ]
+      }
+    },
+    "/v1/example/echo/{id}/{num}/{lang}": {
+      "get": {
+        "summary": "Echo method receives a simple message and returns it.",
+        "description": "The message posted as the id parameter will also be\nreturned.",
+        "operationId": "Echo3",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/examplepbSimpleMessage"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "Id represents the message identifier.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "num",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "lang",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "line_num",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "status.progress",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "status.note",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "en",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "no.progress",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "no.note",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "EchoService"
+        ]
+      }
+    },
+    "/v1/example/echo1/{id}/{line_num}/{status.note}": {
+      "get": {
+        "summary": "Echo method receives a simple message and returns it.",
+        "description": "The message posted as the id parameter will also be\nreturned.",
+        "operationId": "Echo4",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/examplepbSimpleMessage"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "Id represents the message identifier.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "line_num",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "status.note",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "num",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "status.progress",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "en",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "no.progress",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "EchoService"
+        ]
+      }
+    },
+    "/v1/example/echo2/{no.note}": {
+      "get": {
+        "summary": "Echo method receives a simple message and returns it.",
+        "description": "The message posted as the id parameter will also be\nreturned.",
+        "operationId": "Echo5",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/examplepbSimpleMessage"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "no.note",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "id",
+            "description": "Id represents the message identifier.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "num",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "line_num",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "status.progress",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "en",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "no.progress",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "EchoService"
+        ]
+      }
+    },
+    "/v1/example/echo_body": {
+      "post": {
+        "summary": "EchoBody method receives a simple message and returns it.",
+        "operationId": "EchoBody",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/examplepbSimpleMessage"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/examplepbSimpleMessage"
+            }
+          }
+        ],
+        "tags": [
+          "EchoService"
+        ]
+      }
+    },
+    "/v1/example/echo_delete": {
+      "delete": {
+        "summary": "EchoDelete method receives a simple message and returns it.",
+        "operationId": "EchoDelete",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/examplepbSimpleMessage"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "Id represents the message identifier.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "num",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "line_num",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "status.progress",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "status.note",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "en",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "no.progress",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "no.note",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "EchoService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "examplepbEmbedded": {
+      "type": "object",
+      "properties": {
+        "progress": {
+          "type": "string",
+          "format": "int64"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "description": "Embedded represents a message embedded in SimpleMessage."
+    },
+    "examplepbSimpleMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Id represents the message identifier."
+        },
+        "num": {
+          "type": "string",
+          "format": "int64"
+        },
+        "line_num": {
+          "type": "string",
+          "format": "int64"
+        },
+        "lang": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/examplepbEmbedded"
+        },
+        "en": {
+          "type": "string",
+          "format": "int64"
+        },
+        "no": {
+          "$ref": "#/definitions/examplepbEmbedded"
+        }
+      },
+      "description": "SimpleMessage represents a simple message sent to the Echo service."
+    }
+  }
+}

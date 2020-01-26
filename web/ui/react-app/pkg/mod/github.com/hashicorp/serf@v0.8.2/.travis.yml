@@ -1,0 +1,18 @@
+language: go
+
+go:
+  - "1.11.4"
+
+branches:
+  only:
+    - master
+
+install:
+  - make get-tools
+  - make bin
+
+env:
+  - GO111MODULE=on # Enable Go modules in 1.11
+
+script:
+  - make test

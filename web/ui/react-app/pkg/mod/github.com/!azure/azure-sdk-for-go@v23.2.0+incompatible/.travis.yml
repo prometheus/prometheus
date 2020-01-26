@@ -1,0 +1,43 @@
+sudo: false
+
+language: go
+go:
+  - 1.8.x
+  - 1.9.x
+  - 1.10.x
+  - 1.11.x
+  - master
+
+branches:
+  only:
+  - master
+  - latest
+
+env:
+  global:
+    - DEP_RELEASE_TAG=v0.5.0 # so the script knows which version to use
+    - IGNORE_BREAKING_CHANGES=true
+  matrix:
+    - GOARCH="amd64"
+    - GOARCH="386"
+
+matrix:
+  allow_failures:
+    - go: master
+
+before_install:
+  - curl -sSL https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+
+install:
+  - dep ensure
+
+script:
+  - bash rungas.sh
+  - grep -L -r --include *.go --exclude-dir vendor -P "Copyright (\d{4}|\(c\)) Microsoft" ./ | tee /dev/stderr | test -z "$(< /dev/stdin)"
+  - go build $(go list ./... | grep -v vendor)
+  - if [[ $TRAVIS_GO_VERSION == 1.11* ]]; then test -z "$(go fmt $(go list ./... | grep -v vendor) | tee /dev/stderr)"; fi
+  - go vet $(go list ./... | grep -v vendor)
+  - go test $(sh ./findTestedPackages.sh)
+  - go run ./tools/apidiff/main.go packages ./services FETCH_HEAD~1 FETCH_HEAD --copyrepo --breakingchanges || $IGNORE_BREAKING_CHANGES
+  - go run ./tools/pkgchk/main.go ./services --exceptions ./tools/pkgchk/exceptions.txt
+  - git diff --exit-code

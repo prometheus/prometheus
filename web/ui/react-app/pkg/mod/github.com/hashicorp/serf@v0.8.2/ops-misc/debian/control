@@ -1,0 +1,13 @@
+Source: serf
+Section: net
+Priority: optional
+Maintainer: Derp Ston <derpston@sleepygeek.org>
+Build-Depends:
+	debhelper (>= 7.0.50~)
+Homepage: https://www.serf.io/
+
+Package: serf
+Architecture: amd64
+Description: service orchestration and management tool
+ Serf is a service discovery and orchestration tool that is
+ decentralized, highly available, and fault tolerant.

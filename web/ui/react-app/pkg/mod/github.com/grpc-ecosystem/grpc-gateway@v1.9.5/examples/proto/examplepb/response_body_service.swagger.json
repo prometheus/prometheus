@@ -1,0 +1,158 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "examples/proto/examplepb/response_body_service.proto",
+    "version": "version not set"
+  },
+  "schemes": [
+    "http",
+    "https"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/responsebodies/{data}": {
+      "get": {
+        "operationId": "ListResponseBodies",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/examplepbRepeatedResponseBodyOutResponse"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "data",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ResponseBodyService"
+        ]
+      }
+    },
+    "/responsebody/{data}": {
+      "get": {
+        "operationId": "GetResponseBody",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/examplepbResponseBodyOutResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "data",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ResponseBodyService"
+        ]
+      }
+    },
+    "/responsestrings/{data}": {
+      "get": {
+        "operationId": "ListResponseStrings",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "data",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ResponseBodyService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "ResponseResponseType": {
+      "type": "string",
+      "enum": [
+        "UNKNOWN",
+        "A",
+        "B"
+      ],
+      "default": "UNKNOWN",
+      "title": "- UNKNOWN: UNKNOWN\n - A: A is 1\n - B: B is 2"
+    },
+    "examplepbRepeatedResponseBodyOut": {
+      "type": "object",
+      "properties": {
+        "response": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/examplepbRepeatedResponseBodyOutResponse"
+          }
+        }
+      }
+    },
+    "examplepbRepeatedResponseBodyOutResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/ResponseResponseType"
+        }
+      }
+    },
+    "examplepbRepeatedResponseStrings": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "examplepbResponseBodyOut": {
+      "type": "object",
+      "properties": {
+        "response": {
+          "$ref": "#/definitions/examplepbResponseBodyOutResponse"
+        }
+      }
+    },
+    "examplepbResponseBodyOutResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

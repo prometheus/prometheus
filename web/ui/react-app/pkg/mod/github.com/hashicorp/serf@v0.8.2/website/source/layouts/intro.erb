@@ -1,0 +1,63 @@
+<% wrap_layout :inner do %>
+  <% content_for :sidebar do %>
+    <ul class="nav docs-sidenav">
+      <li<%= sidebar_current("what") %>>
+        <a href="/intro/index.html">What is Serf?</a>
+      </li>
+
+      <li<%= sidebar_current("use-cases") %>>
+        <a href="/intro/use-cases.html">Use Cases</a>
+      </li>
+
+      <li<%= sidebar_current("vs-other") %>>
+        <a href="/intro/vs-other-sw.html">Serf vs. Other Software</a>
+        <ul class="nav">
+          <li<%= sidebar_current("vs-other-zk") %>>
+            <a href="/intro/vs-zookeeper.html">ZooKeeper, doozerd, etcd</a>
+          </li>
+          <li<%= sidebar_current("vs-other-chef") %>>
+            <a href="/intro/vs-chef-puppet.html">Chef, Puppet, etc.</a>
+          </li>
+          <li<%= sidebar_current("vs-other-fabric") %>>
+            <a href="/intro/vs-fabric.html">Fabric</a>
+          </li>
+          <li<%= sidebar_current("vs-other-consul") %>>
+            <a href="/intro/vs-consul.html">Consul</a>
+          </li>
+          <li<%= sidebar_current("vs-other-custom") %>>
+            <a href="/intro/vs-custom.html">Custom Solutions</a>
+          </li>
+        </ul>
+      </li>
+
+      <li<%= sidebar_current("gettingstarted") %>>
+        <a href="/intro/getting-started/install.html">Getting Started</a>
+        <ul class="nav">
+          <li<%= sidebar_current("gettingstarted-install") %>>
+            <a href="/intro/getting-started/install.html">Install Serf</a>
+          </li>
+          <li<%= sidebar_current("gettingstarted-agent") %>>
+            <a href="/intro/getting-started/agent.html">Run the Agent</a>
+          </li>
+          <li<%= sidebar_current("gettingstarted-join") %>>
+            <a href="/intro/getting-started/join.html">Join a Cluster</a>
+          </li>
+          <li<%= sidebar_current("gettingstarted-eventhandlers") %>>
+            <a href="/intro/getting-started/event-handlers.html">Event Handlers</a>
+          </li>
+          <li<%= sidebar_current("gettingstarted-userevents") %>>
+            <a href="/intro/getting-started/user-events.html">Custom User Events</a>
+          </li>
+          <li<%= sidebar_current("gettingstarted-queries") %>>
+            <a href="/intro/getting-started/queries.html">Custom Queries</a>
+          </li>
+          <li<%= sidebar_current("gettingstarted-nextsteps") %>>
+            <a href="/intro/getting-started/next-steps.html">Next Steps</a>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  <% end %>
+
+  <%= yield %>
+<% end %>

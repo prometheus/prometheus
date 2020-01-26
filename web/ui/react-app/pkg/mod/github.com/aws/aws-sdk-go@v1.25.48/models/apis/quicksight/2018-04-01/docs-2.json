@@ -1,0 +1,2875 @@
+{
+  "version": "2.0",
+  "service": "<fullname>Amazon QuickSight API Reference</fullname> <p>Amazon QuickSight is a fully managed, serverless business intelligence service for the AWS Cloud that makes it easy to extend data and insights to every user in your organization. This API reference contains documentation for a programming interface that you can use to manage Amazon QuickSight. </p>",
+  "operations": {
+    "CancelIngestion": "<p>Cancels an ongoing ingestion of data into SPICE.</p>",
+    "CreateDashboard": "<p>Creates a dashboard from a template. To first create a template, see the CreateTemplate API.</p> <p>A dashboard is an entity in QuickSight which identifies Quicksight reports, created from analyses. QuickSight dashboards are sharable. With the right permissions, you can create scheduled email reports from them. The <code>CreateDashboard</code>, <code>DescribeDashboard</code> and <code>ListDashboardsByUser</code> APIs act on the dashboard entity. If you have the correct permissions, you can create a dashboard from a template that exists in a different AWS account.</p>",
+    "CreateDataSet": "<p>Creates a dataset.</p>",
+    "CreateDataSource": "<p>Creates a data source.</p>",
+    "CreateGroup": "<p>Creates an Amazon QuickSight group.</p> <p>The permissions resource is <code>arn:aws:quicksight:us-east-1:<i>&lt;relevant-aws-account-id&gt;</i>:group/default/<i>&lt;group-name&gt;</i> </code>.</p> <p>The response is a group object.</p>",
+    "CreateGroupMembership": "<p>Adds an Amazon QuickSight user to an Amazon QuickSight group. </p>",
+    "CreateIAMPolicyAssignment": "<p>Creates an assignment with one specified IAM policy Amazon Resource Name (ARN) and will assigned to specified groups or users of QuickSight. Users and groups need to be in the same namespace. </p>",
+    "CreateIngestion": "<p>Creates and starts a new SPICE ingestion on a dataset</p> <p>Any ingestions operating on tagged datasets inherit the same tags automatically for use in access control. For an example, see <a href=\"https://aws.example.com/premiumsupport/knowledge-center/iam-ec2-resource-tags/\">How do I create an IAM policy to control access to Amazon EC2 resources using tags?</a> in the AWS Knowledge Center. Tags are visible on the tagged dataset, but not on the ingestion resource.</p>",
+    "CreateTemplate": "<p>Creates a template from an existing QuickSight analysis or template. The resulting template can be used to create a dashboard.</p> <p>A template is an entity in QuickSight which encapsulates the metadata required to create an analysis that can be used to create dashboard. It adds a layer of abstraction by use placeholders to replace the dataset associated with the analysis. You can use templates to create dashboards by replacing dataset placeholders with datasets which follow the same schema that was used to create the source analysis and template.</p>",
+    "CreateTemplateAlias": "<p>Creates a template alias for a template.</p>",
+    "DeleteDashboard": "<p>Deletes a dashboard.</p>",
+    "DeleteDataSet": "<p>Deletes a dataset.</p>",
+    "DeleteDataSource": "<p>Deletes the data source permanently. This action breaks all the datasets that reference the deleted data source.</p>",
+    "DeleteGroup": "<p>Removes a user group from Amazon QuickSight. </p>",
+    "DeleteGroupMembership": "<p>Removes a user from a group so that the user is no longer a member of the group.</p>",
+    "DeleteIAMPolicyAssignment": "<p>Deletes an existing assignment.</p>",
+    "DeleteTemplate": "<p>Deletes a template.</p>",
+    "DeleteTemplateAlias": "<p>Update template alias of given template.</p>",
+    "DeleteUser": "<p>Deletes the Amazon QuickSight user that is associated with the identity of the AWS Identity and Access Management (IAM) user or role that's making the call. The IAM user isn't deleted as a result of this call. </p>",
+    "DeleteUserByPrincipalId": "<p>Deletes a user identified by its principal ID. </p>",
+    "DescribeDashboard": "<p>Provides a summary for a dashboard.</p>",
+    "DescribeDashboardPermissions": "<p>Describes read and write permissions on a dashboard.</p>",
+    "DescribeDataSet": "<p>Describes a dataset. </p>",
+    "DescribeDataSetPermissions": "<p>Describes the permissions on a dataset.</p> <p>The permissions resource is <code>arn:aws:quicksight:region:aws-account-id:dataset/data-set-id</code>.</p>",
+    "DescribeDataSource": "<p>Describes a data source.</p>",
+    "DescribeDataSourcePermissions": "<p>Describes the resource permissions for a data source.</p>",
+    "DescribeGroup": "<p>Returns an Amazon QuickSight group's description and Amazon Resource Name (ARN). </p>",
+    "DescribeIAMPolicyAssignment": "<p>Describes an existing IAMPolicy Assignment by specified assignment name.</p>",
+    "DescribeIngestion": "<p>Describes a SPICE ingestion.</p>",
+    "DescribeTemplate": "<p>Describes a template's metadata.</p>",
+    "DescribeTemplateAlias": "<p>Describes the template aliases of a template.</p>",
+    "DescribeTemplatePermissions": "<p>Describes read and write permissions on a template.</p>",
+    "DescribeUser": "<p>Returns information about a user, given the user name. </p>",
+    "GetDashboardEmbedUrl": "<p>Generates a server-side embeddable URL and authorization code. Before this can work properly, first you need to configure the dashboards and user permissions. For more information, see the Amazon QuickSight User Guide section on <a href=\"https://docs.aws.amazon.com/quicksight/latest/user/embedding-dashboards.html\">Embedding Amazon QuickSight Dashboards</a> or see the Amazon QuickSight API Reference section on <a href=\"https://docs.aws.amazon.com/quicksight/latest/APIReference/qs-dev-embedded-dashboards.html\">Embedding Amazon QuickSight Dashboards</a> .</p> <p>Currently, you can use <code>GetDashboardEmbedURL</code> only from the server, not from the user’s browser.</p>",
+    "ListDashboardVersions": "<p>Lists all the versions of the dashboards in the Quicksight subscription.</p>",
+    "ListDashboards": "<p>Lists dashboards in the AWS account.</p>",
+    "ListDataSets": "<p>Lists all of the datasets belonging to this account in an AWS region.</p> <p>The permissions resource is <code>arn:aws:quicksight:region:aws-account-id:dataset/*</code>.</p>",
+    "ListDataSources": "<p>Lists data sources in current AWS Region that belong to this AWS account.</p>",
+    "ListGroupMemberships": "<p>Lists member users in a group.</p>",
+    "ListGroups": "<p>Lists all user groups in Amazon QuickSight. </p>",
+    "ListIAMPolicyAssignments": "<p>Lists assignments in current QuickSight account.</p>",
+    "ListIAMPolicyAssignmentsForUser": "<p>Lists all the assignments and the Amazon Resource Names (ARNs) for the associated IAM policies assigned to the specified user and the group or groups that the user belongs to.</p>",
+    "ListIngestions": "<p>Lists the history of SPICE ingestions for a dataset.</p>",
+    "ListTagsForResource": "<p>Lists the tags assigned to a resource.</p>",
+    "ListTemplateAliases": "<p>Lists all the aliases of a template.</p>",
+    "ListTemplateVersions": "<p>Lists all the versions of the templates in the Quicksight account.</p>",
+    "ListTemplates": "<p>Lists all the templates in the QuickSight account.</p>",
+    "ListUserGroups": "<p>Lists the Amazon QuickSight groups that an Amazon QuickSight user is a member of.</p>",
+    "ListUsers": "<p>Returns a list of all of the Amazon QuickSight users belonging to this account. </p>",
+    "RegisterUser": "<p>Creates an Amazon QuickSight user, whose identity is associated with the AWS Identity and Access Management (IAM) identity or role specified in the request. </p>",
+    "TagResource": "<p>Assigns one or more tags (key-value pairs) to the specified QuickSight resource. </p> <p>Tags can help you organize and categorize your resources. You can also use them to scope user permissions, by granting a user permission to access or change only resources with certain tag values. You can use the <code>TagResource</code> operation with a resource that already has tags. If you specify a new tag key for the resource, this tag is appended to the list of tags associated with the resource. If you specify a tag key that is already associated with the resource, the new tag value that you specify replaces the previous value for that tag.</p> <p>You can associate as many as 50 tags with a resource. QuickSight supports tagging on data set, data source, dashboard, and template. </p> <p>Tagging for QuickSight works in a similar way to tagging for other AWS services, except for the following:</p> <ul> <li> <p>You can't use tags to track AWS costs for QuickSight. This restriction is because QuickSight costs are based on users and SPICE capacity, which aren't taggable resources.</p> </li> <li> <p>QuickSight doesn't currently support the Tag Editor for AWS Resource Groups.</p> </li> </ul>",
+    "UntagResource": "<p>Removes a tag or tags from a resource.</p>",
+    "UpdateDashboard": "<p>Updates a dashboard in the AWS account.</p>",
+    "UpdateDashboardPermissions": "<p>Updates read and write permissions on a dashboard.</p>",
+    "UpdateDashboardPublishedVersion": "<p>Updates the published version of a dashboard.</p>",
+    "UpdateDataSet": "<p>Updates a dataset.</p>",
+    "UpdateDataSetPermissions": "<p>Updates the permissions on a dataset.</p> <p>The permissions resource is <code>arn:aws:quicksight:region:aws-account-id:dataset/data-set-id</code>.</p>",
+    "UpdateDataSource": "<p>Updates a data source.</p>",
+    "UpdateDataSourcePermissions": "<p>Updates the permissions to a data source.</p>",
+    "UpdateGroup": "<p>Changes a group description. </p>",
+    "UpdateIAMPolicyAssignment": "<p>Updates an existing assignment. This operation updates only the optional parameter or parameters that are specified in the request.</p>",
+    "UpdateTemplate": "<p>Updates a template from an existing QuickSight analysis.</p>",
+    "UpdateTemplateAlias": "<p>Updates the template alias of a template.</p>",
+    "UpdateTemplatePermissions": "<p>Updates the permissions on a template.</p>",
+    "UpdateUser": "<p>Updates an Amazon QuickSight user.</p>"
+  },
+  "shapes": {
+    "AccessDeniedException": {
+      "base": "<p>You don't have access to this. The provided credentials couldn't be validated. You might not be authorized to carry out the request. Ensure that your account is authorized to use the Amazon QuickSight service, that your policies have the correct permissions, and that you are using the correct access keys.</p>",
+      "refs": {
+      }
+    },
+    "ActionList": {
+      "base": null,
+      "refs": {
+        "ResourcePermission$Actions": "<p>The action to grant or revoke permissions on. For example, \"quicksight:DescribeDashboard\".</p>"
+      }
+    },
+    "ActiveIAMPolicyAssignment": {
+      "base": "<p>The active AWS Identity and Access Management (IAM) policy assignment.</p>",
+      "refs": {
+        "ActiveIAMPolicyAssignmentList$member": null
+      }
+    },
+    "ActiveIAMPolicyAssignmentList": {
+      "base": null,
+      "refs": {
+        "ListIAMPolicyAssignmentsForUserResponse$ActiveAssignments": "<p>Active assignments for this user.</p>"
+      }
+    },
+    "AdHocFilteringOption": {
+      "base": "<p>Ad hoc (one-time) filtering option.</p>",
+      "refs": {
+        "DashboardPublishOptions$AdHocFilteringOption": "<p>Ad hoc filtering option.</p>"
+      }
+    },
+    "AliasName": {
+      "base": null,
+      "refs": {
+        "CreateTemplateAliasRequest$AliasName": "<p>The name that you want to give to the template alias that you're creating. Aliases that start with <code>$</code> are reserved by QuickSight. </p>",
+        "DeleteTemplateAliasRequest$AliasName": "<p>The alias of the template that you want to delete. If you provide a specific alias, you delete the version that the alias points to. You can specify the latest version of the template by providing the keyword <code>$LATEST</code> in the <code>AliasName</code> parameter. </p>",
+        "DeleteTemplateAliasResponse$AliasName": "<p>The name of the alias.</p>",
+        "DescribeDashboardRequest$AliasName": "<p>The alias name.</p>",
+        "DescribeTemplateAliasRequest$AliasName": "<p>The alias of the template that you want to describe. If you provide a specific alias, you describe the version that the alias points to. You can specify the latest version of the template by providing the keyword <code>$LATEST</code> in the <code>AliasName</code> parameter. The keyword <code>$PUBLISHED</code> doesn't apply to templates.</p>",
+        "DescribeTemplateRequest$AliasName": "<p>The alias of the template that you want to describe. If you provide a specific alias, you describe the version that the alias points to. You can specify the latest version of the template by providing the keyword <code>$LATEST</code> in the <code>AliasName</code> parameter. The keyword <code>$PUBLISHED</code> doesn't apply to templates.</p>",
+        "TemplateAlias$AliasName": "<p>The display name of the template alias.</p>",
+        "UpdateTemplateAliasRequest$AliasName": "<p>The alias of the template that you want to update. If you provide a specific alias, you update the version that the alias points to. You can specify the latest version of the template by providing the keyword <code>$LATEST</code> in the <code>AliasName</code> parameter. The keyword <code>$PUBLISHED</code> doesn't apply to templates.</p>"
+      }
+    },
+    "AmazonElasticsearchParameters": {
+      "base": "<p>Amazon Elasticsearch Service parameters.</p>",
+      "refs": {
+        "DataSourceParameters$AmazonElasticsearchParameters": "<p>Amazon Elasticsearch parameters.</p>"
+      }
+    },
+    "Arn": {
+      "base": null,
+      "refs": {
+        "ActiveIAMPolicyAssignment$PolicyArn": "<p>The Amazon Resource Name (ARN) of the resource.</p>",
+        "CancelIngestionResponse$Arn": "<p>The Amazon Resource Name (ARN) for the data ingestion.</p>",
+        "CreateDashboardResponse$Arn": "<p>The Amazon Resource Name (ARN) of the dashboard.</p>",
+        "CreateDashboardResponse$VersionArn": "<p>The ARN of the dashboard, including the version number of the first version that is created.</p>",
+        "CreateDataSetResponse$Arn": "<p>The Amazon Resource Name (ARN) of the dataset.</p>",
+        "CreateDataSetResponse$IngestionArn": "<p>The ARN for the ingestion, which is triggered as a result of dataset creation if the import mode is SPICE</p>",
+        "CreateDataSourceResponse$Arn": "<p>The Amazon Resource Name (ARN) of the data source.</p>",
+        "CreateIAMPolicyAssignmentRequest$PolicyArn": "<p>An IAM policy Amazon Resource Name (ARN) that you want to apply to the QuickSight users and groups specified in this assignment.</p>",
+        "CreateIAMPolicyAssignmentResponse$PolicyArn": "<p>An IAM policy Amazon Resource Name (ARN) that is applied to the QuickSight users and groups specified in this assignment.</p>",
+        "CreateIngestionResponse$Arn": "<p>The Amazon Resource Name (ARN) for the data ingestion.</p>",
+        "CreateTemplateResponse$Arn": "<p>The Amazon Resource Name (ARN) for the template.</p>",
+        "CreateTemplateResponse$VersionArn": "<p>The ARN for the template, including the version information of the first version.</p>",
+        "CustomSql$DataSourceArn": "<p>The Amazon Resource Name (ARN) of the data source.</p>",
+        "Dashboard$Arn": "<p>The Amazon Resource name (ARN) of the resource.</p>",
+        "DashboardSourceTemplate$Arn": "<p>The Amazon Resource name (ARN) of the resource.</p>",
+        "DashboardSummary$Arn": "<p>The Amazon Resource name (ARN) of the resource.</p>",
+        "DashboardVersion$Arn": "<p>The Amazon Resource name (ARN) of the resource.</p>",
+        "DashboardVersion$SourceEntityArn": "<p>Source entity ARN.</p>",
+        "DashboardVersionSummary$Arn": "<p>The Amazon Resource name (ARN) of the resource.</p>",
+        "DashboardVersionSummary$SourceEntityArn": "<p>Source entity ARN.</p>",
+        "DataSet$Arn": "<p>The Amazon Resource name (ARN) of the resource.</p>",
+        "DataSetReference$DataSetArn": "<p>Dataset ARN.</p>",
+        "DataSetSummary$Arn": "<p>The Amazon Resource name (ARN) of the dataset.</p>",
+        "DataSource$Arn": "<p>The Amazon Resource name (ARN) of the data source.</p>",
+        "DeleteDashboardResponse$Arn": "<p>The Secure Socket Layer (SSL) properties that apply. of the resource.</p>",
+        "DeleteDataSetResponse$Arn": "<p>The Amazon Resource Name (ARN) of the dataset.</p>",
+        "DeleteDataSourceResponse$Arn": "<p>The Amazon Resource Name (ARN) of the data source that you deleted.</p>",
+        "DeleteTemplateAliasResponse$Arn": "<p>The Amazon Resource Name (ARN) of the resource.</p>",
+        "DeleteTemplateResponse$Arn": "<p>The Amazon Resource Name (ARN) of the resource.</p>",
+        "DescribeDashboardPermissionsResponse$DashboardArn": "<p>The Amazon Resource Name (ARN) of the dashboard.</p>",
+        "DescribeDataSetPermissionsResponse$DataSetArn": "<p>The Amazon Resource Name (ARN) of the dataset.</p>",
+        "DescribeDataSourcePermissionsResponse$DataSourceArn": "<p>The Amazon Resource Name (ARN) of the data source.</p>",
+        "DescribeTemplatePermissionsResponse$TemplateArn": "<p>The Amazon Resource Name (ARN) of the template.</p>",
+        "GetDashboardEmbedUrlRequest$UserArn": "<p>The Amazon QuickSight user's Amazon Resource Name (ARN), for use with <code>QUICKSIGHT</code> identity type. You can use this for any Amazon QuickSight users in your account (readers, authors, or admins) authenticated as one of the following:</p> <ul> <li> <p>Active Directory (AD) users or group members</p> </li> <li> <p>Invited non-federated users</p> </li> <li> <p>IAM users and IAM role-based sessions authenticated through Federated Single Sign-On using SAML, OpenID Connect, or IAM Federation</p> </li> </ul>",
+        "Group$Arn": "<p>The Amazon Resource name (ARN) for the group.</p>",
+        "GroupMember$Arn": "<p>The Amazon Resource name (ARN) for the group member (user).</p>",
+        "IAMPolicyAssignment$PolicyArn": "<p>Policy Amazon Resource Name (ARN).</p>",
+        "Ingestion$Arn": "<p>The Amazon Resource name (ARN) of the resource.</p>",
+        "ListTagsForResourceRequest$ResourceArn": "<p>The Amazon Resource Name (ARN) of the resource that you want a list of tags for.</p>",
+        "RelationalTable$DataSourceArn": "<p>The Amazon Resource Name (ARN) for the data source.</p>",
+        "RowLevelPermissionDataSet$Arn": "<p>The Amazon Resource name (ARN) of the permission dataset.</p>",
+        "S3Source$DataSourceArn": "<p>Data source ARN.</p>",
+        "TagResourceRequest$ResourceArn": "<p>The Amazon Resource Name (ARN) of the resource that you want to tag.</p>",
+        "Template$Arn": "<p>The Amazon Resource Name (ARN) of the template.</p>",
+        "TemplateAlias$Arn": "<p>The ARN of the template alias.</p>",
+        "TemplateSourceAnalysis$Arn": "<p>The Amazon Resource name (ARN) of the resource.</p>",
+        "TemplateSourceTemplate$Arn": "<p>The Amazon Resource name (ARN) of the resource.</p>",
+        "TemplateSummary$Arn": "<p>A summary of a template.</p>",
+        "TemplateVersion$SourceEntityArn": "<p>The Amazon Resource Name (ARN) of the analysis or template which was used to create this template.</p>",
+        "TemplateVersionSummary$Arn": "<p>The ARN of the template version.</p>",
+        "UntagResourceRequest$ResourceArn": "<p>The Amazon Resource Name (ARN) of the resource that you want to untag.</p>",
+        "UpdateDashboardPermissionsResponse$DashboardArn": "<p>The Amazon Resource Name (ARN) of the dashboard.</p>",
+        "UpdateDashboardPublishedVersionResponse$DashboardArn": "<p>The Amazon Resource Name (ARN) of the dashboard.</p>",
+        "UpdateDashboardResponse$Arn": "<p>The Amazon Resource Name (ARN) of the resource.</p>",
+        "UpdateDashboardResponse$VersionArn": "<p>The ARN of the dashboard, including the version number.</p>",
+        "UpdateDataSetPermissionsResponse$DataSetArn": "<p>The Amazon Resource Name (ARN) of the dataset.</p>",
+        "UpdateDataSetResponse$Arn": "<p>The Amazon Resource Name (ARN) of the dataset.</p>",
+        "UpdateDataSetResponse$IngestionArn": "<p>The ARN for the ingestion, which is triggered as a result of dataset creation if the import mode is SPICE</p>",
+        "UpdateDataSourcePermissionsResponse$DataSourceArn": "<p>The Amazon Resource Name (ARN) of the data source.</p>",
+        "UpdateDataSourceResponse$Arn": "<p>The Amazon Resource Name (ARN) of the data source.</p>",
+        "UpdateIAMPolicyAssignmentRequest$PolicyArn": "<p>An IAM policy Amazon Resource Name (ARN) that will be applied to specified QuickSight users and groups in this assignment.</p>",
+        "UpdateIAMPolicyAssignmentResponse$PolicyArn": "<p>The IAM policy ARN assigned to the QuickSight users and groups specified in this request.</p>",
+        "UpdateTemplatePermissionsResponse$TemplateArn": "<p>The Amazon Resource Name (ARN) of the template.</p>",
+        "UpdateTemplateResponse$Arn": "<p>The Amazon Resource Name (ARN) for the template.</p>",
+        "UpdateTemplateResponse$VersionArn": "<p>The Amazon Resource Name (ARN) for the template, including the version information of the first version.</p>",
+        "User$Arn": "<p>The Amazon Resource name (ARN) for the user.</p>",
+        "VpcConnectionProperties$VpcConnectionArn": "<p>The Amazon Resource Name (ARN) for the VPC connection.</p>"
+      }
+    },
+    "AssignmentStatus": {
+      "base": null,
+      "refs": {
+        "CreateIAMPolicyAssignmentRequest$AssignmentStatus": "<p>The status of an assignment:</p> <ul> <li> <p>ENABLED - Anything specified in this assignment is used while creating the data source.</p> </li> <li> <p>DISABLED - This assignment isn't used while creating the data source.</p> </li> <li> <p>DRAFT - Assignment is an unfinished draft and isn't used while creating the data source.</p> </li> </ul>",
+        "CreateIAMPolicyAssignmentResponse$AssignmentStatus": "<p>The status of an assignment:</p> <ul> <li> <p>ENABLED - Anything specified in this assignment is used while creating the data source.</p> </li> <li> <p>DISABLED - This assignment isn't used while creating the data source.</p> </li> <li> <p>DRAFT - Assignment is an unfinished draft and isn't used while creating the data source.</p> </li> </ul>",
+        "IAMPolicyAssignment$AssignmentStatus": "<p>Assignment status.</p>",
+        "IAMPolicyAssignmentSummary$AssignmentStatus": "<p>Assignment status.</p>",
+        "ListIAMPolicyAssignmentsRequest$AssignmentStatus": "<p>The status of the assignment.</p>",
+        "UpdateIAMPolicyAssignmentRequest$AssignmentStatus": "<p>The status of an assignment:</p> <ul> <li> <p>ENABLED - Anything specified in this assignment is used while creating the data source.</p> </li> <li> <p>DISABLED - This assignment isn't used while creating the data source.</p> </li> <li> <p>DRAFT - Assignment is an unfinished draft and isn't used while creating the data source.</p> </li> </ul>",
+        "UpdateIAMPolicyAssignmentResponse$AssignmentStatus": "<p>The status of the assignment:</p> <ul> <li> <p>ENABLED - Anything specified in this assignment is used while creating the data source.</p> </li> <li> <p>DISABLED - This assignment isn't used while creating the data source.</p> </li> <li> <p>DRAFT - Assignment is an unfinished draft and isn't used while creating the data source.</p> </li> </ul>"
+      }
+    },
+    "AthenaParameters": {
+      "base": "<p>Amazon Athena parameters.</p>",
+      "refs": {
+        "DataSourceParameters$AthenaParameters": "<p>Athena parameters.</p>"
+      }
+    },
+    "AuroraParameters": {
+      "base": "<p>Amazon Aurora parameters.</p>",
+      "refs": {
+        "DataSourceParameters$AuroraParameters": "<p>Aurora MySQL parameters.</p>"
+      }
+    },
+    "AuroraPostgreSqlParameters": {
+      "base": "<p>Amazon Aurora with PostgreSQL compatibility parameters.</p>",
+      "refs": {
+        "DataSourceParameters$AuroraPostgreSqlParameters": "<p>Aurora PostgreSQL parameters.</p>"
+      }
+    },
+    "AwsAccountId": {
+      "base": null,
+      "refs": {
+        "CancelIngestionRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "CreateDashboardRequest$AwsAccountId": "<p>AWS account ID where you want to create the dashboard.</p>",
+        "CreateDataSetRequest$AwsAccountId": "<p>The AWS Account ID.</p>",
+        "CreateDataSourceRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "CreateGroupMembershipRequest$AwsAccountId": "<p>The ID for the AWS account that the group is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "CreateGroupRequest$AwsAccountId": "<p>The ID for the AWS account that the group is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "CreateIAMPolicyAssignmentRequest$AwsAccountId": "<p>The AWS Account ID where you want to assign QuickSight users or groups to an IAM policy.</p>",
+        "CreateIngestionRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "CreateTemplateAliasRequest$AwsAccountId": "<p>AWS account ID that contains the template you are aliasing.</p>",
+        "CreateTemplateRequest$AwsAccountId": "<p>The ID for the AWS account that the group is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "DeleteDashboardRequest$AwsAccountId": "<p>AWS account ID that contains the dashboard you are deleting.</p>",
+        "DeleteDataSetRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "DeleteDataSourceRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "DeleteGroupMembershipRequest$AwsAccountId": "<p>The ID for the AWS account that the group is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "DeleteGroupRequest$AwsAccountId": "<p>The ID for the AWS account that the group is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "DeleteIAMPolicyAssignmentRequest$AwsAccountId": "<p>The AWS account ID where you want to delete an IAM policy assignment.</p>",
+        "DeleteTemplateAliasRequest$AwsAccountId": "<p>AWS account ID that contains the template alias you are deleting.</p>",
+        "DeleteTemplateRequest$AwsAccountId": "<p>AWS account ID that contains the template you are deleting.</p>",
+        "DeleteUserByPrincipalIdRequest$AwsAccountId": "<p>The ID for the AWS account that the user is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "DeleteUserRequest$AwsAccountId": "<p>The ID for the AWS account that the user is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "DescribeDashboardPermissionsRequest$AwsAccountId": "<p>AWS account ID that contains the dashboard you are describing permissions of.</p>",
+        "DescribeDashboardRequest$AwsAccountId": "<p>AWS account ID that contains the dashboard you are describing.</p>",
+        "DescribeDataSetPermissionsRequest$AwsAccountId": "<p>The AWS Account ID.</p>",
+        "DescribeDataSetRequest$AwsAccountId": "<p>The AWS Account ID.</p>",
+        "DescribeDataSourcePermissionsRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "DescribeDataSourceRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "DescribeGroupRequest$AwsAccountId": "<p>The ID for the AWS account that the group is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "DescribeIAMPolicyAssignmentRequest$AwsAccountId": "<p>The AWS account ID that contains the assignment you want to describe.</p>",
+        "DescribeIngestionRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "DescribeTemplateAliasRequest$AwsAccountId": "<p>AWS account ID that contains the template alias you are describing.</p>",
+        "DescribeTemplatePermissionsRequest$AwsAccountId": "<p>AWS account ID that contains the template you are describing.</p>",
+        "DescribeTemplateRequest$AwsAccountId": "<p>AWS account ID that contains the template you are describing.</p>",
+        "DescribeUserRequest$AwsAccountId": "<p>The ID for the AWS account that the user is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "GetDashboardEmbedUrlRequest$AwsAccountId": "<p>AWS account ID that contains the dashboard you are embedding.</p>",
+        "IAMPolicyAssignment$AwsAccountId": "<p>AWS account ID.</p>",
+        "ListDashboardVersionsRequest$AwsAccountId": "<p>AWS account ID that contains the dashboard you are listing.</p>",
+        "ListDashboardsRequest$AwsAccountId": "<p>AWS account ID that contains the dashboards you are listing.</p>",
+        "ListDataSetsRequest$AwsAccountId": "<p>The AWS Account ID.</p>",
+        "ListDataSourcesRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "ListGroupMembershipsRequest$AwsAccountId": "<p>The ID for the AWS account that the group is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "ListGroupsRequest$AwsAccountId": "<p>The ID for the AWS account that the group is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "ListIAMPolicyAssignmentsForUserRequest$AwsAccountId": "<p>The AWS account ID that contains the assignment.</p>",
+        "ListIAMPolicyAssignmentsRequest$AwsAccountId": "<p>The AWS account ID that contains this IAM policy assignment.</p>",
+        "ListIngestionsRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "ListTemplateAliasesRequest$AwsAccountId": "<p>AWS account ID that contains the template aliases you are listing.</p>",
+        "ListTemplateVersionsRequest$AwsAccountId": "<p>AWS account ID that contains the templates you are listing.</p>",
+        "ListTemplatesRequest$AwsAccountId": "<p>AWS account ID that contains the templates you are listing.</p>",
+        "ListUserGroupsRequest$AwsAccountId": "<p>The AWS Account ID that the user is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "ListUsersRequest$AwsAccountId": "<p>The ID for the AWS account that the user is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "RegisterUserRequest$AwsAccountId": "<p>The ID for the AWS account that the user is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "UpdateDashboardPermissionsRequest$AwsAccountId": "<p>AWS account ID that contains the dashboard you are updating.</p>",
+        "UpdateDashboardPublishedVersionRequest$AwsAccountId": "<p>AWS account ID that contains the dashboard you are updating.</p>",
+        "UpdateDashboardRequest$AwsAccountId": "<p>AWS account ID that contains the dashboard you are updating.</p>",
+        "UpdateDataSetPermissionsRequest$AwsAccountId": "<p>The AWS Account ID.</p>",
+        "UpdateDataSetRequest$AwsAccountId": "<p>The AWS Account ID.</p>",
+        "UpdateDataSourcePermissionsRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "UpdateDataSourceRequest$AwsAccountId": "<p>The AWS account ID.</p>",
+        "UpdateGroupRequest$AwsAccountId": "<p>The ID for the AWS account that the group is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>",
+        "UpdateIAMPolicyAssignmentRequest$AwsAccountId": "<p>The AWS account ID that contains the IAM policy assignment.</p>",
+        "UpdateTemplateAliasRequest$AwsAccountId": "<p>AWS account ID that contains the template aliases you are updating.</p>",
+        "UpdateTemplatePermissionsRequest$AwsAccountId": "<p>AWS account ID that contains the template.</p>",
+        "UpdateTemplateRequest$AwsAccountId": "<p>AWS account ID that contains the template you are updating.</p>",
+        "UpdateUserRequest$AwsAccountId": "<p>The ID for the AWS account that the user is in. Currently, you use the ID for the AWS account that contains your Amazon QuickSight account.</p>"
+      }
+    },
+    "AwsIotAnalyticsParameters": {
+      "base": "<p>AWS IoT Analytics parameters.</p>",
+      "refs": {
+        "DataSourceParameters$AwsIotAnalyticsParameters": "<p>AWS IoT Analytics parameters.</p>"
+      }
+    },
+    "Boolean": {
+      "base": null,
+      "refs": {
+        "SslProperties$DisableSsl": "<p>A boolean flag to control whether SSL should be disabled.</p>",
+        "UploadSettings$ContainsHeader": "<p>Whether or not the file(s) has a header row.</p>",
+        "User$Active": "<p>Active status of user. When you create an Amazon QuickSight user that’s not an IAM user or an AD user, that user is inactive until they sign in and provide a password.</p>"
+      }
+    },
+    "CalculatedColumn": {
+      "base": "<p>A calculated column for a dataset.</p>",
+      "refs": {
+        "CalculatedColumnList$member": null
+      }
+    },
+    "CalculatedColumnList": {
+      "base": null,
+      "refs": {
+        "CreateColumnsOperation$Columns": "<p>Calculated columns to create.</p>"
+      }
+    },
+    "CancelIngestionRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CancelIngestionResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CastColumnTypeOperation": {
+      "base": "<p>A transform operation that casts a column to a different type.</p>",
+      "refs": {
+        "TransformOperation$CastColumnTypeOperation": "<p>A transform operation that casts a column to a different type.</p>"
+      }
+    },
+    "Catalog": {
+      "base": null,
+      "refs": {
+        "PrestoParameters$Catalog": "<p>Catalog.</p>"
+      }
+    },
+    "ClusterId": {
+      "base": null,
+      "refs": {
+        "RedshiftParameters$ClusterId": "<p>Cluster ID. This can be blank if the <code>Host</code> and <code>Port</code> are provided.</p>"
+      }
+    },
+    "ColumnDataType": {
+      "base": null,
+      "refs": {
+        "CastColumnTypeOperation$NewColumnType": "<p>New column data type.</p>",
+        "OutputColumn$Type": "<p>Type.</p>"
+      }
+    },
+    "ColumnGroup": {
+      "base": "<p>Groupings of columns that work together in certain QuickSight features. This is a variant type structure. No more than one of the attributes should be non-null for this structure to be valid.</p>",
+      "refs": {
+        "ColumnGroupList$member": null
+      }
+    },
+    "ColumnGroupColumnSchema": {
+      "base": "<p>A structure describing the name, datatype, and geographic role of the columns.</p>",
+      "refs": {
+        "ColumnGroupColumnSchemaList$member": null
+      }
+    },
+    "ColumnGroupColumnSchemaList": {
+      "base": null,
+      "refs": {
+        "ColumnGroupSchema$ColumnGroupColumnSchemaList": "<p>A structure containing the list of column group column schemas.</p>"
+      }
+    },
+    "ColumnGroupList": {
+      "base": null,
+      "refs": {
+        "CreateDataSetRequest$ColumnGroups": "<p>Groupings of columns that work together in certain QuickSight features. Currently, only geospatial hierarchy is supported.</p>",
+        "DataSet$ColumnGroups": "<p>Groupings of columns that work together in certain QuickSight features. Currently, only geospatial hierarchy is supported.</p>",
+        "UpdateDataSetRequest$ColumnGroups": "<p>Groupings of columns that work together in certain QuickSight features. Currently, only geospatial hierarchy is supported.</p>"
+      }
+    },
+    "ColumnGroupName": {
+      "base": null,
+      "refs": {
+        "GeoSpatialColumnGroup$Name": "<p>A display name for the hierarchy.</p>"
+      }
+    },
+    "ColumnGroupSchema": {
+      "base": "<p>The column group schema.</p>",
+      "refs": {
+        "ColumnGroupSchemaList$member": null
+      }
+    },
+    "ColumnGroupSchemaList": {
+      "base": null,
+      "refs": {
+        "DataSetConfiguration$ColumnGroupSchemaList": "<p>A structure containing the list of column group schemas.</p>"
+      }
+    },
+    "ColumnId": {
+      "base": null,
+      "refs": {
+        "CalculatedColumn$ColumnId": "<p>A unique ID to identify a calculated column. During dataset update, if the column ID of a calculated column matches that of an existing calculated column, QuickSight preserves the existing calculated column.</p>"
+      }
+    },
+    "ColumnList": {
+      "base": null,
+      "refs": {
+        "GeoSpatialColumnGroup$Columns": "<p>Columns in this hierarchy.</p>"
+      }
+    },
+    "ColumnName": {
+      "base": null,
+      "refs": {
+        "CalculatedColumn$ColumnName": "<p>Column name.</p>",
+        "CastColumnTypeOperation$ColumnName": "<p>Column name.</p>",
+        "ColumnList$member": null,
+        "InputColumn$Name": "<p>The name of this column in the underlying data source.</p>",
+        "OutputColumn$Name": "<p>A display name for the dataset.</p>",
+        "RenameColumnOperation$ColumnName": "<p>Name of the column to be renamed.</p>",
+        "RenameColumnOperation$NewColumnName": "<p>New name for the column.</p>",
+        "TagColumnOperation$ColumnName": "<p>The column that this operation acts on.</p>"
+      }
+    },
+    "ColumnSchema": {
+      "base": "<p>The column schema.</p>",
+      "refs": {
+        "ColumnSchemaList$member": null
+      }
+    },
+    "ColumnSchemaList": {
+      "base": null,
+      "refs": {
+        "DataSetSchema$ColumnSchemaList": "<p>A structure containing the list of column schemas.</p>"
+      }
+    },
+    "ColumnTag": {
+      "base": "<p>A tag for a column in a TagColumnOperation. This is a variant type structure. No more than one of the attributes should be non-null for this structure to be valid.</p>",
+      "refs": {
+        "ColumnTagList$member": null
+      }
+    },
+    "ColumnTagList": {
+      "base": null,
+      "refs": {
+        "TagColumnOperation$Tags": "<p>The dataset column tag, currently only used for geospatial type tagging. .</p> <note> <p>This is not tags for the AWS tagging feature. .</p> </note>"
+      }
+    },
+    "ConcurrentUpdatingException": {
+      "base": "<p>A resource is already in an \"actionable\" state that must complete before a new update can be applied.</p>",
+      "refs": {
+      }
+    },
+    "ConflictException": {
+      "base": "<p>Updating or deleting a resource can cause an inconsistent state.</p>",
+      "refs": {
+      }
+    },
+    "CreateColumnsOperation": {
+      "base": "<p>A transform operation that creates calculated columns. Columns created in one such operation form a lexical closure.</p>",
+      "refs": {
+        "TransformOperation$CreateColumnsOperation": "<p>An operation that creates calculated columns. Columns created in one such operation form a lexical closure.</p>"
+      }
+    },
+    "CreateDashboardRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateDashboardResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateDataSetRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateDataSetResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateDataSourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateDataSourceResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateGroupMembershipRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateGroupMembershipResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateGroupRequest": {
+      "base": "<p>The request object for this operation. </p>",
+      "refs": {
+      }
+    },
+    "CreateGroupResponse": {
+      "base": "<p>The response object for this operation.</p>",
+      "refs": {
+      }
+    },
+    "CreateIAMPolicyAssignmentRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateIAMPolicyAssignmentResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateIngestionRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateIngestionResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateTemplateAliasRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateTemplateAliasResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateTemplateRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CreateTemplateResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "CredentialPair": {
+      "base": "<p>The combination of username and password that are used as credentials.</p>",
+      "refs": {
+        "DataSourceCredentials$CredentialPair": "<p>Credential pair.</p>"
+      }
+    },
+    "CustomSql": {
+      "base": "<p>A physical table type built from the results of the custom SQL query.</p>",
+      "refs": {
+        "PhysicalTable$CustomSql": "<p>A physical table type built from the results of the custom SQL query.</p>"
+      }
+    },
+    "CustomSqlName": {
+      "base": null,
+      "refs": {
+        "CustomSql$Name": "<p>A display name for the SQL query result.</p>"
+      }
+    },
+    "Dashboard": {
+      "base": "<p>Dashboard.</p>",
+      "refs": {
+        "DescribeDashboardResponse$Dashboard": "<p>Information about the dashboard.</p>"
+      }
+    },
+    "DashboardBehavior": {
+      "base": null,
+      "refs": {
+        "AdHocFilteringOption$AvailabilityStatus": "<p>Availability status.</p>",
+        "ExportToCSVOption$AvailabilityStatus": "<p>Availability status.</p>"
+      }
+    },
+    "DashboardError": {
+      "base": "<p>Dashboard error.</p>",
+      "refs": {
+        "DashboardErrorList$member": null
+      }
+    },
+    "DashboardErrorList": {
+      "base": null,
+      "refs": {
+        "DashboardVersion$Errors": "<p>Errors.</p>"
+      }
+    },
+    "DashboardErrorType": {
+      "base": null,
+      "refs": {
+        "DashboardError$Type": "<p>Type.</p>"
+      }
+    },
+    "DashboardName": {
+      "base": null,
+      "refs": {
+        "CreateDashboardRequest$Name": "<p>The display name of the dashboard.</p>",
+        "Dashboard$Name": "<p>A display name for the dataset.</p>",
+        "DashboardSummary$Name": "<p>A display name for the dataset.</p>",
+        "UpdateDashboardRequest$Name": "<p>The display name of the dashboard.</p>"
+      }
+    },
+    "DashboardPublishOptions": {
+      "base": "<p>Dashboard publish options.</p>",
+      "refs": {
+        "CreateDashboardRequest$DashboardPublishOptions": "<p>Publishing options when creating dashboard.</p> <ul> <li> <p>AvailabilityStatus for AdHocFilteringOption - This can be either <code>ENABLED</code> or <code>DISABLED</code>. When This is set to set to <code>DISABLED</code>, QuickSight disables the left filter pane on the published dashboard, which can be used for AdHoc filtering. Enabled by default. </p> </li> <li> <p>AvailabilityStatus for ExportToCSVOption - This can be either <code>ENABLED</code> or <code>DISABLED</code>. The visual option to export data to CSV is disabled when this is set to <code>DISABLED</code>. Enabled by default. </p> </li> <li> <p>VisibilityState for SheetControlsOption - This can be either <code>COLLAPSED</code> or <code>EXPANDED</code>. The sheet controls pane is collapsed by default when set to true. Collapsed by default. </p> </li> </ul>",
+        "UpdateDashboardRequest$DashboardPublishOptions": "<p>Publishing options when creating a dashboard.</p> <ul> <li> <p>AvailabilityStatus for AdHocFilteringOption - This can be either <code>ENABLED</code> or <code>DISABLED</code>. When This is set to set to <code>DISABLED</code>, QuickSight disables the left filter pane on the published dashboard, which can be used for AdHoc filtering. Enabled by default. </p> </li> <li> <p>AvailabilityStatus for ExportToCSVOption - This can be either <code>ENABLED</code> or <code>DISABLED</code>. The visual option to export data to CSV is disabled when this is set to <code>DISABLED</code>. Enabled by default. </p> </li> <li> <p>VisibilityState for SheetControlsOption - This can be either <code>COLLAPSED</code> or <code>EXPANDED</code>. The sheet controls pane is collapsed by default when set to true. Collapsed by default. </p> </li> </ul>"
+      }
+    },
+    "DashboardSourceEntity": {
+      "base": "<p>Dashboard source entity.</p>",
+      "refs": {
+        "CreateDashboardRequest$SourceEntity": "<p>Source entity from which the dashboard is created. The souce entity accepts the Amazon Resource Name (ARN) of the source template or analysis and also references the replacement datasets for the placeholders set when creating the template. The replacement datasets need to follow the same schema as the datasets for which placeholders were created when creating the template. </p> <p>If you are creating a dashboard from a source entity in a different AWS account, use the ARN of the source template.</p>",
+        "UpdateDashboardRequest$SourceEntity": "<p>The template or analysis from which the dashboard is created. The SouceTemplate entity accepts the Arn of the template and also references to replacement datasets for the placeholders set when creating the template. The replacement datasets need to follow the same schema as the datasets for which placeholders were created when creating the template.</p>"
+      }
+    },
+    "DashboardSourceTemplate": {
+      "base": "<p>Dashboard source template.</p>",
+      "refs": {
+        "DashboardSourceEntity$SourceTemplate": "<p>Source template.</p>"
+      }
+    },
+    "DashboardSummary": {
+      "base": "<p>Dashboard summary.</p>",
+      "refs": {
+        "DashboardSummaryList$member": null
+      }
+    },
+    "DashboardSummaryList": {
+      "base": null,
+      "refs": {
+        "ListDashboardsResponse$DashboardSummaryList": "<p>A structure that contains all of the dashboards shared with the user. Provides basic information about the dashboards.</p>"
+      }
+    },
+    "DashboardUIState": {
+      "base": null,
+      "refs": {
+        "SheetControlsOption$VisibilityState": "<p>Visibility state.</p>"
+      }
+    },
+    "DashboardVersion": {
+      "base": "<p>Dashboard version.</p>",
+      "refs": {
+        "Dashboard$Version": "<p>Version.</p>"
+      }
+    },
+    "DashboardVersionSummary": {
+      "base": "<p>Dashboard version summary.</p>",
+      "refs": {
+        "DashboardVersionSummaryList$member": null
+      }
+    },
+    "DashboardVersionSummaryList": {
+      "base": null,
+      "refs": {
+        "ListDashboardVersionsResponse$DashboardVersionSummaryList": "<p>A structure that contains information about each version of the dashboard.</p>"
+      }
+    },
+    "DataSet": {
+      "base": "<p>Dataset.</p>",
+      "refs": {
+        "DescribeDataSetResponse$DataSet": "<p>Information on the dataset.</p>"
+      }
+    },
+    "DataSetConfiguration": {
+      "base": "<p>Dataset configuration.</p>",
+      "refs": {
+        "DataSetConfigurationList$member": null
+      }
+    },
+    "DataSetConfigurationList": {
+      "base": null,
+      "refs": {
+        "TemplateVersion$DataSetConfigurations": "<p>Schema of the dataset identified by the placeholder. The idea is that any dashboard created from the template should be bound to new datasets matching the same schema described through this API. .</p>"
+      }
+    },
+    "DataSetImportMode": {
+      "base": null,
+      "refs": {
+        "CreateDataSetRequest$ImportMode": "<p>Indicates whether or not you want to import the data into SPICE.</p>",
+        "DataSet$ImportMode": "<p>Indicates whether or not you want to import the data into SPICE.</p>",
+        "DataSetSummary$ImportMode": "<p>Indicates whether or not you want to import the data into SPICE.</p>",
+        "UpdateDataSetRequest$ImportMode": "<p>Indicates whether or not you want to import the data into SPICE.</p>"
+      }
+    },
+    "DataSetName": {
+      "base": null,
+      "refs": {
+        "AwsIotAnalyticsParameters$DataSetName": "<p>Dataset name.</p>"
+      }
+    },
+    "DataSetReference": {
+      "base": "<p>Dataset reference.</p>",
+      "refs": {
+        "DataSetReferenceList$member": null
+      }
+    },
+    "DataSetReferenceList": {
+      "base": null,
+      "refs": {
+        "DashboardSourceTemplate$DataSetReferences": "<p>Dataset references.</p>",
+        "TemplateSourceAnalysis$DataSetReferences": "<p>A structure containing information about the dataset references used as placeholders in the template.</p>"
+      }
+    },
+    "DataSetSchema": {
+      "base": "<p>Dataset schema.</p>",
+      "refs": {
+        "DataSetConfiguration$DataSetSchema": "<p>Dataset schema.</p>"
+      }
+    },
+    "DataSetSummary": {
+      "base": "<p>Dataset summary.</p>",
+      "refs": {
+        "DataSetSummaryList$member": null
+      }
+    },
+    "DataSetSummaryList": {
+      "base": null,
+      "refs": {
+        "ListDataSetsResponse$DataSetSummaries": "<p>The list of dataset summaries.</p>"
+      }
+    },
+    "DataSource": {
+      "base": "<p>The structure of a data source.</p>",
+      "refs": {
+        "DataSourceList$member": null,
+        "DescribeDataSourceResponse$DataSource": "<p>The information on the data source.</p>"
+      }
+    },
+    "DataSourceCredentials": {
+      "base": "<p>Data source credentials.</p>",
+      "refs": {
+        "CreateDataSourceRequest$Credentials": "<p>The credentials QuickSight that uses to connect to your underlying source. Currently, only credentials based on user name and password are supported.</p>",
+        "UpdateDataSourceRequest$Credentials": "<p>The credentials that QuickSight that uses to connect to your underlying source. Currently, only credentials based on user name and password are supported.</p>"
+      }
+    },
+    "DataSourceErrorInfo": {
+      "base": "<p>Error information on data source creation or update.</p>",
+      "refs": {
+        "DataSource$ErrorInfo": "<p>Error information from the last update or the creation of the data source.</p>"
+      }
+    },
+    "DataSourceErrorInfoType": {
+      "base": null,
+      "refs": {
+        "DataSourceErrorInfo$Type": "<p>Error type.</p>"
+      }
+    },
+    "DataSourceList": {
+      "base": null,
+      "refs": {
+        "ListDataSourcesResponse$DataSources": "<p>A list of data sources.</p>"
+      }
+    },
+    "DataSourceParameters": {
+      "base": "<p>The parameters that QuickSight uses to connect to your underlying source. This is a variant type structure. At most one of the attributes should be non-null for this structure to be valid.</p>",
+      "refs": {
+        "CreateDataSourceRequest$DataSourceParameters": "<p>The parameters that QuickSight uses to connect to your underlying source.</p>",
+        "DataSource$DataSourceParameters": "<p>The parameters that QuickSight uses to connect to your underlying source. This is a variant type structure. At most one of the attributes should be non-null for this structure to be valid.</p>",
+        "UpdateDataSourceRequest$DataSourceParameters": "<p>The parameters that QuickSight uses to connect to your underlying source.</p>"
+      }
+    },
+    "DataSourceType": {
+      "base": null,
+      "refs": {
+        "CreateDataSourceRequest$Type": "<p>The type of the data source. Currently, the supported types for this operation are: <code>ATHENA, AURORA, AURORA_POSTGRESQL, MARIADB, MYSQL, POSTGRESQL, PRESTO, REDSHIFT, S3, SNOWFLAKE, SPARK, SQLSERVER, TERADATA</code>. Use <code>ListDataSources</code> to return a list of all data sources.</p>",
+        "DataSource$Type": "<p>The type of the data source. This indicates which database engine the data source connects to.</p>"
+      }
+    },
+    "Database": {
+      "base": null,
+      "refs": {
+        "AuroraParameters$Database": "<p>Database.</p>",
+        "AuroraPostgreSqlParameters$Database": "<p>Database.</p>",
+        "MariaDbParameters$Database": "<p>Database.</p>",
+        "MySqlParameters$Database": "<p>Database.</p>",
+        "PostgreSqlParameters$Database": "<p>Database.</p>",
+        "RdsParameters$Database": "<p>Database.</p>",
+        "RedshiftParameters$Database": "<p>Database.</p>",
+        "SnowflakeParameters$Database": "<p>Database.</p>",
+        "SqlServerParameters$Database": "<p>Database.</p>",
+        "TeradataParameters$Database": "<p>Database.</p>"
+      }
+    },
+    "DateTimeParameter": {
+      "base": "<p>Date time parameter.</p>",
+      "refs": {
+        "DateTimeParameterList$member": null
+      }
+    },
+    "DateTimeParameterList": {
+      "base": null,
+      "refs": {
+        "Parameters$DateTimeParameters": "<p>DateTime parameters.</p>"
+      }
+    },
+    "DecimalParameter": {
+      "base": "<p>Decimal parameter.</p>",
+      "refs": {
+        "DecimalParameterList$member": null
+      }
+    },
+    "DecimalParameterList": {
+      "base": null,
+      "refs": {
+        "Parameters$DecimalParameters": "<p>Decimal parameters.</p>"
+      }
+    },
+    "DeleteDashboardRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteDashboardResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteDataSetRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteDataSetResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteDataSourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteDataSourceResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteGroupMembershipRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteGroupMembershipResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteGroupRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteGroupResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteIAMPolicyAssignmentRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteIAMPolicyAssignmentResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteTemplateAliasRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteTemplateAliasResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteTemplateRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteTemplateResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteUserByPrincipalIdRequest": {
+      "base": "<p/>",
+      "refs": {
+      }
+    },
+    "DeleteUserByPrincipalIdResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteUserRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DeleteUserResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "Delimiter": {
+      "base": null,
+      "refs": {
+        "UploadSettings$Delimiter": "<p>The delimiter between values in the file.</p>"
+      }
+    },
+    "DescribeDashboardPermissionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDashboardPermissionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDashboardRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDashboardResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDataSetPermissionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDataSetPermissionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDataSetRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDataSetResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDataSourcePermissionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDataSourcePermissionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDataSourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeDataSourceResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeGroupRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeGroupResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeIAMPolicyAssignmentRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeIAMPolicyAssignmentResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeIngestionRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeIngestionResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeTemplateAliasRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeTemplateAliasResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeTemplatePermissionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeTemplatePermissionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeTemplateRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeTemplateResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeUserRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeUserResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "Domain": {
+      "base": null,
+      "refs": {
+        "AmazonElasticsearchParameters$Domain": "<p>The Amazon Elasticsearch Service domain.</p>"
+      }
+    },
+    "DomainNotWhitelistedException": {
+      "base": "<p>The domain specified is not on the allowlist. All domains for embedded dashboards must be added to the approved list by an Amazon QuickSight admin.</p>",
+      "refs": {
+      }
+    },
+    "Double": {
+      "base": null,
+      "refs": {
+        "DoubleList$member": null
+      }
+    },
+    "DoubleList": {
+      "base": null,
+      "refs": {
+        "DecimalParameter$Values": "<p>Values.</p>"
+      }
+    },
+    "EmbeddingUrl": {
+      "base": null,
+      "refs": {
+        "GetDashboardEmbedUrlResponse$EmbedUrl": "<p>URL that you can put into your server-side webpage to embed your dashboard. This URL is valid for 5 minutes, and the resulting session is valid for 10 hours. The API provides the URL with an auth_code that enables a single-signon session. </p>"
+      }
+    },
+    "ErrorInfo": {
+      "base": "<p>Error information on a data set SPICE ingestion.</p>",
+      "refs": {
+        "Ingestion$ErrorInfo": "<p>Error information for this ingestion.</p>"
+      }
+    },
+    "ExceptionResourceType": {
+      "base": null,
+      "refs": {
+        "LimitExceededException$ResourceType": "<p>Limit exceeded.</p>",
+        "ResourceExistsException$ResourceType": "<p>The AWS request ID for this request.</p>",
+        "ResourceNotFoundException$ResourceType": "<p>The AWS request ID for this request.</p>",
+        "ResourceUnavailableException$ResourceType": "<p>The resource type for this request.</p>"
+      }
+    },
+    "ExportToCSVOption": {
+      "base": "<p>Export to CSV option.</p>",
+      "refs": {
+        "DashboardPublishOptions$ExportToCSVOption": "<p>Export to CSV option.</p>"
+      }
+    },
+    "Expression": {
+      "base": null,
+      "refs": {
+        "CalculatedColumn$Expression": "<p>An expression that defines the calculated column.</p>",
+        "FilterOperation$ConditionExpression": "<p>An expression that must evaluate to a boolean value. Rows for which the expression is evaluated to true are kept in the dataset.</p>"
+      }
+    },
+    "FileFormat": {
+      "base": null,
+      "refs": {
+        "UploadSettings$Format": "<p>File format.</p>"
+      }
+    },
+    "FilterOperation": {
+      "base": "<p>A transform operation that filters rows based on some condition.</p>",
+      "refs": {
+        "TransformOperation$FilterOperation": "<p>An operation that filters rows based on some condition.</p>"
+      }
+    },
+    "GeoSpatialColumnGroup": {
+      "base": "<p>Geospatial column group that denotes a hierarchy.</p>",
+      "refs": {
+        "ColumnGroup$GeoSpatialColumnGroup": "<p>Geospatial column group that denotes a hierarchy.</p>"
+      }
+    },
+    "GeoSpatialCountryCode": {
+      "base": null,
+      "refs": {
+        "GeoSpatialColumnGroup$CountryCode": "<p>Country code.</p>"
+      }
+    },
+    "GeoSpatialDataRole": {
+      "base": null,
+      "refs": {
+        "ColumnTag$ColumnGeographicRole": "<p>A geospatial role for a column.</p>"
+      }
+    },
+    "GetDashboardEmbedUrlRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "GetDashboardEmbedUrlResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "Group": {
+      "base": "<p>A <i>group</i> in Amazon QuickSight consists of a set of users. You can use groups to make it easier to manage access and security. Currently, an Amazon QuickSight subscription can't contain more than 500 Amazon QuickSight groups.</p>",
+      "refs": {
+        "CreateGroupResponse$Group": "<p>The name of the group.</p>",
+        "DescribeGroupResponse$Group": "<p>The name of the group.</p>",
+        "GroupList$member": null,
+        "UpdateGroupResponse$Group": "<p>The name of the group.</p>"
+      }
+    },
+    "GroupDescription": {
+      "base": null,
+      "refs": {
+        "CreateGroupRequest$Description": "<p>A description for the group that you want to create.</p>",
+        "Group$Description": "<p>The group description.</p>",
+        "UpdateGroupRequest$Description": "<p>The description for the group that you want to update.</p>"
+      }
+    },
+    "GroupList": {
+      "base": null,
+      "refs": {
+        "ListGroupsResponse$GroupList": "<p>The list of the groups.</p>",
+        "ListUserGroupsResponse$GroupList": "<p>The list of groups the user is a member of.</p>"
+      }
+    },
+    "GroupMember": {
+      "base": "<p>A member of an Amazon QuickSight group. Currently, group members must be users. Groups can't be members of another group. .</p>",
+      "refs": {
+        "CreateGroupMembershipResponse$GroupMember": "<p>The group member.</p>",
+        "GroupMemberList$member": null
+      }
+    },
+    "GroupMemberList": {
+      "base": null,
+      "refs": {
+        "ListGroupMembershipsResponse$GroupMemberList": "<p>The list of the members of the group.</p>"
+      }
+    },
+    "GroupMemberName": {
+      "base": null,
+      "refs": {
+        "CreateGroupMembershipRequest$MemberName": "<p>The name of the user that you want to add to the group membership.</p>",
+        "DeleteGroupMembershipRequest$MemberName": "<p>The name of the user that you want to delete from the group membership.</p>",
+        "GroupMember$MemberName": "<p>The name of the group member (user).</p>"
+      }
+    },
+    "GroupName": {
+      "base": null,
+      "refs": {
+        "CreateGroupMembershipRequest$GroupName": "<p>The name of the group that you want to add the user to.</p>",
+        "CreateGroupRequest$GroupName": "<p>A name for the group that you want to create.</p>",
+        "DeleteGroupMembershipRequest$GroupName": "<p>The name of the group that you want to delete the user from.</p>",
+        "DeleteGroupRequest$GroupName": "<p>The name of the group that you want to delete.</p>",
+        "DescribeGroupRequest$GroupName": "<p>The name of the group that you want to describe.</p>",
+        "Group$GroupName": "<p>The name of the group.</p>",
+        "ListGroupMembershipsRequest$GroupName": "<p>The name of the group that you want to see a membership list of.</p>",
+        "UpdateGroupRequest$GroupName": "<p>The name of the group that you want to update.</p>"
+      }
+    },
+    "Host": {
+      "base": null,
+      "refs": {
+        "AuroraParameters$Host": "<p>Host.</p>",
+        "AuroraPostgreSqlParameters$Host": "<p>Host.</p>",
+        "MariaDbParameters$Host": "<p>Host.</p>",
+        "MySqlParameters$Host": "<p>Host.</p>",
+        "PostgreSqlParameters$Host": "<p>Host.</p>",
+        "PrestoParameters$Host": "<p>Host.</p>",
+        "RedshiftParameters$Host": "<p>Host. This can be blank if the <code>ClusterId</code> is provided.</p>",
+        "SnowflakeParameters$Host": "<p>Host.</p>",
+        "SparkParameters$Host": "<p>Host.</p>",
+        "SqlServerParameters$Host": "<p>Host.</p>",
+        "TeradataParameters$Host": "<p>Host.</p>"
+      }
+    },
+    "IAMPolicyAssignment": {
+      "base": "<p>IAM policy assignment.</p>",
+      "refs": {
+        "DescribeIAMPolicyAssignmentResponse$IAMPolicyAssignment": "<p>Information describing the IAM policy assignment.</p>"
+      }
+    },
+    "IAMPolicyAssignmentName": {
+      "base": null,
+      "refs": {
+        "ActiveIAMPolicyAssignment$AssignmentName": "<p>A name for the IAM policy assignment.</p>",
+        "CreateIAMPolicyAssignmentRequest$AssignmentName": "<p>The name of the assignment. It must be unique within an AWS account.</p>",
+        "CreateIAMPolicyAssignmentResponse$AssignmentName": "<p>The name of the assignment. Must be unique within an AWS account.</p>",
+        "DeleteIAMPolicyAssignmentRequest$AssignmentName": "<p>The name of the assignment. </p>",
+        "DeleteIAMPolicyAssignmentResponse$AssignmentName": "<p>The name of the assignment. </p>",
+        "DescribeIAMPolicyAssignmentRequest$AssignmentName": "<p>The name of the assignment. </p>",
+        "IAMPolicyAssignment$AssignmentName": "<p>Assignment name.</p>",
+        "IAMPolicyAssignmentSummary$AssignmentName": "<p>Assignment name.</p>",
+        "UpdateIAMPolicyAssignmentRequest$AssignmentName": "<p>The name of the assignment. It must be unique within an AWS account.</p>",
+        "UpdateIAMPolicyAssignmentResponse$AssignmentName": "<p>The name of the assignment. </p>"
+      }
+    },
+    "IAMPolicyAssignmentSummary": {
+      "base": "<p>IAM policy assignment Summary.</p>",
+      "refs": {
+        "IAMPolicyAssignmentSummaryList$member": null
+      }
+    },
+    "IAMPolicyAssignmentSummaryList": {
+      "base": null,
+      "refs": {
+        "ListIAMPolicyAssignmentsResponse$IAMPolicyAssignments": "<p>Information describing the IAM policy assignments.</p>"
+      }
+    },
+    "IdentityMap": {
+      "base": null,
+      "refs": {
+        "CreateIAMPolicyAssignmentRequest$Identities": "<p>QuickSight users and/or groups that you want to assign the policy to.</p>",
+        "CreateIAMPolicyAssignmentResponse$Identities": "<p>QuickSight users and/or groups that are assigned to the IAM policy.</p>",
+        "IAMPolicyAssignment$Identities": "<p>Identities.</p>",
+        "UpdateIAMPolicyAssignmentRequest$Identities": "<p>QuickSight users and/or groups that you want to assign to the specified IAM policy.</p>",
+        "UpdateIAMPolicyAssignmentResponse$Identities": "<p>QuickSight users and/or groups that are assigned to this IAM policy.</p>"
+      }
+    },
+    "IdentityName": {
+      "base": null,
+      "refs": {
+        "IdentityNameList$member": null
+      }
+    },
+    "IdentityNameList": {
+      "base": null,
+      "refs": {
+        "IdentityMap$value": null
+      }
+    },
+    "IdentityType": {
+      "base": null,
+      "refs": {
+        "GetDashboardEmbedUrlRequest$IdentityType": "<p>The authentication method the user uses to sign in.</p>",
+        "RegisterUserRequest$IdentityType": "<p>Amazon QuickSight supports several ways of managing the identity of users. This parameter accepts two values:</p> <ul> <li> <p> <code>IAM</code>: A user whose identity maps to an existing IAM user or role. </p> </li> <li> <p> <code>QUICKSIGHT</code>: A user whose identity is owned and managed internally by Amazon QuickSight. </p> </li> </ul>",
+        "User$IdentityType": "<p>The type of identity authentication used by the user.</p>"
+      }
+    },
+    "IdentityTypeNotSupportedException": {
+      "base": "<p>The identity type specified is not supported. Supported identity types include IAM and QUICKSIGHT.</p>",
+      "refs": {
+      }
+    },
+    "Ingestion": {
+      "base": "<p>Information on the SPICE ingestion for a dataset.</p>",
+      "refs": {
+        "DescribeIngestionResponse$Ingestion": "<p>Information about the ingestion.</p>",
+        "Ingestions$member": null
+      }
+    },
+    "IngestionErrorType": {
+      "base": null,
+      "refs": {
+        "ErrorInfo$Type": "<p>Error type.</p>"
+      }
+    },
+    "IngestionId": {
+      "base": null,
+      "refs": {
+        "CancelIngestionRequest$IngestionId": "<p>An ID for the ingestion.</p>",
+        "CancelIngestionResponse$IngestionId": "<p>An ID for the ingestion.</p>",
+        "CreateIngestionRequest$IngestionId": "<p>An ID for the ingestion.</p>",
+        "CreateIngestionResponse$IngestionId": "<p>An ID for the ingestion.</p>",
+        "DescribeIngestionRequest$IngestionId": "<p>An ID for the ingestion.</p>",
+        "Ingestion$IngestionId": "<p>Ingestion ID.</p>"
+      }
+    },
+    "IngestionMaxResults": {
+      "base": null,
+      "refs": {
+        "ListIngestionsRequest$MaxResults": "<p>The maximum number of results to be returned per request.</p>"
+      }
+    },
+    "IngestionRequestSource": {
+      "base": null,
+      "refs": {
+        "Ingestion$RequestSource": "<p>Event source for this ingestion.</p>"
+      }
+    },
+    "IngestionRequestType": {
+      "base": null,
+      "refs": {
+        "Ingestion$RequestType": "<p>Type of this ingestion.</p>"
+      }
+    },
+    "IngestionStatus": {
+      "base": null,
+      "refs": {
+        "CreateIngestionResponse$IngestionStatus": "<p>The ingestion status.</p>",
+        "Ingestion$IngestionStatus": "<p>Ingestion status.</p>"
+      }
+    },
+    "Ingestions": {
+      "base": null,
+      "refs": {
+        "ListIngestionsResponse$Ingestions": "<p>A list of the ingestions.</p>"
+      }
+    },
+    "InputColumn": {
+      "base": "<p>Metadata on a column that is used as the input of a transform operation.</p>",
+      "refs": {
+        "InputColumnList$member": null
+      }
+    },
+    "InputColumnDataType": {
+      "base": null,
+      "refs": {
+        "InputColumn$Type": "<p>The data type of the column.</p>"
+      }
+    },
+    "InputColumnList": {
+      "base": null,
+      "refs": {
+        "CustomSql$Columns": "<p>The column schema from the SQL query result set.</p>",
+        "RelationalTable$InputColumns": "<p>The column schema of the table.</p>",
+        "S3Source$InputColumns": "<p>A physical table type for as S3 data source.</p>"
+      }
+    },
+    "InstanceId": {
+      "base": null,
+      "refs": {
+        "RdsParameters$InstanceId": "<p>Instance ID.</p>"
+      }
+    },
+    "IntegerParameter": {
+      "base": "<p>Integer parameter.</p>",
+      "refs": {
+        "IntegerParameterList$member": null
+      }
+    },
+    "IntegerParameterList": {
+      "base": null,
+      "refs": {
+        "Parameters$IntegerParameters": "<p>Integer parameters.</p>"
+      }
+    },
+    "InternalFailureException": {
+      "base": "<p>An internal failure occurred.</p>",
+      "refs": {
+      }
+    },
+    "InvalidNextTokenException": {
+      "base": "<p>The <code>NextToken</code> value isn't valid.</p>",
+      "refs": {
+      }
+    },
+    "InvalidParameterValueException": {
+      "base": "<p>One or more parameters don't have a valid value.</p>",
+      "refs": {
+      }
+    },
+    "JiraParameters": {
+      "base": "<p>Jira parameters.</p>",
+      "refs": {
+        "DataSourceParameters$JiraParameters": "<p>Jira parameters.</p>"
+      }
+    },
+    "JoinInstruction": {
+      "base": "<p>Join instruction.</p>",
+      "refs": {
+        "LogicalTableSource$JoinInstruction": "<p>Specifies the result of a join of two logical tables.</p>"
+      }
+    },
+    "JoinType": {
+      "base": null,
+      "refs": {
+        "JoinInstruction$Type": "<p>Type.</p>"
+      }
+    },
+    "LimitExceededException": {
+      "base": "<p>A limit is exceeded.</p>",
+      "refs": {
+      }
+    },
+    "ListDashboardVersionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListDashboardVersionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListDashboardsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListDashboardsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListDataSetsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListDataSetsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListDataSourcesRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListDataSourcesResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListGroupMembershipsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListGroupMembershipsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListGroupsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListGroupsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListIAMPolicyAssignmentsForUserRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListIAMPolicyAssignmentsForUserResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListIAMPolicyAssignmentsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListIAMPolicyAssignmentsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListIngestionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListIngestionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTagsForResourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTagsForResourceResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTemplateAliasesRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTemplateAliasesResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTemplateVersionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTemplateVersionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTemplatesRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListTemplatesResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListUserGroupsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListUserGroupsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListUsersRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListUsersResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "LogicalTable": {
+      "base": "<p>A unit that joins and data transformations operate on. A logical table has a source, which can be either a physical table or result of a join. When it points to a physical table, a logical table acts as a mutable copy of that table through transform operations.</p>",
+      "refs": {
+        "LogicalTableMap$value": null
+      }
+    },
+    "LogicalTableAlias": {
+      "base": null,
+      "refs": {
+        "LogicalTable$Alias": "<p>A display name for the logical table.</p>"
+      }
+    },
+    "LogicalTableId": {
+      "base": null,
+      "refs": {
+        "JoinInstruction$LeftOperand": "<p>Left operand.</p>",
+        "JoinInstruction$RightOperand": "<p>Right operand.</p>",
+        "LogicalTableMap$key": null
+      }
+    },
+    "LogicalTableMap": {
+      "base": null,
+      "refs": {
+        "CreateDataSetRequest$LogicalTableMap": "<p>Configures the combination and transformation of the data from the physical tables.</p>",
+        "DataSet$LogicalTableMap": "<p>Configures the combination and transformation of the data from the physical tables.</p>",
+        "UpdateDataSetRequest$LogicalTableMap": "<p>Configures the combination and transformation of the data from the physical tables.</p>"
+      }
+    },
+    "LogicalTableSource": {
+      "base": "<p>Information on the source of a logical table. This is a variant type structure. No more than one of the attributes should be non-null for this structure to be valid.</p>",
+      "refs": {
+        "LogicalTable$Source": "<p>Source of this logical table.</p>"
+      }
+    },
+    "Long": {
+      "base": null,
+      "refs": {
+        "DataSet$ConsumedSpiceCapacityInBytes": "<p>The amount of SPICE capacity used by this dataset. This is 0 if the dataset isn't imported into SPICE.</p>",
+        "LongList$member": null
+      }
+    },
+    "LongList": {
+      "base": null,
+      "refs": {
+        "IntegerParameter$Values": "<p>Values.</p>"
+      }
+    },
+    "ManifestFileLocation": {
+      "base": "<p>Amazon S3 manifest file location.</p>",
+      "refs": {
+        "S3Parameters$ManifestFileLocation": "<p>Location of the Amazon S3 manifest file. This is NULL if the manifest file was uploaded in the console.</p>"
+      }
+    },
+    "MariaDbParameters": {
+      "base": "<p>MariaDB parameters.</p>",
+      "refs": {
+        "DataSourceParameters$MariaDbParameters": "<p>MariaDB parameters.</p>"
+      }
+    },
+    "MaxResults": {
+      "base": null,
+      "refs": {
+        "ListDashboardVersionsRequest$MaxResults": "<p>The maximum number of results to be returned per request.</p>",
+        "ListDashboardsRequest$MaxResults": "<p>The maximum number of results to be returned per request.</p>",
+        "ListDataSetsRequest$MaxResults": "<p>The maximum number of results to be returned per request.</p>",
+        "ListDataSourcesRequest$MaxResults": "<p>The maximum number of results to be returned per request.</p>",
+        "ListGroupMembershipsRequest$MaxResults": "<p>The maximum number of results to return from this request.</p>",
+        "ListGroupsRequest$MaxResults": "<p>The maximum number of results to return.</p>",
+        "ListIAMPolicyAssignmentsForUserRequest$MaxResults": "<p>The maximum number of results to be returned per request.</p>",
+        "ListIAMPolicyAssignmentsRequest$MaxResults": "<p>The maximum number of results to be returned per request.</p>",
+        "ListTemplateAliasesRequest$MaxResults": "<p>The maximum number of results to be returned per request.</p>",
+        "ListTemplateVersionsRequest$MaxResults": "<p>The maximum number of results to be returned per request.</p>",
+        "ListTemplatesRequest$MaxResults": "<p>The maximum number of results to be returned per request.</p>",
+        "ListUserGroupsRequest$MaxResults": "<p>The maximum number of results to return from this request.</p>",
+        "ListUsersRequest$MaxResults": "<p>The maximum number of results to return from this request.</p>"
+      }
+    },
+    "MySqlParameters": {
+      "base": "<p>MySQL parameters.</p>",
+      "refs": {
+        "DataSourceParameters$MySqlParameters": "<p>MySQL parameters.</p>"
+      }
+    },
+    "Namespace": {
+      "base": null,
+      "refs": {
+        "CreateGroupMembershipRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "CreateGroupRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "CreateIAMPolicyAssignmentRequest$Namespace": "<p>The namespace that contains the assignment.</p>",
+        "DeleteGroupMembershipRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "DeleteGroupRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "DeleteIAMPolicyAssignmentRequest$Namespace": "<p>The namespace that contains the assignment.</p>",
+        "DeleteUserByPrincipalIdRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "DeleteUserRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "DescribeGroupRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "DescribeIAMPolicyAssignmentRequest$Namespace": "<p>The namespace that contains the assignment.</p>",
+        "DescribeUserRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "ListGroupMembershipsRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "ListGroupsRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "ListIAMPolicyAssignmentsForUserRequest$Namespace": "<p>The namespace of the assignment.</p>",
+        "ListIAMPolicyAssignmentsRequest$Namespace": "<p>The namespace for this assignment.</p>",
+        "ListUserGroupsRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "ListUsersRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "RegisterUserRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "UpdateGroupRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>",
+        "UpdateIAMPolicyAssignmentRequest$Namespace": "<p>The namespace of the assignment.</p>",
+        "UpdateUserRequest$Namespace": "<p>The namespace. Currently, you should set this to <code>default</code>.</p>"
+      }
+    },
+    "NonEmptyString": {
+      "base": null,
+      "refs": {
+        "DashboardError$Message": "<p>Message.</p>",
+        "DataSetReference$DataSetPlaceholder": "<p>Dataset placeholder.</p>",
+        "DateTimeParameter$Name": "<p>A display name for the dataset.</p>",
+        "DecimalParameter$Name": "<p>A display name for the dataset.</p>",
+        "IntegerParameter$Name": "<p>A display name for the dataset.</p>",
+        "StringParameter$Name": "<p>A display name for the dataset.</p>",
+        "TemplateError$Message": "<p>Description of the error type.</p>"
+      }
+    },
+    "OnClause": {
+      "base": null,
+      "refs": {
+        "JoinInstruction$OnClause": "<p>On Clause.</p>"
+      }
+    },
+    "OptionalPort": {
+      "base": null,
+      "refs": {
+        "RedshiftParameters$Port": "<p>Port. This can be blank if the <code>ClusterId</code> is provided.</p>"
+      }
+    },
+    "OutputColumn": {
+      "base": "<p>Output column.</p>",
+      "refs": {
+        "OutputColumnList$member": null
+      }
+    },
+    "OutputColumnList": {
+      "base": null,
+      "refs": {
+        "DataSet$OutputColumns": "<p>The list of columns after all transforms. These columns are available in templates, analyses, and dashboards.</p>"
+      }
+    },
+    "Parameters": {
+      "base": "<p>Parameters.</p>",
+      "refs": {
+        "CreateDashboardRequest$Parameters": "<p>A structure that contains the parameters of the dashboard. These are parameter overrides for a dashboard. A dashboard can have any type of parameters and some parameters might accept multiple values. You could use the following structure to override two string parameters that accept multiple values:</p>",
+        "UpdateDashboardRequest$Parameters": "<p>A structure that contains the parameters of the dashboard.</p>"
+      }
+    },
+    "Password": {
+      "base": null,
+      "refs": {
+        "CredentialPair$Password": "<p>Password.</p>"
+      }
+    },
+    "PhysicalTable": {
+      "base": "<p>A view of a data source. Contains information on the shape of the data in the underlying source. This is a variant type structure. No more than one of the attributes can be non-null for this structure to be valid.</p>",
+      "refs": {
+        "PhysicalTableMap$value": null
+      }
+    },
+    "PhysicalTableId": {
+      "base": null,
+      "refs": {
+        "LogicalTableSource$PhysicalTableId": "<p>Physical table ID.</p>",
+        "PhysicalTableMap$key": null
+      }
+    },
+    "PhysicalTableMap": {
+      "base": null,
+      "refs": {
+        "CreateDataSetRequest$PhysicalTableMap": "<p>Declares the physical tables that are available in the underlying data sources.</p>",
+        "DataSet$PhysicalTableMap": "<p>Declares the physical tables that are available in the underlying data sources.</p>",
+        "UpdateDataSetRequest$PhysicalTableMap": "<p>Declares the physical tables that are available in the underlying data sources.</p>"
+      }
+    },
+    "Port": {
+      "base": null,
+      "refs": {
+        "AuroraParameters$Port": "<p>Port.</p>",
+        "AuroraPostgreSqlParameters$Port": "<p>Port.</p>",
+        "MariaDbParameters$Port": "<p>Port.</p>",
+        "MySqlParameters$Port": "<p>Port.</p>",
+        "PostgreSqlParameters$Port": "<p>Port.</p>",
+        "PrestoParameters$Port": "<p>Port.</p>",
+        "SparkParameters$Port": "<p>Port.</p>",
+        "SqlServerParameters$Port": "<p>Port.</p>",
+        "TeradataParameters$Port": "<p>Port.</p>"
+      }
+    },
+    "PositiveInteger": {
+      "base": null,
+      "refs": {
+        "TwitterParameters$MaxRows": "<p>Maximum number of rows to query Twitter.</p>",
+        "UploadSettings$StartFromRow": "<p>A row number to start reading data from.</p>"
+      }
+    },
+    "PostgreSqlParameters": {
+      "base": "<p>PostgreSQL parameters.</p>",
+      "refs": {
+        "DataSourceParameters$PostgreSqlParameters": "<p>PostgreSQL parameters.</p>"
+      }
+    },
+    "PreconditionNotMetException": {
+      "base": "<p>One or more preconditions aren't met.</p>",
+      "refs": {
+      }
+    },
+    "PrestoParameters": {
+      "base": "<p>Presto parameters.</p>",
+      "refs": {
+        "DataSourceParameters$PrestoParameters": "<p>Presto parameters.</p>"
+      }
+    },
+    "Principal": {
+      "base": null,
+      "refs": {
+        "ResourcePermission$Principal": "<p>The Amazon Resource Name (ARN) of a QuickSight user or group, or an IAM ARN. If you are using cross-account resource sharing, this is the IAM ARN of an account root. Otherwise, it is the ARN of a QuickSight user or group. .</p>"
+      }
+    },
+    "ProjectOperation": {
+      "base": "<p>A transform operation that projects columns. Operations that come after a projection can only refer to projected columns.</p>",
+      "refs": {
+        "TransformOperation$ProjectOperation": "<p>An operation that projects columns. Operations that come after a projection can only refer to projected columns.</p>"
+      }
+    },
+    "ProjectedColumnList": {
+      "base": null,
+      "refs": {
+        "ProjectOperation$ProjectedColumns": "<p>Projected columns.</p>"
+      }
+    },
+    "Query": {
+      "base": null,
+      "refs": {
+        "TwitterParameters$Query": "<p>Twitter query string.</p>"
+      }
+    },
+    "QueueInfo": {
+      "base": "<p>Information on queued dataset SPICE ingestion.</p>",
+      "refs": {
+        "Ingestion$QueueInfo": null
+      }
+    },
+    "QuickSightUserNotFoundException": {
+      "base": "<p>The user is not found. This error can happen in any operation that requires finding a user based on a provided user name, such as <code>DeleteUser</code>, <code>DescribeUser</code>, and so on.</p>",
+      "refs": {
+      }
+    },
+    "RdsParameters": {
+      "base": "<p>RDS parameters.</p>",
+      "refs": {
+        "DataSourceParameters$RdsParameters": "<p>RDS parameters.</p>"
+      }
+    },
+    "RedshiftParameters": {
+      "base": "<p>Redshift parameters. The <code>ClusterId</code> field can be blank if <code>Host</code> and <code>Port</code> are both set, and the other way around.</p>",
+      "refs": {
+        "DataSourceParameters$RedshiftParameters": "<p>Redshift parameters.</p>"
+      }
+    },
+    "RegisterUserRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "RegisterUserResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "RelationalTable": {
+      "base": "<p>A physical table type for relational data sources.</p>",
+      "refs": {
+        "PhysicalTable$RelationalTable": "<p>A physical table type for relational data sources.</p>"
+      }
+    },
+    "RelationalTableName": {
+      "base": null,
+      "refs": {
+        "RelationalTable$Name": "<p>Name of the relational table.</p>"
+      }
+    },
+    "RelationalTableSchema": {
+      "base": null,
+      "refs": {
+        "RelationalTable$Schema": "<p>The schema name. Applies to certain relational database engines.</p>"
+      }
+    },
+    "RenameColumnOperation": {
+      "base": "<p>A transform operation that renames a column.</p>",
+      "refs": {
+        "TransformOperation$RenameColumnOperation": "<p>An operation that renames a column.</p>"
+      }
+    },
+    "ResourceExistsException": {
+      "base": "<p>The resource specified already exists. </p>",
+      "refs": {
+      }
+    },
+    "ResourceId": {
+      "base": null,
+      "refs": {
+        "CreateDataSetRequest$DataSetId": "<p>An ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "CreateDataSetResponse$DataSetId": "<p>The ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "CreateDataSetResponse$IngestionId": "<p>The ID of the ingestion, which is triggered as a result of dataset creation if the import mode is SPICE</p>",
+        "CreateDataSourceRequest$DataSourceId": "<p>An ID for the data source. This ID is unique per AWS Region for each AWS account. </p>",
+        "CreateDataSourceResponse$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account.</p>",
+        "DataSet$DataSetId": "<p>The ID of the dataset.</p>",
+        "DataSetSummary$DataSetId": "<p>The ID of the dataset.</p>",
+        "DataSource$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account.</p>",
+        "DeleteDataSetRequest$DataSetId": "<p>The ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "DeleteDataSetResponse$DataSetId": "<p>The ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "DeleteDataSourceRequest$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account.</p>",
+        "DeleteDataSourceResponse$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account.</p>",
+        "DescribeDataSetPermissionsRequest$DataSetId": "<p>The ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "DescribeDataSetPermissionsResponse$DataSetId": "<p>The ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "DescribeDataSetRequest$DataSetId": "<p>The ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "DescribeDataSourcePermissionsRequest$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account.</p>",
+        "DescribeDataSourcePermissionsResponse$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account.</p>",
+        "DescribeDataSourceRequest$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account.</p>",
+        "UpdateDataSetPermissionsRequest$DataSetId": "<p>The ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "UpdateDataSetPermissionsResponse$DataSetId": "<p>The ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "UpdateDataSetRequest$DataSetId": "<p>The ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "UpdateDataSetResponse$DataSetId": "<p>The ID for the dataset that you want to create. This ID is unique per AWS Region for each AWS account.</p>",
+        "UpdateDataSetResponse$IngestionId": "<p>The ID of the ingestion, which is triggered as a result of dataset creation if the import mode is SPICE</p>",
+        "UpdateDataSourcePermissionsRequest$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account. </p>",
+        "UpdateDataSourcePermissionsResponse$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account.</p>",
+        "UpdateDataSourceRequest$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account. </p>",
+        "UpdateDataSourceResponse$DataSourceId": "<p>The ID of the data source. This ID is unique per AWS Region for each AWS account.</p>"
+      }
+    },
+    "ResourceName": {
+      "base": null,
+      "refs": {
+        "CreateDataSetRequest$Name": "<p>The display name for the dataset.</p>",
+        "CreateDataSourceRequest$Name": "<p>A display name for the data source.</p>",
+        "DataSet$Name": "<p>A display name for the dataset.</p>",
+        "DataSetSummary$Name": "<p>A display name for the dataset.</p>",
+        "DataSource$Name": "<p>A display name for the data source.</p>",
+        "UpdateDataSetRequest$Name": "<p>The display name for the dataset.</p>",
+        "UpdateDataSourceRequest$Name": "<p>A display name for the data source.</p>"
+      }
+    },
+    "ResourceNotFoundException": {
+      "base": "<p>One or more resources can't be found.</p>",
+      "refs": {
+      }
+    },
+    "ResourcePermission": {
+      "base": "<p>Permission for the resource.</p>",
+      "refs": {
+        "ResourcePermissionList$member": null,
+        "UpdateResourcePermissionList$member": null
+      }
+    },
+    "ResourcePermissionList": {
+      "base": null,
+      "refs": {
+        "CreateDashboardRequest$Permissions": "<p>A structure that contains the permissions of the dashboard. You can use this for granting permissions with principal and action information.</p>",
+        "CreateDataSetRequest$Permissions": "<p>A list of resource permissions on the dataset.</p>",
+        "CreateDataSourceRequest$Permissions": "<p>A list of resource permissions on the data source.</p>",
+        "CreateTemplateRequest$Permissions": "<p>A list of resource permissions to be set on the template. </p>",
+        "DescribeDashboardPermissionsResponse$Permissions": "<p>A structure that contains the permissions of the dashboard.</p>",
+        "DescribeDataSetPermissionsResponse$Permissions": "<p>A list of resource permissions on the dataset.</p>",
+        "DescribeDataSourcePermissionsResponse$Permissions": "<p>A list of resource permissions on the data source.</p>",
+        "DescribeTemplatePermissionsResponse$Permissions": "<p>A list of resource permissions to be set on the template. </p>",
+        "UpdateDashboardPermissionsResponse$Permissions": "<p>Information about the permissions on the dashboard.</p>",
+        "UpdateDataSetPermissionsRequest$GrantPermissions": "<p>The resource permissions that you want to grant to the dataset.</p>",
+        "UpdateDataSetPermissionsRequest$RevokePermissions": "<p>The resource permissions that you want to revoke from the dataset.</p>",
+        "UpdateDataSourcePermissionsRequest$GrantPermissions": "<p>A list of resource permissions that you want to grant on the data source.</p>",
+        "UpdateDataSourcePermissionsRequest$RevokePermissions": "<p>A list of resource permissions that you want to revoke on the data source.</p>",
+        "UpdateTemplatePermissionsResponse$Permissions": "<p>A list of resource permissions to be set on the template.</p>"
+      }
+    },
+    "ResourceStatus": {
+      "base": null,
+      "refs": {
+        "CreateDashboardResponse$CreationStatus": "<p>The creation status of the dashboard create request.</p>",
+        "CreateDataSourceResponse$CreationStatus": "<p>The status of creating the data source.</p>",
+        "CreateTemplateResponse$CreationStatus": "<p>The template creation status.</p>",
+        "DashboardVersion$Status": "<p>The HTTP status of the request.</p>",
+        "DashboardVersionSummary$Status": "<p>The HTTP status of the request.</p>",
+        "DataSource$Status": "<p>The HTTP status of the request.</p>",
+        "TemplateVersion$Status": "<p>The HTTP status of the request.</p>",
+        "TemplateVersionSummary$Status": "<p>The status of the template version.</p>",
+        "UpdateDashboardResponse$CreationStatus": "<p>The creation status of the request.</p>",
+        "UpdateDataSourceResponse$UpdateStatus": "<p>The update status of the data source's last update.</p>",
+        "UpdateTemplateResponse$CreationStatus": "<p>The creation status of the template.</p>"
+      }
+    },
+    "ResourceUnavailableException": {
+      "base": "<p>This resource is currently unavailable.</p>",
+      "refs": {
+      }
+    },
+    "RestrictiveResourceId": {
+      "base": null,
+      "refs": {
+        "CreateDashboardRequest$DashboardId": "<p>The ID for the dashboard, also added to IAM policy.</p>",
+        "CreateDashboardResponse$DashboardId": "<p>The ID for the dashboard.</p>",
+        "CreateTemplateAliasRequest$TemplateId": "<p>An ID for the template.</p>",
+        "CreateTemplateRequest$TemplateId": "<p>An ID for the template you want to create. This is unique per AWS region per AWS account.</p>",
+        "CreateTemplateResponse$TemplateId": "<p>The ID of the template.</p>",
+        "Dashboard$DashboardId": "<p>Dashboard ID.</p>",
+        "DashboardSummary$DashboardId": "<p>Dashboard ID.</p>",
+        "DeleteDashboardRequest$DashboardId": "<p>The ID for the dashboard.</p>",
+        "DeleteDashboardResponse$DashboardId": "<p>The ID of the dashboard.</p>",
+        "DeleteTemplateAliasRequest$TemplateId": "<p>An ID for the template.</p>",
+        "DeleteTemplateAliasResponse$TemplateId": "<p>An ID for the template.</p>",
+        "DeleteTemplateRequest$TemplateId": "<p>An ID for the template you want to delete.</p>",
+        "DeleteTemplateResponse$TemplateId": "<p>An ID for the template.</p>",
+        "DescribeDashboardPermissionsRequest$DashboardId": "<p>The ID for the dashboard, also added to IAM policy.</p>",
+        "DescribeDashboardPermissionsResponse$DashboardId": "<p>The ID for the dashboard.</p>",
+        "DescribeDashboardRequest$DashboardId": "<p>The ID for the dashboard.</p>",
+        "DescribeTemplateAliasRequest$TemplateId": "<p>An ID for the template.</p>",
+        "DescribeTemplatePermissionsRequest$TemplateId": "<p>The ID for the template.</p>",
+        "DescribeTemplatePermissionsResponse$TemplateId": "<p>The ID for the template.</p>",
+        "DescribeTemplateRequest$TemplateId": "<p>An ID for the template.</p>",
+        "GetDashboardEmbedUrlRequest$DashboardId": "<p>The ID for the dashboard, also added to IAM policy</p>",
+        "ListDashboardVersionsRequest$DashboardId": "<p>The ID for the dashboard.</p>",
+        "ListTemplateAliasesRequest$TemplateId": "<p>The ID for the template.</p>",
+        "ListTemplateVersionsRequest$TemplateId": "<p>The ID for the template.</p>",
+        "Template$TemplateId": "<p>The ID for the template. This is unique per AWS Region for each AWS account.</p>",
+        "TemplateSummary$TemplateId": "<p>The ID of the template. This is unique per AWS Region for each AWS account.</p>",
+        "UpdateDashboardPermissionsRequest$DashboardId": "<p>The ID for the dashboard.</p>",
+        "UpdateDashboardPermissionsResponse$DashboardId": "<p>The ID for the dashboard.</p>",
+        "UpdateDashboardPublishedVersionRequest$DashboardId": "<p>The ID for the dashboard.</p>",
+        "UpdateDashboardPublishedVersionResponse$DashboardId": "<p>The ID for the dashboard.</p>",
+        "UpdateDashboardRequest$DashboardId": "<p>The ID for the dashboard.</p>",
+        "UpdateDashboardResponse$DashboardId": "<p>The ID for the dashboard.</p>",
+        "UpdateTemplateAliasRequest$TemplateId": "<p>The ID for the template.</p>",
+        "UpdateTemplatePermissionsRequest$TemplateId": "<p>The ID for the template.</p>",
+        "UpdateTemplatePermissionsResponse$TemplateId": "<p>The ID for the template.</p>",
+        "UpdateTemplateRequest$TemplateId": "<p>The ID for the template.</p>",
+        "UpdateTemplateResponse$TemplateId": "<p>The ID for the template.</p>"
+      }
+    },
+    "RoleSessionName": {
+      "base": null,
+      "refs": {
+        "RegisterUserRequest$SessionName": "<p>You need to use this parameter only when you register one or more users using an assumed IAM role. You don't need to provide the session name for other scenarios, for example when you are registering an IAM user or an Amazon QuickSight user. You can register multiple users using the same IAM role if each user has a different session name. For more information on assuming IAM roles, see <a href=\"https://docs.aws.example.com/cli/latest/reference/sts/assume-role.html\"> <code>assume-role</code> </a> in the <i>AWS CLI Reference.</i> </p>"
+      }
+    },
+    "RowInfo": {
+      "base": "<p>Information on rows during a data set SPICE ingestion.</p>",
+      "refs": {
+        "Ingestion$RowInfo": null
+      }
+    },
+    "RowLevelPermissionDataSet": {
+      "base": "<p>Row-level security configuration on the dataset.</p>",
+      "refs": {
+        "CreateDataSetRequest$RowLevelPermissionDataSet": "<p>Row-level security configuration on the data you want to create.</p>",
+        "DataSet$RowLevelPermissionDataSet": "<p>Row-level security configuration on the dataset.</p>",
+        "DataSetSummary$RowLevelPermissionDataSet": "<p>Row-level security configuration on the dataset.</p>",
+        "UpdateDataSetRequest$RowLevelPermissionDataSet": "<p>Row-level security configuration on the data you want to create.</p>"
+      }
+    },
+    "RowLevelPermissionPolicy": {
+      "base": null,
+      "refs": {
+        "RowLevelPermissionDataSet$PermissionPolicy": "<p>Permission policy.</p>"
+      }
+    },
+    "S3Bucket": {
+      "base": null,
+      "refs": {
+        "ManifestFileLocation$Bucket": "<p>Amazon S3 bucket.</p>"
+      }
+    },
+    "S3Key": {
+      "base": null,
+      "refs": {
+        "ManifestFileLocation$Key": "<p>Amazon S3 key that identifies an object.</p>"
+      }
+    },
+    "S3Parameters": {
+      "base": "<p>S3 parameters.</p>",
+      "refs": {
+        "DataSourceParameters$S3Parameters": "<p>S3 parameters.</p>"
+      }
+    },
+    "S3Source": {
+      "base": "<p>A physical table type for as S3 data source.</p>",
+      "refs": {
+        "PhysicalTable$S3Source": "<p>A physical table type for as S3 data source.</p>"
+      }
+    },
+    "ServiceNowParameters": {
+      "base": "<p>ServiceNow parameters.</p>",
+      "refs": {
+        "DataSourceParameters$ServiceNowParameters": "<p>ServiceNow parameters.</p>"
+      }
+    },
+    "SessionLifetimeInMinutes": {
+      "base": null,
+      "refs": {
+        "GetDashboardEmbedUrlRequest$SessionLifetimeInMinutes": "<p>How many minutes the session is valid. The session lifetime must be between 15 and 600 minutes.</p>"
+      }
+    },
+    "SessionLifetimeInMinutesInvalidException": {
+      "base": "<p>The number of minutes specified for the lifetime of a session is not valid. The session lifetime must be from 15 to 600 minutes.</p>",
+      "refs": {
+      }
+    },
+    "SheetControlsOption": {
+      "base": "<p>Sheet controls option.</p>",
+      "refs": {
+        "DashboardPublishOptions$SheetControlsOption": "<p>Sheet controls option.</p>"
+      }
+    },
+    "SiteBaseUrl": {
+      "base": null,
+      "refs": {
+        "JiraParameters$SiteBaseUrl": "<p>The base URL of the Jira site.</p>",
+        "ServiceNowParameters$SiteBaseUrl": "<p>URL of the base site.</p>"
+      }
+    },
+    "SnowflakeParameters": {
+      "base": "<p>Snowflake parameters.</p>",
+      "refs": {
+        "DataSourceParameters$SnowflakeParameters": "<p>Snowflake parameters.</p>"
+      }
+    },
+    "SparkParameters": {
+      "base": "<p>Spark parameters.</p>",
+      "refs": {
+        "DataSourceParameters$SparkParameters": "<p>Spark parameters.</p>"
+      }
+    },
+    "SqlQuery": {
+      "base": null,
+      "refs": {
+        "CustomSql$SqlQuery": "<p>The SQL query.</p>"
+      }
+    },
+    "SqlServerParameters": {
+      "base": "<p>SQL Server parameters.</p>",
+      "refs": {
+        "DataSourceParameters$SqlServerParameters": "<p>SQL Server parameters.</p>"
+      }
+    },
+    "SslProperties": {
+      "base": "<p>Secure Socket Layer (SSL) properties that apply when QuickSight connects to your underlying data source.</p>",
+      "refs": {
+        "CreateDataSourceRequest$SslProperties": "<p>Secure Socket Layer (SSL) properties that apply when QuickSight connects to your underlying source.</p>",
+        "DataSource$SslProperties": "<p>Secure Socket Layer (SSL) properties that apply when QuickSight connects to your underlying source.</p>",
+        "UpdateDataSourceRequest$SslProperties": "<p>Secure Socket Layer (SSL) properties that apply when QuickSight connects to your underlying source.</p>"
+      }
+    },
+    "StatusCode": {
+      "base": null,
+      "refs": {
+        "CancelIngestionResponse$Status": "<p>The HTTP status of the request.</p>",
+        "CreateDashboardResponse$Status": "<p>The HTTP status of the request.</p>",
+        "CreateDataSetResponse$Status": "<p>The HTTP status of the request.</p>",
+        "CreateDataSourceResponse$Status": "<p>The HTTP status of the request.</p>",
+        "CreateGroupMembershipResponse$Status": "<p>The HTTP status of the request.</p>",
+        "CreateGroupResponse$Status": "<p>The HTTP status of the request.</p>",
+        "CreateIAMPolicyAssignmentResponse$Status": "<p>The HTTP status of the request.</p>",
+        "CreateIngestionResponse$Status": "<p>The HTTP status of the request.</p>",
+        "CreateTemplateAliasResponse$Status": "<p>The HTTP status of the request.</p>",
+        "CreateTemplateResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DeleteDashboardResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DeleteDataSetResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DeleteDataSourceResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DeleteGroupMembershipResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DeleteGroupResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DeleteIAMPolicyAssignmentResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DeleteTemplateAliasResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DeleteTemplateResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DeleteUserByPrincipalIdResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DeleteUserResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeDashboardPermissionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeDashboardResponse$Status": "<p>The http status of this request.</p>",
+        "DescribeDataSetPermissionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeDataSetResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeDataSourcePermissionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeDataSourceResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeGroupResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeIAMPolicyAssignmentResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeIngestionResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeTemplateAliasResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeTemplatePermissionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeTemplateResponse$Status": "<p>The HTTP status of the request.</p>",
+        "DescribeUserResponse$Status": "<p>The HTTP status of the request.</p>",
+        "GetDashboardEmbedUrlResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListDashboardVersionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListDashboardsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListDataSetsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListDataSourcesResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListGroupMembershipsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListGroupsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListIAMPolicyAssignmentsForUserResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListIAMPolicyAssignmentsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListIngestionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListTagsForResourceResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListTemplateAliasesResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListTemplateVersionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListTemplatesResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListUserGroupsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "ListUsersResponse$Status": "<p>The HTTP status of the request.</p>",
+        "RegisterUserResponse$Status": "<p>The HTTP status of the request.</p>",
+        "TagResourceResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UntagResourceResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateDashboardPermissionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateDashboardPublishedVersionResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateDashboardResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateDataSetPermissionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateDataSetResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateDataSourcePermissionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateDataSourceResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateGroupResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateIAMPolicyAssignmentResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateTemplateAliasResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateTemplatePermissionsResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateTemplateResponse$Status": "<p>The HTTP status of the request.</p>",
+        "UpdateUserResponse$Status": "<p>The HTTP status of the request.</p>"
+      }
+    },
+    "String": {
+      "base": null,
+      "refs": {
+        "AccessDeniedException$Message": null,
+        "AccessDeniedException$RequestId": "<p>The AWS request id for this request.</p>",
+        "ActionList$member": null,
+        "ColumnGroupColumnSchema$Name": "<p>The name of the column group's column schema.</p>",
+        "ColumnGroupSchema$Name": "<p>The name of the column group schema.</p>",
+        "ColumnSchema$Name": "<p>The name of the column schema.</p>",
+        "ColumnSchema$DataType": "<p>The data type of the column schema.</p>",
+        "ColumnSchema$GeographicRole": "<p>The geographic role of the column schema.</p>",
+        "ConcurrentUpdatingException$Message": null,
+        "ConcurrentUpdatingException$RequestId": null,
+        "ConflictException$Message": null,
+        "ConflictException$RequestId": "<p>The AWS request id for this request.</p>",
+        "CreateDashboardResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "CreateDataSetResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "CreateDataSourceResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "CreateGroupMembershipResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "CreateGroupResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "CreateIAMPolicyAssignmentResponse$AssignmentId": "<p>An ID for the assignment.</p>",
+        "CreateIAMPolicyAssignmentResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "CreateTemplateAliasResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "CreateTemplateResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DataSetConfiguration$Placeholder": "<p>Placeholder.</p>",
+        "DataSourceErrorInfo$Message": "<p>Error message.</p>",
+        "DeleteDashboardResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DeleteDataSetResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DeleteDataSourceResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DeleteGroupMembershipResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DeleteGroupResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DeleteIAMPolicyAssignmentResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DeleteTemplateAliasResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DeleteTemplateResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DeleteUserByPrincipalIdRequest$PrincipalId": "<p>The principal ID of the user.</p>",
+        "DeleteUserByPrincipalIdResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DeleteUserResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeDashboardPermissionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeDashboardResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeDataSetPermissionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeDataSetResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeDataSourcePermissionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeDataSourceResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeGroupResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeIAMPolicyAssignmentResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeTemplateAliasResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeTemplatePermissionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeUserResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DomainNotWhitelistedException$Message": null,
+        "DomainNotWhitelistedException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "GetDashboardEmbedUrlResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "Group$PrincipalId": "<p>The principal ID of the group.</p>",
+        "IAMPolicyAssignment$AssignmentId": "<p>Assignment ID.</p>",
+        "IdentityMap$key": null,
+        "IdentityTypeNotSupportedException$Message": null,
+        "IdentityTypeNotSupportedException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "InternalFailureException$Message": null,
+        "InternalFailureException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "InvalidNextTokenException$Message": null,
+        "InvalidNextTokenException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "InvalidParameterValueException$Message": null,
+        "InvalidParameterValueException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "LimitExceededException$Message": null,
+        "LimitExceededException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "ListDashboardVersionsRequest$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListDashboardVersionsResponse$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListDashboardVersionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListDashboardsRequest$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListDashboardsResponse$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListDashboardsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListDataSetsRequest$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListDataSetsResponse$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListDataSetsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListDataSourcesRequest$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListDataSourcesResponse$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListDataSourcesResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListGroupMembershipsRequest$NextToken": "<p>A pagination token that can be used in a subsequent request.</p>",
+        "ListGroupMembershipsResponse$NextToken": "<p>A pagination token that can be used in a subsequent request.</p>",
+        "ListGroupMembershipsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListGroupsRequest$NextToken": "<p>A pagination token that can be used in a subsequent request.</p>",
+        "ListGroupsResponse$NextToken": "<p>A pagination token that can be used in a subsequent request.</p>",
+        "ListGroupsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListIAMPolicyAssignmentsForUserRequest$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListIAMPolicyAssignmentsForUserResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListIAMPolicyAssignmentsForUserResponse$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListIAMPolicyAssignmentsRequest$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListIAMPolicyAssignmentsResponse$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListIAMPolicyAssignmentsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListTagsForResourceResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListTemplateAliasesRequest$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListTemplateAliasesResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListTemplateAliasesResponse$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListTemplateVersionsRequest$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListTemplateVersionsResponse$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListTemplateVersionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListTemplatesRequest$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListTemplatesResponse$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListTemplatesResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListUserGroupsRequest$NextToken": "<p>A pagination token that can be used in a subsequent request.</p>",
+        "ListUserGroupsResponse$NextToken": "<p>A pagination token that can be used in a subsequent request.</p>",
+        "ListUserGroupsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ListUsersRequest$NextToken": "<p>A pagination token that can be used in a subsequent request.</p>",
+        "ListUsersResponse$NextToken": "<p>A pagination token that can be used in a subsequent request.</p>",
+        "ListUsersResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "PreconditionNotMetException$Message": null,
+        "PreconditionNotMetException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "ProjectedColumnList$member": null,
+        "QuickSightUserNotFoundException$Message": null,
+        "QuickSightUserNotFoundException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "RegisterUserRequest$Email": "<p>The email address of the user that you want to register.</p>",
+        "RegisterUserRequest$IamArn": "<p>The ARN of the IAM user or role that you are registering with Amazon QuickSight. </p>",
+        "RegisterUserResponse$UserInvitationUrl": "<p>The URL the user visits to complete registration and provide a password. This is returned only for users with an identity type of <code>QUICKSIGHT</code>.</p>",
+        "RegisterUserResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ResourceExistsException$Message": null,
+        "ResourceExistsException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "ResourceNotFoundException$Message": null,
+        "ResourceNotFoundException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "ResourceUnavailableException$Message": null,
+        "ResourceUnavailableException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "SessionLifetimeInMinutesInvalidException$Message": null,
+        "SessionLifetimeInMinutesInvalidException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "StringList$member": null,
+        "TagResourceResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ThrottlingException$Message": null,
+        "ThrottlingException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "UnsupportedUserEditionException$Message": null,
+        "UnsupportedUserEditionException$RequestId": "<p>The AWS request ID for this request.</p>",
+        "UntagResourceResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateDashboardPermissionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateDashboardPublishedVersionResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateDashboardResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateDataSetPermissionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateDataSetResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateDataSourcePermissionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateDataSourceResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateGroupResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateIAMPolicyAssignmentResponse$AssignmentId": "<p>The ID of the assignment.</p>",
+        "UpdateIAMPolicyAssignmentResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateTemplateAliasResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateTemplatePermissionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateTemplateResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "UpdateUserRequest$Email": "<p>The email address of the user that you want to update.</p>",
+        "UpdateUserResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "User$Email": "<p>The user's email address.</p>",
+        "User$PrincipalId": "<p>The principal ID of the user.</p>"
+      }
+    },
+    "StringList": {
+      "base": null,
+      "refs": {
+        "StringParameter$Values": "<p>Values.</p>"
+      }
+    },
+    "StringParameter": {
+      "base": "<p>String parameter.</p>",
+      "refs": {
+        "StringParameterList$member": null
+      }
+    },
+    "StringParameterList": {
+      "base": null,
+      "refs": {
+        "Parameters$StringParameters": "<p>String parameters.</p>"
+      }
+    },
+    "Tag": {
+      "base": "<p>The keys of the key-value pairs for the resource tag or tags assigned to the resource.</p>",
+      "refs": {
+        "TagList$member": null
+      }
+    },
+    "TagColumnOperation": {
+      "base": "<p>A transform operation that tags a column with additional information.</p>",
+      "refs": {
+        "TransformOperation$TagColumnOperation": "<p>An operation that tags a column with additional information.</p>"
+      }
+    },
+    "TagKey": {
+      "base": null,
+      "refs": {
+        "Tag$Key": "<p>Tag key.</p>",
+        "TagKeyList$member": null
+      }
+    },
+    "TagKeyList": {
+      "base": null,
+      "refs": {
+        "UntagResourceRequest$TagKeys": "<p>The keys of the key-value pairs for the resource tag or tags assigned to the resource.</p>"
+      }
+    },
+    "TagList": {
+      "base": null,
+      "refs": {
+        "CreateDashboardRequest$Tags": "<p>Contains a map of the key-value pairs for the resource tag or tags assigned to the dashboard.</p>",
+        "CreateDataSetRequest$Tags": "<p>Contains a map of the key-value pairs for the resource tag or tags assigned to the dataset.</p>",
+        "CreateDataSourceRequest$Tags": "<p>Contains a map of the key-value pairs for the resource tag or tags assigned to the data source.</p>",
+        "CreateTemplateRequest$Tags": "<p>Contains a map of the key-value pairs for the resource tag or tags assigned to the resource.</p>",
+        "ListTagsForResourceResponse$Tags": "<p>Contains a map of the key-value pairs for the resource tag or tags assigned to the resource.</p>",
+        "TagResourceRequest$Tags": "<p>Contains a map of the key-value pairs for the resource tag or tags assigned to the resource.</p>"
+      }
+    },
+    "TagResourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "TagResourceResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "TagValue": {
+      "base": null,
+      "refs": {
+        "Tag$Value": "<p>Tag value.</p>"
+      }
+    },
+    "Template": {
+      "base": "<p>A template object. A template is an entity in QuickSight which encapsulates the metadata required to create an analysis that can be used to create dashboard. It adds a layer of abstraction by replacing the dataset associated with the analysis with placeholders. Templates can be used to create dashboards by replacing dataset placeholders with datasets which follow the same schema that was used to create the source analysis and template.</p> <p>You can share templates across AWS accounts by allowing users in other AWS accounts to create a template or a dashboard from an existing template.</p>",
+      "refs": {
+        "DescribeTemplateResponse$Template": "<p>The template structure of the object you want to describe.</p>"
+      }
+    },
+    "TemplateAlias": {
+      "base": "<p>The template alias.</p>",
+      "refs": {
+        "CreateTemplateAliasResponse$TemplateAlias": "<p>Information on the template alias.</p>",
+        "DescribeTemplateAliasResponse$TemplateAlias": "<p>Information about the template alias.</p>",
+        "TemplateAliasList$member": null,
+        "UpdateTemplateAliasResponse$TemplateAlias": "<p>The template alias.</p>"
+      }
+    },
+    "TemplateAliasList": {
+      "base": null,
+      "refs": {
+        "ListTemplateAliasesResponse$TemplateAliasList": "<p>A structure containing the list of the template's aliases.</p>"
+      }
+    },
+    "TemplateError": {
+      "base": "<p>List of errors that occurred when the template version creation failed.</p>",
+      "refs": {
+        "TemplateErrorList$member": null
+      }
+    },
+    "TemplateErrorList": {
+      "base": null,
+      "refs": {
+        "TemplateVersion$Errors": "<p>Errors associated with the template.</p>"
+      }
+    },
+    "TemplateErrorType": {
+      "base": null,
+      "refs": {
+        "TemplateError$Type": "<p>Type of error.</p>"
+      }
+    },
+    "TemplateName": {
+      "base": null,
+      "refs": {
+        "CreateTemplateRequest$Name": "<p>A display name for the template.</p>",
+        "Template$Name": "<p>The display name of the template.</p>",
+        "TemplateSummary$Name": "<p>A display name for the template.</p>",
+        "UpdateTemplateRequest$Name": "<p>The name for the template.</p>"
+      }
+    },
+    "TemplateSourceAnalysis": {
+      "base": "<p>The source analysis of the template.</p>",
+      "refs": {
+        "TemplateSourceEntity$SourceAnalysis": "<p>The source analysis, if it is based on an analysis.</p>"
+      }
+    },
+    "TemplateSourceEntity": {
+      "base": "<p>The source entity of the template.</p>",
+      "refs": {
+        "CreateTemplateRequest$SourceEntity": "<p>The Amazon Resource Name (ARN) of the source entity from which this template is being created. Templates can be currently created from an analysis or another template. If the ARN is for an analysis, you must include its dataset references. </p>",
+        "UpdateTemplateRequest$SourceEntity": "<p>The source QuickSight entity from which this template is being created. Templates can be currently created from an Analysis or another template.</p>"
+      }
+    },
+    "TemplateSourceTemplate": {
+      "base": "<p>The source template of the template.</p>",
+      "refs": {
+        "TemplateSourceEntity$SourceTemplate": "<p>The source template, if it is based on an template.</p>"
+      }
+    },
+    "TemplateSummary": {
+      "base": "<p>The template summary.</p>",
+      "refs": {
+        "TemplateSummaryList$member": null
+      }
+    },
+    "TemplateSummaryList": {
+      "base": null,
+      "refs": {
+        "ListTemplatesResponse$TemplateSummaryList": "<p>A structure containing information about the templates in the list.</p>"
+      }
+    },
+    "TemplateVersion": {
+      "base": "<p>A version of a template.</p>",
+      "refs": {
+        "Template$Version": "<p>A structure describing the versions of the template.</p>"
+      }
+    },
+    "TemplateVersionSummary": {
+      "base": "<p>The template version.</p>",
+      "refs": {
+        "TemplateVersionSummaryList$member": null
+      }
+    },
+    "TemplateVersionSummaryList": {
+      "base": null,
+      "refs": {
+        "ListTemplateVersionsResponse$TemplateVersionSummaryList": "<p>A structure containing a list of all the versions of the specified template.</p>"
+      }
+    },
+    "TeradataParameters": {
+      "base": "<p>Teradata parameters.</p>",
+      "refs": {
+        "DataSourceParameters$TeradataParameters": "<p>Teradata parameters.</p>"
+      }
+    },
+    "TextQualifier": {
+      "base": null,
+      "refs": {
+        "UploadSettings$TextQualifier": "<p>Text qualifier.</p>"
+      }
+    },
+    "ThrottlingException": {
+      "base": "<p>Access is throttled.</p>",
+      "refs": {
+      }
+    },
+    "Timestamp": {
+      "base": null,
+      "refs": {
+        "Dashboard$CreatedTime": "<p>The time this was created.</p>",
+        "Dashboard$LastPublishedTime": "<p>The last time this was published.</p>",
+        "Dashboard$LastUpdatedTime": "<p>The last time this was updated.</p>",
+        "DashboardSummary$CreatedTime": "<p>The time this was created.</p>",
+        "DashboardSummary$LastUpdatedTime": "<p>The last time this was updated.</p>",
+        "DashboardSummary$LastPublishedTime": "<p>The last time this was published.</p>",
+        "DashboardVersion$CreatedTime": "<p>The time this was created.</p>",
+        "DashboardVersionSummary$CreatedTime": "<p>The time this was created.</p>",
+        "DataSet$CreatedTime": "<p>The time this was created.</p>",
+        "DataSet$LastUpdatedTime": "<p>The last time this was updated.</p>",
+        "DataSetSummary$CreatedTime": "<p>The time this was created.</p>",
+        "DataSetSummary$LastUpdatedTime": "<p>The last time this was updated.</p>",
+        "DataSource$CreatedTime": "<p>The time this was created.</p>",
+        "DataSource$LastUpdatedTime": "<p>The last time this was updated.</p>",
+        "Template$LastUpdatedTime": "<p>Time when this was last updated.</p>",
+        "Template$CreatedTime": "<p>Time when this was created.</p>",
+        "TemplateSummary$CreatedTime": "<p>The last time this was created.</p>",
+        "TemplateSummary$LastUpdatedTime": "<p>The last time this was updated.</p>",
+        "TemplateVersion$CreatedTime": "<p>The time this was created.</p>",
+        "TemplateVersionSummary$CreatedTime": "<p>The time this was created.</p>",
+        "TimestampList$member": null
+      }
+    },
+    "TimestampList": {
+      "base": null,
+      "refs": {
+        "DateTimeParameter$Values": "<p>Values.</p>"
+      }
+    },
+    "TransformOperation": {
+      "base": "<p>A data transformation on a logical table. This is a variant type structure. No more than one of the attributes should be non-null for this structure to be valid.</p>",
+      "refs": {
+        "TransformOperationList$member": null
+      }
+    },
+    "TransformOperationList": {
+      "base": null,
+      "refs": {
+        "LogicalTable$DataTransforms": "<p>Transform operations that act on this logical table.</p>"
+      }
+    },
+    "TwitterParameters": {
+      "base": "<p>Twitter parameters.</p>",
+      "refs": {
+        "DataSourceParameters$TwitterParameters": "<p>Twitter parameters.</p>"
+      }
+    },
+    "TypeCastFormat": {
+      "base": null,
+      "refs": {
+        "CastColumnTypeOperation$Format": "<p>When casting a column from string to datetime type, you can supply a QuickSight supported format string to denote the source data format.</p>"
+      }
+    },
+    "UnsupportedUserEditionException": {
+      "base": "<p>This error indicates that you are calling an operation on an Amazon QuickSight subscription where the edition doesn't include support for that operation. Amazon QuickSight currently has Standard Edition and Enterprise Edition. Not every operation and capability is available in every edition.</p>",
+      "refs": {
+      }
+    },
+    "UntagResourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UntagResourceResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDashboardPermissionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDashboardPermissionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDashboardPublishedVersionRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDashboardPublishedVersionResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDashboardRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDashboardResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDataSetPermissionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDataSetPermissionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDataSetRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDataSetResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDataSourcePermissionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDataSourcePermissionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDataSourceRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateDataSourceResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateGroupRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateGroupResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateIAMPolicyAssignmentRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateIAMPolicyAssignmentResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateResourcePermissionList": {
+      "base": null,
+      "refs": {
+        "UpdateDashboardPermissionsRequest$GrantPermissions": "<p>The permissions that you want to grant on this resource.</p>",
+        "UpdateDashboardPermissionsRequest$RevokePermissions": "<p>The permissions that you want to revoke from this resource.</p>",
+        "UpdateTemplatePermissionsRequest$GrantPermissions": "<p>A list of resource permissions to be granted on the template. </p>",
+        "UpdateTemplatePermissionsRequest$RevokePermissions": "<p>A list of resource permissions to be revoked from the template. </p>"
+      }
+    },
+    "UpdateTemplateAliasRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateTemplateAliasResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateTemplatePermissionsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateTemplatePermissionsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateTemplateRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateTemplateResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateUserRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UpdateUserResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "UploadSettings": {
+      "base": "<p>Information on source file(s) format.</p>",
+      "refs": {
+        "S3Source$UploadSettings": "<p>Information on the S3 source file(s) format.</p>"
+      }
+    },
+    "User": {
+      "base": "<p>A registered user of Amazon QuickSight. Currently, an Amazon QuickSight subscription can't contain more than 20 million users.</p>",
+      "refs": {
+        "DescribeUserResponse$User": "<p>The user name.</p>",
+        "RegisterUserResponse$User": "<p>The user name.</p>",
+        "UpdateUserResponse$User": "<p>The Amazon QuickSight user.</p>",
+        "UserList$member": null
+      }
+    },
+    "UserList": {
+      "base": null,
+      "refs": {
+        "ListUsersResponse$UserList": "<p>The list of users.</p>"
+      }
+    },
+    "UserName": {
+      "base": null,
+      "refs": {
+        "DeleteUserRequest$UserName": "<p>The name of the user that you want to delete.</p>",
+        "DescribeUserRequest$UserName": "<p>The name of the user that you want to describe.</p>",
+        "ListIAMPolicyAssignmentsForUserRequest$UserName": "<p>The name of the user.</p>",
+        "ListUserGroupsRequest$UserName": "<p>The Amazon QuickSight user name that you want to list group memberships for.</p>",
+        "RegisterUserRequest$UserName": "<p>The Amazon QuickSight user name that you want to create for the user you are registering.</p>",
+        "UpdateUserRequest$UserName": "<p>The Amazon QuickSight user name that you want to update.</p>",
+        "User$UserName": "<p>The user's user name.</p>"
+      }
+    },
+    "UserRole": {
+      "base": null,
+      "refs": {
+        "RegisterUserRequest$UserRole": "<p>The Amazon QuickSight role for the user. The user role can be one of the following:</p> <ul> <li> <p> <code>READER</code>: A user who has read-only access to dashboards.</p> </li> <li> <p> <code>AUTHOR</code>: A user who can create data sources, datasets, analyses, and dashboards.</p> </li> <li> <p> <code>ADMIN</code>: A user who is an author, who can also manage Amazon QuickSight settings.</p> </li> <li> <p> <code>RESTRICTED_READER</code>: This role isn't currently available for use.</p> </li> <li> <p> <code>RESTRICTED_AUTHOR</code>: This role isn't currently available for use.</p> </li> </ul>",
+        "UpdateUserRequest$Role": "<p>The Amazon QuickSight role of the user. The user role can be one of the following:</p> <ul> <li> <p> <code>READER</code>: A user who has read-only access to dashboards.</p> </li> <li> <p> <code>AUTHOR</code>: A user who can create data sources, datasets, analyses, and dashboards.</p> </li> <li> <p> <code>ADMIN</code>: A user who is an author, who can also manage Amazon QuickSight settings.</p> </li> </ul>",
+        "User$Role": "<p>The Amazon QuickSight role for the user. The user role can be one of the following:.</p> <ul> <li> <p> <code>READER</code>: A user who has read-only access to dashboards.</p> </li> <li> <p> <code>AUTHOR</code>: A user who can create data sources, datasets, analyses, and dashboards.</p> </li> <li> <p> <code>ADMIN</code>: A user who is an author, who can also manage Amazon QuickSight settings.</p> </li> <li> <p> <code>RESTRICTED_READER</code>: This role isn't currently available for use.</p> </li> <li> <p> <code>RESTRICTED_AUTHOR</code>: This role isn't currently available for use.</p> </li> </ul>"
+      }
+    },
+    "Username": {
+      "base": null,
+      "refs": {
+        "CredentialPair$Username": "<p>Username.</p>"
+      }
+    },
+    "VersionDescription": {
+      "base": null,
+      "refs": {
+        "CreateDashboardRequest$VersionDescription": "<p>A description for the first version of the dashboard being created.</p>",
+        "CreateTemplateRequest$VersionDescription": "<p>A description of the current template version being created. This API created the first version of the template. Every time UpdateTemplate is called a new version is created. Each version of the template maintains a description of the version in the VersionDescription field.</p>",
+        "DashboardVersion$Description": "<p>Description.</p>",
+        "DashboardVersionSummary$Description": "<p>Description.</p>",
+        "TemplateVersion$Description": "<p>The description of the template.</p>",
+        "TemplateVersionSummary$Description": "<p>The desription of the template version.</p>",
+        "UpdateDashboardRequest$VersionDescription": "<p>A description for the first version of the dashboard being created.</p>",
+        "UpdateTemplateRequest$VersionDescription": "<p>A description of the current template version being updated. Every time you cal <code>UpdateTemplate</code> you create a new version. Each version of the template maintains a description of the version in the <code>VersionDescription</code> field.</p>"
+      }
+    },
+    "VersionNumber": {
+      "base": null,
+      "refs": {
+        "CreateTemplateAliasRequest$TemplateVersionNumber": "<p>The version number of the template.</p>",
+        "DashboardSummary$PublishedVersionNumber": "<p>Published version number.</p>",
+        "DashboardVersion$VersionNumber": "<p>Version number.</p>",
+        "DashboardVersionSummary$VersionNumber": "<p>Version number.</p>",
+        "DeleteDashboardRequest$VersionNumber": "<p>The version number of the dashboard. If version number property is provided, only the specified version of the dashboard is deleted.</p>",
+        "DeleteTemplateRequest$VersionNumber": "<p>Specifies the version of the template that you want to delete. If you don't provide a version number, <code>DeleteTemplate</code> deletes all versions of the template. </p>",
+        "DescribeDashboardRequest$VersionNumber": "<p>The version number for the dashboard. If version number isn’t passed the latest published dashboard version is described. </p>",
+        "DescribeTemplateRequest$VersionNumber": "<p>This is an optional field, when a version number is provided the corresponding version is describe, if it's not provided the latest version of the template is described.</p>",
+        "TemplateAlias$TemplateVersionNumber": "<p>The version number of the template alias.</p>",
+        "TemplateSummary$LatestVersionNumber": "<p>A structure containing a list of version numbers for the template summary.</p>",
+        "TemplateVersion$VersionNumber": "<p>The version number of the template.</p>",
+        "TemplateVersionSummary$VersionNumber": "<p>The version number of the template version.</p>",
+        "UpdateDashboardPublishedVersionRequest$VersionNumber": "<p>The version number of the dashboard.</p>",
+        "UpdateTemplateAliasRequest$TemplateVersionNumber": "<p>The version number of the template.</p>"
+      }
+    },
+    "VpcConnectionProperties": {
+      "base": "<p>VPC connection properties.</p>",
+      "refs": {
+        "CreateDataSourceRequest$VpcConnectionProperties": "<p>Use this parameter only when you want QuickSight to use a VPC connection when connecting to your underlying source.</p>",
+        "DataSource$VpcConnectionProperties": "<p>The VPC connection information. You need to use this parameter only when you want QuickSight to use a VPC connection when connecting to your underlying source.</p>",
+        "UpdateDataSourceRequest$VpcConnectionProperties": "<p>Use this parameter only when you want QuickSight to use a VPC connection when connecting to your underlying source.</p>"
+      }
+    },
+    "Warehouse": {
+      "base": null,
+      "refs": {
+        "SnowflakeParameters$Warehouse": "<p>Warehouse.</p>"
+      }
+    },
+    "WorkGroup": {
+      "base": null,
+      "refs": {
+        "AthenaParameters$WorkGroup": "<p>The workgroup that Amazon Athena uses.</p>"
+      }
+    },
+    "boolean": {
+      "base": null,
+      "refs": {
+        "GetDashboardEmbedUrlRequest$UndoRedoDisabled": "<p>Remove the undo/redo button on embedded dashboard. The default is FALSE, which enables the undo/redo button.</p>",
+        "GetDashboardEmbedUrlRequest$ResetDisabled": "<p>Remove the reset button on embedded dashboard. The default is FALSE, which allows the reset button.</p>"
+      }
+    },
+    "long": {
+      "base": null,
+      "refs": {
+        "Ingestion$IngestionTimeInSeconds": "<p>The time this ingestion took, measured in seconds.</p>",
+        "Ingestion$IngestionSizeInBytes": "<p>Size of the data ingested in bytes.</p>",
+        "RowInfo$RowsIngested": "<p>The number of rows that were ingested.</p>",
+        "RowInfo$RowsDropped": "<p>The number of rows that were not ingested.</p>"
+      }
+    },
+    "string": {
+      "base": null,
+      "refs": {
+        "CancelIngestionRequest$DataSetId": "<p>The ID of the dataset used in the ingestion.</p>",
+        "CancelIngestionResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "CreateIngestionRequest$DataSetId": "<p>The ID of the dataset used in the ingestion.</p>",
+        "CreateIngestionResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "DescribeIngestionRequest$DataSetId": "<p>The ID of the dataset used in the ingestion.</p>",
+        "DescribeIngestionResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "ErrorInfo$Message": "<p>Error essage.</p>",
+        "ListIngestionsRequest$DataSetId": "<p>The ID of the dataset used in the ingestion.</p>",
+        "ListIngestionsRequest$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListIngestionsResponse$NextToken": "<p>The token for the next set of results, or null if there are no more results.</p>",
+        "ListIngestionsResponse$RequestId": "<p>The AWS request ID for this operation.</p>",
+        "QueueInfo$WaitingOnIngestion": "<p>The ID of the queued ingestion.</p>",
+        "QueueInfo$QueuedIngestion": "<p>The ID of the ongoing ingestion. The queued ingestion is waiting for the ongoing ingestion to complete.</p>"
+      }
+    },
+    "timestamp": {
+      "base": null,
+      "refs": {
+        "Ingestion$CreatedTime": "<p>The time this ingestion started.</p>"
+      }
+    }
+  }
+}

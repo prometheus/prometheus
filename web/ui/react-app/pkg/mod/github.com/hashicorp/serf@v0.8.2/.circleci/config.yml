@@ -1,0 +1,43 @@
+version: 2
+jobs:
+  build-website:
+    # setting the working_directory along with the checkout path allows us to not have
+    # to cd into the website/ directory for commands
+    working_directory: ~/project/website
+    docker:
+      - image: hashicorp/middleman-hashicorp:0.3.35
+    steps:
+      - checkout:
+          path: ~/project
+
+      # restores gem cache
+      - restore_cache:
+          key: static-site-gems-v1-{{ checksum "Gemfile.lock" }}
+
+      - run:
+          name: install gems
+          command: bundle check || bundle install --path vendor/bundle --retry=3
+
+      # saves gem cache if we have changed the Gemfile
+      - save_cache:
+          key: static-site-gems-v1-{{ checksum "Gemfile.lock" }}
+          paths:
+            - ~/project/website/vendor/bundle
+
+      - run:
+          name: middleman build
+          command: bundle exec middleman build
+
+      - run:
+          name: website deploy
+          command: ./scripts/deploy.sh
+
+workflows:
+  version: 2
+  website:
+    jobs:
+      - build-website:
+          context: static-sites
+          filters:
+            branches:
+              only: stable-website

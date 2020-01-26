@@ -1,0 +1,35 @@
+html {
+  height: 100%;
+  min-height: 100%;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  color: $body-font-color;
+  background-color: $white;
+  font-size: $font-size;
+  font-family: $font-family-open-sans;
+  font-weight: $font-weight-reg;
+  height: 100%;
+  min-height: 100%;
+}
+
+h1, h2, h3, h4, h5 {
+  font-family: $font-family-klavika;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1 {
+  margin-bottom: 24px;
+}
+
+// Avoid FOUT
+.wf-loading {
+  visibility: hidden;
+}
+
+.wf-active, .wf-inactive {
+  visibility: visible;
+}

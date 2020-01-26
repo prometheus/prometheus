@@ -1,0 +1,19 @@
+version: 2
+
+jobs:
+  build:
+    machine: true
+    working_directory: /home/circleci/.go_workspace/src/github.com/go-kit/kit
+    environment:
+      ETCD_ADDR: http://localhost:2379
+      CONSUL_ADDR: localhost:8500
+      ZK_ADDR: localhost:2181
+      EUREKA_ADDR: http://localhost:8761/eureka     
+    steps:
+      - checkout
+      - run: wget -q https://storage.googleapis.com/golang/go1.11.linux-amd64.tar.gz
+      - run: sudo rm -rf /usr/local/go
+      - run: sudo tar -C /usr/local -xzf go1.11.linux-amd64.tar.gz
+      - run: docker-compose -f docker-compose-integration.yml up -d --force-recreate
+      - run: go get -t github.com/go-kit/kit/...
+      - run: go test -v -race -tags integration github.com/go-kit/kit/...

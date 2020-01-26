@@ -1,0 +1,16 @@
+#!/bin/sh
+
+set -e
+
+#DEBHELPER#
+
+case "$1" in
+    purge)
+        deluser --system _serf || true
+        delgroup --system _serf || true
+    ;;
+    *)
+    ;;
+esac
+
+exit 0

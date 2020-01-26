@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 284 258">
+  <g fill="none" fill-rule="evenodd" stroke-width="4" transform="translate(2 2)">
+    <circle cx="22.5" cy="22.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="100.5" cy="22.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="179.5" cy="22.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="257.5" cy="22.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="257.5" cy="92.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="257.5" cy="161.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="257.5" cy="231.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="179.5" cy="231.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="22.5" cy="231.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="22.5" cy="92.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="100.5" cy="92.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="179.5" cy="92.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="179.5" cy="161.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <path stroke="#AAA" d="M22 45.5v24m0 115v24m133.004-115H126m105.004 67H202m-126.996 69H46m29.004-206H46M180 116v22.5m78-22.5v22.5m0-93v24m0 115v24m-78-24v24m0-163v24m-80-24v24m0 46.478V138.5M40 110l41 37.5M42 75l41-36m38 177l41-36m36-104l41-36" stroke-linecap="square"/>
+    <circle cx="100.5" cy="161.5" r="22.5" fill="#FFF" stroke="#B03C44"/>
+    <path stroke="#B03C44" d="M100 184.5v24m-53.315-48h31.32" stroke-linecap="square"/>
+    <circle cx="22.5" cy="161.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+    <circle cx="100.5" cy="231.5" r="22.5" fill="#FFF" stroke="#AAA"/>
+  </g>
+</svg>

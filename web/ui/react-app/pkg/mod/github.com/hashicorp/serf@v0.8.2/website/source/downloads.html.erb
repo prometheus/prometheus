@@ -1,0 +1,61 @@
+---
+page_title: "Download Serf"
+layout: downloads
+description: |-
+  Download Serf
+---
+
+<h1>Download Serf</h1>
+
+<section class="downloads">
+  <div class="description row">
+    <div class="col-md-12">
+      <p>
+        Below are the available downloads for the latest version of Serf
+        (<%= latest_version %>). Please download the proper package for your
+        operating system and architecture.
+      </p>
+      <p>
+        You can find the
+        <a href="https://releases.hashicorp.com/serf/<%= latest_version %>/serf_<%= latest_version %>_SHA256SUMS">
+          SHA256 checksums for Serf <%= latest_version %>
+        </a>
+        online and you can
+        <a href="https://releases.hashicorp.com/serf/<%= latest_version %>/serf_<%= latest_version %>_SHA256SUMS.sig">
+          verify the checksums signature file
+        </a>
+        which has been signed using <a href="https://hashicorp.com/security.html" target="_blank" rel="nofollow noopener noreferrer">HashiCorp's GPG key</a>.
+        You can also <a href="https://releases.hashicorp.com/serf/" target="_blank" rel="nofollow noopener noreferrer">download older versions of Serf</a> from the releases service.
+      </p>
+      <p>
+      Check out the <a href="https://github.com/hashicorp/serf/blob/v<%= latest_version %>/CHANGELOG.md">v<%= latest_version %> CHANGELOG</a> for information on the latest release.
+      </p>
+    </div>
+  </div>
+
+  <% product_versions.each do |os, arches| %>
+    <% next if os == "web" %>
+    <div class="row">
+      <div class="col-md-12 download">
+        <div class="icon pull-left"><%= system_icon(os) %></div>
+        <div class="details">
+          <h2 class="os-name"><%= pretty_os(os) %></h2>
+          <ul>
+            <% arches.each do |arch, url| %>
+              <li><a href="<%= url %>"><%= pretty_arch(arch) %></a></li>
+            <% end %>
+          </ul>
+          <div class="clearfix"></div>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <div class="row">
+    <div class="col-md-12 poweredby">
+      <a href="https://www.fastly.com?utm_source=hashicorp" target="_blank" rel="nofollow noopener noreferrer">
+        <%= inline_svg "fastly.svg", height: 50 %>
+      </a>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,231 @@
+{
+  "version": "2.0",
+  "service": "<p>This section provides documentation for the Amazon CodeGuru Reviewer API operations.</p>",
+  "operations": {
+    "AssociateRepository": "<p>Associates an AWS CodeCommit repository with Amazon CodeGuru Reviewer. When you associate an AWS CodeCommit repository with Amazon CodeGuru Reviewer, Amazon CodeGuru Reviewer will provide recommendations for each pull request. You can view recommendations in the AWS CodeCommit repository.</p> <p>You can associate a GitHub repository using the Amazon CodeGuru Reviewer console.</p>",
+    "DescribeRepositoryAssociation": "<p>Describes a repository association.</p>",
+    "DisassociateRepository": "<p>Removes the association between Amazon CodeGuru Reviewer and a repository.</p>",
+    "ListRepositoryAssociations": "<p>Lists repository associations. You can optionally filter on one or more of the following recommendation properties: provider types, states, names, and owners.</p>"
+  },
+  "shapes": {
+    "AccessDeniedException": {
+      "base": "<p>You do not have sufficient access to perform this action.</p>",
+      "refs": {
+      }
+    },
+    "Arn": {
+      "base": null,
+      "refs": {
+        "DescribeRepositoryAssociationRequest$AssociationArn": "<p>The Amazon Resource Name (ARN) identifying the association.</p>",
+        "DisassociateRepositoryRequest$AssociationArn": "<p>The Amazon Resource Name (ARN) identifying the association.</p>",
+        "RepositoryAssociation$AssociationArn": "<p>The Amazon Resource Name (ARN) identifying the repository association.</p>",
+        "RepositoryAssociationSummary$AssociationArn": "<p>The Amazon Resource Name (ARN) identifying the repository association.</p>"
+      }
+    },
+    "AssociateRepositoryRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "AssociateRepositoryResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "AssociationId": {
+      "base": null,
+      "refs": {
+        "RepositoryAssociation$AssociationId": "<p>The id of the repository association.</p>",
+        "RepositoryAssociationSummary$AssociationId": "<p>The repository association ID.</p>"
+      }
+    },
+    "ClientRequestToken": {
+      "base": null,
+      "refs": {
+        "AssociateRepositoryRequest$ClientRequestToken": "<p>Unique, case-sensitive identifier that you provide to ensure the idempotency of the request.</p> <p>If you want to add a new repository association, this parameter specifies a unique identifier for the new repository association that helps ensure idempotency.</p> <p>If you use the AWS CLI or one of the AWS SDK to call this operation, then you can leave this parameter empty. The CLI or SDK generates a random UUID for you and includes that in the request. If you don't use the SDK and instead generate a raw HTTP request to the Secrets Manager service endpoint, then you must generate a ClientRequestToken yourself for new versions and include that value in the request.</p> <p>You typically only need to interact with this value if you implement your own retry logic and want to ensure that a given repository association is not created twice. We recommend that you generate a UUID-type value to ensure uniqueness within the specified repository association.</p> <p>Amazon CodeGuru Reviewer uses this value to prevent the accidental creation of duplicate repository associations if there are failures and retries. </p>"
+      }
+    },
+    "CodeCommitRepository": {
+      "base": "<p>Information about an AWS CodeCommit repository.</p>",
+      "refs": {
+        "Repository$CodeCommit": "<p>Information about an AWS CodeCommit repository.</p>"
+      }
+    },
+    "ConflictException": {
+      "base": "<p>The requested operation would cause a conflict with the current state of a service resource associated with the request. Resolve the conflict before retrying this request. </p>",
+      "refs": {
+      }
+    },
+    "DescribeRepositoryAssociationRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DescribeRepositoryAssociationResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DisassociateRepositoryRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "DisassociateRepositoryResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ErrorMessage": {
+      "base": null,
+      "refs": {
+        "AccessDeniedException$Message": null,
+        "ConflictException$Message": null,
+        "InternalServerException$Message": null,
+        "NotFoundException$Message": null,
+        "ThrottlingException$Message": null,
+        "ValidationException$Message": null
+      }
+    },
+    "InternalServerException": {
+      "base": "<p>The server encountered an internal error and is unable to complete the request.</p>",
+      "refs": {
+      }
+    },
+    "ListRepositoryAssociationsRequest": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "ListRepositoryAssociationsResponse": {
+      "base": null,
+      "refs": {
+      }
+    },
+    "MaxResults": {
+      "base": null,
+      "refs": {
+        "ListRepositoryAssociationsRequest$MaxResults": "<p>The maximum number of repository association results returned by <code>ListRepositoryAssociations</code> in paginated output. When this parameter is used, <code>ListRepositoryAssociations</code> only returns <code>maxResults</code> results in a single page along with a <code>nextToken</code> response element. The remaining results of the initial request can be seen by sending another <code>ListRepositoryAssociations</code> request with the returned <code>nextToken</code> value. This value can be between 1 and 100. If this parameter is not used, then <code>ListRepositoryAssociations</code> returns up to 100 results and a <code>nextToken</code> value if applicable. </p>"
+      }
+    },
+    "Name": {
+      "base": null,
+      "refs": {
+        "CodeCommitRepository$Name": "<p>The name of the AWS CodeCommit repository.</p>",
+        "Names$member": null,
+        "RepositoryAssociation$Name": "<p>The name of the repository.</p>",
+        "RepositoryAssociationSummary$Name": "<p>The name of the repository association.</p>"
+      }
+    },
+    "Names": {
+      "base": null,
+      "refs": {
+        "ListRepositoryAssociationsRequest$Names": "<p>List of names to use as a filter.</p>"
+      }
+    },
+    "NextToken": {
+      "base": null,
+      "refs": {
+        "ListRepositoryAssociationsRequest$NextToken": "<p>The <code>nextToken</code> value returned from a previous paginated <code>ListRepositoryAssociations</code> request where <code>maxResults</code> was used and the results exceeded the value of that parameter. Pagination continues from the end of the previous results that returned the <code>nextToken</code> value. </p> <note> <p>This token should be treated as an opaque identifier that is only used to retrieve the next items in a list and not for other programmatic purposes.</p> </note>",
+        "ListRepositoryAssociationsResponse$NextToken": "<p>The <code>nextToken</code> value to include in a future <code>ListRecommendations</code> request. When the results of a <code>ListRecommendations</code> request exceed <code>maxResults</code>, this value can be used to retrieve the next page of results. This value is <code>null</code> when there are no more results to return. </p>"
+      }
+    },
+    "NotFoundException": {
+      "base": "<p>The resource specified in the request was not found.</p>",
+      "refs": {
+      }
+    },
+    "Owner": {
+      "base": null,
+      "refs": {
+        "Owners$member": null,
+        "RepositoryAssociation$Owner": "<p>The owner of the repository.</p>",
+        "RepositoryAssociationSummary$Owner": "<p>The owner of the repository association.</p>"
+      }
+    },
+    "Owners": {
+      "base": null,
+      "refs": {
+        "ListRepositoryAssociationsRequest$Owners": "<p>List of owners to use as a filter. For AWS CodeCommit, the owner is the AWS account id. For GitHub, it is the GitHub account name.</p>"
+      }
+    },
+    "ProviderType": {
+      "base": null,
+      "refs": {
+        "ProviderTypes$member": null,
+        "RepositoryAssociation$ProviderType": "<p>The provider type of the repository association.</p>",
+        "RepositoryAssociationSummary$ProviderType": "<p>The provider type of the repository association.</p>"
+      }
+    },
+    "ProviderTypes": {
+      "base": null,
+      "refs": {
+        "ListRepositoryAssociationsRequest$ProviderTypes": "<p>List of provider types to use as a filter.</p>"
+      }
+    },
+    "Repository": {
+      "base": "<p>Information about a repository.</p>",
+      "refs": {
+        "AssociateRepositoryRequest$Repository": "<p>The repository to associate.</p>"
+      }
+    },
+    "RepositoryAssociation": {
+      "base": "<p>Information about a repository association.</p>",
+      "refs": {
+        "AssociateRepositoryResponse$RepositoryAssociation": "<p>Information about the repository association.</p>",
+        "DescribeRepositoryAssociationResponse$RepositoryAssociation": "<p>Information about the repository association.</p>",
+        "DisassociateRepositoryResponse$RepositoryAssociation": "<p>Information about the disassociated repository.</p>"
+      }
+    },
+    "RepositoryAssociationState": {
+      "base": null,
+      "refs": {
+        "RepositoryAssociation$State": "<p>The state of the repository association.</p>",
+        "RepositoryAssociationStates$member": null,
+        "RepositoryAssociationSummary$State": "<p>The state of the repository association.</p> <dl> <dt>Associated</dt> <dd> <p>Amazon CodeGuru Reviewer is associated with the repository. </p> </dd> <dt>Associating</dt> <dd> <p>The association is in progress. </p> </dd> <dt>Failed</dt> <dd> <p>The association failed. For more information about troubleshooting (or why it failed), see [troubleshooting topic]. </p> </dd> <dt>Disassociating</dt> <dd> <p>Amazon CodeGuru Reviewer is in the process of disassociating with the repository. </p> </dd> </dl>"
+      }
+    },
+    "RepositoryAssociationStates": {
+      "base": null,
+      "refs": {
+        "ListRepositoryAssociationsRequest$States": "<p>List of states to use as a filter.</p>"
+      }
+    },
+    "RepositoryAssociationSummaries": {
+      "base": null,
+      "refs": {
+        "ListRepositoryAssociationsResponse$RepositoryAssociationSummaries": "<p>A list of repository associations that meet the criteria of the request.</p>"
+      }
+    },
+    "RepositoryAssociationSummary": {
+      "base": "<p>Information about a repository association.</p>",
+      "refs": {
+        "RepositoryAssociationSummaries$member": null
+      }
+    },
+    "StateReason": {
+      "base": null,
+      "refs": {
+        "RepositoryAssociation$StateReason": "<p>A description of why the repository association is in the current state.</p>"
+      }
+    },
+    "ThrottlingException": {
+      "base": "<p>The request was denied due to request throttling.</p>",
+      "refs": {
+      }
+    },
+    "TimeStamp": {
+      "base": null,
+      "refs": {
+        "RepositoryAssociation$LastUpdatedTimeStamp": "<p>The time, in milliseconds since the epoch, when the repository association was last updated.</p>",
+        "RepositoryAssociation$CreatedTimeStamp": "<p>The time, in milliseconds since the epoch, when the repository association was created.</p>",
+        "RepositoryAssociationSummary$LastUpdatedTimeStamp": "<p>The time, in milliseconds since the epoch, since the repository association was last updated. </p>"
+      }
+    },
+    "ValidationException": {
+      "base": "<p>The input fails to satisfy the specified constraints.</p>",
+      "refs": {
+      }
+    }
+  }
+}

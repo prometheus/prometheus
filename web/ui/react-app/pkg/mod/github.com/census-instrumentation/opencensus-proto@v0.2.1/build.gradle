@@ -1,0 +1,172 @@
+description = 'Opencensus Proto'
+
+apply plugin: 'idea'
+apply plugin: 'java'
+apply plugin: 'com.google.protobuf'
+apply plugin: 'maven'
+apply plugin: "signing"
+
+group = "io.opencensus"
+version = "0.3.0-SNAPSHOT" // CURRENT_OPENCENSUS_PROTO_VERSION
+
+sourceCompatibility = 1.6
+targetCompatibility = 1.6
+
+repositories {
+    maven { url "https://plugins.gradle.org/m2/" }
+}
+
+jar.manifest {
+    attributes('Implementation-Title': name,
+            'Implementation-Version': version,
+            'Built-By': System.getProperty('user.name'),
+            'Built-JDK': System.getProperty('java.version'),
+            'Source-Compatibility': sourceCompatibility,
+            'Target-Compatibility': targetCompatibility)
+}
+
+def protobufVersion = '3.7.0'
+def protocVersion = '3.7.0'
+def grpcVersion = "1.19.0" // CURRENT_GRPC_VERSION
+def javaxAnnotationVersion = '1.3.2'
+
+buildscript {
+    repositories {
+        maven { url "https://plugins.gradle.org/m2/" }
+    }
+    dependencies {
+        classpath "com.google.protobuf:protobuf-gradle-plugin:0.8.8"
+    }
+}
+
+sourceSets {
+    main {
+        proto {
+            srcDir 'src'
+        }
+    }
+}
+
+dependencies {
+    compile "com.google.protobuf:protobuf-java:${protobufVersion}",
+            "io.grpc:grpc-protobuf:${grpcVersion}",
+            "io.grpc:grpc-stub:${grpcVersion}"
+
+    compileOnly "javax.annotation:javax.annotation-api:${javaxAnnotationVersion}"
+}
+
+protobuf {
+    protoc {
+        // The artifact spec for the Protobuf Compiler
+        artifact = "com.google.protobuf:protoc:${protocVersion}"
+    }
+    plugins {
+        grpc {
+            artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}"
+        }
+    }
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+        ofSourceSet('main')
+    }
+
+    generatedFilesBaseDir = "$projectDir/gen_gradle/src"
+}
+
+// Disable all java warnings for proto generated files build
+compileJava {
+    options.compilerArgs += ["-Xlint:none"]
+    options.encoding = "UTF-8"
+}
+
+clean {
+    delete protobuf.generatedFilesBaseDir
+}
+
+// IntelliJ complains that the generated classes are not found, ask IntelliJ to include the
+// generated Java directories as source folders.
+idea {
+    module {
+        sourceDirs += file("${protobuf.generatedFilesBaseDir}/main/java");
+        sourceDirs += file("${protobuf.generatedFilesBaseDir}/main/grpc");
+        // If you have additional sourceSets and/or codegen plugins, add all of them
+    }
+}
+
+signing {
+    required false
+    sign configurations.archives
+}
+
+javadoc.source = "$projectDir/gen_gradle/src"
+
+javadoc.options {
+    encoding = 'UTF-8'
+    links 'https://docs.oracle.com/javase/8/docs/api/'
+}
+
+task javadocJar(type: Jar) {
+    classifier = 'javadoc'
+    from javadoc
+}
+
+task sourcesJar(type: Jar) {
+    classifier = 'sources'
+    from sourceSets.main.allSource
+}
+
+artifacts {
+    archives javadocJar, sourcesJar
+}
+
+uploadArchives {
+        repositories {
+            mavenDeployer {
+                beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+
+                def configureAuth = {
+                    if (rootProject.hasProperty('ossrhUsername') && rootProject.hasProperty('ossrhPassword')) {
+                        authentication(userName:rootProject.ossrhUsername, password: rootProject.ossrhPassword)
+                    }
+                }
+
+                repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/", configureAuth)
+
+                snapshotRepository(url: "https://oss.sonatype.org/content/repositories/snapshots/", configureAuth)
+
+                pom.project {
+                    name "OpenCensus"
+                    packaging 'jar'
+                    description project.description
+                    url 'https://github.com/census-instrumentation/opencensus-proto'
+
+                    scm {
+                        connection 'scm:svn:https://github.com/census-instrumentation/opencensus-proto'
+                        developerConnection 'scm:git:git@github.com/census-instrumentation/opencensus-proto'
+                        url 'https://github.com/census-instrumentation/opencensus-proto'
+                    }
+
+                    licenses {
+                        license {
+                            name 'The Apache License, Version 2.0'
+                            url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id 'io.opencensus'
+                            name 'OpenCensus Contributors'
+                            email 'census-developers@googlegroups.com'
+                            url 'opencensus.io'
+                            // https://issues.gradle.org/browse/GRADLE-2719
+                            organization = 'OpenCensus Authors'
+                            organizationUrl 'https://www.opencensus.io'
+                        }
+                    }
+                }
+            }
+        }
+    }

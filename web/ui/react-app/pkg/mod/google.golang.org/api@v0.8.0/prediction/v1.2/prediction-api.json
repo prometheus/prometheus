@@ -1,0 +1,354 @@
+{
+  "auth": {
+    "oauth2": {
+      "scopes": {
+        "https://www.googleapis.com/auth/devstorage.full_control": {
+          "description": "Manage your data and permissions in Google Cloud Storage"
+        },
+        "https://www.googleapis.com/auth/devstorage.read_only": {
+          "description": "View your data in Google Cloud Storage"
+        },
+        "https://www.googleapis.com/auth/devstorage.read_write": {
+          "description": "Manage your data in Google Cloud Storage"
+        },
+        "https://www.googleapis.com/auth/prediction": {
+          "description": "Manage your data in the Google Prediction API"
+        }
+      }
+    }
+  },
+  "basePath": "/prediction/v1.2/",
+  "baseUrl": "https://www.googleapis.com/prediction/v1.2/",
+  "batchPath": "batch/prediction/v1.2",
+  "description": "Lets you access a cloud hosted machine learning service that makes it easy to build smart apps",
+  "discoveryVersion": "v1",
+  "documentationLink": "https://developers.google.com/prediction/docs/developer-guide",
+  "etag": "\"-iA1DTNe4s-I6JZXPt1t1Ypy8IU/y6-9S-Lx_Izdv2KpEj-E5-XRo7s\"",
+  "icons": {
+    "x16": "https://www.google.com/images/icons/feature/predictionapi-16.png",
+    "x32": "https://www.google.com/images/icons/feature/predictionapi-32.png"
+  },
+  "id": "prediction:v1.2",
+  "kind": "discovery#restDescription",
+  "methods": {
+    "predict": {
+      "description": "Submit data and request a prediction",
+      "httpMethod": "POST",
+      "id": "prediction.predict",
+      "parameterOrder": [
+        "data"
+      ],
+      "parameters": {
+        "data": {
+          "description": "mybucket%2Fmydata resource in Google Storage",
+          "location": "path",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "training/{data}/predict",
+      "request": {
+        "$ref": "Input"
+      },
+      "response": {
+        "$ref": "Output"
+      },
+      "scopes": [
+        "https://www.googleapis.com/auth/prediction"
+      ]
+    }
+  },
+  "name": "prediction",
+  "ownerDomain": "google.com",
+  "ownerName": "Google",
+  "parameters": {
+    "alt": {
+      "default": "json",
+      "description": "Data format for the response.",
+      "enum": [
+        "json"
+      ],
+      "enumDescriptions": [
+        "Responses with Content-Type of application/json"
+      ],
+      "location": "query",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Selector specifying which fields to include in a partial response.",
+      "location": "query",
+      "type": "string"
+    },
+    "key": {
+      "description": "API key. Your API key identifies your project and provides you with API access, quota, and reports. Required unless you provide an OAuth 2.0 token.",
+      "location": "query",
+      "type": "string"
+    },
+    "oauth_token": {
+      "description": "OAuth 2.0 token for the current user.",
+      "location": "query",
+      "type": "string"
+    },
+    "prettyPrint": {
+      "default": "true",
+      "description": "Returns response with indentations and line breaks.",
+      "location": "query",
+      "type": "boolean"
+    },
+    "quotaUser": {
+      "description": "Available to use for quota purposes for server-side applications. Can be any arbitrary string assigned to a user, but should not exceed 40 characters. Overrides userIp if both are provided.",
+      "location": "query",
+      "type": "string"
+    },
+    "userIp": {
+      "description": "IP address of the site where the request originates. Use this if you want to enforce per-user limits.",
+      "location": "query",
+      "type": "string"
+    }
+  },
+  "protocol": "rest",
+  "resources": {
+    "hostedmodels": {
+      "methods": {
+        "predict": {
+          "description": "Submit input and request an output against a hosted model",
+          "httpMethod": "POST",
+          "id": "prediction.hostedmodels.predict",
+          "parameterOrder": [
+            "hostedModelName"
+          ],
+          "parameters": {
+            "hostedModelName": {
+              "description": "The name of a hosted model",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "hostedmodels/{hostedModelName}/predict",
+          "request": {
+            "$ref": "Input"
+          },
+          "response": {
+            "$ref": "Output"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        }
+      }
+    },
+    "training": {
+      "methods": {
+        "delete": {
+          "description": "Delete a trained model",
+          "httpMethod": "DELETE",
+          "id": "prediction.training.delete",
+          "parameterOrder": [
+            "data"
+          ],
+          "parameters": {
+            "data": {
+              "description": "mybucket/mydata resource in Google Storage",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "training/{data}",
+          "scopes": [
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        },
+        "get": {
+          "description": "Check training status of your model",
+          "httpMethod": "GET",
+          "id": "prediction.training.get",
+          "parameterOrder": [
+            "data"
+          ],
+          "parameters": {
+            "data": {
+              "description": "mybucket/mydata resource in Google Storage",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "training/{data}",
+          "response": {
+            "$ref": "Training"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        },
+        "insert": {
+          "description": "Begin training your model",
+          "httpMethod": "POST",
+          "id": "prediction.training.insert",
+          "parameters": {
+            "data": {
+              "description": "mybucket/mydata resource in Google Storage",
+              "location": "query",
+              "type": "string"
+            }
+          },
+          "path": "training",
+          "request": {
+            "$ref": "Training"
+          },
+          "response": {
+            "$ref": "Training"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/devstorage.full_control",
+            "https://www.googleapis.com/auth/devstorage.read_only",
+            "https://www.googleapis.com/auth/devstorage.read_write",
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        },
+        "update": {
+          "description": "Add new data to a trained model",
+          "httpMethod": "PUT",
+          "id": "prediction.training.update",
+          "parameterOrder": [
+            "data"
+          ],
+          "parameters": {
+            "data": {
+              "description": "mybucket/mydata resource in Google Storage",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "training/{data}",
+          "request": {
+            "$ref": "Update"
+          },
+          "response": {
+            "$ref": "Training"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/prediction"
+          ]
+        }
+      }
+    }
+  },
+  "revision": "20160511",
+  "rootUrl": "https://www.googleapis.com/",
+  "schemas": {
+    "Input": {
+      "id": "Input",
+      "properties": {
+        "input": {
+          "properties": {
+            "csvInstance": {
+              "items": {
+                "type": "any"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "Output": {
+      "id": "Output",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "default": "prediction#output",
+          "type": "string"
+        },
+        "outputLabel": {
+          "type": "string"
+        },
+        "outputMulti": {
+          "items": {
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "score": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "outputValue": {
+          "format": "double",
+          "type": "number"
+        },
+        "selfLink": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Training": {
+      "id": "Training",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "default": "prediction#training",
+          "type": "string"
+        },
+        "modelInfo": {
+          "properties": {
+            "classificationAccuracy": {
+              "format": "double",
+              "type": "number"
+            },
+            "meanSquaredError": {
+              "format": "double",
+              "type": "number"
+            },
+            "modelType": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "selfLink": {
+          "type": "string"
+        },
+        "trainingStatus": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Update": {
+      "id": "Update",
+      "properties": {
+        "classLabel": {
+          "description": "The true class label of this instance",
+          "type": "string"
+        },
+        "csvInstance": {
+          "description": "The input features for this instance",
+          "items": {
+            "type": "any"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "servicePath": "prediction/v1.2/",
+  "title": "Prediction API",
+  "version": "v1.2"
+}
