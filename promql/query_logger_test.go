@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"regexp"
@@ -51,7 +52,7 @@ func TestQueryLogging(t *testing.T) {
 		start := 1 + i*entrySize
 		end := start + entrySize
 
-		queryLogger.Insert(queries[i])
+		queryLogger.Insert(context.TODO, queries[i])
 
 		have := string(fileAsBytes[start:end])
 		if !regexp.MustCompile(want[i]).MatchString(have) {

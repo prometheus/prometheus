@@ -189,12 +189,6 @@ func (q *query) Exec(ctx context.Context) *Result {
 		span.SetTag(queryTag, q.stmt.String())
 	}
 
-	// Log query in active log.
-	if q.ng.activeQueryTracker != nil {
-		queryIndex := q.ng.activeQueryTracker.Insert(q.q)
-		defer q.ng.activeQueryTracker.Delete(queryIndex)
-	}
-
 	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
 
@@ -462,15 +456,26 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 		ng.queryLoggerLock.RUnlock()
 	}()
 
+	// Log query in active log. The active log guarantees that we don't run over
+	// MaxConcurrent queries concurrently.
+	if ng.activeQueryTracker != nil {
+		queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
+		if err != nil {
+			return nil, nil, contextErr(err, "query queue")
+		}
+		defer ng.activeQueryTracker.Delete(queryIndex)
+	} else {
+		// If there is no active log, fall back to our gate implementation.
+		if err := ng.gate.Start(ctx); err != nil {
+			return nil, nil, contextErr(err, "query queue")
+		}
+		defer ng.gate.Done()
+	}
+
 	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
 	defer execSpanTimer.Finish()
 
 	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
-
-	if err := ng.gate.Start(ctx); err != nil {
-		return nil, nil, contextErr(err, "query queue")
-	}
-	defer ng.gate.Done()
 
 	queueSpanTimer.Finish()
 
