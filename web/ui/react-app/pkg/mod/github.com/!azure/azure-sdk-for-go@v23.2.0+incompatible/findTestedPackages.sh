@@ -1,1 +1,0 @@
-dirname $(find | grep _test.go | grep -v vendor) | sort -u

@@ -1,6 +1,0 @@
-{
-         "interface": "eth0"
-    ,    "profile": "wan"
-    ,    "log_level": "warn"
-    ,    "tags": {}
-}

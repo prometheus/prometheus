@@ -1,3 +1,0 @@
-source "https://rubygems.org"
-
-gem "middleman-hashicorp", "0.3.29"
