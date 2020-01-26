@@ -1,0 +1,21 @@
+rule_files:
+  - alerts.rules
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: up{service="my-service"}
+        values: 1 1 1 0 0 0 1 1 1
+
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: InstanceDown
+
+      - eval_time: 5m
+        alertname: InstanceDown
+        exp_alerts:
+          - exp_labels:
+              service: my-service
+              severity: critical
+            exp_annotations:
+              description: "stuff's happening with my-service"

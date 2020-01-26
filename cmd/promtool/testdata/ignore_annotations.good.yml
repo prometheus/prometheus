@@ -1,0 +1,31 @@
+rule_files:
+  - alerts.rules
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: up{service="my-service"}
+        values: 1 1 1 0 0 0 1 1 1
+
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: InstanceDown
+        ignore_annotations: true
+        exp_alerts:
+          - exp_labels:
+              service: my-service
+              severity: critical
+
+  - interval: 1m
+    ignore_annotations: true
+    input_series:
+      - series: up{service="my-service"}
+        values: 1 1 1 0 0 0 1 1 1
+
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: InstanceDown
+        exp_alerts:
+          - exp_labels:
+              service: my-service
+              severity: critical

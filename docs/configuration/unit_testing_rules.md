@@ -57,6 +57,10 @@ promql_expr_test:
 # External labels accessible to the alert template.
 external_labels:
   [ <labelname>: <string> ... ]
+
+# If set to true, annotations are ignored during comparison if no annotations
+# are specified in the test data. Optional, defaults to false.
+ignore_annotations: <bool>
 ```
 
 ### `<series>`
@@ -88,6 +92,10 @@ eval_time: <duration>
 
 # Name of the alert to be tested.
 alertname: <string>
+
+# If set to true, annotations are ignored during comparison if no annotations
+# are specified in the test data. Optional, defaults to false.
+ignore_annotations: <bool>
 
 # List of expected alerts which are firing under the given alertname at
 # given evaluation time. If you want to test if an alerting rule should

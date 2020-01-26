@@ -156,11 +156,12 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 
 // testGroup is a group of input series and tests associated with it.
 type testGroup struct {
-	Interval        time.Duration    `yaml:"interval"`
-	InputSeries     []series         `yaml:"input_series"`
-	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
-	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
-	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
+	Interval          time.Duration    `yaml:"interval"`
+	InputSeries       []series         `yaml:"input_series"`
+	AlertRuleTests    []alertTestCase  `yaml:"alert_rule_test,omitempty"`
+	PromqlExprTests   []promqlTestCase `yaml:"promql_expr_test,omitempty"`
+	ExternalLabels    labels.Labels    `yaml:"external_labels,omitempty"`
+	IgnoreAnnotations bool             `yaml:"ignore_annotations,omitempty"`
 }
 
 // test performs the unit tests.
@@ -307,9 +308,16 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 					sort.Sort(gotAlerts)
 					sort.Sort(expAlerts)
 
-					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+					for i := range gotAlerts {
+						if labels.Compare(gotAlerts[i].Labels, expAlerts[i].Labels) != 0 {
+							errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+								testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+						}
+						ignore := len(expAlerts[i].Annotations) == 0 && (tg.IgnoreAnnotations || testcase.IgnoreAnnotations)
+						if !ignore && labels.Compare(gotAlerts[i].Annotations, expAlerts[i].Annotations) != 0 {
+							errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+								testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+						}
 					}
 				}
 			}
@@ -482,9 +490,10 @@ type series struct {
 }
 
 type alertTestCase struct {
-	EvalTime  time.Duration `yaml:"eval_time"`
-	Alertname string        `yaml:"alertname"`
-	ExpAlerts []alert       `yaml:"exp_alerts"`
+	EvalTime          time.Duration `yaml:"eval_time"`
+	Alertname         string        `yaml:"alertname"`
+	ExpAlerts         []alert       `yaml:"exp_alerts"`
+	IgnoreAnnotations bool          `yaml:"ignore_annotations,omitempty"`
 }
 
 type alert struct {
