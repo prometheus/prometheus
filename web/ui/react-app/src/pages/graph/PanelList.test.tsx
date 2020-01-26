@@ -14,10 +14,6 @@ describe('PanelList', () => {
       const panelList = shallow(<PanelList />);
       const checkbox = panelList.find(Checkbox).at(idx);
       expect(checkbox.prop('id')).toEqual(cb.id);
-      expect(checkbox.prop('wrapperStyles')).toEqual({
-        margin: '0 0 0 15px',
-        alignSelf: 'center',
-      });
       expect(checkbox.prop('defaultChecked')).toBe(false);
       expect(checkbox.children().text()).toBe(cb.label);
     });

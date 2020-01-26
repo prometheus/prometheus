@@ -1,6 +1,5 @@
-import React, { ChangeEvent, FC, useState, useEffect } from 'react';
+import React, { FC, useState, useEffect } from 'react';
 import { RouteComponentProps } from '@reach/router';
-
 import { Alert, Button } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
@@ -8,12 +7,9 @@ import Checkbox from '../../components/Checkbox';
 import PathPrefixProps from '../../types/PathPrefixProps';
 import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, callAll } from '../../utils';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
-
-export const isHistoryEnabled: () => boolean = () => JSON.parse(localStorage.getItem('enable-query-history') || 'false');
-
-export const getHistoryItems: () => string[] = () => JSON.parse(localStorage.getItem('history') || '[]');
 
 export const updateURL = (nextPanels: PanelMeta[]) => {
   const query = encodePanelOptionsToQueryString(nextPanels);
@@ -23,20 +19,19 @@ export const updateURL = (nextPanels: PanelMeta[]) => {
 interface PanelListProps extends PathPrefixProps, RouteComponentProps {
   panels: PanelMeta[];
   metrics: string[];
-  onExecuteQuery: () => void;
-  pastQueries: string[];
   useLocalTime: boolean;
+  queryHistoryEnabled: boolean;
 }
 
 export const PanelListContent: FC<PanelListProps> = ({
   metrics = [],
   useLocalTime,
   pathPrefix,
-  pastQueries,
-  onExecuteQuery,
+  queryHistoryEnabled,
   ...rest
 }) => {
   const [panels, setPanels] = useState(rest.panels);
+  const [historyItems, setLocalStorageHistoryItems] = useLocalStorage<string[]>('history', []);
 
   useEffect(() => {
     !panels.length && addPanel();
@@ -54,15 +49,13 @@ export const PanelListContent: FC<PanelListProps> = ({
     if (isSimpleMetric || !query.length) {
       return;
     }
-    const historyItems = getHistoryItems();
     const extendedItems = historyItems.reduce(
       (acc, metric) => {
         return metric === query ? acc : [...acc, metric]; // Prevent adding query twice.
       },
       [query]
     );
-    localStorage.setItem('history', JSON.stringify(extendedItems.slice(0, 50)));
-    onExecuteQuery();
+    setLocalStorageHistoryItems(extendedItems.slice(0, 50));
   };
 
   const addPanel = () => {
@@ -96,7 +89,7 @@ export const PanelListContent: FC<PanelListProps> = ({
           }
           useLocalTime={useLocalTime}
           metricNames={metrics}
-          pastQueries={pastQueries}
+          pastQueries={queryHistoryEnabled ? historyItems : []}
           pathPrefix={pathPrefix}
         />
       ))}
@@ -111,10 +104,10 @@ const PanelsWithStatus = withStatusIndicator<PanelListProps>(PanelListContent);
 
 const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const [metricNames, setMetricNames] = useState<string[]>([]);
-  const [pastQueries, setPastQueries] = useState<string[]>([]);
   const [timeDriftError, setTimeDriftError] = useState();
   const [fetchMetricsError, setFetchMetricsError] = useState();
-  const [useLocalTime, setUseLocalTime] = useState();
+  const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
+  const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
 
   useEffect(() => {
     (async () => {
@@ -144,33 +137,22 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) =>
       } else {
         setTimeDriftError('Unexpected response status when fetching server time:' + timeResponse.statusText);
       }
-      updatePastQueries();
     })();
   }, [pathPrefix]);
 
-  const toggleQueryHistory = (e: ChangeEvent<HTMLInputElement>) => {
-    localStorage.setItem('enable-query-history', `${e.target.checked}`);
-    updatePastQueries();
-  };
-
-  const updatePastQueries = () => {
-    setPastQueries(isHistoryEnabled() ? getHistoryItems() : []);
-  };
-
-  const toggleUseLocalTime = (e: ChangeEvent<HTMLInputElement>) => {
-    localStorage.setItem('use-local-time', `${e.target.checked}`);
-    setUseLocalTime(e.target.checked);
-  };
-
   return (
     <>
-      <Checkbox id="history-checkbox" onChange={toggleQueryHistory} defaultChecked={isHistoryEnabled()}>
+      <Checkbox
+        id="query-history-checkbox"
+        onChange={({ target }) => setEnableQueryHistory(target.checked)}
+        defaultChecked={enableQueryHistory}
+      >
         Enable query history
       </Checkbox>
       <Checkbox
         id="use-local-time-checkbox"
-        onChange={toggleUseLocalTime}
-        defaultChecked={JSON.parse(localStorage.getItem('use-local-time') || 'false')}
+        onChange={({ target }) => setUseLocalTime(target.checked)}
+        defaultChecked={useLocalTime}
       >
         Use local time
       </Checkbox>
@@ -190,8 +172,7 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) =>
         pathPrefix={pathPrefix}
         useLocalTime={useLocalTime}
         metrics={metricNames}
-        onExecuteQuery={updatePastQueries}
-        pastQueries={pastQueries}
+        queryHistoryEnabled={enableQueryHistory}
       />
     </>
   );
