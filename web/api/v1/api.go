@@ -897,33 +897,39 @@ type RuleGroup struct {
 	// In order to preserve rule ordering, while exposing type (alerting or recording)
 	// specific properties, both alerting and recording rules are exposed in the
 	// same array.
-	Rules    []rule  `json:"rules"`
-	Interval float64 `json:"interval"`
+	Rules          []rule    `json:"rules"`
+	Interval       float64   `json:"interval"`
+	EvaluationTime float64   `json:"evaluationTime"`
+	LastEvaluation time.Time `json:"lastEvaluation"`
 }
 
 type rule interface{}
 
 type alertingRule struct {
 	// State can be "pending", "firing", "inactive".
-	State       string           `json:"state"`
-	Name        string           `json:"name"`
-	Query       string           `json:"query"`
-	Duration    float64          `json:"duration"`
-	Labels      labels.Labels    `json:"labels"`
-	Annotations labels.Labels    `json:"annotations"`
-	Alerts      []*Alert         `json:"alerts"`
-	Health      rules.RuleHealth `json:"health"`
-	LastError   string           `json:"lastError,omitempty"`
+	State          string           `json:"state"`
+	Name           string           `json:"name"`
+	Query          string           `json:"query"`
+	Duration       float64          `json:"duration"`
+	Labels         labels.Labels    `json:"labels"`
+	Annotations    labels.Labels    `json:"annotations"`
+	Alerts         []*Alert         `json:"alerts"`
+	Health         rules.RuleHealth `json:"health"`
+	LastError      string           `json:"lastError,omitempty"`
+	EvaluationTime float64          `json:"evaluationTime"`
+	LastEvaluation time.Time        `json:"lastEvaluation"`
 	// Type of an alertingRule is always "alerting".
 	Type string `json:"type"`
 }
 
 type recordingRule struct {
-	Name      string           `json:"name"`
-	Query     string           `json:"query"`
-	Labels    labels.Labels    `json:"labels,omitempty"`
-	Health    rules.RuleHealth `json:"health"`
-	LastError string           `json:"lastError,omitempty"`
+	Name           string           `json:"name"`
+	Query          string           `json:"query"`
+	Labels         labels.Labels    `json:"labels,omitempty"`
+	Health         rules.RuleHealth `json:"health"`
+	LastError      string           `json:"lastError,omitempty"`
+	EvaluationTime float64          `json:"evaluationTime"`
+	LastEvaluation time.Time        `json:"lastEvaluation"`
 	// Type of a recordingRule is always "recording".
 	Type string `json:"type"`
 }
@@ -943,10 +949,12 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 	for i, grp := range ruleGroups {
 		apiRuleGroup := &RuleGroup{
-			Name:     grp.Name(),
-			File:     grp.File(),
-			Interval: grp.Interval().Seconds(),
-			Rules:    []rule{},
+			Name:           grp.Name(),
+			File:           grp.File(),
+			Interval:       grp.Interval().Seconds(),
+			Rules:          []rule{},
+			EvaluationTime: grp.GetEvaluationDuration().Seconds(),
+			LastEvaluation: grp.GetEvaluationTimestamp(),
 		}
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
@@ -961,28 +969,32 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					break
 				}
 				enrichedRule = alertingRule{
-					State:       rule.State().String(),
-					Name:        rule.Name(),
-					Query:       rule.Query().String(),
-					Duration:    rule.Duration().Seconds(),
-					Labels:      rule.Labels(),
-					Annotations: rule.Annotations(),
-					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
-					Health:      rule.Health(),
-					LastError:   lastError,
-					Type:        "alerting",
+					State:          rule.State().String(),
+					Name:           rule.Name(),
+					Query:          rule.Query().String(),
+					Duration:       rule.Duration().Seconds(),
+					Labels:         rule.Labels(),
+					Annotations:    rule.Annotations(),
+					Alerts:         rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Health:         rule.Health(),
+					LastError:      lastError,
+					EvaluationTime: rule.GetEvaluationDuration().Seconds(),
+					LastEvaluation: rule.GetEvaluationTimestamp(),
+					Type:           "alerting",
 				}
 			case *rules.RecordingRule:
 				if !returnRecording {
 					break
 				}
 				enrichedRule = recordingRule{
-					Name:      rule.Name(),
-					Query:     rule.Query().String(),
-					Labels:    rule.Labels(),
-					Health:    rule.Health(),
-					LastError: lastError,
-					Type:      "recording",
+					Name:           rule.Name(),
+					Query:          rule.Query().String(),
+					Labels:         rule.Labels(),
+					Health:         rule.Health(),
+					LastError:      lastError,
+					EvaluationTime: rule.GetEvaluationDuration().Seconds(),
+					LastEvaluation: rule.GetEvaluationTimestamp(),
+					Type:           "recording",
 				}
 			default:
 				err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
