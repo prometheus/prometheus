@@ -458,7 +458,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 
 	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
 	// Log query in active log. The active log guarantees that we don't run over
-	// MaxConcurrent queries concurrently.
+	// MaxConcurrent queries.
 	if ng.activeQueryTracker != nil {
 		queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
 		if err != nil {
