@@ -437,20 +437,20 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 	defer func() {
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
-			f := []interface{}{"query", q.q}
+			params := make(map[string]interface{}, 4)
+			params["query"] = q.q
+			if eq, ok := q.Statement().(*EvalStmt); ok {
+				params["start"] = formatDate(eq.Start)
+				params["end"] = formatDate(eq.End)
+				params["step"] = eq.Interval
+			}
+			f := []interface{}{"params", params}
 			if err != nil {
 				f = append(f, "error", err)
 			}
-			if eq, ok := q.Statement().(*EvalStmt); ok {
-				f = append(f,
-					"start", formatDate(eq.Start),
-					"end", formatDate(eq.End),
-					"step", eq.Interval.String(),
-				)
-			}
 			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
 			if origin := ctx.Value(queryOrigin); origin != nil {
-				for k, v := range origin.(map[string]string) {
+				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)
 				}
 			}
@@ -2096,7 +2096,7 @@ func shouldDropMetricName(op ItemType) bool {
 }
 
 // NewOriginContext returns a new context with data about the origin attached.
-func NewOriginContext(ctx context.Context, data map[string]string) context.Context {
+func NewOriginContext(ctx context.Context, data map[string]interface{}) context.Context {
 	return context.WithValue(ctx, queryOrigin, data)
 }
 
