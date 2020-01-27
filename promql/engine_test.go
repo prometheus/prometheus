@@ -149,7 +149,7 @@ func TestQueryCancel(t *testing.T) {
 	<-processing
 
 	testutil.NotOk(t, res.Err, "expected cancellation error for query1 but got none")
-	testutil.Equals(t, res.Err, errQueryCanceled)
+	testutil.Equals(t, errQueryCanceled, res.Err)
 
 	// Canceling a query before starting it must have no effect.
 	query2 := engine.newTestQuery(func(ctx context.Context) error {
@@ -203,14 +203,14 @@ func TestQueryError(t *testing.T) {
 
 	res := vectorQuery.Exec(ctx)
 	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
-	testutil.Equals(t, res.Err, errStorage)
+	testutil.Equals(t, errStorage, res.Err)
 
 	matrixQuery, err := engine.NewInstantQuery(queryable, "foo[1m]", time.Unix(1, 0))
 	testutil.Ok(t, err)
 
 	res = matrixQuery.Exec(ctx)
 	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
-	testutil.Equals(t, res.Err, errStorage)
+	testutil.Equals(t, errStorage, res.Err)
 }
 
 // paramCheckerQuerier implements storage.Querier which checks the start and end times
@@ -486,7 +486,7 @@ func TestEngineShutdown(t *testing.T) {
 	<-processing
 
 	testutil.NotOk(t, res.Err, "expected error on shutdown during query but got none")
-	testutil.Equals(t, res.Err, errQueryCanceled)
+	testutil.Equals(t, errQueryCanceled, res.Err)
 
 	query2 := engine.newTestQuery(func(context.Context) error {
 		t.Fatalf("reached query execution unexpectedly")
@@ -599,7 +599,7 @@ load 10s
 		}
 
 		testutil.Ok(t, res.Err)
-		testutil.Equals(t, res.Value, c.Result)
+		testutil.Equals(t, c.Result, res.Value)
 	}
 
 }
@@ -816,8 +816,8 @@ load 10s
 		testutil.Ok(t, err)
 
 		res := qry.Exec(test.Context())
-		testutil.Equals(t, res.Err, c.Result.Err)
-		testutil.Equals(t, res.Value, c.Result.Value)
+		testutil.Equals(t, c.Result.Err, res.Err)
+		testutil.Equals(t, c.Result.Value, res.Value)
 	}
 }
 
@@ -1100,8 +1100,8 @@ func TestSubquerySelector(t *testing.T) {
 			testutil.Ok(t, err)
 
 			res := qry.Exec(test.Context())
-			testutil.Equals(t, res.Err, c.Result.Err)
-			testutil.Equals(t, res.Value, c.Result.Value)
+			testutil.Equals(t, c.Result.Err, res.Err)
+			testutil.Equals(t, c.Result.Value, res.Value)
 		}
 	}
 }

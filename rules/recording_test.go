@@ -74,7 +74,7 @@ func TestRuleEval(t *testing.T) {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
 		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
 		testutil.Ok(t, err)
-		testutil.Equals(t, result, test.result)
+		testutil.Equals(t, test.result, result)
 	}
 }
 
