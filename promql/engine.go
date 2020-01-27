@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -230,7 +229,6 @@ type Engine struct {
 	logger             log.Logger
 	metrics            *engineMetrics
 	timeout            time.Duration
-	gate               *gate.Gate
 	maxSamplesPerQuery int
 	activeQueryTracker *ActiveQueryTracker
 	queryLogger        QueryLogger
@@ -317,7 +315,6 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 
 	return &Engine{
-		gate:               gate.New(opts.MaxConcurrent),
 		timeout:            opts.Timeout,
 		logger:             opts.Logger,
 		metrics:            metrics,
@@ -466,13 +463,6 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 			return nil, nil, contextErr(err, "query queue")
 		}
 		defer ng.activeQueryTracker.Delete(queryIndex)
-	} else {
-		// If there is no active log, fall back to our gate implementation.
-		if err := ng.gate.Start(ctx); err != nil {
-			queueSpanTimer.Finish()
-			return nil, nil, contextErr(err, "query queue")
-		}
-		defer ng.gate.Done()
 	}
 	queueSpanTimer.Finish()
 

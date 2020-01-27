@@ -16,6 +16,8 @@ package promql
 import (
 	"context"
 	"errors"
+	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -28,12 +30,20 @@ import (
 )
 
 func TestQueryConcurrency(t *testing.T) {
+	maxConcurrency := 10
+
+	dir, err := ioutil.TempDir("", "test_concurrency")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
+
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       100 * time.Second,
+		Logger:             nil,
+		Reg:                nil,
+		MaxConcurrent:      maxConcurrency,
+		MaxSamples:         10,
+		Timeout:            100 * time.Second,
+		ActiveQueryTracker: queryTracker,
 	}
 
 	engine := NewEngine(opts)
