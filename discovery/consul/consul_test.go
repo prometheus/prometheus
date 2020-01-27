@@ -15,6 +15,8 @@ package consul
 
 import (
 	"context"
+	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
@@ -340,4 +342,52 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 		// Should still be empty.
 		testutil.Equals(t, "", d.clientDatacenter)
 	}
+}
+
+func TestConfiguredFileToken(t *testing.T) {
+	headers := make(chan http.Header, 1)
+
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers <- r.Header
+	}))
+	stuburl, err := url.Parse(stub.URL)
+	testutil.Ok(t, err)
+
+	tmpfile, err := ioutil.TempFile("", "consul_token")
+	testutil.Ok(t, err)
+	defer os.Remove(tmpfile.Name())
+
+	testToken := func(token, expected string) {
+		_, err = tmpfile.Seek(0, 0)
+		testutil.Ok(t, err)
+		_, err = tmpfile.Write([]byte(token))
+		testutil.Ok(t, err)
+
+		conf := &SDConfig{
+			Server:    stuburl.Host,
+			TokenFile: tmpfile.Name(),
+		}
+		d, err := NewDiscovery(conf, nil)
+		testutil.Ok(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		ch := make(chan []*targetgroup.Group)
+		go d.Run(ctx, ch)
+
+		h := <-headers
+
+		var found string
+		for h, v := range h {
+			if h == "X-Consul-Token" {
+				testutil.Equals(t, 1, len(v))
+				found = v[0]
+			}
+		}
+		testutil.Equals(t, expected, found)
+	}
+
+	testToken("03179254-6cea-4737-b07f-1b0e0ce7afd9", "03179254-6cea-4737-b07f-1b0e0ce7afd9")
+	testToken("8ce38a78-964a-4013-b58d-dfd5188ab904", "8ce38a78-964a-4013-b58d-dfd5188ab904")
+	testToken("   fdc8127d-2453-4024-97d8-88772964b645  \n", "fdc8127d-2453-4024-97d8-88772964b645")
 }

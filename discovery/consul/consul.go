@@ -16,6 +16,7 @@ package consul
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"strconv"
@@ -97,6 +98,7 @@ var (
 type SDConfig struct {
 	Server       string             `yaml:"server,omitempty"`
 	Token        config_util.Secret `yaml:"token,omitempty"`
+	TokenFile    string             `yaml:"token_file,omitempty"`
 	Datacenter   string             `yaml:"datacenter,omitempty"`
 	TagSeparator string             `yaml:"tag_separator,omitempty"`
 	Scheme       string             `yaml:"scheme,omitempty"`
@@ -132,6 +134,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+	if len(c.Token) > 0 && len(c.TokenFile) > 0 {
+		return errors.New("consul SD requires at most one of token & token_file to be configured")
+	}
 	if strings.TrimSpace(c.Server) == "" {
 		return errors.New("consul SD configuration requires a server address")
 	}
@@ -164,6 +169,7 @@ type Discovery struct {
 
 // NewDiscovery returns a new Discovery for the given config.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+	var rt http.RoundTripper
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -180,8 +186,20 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 			conntrack.DialWithName("consul_sd"),
 		),
 	}
+
+	// We need the original transport to close the idle connections, and we need
+	// the roundtripper interface to swap rt with the token file roundtripper.
+	rt = transport
+
+	if len(conf.TokenFile) > 0 {
+		rt, err = newTokenFileRoundTripper(conf.TokenFile, rt)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	wrapper := &http.Client{
-		Transport: transport,
+		Transport: rt,
 		Timeout:   35 * time.Second,
 	}
 
@@ -548,4 +566,30 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 	case <-ctx.Done():
 	case ch <- []*targetgroup.Group{&tgroup}:
 	}
+}
+
+type tokenFileRoundTripper struct {
+	tokenFile string
+	rt        http.RoundTripper
+}
+
+// newTokenFileRoundTripper adds the token read from the file to a request.
+func newTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.RoundTripper, error) {
+	// fail-fast if we can't read the file.
+	_, err := ioutil.ReadFile(tokenFile)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to read token file %s", tokenFile)
+	}
+	return &tokenFileRoundTripper{tokenFile, rt}, nil
+}
+
+func (rt *tokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	b, err := ioutil.ReadFile(rt.tokenFile)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to read token file %s", rt.tokenFile)
+	}
+	authToken := strings.TrimSpace(string(b))
+
+	request.Header.Set("X-Consul-Token", authToken)
+	return rt.rt.RoundTrip(request)
 }

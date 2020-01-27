@@ -339,6 +339,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # as the Consul documentation requires.
 [ server: <host> | default = "localhost:8500" ]
 [ token: <secret> ]
+[ token_file: <filename> ]
 [ datacenter: <string> ]
 [ scheme: <string> | default = "http" ]
 [ username: <string> ]
