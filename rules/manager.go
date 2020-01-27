@@ -874,7 +874,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 		// check if new group equals with the old group, if yes then skip it.
 		// If not equals, stop it and wait for it to finish the current iteration.
 		// Then copy it into the new group.
-		gn := groupKey(newg.name, newg.file)
+		gn := groupKey(newg.file, newg.name)
 		oldg, ok := m.groups[gn]
 		delete(m.groups, gn)
 
@@ -901,8 +901,13 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	}
 
 	// Stop remaining old groups.
-	for _, oldg := range m.groups {
+	for n, oldg := range m.groups {
 		oldg.stop()
+		if m := oldg.metrics; m != nil {
+			m.groupLastEvalTime.DeleteLabelValues(n)
+			m.groupLastDuration.DeleteLabelValues(n)
+			m.groupRules.DeleteLabelValues(n)
+		}
 	}
 
 	wg.Wait()
@@ -958,7 +963,7 @@ func (m *Manager) LoadGroups(
 				))
 			}
 
-			groups[groupKey(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, rules, shouldRestore, m.opts)
+			groups[groupKey(fn, rg.Name)] = NewGroup(rg.Name, fn, itv, rules, shouldRestore, m.opts)
 		}
 	}
 
@@ -966,8 +971,8 @@ func (m *Manager) LoadGroups(
 }
 
 // Group names need not be unique across filenames.
-func groupKey(name, file string) string {
-	return name + ";" + file
+func groupKey(file, name string) string {
+	return file + ";" + name
 }
 
 // RuleGroups returns the list of manager's rule groups.
