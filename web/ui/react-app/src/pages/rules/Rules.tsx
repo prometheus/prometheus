@@ -10,7 +10,7 @@ const RulesWithStatusIndicator = withStatusIndicator(RulesContent);
 const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
   const { response, error, isLoading } = useFetch<RulesMap>(`${pathPrefix}/api/v1/rules`);
 
-  return <RulesWithStatusIndicator response={response} error={error} isLoading={isLoading} />;
+  return <RulesWithStatusIndicator {...response.data} error={error} isLoading={isLoading} />;
 };
 
 export default Rules;
