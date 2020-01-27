@@ -10,9 +10,13 @@ export const RulePanel: FC<{ rule: Rule; styles?: CSSProperties; tag?: keyof JSX
 }) => {
   const Tag = tag || Fragment;
   const { name, query, labels, annotations, alerts } = rule;
+  let customTagProps = {};
   const mergedStyles = { background: '#f5f5f5', ...styles };
+  if (tag) {
+    customTagProps = { style: mergedStyles };
+  }
   return (
-    <Tag style={mergedStyles}>
+    <Tag {...customTagProps}>
       <pre className="m-0" style={tag ? undefined : mergedStyles}>
         <code>
           <div>
