@@ -43,7 +43,7 @@ func NewManager(logger log.Logger, app Appendable) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	return &Manager{
+	m := &Manager{
 		append:        app,
 		logger:        logger,
 		scrapeConfigs: make(map[string]*config.ScrapeConfig),
@@ -51,6 +51,8 @@ func NewManager(logger log.Logger, app Appendable) *Manager {
 		graceShut:     make(chan struct{}),
 		triggerReload: make(chan struct{}, 1),
 	}
+
+	return m
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -134,6 +136,7 @@ func (m *Manager) reload() {
 		}(m.scrapePools[setName], groups)
 
 	}
+	targetMetadataCache.registerManager(m)
 	m.mtxScrape.Unlock()
 	wg.Wait()
 }

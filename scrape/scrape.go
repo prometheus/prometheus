@@ -141,9 +141,9 @@ type MetadataMetricsCollector struct {
 	CacheEntries *prometheus.Desc
 	CacheBytes   *prometheus.Desc
 
-	scrapeCaches map[*Target]*scrapeCache
+	scrapeManager *Manager
 
-	mtx sync.RWMutex
+	mtx sync.Mutex
 }
 
 func newMetadataMetricsCollector() *MetadataMetricsCollector {
@@ -151,29 +151,20 @@ func newMetadataMetricsCollector() *MetadataMetricsCollector {
 		CacheEntries: prometheus.NewDesc(
 			"prometheus_target_metadata_cache_entries",
 			"Total number of metric metadata entries in the cache",
-			nil,
+			[]string{"scrape_job"},
 			nil,
 		),
 		CacheBytes: prometheus.NewDesc(
 			"prometheus_target_metadata_cache_bytes",
 			"The number of bytes that are currently used for storing metric metadata in the cache",
-			nil,
+			[]string{"scrape_job"},
 			nil,
 		),
-		scrapeCaches: map[*Target]*scrapeCache{},
 	}
 }
 
-func (mc *MetadataMetricsCollector) addScrapeCache(t *Target, c *scrapeCache) {
-	mc.mtx.Lock()
-	mc.scrapeCaches[t] = c
-	mc.mtx.Unlock()
-}
-
-func (mc *MetadataMetricsCollector) removeScrapeCache(t *Target) {
-	mc.mtx.Lock()
-	delete(mc.scrapeCaches, t)
-	mc.mtx.Unlock()
+func (mc *MetadataMetricsCollector) registerManager(m *Manager) {
+	mc.scrapeManager = m
 }
 
 // Describe sends the metrics descriptions to the channel.
@@ -184,20 +175,33 @@ func (mc *MetadataMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect creates and sends the metrics for the metadata cache.
 func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
-	mc.mtx.RLock()
-	defer mc.mtx.RUnlock()
+	mc.mtx.Lock()
+	defer mc.mtx.Unlock()
 
-	for _, c := range mc.scrapeCaches {
+	if mc.scrapeManager == nil {
+		return
+	}
+
+	for _, p := range mc.scrapeManager.scrapePools {
+		var size, length int
+		for _, l := range p.loops {
+			c := l.getCache()
+			size += c.MetadataSize()
+			length += c.MetadataLen()
+		}
+
 		ch <- prometheus.MustNewConstMetric(
 			mc.CacheEntries,
 			prometheus.GaugeValue,
-			float64(c.MetadataLen()),
+			float64(length),
+			p.config.JobName,
 		)
 
 		ch <- prometheus.MustNewConstMetric(
 			mc.CacheBytes,
 			prometheus.GaugeValue,
-			float64(c.MetadataSize()),
+			float64(size),
+			p.config.JobName,
 		)
 	}
 }
@@ -284,11 +288,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 		}
 		opts.target.SetMetadataStore(cache)
 
-		targetMetadataCache.addScrapeCache(opts.target, cache)
-
-		return newScrapeLoop(
-			opts.target,
-			ctx,
+		return newScrapeLoop(ctx,
 			opts.scraper,
 			log.With(logger, "target", opts.target),
 			buffers,
@@ -675,7 +675,6 @@ type cacheEntry struct {
 }
 
 type scrapeLoop struct {
-	target          *Target
 	scraper         scraper
 	l               log.Logger
 	cache           *scrapeCache
@@ -938,9 +937,7 @@ func (c *scrapeCache) MetadataLen() int {
 	return len(c.metadata)
 }
 
-func newScrapeLoop(
-	t *Target,
-	ctx context.Context,
+func newScrapeLoop(ctx context.Context,
 	sc scraper,
 	l log.Logger,
 	buffers *pool.Pool,
@@ -961,7 +958,6 @@ func newScrapeLoop(
 		cache = newScrapeCache()
 	}
 	sl := &scrapeLoop{
-		target:              t,
 		scraper:             sc,
 		buffers:             buffers,
 		cache:               cache,
@@ -1127,7 +1123,6 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 // returned. Cancel the context to stop all writes.
 func (sl *scrapeLoop) stop() {
 	sl.cancel()
-	targetMetadataCache.removeScrapeCache(sl.target)
 	<-sl.stopped
 }
 
