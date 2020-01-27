@@ -100,7 +100,6 @@ func marshalPointJSON(ptr unsafe.Pointer, stream *json.Stream) {
 	if abs != 0 {
 		if abs < 1e-6 || abs >= 1e21 {
 			fmt = 'e'
-			fmt = 'e'
 		}
 	}
 	buf = strconv.AppendFloat(buf, float64(p.Value), fmt, -1, 64)

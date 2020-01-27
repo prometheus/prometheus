@@ -14,6 +14,9 @@
 package index
 
 import (
+	"context"
+	"fmt"
+	"hash/crc32"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -22,10 +25,10 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -35,19 +38,18 @@ type series struct {
 }
 
 type mockIndex struct {
-	series     map[uint64]series
-	labelIndex map[string][]string
-	postings   map[labels.Label][]uint64
-	symbols    map[string]struct{}
+	series   map[uint64]series
+	postings map[labels.Label][]uint64
+	symbols  map[string]struct{}
 }
 
 func newMockIndex() mockIndex {
 	ix := mockIndex{
-		series:     make(map[uint64]series),
-		labelIndex: make(map[string][]string),
-		postings:   make(map[labels.Label][]uint64),
-		symbols:    make(map[string]struct{}),
+		series:   make(map[uint64]series),
+		postings: make(map[labels.Label][]uint64),
+		symbols:  make(map[string]struct{}),
 	}
+	ix.postings[allPostingsKey] = []uint64{}
 	return ix
 }
 
@@ -62,7 +64,12 @@ func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta)
 	for _, lbl := range l {
 		m.symbols[lbl.Name] = struct{}{}
 		m.symbols[lbl.Value] = struct{}{}
+		if _, ok := m.postings[lbl]; !ok {
+			m.postings[lbl] = []uint64{}
+		}
+		m.postings[lbl] = append(m.postings[lbl], ref)
 	}
+	m.postings[allPostingsKey] = append(m.postings[allPostingsKey], ref)
 
 	s := series{l: l}
 	// Actual chunk data is not stored in the index.
@@ -75,45 +82,27 @@ func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta)
 	return nil
 }
 
-func (m mockIndex) WriteLabelIndex(names []string, values []string) error {
-	// TODO support composite indexes
-	if len(names) != 1 {
-		return errors.New("composite indexes not supported yet")
-	}
-	sort.Strings(values)
-	m.labelIndex[names[0]] = values
-	return nil
-}
-
-func (m mockIndex) WritePostings(name, value string, it Postings) error {
-	l := labels.Label{Name: name, Value: value}
-	if _, ok := m.postings[l]; ok {
-		return errors.Errorf("postings for %s already added", l)
-	}
-	ep, err := ExpandPostings(it)
-	if err != nil {
-		return err
-	}
-	m.postings[l] = ep
-	return nil
-}
-
 func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) LabelValues(names ...string) (StringTuples, error) {
-	// TODO support composite indexes
-	if len(names) != 1 {
-		return nil, errors.New("composite indexes not supported yet")
+func (m mockIndex) LabelValues(name string) ([]string, error) {
+	values := []string{}
+	for l := range m.postings {
+		if l.Name == name {
+			values = append(values, l.Value)
+		}
 	}
-
-	return NewStringTuples(m.labelIndex[names[0]], 1)
+	return values, nil
 }
 
-func (m mockIndex) Postings(name, value string) (Postings, error) {
-	l := labels.Label{Name: name, Value: value}
-	return NewListPostings(m.postings[l]), nil
+func (m mockIndex) Postings(name string, values ...string) (Postings, error) {
+	p := []Postings{}
+	for _, value := range values {
+		l := labels.Label{Name: name, Value: value}
+		p = append(p, m.SortedPostings(NewListPostings(m.postings[l])))
+	}
+	return Merge(p...), nil
 }
 
 func (m mockIndex) SortedPostings(p Postings) Postings {
@@ -139,14 +128,6 @@ func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) 
 	return nil
 }
 
-func (m mockIndex) LabelIndices() ([][]string, error) {
-	res := make([][]string, 0, len(m.labelIndex))
-	for k := range m.labelIndex {
-		res = append(res, []string{k})
-	}
-	return res, nil
-}
-
 func TestIndexRW_Create_Open(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_index_create")
 	testutil.Ok(t, err)
@@ -157,7 +138,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	fn := filepath.Join(dir, indexFilename)
 
 	// An empty index must still result in a readable file.
-	iw, err := NewWriter(fn)
+	iw, err := NewWriter(context.Background(), fn)
 	testutil.Ok(t, err)
 	testutil.Ok(t, iw.Close())
 
@@ -185,7 +166,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	fn := filepath.Join(dir, indexFilename)
 
-	iw, err := NewWriter(fn)
+	iw, err := NewWriter(context.Background(), fn)
 	testutil.Ok(t, err)
 
 	series := []labels.Labels{
@@ -195,15 +176,12 @@ func TestIndexRW_Postings(t *testing.T) {
 		labels.FromStrings("a", "1", "b", "4"),
 	}
 
-	err = iw.AddSymbols(map[string]struct{}{
-		"a": {},
-		"b": {},
-		"1": {},
-		"2": {},
-		"3": {},
-		"4": {},
-	})
-	testutil.Ok(t, err)
+	testutil.Ok(t, iw.AddSymbol("1"))
+	testutil.Ok(t, iw.AddSymbol("2"))
+	testutil.Ok(t, iw.AddSymbol("3"))
+	testutil.Ok(t, iw.AddSymbol("4"))
+	testutil.Ok(t, iw.AddSymbol("a"))
+	testutil.Ok(t, iw.AddSymbol("b"))
 
 	// Postings lists are only written if a series with the respective
 	// reference was added before.
@@ -211,9 +189,6 @@ func TestIndexRW_Postings(t *testing.T) {
 	testutil.Ok(t, iw.AddSeries(2, series[1]))
 	testutil.Ok(t, iw.AddSeries(3, series[2]))
 	testutil.Ok(t, iw.AddSeries(4, series[3]))
-
-	err = iw.WritePostings("a", "1", newListPostings(1, 2, 3, 4))
-	testutil.Ok(t, err)
 
 	testutil.Ok(t, iw.Close())
 
@@ -235,7 +210,130 @@ func TestIndexRW_Postings(t *testing.T) {
 	}
 	testutil.Ok(t, p.Err())
 
+	// The label incides are no longer used, so test them by hand here.
+	labelIndices := map[string][]string{}
+	testutil.Ok(t, ReadOffsetTable(ir.b, ir.toc.LabelIndicesTable, func(key []string, off uint64, _ int) error {
+		if len(key) != 1 {
+			return errors.Errorf("unexpected key length for label indices table %d", len(key))
+		}
+
+		d := encoding.NewDecbufAt(ir.b, int(off), castagnoliTable)
+		vals := []string{}
+		nc := d.Be32int()
+		if nc != 1 {
+			return errors.Errorf("unexpected number of label indices table names %d", nc)
+		}
+		for i := d.Be32(); i > 0; i-- {
+			v, err := ir.lookupSymbol(d.Be32())
+			if err != nil {
+				return err
+			}
+			vals = append(vals, v)
+		}
+		labelIndices[key[0]] = vals
+		return d.Err()
+	}))
+	testutil.Equals(t, map[string][]string{
+		"a": []string{"1"},
+		"b": []string{"1", "2", "3", "4"},
+	}, labelIndices)
+
 	testutil.Ok(t, ir.Close())
+}
+
+func TestPostingsMany(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test_postings_many")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+
+	fn := filepath.Join(dir, indexFilename)
+
+	iw, err := NewWriter(context.Background(), fn)
+	testutil.Ok(t, err)
+
+	// Create a label in the index which has 999 values.
+	symbols := map[string]struct{}{}
+	series := []labels.Labels{}
+	for i := 1; i < 1000; i++ {
+		v := fmt.Sprintf("%03d", i)
+		series = append(series, labels.FromStrings("i", v, "foo", "bar"))
+		symbols[v] = struct{}{}
+	}
+	symbols["i"] = struct{}{}
+	symbols["foo"] = struct{}{}
+	symbols["bar"] = struct{}{}
+	syms := []string{}
+	for s := range symbols {
+		syms = append(syms, s)
+	}
+	sort.Strings(syms)
+	for _, s := range syms {
+		testutil.Ok(t, iw.AddSymbol(s))
+	}
+
+	for i, s := range series {
+		testutil.Ok(t, iw.AddSeries(uint64(i), s))
+	}
+	testutil.Ok(t, iw.Close())
+
+	ir, err := NewFileReader(fn)
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, ir.Close()) }()
+
+	cases := []struct {
+		in []string
+	}{
+		// Simple cases, everything is present.
+		{in: []string{"002"}},
+		{in: []string{"031", "032", "033"}},
+		{in: []string{"032", "033"}},
+		{in: []string{"127", "128"}},
+		{in: []string{"127", "128", "129"}},
+		{in: []string{"127", "129"}},
+		{in: []string{"128", "129"}},
+		{in: []string{"998", "999"}},
+		{in: []string{"999"}},
+		// Before actual values.
+		{in: []string{"000"}},
+		{in: []string{"000", "001"}},
+		{in: []string{"000", "002"}},
+		// After actual values.
+		{in: []string{"999a"}},
+		{in: []string{"999", "999a"}},
+		{in: []string{"998", "999", "999a"}},
+		// In the middle of actual values.
+		{in: []string{"126a", "127", "128"}},
+		{in: []string{"127", "127a", "128"}},
+		{in: []string{"127", "127a", "128", "128a", "129"}},
+		{in: []string{"127", "128a", "129"}},
+		{in: []string{"128", "128a", "129"}},
+		{in: []string{"128", "129", "129a"}},
+		{in: []string{"126a", "126b", "127", "127a", "127b", "128", "128a", "128b", "129", "129a", "129b"}},
+	}
+
+	for _, c := range cases {
+		it, err := ir.Postings("i", c.in...)
+		testutil.Ok(t, err)
+
+		got := []string{}
+		var lbls labels.Labels
+		var metas []chunks.Meta
+		for it.Next() {
+			testutil.Ok(t, ir.Series(it.At(), &lbls, &metas))
+			got = append(got, lbls.Get("i"))
+		}
+		testutil.Ok(t, it.Err())
+		exp := []string{}
+		for _, e := range c.in {
+			if _, ok := symbols[e]; ok && e != "l" {
+				exp = append(exp, e)
+			}
+		}
+		testutil.Equals(t, exp, got, fmt.Sprintf("input: %v", c.in))
+	}
+
 }
 
 func TestPersistence_index_e2e(t *testing.T) {
@@ -279,10 +377,17 @@ func TestPersistence_index_e2e(t *testing.T) {
 		})
 	}
 
-	iw, err := NewWriter(filepath.Join(dir, indexFilename))
+	iw, err := NewWriter(context.Background(), filepath.Join(dir, indexFilename))
 	testutil.Ok(t, err)
 
-	testutil.Ok(t, iw.AddSymbols(symbols))
+	syms := []string{}
+	for s := range symbols {
+		syms = append(syms, s)
+	}
+	sort.Strings(syms)
+	for _, s := range syms {
+		testutil.Ok(t, iw.AddSymbol(s))
+	}
 
 	// Population procedure as done by compaction.
 	var (
@@ -306,33 +411,6 @@ func TestPersistence_index_e2e(t *testing.T) {
 			valset[l.Value] = struct{}{}
 		}
 		postings.Add(uint64(i), s.labels)
-	}
-
-	for k, v := range values {
-		var vals []string
-		for e := range v {
-			vals = append(vals, e)
-		}
-		sort.Strings(vals)
-
-		testutil.Ok(t, iw.WriteLabelIndex([]string{k}, vals))
-		testutil.Ok(t, mi.WriteLabelIndex([]string{k}, vals))
-	}
-
-	all := make([]uint64, len(lbls))
-	for i := range all {
-		all[i] = uint64(i)
-	}
-	err = iw.WritePostings("", "", newListPostings(all...))
-	testutil.Ok(t, err)
-	testutil.Ok(t, mi.WritePostings("", "", newListPostings(all...)))
-
-	for n, e := range postings.m {
-		for v := range e {
-			err = iw.WritePostings(n, v, postings.Get(n, v))
-			testutil.Ok(t, err)
-			mi.WritePostings(n, v, postings.Get(n, v))
-		}
 	}
 
 	err = iw.Close()
@@ -364,42 +442,43 @@ func TestPersistence_index_e2e(t *testing.T) {
 			testutil.Equals(t, explset, lset)
 			testutil.Equals(t, expchks, chks)
 		}
-		testutil.Assert(t, expp.Next() == false, "")
+		testutil.Assert(t, expp.Next() == false, "Expected no more postings for %q=%q", p.Name, p.Value)
 		testutil.Ok(t, gotp.Err())
 	}
 
-	for k, v := range mi.labelIndex {
-		tplsExp, err := NewStringTuples(v, 1)
+	labelPairs := map[string][]string{}
+	for l := range mi.postings {
+		labelPairs[l.Name] = append(labelPairs[l.Name], l.Value)
+	}
+	for k, v := range labelPairs {
+		sort.Strings(v)
+
+		res, err := ir.LabelValues(k)
 		testutil.Ok(t, err)
 
-		tplsRes, err := ir.LabelValues(k)
-		testutil.Ok(t, err)
-
-		testutil.Equals(t, tplsExp.Len(), tplsRes.Len())
-		for i := 0; i < tplsExp.Len(); i++ {
-			strsExp, err := tplsExp.At(i)
-			testutil.Ok(t, err)
-
-			strsRes, err := tplsRes.At(i)
-			testutil.Ok(t, err)
-
-			testutil.Equals(t, strsExp, strsRes)
+		testutil.Equals(t, len(v), len(res))
+		for i := 0; i < len(v); i++ {
+			testutil.Equals(t, v[i], res[i])
 		}
 	}
 
-	gotSymbols, err := ir.Symbols()
-	testutil.Ok(t, err)
-
-	testutil.Equals(t, len(mi.symbols), len(gotSymbols))
-	for s := range mi.symbols {
-		_, ok := gotSymbols[s]
-		testutil.Assert(t, ok, "")
+	gotSymbols := []string{}
+	it := ir.Symbols()
+	for it.Next() {
+		gotSymbols = append(gotSymbols, it.At())
 	}
+	testutil.Ok(t, it.Err())
+	expSymbols := []string{}
+	for s := range mi.symbols {
+		expSymbols = append(expSymbols, s)
+	}
+	sort.Strings(expSymbols)
+	testutil.Equals(t, expSymbols, gotSymbols)
 
 	testutil.Ok(t, ir.Close())
 }
 
-func TestDecbufUvariantWithInvalidBuffer(t *testing.T) {
+func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
 	db := encoding.NewDecbufUvarintAt(b, 0, castagnoliTable)
@@ -426,4 +505,51 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 
 	// dir.Close will fail on Win if idxName fd is not closed on error path.
 	dir.Close()
+}
+
+func TestSymbols(t *testing.T) {
+	buf := encoding.Encbuf{}
+
+	// Add prefix to the buffer to simulate symbols as part of larger buffer.
+	buf.PutUvarintStr("something")
+
+	symbolsStart := buf.Len()
+	buf.PutBE32int(204) // Length of symbols table.
+	buf.PutBE32int(100) // Number of symbols.
+	for i := 0; i < 100; i++ {
+		// i represents index in unicode characters table.
+		buf.PutUvarintStr(string(i)) // Symbol.
+	}
+	checksum := crc32.Checksum(buf.Get()[symbolsStart+4:], castagnoliTable)
+	buf.PutBE32(checksum) // Check sum at the end.
+
+	s, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, symbolsStart)
+	testutil.Ok(t, err)
+
+	// We store only 4 offsets to symbols.
+	testutil.Equals(t, 32, s.Size())
+
+	for i := 99; i >= 0; i-- {
+		s, err := s.Lookup(uint32(i))
+		testutil.Ok(t, err)
+		testutil.Equals(t, string(i), s)
+	}
+	_, err = s.Lookup(100)
+	testutil.NotOk(t, err)
+
+	for i := 99; i >= 0; i-- {
+		r, err := s.ReverseLookup(string(i))
+		testutil.Ok(t, err)
+		testutil.Equals(t, uint32(i), r)
+	}
+	_, err = s.ReverseLookup(string(100))
+	testutil.NotOk(t, err)
+
+	iter := s.Iter()
+	i := 0
+	for iter.Next() {
+		testutil.Equals(t, string(i), iter.At())
+		i++
+	}
+	testutil.Ok(t, iter.Err())
 }

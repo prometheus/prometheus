@@ -15,15 +15,21 @@ package rules
 
 import (
 	"context"
+	"fmt"
+	"io/ioutil"
 	"math"
+	"os"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
@@ -703,18 +709,111 @@ func TestUpdate(t *testing.T) {
 	err := ruleManager.Update(10*time.Second, files, nil)
 	testutil.Ok(t, err)
 	testutil.Assert(t, len(ruleManager.groups) > 0, "expected non-empty rule groups")
-	for _, g := range ruleManager.groups {
+	ogs := map[string]*Group{}
+	for h, g := range ruleManager.groups {
 		g.seriesInPreviousEval = []map[string]labels.Labels{
 			expected,
 		}
+		ogs[h] = g
 	}
 
 	err = ruleManager.Update(10*time.Second, files, nil)
 	testutil.Ok(t, err)
-	for _, g := range ruleManager.groups {
+	for h, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
 			testutil.Equals(t, expected, actual)
 		}
+		// Groups are the same because of no updates.
+		testutil.Equals(t, ogs[h], g)
+	}
+
+	// Groups will be recreated if updated.
+	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml")
+	testutil.Assert(t, len(errs) == 0, "file parsing failures")
+
+	tmpFile, err := ioutil.TempFile("", "rules.test.*.yaml")
+	testutil.Ok(t, err)
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil)
+	testutil.Ok(t, err)
+
+	for h, g := range ruleManager.groups {
+		ogs[h] = g
+	}
+
+	// Update interval and reload.
+	for i, g := range rgs.Groups {
+		if g.Interval != 0 {
+			rgs.Groups[i].Interval = g.Interval * 2
+		} else {
+			rgs.Groups[i].Interval = model.Duration(10)
+		}
+
+	}
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+
+	// Change group rules and reload.
+	for i, g := range rgs.Groups {
+		for j, r := range g.Rules {
+			rgs.Groups[i].Rules[j].Expr.SetString(fmt.Sprintf("%s * 0", r.Expr.Value))
+		}
+	}
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+}
+
+// ruleGroupsTest for running tests over rules.
+type ruleGroupsTest struct {
+	Groups []ruleGroupTest `yaml:"groups"`
+}
+
+// ruleGroupTest forms a testing struct for running tests over rules.
+type ruleGroupTest struct {
+	Name     string         `yaml:"name"`
+	Interval model.Duration `yaml:"interval,omitempty"`
+	Rules    []rulefmt.Rule `yaml:"rules"`
+}
+
+func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
+	grps := r.Groups
+	tmp := []ruleGroupTest{}
+	for _, g := range grps {
+		rtmp := []rulefmt.Rule{}
+		for _, r := range g.Rules {
+			rtmp = append(rtmp, rulefmt.Rule{
+				Record:      r.Record.Value,
+				Alert:       r.Alert.Value,
+				Expr:        r.Expr.Value,
+				For:         r.For,
+				Labels:      r.Labels,
+				Annotations: r.Annotations,
+			})
+		}
+		tmp = append(tmp, ruleGroupTest{
+			Name:     g.Name,
+			Interval: g.Interval,
+			Rules:    rtmp,
+		})
+	}
+	return ruleGroupsTest{
+		Groups: tmp,
+	}
+}
+
+func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
+	bs, err := yaml.Marshal(formatRules(rgs))
+	testutil.Ok(t, err)
+	tmpFile.Seek(0, 0)
+	_, err = tmpFile.Write(bs)
+	testutil.Ok(t, err)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil)
+	testutil.Ok(t, err)
+	for h, g := range ruleManager.groups {
+		if ogs[h] == g {
+			t.Fail()
+		}
+		ogs[h] = g
 	}
 }
 
@@ -775,4 +874,81 @@ func TestNotify(t *testing.T) {
 	// Resolution alert sent right away
 	group.Eval(ctx, time.Unix(6, 0))
 	testutil.Equals(t, 1, len(lastNotified))
+}
+
+func TestMetricsUpdate(t *testing.T) {
+	files := []string{"fixtures/rules.yaml", "fixtures/rules2.yaml"}
+	metricNames := []string{
+		"prometheus_rule_group_interval_seconds",
+		"prometheus_rule_group_last_duration_seconds",
+		"prometheus_rule_group_last_evaluation_timestamp_seconds",
+		"prometheus_rule_group_rules",
+	}
+
+	storage := teststorage.New(t)
+	registry := prometheus.NewRegistry()
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+		Registerer: registry,
+	})
+	ruleManager.Run()
+	defer ruleManager.Stop()
+
+	countMetrics := func() int {
+		ms, err := registry.Gather()
+		testutil.Ok(t, err)
+		var metrics int
+		for _, m := range ms {
+			s := m.GetName()
+			for _, n := range metricNames {
+				if s == n {
+					metrics += len(m.Metric)
+					break
+				}
+			}
+		}
+		return metrics
+	}
+
+	cases := []struct {
+		files   []string
+		metrics int
+	}{
+		{
+			files:   files,
+			metrics: 8,
+		},
+		{
+			files:   files[:1],
+			metrics: 4,
+		},
+		{
+			files:   files[:0],
+			metrics: 0,
+		},
+		{
+			files:   files[1:],
+			metrics: 4,
+		},
+	}
+
+	for i, c := range cases {
+		err := ruleManager.Update(time.Second, c.files, nil)
+		testutil.Ok(t, err)
+		time.Sleep(2 * time.Second)
+		testutil.Equals(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
+	}
 }

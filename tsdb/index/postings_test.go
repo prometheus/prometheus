@@ -20,7 +20,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -193,7 +193,7 @@ func TestMultiIntersect(t *testing.T) {
 			},
 			res: []uint64{2, 5, 6, 1001},
 		},
-		// One of the reproduceable cases for:
+		// One of the reproducible cases for:
 		// https://github.com/prometheus/prometheus/issues/2616
 		// The initialisation of intersectPostings was moving the iterator forward
 		// prematurely making us miss some postings.
@@ -812,6 +812,36 @@ func TestWithoutPostings(t *testing.T) {
 			testutil.Equals(t, expected, res)
 		})
 	}
+}
+
+func BenchmarkPostings_Stats(b *testing.B) {
+	p := NewMemPostings()
+
+	createPostingsLabelValues := func(name, valuePrefix string, count int) {
+		for n := 1; n < count; n++ {
+			value := fmt.Sprintf("%s-%d", valuePrefix, n)
+			p.Add(uint64(n), labels.FromStrings(name, value))
+		}
+
+	}
+	createPostingsLabelValues("__name__", "metrics_name_can_be_very_big_and_bad", 1e3)
+	for i := 0; i < 20; i++ {
+		createPostingsLabelValues(fmt.Sprintf("host-%d", i), "metrics_name_can_be_very_big_and_bad", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("instance-%d", i), "10.0.IP.", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("job-%d", i), "Small_Job_name", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("err-%d", i), "avg_namespace-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("team-%d", i), "team-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("container_name-%d", i), "pod-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("cluster-%d", i), "newcluster-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("uid-%d", i), "123412312312312311-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("area-%d", i), "new_area_of_work-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("request_id-%d", i), "owner_name_work-", 1e3)
+	}
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		p.Stats("__name__")
+	}
+
 }
 
 func TestMemPostings_Delete(t *testing.T) {

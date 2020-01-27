@@ -35,8 +35,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
-	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -117,7 +117,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 		})
 		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
-			Labels: tsdbLabels.Labels{tsdbLabels.Label{Name: "__name__", Value: name}},
+			Labels: labels.Labels{labels.Label{Name: "__name__", Value: name}},
 		})
 	}
 
@@ -186,7 +186,7 @@ func TestSeriesReset(t *testing.T) {
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
 		for j := 0; j < numSeries; j++ {
-			series = append(series, record.RefSeries{Ref: uint64((i * 100) + j), Labels: tsdbLabels.Labels{{Name: "a", Value: "a"}}})
+			series = append(series, record.RefSeries{Ref: uint64((i * 100) + j), Labels: labels.Labels{{Name: "a", Value: "a"}}})
 		}
 		m.StoreSeries(series, i)
 	}
@@ -266,8 +266,8 @@ func TestReleaseNoninternedString(t *testing.T) {
 		m.StoreSeries([]record.RefSeries{
 			{
 				Ref: uint64(i),
-				Labels: tsdbLabels.Labels{
-					tsdbLabels.Label{
+				Labels: labels.Labels{
+					labels.Label{
 						Name:  "asdf",
 						Value: fmt.Sprintf("%d", i),
 					},
@@ -279,6 +279,51 @@ func TestReleaseNoninternedString(t *testing.T) {
 
 	metric := client_testutil.ToFloat64(noReferenceReleases)
 	testutil.Assert(t, metric == 0, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
+}
+
+func TestCalculateDesiredsShards(t *testing.T) {
+	type testcase struct {
+		startingShards        int
+		samplesIn, samplesOut int64
+		reshard               bool
+	}
+	cases := []testcase{
+		{
+			// Test that ensures that if we haven't successfully sent a
+			// sample recently the queue will not reshard.
+			startingShards: 10,
+			reshard:        false,
+			samplesIn:      1000,
+			samplesOut:     10,
+		},
+		{
+			startingShards: 5,
+			reshard:        true,
+			samplesIn:      1000,
+			samplesOut:     10,
+		},
+	}
+	for _, c := range cases {
+		client := NewTestStorageClient()
+		m := NewQueueManager(nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, client, defaultFlushDeadline)
+		m.numShards = c.startingShards
+		m.samplesIn.incr(c.samplesIn)
+		m.samplesOut.incr(c.samplesOut)
+		m.lastSendTimestamp = time.Now().Unix()
+
+		// Resharding shouldn't take place if the last successful send was > batch send deadline*2 seconds ago.
+		if !c.reshard {
+			m.lastSendTimestamp = m.lastSendTimestamp - int64(3*time.Duration(config.DefaultQueueConfig.BatchSendDeadline)/time.Second)
+		}
+		m.Start()
+		desiredShards := m.calculateDesiredShards()
+		m.Stop()
+		if !c.reshard {
+			testutil.Assert(t, desiredShards == m.numShards, "expected calculateDesiredShards to not want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
+		} else {
+			testutil.Assert(t, desiredShards != m.numShards, "expected calculateDesiredShards to want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
+		}
+	}
 }
 
 func createTimeseries(n int) ([]record.RefSample, []record.RefSeries) {
@@ -293,7 +338,7 @@ func createTimeseries(n int) ([]record.RefSample, []record.RefSeries) {
 		})
 		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
-			Labels: tsdbLabels.Labels{{Name: "__name__", Value: name}},
+			Labels: labels.Labels{{Name: "__name__", Value: name}},
 		})
 	}
 	return samples, series
@@ -401,6 +446,10 @@ func (c *TestStorageClient) Name() string {
 	return "teststorageclient"
 }
 
+func (c *TestStorageClient) Endpoint() string {
+	return "http://test-remote.com/1234"
+}
+
 // TestBlockingStorageClient is a queue_manager StorageClient which will block
 // on any calls to Store(), until the request's Context is cancelled, at which
 // point the `numCalls` property will contain a count of how many times Store()
@@ -425,6 +474,10 @@ func (c *TestBlockingStorageClient) NumCalls() uint64 {
 
 func (c *TestBlockingStorageClient) Name() string {
 	return "testblockingstorageclient"
+}
+
+func (c *TestBlockingStorageClient) Endpoint() string {
+	return "http://test-remote-blocking.com/1234"
 }
 
 func BenchmarkSampleDelivery(b *testing.B) {
@@ -487,7 +540,7 @@ func BenchmarkStartup(b *testing.B) {
 		m := NewQueueManager(nil, logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
 			config.DefaultQueueConfig, nil, nil, c, 1*time.Minute)
-		m.watcher.StartTime = math.MaxInt64
+		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
 		err := m.watcher.Run()
 		testutil.Ok(b, err)
@@ -496,31 +549,108 @@ func BenchmarkStartup(b *testing.B) {
 
 func TestProcessExternalLabels(t *testing.T) {
 	for _, tc := range []struct {
-		labels         tsdbLabels.Labels
+		labels         labels.Labels
 		externalLabels labels.Labels
 		expected       labels.Labels
 	}{
 		// Test adding labels at the end.
 		{
-			labels:         tsdbLabels.Labels{{Name: "a", Value: "b"}},
+			labels:         labels.Labels{{Name: "a", Value: "b"}},
 			externalLabels: labels.Labels{{Name: "c", Value: "d"}},
 			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
 		},
 
 		// Test adding labels at the beginning.
 		{
-			labels:         tsdbLabels.Labels{{Name: "c", Value: "d"}},
+			labels:         labels.Labels{{Name: "c", Value: "d"}},
 			externalLabels: labels.Labels{{Name: "a", Value: "b"}},
 			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
 		},
 
 		// Test we don't override existing labels.
 		{
-			labels:         tsdbLabels.Labels{{Name: "a", Value: "b"}},
+			labels:         labels.Labels{{Name: "a", Value: "b"}},
 			externalLabels: labels.Labels{{Name: "a", Value: "c"}},
 			expected:       labels.Labels{{Name: "a", Value: "b"}},
 		},
 	} {
 		testutil.Equals(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
 	}
+}
+
+func TestCalculateDesiredShards(t *testing.T) {
+	c := NewTestStorageClient()
+	cfg := config.DefaultQueueConfig
+
+	dir, err := ioutil.TempDir("", "TestCalculateDesiredShards")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
+	m := NewQueueManager(nil, nil, dir, samplesIn, cfg, nil, nil, c, defaultFlushDeadline)
+
+	// Need to start the queue manager so the proper metrics are initialized.
+	// However we can stop it right away since we don't need to do any actual
+	// processing.
+	m.Start()
+	m.Stop()
+
+	inputRate := int64(50000)
+	var pendingSamples int64
+
+	// Two minute startup, no samples are sent.
+	startedAt := time.Now().Add(-2 * time.Minute)
+
+	// helper function for adding samples.
+	addSamples := func(s int64, ts time.Duration) {
+		pendingSamples += s
+		samplesIn.incr(s)
+		samplesIn.tick()
+
+		highestTimestamp.Set(float64(startedAt.Add(ts).Unix()))
+	}
+
+	// helper function for sending samples.
+	sendSamples := func(s int64, ts time.Duration) {
+		pendingSamples -= s
+		m.samplesOut.incr(s)
+		m.samplesOutDuration.incr(int64(m.numShards) * int64(shardUpdateDuration))
+
+		// highest sent is how far back pending samples would be at our input rate.
+		highestSent := startedAt.Add(ts - time.Duration(pendingSamples/inputRate)*time.Second)
+		m.highestSentTimestampMetric.Set(float64(highestSent.Unix()))
+
+		atomic.StoreInt64(&m.lastSendTimestamp, time.Now().Unix())
+	}
+
+	ts := time.Duration(0)
+	for ; ts < 120*time.Second; ts += shardUpdateDuration {
+		addSamples(inputRate*int64(shardUpdateDuration/time.Second), ts)
+		m.numShards = m.calculateDesiredShards()
+		testutil.Equals(t, 1, m.numShards)
+	}
+
+	// Assume 100ms per request, or 10 requests per second per shard.
+	// Shard calculation should never drop below barely keeping up.
+	minShards := int(inputRate) / cfg.MaxSamplesPerSend / 10
+	// This test should never go above 200 shards, that would be more resources than needed.
+	maxShards := 200
+
+	for ; ts < 15*time.Minute; ts += shardUpdateDuration {
+		sin := inputRate * int64(shardUpdateDuration/time.Second)
+		addSamples(sin, ts)
+
+		sout := int64(m.numShards*cfg.MaxSamplesPerSend) * int64(shardUpdateDuration/(100*time.Millisecond))
+		// You can't send samples that don't exist so cap at the number of pending samples.
+		if sout > pendingSamples {
+			sout = pendingSamples
+		}
+		sendSamples(sout, ts)
+
+		t.Log("desiredShards", m.numShards, "pendingSamples", pendingSamples)
+		m.numShards = m.calculateDesiredShards()
+		testutil.Assert(t, m.numShards >= minShards, "Shards are too low. desiredShards=%d, minShards=%d, t_seconds=%d", m.numShards, minShards, ts/time.Second)
+		testutil.Assert(t, m.numShards <= maxShards, "Shards are too high. desiredShards=%d, maxShards=%d, t_seconds=%d", m.numShards, maxShards, ts/time.Second)
+	}
+	testutil.Assert(t, pendingSamples == 0, "Remote write never caught up, there are still %d pending samples.", pendingSamples)
 }

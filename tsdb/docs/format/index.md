@@ -126,7 +126,7 @@ After the labels, the number of indexed chunks is encoded, followed by a sequenc
 ### Label Index
 
 A label index section indexes the existing (combined) values for one or more label names.
-The `#names` field determines the number of indexed label names, followed by the total number of entries in the `#entries` field. The body holds #entries / #names tuples of symbol table references, each tuple being of #names length. The value tuples are sorted in lexicographically increasing order.
+The `#names` field determines the number of indexed label names, followed by the total number of entries in the `#entries` field. The body holds #entries / #names tuples of symbol table references, each tuple being of #names length. The value tuples are sorted in lexicographically increasing order. This is no longer used.
 
 ```
 ┌───────────────┬────────────────┬────────────────┐
@@ -181,7 +181,7 @@ The sequence of postings sections is finalized by a [postings offset table](#pos
 
 A label offset table stores a sequence of label offset entries.
 Every label offset entry holds the label name and the offset to its values in the label index section.
-They are used to track label index sections. They are read into memory when an index file is loaded.
+They are used to track label index sections. This is no longer used.
 
 ```
 ┌─────────────────────┬──────────────────────┐
@@ -203,9 +203,9 @@ They are used to track label index sections. They are read into memory when an i
 
 ### Postings Offset Table
 
-A postings offset table stores a sequence of postings offset entries.
-Every postings offset entry holds the lable name/value pair and the offset to its series list in the postings section.
-They are used to track postings sections. They are read into memory when an index file is loaded.
+A postings offset table stores a sequence of postings offset entries, sorted by label name and value.
+Every postings offset entry holds the label name/value pair and the offset to its series list in the postings section.
+They are used to track postings sections. They are partially read into memory when an index file is loaded.
 
 ```
 ┌─────────────────────┬──────────────────────┐

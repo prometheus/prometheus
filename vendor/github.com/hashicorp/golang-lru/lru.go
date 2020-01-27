@@ -86,35 +86,17 @@ func (c *Cache) ContainsOrAdd(key, value interface{}) (ok, evicted bool) {
 }
 
 // Remove removes the provided key from the cache.
-func (c *Cache) Remove(key interface{}) (present bool) {
+func (c *Cache) Remove(key interface{}) {
 	c.lock.Lock()
-	present = c.lru.Remove(key)
+	c.lru.Remove(key)
 	c.lock.Unlock()
-	return
-}
-
-// Resize changes the cache size.
-func (c *Cache) Resize(size int) (evicted int) {
-	c.lock.Lock()
-	evicted = c.lru.Resize(size)
-	c.lock.Unlock()
-	return evicted
 }
 
 // RemoveOldest removes the oldest item from the cache.
-func (c *Cache) RemoveOldest() (key interface{}, value interface{}, ok bool) {
+func (c *Cache) RemoveOldest() {
 	c.lock.Lock()
-	key, value, ok = c.lru.RemoveOldest()
+	c.lru.RemoveOldest()
 	c.lock.Unlock()
-	return
-}
-
-// GetOldest returns the oldest entry
-func (c *Cache) GetOldest() (key interface{}, value interface{}, ok bool) {
-	c.lock.Lock()
-	key, value, ok = c.lru.GetOldest()
-	c.lock.Unlock()
-	return
 }
 
 // Keys returns a slice of the keys in the cache, from oldest to newest.

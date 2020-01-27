@@ -58,7 +58,10 @@ func (r *Response) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &r.Refable); err != nil {
 		return err
 	}
-	return json.Unmarshal(data, &r.VendorExtensible)
+	if err := json.Unmarshal(data, &r.VendorExtensible); err != nil {
+		return err
+	}
+	return nil
 }
 
 // MarshalJSON converts this items object to JSON

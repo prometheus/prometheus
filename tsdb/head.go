@@ -28,11 +28,10 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -54,9 +53,9 @@ var (
 	// writable time range.
 	ErrOutOfBounds = errors.New("out of bounds")
 
-	// emptyTombstoneReader is a no-op Tombstone Reader.
-	// This is used by head to satisfy the Tombstones() function call.
-	emptyTombstoneReader = tombstones.NewMemTombstones()
+	// ErrInvalidSample is returned if an appended sample is not valid and can't
+	// be ingested.
+	ErrInvalidSample = errors.New("invalid sample")
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -87,6 +86,12 @@ type Head struct {
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
 	postings *index.MemPostings // postings lists for terms
+
+	tombstones *tombstones.MemTombstones
+
+	cardinalityMutex      sync.Mutex
+	cardinalityCache      *index.PostingsStats // posting stats cache which will expire after 30sec
+	lastPostingsStatsCall time.Duration        // last posting stats call (PostingsCardinalityStats()) time for caching
 }
 
 type headMetrics struct {
@@ -231,6 +236,26 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	return m
 }
 
+const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
+
+// PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.
+func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.PostingsStats {
+	h.cardinalityMutex.Lock()
+	defer h.cardinalityMutex.Unlock()
+	currentTime := time.Duration(time.Now().Unix()) * time.Second
+	seconds := currentTime - h.lastPostingsStatsCall
+	if seconds > cardinalityCacheExpirationTime {
+		h.cardinalityCache = nil
+	}
+	if h.cardinalityCache != nil {
+		return h.cardinalityCache
+	}
+	h.cardinalityCache = h.postings.Stats(statsByLabelName)
+	h.lastPostingsStatsCall = time.Duration(time.Now().Unix()) * time.Second
+
+	return h.cardinalityCache
+}
+
 // NewHead opens the head block in dir.
 func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64) (*Head, error) {
 	if l == nil {
@@ -249,6 +274,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
+		tombstones: tombstones.NewMemTombstones(),
 		deleted:    map[uint64]int{},
 	}
 	h.metrics = newHeadMetrics(h, r)
@@ -364,33 +390,85 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 	}
 
 	var (
-		dec       record.Decoder
-		series    []record.RefSeries
-		samples   []record.RefSample
-		tstones   []tombstones.Stone
-		allStones = tombstones.NewMemTombstones()
-		shards    = make([][]record.RefSample, n)
+		dec    record.Decoder
+		shards = make([][]record.RefSample, n)
 	)
-	defer func() {
-		if err := allStones.Close(); err != nil {
-			level.Warn(h.logger).Log("msg", "closing  memTombstones during wal read", "err", err)
-		}
-	}()
-	for r.Next() {
-		series, samples, tstones = series[:0], samples[:0], tstones[:0]
-		rec := r.Record()
 
-		switch dec.Type(rec) {
-		case record.Series:
-			series, err = dec.Series(rec, series)
-			if err != nil {
-				return &wal.CorruptionErr{
-					Err:     errors.Wrap(err, "decode series"),
+	var (
+		decoded    = make(chan interface{}, 10)
+		errCh      = make(chan error, 1)
+		seriesPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefSeries{}
+			},
+		}
+		samplesPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefSample{}
+			},
+		}
+		tstonesPool = sync.Pool{
+			New: func() interface{} {
+				return []tombstones.Stone{}
+			},
+		}
+	)
+	go func() {
+		defer close(decoded)
+		for r.Next() {
+			rec := r.Record()
+			switch dec.Type(rec) {
+			case record.Series:
+				series := seriesPool.Get().([]record.RefSeries)[:0]
+				series, err = dec.Series(rec, series)
+				if err != nil {
+					errCh <- &wal.CorruptionErr{
+						Err:     errors.Wrap(err, "decode series"),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- series
+			case record.Samples:
+				samples := samplesPool.Get().([]record.RefSample)[:0]
+				samples, err = dec.Samples(rec, samples)
+				if err != nil {
+					errCh <- &wal.CorruptionErr{
+						Err:     errors.Wrap(err, "decode samples"),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- samples
+			case record.Tombstones:
+				tstones := tstonesPool.Get().([]tombstones.Stone)[:0]
+				tstones, err = dec.Tombstones(rec, tstones)
+				if err != nil {
+					errCh <- &wal.CorruptionErr{
+						Err:     errors.Wrap(err, "decode tombstones"),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- tstones
+			default:
+				errCh <- &wal.CorruptionErr{
+					Err:     errors.Errorf("invalid record type %v", dec.Type(rec)),
 					Segment: r.Segment(),
 					Offset:  r.Offset(),
 				}
+				return
 			}
-			for _, s := range series {
+		}
+	}()
+
+	for d := range decoded {
+		switch v := d.(type) {
+		case []record.RefSeries:
+			for _, s := range v {
 				series, created := h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
 
 				if !created {
@@ -402,16 +480,10 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 					h.lastSeriesID = s.Ref
 				}
 			}
-		case record.Samples:
-			samples, err = dec.Samples(rec, samples)
-			s := samples
-			if err != nil {
-				return &wal.CorruptionErr{
-					Err:     errors.Wrap(err, "decode samples"),
-					Segment: r.Segment(),
-					Offset:  r.Offset(),
-				}
-			}
+			//lint:ignore SA6002 relax staticcheck verification.
+			seriesPool.Put(v)
+		case []record.RefSample:
+			samples := v
 			// We split up the samples into chunks of 5000 samples or less.
 			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
 			// cause thousands of very large in flight buffers occupying large amounts
@@ -441,17 +513,10 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 				}
 				samples = samples[m:]
 			}
-			samples = s // Keep whole slice for reuse.
-		case record.Tombstones:
-			tstones, err = dec.Tombstones(rec, tstones)
-			if err != nil {
-				return &wal.CorruptionErr{
-					Err:     errors.Wrap(err, "decode tombstones"),
-					Segment: r.Segment(),
-					Offset:  r.Offset(),
-				}
-			}
-			for _, s := range tstones {
+			//lint:ignore SA6002 relax staticcheck verification.
+			samplesPool.Put(v)
+		case []tombstones.Stone:
+			for _, s := range v {
 				for _, itv := range s.Intervals {
 					if itv.Maxt < h.minValidTime {
 						continue
@@ -460,16 +525,20 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 						unknownRefs++
 						continue
 					}
-					allStones.AddInterval(s.Ref, itv)
+					h.tombstones.AddInterval(s.Ref, itv)
 				}
 			}
+			//lint:ignore SA6002 relax staticcheck verification.
+			tstonesPool.Put(v)
 		default:
-			return &wal.CorruptionErr{
-				Err:     errors.Errorf("invalid record type %v", dec.Type(rec)),
-				Segment: r.Segment(),
-				Offset:  r.Offset(),
-			}
+			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
+	}
+
+	select {
+	case err := <-errCh:
+		return err
+	default:
 	}
 
 	// Signal termination to each worker and wait for it to close its output channel.
@@ -482,12 +551,6 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 
 	if r.Err() != nil {
 		return errors.Wrap(r.Err(), "read records")
-	}
-
-	if err := allStones.Iter(func(ref uint64, dranges tombstones.Intervals) error {
-		return h.chunkRewrite(ref, dranges)
-	}); err != nil {
-		return errors.Wrap(r.Err(), "deleting samples from tombstones")
 	}
 
 	if unknownRefs > 0 {
@@ -696,7 +759,7 @@ func (h *rangeHead) Chunks() (ChunkReader, error) {
 }
 
 func (h *rangeHead) Tombstones() (tombstones.Reader, error) {
-	return emptyTombstoneReader, nil
+	return h.head.tombstones, nil
 }
 
 func (h *rangeHead) MinTime() int64 {
@@ -775,7 +838,7 @@ func (h *Head) Appender() Appender {
 func (h *Head) appender() *headAppender {
 	return &headAppender{
 		head: h,
-		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
+		// Set the minimum valid time to whichever is greater the head min valid time or the compaction window.
 		// This ensures that no samples will be added within the compaction window to avoid races.
 		minValidTime: max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2),
 		mint:         math.MaxInt64,
@@ -848,6 +911,10 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 
 	// Ensure no empty labels have gotten through.
 	lset = lset.WithoutEmpty()
+
+	if l, dup := lset.HasDuplicateLabelNames(); dup {
+		return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
+	}
 
 	s, created := a.head.getOrCreate(lset.Hash(), lset)
 	if created {
@@ -974,7 +1041,7 @@ func (a *headAppender) Rollback() error {
 
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given
 // label matchers.
-func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	// Do not delete anything beyond the currently valid range.
 	mint, maxt = clampInterval(mint, maxt, h.MinTime(), h.MaxTime())
 
@@ -986,7 +1053,6 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	}
 
 	var stones []tombstones.Stone
-	dirty := false
 	for p.Next() {
 		series := h.series.getByID(p.At())
 
@@ -996,59 +1062,19 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		}
 		// Delete only until the current values and not beyond.
 		t0, t1 = clampInterval(mint, maxt, t0, t1)
-		if h.wal != nil {
-			stones = append(stones, tombstones.Stone{Ref: p.At(), Intervals: tombstones.Intervals{{Mint: t0, Maxt: t1}}})
-		}
-		if err := h.chunkRewrite(p.At(), tombstones.Intervals{{Mint: t0, Maxt: t1}}); err != nil {
-			return errors.Wrap(err, "delete samples")
-		}
-		dirty = true
+		stones = append(stones, tombstones.Stone{Ref: p.At(), Intervals: tombstones.Intervals{{Mint: t0, Maxt: t1}}})
 	}
 	if p.Err() != nil {
 		return p.Err()
 	}
-	var enc record.Encoder
 	if h.wal != nil {
-		// Although we don't store the stones in the head
-		// we need to write them to the WAL to mark these as deleted
-		// after a restart while loading the WAL.
+		var enc record.Encoder
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
 			return err
 		}
 	}
-	if dirty {
-		h.gc()
-	}
-
-	return nil
-}
-
-// chunkRewrite re-writes the chunks which overlaps with deleted ranges
-// and removes the samples in the deleted ranges.
-// Chunks is deleted if no samples are left at the end.
-func (h *Head) chunkRewrite(ref uint64, dranges tombstones.Intervals) (err error) {
-	if len(dranges) == 0 {
-		return nil
-	}
-
-	ms := h.series.getByID(ref)
-	ms.Lock()
-	defer ms.Unlock()
-	if len(ms.chunks) == 0 {
-		return nil
-	}
-
-	metas := ms.chunksMetas()
-	mint, maxt := metas[0].MinTime, metas[len(metas)-1].MaxTime
-	it := newChunkSeriesIterator(metas, dranges, mint, maxt)
-
-	ms.reset()
-	for it.Next() {
-		t, v := it.At()
-		ok, _ := ms.append(t, v)
-		if !ok {
-			level.Warn(h.logger).Log("msg", "failed to add sample during delete")
-		}
+	for _, s := range stones {
+		h.tombstones.AddInterval(s.Ref, s.Intervals[0])
 	}
 
 	return nil
@@ -1119,7 +1145,7 @@ func (h *Head) gc() {
 
 // Tombstones returns a new reader over the head's tombstones
 func (h *Head) Tombstones() (tombstones.Reader, error) {
-	return emptyTombstoneReader, nil
+	return h.tombstones, nil
 }
 
 // Index returns an IndexReader against the block.
@@ -1266,33 +1292,29 @@ func (h *headIndexReader) Close() error {
 	return nil
 }
 
-func (h *headIndexReader) Symbols() (map[string]struct{}, error) {
+func (h *headIndexReader) Symbols() index.StringIter {
 	h.head.symMtx.RLock()
-	defer h.head.symMtx.RUnlock()
-
-	res := make(map[string]struct{}, len(h.head.symbols))
+	res := make([]string, 0, len(h.head.symbols))
 
 	for s := range h.head.symbols {
-		res[s] = struct{}{}
+		res = append(res, s)
 	}
-	return res, nil
+	h.head.symMtx.RUnlock()
+
+	sort.Strings(res)
+	return index.NewStringListIter(res)
 }
 
 // LabelValues returns the possible label values
-func (h *headIndexReader) LabelValues(names ...string) (index.StringTuples, error) {
-	if len(names) != 1 {
-		return nil, encoding.ErrInvalidSize
-	}
-
+func (h *headIndexReader) LabelValues(name string) ([]string, error) {
 	h.head.symMtx.RLock()
-	sl := make([]string, 0, len(h.head.values[names[0]]))
-	for s := range h.head.values[names[0]] {
+	sl := make([]string, 0, len(h.head.values[name]))
+	for s := range h.head.values[name] {
 		sl = append(sl, s)
 	}
 	h.head.symMtx.RUnlock()
 	sort.Strings(sl)
-
-	return index.NewStringTuples(sl, len(names))
+	return sl, nil
 }
 
 // LabelNames returns all the unique label names present in the head.
@@ -1310,9 +1332,13 @@ func (h *headIndexReader) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-// Postings returns the postings list iterator for the label pair.
-func (h *headIndexReader) Postings(name, value string) (index.Postings, error) {
-	return h.head.postings.Get(name, value), nil
+// Postings returns the postings list iterator for the label pairs.
+func (h *headIndexReader) Postings(name string, values ...string) (index.Postings, error) {
+	res := make([]index.Postings, 0, len(values))
+	for _, value := range values {
+		res = append(res, h.head.postings.Get(name, value))
+	}
+	return index.Merge(res...), nil
 }
 
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
@@ -1379,16 +1405,6 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 	return nil
 }
 
-func (h *headIndexReader) LabelIndices() ([][]string, error) {
-	h.head.symMtx.RLock()
-	defer h.head.symMtx.RUnlock()
-	res := [][]string{}
-	for s := range h.head.values {
-		res = append(res, []string{s})
-	}
-	return res, nil
-}
-
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool) {
 	// Just using `getOrSet` below would be semantically sufficient, but we'd create
 	// a new series on every sample inserted via Add(), which causes allocations
@@ -1443,7 +1459,7 @@ type seriesHashmap map[uint64][]*memSeries
 
 func (m seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	for _, s := range m[hash] {
-		if s.lset.Equals(lset) {
+		if labels.Equal(s.lset, lset) {
 			return s
 		}
 	}
@@ -1453,7 +1469,7 @@ func (m seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 func (m seriesHashmap) set(hash uint64, s *memSeries) {
 	l := m[hash]
 	for i, prev := range l {
-		if prev.lset.Equals(s.lset) {
+		if labels.Equal(prev.lset, s.lset) {
 			l[i] = s
 			return
 		}
@@ -1464,7 +1480,7 @@ func (m seriesHashmap) set(hash uint64, s *memSeries) {
 func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
 	var rem []*memSeries
 	for _, s := range m[hash] {
-		if !s.lset.Equals(lset) {
+		if !labels.Equal(s.lset, lset) {
 			rem = append(rem, s)
 		}
 	}
@@ -1676,26 +1692,6 @@ func (s *memSeries) cut(mint int64) *memChunk {
 	}
 	s.app = app
 	return c
-}
-
-func (s *memSeries) chunksMetas() []chunks.Meta {
-	metas := make([]chunks.Meta, 0, len(s.chunks))
-	for _, chk := range s.chunks {
-		metas = append(metas, chunks.Meta{Chunk: chk.chunk, MinTime: chk.minTime, MaxTime: chk.maxTime})
-	}
-	return metas
-}
-
-// reset re-initialises all the variable in the memSeries except 'lset', 'ref',
-// and 'chunkRange', like how it would appear after 'newMemSeries(...)'.
-func (s *memSeries) reset() {
-	s.chunks = nil
-	s.headChunk = nil
-	s.firstChunkID = 0
-	s.nextAt = math.MinInt64
-	s.sampleBuf = [4]sample{}
-	s.pendingCommit = false
-	s.app = nil
 }
 
 // appendable checks whether the given sample is valid for appending to the series.

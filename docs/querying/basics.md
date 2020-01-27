@@ -74,8 +74,8 @@ name:
 
     http_requests_total
 
-It is possible to filter these time series further by appending a set of labels
-to match in curly braces (`{}`).
+It is possible to filter these time series further by appending a comma separated list of label
+matchers in curly braces (`{}`).
 
 This example selects only those time series with the `http_requests_total`
 metric name that also have the `job` label set to `prometheus` and their
@@ -165,7 +165,7 @@ While the following would be *incorrect*:
 
     sum(http_requests_total{method="GET"}) offset 5m // INVALID.
 
-The same works for range vectors. This returns the 5-minutes rate that
+The same works for range vectors. This returns the 5-minute rate that
 `http_requests_total` had a week ago:
 
     rate(http_requests_total[5m] offset 1w)
@@ -187,6 +187,12 @@ in detail in the [expression language operators](operators.md) page.
 
 Prometheus supports several functions to operate on data. These are described
 in detail in the [expression language functions](functions.md) page.
+
+## Comments
+
+PromQL supports line comments that start with `#`. Example:
+
+        # This is a comment
 
 ## Gotchas
 

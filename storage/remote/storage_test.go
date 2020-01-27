@@ -15,10 +15,12 @@ package remote
 
 import (
 	"io/ioutil"
+	"net/url"
 	"os"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -38,6 +40,18 @@ func TestStorageLifecycle(t *testing.T) {
 			&config.DefaultRemoteReadConfig,
 		},
 	}
+	// We need to set URL's so that metric creation doesn't panic.
+	conf.RemoteWriteConfigs[0].URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
+	}
+	conf.RemoteReadConfigs[0].URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
+	}
+
 	s.ApplyConfig(conf)
 
 	// make sure remote write has a queue.

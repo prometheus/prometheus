@@ -53,6 +53,12 @@ func New() *Router {
 
 // WithInstrumentation returns a router with instrumentation support.
 func (r *Router) WithInstrumentation(instrh func(handlerName string, handler http.HandlerFunc) http.HandlerFunc) *Router {
+	if r.instrh != nil {
+		newInstrh := instrh
+		instrh = func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+			return newInstrh(handlerName, r.instrh(handlerName, handler))
+		}
+	}
 	return &Router{rtr: r.rtr, prefix: r.prefix, instrh: instrh}
 }
 

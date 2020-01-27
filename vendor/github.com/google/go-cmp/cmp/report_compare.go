@@ -168,7 +168,7 @@ func (opts formatOptions) formatDiffList(recs []reportRecord, k reflect.Kind) te
 				var isZero bool
 				switch opts.DiffMode {
 				case diffIdentical:
-					isZero = value.IsZero(r.Value.ValueX) || value.IsZero(r.Value.ValueY)
+					isZero = value.IsZero(r.Value.ValueX) || value.IsZero(r.Value.ValueX)
 				case diffRemoved:
 					isZero = value.IsZero(r.Value.ValueX)
 				case diffInserted:

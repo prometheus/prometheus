@@ -236,7 +236,7 @@ The following example returns all series that match either of the selectors
 `up` or `process_start_time_seconds{job="prometheus"}`:
 
 ```json
-$ curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode='match[]=up' --data-urlencode='match[]=process_start_time_seconds{job="prometheus"}'
+$ curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode 'match[]=up' --data-urlencode 'match[]=process_start_time_seconds{job="prometheus"}'
 {
    "status" : "success",
    "data" : [
@@ -390,7 +390,7 @@ Prometheus target discovery:
 GET /api/v1/targets
 ```
 
-Both the active and dropped targets are part of the response.
+Both the active and dropped targets are part of the response by default.
 `labels` represents the label set after relabelling has occurred.
 `discoveredLabels` represent the unmodified labels retrieved during service discovery before relabelling has occurred.
 
@@ -411,9 +411,11 @@ $ curl http://localhost:9090/api/v1/targets
           "instance": "127.0.0.1:9090",
           "job": "prometheus"
         },
+        "scrapePool": "prometheus",
         "scrapeUrl": "http://127.0.0.1:9090/metrics",
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
+        "lastScrapeDuration": 0.050688943,
         "health": "up"
       }
     ],
@@ -431,6 +433,41 @@ $ curl http://localhost:9090/api/v1/targets
 }
 ```
 
+The `state` query parameter allows the caller to filter by active or dropped targets,
+(e.g., `state=active`, `state=dropped`, `state=any`).
+Note that an empty array is still returned for targets that are filtered out.
+Other values are ignored.
+
+```json
+$ curl 'http://localhost:9090/api/v1/targets?state=active'
+{
+  "status": "success",
+  "data": {
+    "activeTargets": [
+      {
+        "discoveredLabels": {
+          "__address__": "127.0.0.1:9090",
+          "__metrics_path__": "/metrics",
+          "__scheme__": "http",
+          "job": "prometheus"
+        },
+        "labels": {
+          "instance": "127.0.0.1:9090",
+          "job": "prometheus"
+        },
+        "scrapePool": "prometheus",
+        "scrapeUrl": "http://127.0.0.1:9090/metrics",
+        "lastError": "",
+        "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
+        "lastScrapeDuration": 50688943,
+        "health": "up"
+      }
+    ],
+    "droppedTargets": []
+  }
+}
+```
+
 
 ## Rules
 
@@ -444,6 +481,9 @@ guarantees as the overarching API v1.
 ```
 GET /api/v1/rules
 ```
+
+URL query parameters:
+- `type=alert|record`: return only the alerting rules (e.g. `type=alert`) or the recording rules (e.g. `type=record`). When the parameter is absent or empty, no filtering is done.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules
@@ -532,7 +572,7 @@ $ curl http://localhost:9090/api/v1/alerts
 
 ## Querying target metadata
 
-The following endpoint returns metadata about metrics currently scraped by targets.
+The following endpoint returns metadata about metrics currently scraped from targets.
 This is **experimental** and might change in the future.
 
 ```
@@ -616,6 +656,77 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
 }
 ```
 
+## Querying metric metadata
+
+It returns metadata about metrics currently scrapped from targets. However, it does not provide any target information.
+This is considered **experimental** and might change in the future.
+
+```
+GET /api/v1/metadata
+```
+
+URL query parameters:
+
+- `limit=<number>`: Maximum number of metrics to return.
+- `metric=<string>`: A metric name to filter metadata for. All metric metadata is retrieved if left empty.
+
+The `data` section of the query result consists of an object where each key is a metric name and each value is a list of unique metadata objects, as exposed for that metric name across all targets.
+
+The following example returns two metrics. Note that the metric `http_requests_total` has more than one object in the list. At least one target has a value for `HELP` that do not match with the rest.
+
+```json
+curl -G http://localhost:9090/api/v1/metadata?limit=2
+
+{
+  "status": "success",
+  "data": {
+    "cortex_ring_tokens": [
+      {
+        "type": "gauge",
+        "help": "Number of tokens in the ring",
+        "unit": ""
+      }
+    ],
+    "http_requests_total": [
+      {
+        "type": "counter",
+        "help": "Number of HTTP requests",
+        "unit": ""
+      },
+      {
+        "type": "counter",
+        "help": "Amount of HTTP requests",
+        "unit": ""
+      }
+    ]
+  }
+}
+```
+
+The following example returns metadata only for the metric `http_requests_total`.
+
+```json
+curl -G http://localhost:9090/api/v1/metadata?metric=http_requests_total
+
+{
+  "status": "success",
+  "data": {
+    "http_requests_total": [
+      {
+        "type": "counter",
+        "help": "Number of HTTP requests",
+        "unit": ""
+      },
+      {
+        "type": "counter",
+        "help": "Amount of HTTP requests",
+        "unit": ""
+      }
+    ]
+  }
+}
+```
+
 ## Alertmanagers
 
 The following endpoint returns an overview of the current state of the
@@ -679,7 +790,7 @@ The following endpoint returns flag values that Prometheus was configured with:
 GET /api/v1/status/flags
 ```
 
-All values are in a form of "string".
+All values are of the result type `string`.
 
 ```json
 $ curl http://localhost:9090/api/v1/status/flags
@@ -697,6 +808,133 @@ $ curl http://localhost:9090/api/v1/status/flags
 ```
 
 *New in v2.2*
+
+### Runtime Information
+
+The following endpoint returns various runtime information properties about the Prometheus server:
+
+```
+GET /api/v1/status/runtimeinfo
+```
+
+The returned values are of different types, depending on the nature of the runtime property.
+
+```json
+$ curl http://localhost:9090/api/v1/status/runtimeinfo
+{
+  "status": "success",
+  "data": {
+    "startTime": "2019-11-02T17:23:59.301361365+01:00",
+    "CWD": "/",
+    "reloadConfigSuccess": true,
+    "lastConfigTime": "2019-11-02T17:23:59+01:00",
+    "chunkCount": 873,
+    "timeSeriesCount": 873,
+    "corruptionCount": 0,
+    "goroutineCount": 48,
+    "GOMAXPROCS": 4,
+    "GOGC": "",
+    "GODEBUG": "",
+    "storageRetention": "15d"
+  }
+}
+```
+
+**NOTE**: The exact returned runtime properties may change without notice between Prometheus versions.
+
+*New in v2.14*
+
+### Build Information
+
+The following endpoint returns various build information properties about the Prometheus server:
+
+```
+GET /api/v1/status/buildinfo
+```
+
+All values are of the result type `string`.
+
+```json
+$ curl http://localhost:9090/api/v1/status/buildinfo
+{
+  "status": "success",
+  "data": {
+    "version": "2.13.1",
+    "revision": "cb7cbad5f9a2823a622aaa668833ca04f50a0ea7",
+    "branch": "master",
+    "buildUser": "julius@desktop",
+    "buildDate": "20191102-16:19:59",
+    "goVersion": "go1.13.1"
+  }
+}
+```
+
+**NOTE**: The exact returned build properties may change without notice between Prometheus versions.
+
+*New in v2.14*
+
+### TSDB Stats
+
+The following endpoint returns various cardinality statistics about the Prometheus TSDB:
+
+```
+GET /api/v1/status/tsdb
+```
+- **seriesCountByMetricName:**  This will provide a list of metrics names and their series count.
+- **labelValueCountByLabelName:** This will provide a list of the label names and their value count.
+- **memoryInBytesByLabelName** This will provide a list of the label names and memory used in bytes. Memory usage is calculated by adding the length of all values for a given label name.
+- **seriesCountByLabelPair** This will provide a list of label value pairs and their series count.
+
+```json
+$ curl http://localhost:9090/api/v1/status/tsdb
+{
+  "status": "success",
+  "data": {
+    "seriesCountByMetricName": [
+      {
+        "name": "net_conntrack_dialer_conn_failed_total",
+        "value": 20
+      },
+      {
+        "name": "prometheus_http_request_duration_seconds_bucket",
+        "value": 20
+      }
+    ],
+    "labelValueCountByLabelName": [
+      {
+        "name": "__name__",
+        "value": 211
+      },
+      {
+        "name": "event",
+        "value": 3
+      }
+    ],
+    "memoryInBytesByLabelName": [
+      {
+        "name": "__name__",
+        "value": 8266
+      },
+      {
+        "name": "instance",
+        "value": 28
+      }
+    ],
+    "seriesCountByLabelValuePair": [
+      {
+        "name": "job=prometheus",
+        "value": 425
+      },
+      {
+        "name": "instance=localhost:9090",
+        "value": 425
+      }
+    ]
+  }
+}
+```
+
+*New in v2.15*
 
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.

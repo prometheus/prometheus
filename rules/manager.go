@@ -287,6 +287,13 @@ func (g *Group) run(ctx context.Context) {
 		return
 	}
 
+	ctx = promql.NewOriginContext(ctx, map[string]interface{}{
+		"ruleGroup": map[string]string{
+			"file": g.File(),
+			"name": g.Name(),
+		},
+	})
+
 	iter := func() {
 		g.metrics.iterationsScheduled.Inc()
 
@@ -612,7 +619,6 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			g.staleSeries = nil
 		}
 	}
-
 }
 
 // RestoreForState restores the 'for' state of the alerts
@@ -743,6 +749,33 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 }
 
+// Equals return if two groups are the same.
+func (g *Group) Equals(ng *Group) bool {
+	if g.name != ng.name {
+		return false
+	}
+
+	if g.file != ng.file {
+		return false
+	}
+
+	if g.interval != ng.interval {
+		return false
+	}
+
+	if len(g.rules) != len(ng.rules) {
+		return false
+	}
+
+	for i, gr := range g.rules {
+		if gr.String() != ng.rules[i].String() {
+			return false
+		}
+	}
+
+	return true
+}
+
 // The Manager manages recording and alerting rules.
 type Manager struct {
 	opts     *ManagerOptions
@@ -836,16 +869,21 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	m.restored = true
 
 	var wg sync.WaitGroup
-
 	for _, newg := range groups {
-		wg.Add(1)
-
-		// If there is an old group with the same identifier, stop it and wait for
-		// it to finish the current iteration. Then copy it into the new group.
-		gn := groupKey(newg.name, newg.file)
+		// If there is an old group with the same identifier,
+		// check if new group equals with the old group, if yes then skip it.
+		// If not equals, stop it and wait for it to finish the current iteration.
+		// Then copy it into the new group.
+		gn := groupKey(newg.file, newg.name)
 		oldg, ok := m.groups[gn]
 		delete(m.groups, gn)
 
+		if ok && oldg.Equals(newg) {
+			groups[gn] = oldg
+			continue
+		}
+
+		wg.Add(1)
 		go func(newg *Group) {
 			if ok {
 				oldg.stop()
@@ -863,8 +901,13 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	}
 
 	// Stop remaining old groups.
-	for _, oldg := range m.groups {
+	for n, oldg := range m.groups {
 		oldg.stop()
+		if m := oldg.metrics; m != nil {
+			m.groupLastEvalTime.DeleteLabelValues(n)
+			m.groupLastDuration.DeleteLabelValues(n)
+			m.groupRules.DeleteLabelValues(n)
+		}
 	}
 
 	wg.Wait()
@@ -895,14 +938,14 @@ func (m *Manager) LoadGroups(
 
 			rules := make([]Rule, 0, len(rg.Rules))
 			for _, r := range rg.Rules {
-				expr, err := promql.ParseExpr(r.Expr)
+				expr, err := promql.ParseExpr(r.Expr.Value)
 				if err != nil {
 					return nil, []error{errors.Wrap(err, fn)}
 				}
 
-				if r.Alert != "" {
+				if r.Alert.Value != "" {
 					rules = append(rules, NewAlertingRule(
-						r.Alert,
+						r.Alert.Value,
 						expr,
 						time.Duration(r.For),
 						labels.FromMap(r.Labels),
@@ -914,13 +957,13 @@ func (m *Manager) LoadGroups(
 					continue
 				}
 				rules = append(rules, NewRecordingRule(
-					r.Record,
+					r.Record.Value,
 					expr,
 					labels.FromMap(r.Labels),
 				))
 			}
 
-			groups[groupKey(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, rules, shouldRestore, m.opts)
+			groups[groupKey(fn, rg.Name)] = NewGroup(rg.Name, fn, itv, rules, shouldRestore, m.opts)
 		}
 	}
 
@@ -928,8 +971,8 @@ func (m *Manager) LoadGroups(
 }
 
 // Group names need not be unique across filenames.
-func groupKey(name, file string) string {
-	return name + ";" + file
+func groupKey(file, name string) string {
+	return file + ";" + name
 }
 
 // RuleGroups returns the list of manager's rule groups.

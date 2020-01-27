@@ -85,11 +85,10 @@ func (l *Linter) Lint() ([]Problem, error) {
 
 	// Ensure deterministic output.
 	sort.SliceStable(problems, func(i, j int) bool {
-		if problems[i].Metric < problems[j].Metric {
-			return true
+		if problems[i].Metric == problems[j].Metric {
+			return problems[i].Text < problems[j].Text
 		}
-
-		return problems[i].Text < problems[j].Text
+		return problems[i].Metric < problems[j].Metric
 	})
 
 	return problems, nil

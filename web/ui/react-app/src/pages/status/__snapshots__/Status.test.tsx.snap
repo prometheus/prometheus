@@ -1,0 +1,453 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Status Snapshot testing should match table snapshot 1`] = `
+<Fragment>
+  <h2>
+    Runtime Information
+  </h2>
+  <Table
+    bordered={true}
+    className="h-auto"
+    responsiveTag="div"
+    size="sm"
+    striped={true}
+    tag="table"
+  >
+    <tbody>
+      <tr
+        key="startTime"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          Start time
+        </th>
+        <td
+          className="text-break"
+        >
+          Wed, 30 Oct 2019 20:03:23 GMT
+        </td>
+      </tr>
+      <tr
+        key="CWD"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          Working directory
+        </th>
+        <td
+          className="text-break"
+        >
+          /home/boyskila/Desktop/prometheus
+        </td>
+      </tr>
+      <tr
+        key="reloadConfigSuccess"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          Configuration reload
+        </th>
+        <td
+          className="text-break"
+        >
+          Successful
+        </td>
+      </tr>
+      <tr
+        key="lastConfigTime"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          Last successful configuration reload
+        </th>
+        <td
+          className="text-break"
+        >
+          2019-10-30T22:03:23+02:00
+        </td>
+      </tr>
+      <tr
+        key="chunkCount"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          Head chunks
+        </th>
+        <td
+          className="text-break"
+        >
+          1383
+        </td>
+      </tr>
+      <tr
+        key="timeSeriesCount"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          Head time series
+        </th>
+        <td
+          className="text-break"
+        >
+          461
+        </td>
+      </tr>
+      <tr
+        key="corruptionCount"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          WAL corruptions
+        </th>
+        <td
+          className="text-break"
+        >
+          0
+        </td>
+      </tr>
+      <tr
+        key="goroutineCount"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          Goroutines
+        </th>
+        <td
+          className="text-break"
+        >
+          37
+        </td>
+      </tr>
+      <tr
+        key="GOMAXPROCS"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          GOMAXPROCS
+        </th>
+        <td
+          className="text-break"
+        >
+          4
+        </td>
+      </tr>
+      <tr
+        key="GOGC"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          GOGC
+        </th>
+        <td
+          className="text-break"
+        />
+      </tr>
+      <tr
+        key="GODEBUG"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          GODEBUG
+        </th>
+        <td
+          className="text-break"
+        />
+      </tr>
+      <tr
+        key="storageRetention"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          Storage retention
+        </th>
+        <td
+          className="text-break"
+        >
+          15d
+        </td>
+      </tr>
+    </tbody>
+  </Table>
+  <h2>
+    Build Information
+  </h2>
+  <Table
+    bordered={true}
+    className="h-auto"
+    responsiveTag="div"
+    size="sm"
+    striped={true}
+    tag="table"
+  >
+    <tbody>
+      <tr
+        key="version"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          version
+        </th>
+        <td
+          className="text-break"
+        />
+      </tr>
+      <tr
+        key="revision"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          revision
+        </th>
+        <td
+          className="text-break"
+        />
+      </tr>
+      <tr
+        key="branch"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          branch
+        </th>
+        <td
+          className="text-break"
+        />
+      </tr>
+      <tr
+        key="buildUser"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          buildUser
+        </th>
+        <td
+          className="text-break"
+        />
+      </tr>
+      <tr
+        key="buildDate"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          buildDate
+        </th>
+        <td
+          className="text-break"
+        />
+      </tr>
+      <tr
+        key="goVersion"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          goVersion
+        </th>
+        <td
+          className="text-break"
+        >
+          go1.13.3
+        </td>
+      </tr>
+    </tbody>
+  </Table>
+  <h2>
+    Alertmanagers
+  </h2>
+  <Table
+    bordered={true}
+    className="h-auto"
+    responsiveTag="div"
+    size="sm"
+    striped={true}
+    tag="table"
+  >
+    <tbody>
+      <tr>
+        <th>
+          Endpoint
+        </th>
+      </tr>
+      <tr
+        key="https://1.2.3.4:9093/api/v1/alerts"
+      >
+        <td>
+          <a
+            href="https://1.2.3.4:9093/api/v1/alerts"
+          >
+            https://1.2.3.4:9093
+          </a>
+          /api/v1/alerts
+        </td>
+      </tr>
+      <tr
+        key="https://1.2.3.5:9093/api/v1/alerts"
+      >
+        <td>
+          <a
+            href="https://1.2.3.5:9093/api/v1/alerts"
+          >
+            https://1.2.3.5:9093
+          </a>
+          /api/v1/alerts
+        </td>
+      </tr>
+      <tr
+        key="https://1.2.3.6:9093/api/v1/alerts"
+      >
+        <td>
+          <a
+            href="https://1.2.3.6:9093/api/v1/alerts"
+          >
+            https://1.2.3.6:9093
+          </a>
+          /api/v1/alerts
+        </td>
+      </tr>
+      <tr
+        key="https://1.2.3.7:9093/api/v1/alerts"
+      >
+        <td>
+          <a
+            href="https://1.2.3.7:9093/api/v1/alerts"
+          >
+            https://1.2.3.7:9093
+          </a>
+          /api/v1/alerts
+        </td>
+      </tr>
+      <tr
+        key="https://1.2.3.8:9093/api/v1/alerts"
+      >
+        <td>
+          <a
+            href="https://1.2.3.8:9093/api/v1/alerts"
+          >
+            https://1.2.3.8:9093
+          </a>
+          /api/v1/alerts
+        </td>
+      </tr>
+      <tr
+        key="https://1.2.3.9:9093/api/v1/alerts"
+      >
+        <td>
+          <a
+            href="https://1.2.3.9:9093/api/v1/alerts"
+          >
+            https://1.2.3.9:9093
+          </a>
+          /api/v1/alerts
+        </td>
+      </tr>
+    </tbody>
+  </Table>
+</Fragment>
+`;

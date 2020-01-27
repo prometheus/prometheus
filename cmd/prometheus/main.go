@@ -16,8 +16,6 @@ package main
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -50,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"github.com/prometheus/prometheus/promql"
@@ -195,7 +194,7 @@ func main() {
 	a.Flag("storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead.").
 		SetValue(&oldFlagRetentionDuration)
 
-	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+".").
+	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
 		SetValue(&newFlagRetentionDuration)
 
 	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. Units supported: KB, MB, GB, TB, PB. This flag is experimental and can be changed in future releases.").
@@ -422,6 +421,19 @@ func main() {
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
+		func(cfg *config.Config) error {
+			if cfg.GlobalConfig.QueryLogFile == "" {
+				queryEngine.SetQueryLogger(nil)
+				return nil
+			}
+
+			l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
+			if err != nil {
+				return err
+			}
+			queryEngine.SetQueryLogger(l)
+			return nil
+		},
 		// The Scrape and notifier managers need to reload before the Discovery manager as
 		// they need to read the most updated config when receiving the new targets list.
 		scrapeManager.ApplyConfig,
@@ -435,13 +447,8 @@ func main() {
 		notifierManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
-			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
-				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config hash as the identifier.
-				b, err := json.Marshal(v)
-				if err != nil {
-					return err
-				}
-				c[fmt.Sprintf("%x", md5.Sum(b))] = v.ServiceDiscoveryConfig
+			for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+				c[k] = v.ServiceDiscoveryConfig
 			}
 			return discoveryManagerNotify.ApplyConfig(c)
 		},
@@ -500,12 +507,10 @@ func main() {
 				case <-term:
 					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
 					reloadReady.Close()
-
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
 				case <-cancel:
 					reloadReady.Close()
-					break
 				}
 				return nil
 			},

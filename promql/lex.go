@@ -20,67 +20,67 @@ import (
 	"unicode/utf8"
 )
 
-// item represents a token or text string returned from the scanner.
-type item struct {
-	typ ItemType // The type of this item.
-	pos Pos      // The starting position, in bytes, of this item in the input string.
-	val string   // The value of this item.
+// Item represents a token or text string returned from the scanner.
+type Item struct {
+	Typ ItemType // The type of this Item.
+	Pos Pos      // The starting position, in bytes, of this Item in the input string.
+	Val string   // The value of this Item.
 }
 
-// String returns a descriptive string for the item.
-func (i item) String() string {
+// String returns a descriptive string for the Item.
+func (i Item) String() string {
 	switch {
-	case i.typ == ItemEOF:
+	case i.Typ == EOF:
 		return "EOF"
-	case i.typ == ItemError:
-		return i.val
-	case i.typ == ItemIdentifier || i.typ == ItemMetricIdentifier:
-		return fmt.Sprintf("%q", i.val)
-	case i.typ.isKeyword():
-		return fmt.Sprintf("<%s>", i.val)
-	case i.typ.isOperator():
-		return fmt.Sprintf("<op:%s>", i.val)
-	case i.typ.isAggregator():
-		return fmt.Sprintf("<aggr:%s>", i.val)
-	case len(i.val) > 10:
-		return fmt.Sprintf("%.10q...", i.val)
+	case i.Typ == ERROR:
+		return i.Val
+	case i.Typ == IDENTIFIER || i.Typ == METRIC_IDENTIFIER:
+		return fmt.Sprintf("%q", i.Val)
+	case i.Typ.isKeyword():
+		return fmt.Sprintf("<%s>", i.Val)
+	case i.Typ.isOperator():
+		return fmt.Sprintf("<op:%s>", i.Val)
+	case i.Typ.isAggregator():
+		return fmt.Sprintf("<aggr:%s>", i.Val)
+	case len(i.Val) > 10:
+		return fmt.Sprintf("%.10q...", i.Val)
 	}
-	return fmt.Sprintf("%q", i.val)
+	return fmt.Sprintf("%q", i.Val)
 }
 
-// isOperator returns true if the item corresponds to a arithmetic or set operator.
+// isOperator returns true if the Item corresponds to a arithmetic or set operator.
 // Returns false otherwise.
 func (i ItemType) isOperator() bool { return i > operatorsStart && i < operatorsEnd }
 
-// isAggregator returns true if the item belongs to the aggregator functions.
+// isAggregator returns true if the Item belongs to the aggregator functions.
 // Returns false otherwise
 func (i ItemType) isAggregator() bool { return i > aggregatorsStart && i < aggregatorsEnd }
 
-// isAggregator returns true if the item is an aggregator that takes a parameter.
+// isAggregator returns true if the Item is an aggregator that takes a parameter.
 // Returns false otherwise
 func (i ItemType) isAggregatorWithParam() bool {
-	return i == ItemTopK || i == ItemBottomK || i == ItemCountValues || i == ItemQuantile
+	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE
 }
 
-// isKeyword returns true if the item corresponds to a keyword.
+// isKeyword returns true if the Item corresponds to a keyword.
 // Returns false otherwise.
 func (i ItemType) isKeyword() bool { return i > keywordsStart && i < keywordsEnd }
 
-// isComparisonOperator returns true if the item corresponds to a comparison operator.
+// isComparisonOperator returns true if the Item corresponds to a comparison operator.
 // Returns false otherwise.
 func (i ItemType) isComparisonOperator() bool {
 	switch i {
-	case ItemEQL, ItemNEQ, ItemLTE, ItemLSS, ItemGTE, ItemGTR:
+	case EQL, NEQ, LTE, LSS, GTE, GTR:
 		return true
 	default:
 		return false
 	}
 }
 
-// isSetOperator returns whether the item corresponds to a set operator.
+// isSetOperator returns whether the Item corresponds to a set operator.
 func (i ItemType) isSetOperator() bool {
 	switch i {
-	case ItemLAND, ItemLOR, ItemLUnless:
+	case LAND, LOR, LUNLESS:
 		return true
 	}
 	return false
@@ -89,219 +89,119 @@ func (i ItemType) isSetOperator() bool {
 // LowestPrec is a constant for operator precedence in expressions.
 const LowestPrec = 0 // Non-operators.
 
-// Precedence returns the operator precedence of the binary
-// operator op. If op is not a binary operator, the result
-// is LowestPrec.
-func (i ItemType) precedence() int {
-	switch i {
-	case ItemLOR:
-		return 1
-	case ItemLAND, ItemLUnless:
-		return 2
-	case ItemEQL, ItemNEQ, ItemLTE, ItemLSS, ItemGTE, ItemGTR:
-		return 3
-	case ItemADD, ItemSUB:
-		return 4
-	case ItemMUL, ItemDIV, ItemMOD:
-		return 5
-	case ItemPOW:
-		return 6
-	default:
-		return LowestPrec
-	}
-}
-
-func (i ItemType) isRightAssociative() bool {
-	switch i {
-	case ItemPOW:
-		return true
-	default:
-		return false
-	}
-
-}
-
 type ItemType int
 
-const (
-	ItemError ItemType = iota // Error occurred, value is error message
-	ItemEOF
-	ItemComment
-	ItemIdentifier
-	ItemMetricIdentifier
-	ItemLeftParen
-	ItemRightParen
-	ItemLeftBrace
-	ItemRightBrace
-	ItemLeftBracket
-	ItemRightBracket
-	ItemComma
-	ItemAssign
-	ItemColon
-	ItemSemicolon
-	ItemString
-	ItemNumber
-	ItemDuration
-	ItemBlank
-	ItemTimes
-	ItemSpace
-
-	operatorsStart
-	// Operators.
-	ItemSUB
-	ItemADD
-	ItemMUL
-	ItemMOD
-	ItemDIV
-	ItemLAND
-	ItemLOR
-	ItemLUnless
-	ItemEQL
-	ItemNEQ
-	ItemLTE
-	ItemLSS
-	ItemGTE
-	ItemGTR
-	ItemEQLRegex
-	ItemNEQRegex
-	ItemPOW
-	operatorsEnd
-
-	aggregatorsStart
-	// Aggregators.
-	ItemAvg
-	ItemCount
-	ItemSum
-	ItemMin
-	ItemMax
-	ItemStddev
-	ItemStdvar
-	ItemTopK
-	ItemBottomK
-	ItemCountValues
-	ItemQuantile
-	aggregatorsEnd
-
-	keywordsStart
-	// Keywords.
-	ItemOffset
-	ItemBy
-	ItemWithout
-	ItemOn
-	ItemIgnoring
-	ItemGroupLeft
-	ItemGroupRight
-	ItemBool
-	keywordsEnd
-)
-
+// This is a list of all keywords in PromQL.
+// When changing this list, make sure to also change
+// the maybe_label grammar rule in the generated parser
+// to avoid misinterpretation of labels as keywords.
 var key = map[string]ItemType{
 	// Operators.
-	"and":    ItemLAND,
-	"or":     ItemLOR,
-	"unless": ItemLUnless,
+	"and":    LAND,
+	"or":     LOR,
+	"unless": LUNLESS,
 
 	// Aggregators.
-	"sum":          ItemSum,
-	"avg":          ItemAvg,
-	"count":        ItemCount,
-	"min":          ItemMin,
-	"max":          ItemMax,
-	"stddev":       ItemStddev,
-	"stdvar":       ItemStdvar,
-	"topk":         ItemTopK,
-	"bottomk":      ItemBottomK,
-	"count_values": ItemCountValues,
-	"quantile":     ItemQuantile,
+	"sum":          SUM,
+	"avg":          AVG,
+	"count":        COUNT,
+	"min":          MIN,
+	"max":          MAX,
+	"stddev":       STDDEV,
+	"stdvar":       STDVAR,
+	"topk":         TOPK,
+	"bottomk":      BOTTOMK,
+	"count_values": COUNT_VALUES,
+	"quantile":     QUANTILE,
 
 	// Keywords.
-	"offset":      ItemOffset,
-	"by":          ItemBy,
-	"without":     ItemWithout,
-	"on":          ItemOn,
-	"ignoring":    ItemIgnoring,
-	"group_left":  ItemGroupLeft,
-	"group_right": ItemGroupRight,
-	"bool":        ItemBool,
+	"offset":      OFFSET,
+	"by":          BY,
+	"without":     WITHOUT,
+	"on":          ON,
+	"ignoring":    IGNORING,
+	"group_left":  GROUP_LEFT,
+	"group_right": GROUP_RIGHT,
+	"bool":        BOOL,
 }
 
-// These are the default string representations for common items. It does not
-// imply that those are the only character sequences that can be lexed to such an item.
-var itemTypeStr = map[ItemType]string{
-	ItemLeftParen:    "(",
-	ItemRightParen:   ")",
-	ItemLeftBrace:    "{",
-	ItemRightBrace:   "}",
-	ItemLeftBracket:  "[",
-	ItemRightBracket: "]",
-	ItemComma:        ",",
-	ItemAssign:       "=",
-	ItemColon:        ":",
-	ItemSemicolon:    ";",
-	ItemBlank:        "_",
-	ItemTimes:        "x",
-	ItemSpace:        "<space>",
+// These are the default string representations for common Items. It does not
+// imply that those are the only character sequences that can be lexed to such an Item.
+var ItemTypeStr = map[ItemType]string{
+	LEFT_PAREN:    "(",
+	RIGHT_PAREN:   ")",
+	LEFT_BRACE:    "{",
+	RIGHT_BRACE:   "}",
+	LEFT_BRACKET:  "[",
+	RIGHT_BRACKET: "]",
+	COMMA:         ",",
+	ASSIGN:        "=",
+	COLON:         ":",
+	SEMICOLON:     ";",
+	BLANK:         "_",
+	TIMES:         "x",
+	SPACE:         "<space>",
 
-	ItemSUB:      "-",
-	ItemADD:      "+",
-	ItemMUL:      "*",
-	ItemMOD:      "%",
-	ItemDIV:      "/",
-	ItemEQL:      "==",
-	ItemNEQ:      "!=",
-	ItemLTE:      "<=",
-	ItemLSS:      "<",
-	ItemGTE:      ">=",
-	ItemGTR:      ">",
-	ItemEQLRegex: "=~",
-	ItemNEQRegex: "!~",
-	ItemPOW:      "^",
+	SUB:       "-",
+	ADD:       "+",
+	MUL:       "*",
+	MOD:       "%",
+	DIV:       "/",
+	EQL:       "==",
+	NEQ:       "!=",
+	LTE:       "<=",
+	LSS:       "<",
+	GTE:       ">=",
+	GTR:       ">",
+	EQL_REGEX: "=~",
+	NEQ_REGEX: "!~",
+	POW:       "^",
 }
 
 func init() {
-	// Add keywords to item type strings.
+	// Add keywords to Item type strings.
 	for s, ty := range key {
-		itemTypeStr[ty] = s
+		ItemTypeStr[ty] = s
 	}
 	// Special numbers.
-	key["inf"] = ItemNumber
-	key["nan"] = ItemNumber
+	key["inf"] = NUMBER
+	key["nan"] = NUMBER
 }
 
 func (i ItemType) String() string {
-	if s, ok := itemTypeStr[i]; ok {
+	if s, ok := ItemTypeStr[i]; ok {
 		return s
 	}
-	return fmt.Sprintf("<item %d>", i)
+	return fmt.Sprintf("<Item %d>", i)
 }
 
-func (i item) desc() string {
-	if _, ok := itemTypeStr[i.typ]; ok {
+func (i Item) desc() string {
+	if _, ok := ItemTypeStr[i.Typ]; ok {
 		return i.String()
 	}
-	if i.typ == ItemEOF {
-		return i.typ.desc()
+	if i.Typ == EOF {
+		return i.Typ.desc()
 	}
-	return fmt.Sprintf("%s %s", i.typ.desc(), i)
+	return fmt.Sprintf("%s %s", i.Typ.desc(), i)
 }
 
 func (i ItemType) desc() string {
 	switch i {
-	case ItemError:
+	case ERROR:
 		return "error"
-	case ItemEOF:
+	case EOF:
 		return "end of input"
-	case ItemComment:
+	case COMMENT:
 		return "comment"
-	case ItemIdentifier:
+	case IDENTIFIER:
 		return "identifier"
-	case ItemMetricIdentifier:
+	case METRIC_IDENTIFIER:
 		return "metric identifier"
-	case ItemString:
+	case STRING:
 		return "string"
-	case ItemNumber:
+	case NUMBER:
 		return "number"
-	case ItemDuration:
+	case DURATION:
 		return "duration"
 	}
 	return fmt.Sprintf("%q", i)
@@ -310,20 +210,22 @@ func (i ItemType) desc() string {
 const eof = -1
 
 // stateFn represents the state of the scanner as a function that returns the next state.
-type stateFn func(*lexer) stateFn
+type stateFn func(*Lexer) stateFn
 
 // Pos is the position in a string.
+// Negative numbers indicate undefined positions.
 type Pos int
 
-// lexer holds the state of the scanner.
-type lexer struct {
-	input   string    // The string being scanned.
-	state   stateFn   // The next lexing function to enter.
-	pos     Pos       // Current position in the input.
-	start   Pos       // Start position of this item.
-	width   Pos       // Width of last rune read from input.
-	lastPos Pos       // Position of most recent item returned by nextItem.
-	items   chan item // Channel of scanned items.
+// Lexer holds the state of the scanner.
+type Lexer struct {
+	input       string  // The string being scanned.
+	state       stateFn // The next lexing function to enter.
+	pos         Pos     // Current position in the input.
+	start       Pos     // Start position of this Item.
+	width       Pos     // Width of last rune read from input.
+	lastPos     Pos     // Position of most recent Item returned by NextItem.
+	itemp       *Item   // Pointer to where the next scanned item should be placed.
+	scannedItem bool    // Set to true every time an item is scanned.
 
 	parenDepth  int  // Nesting depth of ( ) exprs.
 	braceOpen   bool // Whether a { is opened.
@@ -337,7 +239,7 @@ type lexer struct {
 }
 
 // next returns the next rune in the input.
-func (l *lexer) next() rune {
+func (l *Lexer) next() rune {
 	if int(l.pos) >= len(l.input) {
 		l.width = 0
 		return eof
@@ -349,30 +251,31 @@ func (l *lexer) next() rune {
 }
 
 // peek returns but does not consume the next rune in the input.
-func (l *lexer) peek() rune {
+func (l *Lexer) peek() rune {
 	r := l.next()
 	l.backup()
 	return r
 }
 
 // backup steps back one rune. Can only be called once per call of next.
-func (l *lexer) backup() {
+func (l *Lexer) backup() {
 	l.pos -= l.width
 }
 
-// emit passes an item back to the client.
-func (l *lexer) emit(t ItemType) {
-	l.items <- item{t, l.start, l.input[l.start:l.pos]}
+// emit passes an Item back to the client.
+func (l *Lexer) emit(t ItemType) {
+	*l.itemp = Item{t, l.start, l.input[l.start:l.pos]}
 	l.start = l.pos
+	l.scannedItem = true
 }
 
 // ignore skips over the pending input before this point.
-func (l *lexer) ignore() {
+func (l *Lexer) ignore() {
 	l.start = l.pos
 }
 
 // accept consumes the next rune if it's from the valid set.
-func (l *lexer) accept(valid string) bool {
+func (l *Lexer) accept(valid string) bool {
 	if strings.ContainsRune(valid, l.next()) {
 		return true
 	}
@@ -381,74 +284,52 @@ func (l *lexer) accept(valid string) bool {
 }
 
 // acceptRun consumes a run of runes from the valid set.
-func (l *lexer) acceptRun(valid string) {
+func (l *Lexer) acceptRun(valid string) {
 	for strings.ContainsRune(valid, l.next()) {
 		// consume
 	}
 	l.backup()
 }
 
-// lineNumber reports which line we're on, based on the position of
-// the previous item returned by nextItem. Doing it this way
-// means we don't have to worry about peek double counting.
-func (l *lexer) lineNumber() int {
-	return 1 + strings.Count(l.input[:l.lastPos], "\n")
-}
-
-// linePosition reports at which character in the current line
-// we are on.
-func (l *lexer) linePosition() int {
-	lb := strings.LastIndex(l.input[:l.lastPos], "\n")
-	if lb == -1 {
-		return 1 + int(l.lastPos)
-	}
-	return 1 + int(l.lastPos) - lb
-}
-
 // errorf returns an error token and terminates the scan by passing
-// back a nil pointer that will be the next state, terminating l.nextItem.
-func (l *lexer) errorf(format string, args ...interface{}) stateFn {
-	l.items <- item{ItemError, l.start, fmt.Sprintf(format, args...)}
+// back a nil pointer that will be the next state, terminating l.NextItem.
+func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
+	*l.itemp = Item{ERROR, l.start, fmt.Sprintf(format, args...)}
+	l.scannedItem = true
+
 	return nil
 }
 
-// nextItem returns the next item from the input.
-func (l *lexer) nextItem() item {
-	item := <-l.items
-	l.lastPos = item.pos
-	return item
+// NextItem writes the next item to the provided address.
+func (l *Lexer) NextItem(itemp *Item) {
+	l.scannedItem = false
+	l.itemp = itemp
+
+	if l.state != nil {
+		for !l.scannedItem {
+			l.state = l.state(l)
+		}
+	} else {
+		l.emit(EOF)
+	}
+
+	l.lastPos = l.itemp.Pos
 }
 
-// lex creates a new scanner for the input string.
-func lex(input string) *lexer {
-	l := &lexer{
+// Lex creates a new scanner for the input string.
+func Lex(input string) *Lexer {
+	l := &Lexer{
 		input: input,
-		items: make(chan item),
+		state: lexStatements,
 	}
-	go l.run()
 	return l
-}
-
-// run runs the state machine for the lexer.
-func (l *lexer) run() {
-	for l.state = lexStatements; l.state != nil; {
-		l.state = l.state(l)
-	}
-	close(l.items)
-}
-
-// Release resources used by lexer.
-func (l *lexer) close() {
-	for range l.items {
-		// Consume.
-	}
 }
 
 // lineComment is the character that starts a line comment.
 const lineComment = "#"
 
 // lexStatements is the top-level state for lexing.
-func lexStatements(l *lexer) stateFn {
+func lexStatements(l *Lexer) stateFn {
 	if l.braceOpen {
 		return lexInsideBraces
 	}
@@ -463,52 +344,52 @@ func lexStatements(l *lexer) stateFn {
 		} else if l.bracketOpen {
 			return l.errorf("unclosed left bracket")
 		}
-		l.emit(ItemEOF)
+		l.emit(EOF)
 		return nil
 	case r == ',':
-		l.emit(ItemComma)
+		l.emit(COMMA)
 	case isSpace(r):
 		return lexSpace
 	case r == '*':
-		l.emit(ItemMUL)
+		l.emit(MUL)
 	case r == '/':
-		l.emit(ItemDIV)
+		l.emit(DIV)
 	case r == '%':
-		l.emit(ItemMOD)
+		l.emit(MOD)
 	case r == '+':
-		l.emit(ItemADD)
+		l.emit(ADD)
 	case r == '-':
-		l.emit(ItemSUB)
+		l.emit(SUB)
 	case r == '^':
-		l.emit(ItemPOW)
+		l.emit(POW)
 	case r == '=':
 		if t := l.peek(); t == '=' {
 			l.next()
-			l.emit(ItemEQL)
+			l.emit(EQL)
 		} else if t == '~' {
 			return l.errorf("unexpected character after '=': %q", t)
 		} else {
-			l.emit(ItemAssign)
+			l.emit(ASSIGN)
 		}
 	case r == '!':
 		if t := l.next(); t == '=' {
-			l.emit(ItemNEQ)
+			l.emit(NEQ)
 		} else {
 			return l.errorf("unexpected character after '!': %q", t)
 		}
 	case r == '<':
 		if t := l.peek(); t == '=' {
 			l.next()
-			l.emit(ItemLTE)
+			l.emit(LTE)
 		} else {
-			l.emit(ItemLSS)
+			l.emit(LSS)
 		}
 	case r == '>':
 		if t := l.peek(); t == '=' {
 			l.next()
-			l.emit(ItemGTE)
+			l.emit(GTE)
 		} else {
-			l.emit(ItemGTR)
+			l.emit(GTR)
 		}
 	case isDigit(r) || (r == '.' && isDigit(l.peek())):
 		l.backup()
@@ -527,36 +408,39 @@ func lexStatements(l *lexer) stateFn {
 		if l.gotColon {
 			return l.errorf("unexpected colon %q", r)
 		}
-		l.emit(ItemColon)
+		l.emit(COLON)
 		l.gotColon = true
 	case r == '(':
-		l.emit(ItemLeftParen)
+		l.emit(LEFT_PAREN)
 		l.parenDepth++
 		return lexStatements
 	case r == ')':
-		l.emit(ItemRightParen)
+		l.emit(RIGHT_PAREN)
 		l.parenDepth--
 		if l.parenDepth < 0 {
 			return l.errorf("unexpected right parenthesis %q", r)
 		}
 		return lexStatements
 	case r == '{':
-		l.emit(ItemLeftBrace)
+		l.emit(LEFT_BRACE)
 		l.braceOpen = true
-		return lexInsideBraces(l)
+		return lexInsideBraces
 	case r == '[':
 		if l.bracketOpen {
 			return l.errorf("unexpected left bracket %q", r)
 		}
 		l.gotColon = false
-		l.emit(ItemLeftBracket)
+		l.emit(LEFT_BRACKET)
+		if isSpace(l.peek()) {
+			skipSpaces(l)
+		}
 		l.bracketOpen = true
 		return lexDuration
 	case r == ']':
 		if !l.bracketOpen {
 			return l.errorf("unexpected right bracket %q", r)
 		}
-		l.emit(ItemRightBracket)
+		l.emit(RIGHT_BRACKET)
 		l.bracketOpen = false
 
 	default:
@@ -567,7 +451,7 @@ func lexStatements(l *lexer) stateFn {
 
 // lexInsideBraces scans the inside of a vector selector. Keywords are ignored and
 // scanned as identifiers.
-func lexInsideBraces(l *lexer) stateFn {
+func lexInsideBraces(l *Lexer) stateFn {
 	if strings.HasPrefix(l.input[l.pos:], lineComment) {
 		return lexLineComment
 	}
@@ -581,7 +465,7 @@ func lexInsideBraces(l *lexer) stateFn {
 		l.backup()
 		return lexIdentifier
 	case r == ',':
-		l.emit(ItemComma)
+		l.emit(COMMA)
 	case r == '"' || r == '\'':
 		l.stringOpen = r
 		return lexString
@@ -590,24 +474,24 @@ func lexInsideBraces(l *lexer) stateFn {
 		return lexRawString
 	case r == '=':
 		if l.next() == '~' {
-			l.emit(ItemEQLRegex)
+			l.emit(EQL_REGEX)
 			break
 		}
 		l.backup()
-		l.emit(ItemEQL)
+		l.emit(EQL)
 	case r == '!':
 		switch nr := l.next(); {
 		case nr == '~':
-			l.emit(ItemNEQRegex)
+			l.emit(NEQ_REGEX)
 		case nr == '=':
-			l.emit(ItemNEQ)
+			l.emit(NEQ)
 		default:
 			return l.errorf("unexpected character after '!' inside braces: %q", nr)
 		}
 	case r == '{':
 		return l.errorf("unexpected left brace %q", r)
 	case r == '}':
-		l.emit(ItemRightBrace)
+		l.emit(RIGHT_BRACE)
 		l.braceOpen = false
 
 		if l.seriesDesc {
@@ -621,27 +505,27 @@ func lexInsideBraces(l *lexer) stateFn {
 }
 
 // lexValueSequence scans a value sequence of a series description.
-func lexValueSequence(l *lexer) stateFn {
+func lexValueSequence(l *Lexer) stateFn {
 	switch r := l.next(); {
 	case r == eof:
 		return lexStatements
 	case isSpace(r):
-		l.emit(ItemSpace)
+		l.emit(SPACE)
 		lexSpace(l)
 	case r == '+':
-		l.emit(ItemADD)
+		l.emit(ADD)
 	case r == '-':
-		l.emit(ItemSUB)
+		l.emit(SUB)
 	case r == 'x':
-		l.emit(ItemTimes)
+		l.emit(TIMES)
 	case r == '_':
-		l.emit(ItemBlank)
+		l.emit(BLANK)
 	case isDigit(r) || (r == '.' && isDigit(l.peek())):
 		l.backup()
 		lexNumber(l)
 	case isAlpha(r):
 		l.backup()
-		// We might lex invalid items here but this will be caught by the parser.
+		// We might lex invalid Items here but this will be caught by the parser.
 		return lexKeywordOrIdentifier
 	default:
 		return l.errorf("unexpected character in series sequence: %q", r)
@@ -657,14 +541,14 @@ func lexValueSequence(l *lexer) stateFn {
 // package of the Go standard library to work for Prometheus-style strings.
 // None of the actual escaping/quoting logic was changed in this function - it
 // was only modified to integrate with our lexer.
-func lexEscape(l *lexer) {
+func lexEscape(l *Lexer) stateFn {
 	var n int
 	var base, max uint32
 
 	ch := l.next()
 	switch ch {
 	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', l.stringOpen:
-		return
+		return lexString
 	case '0', '1', '2', '3', '4', '5', '6', '7':
 		n, base, max = 3, 8, 255
 	case 'x':
@@ -678,8 +562,10 @@ func lexEscape(l *lexer) {
 		n, base, max = 8, 16, unicode.MaxRune
 	case eof:
 		l.errorf("escape sequence not terminated")
+		return lexString
 	default:
 		l.errorf("unknown escape sequence %#U", ch)
+		return lexString
 	}
 
 	var x uint32
@@ -688,8 +574,10 @@ func lexEscape(l *lexer) {
 		if d >= base {
 			if ch == eof {
 				l.errorf("escape sequence not terminated")
+				return lexString
 			}
 			l.errorf("illegal character %#U in escape sequence", ch)
+			return lexString
 		}
 		x = x*base + d
 		ch = l.next()
@@ -699,6 +587,7 @@ func lexEscape(l *lexer) {
 	if x > max || 0xD800 <= x && x < 0xE000 {
 		l.errorf("escape sequence is an invalid Unicode code point")
 	}
+	return lexString
 }
 
 // digitVal returns the digit value of a rune or 16 in case the rune does not
@@ -715,44 +604,55 @@ func digitVal(ch rune) int {
 	return 16 // Larger than any legal digit val.
 }
 
+// skipSpaces skips the spaces until a non-space is encountered.
+func skipSpaces(l *Lexer) {
+	for isSpace(l.peek()) {
+		l.next()
+	}
+	l.ignore()
+}
+
 // lexString scans a quoted string. The initial quote has already been seen.
-func lexString(l *lexer) stateFn {
+func lexString(l *Lexer) stateFn {
 Loop:
 	for {
 		switch l.next() {
 		case '\\':
-			lexEscape(l)
+			return lexEscape
 		case utf8.RuneError:
-			return l.errorf("invalid UTF-8 rune")
+			l.errorf("invalid UTF-8 rune")
+			return lexString
 		case eof, '\n':
 			return l.errorf("unterminated quoted string")
 		case l.stringOpen:
 			break Loop
 		}
 	}
-	l.emit(ItemString)
+	l.emit(STRING)
 	return lexStatements
 }
 
 // lexRawString scans a raw quoted string. The initial quote has already been seen.
-func lexRawString(l *lexer) stateFn {
+func lexRawString(l *Lexer) stateFn {
 Loop:
 	for {
 		switch l.next() {
 		case utf8.RuneError:
-			return l.errorf("invalid UTF-8 rune")
+			l.errorf("invalid UTF-8 rune")
+			return lexRawString
 		case eof:
-			return l.errorf("unterminated raw string")
+			l.errorf("unterminated raw string")
+			return lexRawString
 		case l.stringOpen:
 			break Loop
 		}
 	}
-	l.emit(ItemString)
+	l.emit(STRING)
 	return lexStatements
 }
 
 // lexSpace scans a run of space characters. One space has already been seen.
-func lexSpace(l *lexer) stateFn {
+func lexSpace(l *Lexer) stateFn {
 	for isSpace(l.peek()) {
 		l.next()
 	}
@@ -761,17 +661,17 @@ func lexSpace(l *lexer) stateFn {
 }
 
 // lexLineComment scans a line comment. Left comment marker is known to be present.
-func lexLineComment(l *lexer) stateFn {
+func lexLineComment(l *Lexer) stateFn {
 	l.pos += Pos(len(lineComment))
 	for r := l.next(); !isEndOfLine(r) && r != eof; {
 		r = l.next()
 	}
 	l.backup()
-	l.emit(ItemComment)
+	l.emit(COMMENT)
 	return lexStatements
 }
 
-func lexDuration(l *lexer) stateFn {
+func lexDuration(l *Lexer) stateFn {
 	if l.scanNumber() {
 		return l.errorf("missing unit character in duration")
 	}
@@ -781,25 +681,25 @@ func lexDuration(l *lexer) stateFn {
 			return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
 		}
 		l.backup()
-		l.emit(ItemDuration)
+		l.emit(DURATION)
 		return lexStatements
 	}
 	return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
 }
 
 // lexNumber scans a number: decimal, hex, oct or float.
-func lexNumber(l *lexer) stateFn {
+func lexNumber(l *Lexer) stateFn {
 	if !l.scanNumber() {
 		return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
 	}
-	l.emit(ItemNumber)
+	l.emit(NUMBER)
 	return lexStatements
 }
 
-// lexNumberOrDuration scans a number or a duration item.
-func lexNumberOrDuration(l *lexer) stateFn {
+// lexNumberOrDuration scans a number or a duration Item.
+func lexNumberOrDuration(l *Lexer) stateFn {
 	if l.scanNumber() {
-		l.emit(ItemNumber)
+		l.emit(NUMBER)
 		return lexStatements
 	}
 	// Next two chars must be a valid unit and a non-alphanumeric.
@@ -808,15 +708,15 @@ func lexNumberOrDuration(l *lexer) stateFn {
 			return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
 		}
 		l.backup()
-		l.emit(ItemDuration)
+		l.emit(DURATION)
 		return lexStatements
 	}
 	return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
 }
 
-// scanNumber scans numbers of different formats. The scanned item is
+// scanNumber scans numbers of different formats. The scanned Item is
 // not necessarily a valid number. This case is caught by the parser.
-func (l *lexer) scanNumber() bool {
+func (l *Lexer) scanNumber() bool {
 	digits := "0123456789"
 	// Disallow hexadecimal in series descriptions as the syntax is ambiguous.
 	if !l.seriesDesc && l.accept("0") && l.accept("xX") {
@@ -840,19 +740,19 @@ func (l *lexer) scanNumber() bool {
 
 // lexIdentifier scans an alphanumeric identifier. The next character
 // is known to be a letter.
-func lexIdentifier(l *lexer) stateFn {
+func lexIdentifier(l *Lexer) stateFn {
 	for isAlphaNumeric(l.next()) {
 		// absorb
 	}
 	l.backup()
-	l.emit(ItemIdentifier)
+	l.emit(IDENTIFIER)
 	return lexStatements
 }
 
 // lexKeywordOrIdentifier scans an alphanumeric identifier which may contain
-// a colon rune. If the identifier is a keyword the respective keyword item
+// a colon rune. If the identifier is a keyword the respective keyword Item
 // is scanned.
-func lexKeywordOrIdentifier(l *lexer) stateFn {
+func lexKeywordOrIdentifier(l *Lexer) stateFn {
 Loop:
 	for {
 		switch r := l.next(); {
@@ -864,9 +764,9 @@ Loop:
 			if kw, ok := key[strings.ToLower(word)]; ok {
 				l.emit(kw)
 			} else if !strings.Contains(word, ":") {
-				l.emit(ItemIdentifier)
+				l.emit(IDENTIFIER)
 			} else {
-				l.emit(ItemMetricIdentifier)
+				l.emit(METRIC_IDENTIFIER)
 			}
 			break Loop
 		}

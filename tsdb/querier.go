@@ -20,11 +20,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -32,14 +32,11 @@ import (
 // time range.
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
-	Select(...labels.Matcher) (SeriesSet, error)
+	Select(...*labels.Matcher) (SeriesSet, error)
 
 	// LabelValues returns all potential values for a label name.
+	// It is not safe to use the strings beyond the lifefime of the querier.
 	LabelValues(string) ([]string, error)
-
-	// LabelValuesFor returns all potential values for a label name.
-	// under the constraint of another label.
-	LabelValuesFor(string, labels.Label) ([]string, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	LabelNames() ([]string, error)
@@ -108,32 +105,22 @@ func (q *querier) lvals(qs []Querier, n string) ([]string, error) {
 	return mergeStrings(s1, s2), nil
 }
 
-func (q *querier) LabelValuesFor(string, labels.Label) ([]string, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (q *querier) Select(ms ...labels.Matcher) (SeriesSet, error) {
-	return q.sel(q.blocks, ms)
-}
-
-func (q *querier) sel(qs []Querier, ms []labels.Matcher) (SeriesSet, error) {
-	if len(qs) == 0 {
+func (q *querier) Select(ms ...*labels.Matcher) (SeriesSet, error) {
+	if len(q.blocks) == 0 {
 		return EmptySeriesSet(), nil
 	}
-	if len(qs) == 1 {
-		return qs[0].Select(ms...)
+	ss := make([]SeriesSet, len(q.blocks))
+	var s SeriesSet
+	var err error
+	for i, b := range q.blocks {
+		s, err = b.Select(ms...)
+		if err != nil {
+			return nil, err
+		}
+		ss[i] = s
 	}
-	l := len(qs) / 2
 
-	a, err := q.sel(qs[:l], ms)
-	if err != nil {
-		return nil, err
-	}
-	b, err := q.sel(qs[l:], ms)
-	if err != nil {
-		return nil, err
-	}
-	return newMergedSeriesSet(a, b), nil
+	return NewMergedSeriesSet(ss), nil
 }
 
 func (q *querier) Close() error {
@@ -151,11 +138,11 @@ type verticalQuerier struct {
 	querier
 }
 
-func (q *verticalQuerier) Select(ms ...labels.Matcher) (SeriesSet, error) {
+func (q *verticalQuerier) Select(ms ...*labels.Matcher) (SeriesSet, error) {
 	return q.sel(q.blocks, ms)
 }
 
-func (q *verticalQuerier) sel(qs []Querier, ms []labels.Matcher) (SeriesSet, error) {
+func (q *verticalQuerier) sel(qs []Querier, ms []*labels.Matcher) (SeriesSet, error) {
 	if len(qs) == 0 {
 		return EmptySeriesSet(), nil
 	}
@@ -212,7 +199,7 @@ type blockQuerier struct {
 	mint, maxt int64
 }
 
-func (q *blockQuerier) Select(ms ...labels.Matcher) (SeriesSet, error) {
+func (q *blockQuerier) Select(ms ...*labels.Matcher) (SeriesSet, error) {
 	base, err := LookupChunkSeries(q.index, q.tombstones, ms...)
 	if err != nil {
 		return nil, err
@@ -231,20 +218,7 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) (SeriesSet, error) {
 }
 
 func (q *blockQuerier) LabelValues(name string) ([]string, error) {
-	tpls, err := q.index.LabelValues(name)
-	if err != nil {
-		return nil, err
-	}
-	res := make([]string, 0, tpls.Len())
-
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, vals[0])
-	}
-	return res, nil
+	return q.index.LabelValues(name)
 }
 
 func (q *blockQuerier) LabelNames() ([]string, error) {
@@ -326,26 +300,31 @@ func findSetMatches(pattern string) []string {
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers.
-func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, error) {
+func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
 	labelMustBeSet := make(map[string]bool, len(ms))
 	for _, m := range ms {
 		if !m.Matches("") {
-			labelMustBeSet[m.Name()] = true
+			labelMustBeSet[m.Name] = true
 		}
 	}
 
 	for _, m := range ms {
-		if labelMustBeSet[m.Name()] {
+		if labelMustBeSet[m.Name] {
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
-			nm, isNot := m.(*labels.NotMatcher)
+			isNot := m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp
 			if isNot && matchesEmpty { // l!="foo"
 				// If the label can't be empty and is a Not and the inner matcher
 				// doesn't match empty, then subtract it out at the end.
-				it, err := postingsForMatcher(ix, nm.Matcher)
+				inverse, err := m.Inverse()
+				if err != nil {
+					return nil, err
+				}
+
+				it, err := postingsForMatcher(ix, inverse)
 				if err != nil {
 					return nil, err
 				}
@@ -353,7 +332,12 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 			} else if isNot && !matchesEmpty { // l!=""
 				// If the label can't be empty and is a Not, but the inner matcher can
 				// be empty we need to use inversePostingsForMatcher.
-				it, err := inversePostingsForMatcher(ix, nm.Matcher)
+				inverse, err := m.Inverse()
+				if err != nil {
+					return nil, err
+				}
+
+				it, err := inversePostingsForMatcher(ix, inverse)
 				if err != nil {
 					return nil, err
 				}
@@ -381,7 +365,8 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 
 	// If there's nothing to subtract from, add in everything and remove the notIts later.
 	if len(its) == 0 && len(notIts) != 0 {
-		allPostings, err := ix.Postings(index.AllPostingsKey())
+		k, v := index.AllPostingsKey()
+		allPostings, err := ix.Postings(k, v)
 		if err != nil {
 			return nil, err
 		}
@@ -397,35 +382,32 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 	return ix.SortedPostings(it), nil
 }
 
-func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
+func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
 	// This method will not return postings for missing labels.
 
 	// Fast-path for equal matching.
-	if em, ok := m.(*labels.EqualMatcher); ok {
-		return ix.Postings(em.Name(), em.Value())
+	if m.Type == labels.MatchEqual {
+		return ix.Postings(m.Name, m.Value)
 	}
 
 	// Fast-path for set matching.
-	if em, ok := m.(*labels.RegexpMatcher); ok {
-		setMatches := findSetMatches(em.Value())
+	if m.Type == labels.MatchRegexp {
+		setMatches := findSetMatches(m.Value)
 		if len(setMatches) > 0 {
-			return postingsForSetMatcher(ix, em.Name(), setMatches)
+			sort.Strings(setMatches)
+			return ix.Postings(m.Name, setMatches...)
 		}
 	}
 
-	tpls, err := ix.LabelValues(m.Name())
+	vals, err := ix.LabelValues(m.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	var res []string
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			return nil, err
-		}
-		if m.Matches(vals[0]) {
-			res = append(res, vals[0])
+	for _, val := range vals {
+		if m.Matches(val) {
+			res = append(res, val)
 		}
 	}
 
@@ -433,61 +415,24 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 		return index.EmptyPostings(), nil
 	}
 
-	var rit []index.Postings
-
-	for _, v := range res {
-		it, err := ix.Postings(m.Name(), v)
-		if err != nil {
-			return nil, err
-		}
-		rit = append(rit, it)
-	}
-
-	return index.Merge(rit...), nil
+	return ix.Postings(m.Name, res...)
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
-func inversePostingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
-	tpls, err := ix.LabelValues(m.Name())
+func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
+	vals, err := ix.LabelValues(m.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	var res []string
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			return nil, err
-		}
-
-		if !m.Matches(vals[0]) {
-			res = append(res, vals[0])
+	for _, val := range vals {
+		if !m.Matches(val) {
+			res = append(res, val)
 		}
 	}
 
-	var rit []index.Postings
-	for _, v := range res {
-		it, err := ix.Postings(m.Name(), v)
-		if err != nil {
-			return nil, err
-		}
-
-		rit = append(rit, it)
-	}
-
-	return index.Merge(rit...), nil
-}
-
-func postingsForSetMatcher(ix IndexReader, name string, matches []string) (index.Postings, error) {
-	var its []index.Postings
-	for _, match := range matches {
-		if it, err := ix.Postings(name, match); err == nil {
-			its = append(its, it)
-		} else {
-			return nil, err
-		}
-	}
-	return index.Merge(its...), nil
+	return ix.Postings(m.Name, res...)
 }
 
 func mergeStrings(a, b []string) []string {
@@ -532,29 +477,28 @@ func EmptySeriesSet() SeriesSet {
 	return emptySeriesSet
 }
 
-// mergedSeriesSet takes two series sets as a single series set. The input series sets
-// must be sorted and sequential in time, i.e. if they have the same label set,
-// the datapoints of a must be before the datapoints of b.
+// mergedSeriesSet returns a series sets slice as a single series set. The input series sets
+// must be sorted and sequential in time.
 type mergedSeriesSet struct {
-	a, b SeriesSet
-
-	cur          Series
-	adone, bdone bool
+	all  []SeriesSet
+	buf  []SeriesSet // A buffer for keeping the order of SeriesSet slice during forwarding the SeriesSet.
+	ids  []int       // The indices of chosen SeriesSet for the current run.
+	done bool
+	err  error
+	cur  Series
 }
 
-// NewMergedSeriesSet takes two series sets as a single series set. The input series sets
-// must be sorted and sequential in time, i.e. if they have the same label set,
-// the datapoints of a must be before the datapoints of b.
-func NewMergedSeriesSet(a, b SeriesSet) SeriesSet {
-	return newMergedSeriesSet(a, b)
-}
-
-func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
-	s := &mergedSeriesSet{a: a, b: b}
-	// Initialize first elements of both sets as Next() needs
+func NewMergedSeriesSet(all []SeriesSet) SeriesSet {
+	if len(all) == 1 {
+		return all[0]
+	}
+	s := &mergedSeriesSet{all: all}
+	// Initialize first elements of all sets as Next() needs
 	// one element look-ahead.
-	s.adone = !s.a.Next()
-	s.bdone = !s.b.Next()
+	s.nextAll()
+	if len(s.all) == 0 {
+		s.done = true
+	}
 
 	return s
 }
@@ -564,40 +508,93 @@ func (s *mergedSeriesSet) At() Series {
 }
 
 func (s *mergedSeriesSet) Err() error {
-	if s.a.Err() != nil {
-		return s.a.Err()
-	}
-	return s.b.Err()
+	return s.err
 }
 
-func (s *mergedSeriesSet) compare() int {
-	if s.adone {
-		return 1
+// nextAll is to call Next() for all SeriesSet.
+// Because the order of the SeriesSet slice will affect the results,
+// we need to use an buffer slice to hold the order.
+func (s *mergedSeriesSet) nextAll() {
+	s.buf = s.buf[:0]
+	for _, ss := range s.all {
+		if ss.Next() {
+			s.buf = append(s.buf, ss)
+		} else if ss.Err() != nil {
+			s.done = true
+			s.err = ss.Err()
+			break
+		}
 	}
-	if s.bdone {
-		return -1
+	s.all, s.buf = s.buf, s.all
+}
+
+// nextWithID is to call Next() for the SeriesSet with the indices of s.ids.
+// Because the order of the SeriesSet slice will affect the results,
+// we need to use an buffer slice to hold the order.
+func (s *mergedSeriesSet) nextWithID() {
+	if len(s.ids) == 0 {
+		return
 	}
-	return labels.Compare(s.a.At().Labels(), s.b.At().Labels())
+
+	s.buf = s.buf[:0]
+	i1 := 0
+	i2 := 0
+	for i1 < len(s.all) {
+		if i2 < len(s.ids) && i1 == s.ids[i2] {
+			if !s.all[s.ids[i2]].Next() {
+				if s.all[s.ids[i2]].Err() != nil {
+					s.done = true
+					s.err = s.all[s.ids[i2]].Err()
+					break
+				}
+				i2++
+				i1++
+				continue
+			}
+			i2++
+		}
+		s.buf = append(s.buf, s.all[i1])
+		i1++
+	}
+	s.all, s.buf = s.buf, s.all
 }
 
 func (s *mergedSeriesSet) Next() bool {
-	if s.adone && s.bdone || s.Err() != nil {
+	if s.done {
 		return false
 	}
 
-	d := s.compare()
+	s.nextWithID()
+	if s.done {
+		return false
+	}
+	s.ids = s.ids[:0]
+	if len(s.all) == 0 {
+		s.done = true
+		return false
+	}
 
-	// Both sets contain the current series. Chain them into a single one.
-	if d > 0 {
-		s.cur = s.b.At()
-		s.bdone = !s.b.Next()
-	} else if d < 0 {
-		s.cur = s.a.At()
-		s.adone = !s.a.Next()
+	// Here we are looking for a set of series sets with the lowest labels,
+	// and we will cache their indexes in s.ids.
+	s.ids = append(s.ids, 0)
+	for i := 1; i < len(s.all); i++ {
+		cmp := labels.Compare(s.all[s.ids[0]].At().Labels(), s.all[i].At().Labels())
+		if cmp > 0 {
+			s.ids = s.ids[:1]
+			s.ids[0] = i
+		} else if cmp == 0 {
+			s.ids = append(s.ids, i)
+		}
+	}
+
+	if len(s.ids) > 1 {
+		series := make([]Series, len(s.ids))
+		for i, idx := range s.ids {
+			series[i] = s.all[idx].At()
+		}
+		s.cur = &chainedSeries{series: series}
 	} else {
-		s.cur = &chainedSeries{series: []Series{s.a.At(), s.b.At()}}
-		s.adone = !s.a.Next()
-		s.bdone = !s.b.Next()
+		s.cur = s.all[s.ids[0]].At()
 	}
 	return true
 }
@@ -691,7 +688,7 @@ type baseChunkSeries struct {
 
 // LookupChunkSeries retrieves all series for the given matchers and returns a ChunkSeriesSet
 // over them. It drops chunks based on tombstones in the given reader.
-func LookupChunkSeries(ir IndexReader, tr tombstones.Reader, ms ...labels.Matcher) (ChunkSeriesSet, error) {
+func LookupChunkSeries(ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (ChunkSeriesSet, error) {
 	if tr == nil {
 		tr = tombstones.NewMemTombstones()
 	}

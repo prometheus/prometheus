@@ -181,7 +181,7 @@ const (
 "NodeMeta": {"rack_name": "2304"},
 "ServiceID": "test",
 "ServiceName": "test",
-"ServiceMeta": {"version":"1.0.0","environment":"stagging"},
+"ServiceMeta": {"version":"1.0.0","environment":"staging"},
 "ServiceTags": ["tag1"],
 "ServicePort": 3341,
 "CreateIndex": 1,
@@ -296,4 +296,48 @@ func TestAllOptions(t *testing.T) {
 	go d.Run(ctx, ch)
 	checkOneTarget(t, <-ch)
 	cancel()
+}
+
+func TestGetDatacenterShouldReturnError(t *testing.T) {
+	for _, tc := range []struct {
+		handler    func(http.ResponseWriter, *http.Request)
+		errMessage string
+	}{
+		{
+			// Define a handler that will return status 500.
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(500)
+			},
+			errMessage: "Unexpected response code: 500 ()",
+		},
+		{
+			// Define a handler that will return incorrect response.
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
+			},
+			errMessage: "invalid value '<nil>' for Config.Datacenter",
+		},
+	} {
+		stub := httptest.NewServer(http.HandlerFunc(tc.handler))
+		stuburl, err := url.Parse(stub.URL)
+		testutil.Ok(t, err)
+
+		config := &SDConfig{
+			Server:          stuburl.Host,
+			Token:           "fake-token",
+			RefreshInterval: model.Duration(1 * time.Second),
+		}
+		defer stub.Close()
+		d := newDiscovery(t, config)
+
+		// Should be empty if not initialized.
+		testutil.Equals(t, "", d.clientDatacenter)
+
+		err = d.getDatacenter()
+
+		// An error should be returned.
+		testutil.Equals(t, tc.errMessage, err.Error())
+		// Should still be empty.
+		testutil.Equals(t, "", d.clientDatacenter)
+	}
 }

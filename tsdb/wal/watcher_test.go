@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -139,7 +139,7 @@ func TestTailSamples(t *testing.T) {
 
 			wt := newWriteToMock()
 			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
-			watcher.StartTime = now.UnixNano()
+			watcher.SetStartTime(now)
 
 			// Set the Watcher's metrics so they're not nil pointers.
 			watcher.setMetrics()
@@ -427,6 +427,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 					}
 				}
 			}
+			testutil.Ok(t, w.Close())
 
 			// At this point we should have at least 6 segments, lets create a checkpoint dir of the first 5.
 			checkpointDir := dir + "/wal/checkpoint.000004"

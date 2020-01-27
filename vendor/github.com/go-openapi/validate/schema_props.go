@@ -36,39 +36,31 @@ type schemaPropsValidator struct {
 	notValidator    *SchemaValidator
 	Root            interface{}
 	KnownFormats    strfmt.Registry
-	Options         SchemaValidatorOptions
 }
 
 func (s *schemaPropsValidator) SetPath(path string) {
 	s.Path = path
 }
 
-func newSchemaPropsValidator(path string, in string, allOf, oneOf, anyOf []spec.Schema, not *spec.Schema, deps spec.Dependencies, root interface{}, formats strfmt.Registry, options ...Option) *schemaPropsValidator {
+func newSchemaPropsValidator(path string, in string, allOf, oneOf, anyOf []spec.Schema, not *spec.Schema, deps spec.Dependencies, root interface{}, formats strfmt.Registry) *schemaPropsValidator {
 	anyValidators := make([]SchemaValidator, 0, len(anyOf))
 	for _, v := range anyOf {
-		v := v
-		anyValidators = append(anyValidators, *NewSchemaValidator(&v, root, path, formats, options...))
+		anyValidators = append(anyValidators, *NewSchemaValidator(&v, root, path, formats))
 	}
 	allValidators := make([]SchemaValidator, 0, len(allOf))
 	for _, v := range allOf {
-		v := v
-		allValidators = append(allValidators, *NewSchemaValidator(&v, root, path, formats, options...))
+		allValidators = append(allValidators, *NewSchemaValidator(&v, root, path, formats))
 	}
 	oneValidators := make([]SchemaValidator, 0, len(oneOf))
 	for _, v := range oneOf {
-		v := v
-		oneValidators = append(oneValidators, *NewSchemaValidator(&v, root, path, formats, options...))
+		oneValidators = append(oneValidators, *NewSchemaValidator(&v, root, path, formats))
 	}
 
 	var notValidator *SchemaValidator
 	if not != nil {
-		notValidator = NewSchemaValidator(not, root, path, formats, options...)
+		notValidator = NewSchemaValidator(not, root, path, formats)
 	}
 
-	schOptions := &SchemaValidatorOptions{}
-	for _, o := range options {
-		o(schOptions)
-	}
 	return &schemaPropsValidator{
 		Path:            path,
 		In:              in,
@@ -83,7 +75,6 @@ func newSchemaPropsValidator(path string, in string, allOf, oneOf, anyOf []spec.
 		notValidator:    notValidator,
 		Root:            root,
 		KnownFormats:    formats,
-		Options:         *schOptions,
 	}
 }
 
@@ -218,7 +209,7 @@ func (s *schemaPropsValidator) Validate(data interface{}) *Result {
 			if dep, ok := s.Dependencies[key]; ok {
 
 				if dep.Schema != nil {
-					mainResult.Merge(NewSchemaValidator(dep.Schema, s.Root, s.Path+"."+key, s.KnownFormats, s.Options.Options()...).Validate(data))
+					mainResult.Merge(NewSchemaValidator(dep.Schema, s.Root, s.Path+"."+key, s.KnownFormats).Validate(data))
 					continue
 				}
 

@@ -14,7 +14,9 @@
 package tsdb
 
 import (
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -22,17 +24,21 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 
 	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -54,7 +60,7 @@ func openTestDB(t testing.TB, opts *Options) (db *DB, close func()) {
 }
 
 // query runs a matcher query against the querier and fully expands its data.
-func query(t testing.TB, q Querier, matchers ...labels.Matcher) map[string][]tsdbutil.Sample {
+func query(t testing.TB, q Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
 	ss, err := q.Select(matchers...)
 	defer func() {
 		testutil.Ok(t, q.Close())
@@ -125,7 +131,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 
 	querier, err := db.Querier(0, 1)
 	testutil.Ok(t, err)
-	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
+	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	testutil.Equals(t, map[string][]tsdbutil.Sample{}, seriesSet)
 
 	err = app.Commit()
@@ -135,7 +141,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	testutil.Ok(t, err)
 	defer querier.Close()
 
-	seriesSet = query(t, querier, labels.NewEqualMatcher("foo", "bar"))
+	seriesSet = query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 0, v: 0}}}, seriesSet)
 }
@@ -158,7 +164,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	testutil.Ok(t, err)
 	defer querier.Close()
 
-	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
+	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{}, seriesSet)
 }
@@ -205,7 +211,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	q, err := db.Querier(0, 200)
 	testutil.Ok(t, err)
 
-	res := query(t, q, labels.NewEqualMatcher("a", "b"))
+	res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{
 		labels.FromStrings("a", "b").String(): {
@@ -291,14 +297,14 @@ Outer:
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
 		for _, r := range c.Intervals {
-			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
+			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// Compare the result.
 		q, err := db.Querier(0, numSamples)
 		testutil.Ok(t, err)
 
-		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+		res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 		testutil.Ok(t, err)
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
@@ -309,22 +315,6 @@ Outer:
 		expss := newMockSeriesSet([]Series{
 			newSeries(map[string]string{"a": "b"}, expSamples),
 		})
-
-		lns, err := q.LabelNames()
-		testutil.Ok(t, err)
-		lvs, err := q.LabelValues("a")
-		testutil.Ok(t, err)
-		if len(expSamples) == 0 {
-			testutil.Equals(t, 0, len(lns))
-			testutil.Equals(t, 0, len(lvs))
-			testutil.Assert(t, res.Next() == false, "")
-			continue
-		} else {
-			testutil.Equals(t, 1, len(lns))
-			testutil.Equals(t, 1, len(lvs))
-			testutil.Equals(t, "a", lns[0])
-			testutil.Equals(t, "b", lvs[0])
-		}
 
 		for {
 			eok, rok := expss.Next(), res.Next()
@@ -417,7 +407,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	q, err := db.Querier(0, 10)
 	testutil.Ok(t, err)
 
-	ssMap := query(t, q, labels.NewEqualMatcher("a", "b"))
+	ssMap := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{
 		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}},
@@ -434,7 +424,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	q, err = db.Querier(0, 10)
 	testutil.Ok(t, err)
 
-	ssMap = query(t, q, labels.NewEqualMatcher("a", "b"))
+	ssMap = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	testutil.Equals(t, map[string][]tsdbutil.Sample{
 		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}, sample{10, 3}},
@@ -475,7 +465,7 @@ func TestDB_Snapshot(t *testing.T) {
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// sum values
-	seriesSet, err := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	seriesSet, err := querier.Select(labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	testutil.Ok(t, err)
 
 	sum := 0.0
@@ -529,7 +519,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// Sum values.
-	seriesSet, err := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	seriesSet, err := querier.Select(labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	testutil.Ok(t, err)
 
 	sum := 0.0
@@ -577,7 +567,7 @@ Outer:
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
 		for _, r := range c.intervals {
-			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
+			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// create snapshot
@@ -600,7 +590,7 @@ Outer:
 		testutil.Ok(t, err)
 		defer func() { testutil.Ok(t, q.Close()) }()
 
-		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+		res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 		testutil.Ok(t, err)
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
@@ -645,7 +635,7 @@ func TestDB_e2e(t *testing.T) {
 		timeInterval  = int64(3)
 	)
 	// Create 8 series with 1000 data-points of different ranges and run queries.
-	lbls := [][]labels.Label{
+	lbls := []labels.Labels{
 		{
 			{Name: "a", Value: "b"},
 			{Name: "instance", Value: "localhost:9090"},
@@ -724,22 +714,22 @@ func TestDB_e2e(t *testing.T) {
 
 	// Query each selector on 1000 random time-ranges.
 	queries := []struct {
-		ms []labels.Matcher
+		ms []*labels.Matcher
 	}{
 		{
-			ms: []labels.Matcher{labels.NewEqualMatcher("a", "b")},
+			ms: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "b")},
 		},
 		{
-			ms: []labels.Matcher{
-				labels.NewEqualMatcher("a", "b"),
-				labels.NewEqualMatcher("job", "prom-k8s"),
+			ms: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "b"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "prom-k8s"),
 			},
 		},
 		{
-			ms: []labels.Matcher{
-				labels.NewEqualMatcher("a", "c"),
-				labels.NewEqualMatcher("instance", "localhost:9090"),
-				labels.NewEqualMatcher("job", "prometheus"),
+			ms: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "c"),
+				labels.MustNewMatcher(labels.MatchEqual, "instance", "localhost:9090"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus"),
 			},
 		},
 		// TODO: Add Regexp Matchers.
@@ -918,7 +908,7 @@ func TestTombstoneClean(t *testing.T) {
 		defer db.Close()
 
 		for _, r := range c.intervals {
-			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
+			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// All of the setup for THIS line.
@@ -929,7 +919,7 @@ func TestTombstoneClean(t *testing.T) {
 		testutil.Ok(t, err)
 		defer q.Close()
 
-		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+		res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 		testutil.Ok(t, err)
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
@@ -1111,11 +1101,49 @@ func TestSizeRetention(t *testing.T) {
 		createBlock(t, db.Dir(), genSeries(100, 10, m.MinTime, m.MaxTime))
 	}
 
+	headBlocks := []*BlockMeta{
+		{MinTime: 700, MaxTime: 800},
+	}
+
+	// Add some data to the WAL.
+	headApp := db.Head().Appender()
+	for _, m := range headBlocks {
+		series := genSeries(100, 10, m.MinTime, m.MaxTime)
+		for _, s := range series {
+			it := s.Iterator()
+			for it.Next() {
+				tim, v := it.At()
+				_, err := headApp.Add(s.Labels(), tim, v)
+				testutil.Ok(t, err)
+			}
+			testutil.Ok(t, it.Err())
+		}
+	}
+	testutil.Ok(t, headApp.Commit())
+
 	// Test that registered size matches the actual disk size.
-	testutil.Ok(t, db.reload())                                       // Reload the db to register the new db size.
-	testutil.Equals(t, len(blocks), len(db.Blocks()))                 // Ensure all blocks are registered.
-	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
-	actSize := testutil.DirSize(t, db.Dir())
+	testutil.Ok(t, db.reload())                                         // Reload the db to register the new db size.
+	testutil.Equals(t, len(blocks), len(db.Blocks()))                   // Ensure all blocks are registered.
+	blockSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
+	walSize, err := db.Head().wal.Size()
+	testutil.Ok(t, err)
+	// Expected size should take into account block size + WAL size
+	expSize := blockSize + walSize
+	actSize, err := fileutil.DirSize(db.Dir())
+	testutil.Ok(t, err)
+	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
+
+	// Create a WAL checkpoint, and compare sizes.
+	first, last, err := db.Head().wal.Segments()
+	testutil.Ok(t, err)
+	_, err = wal.Checkpoint(db.Head().wal, first, last-1, func(x uint64) bool { return false }, 0)
+	testutil.Ok(t, err)
+	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
+	walSize, err = db.Head().wal.Size()
+	testutil.Ok(t, err)
+	expSize = blockSize + walSize
+	actSize, err = fileutil.DirSize(db.Dir())
+	testutil.Ok(t, err)
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 	// Decrease the max bytes limit so that a delete is triggered.
@@ -1127,17 +1155,21 @@ func TestSizeRetention(t *testing.T) {
 
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
-	expSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
-	actRetentCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
-	actSize = testutil.DirSize(t, db.Dir())
+	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
+	walSize, err = db.Head().wal.Size()
+	testutil.Ok(t, err)
+	// Expected size should take into account block size + WAL size
+	expSize = blockSize + walSize
+	actRetentionCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
+	actSize, err = fileutil.DirSize(db.Dir())
+	testutil.Ok(t, err)
 
-	testutil.Equals(t, 1, actRetentCount, "metric retention count mismatch")
+	testutil.Equals(t, 1, actRetentionCount, "metric retention count mismatch")
 	testutil.Equals(t, actSize, expSize, "metric db size doesn't match actual disk size")
 	testutil.Assert(t, expSize <= sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
 	testutil.Equals(t, len(blocks)-1, len(actBlocks), "new block count should be decreased from:%v to:%v", len(blocks), len(blocks)-1)
 	testutil.Equals(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime, "maxT mismatch of the first block")
 	testutil.Equals(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime, "maxT mismatch of the last block")
-
 }
 
 func TestSizeRetentionMetric(t *testing.T) {
@@ -1188,39 +1220,39 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 		series   []labels.Labels
 	}{{
 		selector: labels.Selector{
-			labels.Not(labels.NewEqualMatcher("lname", "lvalue")),
+			labels.MustNewMatcher(labels.MatchNotEqual, "lname", "lvalue"),
 		},
 		series: labelpairs,
 	}, {
 		selector: labels.Selector{
-			labels.NewEqualMatcher("a", "abcd"),
-			labels.Not(labels.NewEqualMatcher("b", "abcde")),
+			labels.MustNewMatcher(labels.MatchEqual, "a", "abcd"),
+			labels.MustNewMatcher(labels.MatchNotEqual, "b", "abcde"),
 		},
 		series: []labels.Labels{},
 	}, {
 		selector: labels.Selector{
-			labels.NewEqualMatcher("a", "abcd"),
-			labels.Not(labels.NewEqualMatcher("b", "abc")),
+			labels.MustNewMatcher(labels.MatchEqual, "a", "abcd"),
+			labels.MustNewMatcher(labels.MatchNotEqual, "b", "abc"),
 		},
 		series: []labels.Labels{labelpairs[0]},
 	}, {
 		selector: labels.Selector{
-			labels.Not(labels.NewMustRegexpMatcher("a", "abd.*")),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "a", "abd.*"),
 		},
 		series: labelpairs,
 	}, {
 		selector: labels.Selector{
-			labels.Not(labels.NewMustRegexpMatcher("a", "abc.*")),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "a", "abc.*"),
 		},
 		series: labelpairs[1:],
 	}, {
 		selector: labels.Selector{
-			labels.Not(labels.NewMustRegexpMatcher("c", "abd.*")),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "c", "abd.*"),
 		},
 		series: labelpairs,
 	}, {
 		selector: labels.Selector{
-			labels.Not(labels.NewMustRegexpMatcher("labelname", "labelvalue")),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "labelname", "labelvalue"),
 		},
 		series: labelpairs[:1],
 	}}
@@ -1364,7 +1396,7 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 	err := app.Commit()
 	testutil.Ok(t, err)
 
-	err = db.compact()
+	err = db.Compact()
 	testutil.Ok(t, err)
 
 	for _, block := range db.Blocks() {
@@ -1374,7 +1406,8 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 
 		meta := block.Meta()
 
-		p, err := r.Postings(index.AllPostingsKey())
+		k, v := index.AllPostingsKey()
+		p, err := r.Postings(k, v)
 		testutil.Ok(t, err)
 
 		var (
@@ -1418,7 +1451,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	err := app.Commit()
 	testutil.Ok(t, err)
 
-	err = db.compact()
+	err = db.Compact()
 	testutil.Ok(t, err)
 
 	testutil.Assert(t, len(db.blocks) >= 3, "invalid test, less than three blocks in DB")
@@ -1561,10 +1594,10 @@ func TestNoEmptyBlocks(t *testing.T) {
 
 	rangeToTriggerCompaction := db.opts.BlockRanges[0]/2*3 - 1
 	defaultLabel := labels.FromStrings("foo", "bar")
-	defaultMatcher := labels.NewMustRegexpMatcher("", ".*")
+	defaultMatcher := labels.MustNewMatcher(labels.MatchRegexp, "", ".*")
 
 	t.Run("Test no blocks after compact with empty head.", func(t *testing.T) {
-		testutil.Ok(t, db.compact())
+		testutil.Ok(t, db.Compact())
 		actBlocks, err := blockDirs(db.Dir())
 		testutil.Ok(t, err)
 		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
@@ -1582,7 +1615,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
-		testutil.Ok(t, db.compact())
+		testutil.Ok(t, db.Compact())
 		testutil.Equals(t, 1, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 
 		actBlocks, err := blockDirs(db.Dir())
@@ -1604,7 +1637,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 
-		testutil.Ok(t, db.compact())
+		testutil.Ok(t, db.Compact())
 		testutil.Equals(t, 2, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 		actBlocks, err = blockDirs(db.Dir())
 		testutil.Ok(t, err)
@@ -1625,7 +1658,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
 		testutil.Ok(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
-		testutil.Ok(t, db.compact())
+		testutil.Ok(t, db.Compact())
 		testutil.Equals(t, 3, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 		testutil.Equals(t, oldBlocks, db.Blocks())
 	})
@@ -1644,7 +1677,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Ok(t, db.reload())                                      // Reload the db to register the new blocks.
 		testutil.Equals(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
 		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
-		testutil.Ok(t, db.compact())
+		testutil.Ok(t, db.Compact())
 		testutil.Equals(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here once for each block that have tombstones")
 
 		actBlocks, err := blockDirs(db.Dir())
@@ -1727,10 +1760,10 @@ func TestDB_LabelNames(t *testing.T) {
 		testutil.Ok(t, headIndexr.Close())
 
 		// Testing disk.
-		err = db.compact()
+		err = db.Compact()
 		testutil.Ok(t, err)
 		// All blocks have same label names, hence check them individually.
-		// No need to aggregrate and check.
+		// No need to aggregate and check.
 		for _, b := range db.Blocks() {
 			blockIndexr, err := b.Index()
 			testutil.Ok(t, err)
@@ -1740,7 +1773,7 @@ func TestDB_LabelNames(t *testing.T) {
 			testutil.Ok(t, blockIndexr.Close())
 		}
 
-		// Addings more samples to head with new label names
+		// Adding more samples to head with new label names
 		// so that we can test (head+disk).LabelNames() (the union).
 		appendSamples(db, 5, 9, tst.sampleLabels2)
 
@@ -1763,7 +1796,7 @@ func TestCorrectNumTombstones(t *testing.T) {
 
 	blockRange := DefaultOptions.BlockRanges[0]
 	defaultLabel := labels.FromStrings("foo", "bar")
-	defaultMatcher := labels.NewEqualMatcher(defaultLabel[0].Name, defaultLabel[0].Value)
+	defaultMatcher := labels.MustNewMatcher(labels.MatchEqual, defaultLabel[0].Name, defaultLabel[0].Value)
 
 	app := db.Appender()
 	for i := int64(0); i < 3; i++ {
@@ -1774,7 +1807,7 @@ func TestCorrectNumTombstones(t *testing.T) {
 	}
 	testutil.Ok(t, app.Commit())
 
-	err := db.compact()
+	err := db.Compact()
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, len(db.blocks))
 
@@ -2108,7 +2141,7 @@ func TestVerticalCompaction(t *testing.T) {
 		},
 	}
 
-	defaultMatcher := labels.NewMustRegexpMatcher("__name__", ".*")
+	defaultMatcher := labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*")
 	for _, c := range cases {
 		if ok := t.Run("", func(t *testing.T) {
 
@@ -2140,7 +2173,7 @@ func TestVerticalCompaction(t *testing.T) {
 			// Vertical compaction.
 			lc := db.compactor.(*LeveledCompactor)
 			testutil.Equals(t, 0, int(prom_testutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count should be still 0 here")
-			err = db.compact()
+			err = db.Compact()
 			testutil.Ok(t, err)
 			testutil.Equals(t, c.expBlockNum, len(db.Blocks()), "Wrong number of blocks [after compact]")
 
@@ -2267,7 +2300,7 @@ func TestDBReadOnly(t *testing.T) {
 		expSeries      map[string][]tsdbutil.Sample
 		expSeriesCount int
 		expDBHash      []byte
-		matchAll       = labels.NewEqualMatcher("", "")
+		matchAll       = labels.MustNewMatcher(labels.MatchEqual, "", "")
 		err            error
 	)
 
@@ -2298,7 +2331,8 @@ func TestDBReadOnly(t *testing.T) {
 		testutil.Ok(t, err)
 		dbWritable.DisableCompactions()
 
-		dbSizeBeforeAppend := testutil.DirSize(t, dbWritable.Dir())
+		dbSizeBeforeAppend, err := fileutil.DirSize(dbWritable.Dir())
+		testutil.Ok(t, err)
 		app := dbWritable.Appender()
 		_, err = app.Add(labels.FromStrings("foo", "bar"), dbWritable.Head().MaxTime()+1, 0)
 		testutil.Ok(t, err)
@@ -2306,7 +2340,8 @@ func TestDBReadOnly(t *testing.T) {
 		expSeriesCount++
 
 		expBlocks = dbWritable.Blocks()
-		expDbSize := testutil.DirSize(t, dbWritable.Dir())
+		expDbSize, err := fileutil.DirSize(dbWritable.Dir())
+		testutil.Ok(t, err)
 		testutil.Assert(t, expDbSize > dbSizeBeforeAppend, "db size didn't increase after an append")
 
 		q, err := dbWritable.Querier(math.MinInt64, math.MaxInt64)
@@ -2419,7 +2454,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// Sum the values.
-	seriesSet, err := querier.Select(labels.NewEqualMatcher(defaultLabelName, "flush"))
+	seriesSet, err := querier.Select(labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "flush"))
 	testutil.Ok(t, err)
 
 	sum := 0.0
@@ -2433,4 +2468,227 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	}
 	testutil.Ok(t, seriesSet.Err())
 	testutil.Equals(t, 1000.0, sum)
+}
+
+// TestChunkWriter_ReadAfterWrite ensures that chunk segment are cut at the set segment size and
+// that the resulted segments includes the expected chunks data.
+func TestChunkWriter_ReadAfterWrite(t *testing.T) {
+	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
+	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2}})
+	chk3 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3}})
+	chk4 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4}})
+	chk5 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5}})
+	chunkSize := len(chk1.Chunk.Bytes()) + chunks.MaxChunkLengthFieldSize + chunks.ChunkEncodingSize + crc32.Size
+
+	tests := []struct {
+		chks [][]chunks.Meta
+		segmentSize,
+		expSegmentsCount int
+		expSegmentSizes []int
+	}{
+		// 0:Last chunk ends at the segment boundary so
+		// all chunks should fit in a single segment.
+		{
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk1,
+					chk2,
+					chk3,
+				},
+			},
+			segmentSize:      3 * chunkSize,
+			expSegmentSizes:  []int{3 * chunkSize},
+			expSegmentsCount: 1,
+		},
+		// 1:Two chunks can fit in a single segment so the last one should result in a new segment.
+		{
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk1,
+					chk2,
+					chk3,
+					chk4,
+					chk5,
+				},
+			},
+			segmentSize:      2 * chunkSize,
+			expSegmentSizes:  []int{2 * chunkSize, 2 * chunkSize, chunkSize},
+			expSegmentsCount: 3,
+		},
+		// 2:When the segment size is smaller than the size of 2 chunks
+		// the last segment should still create a new segment.
+		{
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk1,
+					chk2,
+					chk3,
+				},
+			},
+			segmentSize:      2*chunkSize - 1,
+			expSegmentSizes:  []int{chunkSize, chunkSize, chunkSize},
+			expSegmentsCount: 3,
+		},
+		// 3:When the segment is smaller than a single chunk
+		// it should still be written by ignoring the max segment size.
+		{
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk1,
+				},
+			},
+			segmentSize:      chunkSize - 1,
+			expSegmentSizes:  []int{chunkSize},
+			expSegmentsCount: 1,
+		},
+		// 4:All chunks are bigger than the max segment size, but
+		// these should still be written even when this will result in bigger segment than the set size.
+		// Each segment will hold a single chunk.
+		{
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk1,
+					chk2,
+					chk3,
+				},
+			},
+			segmentSize:      1,
+			expSegmentSizes:  []int{chunkSize, chunkSize, chunkSize},
+			expSegmentsCount: 3,
+		},
+		// 5:Adding multiple batches of chunks.
+		{
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk1,
+					chk2,
+					chk3,
+				},
+				[]chunks.Meta{
+					chk4,
+					chk5,
+				},
+			},
+			segmentSize:      3 * chunkSize,
+			expSegmentSizes:  []int{3 * chunkSize, 2 * chunkSize},
+			expSegmentsCount: 2,
+		},
+		// 6:Adding multiple batches of chunks.
+		{
+			chks: [][]chunks.Meta{
+				[]chunks.Meta{
+					chk1,
+				},
+				[]chunks.Meta{
+					chk2,
+					chk3,
+				},
+				[]chunks.Meta{
+					chk4,
+				},
+			},
+			segmentSize:      2 * chunkSize,
+			expSegmentSizes:  []int{2 * chunkSize, 2 * chunkSize},
+			expSegmentsCount: 2,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+
+			tempDir, err := ioutil.TempDir("", "test_chunk_writer")
+			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, os.RemoveAll(tempDir)) }()
+
+			chunkw, err := chunks.NewWriterWithSegSize(tempDir, chunks.SegmentHeaderSize+int64(test.segmentSize))
+			testutil.Ok(t, err)
+
+			for _, chks := range test.chks {
+				testutil.Ok(t, chunkw.WriteChunks(chks...))
+			}
+			testutil.Ok(t, chunkw.Close())
+
+			files, err := ioutil.ReadDir(tempDir)
+			testutil.Ok(t, err)
+			testutil.Equals(t, test.expSegmentsCount, len(files), "expected segments count mismatch")
+
+			// Verify that all data is written to the segments.
+			sizeExp := 0
+			sizeAct := 0
+
+			for _, chks := range test.chks {
+				for _, chk := range chks {
+					l := make([]byte, binary.MaxVarintLen32)
+					sizeExp += binary.PutUvarint(l, uint64(len(chk.Chunk.Bytes()))) // The length field.
+					sizeExp += chunks.ChunkEncodingSize
+					sizeExp += len(chk.Chunk.Bytes()) // The data itself.
+					sizeExp += crc32.Size             // The 4 bytes of crc32
+				}
+			}
+			sizeExp += test.expSegmentsCount * chunks.SegmentHeaderSize // The segment header bytes.
+
+			for i, f := range files {
+				size := int(f.Size())
+				// Verify that the segment is the same or smaller than the expected size.
+				testutil.Assert(t, chunks.SegmentHeaderSize+test.expSegmentSizes[i] >= size, "Segment:%v should NOT be bigger than:%v actual:%v", i, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size)
+
+				sizeAct += size
+			}
+			testutil.Equals(t, sizeExp, sizeAct)
+
+			// Check the content of the chunks.
+			r, err := chunks.NewDirReader(tempDir, nil)
+			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, r.Close()) }()
+
+			for _, chks := range test.chks {
+				for _, chkExp := range chks {
+					chkAct, err := r.Chunk(chkExp.Ref)
+					testutil.Ok(t, err)
+					testutil.Equals(t, chkExp.Chunk.Bytes(), chkAct.Bytes())
+				}
+			}
+		})
+	}
+}
+
+// TestChunkReader_ConcurrentReads checks that the chunk result can be read concurrently.
+// Regression test for https://github.com/prometheus/prometheus/pull/6514.
+func TestChunkReader_ConcurrentReads(t *testing.T) {
+	chks := []chunks.Meta{
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5}}),
+	}
+
+	tempDir, err := ioutil.TempDir("", "test_chunk_writer")
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, os.RemoveAll(tempDir)) }()
+
+	chunkw, err := chunks.NewWriter(tempDir)
+	testutil.Ok(t, err)
+
+	testutil.Ok(t, chunkw.WriteChunks(chks...))
+	testutil.Ok(t, chunkw.Close())
+
+	r, err := chunks.NewDirReader(tempDir, nil)
+	testutil.Ok(t, err)
+
+	var wg sync.WaitGroup
+	for _, chk := range chks {
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func(chunk chunks.Meta) {
+				defer wg.Done()
+
+				chkAct, err := r.Chunk(chunk.Ref)
+				testutil.Ok(t, err)
+				testutil.Equals(t, chunk.Chunk.Bytes(), chkAct.Bytes())
+			}(chk)
+		}
+		wg.Wait()
+	}
+	testutil.Ok(t, r.Close())
 }

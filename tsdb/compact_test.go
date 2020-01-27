@@ -27,9 +27,9 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -163,7 +163,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 }
 
 func TestLeveledCompactor_plan(t *testing.T) {
-	// This mimicks our default ExponentialBlockRanges with min block size equals to 20.
+	// This mimics our default ExponentialBlockRanges with min block size equals to 20.
 	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
 		20,
 		60,
@@ -289,7 +289,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		},
 		`Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
 		We need to actually look on max time instead.
-		
+
 		With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
 		block overlaps`: {
 			metas: []dirMeta{
@@ -852,8 +852,40 @@ func BenchmarkCompaction(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			_, err = c.Compact(dir, blockDirs, blocks)
+			for i := 0; i < b.N; i++ {
+				_, err = c.Compact(dir, blockDirs, blocks)
+				testutil.Ok(b, err)
+			}
+		})
+	}
+}
+
+func BenchmarkCompactionFromHead(b *testing.B) {
+	dir, err := ioutil.TempDir("", "bench_compaction_from_head")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(dir))
+	}()
+	totalSeries := 100000
+	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
+		labelValues := totalSeries / labelNames
+		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
+			h, err := NewHead(nil, nil, nil, 1000)
 			testutil.Ok(b, err)
+			for ln := 0; ln < labelNames; ln++ {
+				app := h.Appender()
+				for lv := 0; lv < labelValues; lv++ {
+					app.Add(labels.FromStrings(fmt.Sprintf("%d", ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
+				}
+				testutil.Ok(b, app.Commit())
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				createBlockFromHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), h)
+			}
+			h.Close()
 		})
 	}
 }
@@ -924,8 +956,8 @@ func TestCancelCompactions(t *testing.T) {
 	}()
 
 	// Create some blocks to fall within the compaction range.
-	createBlock(t, tmpdir, genSeries(10, 10000, 0, 1000))
-	createBlock(t, tmpdir, genSeries(10, 10000, 1000, 2000))
+	createBlock(t, tmpdir, genSeries(1, 10000, 0, 1000))
+	createBlock(t, tmpdir, genSeries(1, 10000, 1000, 2000))
 	createBlock(t, tmpdir, genSeries(1, 1, 2000, 2001)) // The most recent block is ignored so can be e small one.
 
 	// Copy the db so we have an exact copy to compare compaction times.
@@ -1047,7 +1079,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			// Do the compaction and check the metrics.
 			// Compaction should succeed, but the reload should fail and
 			// the new block created from the compaction should be deleted.
-			testutil.NotOk(t, db.compact())
+			testutil.NotOk(t, db.Compact())
 			testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "'failed db reload' count metrics mismatch")
 			testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "`compaction` count metric mismatch")
 			testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "`compactions failed` count metric mismatch")

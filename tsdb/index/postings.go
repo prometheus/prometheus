@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 var allPostingsKey = labels.Label{}
@@ -77,6 +77,57 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 		return keys[i].Value < keys[j].Value
 	})
 	return keys
+}
+
+// PostingsStats contains cardinality based statistics for postings.
+type PostingsStats struct {
+	CardinalityMetricsStats []Stat
+	CardinalityLabelStats   []Stat
+	LabelValueStats         []Stat
+	LabelValuePairsStats    []Stat
+}
+
+// Stats calculates the cardinality statistics from postings.
+func (p *MemPostings) Stats(label string) *PostingsStats {
+	const maxNumOfRecords = 10
+	var size uint64
+
+	p.mtx.RLock()
+
+	metrics := &maxHeap{}
+	labels := &maxHeap{}
+	labelValueLength := &maxHeap{}
+	labelValuePairs := &maxHeap{}
+
+	metrics.init(maxNumOfRecords)
+	labels.init(maxNumOfRecords)
+	labelValueLength.init(maxNumOfRecords)
+	labelValuePairs.init(maxNumOfRecords)
+
+	for n, e := range p.m {
+		if n == "" {
+			continue
+		}
+		labels.push(Stat{Name: n, Count: uint64(len(e))})
+		size = 0
+		for name, values := range e {
+			if n == label {
+				metrics.push(Stat{Name: name, Count: uint64(len(values))})
+			}
+			labelValuePairs.push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
+			size += uint64(len(name))
+		}
+		labelValueLength.push(Stat{Name: n, Count: size})
+	}
+
+	p.mtx.RUnlock()
+
+	return &PostingsStats{
+		CardinalityMetricsStats: metrics.get(),
+		CardinalityLabelStats:   labels.get(),
+		LabelValueStats:         labelValueLength.get(),
+		LabelValuePairsStats:    labelValuePairs.get(),
+	}
 }
 
 // Get returns a postings list for the given label pair.
@@ -402,10 +453,10 @@ func (h *postingsHeap) Pop() interface{} {
 }
 
 type mergedPostings struct {
-	h          postingsHeap
-	initilized bool
-	cur        uint64
-	err        error
+	h           postingsHeap
+	initialized bool
+	cur         uint64
+	err         error
 }
 
 func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
@@ -434,10 +485,10 @@ func (it *mergedPostings) Next() bool {
 	}
 
 	// The user must issue an initial Next.
-	if !it.initilized {
+	if !it.initialized {
 		heap.Init(&it.h)
 		it.cur = it.h[0].At()
-		it.initilized = true
+		it.initialized = true
 		return true
 	}
 
@@ -468,7 +519,7 @@ func (it *mergedPostings) Seek(id uint64) bool {
 	if it.h.Len() == 0 || it.err != nil {
 		return false
 	}
-	if !it.initilized {
+	if !it.initialized {
 		if !it.Next() {
 			return false
 		}

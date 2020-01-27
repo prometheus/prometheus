@@ -18,8 +18,8 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -75,9 +75,9 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	}, decTstones)
 }
 
-// TestRecord_Corruputed ensures that corrupted records return the correct error.
+// TestRecord_Corrupted ensures that corrupted records return the correct error.
 // Bugfix check for pull/521 and pull/523.
-func TestRecord_Corruputed(t *testing.T) {
+func TestRecord_Corrupted(t *testing.T) {
 	var enc Encoder
 	var dec Decoder
 

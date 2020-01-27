@@ -39,7 +39,6 @@ type SchemaValidator struct {
 	validators   []valueValidator
 	Root         interface{}
 	KnownFormats strfmt.Registry
-	Options      *SchemaValidatorOptions
 }
 
 // AgainstSchema validates the specified data against the provided schema, using a registry of supported formats.
@@ -56,7 +55,7 @@ func AgainstSchema(schema *spec.Schema, data interface{}, formats strfmt.Registr
 // NewSchemaValidator creates a new schema validator.
 //
 // Panics if the provided schema is invalid.
-func NewSchemaValidator(schema *spec.Schema, rootSchema interface{}, root string, formats strfmt.Registry, options ...Option) *SchemaValidator {
+func NewSchemaValidator(schema *spec.Schema, rootSchema interface{}, root string, formats strfmt.Registry) *SchemaValidator {
 	if schema == nil {
 		return nil
 	}
@@ -72,10 +71,7 @@ func NewSchemaValidator(schema *spec.Schema, rootSchema interface{}, root string
 			panic(msg)
 		}
 	}
-	s := SchemaValidator{Path: root, in: "body", Schema: schema, Root: rootSchema, KnownFormats: formats, Options: &SchemaValidatorOptions{}}
-	for _, o := range options {
-		o(s.Options)
-	}
+	s := SchemaValidator{Path: root, in: "body", Schema: schema, Root: rootSchema, KnownFormats: formats}
 	s.validators = []valueValidator{
 		s.typeValidator(),
 		s.schemaPropsValidator(),
@@ -174,7 +170,7 @@ func (s *SchemaValidator) Validate(data interface{}) *Result {
 }
 
 func (s *SchemaValidator) typeValidator() valueValidator {
-	return &typeValidator{Type: s.Schema.Type, Nullable: s.Schema.Nullable, Format: s.Schema.Format, In: s.in, Path: s.Path}
+	return &typeValidator{Type: s.Schema.Type, Format: s.Schema.Format, In: s.in, Path: s.Path}
 }
 
 func (s *SchemaValidator) commonValidator() valueValidator {
@@ -233,7 +229,7 @@ func (s *SchemaValidator) formatValidator() valueValidator {
 
 func (s *SchemaValidator) schemaPropsValidator() valueValidator {
 	sch := s.Schema
-	return newSchemaPropsValidator(s.Path, s.in, sch.AllOf, sch.OneOf, sch.AnyOf, sch.Not, sch.Dependencies, s.Root, s.KnownFormats, s.Options.Options()...)
+	return newSchemaPropsValidator(s.Path, s.in, sch.AllOf, sch.OneOf, sch.AnyOf, sch.Not, sch.Dependencies, s.Root, s.KnownFormats)
 }
 
 func (s *SchemaValidator) objectValidator() valueValidator {
@@ -248,6 +244,5 @@ func (s *SchemaValidator) objectValidator() valueValidator {
 		PatternProperties:    s.Schema.PatternProperties,
 		Root:                 s.Root,
 		KnownFormats:         s.KnownFormats,
-		Options:              *s.Options,
 	}
 }

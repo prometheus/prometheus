@@ -16,7 +16,6 @@ package notifier
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -300,7 +299,7 @@ func TestHandlerRelabel(t *testing.T) {
 	testutil.Ok(t, alertsEqual(expected, h.queue))
 }
 
-func TestHandlerQueueing(t *testing.T) {
+func TestHandlerQueuing(t *testing.T) {
 	var (
 		expectedc = make(chan []*Alert)
 		called    = make(chan struct{})
@@ -467,6 +466,7 @@ alerting:
 	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
+	testutil.Equals(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
 
 	if err := n.ApplyConfig(cfg); err != nil {
 		t.Fatalf("Error Applying the config:%v", err)
@@ -474,18 +474,16 @@ alerting:
 
 	tgs := make(map[string][]*targetgroup.Group)
 	for _, tt := range tests {
-
-		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
-		if err != nil {
-			t.Fatalf("Error creating config hash:%v", err)
-		}
-		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
-			tt.in,
+		for k := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+			tgs[k] = []*targetgroup.Group{
+				tt.in,
+			}
+			break
 		}
 		n.reload(tgs)
 		res := n.Alertmanagers()[0].String()
 
-		testutil.Equals(t, res, tt.out)
+		testutil.Equals(t, tt.out, res)
 	}
 
 }
@@ -522,6 +520,7 @@ alerting:
 	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
+	testutil.Equals(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
 
 	if err := n.ApplyConfig(cfg); err != nil {
 		t.Fatalf("Error Applying the config:%v", err)
@@ -529,20 +528,18 @@ alerting:
 
 	tgs := make(map[string][]*targetgroup.Group)
 	for _, tt := range tests {
+		for k := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+			tgs[k] = []*targetgroup.Group{
+				tt.in,
+			}
+			break
+		}
 
-		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
-		if err != nil {
-			t.Fatalf("Error creating config hash:%v", err)
-		}
-		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
-			tt.in,
-		}
 		n.reload(tgs)
 		res := n.DroppedAlertmanagers()[0].String()
 
 		testutil.Equals(t, res, tt.out)
 	}
-
 }
 
 func makeInputTargetGroup() *targetgroup.Group {

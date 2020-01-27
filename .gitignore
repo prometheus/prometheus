@@ -6,6 +6,7 @@
 
 /prometheus
 /promtool
+/tsdb/tsdb
 benchmark.txt
 /data
 /cmd/prometheus/data
@@ -16,3 +17,7 @@ benchmark.txt
 !/.golangci.yml
 /documentation/examples/remote_storage/remote_storage_adapter/remote_storage_adapter
 /documentation/examples/remote_storage/example_write_adapter/example_writer_adapter
+
+npm_licenses.tar.bz2
+/web/ui/static/react
+/web/ui/assets_vfsdata.go

@@ -15,26 +15,101 @@ package remote
 
 import (
 	"context"
+	"io/ioutil"
+	"net/url"
+	"os"
 	"reflect"
 	"sort"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func mustNewLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
-	m, err := labels.NewMatcher(mt, name, val)
-	if err != nil {
-		panic(err)
+func TestNoDuplicateReadConfigs(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestNoDuplicateReadConfigs")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	cfg1 := config.RemoteReadConfig{
+		Name: "write-1",
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
 	}
-	return m
+	cfg2 := config.RemoteReadConfig{
+		Name: "write-2",
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+	}
+	cfg3 := config.RemoteReadConfig{
+		URL: &config_util.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+	}
+
+	type testcase struct {
+		cfgs []*config.RemoteReadConfig
+		err  bool
+	}
+
+	cases := []testcase{
+		{ // Duplicates but with different names, we should not get an error.
+			cfgs: []*config.RemoteReadConfig{
+				&cfg1,
+				&cfg2,
+			},
+			err: false,
+		},
+		{ // Duplicates but one with no name, we should not get an error.
+			cfgs: []*config.RemoteReadConfig{
+				&cfg1,
+				&cfg3,
+			},
+			err: false,
+		},
+		{ // Duplicates both with no name, we should get an error.
+			cfgs: []*config.RemoteReadConfig{
+				&cfg3,
+				&cfg3,
+			},
+			err: true,
+		},
+	}
+
+	for _, tc := range cases {
+		s := NewStorage(nil, prometheus.DefaultRegisterer, nil, dir, defaultFlushDeadline)
+		conf := &config.Config{
+			GlobalConfig:      config.DefaultGlobalConfig,
+			RemoteReadConfigs: tc.cfgs,
+		}
+		err := s.ApplyConfig(conf)
+		gotError := err != nil
+		testutil.Equals(t, tc.err, gotError)
+
+		err = s.Close()
+		testutil.Ok(t, err)
+	}
 }
 
 func TestExternalLabelsQuerierSelect(t *testing.T) {
 	matchers := []*labels.Matcher{
-		mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
+		labels.MustNewMatcher(labels.MatchEqual, "job", "api-server"),
 	}
 	q := &externalLabelsQuerier{
 		Querier: mockQuerier{},
@@ -61,10 +136,10 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 	}{
 		{
 			inMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "api-server"),
 			},
 			outMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "api-server"),
 			},
 			added: labels.Labels{},
 		},
@@ -74,12 +149,12 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 				{Name: "region", Value: "europe"},
 			},
 			inMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "api-server"),
 			},
 			outMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
-				mustNewLabelMatcher(labels.MatchEqual, "region", "europe"),
-				mustNewLabelMatcher(labels.MatchEqual, "dc", "berlin-01"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "api-server"),
+				labels.MustNewMatcher(labels.MatchEqual, "region", "europe"),
+				labels.MustNewMatcher(labels.MatchEqual, "dc", "berlin-01"),
 			},
 			added: labels.Labels{
 				{Name: "dc", Value: "berlin-01"},
@@ -92,13 +167,13 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 				{Name: "dc", Value: "berlin-01"},
 			},
 			inMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
-				mustNewLabelMatcher(labels.MatchEqual, "dc", "munich-02"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "api-server"),
+				labels.MustNewMatcher(labels.MatchEqual, "dc", "munich-02"),
 			},
 			outMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "job", "api-server"),
-				mustNewLabelMatcher(labels.MatchEqual, "region", "europe"),
-				mustNewLabelMatcher(labels.MatchEqual, "dc", "munich-02"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", "api-server"),
+				labels.MustNewMatcher(labels.MatchEqual, "region", "europe"),
+				labels.MustNewMatcher(labels.MatchEqual, "dc", "munich-02"),
 			},
 			added: labels.Labels{
 				{Name: "region", Value: "europe"},
@@ -215,7 +290,7 @@ func TestPreferLocalStorageFilter(t *testing.T) {
 		}
 
 		if test.querier != q {
-			t.Errorf("%d. expected quierer %+v, got %+v", i, test.querier, q)
+			t.Errorf("%d. expected querier %+v, got %+v", i, test.querier, q)
 		}
 	}
 }
@@ -227,12 +302,12 @@ func TestRequiredMatchersFilter(t *testing.T) {
 		storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 			return mockQuerier{ctx: ctx, mint: mint, maxt: maxt}, nil
 		}),
-		[]*labels.Matcher{mustNewLabelMatcher(labels.MatchEqual, "special", "label")},
+		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "special", "label")},
 	)
 
 	want := &requiredMatchersQuerier{
 		Querier:          mockQuerier{ctx: ctx, mint: 0, maxt: 50},
-		requiredMatchers: []*labels.Matcher{mustNewLabelMatcher(labels.MatchEqual, "special", "label")},
+		requiredMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "special", "label")},
 	}
 	have, err := f.Querier(ctx, 0, 50)
 	if err != nil {
@@ -240,7 +315,7 @@ func TestRequiredMatchersFilter(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(want, have) {
-		t.Errorf("expected quierer %+v, got %+v", want, have)
+		t.Errorf("expected querier %+v, got %+v", want, have)
 	}
 }
 
@@ -253,66 +328,66 @@ func TestRequiredLabelsQuerierSelect(t *testing.T) {
 		{
 			requiredMatchers: []*labels.Matcher{},
 			matchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
 			},
 			seriesSet: mockSeriesSet{},
 		},
 		{
 			requiredMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
 			},
 			matchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
 			},
 			seriesSet: mockSeriesSet{},
 		},
 		{
 			requiredMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
 			},
 			matchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchRegexp, "special", "label"),
+				labels.MustNewMatcher(labels.MatchRegexp, "special", "label"),
 			},
 			seriesSet: storage.NoopSeriesSet(),
 		},
 		{
 			requiredMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
 			},
 			matchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "different"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "different"),
 			},
 			seriesSet: storage.NoopSeriesSet(),
 		},
 		{
 			requiredMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
 			},
 			matchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
-				mustNewLabelMatcher(labels.MatchEqual, "foo", "bar"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 			},
 			seriesSet: mockSeriesSet{},
 		},
 		{
 			requiredMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
-				mustNewLabelMatcher(labels.MatchEqual, "foo", "bar"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 			},
 			matchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
-				mustNewLabelMatcher(labels.MatchEqual, "foo", "baz"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "foo", "baz"),
 			},
 			seriesSet: storage.NoopSeriesSet(),
 		},
 		{
 			requiredMatchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
-				mustNewLabelMatcher(labels.MatchEqual, "foo", "bar"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 			},
 			matchers: []*labels.Matcher{
-				mustNewLabelMatcher(labels.MatchEqual, "special", "label"),
-				mustNewLabelMatcher(labels.MatchEqual, "foo", "bar"),
+				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
+				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 			},
 			seriesSet: mockSeriesSet{},
 		},

@@ -31,9 +31,9 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -112,7 +112,7 @@ type WALReader interface {
 // the truncation threshold can be compacted.
 type segmentFile struct {
 	*os.File
-	maxTime   int64  // highest tombstone or sample timpstamp in segment
+	maxTime   int64  // highest tombstone or sample timestamp in segment
 	minSeries uint64 // lowerst series ID in segment
 }
 

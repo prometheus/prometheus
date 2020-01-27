@@ -26,12 +26,12 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -39,8 +39,8 @@ import (
 // The methods must be called in the order they are specified in.
 type IndexWriter interface {
 	// AddSymbols registers all string symbols that are encountered in series
-	// and other indices.
-	AddSymbols(sym map[string]struct{}) error
+	// and other indices. Symbols must be added in sorted order.
+	AddSymbol(sym string) error
 
 	// AddSeries populates the index writer with a series and its offsets
 	// of chunks that the index can reference.
@@ -50,14 +50,6 @@ type IndexWriter interface {
 	// are added later.
 	AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error
 
-	// WriteLabelIndex serializes an index from label names to values.
-	// The passed in values chained tuples of strings of the length of names.
-	WriteLabelIndex(names []string, values []string) error
-
-	// WritePostings writes a postings list for a single label pair.
-	// The Postings here contain refs to the series that were added.
-	WritePostings(name, value string, it index.Postings) error
-
 	// Close writes any finalization and closes the resources associated with
 	// the underlying writer.
 	Close() error
@@ -65,18 +57,19 @@ type IndexWriter interface {
 
 // IndexReader provides reading access of serialized index data.
 type IndexReader interface {
-	// Symbols returns a set of string symbols that may occur in series' labels
-	// and indices.
-	Symbols() (map[string]struct{}, error)
+	// Symbols return an iterator over sorted string symbols that may occur in
+	// series' labels and indices. It is not safe to use the returned strings
+	// beyond the lifetime of the index reader.
+	Symbols() index.StringIter
 
-	// LabelValues returns the possible label values.
-	LabelValues(names ...string) (index.StringTuples, error)
+	// LabelValues returns sorted possible label values.
+	LabelValues(name string) ([]string, error)
 
-	// Postings returns the postings list iterator for the label pair.
+	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
-	// Found IDs are not strictly required to point to a valid Series, e.g. during
-	// background garbage collections.
-	Postings(name, value string) (index.Postings, error)
+	// Found IDs are not strictly required to point to a valid Series, e.g.
+	// during background garbage collections. Input values must be sorted.
+	Postings(name string, values ...string) (index.Postings, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
@@ -87,23 +80,11 @@ type IndexReader interface {
 	// Returns ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
 
-	// LabelIndices returns a list of string tuples for which a label value index exists.
-	// NOTE: This is deprecated. Use `LabelNames()` instead.
-	LabelIndices() ([][]string, error)
-
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames() ([]string, error)
 
 	// Close releases the underlying resources of the reader.
 	Close() error
-}
-
-// StringTuples provides access to a sorted list of string tuples.
-type StringTuples interface {
-	// Total number of tuples in the list.
-	Len() int
-	// At returns the tuple at position i.
-	At(i int) ([]string, error)
 }
 
 // ChunkWriter serializes a time block of chunked series data.
@@ -440,18 +421,17 @@ type blockIndexReader struct {
 	b  *Block
 }
 
-func (r blockIndexReader) Symbols() (map[string]struct{}, error) {
-	s, err := r.ir.Symbols()
-	return s, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+func (r blockIndexReader) Symbols() index.StringIter {
+	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) LabelValues(names ...string) (index.StringTuples, error) {
-	st, err := r.ir.LabelValues(names...)
+func (r blockIndexReader) LabelValues(name string) ([]string, error) {
+	st, err := r.ir.LabelValues(name)
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
-func (r blockIndexReader) Postings(name, value string) (index.Postings, error) {
-	p, err := r.ir.Postings(name, value)
+func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
+	p, err := r.ir.Postings(name, values...)
 	if err != nil {
 		return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
@@ -467,11 +447,6 @@ func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks
 		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 	return nil
-}
-
-func (r blockIndexReader) LabelIndices() ([][]string, error) {
-	ss, err := r.ir.LabelIndices()
-	return ss, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
 func (r blockIndexReader) LabelNames() ([]string, error) {
@@ -504,7 +479,7 @@ func (r blockChunkReader) Close() error {
 }
 
 // Delete matching series between mint and maxt in the block.
-func (pb *Block) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	pb.mtx.Lock()
 	defer pb.mtx.Unlock()
 

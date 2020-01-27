@@ -17,7 +17,6 @@ import (
 	"context"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
@@ -27,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
@@ -244,12 +242,7 @@ type querier struct {
 	q tsdb.Querier
 }
 
-func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	ms := make([]tsdbLabels.Matcher, 0, len(oms))
-
-	for _, om := range oms {
-		ms = append(ms, convertMatcher(om))
-	}
+func (q querier) Select(_ *storage.SelectParams, ms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	set, err := q.q.Select(ms...)
 	if err != nil {
 		return nil, nil, err
@@ -279,15 +272,15 @@ type series struct {
 	s tsdb.Series
 }
 
-func (s series) Labels() labels.Labels            { return toLabels(s.s.Labels()) }
-func (s series) Iterator() storage.SeriesIterator { return storage.SeriesIterator(s.s.Iterator()) }
+func (s series) Labels() labels.Labels            { return s.s.Labels() }
+func (s series) Iterator() storage.SeriesIterator { return s.s.Iterator() }
 
 type appender struct {
 	a tsdb.Appender
 }
 
 func (a appender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
-	ref, err := a.a.Add(toTSDBLabels(lset), t, v)
+	ref, err := a.a.Add(lset, t, v)
 
 	switch errors.Cause(err) {
 	case tsdb.ErrNotFound:
@@ -320,36 +313,3 @@ func (a appender) AddFast(_ labels.Labels, ref uint64, t int64, v float64) error
 
 func (a appender) Commit() error   { return a.a.Commit() }
 func (a appender) Rollback() error { return a.a.Rollback() }
-
-func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
-	switch m.Type {
-	case labels.MatchEqual:
-		return tsdbLabels.NewEqualMatcher(m.Name, m.Value)
-
-	case labels.MatchNotEqual:
-		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
-
-	case labels.MatchRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
-		if err != nil {
-			panic(err)
-		}
-		return res
-
-	case labels.MatchNotRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
-		if err != nil {
-			panic(err)
-		}
-		return tsdbLabels.Not(res)
-	}
-	panic("storage.convertMatcher: invalid matcher type")
-}
-
-func toTSDBLabels(l labels.Labels) tsdbLabels.Labels {
-	return *(*tsdbLabels.Labels)(unsafe.Pointer(&l))
-}
-
-func toLabels(l tsdbLabels.Labels) labels.Labels {
-	return *(*labels.Labels)(unsafe.Pointer(&l))
-}

@@ -1,5 +1,12 @@
 local g = import 'grafana-builder/grafana.libsonnet';
-
+local grafana = import 'grafonnet/grafana.libsonnet';
+local dashboard = grafana.dashboard;
+local row = grafana.row;
+local singlestat = grafana.singlestat;
+local prometheus = grafana.prometheus;
+local graphPanel = grafana.graphPanel;
+local tablePanel = grafana.tablePanel;
+local template = grafana.template;
 {
   grafanaDashboards+:: {
     'prometheus.json':
@@ -92,57 +99,278 @@ local g = import 'grafana-builder/grafana.libsonnet';
       ),
     // Remote write specific dashboard.
     'prometheus-remote-write.json':
-      g.dashboard('Prometheus Remote Write')
-      .addMultiTemplate('instance', 'prometheus_build_info', 'instance')
-      .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*prometheus.*"}', 'cluster')
-      .addRow(
-        g.row('Timestamps')
-        .addPanel(
-          g.panel('Highest Timestamp In vs. Highest Timestamp Sent') +
-          g.queryPanel('prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"} - ignoring(queue) group_right(instance) prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance"}', '{{cluster}}:{{instance}}-{{queue}}') +
-          { yaxes: g.yaxes('s') }
+      local timestampComparison = 
+        graphPanel.new(
+          'Highest Timestamp In vs. Highest Timestamp Sent',
+          datasource='$datasource',
+          span=6,
         )
-        .addPanel(
-          g.panel('Rate[5m]') +
-          g.queryPanel('rate(prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])  - ignoring (queue) group_right(instance) rate(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])', '{{cluster}}:{{instance}}-{{queue}}')
+        .addTarget(prometheus.target(
+          |||
+            (
+              prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"} 
+            -  
+              ignoring(queue) group_right(instance) prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance"}
+            )
+          |||,
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}',
+        ));
+
+      local timestampComparisonRate = 
+        graphPanel.new(
+          'Rate[5m]',
+          datasource='$datasource',
+          span=6,
+        )
+        .addTarget(prometheus.target(
+          |||
+            (
+              rate(prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])  
+            - 
+              ignoring (queue) group_right(instance) rate(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])
+            )
+          |||,
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}',
+        ));
+
+      local samplesRate =
+        graphPanel.new(
+          'Rate, in vs. succeeded or dropped [5m]',
+          datasource='$datasource',
+          span=12,
+        )
+        .addTarget(prometheus.target(
+          |||
+            rate(
+              prometheus_remote_storage_samples_in_total{cluster=~"$cluster", instance=~"$instance"}[5m])
+            - 
+              ignoring(queue) group_right(instance) rate(prometheus_remote_storage_succeeded_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) 
+            - 
+              rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])
+          |||,
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      local currentShards =
+        graphPanel.new(
+          'Current Shards',
+          datasource='$datasource',
+          span=12,
+          min_span=6,
+        )
+        .addTarget(prometheus.target(
+          'prometheus_remote_storage_shards{cluster=~"$cluster", instance=~"$instance"}',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      local maxShards =
+        graphPanel.new(
+          'Max Shards',
+          datasource='$datasource',
+          span=4,
+        )
+        .addTarget(prometheus.target(
+          'prometheus_remote_storage_shards_max{cluster=~"$cluster", instance=~"$instance"}',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      local minShards =
+        graphPanel.new(
+          'Min Shards',
+          datasource='$datasource',
+          span=4,
+        )
+        .addTarget(prometheus.target(
+          'prometheus_remote_storage_shards_min{cluster=~"$cluster", instance=~"$instance"}',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      local desiredShards =
+        graphPanel.new(
+          'Desired Shards',
+          datasource='$datasource',
+          span=4,
+        )
+        .addTarget(prometheus.target(
+          'prometheus_remote_storage_shards_desired{cluster=~"$cluster", instance=~"$instance"}',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      local shardsCapacity =
+        graphPanel.new(
+          'Shard Capacity',
+          datasource='$datasource',
+          span=6,
+        )
+        .addTarget(prometheus.target(
+          'prometheus_remote_storage_shard_capacity{cluster=~"$cluster", instance=~"$instance"}',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+       
+      
+      local pendingSamples =
+        graphPanel.new(
+          'Pending Samples',
+          datasource='$datasource',
+          span=6,
+        )
+        .addTarget(prometheus.target(
+          'prometheus_remote_storage_pending_samples{cluster=~"$cluster", instance=~"$instance"}',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      local walSegment = 
+        graphPanel.new(
+          'TSDB Current Segment',
+          datasource='$datasource',
+          span=6,
+          formatY1='none',
+        )
+        .addTarget(prometheus.target(
+          'prometheus_tsdb_wal_segment_current{cluster=~"$cluster", instance=~"$instance"}',
+          legendFormat='{{cluster}}:{{instance}}'
+        ));
+
+      local queueSegment = 
+        graphPanel.new(
+          'Remote Write Current Segment',
+          datasource='$datasource',
+          span=6,
+          formatY1='none',
+        )
+        .addTarget(prometheus.target(
+          'prometheus_wal_watcher_current_segment{cluster=~"$cluster", instance=~"$instance"}',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      local droppedSamples =
+        graphPanel.new(
+          'Dropped Samples',
+          datasource='$datasource',
+          span=3,
+        )
+        .addTarget(prometheus.target(
+          'rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      local failedSamples =
+        graphPanel.new(
+          'Failed Samples',
+          datasource='$datasource',
+          span=3,
+        )
+        .addTarget(prometheus.target(
+          'rate(prometheus_remote_storage_failed_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      local retriedSamples =
+        graphPanel.new(
+          'Retried Samples',
+          datasource='$datasource',
+          span=3,
+        )
+        .addTarget(prometheus.target(
+          'rate(prometheus_remote_storage_retried_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      local enqueueRetries =
+        graphPanel.new(
+          'Enqueue Retries',
+          datasource='$datasource',
+          span=3,
+        )
+        .addTarget(prometheus.target(
+          'rate(prometheus_remote_storage_enqueue_retries_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          legendFormat='{{cluster}}:{{instance}}-{{queue}}'
+        ));
+
+      dashboard.new('Prometheus Remote Write',
+      editable=true)
+      .addTemplate(
+        {
+          hide: 0,
+          label: null,
+          name: 'datasource',
+          options: [],
+          query: 'prometheus',
+          refresh: 1,
+          regex: '',
+          type: 'datasource',
+        },
+      )
+      .addTemplate(
+        template.new(
+          'instance',
+          '$datasource',
+          'label_values(prometheus_build_info, instance)' % $._config,
+          refresh='time',
+          current={
+            selected: true,
+            text: 'All',
+            value: '$__all',
+          },
+          includeAll=true, 
+        )
+      )
+      .addTemplate(
+        template.new(
+          'cluster',
+          '$datasource',
+          'label_values(kube_pod_container_info{image=~".*prometheus.*"}, cluster)' % $._config,
+          refresh='time',
+          current={
+            selected: true,
+            text: 'All',
+            value: '$__all',
+          },
+          includeAll=true, 
+        )
+      )
+      .addTemplate(
+        template.new(
+          'queue',
+          '$datasource',
+          'label_values(prometheus_remote_storage_shards{cluster=~"$cluster", instance=~"$instance"}, queue)' % $._config,
+          refresh='time',
+          includeAll=true, 
         )
       )
       .addRow(
-        g.row('Samples')
-        .addPanel(
-          g.panel('Rate, in vs. succeeded or dropped [5m]') +
-          g.queryPanel('rate(prometheus_remote_storage_samples_in_total{cluster=~"$cluster", instance=~"$instance"}[5m])- ignoring(queue) group_right(instance) rate(prometheus_remote_storage_succeeded_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) - rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])', '{{cluster}}:{{instance}}-{{queue}}')
-        )
+        row.new('Timestamps')
+        .addPanel(timestampComparison)
+        .addPanel(timestampComparisonRate)
       )
       .addRow(
-        g.row('Shards')
-        .addPanel(
-          g.panel('Num. Shards') +
-          g.queryPanel('prometheus_remote_storage_shards{cluster=~"$cluster", instance=~"$instance"}', '{{cluster}}:{{instance}}-{{queue}}')
-        )
-        .addPanel(
-          g.panel('Capacity') +
-          g.queryPanel('prometheus_remote_storage_shard_capacity{cluster=~"$cluster", instance=~"$instance"}', '{{cluster}}:{{instance}}-{{queue}}')
-        )
+        row.new('Samples')
+        .addPanel(samplesRate)
       )
       .addRow(
-        g.row('Misc Rates.')
-        .addPanel(
-          g.panel('Dropped Samples') +
-          g.queryPanel('rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])', '{{cluster}}:{{instance}}-{{queue}}')
+        row.new('Shards'
         )
-        .addPanel(
-          g.panel('Failed Samples') +
-          g.queryPanel('rate(prometheus_remote_storage_failed_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])', '{{cluster}}:{{instance}}-{{queue}}')
-        )
-        .addPanel(
-          g.panel('Retried Samples') +
-          g.queryPanel('rate(prometheus_remote_storage_retried_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])', '{{cluster}}:{{instance}}-{{queue}}')
-        )
-        .addPanel(
-          g.panel('Enqueue Retries') +
-          g.queryPanel('rate(prometheus_remote_storage_enqueue_retries_total{cluster=~"$cluster", instance=~"$instance"}[5m])', '{{cluster}}:{{instance}}-{{queue}}')
-        )
-      ),
+        .addPanel(currentShards)
+        .addPanel(maxShards)
+        .addPanel(minShards)
+        .addPanel(desiredShards)
+      )
+      .addRow(
+        row.new('Shard Details')
+        .addPanel(shardsCapacity)
+        .addPanel(pendingSamples)
+      )
+      .addRow(
+        row.new('Segments')
+        .addPanel(walSegment)
+        .addPanel(queueSegment)
+      )
+      .addRow(
+        row.new('Misc. Rates')
+        .addPanel(droppedSamples)
+        .addPanel(failedSamples)
+        .addPanel(retriedSamples)
+        .addPanel(enqueueRetries)
+      )      
   },
 }
