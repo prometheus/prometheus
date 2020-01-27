@@ -182,7 +182,7 @@ type scrapeLoopOptions struct {
 
 const maxAheadTime = 10 * time.Minute
 
-type labelsMutator func(labels.Labels) labels.Labels
+type labelsMutator func(labels.Labels) (labels.Labels, error)
 
 func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, logger log.Logger) (*scrapePool, error) {
 	targetScrapePools.Inc()
@@ -221,10 +221,10 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 			opts.scraper,
 			log.With(logger, "target", opts.target),
 			buffers,
-			func(l labels.Labels) labels.Labels {
+			func(l labels.Labels) (labels.Labels, error) {
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
 			},
-			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
+			func(l labels.Labels) (labels.Labels, error) { return mutateReportSampleLabels(l, opts.target) },
 			func() storage.Appender {
 				app, err := app.Appender()
 				if err != nil {
@@ -452,7 +452,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 	wg.Wait()
 }
 
-func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
+func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) (labels.Labels, error) {
 	lb := labels.NewBuilder(lset)
 
 	if honor {
@@ -464,8 +464,11 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 	} else {
 		for _, l := range target.Labels() {
 			// existingValue will be empty if l.Name doesn't exist.
-			existingValue := lset.Get(l.Name)
-			if existingValue != "" {
+			if existingValue := lset.Get(l.Name); existingValue != "" {
+				exportedLabel := model.ExportedLabelPrefix + l.Name
+				if existingExportedValue := lset.Get(exportedLabel); existingExportedValue != "" {
+					return labels.Labels{}, errors.Errorf(`duplicate label while renaming conflicting label "%s" to "%s"`, l.Name, exportedLabel)
+				}
 				lb.Set(model.ExportedLabelPrefix+l.Name, existingValue)
 			}
 			// It is now safe to set the target label.
@@ -479,10 +482,10 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		res = relabel.Process(res, rc...)
 	}
 
-	return res
+	return res, nil
 }
 
-func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {
+func mutateReportSampleLabels(lset labels.Labels, target *Target) (labels.Labels, error) {
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range target.Labels() {
@@ -490,7 +493,7 @@ func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels 
 		lb.Set(l.Name, l.Value)
 	}
 
-	return lb.Labels()
+	return lb.Labels(), nil
 }
 
 // appender returns an appender for ingested samples from the target.
@@ -1125,7 +1128,11 @@ loop:
 
 			// Hash label set as it is seen local to the target. Then add target labels
 			// and relabeling and store the final label set.
-			lset = sl.sampleMutator(lset)
+			lset, err = sl.sampleMutator(lset)
+			if err != nil {
+				level.Debug(sl.l).Log("msg", "error while mutating metrics", "series", string(met), "err", err)
+				break loop
+			}
 
 			// The label set may be set to nil to indicate dropping.
 			if lset == nil {
@@ -1318,7 +1325,10 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	}
 
 	hash := lset.Hash()
-	lset = sl.reportSampleMutator(lset)
+	lset, err := sl.reportSampleMutator(lset)
+	if err != nil {
+		return err
+	}
 
 	ref, err := app.Add(lset, t, v)
 	switch err {

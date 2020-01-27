@@ -423,7 +423,7 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 	}
 }
 
-func nopMutator(l labels.Labels) labels.Labels { return l }
+func nopMutator(l labels.Labels) (labels.Labels, error) { return l, nil }
 
 func TestScrapeLoopStop(t *testing.T) {
 	var (
@@ -929,6 +929,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 		discoveryLabels []string
 		expLset         labels.Labels
 		expValue        float64
+		err             error
 	}{
 		{
 			// When "honor_labels" is not set
@@ -939,6 +940,17 @@ func TestScrapeLoopAppend(t *testing.T) {
 			discoveryLabels: []string{"n", "2"},
 			expLset:         labels.FromStrings("__name__", "metric", "exported_n", "1", "n", "2"),
 			expValue:        0,
+		}, {
+			// When "honor_labels" is not set
+			// label name collision is handler by adding a prefix, but if there
+			// is a double collision we error
+			title:           "Label name collision",
+			honorLabels:     false,
+			scrapeLabels:    `metric{n="1",exported_n="2"} 0`,
+			discoveryLabels: []string{"n", "2"},
+			expLset:         labels.FromStrings("__name__", "metric", "exported_n", "1", "n", "2"),
+			expValue:        0,
+			err:             fmt.Errorf(`duplicate label while renaming conflicting label "n" to "exported_n"`),
 		}, {
 			// When "honor_labels" is not set
 			// exported label from discovery don't get overwritten
@@ -974,7 +986,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 		},
 	}
 
-	for _, test := range tests {
+	for i, test := range tests {
 		app := &collectResultAppender{}
 
 		discoveryLabels := &Target{
@@ -983,10 +995,10 @@ func TestScrapeLoopAppend(t *testing.T) {
 
 		sl := newScrapeLoop(context.Background(),
 			nil, nil, nil,
-			func(l labels.Labels) labels.Labels {
+			func(l labels.Labels) (labels.Labels, error) {
 				return mutateSampleLabels(l, discoveryLabels, test.honorLabels, nil)
 			},
-			func(l labels.Labels) labels.Labels {
+			func(l labels.Labels) (labels.Labels, error) {
 				return mutateReportSampleLabels(l, discoveryLabels)
 			},
 			func() storage.Appender { return app },
@@ -998,6 +1010,11 @@ func TestScrapeLoopAppend(t *testing.T) {
 		now := time.Now()
 
 		_, _, _, err := sl.append([]byte(test.scrapeLabels), "", now)
+		if test.err != nil {
+			testutil.NotOk(t, err, "test %d", i)
+			testutil.ErrorEqual(t, test.err, err, "test %d", i)
+			continue
+		}
 		testutil.Ok(t, err)
 
 		expected := []sample{
