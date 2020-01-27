@@ -238,13 +238,9 @@ button.execute-btn {
   max-height: 20px;
 }
 
-.rules-head {
-  font-weight: 600;
-}
-
-.rule_cell {
+.rule-cell {
   white-space: pre-wrap;
-  background-color: #F5F5F5;
+  background-color: #f5f5f5;
   display: block;
   font-family: monospace;
 }
