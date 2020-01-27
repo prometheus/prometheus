@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -189,12 +188,6 @@ func (q *query) Exec(ctx context.Context) *Result {
 		span.SetTag(queryTag, q.stmt.String())
 	}
 
-	// Log query in active log.
-	if q.ng.activeQueryTracker != nil {
-		queryIndex := q.ng.activeQueryTracker.Insert(q.q)
-		defer q.ng.activeQueryTracker.Delete(queryIndex)
-	}
-
 	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
 
@@ -236,7 +229,6 @@ type Engine struct {
 	logger             log.Logger
 	metrics            *engineMetrics
 	timeout            time.Duration
-	gate               *gate.Gate
 	maxSamplesPerQuery int
 	activeQueryTracker *ActiveQueryTracker
 	queryLogger        QueryLogger
@@ -323,7 +315,6 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 
 	return &Engine{
-		gate:               gate.New(opts.MaxConcurrent),
 		timeout:            opts.Timeout,
 		logger:             opts.Logger,
 		metrics:            metrics,
@@ -466,12 +457,16 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 	defer execSpanTimer.Finish()
 
 	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
-
-	if err := ng.gate.Start(ctx); err != nil {
-		return nil, nil, contextErr(err, "query queue")
+	// Log query in active log. The active log guarantees that we don't run over
+	// MaxConcurrent queries.
+	if ng.activeQueryTracker != nil {
+		queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
+		if err != nil {
+			queueSpanTimer.Finish()
+			return nil, nil, contextErr(err, "query queue")
+		}
+		defer ng.activeQueryTracker.Delete(queryIndex)
 	}
-	defer ng.gate.Done()
-
 	queueSpanTimer.Finish()
 
 	// Cancel when execution is done or an error was raised.

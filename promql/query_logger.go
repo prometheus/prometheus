@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -174,13 +175,17 @@ func (tracker ActiveQueryTracker) Delete(insertIndex int) {
 	tracker.getNextIndex <- insertIndex
 }
 
-func (tracker ActiveQueryTracker) Insert(query string) int {
-	i, fileBytes := <-tracker.getNextIndex, tracker.mmapedFile
-	entry := newJSONEntry(query, tracker.logger)
-	start, end := i, i+entrySize
+func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int, error) {
+	select {
+	case i := <-tracker.getNextIndex:
+		fileBytes := tracker.mmapedFile
+		entry := newJSONEntry(query, tracker.logger)
+		start, end := i, i+entrySize
 
-	copy(fileBytes[start:], entry)
-	copy(fileBytes[end-1:], ",")
-
-	return i
+		copy(fileBytes[start:], entry)
+		copy(fileBytes[end-1:], ",")
+		return i, nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
 }
