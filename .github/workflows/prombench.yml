@@ -82,7 +82,7 @@ jobs:
         PROJECT_ID: macro-mile-203600
         CLUSTER_NAME: prombench
         ZONE: europe-west3-a
-        TEST_INFRA_REPO: https://github.com/testpromorg/prombench.git
+        TEST_INFRA_REPO: https://github.com/prometheus/prombench.git
         PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
       with:
         args: >-
