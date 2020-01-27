@@ -1,11 +1,10 @@
 import React, { FC, useState, Fragment } from 'react';
-import { Link } from '@reach/router';
 import { Alert, Collapse, Table, Badge } from 'reactstrap';
 import { RuleStatus } from './AlertContents';
 import { Rule } from '../../types/types';
 import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { createExpressionLink } from '../../utils/index';
+import { RulePanel } from '../rules/RulePanel';
 
 interface CollapsibleAlertPanelProps {
   rule: Rule;
@@ -25,27 +24,10 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
     <>
       <Alert fade={false} onClick={() => toggle(!open)} color={alertColors[rule.state]} style={{ cursor: 'pointer' }}>
         <FontAwesomeIcon icon={open ? faChevronDown : faChevronRight} fixedWidth />
-        <strong>{rule.name}</strong> ({`${rule.alerts.length} active`})
+        <strong>{rule.name}</strong> ({rule.alerts.length} active)
       </Alert>
       <Collapse isOpen={open} className="mb-2">
-        <pre style={{ background: '#f5f5f5', padding: 15 }}>
-          <code>
-            <div>
-              name: <Link to={createExpressionLink(`ALERTS{alertname="${rule.name}"}`)}>{rule.name}</Link>
-            </div>
-            <div>
-              expr: <Link to={createExpressionLink(rule.query)}>{rule.query}</Link>
-            </div>
-            <div>
-              <div>labels:</div>
-              <div className="ml-5">severity: {rule.labels.severity}</div>
-            </div>
-            <div>
-              <div>annotations:</div>
-              <div className="ml-5">summary: {rule.annotations.summary}</div>
-            </div>
-          </code>
-        </pre>
+        <RulePanel rule={rule} styles={{ padding: 15, border: '1px solid #ccc', borderRadius: 4 }} />
         {rule.alerts.length > 0 && (
           <Table bordered size="sm">
             <thead>
@@ -71,11 +53,9 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                         })}
                       </td>
                       <td>
-                        <h5 className="m-0">
-                          <Badge color={alertColors[alert.state] + ' text-uppercase'} className="px-3">
-                            {alert.state}
-                          </Badge>
-                        </h5>
+                        <Badge color={alertColors[alert.state] + ' text-uppercase'} className="px-3 py-2">
+                          {alert.state}
+                        </Badge>
                       </td>
                       <td>{alert.activeAt}</td>
                       <td>{alert.value}</td>

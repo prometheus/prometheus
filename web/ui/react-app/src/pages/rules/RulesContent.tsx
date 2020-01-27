@@ -1,10 +1,10 @@
-import React, { FC } from 'react';
+import React, { FC, Fragment } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Alert, Table, Badge } from 'reactstrap';
-import { Link } from '@reach/router';
-import { formatRelative, createExpressionLink, humanizeDuration } from '../../utils';
+import { formatRelative, humanizeDuration, isPresent } from '../../utils';
 import { Rule } from '../../types/types';
 import { now } from 'moment';
+import { RulePanel } from './RulePanel';
 
 interface RuleGroup {
   name: string;
