@@ -72,7 +72,7 @@ type Head struct {
 	lastSeriesID     uint64
 
 	metrics    *headMetrics
-	wal        *wal.WAL
+	wal        wal.WAL
 	logger     log.Logger
 	appendPool sync.Pool
 	seriesPool sync.Pool
@@ -263,7 +263,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 }
 
 // NewHead opens the head block in dir.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64, pool chunkenc.Pool) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal wal.WAL, chunkRange int64, pool chunkenc.Pool) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}

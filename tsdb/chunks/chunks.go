@@ -605,7 +605,11 @@ func nextSequenceFile(dir string) (string, int, error) {
 			i = j
 		}
 	}
-	return filepath.Join(dir, fmt.Sprintf("%0.6d", i+1)), int(i + 1), nil
+	return segmentFile(dir, int(i+1)), int(i + 1), nil
+}
+
+func segmentFile(baseDir string, index int) string {
+	return filepath.Join(baseDir, fmt.Sprintf("%0.6d", index))
 }
 
 func sequenceFiles(dir string) ([]string, error) {
@@ -615,7 +619,6 @@ func sequenceFiles(dir string) ([]string, error) {
 	}
 	var res []string
 	for _, fi := range files {
-
 		if _, err := strconv.ParseUint(fi.Name(), 10, 64); err != nil {
 			continue
 		}

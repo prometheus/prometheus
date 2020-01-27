@@ -304,12 +304,9 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []Series) string {
-	tempDir, err := ioutil.TempDir("", "block_test")
-	testutil.Ok(tb, err)
-	defer func() {
-		testutil.Ok(tb, os.RemoveAll(tempDir))
-	}()
-	head := createHead(tb, series, tempDir)
+	w, close := newTestNoopWal(tb)
+	defer close()
+	head := createHead(tb, series, w)
 	defer func() {
 		testutil.Ok(tb, head.Close())
 	}()
@@ -329,11 +326,8 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	return filepath.Join(dir, ulid.String())
 }
 
-func createHead(tb testing.TB, series []Series, dir string) *Head {
-	wlog, err := wal.New(nil, nil, dir, false)
-	testutil.Ok(tb, err)
-
-	head, err := NewHead(nil, nil, wlog, 2*60*60*1000, nil)
+func createHead(tb testing.TB, series []Series, w wal.WAL) *Head {
+	head, err := NewHead(nil, nil, w, 2*60*60*1000, nil)
 	testutil.Ok(tb, err)
 
 	app := head.Appender()
@@ -355,7 +349,6 @@ func createHead(tb testing.TB, series []Series, dir string) *Head {
 	}
 	err = app.Commit()
 	testutil.Ok(tb, err)
-
 	return head
 }
 

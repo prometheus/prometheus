@@ -40,9 +40,11 @@ import (
 )
 
 func BenchmarkCreateSeries(b *testing.B) {
-	series := genSeries(b.N, 10, 0, 0)
+	w, close := newTestNoopWal(b)
+	defer close()
 
-	h, err := NewHead(nil, nil, nil, 10000, nil)
+	series := genSeries(b.N, 10, 0, 0)
+	h, err := NewHead(nil, nil, w, 10000, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
 
@@ -54,7 +56,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 	}
 }
 
-func populateTestWAL(t testing.TB, w *wal.WAL, recs []interface{}) {
+func populateTestWAL(t testing.TB, w wal.WAL, recs []interface{}) {
 	var enc record.Encoder
 	for _, r := range recs {
 		switch v := r.(type) {
@@ -295,14 +297,17 @@ func TestHead_WALMultiRef(t *testing.T) {
 	testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{100, 1}, sample{300, 2}}}, series)
 }
 
-func TestHead_Truncate(t *testing.T) {
-	dir, err := ioutil.TempDir("", "wal_rollback")
+func newTestNoopWal(t testing.TB) (w wal.WAL, close func()) {
+	dir, err := ioutil.TempDir("", "test_noop_wal")
 	testutil.Ok(t, err)
-	defer func() {
+	return wal.NewNoopWAL(dir), func() {
 		testutil.Ok(t, os.RemoveAll(dir))
-	}()
-	w, err := wal.New(nil, nil, dir, false)
-	testutil.Ok(t, err)
+	}
+}
+
+func TestHead_Truncate(t *testing.T) {
+	w, close := newTestNoopWal(t)
+	defer close()
 
 	h, err := NewHead(nil, nil, w, 1000, nil)
 	testutil.Ok(t, err)
@@ -386,7 +391,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 	// This is usually taken from the Head, but passing manually here.
-	chunkReadWriter, err := chunks.NewHeadReadWriter(chunkDir(dir), chunkenc.NewPool())
+	chunkReadWriter, err := chunks.NewHeadReadWriter(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
 
 	// Initialise the global pool.
@@ -612,13 +617,8 @@ func TestHeadDeleteSimple(t *testing.T) {
 }
 
 func TestDeleteUntilCurMax(t *testing.T) {
-	dir, err := ioutil.TempDir("", "del_cur_max")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
-	wlog, err := wal.New(nil, nil, dir, false)
-	testutil.Ok(t, err)
+	wlog, close := newTestNoopWal(t)
+	defer close()
 
 	numSamples := int64(10)
 	hb, err := NewHead(nil, nil, wlog, 1000000, nil)
@@ -956,7 +956,7 @@ func TestMemSeries_append(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 	// This is usually taken from the Head, but passing manually here.
-	chunkReadWriter, err := chunks.NewHeadReadWriter(chunkDir(dir), chunkenc.NewPool())
+	chunkReadWriter, err := chunks.NewHeadReadWriter(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
 
 	s := newMemSeries(labels.Labels{}, 1, 500)
@@ -994,22 +994,16 @@ func TestMemSeries_append(t *testing.T) {
 	testutil.Assert(t, len(s.mmappedChunks)+1 > 7, "expected intermediate chunks")
 
 	// All chunks but the first and last should now be moderately full.
-	// TODO: Fix this with HeadReadWriter.
-	// for i, c := range s.chunks[1 : len(s.chunks)-1] {
-	// 	testutil.Assert(t, c.chunk.NumSamples() > 100, "unexpected small chunk %d of length %d", i, c.chunk.NumSamples())
-	// }
+	for i, c := range s.mmappedChunks[1:] {
+		chk, err := chunkReadWriter.Chunk(c.ref)
+		testutil.Ok(t, err)
+		testutil.Assert(t, chk.NumSamples() > 100, "unexpected small chunk %d of length %d", i, chk.NumSamples())
+	}
 }
 
 func TestGCChunkAccess(t *testing.T) {
-	// Create a WAL for Head so that chunks are written to tem dir
-	// and doesnt populate project dir on test failure.
-	dir, err := ioutil.TempDir("", "wal_rollback")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
-	w, err := wal.New(nil, nil, dir, false)
-	testutil.Ok(t, err)
+	w, close := newTestNoopWal(t)
+	defer close()
 
 	// Put a chunk, select it. GC it and then access it.
 	h, err := NewHead(nil, nil, w, 1000, nil)
@@ -1063,15 +1057,8 @@ func TestGCChunkAccess(t *testing.T) {
 }
 
 func TestGCSeriesAccess(t *testing.T) {
-	// Create a WAL for Head so that chunks are written to tem dir
-	// and doesnt populate project dir on test failure.
-	dir, err := ioutil.TempDir("", "wal_rollback")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
-	w, err := wal.New(nil, nil, dir, false)
-	testutil.Ok(t, err)
+	w, close := newTestNoopWal(t)
+	defer close()
 
 	// Put a series, select it. GC it and then access it.
 	h, err := NewHead(nil, nil, w, 1000, nil)
@@ -1127,13 +1114,8 @@ func TestGCSeriesAccess(t *testing.T) {
 }
 
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
-	wlog, err := wal.New(nil, nil, dir, false)
-	testutil.Ok(t, err)
+	wlog, close := newTestNoopWal(t)
+	defer close()
 
 	h, err := NewHead(nil, nil, wlog, 1000, nil)
 	testutil.Ok(t, err)
@@ -1162,13 +1144,8 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 }
 
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
-	dir, err := ioutil.TempDir("", "del_cur_max")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
-	wlog, err := wal.New(nil, nil, dir, false)
-	testutil.Ok(t, err)
+	wlog, close := newTestNoopWal(t)
+	defer close()
 
 	h, err := NewHead(nil, nil, wlog, 1000, nil)
 	testutil.Ok(t, err)

@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -871,13 +870,8 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
 		labelValues := totalSeries / labelNames
 		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
-			dir, err := ioutil.TempDir("", "compaction_from_head")
-			testutil.Ok(b, err)
-			defer func() {
-				testutil.Ok(b, os.RemoveAll(dir))
-			}()
-			wlog, err := wal.New(nil, nil, dir, false)
-			testutil.Ok(b, err)
+			wlog, close := newTestNoopWal(b)
+			defer close()
 
 			h, err := NewHead(nil, nil, wlog, 1000, nil)
 			testutil.Ok(b, err)

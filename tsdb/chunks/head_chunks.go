@@ -154,6 +154,22 @@ func (w *HeadReadWriter) initReader() (err error) {
 		if v := int(b.Range(MagicChunksSize, MagicChunksSize+ChunksFormatVersionSize)[0]); v != chunksFormatV1 {
 			return errors.Errorf("invalid chunk format version %d", v)
 		}
+
+		maxt := binary.BigEndian.Uint64(b.Range(HeaderMaxtOffset, HeaderMaxtOffset+8))
+		if maxt == 0 {
+			// This is possible if Prometheus crashes and the maxt was unwritten to the
+			// last segment. We set it to current time so that it will be eventually deleted.
+			f, err := os.OpenFile(files[i], os.O_WRONLY|os.O_CREATE, 0666)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			binary.BigEndian.PutUint64(w.buf[:], uint64(time.Now().Unix()))
+			if _, err := f.WriteAt(w.buf[:8], HeaderMaxtOffset); err != nil {
+				return err
+			}
+		}
+
 		w.size += int64(b.Len())
 	}
 
@@ -234,7 +250,6 @@ func (w *HeadReadWriter) Close() error {
 		return err
 	}
 
-	// close dir file (if not windows platform will fail on rename)
 	if err := w.dirFile.Close(); err != nil {
 		return err
 	}
@@ -254,8 +269,6 @@ func (w *HeadReadWriter) WriteChunk(seriesRef uint64, mint, maxt int64, chk chun
 			return 0, err
 		}
 	}
-
-	var seq = uint64(w.seq()) << 32
 
 	binary.BigEndian.PutUint64(w.buf[:], seriesRef)
 	if err := w.write(w.buf[:8]); err != nil {
@@ -277,7 +290,7 @@ func (w *HeadReadWriter) WriteChunk(seriesRef uint64, mint, maxt int64, chk chun
 	//
 	// The upper 4 bytes are for the segment index and
 	// the lower 4 bytes are for the segment offset where to start reading this chunk.
-	chunkRef = seq | uint64(w.n)
+	chunkRef = w.chunkRef(uint64(w.seq()), uint64(w.n))
 
 	w.buf[0] = byte(chk.Encoding())
 	if err := w.write(w.buf[:1]); err != nil {
@@ -294,6 +307,10 @@ func (w *HeadReadWriter) WriteChunk(seriesRef uint64, mint, maxt int64, chk chun
 	}
 
 	return chunkRef, w.wbuf.Flush()
+}
+
+func (w *HeadReadWriter) chunkRef(seq, offset uint64) (chunkRef uint64) {
+	return (seq << 32) | offset
 }
 
 func (w *HeadReadWriter) shouldCutSegment(chunkLength int) bool {
@@ -333,9 +350,9 @@ func (w *HeadReadWriter) cut() (err error) {
 	oldSeq := w.curFileSequence
 	w.curFileSequence = seq
 
-	// Write current time for mint and 0 for maxt.
+	// Write current time in milliseconds for mint and 0 for maxt.
 	w.curFileStartTime = time.Now()
-	binary.BigEndian.PutUint64(w.buf[:], uint64(w.curFileStartTime.Unix()))
+	binary.BigEndian.PutUint64(w.buf[:], uint64(w.curFileStartTime.UnixNano()/1e6))
 	if _, err := f.Write(w.buf[:8]); err != nil {
 		return err
 	}
@@ -385,7 +402,7 @@ func (w *HeadReadWriter) cut() (err error) {
 }
 
 // Truncate deletes the segment files which are strictly below the mint.
-// mint should be in seconds.
+// mint should be in milliseconds.
 func (w *HeadReadWriter) Truncate(mint int64) error {
 	var removedFiles []int
 
@@ -405,6 +422,10 @@ func (w *HeadReadWriter) Truncate(mint int64) error {
 		closers = append(closers, w.cs[seq])
 		delete(w.bs, seq)
 		delete(w.cs, seq)
+		if err := os.Remove(segmentFile(w.dirFile.Name(), seq)); err != nil {
+			w.bsMtx.Unlock()
+			return err
+		}
 	}
 	w.bsMtx.Unlock()
 
@@ -427,8 +448,8 @@ func (w *HeadReadWriter) finalizeCurFile() error {
 		return err
 	}
 
-	// Writing maxt of the file.
-	binary.BigEndian.PutUint64(w.buf[:], uint64(time.Now().Unix()))
+	// Writing maxt of the file in milliseconds.
+	binary.BigEndian.PutUint64(w.buf[:], uint64(time.Now().UnixNano()/1e6))
 	if _, err := w.curFile.WriteAt(w.buf[:8], HeaderMaxtOffset); err != nil {
 		return nil
 	}

@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -1813,13 +1812,8 @@ func TestFindSetMatches(t *testing.T) {
 }
 
 func TestPostingsForMatchers(t *testing.T) {
-	dir, err := ioutil.TempDir("", "postings_for_matchers")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
-	wlog, err := wal.New(nil, nil, dir, false)
-	testutil.Ok(t, err)
+	wlog, close := newTestNoopWal(t)
+	defer close()
 
 	h, err := NewHead(nil, nil, wlog, 1000, nil)
 	testutil.Ok(t, err)
@@ -2184,7 +2178,10 @@ func BenchmarkQueries(b *testing.B) {
 				queryTypes["_3-Blocks"] = &querier{blocks: qs[0:3]}
 				queryTypes["_10-Blocks"] = &querier{blocks: qs}
 
-				head := createHead(b, series, dir)
+				w, close := newTestNoopWal(b)
+				defer close()
+
+				head := createHead(b, series, w)
 				qHead, err := NewBlockQuerier(head, 1, int64(nSamples))
 				testutil.Ok(b, err)
 				queryTypes["_Head"] = qHead
