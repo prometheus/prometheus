@@ -453,6 +453,9 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 		ng.queryLoggerLock.RUnlock()
 	}()
 
+	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
+	defer execSpanTimer.Finish()
+
 	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
 	// Log query in active log. The active log guarantees that we don't run over
 	// MaxConcurrent queries concurrently.
@@ -465,9 +468,6 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 		defer ng.activeQueryTracker.Delete(queryIndex)
 	}
 	queueSpanTimer.Finish()
-
-	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
-	defer execSpanTimer.Finish()
 
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
