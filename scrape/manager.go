@@ -51,6 +51,7 @@ func NewManager(logger log.Logger, app Appendable) *Manager {
 		graceShut:     make(chan struct{}),
 		triggerReload: make(chan struct{}, 1),
 	}
+	targetMetadataCache.registerManager(m)
 
 	return m
 }
@@ -136,7 +137,6 @@ func (m *Manager) reload() {
 		}(m.scrapePools[setName], groups)
 
 	}
-	targetMetadataCache.registerManager(m)
 	m.mtxScrape.Unlock()
 	wg.Wait()
 }
