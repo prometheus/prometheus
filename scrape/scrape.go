@@ -133,76 +133,7 @@ var (
 			Help: "How many times a scrape cache was flushed due to getting big while scrapes are failing.",
 		},
 	)
-	targetMetadataCache = newMetadataMetricsCollector()
 )
-
-// MetadataMetricsCollector is a Custom Collector for the metadata cache metrics.
-type MetadataMetricsCollector struct {
-	CacheEntries *prometheus.Desc
-	CacheBytes   *prometheus.Desc
-
-	scrapeManager *Manager
-}
-
-func newMetadataMetricsCollector() *MetadataMetricsCollector {
-	return &MetadataMetricsCollector{
-		CacheEntries: prometheus.NewDesc(
-			"prometheus_target_metadata_cache_entries",
-			"Total number of metric metadata entries in the cache",
-			[]string{"scrape_job"},
-			nil,
-		),
-		CacheBytes: prometheus.NewDesc(
-			"prometheus_target_metadata_cache_bytes",
-			"The number of bytes that are currently used for storing metric metadata in the cache",
-			[]string{"scrape_job"},
-			nil,
-		),
-	}
-}
-
-func (mc *MetadataMetricsCollector) registerManager(m *Manager) {
-	mc.scrapeManager = m
-}
-
-// Describe sends the metrics descriptions to the channel.
-func (mc *MetadataMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- mc.CacheEntries
-	ch <- mc.CacheBytes
-}
-
-// Collect creates and sends the metrics for the metadata cache.
-func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
-	if mc.scrapeManager == nil {
-		return
-	}
-
-	for tset, targets := range mc.scrapeManager.TargetsActive() {
-		p, ok := mc.scrapeManager.scrapePools[tset]
-		if !ok {
-			continue
-		}
-		var size, length int
-		for _, t := range targets {
-			size += t.MetadataSize()
-			length += t.MetadataLength()
-		}
-
-		ch <- prometheus.MustNewConstMetric(
-			mc.CacheEntries,
-			prometheus.GaugeValue,
-			float64(length),
-			p.config.JobName,
-		)
-
-		ch <- prometheus.MustNewConstMetric(
-			mc.CacheBytes,
-			prometheus.GaugeValue,
-			float64(size),
-			p.config.JobName,
-		)
-	}
-}
 
 func init() {
 	prometheus.MustRegister(
