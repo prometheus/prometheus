@@ -18,6 +18,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -179,6 +180,9 @@ type errQuerier struct {
 func (q *errQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	return errSeriesSet{err: q.err}, nil, q.err
 }
+func (q *errQuerier) SelectSorted(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	return errSeriesSet{err: q.err}, nil, q.err
+}
 func (*errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) { return nil, nil, nil }
 func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)             { return nil, nil, nil }
 func (*errQuerier) Close() error                                                { return nil }
@@ -236,7 +240,10 @@ type paramCheckerQuerier struct {
 	t *testing.T
 }
 
-func (q *paramCheckerQuerier) Select(sp *storage.SelectParams, _ ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q *paramCheckerQuerier) Select(sp *storage.SelectParams, m ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	return q.SelectSorted(sp, m...)
+}
+func (q *paramCheckerQuerier) SelectSorted(sp *storage.SelectParams, _ ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	testutil.Equals(q.t, q.start, sp.Start)
 	testutil.Equals(q.t, q.end, sp.End)
 	testutil.Equals(q.t, q.grouping, sp.Grouping)
@@ -1111,7 +1118,9 @@ func TestSubquerySelector(t *testing.T) {
 
 			res := qry.Exec(test.Context())
 			testutil.Equals(t, c.Result.Err, res.Err)
-			testutil.Equals(t, c.Result.Value, res.Value)
+			mat := res.Value.(Matrix)
+			sort.Sort(mat)
+			testutil.Equals(t, c.Result.Value, mat)
 		}
 	}
 }

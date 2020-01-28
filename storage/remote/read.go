@@ -60,6 +60,12 @@ type querier struct {
 // Select implements storage.Querier and uses the given matchers to read series
 // sets from the Client.
 func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	return q.SelectSorted(p, matchers...)
+}
+
+// SelectSorted implements storage.Querier and uses the given matchers to read series
+// sets from the Client.
+func (q *querier) SelectSorted(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	query, err := ToQuery(q.mint, q.maxt, matchers, p)
 	if err != nil {
 		return nil, nil, err
@@ -74,6 +80,7 @@ func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (
 		return nil, nil, fmt.Errorf("remote_read: %v", err)
 	}
 
+	// FromQueryResult sorts.
 	return FromQueryResult(res), nil, nil
 }
 

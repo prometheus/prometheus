@@ -229,10 +229,19 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 
 // Select returns a set of series that matches the given label matchers.
 func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
+	if len(q.queriers) != 1 {
+		// We need to sort for NewMergeSeriesSet to work.
+		return q.SelectSorted(params, matchers...)
+	}
+	return q.queriers[0].Select(params, matchers...)
+}
+
+// SelectSorted returns a set of sorted series that matches the given label matchers.
+func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
 	var warnings Warnings
 	for _, querier := range q.queriers {
-		set, wrn, err := querier.Select(params, matchers...)
+		set, wrn, err := querier.SelectSorted(params, matchers...)
 		q.setQuerierMap[set] = querier
 		if wrn != nil {
 			warnings = append(warnings, wrn...)
