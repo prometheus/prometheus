@@ -41,7 +41,6 @@ func TestQueryConcurrency(t *testing.T) {
 	opts := EngineOpts{
 		Logger:             nil,
 		Reg:                nil,
-		MaxConcurrent:      maxConcurrency,
 		MaxSamples:         10,
 		Timeout:            100 * time.Second,
 		ActiveQueryTracker: queryTracker,
@@ -60,7 +59,7 @@ func TestQueryConcurrency(t *testing.T) {
 		return nil
 	}
 
-	for i := 0; i < opts.MaxConcurrent; i++ {
+	for i := 0; i < maxConcurrency; i++ {
 		q := engine.newTestQuery(f)
 		go q.Exec(ctx)
 		select {
@@ -92,18 +91,17 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	// Terminate remaining queries.
-	for i := 0; i < opts.MaxConcurrent; i++ {
+	for i := 0; i < maxConcurrency; i++ {
 		block <- struct{}{}
 	}
 }
 
 func TestQueryTimeout(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 20,
-		MaxSamples:    10,
-		Timeout:       5 * time.Millisecond,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    5 * time.Millisecond,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -127,11 +125,10 @@ const errQueryCanceled = ErrQueryCanceled("test statement execution")
 
 func TestQueryCancel(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -198,11 +195,10 @@ func (e errSeriesSet) Err() error       { return e.err }
 
 func TestQueryError(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := NewEngine(opts)
 	errStorage := ErrStorage{errors.New("storage error")}
@@ -261,11 +257,10 @@ func (*paramCheckerQuerier) Close() error                                    { r
 
 func TestParamsSetCorrectly(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 
 	// Set the lookback to be smaller and reset at the end.
@@ -466,11 +461,10 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 func TestEngineShutdown(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -1149,11 +1143,10 @@ func (f *FakeQueryLogger) Log(l ...interface{}) error {
 
 func TestQueryLogger_basic(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := NewEngine(opts)
 
@@ -1201,11 +1194,10 @@ func TestQueryLogger_basic(t *testing.T) {
 
 func TestQueryLogger_fields(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := NewEngine(opts)
 
@@ -1231,11 +1223,10 @@ func TestQueryLogger_fields(t *testing.T) {
 
 func TestQueryLogger_error(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := NewEngine(opts)
 

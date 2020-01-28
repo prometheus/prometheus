@@ -228,11 +228,10 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	defer storage.Close()
 
 	engineOpts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       100 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    100 * time.Second,
 	}
 
 	engine := promql.NewEngine(engineOpts)

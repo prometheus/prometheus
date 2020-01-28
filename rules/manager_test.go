@@ -502,11 +502,10 @@ func TestStaleness(t *testing.T) {
 	storage := teststorage.New(t)
 	defer storage.Close()
 	engineOpts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(engineOpts)
 	opts := &ManagerOptions{
@@ -689,11 +688,10 @@ func TestUpdate(t *testing.T) {
 	storage := teststorage.New(t)
 	defer storage.Close()
 	opts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
@@ -821,11 +819,10 @@ func TestNotify(t *testing.T) {
 	storage := teststorage.New(t)
 	defer storage.Close()
 	engineOpts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(engineOpts)
 	var lastNotified []*Alert
@@ -889,11 +886,10 @@ func TestMetricsUpdate(t *testing.T) {
 	registry := prometheus.NewRegistry()
 	defer storage.Close()
 	opts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{

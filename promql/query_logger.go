@@ -28,9 +28,10 @@ import (
 )
 
 type ActiveQueryTracker struct {
-	mmapedFile   []byte
-	getNextIndex chan int
-	logger       log.Logger
+	mmapedFile    []byte
+	getNextIndex  chan int
+	logger        log.Logger
+	maxConcurrent int
 }
 
 type Entry struct {
@@ -102,13 +103,13 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, er
 	return fileAsBytes, err
 }
 
-func NewActiveQueryTracker(localStoragePath string, maxQueries int, logger log.Logger) *ActiveQueryTracker {
+func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) *ActiveQueryTracker {
 	err := os.MkdirAll(localStoragePath, 0777)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to create directory for logging active queries")
 	}
 
-	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxQueries*entrySize
+	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxConcurrent*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
 
 	fileAsBytes, err := getMMapedFile(filename, filesize, logger)
@@ -118,12 +119,13 @@ func NewActiveQueryTracker(localStoragePath string, maxQueries int, logger log.L
 
 	copy(fileAsBytes, "[")
 	activeQueryTracker := ActiveQueryTracker{
-		mmapedFile:   fileAsBytes,
-		getNextIndex: make(chan int, maxQueries),
-		logger:       logger,
+		mmapedFile:    fileAsBytes,
+		getNextIndex:  make(chan int, maxConcurrent),
+		logger:        logger,
+		maxConcurrent: maxConcurrent,
 	}
 
-	activeQueryTracker.generateIndices(maxQueries)
+	activeQueryTracker.generateIndices(maxConcurrent)
 
 	return &activeQueryTracker
 }
@@ -164,10 +166,14 @@ func newJSONEntry(query string, logger log.Logger) []byte {
 	return jsonEntry
 }
 
-func (tracker ActiveQueryTracker) generateIndices(maxQueries int) {
-	for i := 0; i < maxQueries; i++ {
+func (tracker ActiveQueryTracker) generateIndices(maxConcurrent int) {
+	for i := 0; i < maxConcurrent; i++ {
 		tracker.getNextIndex <- 1 + (i * entrySize)
 	}
+}
+
+func (tracker ActiveQueryTracker) GetMaxConcurrent() int {
+	return tracker.maxConcurrent
 }
 
 func (tracker ActiveQueryTracker) Delete(insertIndex int) {
