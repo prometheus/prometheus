@@ -1777,3 +1777,33 @@ func TestReuseScrapeCache(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkScrapeLoopAppendSampleLimit(b *testing.B) {
+	for _, limit := range []int{100, 1e3, 1e4} {
+		for _, scale := range []float64{1.1, 1.5, 2, 5, 10, 100, 1e3, 1e4} {
+			b.Run(fmt.Sprintf("%vx%v", limit, scale), func(b *testing.B) {
+				b.ReportAllocs()
+				resApp := &collectResultAppender{}
+				app := &limitAppender{Appender: resApp, limit: limit}
+				sl := newScrapeLoop(context.Background(),
+					nil, nil, nil,
+					nopMutator,
+					nopMutator,
+					func() storage.Appender { return app },
+					nil,
+					0,
+					true,
+				)
+				m := []byte{}
+				for i := 0.; i <= 1+float64(limit)*scale; i++ {
+					m = append(m, []byte("metric_a 1\n")...)
+				}
+				b.ResetTimer()
+				for e := 0; e < b.N; e++ {
+					now := time.Now()
+					sl.append(m, "", now)
+				}
+			})
+		}
+	}
+}
