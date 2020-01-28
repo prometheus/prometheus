@@ -31,11 +31,10 @@ func TestRuleEval(t *testing.T) {
 	defer storage.Close()
 
 	opts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 
 	engine := promql.NewEngine(opts)
@@ -99,11 +98,10 @@ func TestRuleEvalDuplicate(t *testing.T) {
 	defer storage.Close()
 
 	opts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 
 	engine := promql.NewEngine(opts)
