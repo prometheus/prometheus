@@ -1108,11 +1108,20 @@ loop:
 				targetScrapeSampleOutOfBounds.Inc()
 				continue
 			case errSampleLimit:
-				// Keep on parsing output if we hit the limit, so we report the correct
-				// total number of samples scraped.
 				sampleLimitErr = err
 				added++
-				continue
+
+				// Count the remaining samples in place, to avoid touching the
+				// storage layer.
+				var remaining int
+				remaining, err = countRemainingSamples(p)
+				// Count of the remaining samples could return an error. If
+				// it returns nil, then we restore the errSampleLimit error.
+				if err == nil {
+					err = errSampleLimit
+				}
+				added += remaining
+				break loop
 			default:
 				break loop
 			}
@@ -1158,7 +1167,18 @@ loop:
 			case errSampleLimit:
 				sampleLimitErr = err
 				added++
-				continue
+
+				// Count the remaining samples in place, to avoid touching the
+				// storage layer.
+				var remaining int
+				remaining, err = countRemainingSamples(p)
+				// Count of the remaining samples could return an error. If
+				// it returns nil, then we restore the errSampleLimit error.
+				if err == nil {
+					err = errSampleLimit
+				}
+				added += remaining
+				break loop
 			default:
 				level.Debug(sl.l).Log("msg", "unexpected error", "series", string(met), "err", err)
 				break loop
@@ -1351,4 +1371,23 @@ func reusableCache(r, l *config.ScrapeConfig) bool {
 		return false
 	}
 	return reflect.DeepEqual(zeroConfig(r), zeroConfig(l))
+}
+
+func countRemainingSamples(p textparse.Parser) (int, error) {
+	var (
+		et    textparse.Entry
+		err   error
+		count int
+	)
+	for {
+		if et, err = p.Next(); err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return count, err
+		}
+		if et == textparse.EntrySeries {
+			count++
+		}
+	}
 }

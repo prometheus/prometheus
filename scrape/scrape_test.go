@@ -1042,10 +1042,9 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	beforeMetricValue := beforeMetric.GetCounter().GetValue()
 
 	now := time.Now()
-	_, _, _, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
-	if err != errSampleLimit {
-		t.Fatalf("Did not see expected sample limit error: %s", err)
-	}
+	_, added, _, err := sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
+	testutil.ErrorEqual(t, err, errSampleLimit)
+	testutil.Equals(t, 3, added)
 
 	// Check that the Counter has been incremented a single time for the scrape,
 	// not multiple times for each sample.
@@ -1066,6 +1065,17 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		},
 	}
 	testutil.Equals(t, want, resApp.result, "Appended samples not as expected")
+
+	// Test that we return proper errors instead of sample limit.
+	now = time.Now()
+	_, _, _, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\ninvalid"), "", now)
+	testutil.Equals(t, `expected value after metric, got "MNAME"`, err.Error())
+
+	// Test that we only count metrics in added samples.
+	now = time.Now()
+	_, added, _, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n# HELP metric_d example help\n# TYPE metric_d gauge\nmetric_d 1"), "", now)
+	testutil.ErrorEqual(t, err, errSampleLimit)
+	testutil.Equals(t, 4, added)
 }
 
 func TestScrapeLoop_ChangingMetricString(t *testing.T) {
