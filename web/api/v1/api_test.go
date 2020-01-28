@@ -77,6 +77,9 @@ func (s *testMetaStore) GetMetadata(metric string) (scrape.MetricMetadata, bool)
 	return scrape.MetricMetadata{}, false
 }
 
+func (s *testMetaStore) SizeMetadata() int   { return 0 }
+func (s *testMetaStore) LengthMetadata() int { return 0 }
+
 // testTargetRetriever represents a list of targets to scrape.
 // It is used to represent targets as part of test cases.
 type testTargetRetriever struct {

@@ -142,8 +142,6 @@ type MetadataMetricsCollector struct {
 	CacheBytes   *prometheus.Desc
 
 	scrapeManager *Manager
-
-	mtx sync.Mutex
 }
 
 func newMetadataMetricsCollector() *MetadataMetricsCollector {
@@ -175,19 +173,19 @@ func (mc *MetadataMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect creates and sends the metrics for the metadata cache.
 func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
-	mc.mtx.Lock()
-	defer mc.mtx.Unlock()
-
 	if mc.scrapeManager == nil {
 		return
 	}
 
-	for _, p := range mc.scrapeManager.scrapePools {
+	for tset, targets := range mc.scrapeManager.TargetsActive() {
+		p, ok := mc.scrapeManager.scrapePools[tset]
+		if !ok {
+			continue
+		}
 		var size, length int
-		for _, l := range p.loops {
-			c := l.getCache()
-			size += c.MetadataSize()
-			length += c.MetadataLen()
+		for _, t := range targets {
+			size += t.MetadataSize()
+			length += t.MetadataLength()
 		}
 
 		ch <- prometheus.MustNewConstMetric(
@@ -922,7 +920,7 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 }
 
 // MetadataSize returns the size of the metadata cache.
-func (c *scrapeCache) MetadataSize() (s int) {
+func (c *scrapeCache) SizeMetadata() (s int) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 	for _, e := range c.metadata {
@@ -933,7 +931,7 @@ func (c *scrapeCache) MetadataSize() (s int) {
 }
 
 // MetadataLen returns the number of metadata entries in the cache.
-func (c *scrapeCache) MetadataLen() int {
+func (c *scrapeCache) LengthMetadata() int {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
