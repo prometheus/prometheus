@@ -50,15 +50,6 @@ const (
 // Constants for instrumentation.
 const namespace = "prometheus"
 
-var (
-	groupInterval = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, "", "rule_group_interval_seconds"),
-		"The interval of a rule group.",
-		[]string{"rule_group"},
-		nil,
-	)
-)
-
 // Metrics for rule evaluation.
 type Metrics struct {
 	evalDuration        prometheus.Summary
@@ -67,6 +58,7 @@ type Metrics struct {
 	iterationDuration   prometheus.Summary
 	iterationsMissed    prometheus.Counter
 	iterationsScheduled prometheus.Counter
+	groupInterval       *prometheus.GaugeVec
 	groupLastEvalTime   *prometheus.GaugeVec
 	groupLastDuration   *prometheus.GaugeVec
 	groupRules          *prometheus.GaugeVec
@@ -111,6 +103,14 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			Name:      "rule_group_iterations_total",
 			Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
 		}),
+		groupInterval: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_interval_seconds",
+				Help:      "The interval of a rule group.",
+			},
+			[]string{"rule_group"},
+		),
 		groupLastEvalTime: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -145,6 +145,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.iterationDuration,
 			m.iterationsMissed,
 			m.iterationsScheduled,
+			m.groupInterval,
 			m.groupLastEvalTime,
 			m.groupLastDuration,
 			m.groupRules,
@@ -248,6 +249,7 @@ func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRes
 	metrics.groupLastEvalTime.WithLabelValues(groupKey(file, name))
 	metrics.groupLastDuration.WithLabelValues(groupKey(file, name))
 	metrics.groupRules.WithLabelValues(groupKey(file, name)).Set(float64(len(rules)))
+	metrics.groupInterval.WithLabelValues(groupKey(file, name)).Set(interval.Seconds())
 
 	return &Group{
 		name:                 name,
@@ -826,10 +828,6 @@ func NewManager(o *ManagerOptions) *Manager {
 		logger: o.Logger,
 	}
 
-	if o.Registerer != nil {
-		o.Registerer.MustRegister(m)
-	}
-
 	o.Metrics.iterationsMissed.Inc()
 	return m
 }
@@ -904,6 +902,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	for n, oldg := range m.groups {
 		oldg.stop()
 		if m := oldg.metrics; m != nil {
+			m.groupInterval.DeleteLabelValues(n)
 			m.groupLastEvalTime.DeleteLabelValues(n)
 			m.groupLastDuration.DeleteLabelValues(n)
 			m.groupRules.DeleteLabelValues(n)
@@ -1021,19 +1020,4 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 	}
 
 	return alerts
-}
-
-// Describe implements prometheus.Collector.
-func (m *Manager) Describe(ch chan<- *prometheus.Desc) {
-	ch <- groupInterval
-}
-
-// Collect implements prometheus.Collector.
-func (m *Manager) Collect(ch chan<- prometheus.Metric) {
-	for _, g := range m.RuleGroups() {
-		ch <- prometheus.MustNewConstMetric(groupInterval,
-			prometheus.GaugeValue,
-			g.interval.Seconds(),
-			groupKey(g.file, g.name))
-	}
 }
