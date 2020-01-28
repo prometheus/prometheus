@@ -1111,8 +1111,8 @@ loop:
 				sampleLimitErr = err
 				added++
 
-				// Count the remaining samples in place, to avoid touching the
-				// storage layer.
+				// Only count the remaining samples in place, to speed-up
+				// the end of the scrape and minimize memory usage.
 				var remaining int
 				remaining, err = countRemainingSamples(p)
 				// Count of the remaining samples could return an error. If
@@ -1168,8 +1168,8 @@ loop:
 				sampleLimitErr = err
 				added++
 
-				// Count the remaining samples in place, to avoid touching the
-				// storage layer.
+				// Only count the remaining samples in place, to speed-up
+				// the end of the scrape and minimize memory usage.
 				var remaining int
 				remaining, err = countRemainingSamples(p)
 				// Count of the remaining samples could return an error. If
