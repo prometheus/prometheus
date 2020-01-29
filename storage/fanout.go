@@ -234,7 +234,7 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 	var warnings Warnings
 	wg := sync.WaitGroup{}
 	wg.Add(len(q.queriers))
-	queryResult := make(map[int]SeriesSet, 0)
+	queryResult := make(map[int]SeriesSet)
 	var priErr error
 	isPriError := false
 	for idx, qr := range q.queriers {
