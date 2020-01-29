@@ -152,7 +152,7 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 		if err := validateLabelsAndMetricName(labels); err != nil {
 			return errSeriesSet{err: err}
 		}
-
+		sortSamples(&ts.Samples, 0, len(ts.Samples)-1)
 		series = append(series, &concreteSeries{
 			labels:  labels,
 			samples: ts.Samples,
