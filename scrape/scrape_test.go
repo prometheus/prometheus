@@ -1026,7 +1026,12 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 
 	sl := newScrapeLoop(context.Background(),
 		nil, nil, nil,
-		nopMutator,
+		func(l labels.Labels) labels.Labels {
+			if l.Has("deleteme") {
+				return nil
+			}
+			return l
+		},
 		nopMutator,
 		func() storage.Appender { return app },
 		nil,
@@ -1042,10 +1047,13 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	beforeMetricValue := beforeMetric.GetCounter().GetValue()
 
 	now := time.Now()
-	_, _, _, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
+	total, added, seriesAdded, err := sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
 	if err != errSampleLimit {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
+	testutil.Equals(t, 3, total)
+	testutil.Equals(t, 3, added)
+	testutil.Equals(t, 1, seriesAdded)
 
 	// Check that the Counter has been incremented a single time for the scrape,
 	// not multiple times for each sample.
@@ -1066,6 +1074,15 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		},
 	}
 	testutil.Equals(t, want, resApp.result, "Appended samples not as expected")
+
+	now = time.Now()
+	total, added, seriesAdded, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c{deleteme=\"yes\"} 1\nmetric_d 1\nmetric_e 1\nmetric_f 1\nmetric_g 1\nmetric_h{deleteme=\"yes\"} 1\nmetric_i{deleteme=\"yes\"} 1\n"), "", now)
+	if err != errSampleLimit {
+		t.Fatalf("Did not see expected sample limit error: %s", err)
+	}
+	testutil.Equals(t, 9, total)
+	testutil.Equals(t, 6, added)
+	testutil.Equals(t, 0, seriesAdded)
 }
 
 func TestScrapeLoop_ChangingMetricString(t *testing.T) {
