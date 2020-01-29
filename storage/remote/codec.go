@@ -164,7 +164,6 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 	}
 }
 
-
 func sortSamples(arr *[]prompb.Sample, startIndex, endIndex int) int {
 	if startIndex >= endIndex {
 		return -1
