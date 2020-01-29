@@ -244,7 +244,6 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 				set, wrn, err := querier.Select(params, matchers...)
 				lock.Lock()
 				q.setQuerierMap[set] = querier
-				lock.Unlock()
 				if wrn != nil {
 					warnings = append(warnings, wrn...)
 				}
@@ -259,6 +258,7 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 					}
 				}
 				queryResult[index] = set
+				lock.Unlock()
 			}(idx, qr)
 		}
 		wg.Wait()
