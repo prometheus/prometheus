@@ -16,15 +16,14 @@ package storage
 import (
 	"container/heap"
 	"context"
-	"sort"
-	"strings"
-	"sync"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"sort"
+	"strings"
+	"sync"
 )
 
 type fanout struct {
@@ -232,14 +231,44 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
 	var warnings Warnings
-	wg := sync.WaitGroup{}
-	wg.Add(len(q.queriers))
-	queryResult := make(map[int]SeriesSet)
-	var priErr error
-	isPriError := false
-	for idx, qr := range q.queriers {
-		go func(index int, querier Querier) {
-			defer wg.Done()
+	if len(q.queriers) > 1 {
+		wg := sync.WaitGroup{}
+		wg.Add(len(q.queriers))
+		queryResult := make(map[int]SeriesSet)
+		var priErr error = nil
+		var lock sync.Mutex
+		for idx, qr := range q.queriers {
+			go func(index int, querier Querier) {
+				defer wg.Done()
+				set, wrn, err := querier.Select(params, matchers...)
+				lock.Lock()
+				q.setQuerierMap[set] = querier
+				lock.Unlock()
+				if wrn != nil {
+					warnings = append(warnings, wrn...)
+				}
+				if err != nil {
+					q.failedQueriers[querier] = struct{}{}
+					// If the error source isn't the primary querier, return the error as a warning and continue.
+					if querier != q.primaryQuerier {
+						warnings = append(warnings, err)
+						return
+					} else {
+						priErr = err
+					}
+				}
+				queryResult[index] = set
+			}(idx, qr)
+		}
+		wg.Wait()
+		if priErr != nil {
+			return nil, nil, priErr
+		}
+		for _, set := range queryResult {
+			seriesSets = append(seriesSets, set)
+		}
+	} else { //If there's no remote storage configured do we end up creating goroutines?
+		for _, querier := range q.queriers {
 			set, wrn, err := querier.Select(params, matchers...)
 			q.setQuerierMap[set] = querier
 			if wrn != nil {
@@ -250,21 +279,13 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 				// If the error source isn't the primary querier, return the error as a warning and continue.
 				if querier != q.primaryQuerier {
 					warnings = append(warnings, err)
-					return
+					continue
 				} else {
-					isPriError = true
-					priErr = err
+					return nil, nil, err
 				}
 			}
-			queryResult[index] = set
-		}(idx, qr)
-	}
-	wg.Wait()
-	if isPriError {
-		return nil, nil, priErr
-	}
-	for _, set := range queryResult {
-		seriesSets = append(seriesSets, set)
+			seriesSets = append(seriesSets, set)
+		}
 	}
 	return NewMergeSeriesSet(seriesSets, q), warnings, nil
 }
