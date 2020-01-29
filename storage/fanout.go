@@ -273,7 +273,7 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 		for _, set := range queryResult {
 			seriesSets = append(seriesSets, set)
 		}
-	} else { //If there's no remote storage configured .  end up creating goroutines
+	} else { //If there's no remote storage configured . end up creating goroutines
 		for _, querier := range q.queriers {
 			set, wrn, err := querier.Select(params, matchers...)
 			q.setQuerierMap[set] = querier
