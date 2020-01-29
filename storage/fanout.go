@@ -16,14 +16,15 @@ package storage
 import (
 	"container/heap"
 	"context"
+	"sort"
+	"strings"
+	"sync"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"sort"
-	"strings"
-	"sync"
 )
 
 type fanout struct {
