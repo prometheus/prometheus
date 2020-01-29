@@ -18,6 +18,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -231,22 +232,38 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
 	var warnings Warnings
-	for _, querier := range q.queriers {
-		set, wrn, err := querier.Select(params, matchers...)
-		q.setQuerierMap[set] = querier
-		if wrn != nil {
-			warnings = append(warnings, wrn...)
-		}
-		if err != nil {
-			q.failedQueriers[querier] = struct{}{}
-			// If the error source isn't the primary querier, return the error as a warning and continue.
-			if querier != q.primaryQuerier {
-				warnings = append(warnings, err)
-				continue
-			} else {
-				return nil, nil, err
+	wg := sync.WaitGroup{}
+	wg.Add(len(q.queriers))
+	queryResult := make(map[int]SeriesSet, 0)
+	var priErr error
+	isPriError := false
+	for idx, qr := range q.queriers {
+		go func(index int, querier Querier) {
+			defer wg.Done()
+			set, wrn, err := querier.Select(params, matchers...)
+			q.setQuerierMap[set] = querier
+			if wrn != nil {
+				warnings = append(warnings, wrn...)
 			}
-		}
+			if err != nil {
+				q.failedQueriers[querier] = struct{}{}
+				// If the error source isn't the primary querier, return the error as a warning and continue.
+				if querier != q.primaryQuerier {
+					warnings = append(warnings, err)
+					return
+				} else {
+					isPriError = true
+					priErr = err
+				}
+			}
+			queryResult[index] = set
+		}(idx, qr)
+	}
+	wg.Wait()
+	if isPriError {
+		return nil, nil, priErr
+	}
+	for _, set := range queryResult {
 		seriesSets = append(seriesSets, set)
 	}
 	return NewMergeSeriesSet(seriesSets, q), warnings, nil
