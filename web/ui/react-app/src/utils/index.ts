@@ -210,3 +210,7 @@ export const callAll = (...fns: Array<(...args: any) => void>) => (...args: any)
   // eslint-disable-next-line prefer-spread
   fns.filter(Boolean).forEach(fn => fn.apply(null, args));
 };
+
+export const replaceWith = (str: string, needle: string, replace: string) => {
+  return str.replace(new RegExp(needle, 'g'), `${replace}`);
+};

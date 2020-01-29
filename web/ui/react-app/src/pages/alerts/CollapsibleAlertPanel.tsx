@@ -5,6 +5,7 @@ import { Rule } from '../../types/types';
 import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { RulePanel } from '../rules/RulePanel';
+import { replaceWith } from '../../utils';
 
 interface CollapsibleAlertPanelProps {
   rule: Rule;
@@ -24,7 +25,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
     <>
       <Alert fade={false} onClick={() => toggle(!open)} color={alertColors[rule.state]} style={{ cursor: 'pointer' }}>
         <FontAwesomeIcon icon={open ? faChevronDown : faChevronRight} fixedWidth />
-        <strong>{rule.name}</strong> ({rule.alerts.length} active)
+        <strong>{replaceWith(rule.name, `"`, `'`)}</strong> ({rule.alerts.length} active)
       </Alert>
       <Collapse isOpen={open} className="mb-2">
         <RulePanel rule={rule} styles={{ padding: 15, border: '1px solid #ccc', borderRadius: 4 }} />

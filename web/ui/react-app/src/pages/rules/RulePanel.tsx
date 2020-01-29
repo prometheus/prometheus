@@ -1,49 +1,56 @@
 import React, { FC, CSSProperties, Fragment } from 'react';
 import { Rule } from '../../types/types';
 import { Link } from '@reach/router';
-import { createExpressionLink } from '../../utils';
+import { createExpressionLink, isPresent, replaceWith } from '../../utils';
 
-export const RulePanel: FC<{ rule: Rule; styles?: CSSProperties; tag?: keyof JSX.IntrinsicElements }> = ({
+interface RulePanelProps {
+  rule: Rule;
+  styles?: CSSProperties;
+  tag?: keyof JSX.IntrinsicElements
+}
+
+export const RulePanel: FC<RulePanelProps> = ({
   rule,
   styles = {},
   tag,
 }) => {
   const Tag = tag || Fragment;
-  const { name, query, labels, annotations, alerts } = rule;
-  let customTagProps = {};
-  const mergedStyles = { background: '#f5f5f5', ...styles };
-  if (tag) {
-    customTagProps = { style: mergedStyles };
-  }
+  const { name, query, labels, annotations, type, duration } = rule;
+  const style = { background: '#f5f5f5', ...styles };
+  const ruleName = replaceWith(name, `"`, `'`)
   return (
-    <Tag {...customTagProps}>
-      <pre className="m-0" style={tag ? undefined : mergedStyles}>
+    <Tag {...(tag ? { style } : {})}>
+      <pre className="m-0" style={tag ? undefined : style}>
         <code>
           <div>
-            {rule.alerts ? 'name: ' : 'record: '}
-            <Link to={createExpressionLink(`ALERTS{alertname="${name}"}`)}>{name}</Link>
+            {/* Type of the rule is either alerting or recording. */}
+            {type.replace('ing', ': ')}
+            <Link to={createExpressionLink(`ALERTS{alertname="${ruleName}"}`)}>{ruleName}</Link>
           </div>
           <div>
             expr: <Link to={createExpressionLink(query)}>{query}</Link>
           </div>
-          {alerts && (
+          {isPresent(duration) && (
+            <div>for: {duration}</div>
+          )}
+          {labels && (
             <>
-              <div>
-                <div>labels:</div>
-                {Object.entries(labels).map(([key, value]) => (
-                  <div className="ml-4" key={key}>
-                    {key}: {value}
-                  </div>
-                ))}
-              </div>
-              <div>
-                <div>annotations:</div>
-                {Object.entries(annotations).map(([key, value]) => (
-                  <div className="ml-4" key={key}>
-                    {key}: {value}
-                  </div>
-                ))}
-              </div>
+              <div>labels:</div>
+              {Object.entries(labels).map(([key, value]) => (
+                <div className="ml-4" key={key}>
+                  {key}: {value}
+                </div>
+              ))}
+            </>
+          )}
+          {labels && (
+            <>
+              <div>annotations:</div>
+              {Object.entries(annotations).map(([key, value]) => (
+                <div className="ml-4" key={key}>
+                  {key}: {value}
+                </div>
+              ))}
             </>
           )}
         </code>
