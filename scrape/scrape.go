@@ -136,19 +136,22 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(targetIntervalLength)
-	prometheus.MustRegister(targetReloadIntervalLength)
-	prometheus.MustRegister(targetScrapePools)
-	prometheus.MustRegister(targetScrapePoolsFailed)
-	prometheus.MustRegister(targetScrapePoolReloads)
-	prometheus.MustRegister(targetScrapePoolReloadsFailed)
-	prometheus.MustRegister(targetSyncIntervalLength)
-	prometheus.MustRegister(targetScrapePoolSyncsCounter)
-	prometheus.MustRegister(targetScrapeSampleLimit)
-	prometheus.MustRegister(targetScrapeSampleDuplicate)
-	prometheus.MustRegister(targetScrapeSampleOutOfOrder)
-	prometheus.MustRegister(targetScrapeSampleOutOfBounds)
-	prometheus.MustRegister(targetScrapeCacheFlushForced)
+	prometheus.MustRegister(
+		targetIntervalLength,
+		targetReloadIntervalLength,
+		targetScrapePools,
+		targetScrapePoolsFailed,
+		targetScrapePoolReloads,
+		targetScrapePoolReloadsFailed,
+		targetSyncIntervalLength,
+		targetScrapePoolSyncsCounter,
+		targetScrapeSampleLimit,
+		targetScrapeSampleDuplicate,
+		targetScrapeSampleOutOfOrder,
+		targetScrapeSampleOutOfBounds,
+		targetScrapeCacheFlushForced,
+		targetMetadataCache,
+	)
 }
 
 // scrapePool manages scrapes for sets of targets.
@@ -658,6 +661,11 @@ type metaEntry struct {
 	unit     string
 }
 
+func (m *metaEntry) size() int {
+	// The attribute lastIter although part of the struct it is not metadata.
+	return len(m.help) + len(m.unit) + len(m.typ)
+}
+
 func newScrapeCache() *scrapeCache {
 	return &scrapeCache{
 		series:        map[string]*cacheEntry{},
@@ -840,6 +848,25 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 		})
 	}
 	return res
+}
+
+// MetadataSize returns the size of the metadata cache.
+func (c *scrapeCache) SizeMetadata() (s int) {
+	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
+	for _, e := range c.metadata {
+		s += e.size()
+	}
+
+	return s
+}
+
+// MetadataLen returns the number of metadata entries in the cache.
+func (c *scrapeCache) LengthMetadata() int {
+	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
+
+	return len(c.metadata)
 }
 
 func newScrapeLoop(ctx context.Context,
