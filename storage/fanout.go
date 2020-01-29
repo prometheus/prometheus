@@ -238,9 +238,14 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 		queryResult := make(map[int]SeriesSet)
 		var priErr error = nil
 		var lock sync.Mutex
+		var wgLock sync.Mutex
 		for idx, qr := range q.queriers {
 			go func(index int, querier Querier) {
-				defer wg.Done()
+				defer func() {
+					wgLock.Lock()
+					wg.Done()
+					wgLock.Unlock()
+				}()
 				set, wrn, err := querier.Select(params, matchers...)
 				lock.Lock()
 				q.setQuerierMap[set] = querier
