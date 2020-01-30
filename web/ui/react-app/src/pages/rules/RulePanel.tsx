@@ -25,7 +25,7 @@ export const RulePanel: FC<RulePanelProps> = ({ rule, styles = {}, tag }) => {
           <div>
             expr: <Link to={createExpressionLink(query)}>{query}</Link>
           </div>
-          {isPresent(duration) && <div>for: {duration}</div>}
+          {duration > 0 && <div>for: {duration}</div>}
           {labels && (
             <>
               <div>labels:</div>
