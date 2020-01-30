@@ -1,7 +1,7 @@
 import React, { FC, CSSProperties, Fragment } from 'react';
 import { Rule } from '../../types/types';
 import { Link } from '@reach/router';
-import { createExpressionLink, isPresent, replaceWith } from '../../utils';
+import { createExpressionLink, isPresent } from '../../utils';
 
 interface RulePanelProps {
   rule: Rule;
@@ -13,14 +13,14 @@ export const RulePanel: FC<RulePanelProps> = ({ rule, styles = {}, tag }) => {
   const Tag = tag || Fragment;
   const { name, query, labels, annotations, type, duration } = rule;
   const style = { background: '#f5f5f5', ...styles };
-  const ruleName = replaceWith(name, `"`, `'`);
+  const ruleName = name.replace(/"/g, "\\");
   return (
     <Tag {...(tag ? { style } : {})}>
       <pre className="m-0" style={tag ? undefined : style}>
         <code>
           <div>
             {/* Type of the rule is either alerting or recording. */}
-            {type.replace('ing', ': ')}
+            {type === 'alerting' ? 'alert: ' : 'record: '}
             <Link to={createExpressionLink(`ALERTS{alertname="${ruleName}"}`)}>{ruleName}</Link>
           </div>
           <div>
@@ -37,7 +37,7 @@ export const RulePanel: FC<RulePanelProps> = ({ rule, styles = {}, tag }) => {
               ))}
             </>
           )}
-          {labels && (
+          {annotations && (
             <>
               <div>annotations:</div>
               {Object.entries(annotations).map(([key, value]) => (
