@@ -93,7 +93,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		s := NewStorage(nil, prometheus.DefaultRegisterer, nil, dir, defaultFlushDeadline)
+		s := NewStorage(nil, prometheus.NewRegistry(), nil, dir, defaultFlushDeadline)
 		conf := &config.Config{
 			GlobalConfig:      config.DefaultGlobalConfig,
 			RemoteReadConfigs: tc.cfgs,

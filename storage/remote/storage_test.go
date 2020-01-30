@@ -30,7 +30,7 @@ func TestStorageLifecycle(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	s := NewStorage(nil, prometheus.DefaultRegisterer, nil, dir, defaultFlushDeadline)
+	s := NewStorage(nil, prometheus.NewRegistry(), nil, dir, defaultFlushDeadline)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -69,7 +69,7 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	s := NewStorage(nil, prometheus.DefaultRegisterer, nil, dir, defaultFlushDeadline)
+	s := NewStorage(nil, prometheus.NewRegistry(), nil, dir, defaultFlushDeadline)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
