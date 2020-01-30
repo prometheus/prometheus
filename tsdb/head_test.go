@@ -1276,7 +1276,7 @@ func TestAddDuplicateLabelName(t *testing.T) {
 	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
 	testutil.Ok(t, err)
 
-	h, err := NewHead(nil, nil, wlog, 1000)
+	h, err := NewHead(nil, nil, wlog, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
