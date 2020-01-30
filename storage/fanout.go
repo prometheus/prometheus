@@ -243,7 +243,7 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 				set, wrn, selectError := querier.Select(params, matchers...)
 				lock.Lock()
 				defer lock.Unlock()
-				err := q.processSelectResult(querier, set, wrn, selectError, seriesSets, warnings, params, matchers...)
+				err := q.processSelectResult(querier, set, wrn, selectError, &seriesSets, &warnings, params, matchers...)
 				if err != nil {
 					priErr = err
 				}
@@ -256,7 +256,7 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 	} else { //If there's no remote storage configured . end up creating goroutines
 		for _, querier := range q.queriers {
 			set, wrn, selectError := querier.Select(params, matchers...)
-			err := q.processSelectResult(querier, set, wrn, selectError, seriesSets, warnings, params, matchers...)
+			err := q.processSelectResult(querier, set, wrn, selectError, &seriesSets, &warnings, params, matchers...)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -265,21 +265,21 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 	return NewMergeSeriesSet(seriesSets, q), warnings, nil
 }
 
-func (q *mergeQuerier) processSelectResult(querier Querier, set SeriesSet, wrn Warnings, selectError error, seriesSets []SeriesSet, warnings Warnings, params *SelectParams, matchers ...*labels.Matcher) error {
+func (q *mergeQuerier) processSelectResult(querier Querier, set SeriesSet, wrn Warnings, selectError error, seriesSets *[]SeriesSet, warnings *Warnings, params *SelectParams, matchers ...*labels.Matcher) error {
 	q.setQuerierMap[set] = querier
 	if wrn != nil {
-		warnings = append(warnings, wrn...)
+		*warnings = append(*warnings, wrn...)
 	}
 	if selectError != nil {
 		q.failedQueriers[querier] = struct{}{}
 		// If the error source isn't the primary querier, return the error as a warning and continue.
 		if querier != q.primaryQuerier {
-			warnings = append(warnings, selectError)
+			*warnings = append(*warnings, selectError)
 		} else {
 			return selectError
 		}
 	}
-	seriesSets = append(seriesSets, set)
+	*seriesSets = append(*seriesSets, set)
 	return nil
 }
 
