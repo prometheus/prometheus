@@ -13,7 +13,6 @@ export const RulePanel: FC<RulePanelProps> = ({ rule, styles = {}, tag }) => {
   const Tag = tag || Fragment;
   const { name, query, labels, annotations, type, duration } = rule;
   const style = { background: '#f5f5f5', ...styles };
-  const ruleName = name.replace(/"/g, "\\");
   return (
     <Tag {...(tag ? { style } : {})}>
       <pre className="m-0" style={tag ? undefined : style}>
@@ -21,7 +20,7 @@ export const RulePanel: FC<RulePanelProps> = ({ rule, styles = {}, tag }) => {
           <div>
             {/* Type of the rule is either alerting or recording. */}
             {type === 'alerting' ? 'alert: ' : 'record: '}
-            <Link to={createExpressionLink(`ALERTS{alertname="${ruleName}"}`)}>{ruleName}</Link>
+            <Link to={createExpressionLink(`ALERTS{alertname="${name.replace(/([/"])/g, "\\$1")}"}`)}>{name}</Link>
           </div>
           <div>
             expr: <Link to={createExpressionLink(query)}>{query}</Link>
