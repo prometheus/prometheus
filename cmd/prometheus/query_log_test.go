@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -244,9 +245,15 @@ func (p *queryLogTest) run(t *testing.T) {
 	// Log stderr in case of failure.
 	stderr, err := prom.StderrPipe()
 	testutil.Ok(t, err)
+
+	// We use a WaitGroup to avoid calling t.Log after the test is done.
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer wg.Wait()
 	go func() {
 		slurp, _ := ioutil.ReadAll(stderr)
 		t.Log(string(slurp))
+		wg.Done()
 	}()
 
 	testutil.Ok(t, prom.Start())
