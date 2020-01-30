@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -189,12 +188,6 @@ func (q *query) Exec(ctx context.Context) *Result {
 		span.SetTag(queryTag, q.stmt.String())
 	}
 
-	// Log query in active log.
-	if q.ng.activeQueryTracker != nil {
-		queryIndex := q.ng.activeQueryTracker.Insert(q.q)
-		defer q.ng.activeQueryTracker.Delete(queryIndex)
-	}
-
 	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
 
@@ -224,7 +217,6 @@ func contextErr(err error, env string) error {
 type EngineOpts struct {
 	Logger             log.Logger
 	Reg                prometheus.Registerer
-	MaxConcurrent      int
 	MaxSamples         int
 	Timeout            time.Duration
 	ActiveQueryTracker *ActiveQueryTracker
@@ -236,7 +228,6 @@ type Engine struct {
 	logger             log.Logger
 	metrics            *engineMetrics
 	timeout            time.Duration
-	gate               *gate.Gate
 	maxSamplesPerQuery int
 	activeQueryTracker *ActiveQueryTracker
 	queryLogger        QueryLogger
@@ -307,7 +298,12 @@ func NewEngine(opts EngineOpts) *Engine {
 			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		}),
 	}
-	metrics.maxConcurrentQueries.Set(float64(opts.MaxConcurrent))
+
+	if t := opts.ActiveQueryTracker; t != nil {
+		metrics.maxConcurrentQueries.Set(float64(t.GetMaxConcurrent()))
+	} else {
+		metrics.maxConcurrentQueries.Set(-1)
+	}
 
 	if opts.Reg != nil {
 		opts.Reg.MustRegister(
@@ -323,7 +319,6 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 
 	return &Engine{
-		gate:               gate.New(opts.MaxConcurrent),
 		timeout:            opts.Timeout,
 		logger:             opts.Logger,
 		metrics:            metrics,
@@ -437,20 +432,20 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 	defer func() {
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
-			f := []interface{}{"query", q.q}
+			params := make(map[string]interface{}, 4)
+			params["query"] = q.q
+			if eq, ok := q.Statement().(*EvalStmt); ok {
+				params["start"] = formatDate(eq.Start)
+				params["end"] = formatDate(eq.End)
+				params["step"] = eq.Interval
+			}
+			f := []interface{}{"params", params}
 			if err != nil {
 				f = append(f, "error", err)
 			}
-			if eq, ok := q.Statement().(*EvalStmt); ok {
-				f = append(f,
-					"start", formatDate(eq.Start),
-					"end", formatDate(eq.End),
-					"step", eq.Interval.String(),
-				)
-			}
 			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
 			if origin := ctx.Value(queryOrigin); origin != nil {
-				for k, v := range origin.(map[string]string) {
+				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)
 				}
 			}
@@ -466,12 +461,16 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 	defer execSpanTimer.Finish()
 
 	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
-
-	if err := ng.gate.Start(ctx); err != nil {
-		return nil, nil, contextErr(err, "query queue")
+	// Log query in active log. The active log guarantees that we don't run over
+	// MaxConcurrent queries.
+	if ng.activeQueryTracker != nil {
+		queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
+		if err != nil {
+			queueSpanTimer.Finish()
+			return nil, nil, contextErr(err, "query queue")
+		}
+		defer ng.activeQueryTracker.Delete(queryIndex)
 	}
-	defer ng.gate.Done()
-
 	queueSpanTimer.Finish()
 
 	// Cancel when execution is done or an error was raised.
@@ -601,7 +600,6 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		return nil, warnings, err
 	}
 
-	// TODO(fabxc): order ensured by storage?
 	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
 	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
 	sort.Sort(mat)
@@ -2096,7 +2094,7 @@ func shouldDropMetricName(op ItemType) bool {
 }
 
 // NewOriginContext returns a new context with data about the origin attached.
-func NewOriginContext(ctx context.Context, data map[string]string) context.Context {
+func NewOriginContext(ctx context.Context, data map[string]interface{}) context.Context {
 	return context.WithValue(ctx, queryOrigin, data)
 }
 

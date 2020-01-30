@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -27,9 +28,10 @@ import (
 )
 
 type ActiveQueryTracker struct {
-	mmapedFile   []byte
-	getNextIndex chan int
-	logger       log.Logger
+	mmapedFile    []byte
+	getNextIndex  chan int
+	logger        log.Logger
+	maxConcurrent int
 }
 
 type Entry struct {
@@ -101,13 +103,13 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, er
 	return fileAsBytes, err
 }
 
-func NewActiveQueryTracker(localStoragePath string, maxQueries int, logger log.Logger) *ActiveQueryTracker {
+func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) *ActiveQueryTracker {
 	err := os.MkdirAll(localStoragePath, 0777)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to create directory for logging active queries")
 	}
 
-	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxQueries*entrySize
+	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxConcurrent*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
 
 	fileAsBytes, err := getMMapedFile(filename, filesize, logger)
@@ -117,12 +119,13 @@ func NewActiveQueryTracker(localStoragePath string, maxQueries int, logger log.L
 
 	copy(fileAsBytes, "[")
 	activeQueryTracker := ActiveQueryTracker{
-		mmapedFile:   fileAsBytes,
-		getNextIndex: make(chan int, maxQueries),
-		logger:       logger,
+		mmapedFile:    fileAsBytes,
+		getNextIndex:  make(chan int, maxConcurrent),
+		logger:        logger,
+		maxConcurrent: maxConcurrent,
 	}
 
-	activeQueryTracker.generateIndices(maxQueries)
+	activeQueryTracker.generateIndices(maxConcurrent)
 
 	return &activeQueryTracker
 }
@@ -163,10 +166,14 @@ func newJSONEntry(query string, logger log.Logger) []byte {
 	return jsonEntry
 }
 
-func (tracker ActiveQueryTracker) generateIndices(maxQueries int) {
-	for i := 0; i < maxQueries; i++ {
+func (tracker ActiveQueryTracker) generateIndices(maxConcurrent int) {
+	for i := 0; i < maxConcurrent; i++ {
 		tracker.getNextIndex <- 1 + (i * entrySize)
 	}
+}
+
+func (tracker ActiveQueryTracker) GetMaxConcurrent() int {
+	return tracker.maxConcurrent
 }
 
 func (tracker ActiveQueryTracker) Delete(insertIndex int) {
@@ -174,13 +181,17 @@ func (tracker ActiveQueryTracker) Delete(insertIndex int) {
 	tracker.getNextIndex <- insertIndex
 }
 
-func (tracker ActiveQueryTracker) Insert(query string) int {
-	i, fileBytes := <-tracker.getNextIndex, tracker.mmapedFile
-	entry := newJSONEntry(query, tracker.logger)
-	start, end := i, i+entrySize
+func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int, error) {
+	select {
+	case i := <-tracker.getNextIndex:
+		fileBytes := tracker.mmapedFile
+		entry := newJSONEntry(query, tracker.logger)
+		start, end := i, i+entrySize
 
-	copy(fileBytes[start:], entry)
-	copy(fileBytes[end-1:], ",")
-
-	return i
+		copy(fileBytes[start:], entry)
+		copy(fileBytes[end-1:], ",")
+		return i, nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
 }

@@ -77,6 +77,9 @@ func (s *testMetaStore) GetMetadata(metric string) (scrape.MetricMetadata, bool)
 	return scrape.MetricMetadata{}, false
 }
 
+func (s *testMetaStore) SizeMetadata() int   { return 0 }
+func (s *testMetaStore) LengthMetadata() int { return 0 }
+
 // testTargetRetriever represents a list of targets to scrape.
 // It is used to represent targets as part of test cases.
 type testTargetRetriever struct {
@@ -228,11 +231,10 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	defer storage.Close()
 
 	engineOpts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       100 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    100 * time.Second,
 	}
 
 	engine := promql.NewEngine(engineOpts)
@@ -1875,7 +1877,7 @@ func (f *fakeDB) Dir() string {
 }
 func (f *fakeDB) Snapshot(dir string, withHead bool) error { return f.err }
 func (f *fakeDB) Head() *tsdb.Head {
-	h, _ := tsdb.NewHead(nil, nil, nil, 1000)
+	h, _ := tsdb.NewHead(nil, nil, nil, 1000, tsdb.DefaultStripeSize)
 	return h
 }
 

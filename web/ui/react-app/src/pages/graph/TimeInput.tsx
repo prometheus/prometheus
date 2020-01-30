@@ -25,6 +25,7 @@ dom.watch();
 
 interface TimeInputProps {
   time: number | null; // Timestamp in milliseconds.
+  useLocalTime: boolean;
   range: number; // Range in seconds.
   placeholder: string;
   onChangeTime: (time: number | null) => void;
@@ -54,6 +55,10 @@ class TimeInput extends Component<TimeInputProps> {
     this.props.onChangeTime(null);
   };
 
+  timezone = (): string => {
+    return this.props.useLocalTime ? moment.tz.guess() : 'UTC';
+  };
+
   componentDidMount() {
     this.$time = $(this.timeInputRef.current!);
 
@@ -69,7 +74,7 @@ class TimeInput extends Component<TimeInputProps> {
       sideBySide: true,
       format: 'YYYY-MM-DD HH:mm:ss',
       locale: 'en',
-      timeZone: 'UTC',
+      timeZone: this.timezone(),
       defaultDate: this.props.time,
     });
 
@@ -84,8 +89,14 @@ class TimeInput extends Component<TimeInputProps> {
     this.$time.datetimepicker('destroy');
   }
 
-  componentDidUpdate() {
-    this.$time.datetimepicker('date', this.props.time ? moment(this.props.time) : null);
+  componentDidUpdate(prevProps: TimeInputProps) {
+    const { time, useLocalTime } = this.props;
+    if (prevProps.time !== time) {
+      this.$time.datetimepicker('date', time ? moment(time) : null);
+    }
+    if (prevProps.useLocalTime !== useLocalTime) {
+      this.$time.datetimepicker('options', { timeZone: this.timezone(), defaultDate: null });
+    }
   }
 
   render() {

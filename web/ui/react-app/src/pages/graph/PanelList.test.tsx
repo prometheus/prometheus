@@ -6,16 +6,21 @@ import { Alert, Button } from 'reactstrap';
 import Panel from './Panel';
 
 describe('PanelList', () => {
-  it('renders a query history checkbox', () => {
-    const panelList = shallow(<PanelList />);
-    const checkbox = panelList.find(Checkbox);
-    expect(checkbox.prop('id')).toEqual('query-history-checkbox');
-    expect(checkbox.prop('wrapperStyles')).toEqual({
-      margin: '0 0 0 15px',
-      alignSelf: 'center',
+  it('renders query history and local time checkboxes', () => {
+    [
+      { id: 'query-history-checkbox', label: 'Enable query history' },
+      { id: 'use-local-time-checkbox', label: 'Use local time' },
+    ].forEach((cb, idx) => {
+      const panelList = shallow(<PanelList />);
+      const checkbox = panelList.find(Checkbox).at(idx);
+      expect(checkbox.prop('id')).toEqual(cb.id);
+      expect(checkbox.prop('wrapperStyles')).toEqual({
+        margin: '0 0 0 15px',
+        alignSelf: 'center',
+      });
+      expect(checkbox.prop('defaultChecked')).toBe(false);
+      expect(checkbox.children().text()).toBe(cb.label);
     });
-    expect(checkbox.prop('defaultChecked')).toBe(false);
-    expect(checkbox.children().text()).toBe('Enable query history');
   });
 
   it('renders an alert when no data is queried yet', () => {

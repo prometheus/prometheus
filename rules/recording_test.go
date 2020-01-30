@@ -31,11 +31,10 @@ func TestRuleEval(t *testing.T) {
 	defer storage.Close()
 
 	opts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 
 	engine := promql.NewEngine(opts)
@@ -74,7 +73,7 @@ func TestRuleEval(t *testing.T) {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
 		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
 		testutil.Ok(t, err)
-		testutil.Equals(t, result, test.result)
+		testutil.Equals(t, test.result, result)
 	}
 }
 
@@ -99,11 +98,10 @@ func TestRuleEvalDuplicate(t *testing.T) {
 	defer storage.Close()
 
 	opts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 
 	engine := promql.NewEngine(opts)

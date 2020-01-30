@@ -144,7 +144,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 	return resp, nil
 }
 
-// FromQueryResult unpacks a QueryResult proto.
+// FromQueryResult unpacks and sorts a QueryResult proto.
 func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {

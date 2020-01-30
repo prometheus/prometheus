@@ -3,6 +3,7 @@ import $ from 'jquery';
 import { escapeHTML } from '../../utils';
 import { Metric } from '../../types/types';
 import { GraphProps, GraphSeries } from './Graph';
+import moment from 'moment-timezone';
 
 export const formatValue = (y: number | null): string => {
   if (y === null) {
@@ -71,7 +72,7 @@ export const toHoverColor = (index: number, stacked: boolean) => (series: GraphS
   color: getHoverColor(series.color, i !== index ? 0.3 : 1, stacked),
 });
 
-export const getOptions = (stacked: boolean): jquery.flot.plotOptions => {
+export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot.plotOptions => {
   return {
     grid: {
       hoverable: true,
@@ -87,6 +88,7 @@ export const getOptions = (stacked: boolean): jquery.flot.plotOptions => {
       showTicks: true,
       showMinorTicks: true,
       timeBase: 'milliseconds',
+      timezone: useLocalTime ? 'browser' : undefined,
     },
     yaxis: {
       tickFormatter: formatValue,
@@ -100,8 +102,12 @@ export const getOptions = (stacked: boolean): jquery.flot.plotOptions => {
       cssClass: 'graph-tooltip',
       content: (_, xval, yval, { series }): string => {
         const { labels, color } = series;
+        let dateTime = moment(xval);
+        if (!useLocalTime) {
+          dateTime = dateTime.utc();
+        }
         return `
-            <div class="date">${new Date(xval).toUTCString()}</div>
+            <div class="date">${dateTime.format('YYYY-MM-DD HH:mm:ss Z')}</div>
             <div>
               <span class="detail-swatch" style="background-color: ${color}" />
               <span>${labels.__name__ || 'value'}: <strong>${yval}</strong></span>

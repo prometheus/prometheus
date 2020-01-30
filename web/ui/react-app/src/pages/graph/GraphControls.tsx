@@ -10,6 +10,7 @@ import { parseRange, formatRange } from '../../utils';
 interface GraphControlsProps {
   range: number;
   endTime: number | null;
+  useLocalTime: boolean;
   resolution: number | null;
   stacked: boolean;
 
@@ -111,6 +112,7 @@ class GraphControls extends Component<GraphControlsProps> {
 
         <TimeInput
           time={this.props.endTime}
+          useLocalTime={this.props.useLocalTime}
           range={this.props.range}
           placeholder="End time"
           onChangeTime={this.props.onChangeEndTime}

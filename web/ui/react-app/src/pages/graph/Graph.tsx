@@ -19,6 +19,7 @@ export interface GraphProps {
     result: Array<{ metric: Metric; values: [number, string][] }>;
   };
   stacked: boolean;
+  useLocalTime: boolean;
   queryParams: QueryParams | null;
 }
 
@@ -44,7 +45,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   };
 
   componentDidUpdate(prevProps: GraphProps) {
-    const { data, stacked } = this.props;
+    const { data, stacked, useLocalTime } = this.props;
     if (prevProps.data !== data) {
       this.selectedSeriesIndexes = [];
       this.setState({ chartData: normalizeData(this.props) }, this.plot);
@@ -56,6 +57,10 @@ class Graph extends PureComponent<GraphProps, GraphState> {
           this.plot(this.state.chartData.filter((_, i) => this.selectedSeriesIndexes.includes(i)));
         }
       });
+    }
+
+    if (prevProps.useLocalTime !== useLocalTime) {
+      this.plot();
     }
   }
 
@@ -73,7 +78,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
     this.destroyPlot();
 
-    this.$chart = $.plot($(this.chartRef.current), data, getOptions(this.props.stacked));
+    this.$chart = $.plot($(this.chartRef.current), data, getOptions(this.props.stacked, this.props.useLocalTime));
   };
 
   destroyPlot = () => {

@@ -78,6 +78,8 @@ func (t *Target) String() string {
 type MetricMetadataStore interface {
 	ListMetadata() []MetricMetadata
 	GetMetadata(metric string) (MetricMetadata, bool)
+	SizeMetadata() int
+	LengthMetadata() int
 }
 
 // MetricMetadata is a piece of metadata for a metric.
@@ -96,6 +98,28 @@ func (t *Target) MetadataList() []MetricMetadata {
 		return nil
 	}
 	return t.metadata.ListMetadata()
+}
+
+func (t *Target) MetadataSize() int {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	if t.metadata == nil {
+		return 0
+	}
+
+	return t.metadata.SizeMetadata()
+}
+
+func (t *Target) MetadataLength() int {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	if t.metadata == nil {
+		return 0
+	}
+
+	return t.metadata.LengthMetadata()
 }
 
 // Metadata returns type and help metadata for the given metric.
