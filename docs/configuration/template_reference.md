@@ -82,6 +82,8 @@ versions.
 | args          | []interface{} | map[string]interface{} | This converts a list of objects to a map with keys arg0, arg1 etc. This is intended to allow multiple arguments to be passed to templates. |
 | tmpl          | string, []interface{} | nothing  | Like the built-in `template`, but allows non-literals as the template name. Note that the result is assumed to be safe, and will not be auto-escaped. Only available in consoles. |
 | safeHtml      | string        | string  | Marks string as HTML not requiring auto-escaping. |
+| externalURL   | none          | string  | The URL under which Prometheus is externally reachable (set with `--web.external-url`). |
+| pathPrefix    | none          | string  | Path portion of the external URL. |
 
 ## Template type differences
 
