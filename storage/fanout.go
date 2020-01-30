@@ -266,7 +266,6 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 }
 
 func (q *mergeQuerier) processSelectResult(querier Querier, set SeriesSet, wrn Warnings, selectError error, seriesSets []SeriesSet, warnings Warnings, params *SelectParams, matchers ...*labels.Matcher) error {
-	//set, wrn, err := querier.Select(params, matchers...)
 	q.setQuerierMap[set] = querier
 	if wrn != nil {
 		warnings = append(warnings, wrn...)
