@@ -6,18 +6,14 @@ import { createExpressionLink, isPresent, replaceWith } from '../../utils';
 interface RulePanelProps {
   rule: Rule;
   styles?: CSSProperties;
-  tag?: keyof JSX.IntrinsicElements
+  tag?: keyof JSX.IntrinsicElements;
 }
 
-export const RulePanel: FC<RulePanelProps> = ({
-  rule,
-  styles = {},
-  tag,
-}) => {
+export const RulePanel: FC<RulePanelProps> = ({ rule, styles = {}, tag }) => {
   const Tag = tag || Fragment;
   const { name, query, labels, annotations, type, duration } = rule;
   const style = { background: '#f5f5f5', ...styles };
-  const ruleName = replaceWith(name, `"`, `'`)
+  const ruleName = replaceWith(name, `"`, `'`);
   return (
     <Tag {...(tag ? { style } : {})}>
       <pre className="m-0" style={tag ? undefined : style}>
@@ -30,9 +26,7 @@ export const RulePanel: FC<RulePanelProps> = ({
           <div>
             expr: <Link to={createExpressionLink(query)}>{query}</Link>
           </div>
-          {isPresent(duration) && (
-            <div>for: {duration}</div>
-          )}
+          {isPresent(duration) && <div>for: {duration}</div>}
           {labels && (
             <>
               <div>labels:</div>
