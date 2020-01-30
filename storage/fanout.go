@@ -235,65 +235,53 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 	if len(q.queriers) > 1 {
 		wg := sync.WaitGroup{}
 		wg.Add(len(q.queriers))
-		queryResult := make(map[int]SeriesSet)
 		var priErr error = nil
 		var lock sync.Mutex
-		var wgLock sync.Mutex
-		for idx, qr := range q.queriers {
-			go func(index int, querier Querier) {
-				defer func() {
-					wgLock.Lock()
-					wg.Done()
-					wgLock.Unlock()
-				}()
-				set, wrn, err := querier.Select(params, matchers...)
+		for _, qr := range q.queriers {
+			go func(querier Querier) {
+				defer wg.Done()
+				set, wrn, selectError := querier.Select(params, matchers...)
 				lock.Lock()
-				q.setQuerierMap[set] = querier
-				if wrn != nil {
-					warnings = append(warnings, wrn...)
-				}
+				defer lock.Unlock()
+				err := q.processSelectResult(querier, set, wrn, selectError, seriesSets, warnings, params, matchers...)
 				if err != nil {
-					q.failedQueriers[querier] = struct{}{}
-					// If the error source isn't the primary querier, return the error as a warning and continue.
-					if querier != q.primaryQuerier {
-						warnings = append(warnings, err)
-						return
-					} else {
-						priErr = err
-					}
+					priErr = err
 				}
-				queryResult[index] = set
-				lock.Unlock()
-			}(idx, qr)
+			}(qr)
 		}
 		wg.Wait()
 		if priErr != nil {
 			return nil, nil, priErr
 		}
-		for _, set := range queryResult {
-			seriesSets = append(seriesSets, set)
-		}
 	} else { //If there's no remote storage configured . end up creating goroutines
 		for _, querier := range q.queriers {
-			set, wrn, err := querier.Select(params, matchers...)
-			q.setQuerierMap[set] = querier
-			if wrn != nil {
-				warnings = append(warnings, wrn...)
-			}
+			set, wrn, selectError := querier.Select(params, matchers...)
+			err := q.processSelectResult(querier, set, wrn, selectError, seriesSets, warnings, params, matchers...)
 			if err != nil {
-				q.failedQueriers[querier] = struct{}{}
-				// If the error source isn't the primary querier, return the error as a warning and continue.
-				if querier != q.primaryQuerier {
-					warnings = append(warnings, err)
-					continue
-				} else {
-					return nil, nil, err
-				}
+				return nil, nil, err
 			}
-			seriesSets = append(seriesSets, set)
 		}
 	}
 	return NewMergeSeriesSet(seriesSets, q), warnings, nil
+}
+
+func (q *mergeQuerier) processSelectResult(querier Querier, set SeriesSet, wrn Warnings, selectError error, seriesSets []SeriesSet, warnings Warnings, params *SelectParams, matchers ...*labels.Matcher) error {
+	//set, wrn, err := querier.Select(params, matchers...)
+	q.setQuerierMap[set] = querier
+	if wrn != nil {
+		warnings = append(warnings, wrn...)
+	}
+	if selectError != nil {
+		q.failedQueriers[querier] = struct{}{}
+		// If the error source isn't the primary querier, return the error as a warning and continue.
+		if querier != q.primaryQuerier {
+			warnings = append(warnings, selectError)
+		} else {
+			return selectError
+		}
+	}
+	seriesSets = append(seriesSets, set)
+	return nil
 }
 
 // LabelValues returns all potential values for a label name.
