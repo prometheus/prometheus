@@ -257,7 +257,10 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 }
 
 // NewHead opens the head block in dir.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64) (*Head, error) {
+// stripeSize sets the number of entries in the hash map, it must be a power of 2.
+// A larger stripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
+// A smaller stripeSize reduces the memory allocated, but can decrease performance with large number of series.
+func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64, stripeSize int) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -270,7 +273,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		chunkRange: chunkRange,
 		minTime:    math.MaxInt64,
 		maxTime:    math.MinInt64,
-		series:     newStripeSeries(),
+		series:     newStripeSeries(stripeSize),
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
@@ -1491,20 +1494,21 @@ func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
 	}
 }
 
+const (
+	// DefaultStripeSize is the default number of entries to allocate in the stripeSeries hash map.
+	DefaultStripeSize = 1 << 14
+)
+
 // stripeSeries locks modulo ranges of IDs and hashes to reduce lock contention.
 // The locks are padded to not be on the same cache line. Filling the padded space
 // with the maps was profiled to be slower – likely due to the additional pointer
 // dereferences.
 type stripeSeries struct {
-	series [stripeSize]map[uint64]*memSeries
-	hashes [stripeSize]seriesHashmap
-	locks  [stripeSize]stripeLock
+	size   int
+	series []map[uint64]*memSeries
+	hashes []seriesHashmap
+	locks  []stripeLock
 }
-
-const (
-	stripeSize = 1 << 14
-	stripeMask = stripeSize - 1
-)
 
 type stripeLock struct {
 	sync.RWMutex
@@ -1512,8 +1516,13 @@ type stripeLock struct {
 	_ [40]byte
 }
 
-func newStripeSeries() *stripeSeries {
-	s := &stripeSeries{}
+func newStripeSeries(stripeSize int) *stripeSeries {
+	s := &stripeSeries{
+		size:   stripeSize,
+		series: make([]map[uint64]*memSeries, stripeSize),
+		hashes: make([]seriesHashmap, stripeSize),
+		locks:  make([]stripeLock, stripeSize),
+	}
 
 	for i := range s.series {
 		s.series[i] = map[uint64]*memSeries{}
@@ -1533,7 +1542,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 	)
 	// Run through all series and truncate old chunks. Mark those with no
 	// chunks left as deleted and store their ID.
-	for i := 0; i < stripeSize; i++ {
+	for i := 0; i < s.size; i++ {
 		s.locks[i].Lock()
 
 		for hash, all := range s.hashes[i] {
@@ -1551,7 +1560,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 				// series alike.
 				// If we don't hold them all, there's a very small chance that a series receives
 				// samples again while we are half-way into deleting it.
-				j := int(series.ref & stripeMask)
+				j := int(series.ref) & (s.size - 1)
 
 				if i != j {
 					s.locks[j].Lock()
@@ -1576,7 +1585,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 }
 
 func (s *stripeSeries) getByID(id uint64) *memSeries {
-	i := id & stripeMask
+	i := id & uint64(s.size-1)
 
 	s.locks[i].RLock()
 	series := s.series[i][id]
@@ -1586,7 +1595,7 @@ func (s *stripeSeries) getByID(id uint64) *memSeries {
 }
 
 func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
-	i := hash & stripeMask
+	i := hash & uint64(s.size-1)
 
 	s.locks[i].RLock()
 	series := s.hashes[i].get(hash, lset)
@@ -1596,7 +1605,7 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 }
 
 func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, bool) {
-	i := hash & stripeMask
+	i := hash & uint64(s.size-1)
 
 	s.locks[i].Lock()
 
@@ -1607,7 +1616,7 @@ func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, boo
 	s.hashes[i].set(hash, series)
 	s.locks[i].Unlock()
 
-	i = series.ref & stripeMask
+	i = series.ref & uint64(s.size-1)
 
 	s.locks[i].Lock()
 	s.series[i][series.ref] = series
