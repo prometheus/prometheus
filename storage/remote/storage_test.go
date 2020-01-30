@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
+	"sync/atomic"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -85,4 +86,44 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 
 	err = s.Close()
 	testutil.Ok(t, err)
+}
+
+func TestLastSentTimestamp(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestLastSentTimestamp")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	s := NewStorage(nil, prometheus.DefaultRegisterer, nil, dir, defaultFlushDeadline)
+
+	rwConf := &config.DefaultRemoteWriteConfig
+	rwConf.URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
+	}
+
+	_, err = s.LastSentTimestamp(rwConf)
+	testutil.NotOk(t, err)
+
+	conf := &config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{rwConf},
+	}
+	err = s.ApplyConfig(conf)
+	testutil.Ok(t, err)
+
+	ts, err := s.LastSentTimestamp(rwConf)
+	testutil.Ok(t, err)
+	testutil.Equals(t, int64(0), ts)
+
+	// Fake the value to non-zero for the first queue (there should
+	// only be one).
+	for _, queue := range s.rws.queues {
+		atomic.StoreInt64(&queue.lastSendTimestamp, 1234)
+		break
+	}
+
+	ts, err = s.LastSentTimestamp(rwConf)
+	testutil.Ok(t, err)
+	testutil.Equals(t, int64(1234), ts)
 }
