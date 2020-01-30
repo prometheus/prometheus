@@ -33,14 +33,14 @@ func TestHeadReadWriter_WriteChunk(t *testing.T) {
 	}()
 
 	expectedBytes := []byte{}
-	numChunks := 50
+	numChunks := 2000
 	nextChunkOffset := uint64(HeadSegmentHeaderSize + 24)
 
 	var buf [8]byte
 	for i := 0; i < numChunks; i++ {
 		seriesRef := uint64(rand.Int63())
-		mint := rand.Int63()
-		maxt := rand.Int63()
+		mint := int64(i*1000 + 1)
+		maxt := int64((i + 1) * 1000)
 		chunk := randomChunk(t)
 
 		chunkRef, err := hrw.WriteChunk(seriesRef, mint, maxt, chunk)
@@ -67,6 +67,7 @@ func TestHeadReadWriter_WriteChunk(t *testing.T) {
 		// += encoding + chunk data len + chunk data + seriesRef,mint,maxt of next chunk.
 		nextChunkOffset += 1 + uint64(n) + uint64(len(chunk.Bytes())) + 24
 	}
+	testutil.Ok(t, hrw.flushBuffer())
 
 	testutil.Assert(t, len(hrw.bs) == 1 && len(hrw.cs) == 1, "expected only 1 mmapped file, got %d", len(hrw.bs))
 
@@ -100,23 +101,36 @@ func TestHeadReadWriter_ReadChunk(t *testing.T) {
 	}
 
 	expectedData := []expectedDataType{}
-	numChunks := 50
+	numChunks := 100
 
-	for i := 0; i < numChunks; i++ {
-		chunk := randomChunk(t)
-		chunkRef, err := hrw.WriteChunk(
-			uint64(rand.Int63()),
-			rand.Int63(),
-			rand.Int63(),
-			chunk,
-		)
-		testutil.Ok(t, err)
+	timesRan := 0
+	populateChunks := func() {
+		for i := 0; i < numChunks; i++ {
+			chunk := randomChunk(t)
+			chunkRef, err := hrw.WriteChunk(
+				uint64(rand.Int63()),
+				int64(((timesRan*numChunks)+i)*1000+1),
+				int64(((timesRan*numChunks)+i+1)*1000),
+				chunk,
+			)
+			testutil.Ok(t, err)
 
-		expectedData = append(expectedData, expectedDataType{
-			chunkRef: chunkRef,
-			chunk:    chunk,
-		})
+			expectedData = append(expectedData, expectedDataType{
+				chunkRef: chunkRef,
+				chunk:    chunk,
+			})
+		}
 	}
+
+	// Add chunks till we fill at least 1 segment file
+	// and also have something in the in-memory buffer.
+	for hrw.curFileSequence < 2 || hrw.wbuf.Buffered() == 0 {
+		populateChunks()
+		timesRan++
+	}
+
+	// This is to test the access of buffered chunks.
+	testutil.Assert(t, hrw.wbuf.Buffered() > 0, "there are no buffered chunks")
 
 	for _, exp := range expectedData {
 		actChunk, err := hrw.Chunk(exp.chunkRef)
@@ -136,12 +150,12 @@ func TestHeadReadWriter_IterateChunks(t *testing.T) {
 	}
 
 	expectedData := []expectedDataType{}
-	numChunks := 50
+	numChunks := 10000
 
 	for i := 0; i < numChunks; i++ {
 		seriesRef := uint64(rand.Int63())
-		mint := rand.Int63()
-		maxt := rand.Int63()
+		mint := int64(i*1000 + 1)
+		maxt := int64((i + 1) * 1000)
 		chunk := randomChunk(t)
 
 		chunkRef, err := hrw.WriteChunk(seriesRef, mint, maxt, chunk)
@@ -193,15 +207,20 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 		testutil.Ok(t, hrw.Close())
 	}()
 
-	var timeToTruncate time.Time
+	var timeToTruncate int64
 
 	// Cut 5 segments.
 	for i := 1; i <= 5; i++ {
-		testutil.Ok(t, hrw.cut())
+		testutil.Ok(t, hrw.cut(int64(i-1)*100))
+
+		// Write a chunks to set maxt for the segment.
+		_, err := hrw.WriteChunk(1, int64((i-1)*100)+1, int64(i*100)-1, randomChunk(t))
+		testutil.Ok(t, err)
+
 		time.Sleep(100 * time.Millisecond)
 		if i == 3 {
 			// Truncate the segment files before the 3rd segment.
-			timeToTruncate = time.Now()
+			timeToTruncate = int64((i-1)*100) + 1
 		}
 	}
 
@@ -213,7 +232,7 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	testutil.Equals(t, 5, len(hrw.cs))
 
 	// Truncating files.
-	testutil.Ok(t, hrw.Truncate(timeToTruncate.UnixNano()/1e6))
+	testutil.Ok(t, hrw.Truncate(timeToTruncate))
 
 	// Verifying the truncated files.
 	files, err = ioutil.ReadDir(hrw.dirFile.Name())

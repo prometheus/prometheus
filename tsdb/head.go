@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -424,8 +425,12 @@ func (h *Head) loadSeries(r *wal.Reader, multiRef map[uint64]uint64, refSeries m
 	case err := <-errCh:
 		return err
 	default:
-		return nil
+		if r.Err() != nil {
+			return errors.Wrap(r.Err(), "read records")
+		}
 	}
+
+	return nil
 }
 
 func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, refSeries map[uint64]*memSeries) (err error) {
@@ -620,6 +625,9 @@ func (h *Head) Init(minValidTime int64) error {
 		return nil
 	}
 
+	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
+	start := time.Now()
+
 	refSeries := map[uint64]*memSeries{}
 	level.Info(h.logger).Log("msg", "creating series from WAL")
 	multiRef := map[uint64]uint64{}
@@ -644,6 +652,7 @@ func (h *Head) Init(minValidTime int64) error {
 		return err
 	}
 
+	level.Info(h.logger).Log("msg", "m-mapping the on-disk chunks")
 	unknownRefs := 0
 	if err := h.chunkReadWriter.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64) error {
 		ms := refSeries[seriesRef]
@@ -668,7 +677,7 @@ func (h *Head) Init(minValidTime int64) error {
 		return errors.Wrap(err, "iterate on-disk chunks")
 	}
 
-	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
+	level.Info(h.logger).Log("msg", "adding remaining samples")
 	// Backfill the checkpoint first if it exists.
 	if err := h.executeOnCheckpointReader(func(checkpointReader *wal.Reader) error {
 		// A corrupted checkpoint is a hard error for now and requires user
@@ -691,6 +700,7 @@ func (h *Head) Init(minValidTime int64) error {
 		return err
 	}
 
+	level.Info(h.logger).Log("msg", "finished replaying WAL", "duration", time.Since(start).String())
 	return nil
 }
 
@@ -1341,13 +1351,12 @@ func (h *Head) compactable() bool {
 
 // Close flushes the WAL and closes the head.
 func (h *Head) Close() error {
-	if err := h.chunkReadWriter.Close(); err != nil {
-		return err
+	var merr tsdb_errors.MultiError
+	merr.Add(h.chunkReadWriter.Close())
+	if h.wal != nil {
+		merr.Add(h.wal.Close())
 	}
-	if h.wal == nil {
-		return nil
-	}
-	return h.wal.Close()
+	return merr.Err()
 }
 
 type headChunkReader struct {
@@ -1394,8 +1403,8 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		}
 	}()
 
-	// This means that the chunk has been garbage collected or is outside
-	// the specified range.
+	// This means that the chunk has been garbage collected (or) is outside
+	// the specified range (or) Head is closing.
 	if c == nil || !c.OverlapsClosedInterval(h.mint, h.maxt) {
 		s.Unlock()
 		return nil, ErrNotFound
@@ -1822,6 +1831,11 @@ func (s *memSeries) cut(mint int64, chunkReadWriter *chunks.HeadReadWriter) *mem
 	if s.headChunk != nil {
 		chunkRef, err := chunkReadWriter.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk)
 		if err != nil {
+			if err == chunks.ErrHeadReadWriterClosed {
+				// The head is being closed, hence chunkReadWriter is closed.
+				// Return the same head chunk as there wont be more samples appended anyway.
+				return s.headChunk
+			}
 			panic(err)
 		}
 		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
@@ -1879,6 +1893,9 @@ func (s *memSeries) chunk(id int, chunkReadWriter *chunks.HeadReadWriter) (chunk
 	}
 	chk, err := chunkReadWriter.Chunk(s.mmappedChunks[ix].ref)
 	if err != nil {
+		if err == chunks.ErrHeadReadWriterClosed {
+			return nil, false
+		}
 		panic(err)
 	}
 	mc := memChunkPool.Get().(*memChunk)
@@ -1983,6 +2000,7 @@ func (s *memSeries) iterator(id int, it chunkenc.Iterator, chunkReadWriter *chun
 	// TODO(fabxc): Work around! A querier may have retrieved a pointer to a series' chunk,
 	// which got then garbage collected before it got accessed.
 	// We must ensure to not garbage collect as long as any readers still hold a reference.
+	// It can also be nil if the Head is being closed.
 	if c == nil {
 		return chunkenc.NewNopIterator()
 	}
