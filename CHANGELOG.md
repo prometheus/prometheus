@@ -1,25 +1,29 @@
 ## 2.16.0-rc.0 / 2020-01-30
 
-* [CHANGE] PromQL: Remove MaxConcurrent from the PromQL engine opts #6712
-* [FEATURE] PromQL: Support trailing commas in grouping opts #6480
 * [FEATURE] PromQL: add absent_over_time query function #6490
 * [FEATURE] Adding optional logging of queries to their own file #6520
+* [FEATURE] React UI: Support local timezone on /graph #6692
 * [ENHANCEMENT] Remote write: Improve sharding calculation in cases where we would always be consistently behind by tracking pendingSamples ##6511
 * [ENHANCEMENT] React UI: Add support for rules page and "Xs ago" duration displays #6503
 * [ENHANCEMENT] promtool: Add support for line-column numbers for invalid rules output #6533
 * [ENHANCEMENT] ReactUI: alerts page, replace filtering togglers tabs with checkboxes #6543
-* [ENHANCEMENT] PromQL: Use PositionRange in parser errors to improve error messages #6634
-* [ENHANCEMENT] TSDB: return an error on ingesting series with duplicate labels #6664
+* [ENHANCEMENT] PromQL: Refactoring in parser errors to improve error messages #6634
 * [ENHANCEMENT] TSDB: Export metric for WAL write errors #6647
 * [ENHANCEMENT] scrape: Add metrics to track bytes and entries in the metadata cache #6675
-* [ENHANCEMENT] ReactUI: adopt grafana flot fix for stacked graphs #6603
-* [ENHANCEMENT] React UI: Support local timezone on /graph #6692
+* [ENHANCEMENT] PromQL: Support trailing commas in grouping opts #6480
+* [ENHANCEMENT] Avoid restarting rule groups when it is unnecessary #6450
+* [ENHANCEMENT] Improve query performance for queries that only touch the most recent 2h of data. #6651
 * [BUGFIX] React UI: Send cookies on fetch() on older browsers #6553
 * [BUGFIX] PromQL: Fix unary operator precedence #6579
 * [BUGFIX] TSDB: ensure compactionsSkipped metric is registered, and log proper error if one is returned from head.Init #6616
 * [BUGFIX] Remote read: return the correct error if configs can't be marshal'd to JSON #6622
 * [BUFGIX] React UI: broken graph page browser history so that back button works as expected #6659
-* [BUGFIX] Remote write: Make remote client `Store` use passed context #6673
+* [BUGFIX] Remote write: Make remote client `Store` use passed context, which can affect shutdown timing #6673
+* [BUGFIX] PromQL:Respect query.timeout even when we reach query.max-concurrency #6712
+* [BUGFIX] PromQL: Fix string and parentheses handling in engine, which affected React UI #6612
+* [BUGFIX] React UI: adopt grafana flot fix for stacked graphs #6603
+* [BUGFIX] TSDB: return an error on ingesting series with duplicate labels #6664
+
 
 ## 2.15.2 / 2020-01-06
 
