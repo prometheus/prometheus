@@ -20,7 +20,7 @@
 * [BUGFIX] TSDB: ensure compactionsSkipped metric is registered, and log proper error if one is returned from head.Init #6616
 * [BUGFIX] TSDB: return an error on ingesting series with duplicate labels #6664
 * [BUGFIX] PromQL: Fix unary operator precedence #6579
-* [BUGFIX] PromQL:Respect query.timeout even when we reach query.max-concurrency #6712
+* [BUGFIX] PromQL: Respect query.timeout even when we reach query.max-concurrency #6712
 * [BUGFIX] PromQL: Fix string and parentheses handling in engine, which affected React UI #6612
 * [BUGFIX] PromQL: Remove output labels returned by absent() if they are produced by multiple identical label matchers #6493
 * [BUGFIX] Scrape: Validate that OpenMetrics input ends with `# EOF` #6505
