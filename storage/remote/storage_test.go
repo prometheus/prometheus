@@ -19,7 +19,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -30,7 +29,7 @@ func TestStorageLifecycle(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	s := NewStorage(nil, prometheus.NewRegistry(), nil, dir, defaultFlushDeadline)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -69,7 +68,7 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	s := NewStorage(nil, prometheus.NewRegistry(), nil, dir, defaultFlushDeadline)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
