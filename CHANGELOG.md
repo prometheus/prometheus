@@ -13,7 +13,6 @@
 * [ENHANCEMENT] Scrape: Add metrics to track bytes and entries in the metadata cache #6675
 * [ENHANCEMENT] promtool: Add support for line-column numbers for invalid rules output #6533
 * [ENHANCEMENT] Avoid restarting rule groups when it is unnecessary #6450
-* [ENHANCEMENT] Remote write: Improve sharding calculation in cases where we would always be consistently behind by tracking pendingSamples #6511
 * [BUGFIX] React UI: Send cookies on fetch() on older browsers #6553
 * [BUGFIX] React UI: adopt grafana flot fix for stacked graphs #6603
 * [BUFGIX] React UI: broken graph page browser history so that back button works as expected #6659
@@ -26,8 +25,8 @@
 * [BUGFIX] Scrape: Validate that OpenMetrics input ends with `# EOF` #6505
 * [BUGFIX] Remote read: return the correct error if configs can't be marshal'd to JSON #6622
 * [BUGFIX] Remote write: Make remote client `Store` use passed context, which can affect shutdown timing #6673
+* [BUGFIX] Remote write: Improve sharding calculation in cases where we would always be consistently behind by tracking pendingSamples #6511
 * [BUGFIX] Ensure prometheus_rule_group metrics are deleted when a rule group is removed #6693
-
 
 ## 2.15.2 / 2020-01-06
 
