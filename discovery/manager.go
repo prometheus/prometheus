@@ -304,8 +304,8 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 }
 
 func (m *Manager) allGroups() map[string][]*targetgroup.Group {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
 
 	tSets := map[string][]*targetgroup.Group{}
 	for pkey, tsets := range m.targets {

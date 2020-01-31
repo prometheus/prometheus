@@ -31,11 +31,10 @@ func TestDeriv(t *testing.T) {
 	storage := teststorage.New(t)
 	defer storage.Close()
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10000,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10000,
+		Timeout:    10 * time.Second,
 	}
 	engine := NewEngine(opts)
 

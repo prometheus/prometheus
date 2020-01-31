@@ -16,6 +16,7 @@ import { QueryParams } from '../../types/types';
 interface PanelProps {
   options: PanelOptions;
   onOptionsChanged: (opts: PanelOptions) => void;
+  useLocalTime: boolean;
   pastQueries: string[];
   metricNames: string[];
   removePanel: () => void;
@@ -266,6 +267,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
                     <div className="table-controls">
                       <TimeInput
                         time={options.endTime}
+                        useLocalTime={this.props.useLocalTime}
                         range={options.range}
                         placeholder="Evaluation time"
                         onChangeTime={this.handleChangeEndTime}
@@ -281,6 +283,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
                     <GraphControls
                       range={options.range}
                       endTime={options.endTime}
+                      useLocalTime={this.props.useLocalTime}
                       resolution={options.resolution}
                       stacked={options.stacked}
                       onChangeRange={this.handleChangeRange}
@@ -291,6 +294,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
                     <GraphTabContent
                       data={this.state.data}
                       stacked={options.stacked}
+                      useLocalTime={this.props.useLocalTime}
                       lastQueryParams={this.state.lastQueryParams}
                     />
                   </>

@@ -1,4 +1,5 @@
 import { formatValue, getColors, parseValue, getOptions } from './GraphHelpers';
+import moment from 'moment';
 require('../../vendor/flot/jquery.flot'); // need for $.colors
 
 describe('GraphHelpers', () => {
@@ -98,8 +99,8 @@ describe('GraphHelpers', () => {
     });
   });
   describe('Plot options', () => {
-    it('should configer options properly if stacked prop is true', () => {
-      expect(getOptions(true)).toMatchObject({
+    it('should configure options properly if stacked prop is true', () => {
+      expect(getOptions(true, false)).toMatchObject({
         series: {
           stack: true,
           lines: { lineWidth: 1, steps: false, fill: true },
@@ -107,8 +108,8 @@ describe('GraphHelpers', () => {
         },
       });
     });
-    it('should configer options properly if stacked prop is false', () => {
-      expect(getOptions(false)).toMatchObject({
+    it('should configure options properly if stacked prop is false', () => {
+      expect(getOptions(false, false)).toMatchObject({
         series: {
           stack: false,
           lines: { lineWidth: 2, steps: false, fill: false },
@@ -116,13 +117,51 @@ describe('GraphHelpers', () => {
         },
       });
     });
+    it('should configure options properly if useLocalTime prop is true', () => {
+      expect(getOptions(true, true)).toMatchObject({
+        xaxis: {
+          mode: 'time',
+          showTicks: true,
+          showMinorTicks: true,
+          timeBase: 'milliseconds',
+          timezone: 'browser',
+        },
+      });
+    });
+    it('should configure options properly if useLocalTime prop is false', () => {
+      expect(getOptions(false, false)).toMatchObject({
+        xaxis: {
+          mode: 'time',
+          showTicks: true,
+          showMinorTicks: true,
+          timeBase: 'milliseconds',
+        },
+      });
+    });
     it('should return proper tooltip html from options', () => {
       expect(
-        getOptions(true).tooltip.content('', 1572128592, 1572128592, {
+        getOptions(true, false).tooltip.content('', 1572128592, 1572128592, {
           series: { labels: { foo: '1', bar: '2' }, color: '' },
         } as any)
       ).toEqual(`
-            <div class="date">Mon, 19 Jan 1970 04:42:08 GMT</div>
+            <div class="date">1970-01-19 04:42:08 +00:00</div>
+            <div>
+              <span class="detail-swatch" style="background-color: " />
+              <span>value: <strong>1572128592</strong></span>
+            <div>
+            <div class="labels mt-1">
+              <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
+            </div>
+          `);
+    });
+    it('should return proper tooltip html from options with local time', () => {
+      moment.tz.setDefault('America/New_York');
+      expect(
+        getOptions(true, true).tooltip.content('', 1572128592, 1572128592, {
+          series: { labels: { foo: '1', bar: '2' }, color: '' },
+        } as any)
+      ).toEqual(`
+            <div class="date">1970-01-18 23:42:08 -05:00</div>
             <div>
               <span class="detail-swatch" style="background-color: " />
               <span>value: <strong>1572128592</strong></span>
@@ -133,7 +172,7 @@ describe('GraphHelpers', () => {
           `);
     });
     it('should render Plot with proper options', () => {
-      expect(getOptions(true)).toEqual({
+      expect(getOptions(true, false)).toEqual({
         grid: {
           hoverable: true,
           clickable: true,

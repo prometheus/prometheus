@@ -237,3 +237,14 @@ button.execute-btn {
   margin-right: 5px;
   max-height: 20px;
 }
+
+.rules-head {
+  font-weight: 600;
+}
+
+.rule_cell {
+  white-space: pre-wrap;
+  background-color: #F5F5F5;
+  display: block;
+  font-family: monospace;
+}

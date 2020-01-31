@@ -1,18 +1,17 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { Alert } from 'reactstrap';
 import Graph from './Graph';
 import { QueryParams } from '../../types/types';
 import { isPresent } from '../../utils';
 
-export const GraphTabContent = ({
-  data,
-  stacked,
-  lastQueryParams,
-}: {
+interface GraphTabContentProps {
   data: any;
   stacked: boolean;
+  useLocalTime: boolean;
   lastQueryParams: QueryParams | null;
-}) => {
+}
+
+export const GraphTabContent: FC<GraphTabContentProps> = ({ data, stacked, useLocalTime, lastQueryParams }) => {
   if (!isPresent(data)) {
     return <Alert color="light">No data queried yet</Alert>;
   }
@@ -24,5 +23,5 @@ export const GraphTabContent = ({
       <Alert color="danger">Query result is of wrong type '{data.resultType}', should be 'matrix' (range vector).</Alert>
     );
   }
-  return <Graph data={data} stacked={stacked} queryParams={lastQueryParams} />;
+  return <Graph data={data} stacked={stacked} useLocalTime={useLocalTime} queryParams={lastQueryParams} />;
 };

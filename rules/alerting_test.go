@@ -138,7 +138,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 				filteredRes = append(filteredRes, smpl)
 			} else {
 				// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-				testutil.Equals(t, smplName, "ALERTS_FOR_STATE")
+				testutil.Equals(t, "ALERTS_FOR_STATE", smplName)
 			}
 		}
 
@@ -217,7 +217,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 			filteredRes = append(filteredRes, smpl)
 		} else {
 			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-			testutil.Equals(t, smplName, "ALERTS_FOR_STATE")
+			testutil.Equals(t, "ALERTS_FOR_STATE", smplName)
 		}
 	}
 
@@ -231,7 +231,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 			filteredRes = append(filteredRes, smpl)
 		} else {
 			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-			testutil.Equals(t, smplName, "ALERTS_FOR_STATE")
+			testutil.Equals(t, "ALERTS_FOR_STATE", smplName)
 		}
 	}
 
@@ -287,7 +287,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 			filteredRes = append(filteredRes, smpl)
 		} else {
 			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-			testutil.Equals(t, smplName, "ALERTS_FOR_STATE")
+			testutil.Equals(t, "ALERTS_FOR_STATE", smplName)
 		}
 	}
 	testutil.Equals(t, result, filteredRes)
@@ -298,11 +298,10 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 	defer storage.Close()
 
 	opts := promql.EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 
 	engine := promql.NewEngine(opts)

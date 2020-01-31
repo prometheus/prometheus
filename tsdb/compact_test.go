@@ -873,7 +873,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			wlog, close := newTestNoopWal(b)
 			defer close()
 
-			h, err := NewHead(nil, nil, wlog, 1000, nil)
+			h, err := NewHead(nil, nil, wlog, 1000, nil, DefaultStripeSize)
 			testutil.Ok(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender()

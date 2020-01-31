@@ -197,3 +197,7 @@ export const toQueryString = ({ key, options }: PanelMeta) => {
 export const encodePanelOptionsToQueryString = (panels: PanelMeta[]) => {
   return `?${panels.map(toQueryString).join('&')}`;
 };
+
+export const createExpressionLink = (expr: string) => {
+  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.range_input=1h`;
+};

@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -146,24 +147,27 @@ func (p *queryLogTest) queryString() string {
 // test parameters.
 func (p *queryLogTest) validateLastQuery(t *testing.T, ql []queryLogLine) {
 	q := ql[len(ql)-1]
-	testutil.Equals(t, q["query"].(string), p.queryString())
-	switch p.origin {
-	case consoleOrigin:
-		testutil.Equals(t, q["path"].(string), p.prefix+"/consoles/test.html")
-	case apiOrigin:
-		testutil.Equals(t, q["path"].(string), p.prefix+"/api/v1/query")
-	case ruleOrigin:
-		testutil.Equals(t, q["groupName"].(string), "querylogtest")
-		testutil.Equals(t, q["groupFile"].(string), filepath.Join(p.cwd, "testdata", "rules", "test.yml"))
-	default:
-		panic("unknown origin")
-	}
+	testutil.Equals(t, p.queryString(), q.Params.Query)
+	testutil.Equals(t, 0, q.Params.Step)
+
 	if p.origin != ruleOrigin {
 		host := p.host
 		if host == "[::1]" {
 			host = "::1"
 		}
-		testutil.Equals(t, q["clientIP"].(string), host)
+		testutil.Equals(t, host, q.Request.ClientIP)
+	}
+
+	switch p.origin {
+	case apiOrigin:
+		testutil.Equals(t, p.prefix+"/api/v1/query", q.Request.Path)
+	case consoleOrigin:
+		testutil.Equals(t, p.prefix+"/consoles/test.html", q.Request.Path)
+	case ruleOrigin:
+		testutil.Equals(t, "querylogtest", q.RuleGroup.Name)
+		testutil.Equals(t, filepath.Join(p.cwd, "testdata", "rules", "test.yml"), q.RuleGroup.File)
+	default:
+		panic("unknown origin")
 	}
 }
 
@@ -253,9 +257,15 @@ func (p *queryLogTest) run(t *testing.T) {
 	// Log stderr in case of failure.
 	stderr, err := prom.StderrPipe()
 	testutil.Ok(t, err)
+
+	// We use a WaitGroup to avoid calling t.Log after the test is done.
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer wg.Wait()
 	go func() {
 		slurp, _ := ioutil.ReadAll(stderr)
 		t.Log(string(slurp))
+		wg.Done()
 	}()
 
 	testutil.Ok(t, prom.Start())
@@ -354,7 +364,20 @@ func (p *queryLogTest) run(t *testing.T) {
 	}
 }
 
-type queryLogLine map[string]interface{}
+type queryLogLine struct {
+	Params struct {
+		Query string `json:"query"`
+		Step  int    `json:"step"`
+	} `json:"params"`
+	Request struct {
+		Path     string `json:"path"`
+		ClientIP string `json:"clientIP"`
+	} `json:"httpRequest"`
+	RuleGroup struct {
+		File string `json:"file"`
+		Name string `json:"name"`
+	} `json:"ruleGroup"`
+}
 
 // readQueryLog unmarshal a json-formatted query log into query log lines.
 func readQueryLog(t *testing.T, path string) []queryLogLine {

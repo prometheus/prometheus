@@ -1815,7 +1815,7 @@ func TestPostingsForMatchers(t *testing.T) {
 	wlog, close := newTestNoopWal(t)
 	defer close()
 
-	h, err := NewHead(nil, nil, wlog, 1000, nil)
+	h, err := NewHead(nil, nil, wlog, 1000, nil, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, h.Close())

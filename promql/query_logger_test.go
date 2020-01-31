@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"regexp"
@@ -51,7 +52,7 @@ func TestQueryLogging(t *testing.T) {
 		start := 1 + i*entrySize
 		end := start + entrySize
 
-		queryLogger.Insert(queries[i])
+		queryLogger.Insert(context.Background(), queries[i])
 
 		have := string(fileAsBytes[start:end])
 		if !regexp.MustCompile(want[i]).MatchString(have) {
@@ -77,16 +78,16 @@ func TestIndexReuse(t *testing.T) {
 	}
 
 	queryLogger.generateIndices(3)
-	queryLogger.Insert("TestQuery1")
-	queryLogger.Insert("TestQuery2")
-	queryLogger.Insert("TestQuery3")
+	queryLogger.Insert(context.Background(), "TestQuery1")
+	queryLogger.Insert(context.Background(), "TestQuery2")
+	queryLogger.Insert(context.Background(), "TestQuery3")
 
 	queryLogger.Delete(1 + entrySize)
 	queryLogger.Delete(1)
 	newQuery2 := "ThisShouldBeInsertedAtIndex2"
 	newQuery1 := "ThisShouldBeInsertedAtIndex1"
-	queryLogger.Insert(newQuery2)
-	queryLogger.Insert(newQuery1)
+	queryLogger.Insert(context.Background(), newQuery2)
+	queryLogger.Insert(context.Background(), newQuery1)
 
 	want := []string{
 		`^{"query":"ThisShouldBeInsertedAtIndex1","timestamp_sec":\d+}\x00*,$`,

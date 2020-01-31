@@ -27,7 +27,7 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	defer close()
 
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, wlog, 1000, nil)
+	h, err := NewHead(nil, nil, wlog, 1000, nil, DefaultStripeSize)
 	testutil.Ok(b, err)
 	defer h.Close()
 
@@ -41,7 +41,7 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 	defer close()
 
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, wlog, 1000, nil)
+	h, err := NewHead(nil, nil, wlog, 1000, nil, DefaultStripeSize)
 	testutil.Ok(b, err)
 	defer h.Close()
 

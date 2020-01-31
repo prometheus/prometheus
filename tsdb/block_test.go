@@ -327,7 +327,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 }
 
 func createHead(tb testing.TB, series []Series, w wal.WAL) *Head {
-	head, err := NewHead(nil, nil, w, 2*60*60*1000, nil)
+	head, err := NewHead(nil, nil, w, 2*60*60*1000, nil, DefaultStripeSize)
 	testutil.Ok(tb, err)
 
 	app := head.Appender()

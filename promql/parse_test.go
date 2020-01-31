@@ -2488,7 +2488,7 @@ func TestParseExpressions(t *testing.T) {
 
 		if !test.fail {
 			testutil.Ok(t, err)
-			testutil.Equals(t, expr, test.expected, "error on input '%s'", test.input)
+			testutil.Equals(t, test.expected, expr, "error on input '%s'", test.input)
 		} else {
 			testutil.NotOk(t, err)
 			testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
@@ -2635,7 +2635,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 	var err error
 
 	defer func() {
-		testutil.Equals(t, err, errUnexpected)
+		testutil.Equals(t, errUnexpected, err)
 	}()
 	defer p.recover(&err)
 	// Cause a runtime panic.
@@ -2651,7 +2651,7 @@ func TestRecoverParserError(t *testing.T) {
 	e := errors.New("custom error")
 
 	defer func() {
-		testutil.Equals(t, err.Error(), e.Error())
+		testutil.Equals(t, e.Error(), err.Error())
 	}()
 	defer p.recover(&err)
 

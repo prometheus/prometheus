@@ -340,7 +340,7 @@ func (m *QueryResult) GetTimeseries() []*TimeSeries {
 // ChunkedReadResponse is a response when response_type equals STREAMED_XOR_CHUNKS.
 // We strictly stream full series after series, optionally split by time. This means that a single frame can contain
 // partition of the single series, but once a new series is started to be streamed it means that no more chunks will
-// be sent for previous one.
+// be sent for previous one. Series are returned sorted in the same way TSDB block are internally.
 type ChunkedReadResponse struct {
 	ChunkedSeries []*ChunkedSeries `protobuf:"bytes,1,rep,name=chunked_series,json=chunkedSeries,proto3" json:"chunked_series,omitempty"`
 	// query_index represents an index of the query from ReadRequest.queries these chunks relates to.
