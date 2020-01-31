@@ -13,6 +13,7 @@
 * [ENHANCEMENT] PromQL: Support trailing commas in grouping opts #6480
 * [ENHANCEMENT] Avoid restarting rule groups when it is unnecessary #6450
 * [ENHANCEMENT] Improve query performance for queries that only touch the most recent 2h of data. #6651
+* [ENHANCEMENT] Reduce memory usage on reloads by reusing scrape cache #6670
 * [BUGFIX] React UI: Send cookies on fetch() on older browsers #6553
 * [BUGFIX] PromQL: Fix unary operator precedence #6579
 * [BUGFIX] TSDB: ensure compactionsSkipped metric is registered, and log proper error if one is returned from head.Init #6616
@@ -23,6 +24,9 @@
 * [BUGFIX] PromQL: Fix string and parentheses handling in engine, which affected React UI #6612
 * [BUGFIX] React UI: adopt grafana flot fix for stacked graphs #6603
 * [BUGFIX] TSDB: return an error on ingesting series with duplicate labels #6664
+* [BUGFIX] Scrape: Validate that OpenMetrics input ends with `# EOF` #6505
+* [BUGFIX] Remove output labels returned by absent() if they are produced by multiple identical label matchers #6493
+* [BUGFIX] Ensure prometheus_rule_group metrics are deleted when a rule group is removed #6693
 
 
 ## 2.15.2 / 2020-01-06
