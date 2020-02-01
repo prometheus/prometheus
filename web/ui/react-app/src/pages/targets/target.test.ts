@@ -8,7 +8,7 @@ describe('groupTargets', () => {
   const targetGroups: ScrapePools = groupTargets(targets);
 
   it('groups a list of targets by scrape job', () => {
-    ['blackbox', 'prometheus', 'node_exporter'].forEach(scrapePool => {
+    ['blackbox', 'prometheus/test', 'node_exporter'].forEach(scrapePool => {
       expect(Object.keys(targetGroups)).toContain(scrapePool);
     });
     Object.keys(targetGroups).forEach((scrapePool: string): void => {
@@ -20,7 +20,7 @@ describe('groupTargets', () => {
   });
 
   it('adds upCount during aggregation', () => {
-    const testCases: { [key: string]: number } = { blackbox: 3, prometheus: 1, node_exporter: 1 };
+    const testCases: { [key: string]: number } = { blackbox: 3, 'prometheus/test': 1, node_exporter: 1 };
     Object.keys(testCases).forEach((scrapePool: string): void => {
       expect(targetGroups[scrapePool].upCount).toEqual(testCases[scrapePool]);
     });

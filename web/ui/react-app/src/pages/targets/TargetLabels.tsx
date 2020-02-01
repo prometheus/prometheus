@@ -15,11 +15,15 @@ export interface TargetLabelsProps {
 
 const formatLabels = (labels: Labels): string[] => Object.keys(labels).map(key => `${key}="${labels[key]}"`);
 
+const sanitizeIDSequence = (scrapePool: string): string => {
+  return scrapePool.replace(/\W/g, (substring: string): string => substring.charCodeAt(0).toString());
+};
+
 const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, scrapePool }) => {
   const [tooltipOpen, setTooltipOpen] = useState(false);
 
   const toggle = (): void => setTooltipOpen(!tooltipOpen);
-  const id = `series-labels-${scrapePool}-${idx}`;
+  const id = `series-labels-${sanitizeIDSequence(scrapePool)}-${idx}`;
 
   return (
     <>

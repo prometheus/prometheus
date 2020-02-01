@@ -10,7 +10,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { FetchMock } from 'jest-fetch-mock/types';
 
-describe('Flags', () => {
+describe('ScrapePoolList', () => {
   const defaultProps = {
     filter: { showHealthy: true, showUnhealthy: true },
     pathPrefix: '..',
@@ -39,7 +39,7 @@ describe('Flags', () => {
     let mock: FetchMock;
     beforeEach(() => {
       //Tooltip requires DOM elements to exist. They do not in enzyme rendering so we must manually create them.
-      const scrapePools: { [key: string]: number } = { blackbox: 3, node_exporter: 1, prometheus: 1 };
+      const scrapePools: { [key: string]: number } = { blackbox: 3, node_exporter: 1, prometheus47test: 1 };
       Object.keys(scrapePools).forEach((pool: string): void => {
         Array.from(Array(scrapePools[pool]).keys()).forEach((idx: number): void => {
           const div = document.createElement('div');
