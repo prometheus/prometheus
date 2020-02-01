@@ -321,7 +321,6 @@ func main() {
 		}
 	}
 
-	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
 	promql.SetDefaultEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
 
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
@@ -360,6 +359,7 @@ func main() {
 			MaxSamples:         cfg.queryMaxSamples,
 			Timeout:            time.Duration(cfg.queryTimeout),
 			ActiveQueryTracker: promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
+			LookbackDelta:      time.Duration(cfg.lookbackDelta),
 		}
 
 		queryEngine = promql.NewEngine(opts)

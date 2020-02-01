@@ -53,9 +53,6 @@ const (
 )
 
 var (
-	// LookbackDelta determines the time since the last sample after which a time
-	// series is considered stale.
-	LookbackDelta = 5 * time.Minute
 
 	// DefaultEvaluationInterval is the default evaluation interval of
 	// a subquery in milliseconds.
@@ -220,6 +217,9 @@ type EngineOpts struct {
 	MaxSamples         int
 	Timeout            time.Duration
 	ActiveQueryTracker *ActiveQueryTracker
+	// LookbackDelta determines the time since the last sample after which a time
+	// series is considered stale.
+	LookbackDelta time.Duration
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -232,6 +232,7 @@ type Engine struct {
 	activeQueryTracker *ActiveQueryTracker
 	queryLogger        QueryLogger
 	queryLoggerLock    sync.RWMutex
+	lookbackDelta      time.Duration
 }
 
 // NewEngine returns a new engine.
@@ -324,6 +325,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		metrics:            metrics,
 		maxSamplesPerQuery: opts.MaxSamples,
 		activeQueryTracker: opts.ActiveQueryTracker,
+		lookbackDelta:      opts.LookbackDelta,
 	}
 }
 
@@ -348,6 +350,11 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 	} else {
 		ng.metrics.queryLogEnabled.Set(0)
 	}
+}
+
+// GetLookbackDelta returns the lookback delta of the query engine.
+func (ng *Engine) GetLookbackDelta() time.Duration {
+	return ng.lookbackDelta
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
@@ -532,6 +539,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			maxSamples:          ng.maxSamplesPerQuery,
 			defaultEvalInterval: GetDefaultEvaluationInterval(),
 			logger:              ng.logger,
+			lookbackDelta:       ng.lookbackDelta,
 		}
 
 		val, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -570,7 +578,6 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		default:
 			panic(errors.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
 		}
-
 	}
 
 	// Range evaluation.
@@ -581,6 +588,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		maxSamples:          ng.maxSamplesPerQuery,
 		defaultEvalInterval: GetDefaultEvaluationInterval(),
 		logger:              ng.logger,
+		lookbackDelta:       ng.lookbackDelta,
 	}
 	val, err := evaluator.Eval(ctxInnerEval, s.Expr)
 	if err != nil {
@@ -624,11 +632,11 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		subqOffset := ng.cumulativeSubqueryOffset(path)
 		switch n := node.(type) {
 		case *VectorSelector:
-			if maxOffset < LookbackDelta+subqOffset {
-				maxOffset = LookbackDelta + subqOffset
+			if maxOffset < ng.lookbackDelta+subqOffset {
+				maxOffset = ng.lookbackDelta + subqOffset
 			}
-			if n.Offset+LookbackDelta+subqOffset > maxOffset {
-				maxOffset = n.Offset + LookbackDelta + subqOffset
+			if n.Offset+ng.lookbackDelta+subqOffset > maxOffset {
+				maxOffset = n.Offset + ng.lookbackDelta + subqOffset
 			}
 		case *MatrixSelector:
 			if maxOffset < n.Range+subqOffset {
@@ -675,7 +683,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		switch n := node.(type) {
 		case *VectorSelector:
 			if evalRange == 0 {
-				params.Start = params.Start - durationMilliseconds(LookbackDelta)
+				params.Start = params.Start - durationMilliseconds(ng.lookbackDelta)
 			} else {
 				params.Range = durationMilliseconds(evalRange)
 				// For all matrix queries we want to ensure that we have (end-start) + range selected
@@ -779,6 +787,7 @@ type evaluator struct {
 	currentSamples      int
 	defaultEvalInterval int64
 	logger              log.Logger
+	lookbackDelta       time.Duration
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1268,7 +1277,7 @@ func (ev *evaluator) eval(ctx context.Context, expr Expr) Value {
 	case *VectorSelector:
 		checkForSeriesSetExpansion(ctx, e)
 		mat := make(Matrix, 0, len(e.series))
-		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
+		it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
 		for i, s := range e.series {
 			it.Reset(s.Iterator())
 			ss := Series{
@@ -1313,6 +1322,7 @@ func (ev *evaluator) eval(ctx context.Context, expr Expr) Value {
 			maxSamples:          ev.maxSamples,
 			defaultEvalInterval: ev.defaultEvalInterval,
 			logger:              ev.logger,
+			lookbackDelta:       ev.lookbackDelta,
 		}
 
 		if e.Step != 0 {
@@ -1348,7 +1358,7 @@ func (ev *evaluator) vectorSelector(ctx context.Context, node *VectorSelector, t
 		vec = make(Vector, 0, len(node.series))
 	)
 
-	it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
+	it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
 	for i, s := range node.series {
 		it.Reset(s.Iterator())
 
@@ -1387,7 +1397,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, no
 
 	if !ok || t > refTime {
 		t, v, ok = it.PeekBack(1)
-		if !ok || t < refTime-durationMilliseconds(LookbackDelta) {
+		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
 			return 0, 0, false
 		}
 	}
