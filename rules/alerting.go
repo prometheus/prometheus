@@ -205,8 +205,8 @@ func (r *AlertingRule) Query() promql.Expr {
 	return r.vector
 }
 
-// Duration returns the hold duration of the alerting rule.
-func (r *AlertingRule) Duration() time.Duration {
+// HoldDuration returns the hold duration of the alerting rule.
+func (r *AlertingRule) HoldDuration() time.Duration {
 	return r.holdDuration
 }
 
@@ -546,9 +546,4 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		return html_template.HTML(fmt.Sprintf("error marshaling alerting rule: %q", html_template.HTMLEscapeString(err.Error())))
 	}
 	return html_template.HTML(byt)
-}
-
-// HoldDuration returns the holdDuration of the alerting rule.
-func (r *AlertingRule) HoldDuration() time.Duration {
-	return r.holdDuration
 }

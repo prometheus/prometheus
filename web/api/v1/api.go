@@ -972,7 +972,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					State:          rule.State().String(),
 					Name:           rule.Name(),
 					Query:          rule.Query().String(),
-					Duration:       rule.Duration().Seconds(),
+					Duration:       rule.HoldDuration().Seconds(),
 					Labels:         rule.Labels(),
 					Annotations:    rule.Annotations(),
 					Alerts:         rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
