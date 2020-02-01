@@ -1,7 +1,7 @@
 import React, { FC, CSSProperties, Fragment } from 'react';
 import { Rule } from '../../types/types';
 import { Link } from '@reach/router';
-import { createExpressionLink, isPresent } from '../../utils';
+import { createExpressionLink, mapObjEntries, isAlertinRule, formatRange } from '../../utils';
 
 interface RulePanelProps {
   rule: Rule;
@@ -11,35 +11,32 @@ interface RulePanelProps {
 
 export const RulePanel: FC<RulePanelProps> = ({ rule, styles = {}, tag }) => {
   const Tag = tag || Fragment;
-  const { name, query, labels, annotations, type, duration } = rule;
+  const { name, query, labels } = rule;
   const style = { background: '#f5f5f5', ...styles };
   return (
     <Tag {...(tag ? { style } : {})}>
       <pre className="m-0" style={tag ? undefined : style}>
         <code>
-          <div>
-            {/* Type of the rule is either alerting or recording. */}
-            {type === 'alerting' ? 'alert: ' : 'record: '}
-            <Link to={createExpressionLink(`ALERTS{alertname="${name.replace(/"/g, '\\"')}"}`)}>{name}</Link>
-          </div>
+          {isAlertinRule(rule) ? 'alert: ' : 'record: '}
+          <Link to={createExpressionLink(`ALERTS{alertname="${name.replace(/"/g, '\\"')}"}`)}>{name}</Link>
           <div>
             expr: <Link to={createExpressionLink(query)}>{query}</Link>
           </div>
-          {duration > 0 && <div>for: {duration}</div>}
+          {isAlertinRule(rule) && rule.duration > 0 && <div>for: {formatRange(rule.duration)}</div>}
           {labels && (
             <>
-              <div>labels:</div>
-              {Object.entries(labels).map(([key, value]) => (
+              labels:
+              {mapObjEntries(labels, ([key, value]) => (
                 <div className="ml-4" key={key}>
                   {key}: {value}
                 </div>
               ))}
             </>
           )}
-          {annotations && (
+          {isAlertinRule(rule) && rule.annotations && (
             <>
-              <div>annotations:</div>
-              {Object.entries(annotations).map(([key, value]) => (
+              annotations:
+              {mapObjEntries(rule.annotations, ([key, value]) => (
                 <div className="ml-4" key={key}>
                   {key}: {value}
                 </div>

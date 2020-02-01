@@ -1,13 +1,13 @@
 import React, { FC, useState, Fragment } from 'react';
 import { Alert, Collapse, Table, Badge } from 'reactstrap';
 import { RuleStatus } from './AlertContents';
-import { Rule } from '../../types/types';
+import { AlertingRule } from '../../types/types';
 import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { RulePanel } from '../rules/RulePanel';
 
 interface CollapsibleAlertPanelProps {
-  rule: Rule;
+  rule: AlertingRule;
   showAnnotations: boolean;
 }
 
