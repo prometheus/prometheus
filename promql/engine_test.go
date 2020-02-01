@@ -44,6 +44,7 @@ func TestQueryConcurrency(t *testing.T) {
 		MaxSamples:         10,
 		Timeout:            100 * time.Second,
 		ActiveQueryTracker: queryTracker,
+		LookbackDelta:      5 * time.Minute,
 	}
 
 	engine := NewEngine(opts)
@@ -98,10 +99,11 @@ func TestQueryConcurrency(t *testing.T) {
 
 func TestQueryTimeout(t *testing.T) {
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    5 * time.Millisecond,
+		Logger:        nil,
+		Reg:           nil,
+		MaxSamples:    10,
+		Timeout:       5 * time.Millisecond,
+		LookbackDelta: 5 * time.Minute,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -125,10 +127,11 @@ const errQueryCanceled = ErrQueryCanceled("test statement execution")
 
 func TestQueryCancel(t *testing.T) {
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+		Logger:        nil,
+		Reg:           nil,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Minute,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -195,10 +198,11 @@ func (e errSeriesSet) Err() error       { return e.err }
 
 func TestQueryError(t *testing.T) {
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+		Logger:        nil,
+		Reg:           nil,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Minute,
 	}
 	engine := NewEngine(opts)
 	errStorage := ErrStorage{errors.New("storage error")}
@@ -257,18 +261,12 @@ func (*paramCheckerQuerier) Close() error                                    { r
 
 func TestParamsSetCorrectly(t *testing.T) {
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+		Logger:        nil,
+		Reg:           nil,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Second,
 	}
-
-	// Set the lookback to be smaller and reset at the end.
-	currLookback := LookbackDelta
-	LookbackDelta = 5 * time.Second
-	defer func() {
-		LookbackDelta = currLookback
-	}()
 
 	cases := []struct {
 		query string
@@ -1143,10 +1141,11 @@ func (f *FakeQueryLogger) Log(l ...interface{}) error {
 
 func TestQueryLogger_basic(t *testing.T) {
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+		Logger:        nil,
+		Reg:           nil,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Minute,
 	}
 	engine := NewEngine(opts)
 
@@ -1194,10 +1193,11 @@ func TestQueryLogger_basic(t *testing.T) {
 
 func TestQueryLogger_fields(t *testing.T) {
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+		Logger:        nil,
+		Reg:           nil,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Minute,
 	}
 	engine := NewEngine(opts)
 
@@ -1223,10 +1223,11 @@ func TestQueryLogger_fields(t *testing.T) {
 
 func TestQueryLogger_error(t *testing.T) {
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+		Logger:        nil,
+		Reg:           nil,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Minute,
 	}
 	engine := NewEngine(opts)
 
