@@ -1090,7 +1090,6 @@ func TestSubquerySelector(t *testing.T) {
 		},
 	}
 
-	SetDefaultEvaluationInterval(1 * time.Minute)
 	for _, tst := range tests {
 		test, err := NewTest(t, tst.loadString)
 		testutil.Ok(t, err)

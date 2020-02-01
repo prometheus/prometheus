@@ -321,8 +321,6 @@ func main() {
 		}
 	}
 
-	promql.SetDefaultEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
-
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
 	klog.ClampLevel(6)
 	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
@@ -420,7 +418,9 @@ func main() {
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
+		// Query engine.
 		func(cfg *config.Config) error {
+			queryEngine.SetDefaultEvaluationInterval(time.Duration(cfg.GlobalConfig.EvaluationInterval))
 			if cfg.GlobalConfig.QueryLogFile == "" {
 				queryEngine.SetQueryLogger(nil)
 				return nil
@@ -771,7 +771,6 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
 
-	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }

@@ -52,23 +52,6 @@ const (
 	minInt64 = -9223372036854775808
 )
 
-var (
-
-	// DefaultEvaluationInterval is the default evaluation interval of
-	// a subquery in milliseconds.
-	DefaultEvaluationInterval int64
-)
-
-// SetDefaultEvaluationInterval sets DefaultEvaluationInterval.
-func SetDefaultEvaluationInterval(ev time.Duration) {
-	atomic.StoreInt64(&DefaultEvaluationInterval, durationToInt64Millis(ev))
-}
-
-// GetDefaultEvaluationInterval returns the DefaultEvaluationInterval as time.Duration.
-func GetDefaultEvaluationInterval() int64 {
-	return atomic.LoadInt64(&DefaultEvaluationInterval)
-}
-
 type engineMetrics struct {
 	currentQueries       prometheus.Gauge
 	maxConcurrentQueries prometheus.Gauge
@@ -220,19 +203,23 @@ type EngineOpts struct {
 	// LookbackDelta determines the time since the last sample after which a time
 	// series is considered stale.
 	LookbackDelta time.Duration
+	// DefaultEvaluationInterval is the default evaluation interval of
+	// a subquery in milliseconds.
+	DefaultEvaluationInterval int64
 }
 
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
-	logger             log.Logger
-	metrics            *engineMetrics
-	timeout            time.Duration
-	maxSamplesPerQuery int
-	activeQueryTracker *ActiveQueryTracker
-	queryLogger        QueryLogger
-	queryLoggerLock    sync.RWMutex
-	lookbackDelta      time.Duration
+	logger                    log.Logger
+	metrics                   *engineMetrics
+	timeout                   time.Duration
+	maxSamplesPerQuery        int
+	activeQueryTracker        *ActiveQueryTracker
+	queryLogger               QueryLogger
+	queryLoggerLock           sync.RWMutex
+	lookbackDelta             time.Duration
+	defaultEvaluationInterval int64
 }
 
 // NewEngine returns a new engine.
@@ -320,12 +307,13 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 
 	return &Engine{
-		timeout:            opts.Timeout,
-		logger:             opts.Logger,
-		metrics:            metrics,
-		maxSamplesPerQuery: opts.MaxSamples,
-		activeQueryTracker: opts.ActiveQueryTracker,
-		lookbackDelta:      opts.LookbackDelta,
+		timeout:                   opts.Timeout,
+		logger:                    opts.Logger,
+		metrics:                   metrics,
+		maxSamplesPerQuery:        opts.MaxSamples,
+		activeQueryTracker:        opts.ActiveQueryTracker,
+		lookbackDelta:             opts.LookbackDelta,
+		defaultEvaluationInterval: opts.DefaultEvaluationInterval,
 	}
 }
 
@@ -355,6 +343,16 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 // GetLookbackDelta returns the lookback delta of the query engine.
 func (ng *Engine) GetLookbackDelta() time.Duration {
 	return ng.lookbackDelta
+}
+
+// SetDefaultEvaluationInterval sets DefaultEvaluationInterval.
+func (ng *Engine) SetDefaultEvaluationInterval(ev time.Duration) {
+	atomic.StoreInt64(&ng.defaultEvaluationInterval, durationToInt64Millis(ev))
+}
+
+// GetDefaultEvaluationInterval returns the DefaultEvaluationInterval as time.Duration.
+func (ng *Engine) GetDefaultEvaluationInterval() int64 {
+	return atomic.LoadInt64(&ng.defaultEvaluationInterval)
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
@@ -537,7 +535,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			endTimestamp:        start,
 			interval:            1,
 			maxSamples:          ng.maxSamplesPerQuery,
-			defaultEvalInterval: GetDefaultEvaluationInterval(),
+			defaultEvalInterval: ng.GetDefaultEvaluationInterval(),
 			logger:              ng.logger,
 			lookbackDelta:       ng.lookbackDelta,
 		}
@@ -586,7 +584,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		endTimestamp:        timeMilliseconds(s.End),
 		interval:            durationMilliseconds(s.Interval),
 		maxSamples:          ng.maxSamplesPerQuery,
-		defaultEvalInterval: GetDefaultEvaluationInterval(),
+		defaultEvalInterval: ng.GetDefaultEvaluationInterval(),
 		logger:              ng.logger,
 		lookbackDelta:       ng.lookbackDelta,
 	}
