@@ -1,5 +1,6 @@
 import React, { FC, Fragment, useState } from 'react';
 import { Badge, Tooltip } from 'reactstrap';
+import 'css.escape';
 import styles from './TargetLabels.module.css';
 
 interface Labels {
@@ -15,15 +16,11 @@ export interface TargetLabelsProps {
 
 const formatLabels = (labels: Labels): string[] => Object.keys(labels).map(key => `${key}="${labels[key]}"`);
 
-const sanitizeIDSequence = (scrapePool: string): string => {
-  return scrapePool.replace(/\W/g, (substring: string): string => substring.charCodeAt(0).toString());
-};
-
 const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, scrapePool }) => {
   const [tooltipOpen, setTooltipOpen] = useState(false);
 
   const toggle = (): void => setTooltipOpen(!tooltipOpen);
-  const id = `series-labels-${sanitizeIDSequence(scrapePool)}-${idx}`;
+  const id = `series-labels-${CSS.escape(scrapePool)}-${idx}`;
 
   return (
     <>
