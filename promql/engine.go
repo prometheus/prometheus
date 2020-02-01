@@ -529,13 +529,12 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			startTimestamp:      start,
 			endTimestamp:        start,
 			interval:            1,
-			ctx:                 ctxInnerEval,
 			maxSamples:          ng.maxSamplesPerQuery,
 			defaultEvalInterval: GetDefaultEvaluationInterval(),
 			logger:              ng.logger,
 		}
 
-		val, err := evaluator.Eval(s.Expr)
+		val, err := evaluator.Eval(ctxInnerEval, s.Expr)
 		if err != nil {
 			return nil, warnings, err
 		}
@@ -579,12 +578,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		startTimestamp:      timeMilliseconds(s.Start),
 		endTimestamp:        timeMilliseconds(s.End),
 		interval:            durationMilliseconds(s.Interval),
-		ctx:                 ctxInnerEval,
 		maxSamples:          ng.maxSamplesPerQuery,
 		defaultEvalInterval: GetDefaultEvaluationInterval(),
 		logger:              ng.logger,
 	}
-	val, err := evaluator.Eval(s.Expr)
+	val, err := evaluator.Eval(ctxInnerEval, s.Expr)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -773,8 +771,6 @@ func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.S
 // is attached to an engine through which it connects to a querier and reports
 // errors. On timeout or cancellation of its context it terminates.
 type evaluator struct {
-	ctx context.Context
-
 	startTimestamp int64 // Start time in milliseconds.
 	endTimestamp   int64 // End time in milliseconds.
 	interval       int64 // Interval in milliseconds.
@@ -813,9 +809,9 @@ func (ev *evaluator) recover(errp *error) {
 	}
 }
 
-func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
+func (ev *evaluator) Eval(ctx context.Context, expr Expr) (v Value, err error) {
 	defer ev.recover(&err)
-	return ev.eval(expr), nil
+	return ev.eval(ctx, expr), nil
 }
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
@@ -878,7 +874,7 @@ func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.L
 // the given function with the values computed for each expression at that
 // step.  The return value is the combination into time series of all the
 // function call results.
-func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ...Expr) Matrix {
+func (ev *evaluator) rangeEval(ctx context.Context, f func([]Value, *EvalNodeHelper) Vector, exprs ...Expr) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
@@ -888,7 +884,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 		// Functions will take string arguments from the expressions, not the values.
 		if e != nil && e.Type() != ValueTypeString {
 			// ev.currentSamples will be updated to the correct value within the ev.eval call.
-			matrixes[i] = ev.eval(e).(Matrix)
+			matrixes[i] = ev.eval(ctx, e).(Matrix)
 
 			// Keep a copy of the original point slices so that they
 			// can be returned to the pool.
@@ -912,7 +908,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
 	tempNumSamples := ev.currentSamples
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
-		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
 		// Reset number of samples in memory after each timestamp.
@@ -1000,8 +996,8 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
-func (ev *evaluator) evalSubquery(subq *SubqueryExpr) *MatrixSelector {
-	val := ev.eval(subq).(Matrix)
+func (ev *evaluator) evalSubquery(ctx context.Context, subq *SubqueryExpr) *MatrixSelector {
+	val := ev.eval(ctx, subq).(Matrix)
 	vs := &VectorSelector{
 		Offset: subq.Offset,
 		series: make([]storage.Series, 0, len(val)),
@@ -1017,10 +1013,10 @@ func (ev *evaluator) evalSubquery(subq *SubqueryExpr) *MatrixSelector {
 }
 
 // eval evaluates the given expression as the given AST expression node requires.
-func (ev *evaluator) eval(expr Expr) Value {
+func (ev *evaluator) eval(ctx context.Context, expr Expr) Value {
 	// This is the top-level evaluation method.
 	// Thus, we check for timeout/cancellation here.
-	if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
@@ -1029,11 +1025,11 @@ func (ev *evaluator) eval(expr Expr) Value {
 	case *AggregateExpr:
 		unwrapParenExpr(&e.Param)
 		if s, ok := e.Param.(*StringLiteral); ok {
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector), enh)
 			}, e.Expr)
 		}
-		return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+		return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 			var param float64
 			if e.Param != nil {
 				param = v[0].(Vector)[0].V
@@ -1048,8 +1044,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 			// a vector selector.
 			vs, ok := e.Args[0].(*VectorSelector)
 			if ok {
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
-					return e.Func.Call([]Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh)
+				return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
+					return e.Func.Call([]Value{ev.vectorSelector(ctx, vs, enh.ts)}, e.Args, enh)
 				})
 			}
 		}
@@ -1070,13 +1066,13 @@ func (ev *evaluator) eval(expr Expr) Value {
 				matrixArgIndex = i
 				matrixArg = true
 				// Replacing SubqueryExpr with MatrixSelector.
-				e.Args[i] = ev.evalSubquery(subq)
+				e.Args[i] = ev.evalSubquery(ctx, subq)
 				break
 			}
 		}
 		if !matrixArg {
 			// Does not have a matrix argument.
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 				return e.Func.Call(v, e.Args, enh)
 			}, e.Args...)
 		}
@@ -1087,7 +1083,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		otherInArgs := make([]Vector, len(e.Args))
 		for i, e := range e.Args {
 			if i != matrixArgIndex {
-				otherArgs[i] = ev.eval(e).(Matrix)
+				otherArgs[i] = ev.eval(ctx, e).(Matrix)
 				otherInArgs[i] = Vector{Sample{}}
 				inArgs[i] = otherInArgs[i]
 			}
@@ -1096,7 +1092,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		sel := e.Args[matrixArgIndex].(*MatrixSelector)
 		selVS := sel.VectorSelector.(*VectorSelector)
 
-		checkForSeriesSetExpansion(ev.ctx, sel)
+		checkForSeriesSetExpansion(ctx, sel)
 		mat := make(Matrix, 0, len(selVS.series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
@@ -1209,10 +1205,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return mat
 
 	case *ParenExpr:
-		return ev.eval(e.Expr)
+		return ev.eval(ctx, e.Expr)
 
 	case *UnaryExpr:
-		mat := ev.eval(e.Expr).(Matrix)
+		mat := ev.eval(ctx, e.Expr).(Matrix)
 		if e.Op == SUB {
 			for i := range mat {
 				mat[i].Metric = dropMetricName(mat[i].Metric)
@@ -1229,48 +1225,48 @@ func (ev *evaluator) eval(expr Expr) Value {
 	case *BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == ValueTypeScalar && rt == ValueTypeScalar:
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 				val := scalarBinop(e.Op, v[0].(Vector)[0].Point.V, v[1].(Vector)[0].Point.V)
 				return append(enh.out, Sample{Point: Point{V: val}})
 			}, e.LHS, e.RHS)
 		case lt == ValueTypeVector && rt == ValueTypeVector:
 			switch e.Op {
 			case LAND:
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+				return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case LOR:
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+				return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case LUNLESS:
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+				return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			default:
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+				return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
 				}, e.LHS, e.RHS)
 			}
 
 		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool, enh)
 			}, e.LHS, e.RHS)
 
 		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].Point.V}, true, e.ReturnBool, enh)
 			}, e.LHS, e.RHS)
 		}
 
 	case *NumberLiteral:
-		return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+		return ev.rangeEval(ctx, func(v []Value, enh *EvalNodeHelper) Vector {
 			return append(enh.out, Sample{Point: Point{V: e.Val}})
 		})
 
 	case *VectorSelector:
-		checkForSeriesSetExpansion(ev.ctx, e)
+		checkForSeriesSetExpansion(ctx, e)
 		mat := make(Matrix, 0, len(e.series))
 		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 		for i, s := range e.series {
@@ -1305,7 +1301,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		if ev.startTimestamp != ev.endTimestamp {
 			panic(errors.New("cannot do range evaluation of matrix selector"))
 		}
-		return ev.matrixSelector(e)
+		return ev.matrixSelector(ctx, e)
 
 	case *SubqueryExpr:
 		offsetMillis := durationToInt64Millis(e.Offset)
@@ -1313,7 +1309,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 		newEv := &evaluator{
 			endTimestamp:        ev.endTimestamp - offsetMillis,
 			interval:            ev.defaultEvalInterval,
-			ctx:                 ev.ctx,
 			currentSamples:      ev.currentSamples,
 			maxSamples:          ev.maxSamples,
 			defaultEvalInterval: ev.defaultEvalInterval,
@@ -1331,7 +1326,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			newEv.startTimestamp += newEv.interval
 		}
 
-		res := newEv.eval(e.Expr)
+		res := newEv.eval(ctx, e.Expr)
 		ev.currentSamples = newEv.currentSamples
 		return res
 	case *StringLiteral:
@@ -1346,8 +1341,8 @@ func durationToInt64Millis(d time.Duration) int64 {
 }
 
 // vectorSelector evaluates a *VectorSelector expression.
-func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
-	checkForSeriesSetExpansion(ev.ctx, node)
+func (ev *evaluator) vectorSelector(ctx context.Context, node *VectorSelector, ts int64) Vector {
+	checkForSeriesSetExpansion(ctx, node)
 
 	var (
 		vec = make(Vector, 0, len(node.series))
@@ -1418,8 +1413,8 @@ func putPointSlice(p []Point) {
 }
 
 // matrixSelector evaluates a *MatrixSelector expression.
-func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
-	checkForSeriesSetExpansion(ev.ctx, node)
+func (ev *evaluator) matrixSelector(ctx context.Context, node *MatrixSelector) Matrix {
+	checkForSeriesSetExpansion(ctx, node)
 
 	vs := node.VectorSelector.(*VectorSelector)
 
@@ -1434,7 +1429,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 	series := vs.series
 
 	for i, s := range series {
-		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
 		it.Reset(s.Iterator())
