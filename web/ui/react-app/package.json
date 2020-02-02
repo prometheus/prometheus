@@ -18,6 +18,7 @@
     "@types/react-resize-detector": "^4.0.2",
     "@types/sanitize-html": "^1.20.2",
     "bootstrap": "^4.2.1",
+    "css.escape": "^1.5.1",
     "downshift": "^3.2.2",
     "enzyme-to-json": "^3.4.3",
     "fuzzy": "^0.1.3",
