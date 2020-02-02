@@ -1,4 +1,4 @@
-import React, { FC, useState, useEffect } from 'react';
+import React, { FC, useState, useEffect, useCallback } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Alert, Button } from 'reactstrap';
 
@@ -6,7 +6,7 @@ import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import Checkbox from '../../components/Checkbox';
 import PathPrefixProps from '../../types/PathPrefixProps';
 import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, callAll } from '../../utils';
-import { withStatusIndicator } from '../../components/withStatusIndicator';
+import { useFetch } from '../../hooks/useFetch';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
@@ -100,45 +100,33 @@ export const PanelListContent: FC<PanelListProps> = ({
   );
 };
 
-const PanelsWithStatus = withStatusIndicator<PanelListProps>(PanelListContent);
+const opts: RequestInit = {
+  cache: 'no-store',
+};
 
-const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const [metricNames, setMetricNames] = useState<string[]>([]);
-  const [timeDriftError, setTimeDriftError] = useState();
-  const [fetchMetricsError, setFetchMetricsError] = useState();
+const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+  const memoizedFetch = useCallback(useFetch, [pathPrefix]);
+  const [delta, setDelta] = useState(0);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
 
-  useEffect(() => {
-    (async () => {
-      const metricsResponse = await fetch(`${pathPrefix}/api/v1/label/__name__/values`, { cache: 'no-store' });
-      if (metricsResponse.ok) {
-        const json = await metricsResponse.json();
-        setMetricNames(json.data);
-      } else {
-        setFetchMetricsError(
-          `Error fetching metrics list: Unexpected response status when fetching metric names: ${metricsResponse.statusText}`
-        );
-      }
+  const { response: metricsResponse, error: metricsErr } = memoizedFetch<string[]>(
+    `${pathPrefix}/api/v1/label/__name__/values`,
+    opts
+  );
 
-      const browserTime = new Date().getTime() / 1000;
-      const timeResponse = await fetch(`${pathPrefix}/api/v1/query?query=time()`, {
-        cache: 'no-store',
-      });
-      if (timeResponse.ok) {
-        const json = await timeResponse.json();
-        const serverTime = json.data.result[0];
-        const delta = Math.abs(browserTime - serverTime);
-        if (delta >= 30) {
-          setTimeDriftError(
-            `Error fetching server time: Detected ${delta} seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.`
-          );
-        }
-      } else {
-        setTimeDriftError('Unexpected response status when fetching server time:' + timeResponse.statusText);
-      }
-    })();
-  }, [pathPrefix]);
+  const browserTime = new Date().getTime() / 1000;
+  const { response: timeResponse, error: timeError } = memoizedFetch<{ result: number[] }>(
+    `${pathPrefix}/api/v1/query?query=time()`,
+    opts
+  );
+  useEffect(() => {
+    if (timeResponse.data) {
+      const serverTime = timeResponse.data.result[0];
+      setDelta(Math.abs(browserTime - serverTime));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeResponse.data]);
 
   return (
     <>
@@ -156,22 +144,25 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) =>
       >
         Use local time
       </Checkbox>
-      {timeDriftError && (
+      {(delta > 30 || timeError) && (
         <Alert color="danger">
-          <strong>Warning:</strong> {timeDriftError}
+          <strong>Warning: </strong>
+          {timeError && `Unexpected response status when fetching server time: ${timeError.message}`}
+          {delta > 30 &&
+            `Error fetching server time: Detected ${delta} seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.`}
         </Alert>
       )}
-      {fetchMetricsError && (
+      {metricsErr && (
         <Alert color="danger">
-          <strong>Warning:</strong> {fetchMetricsError}
+          <strong>Warning: </strong>
+          {`Error fetching metrics list: Unexpected response status when fetching metric names: ${metricsErr.message}`}
         </Alert>
       )}
-      <PanelsWithStatus
-        isLoading={!timeDriftError && !fetchMetricsError && metricNames.length === 0}
+      <PanelListContent
         panels={decodePanelOptionsFromQueryString(window.location.search)}
         pathPrefix={pathPrefix}
         useLocalTime={useLocalTime}
-        metrics={metricNames}
+        metrics={metricsResponse.data}
         queryHistoryEnabled={enableQueryHistory}
       />
     </>
