@@ -129,11 +129,13 @@ START_METRIC_SELECTOR
 %type <matchers> label_match_list
 %type <matcher> label_matcher
 
-%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op
+%type <item> aggregate_op  match_op maybe_label metric_identifier unary_op
+
+%type <matcher> grouping_label
 
 %type <labels> label_set label_set_list metric
 %type <label> label_set_item
-%type <strings> grouping_label_list grouping_labels maybe_grouping_labels
+%type <matchers> grouping_label_list grouping_labels maybe_grouping_labels
 %type <series> series_item series_values
 %type <uint> uint
 %type <float> number series_value signed_number
@@ -206,13 +208,13 @@ aggregate_modifier:
                 BY grouping_labels
                         {
                         $$ = &AggregateExpr{
-                                Grouping: $2,
+                                Grouping: justNames($2),
                         }
                         }
                 | WITHOUT grouping_labels
                         {
                         $$ = &AggregateExpr{
-                                Grouping: $2,
+                                Grouping: justNames($2),
                                 Without:  true,
                         }
                         }
@@ -276,13 +278,13 @@ group_modifiers: bool_modifier /* empty */
                         {
                         $$ = $1
                         $$.(*BinaryExpr).VectorMatching.Card = CardManyToOne
-                        $$.(*BinaryExpr).VectorMatching.Include = $3
+                        $$.(*BinaryExpr).VectorMatching.Include = justNames($3)
                         }
                 | on_or_ignoring GROUP_RIGHT maybe_grouping_labels
                         {
                         $$ = $1
                         $$.(*BinaryExpr).VectorMatching.Card = CardOneToMany
-                        $$.(*BinaryExpr).VectorMatching.Include = $3
+                        $$.(*BinaryExpr).VectorMatching.Include = justNames($3)
                         }
                 ;
 
@@ -292,7 +294,7 @@ grouping_labels : LEFT_PAREN grouping_label_list RIGHT_PAREN
                 | LEFT_PAREN grouping_label_list COMMA RIGHT_PAREN
                         { $$ = $2 }
                 | LEFT_PAREN RIGHT_PAREN
-                        { $$ = []string{} }
+                        { $$ = []*labels.Matcher{} }
                 | error
                         { yylex.(*parser).unexpected("grouping opts", "\"(\""); $$ = nil }
                 ;
@@ -300,9 +302,9 @@ grouping_labels : LEFT_PAREN grouping_label_list RIGHT_PAREN
 
 grouping_label_list:
                 grouping_label_list COMMA grouping_label
-                        { $$ = append($1, $3.Val) }
+                        { $$ = append($1, $3) }
                 | grouping_label
-                        { $$ = []string{$1.Val} }
+                        { $$ = []*labels.Matcher{$1} }
                 | grouping_label_list error
                         { yylex.(*parser).unexpected("grouping opts", "\",\" or \")\""); $$ = $1 }
                 ;
@@ -312,10 +314,20 @@ grouping_label  : maybe_label
                         if !isLabel($1.Val) {
                                 yylex.(*parser).unexpected("grouping opts", "label")
                         }
-                        $$ = $1
+                        $$ = yylex.(*parser).newLabelMatcher($1, Item{Typ:EQL}, $1.Quote());
+                        }
+                | maybe_label EQL maybe_label
+                        {
+                        if !isLabel($1.Val) {
+                                yylex.(*parser).unexpected("grouping opts", "label")
+                        }
+                        if !isLabel($3.Val) {
+                                yylex.(*parser).unexpected("grouping opts", "label")
+                        }
+                        $$ = yylex.(*parser).newLabelMatcher($1, Item{Typ:EQL}, $3.Quote());
                         }
                 | error
-                        { yylex.(*parser).unexpected("grouping opts", "label"); $$ = Item{} }
+                        { yylex.(*parser).unexpected("grouping opts", "label"); $$ = nil }
                 ;
 
 /*

@@ -1519,18 +1519,19 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching, enh *E
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
+	sigfl := enh.signatureFunc(matching.On, justNames(matching.MatchingLabels)...)
+	sigfr := enh.signatureFunc(matching.On, justValues(matching.MatchingLabels)...)
 
 	// The set of signatures for the right-hand side Vector.
 	rightSigs := map[uint64]struct{}{}
 	// Add all rhs samples to a map so we can easily find matches later.
 	for _, rs := range rhs {
-		rightSigs[sigf(rs.Metric)] = struct{}{}
+		rightSigs[sigfr(rs.Metric)] = struct{}{}
 	}
 
 	for _, ls := range lhs {
 		// If there's a matching entry in the right-hand side Vector, add the sample.
-		if _, ok := rightSigs[sigf(ls.Metric)]; ok {
+		if _, ok := rightSigs[sigfl(ls.Metric)]; ok {
 			enh.out = append(enh.out, ls)
 		}
 	}
@@ -1541,17 +1542,18 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *VectorMatching, enh *Ev
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
+	sigfl := enh.signatureFunc(matching.On, justNames(matching.MatchingLabels)...)
+	sigfr := enh.signatureFunc(matching.On, justValues(matching.MatchingLabels)...)
 
 	leftSigs := map[uint64]struct{}{}
 	// Add everything from the left-hand-side Vector.
 	for _, ls := range lhs {
-		leftSigs[sigf(ls.Metric)] = struct{}{}
+		leftSigs[sigfl(ls.Metric)] = struct{}{}
 		enh.out = append(enh.out, ls)
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for _, rs := range rhs {
-		if _, ok := leftSigs[sigf(rs.Metric)]; !ok {
+		if _, ok := leftSigs[sigfr(rs.Metric)]; !ok {
 			enh.out = append(enh.out, rs)
 		}
 	}
@@ -1562,15 +1564,16 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching, enh
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
+	sigfl := enh.signatureFunc(matching.On, justNames(matching.MatchingLabels)...)
+	sigfr := enh.signatureFunc(matching.On, justValues(matching.MatchingLabels)...)
 
 	rightSigs := map[uint64]struct{}{}
 	for _, rs := range rhs {
-		rightSigs[sigf(rs.Metric)] = struct{}{}
+		rightSigs[sigfr(rs.Metric)] = struct{}{}
 	}
 
 	for _, ls := range lhs {
-		if _, ok := rightSigs[sigf(ls.Metric)]; !ok {
+		if _, ok := rightSigs[sigfl(ls.Metric)]; !ok {
 			enh.out = append(enh.out, ls)
 		}
 	}
@@ -1582,12 +1585,14 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 	if matching.Card == CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
-	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
+	sigfl := enh.signatureFunc(matching.On, justNames(matching.MatchingLabels)...)
+	sigfr := enh.signatureFunc(matching.On, justValues(matching.MatchingLabels)...)
 
 	// The control flow below handles one-to-one or many-to-one matching.
 	// For one-to-many, swap sidedness and account for the swap when calculating
 	// values.
 	if matching.Card == CardOneToMany {
+		sigfl, sigfr = sigfr, sigfl
 		lhs, rhs = rhs, lhs
 	}
 
@@ -1603,7 +1608,7 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 
 	// Add all rhs samples to a map so we can easily find matches later.
 	for _, rs := range rhs {
-		sig := sigf(rs.Metric)
+		sig := sigfr(rs.Metric)
 		// The rhs is guaranteed to be the 'one' side. Having multiple samples
 		// with the same signature means that the matching is many-to-many.
 		if duplSample, found := rightSigs[sig]; found {
@@ -1612,7 +1617,7 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 			if matching.Card == CardOneToMany {
 				oneSide = "left"
 			}
-			matchedLabels := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
+			matchedLabels := rs.Metric.MatchLabels(matching.On, justNames(matching.MatchingLabels)...)
 			// Many-to-many matching not allowed.
 			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
 				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
@@ -1634,7 +1639,7 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 	// For all lhs samples find a respective rhs sample and perform
 	// the binary operation.
 	for _, ls := range lhs {
-		sig := sigf(ls.Metric)
+		sig := sigfl(ls.Metric)
 
 		rs, found := rightSigs[sig] // Look for a match in the rhs Vector.
 		if !found {
@@ -1730,14 +1735,14 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 		Outer:
 			for _, l := range lhs {
 				for _, n := range matching.MatchingLabels {
-					if l.Name == n {
+					if l.Name == n.Name {
 						continue Outer
 					}
 				}
 				lb.Del(l.Name)
 			}
 		} else {
-			lb.Del(matching.MatchingLabels...)
+			lb.Del(justNames(matching.MatchingLabels)...)
 		}
 	}
 	for _, ln := range matching.Include {

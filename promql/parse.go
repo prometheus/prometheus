@@ -490,7 +490,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 
 		for _, l1 := range n.VectorMatching.MatchingLabels {
 			for _, l2 := range n.VectorMatching.Include {
-				if l1 == l2 && n.VectorMatching.On {
+				if l1.Name == l2 && n.VectorMatching.On {
 					p.addParseErrf(opRange(), "label %q must not occur in ON and GROUP clause at once", l1)
 				}
 			}

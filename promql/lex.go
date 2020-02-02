@@ -15,6 +15,7 @@ package promql
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -25,6 +26,11 @@ type Item struct {
 	Typ ItemType // The type of this Item.
 	Pos Pos      // The starting position, in bytes, of this Item in the input string.
 	Val string   // The value of this Item.
+}
+
+func (i Item) Quote() Item {
+	i.Val = strconv.Quote(i.Val)
+	return i
 }
 
 // String returns a descriptive string for the Item.

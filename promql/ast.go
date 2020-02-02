@@ -232,13 +232,29 @@ type VectorMatching struct {
 	Card VectorMatchCardinality
 	// MatchingLabels contains the labels which define equality of a pair of
 	// elements from the Vectors.
-	MatchingLabels []string
+	MatchingLabels []*labels.Matcher
 	// On includes the given label names from matching,
 	// rather than excluding them.
 	On bool
 	// Include contains additional labels that should be included in
 	// the result from the side with the lower cardinality.
 	Include []string
+}
+
+func justNames(in []*labels.Matcher) []string {
+	var result = make([]string, 0, len(in))
+	for _, i := range in {
+		result = append(result, i.Name)
+	}
+	return result
+}
+
+func justValues(in []*labels.Matcher) []string {
+	var result = make([]string, 0, len(in))
+	for _, i := range in {
+		result = append(result, i.Value)
+	}
+	return result
 }
 
 // Visitor allows visiting a Node and its child nodes. The Visit method is

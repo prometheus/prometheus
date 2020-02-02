@@ -90,9 +90,9 @@ func (node *BinaryExpr) String() string {
 	vm := node.VectorMatching
 	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
 		if vm.On {
-			matching = fmt.Sprintf(" on(%s)", strings.Join(vm.MatchingLabels, ", "))
+			matching = fmt.Sprintf(" on(%s)", strings.Join(justNames(vm.MatchingLabels), ", "))
 		} else {
-			matching = fmt.Sprintf(" ignoring(%s)", strings.Join(vm.MatchingLabels, ", "))
+			matching = fmt.Sprintf(" ignoring(%s)", strings.Join(justNames(vm.MatchingLabels), ", "))
 		}
 		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
 			matching += " group_"
