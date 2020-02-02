@@ -107,10 +107,11 @@ const opts: RequestInit = {
 const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
   const memoizedFetch = useCallback(useFetch, [pathPrefix]);
   const [delta, setDelta] = useState(0);
+  const [panels, setPanels] = useState<PanelMeta[]>([]);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
 
-  const { response: metricsResponse, error: metricsErr } = memoizedFetch<string[]>(
+  const { response: metricsResponse, error: metricsError } = memoizedFetch<string[]>(
     `${pathPrefix}/api/v1/label/__name__/values`,
     opts
   );
@@ -120,6 +121,11 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' 
     `${pathPrefix}/api/v1/query?query=time()`,
     opts
   );
+
+  useEffect(() => {
+    setPanels(decodePanelOptionsFromQueryString(window.location.search));
+  }, []);
+
   useEffect(() => {
     if (timeResponse.data) {
       const serverTime = timeResponse.data.result[0];
@@ -148,18 +154,18 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' 
         <Alert color="danger">
           <strong>Warning: </strong>
           {timeError && `Unexpected response status when fetching server time: ${timeError.message}`}
-          {delta > 30 &&
+          {delta >= 30 &&
             `Error fetching server time: Detected ${delta} seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.`}
         </Alert>
       )}
-      {metricsErr && (
+      {metricsError && (
         <Alert color="danger">
           <strong>Warning: </strong>
-          {`Error fetching metrics list: Unexpected response status when fetching metric names: ${metricsErr.message}`}
+          {`Error fetching metrics list: Unexpected response status when fetching metric names: ${metricsError.message}`}
         </Alert>
       )}
       <PanelListContent
-        panels={decodePanelOptionsFromQueryString(window.location.search)}
+        panels={panels}
         pathPrefix={pathPrefix}
         useLocalTime={useLocalTime}
         metrics={metricsResponse.data}
