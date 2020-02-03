@@ -1,13 +1,11 @@
 import * as React from 'react';
-import { mount, shallow, ReactWrapper } from 'enzyme';
+import { mount, ReactWrapper } from 'enzyme';
 import { act } from 'react-dom/test-utils';
 import { Alert } from 'reactstrap';
 import { sampleApiResponse } from './__testdata__/testdata';
 import ScrapePoolList from './ScrapePoolList';
 import ScrapePoolPanel from './ScrapePoolPanel';
 import { Target } from './target';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { FetchMock } from 'jest-fetch-mock/types';
 
 describe('ScrapePoolList', () => {
@@ -18,20 +16,6 @@ describe('ScrapePoolList', () => {
 
   beforeEach(() => {
     fetchMock.resetMocks();
-  });
-
-  describe('before data is returned', () => {
-    const scrapePoolList = shallow(<ScrapePoolList {...defaultProps} />);
-    const spinner = scrapePoolList.find(FontAwesomeIcon);
-
-    it('renders a spinner', () => {
-      expect(spinner.prop('icon')).toEqual(faSpinner);
-      expect(spinner.prop('spin')).toBe(true);
-    });
-
-    it('renders exactly one spinner', () => {
-      expect(spinner).toHaveLength(1);
-    });
   });
 
   describe('when data is returned', () => {
@@ -55,7 +39,7 @@ describe('ScrapePoolList', () => {
         scrapePoolList = mount(<ScrapePoolList {...defaultProps} />);
       });
       scrapePoolList.update();
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-cache', credentials: 'same-origin' });
+      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
       const panels = scrapePoolList.find(ScrapePoolPanel);
       expect(panels).toHaveLength(3);
       const activeTargets: Target[] = sampleApiResponse.data.activeTargets as Target[];
@@ -74,7 +58,7 @@ describe('ScrapePoolList', () => {
         scrapePoolList = mount(<ScrapePoolList {...props} />);
       });
       scrapePoolList.update();
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-cache', credentials: 'same-origin' });
+      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
       const panels = scrapePoolList.find(ScrapePoolPanel);
       expect(panels).toHaveLength(0);
     });
@@ -90,7 +74,7 @@ describe('ScrapePoolList', () => {
       });
       scrapePoolList.update();
 
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-cache', credentials: 'same-origin' });
+      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
       const alert = scrapePoolList.find(Alert);
       expect(alert.prop('color')).toBe('danger');
       expect(alert.text()).toContain('Error fetching targets');

@@ -7,12 +7,14 @@ interface StatusIndicatorProps {
   error?: Error;
   isLoading?: boolean;
   customErrorMsg?: JSX.Element;
+  componentTitle?: string;
 }
 
 export const withStatusIndicator = <T extends {}>(Component: ComponentType<T>): FC<StatusIndicatorProps & T> => ({
   error,
   isLoading,
   customErrorMsg,
+  componentTitle,
   ...rest
 }) => {
   if (error) {
@@ -22,7 +24,7 @@ export const withStatusIndicator = <T extends {}>(Component: ComponentType<T>): 
           customErrorMsg
         ) : (
           <>
-            <strong>Error:</strong> Error fetching {Component.displayName}: {error.message}
+            <strong>Error:</strong> Error fetching {componentTitle || Component.displayName}: {error.message}
           </>
         )}
       </Alert>
