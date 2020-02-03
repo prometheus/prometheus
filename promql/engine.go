@@ -1238,19 +1238,19 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			switch e.Op {
 			case parser.LAND:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, enh)
+					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case parser.LOR:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, enh)
+					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case parser.LUNLESS:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, enh)
+					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			default:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, e.ReturnBool, enh)
+					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
 				}, e.LHS, e.RHS)
 			}
 
@@ -1333,7 +1333,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			newEv.startTimestamp += newEv.interval
 		}
 
-		res := newEv.eval(e.parser.Expr)
+		res := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
 		return res
 	case *StringLiteral:
@@ -1423,7 +1423,7 @@ func putPointSlice(p []Point) {
 func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) Matrix {
 	checkForSeriesSetExpansion(ev.ctx, node)
 
-	vs := node.parser.VectorSelector.(*parser.VectorSelector)
+	vs := node.VectorSelector.(*parser.VectorSelector)
 
 	var (
 		offset = durationMilliseconds(vs.Offset)
