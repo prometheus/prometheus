@@ -125,7 +125,7 @@ type Query interface {
 	Exec(ctx context.Context) *Result
 	// Close recovers memory used by the query result.
 	Close()
-	// parser.Statement returns the parsed statement of the query.
+	// Statement returns the parsed statement of the query.
 	Statement() parser.Statement
 	// Stats returns statistics about the lifetime of the query.
 	Stats() *stats.QueryTimers
@@ -139,7 +139,7 @@ type query struct {
 	queryable storage.Queryable
 	// The original query string.
 	q string
-	// parser.Statement of the parsed query.
+	// Statement of the parsed query.
 	stmt parser.Statement
 	// Timer stats for the query execution.
 	stats *stats.QueryTimers
@@ -156,7 +156,7 @@ type queryCtx int
 
 var queryOrigin queryCtx
 
-// parser.Statement implements the Query interface.
+// Statement implements the Query interface.
 func (q *query) Statement() parser.Statement {
 	return q.stmt
 }
@@ -416,7 +416,7 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 
 // exec executes the query.
 //
-// At this point per query only one parser.EvalStmt is evaluated. Alert and record
+// At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
 func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage.Warnings, err error) {
 	ng.metrics.currentQueries.Inc()
@@ -650,8 +650,8 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 
 	var warnings storage.Warnings
 
-	// Whenever a parser.MatrixSelector is evaluated this variable is set to the corresponding range.
-	// The evaluation of the parser.VectorSelector inside then evaluates the given range and unsets
+	// Whenever a MatrixSelector is evaluated this variable is set to the corresponding range.
+	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
 
@@ -997,8 +997,8 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 	return mat
 }
 
-// evalSubquery evaluates given parser.SubqueryExpr and returns an equivalent
-// evaluated parser.MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
+// evalSubquery evaluates given SubqueryExpr and returns an equivalent
+// evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
 func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) *parser.MatrixSelector {
 	val := ev.eval(subq).(Matrix)
 	vs := &parser.VectorSelector{
@@ -1494,7 +1494,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 		if value.IsStaleNaN(v) {
 			continue
 		}
-		// parser.Values in the buffer are guaranteed to be smaller than maxt.
+		// Values in the buffer are guaranteed to be smaller than maxt.
 		if t >= mint {
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))

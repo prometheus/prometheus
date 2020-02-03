@@ -2605,9 +2605,9 @@ const none = math.SmallestNonzeroFloat64
 func newSeq(vals ...float64) (res []SequenceValue) {
 	for _, v := range vals {
 		if v == none {
-			res = append(res, SequenceValue{omitted: true})
+			res = append(res, SequenceValue{Omitted: true})
 		} else {
-			res = append(res, SequenceValue{value: v})
+			res = append(res, SequenceValue{Value: v})
 		}
 	}
 	return res

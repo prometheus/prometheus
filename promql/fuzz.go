@@ -32,9 +32,9 @@ import (
 //
 // And then run the tests with the appropriate inputs
 //
-//     go-fuzz -bin FuzzParseMetric.zip -workdir fuzz-data/parser.ParseMetric
+//     go-fuzz -bin FuzzParseMetric.zip -workdir fuzz-data/ParseMetric
 //
-// Further input samples should go in the folders fuzz-data/parser.ParseMetric/corpus.
+// Further input samples should go in the folders fuzz-data/ParseMetric/corpus.
 //
 // Repeat for FuzzParseOpenMetric, FuzzParseMetricSelector and FuzzParseExpr.
 
