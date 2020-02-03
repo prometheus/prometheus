@@ -920,12 +920,6 @@ var FunctionCalls = map[string]FunctionCall{
 	"year":               funcYear,
 }
 
-// getFunction returns a predefined Function object for the given name.
-func getFunctionCall(name string) (FunctionCall, bool) {
-	function, ok := FunctionCalls[name]
-	return function, ok
-}
-
 type vectorByValueHeap Vector
 
 func (s vectorByValueHeap) Len() int {
