@@ -948,3 +948,151 @@ func TestMetricsUpdate(t *testing.T) {
 		testutil.Equals(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
 	}
 }
+
+func TestMetricsStaleAfterUpdate(t *testing.T) {
+	files := []string{"fixtures/rules2.yaml", "fixtures/rules3.yaml"}
+
+	storage := teststorage.New(t)
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	ruleManager.Run()
+	defer ruleManager.Stop()
+
+	metricValue := func() float64 {
+		querier, err := storage.Querier(context.Background(), 0, time.Now().Unix()*1000)
+		testutil.Ok(t, err)
+		defer querier.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
+		testutil.Ok(t, err)
+
+		set, _, err := querier.Select(nil, matcher)
+		testutil.Ok(t, err)
+
+		samples, err := readSeriesSet(set)
+		testutil.Ok(t, err)
+
+		metric := labels.FromStrings(model.MetricNameLabel, "test_2").String()
+		metricSample, ok := samples[metric]
+
+		testutil.Assert(t, ok, "Series %s not returned.", metric)
+		return metricSample[len(metricSample)-1].V
+	}
+
+	cases := []struct {
+		files []string
+		stale bool
+	}{
+		{
+			files: files,
+			stale: false,
+		},
+		{
+			files: files[:0],
+			stale: true,
+		},
+		{
+			files: files[1:2],
+			stale: true,
+		},
+		{
+			files: files[0:1],
+			stale: false,
+		},
+	}
+
+	for i, c := range cases {
+		err := ruleManager.Update(time.Second, c.files, nil)
+		testutil.Ok(t, err)
+		time.Sleep(2 * time.Second)
+		testutil.Equals(t, c.stale, value.IsStaleNaN(metricValue()), "test %d/%q: invalid staleness", i, c.files)
+	}
+}
+
+func TestMetricsNotStaleAfterRename(t *testing.T) {
+	files := []string{"fixtures/rules2.yaml"}
+	sameFiles := []string{"fixtures/rules2.yaml"}
+
+	storage := teststorage.New(t)
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	ruleManager.Run()
+	defer ruleManager.Stop()
+
+	hasStaleNaN := func() bool {
+		querier, err := storage.Querier(context.Background(), 0, time.Now().Unix()*1000)
+		testutil.Ok(t, err)
+		defer querier.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
+		testutil.Ok(t, err)
+
+		set, _, err := querier.Select(nil, matcher)
+		testutil.Ok(t, err)
+
+		samples, err := readSeriesSet(set)
+		testutil.Ok(t, err)
+
+		metric := labels.FromStrings(model.MetricNameLabel, "test_2").String()
+		metricSample, ok := samples[metric]
+
+		testutil.Assert(t, ok, "Series %s not returned.", metric)
+		for _, s := range metricSample {
+			if value.IsStaleNaN(s.V) {
+				return true
+			}
+		}
+		return false
+	}
+
+	cases := []struct {
+		files    []string
+		staleNaN bool
+	}{
+		{
+			files:    files,
+			staleNaN: false,
+		},
+		{
+			files:    sameFiles,
+			staleNaN: false,
+		},
+		{
+			files:    files[:0],
+			staleNaN: true,
+		},
+	}
+
+	for i, c := range cases {
+		err := ruleManager.Update(time.Second, c.files, nil)
+		testutil.Ok(t, err)
+		time.Sleep(2 * time.Second)
+		testutil.Equals(t, c.staleNaN, hasStaleNaN(), "test %d/%q: invalid staleness", i, c.files)
+	}
+}

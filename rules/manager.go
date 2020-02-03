@@ -314,6 +314,19 @@ func (g *Group) run(ctx context.Context) {
 	tick := time.NewTicker(g.interval)
 	defer tick.Stop()
 
+	makeStale := func() {
+		now := time.Now()
+		// Wait for an extra interval to give the opportunity to renamed rules
+		// to insert new series in the tsdb.
+		<-tick.C
+		for _, rule := range g.seriesInPreviousEval {
+			for _, s := range rule {
+				g.staleSeries = append(g.staleSeries, s)
+			}
+		}
+		g.cleanupStaleSeries(now)
+	}
+
 	iter()
 	if g.shouldRestore {
 		// If we have to restore, we wait for another Eval to finish.
@@ -322,6 +335,7 @@ func (g *Group) run(ctx context.Context) {
 		// have updated the latest values, on which some alerts might depend.
 		select {
 		case <-g.done:
+			makeStale()
 			return
 		case <-tick.C:
 			missed := (time.Since(evalTimestamp) / g.interval) - 1
@@ -340,10 +354,12 @@ func (g *Group) run(ctx context.Context) {
 	for {
 		select {
 		case <-g.done:
+			makeStale()
 			return
 		default:
 			select {
 			case <-g.done:
+				makeStale()
 				return
 			case <-tick.C:
 				missed := (time.Since(evalTimestamp) / g.interval) - 1
@@ -596,30 +612,34 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 		}(i, rule)
 	}
+	g.cleanupStaleSeries(ts)
+}
 
-	if len(g.staleSeries) != 0 {
-		app, err := g.opts.Appendable.Appender()
-		if err != nil {
-			level.Warn(g.logger).Log("msg", "creating appender failed", "err", err)
-			return
+func (g *Group) cleanupStaleSeries(ts time.Time) {
+	if len(g.staleSeries) == 0 {
+		return
+	}
+	app, err := g.opts.Appendable.Appender()
+	if err != nil {
+		level.Warn(g.logger).Log("msg", "creating appender failed", "err", err)
+		return
+	}
+	for _, s := range g.staleSeries {
+		// Rule that produced series no longer configured, mark it stale.
+		_, err = app.Add(s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+		switch err {
+		case nil:
+		case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
+			// Do not count these in logging, as this is expected if series
+			// is exposed from a different rule.
+		default:
+			level.Warn(g.logger).Log("msg", "adding stale sample for previous configuration failed", "sample", s, "err", err)
 		}
-		for _, s := range g.staleSeries {
-			// Rule that produced series no longer configured, mark it stale.
-			_, err = app.Add(s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
-			switch err {
-			case nil:
-			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
-				// Do not count these in logging, as this is expected if series
-				// is exposed from a different rule.
-			default:
-				level.Warn(g.logger).Log("msg", "adding stale sample for previous configuration failed", "sample", s, "err", err)
-			}
-		}
-		if err := app.Commit(); err != nil {
-			level.Warn(g.logger).Log("msg", "stale sample appending for previous configuration failed", "err", err)
-		} else {
-			g.staleSeries = nil
-		}
+	}
+	if err := app.Commit(); err != nil {
+		level.Warn(g.logger).Log("msg", "stale sample appending for previous configuration failed", "err", err)
+	} else {
+		g.staleSeries = nil
 	}
 }
 
