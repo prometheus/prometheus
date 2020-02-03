@@ -41,10 +41,11 @@ import (
 )
 
 const (
-	namespace = "prometheus"
-	subsystem = "engine"
-	queryTag  = "query"
-	env       = "query execution"
+	namespace            = "prometheus"
+	subsystem            = "engine"
+	queryTag             = "query"
+	env                  = "query execution"
+	defaultLookbackDelta = 5 * time.Minute
 
 	// The largest SampleValue that can be converted to an int64 without overflow.
 	maxInt64 = 9223372036854774784
@@ -53,7 +54,6 @@ const (
 )
 
 var (
-
 	// DefaultEvaluationInterval is the default evaluation interval of
 	// a subquery in milliseconds.
 	DefaultEvaluationInterval int64
@@ -219,7 +219,7 @@ type EngineOpts struct {
 	ActiveQueryTracker *ActiveQueryTracker
 	// LookbackDelta determines the time since the last sample after which a time
 	// series is considered stale.
-	LookbackDelta time.Duration
+	LookbackDelta *time.Duration
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -306,6 +306,11 @@ func NewEngine(opts EngineOpts) *Engine {
 		metrics.maxConcurrentQueries.Set(-1)
 	}
 
+	if opts.LookbackDelta == nil {
+		v := defaultLookbackDelta
+		opts.LookbackDelta = &v
+	}
+
 	if opts.Reg != nil {
 		opts.Reg.MustRegister(
 			metrics.currentQueries,
@@ -325,7 +330,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		metrics:            metrics,
 		maxSamplesPerQuery: opts.MaxSamples,
 		activeQueryTracker: opts.ActiveQueryTracker,
-		lookbackDelta:      opts.LookbackDelta,
+		lookbackDelta:      *opts.LookbackDelta,
 	}
 }
 

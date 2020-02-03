@@ -353,13 +353,14 @@ func main() {
 
 		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 
-		opts = promql.EngineOpts{
+		lookbackDelta = time.Duration(cfg.lookbackDelta)
+		opts          = promql.EngineOpts{
 			Logger:             log.With(logger, "component", "query engine"),
 			Reg:                prometheus.DefaultRegisterer,
 			MaxSamples:         cfg.queryMaxSamples,
 			Timeout:            time.Duration(cfg.queryTimeout),
 			ActiveQueryTracker: promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
-			LookbackDelta:      time.Duration(cfg.lookbackDelta),
+			LookbackDelta:      &lookbackDelta,
 		}
 
 		queryEngine = promql.NewEngine(opts)
