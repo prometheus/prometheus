@@ -256,13 +256,12 @@ func (*paramCheckerQuerier) LabelNames() ([]string, storage.Warnings, error) { r
 func (*paramCheckerQuerier) Close() error                                    { return nil }
 
 func TestParamsSetCorrectly(t *testing.T) {
-	lookbackDelta := 5 * time.Second
 	opts := EngineOpts{
 		Logger:        nil,
 		Reg:           nil,
 		MaxSamples:    10,
 		Timeout:       10 * time.Second,
-		LookbackDelta: &lookbackDelta,
+		LookbackDelta: 5 * time.Second,
 	}
 
 	cases := []struct {

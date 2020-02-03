@@ -219,7 +219,7 @@ type EngineOpts struct {
 	ActiveQueryTracker *ActiveQueryTracker
 	// LookbackDelta determines the time since the last sample after which a time
 	// series is considered stale.
-	LookbackDelta *time.Duration
+	LookbackDelta time.Duration
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -306,9 +306,8 @@ func NewEngine(opts EngineOpts) *Engine {
 		metrics.maxConcurrentQueries.Set(-1)
 	}
 
-	if opts.LookbackDelta == nil {
-		v := defaultLookbackDelta
-		opts.LookbackDelta = &v
+	if opts.LookbackDelta == 0 {
+		opts.LookbackDelta = defaultLookbackDelta
 	}
 
 	if opts.Reg != nil {
@@ -330,7 +329,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		metrics:            metrics,
 		maxSamplesPerQuery: opts.MaxSamples,
 		activeQueryTracker: opts.ActiveQueryTracker,
-		LookbackDelta:      *opts.LookbackDelta,
+		LookbackDelta:      opts.LookbackDelta,
 	}
 }
 
