@@ -232,7 +232,7 @@ type Engine struct {
 	activeQueryTracker *ActiveQueryTracker
 	queryLogger        QueryLogger
 	queryLoggerLock    sync.RWMutex
-	LookbackDelta      time.Duration
+	lookbackDelta      time.Duration
 }
 
 // NewEngine returns a new engine.
@@ -332,7 +332,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		metrics:            metrics,
 		maxSamplesPerQuery: opts.MaxSamples,
 		activeQueryTracker: opts.ActiveQueryTracker,
-		LookbackDelta:      opts.LookbackDelta,
+		lookbackDelta:      opts.LookbackDelta,
 	}
 }
 
@@ -542,7 +542,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			maxSamples:          ng.maxSamplesPerQuery,
 			defaultEvalInterval: GetDefaultEvaluationInterval(),
 			logger:              ng.logger,
-			lookbackDelta:       ng.LookbackDelta,
+			lookbackDelta:       ng.lookbackDelta,
 		}
 
 		val, err := evaluator.Eval(s.Expr)
@@ -592,7 +592,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		maxSamples:          ng.maxSamplesPerQuery,
 		defaultEvalInterval: GetDefaultEvaluationInterval(),
 		logger:              ng.logger,
-		lookbackDelta:       ng.LookbackDelta,
+		lookbackDelta:       ng.lookbackDelta,
 	}
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
@@ -636,11 +636,11 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		subqOffset := ng.cumulativeSubqueryOffset(path)
 		switch n := node.(type) {
 		case *VectorSelector:
-			if maxOffset < ng.LookbackDelta+subqOffset {
-				maxOffset = ng.LookbackDelta + subqOffset
+			if maxOffset < ng.lookbackDelta+subqOffset {
+				maxOffset = ng.lookbackDelta + subqOffset
 			}
-			if n.Offset+ng.LookbackDelta+subqOffset > maxOffset {
-				maxOffset = n.Offset + ng.LookbackDelta + subqOffset
+			if n.Offset+ng.lookbackDelta+subqOffset > maxOffset {
+				maxOffset = n.Offset + ng.lookbackDelta + subqOffset
 			}
 		case *MatrixSelector:
 			if maxOffset < n.Range+subqOffset {
@@ -687,7 +687,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		switch n := node.(type) {
 		case *VectorSelector:
 			if evalRange == 0 {
-				params.Start = params.Start - durationMilliseconds(ng.LookbackDelta)
+				params.Start = params.Start - durationMilliseconds(ng.lookbackDelta)
 			} else {
 				params.Range = durationMilliseconds(evalRange)
 				// For all matrix queries we want to ensure that we have (end-start) + range selected
