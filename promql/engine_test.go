@@ -605,7 +605,7 @@ load 10s
 		}
 
 		testutil.Ok(t, res.Err)
-		testutil.Equals(t, c.Result, res.parser.Value)
+		testutil.Equals(t, c.Result, res.Value)
 	}
 
 }
@@ -823,7 +823,7 @@ load 10s
 
 		res := qry.Exec(test.Context())
 		testutil.Equals(t, c.Result.Err, res.Err)
-		testutil.Equals(t, c.Result.parser.Value, res.parser.Value)
+		testutil.Equals(t, c.Result.Value, res.Value)
 	}
 }
 
@@ -1107,9 +1107,9 @@ func TestSubquerySelector(t *testing.T) {
 
 			res := qry.Exec(test.Context())
 			testutil.Equals(t, c.Result.Err, res.Err)
-			mat := res.parser.Value.(Matrix)
+			mat := res.Value.(Matrix)
 			sort.Sort(mat)
-			testutil.Equals(t, c.Result.parser.Value, mat)
+			testutil.Equals(t, c.Result.Value, mat)
 		}
 	}
 }

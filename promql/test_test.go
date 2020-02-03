@@ -127,7 +127,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 				for _, s := range tc.series {
 					var matchers []*labels.Matcher
 					for _, label := range s.Metric {
-						m, err := labels.NewMatcher(labels.MatchEqual, label.Name, label.parser.Value)
+						m, err := labels.NewMatcher(labels.MatchEqual, label.Name, label.Value)
 						testutil.Ok(t, err)
 						matchers = append(matchers, m)
 					}

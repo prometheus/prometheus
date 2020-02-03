@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
