@@ -1098,7 +1098,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
 		checkForSeriesSetExpansion(ev.ctx, sel)
-		mat := make(Matrix, 0, len(selVS.series)) // Output matrix.
+		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
 		stepRange := selRange
@@ -1112,17 +1112,17 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		enh := &EvalNodeHelper{out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
-		for i, s := range selVS.series {
+		for i, s := range selVS.Series {
 			points = points[:0]
 			it.Reset(s.Iterator())
 			ss := Series{
 				// For all range vector functions, the only change to the
 				// output labels is dropping the metric name so just do
 				// it once here.
-				Metric: dropMetricName(selVS.series[i].Labels()),
+				Metric: dropMetricName(selVS.Series[i].Labels()),
 				Points: getPointSlice(numSteps),
 			}
-			inMatrix[0].Metric = selVS.series[i].Labels()
+			inMatrix[0].Metric = selVS.Series[i].Labels()
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 				step++
 				// Set the non-matrix arguments.
@@ -1143,7 +1143,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 				inMatrix[0].Points = points
 				enh.ts = ts
 				// Make the function call.
-				outVec := e.Func.Call(inArgs, e.Args, enh)
+				outVec := call(inArgs, e.Args, enh)
 				enh.out = outVec[:0]
 				if len(outVec) > 0 {
 					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
@@ -1209,12 +1209,12 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 
 		return mat
 
-	case *ParenExpr:
-		return ev.eval(e.parser.Expr)
+	case *parser.ParenExpr:
+		return ev.eval(e.Expr)
 
-	case *UnaryExpr:
-		mat := ev.eval(e.parser.Expr).(Matrix)
-		if e.Op == SUB {
+	case *parser.UnaryExpr:
+		mat := ev.eval(e.Expr).(Matrix)
+		if e.Op == parser.SUB {
 			for i := range mat {
 				mat[i].Metric = dropMetricName(mat[i].Metric)
 				for j := range mat[i].Points {
@@ -1227,7 +1227,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		}
 		return mat
 
-	case *BinaryExpr:
+	case *parser.BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
 			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
@@ -1236,15 +1236,15 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
 			switch e.Op {
-			case LAND:
+			case parser.LAND:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, enh)
 				}, e.LHS, e.RHS)
-			case LOR:
+			case parser.LOR:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, enh)
 				}, e.LHS, e.RHS)
-			case LUNLESS:
+			case parser.LUNLESS:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, enh)
 				}, e.LHS, e.RHS)
