@@ -39,7 +39,7 @@ describe('ScrapePoolList', () => {
         scrapePoolList = mount(<ScrapePoolList {...defaultProps} />);
       });
       scrapePoolList.update();
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-cache', credentials: 'same-origin' });
+      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
       const panels = scrapePoolList.find(ScrapePoolPanel);
       expect(panels).toHaveLength(3);
       const activeTargets: Target[] = sampleApiResponse.data.activeTargets as Target[];
@@ -58,7 +58,7 @@ describe('ScrapePoolList', () => {
         scrapePoolList = mount(<ScrapePoolList {...props} />);
       });
       scrapePoolList.update();
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-cache', credentials: 'same-origin' });
+      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
       const panels = scrapePoolList.find(ScrapePoolPanel);
       expect(panels).toHaveLength(0);
     });
@@ -74,7 +74,7 @@ describe('ScrapePoolList', () => {
       });
       scrapePoolList.update();
 
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-cache', credentials: 'same-origin' });
+      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
       const alert = scrapePoolList.find(Alert);
       expect(alert.prop('color')).toBe('danger');
       expect(alert.text()).toContain('Error fetching targets');
