@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/kit/log"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -522,7 +523,7 @@ load 10s
 
 	cases := []struct {
 		Query       string
-		Result      Value
+		Result      parser.Value
 		Start       time.Time
 		End         time.Time
 		Interval    time.Duration
@@ -604,7 +605,7 @@ load 10s
 		}
 
 		testutil.Ok(t, res.Err)
-		testutil.Equals(t, c.Result, res.Value)
+		testutil.Equals(t, c.Result, res.parser.Value)
 	}
 
 }
@@ -822,7 +823,7 @@ load 10s
 
 		res := qry.Exec(test.Context())
 		testutil.Equals(t, c.Result.Err, res.Err)
-		testutil.Equals(t, c.Result.Value, res.Value)
+		testutil.Equals(t, c.Result.parser.Value, res.parser.Value)
 	}
 }
 
@@ -1106,9 +1107,9 @@ func TestSubquerySelector(t *testing.T) {
 
 			res := qry.Exec(test.Context())
 			testutil.Equals(t, c.Result.Err, res.Err)
-			mat := res.Value.(Matrix)
+			mat := res.parser.Value.(Matrix)
 			sort.Sort(mat)
-			testutil.Equals(t, c.Result.Value, mat)
+			testutil.Equals(t, c.Result.parser.Value, mat)
 		}
 	}
 }

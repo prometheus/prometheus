@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
 )
@@ -188,7 +189,7 @@ func (q *query) Exec(ctx context.Context) *Result {
 	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
 
-	return &Result{Err: err, Value: res, Warnings: warnings}
+	return &Result{Err: err, parser.Value: res, Warnings: warnings}
 }
 
 // contextDone returns an error if the context was canceled or timed out.
@@ -378,7 +379,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	if err != nil {
 		return nil, err
 	}
-	if expr.Type() != ValueTypeVector && expr.Type() != ValueTypeScalar {
+	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", documentedType(expr.Type()))
 	}
 	qry := ng.newQuery(q, expr, start, end, interval)
@@ -431,7 +432,7 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 //
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
-func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnings, err error) {
+func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage.Warnings, err error) {
 	ng.metrics.currentQueries.Inc()
 	defer ng.metrics.currentQueries.Dec()
 
@@ -454,7 +455,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 				f = append(f, "error", err)
 			}
 			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
-			if origin := ctx.Value(queryOrigin); origin != nil {
+			if origin := ctx.parser.Value(queryOrigin); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)
 				}
@@ -515,7 +516,7 @@ func durationMilliseconds(d time.Duration) int64 {
 }
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
-func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (Value, storage.Warnings, error) {
+func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (parser.Value, storage.Warnings, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
 	querier, warnings, err := ng.populateSeries(ctxPrepare, query.queryable, s)
 	prepareSpanTimer.Finish()
@@ -566,7 +567,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 		query.matrix = mat
 		switch s.Expr.Type() {
-		case ValueTypeVector:
+		case parser.ValueTypeVector:
 			// Convert matrix with one value per series into vector.
 			vector := make(Vector, len(mat))
 			for i, s := range mat {
@@ -575,9 +576,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 				vector[i] = Sample{Metric: s.Metric, Point: Point{V: s.Points[0].V, T: start}}
 			}
 			return vector, warnings, nil
-		case ValueTypeScalar:
+		case parser.ValueTypeScalar:
 			return Scalar{V: mat[0].Points[0].V, T: start}, warnings, nil
-		case ValueTypeMatrix:
+		case parser.ValueTypeMatrix:
 			return mat, warnings, nil
 		default:
 			panic(errors.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
@@ -825,7 +826,7 @@ func (ev *evaluator) recover(errp *error) {
 	}
 }
 
-func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
+func (ev *evaluator) Eval(expr Expr) (v parser.Value, err error) {
 	defer ev.recover(&err)
 	return ev.eval(expr), nil
 }
@@ -890,7 +891,7 @@ func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.L
 // the given function with the values computed for each expression at that
 // step.  The return value is the combination into time series of all the
 // function call results.
-func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ...Expr) Matrix {
+func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, exprs ...Expr) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
@@ -898,7 +899,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 
 	for i, e := range exprs {
 		// Functions will take string arguments from the expressions, not the values.
-		if e != nil && e.Type() != ValueTypeString {
+		if e != nil && e.Type() != parser.ValueTypeString {
 			// ev.currentSamples will be updated to the correct value within the ev.eval call.
 			matrixes[i] = ev.eval(e).(Matrix)
 
@@ -909,8 +910,8 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 		}
 	}
 
-	vectors := make([]Vector, len(exprs)) // Input vectors for the function.
-	args := make([]Value, len(exprs))     // Argument to function.
+	vectors := make([]Vector, len(exprs))    // Input vectors for the function.
+	args := make([]parser.Value, len(exprs)) // Argument to function.
 	// Create an output vector that is as big as the input matrix with
 	// the most time series.
 	biggestLen := 1
@@ -1029,7 +1030,7 @@ func (ev *evaluator) evalSubquery(subq *SubqueryExpr) *MatrixSelector {
 }
 
 // eval evaluates the given expression as the given AST expression node requires.
-func (ev *evaluator) eval(expr Expr) Value {
+func (ev *evaluator) eval(expr Expr) parser.Value {
 	// This is the top-level evaluation method.
 	// Thus, we check for timeout/cancellation here.
 	if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
@@ -1041,11 +1042,11 @@ func (ev *evaluator) eval(expr Expr) Value {
 	case *AggregateExpr:
 		unwrapParenExpr(&e.Param)
 		if s, ok := e.Param.(*StringLiteral); ok {
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector), enh)
 			}, e.Expr)
 		}
-		return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+		return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 			var param float64
 			if e.Param != nil {
 				param = v[0].(Vector)[0].V
@@ -1060,8 +1061,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 			// a vector selector.
 			vs, ok := e.Args[0].(*VectorSelector)
 			if ok {
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
-					return e.Func.Call([]Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh)
+				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
+					return e.Func.Call([]parser.Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh)
 				})
 			}
 		}
@@ -1088,12 +1089,12 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 		if !matrixArg {
 			// Does not have a matrix argument.
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 				return e.Func.Call(v, e.Args, enh)
 			}, e.Args...)
 		}
 
-		inArgs := make([]Value, len(e.Args))
+		inArgs := make([]parser.Value, len(e.Args))
 		// Evaluate any non-matrix arguments.
 		otherArgs := make([]Matrix, len(e.Args))
 		otherInArgs := make([]Vector, len(e.Args))
@@ -1240,44 +1241,44 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
-		case lt == ValueTypeScalar && rt == ValueTypeScalar:
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
+			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 				val := scalarBinop(e.Op, v[0].(Vector)[0].Point.V, v[1].(Vector)[0].Point.V)
 				return append(enh.out, Sample{Point: Point{V: val}})
 			}, e.LHS, e.RHS)
-		case lt == ValueTypeVector && rt == ValueTypeVector:
+		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
 			switch e.Op {
 			case LAND:
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case LOR:
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case LUNLESS:
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			default:
-				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
 				}, e.LHS, e.RHS)
 			}
 
-		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
+			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool, enh)
 			}, e.LHS, e.RHS)
 
-		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeVector:
+			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].Point.V}, true, e.ReturnBool, enh)
 			}, e.LHS, e.RHS)
 		}
 
 	case *NumberLiteral:
-		return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
+		return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 			return append(enh.out, Sample{Point: Point{V: e.Val}})
 		})
 
@@ -1400,7 +1401,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, no
 	}
 
 	if ok {
-		t, v = it.Values()
+		t, v = it.parser.Values()
 	}
 
 	if !ok || t > refTime {
@@ -1505,7 +1506,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 		if value.IsStaleNaN(v) {
 			continue
 		}
-		// Values in the buffer are guaranteed to be smaller than maxt.
+		// parser.Values in the buffer are guaranteed to be smaller than maxt.
 		if t >= mint {
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
@@ -1516,7 +1517,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 	}
 	// The seeked sample might also be in the range.
 	if ok {
-		t, v := it.Values()
+		t, v := it.parser.Values()
 		if t == maxt && !value.IsStaleNaN(v) {
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))

@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -357,7 +358,7 @@ func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
 }
 
 // compareResult compares the result value with the defined expectation.
-func (ev *evalCmd) compareResult(result Value) error {
+func (ev *evalCmd) compareResult(result parser.Value) error {
 	switch val := result.(type) {
 	case Matrix:
 		return errors.New("received range result on instant evaluation")
@@ -458,7 +459,7 @@ func (t *Test) exec(tc testCommand) error {
 			return errors.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 		}
 
-		err = cmd.compareResult(res.Value)
+		err = cmd.compareResult(res.parser.Value)
 		if err != nil {
 			return errors.Wrapf(err, "error in %s %s", cmd, cmd.expr)
 		}
@@ -478,7 +479,7 @@ func (t *Test) exec(tc testCommand) error {
 			// Ordering isn't defined for range queries.
 			return nil
 		}
-		mat := rangeRes.Value.(Matrix)
+		mat := rangeRes.parser.Value.(Matrix)
 		vec := make(Vector, 0, len(mat))
 		for _, series := range mat {
 			for _, point := range series.Points {
@@ -488,7 +489,7 @@ func (t *Test) exec(tc testCommand) error {
 				}
 			}
 		}
-		if _, ok := res.Value.(Scalar); ok {
+		if _, ok := res.parser.Value.(Scalar); ok {
 			err = cmd.compareResult(Scalar{V: vec[0].Point.V})
 		} else {
 			err = cmd.compareResult(vec)
