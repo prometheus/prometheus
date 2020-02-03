@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -300,8 +301,8 @@ func (api *API) Register(r *route.Router) {
 }
 
 type queryData struct {
-	ResultType promql.ValueType  `json:"resultType"`
-	Result     promql.Value      `json:"result"`
+	ResultType parser.ValueType  `json:"resultType"`
+	Result     parser.Value      `json:"result"`
 	Stats      *stats.QueryStats `json:"stats,omitempty"`
 }
 
@@ -534,7 +535,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 
 	var matcherSets [][]*labels.Matcher
 	for _, s := range r.Form["match[]"] {
-		matchers, err := promql.ParseMetricSelector(s)
+		matchers, err := parser.ParseMetricSelector(s)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
@@ -695,7 +696,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	var err error
 
 	if matchTarget != "" {
-		matchers, err = promql.ParseMetricSelector(matchTarget)
+		matchers, err = parser.ParseMetricSelector(matchTarget)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
@@ -1282,7 +1283,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 	}
 
 	for _, s := range r.Form["match[]"] {
-		matchers, err := promql.ParseMetricSelector(s)
+		matchers, err := parser.ParseMetricSelector(s)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
