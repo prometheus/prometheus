@@ -41,7 +41,7 @@ export const PanelListContent: FC<PanelListProps> = ({
         setPanels(panels);
       }
     };
-    // We want useEffect to act only as componentDidMount, but react still complain about the empty dependencies list.
+    // We want useEffect to act only as componentDidMount, but react still complains about the empty dependencies list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -116,9 +116,11 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' 
       const serverTime = timeRes.data.result[0];
       setDelta(Math.abs(browserTime - serverTime));
     }
-    // React wants to include browserTime to useEffect dependencie list which will cause a delta change on every re-render
-    // Basically to disable this rule it's not recommended but this is the only way to take control over the useEffect and not to include
-    // browserTime variable.
+    /**
+     * React wants to include browserTime to useEffect dependencie list which will cause a delta change on every re-render
+     * Basically it's not recommended to disable this rule, but this is the only way to take control over the useEffect
+     * dependencies and to not include the browserTime variable.
+     **/
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeRes.data]);
 
