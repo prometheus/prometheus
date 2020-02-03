@@ -125,8 +125,8 @@ type Query interface {
 	Exec(ctx context.Context) *Result
 	// Close recovers memory used by the query result.
 	Close()
-	// Statement returns the parsed statement of the query.
-	Statement() Statement
+	// parser.Statement returns the parsed statement of the query.
+	Statement() parser.Statement
 	// Stats returns statistics about the lifetime of the query.
 	Stats() *stats.QueryTimers
 	// Cancel signals that a running query execution should be aborted.
@@ -139,8 +139,8 @@ type query struct {
 	queryable storage.Queryable
 	// The original query string.
 	q string
-	// Statement of the parsed query.
-	stmt Statement
+	// parser.Statement of the parsed query.
+	stmt parser.Statement
 	// Timer stats for the query execution.
 	stats *stats.QueryTimers
 	// Result matrix for reuse.
@@ -156,8 +156,8 @@ type queryCtx int
 
 var queryOrigin queryCtx
 
-// Statement implements the Query interface.
-func (q *query) Statement() Statement {
+// parser.Statement implements the Query interface.
+func (q *query) Statement() parser.Statement {
 	return q.stmt
 }
 
@@ -444,7 +444,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage
 		if l := ng.queryLogger; l != nil {
 			params := make(map[string]interface{}, 4)
 			params["query"] = q.q
-			if eq, ok := q.Statement().(*EvalStmt); ok {
+			if eq, ok := q.parser.Statement().(*EvalStmt); ok {
 				params["start"] = formatDate(eq.Start)
 				params["end"] = formatDate(eq.End)
 				// The step provided by the user is in seconds.
@@ -497,14 +497,14 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage
 		return nil, nil, err
 	}
 
-	switch s := q.Statement().(type) {
+	switch s := q.parser.Statement().(type) {
 	case *EvalStmt:
 		return ng.execEvalStmt(ctx, q, s)
 	case testStmt:
 		return nil, nil, s(ctx)
 	}
 
-	panic(errors.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
+	panic(errors.Errorf("promql.Engine.exec: unhandled statement of type %T", q.parser.Statement()))
 }
 
 func timeMilliseconds(t time.Time) int64 {
