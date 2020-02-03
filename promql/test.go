@@ -102,7 +102,7 @@ func (t *Test) Storage() storage.Storage {
 }
 
 func raise(line int, format string, v ...interface{}) error {
-	return &ParseErr{
+	return &parser.ParseErr{
 		lineOffset: line,
 		Err:        errors.Errorf(format, v...),
 	}
@@ -114,7 +114,7 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	}
 	parts := patLoad.FindStringSubmatch(lines[i])
 
-	gap, err := model.ParseDuration(parts[1])
+	gap, err := model.parser.ParseDuration(parts[1])
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
 	}
@@ -128,7 +128,7 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 		}
 		metric, vals, err := parseSeriesDesc(defLine)
 		if err != nil {
-			if perr, ok := err.(*ParseErr); ok {
+			if perr, ok := err.(*parser.ParseErr); ok {
 				perr.lineOffset = i
 			}
 			return i, nil, err
@@ -148,9 +148,9 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		at   = parts[2]
 		expr = parts[3]
 	)
-	_, err := ParseExpr(expr)
+	_, err := parser.ParseExpr(expr)
 	if err != nil {
-		if perr, ok := err.(*ParseErr); ok {
+		if perr, ok := err.(*parser.ParseErr); ok {
 			perr.lineOffset = i
 			posOffset := Pos(strings.Index(lines[i], expr))
 			perr.PositionRange.Start += posOffset
@@ -160,7 +160,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		return i, nil, err
 	}
 
-	offset, err := model.ParseDuration(at)
+	offset, err := model.parser.ParseDuration(at)
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
 	}
@@ -187,7 +187,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		}
 		metric, vals, err := parseSeriesDesc(defLine)
 		if err != nil {
-			if perr, ok := err.(*ParseErr); ok {
+			if perr, ok := err.(*parser.ParseErr); ok {
 				perr.lineOffset = i
 			}
 			return i, nil, err
@@ -559,10 +559,10 @@ func almostEqual(a, b float64) bool {
 }
 
 func parseNumber(s string) (float64, error) {
-	n, err := strconv.ParseInt(s, 0, 64)
+	n, err := strconv.parser.ParseInt(s, 0, 64)
 	f := float64(n)
 	if err != nil {
-		f, err = strconv.ParseFloat(s, 64)
+		f, err = strconv.parser.ParseFloat(s, 64)
 	}
 	if err != nil {
 		return 0, errors.Wrap(err, "error parsing number")

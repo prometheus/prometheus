@@ -31,9 +31,9 @@ const (
 	ValueTypeString = "string"
 )
 
-// documentedType returns the internal type to the equivalent
+// DocumentedType returns the internal type to the equivalent
 // user facing terminology as defined in the documentation.
-func documentedType(t ValueType) string {
+func DocumentedType(t ValueType) string {
 	switch t {
 	case "vector":
 		return "instant vector"

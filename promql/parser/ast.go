@@ -14,6 +14,7 @@
 package parser
 
 import (
+	"context"
 	"time"
 
 	"github.com/pkg/errors"
@@ -173,6 +174,19 @@ type VectorSelector struct {
 	PosRange PositionRange
 }
 
+// TestStmt is an internal helper statement that allows execution
+// of an arbitrary function during handling. It is used to test the Engine.
+type TestStmt func(context.Context) error
+
+func (TestStmt) String() string { return "test statement" }
+func (TestStmt) stmt()          {}
+
+func (TestStmt) PositionRange() PositionRange {
+	return PositionRange{
+		Start: -1,
+		End:   -1,
+	}
+}
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
 func (e *Call) Type() ValueType           { return e.Func.ReturnType }
 func (e *MatrixSelector) Type() ValueType { return ValueTypeMatrix }

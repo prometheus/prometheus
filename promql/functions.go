@@ -614,7 +614,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 	}
 	for _, el := range inVec {
-		upperBound, err := strconv.ParseFloat(
+		upperBound, err := strconv.parser.ParseFloat(
 			el.Metric.Get(model.BucketLabel), 64,
 		)
 		if err != nil {

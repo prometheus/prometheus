@@ -189,7 +189,7 @@ func (q *query) Exec(ctx context.Context) *Result {
 	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
 
-	return &Result{Err: err, parser.Value: res, Warnings: warnings}
+	return &Result{Err: err, Value: res, Warnings: warnings}
 }
 
 // contextDone returns an error if the context was canceled or timed out.
@@ -362,7 +362,7 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
 func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (Query, error) {
-	expr, err := ParseExpr(qs)
+	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
@@ -375,12 +375,12 @@ func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) 
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
 func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.Time, interval time.Duration) (Query, error) {
-	expr, err := ParseExpr(qs)
+	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
-		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", documentedType(expr.Type()))
+		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 	qry := ng.newQuery(q, expr, start, end, interval)
 	qry.q = qs
@@ -390,10 +390,10 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 
 func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end time.Time, interval time.Duration) *query {
 	es := &parser.EvalStmt{
-		parser.Expr: expr,
-		Start:       start,
-		End:         end,
-		Interval:    interval,
+		Expr:     expr,
+		Start:    start,
+		End:      end,
+		Interval: interval,
 	}
 	qry := &query{
 		stmt:      es,
@@ -404,24 +404,10 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 	return qry
 }
 
-// testStmt is an internal helper statement that allows execution
-// of an arbitrary function during handling. It is used to test the Engine.
-type testStmt func(context.Context) error
-
-func (testStmt) String() string { return "test statement" }
-func (testStmt) stmt()          {}
-
-func (testStmt) PositionRange() parser.PositionRange {
-	return parser.PositionRange{
-		Start: -1,
-		End:   -1,
-	}
-}
-
 func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 	qry := &query{
 		q:     "test statement",
-		stmt:  testStmt(f),
+		stmt:  parser.TestStmt(f),
 		ng:    ng,
 		stats: stats.NewQueryTimers(),
 	}
@@ -444,7 +430,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage
 		if l := ng.queryLogger; l != nil {
 			params := make(map[string]interface{}, 4)
 			params["query"] = q.q
-			if eq, ok := q.parser.Statement().(*parser.EvalStmt); ok {
+			if eq, ok := q.Statement().(*parser.EvalStmt); ok {
 				params["start"] = formatDate(eq.Start)
 				params["end"] = formatDate(eq.End)
 				// The step provided by the user is in seconds.
@@ -455,7 +441,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage
 				f = append(f, "error", err)
 			}
 			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
-			if origin := ctx.parser.Value(queryOrigin); origin != nil {
+			if origin := ctx.Value(queryOrigin); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)
 				}
@@ -497,14 +483,14 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage
 		return nil, nil, err
 	}
 
-	switch s := q.parser.Statement().(type) {
+	switch s := q.Statement().(type) {
 	case *parser.EvalStmt:
 		return ng.execEvalStmt(ctx, q, s)
-	case testStmt:
+	case parser.TestStmt:
 		return nil, nil, s(ctx)
 	}
 
-	panic(errors.Errorf("promql.Engine.exec: unhandled statement of type %T", q.parser.Statement()))
+	panic(errors.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
 }
 
 func timeMilliseconds(t time.Time) int64 {
@@ -547,7 +533,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			lookbackDelta:       ng.lookbackDelta,
 		}
 
-		val, err := evaluator.Eval(s.parser.Expr)
+		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
 			return nil, warnings, err
 		}
@@ -566,7 +552,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		}
 
 		query.matrix = mat
-		switch s.parser.Expr.Type() {
+		switch s.Expr.Type() {
 		case parser.ValueTypeVector:
 			// Convert matrix with one value per series into vector.
 			vector := make(Vector, len(mat))
@@ -581,7 +567,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		case parser.ValueTypeMatrix:
 			return mat, warnings, nil
 		default:
-			panic(errors.Errorf("promql.Engine.exec: unexpected expression type %q", s.parser.Expr.Type()))
+			panic(errors.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
 		}
 	}
 
@@ -596,7 +582,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		logger:              ng.logger,
 		lookbackDelta:       ng.lookbackDelta,
 	}
-	val, err := evaluator.Eval(s.parser.Expr)
+	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -634,7 +620,7 @@ func (ng *Engine) cumulativeSubqueryOffset(path []parser.Node) time.Duration {
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *parser.EvalStmt) (storage.Querier, storage.Warnings, error) {
 	var maxOffset time.Duration
-	Inspect(s.parser.Expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		subqOffset := ng.cumulativeSubqueryOffset(path)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
@@ -648,7 +634,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 			if maxOffset < n.Range+subqOffset {
 				maxOffset = n.Range + subqOffset
 			}
-			if m := n.parser.VectorSelector.(*parser.VectorSelector).Offset + n.Range + subqOffset; m > maxOffset {
+			if m := n.VectorSelector.(*parser.VectorSelector).Offset + n.Range + subqOffset; m > maxOffset {
 				maxOffset = m
 			}
 		}
@@ -669,7 +655,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 	// the variable.
 	var evalRange time.Duration
 
-	Inspect(s.parser.Expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		var set storage.SeriesSet
 		var wrn storage.Warnings
 		params := &storage.SelectParams{
@@ -729,11 +715,11 @@ func extractFuncFromPath(p []parser.Node) string {
 		return ""
 	}
 	switch n := p[len(p)-1].(type) {
-	case *AggregateExpr:
+	case *parser.AggregateExpr:
 		return n.Op.String()
-	case *Call:
+	case *parser.Call:
 		return n.Func.Name
-	case *BinaryExpr:
+	case *parser.BinaryExpr:
 		// If we hit a binary expression we terminate since we only care about functions
 		// or aggregations over a single metric.
 		return ""
@@ -747,7 +733,7 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 		return false, nil
 	}
 	switch n := p[len(p)-1].(type) {
-	case *AggregateExpr:
+	case *parser.AggregateExpr:
 		return !n.Without, n.Grouping
 	}
 	return false, nil
@@ -756,7 +742,7 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 func checkForSeriesSetExpansion(ctx context.Context, expr parser.Expr) {
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
-		checkForSeriesSetExpansion(ctx, e.parser.VectorSelector)
+		checkForSeriesSetExpansion(ctx, e.VectorSelector)
 	case *parser.VectorSelector:
 		if e.series == nil {
 			series, err := expandSeriesSet(ctx, e.unexpandedSeriesSet)

@@ -32,9 +32,9 @@ import (
 //
 // And then run the tests with the appropriate inputs
 //
-//     go-fuzz -bin FuzzParseMetric.zip -workdir fuzz-data/ParseMetric
+//     go-fuzz -bin FuzzParseMetric.zip -workdir fuzz-data/parser.ParseMetric
 //
-// Further input samples should go in the folders fuzz-data/ParseMetric/corpus.
+// Further input samples should go in the folders fuzz-data/parser.ParseMetric/corpus.
 //
 // Repeat for FuzzParseOpenMetric, FuzzParseMetricSelector and FuzzParseExpr.
 
@@ -83,7 +83,7 @@ func FuzzParseOpenMetric(in []byte) int {
 
 // Fuzz the metric selector parser.
 func FuzzParseMetricSelector(in []byte) int {
-	_, err := ParseMetricSelector(string(in))
+	_, err := parser.ParseMetricSelector(string(in))
 	if err == nil {
 		return fuzzInteresting
 	}
@@ -93,7 +93,7 @@ func FuzzParseMetricSelector(in []byte) int {
 
 // Fuzz the expression parser.
 func FuzzParseExpr(in []byte) int {
-	_, err := ParseExpr(string(in))
+	_, err := parser.ParseExpr(string(in))
 	if err == nil {
 		return fuzzInteresting
 	}
