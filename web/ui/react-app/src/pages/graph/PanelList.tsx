@@ -1,4 +1,4 @@
-import React, { FC, useState, useEffect, useCallback } from 'react';
+import React, { FC, useState, useEffect } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Alert, Button } from 'reactstrap';
 
@@ -41,6 +41,7 @@ export const PanelListContent: FC<PanelListProps> = ({
         setPanels(panels);
       }
     };
+    // We want useEffect to act only as componentDidMount, but react still complain about the empty dependencies list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -93,50 +94,38 @@ export const PanelListContent: FC<PanelListProps> = ({
           pathPrefix={pathPrefix}
         />
       ))}
-      <Button color="primary" onClick={addPanel}>
+      <Button className="mb-3" color="primary" onClick={addPanel}>
         Add Panel
       </Button>
     </>
   );
 };
 
-const opts: RequestInit = {
-  cache: 'no-store',
-};
-
 const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
-  const memoizedFetch = useCallback(useFetch, [pathPrefix]);
   const [delta, setDelta] = useState(0);
-  const [panels, setPanels] = useState<PanelMeta[]>([]);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
 
-  const { response: metricsResponse, error: metricsError } = memoizedFetch<string[]>(
-    `${pathPrefix}/api/v1/label/__name__/values`,
-    opts
-  );
+  const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/api/v1/label/__name__/values`);
 
   const browserTime = new Date().getTime() / 1000;
-  const { response: timeResponse, error: timeError } = memoizedFetch<{ result: number[] }>(
-    `${pathPrefix}/api/v1/query?query=time()`,
-    opts
-  );
+  const { response: timeRes, error: timeErr } = useFetch<{ result: number[] }>(`${pathPrefix}/api/v1/query?query=time()`);
 
   useEffect(() => {
-    setPanels(decodePanelOptionsFromQueryString(window.location.search));
-  }, []);
-
-  useEffect(() => {
-    if (timeResponse.data) {
-      const serverTime = timeResponse.data.result[0];
+    if (timeRes.data) {
+      const serverTime = timeRes.data.result[0];
       setDelta(Math.abs(browserTime - serverTime));
     }
+    // React wants to include browserTime to useEffect dependencie list which will cause a delta change on every re-render
+    // Basically to disable this rule it's not recommended but this is the only way to take control over the useEffect and not to include
+    // browserTime variable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeResponse.data]);
+  }, [timeRes.data]);
 
   return (
     <>
       <Checkbox
+        wrapperStyles={{ marginLeft: 3, display: 'inline-block' }}
         id="query-history-checkbox"
         onChange={({ target }) => setEnableQueryHistory(target.checked)}
         defaultChecked={enableQueryHistory}
@@ -144,31 +133,32 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' 
         Enable query history
       </Checkbox>
       <Checkbox
+        wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
         id="use-local-time-checkbox"
         onChange={({ target }) => setUseLocalTime(target.checked)}
         defaultChecked={useLocalTime}
       >
         Use local time
       </Checkbox>
-      {(delta > 30 || timeError) && (
+      {(delta > 30 || timeErr) && (
         <Alert color="danger">
           <strong>Warning: </strong>
-          {timeError && `Unexpected response status when fetching server time: ${timeError.message}`}
+          {timeErr && `Unexpected response status when fetching server time: ${timeErr.message}`}
           {delta >= 30 &&
             `Error fetching server time: Detected ${delta} seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.`}
         </Alert>
       )}
-      {metricsError && (
+      {metricsErr && (
         <Alert color="danger">
           <strong>Warning: </strong>
-          {`Error fetching metrics list: Unexpected response status when fetching metric names: ${metricsError.message}`}
+          Error fetching metrics list: Unexpected response status when fetching metric names: {metricsErr.message}
         </Alert>
       )}
       <PanelListContent
-        panels={panels}
+        panels={decodePanelOptionsFromQueryString(window.location.search)}
         pathPrefix={pathPrefix}
         useLocalTime={useLocalTime}
-        metrics={metricsResponse.data}
+        metrics={metricsRes.data}
         queryHistoryEnabled={enableQueryHistory}
       />
     </>

@@ -17,7 +17,7 @@ export const useFetch = <T extends {}>(url: string, options?: RequestInit): Fetc
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(url, { cache: 'no-cache', credentials: 'same-origin', ...options });
+        const res = await fetch(url, { cache: 'no-store', credentials: 'same-origin', ...options });
         if (!res.ok) {
           throw new Error(res.statusText);
         }
