@@ -411,8 +411,8 @@ type testStmt func(context.Context) error
 func (testStmt) String() string { return "test statement" }
 func (testStmt) stmt()          {}
 
-func (testStmt) PositionRange() PositionRange {
-	return PositionRange{
+func (testStmt) PositionRange() parser.PositionRange {
+	return parser.PositionRange{
 		Start: -1,
 		End:   -1,
 	}
@@ -644,7 +644,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 			if n.Offset+ng.lookbackDelta+subqOffset > maxOffset {
 				maxOffset = n.Offset + ng.lookbackDelta + subqOffset
 			}
-		case *MatrixSelector:
+		case *parser.MatrixSelector:
 			if maxOffset < n.Range+subqOffset {
 				maxOffset = n.Range + subqOffset
 			}
@@ -664,7 +664,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 
 	var warnings storage.Warnings
 
-	// Whenever a MatrixSelector is evaluated this variable is set to the corresponding range.
+	// Whenever a parser.MatrixSelector is evaluated this variable is set to the corresponding range.
 	// The evaluation of the parser.VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
@@ -714,7 +714,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 			}
 			n.unexpandedSeriesSet = set
 
-		case *MatrixSelector:
+		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
 		return nil
@@ -755,7 +755,7 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 
 func checkForSeriesSetExpansion(ctx context.Context, expr parser.Expr) {
 	switch e := expr.(type) {
-	case *MatrixSelector:
+	case *parser.MatrixSelector:
 		checkForSeriesSetExpansion(ctx, e.parser.VectorSelector)
 	case *parser.VectorSelector:
 		if e.series == nil {
@@ -1012,14 +1012,14 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 }
 
 // evalSubquery evaluates given parser.SubqueryExpr and returns an equivalent
-// evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
-func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) *MatrixSelector {
+// evaluated parser.MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
+func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) *parser.MatrixSelector {
 	val := ev.eval(subq).(Matrix)
 	vs := &parser.VectorSelector{
 		Offset: subq.Offset,
 		series: make([]storage.Series, 0, len(val)),
 	}
-	ms := &MatrixSelector{
+	ms := &parser.MatrixSelector{
 		Range:                 subq.Range,
 		parser.VectorSelector: vs,
 	}
@@ -1073,16 +1073,16 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		for i := range e.Args {
 			unwrapParenExpr(&e.Args[i])
 			a := e.Args[i]
-			if _, ok := a.(*MatrixSelector); ok {
+			if _, ok := a.(*parser.MatrixSelector); ok {
 				matrixArgIndex = i
 				matrixArg = true
 				break
 			}
-			// parser.SubqueryExpr can be used in place of MatrixSelector.
+			// parser.SubqueryExpr can be used in place of parser.MatrixSelector.
 			if subq, ok := a.(*parser.SubqueryExpr); ok {
 				matrixArgIndex = i
 				matrixArg = true
-				// Replacing parser.SubqueryExpr with MatrixSelector.
+				// Replacing parser.SubqueryExpr with parser.MatrixSelector.
 				e.Args[i] = ev.evalSubquery(subq)
 				break
 			}
@@ -1106,7 +1106,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			}
 		}
 
-		sel := e.Args[matrixArgIndex].(*MatrixSelector)
+		sel := e.Args[matrixArgIndex].(*parser.MatrixSelector)
 		selVS := sel.parser.VectorSelector.(*parser.VectorSelector)
 
 		checkForSeriesSetExpansion(ev.ctx, sel)
@@ -1250,19 +1250,19 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			switch e.Op {
 			case LAND:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
+					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case LOR:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
+					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case LUNLESS:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
+					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			default:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
+					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.parser.VectorMatching, e.ReturnBool, enh)
 				}, e.LHS, e.RHS)
 			}
 
@@ -1314,7 +1314,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		}
 		return mat
 
-	case *MatrixSelector:
+	case *parser.MatrixSelector:
 		if ev.startTimestamp != ev.endTimestamp {
 			panic(errors.New("cannot do range evaluation of matrix selector"))
 		}
@@ -1431,8 +1431,8 @@ func putPointSlice(p []Point) {
 	pointPool.Put(p[:0])
 }
 
-// matrixSelector evaluates a *MatrixSelector expression.
-func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
+// matrixSelector evaluates a *parser.MatrixSelector expression.
+func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) Matrix {
 	checkForSeriesSetExpansion(ev.ctx, node)
 
 	vs := node.parser.VectorSelector.(*parser.VectorSelector)
@@ -1529,7 +1529,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 	return out
 }
 
-func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, enh *EvalNodeHelper) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
@@ -1551,7 +1551,7 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching, enh *E
 	return enh.out
 }
 
-func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *VectorMatching, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, enh *EvalNodeHelper) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
@@ -1572,7 +1572,7 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *VectorMatching, enh *Ev
 	return enh.out
 }
 
-func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching, enh *EvalNodeHelper) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
@@ -1592,7 +1592,7 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching, enh
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
-func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorMatching, returnBool bool, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, enh *EvalNodeHelper) Vector {
 	if matching.Card == CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
@@ -1719,7 +1719,7 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
-func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching, enh *EvalNodeHelper) labels.Labels {
+func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, enh *EvalNodeHelper) labels.Labels {
 	if enh.resultMetric == nil {
 		enh.resultMetric = make(map[uint64]labels.Labels, len(enh.out))
 	}
@@ -1769,7 +1769,7 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 }
 
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
-func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) Vector {
 	for _, lhsSample := range lhs {
 		lv, rv := lhsSample.V, rhs.V
 		// lhs always contains the Vector. If the original position was different
@@ -1807,7 +1807,7 @@ func dropMetricName(l labels.Labels) labels.Labels {
 }
 
 // scalarBinop evaluates a binary operation between two Scalars.
-func scalarBinop(op ItemType, lhs, rhs float64) float64 {
+func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 	switch op {
 	case ADD:
 		return lhs + rhs
@@ -1838,7 +1838,7 @@ func scalarBinop(op ItemType, lhs, rhs float64) float64 {
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
-func vectorElemBinop(op ItemType, lhs, rhs float64) (float64, bool) {
+func vectorElemBinop(op parser.ItemType, lhs, rhs float64) (float64, bool) {
 	switch op {
 	case ADD:
 		return lhs + rhs, true
@@ -1878,7 +1878,7 @@ type groupedAggregation struct {
 }
 
 // aggregation evaluates an aggregation operation on a Vector.
-func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, param interface{}, vec Vector, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without bool, param interface{}, vec Vector, enh *EvalNodeHelper) Vector {
 
 	result := map[uint64]*groupedAggregation{}
 	var k int64
@@ -2098,7 +2098,7 @@ func btos(b bool) float64 {
 
 // shouldDropMetricName returns whether the metric name should be dropped in the
 // result of the op operation.
-func shouldDropMetricName(op ItemType) bool {
+func shouldDropMetricName(op parser.ItemType) bool {
 	switch op {
 	case ADD, SUB, DIV, MUL, POW, MOD:
 		return true

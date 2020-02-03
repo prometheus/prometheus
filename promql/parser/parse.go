@@ -178,13 +178,13 @@ func newParser(input string) *parser {
 	return p
 }
 
-// sequenceValue is an omittable value in a sequence of time series values.
-type sequenceValue struct {
+// SequenceValue is an omittable value in a sequence of time series values.
+type SequenceValue struct {
 	value   float64
 	omitted bool
 }
 
-func (v sequenceValue) String() string {
+func (v SequenceValue) String() string {
 	if v.omitted {
 		return "_"
 	}
@@ -193,11 +193,11 @@ func (v sequenceValue) String() string {
 
 type seriesDescription struct {
 	labels labels.Labels
-	values []sequenceValue
+	values []SequenceValue
 }
 
 // parseSeriesDesc parses the description of a time series.
-func parseSeriesDesc(input string) (labels labels.Labels, values []sequenceValue, err error) {
+func parseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, err error) {
 	p := newParser(input)
 	p.lex.seriesDesc = true
 

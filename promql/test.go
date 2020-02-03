@@ -182,7 +182,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 		if f, err := parseNumber(defLine); err == nil {
-			cmd.expect(0, nil, sequenceValue{value: f})
+			cmd.expect(0, nil, parser.SequenceValue{value: f})
 			break
 		}
 		metric, vals, err := parseSeriesDesc(defLine)
@@ -276,7 +276,7 @@ func (cmd loadCmd) String() string {
 }
 
 // set a sequence of sample values for the given metric.
-func (cmd *loadCmd) set(m labels.Labels, vals ...sequenceValue) {
+func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 
 	samples := make([]Point, 0, len(vals))
@@ -323,7 +323,7 @@ type evalCmd struct {
 
 type entry struct {
 	pos  int
-	vals []sequenceValue
+	vals []parser.SequenceValue
 }
 
 func (e entry) String() string {
@@ -347,7 +347,7 @@ func (ev *evalCmd) String() string {
 
 // expect adds a new metric with a sequence of values to the set of expected
 // results for the query.
-func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
+func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...parser.SequenceValue) {
 	if m == nil {
 		ev.expected[0] = entry{pos: pos, vals: vals}
 		return

@@ -64,7 +64,7 @@ func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
 func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
-	ms := args[0].(*MatrixSelector)
+	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.parser.VectorSelector.(*parser.VectorSelector)
 
 	var (
@@ -1244,7 +1244,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	switch n := expr.(type) {
 	case *parser.VectorSelector:
 		lm = n.LabelMatchers
-	case *MatrixSelector:
+	case *parser.MatrixSelector:
 		lm = n.parser.VectorSelector.(*parser.VectorSelector).LabelMatchers
 	default:
 		return m
