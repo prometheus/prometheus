@@ -12,7 +12,7 @@
 // limitations under the License.
 
 %{
-package promql
+package parser
 
 import (
         "math"

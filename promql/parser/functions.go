@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
+package parser
 
 // Function represents a function of the expression language and is
 // used by function nodes.
