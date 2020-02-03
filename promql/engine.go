@@ -698,7 +698,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
 				return err
 			}
-			n.unexpandedSeriesSet = set
+			n.UnexpandedSeriesSet = set
 
 		case *parser.MatrixSelector:
 			evalRange = n.Range
@@ -744,12 +744,12 @@ func checkForSeriesSetExpansion(ctx context.Context, expr parser.Expr) {
 	case *parser.MatrixSelector:
 		checkForSeriesSetExpansion(ctx, e.VectorSelector)
 	case *parser.VectorSelector:
-		if e.series == nil {
-			series, err := expandSeriesSet(ctx, e.unexpandedSeriesSet)
+		if e.Series == nil {
+			series, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
 			if err != nil {
 				panic(err)
 			} else {
-				e.series = series
+				e.Series = series
 			}
 		}
 	}
@@ -1003,14 +1003,14 @@ func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) *parser.MatrixSelec
 	val := ev.eval(subq).(Matrix)
 	vs := &parser.VectorSelector{
 		Offset: subq.Offset,
-		series: make([]storage.Series, 0, len(val)),
+		Series: make([]storage.Series, 0, len(val)),
 	}
 	ms := &parser.MatrixSelector{
-		Range:                 subq.Range,
-		parser.VectorSelector: vs,
+		Range:          subq.Range,
+		VectorSelector: vs,
 	}
 	for _, s := range val {
-		vs.series = append(vs.series, NewStorageSeries(s))
+		vs.Series = append(vs.Series, NewStorageSeries(s))
 	}
 	return ms
 }
@@ -1025,12 +1025,12 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	switch e := expr.(type) {
-	case *AggregateExpr:
+	case *parser.AggregateExpr:
 		unwrapParenExpr(&e.Param)
-		if s, ok := e.Param.(*StringLiteral); ok {
+		if s, ok := e.Param.(*parser.StringLiteral); ok {
 			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector), enh)
-			}, e.parser.Expr)
+			}, e.Expr)
 		}
 		return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 			var param float64
@@ -1038,9 +1038,9 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 				param = v[0].(Vector)[0].V
 			}
 			return ev.aggregation(e.Op, e.Grouping, e.Without, param, v[1].(Vector), enh)
-		}, e.Param, e.parser.Expr)
+		}, e.Param, e.Expr)
 
-	case *Call:
+	case *parser.Call:
 		if e.Func.Name == "timestamp" {
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given
@@ -1048,10 +1048,12 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			vs, ok := e.Args[0].(*parser.VectorSelector)
 			if ok {
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-					return e.Func.Call([]parser.Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh)
+					return funcTimestamp([]parser.Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh)
 				})
 			}
 		}
+
+		call := FunctionCalls[e.Func.Name]
 
 		// Check if the function has a matrix argument.
 		var matrixArgIndex int
@@ -1076,7 +1078,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		if !matrixArg {
 			// Does not have a matrix argument.
 			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-				return e.Func.Call(v, e.Args, enh)
+				return call(v, e.Args, enh)
 			}, e.Args...)
 		}
 
@@ -1093,7 +1095,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		}
 
 		sel := e.Args[matrixArgIndex].(*parser.MatrixSelector)
-		selVS := sel.parser.VectorSelector.(*parser.VectorSelector)
+		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
 		checkForSeriesSetExpansion(ev.ctx, sel)
 		mat := make(Matrix, 0, len(selVS.series)) // Output matrix.

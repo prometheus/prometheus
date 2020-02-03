@@ -28,29 +28,22 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// Function represents a function of the expression language and is
-// used by function nodes.
-type Function struct {
-	Name       string
-	ArgTypes   []parser.ValueType
-	Variadic   int
-	ReturnType parser.ValueType
-
-	// vals is a list of the evaluated arguments for the function call.
-	//    For range vectors it will be a Matrix with one series, instant vectors a
-	//    Vector, scalars a Vector with one series whose value is the scalar
-	//    value,and nil for strings.
-	// args are the original arguments to the function, where you can access
-	//    matrixSelectors, vectorSelectors, and StringLiterals.
-	// enh.out is a pre-allocated empty vector that you may use to accumulate
-	//    output before returning it. The vectors in vals should not be returned.a
-	// Range vector functions need only return a vector with the right value,
-	//     the metric and timestamp are not needed.
-	// Instant vector functions need only return a vector with the right values and
-	//     metrics, the timestamp are not needed.
-	// Scalar results should be returned as the value of a sample in a Vector.
-	Call func(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector
-}
+// FunctionCall is the type of a PromQL function implementation
+//
+// vals is a list of the evaluated arguments for the function call.
+//    For range vectors it will be a Matrix with one series, instant vectors a
+//    Vector, scalars a Vector with one series whose value is the scalar
+//    value,and nil for strings.
+// args are the original arguments to the function, where you can access
+//    matrixSelectors, vectorSelectors, and StringLiterals.
+// enh.out is a pre-allocated empty vector that you may use to accumulate
+//    output before returning it. The vectors in vals should not be returned.a
+// Range vector functions need only return a vector with the right value,
+//     the metric and timestamp are not needed.
+// Instant vector functions need only return a vector with the right values and
+//     metrics, the timestamp are not needed.
+// Scalar results should be returned as the value of a sample in a Vector.
+type FunctionCall func(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector
 
 // === time() float64 ===
 func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
@@ -614,7 +607,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 	}
 	for _, el := range inVec {
-		upperBound, err := strconv.parser.ParseFloat(
+		upperBound, err := strconv.ParseFloat(
 			el.Metric.Get(model.BucketLabel), 64,
 		)
 		if err != nil {
@@ -877,303 +870,59 @@ func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 }
 
 // Functions is a list of all functions supported by PromQL, including their types.
-var Functions = map[string]*Function{
-	"abs": {
-		Name:       "abs",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcAbs,
-	},
-	"absent": {
-		Name:       "absent",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcAbsent,
-	},
-	"absent_over_time": {
-		Name:       "absent_over_time",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcAbsentOverTime,
-	},
-	"avg_over_time": {
-		Name:       "avg_over_time",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcAvgOverTime,
-	},
-	"ceil": {
-		Name:       "ceil",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcCeil,
-	},
-	"changes": {
-		Name:       "changes",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcChanges,
-	},
-	"clamp_max": {
-		Name:       "clamp_max",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector, parser.ValueTypeScalar},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcClampMax,
-	},
-	"clamp_min": {
-		Name:       "clamp_min",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector, parser.ValueTypeScalar},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcClampMin,
-	},
-	"count_over_time": {
-		Name:       "count_over_time",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcCountOverTime,
-	},
-	"days_in_month": {
-		Name:       "days_in_month",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		Variadic:   1,
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcDaysInMonth,
-	},
-	"day_of_month": {
-		Name:       "day_of_month",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		Variadic:   1,
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcDayOfMonth,
-	},
-	"day_of_week": {
-		Name:       "day_of_week",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		Variadic:   1,
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcDayOfWeek,
-	},
-	"delta": {
-		Name:       "delta",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcDelta,
-	},
-	"deriv": {
-		Name:       "deriv",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcDeriv,
-	},
-	"exp": {
-		Name:       "exp",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcExp,
-	},
-	"floor": {
-		Name:       "floor",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcFloor,
-	},
-	"histogram_quantile": {
-		Name:       "histogram_quantile",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeScalar, parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcHistogramQuantile,
-	},
-	"holt_winters": {
-		Name:       "holt_winters",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix, parser.ValueTypeScalar, parser.ValueTypeScalar},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcHoltWinters,
-	},
-	"hour": {
-		Name:       "hour",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		Variadic:   1,
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcHour,
-	},
-	"idelta": {
-		Name:       "idelta",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcIdelta,
-	},
-	"increase": {
-		Name:       "increase",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcIncrease,
-	},
-	"irate": {
-		Name:       "irate",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcIrate,
-	},
-	"label_replace": {
-		Name:       "label_replace",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector, parser.ValueTypeString, parser.ValueTypeString, parser.ValueTypeString, parser.ValueTypeString},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcLabelReplace,
-	},
-	"label_join": {
-		Name:       "label_join",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector, parser.ValueTypeString, parser.ValueTypeString, parser.ValueTypeString},
-		Variadic:   -1,
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcLabelJoin,
-	},
-	"ln": {
-		Name:       "ln",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcLn,
-	},
-	"log10": {
-		Name:       "log10",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcLog10,
-	},
-	"log2": {
-		Name:       "log2",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcLog2,
-	},
-	"max_over_time": {
-		Name:       "max_over_time",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcMaxOverTime,
-	},
-	"min_over_time": {
-		Name:       "min_over_time",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcMinOverTime,
-	},
-	"minute": {
-		Name:       "minute",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		Variadic:   1,
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcMinute,
-	},
-	"month": {
-		Name:       "month",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		Variadic:   1,
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcMonth,
-	},
-	"predict_linear": {
-		Name:       "predict_linear",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix, parser.ValueTypeScalar},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcPredictLinear,
-	},
-	"quantile_over_time": {
-		Name:       "quantile_over_time",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeScalar, parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcQuantileOverTime,
-	},
-	"rate": {
-		Name:       "rate",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcRate,
-	},
-	"resets": {
-		Name:       "resets",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcResets,
-	},
-	"round": {
-		Name:       "round",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector, parser.ValueTypeScalar},
-		Variadic:   1,
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcRound,
-	},
-	"scalar": {
-		Name:       "scalar",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeScalar,
-		Call:       funcScalar,
-	},
-	"sort": {
-		Name:       "sort",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcSort,
-	},
-	"sort_desc": {
-		Name:       "sort_desc",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcSortDesc,
-	},
-	"sqrt": {
-		Name:       "sqrt",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcSqrt,
-	},
-	"stddev_over_time": {
-		Name:       "stddev_over_time",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcStddevOverTime,
-	},
-	"stdvar_over_time": {
-		Name:       "stdvar_over_time",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcStdvarOverTime,
-	},
-	"sum_over_time": {
-		Name:       "sum_over_time",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcSumOverTime,
-	},
-	"time": {
-		Name:       "time",
-		ArgTypes:   []parser.ValueType{},
-		ReturnType: parser.ValueTypeScalar,
-		Call:       funcTime,
-	},
-	"timestamp": {
-		Name:       "timestamp",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcTimestamp,
-	},
-	"vector": {
-		Name:       "vector",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeScalar},
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcVector,
-	},
-	"year": {
-		Name:       "year",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
-		Variadic:   1,
-		ReturnType: parser.ValueTypeVector,
-		Call:       funcYear,
-	},
+var FunctionCalls = map[string]FunctionCall{
+	"abs":                funcAbs,
+	"absent":             funcAbsent,
+	"absent_over_time":   funcAbsentOverTime,
+	"avg_over_time":      funcAvgOverTime,
+	"ceil":               funcCeil,
+	"changes":            funcChanges,
+	"clamp_max":          funcClampMax,
+	"clamp_min":          funcClampMin,
+	"count_over_time":    funcCountOverTime,
+	"days_in_month":      funcDaysInMonth,
+	"day_of_month":       funcDayOfMonth,
+	"day_of_week":        funcDayOfWeek,
+	"delta":              funcDelta,
+	"deriv":              funcDeriv,
+	"exp":                funcExp,
+	"floor":              funcFloor,
+	"histogram_quantile": funcHistogramQuantile,
+	"holt_winters":       funcHoltWinters,
+	"hour":               parser.ValueTypeVector,
+	"idelta":             funcIdelta,
+	"increase":           funcIncrease,
+	"irate":              funcIrate,
+	"label_replace":      funcLabelReplace,
+	"label_join":         funcLabelJoin,
+	"ln":                 funcLn,
+	"log10":              funcLog10,
+	"log2":               funcLog2,
+	"max_over_time":      funcMaxOverTime,
+	"min_over_time":      funcMinOverTime,
+	"minute":             funcMinute,
+	"month":              funcMonth,
+	"predict_linear":     funcPredictLinear,
+	"quantile_over_time": funcQuantileOverTime,
+	"rate":               funcRate,
+	"resets":             funcResets,
+	"round":              funcRound,
+	"scalar":             funcScalar,
+	"sort":               funcSort,
+	"sort_desc":          funcSortDesc,
+	"sqrt":               funcSqrt,
+	"stddev_over_time":   funcStddevOverTime,
+	"stdvar_over_time":   funcStdvarOverTime,
+	"sum_over_time":      funcSumOverTime,
+	"time":               funcTime,
+	"timestamp":          funcTimestamp,
+	"vector":             funcVector,
+	"year":               funcYear,
 }
 
 // getFunction returns a predefined Function object for the given name.
-func getFunction(name string) (*Function, bool) {
-	function, ok := Functions[name]
+func getFunctionCall(name string) (FunctionCall, bool) {
+	function, ok := FunctionCalls[name]
 	return function, ok
 }
 
