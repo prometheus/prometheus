@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -383,13 +384,16 @@ func (w *HeadReadWriter) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		chkStart = int((ref << 32) >> 32)
 	)
 
+	w.wbufLock.RLock()
 	// TODO(codesome): take care of possible race with w.wbuf.
 	if sgmIndex == w.curFileSequence && chkStart > int(w.n)-w.wbuf.Buffered() {
 		chunk := w.getChunkFromBuffer(ref)
 		if chunk != nil {
+			w.wbufLock.RUnlock()
 			return chunk, nil
 		}
 	}
+	w.wbufLock.RUnlock()
 
 	w.bsMtx.RLock()
 	// We hold this read lock for the entire duration because if the Close()
@@ -532,7 +536,6 @@ func (w *HeadReadWriter) chunkRef(seq, offset uint64) (chunkRef uint64) {
 
 func (w *HeadReadWriter) shouldCutSegment(chunkLength int, maxt int64) bool {
 	return w.n == 0 || // First segment
-		// TODO: tune this boolean, cutting a segment for only 1 chunk would be inefficient.
 		(maxt-w.curFileMint > w.segmentTime && w.n > HeadSegmentHeaderSize) || // Time duration reached for the existing file.
 		w.n+int64(chunkLength+27) >= MaxSegmentSize
 }
@@ -543,7 +546,7 @@ func (w *HeadReadWriter) seq() int {
 
 func (w *HeadReadWriter) write(b []byte) error {
 	n, err := w.wbuf.Write(b)
-	w.n += int64(n)
+	atomic.AddInt64(&w.n, int64(n))
 	return err
 }
 
@@ -566,22 +569,21 @@ func (w *HeadReadWriter) cut(mint int64) (returnErr error) {
 	}()
 
 	w.size += w.n
-	w.n = int64(n)
+	atomic.StoreInt64(&w.n, int64(n))
 	oldSeq := w.curFileSequence
 	w.curFileSequence = seq
 
-	// Write current time in milliseconds for mint and 0 for maxt.
+	// Write the provided time for mint and 0 for maxt.
 	w.curFileMint = mint
 	binary.BigEndian.PutUint64(w.buf[:], uint64(mint))
 	if _, err := f.Write(w.buf[:8]); err != nil {
 		return err
 	}
-	w.n += 8
 	binary.BigEndian.PutUint64(w.buf[:], 0)
 	if _, err := f.Write(w.buf[:8]); err != nil {
 		return err
 	}
-	w.n += 8
+	atomic.AddInt64(&w.n, 16)
 
 	oldFile := w.curFile
 
@@ -623,7 +625,8 @@ func (w *HeadReadWriter) cut(mint int64) (returnErr error) {
 
 // Size returns the size of the chunks.
 func (w *HeadReadWriter) Size() int64 {
-	return w.size + w.n
+	n := atomic.LoadInt64(&w.n)
+	return w.size + n
 }
 
 // finalizeCurFile writes all pending data to the current tail file,
