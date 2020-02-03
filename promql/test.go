@@ -103,7 +103,7 @@ func (t *Test) Storage() storage.Storage {
 
 func raise(line int, format string, v ...interface{}) error {
 	return &parser.ParseErr{
-		lineOffset: line,
+		LineOffset: line,
 		Err:        errors.Errorf(format, v...),
 	}
 }
@@ -114,7 +114,7 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	}
 	parts := patLoad.FindStringSubmatch(lines[i])
 
-	gap, err := model.parser.ParseDuration(parts[1])
+	gap, err := model.ParseDuration(parts[1])
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
 	}
@@ -126,10 +126,10 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 			i--
 			break
 		}
-		metric, vals, err := parseSeriesDesc(defLine)
+		metric, vals, err := parser.ParseSeriesDesc(defLine)
 		if err != nil {
 			if perr, ok := err.(*parser.ParseErr); ok {
-				perr.lineOffset = i
+				perr.LineOffset = i
 			}
 			return i, nil, err
 		}
@@ -151,8 +151,8 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	_, err := parser.ParseExpr(expr)
 	if err != nil {
 		if perr, ok := err.(*parser.ParseErr); ok {
-			perr.lineOffset = i
-			posOffset := Pos(strings.Index(lines[i], expr))
+			perr.LineOffset = i
+			posOffset := parser.Pos(strings.Index(lines[i], expr))
 			perr.PositionRange.Start += posOffset
 			perr.PositionRange.End += posOffset
 			perr.Query = lines[i]
@@ -160,7 +160,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		return i, nil, err
 	}
 
-	offset, err := model.parser.ParseDuration(at)
+	offset, err := model.ParseDuration(at)
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
 	}
@@ -182,13 +182,13 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 		if f, err := parseNumber(defLine); err == nil {
-			cmd.expect(0, nil, parser.SequenceValue{value: f})
+			cmd.expect(0, nil, parser.SequenceValue{Value: f})
 			break
 		}
-		metric, vals, err := parseSeriesDesc(defLine)
+		metric, vals, err := parser.ParseSeriesDesc(defLine)
 		if err != nil {
 			if perr, ok := err.(*parser.ParseErr); ok {
-				perr.lineOffset = i
+				perr.LineOffset = i
 			}
 			return i, nil, err
 		}
@@ -282,10 +282,10 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	samples := make([]Point, 0, len(vals))
 	ts := testStartTime
 	for _, v := range vals {
-		if !v.omitted {
+		if !v.Omitted {
 			samples = append(samples, Point{
 				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
-				V: v.value,
+				V: v.Value,
 			})
 		}
 		ts = ts.Add(cmd.gap)
@@ -374,8 +374,8 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if ev.ordered && exp.pos != pos+1 {
 				return errors.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
-			if !almostEqual(exp.vals[0].value, v.V) {
-				return errors.Errorf("expected %v for %s but got %v", exp.vals[0].value, v.Metric, v.V)
+			if !almostEqual(exp.vals[0].Value, v.V) {
+				return errors.Errorf("expected %v for %s but got %v", exp.vals[0].Value, v.Metric, v.V)
 			}
 
 			seen[fp] = true
@@ -391,8 +391,8 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 
 	case Scalar:
-		if !almostEqual(ev.expected[0].vals[0].value, val.V) {
-			return errors.Errorf("expected Scalar %v but got %v", val.V, ev.expected[0].vals[0].value)
+		if !almostEqual(ev.expected[0].vals[0].Value, val.V) {
+			return errors.Errorf("expected Scalar %v but got %v", val.V, ev.expected[0].vals[0].Value)
 		}
 
 	default:
@@ -459,7 +459,7 @@ func (t *Test) exec(tc testCommand) error {
 			return errors.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 		}
 
-		err = cmd.compareResult(res.parser.Value)
+		err = cmd.compareResult(res.Value)
 		if err != nil {
 			return errors.Wrapf(err, "error in %s %s", cmd, cmd.expr)
 		}
@@ -479,7 +479,7 @@ func (t *Test) exec(tc testCommand) error {
 			// Ordering isn't defined for range queries.
 			return nil
 		}
-		mat := rangeRes.parser.Value.(Matrix)
+		mat := rangeRes.Value.(Matrix)
 		vec := make(Vector, 0, len(mat))
 		for _, series := range mat {
 			for _, point := range series.Points {
@@ -489,7 +489,7 @@ func (t *Test) exec(tc testCommand) error {
 				}
 			}
 		}
-		if _, ok := res.parser.Value.(Scalar); ok {
+		if _, ok := res.Value.(Scalar); ok {
 			err = cmd.compareResult(Scalar{V: vec[0].Point.V})
 		} else {
 			err = cmd.compareResult(vec)
@@ -559,10 +559,10 @@ func almostEqual(a, b float64) bool {
 }
 
 func parseNumber(s string) (float64, error) {
-	n, err := strconv.parser.ParseInt(s, 0, 64)
+	n, err := strconv.ParseInt(s, 0, 64)
 	f := float64(n)
 	if err != nil {
-		f, err = strconv.parser.ParseFloat(s, 64)
+		f, err = strconv.ParseFloat(s, 64)
 	}
 	if err != nil {
 		return 0, errors.Wrap(err, "error parsing number")

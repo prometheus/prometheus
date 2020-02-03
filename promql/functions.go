@@ -58,7 +58,7 @@ func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 // the result as either per-second (if isRate is true) or overall.
 func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
 	ms := args[0].(*parser.MatrixSelector)
-	vs := ms.parser.VectorSelector.(*parser.VectorSelector)
+	vs := ms.VectorSelector.(*parser.VectorSelector)
 
 	var (
 		samples    = vals[0].(Matrix)[0]
@@ -683,10 +683,10 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector   = vals[0].(Vector)
-		dst      = args[1].(*StringLiteral).Val
-		repl     = args[2].(*StringLiteral).Val
-		src      = args[3].(*StringLiteral).Val
-		regexStr = args[4].(*StringLiteral).Val
+		dst      = args[1].(*parser.StringLiteral).Val
+		repl     = args[2].(*parser.StringLiteral).Val
+		src      = args[3].(*parser.StringLiteral).Val
+		regexStr = args[4].(*parser.StringLiteral).Val
 	)
 
 	if enh.regex == nil {
@@ -746,8 +746,8 @@ func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector    = vals[0].(Vector)
-		dst       = args[1].(*StringLiteral).Val
-		sep       = args[2].(*StringLiteral).Val
+		dst       = args[1].(*parser.StringLiteral).Val
+		sep       = args[2].(*parser.StringLiteral).Val
 		srcLabels = make([]string, len(args)-3)
 	)
 
@@ -756,7 +756,7 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	}
 
 	for i := 3; i < len(args); i++ {
-		src := args[i].(*StringLiteral).Val
+		src := args[i].(*parser.StringLiteral).Val
 		if !model.LabelName(src).IsValid() {
 			panic(errors.Errorf("invalid source label name in label_join(): %s", src))
 		}
@@ -889,7 +889,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"floor":              funcFloor,
 	"histogram_quantile": funcHistogramQuantile,
 	"holt_winters":       funcHoltWinters,
-	"hour":               parser.ValueTypeVector,
+	"hour":               funcHour,
 	"idelta":             funcIdelta,
 	"increase":           funcIncrease,
 	"irate":              funcIrate,
@@ -994,7 +994,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	case *parser.VectorSelector:
 		lm = n.LabelMatchers
 	case *parser.MatrixSelector:
-		lm = n.parser.VectorSelector.(*parser.VectorSelector).LabelMatchers
+		lm = n.VectorSelector.(*parser.VectorSelector).LabelMatchers
 	default:
 		return m
 	}
@@ -1005,7 +1005,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 			continue
 		}
 		if ma.Type == labels.MatchEqual && !m.Has(ma.Name) {
-			m = labels.NewBuilder(m).Set(ma.Name, ma.parser.Value).Labels()
+			m = labels.NewBuilder(m).Set(ma.Name, ma.Value).Labels()
 		} else {
 			empty = append(empty, ma.Name)
 		}
