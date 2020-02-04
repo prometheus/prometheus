@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -198,9 +199,10 @@ func TestFederation(t *testing.T) {
 	}
 
 	h := &Handler{
-		storage:     suite.Storage(),
-		queryEngine: suite.QueryEngine(),
-		now:         func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
+		storage:       suite.Storage(),
+		queryEngine:   suite.QueryEngine(),
+		lookbackDelta: 5 * time.Minute,
+		now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
 		config: &config.Config{
 			GlobalConfig: config.GlobalConfig{},
 		},
