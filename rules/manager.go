@@ -329,12 +329,12 @@ func (g *Group) run(ctx context.Context) {
 		if !s || g.opts.LookbackDelta < g.interval {
 			return
 		}
-		now := time.Now()
-		// Wait for two extra intervals to give the opportunity to renamed rules
-		// to insert new series in the tsdb.
-		select {
-		case <-g.managerDone:
-		case <-tick.C:
+		go func(now time.Time) {
+			// Wait for 2 intervals to give the opportunity to renamed rules
+			// to insert new series in the tsdb. At this point if there is a
+			// renamed rule, it should already be started.
+			tick := time.NewTicker(2 * g.interval)
+			defer tick.Stop()
 			select {
 			case <-g.managerDone:
 			case <-tick.C:
@@ -345,7 +345,7 @@ func (g *Group) run(ctx context.Context) {
 				}
 				g.cleanupStaleSeries(now)
 			}
-		}
+		}(time.Now())
 	}
 
 	iter()

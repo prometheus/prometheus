@@ -1051,7 +1051,7 @@ func TestMetricsStaleAfterUpdate(t *testing.T) {
 	for i, c := range cases {
 		err := ruleManager.Update(time.Second, c.files, nil)
 		testutil.Ok(t, err)
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 		testutil.Equals(t, c.stale, value.IsStaleNaN(metricValue()), "test %d/%q: invalid staleness", i, c.files)
 	}
 }
@@ -1144,7 +1144,7 @@ func TestMetricsNotStaleAfterRename(t *testing.T) {
 	for i, c := range cases {
 		err := ruleManager.Update(time.Second, c.files, nil)
 		testutil.Ok(t, err)
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 		totalStaleNaN += c.staleNaN
 		testutil.Equals(t, totalStaleNaN, countStaleNaN(), "test %d/%q: invalid count of staleness markers", i, c.files)
 	}
