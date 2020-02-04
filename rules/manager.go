@@ -316,8 +316,9 @@ func (g *Group) run(ctx context.Context) {
 
 	makeStale := func() {
 		now := time.Now()
-		// Wait for an extra interval to give the opportunity to renamed rules
+		// Wait for two extra intervals to give the opportunity to renamed rules
 		// to insert new series in the tsdb.
+		<-tick.C
 		<-tick.C
 		for _, rule := range g.seriesInPreviousEval {
 			for _, s := range rule {

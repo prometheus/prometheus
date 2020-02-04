@@ -1024,7 +1024,7 @@ func TestMetricsStaleAfterUpdate(t *testing.T) {
 
 func TestMetricsNotStaleAfterRename(t *testing.T) {
 	files := []string{"fixtures/rules2.yaml"}
-	sameFiles := []string{"fixtures/rules2.yaml"}
+	sameFiles := []string{"fixtures/rules2_test.yaml"}
 
 	storage := teststorage.New(t)
 	defer storage.Close()
@@ -1085,6 +1085,10 @@ func TestMetricsNotStaleAfterRename(t *testing.T) {
 		},
 		{
 			files:    files[:0],
+			staleNaN: true,
+		},
+		{
+			files:    sameFiles,
 			staleNaN: true,
 		},
 	}
