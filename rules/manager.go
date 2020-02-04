@@ -231,7 +231,7 @@ type Group struct {
 
 	shouldRestore bool
 
-	done       chan struct{}
+	done       chan bool
 	terminated chan struct{}
 
 	logger log.Logger
@@ -259,7 +259,7 @@ func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRes
 		shouldRestore:        shouldRestore,
 		opts:                 opts,
 		seriesInPreviousEval: make([]map[string]labels.Labels, len(rules)),
-		done:                 make(chan struct{}),
+		done:                 make(chan bool),
 		terminated:           make(chan struct{}),
 		logger:               log.With(opts.Logger, "group", name),
 		metrics:              metrics,
@@ -314,7 +314,10 @@ func (g *Group) run(ctx context.Context) {
 	tick := time.NewTicker(g.interval)
 	defer tick.Stop()
 
-	makeStale := func() {
+	makeStale := func(s bool) {
+		if !s {
+			return
+		}
 		now := time.Now()
 		// Wait for two extra intervals to give the opportunity to renamed rules
 		// to insert new series in the tsdb.
@@ -335,8 +338,8 @@ func (g *Group) run(ctx context.Context) {
 		// we might not have enough data scraped, and recording rules would not
 		// have updated the latest values, on which some alerts might depend.
 		select {
-		case <-g.done:
-			makeStale()
+		case stale := <-g.done:
+			makeStale(stale)
 			return
 		case <-tick.C:
 			missed := (time.Since(evalTimestamp) / g.interval) - 1
@@ -354,13 +357,13 @@ func (g *Group) run(ctx context.Context) {
 
 	for {
 		select {
-		case <-g.done:
-			makeStale()
+		case stale := <-g.done:
+			makeStale(stale)
 			return
 		default:
 			select {
-			case <-g.done:
-				makeStale()
+			case stale := <-g.done:
+				makeStale(stale)
 				return
 			case <-tick.C:
 				missed := (time.Since(evalTimestamp) / g.interval) - 1
@@ -373,6 +376,12 @@ func (g *Group) run(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (g *Group) stopAndMakeStale() {
+	g.done <- true
+	<-g.terminated
+	close(g.done)
 }
 
 func (g *Group) stop() {
@@ -922,16 +931,16 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	// Stop remaining old groups.
 	wg.Add(len(m.groups))
 	for n, oldg := range m.groups {
-		go func() {
-			oldg.stop()
+		go func(n string, g *Group) {
+			g.stopAndMakeStale()
+			if m := g.metrics; m != nil {
+				m.groupInterval.DeleteLabelValues(n)
+				m.groupLastEvalTime.DeleteLabelValues(n)
+				m.groupLastDuration.DeleteLabelValues(n)
+				m.groupRules.DeleteLabelValues(n)
+			}
 			wg.Done()
-		}()
-		if m := oldg.metrics; m != nil {
-			m.groupInterval.DeleteLabelValues(n)
-			m.groupLastEvalTime.DeleteLabelValues(n)
-			m.groupLastDuration.DeleteLabelValues(n)
-			m.groupRules.DeleteLabelValues(n)
-		}
+		}(n, oldg)
 	}
 
 	wg.Wait()
