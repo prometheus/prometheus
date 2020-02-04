@@ -1024,7 +1024,7 @@ func TestMetricsStaleAfterUpdate(t *testing.T) {
 
 func TestMetricsNotStaleAfterRename(t *testing.T) {
 	files := []string{"fixtures/rules2.yaml"}
-	sameFiles := []string{"fixtures/rules2_test.yaml"}
+	sameFiles := []string{"fixtures/rules2_copy.yaml"}
 
 	storage := teststorage.New(t)
 	defer storage.Close()
@@ -1042,10 +1042,16 @@ func TestMetricsNotStaleAfterRename(t *testing.T) {
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
 	})
+	var stopped bool
 	ruleManager.Run()
-	defer ruleManager.Stop()
+	defer func() {
+		if !stopped {
+			ruleManager.Stop()
+		}
+	}()
 
-	hasStaleNaN := func() bool {
+	countStaleNaN := func() int {
+		var c int
 		querier, err := storage.Querier(context.Background(), 0, time.Now().Unix()*1000)
 		testutil.Ok(t, err)
 		defer querier.Close()
@@ -1065,38 +1071,43 @@ func TestMetricsNotStaleAfterRename(t *testing.T) {
 		testutil.Assert(t, ok, "Series %s not returned.", metric)
 		for _, s := range metricSample {
 			if value.IsStaleNaN(s.V) {
-				return true
+				c++
 			}
 		}
-		return false
+		return c
 	}
 
 	cases := []struct {
 		files    []string
-		staleNaN bool
+		staleNaN int
 	}{
 		{
 			files:    files,
-			staleNaN: false,
+			staleNaN: 0,
 		},
 		{
 			files:    sameFiles,
-			staleNaN: false,
+			staleNaN: 0,
 		},
 		{
 			files:    files[:0],
-			staleNaN: true,
+			staleNaN: 1,
 		},
 		{
 			files:    sameFiles,
-			staleNaN: true,
+			staleNaN: 0,
 		},
 	}
 
+	var totalStaleNaN int
 	for i, c := range cases {
 		err := ruleManager.Update(time.Second, c.files, nil)
 		testutil.Ok(t, err)
 		time.Sleep(2 * time.Second)
-		testutil.Equals(t, c.staleNaN, hasStaleNaN(), "test %d/%q: invalid staleness", i, c.files)
+		totalStaleNaN += c.staleNaN
+		testutil.Equals(t, totalStaleNaN, countStaleNaN(), "test %d/%q: invalid count of staleness markers", i, c.files)
 	}
+	ruleManager.Stop()
+	stopped = true
+	testutil.Equals(t, totalStaleNaN, countStaleNaN(), "invalid count of staleness markers after stopping the engine")
 }
