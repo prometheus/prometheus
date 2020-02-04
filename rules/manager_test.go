@@ -364,6 +364,7 @@ func TestForStateRestore(t *testing.T) {
 		NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
 		OutageTolerance: 30 * time.Minute,
 		ForGracePeriod:  10 * time.Minute,
+		LookbackDelta:   5 * time.Minute,
 	}
 
 	alertForDuration := 25 * time.Minute
@@ -523,11 +524,12 @@ func TestStaleness(t *testing.T) {
 	}
 	engine := promql.NewEngine(engineOpts)
 	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Appendable: storage,
-		TSDB:       storage,
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		QueryFunc:     EngineQueryFunc(engine, storage),
+		Appendable:    storage,
+		TSDB:          storage,
+		Context:       context.Background(),
+		Logger:        log.NewNopLogger(),
+		LookbackDelta: 5 * time.Minute,
 	}
 
 	expr, err := promql.ParseExpr("a + 1")
@@ -716,11 +718,12 @@ func TestUpdate(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: storage,
-		TSDB:       storage,
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Appendable:    storage,
+		TSDB:          storage,
+		QueryFunc:     EngineQueryFunc(engine, storage),
+		Context:       context.Background(),
+		Logger:        log.NewNopLogger(),
+		LookbackDelta: 5 * time.Minute,
 	})
 	ruleManager.Run()
 	defer ruleManager.Stop()
@@ -851,13 +854,14 @@ func TestNotify(t *testing.T) {
 		lastNotified = alerts
 	}
 	opts := &ManagerOptions{
-		QueryFunc:   EngineQueryFunc(engine, storage),
-		Appendable:  storage,
-		TSDB:        storage,
-		Context:     context.Background(),
-		Logger:      log.NewNopLogger(),
-		NotifyFunc:  notifyFunc,
-		ResendDelay: 2 * time.Second,
+		QueryFunc:     EngineQueryFunc(engine, storage),
+		Appendable:    storage,
+		TSDB:          storage,
+		Context:       context.Background(),
+		Logger:        log.NewNopLogger(),
+		NotifyFunc:    notifyFunc,
+		ResendDelay:   2 * time.Second,
+		LookbackDelta: 5 * time.Minute,
 	}
 
 	expr, err := promql.ParseExpr("a > 1")
@@ -921,12 +925,13 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: storage,
-		TSDB:       storage,
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
-		Registerer: registry,
+		Appendable:    storage,
+		TSDB:          storage,
+		QueryFunc:     EngineQueryFunc(engine, storage),
+		Context:       context.Background(),
+		Logger:        log.NewNopLogger(),
+		Registerer:    registry,
+		LookbackDelta: 5 * time.Minute,
 	})
 	ruleManager.Run()
 	defer ruleManager.Stop()
@@ -990,11 +995,12 @@ func TestMetricsStaleAfterUpdate(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: storage,
-		TSDB:       storage,
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Appendable:    storage,
+		TSDB:          storage,
+		QueryFunc:     EngineQueryFunc(engine, storage),
+		Context:       context.Background(),
+		Logger:        log.NewNopLogger(),
+		LookbackDelta: 5 * time.Minute,
 	})
 	ruleManager.Run()
 	defer ruleManager.Stop()
@@ -1064,11 +1070,12 @@ func TestMetricsNotStaleAfterRename(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: storage,
-		TSDB:       storage,
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Appendable:    storage,
+		TSDB:          storage,
+		QueryFunc:     EngineQueryFunc(engine, storage),
+		Context:       context.Background(),
+		Logger:        log.NewNopLogger(),
+		LookbackDelta: 5 * time.Minute,
 	})
 	var stopped bool
 	ruleManager.Run()

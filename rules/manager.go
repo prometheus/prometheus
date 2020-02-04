@@ -326,20 +326,26 @@ func (g *Group) run(ctx context.Context) {
 	defer tick.Stop()
 
 	makeStale := func(s bool) {
-		if !s || g.opts.LookbackDelta > g.interval {
+		if !s || g.opts.LookbackDelta < g.interval {
 			return
 		}
 		now := time.Now()
 		// Wait for two extra intervals to give the opportunity to renamed rules
 		// to insert new series in the tsdb.
-		<-tick.C
-		<-tick.C
-		for _, rule := range g.seriesInPreviousEval {
-			for _, s := range rule {
-				g.staleSeries = append(g.staleSeries, s)
+		select {
+		case <-g.managerDone:
+		case <-tick.C:
+			select {
+			case <-g.managerDone:
+			case <-tick.C:
+				for _, rule := range g.seriesInPreviousEval {
+					for _, s := range rule {
+						g.staleSeries = append(g.staleSeries, s)
+					}
+				}
+				g.cleanupStaleSeries(now)
 			}
 		}
-		g.cleanupStaleSeries(now)
 	}
 
 	iter()
@@ -890,6 +896,10 @@ func (m *Manager) Stop() {
 	for _, eg := range m.groups {
 		eg.stop()
 	}
+
+	// Shut down the groups waiting multiple evaluation intervals to write
+	// staleness marlers.
+	close(m.done)
 
 	level.Info(m.logger).Log("msg", "Rule manager stopped")
 }
