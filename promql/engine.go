@@ -309,7 +309,7 @@ func NewEngine(opts EngineOpts) *Engine {
 	if opts.LookbackDelta == 0 {
 		opts.LookbackDelta = defaultLookbackDelta
 		if l := opts.Logger; l != nil {
-			level.Debug(l).Log("msg", "lookback delta is not zero, setting to default value", "value", defaultLookbackDelta)
+			level.Debug(l).Log("msg", "lookback delta is zero, setting to default value", "value", defaultLookbackDelta)
 		}
 	}
 
