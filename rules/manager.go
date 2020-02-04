@@ -381,7 +381,6 @@ func (g *Group) run(ctx context.Context) {
 func (g *Group) stopAndMakeStale() {
 	g.done <- true
 	<-g.terminated
-	close(g.done)
 }
 
 func (g *Group) stop() {
