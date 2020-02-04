@@ -250,7 +250,7 @@ type GroupOptions struct {
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
-func NewGroup(o *GroupOptions) *Group {
+func NewGroup(o GroupOptions) *Group {
 	metrics := o.Opts.Metrics
 	if metrics == nil {
 		metrics = NewGroupMetrics(o.Opts.Registerer)
@@ -1019,7 +1019,7 @@ func (m *Manager) LoadGroups(
 				))
 			}
 
-			groups[groupKey(fn, rg.Name)] = NewGroup(&GroupOptions{
+			groups[groupKey(fn, rg.Name)] = NewGroup(GroupOptions{
 				Name:          rg.Name,
 				File:          fn,
 				Interval:      itv,

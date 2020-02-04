@@ -258,7 +258,7 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
 	r = append(r, recordingRule)
 
-	group := rules.NewGroup(&rules.GroupOptions{
+	group := rules.NewGroup(rules.GroupOptions{
 		Name:          "grp",
 		File:          "/path/to/file",
 		Interval:      time.Second,

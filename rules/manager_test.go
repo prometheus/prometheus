@@ -377,7 +377,7 @@ func TestForStateRestore(t *testing.T) {
 		nil, nil, true, nil,
 	)
 
-	group := NewGroup(&GroupOptions{
+	group := NewGroup(GroupOptions{
 		Name:          "default",
 		Interval:      time.Second,
 		Rules:         []Rule{rule},
@@ -442,7 +442,7 @@ func TestForStateRestore(t *testing.T) {
 			labels.FromStrings("severity", "critical"),
 			nil, nil, false, nil,
 		)
-		newGroup := NewGroup(&GroupOptions{
+		newGroup := NewGroup(GroupOptions{
 			Name:          "default",
 			Interval:      time.Second,
 			Rules:         []Rule{newRule},
@@ -533,7 +533,7 @@ func TestStaleness(t *testing.T) {
 	expr, err := promql.ParseExpr("a + 1")
 	testutil.Ok(t, err)
 	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
-	group := NewGroup(&GroupOptions{
+	group := NewGroup(GroupOptions{
 		Name:          "default",
 		Interval:      time.Second,
 		Rules:         []Rule{rule},
@@ -864,7 +864,7 @@ func TestNotify(t *testing.T) {
 	expr, err := promql.ParseExpr("a > 1")
 	testutil.Ok(t, err)
 	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, nil, true, log.NewNopLogger())
-	group := NewGroup(&GroupOptions{
+	group := NewGroup(GroupOptions{
 		Name:          "alert",
 		Interval:      time.Second,
 		Rules:         []Rule{rule},
