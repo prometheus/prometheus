@@ -377,14 +377,13 @@ func TestForStateRestore(t *testing.T) {
 		nil, nil, true, nil,
 	)
 
-	o := &GroupOptions{
-		name:          "default",
-		interval:      time.Second,
-		rules:         []Rule{rule},
-		shouldRestore: true,
-		opts:          opts,
-	}
-	group := NewGroup(o)
+	group := NewGroup(&GroupOptions{
+		Name:          "default",
+		Interval:      time.Second,
+		Rules:         []Rule{rule},
+		ShouldRestore: true,
+		Opts:          opts,
+	})
 	groups := make(map[string]*Group)
 	groups["default;"] = group
 
@@ -443,14 +442,13 @@ func TestForStateRestore(t *testing.T) {
 			labels.FromStrings("severity", "critical"),
 			nil, nil, false, nil,
 		)
-		o := &GroupOptions{
-			name:          "default",
-			interval:      time.Second,
-			rules:         []Rule{newRule},
-			shouldRestore: true,
-			opts:          opts,
-		}
-		newGroup := NewGroup(o)
+		newGroup := NewGroup(&GroupOptions{
+			Name:          "default",
+			Interval:      time.Second,
+			Rules:         []Rule{newRule},
+			ShouldRestore: true,
+			Opts:          opts,
+		})
 
 		newGroups := make(map[string]*Group)
 		newGroups["default;"] = newGroup
@@ -535,14 +533,13 @@ func TestStaleness(t *testing.T) {
 	expr, err := promql.ParseExpr("a + 1")
 	testutil.Ok(t, err)
 	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
-	o := &GroupOptions{
-		name:          "default",
-		interval:      time.Second,
-		rules:         []Rule{rule},
-		shouldRestore: true,
-		opts:          opts,
-	}
-	group := NewGroup(o)
+	group := NewGroup(&GroupOptions{
+		Name:          "default",
+		Interval:      time.Second,
+		Rules:         []Rule{rule},
+		ShouldRestore: true,
+		Opts:          opts,
+	})
 
 	// A time series that has two samples and then goes stale.
 	app, _ := storage.Appender()
@@ -867,14 +864,13 @@ func TestNotify(t *testing.T) {
 	expr, err := promql.ParseExpr("a > 1")
 	testutil.Ok(t, err)
 	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, nil, true, log.NewNopLogger())
-	o := &GroupOptions{
-		name:          "alert",
-		interval:      time.Second,
-		rules:         []Rule{rule},
-		shouldRestore: true,
-		opts:          opts,
-	}
-	group := NewGroup(o)
+	group := NewGroup(&GroupOptions{
+		Name:          "alert",
+		Interval:      time.Second,
+		Rules:         []Rule{rule},
+		ShouldRestore: true,
+		Opts:          opts,
+	})
 
 	app, _ := storage.Appender()
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)

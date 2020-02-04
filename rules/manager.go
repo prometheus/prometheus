@@ -241,38 +241,38 @@ type Group struct {
 }
 
 type GroupOptions struct {
-	name, file    string
-	interval      time.Duration
-	rules         []Rule
-	shouldRestore bool
-	opts          *ManagerOptions
+	Name, File    string
+	Interval      time.Duration
+	Rules         []Rule
+	ShouldRestore bool
+	Opts          *ManagerOptions
 	done          chan struct{}
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
 func NewGroup(o *GroupOptions) *Group {
-	metrics := o.opts.Metrics
+	metrics := o.Opts.Metrics
 	if metrics == nil {
-		metrics = NewGroupMetrics(o.opts.Registerer)
+		metrics = NewGroupMetrics(o.Opts.Registerer)
 	}
 
-	metrics.groupLastEvalTime.WithLabelValues(groupKey(o.file, o.name))
-	metrics.groupLastDuration.WithLabelValues(groupKey(o.file, o.name))
-	metrics.groupRules.WithLabelValues(groupKey(o.file, o.name)).Set(float64(len(o.rules)))
-	metrics.groupInterval.WithLabelValues(groupKey(o.file, o.name)).Set(o.interval.Seconds())
+	metrics.groupLastEvalTime.WithLabelValues(groupKey(o.File, o.Name))
+	metrics.groupLastDuration.WithLabelValues(groupKey(o.File, o.Name))
+	metrics.groupRules.WithLabelValues(groupKey(o.File, o.Name)).Set(float64(len(o.Rules)))
+	metrics.groupInterval.WithLabelValues(groupKey(o.File, o.Name)).Set(o.Interval.Seconds())
 
 	return &Group{
-		name:                 o.name,
-		file:                 o.file,
-		interval:             o.interval,
-		rules:                o.rules,
-		shouldRestore:        o.shouldRestore,
-		opts:                 o.opts,
-		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.rules)),
+		name:                 o.Name,
+		file:                 o.File,
+		interval:             o.Interval,
+		rules:                o.Rules,
+		shouldRestore:        o.ShouldRestore,
+		opts:                 o.Opts,
+		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
 		done:                 make(chan bool),
 		managerDone:          o.done,
 		terminated:           make(chan struct{}),
-		logger:               log.With(o.opts.Logger, "group", o.name),
+		logger:               log.With(o.Opts.Logger, "group", o.Name),
 		metrics:              metrics,
 	}
 }
@@ -1019,16 +1019,15 @@ func (m *Manager) LoadGroups(
 				))
 			}
 
-			opts := &GroupOptions{
-				name:          rg.Name,
-				file:          fn,
-				interval:      itv,
-				rules:         rules,
-				shouldRestore: shouldRestore,
-				opts:          m.opts,
+			groups[groupKey(fn, rg.Name)] = NewGroup(&GroupOptions{
+				Name:          rg.Name,
+				File:          fn,
+				Interval:      itv,
+				Rules:         rules,
+				ShouldRestore: shouldRestore,
+				Opts:          m.opts,
 				done:          m.done,
-			}
-			groups[groupKey(fn, rg.Name)] = NewGroup(opts)
+			})
 		}
 	}
 
