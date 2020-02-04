@@ -231,37 +231,48 @@ type Group struct {
 
 	shouldRestore bool
 
-	done       chan bool
-	terminated chan struct{}
+	done        chan bool
+	terminated  chan struct{}
+	managerDone chan struct{}
 
 	logger log.Logger
 
 	metrics *Metrics
 }
 
+type GroupOptions struct {
+	name, file    string
+	interval      time.Duration
+	rules         []Rule
+	shouldRestore bool
+	opts          *ManagerOptions
+	done          chan struct{}
+}
+
 // NewGroup makes a new Group with the given name, options, and rules.
-func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRestore bool, opts *ManagerOptions) *Group {
-	metrics := opts.Metrics
+func NewGroup(o *GroupOptions) *Group {
+	metrics := o.opts.Metrics
 	if metrics == nil {
-		metrics = NewGroupMetrics(opts.Registerer)
+		metrics = NewGroupMetrics(o.opts.Registerer)
 	}
 
-	metrics.groupLastEvalTime.WithLabelValues(groupKey(file, name))
-	metrics.groupLastDuration.WithLabelValues(groupKey(file, name))
-	metrics.groupRules.WithLabelValues(groupKey(file, name)).Set(float64(len(rules)))
-	metrics.groupInterval.WithLabelValues(groupKey(file, name)).Set(interval.Seconds())
+	metrics.groupLastEvalTime.WithLabelValues(groupKey(o.file, o.name))
+	metrics.groupLastDuration.WithLabelValues(groupKey(o.file, o.name))
+	metrics.groupRules.WithLabelValues(groupKey(o.file, o.name)).Set(float64(len(o.rules)))
+	metrics.groupInterval.WithLabelValues(groupKey(o.file, o.name)).Set(o.interval.Seconds())
 
 	return &Group{
-		name:                 name,
-		file:                 file,
-		interval:             interval,
-		rules:                rules,
-		shouldRestore:        shouldRestore,
-		opts:                 opts,
-		seriesInPreviousEval: make([]map[string]labels.Labels, len(rules)),
+		name:                 o.name,
+		file:                 o.file,
+		interval:             o.interval,
+		rules:                o.rules,
+		shouldRestore:        o.shouldRestore,
+		opts:                 o.opts,
+		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.rules)),
 		done:                 make(chan bool),
+		managerDone:          o.done,
 		terminated:           make(chan struct{}),
-		logger:               log.With(opts.Logger, "group", name),
+		logger:               log.With(o.opts.Logger, "group", o.name),
 		metrics:              metrics,
 	}
 }
@@ -813,6 +824,7 @@ type Manager struct {
 	groups   map[string]*Group
 	mtx      sync.RWMutex
 	block    chan struct{}
+	done     chan struct{}
 	restored bool
 
 	logger log.Logger
@@ -855,6 +867,7 @@ func NewManager(o *ManagerOptions) *Manager {
 		groups: map[string]*Group{},
 		opts:   o,
 		block:  make(chan struct{}),
+		done:   make(chan struct{}),
 		logger: o.Logger,
 	}
 
@@ -996,7 +1009,16 @@ func (m *Manager) LoadGroups(
 				))
 			}
 
-			groups[groupKey(fn, rg.Name)] = NewGroup(rg.Name, fn, itv, rules, shouldRestore, m.opts)
+			opts := &GroupOptions{
+				name:          rg.Name,
+				file:          fn,
+				interval:      itv,
+				rules:         rules,
+				shouldRestore: shouldRestore,
+				opts:          m.opts,
+				done:          m.done,
+			}
+			groups[groupKey(fn, rg.Name)] = NewGroup(opts)
 		}
 	}
 

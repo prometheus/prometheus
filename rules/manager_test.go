@@ -376,7 +376,14 @@ func TestForStateRestore(t *testing.T) {
 		nil, nil, true, nil,
 	)
 
-	group := NewGroup("default", "", time.Second, []Rule{rule}, true, opts)
+	o := &GroupOptions{
+		name:          "default",
+		interval:      time.Second,
+		rules:         []Rule{rule},
+		shouldRestore: true,
+		opts:          opts,
+	}
+	group := NewGroup(o)
 	groups := make(map[string]*Group)
 	groups["default;"] = group
 
@@ -435,7 +442,14 @@ func TestForStateRestore(t *testing.T) {
 			labels.FromStrings("severity", "critical"),
 			nil, nil, false, nil,
 		)
-		newGroup := NewGroup("default", "", time.Second, []Rule{newRule}, true, opts)
+		o := &GroupOptions{
+			name:          "default",
+			interval:      time.Second,
+			rules:         []Rule{newRule},
+			shouldRestore: true,
+			opts:          opts,
+		}
+		newGroup := NewGroup(o)
 
 		newGroups := make(map[string]*Group)
 		newGroups["default;"] = newGroup
@@ -519,7 +533,14 @@ func TestStaleness(t *testing.T) {
 	expr, err := promql.ParseExpr("a + 1")
 	testutil.Ok(t, err)
 	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
-	group := NewGroup("default", "", time.Second, []Rule{rule}, true, opts)
+	o := &GroupOptions{
+		name:          "default",
+		interval:      time.Second,
+		rules:         []Rule{rule},
+		shouldRestore: true,
+		opts:          opts,
+	}
+	group := NewGroup(o)
 
 	// A time series that has two samples and then goes stale.
 	app, _ := storage.Appender()
@@ -842,7 +863,14 @@ func TestNotify(t *testing.T) {
 	expr, err := promql.ParseExpr("a > 1")
 	testutil.Ok(t, err)
 	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, nil, true, log.NewNopLogger())
-	group := NewGroup("alert", "", time.Second, []Rule{rule}, true, opts)
+	o := &GroupOptions{
+		name:          "alert",
+		interval:      time.Second,
+		rules:         []Rule{rule},
+		shouldRestore: true,
+		opts:          opts,
+	}
+	group := NewGroup(o)
 
 	app, _ := storage.Appender()
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
