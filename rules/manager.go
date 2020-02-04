@@ -919,8 +919,12 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	}
 
 	// Stop remaining old groups.
+	wg.Add(len(m.groups))
 	for n, oldg := range m.groups {
-		oldg.stop()
+		go func() {
+			oldg.stop()
+			wg.Done()
+		}()
 		if m := oldg.metrics; m != nil {
 			m.groupInterval.DeleteLabelValues(n)
 			m.groupLastEvalTime.DeleteLabelValues(n)
