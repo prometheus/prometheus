@@ -1148,3 +1148,155 @@ func TestMetricsNotStaleAfterRename(t *testing.T) {
 	stopped = true
 	testutil.Equals(t, totalStaleNaN, countStaleNaN(), "invalid count of staleness markers after stopping the engine")
 }
+
+func TestMetricsStalenessEvalInterval(t *testing.T) {
+	files := []string{"fixtures/rules2.yaml"}
+
+	storage := teststorage.New(t)
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable:    storage,
+		TSDB:          storage,
+		QueryFunc:     EngineQueryFunc(engine, storage),
+		Context:       context.Background(),
+		Logger:        log.NewNopLogger(),
+		LookbackDelta: 1 * time.Second,
+	})
+	var stopped bool
+	ruleManager.Run()
+	defer func() {
+		if !stopped {
+			ruleManager.Stop()
+		}
+	}()
+
+	countStaleNaN := func() int {
+		var c int
+		querier, err := storage.Querier(context.Background(), 0, time.Now().Unix()*1000)
+		testutil.Ok(t, err)
+		defer querier.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
+		testutil.Ok(t, err)
+
+		set, _, err := querier.Select(nil, matcher)
+		testutil.Ok(t, err)
+
+		samples, err := readSeriesSet(set)
+		testutil.Ok(t, err)
+
+		metric := labels.FromStrings(model.MetricNameLabel, "test_2").String()
+		metricSample, ok := samples[metric]
+
+		testutil.Assert(t, ok, "Series %s not returned.", metric)
+		for _, s := range metricSample {
+			if value.IsStaleNaN(s.V) {
+				c++
+			}
+		}
+		return c
+	}
+
+	cases := []struct {
+		files    []string
+		staleNaN int
+	}{
+		{
+			files:    files,
+			staleNaN: 0,
+		},
+		{
+			// Staleness marker should not be present because lookback delta
+			// (1s) is not longer than evaluation interval (2s).
+			files:    files[:0],
+			staleNaN: 0,
+		},
+	}
+
+	var totalStaleNaN int
+	for i, c := range cases {
+		err := ruleManager.Update(2*time.Second, c.files, nil)
+		testutil.Ok(t, err)
+		time.Sleep(5 * time.Second)
+		totalStaleNaN += c.staleNaN
+		testutil.Equals(t, totalStaleNaN, countStaleNaN(), "test %d/%q: invalid count of staleness markers", i, c.files)
+	}
+	ruleManager.Stop()
+	stopped = true
+	testutil.Equals(t, totalStaleNaN, countStaleNaN(), "invalid count of staleness markers after stopping the engine")
+}
+
+func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
+	files := []string{"fixtures/rules2.yaml"}
+
+	storage := teststorage.New(t)
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable:    storage,
+		TSDB:          storage,
+		QueryFunc:     EngineQueryFunc(engine, storage),
+		Context:       context.Background(),
+		Logger:        log.NewNopLogger(),
+		LookbackDelta: 5 * time.Minute,
+	})
+	var stopped bool
+	ruleManager.Run()
+	defer func() {
+		if !stopped {
+			ruleManager.Stop()
+		}
+	}()
+
+	countStaleNaN := func() int {
+		var c int
+		querier, err := storage.Querier(context.Background(), 0, time.Now().Unix()*1000)
+		testutil.Ok(t, err)
+		defer querier.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
+		testutil.Ok(t, err)
+
+		set, _, err := querier.Select(nil, matcher)
+		testutil.Ok(t, err)
+
+		samples, err := readSeriesSet(set)
+		testutil.Ok(t, err)
+
+		metric := labels.FromStrings(model.MetricNameLabel, "test_2").String()
+		metricSample, ok := samples[metric]
+
+		testutil.Assert(t, ok, "Series %s not returned.", metric)
+		for _, s := range metricSample {
+			if value.IsStaleNaN(s.V) {
+				c++
+			}
+		}
+		return c
+	}
+
+	err := ruleManager.Update(2*time.Second, files, nil)
+	time.Sleep(4 * time.Second)
+	testutil.Ok(t, err)
+	start := time.Now()
+	err = ruleManager.Update(3*time.Second, files[:0], nil)
+	testutil.Ok(t, err)
+	ruleManager.Stop()
+	stopped = true
+	testutil.Assert(t, time.Since(start) < 1*time.Second, "rule manager does not stop early")
+	time.Sleep(5 * time.Second)
+	testutil.Equals(t, 0, countStaleNaN(), "invalid count of staleness markers after stopping the engine")
+}

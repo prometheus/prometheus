@@ -333,11 +333,9 @@ func (g *Group) run(ctx context.Context) {
 			// Wait for 2 intervals to give the opportunity to renamed rules
 			// to insert new series in the tsdb. At this point if there is a
 			// renamed rule, it should already be started.
-			tick := time.NewTicker(2 * g.interval)
-			defer tick.Stop()
 			select {
 			case <-g.managerDone:
-			case <-tick.C:
+			case <-time.After(2 * g.interval):
 				for _, rule := range g.seriesInPreviousEval {
 					for _, s := range rule {
 						g.staleSeries = append(g.staleSeries, s)
@@ -898,7 +896,7 @@ func (m *Manager) Stop() {
 	}
 
 	// Shut down the groups waiting multiple evaluation intervals to write
-	// staleness marlers.
+	// staleness markers.
 	close(m.done)
 
 	level.Info(m.logger).Log("msg", "Rule manager stopped")
