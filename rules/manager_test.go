@@ -1086,14 +1086,20 @@ func TestMetricsNotStaleAfterRename(t *testing.T) {
 			staleNaN: 0,
 		},
 		{
+			// Rules that produce the same metrics but in a different file
+			// should not produce staleness marker.
 			files:    sameFiles,
 			staleNaN: 0,
 		},
 		{
+			// Staleness marker should be present as we don't have any rules
+			// loaded anymore.
 			files:    files[:0],
 			staleNaN: 1,
 		},
 		{
+			// Add rules back so we have rules loaded when we stop the manager
+			// and check for the absence of staleness markers.
 			files:    sameFiles,
 			staleNaN: 0,
 		},
