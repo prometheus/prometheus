@@ -20,8 +20,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 func TestMemPostings_addFor(t *testing.T) {
@@ -194,7 +194,7 @@ func TestMultiIntersect(t *testing.T) {
 			res: []uint64{2, 5, 6, 1001},
 		},
 		// One of the reproducible cases for:
-		// https://github.com/prometheus/prometheus/issues/2616
+		// https://github.com/prometheus/prometheus/v3/issues/2616
 		// The initialisation of intersectPostings was moving the iterator forward
 		// prematurely making us miss some postings.
 		{
@@ -721,7 +721,7 @@ func TestBigEndian(t *testing.T) {
 
 func TestIntersectWithMerge(t *testing.T) {
 	// One of the reproducible cases for:
-	// https://github.com/prometheus/prometheus/issues/2616
+	// https://github.com/prometheus/prometheus/v3/issues/2616
 	a := newListPostings(21, 22, 23, 24, 25, 30)
 
 	b := Merge(

@@ -26,10 +26,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
+	"github.com/prometheus/prometheus/v3/storage"
+	"github.com/prometheus/prometheus/v3/util/teststorage"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 var (
@@ -433,7 +433,7 @@ func (t *Test) exec(tc testCommand) error {
 			return err
 		}
 		if err := cmd.append(app); err != nil {
-			app.Rollback()
+			_ = app.Rollback()
 			return err
 		}
 

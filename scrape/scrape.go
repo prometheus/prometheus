@@ -36,15 +36,15 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/pool"
-	"github.com/prometheus/prometheus/pkg/relabel"
-	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/pkg/value"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/v3/config"
+	"github.com/prometheus/prometheus/v3/discovery/targetgroup"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
+	"github.com/prometheus/prometheus/v3/pkg/pool"
+	"github.com/prometheus/prometheus/v3/pkg/relabel"
+	"github.com/prometheus/prometheus/v3/pkg/textparse"
+	"github.com/prometheus/prometheus/v3/pkg/timestamp"
+	"github.com/prometheus/prometheus/v3/pkg/value"
+	"github.com/prometheus/prometheus/v3/storage"
 )
 
 var (
@@ -1229,7 +1229,7 @@ loop:
 		})
 	}
 	if err != nil {
-		app.Rollback()
+		_ = app.Rollback()
 		return total, added, seriesAdded, err
 	}
 	if err := app.Commit(); err != nil {
@@ -1269,7 +1269,7 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, a
 	app := sl.appender()
 
 	if err := sl.addReportSample(app, scrapeHealthMetricName, ts, health); err != nil {
-		app.Rollback()
+		_ = app.Rollback()
 		return err
 	}
 	if err := sl.addReportSample(app, scrapeDurationMetricName, ts, duration.Seconds()); err != nil {

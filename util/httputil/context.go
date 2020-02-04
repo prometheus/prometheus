@@ -18,7 +18,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/v3/promql"
 )
 
 type ctxParam int

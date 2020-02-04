@@ -16,18 +16,18 @@ package config
 import (
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/discovery/azure"
-	"github.com/prometheus/prometheus/discovery/consul"
-	"github.com/prometheus/prometheus/discovery/dns"
-	"github.com/prometheus/prometheus/discovery/ec2"
-	"github.com/prometheus/prometheus/discovery/file"
-	"github.com/prometheus/prometheus/discovery/gce"
-	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/discovery/marathon"
-	"github.com/prometheus/prometheus/discovery/openstack"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/discovery/triton"
-	"github.com/prometheus/prometheus/discovery/zookeeper"
+	"github.com/prometheus/prometheus/v3/discovery/azure"
+	"github.com/prometheus/prometheus/v3/discovery/consul"
+	"github.com/prometheus/prometheus/v3/discovery/dns"
+	"github.com/prometheus/prometheus/v3/discovery/ec2"
+	"github.com/prometheus/prometheus/v3/discovery/file"
+	"github.com/prometheus/prometheus/v3/discovery/gce"
+	"github.com/prometheus/prometheus/v3/discovery/kubernetes"
+	"github.com/prometheus/prometheus/v3/discovery/marathon"
+	"github.com/prometheus/prometheus/v3/discovery/openstack"
+	"github.com/prometheus/prometheus/v3/discovery/targetgroup"
+	"github.com/prometheus/prometheus/v3/discovery/triton"
+	"github.com/prometheus/prometheus/v3/discovery/zookeeper"
 )
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.

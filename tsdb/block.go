@@ -26,13 +26,13 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
+	"github.com/prometheus/prometheus/v3/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/v3/tsdb/chunks"
+	tsdb_errors "github.com/prometheus/prometheus/v3/tsdb/errors"
+	"github.com/prometheus/prometheus/v3/tsdb/fileutil"
+	"github.com/prometheus/prometheus/v3/tsdb/index"
+	"github.com/prometheus/prometheus/v3/tsdb/tombstones"
 )
 
 // IndexWriter serializes the index for a block of series data.

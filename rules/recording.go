@@ -23,10 +23,10 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/util/strutil"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
+	"github.com/prometheus/prometheus/v3/pkg/rulefmt"
+	"github.com/prometheus/prometheus/v3/promql"
+	"github.com/prometheus/prometheus/v3/util/strutil"
 )
 
 // A RecordingRule records its vector expression into new timeseries.

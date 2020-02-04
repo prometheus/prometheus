@@ -20,7 +20,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 func TestQueryLogging(t *testing.T) {

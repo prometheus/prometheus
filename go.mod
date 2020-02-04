@@ -1,4 +1,4 @@
-module github.com/prometheus/prometheus
+module github.com/prometheus/prometheus/v3
 
 go 1.13
 
@@ -8,9 +8,17 @@ require (
 	github.com/Azure/go-autorest v11.2.8+incompatible
 	github.com/alecthomas/units v0.0.0-20190717042225-c3de453c63f4
 	github.com/aws/aws-sdk-go v1.25.48
+	github.com/certifi/gocertifi v0.0.0-20200104152315-a6d78f326758 // indirect
 	github.com/cespare/xxhash v1.1.0
+	github.com/cockroachdb/cmux v0.0.0-20170110192607-30d10be49292 // indirect
+	github.com/cockroachdb/cockroach v19.2.2+incompatible // indirect
+	github.com/cockroachdb/errors v1.2.4 // indirect
+	github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f // indirect
+	github.com/cockroachdb/ttycolor v0.0.0-20180709150743-a1d5aaeb377d // indirect
 	github.com/dgryski/go-sip13 v0.0.0-20190329191031-25c5027a8c7b
+	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/edsrzf/mmap-go v1.0.0
+	github.com/getsentry/raven-go v0.2.0 // indirect
 	github.com/go-kit/kit v0.9.0
 	github.com/go-logfmt/logfmt v0.4.0
 	github.com/go-openapi/strfmt v0.19.2
@@ -23,17 +31,22 @@ require (
 	github.com/influxdata/influxdb v1.7.7
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.7
+	github.com/lightstep/lightstep-tracer-go v0.18.1 // indirect
 	github.com/miekg/dns v1.1.15
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
+	github.com/oklog/oklog v0.3.2 // indirect
 	github.com/oklog/run v1.0.0
 	github.com/oklog/ulid v1.3.1
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20190519235532-cf7a6c988dc9
 	github.com/opentracing/opentracing-go v1.1.0
+	github.com/openzipkin-contrib/zipkin-go-opentracing v0.4.5 // indirect
+	github.com/petermattis/goid v0.0.0-20180202154549-b0b1615b78e5 // indirect
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/alertmanager v0.18.0
 	github.com/prometheus/client_golang v1.2.0
 	github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4
 	github.com/prometheus/common v0.8.0
+	github.com/prometheus/tsdb v0.10.0 // indirect
 	github.com/samuel/go-zookeeper v0.0.0-20190810000440-0ceca61e4d75
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/shurcooL/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
@@ -43,7 +56,7 @@ require (
 	golang.org/x/sync v0.0.0-20190423024810-112230192c58
 	golang.org/x/sys v0.0.0-20191010194322-b09406accb47
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
-	golang.org/x/tools v0.0.0-20190918214516-5a1a30219888
+	golang.org/x/tools v0.0.0-20200204074204-1cc6d1ef6c74
 	google.golang.org/api v0.8.0
 	google.golang.org/genproto v0.0.0-20190801165951-fa694d86fc64
 	google.golang.org/grpc v1.22.1

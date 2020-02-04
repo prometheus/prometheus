@@ -15,7 +15,7 @@ package index
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 func TestPostingsStats(t *testing.T) {

@@ -31,8 +31,8 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
+	"github.com/prometheus/prometheus/v3/discovery/targetgroup"
+	"github.com/prometheus/prometheus/v3/util/strutil"
 )
 
 const (
@@ -237,7 +237,7 @@ func (d *Discovery) shouldWatchFromName(name string) bool {
 
 // shouldWatch returns whether the service of the given name should be watched based on its tags.
 // This gets called when the user doesn't specify a list of services in order to avoid watching
-// *all* services. Details in https://github.com/prometheus/prometheus/pull/3814
+// *all* services. Details in https://github.com/prometheus/prometheus/v3/pull/3814
 func (d *Discovery) shouldWatchFromTags(tags []string) bool {
 	// If there's no fixed set of watched tags, we watch everything.
 	if len(d.watchedTags) == 0 {

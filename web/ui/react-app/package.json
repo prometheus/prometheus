@@ -40,7 +40,8 @@
     "sanitize-html": "^1.20.1",
     "tempusdominus-bootstrap-4": "^5.1.2",
     "tempusdominus-core": "^5.0.3",
-    "typescript": "^3.3.3"
+    "typescript": "^3.3.3",
+    "yarn": "^1.21.1"
   },
   "scripts": {
     "start": "react-scripts start",

@@ -25,11 +25,11 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/encoding"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
+	"github.com/prometheus/prometheus/v3/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/v3/tsdb/chunks"
+	"github.com/prometheus/prometheus/v3/tsdb/encoding"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 type series struct {

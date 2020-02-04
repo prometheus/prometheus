@@ -29,13 +29,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/storage/tsdb"
-	libtsdb "github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/config"
+	"github.com/prometheus/prometheus/v3/notifier"
+	"github.com/prometheus/prometheus/v3/rules"
+	"github.com/prometheus/prometheus/v3/scrape"
+	"github.com/prometheus/prometheus/v3/storage/tsdb"
+	libtsdb "github.com/prometheus/prometheus/v3/tsdb"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 func TestMain(m *testing.M) {

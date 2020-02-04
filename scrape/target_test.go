@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
 )
 
 const (

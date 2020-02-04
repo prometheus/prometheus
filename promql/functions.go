@@ -24,7 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
 )
 
 // Function represents a function of the expression language and is
@@ -575,7 +575,7 @@ func funcDeriv(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 
 	// We pass in an arbitrary timestamp that is near the values in use
 	// to avoid floating point accuracy issues, see
-	// https://github.com/prometheus/prometheus/issues/2674
+	// https://github.com/prometheus/prometheus/v3/issues/2674
 	slope, _ := linearRegression(samples.Points, samples.Points[0].T)
 	return append(enh.out, Sample{
 		Point: Point{V: slope},

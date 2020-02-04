@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/promlint"
+	"github.com/prometheus/prometheus/v3/util/promlint"
 )
 
 type test struct {

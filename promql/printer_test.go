@@ -16,7 +16,7 @@ package promql
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 func TestExprString(t *testing.T) {

@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
 )
 
 var InvalidTimesError = fmt.Errorf("max time is lesser than min time")

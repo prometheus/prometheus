@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	common_config "github.com/prometheus/common/config"
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/config"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 func TestStorageLifecycle(t *testing.T) {

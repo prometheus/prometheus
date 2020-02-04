@@ -28,11 +28,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
-	"github.com/prometheus/prometheus/discovery/consul"
-	"github.com/prometheus/prometheus/discovery/file"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/v3/config"
+	sd_config "github.com/prometheus/prometheus/v3/discovery/config"
+	"github.com/prometheus/prometheus/v3/discovery/consul"
+	"github.com/prometheus/prometheus/v3/discovery/file"
+	"github.com/prometheus/prometheus/v3/discovery/targetgroup"
 	"gopkg.in/yaml.v2"
 )
 

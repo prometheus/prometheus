@@ -18,10 +18,10 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/storage/tsdb"
-	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
+	"github.com/prometheus/prometheus/v3/storage/tsdb"
+	"github.com/prometheus/prometheus/v3/util/teststorage"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 func TestMetrics(t *testing.T) {

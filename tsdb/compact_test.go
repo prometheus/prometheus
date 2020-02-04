@@ -27,11 +27,11 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
+	"github.com/prometheus/prometheus/v3/tsdb/chunks"
+	"github.com/prometheus/prometheus/v3/tsdb/fileutil"
+	"github.com/prometheus/prometheus/v3/tsdb/tombstones"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 func TestSplitByRange(t *testing.T) {
@@ -137,7 +137,7 @@ func TestSplitByRange(t *testing.T) {
 	}
 }
 
-// See https://github.com/prometheus/prometheus/issues/3064
+// See https://github.com/prometheus/prometheus/v3/issues/3064
 func TestNoPanicFor0Tombstones(t *testing.T) {
 	metas := []dirMeta{
 		{
@@ -652,7 +652,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			expErr:         errors.New("found chunk with minTime: 10 maxTime: 30 outside of compacted minTime: 0 maxTime: 20"),
 		},
 		{
-			// Introduced by https://github.com/prometheus/prometheus/tsdb/issues/347.
+			// Introduced by https://github.com/prometheus/prometheus/v3/tsdb/issues/347.
 			title: "Populate from single block containing extra chunk",
 			inputSeriesSamples: [][]seriesSamples{
 				{
@@ -692,7 +692,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			},
 		},
 		{
-			// Introduced by https://github.com/prometheus/prometheus/tsdb/pull/539.
+			// Introduced by https://github.com/prometheus/prometheus/v3/tsdb/pull/539.
 			title: "Populate from three blocks that the last two are overlapping.",
 			inputSeriesSamples: [][]seriesSamples{
 				{

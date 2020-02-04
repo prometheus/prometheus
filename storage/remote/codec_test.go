@@ -17,10 +17,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
+	"github.com/prometheus/prometheus/v3/prompb"
+	"github.com/prometheus/prometheus/v3/storage"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 func TestValidateLabelsAndMetricName(t *testing.T) {

@@ -27,15 +27,15 @@ import (
 
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v3/pkg/labels"
+	"github.com/prometheus/prometheus/v3/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/v3/tsdb/chunks"
+	"github.com/prometheus/prometheus/v3/tsdb/index"
+	"github.com/prometheus/prometheus/v3/tsdb/record"
+	"github.com/prometheus/prometheus/v3/tsdb/tombstones"
+	"github.com/prometheus/prometheus/v3/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/v3/tsdb/wal"
+	"github.com/prometheus/prometheus/v3/util/testutil"
 )
 
 func BenchmarkCreateSeries(b *testing.B) {
