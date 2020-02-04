@@ -257,12 +257,8 @@ func (ls Labels) Map() map[string]string {
 // New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
-	set := make(Labels, 0, len(ls))
-	for _, l := range ls {
-		set = append(set, l)
-	}
+	set := Labels(ls)
 	sort.Sort(set)
-
 	return set
 }
 
