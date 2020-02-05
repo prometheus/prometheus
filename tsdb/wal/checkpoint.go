@@ -100,7 +100,7 @@ const checkpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(w WAL, from, to int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
+func Checkpoint(w *WAL, from, to int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 

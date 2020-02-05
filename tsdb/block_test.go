@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -304,9 +303,12 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []Series) string {
-	w, close := newTestNoopWal(tb)
-	defer close()
-	head := createHead(tb, series, w)
+	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	testutil.Ok(tb, err)
+	defer func() {
+		testutil.Ok(tb, os.RemoveAll(chunkDir))
+	}()
+	head := createHead(tb, series, chunkDir)
 	defer func() {
 		testutil.Ok(tb, head.Close())
 	}()
@@ -326,8 +328,8 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	return filepath.Join(dir, ulid.String())
 }
 
-func createHead(tb testing.TB, series []Series, w wal.WAL) *Head {
-	head, err := NewHead(nil, nil, w, 2*60*60*1000, nil, DefaultStripeSize)
+func createHead(tb testing.TB, series []Series, chunkDir string) *Head {
+	head, err := NewHead(nil, nil, nil, 2*60*60*1000, chunkDir, nil, DefaultStripeSize)
 	testutil.Ok(tb, err)
 
 	app := head.Appender()

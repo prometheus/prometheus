@@ -1812,10 +1812,12 @@ func TestFindSetMatches(t *testing.T) {
 }
 
 func TestPostingsForMatchers(t *testing.T) {
-	wlog, close := newTestNoopWal(t)
-	defer close()
-
-	h, err := NewHead(nil, nil, wlog, 1000, nil, DefaultStripeSize)
+	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(chunkDir))
+	}()
+	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, h.Close())
@@ -2178,10 +2180,12 @@ func BenchmarkQueries(b *testing.B) {
 				queryTypes["_3-Blocks"] = &querier{blocks: qs[0:3]}
 				queryTypes["_10-Blocks"] = &querier{blocks: qs}
 
-				w, close := newTestNoopWal(b)
-				defer close()
-
-				head := createHead(b, series, w)
+				chunkDir, err := ioutil.TempDir("", "chunk_dir")
+				testutil.Ok(b, err)
+				defer func() {
+					testutil.Ok(b, os.RemoveAll(chunkDir))
+				}()
+				head := createHead(b, series, chunkDir)
 				qHead, err := NewBlockQuerier(head, 1, int64(nSamples))
 				testutil.Ok(b, err)
 				queryTypes["_Head"] = qHead

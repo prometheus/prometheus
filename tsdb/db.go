@@ -313,7 +313,7 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 	if err != nil {
 		return err
 	}
-	head, err := NewHead(nil, db.logger, w, 1, nil, DefaultStripeSize)
+	head, err := NewHead(nil, db.logger, w, 1, w.Dir(), nil, DefaultStripeSize)
 	if err != nil {
 		return err
 	}
@@ -360,7 +360,7 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (Querier, error) {
 		blocks[i] = b
 	}
 
-	head, err := NewHead(nil, db.logger, nil, 1, nil, DefaultStripeSize)
+	head, err := NewHead(nil, db.logger, nil, 1, "", nil, DefaultStripeSize)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +375,7 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (Querier, error) {
 		if err != nil {
 			return nil, err
 		}
-		head, err = NewHead(nil, db.logger, w, 1, nil, DefaultStripeSize)
+		head, err = NewHead(nil, db.logger, w, 1, w.Dir(), nil, DefaultStripeSize)
 		if err != nil {
 			return nil, err
 		}
@@ -542,23 +542,22 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	}
 	db.compactCancel = cancel
 
-	var wlog wal.WAL
+	var wlog *wal.WAL
 	segmentSize := wal.DefaultSegmentSize
+	walDir := filepath.Join(dir, "wal")
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
 		// Wal is set to a custom size.
 		if opts.WALSegmentSize > 0 {
 			segmentSize = opts.WALSegmentSize
 		}
-		wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
+		wlog, err = wal.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		wlog = wal.NewNoopWAL(dir)
 	}
 
-	db.head, err = NewHead(r, l, wlog, opts.BlockRanges[0], db.chunkPool, opts.StripeSize)
+	db.head, err = NewHead(r, l, wlog, opts.BlockRanges[0], walDir, db.chunkPool, opts.StripeSize)
 	if err != nil {
 		return nil, err
 	}
