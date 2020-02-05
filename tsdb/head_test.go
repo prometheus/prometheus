@@ -39,9 +39,11 @@ import (
 )
 
 func BenchmarkCreateSeries(b *testing.B) {
-	series := genSeries(b.N, 10, 0, 0)
+	w, close := newTestNoopWal(b)
+	defer close()
 
-	h, err := NewHead(nil, nil, nil, 10000, DefaultStripeSize)
+	series := genSeries(b.N, 10, 0, 0)
+	h, err := NewHead(nil, nil, w, 10000, DefaultStripeSize)
 	testutil.Ok(b, err)
 	defer h.Close()
 
@@ -53,7 +55,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 	}
 }
 
-func populateTestWAL(t testing.TB, w *wal.WAL, recs []interface{}) {
+func populateTestWAL(t testing.TB, w wal.WAL, recs []interface{}) {
 	var enc record.Encoder
 	for _, r := range recs {
 		switch v := r.(type) {
@@ -295,7 +297,10 @@ func TestHead_WALMultiRef(t *testing.T) {
 }
 
 func TestHead_Truncate(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 10000, DefaultStripeSize)
+	w, close := newTestNoopWal(t)
+	defer close()
+
+	h, err := NewHead(nil, nil, w, 10000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -584,8 +589,11 @@ func TestHeadDeleteSimple(t *testing.T) {
 }
 
 func TestDeleteUntilCurMax(t *testing.T) {
+	w, close := newTestNoopWal(t)
+	defer close()
+
 	numSamples := int64(10)
-	hb, err := NewHead(nil, nil, nil, 1000000, DefaultStripeSize)
+	hb, err := NewHead(nil, nil, w, 1000000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer hb.Close()
 	app := hb.Appender()
@@ -730,7 +738,9 @@ func TestDelete_e2e(t *testing.T) {
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
-	hb, err := NewHead(nil, nil, nil, 100000, DefaultStripeSize)
+	w, close := newTestNoopWal(t)
+	defer close()
+	hb, err := NewHead(nil, nil, w, 100000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer hb.Close()
 	app := hb.Appender()
@@ -951,8 +961,10 @@ func TestMemSeries_append(t *testing.T) {
 }
 
 func TestGCChunkAccess(t *testing.T) {
+	w, close := newTestNoopWal(t)
+	defer close()
 	// Put a chunk, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	h, err := NewHead(nil, nil, w, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -991,8 +1003,10 @@ func TestGCChunkAccess(t *testing.T) {
 }
 
 func TestGCSeriesAccess(t *testing.T) {
+	w, close := newTestNoopWal(t)
+	defer close()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	h, err := NewHead(nil, nil, w, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -1033,7 +1047,9 @@ func TestGCSeriesAccess(t *testing.T) {
 }
 
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	w, close := newTestNoopWal(t)
+	defer close()
+	h, err := NewHead(nil, nil, w, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -1060,7 +1076,9 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 }
 
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	w, close := newTestNoopWal(t)
+	defer close()
+	h, err := NewHead(nil, nil, w, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -1290,4 +1308,12 @@ func TestAddDuplicateLabelName(t *testing.T) {
 	add(labels.Labels{{Name: "a", Value: "c"}, {Name: "a", Value: "b"}}, "a")
 	add(labels.Labels{{Name: "a", Value: "c"}, {Name: "a", Value: "c"}}, "a")
 	add(labels.Labels{{Name: "__name__", Value: "up"}, {Name: "job", Value: "prometheus"}, {Name: "le", Value: "500"}, {Name: "le", Value: "400"}, {Name: "unit", Value: "s"}}, "le")
+}
+
+func newTestNoopWal(t testing.TB) (w wal.WAL, close func()) {
+	dir, err := ioutil.TempDir("", "test_noop_wal")
+	testutil.Ok(t, err)
+	return wal.NewNoopWAL(dir), func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}
 }

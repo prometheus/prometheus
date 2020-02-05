@@ -69,7 +69,7 @@ type Head struct {
 	lastSeriesID     uint64
 
 	metrics    *headMetrics
-	wal        *wal.WAL
+	wal        wal.WAL
 	logger     log.Logger
 	appendPool sync.Pool
 	seriesPool sync.Pool
@@ -260,7 +260,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 // stripeSize sets the number of entries in the hash map, it must be a power of 2.
 // A larger stripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 // A smaller stripeSize reduces the memory allocated, but can decrease performance with large number of series.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64, stripeSize int) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal wal.WAL, chunkRange int64, stripeSize int) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}

@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -303,7 +304,13 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []Series) string {
-	return createBlockFromHead(tb, dir, createHead(tb, series))
+	w, close := newTestNoopWal(tb)
+	defer close()
+	head := createHead(tb, series, w)
+	defer func() {
+		testutil.Ok(tb, head.Close())
+	}()
+	return createBlockFromHead(tb, dir, head)
 }
 
 func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
@@ -319,10 +326,9 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	return filepath.Join(dir, ulid.String())
 }
 
-func createHead(tb testing.TB, series []Series) *Head {
-	head, err := NewHead(nil, nil, nil, 2*60*60*1000, DefaultStripeSize)
+func createHead(tb testing.TB, series []Series, w wal.WAL) *Head {
+	head, err := NewHead(nil, nil, w, 2*60*60*1000, DefaultStripeSize)
 	testutil.Ok(tb, err)
-	defer head.Close()
 
 	app := head.Appender()
 	for _, s := range series {

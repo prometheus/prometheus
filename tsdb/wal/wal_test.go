@@ -302,9 +302,11 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		err = w.Repair(corruptionErr)
 		testutil.Ok(t, err)
 
+		wOriginal, ok := w.(*WALImplementation)
+		testutil.Assert(t, ok, "Expected type WAL")
 		// Ensure that we have a completely clean slate after repairing.
-		testutil.Equals(t, w.segment.Index(), 1) // We corrupted segment 0.
-		testutil.Equals(t, w.donePages, 0)
+		testutil.Equals(t, wOriginal.segment.Index(), 1) // We corrupted segment 0.
+		testutil.Equals(t, wOriginal.donePages, 0)
 
 		for i := 0; i < 5; i++ {
 			buf := make([]byte, recordSize)
@@ -363,7 +365,9 @@ func TestSegmentMetric(t *testing.T) {
 	w, err := NewSize(nil, nil, dir, segmentSize, false)
 	testutil.Ok(t, err)
 
-	initialSegment := client_testutil.ToFloat64(w.metrics.currentSegment)
+	wOriginal, ok := w.(*WALImplementation)
+	testutil.Assert(t, ok, "Expected type WAL")
+	initialSegment := client_testutil.ToFloat64(wOriginal.metrics.currentSegment)
 
 	// Write 3 records, each of which is half the segment size, meaning we should rotate to the next segment.
 	for i := 0; i < 3; i++ {
@@ -374,7 +378,7 @@ func TestSegmentMetric(t *testing.T) {
 		err = w.Log(buf)
 		testutil.Ok(t, err)
 	}
-	testutil.Assert(t, client_testutil.ToFloat64(w.metrics.currentSegment) == initialSegment+1, "segment metric did not increment after segment rotation")
+	testutil.Assert(t, client_testutil.ToFloat64(wOriginal.metrics.currentSegment) == initialSegment+1, "segment metric did not increment after segment rotation")
 	testutil.Ok(t, w.Close())
 }
 

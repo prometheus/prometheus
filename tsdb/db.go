@@ -542,7 +542,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	}
 	db.compactCancel = cancel
 
-	var wlog *wal.WAL
+	var wlog wal.WAL
 	segmentSize := wal.DefaultSegmentSize
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
@@ -554,6 +554,8 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		wlog = wal.NewNoopWAL(dir)
 	}
 
 	db.head, err = NewHead(r, l, wlog, opts.BlockRanges[0], opts.StripeSize)

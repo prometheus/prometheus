@@ -1811,7 +1811,10 @@ func TestFindSetMatches(t *testing.T) {
 }
 
 func TestPostingsForMatchers(t *testing.T) {
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	w, close := newTestNoopWal(t)
+	defer close()
+
+	h, err := NewHead(nil, nil, w, 1000, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, h.Close())
@@ -2174,7 +2177,10 @@ func BenchmarkQueries(b *testing.B) {
 				queryTypes["_3-Blocks"] = &querier{blocks: qs[0:3]}
 				queryTypes["_10-Blocks"] = &querier{blocks: qs}
 
-				head := createHead(b, series)
+				w, close := newTestNoopWal(b)
+				defer close()
+
+				head := createHead(b, series, w)
 				qHead, err := NewBlockQuerier(head, 1, int64(nSamples))
 				testutil.Ok(b, err)
 				queryTypes["_Head"] = qHead
@@ -2186,6 +2192,7 @@ func BenchmarkQueries(b *testing.B) {
 						benchQuery(b, expExpansions, querier, selectors)
 					})
 				}
+				testutil.Ok(b, head.Close())
 			}
 		}
 	}

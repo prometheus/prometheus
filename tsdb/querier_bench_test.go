@@ -30,7 +30,10 @@ const (
 )
 
 func BenchmarkPostingsForMatchers(b *testing.B) {
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	w, close := newTestNoopWal(b)
+	defer close()
+
+	h, err := NewHead(nil, nil, w, 1000, DefaultStripeSize)
 	testutil.Ok(b, err)
 	defer func() {
 		testutil.Ok(b, h.Close())
@@ -126,7 +129,10 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 }
 
 func BenchmarkQuerierSelect(b *testing.B) {
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	w, close := newTestNoopWal(b)
+	defer close()
+
+	h, err := NewHead(nil, nil, w, 1000, DefaultStripeSize)
 	testutil.Ok(b, err)
 	defer h.Close()
 	app := h.Appender()
