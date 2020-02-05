@@ -126,7 +126,7 @@ func main() {
 
 	case queryInstantCmd.FullCommand():
 		{
-			if !strings.Contains(*queryServer, "http") {
+			if !strings.HasPrefix(*queryServer, "http://") && !strings.HasPrefix(*queryServer, "https://") {
 				*queryServer = "http://" + *queryServer
 			}
 			os.Exit(QueryInstant(*queryServer, *queryExpr, p))
