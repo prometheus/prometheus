@@ -44,7 +44,7 @@ assets: $(REACT_APP_OUTPUT_DIR)
 	# Un-setting GOOS and GOARCH here because the generated Go code is always the same,
 	# but the cached object code is incompatible between architectures and OSes (which
 	# breaks cross-building for different combinations on CI in the same container).
-	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
+	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= GO=$(GO) $(GO) generate -x -v $(GOOPTS)
 	@$(GOFMT) -w ./web/ui
 
 .PHONY: react-app-lint
