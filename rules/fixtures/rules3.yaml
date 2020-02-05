@@ -1,5 +1,0 @@
-groups:
-  - name: test_3
-    rules:
-    - record: test_3
-      expr: vector(2) == 9
