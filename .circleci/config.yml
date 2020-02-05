@@ -15,7 +15,7 @@ executors:
 
   fuzzit:
     docker:
-      - image: fuzzitdev/golang:1.12.7-buster
+      - image: quay.io/sylr/fuzzitdev-golang:1.13.7-buster
 
 jobs:
   test:
