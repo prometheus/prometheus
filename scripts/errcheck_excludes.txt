@@ -10,4 +10,4 @@ io.WriteString
 (github.com/go-kit/kit/log.Logger).Log
 
 // Never check for rollback errors as Rollback() is called when a previous error was detected.
-(github.com/prometheus/prometheus/storage.Appender).Rollback
+(github.com/prometheus/prometheus/v2/storage.Appender).Rollback

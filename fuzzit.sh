@@ -1,11 +1,8 @@
 #!/bin/bash
 set -xe
 
-# Go-fuzz doesn't support modules yet, so ensure we do everything in the old style GOPATH way
-export GO111MODULE="off"
-
 # Install go-fuzz
-go get -u github.com/dvyukov/go-fuzz/go-fuzz github.com/dvyukov/go-fuzz/go-fuzz-build
+GO111MODULE="off" go get -u github.com/dvyukov/go-fuzz/go-fuzz github.com/dvyukov/go-fuzz/go-fuzz-build
 
 # Target names on fuzzit.dev
 TARGETS=("promql-parse-metric" "promql-parse-open-metric" "promql-parse-metric-selector" "promql-parse-expr")

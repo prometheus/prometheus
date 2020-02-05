@@ -3,7 +3,7 @@ go:
     # .circle/config.yml should also be updated.
     version: 1.13
 repository:
-    path: github.com/prometheus/prometheus
+    path: github.com/prometheus/prometheus/v2
 build:
     binaries:
         - name: prometheus
@@ -14,11 +14,11 @@ build:
           path: ./tsdb/cmd/tsdb
     flags: -mod=vendor -a -tags netgo,builtinassets
     ldflags: |
-        -X github.com/prometheus/common/version.Version={{.Version}}
-        -X github.com/prometheus/common/version.Revision={{.Revision}}
-        -X github.com/prometheus/common/version.Branch={{.Branch}}
-        -X github.com/prometheus/common/version.BuildUser={{user}}@{{host}}
-        -X github.com/prometheus/common/version.BuildDate={{date "20060102-15:04:05"}}
+        -X github.com/prometheus/v2/common/version.Version={{.Version}}
+        -X github.com/prometheus/v2/common/version.Revision={{.Revision}}
+        -X github.com/prometheus/v2/common/version.Branch={{.Branch}}
+        -X github.com/prometheus/v2/common/version.BuildUser={{user}}@{{host}}
+        -X github.com/prometheus/v2/common/version.BuildDate={{date "20060102-15:04:05"}}
 tarball:
     files:
         - consoles
