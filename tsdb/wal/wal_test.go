@@ -23,10 +23,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/v2/tsdb/fileutil"
 
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v2/util/testutil"
 )
 
 // TestWALRepair_ReadingError ensures that a repair is run for an error

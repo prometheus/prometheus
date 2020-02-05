@@ -15,14 +15,14 @@ package adapter
 
 import (
 	"context"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v2/util/testutil"
 	"io/ioutil"
 	"os"
 	"reflect"
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/v2/discovery/targetgroup"
 )
 
 // TestGenerateTargetGroups checks that the target is correctly generated.

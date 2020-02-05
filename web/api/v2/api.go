@@ -31,10 +31,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	pb "github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
+	"github.com/prometheus/prometheus/v2/pkg/timestamp"
+	pb "github.com/prometheus/prometheus/v2/prompb"
+	"github.com/prometheus/prometheus/v2/tsdb"
 )
 
 // API encapsulates all API services.

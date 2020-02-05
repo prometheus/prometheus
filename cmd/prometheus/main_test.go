@@ -24,10 +24,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v2/notifier"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
+	"github.com/prometheus/prometheus/v2/rules"
+	"github.com/prometheus/prometheus/v2/util/testutil"
 )
 
 var promPath = os.Args[0]

@@ -18,10 +18,10 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/encoding"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
+	"github.com/prometheus/prometheus/v2/tsdb/encoding"
+	"github.com/prometheus/prometheus/v2/tsdb/tombstones"
+	"github.com/prometheus/prometheus/v2/util/testutil"
 )
 
 func TestRecord_EncodeDecode(t *testing.T) {

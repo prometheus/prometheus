@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
 )
 
 // Tree returns a string of the tree structure of the given node.

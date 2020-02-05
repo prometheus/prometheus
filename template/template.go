@@ -31,8 +31,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/util/strutil"
+	"github.com/prometheus/prometheus/v2/promql"
+	"github.com/prometheus/prometheus/v2/util/strutil"
 )
 
 var (

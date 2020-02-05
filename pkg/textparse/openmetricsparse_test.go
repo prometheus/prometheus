@@ -17,9 +17,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v2/pkg/exemplar"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
+	"github.com/prometheus/prometheus/v2/util/testutil"
 )
 
 func TestOpenMetricsParse(t *testing.T) {

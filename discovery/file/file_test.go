@@ -27,8 +27,8 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/v2/discovery/targetgroup"
+	"github.com/prometheus/prometheus/v2/util/testutil"
 )
 
 const defaultWait = time.Second

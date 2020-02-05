@@ -27,9 +27,9 @@ import (
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v2"
 
-	sd_config "github.com/prometheus/prometheus/discovery/config"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	sd_config "github.com/prometheus/prometheus/v2/discovery/config"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
+	"github.com/prometheus/prometheus/v2/pkg/relabel"
 )
 
 var (

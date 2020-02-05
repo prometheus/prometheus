@@ -32,7 +32,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/v2/tsdb/fileutil"
 )
 
 const (
