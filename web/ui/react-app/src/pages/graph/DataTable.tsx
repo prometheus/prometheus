@@ -56,10 +56,10 @@ const DataTable: FC<QueryResult> = ({ data }) => {
     return <Alert color="secondary">Empty query result</Alert>;
   }
 
-  let maxFormattableSize = 100
+  const maxFormattableSize = 100;
   let rows: ReactNode[] = [];
   let limited = false;
-  let toFormatStyle = data.result.length <= maxFormattableSize;
+  const toFormatStyle = data.result.length <= maxFormattableSize;
   switch (data.resultType) {
     case 'vector':
       rows = (limitSeries(data.result) as InstantSample[]).map(
@@ -123,7 +123,8 @@ const DataTable: FC<QueryResult> = ({ data }) => {
       )}
       {rows.length > maxFormattableSize && (
         <Alert color="secondary">
-          <strong>Notice:</strong> Showing more than {maxFormattableSize} series, turning off label formatting for performance reasons.
+          <strong>Notice:</strong> Showing more than {maxFormattableSize} series, turning off label formatting for
+          performance reasons.
         </Alert>
       )}
       <Table hover size="sm" className="data-table">
