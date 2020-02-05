@@ -34,12 +34,11 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
         <Nav className="ml-0" navbar>
-          {consoleLink != '' ? (
+          {consoleLink !== '' && (
             <NavItem>
-              <NavLink href={`${pathPrefix+consoleLink}`}>Consoles</NavLink>
-            </NavItem>  
-          ):('')
-          }
+              <NavLink href={`${pathPrefix + consoleLink}`}>Consoles</NavLink>
+            </NavItem>
+          )}
           <NavItem>
             <NavLink tag={Link} to={`${pathPrefix}/new/alerts`}>
               Alerts
