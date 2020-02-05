@@ -4,10 +4,6 @@ import toJson from 'enzyme-to-json';
 import { StatusContent } from './Status';
 
 describe('Status', () => {
-  it('should not fail with undefined data', () => {
-    const wrapper = shallow(<StatusContent data={[]} />);
-    expect(wrapper).toHaveLength(1);
-  });
   describe('Snapshot testing', () => {
     const response: any = [
       {
@@ -45,7 +41,7 @@ describe('Status', () => {
       },
     ];
     it('should match table snapshot', () => {
-      const wrapper = shallow(<StatusContent data={response} />);
+      const wrapper = shallow(<StatusContent data={response} title="Foo" />);
       expect(toJson(wrapper)).toMatchSnapshot();
       jest.restoreAllMocks();
     });

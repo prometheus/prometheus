@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { mount, shallow } from 'enzyme';
-import PanelList from './PanelList';
+import { shallow } from 'enzyme';
+import PanelList, { PanelListContent } from './PanelList';
 import Checkbox from '../../components/Checkbox';
-import { Alert, Button } from 'reactstrap';
+import { Button } from 'reactstrap';
 import Panel from './Panel';
 
 describe('PanelList', () => {
@@ -14,31 +14,20 @@ describe('PanelList', () => {
       const panelList = shallow(<PanelList />);
       const checkbox = panelList.find(Checkbox).at(idx);
       expect(checkbox.prop('id')).toEqual(cb.id);
-      expect(checkbox.prop('wrapperStyles')).toEqual({
-        margin: '0 0 0 15px',
-        alignSelf: 'center',
-      });
       expect(checkbox.prop('defaultChecked')).toBe(false);
       expect(checkbox.children().text()).toBe(cb.label);
     });
   });
 
-  it('renders an alert when no data is queried yet', () => {
-    const panelList = mount(<PanelList />);
-    const alert = panelList.find(Alert);
-    expect(alert.prop('color')).toEqual('light');
-    expect(alert.children().text()).toEqual('No data queried yet');
-  });
-
   it('renders panels', () => {
-    const panelList = shallow(<PanelList />);
+    const panelList = shallow(<PanelListContent {...({ panels: [{}] } as any)} />);
     const panels = panelList.find(Panel);
     expect(panels.length).toBeGreaterThan(0);
   });
 
   it('renders a button to add a panel', () => {
-    const panelList = shallow(<PanelList />);
-    const btn = panelList.find(Button).filterWhere(btn => btn.prop('className') === 'add-panel-btn');
+    const panelList = shallow(<PanelListContent {...({ panels: [] } as any)} />);
+    const btn = panelList.find(Button);
     expect(btn.prop('color')).toEqual('primary');
     expect(btn.children().text()).toEqual('Add Panel');
   });

@@ -4,7 +4,7 @@ import { Container } from 'reactstrap';
 
 import './App.css';
 import { Router, Redirect } from '@reach/router';
-import { Alerts, Config, Flags, Rules, Services, Status, Targets, TSDBStatus, PanelList } from './pages';
+import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList } from './pages';
 import PathPrefixProps from './types/PathPrefixProps';
 
 const App: FC<PathPrefixProps> = ({ pathPrefix }) => {
@@ -24,7 +24,7 @@ const App: FC<PathPrefixProps> = ({ pathPrefix }) => {
           <Config path="/config" pathPrefix={pathPrefix} />
           <Flags path="/flags" pathPrefix={pathPrefix} />
           <Rules path="/rules" pathPrefix={pathPrefix} />
-          <Services path="/service-discovery" pathPrefix={pathPrefix} />
+          <ServiceDiscovery path="/service-discovery" pathPrefix={pathPrefix} />
           <Status path="/status" pathPrefix={pathPrefix} />
           <TSDBStatus path="/tsdb-status" pathPrefix={pathPrefix} />
           <Targets path="/targets" pathPrefix={pathPrefix} />

@@ -424,7 +424,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
-		setMatches := findSetMatches(m.Value)
+		setMatches := findSetMatches(m.GetRegexString())
 		if len(setMatches) > 0 {
 			sort.Strings(setMatches)
 			return ix.Postings(m.Name, setMatches...)
