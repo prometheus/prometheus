@@ -326,7 +326,7 @@ func (g *Group) run(ctx context.Context) {
 	defer tick.Stop()
 
 	makeStale := func(s bool) {
-		if !s || g.opts.LookbackDelta < g.interval {
+		if !s {
 			return
 		}
 		go func(now time.Time) {
@@ -855,7 +855,6 @@ type ManagerOptions struct {
 	OutageTolerance time.Duration
 	ForGracePeriod  time.Duration
 	ResendDelay     time.Duration
-	LookbackDelta   time.Duration
 
 	Metrics *Metrics
 }

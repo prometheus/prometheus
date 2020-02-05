@@ -364,7 +364,6 @@ func TestForStateRestore(t *testing.T) {
 		NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
 		OutageTolerance: 30 * time.Minute,
 		ForGracePeriod:  10 * time.Minute,
-		LookbackDelta:   5 * time.Minute,
 	}
 
 	alertForDuration := 25 * time.Minute
@@ -522,12 +521,11 @@ func TestStaleness(t *testing.T) {
 	}
 	engine := promql.NewEngine(engineOpts)
 	opts := &ManagerOptions{
-		QueryFunc:     EngineQueryFunc(engine, storage),
-		Appendable:    storage,
-		TSDB:          storage,
-		Context:       context.Background(),
-		Logger:        log.NewNopLogger(),
-		LookbackDelta: 5 * time.Minute,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Appendable: storage,
+		TSDB:       storage,
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 	}
 
 	expr, err := promql.ParseExpr("a + 1")
@@ -715,12 +713,11 @@ func TestUpdate(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable:    storage,
-		TSDB:          storage,
-		QueryFunc:     EngineQueryFunc(engine, storage),
-		Context:       context.Background(),
-		Logger:        log.NewNopLogger(),
-		LookbackDelta: 5 * time.Minute,
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 	})
 	ruleManager.Run()
 	defer ruleManager.Stop()
@@ -851,14 +848,13 @@ func TestNotify(t *testing.T) {
 		lastNotified = alerts
 	}
 	opts := &ManagerOptions{
-		QueryFunc:     EngineQueryFunc(engine, storage),
-		Appendable:    storage,
-		TSDB:          storage,
-		Context:       context.Background(),
-		Logger:        log.NewNopLogger(),
-		NotifyFunc:    notifyFunc,
-		ResendDelay:   2 * time.Second,
-		LookbackDelta: 5 * time.Minute,
+		QueryFunc:   EngineQueryFunc(engine, storage),
+		Appendable:  storage,
+		TSDB:        storage,
+		Context:     context.Background(),
+		Logger:      log.NewNopLogger(),
+		NotifyFunc:  notifyFunc,
+		ResendDelay: 2 * time.Second,
 	}
 
 	expr, err := promql.ParseExpr("a > 1")
@@ -921,13 +917,12 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable:    storage,
-		TSDB:          storage,
-		QueryFunc:     EngineQueryFunc(engine, storage),
-		Context:       context.Background(),
-		Logger:        log.NewNopLogger(),
-		Registerer:    registry,
-		LookbackDelta: 5 * time.Minute,
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+		Registerer: registry,
 	})
 	ruleManager.Run()
 	defer ruleManager.Stop()
@@ -978,85 +973,7 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 }
 
-func TestMetricsStaleAfterUpdate(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode.")
-	}
-
-	files := []string{"fixtures/rules2.yaml", "fixtures/rules3.yaml"}
-
-	storage := teststorage.New(t)
-	defer storage.Close()
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
-	}
-	engine := promql.NewEngine(opts)
-	ruleManager := NewManager(&ManagerOptions{
-		Appendable:    storage,
-		TSDB:          storage,
-		QueryFunc:     EngineQueryFunc(engine, storage),
-		Context:       context.Background(),
-		Logger:        log.NewNopLogger(),
-		LookbackDelta: 5 * time.Minute,
-	})
-	ruleManager.Run()
-	defer ruleManager.Stop()
-
-	metricValue := func() float64 {
-		querier, err := storage.Querier(context.Background(), 0, time.Now().Unix()*1000)
-		testutil.Ok(t, err)
-		defer querier.Close()
-
-		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
-		testutil.Ok(t, err)
-
-		set, _, err := querier.Select(nil, matcher)
-		testutil.Ok(t, err)
-
-		samples, err := readSeriesSet(set)
-		testutil.Ok(t, err)
-
-		metric := labels.FromStrings(model.MetricNameLabel, "test_2").String()
-		metricSample, ok := samples[metric]
-
-		testutil.Assert(t, ok, "Series %s not returned.", metric)
-		return metricSample[len(metricSample)-1].V
-	}
-
-	cases := []struct {
-		files []string
-		stale bool
-	}{
-		{
-			files: files,
-			stale: false,
-		},
-		{
-			files: files[:0],
-			stale: true,
-		},
-		{
-			files: files[1:2],
-			stale: true,
-		},
-		{
-			files: files[0:1],
-			stale: false,
-		},
-	}
-
-	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, nil)
-		testutil.Ok(t, err)
-		time.Sleep(3 * time.Second)
-		testutil.Equals(t, c.stale, value.IsStaleNaN(metricValue()), "test %d/%q: invalid staleness", i, c.files)
-	}
-}
-
-func TestMetricsNotStaleAfterRename(t *testing.T) {
+func TestGroupStalenessOnRemoval(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
@@ -1074,12 +991,11 @@ func TestMetricsNotStaleAfterRename(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable:    storage,
-		TSDB:          storage,
-		QueryFunc:     EngineQueryFunc(engine, storage),
-		Context:       context.Background(),
-		Logger:        log.NewNopLogger(),
-		LookbackDelta: 5 * time.Minute,
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 	})
 	var stopped bool
 	ruleManager.Run()
@@ -1096,6 +1012,11 @@ func TestMetricsNotStaleAfterRename(t *testing.T) {
 		{
 			files:    files,
 			staleNaN: 0,
+		},
+		{
+			// When we remove the files, it should produce a staleness marker.
+			files:    files[:0],
+			staleNaN: 1,
 		},
 		{
 			// Rules that produce the same metrics but in a different file
@@ -1130,67 +1051,6 @@ func TestMetricsNotStaleAfterRename(t *testing.T) {
 	testutil.Equals(t, totalStaleNaN, countStaleNaN(t, storage), "invalid count of staleness markers after stopping the engine")
 }
 
-func TestMetricsStalenessEvalInterval(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode.")
-	}
-
-	files := []string{"fixtures/rules2.yaml"}
-
-	storage := teststorage.New(t)
-	defer storage.Close()
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
-	}
-	engine := promql.NewEngine(opts)
-	ruleManager := NewManager(&ManagerOptions{
-		Appendable:    storage,
-		TSDB:          storage,
-		QueryFunc:     EngineQueryFunc(engine, storage),
-		Context:       context.Background(),
-		Logger:        log.NewNopLogger(),
-		LookbackDelta: 1 * time.Second,
-	})
-	var stopped bool
-	ruleManager.Run()
-	defer func() {
-		if !stopped {
-			ruleManager.Stop()
-		}
-	}()
-
-	cases := []struct {
-		files    []string
-		staleNaN int
-	}{
-		{
-			files:    files,
-			staleNaN: 0,
-		},
-		{
-			// Staleness marker should not be present because lookback delta
-			// (1s) is not longer than evaluation interval (2s).
-			files:    files[:0],
-			staleNaN: 0,
-		},
-	}
-
-	var totalStaleNaN int
-	for i, c := range cases {
-		err := ruleManager.Update(2*time.Second, c.files, nil)
-		testutil.Ok(t, err)
-		time.Sleep(5 * time.Second)
-		totalStaleNaN += c.staleNaN
-		testutil.Equals(t, totalStaleNaN, countStaleNaN(t, storage), "test %d/%q: invalid count of staleness markers", i, c.files)
-	}
-	ruleManager.Stop()
-	stopped = true
-	testutil.Equals(t, totalStaleNaN, countStaleNaN(t, storage), "invalid count of staleness markers after stopping the engine")
-}
-
 func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
@@ -1208,12 +1068,11 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable:    storage,
-		TSDB:          storage,
-		QueryFunc:     EngineQueryFunc(engine, storage),
-		Context:       context.Background(),
-		Logger:        log.NewNopLogger(),
-		LookbackDelta: 5 * time.Minute,
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 	})
 	var stopped bool
 	ruleManager.Run()

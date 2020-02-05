@@ -376,7 +376,6 @@ func main() {
 			OutageTolerance: time.Duration(cfg.outageTolerance),
 			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
 			ResendDelay:     time.Duration(cfg.resendDelay),
-			LookbackDelta:   time.Duration(cfg.lookbackDelta),
 		})
 	)
 
