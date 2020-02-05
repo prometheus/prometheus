@@ -16,6 +16,7 @@ package chunks
 import (
 	"bufio"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
@@ -241,6 +242,17 @@ func closeAllFromMap(cs map[int]io.Closer) error {
 	return merr.Err()
 }
 
+// CorruptionErr is an error that's returned when corruption is encountered.
+type CorruptionErr struct {
+	Dir     string
+	Segment int
+	Err     error
+}
+
+func (e *CorruptionErr) Error() string {
+	return fmt.Sprintf("corruption in segment %s: %s", segmentFile(e.Dir, e.Segment), e.Err.Error())
+}
+
 // IterateAllChunks iterates on all the chunks in its byte slices in the order of the segment file sequence
 // and runs the provided function on each chunk. It returns on the first error encountered.
 func (w *HeadReadWriter) IterateAllChunks(f func(seriesRef, chunkRef uint64, mint, maxt int64) error) error {
@@ -256,7 +268,11 @@ func (w *HeadReadWriter) IterateAllChunks(f func(seriesRef, chunkRef uint64, min
 		idx := HeadSegmentHeaderSize
 		for idx < sliceLen {
 			if sliceLen-idx < 30 {
-				return errors.Errorf("segment doesn't include enough bytes to read the chunk header - required:%v, available:%v", idx+25, sliceLen)
+				return &CorruptionErr{
+					Dir:     w.dirFile.Name(),
+					Segment: seq,
+					Err:     errors.Errorf("segment doesn't include enough bytes to read the chunk header - required:%v, available:%v", idx+25, sliceLen),
+				}
 			}
 
 			seriesRef := binary.BigEndian.Uint64(bs.Range(idx, idx+8))
@@ -270,7 +286,11 @@ func (w *HeadReadWriter) IterateAllChunks(f func(seriesRef, chunkRef uint64, min
 
 			chunkRef := uint64(seq)<<32 | uint64(idx)
 			if err := f(seriesRef, chunkRef, mint, maxt); err != nil {
-				return err
+				return &CorruptionErr{
+					Dir:     w.dirFile.Name(),
+					Segment: seq,
+					Err:     err,
+				}
 			}
 
 			idx++ // Skip encoding.
@@ -281,6 +301,25 @@ func (w *HeadReadWriter) IterateAllChunks(f func(seriesRef, chunkRef uint64, min
 	}
 
 	return nil
+}
+
+// Repair deletes all the segments after the one which had the corruption
+// (including the corrupt file).
+func (w *HeadReadWriter) Repair(originalErr error) error {
+	err := errors.Cause(originalErr) // So that we can pick up errors even if wrapped.
+	cerr, ok := err.(*CorruptionErr)
+	if !ok {
+		return errors.Wrap(originalErr, "cannot handle error")
+	}
+
+	// Delete all the segments following the corrupt segment file.
+	segs := []int{}
+	for seg := range w.bs {
+		if seg >= cerr.Segment {
+			segs = append(segs, seg)
+		}
+	}
+	return w.deleteFiles(segs)
 }
 
 // WriteChunk writes the chunk to the disk.
@@ -460,6 +499,9 @@ func (w *HeadReadWriter) Truncate(mint int64) error {
 	}
 	w.bsMtx.RUnlock()
 
+	return w.deleteFiles(removedFiles)
+}
+func (w *HeadReadWriter) deleteFiles(removedFiles []int) error {
 	closers := make([]io.Closer, 0, len(removedFiles))
 	w.bsMtx.Lock()
 	for _, seq := range removedFiles {
@@ -469,7 +511,10 @@ func (w *HeadReadWriter) Truncate(mint int64) error {
 		delete(w.cs, seq)
 		if err := os.Remove(segmentFile(w.dirFile.Name(), seq)); err != nil {
 			w.bsMtx.Unlock()
-			return err
+			var merr tsdb_errors.MultiError
+			merr.Add(err)
+			merr.Add(closeAll(closers))
+			return merr.Err()
 		}
 	}
 	w.bsMtx.Unlock()

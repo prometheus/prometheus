@@ -629,11 +629,36 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
-	start := time.Now()
 
 	refSeries := map[uint64]*memSeries{}
-	level.Info(h.logger).Log("msg", "creating series from WAL")
 	multiRef := map[uint64]uint64{}
+
+	start := time.Now()
+	level.Info(h.logger).Log("msg", "creating series from WAL")
+	if err := h.loadSeriesFromWAL(refSeries, multiRef); err != nil {
+		// TODO(codesome): If corruption is found here and repaired, we still need to load the WAL.
+		return err
+	}
+
+	level.Info(h.logger).Log("msg", "m-mapping the on-disk chunks")
+	if err := h.loadMmappedChunks(refSeries, multiRef); err != nil {
+		level.Error(h.logger).Log("msg", "loading on-disk chunks failed", "err", err)
+		// Repair is best effort here. If it fails, data will be recovered from WAL.
+		// Hence we wont lose any data (given WAL is not corrupt).
+		// TODO(codesome): add test for this repair.
+		h.repairMmappedChunks(err, refSeries, multiRef)
+	}
+
+	level.Info(h.logger).Log("msg", "adding remaining samples")
+	if err := h.loadSamplesFromWAL(refSeries, multiRef); err != nil {
+		return err
+	}
+
+	level.Info(h.logger).Log("msg", "finished replaying WAL", "duration", time.Since(start).String())
+	return nil
+}
+
+func (h *Head) loadSeriesFromWAL(refSeries map[uint64]*memSeries, multiRef map[uint64]uint64) error {
 	// Backfill series from the checkpoint first if it exists.
 	if err := h.executeOnCheckpointReader(func(checkpointReader *wal.Reader) error {
 		// A corrupted checkpoint is a hard error for now and requires user
@@ -655,7 +680,36 @@ func (h *Head) Init(minValidTime int64) error {
 		return err
 	}
 
-	level.Info(h.logger).Log("msg", "m-mapping the on-disk chunks")
+	return nil
+}
+
+func (h *Head) loadSamplesFromWAL(refSeries map[uint64]*memSeries, multiRef map[uint64]uint64) error {
+	// Backfill the checkpoint first if it exists.
+	if err := h.executeOnCheckpointReader(func(checkpointReader *wal.Reader) error {
+		// A corrupted checkpoint is a hard error for now and requires user
+		// intervention. There's likely little data that can be recovered anyway.
+		if err := h.loadWAL(checkpointReader, multiRef, refSeries); err != nil {
+			return errors.Wrap(err, "backfill checkpoint")
+		}
+		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
+		return nil
+	}); err != nil {
+		return err
+	}
+	// Backfill the remaining WAL.
+	if err := h.executeOnWALSegmentReader(func(segmentReader *wal.Reader) error {
+		if err := h.loadWAL(segmentReader, multiRef, refSeries); err != nil {
+			return errors.Wrap(err, "backfill WAL")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (h *Head) loadMmappedChunks(refSeries map[uint64]*memSeries, multiRef map[uint64]uint64) error {
 	unknownRefs := 0
 	if err := h.chunkReadWriter.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64) error {
 		ms := refSeries[seriesRef]
@@ -679,32 +733,40 @@ func (h *Head) Init(minValidTime int64) error {
 	}); err != nil {
 		return errors.Wrap(err, "iterate on-disk chunks")
 	}
-
-	level.Info(h.logger).Log("msg", "adding remaining samples")
-	// Backfill the checkpoint first if it exists.
-	if err := h.executeOnCheckpointReader(func(checkpointReader *wal.Reader) error {
-		// A corrupted checkpoint is a hard error for now and requires user
-		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(checkpointReader, multiRef, refSeries); err != nil {
-			return errors.Wrap(err, "backfill checkpoint")
-		}
-		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
-		return nil
-	}); err != nil {
-		return err
+	if unknownRefs > 0 {
+		level.Warn(h.logger).Log("msg", "unknown series references during chunk replay", "count", unknownRefs)
 	}
-	// Backfill the remaining WAL.
-	if err := h.executeOnWALSegmentReader(func(segmentReader *wal.Reader) error {
-		if err := h.loadWAL(segmentReader, multiRef, refSeries); err != nil {
-			return errors.Wrap(err, "backfill WAL")
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	level.Info(h.logger).Log("msg", "finished replaying WAL", "duration", time.Since(start).String())
 	return nil
+}
+
+// repairMmappedChunks attempts repair of the mmapped chunks and if it fails, it clears all the previously
+// loaded mmapped chunks.
+func (h *Head) repairMmappedChunks(err error, refSeries map[uint64]*memSeries, multiRef map[uint64]uint64) {
+	level.Info(h.logger).Log("msg", "repairing on-disk chunk files")
+
+	clearMmappedChunks := func() {
+		for _, stripe := range h.series.series {
+			for _, ms := range stripe {
+				ms.mmappedChunks = nil
+			}
+		}
+	}
+
+	// To reduce the complexity of the code, we read all the chunks once again after the repair.
+	// Hence we need to clear the mmapped chunks from head irrespective of repair failing or passing.
+	clearMmappedChunks()
+
+	if err := h.chunkReadWriter.Repair(err); err != nil {
+		level.Info(h.logger).Log("msg", "repair of on-disk chunk files failed, discarding chunk files completely", "err", err)
+	}
+
+	level.Info(h.logger).Log("msg", "repair of on-disk chunk files successful")
+	level.Info(h.logger).Log("msg", "reattempting m-mapping the on-disk chunks")
+	// Repair done. Attempt loading the remaining chunks again.
+	if err := h.loadMmappedChunks(refSeries, multiRef); err != nil {
+		level.Error(h.logger).Log("msg", "loading on-disk chunks failed, discarding chunk files completely", "err", err)
+		clearMmappedChunks()
+	}
 }
 
 func (h *Head) executeOnCheckpointReader(f func(*wal.Reader) error) error {
