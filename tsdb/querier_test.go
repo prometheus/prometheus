@@ -1641,21 +1641,21 @@ func BenchmarkSetMatcher(b *testing.B) {
 			numSeries:                   1,
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 100,
-			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+			pattern:                     "1|2|3|4|5|6|7|8|9|10",
 		},
 		{
 			numBlocks:                   1,
 			numSeries:                   15,
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 100,
-			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+			pattern:                     "1|2|3|4|5|6|7|8|9|10",
 		},
 		{
 			numBlocks:                   1,
 			numSeries:                   15,
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 100,
-			pattern:                     "^(?:1|2|3)$",
+			pattern:                     "1|2|3",
 		},
 		// Big data sizes benchmarks.
 		{
@@ -1663,14 +1663,14 @@ func BenchmarkSetMatcher(b *testing.B) {
 			numSeries:                   1000,
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 100,
-			pattern:                     "^(?:1|2|3)$",
+			pattern:                     "1|2|3",
 		},
 		{
 			numBlocks:                   20,
 			numSeries:                   1000,
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 100,
-			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+			pattern:                     "1|2|3|4|5|6|7|8|9|10",
 		},
 		// Increase cardinality.
 		{
@@ -1678,28 +1678,28 @@ func BenchmarkSetMatcher(b *testing.B) {
 			numSeries:                   100000,
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 100000,
-			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+			pattern:                     "1|2|3|4|5|6|7|8|9|10",
 		},
 		{
 			numBlocks:                   1,
 			numSeries:                   500000,
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 500000,
-			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+			pattern:                     "1|2|3|4|5|6|7|8|9|10",
 		},
 		{
 			numBlocks:                   10,
 			numSeries:                   500000,
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 500000,
-			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+			pattern:                     "1|2|3|4|5|6|7|8|9|10",
 		},
 		{
 			numBlocks:                   1,
 			numSeries:                   1000000,
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 1000000,
-			pattern:                     "^(?:1|2|3|4|5|6|7|8|9|10)$",
+			pattern:                     "1|2|3|4|5|6|7|8|9|10",
 		},
 	}
 
@@ -1749,7 +1749,6 @@ func BenchmarkSetMatcher(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				_, err := que.Select(labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
 				testutil.Ok(b, err)
-
 			}
 		})
 	}
@@ -1997,7 +1996,7 @@ func TestPostingsForMatchers(t *testing.T) {
 		// Set optimization for Regex.
 		// Refer to https://github.com/prometheus/prometheus/issues/2651.
 		{
-			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^(?:1|2)$")},
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1|2")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1"),
 				labels.FromStrings("n", "1", "i", "a"),
@@ -2006,20 +2005,20 @@ func TestPostingsForMatchers(t *testing.T) {
 			},
 		},
 		{
-			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^(?:a|b)$")},
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "a|b")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
 			},
 		},
 		{
-			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^(?:x1|2)$")},
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "x1|2")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "2"),
 			},
 		},
 		{
-			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^(?:2|2\\.5)$")},
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "2|2\\.5")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "2"),
 				labels.FromStrings("n", "2.5"),
@@ -2027,7 +2026,7 @@ func TestPostingsForMatchers(t *testing.T) {
 		},
 		// Empty value.
 		{
-			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^(?:c||d)$")},
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "c||d")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1"),
 				labels.FromStrings("n", "2"),
@@ -2209,5 +2208,68 @@ func benchQuery(b *testing.B, expExpansions int, q Querier, selectors labels.Sel
 		}
 		testutil.Equals(b, expExpansions, actualExpansions)
 		testutil.Ok(b, ss.Err())
+	}
+}
+
+// mockMatcherIndex is used to check if the regex matcher works as expected.
+type mockMatcherIndex struct{}
+
+func (m mockMatcherIndex) Symbols() index.StringIter { return nil }
+
+func (m mockMatcherIndex) Close() error { return nil }
+
+// LabelValues will return error if it is called.
+func (m mockMatcherIndex) LabelValues(name string) ([]string, error) {
+	return []string{}, errors.New("label values called")
+}
+
+func (m mockMatcherIndex) Postings(name string, values ...string) (index.Postings, error) {
+	return index.EmptyPostings(), nil
+}
+
+func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
+	return index.EmptyPostings()
+}
+
+func (m mockMatcherIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+	return nil
+}
+
+func (m mockMatcherIndex) LabelNames() ([]string, error) { return []string{}, nil }
+
+func TestPostingsForMatcher(t *testing.T) {
+	cases := []struct {
+		matcher  *labels.Matcher
+		hasError bool
+	}{
+		{
+			// Equal label matcher will just return.
+			matcher:  labels.MustNewMatcher(labels.MatchEqual, "test", "test"),
+			hasError: false,
+		},
+		{
+			// Regex matcher which doesn't have '|' will call Labelvalues()
+			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", ".*"),
+			hasError: true,
+		},
+		{
+			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "a|b"),
+			hasError: false,
+		},
+		{
+			// Test case for double quoted regex matcher
+			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "^(?:a|b)$"),
+			hasError: true,
+		},
+	}
+
+	for _, tc := range cases {
+		ir := &mockMatcherIndex{}
+		_, err := postingsForMatcher(ir, tc.matcher)
+		if tc.hasError {
+			testutil.NotOk(t, err)
+		} else {
+			testutil.Ok(t, err)
+		}
 	}
 }
