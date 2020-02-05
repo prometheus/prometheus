@@ -737,6 +737,126 @@ func TestCompaction_populateBlock(t *testing.T) {
 				},
 			},
 		},
+		{
+			title: "Break chunks that are greater than 120 in size.",
+			inputSeriesSamples: [][]seriesSamples{
+				{
+					{
+						lset: map[string]string{"a": "b"},
+						chunks: func() [][]sample {
+							chunkOne := make([]sample, 120)
+							for i := 0; i < 120; i++ {
+								chunkOne[i] = sample{t: int64(i + 1)}
+							}
+							chunkTwo := make([]sample, 42)
+							for i := 0; i < 42; i++ {
+								chunkTwo[i] = sample{t: int64(i + 1 + 200)}
+							}
+							chunkThree := make([]sample, 70)
+							for i := 0; i < 70; i++ {
+								chunkThree[i] = sample{t: int64(i + 1 + 300)}
+							}
+							chunkFour := make([]sample, 120)
+							for i := 0; i < 120; i++ {
+								chunkFour[i] = sample{t: int64(i + 1 + 500)}
+							}
+							chunkFive := make([]sample, 120) // tricky test case of 3 chunks overlapping 1:1 with more than 120 samples
+							for i := 0; i < 60; i++ {
+								chunkFive[i] = sample{t: int64(i + 1 + 940)}
+							}
+							for i, j := 60, 0; i < 70; i, j = i+1, j+1 {
+								chunkFive[i] = sample{t: int64(j + 1 + 1100)}
+							}
+							for i, j := 70, 0; i < 120; i, j = i+1, j+1 {
+								chunkFive[i] = sample{t: int64(j + 1 + 1220)}
+							}
+							chunks := [][]sample{chunkOne, chunkTwo, chunkThree, chunkFour, chunkFive}
+							return chunks
+						}(),
+					},
+				},
+				{
+					{
+						lset: map[string]string{"a": "b"},
+						chunks: func() [][]sample {
+
+							chunkOne := make([]sample, 70)
+							for i := 0; i < 70; i++ {
+								chunkOne[i] = sample{t: int64(i + 1 + 300 + 60)}
+							}
+							chunkTwo := make([]sample, 120)
+							for i := 0; i < 120; i++ {
+								chunkTwo[i] = sample{t: int64(i + 1 + 500 + 118)}
+							}
+							chunkThree := make([]sample, 120)
+							for i := 0; i < 120; i++ {
+								chunkThree[i] = sample{t: int64(i + 1 + 1000)}
+							}
+							chunks := [][]sample{chunkOne, chunkTwo, chunkThree}
+							return chunks
+						}(),
+					},
+				},
+				{
+					{
+						lset: map[string]string{"a": "b"},
+						chunks: func() [][]sample {
+							chunkOne := make([]sample, 120)
+							for i := 0; i < 120; i++ {
+								chunkOne[i] = sample{t: int64(i + 1 + 1100)}
+							}
+							chunks := [][]sample{chunkOne}
+							return chunks
+						}(),
+					},
+				},
+			},
+			expSeriesSamples: []seriesSamples{
+				{
+					lset: map[string]string{"a": "b"},
+					chunks: func() [][]sample {
+						chunkOne := make([]sample, 120)
+						for i := 0; i < 120; i++ {
+							chunkOne[i] = sample{t: int64(i + 1)}
+						}
+						chunkTwo := make([]sample, 42)
+						for i := 0; i < 42; i++ {
+							chunkTwo[i] = sample{t: int64(i + 1 + 200)}
+						}
+						chunkThree := make([]sample, 120)
+						for i := 0; i < 120; i++ {
+							chunkThree[i] = sample{t: int64(i + 1 + 300)}
+						}
+						chunkFour := make([]sample, 10)
+						for i := 0; i < 10; i++ {
+							chunkFour[i] = sample{t: int64(i + 1 + 300 + 120)}
+						}
+						chunkFive := make([]sample, 120)
+						for i := 0; i < 120; i++ {
+							chunkFive[i] = sample{t: int64(i + 1 + 500)}
+						}
+						chunkSix := make([]sample, 118)
+						for i := 0; i < 118; i++ {
+							chunkSix[i] = sample{t: int64(i + 1 + 620)}
+						}
+						chunkSeven := make([]sample, 120)
+						for i := 0; i < 120; i++ {
+							chunkSeven[i] = sample{t: int64(i + 1 + 940)}
+						}
+						chunkEight := make([]sample, 120)
+						for i := 0; i < 120; i++ {
+							chunkEight[i] = sample{t: int64(i + 1 + 1060)}
+						}
+						chunkNine := make([]sample, 90)
+						for i := 0; i < 90; i++ {
+							chunkNine[i] = sample{t: int64(i + 1 + 1180)}
+						}
+						chunks := [][]sample{chunkOne, chunkTwo, chunkThree, chunkFour, chunkFive, chunkSix, chunkSeven, chunkEight, chunkNine}
+						return chunks
+					}(),
+				},
+			},
+		},
 	}
 
 	for _, tc := range populateBlocksCases {

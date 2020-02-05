@@ -22,6 +22,7 @@ import (
 	"hash/crc32"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -51,6 +52,10 @@ const (
 	MaxChunkLengthFieldSize = binary.MaxVarintLen32
 	// ChunkEncodingSize defines the size of the chunk encoding part.
 	ChunkEncodingSize = 1
+	// MaxSamplesInChunk defines the maximum number of samples that should be in a Chunk.
+	// 120 is used becuase it results in the best compression ratio. Anything more will
+	// introduce higher latency while decoding.
+	MaxSamplesInChunk = 120
 )
 
 // Meta holds information about a chunk of data.
@@ -241,34 +246,31 @@ func MergeOverlappingChunks(chks []Meta) ([]Meta, error) {
 	}
 	newChks := make([]Meta, 0, len(chks)) // Will contain the merged chunks.
 	newChks = append(newChks, chks[0])
-	last := 0
 	for _, c := range chks[1:] {
 		// We need to check only the last chunk in newChks.
-		// Reason: (1) newChks[last-1].MaxTime < newChks[last].MinTime (non overlapping)
-		//         (2) As chks are sorted w.r.t. MinTime, newChks[last].MinTime < c.MinTime.
-		// So never overlaps with newChks[last-1] or anything before that.
-		if c.MinTime > newChks[last].MaxTime {
+		// Reason: (1) newChks[len(newChks)-2].MaxTime < newChks[len(newChks)-1].MinTime (non overlapping)
+		//         (2) As chks are sorted w.r.t. MinTime, newChks[len(newChks)-1].MinTime < c.MinTime.
+		// So never overlaps with newChks[len(newChks)-1-1] or anything before that.
+		if c.MinTime > newChks[len(newChks)-1].MaxTime {
 			newChks = append(newChks, c)
-			last++
 			continue
 		}
-		nc := &newChks[last]
-		if c.MaxTime > nc.MaxTime {
-			nc.MaxTime = c.MaxTime
-		}
-		chk, err := MergeChunks(nc.Chunk, c.Chunk)
+		dividedChks, err := MergeChunks(newChks[len(newChks)-1].Chunk, c.Chunk)
 		if err != nil {
 			return nil, err
 		}
-		nc.Chunk = chk
+		// Appending the first len(newChks)-2 chunks with the divided chunks.
+		// The len(newChks)-1 th chunk would have been merged and hence is overwritten.
+		newChks = append(newChks[:len(newChks)-1], dividedChks...)
 	}
-
 	return newChks, nil
 }
 
 // MergeChunks vertically merges a and b, i.e., if there is any sample
 // with same timestamp in both a and b, the sample in a is discarded.
-func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
+// Also breaks chunks that are larger than MaxSamplesInChunk.
+func MergeChunks(a, b chunkenc.Chunk) ([]Meta, error) {
+	var newMetas []Meta
 	newChunk := chunkenc.NewXORChunk()
 	app, err := newChunk.Appender()
 	if err != nil {
@@ -276,31 +278,57 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 	}
 	ait := a.Iterator(nil)
 	bit := b.Iterator(nil)
+	numSamples := 0
+	var mint, maxt int64
+	mint = int64(math.MinInt64)
+	var at, bt int64
+	var av, bv float64
 	aok, bok := ait.Next(), bit.Next()
-	for aok && bok {
-		at, av := ait.At()
-		bt, bv := bit.At()
+	for {
+		if !aok && !bok {
+			break
+		} else if !aok {
+			at = math.MaxInt64
+			bt, bv = bit.At()
+		} else if !bok {
+			bt = math.MaxInt64
+			at, av = ait.At()
+		} else {
+			at, av = ait.At()
+			bt, bv = bit.At()
+		}
 		if at < bt {
 			app.Append(at, av)
+			maxt = at
 			aok = ait.Next()
 		} else if bt < at {
 			app.Append(bt, bv)
+			maxt = bt
 			bok = bit.Next()
 		} else {
 			app.Append(bt, bv)
+			maxt = bt
 			aok = ait.Next()
 			bok = bit.Next()
 		}
-	}
-	for aok {
-		at, av := ait.At()
-		app.Append(at, av)
-		aok = ait.Next()
-	}
-	for bok {
-		bt, bv := bit.At()
-		app.Append(bt, bv)
-		bok = bit.Next()
+		if mint == math.MinInt64 {
+			if at < bt {
+				mint = at
+			} else {
+				mint = bt
+			}
+		}
+		numSamples++
+		if numSamples >= MaxSamplesInChunk {
+			newMetas = append(newMetas, Meta{Chunk: newChunk, MinTime: mint, MaxTime: maxt})
+			newChunk = chunkenc.NewXORChunk()
+			app, err = newChunk.Appender()
+			if err != nil {
+				return nil, err
+			}
+			numSamples = 0
+			mint = int64(math.MinInt64)
+		}
 	}
 	if ait.Err() != nil {
 		return nil, ait.Err()
@@ -308,7 +336,10 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 	if bit.Err() != nil {
 		return nil, bit.Err()
 	}
-	return newChunk, nil
+	if newChunk.NumSamples() != 0 {
+		newMetas = append(newMetas, Meta{Chunk: newChunk, MinTime: mint, MaxTime: maxt})
+	}
+	return newMetas, nil
 }
 
 // WriteChunks writes as many chunks as possible to the current segment,
