@@ -18,6 +18,9 @@ import (
 	"errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
 // The errors exposed.
@@ -28,16 +31,20 @@ var (
 	ErrOutOfBounds                 = errors.New("out of bounds")
 )
 
+// Appendable allows creating appenders.
+type Appendable interface {
+	// Appender returns a new appender against the storage.
+	Appender() Appender
+}
+
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe. Storage implements storage.SampleAppender.
 type Storage interface {
 	Queryable
+	Appendable
 
 	// StartTime returns the oldest timestamp stored in the storage.
 	StartTime() (int64, error)
-
-	// Appender returns a new appender against the storage.
-	Appender() (Appender, error)
 
 	// Close closes the storage and all its underlying resources.
 	Close() error
@@ -49,7 +56,8 @@ type Queryable interface {
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
 
-// Querier provides reading access to time series data.
+// Querier provides querying access over time series data of a fixed
+// time range.
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
 	Select(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
@@ -58,6 +66,7 @@ type Querier interface {
 	SelectSorted(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
 
 	// LabelValues returns all potential values for a label name.
+	// It is not safe to use the strings beyond the lifefime of the querier.
 	LabelValues(name string) ([]string, Warnings, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
@@ -93,7 +102,7 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 type Appender interface {
 	Add(l labels.Labels, t int64, v float64) (uint64, error)
 
-	AddFast(l labels.Labels, ref uint64, t int64, v float64) error
+	AddFast(ref uint64, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
 	Commit() error
@@ -108,25 +117,36 @@ type SeriesSet interface {
 	Err() error
 }
 
+var emptySeriesSet = errSeriesSet{}
+
+// EmptySeriesSet returns a series set that's always empty.
+func EmptySeriesSet() SeriesSet {
+	return emptySeriesSet
+}
+
+type errSeriesSet struct {
+	err error
+}
+
+func (s errSeriesSet) Next() bool { return false }
+func (s errSeriesSet) At() Series { return nil }
+func (s errSeriesSet) Err() error { return s.err }
+
 // Series represents a single time series.
 type Series interface {
 	// Labels returns the complete set of labels identifying the series.
 	Labels() labels.Labels
 
 	// Iterator returns a new iterator of the data of the series.
-	Iterator() SeriesIterator
+	Iterator() chunkenc.Iterator
 }
 
-// SeriesIterator iterates over the data of a time series.
-type SeriesIterator interface {
-	// Seek advances the iterator forward to the value at or after
-	// the given timestamp.
-	Seek(t int64) bool
-	// At returns the current timestamp/value pair.
-	At() (t int64, v float64)
-	// Next advances the iterator by one.
+// ChunkSeriesSet exposes the chunks and intervals of a series instead of the
+// actual series itself.
+// TODO(bwplotka): Move it to Series liike Iterator that iterates over chunks and avoiding loading all of them at once.
+type ChunkSeriesSet interface {
 	Next() bool
-	// Err returns the current error.
+	At() (labels.Labels, []chunks.Meta, tombstones.Intervals)
 	Err() error
 }
 

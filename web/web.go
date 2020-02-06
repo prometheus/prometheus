@@ -62,7 +62,6 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
-	prometheus_tsdb "github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -213,7 +212,7 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 type Options struct {
 	Context       context.Context
 	TSDB          func() *tsdb.DB
-	TSDBCfg       prometheus_tsdb.Options
+	TSDBCfg       tsdb.Options
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
 	LookbackDelta time.Duration

@@ -156,7 +156,7 @@ func init() {
 
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
-	appendable Appendable
+	appendable storage.Appendable
 	logger     log.Logger
 
 	mtx    sync.RWMutex
@@ -187,7 +187,7 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, logger log.Logger) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -228,13 +228,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
-			func() storage.Appender {
-				app, err := app.Appender()
-				if err != nil {
-					panic(err)
-				}
-				return appender(app, opts.limit)
-			},
+			func() storage.Appender { return appender(app.Appender(), opts.limit) },
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
@@ -1112,7 +1106,7 @@ loop:
 		}
 		ce, ok := sl.cache.get(yoloString(met))
 		if ok {
-			switch err = app.AddFast(ce.lset, ce.ref, t, v); err {
+			switch err = app.AddFast(ce.ref, t, v); err {
 			case nil:
 				if tp == nil {
 					sl.cache.trackStaleness(ce.hash, ce.lset)
@@ -1323,7 +1317,7 @@ func (sl *scrapeLoop) reportStale(start time.Time) error {
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v float64) error {
 	ce, ok := sl.cache.get(s)
 	if ok {
-		err := app.AddFast(ce.lset, ce.ref, t, v)
+		err := app.AddFast(ce.ref, t, v)
 		switch err {
 		case nil:
 			return nil

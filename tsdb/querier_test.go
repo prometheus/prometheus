@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -36,22 +38,22 @@ import (
 
 type mockSeriesSet struct {
 	next   func() bool
-	series func() Series
+	series func() storage.Series
 	err    func() error
 }
 
-func (m *mockSeriesSet) Next() bool { return m.next() }
-func (m *mockSeriesSet) At() Series { return m.series() }
-func (m *mockSeriesSet) Err() error { return m.err() }
+func (m *mockSeriesSet) Next() bool         { return m.next() }
+func (m *mockSeriesSet) At() storage.Series { return m.series() }
+func (m *mockSeriesSet) Err() error         { return m.err() }
 
-func newMockSeriesSet(list []Series) *mockSeriesSet {
+func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 	i := -1
 	return &mockSeriesSet{
 		next: func() bool {
 			i++
 			return i < len(list)
 		},
-		series: func() Series {
+		series: func() storage.Series {
 			return list[i]
 		},
 		err: func() error { return nil },
@@ -63,20 +65,20 @@ func TestMergedSeriesSet(t *testing.T) {
 	cases := []struct {
 		// The input sets in order (samples in series in b are strictly
 		// after those in a).
-		a, b SeriesSet
+		a, b storage.SeriesSet
 		// The composition of a and b in the partition series set must yield
 		// results equivalent to the result series set.
-		exp SeriesSet
+		exp storage.SeriesSet
 	}{
 		{
-			a: newMockSeriesSet([]Series{
+			a: newMockSeriesSet([]storage.Series{
 				newSeries(map[string]string{
 					"a": "a",
 				}, []tsdbutil.Sample{
 					sample{t: 1, v: 1},
 				}),
 			}),
-			b: newMockSeriesSet([]Series{
+			b: newMockSeriesSet([]storage.Series{
 				newSeries(map[string]string{
 					"a": "a",
 				}, []tsdbutil.Sample{
@@ -88,7 +90,7 @@ func TestMergedSeriesSet(t *testing.T) {
 					sample{t: 1, v: 1},
 				}),
 			}),
-			exp: newMockSeriesSet([]Series{
+			exp: newMockSeriesSet([]storage.Series{
 				newSeries(map[string]string{
 					"a": "a",
 				}, []tsdbutil.Sample{
@@ -103,7 +105,7 @@ func TestMergedSeriesSet(t *testing.T) {
 			}),
 		},
 		{
-			a: newMockSeriesSet([]Series{
+			a: newMockSeriesSet([]storage.Series{
 				newSeries(map[string]string{
 					"handler":  "prometheus",
 					"instance": "127.0.0.1:9090",
@@ -117,7 +119,7 @@ func TestMergedSeriesSet(t *testing.T) {
 					sample{t: 1, v: 2},
 				}),
 			}),
-			b: newMockSeriesSet([]Series{
+			b: newMockSeriesSet([]storage.Series{
 				newSeries(map[string]string{
 					"handler":  "prometheus",
 					"instance": "127.0.0.1:9090",
@@ -131,7 +133,7 @@ func TestMergedSeriesSet(t *testing.T) {
 					sample{t: 2, v: 2},
 				}),
 			}),
-			exp: newMockSeriesSet([]Series{
+			exp: newMockSeriesSet([]storage.Series{
 				newSeries(map[string]string{
 					"handler":  "prometheus",
 					"instance": "127.0.0.1:9090",
@@ -157,7 +159,7 @@ func TestMergedSeriesSet(t *testing.T) {
 
 Outer:
 	for _, c := range cases {
-		res := NewMergedSeriesSet([]SeriesSet{c.a, c.b})
+		res := NewMergedSeriesSet([]storage.SeriesSet{c.a, c.b})
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
@@ -180,7 +182,7 @@ Outer:
 	}
 }
 
-func expandSeriesIterator(it SeriesIterator) (r []tsdbutil.Sample, err error) {
+func expandSeriesIterator(it chunkenc.Iterator) (r []tsdbutil.Sample, err error) {
 	for it.Next() {
 		t, v := it.At()
 		r = append(r, sample{t: t, v: v})
@@ -258,17 +260,17 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 }
 
 func TestBlockQuerier(t *testing.T) {
-	newSeries := func(l map[string]string, s []tsdbutil.Sample) Series {
+	newSeries := func(l map[string]string, s []tsdbutil.Sample) storage.Series {
 		return &mockSeries{
 			labels:   func() labels.Labels { return labels.FromMap(l) },
-			iterator: func() SeriesIterator { return newListSeriesIterator(s) },
+			iterator: func() chunkenc.Iterator { return newListSeriesIterator(s) },
 		}
 	}
 
 	type query struct {
 		mint, maxt int64
 		ms         []*labels.Matcher
-		exp        SeriesSet
+		exp        storage.SeriesSet
 	}
 
 	cases := struct {
@@ -324,25 +326,25 @@ func TestBlockQuerier(t *testing.T) {
 				mint: 0,
 				maxt: 0,
 				ms:   []*labels.Matcher{},
-				exp:  newMockSeriesSet([]Series{}),
+				exp:  newMockSeriesSet([]storage.Series{}),
 			},
 			{
 				mint: 0,
 				maxt: 0,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
-				exp:  newMockSeriesSet([]Series{}),
+				exp:  newMockSeriesSet([]storage.Series{}),
 			},
 			{
 				mint: 1,
 				maxt: 0,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
-				exp:  newMockSeriesSet([]Series{}),
+				exp:  newMockSeriesSet([]storage.Series{}),
 			},
 			{
 				mint: 2,
 				maxt: 6,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
-				exp: newMockSeriesSet([]Series{
+				exp: newMockSeriesSet([]storage.Series{
 					newSeries(map[string]string{
 						"a": "a",
 					},
@@ -371,8 +373,9 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res, err := querier.Select(c.ms...)
+		res, ws, err := querier.Select(nil, c.ms...)
 		testutil.Ok(t, err)
+		testutil.Equals(t, 0, len(ws))
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
@@ -396,17 +399,17 @@ Outer:
 }
 
 func TestBlockQuerierDelete(t *testing.T) {
-	newSeries := func(l map[string]string, s []tsdbutil.Sample) Series {
+	newSeries := func(l map[string]string, s []tsdbutil.Sample) storage.Series {
 		return &mockSeries{
 			labels:   func() labels.Labels { return labels.FromMap(l) },
-			iterator: func() SeriesIterator { return newListSeriesIterator(s) },
+			iterator: func() chunkenc.Iterator { return newListSeriesIterator(s) },
 		}
 	}
 
 	type query struct {
 		mint, maxt int64
 		ms         []*labels.Matcher
-		exp        SeriesSet
+		exp        storage.SeriesSet
 	}
 
 	cases := struct {
@@ -467,7 +470,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 				mint: 2,
 				maxt: 7,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
-				exp: newMockSeriesSet([]Series{
+				exp: newMockSeriesSet([]storage.Series{
 					newSeries(map[string]string{
 						"a": "a",
 					},
@@ -485,7 +488,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 				mint: 2,
 				maxt: 7,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "b", "b")},
-				exp: newMockSeriesSet([]Series{
+				exp: newMockSeriesSet([]storage.Series{
 					newSeries(map[string]string{
 						"a": "a",
 						"b": "b",
@@ -503,7 +506,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 				mint: 1,
 				maxt: 4,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
-				exp: newMockSeriesSet([]Series{
+				exp: newMockSeriesSet([]storage.Series{
 					newSeries(map[string]string{
 						"a": "a",
 						"b": "b",
@@ -516,12 +519,11 @@ func TestBlockQuerierDelete(t *testing.T) {
 				mint: 1,
 				maxt: 3,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
-				exp:  newMockSeriesSet([]Series{}),
+				exp:  newMockSeriesSet([]storage.Series{}),
 			},
 		},
 	}
 
-	fmt.Println("tombstones", cases.tombstones)
 Outer:
 	for _, c := range cases.queries {
 		ir, cr, _, _ := createIdxChkReaders(t, cases.data)
@@ -534,8 +536,9 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res, err := querier.Select(c.ms...)
+		res, ws, err := querier.Select(nil, c.ms...)
 		testutil.Ok(t, err)
+		testutil.Equals(t, 0, len(ws))
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
@@ -654,13 +657,12 @@ func TestBaseChunkSeries(t *testing.T) {
 	}
 }
 
-// TODO: Remove after simpleSeries is merged
 type itSeries struct {
-	si SeriesIterator
+	si chunkenc.Iterator
 }
 
-func (s itSeries) Iterator() SeriesIterator { return s.si }
-func (s itSeries) Labels() labels.Labels    { return labels.Labels{} }
+func (s itSeries) Iterator() chunkenc.Iterator { return s.si }
+func (s itSeries) Labels() labels.Labels       { return labels.Labels{} }
 
 func TestSeriesIterator(t *testing.T) {
 	itcases := []struct {
@@ -1003,7 +1005,7 @@ func TestSeriesIterator(t *testing.T) {
 
 		t.Run("Seek", func(t *testing.T) {
 			for _, tc := range seekcases {
-				ress := []SeriesIterator{
+				ress := []chunkenc.Iterator{
 					newChainedSeriesIterator(
 						itSeries{newListSeriesIterator(tc.a)},
 						itSeries{newListSeriesIterator(tc.b)},
@@ -1167,8 +1169,9 @@ func (m *mockChunkSeriesSet) Err() error {
 
 // Test the cost of merging series sets for different number of merged sets and their size.
 // The subset are all equivalent so this does not capture merging of partial or non-overlapping sets well.
+// TODO(bwplotka): Merge with storage merged series set benchmark.
 func BenchmarkMergedSeriesSet(b *testing.B) {
-	var sel = func(sets []SeriesSet) SeriesSet {
+	var sel = func(sets []storage.SeriesSet) storage.SeriesSet {
 		return NewMergedSeriesSet(sets)
 	}
 
@@ -1185,7 +1188,7 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 
 				sort.Sort(labels.Slice(lbls))
 
-				in := make([][]Series, j)
+				in := make([][]storage.Series, j)
 
 				for _, l := range lbls {
 					l2 := l
@@ -1197,7 +1200,7 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 				b.ResetTimer()
 
 				for i := 0; i < b.N; i++ {
-					var sets []SeriesSet
+					var sets []storage.SeriesSet
 					for _, s := range in {
 						sets = append(sets, newMockSeriesSet(s))
 					}
@@ -1244,6 +1247,104 @@ func TestDeletedIterator(t *testing.T) {
 
 	cases := []struct {
 		r tombstones.Intervals
+	}{
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 20}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 10}, {Mint: 12, Maxt: 20}, {Mint: 21, Maxt: 23}, {Mint: 25, Maxt: 30}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 10}, {Mint: 12, Maxt: 20}, {Mint: 20, Maxt: 30}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 10}, {Mint: 12, Maxt: 23}, {Mint: 25, Maxt: 30}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 23}, {Mint: 12, Maxt: 20}, {Mint: 25, Maxt: 30}}},
+		{r: tombstones.Intervals{{Mint: 1, Maxt: 23}, {Mint: 12, Maxt: 20}, {Mint: 25, Maxt: 3000}}},
+		{r: tombstones.Intervals{{Mint: 0, Maxt: 2000}}},
+		{r: tombstones.Intervals{{Mint: 500, Maxt: 2000}}},
+		{r: tombstones.Intervals{{Mint: 0, Maxt: 200}}},
+		{r: tombstones.Intervals{{Mint: 1000, Maxt: 20000}}},
+	}
+
+	for _, c := range cases {
+		t.Run("Simple", func(t *testing.T) {
+			i := int64(-1)
+			it := &deletedIterator{it: chk.Iterator(nil), intervals: c.r[:]}
+			ranges := c.r[:]
+			for it.Next() {
+				i++
+				for _, tr := range ranges {
+					if tr.InBounds(i) {
+						i = tr.Maxt + 1
+						ranges = ranges[1:]
+					}
+				}
+
+				testutil.Assert(t, i < 1000, "")
+
+				ts, v := it.At()
+				testutil.Equals(t, act[i].t, ts)
+				testutil.Equals(t, act[i].v, v)
+			}
+			// There has been an extra call to Next().
+			i++
+			for _, tr := range ranges {
+				if tr.InBounds(i) {
+					i = tr.Maxt + 1
+					ranges = ranges[1:]
+				}
+			}
+
+			testutil.Assert(t, i >= 1000, "")
+			testutil.Ok(t, it.Err())
+		})
+		t.Run("Seek", func(t *testing.T) {
+			const seek = 10
+
+			i := int64(seek)
+			it := &deletedIterator{it: chk.Iterator(nil), intervals: c.r[:]}
+			ranges := c.r[:]
+
+			testutil.Assert(t, it.Seek(seek), "")
+			for it.Next() {
+				i++
+				for _, tr := range ranges {
+					if tr.InBounds(i) {
+						i = tr.Maxt + 1
+						ranges = ranges[1:]
+					}
+				}
+
+				testutil.Assert(t, i < 1000, "")
+
+				ts, v := it.At()
+				testutil.Equals(t, act[i].t, ts)
+				testutil.Equals(t, act[i].v, v)
+			}
+			// There has been an extra call to Next().
+			i++
+			for _, tr := range ranges {
+				if tr.InBounds(i) {
+					i = tr.Maxt + 1
+					ranges = ranges[1:]
+				}
+			}
+
+			testutil.Assert(t, i >= 1000, "")
+			testutil.Ok(t, it.Err())
+		})
+	}
+}
+
+func TestDeletedIterator_WithSeek(t *testing.T) {
+	chk := chunkenc.NewXORChunk()
+	app, err := chk.Appender()
+	testutil.Ok(t, err)
+	// Insert random stuff from (0, 1000).
+	act := make([]sample, 1000)
+	for i := 0; i < 1000; i++ {
+		act[i].t = int64(i)
+		act[i].v = rand.Float64()
+		app.Append(act[i].t, act[i].v)
+	}
+
+	cases := []struct {
+		r    tombstones.Intervals
+		seek int64
 	}{
 		{r: tombstones.Intervals{{Mint: 1, Maxt: 20}}},
 		{r: tombstones.Intervals{{Mint: 1, Maxt: 10}, {Mint: 12, Maxt: 20}, {Mint: 21, Maxt: 23}, {Mint: 25, Maxt: 30}}},
@@ -1414,17 +1515,17 @@ func (m mockIndex) LabelNames() ([]string, error) {
 
 type mockSeries struct {
 	labels   func() labels.Labels
-	iterator func() SeriesIterator
+	iterator func() chunkenc.Iterator
 }
 
-func newSeries(l map[string]string, s []tsdbutil.Sample) Series {
+func newSeries(l map[string]string, s []tsdbutil.Sample) storage.Series {
 	return &mockSeries{
 		labels:   func() labels.Labels { return labels.FromMap(l) },
-		iterator: func() SeriesIterator { return newListSeriesIterator(s) },
+		iterator: func() chunkenc.Iterator { return newListSeriesIterator(s) },
 	}
 }
-func (m *mockSeries) Labels() labels.Labels    { return m.labels() }
-func (m *mockSeries) Iterator() SeriesIterator { return m.iterator() }
+func (m *mockSeries) Labels() labels.Labels       { return m.labels() }
+func (m *mockSeries) Iterator() chunkenc.Iterator { return m.iterator() }
 
 type listSeriesIterator struct {
 	list []tsdbutil.Sample
@@ -1493,7 +1594,7 @@ func BenchmarkQueryIterator(b *testing.B) {
 					blocks          []*Block
 					overlapDelta    = int64(overlapPercentage * c.numSamplesPerSeriesPerBlock / 100)
 					prefilledLabels []map[string]string
-					generatedSeries []Series
+					generatedSeries []storage.Series
 				)
 				for i := int64(0); i < int64(c.numBlocks); i++ {
 					offset := i * overlapDelta
@@ -1514,7 +1615,7 @@ func BenchmarkQueryIterator(b *testing.B) {
 				}
 
 				que := &querier{
-					blocks: make([]Querier, 0, len(blocks)),
+					blocks: make([]storage.Querier, 0, len(blocks)),
 				}
 				for _, blk := range blocks {
 					q, err := NewBlockQuerier(blk, math.MinInt64, math.MaxInt64)
@@ -1522,7 +1623,7 @@ func BenchmarkQueryIterator(b *testing.B) {
 					que.blocks = append(que.blocks, q)
 				}
 
-				var sq Querier = que
+				var sq storage.Querier = que
 				if overlapPercentage > 0 {
 					sq = &verticalQuerier{
 						querier: *que,
@@ -1567,7 +1668,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 					blocks          []*Block
 					overlapDelta    = int64(overlapPercentage * c.numSamplesPerSeriesPerBlock / 100)
 					prefilledLabels []map[string]string
-					generatedSeries []Series
+					generatedSeries []storage.Series
 				)
 				for i := int64(0); i < int64(c.numBlocks); i++ {
 					offset := i * overlapDelta
@@ -1588,7 +1689,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				}
 
 				que := &querier{
-					blocks: make([]Querier, 0, len(blocks)),
+					blocks: make([]storage.Querier, 0, len(blocks)),
 				}
 				for _, blk := range blocks {
 					q, err := NewBlockQuerier(blk, math.MinInt64, math.MaxInt64)
@@ -1596,7 +1697,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 					que.blocks = append(que.blocks, q)
 				}
 
-				var sq Querier = que
+				var sq storage.Querier = que
 				if overlapPercentage > 0 {
 					sq = &verticalQuerier{
 						querier: *que,
@@ -1610,7 +1711,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
-				ss, err := sq.Select(labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+				ss, ws, err := sq.Select(nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 				for ss.Next() {
 					it := ss.At().Iterator()
 					for t := mint; t <= maxt; t++ {
@@ -1620,6 +1721,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				}
 				testutil.Ok(b, ss.Err())
 				testutil.Ok(b, err)
+				testutil.Equals(b, 0, len(ws))
 			})
 		}
 	}
@@ -1713,7 +1815,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 		var (
 			blocks          []*Block
 			prefilledLabels []map[string]string
-			generatedSeries []Series
+			generatedSeries []storage.Series
 		)
 		for i := int64(0); i < int64(c.numBlocks); i++ {
 			mint := i * int64(c.numSamplesPerSeriesPerBlock)
@@ -1733,7 +1835,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 		}
 
 		que := &querier{
-			blocks: make([]Querier, 0, len(blocks)),
+			blocks: make([]storage.Querier, 0, len(blocks)),
 		}
 		for _, blk := range blocks {
 			q, err := NewBlockQuerier(blk, math.MinInt64, math.MaxInt64)
@@ -1747,8 +1849,9 @@ func BenchmarkSetMatcher(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for n := 0; n < b.N; n++ {
-				_, err := que.Select(labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
+				_, ws, err := que.Select(nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
 				testutil.Ok(b, err)
+				testutil.Equals(b, 0, len(ws))
 			}
 		})
 	}
@@ -2076,7 +2179,7 @@ func TestClose(t *testing.T) {
 	createBlock(t, dir, genSeries(1, 1, 0, 10))
 	createBlock(t, dir, genSeries(1, 1, 10, 20))
 
-	db, err := Open(dir, nil, nil, DefaultOptions)
+	db, err := Open(dir, nil, nil, DefaultOptions())
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
 	}
@@ -2084,7 +2187,7 @@ func TestClose(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	q, err := db.Querier(0, 20)
+	q, err := db.Querier(context.TODO(), 0, 20)
 	testutil.Ok(t, err)
 	testutil.Ok(t, q.Close())
 	testutil.NotOk(t, q.Close())
@@ -2119,7 +2222,7 @@ func BenchmarkQueries(b *testing.B) {
 		},
 	}
 
-	queryTypes := make(map[string]Querier)
+	queryTypes := make(map[string]storage.Querier)
 	defer func() {
 		for _, q := range queryTypes {
 			// Can't run a check for error here as some of these will fail as
@@ -2162,7 +2265,7 @@ func BenchmarkQueries(b *testing.B) {
 					}
 				}
 
-				qs := []Querier{}
+				qs := make([]storage.Querier, 0, 10)
 				for x := 0; x <= 10; x++ {
 					block, err := OpenBlock(nil, createBlock(b, dir, series), nil)
 					testutil.Ok(b, err)
@@ -2191,12 +2294,13 @@ func BenchmarkQueries(b *testing.B) {
 	}
 }
 
-func benchQuery(b *testing.B, expExpansions int, q Querier, selectors labels.Selector) {
+func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors labels.Selector) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		ss, err := q.Select(selectors...)
+		ss, ws, err := q.Select(nil, selectors...)
 		testutil.Ok(b, err)
+		testutil.Equals(b, 0, len(ws))
 		var actualExpansions int
 		for ss.Next() {
 			s := ss.At()
