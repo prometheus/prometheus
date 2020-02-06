@@ -738,6 +738,7 @@ Available meta labels:
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
+* `__meta_kubernetes_service_type`: The type of the service.
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
 * `__meta_kubernetes_service_name`: The name of the service object.
