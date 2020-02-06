@@ -208,14 +208,9 @@ export const mapObjEntries = <T, key extends keyof T, Z>(
 ) => Object.entries(o).map(cb);
 
 export const callAll = (...fns: Array<(...args: any) => void>) => (...args: any) => {
-  // eslint-disable-next-line prefer-spread
-  fns.filter(Boolean).forEach(fn => fn.apply(null, args));
+  fns.filter(Boolean).forEach(fn => fn(...args));
 };
 
-export const replaceWith = (str: string, needle: string, replace: string) => {
-  return str.replace(new RegExp(needle, 'g'), `${replace}`);
-};
-
-export const isAlertinRule = (rule: Rule): rule is AlertingRule => {
+export const isAlertingRule = (rule: Rule): rule is AlertingRule => {
   return rule.type === 'alerting';
 };
