@@ -959,10 +959,22 @@ func TestGCChunkAccess(t *testing.T) {
 	h.initTime(0)
 
 	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
-	s.chunks = []*memChunk{
-		{minTime: 0, maxTime: 999},
-		{minTime: 1000, maxTime: 1999},
-	}
+
+	// Appending 2 samples for the first chunk.
+	ok, chunkCreated := s.append(0, 0)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, chunkCreated, "chunks was not created")
+	ok, chunkCreated = s.append(999, 999)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, !chunkCreated, "chunks was created")
+
+	// A new chunks should be created here as it's beyond the chunk range.
+	ok, chunkCreated = s.append(1000, 1000)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, chunkCreated, "chunks was not created")
+	ok, chunkCreated = s.append(1999, 1999)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, !chunkCreated, "chunks was created")
 
 	idx := h.indexRange(0, 1500)
 	var (
@@ -999,10 +1011,22 @@ func TestGCSeriesAccess(t *testing.T) {
 	h.initTime(0)
 
 	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
-	s.chunks = []*memChunk{
-		{minTime: 0, maxTime: 999},
-		{minTime: 1000, maxTime: 1999},
-	}
+
+	// Appending 2 samples for the first chunk.
+	ok, chunkCreated := s.append(0, 0)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, chunkCreated, "chunks was not created")
+	ok, chunkCreated = s.append(999, 999)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, !chunkCreated, "chunks was created")
+
+	// A new chunks should be created here as it's beyond the chunk range.
+	ok, chunkCreated = s.append(1000, 1000)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, chunkCreated, "chunks was not created")
+	ok, chunkCreated = s.append(1999, 1999)
+	testutil.Assert(t, ok, "series append failed")
+	testutil.Assert(t, !chunkCreated, "chunks was created")
 
 	idx := h.indexRange(0, 2000)
 	var (
