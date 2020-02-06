@@ -818,8 +818,14 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 	tests := map[int]func(dbdir string, segmentSize int){
 		// Default Wal Size.
 		0: func(dbDir string, segmentSize int) {
-			files, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
+			filesAndDir, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
 			testutil.Ok(t, err)
+			files := []os.FileInfo{}
+			for _, f := range filesAndDir {
+				if !f.IsDir() {
+					files = append(files, f)
+				}
+			}
 			for _, f := range files[:len(files)-1] {
 				testutil.Equals(t, int64(DefaultOptions.WALSegmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
@@ -828,9 +834,15 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 		},
 		// Custom Wal Size.
 		2 * 32 * 1024: func(dbDir string, segmentSize int) {
-			files, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
-			testutil.Assert(t, len(files) > 1, "current WALSegmentSize should result in more than a single WAL file.")
+			filesAndDir, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
 			testutil.Ok(t, err)
+			files := []os.FileInfo{}
+			for _, f := range filesAndDir {
+				if !f.IsDir() {
+					files = append(files, f)
+				}
+			}
+			testutil.Assert(t, len(files) > 1, "current WALSegmentSize should result in more than a single WAL file.")
 			for _, f := range files[:len(files)-1] {
 				testutil.Equals(t, int64(segmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
