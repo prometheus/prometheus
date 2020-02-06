@@ -30,6 +30,12 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
+var (
+	svcAddCount    = eventCount.WithLabelValues("service", "add")
+	svcUpdateCount = eventCount.WithLabelValues("service", "update")
+	svcDeleteCount = eventCount.WithLabelValues("service", "delete")
+)
+
 // Service implements discovery of Kubernetes services.
 type Service struct {
 	logger   log.Logger
@@ -46,15 +52,15 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 	s := &Service{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("service")}
 	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "add").Inc()
+			svcAddCount.Inc()
 			s.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "delete").Inc()
+			svcDeleteCount.Inc()
 			s.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("service", "update").Inc()
+			svcUpdateCount.Inc()
 			s.enqueue(o)
 		},
 	})

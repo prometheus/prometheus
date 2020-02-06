@@ -29,6 +29,12 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
+var (
+	epAddCount    = eventCount.WithLabelValues("endpoints", "add")
+	epUpdateCount = eventCount.WithLabelValues("endpoints", "update")
+	epDeleteCount = eventCount.WithLabelValues("endpoints", "delete")
+)
+
 // Endpoints discovers new endpoint targets.
 type Endpoints struct {
 	logger log.Logger
@@ -62,15 +68,15 @@ func NewEndpoints(l log.Logger, svc, eps, pod cache.SharedInformer) *Endpoints {
 
 	e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("endpoints", "add").Inc()
+			epAddCount.Inc()
 			e.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("endpoints", "update").Inc()
+			epUpdateCount.Inc()
 			e.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("endpoints", "delete").Inc()
+			epDeleteCount.Inc()
 			e.enqueue(o)
 		},
 	})
@@ -98,15 +104,15 @@ func NewEndpoints(l log.Logger, svc, eps, pod cache.SharedInformer) *Endpoints {
 		// TODO(fabxc): potentially remove add and delete event handlers. Those should
 		// be triggered via the endpoint handlers already.
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "add").Inc()
+			svcAddCount.Inc()
 			serviceUpdate(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("service", "update").Inc()
+			svcUpdateCount.Inc()
 			serviceUpdate(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "delete").Inc()
+			svcDeleteCount.Inc()
 			serviceUpdate(o)
 		},
 	})
