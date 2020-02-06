@@ -236,20 +236,22 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 		wg := sync.WaitGroup{}
 		wg.Add(len(q.queriers))
 		var priErr error = nil
-		var lock sync.Mutex
+		queryResultChan := make(chan *queryResult, len(q.queriers))
 		for _, qr := range q.queriers {
 			go func(querier Querier) {
 				defer wg.Done()
 				set, wrn, selectError := querier.Select(params, matchers...)
-				lock.Lock()
-				defer lock.Unlock()
-				err := q.processSelectResult(querier, set, wrn, selectError, &seriesSets, &warnings, params, matchers...)
-				if err != nil {
-					priErr = err
-				}
+				queryResultChan <- &queryResult{qr: qr, set: set, wrn: wrn, selectError: selectError}
 			}(qr)
 		}
 		wg.Wait()
+		for i := 0; i < len(q.queriers); i++ {
+			qryResult := <-queryResultChan
+			err := q.processSelectResult(qryResult.qr, qryResult.set, qryResult.wrn, qryResult.selectError, &seriesSets, &warnings, params, matchers...)
+			if err != nil {
+				priErr = err
+			}
+		}
 		if priErr != nil {
 			return nil, nil, priErr
 		}
@@ -263,6 +265,13 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 		}
 	}
 	return NewMergeSeriesSet(seriesSets, q), warnings, nil
+}
+
+type queryResult struct {
+	qr          Querier
+	set         SeriesSet
+	wrn         Warnings
+	selectError error
 }
 
 func (q *mergeQuerier) processSelectResult(querier Querier, set SeriesSet, wrn Warnings, selectError error, seriesSets *[]SeriesSet, warnings *Warnings, params *SelectParams, matchers ...*labels.Matcher) error {
