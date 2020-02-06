@@ -18,7 +18,6 @@ import (
 	"context"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -241,42 +240,25 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
 	var warnings Warnings
-
-	wg := sync.WaitGroup{}
-	wg.Add(len(q.queriers))
-	queryResultChan := make(chan *queryResult, len(q.queriers))
 	for _, querier := range q.queriers {
-		go func(qr Querier) {
-			defer wg.Done()
-			set, wrn, err := qr.SelectSorted(params, matchers...)
-			queryResultChan <- &queryResult{qr: querier, set: set, wrn: wrn, selectError: err}
-		}(querier)
-	}
-	wg.Wait()
-	for i := 0; i < len(q.queriers); i++ {
-		qryResult := <-queryResultChan
-		q.setQuerierMap[qryResult.set] = qryResult.qr
-		if qryResult.wrn != nil {
-			warnings = append(warnings, qryResult.wrn...)
+		set, wrn, err := querier.SelectSorted(params, matchers...)
+		q.setQuerierMap[set] = querier
+		if wrn != nil {
+			warnings = append(warnings, wrn...)
 		}
-		if qryResult.selectError != nil {
-			q.failedQueriers[qryResult.qr] = struct{}{}
+		if err != nil {
+			q.failedQueriers[querier] = struct{}{}
 			// If the error source isn't the primary querier, return the error as a warning and continue.
-			if qryResult.qr != q.primaryQuerier {
-				warnings = append(warnings, qryResult.selectError)
+			if querier != q.primaryQuerier {
+				warnings = append(warnings, err)
+				continue
 			} else {
-				return nil, nil, qryResult.selectError
+				return nil, nil, err
 			}
 		}
+		seriesSets = append(seriesSets, set)
 	}
 	return NewMergeSeriesSet(seriesSets, q), warnings, nil
-}
-
-type queryResult struct {
-	qr          Querier
-	set         SeriesSet
-	wrn         Warnings
-	selectError error
 }
 
 // LabelValues returns all potential values for a label name.
