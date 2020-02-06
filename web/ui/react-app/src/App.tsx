@@ -7,10 +7,10 @@ import { Router, Redirect } from '@reach/router';
 import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList } from './pages';
 import PathPrefixProps from './types/PathPrefixProps';
 
-const App: FC<PathPrefixProps> = ({ pathPrefix }) => {
+const App: FC<PathPrefixProps> = ({ pathPrefix, consolesLink }) => {
   return (
     <>
-      <Navigation pathPrefix={pathPrefix} />
+      <Navigation pathPrefix={pathPrefix} consolesLink={consolesLink} />
       <Container fluid style={{ paddingTop: 70 }}>
         <Router basepath={`${pathPrefix}/new`}>
           <Redirect from="/" to={`${pathPrefix}/new/graph`} />

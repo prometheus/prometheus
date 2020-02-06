@@ -10,17 +10,17 @@
     <meta name="theme-color" content="#000000" />
 
     <!--
-      PATH_PREFIX constants placeholder magic value is replaced during serving by Prometheus
+      The GLOBAL_PATH_PREFIX placeholder magic value is replaced during serving by Prometheus
       and set to Prometheus's external URL path. It gets prepended to all links back
       to Prometheus, both for asset loading as well as API accesses.
 
-      CONSOLES_LINK constants placeholder magic value is replaced during serving by Prometheus
-      and set to console link if it exists. It will render Console link on navbar when 
-      it is non empty. 
+      The GLOBAL_CONSOLES_LINK placeholder magic value is replaced during serving by Prometheus
+      and set to the consoles link if it exists. It will render a "Consoles" link in the navbar when 
+      it is non-empty. 
     -->
     <script>
-      const PATH_PREFIX='PATH_PREFIX_PLACEHOLDER';
-      const CONSOLES_LINK='CONSOLES_LINK_PLACEHOLDER';
+      const GLOBAL_PATH_PREFIX='PATH_PREFIX_PLACEHOLDER';
+      const GLOBAL_CONSOLES_LINK='CONSOLES_LINK_PLACEHOLDER';
     </script>
 
     <!--

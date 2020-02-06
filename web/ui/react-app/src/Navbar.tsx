@@ -1,4 +1,3 @@
-import './globals';
 import React, { FC, useState } from 'react';
 import { Link } from '@reach/router';
 import {
@@ -15,15 +14,7 @@ import {
 } from 'reactstrap';
 import PathPrefixProps from './types/PathPrefixProps';
 
-// Declared/defined in public/index.html, value replaced by Prometheus when serving bundle.
-declare const CONSOLES_LINK: string;
-
-let consoleLink = CONSOLES_LINK;
-if (CONSOLES_LINK === 'CONSOLES_LINK_PLACEHOLDER' || CONSOLES_LINK === '') {
-  consoleLink = '';
-}
-
-const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
+const Navigation: FC<PathPrefixProps> = ({ pathPrefix, consolesLink }) => {
   const [isOpen, setIsOpen] = useState(false);
   const toggle = () => setIsOpen(!isOpen);
   return (
@@ -34,9 +25,9 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
         <Nav className="ml-0" navbar>
-          {consoleLink !== '' && (
+          {consolesLink !== '' && (
             <NavItem>
-              <NavLink href={`${pathPrefix + consoleLink}`}>Consoles</NavLink>
+              <NavLink href={`${consolesLink}`}>Consoles</NavLink>
             </NavItem>
           )}
           <NavItem>
