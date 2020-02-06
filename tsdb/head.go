@@ -1691,6 +1691,11 @@ func (s *memSeries) cut(mint int64) *memChunk {
 	s.chunks = append(s.chunks, c)
 	s.headChunk = c
 
+	// Remove exceeding capacity from the previous chunk byte slice to save memory.
+	if l := len(s.chunks); l > 1 {
+		s.chunks[l-2].chunk.Compact()
+	}
+
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
 	s.nextAt = rangeForTimestamp(mint, s.chunkRange)
