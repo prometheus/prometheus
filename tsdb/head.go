@@ -1982,10 +1982,10 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 	var k int
 	if s.headChunk != nil && s.headChunk.maxTime < mint {
 		// If head chunk is truncated, we can truncate all mmapped chunks.
+		k = 1 + len(s.mmappedChunks)
+		s.firstChunkID += k
 		s.headChunk = nil
 		s.mmappedChunks = nil
-		s.firstChunkID += 1 + len(s.mmappedChunks)
-		k = 1 + len(s.mmappedChunks)
 	}
 	if len(s.mmappedChunks) > 0 {
 		for i, c := range s.mmappedChunks {
