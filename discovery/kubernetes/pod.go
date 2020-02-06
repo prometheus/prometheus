@@ -32,6 +32,12 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
+var (
+	podAddCount    = eventCount.WithLabelValues("pod", "add")
+	podUpdateCount = eventCount.WithLabelValues("pod", "update")
+	podDeleteCount = eventCount.WithLabelValues("pod", "delete")
+)
+
 // Pod discovers new pod targets.
 type Pod struct {
 	informer cache.SharedInformer
@@ -53,15 +59,15 @@ func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
 	}
 	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("pod", "add").Inc()
+			podAddCount.Inc()
 			p.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("pod", "delete").Inc()
+			podDeleteCount.Inc()
 			p.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("pod", "update").Inc()
+			podUpdateCount.Inc()
 			p.enqueue(o)
 		},
 	})
