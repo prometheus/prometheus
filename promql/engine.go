@@ -678,6 +678,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		case *VectorSelector:
 			if evalRange == 0 {
 				params.Start = params.Start - durationMilliseconds(LookbackDelta)
+				params.By, params.Grouping = extractGroupsFromPath(path)
 			} else {
 				params.Range = durationMilliseconds(evalRange)
 				// For all matrix queries we want to ensure that we have (end-start) + range selected
@@ -687,7 +688,6 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			}
 
 			params.Func = extractFuncFromPath(path)
-			params.By, params.Grouping = extractGroupsFromPath(path)
 			if n.Offset > 0 {
 				offsetMilliseconds := durationMilliseconds(n.Offset)
 				params.Start = params.Start - offsetMilliseconds
