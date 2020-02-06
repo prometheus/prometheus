@@ -46,9 +46,11 @@ var (
 
 // WriteStorage represents all the remote write storage.
 type WriteStorage struct {
+	reg    prometheus.Registerer
 	logger log.Logger
 	mtx    sync.Mutex
 
+	queueMetrics      *queueManagerMetrics
 	configHash        string
 	externalLabelHash string
 	walDir            string
@@ -58,12 +60,14 @@ type WriteStorage struct {
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, walDir string, flushDeadline time.Duration) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string, flushDeadline time.Duration) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
 		queues:        make(map[string]*QueueManager),
+		reg:           reg,
+		queueMetrics:  newQueueManagerMetrics(reg),
 		logger:        logger,
 		flushDeadline: flushDeadline,
 		samplesIn:     newEWMARate(ewmaWeight, shardUpdateDuration),
@@ -148,7 +152,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 		newQueues[hash] = NewQueueManager(
-			prometheus.DefaultRegisterer,
+			rws.reg,
+			rws.queueMetrics,
 			rws.logger,
 			rws.walDir,
 			rws.samplesIn,

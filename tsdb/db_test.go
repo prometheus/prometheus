@@ -981,7 +981,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, 0, 1))
 		block, err := OpenBlock(nil, blockDir, nil)
 		testutil.Ok(t, err)
-		// Add some some fake tombstones to trigger the compaction.
+		// Add some fake tombstones to trigger the compaction.
 		tomb := tombstones.NewMemTombstones()
 		tomb.AddInterval(0, tombstones.Interval{Mint: 0, Maxt: 1})
 		block.tombstones = tomb

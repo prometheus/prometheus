@@ -19,7 +19,7 @@ import (
 	_ "github.com/prometheus/prometheus/tsdb/goversion"
 )
 
-// This test is is intentionally blank and exists only so `go test` believes
+// This test is intentionally blank and exists only so `go test` believes
 // there is something to test.
 //
 // The blank import above is actually what invokes the test of this package. If

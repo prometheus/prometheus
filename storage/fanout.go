@@ -388,6 +388,8 @@ type mergeSeriesSet struct {
 
 // NewMergeSeriesSet returns a new series set that merges (deduplicates)
 // series returned by the input series sets when iterating.
+// Each input series set must return its series in labels order, otherwise
+// merged series set will be incorrect.
 func NewMergeSeriesSet(sets []SeriesSet, querier *mergeQuerier) SeriesSet {
 	if len(sets) == 1 {
 		return sets[0]

@@ -20,14 +20,7 @@ const Alerts: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) 
     response.data.groups.forEach(el => el.rules.forEach(r => ruleStatsCount[r.state]++));
   }
 
-  return (
-    <AlertsWithStatusIndicator
-      statsCount={ruleStatsCount}
-      groups={response.data && response.data.groups}
-      error={error}
-      isLoading={isLoading}
-    />
-  );
+  return <AlertsWithStatusIndicator statsCount={ruleStatsCount} {...response.data} error={error} isLoading={isLoading} />;
 };
 
 export default Alerts;

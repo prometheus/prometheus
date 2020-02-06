@@ -25,16 +25,23 @@ type MmapFile struct {
 }
 
 func OpenMmapFile(path string) (*MmapFile, error) {
+	return OpenMmapFileWithSize(path, 0)
+}
+
+func OpenMmapFileWithSize(path string, size int) (*MmapFile, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "try lock file")
 	}
-	info, err := f.Stat()
-	if err != nil {
-		return nil, errors.Wrap(err, "stat")
+	if size <= 0 {
+		info, err := f.Stat()
+		if err != nil {
+			return nil, errors.Wrap(err, "stat")
+		}
+		size = int(info.Size())
 	}
 
-	b, err := mmap(f, int(info.Size()))
+	b, err := mmap(f, size)
 	if err != nil {
 		return nil, errors.Wrap(err, "mmap")
 	}
