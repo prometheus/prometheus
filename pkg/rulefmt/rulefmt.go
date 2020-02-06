@@ -128,6 +128,19 @@ type RuleNode struct {
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
+// MarshalYAML implements yaml.Marshaler. It is required to encode the RuleGroup
+// struct back into yaml.
+func (r RuleNode) MarshalYAML() (interface{}, error) {
+	return &Rule{
+		Record:      r.Record.Value,
+		Alert:       r.Alert.Value,
+		Expr:        r.Expr.Value,
+		For:         r.For,
+		Labels:      r.Labels,
+		Annotations: r.Annotations,
+	}, nil
+}
+
 // Validate the rule and return a list of encountered errors.
 func (r *RuleNode) Validate() (nodes []WrappedError) {
 	if r.Record.Value != "" && r.Alert.Value != "" {

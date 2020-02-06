@@ -15,10 +15,12 @@ package rulefmt
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/prometheus/prometheus/util/testutil"
+	"gopkg.in/yaml.v3"
 )
 
 func TestParseFileSuccess(t *testing.T) {
@@ -160,4 +162,54 @@ groups:
 		testutil.Assert(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
 	}
 
+}
+
+// Test to ensure the RuleGroups struct can be successfully Marshalled into YAML
+func TestRuleGroupsMarshalYAML(t *testing.T) {
+	tests := []struct {
+		ruleString string
+	}{
+		{
+			ruleString: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+`,
+		},
+	}
+
+	for _, tst := range tests {
+		rgs, _ := Parse([]byte(tst.ruleString))
+		testutil.Assert(t, rgs != nil, "Rule parsing, rule=\n"+tst.ruleString)
+		marshalled, err := yaml.Marshal(rgs)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		rgsRemarshalled, _ := Parse(marshalled)
+		testutil.Assert(t, len(rgsRemarshalled.Groups) == len(rgs.Groups), "The length of remarshalled rule group is not equal to the original")
+
+		for i := range rgsRemarshalled.Groups {
+			groupOne, groupTwo := rgsRemarshalled.Groups[i], rgs.Groups[i]
+			testutil.Assert(t, groupOne.Name == groupTwo.Name, "Rule groups are named differently")
+			testutil.Assert(t, groupOne.Interval == groupTwo.Interval, "Rule groups have different interval")
+			testutil.Assert(t, len(groupOne.Rules) == len(groupTwo.Rules), "Rule groups have a different number of rules")
+			for n := range groupOne.Rules {
+				ruleOne, ruleTwo := groupOne.Rules[n], groupTwo.Rules[n]
+				testutil.Assert(t, ruleOne.Alert.Value == ruleTwo.Alert.Value, "Rules contain different Alert values")
+				testutil.Assert(t, ruleOne.Record.Value == ruleTwo.Record.Value, "Rules contain different Record values")
+				testutil.Assert(t, ruleOne.Expr.Value == ruleTwo.Expr.Value, "Rules contain different Expr values")
+				testutil.Assert(t, ruleOne.For == ruleTwo.For, "Rules contain different For values")
+				testutil.Assert(t, reflect.DeepEqual(ruleOne.Annotations, ruleTwo.Annotations), "Rules contain different Annotation maps")
+				testutil.Assert(t, reflect.DeepEqual(ruleOne.Labels, ruleTwo.Labels), "Rules contain different Label maps")
+			}
+		}
+	}
 }
