@@ -1330,6 +1330,70 @@ func TestWalRepair_DecodingError(t *testing.T) {
 	}
 }
 
+func TestHeadReadWriterRepair(t *testing.T) {
+	dir, err := ioutil.TempDir("", "head_read_writer_repair")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+
+	const blockRange = 1000
+	walDir := filepath.Join(dir, "wal")
+
+	// Fill the chunk segments and corrupt it.
+	{
+		w, err := wal.New(nil, nil, walDir, false)
+		testutil.Ok(t, err)
+
+		chunks.DefaultHeadChunkSegmentTime = int64(blockRange * 4.5) // to hold 4 chunks per segment.
+		h, err := NewHead(nil, nil, w, blockRange, w.Dir(), nil, DefaultStripeSize)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))
+		testutil.Ok(t, h.Init(math.MinInt64))
+
+		s, created := h.getOrCreate(1, labels.FromStrings("a", "1"))
+		testutil.Assert(t, created, "series was not created")
+
+		// Create 22 chunks. Hence 6 segment files in total.
+		for i := 0; i < 22; i++ {
+			ok, chunkCreated := s.append(int64(i*blockRange), float64(i*blockRange), h.chunkReadWriter)
+			testutil.Assert(t, ok, "series append failed")
+			testutil.Assert(t, chunkCreated, "chunk was not created")
+			ok, chunkCreated = s.append(int64(i*blockRange)+blockRange-1, float64(i*blockRange), h.chunkReadWriter)
+			testutil.Assert(t, ok, "series append failed")
+			testutil.Assert(t, !chunkCreated, "chunk was created")
+		}
+		testutil.Ok(t, h.Close())
+
+		// Verify that there are 6 segment files.
+		files, err := ioutil.ReadDir(chunkDir(w.Dir()))
+		testutil.Ok(t, err)
+		testutil.Equals(t, 6, len(files))
+
+		// Corrupt the 4th file by removing last 10 bytes.
+		err = os.Truncate(filepath.Join(chunkDir(w.Dir()), files[3].Name()), files[3].Size()-10)
+		testutil.Ok(t, err)
+	}
+
+	// Open the db to trigger a repair.
+	{
+		db, err := Open(dir, nil, nil, DefaultOptions)
+		testutil.Ok(t, err)
+		defer func() {
+			testutil.Ok(t, db.Close())
+		}()
+		testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.mmapChunkCorruptionTotal))
+	}
+
+	// Verify that there are 3 segment files after the repair.
+	// The segments from the corrupt segment should be removed.
+	{
+		files, err := ioutil.ReadDir(chunkDir(walDir))
+		testutil.Ok(t, err)
+		testutil.Equals(t, 3, len(files))
+	}
+}
+
 func TestNewWalSegmentOnTruncate(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_wal_segments")
 	testutil.Ok(t, err)

@@ -102,26 +102,27 @@ type Head struct {
 }
 
 type headMetrics struct {
-	activeAppenders         prometheus.Gauge
-	series                  prometheus.GaugeFunc
-	seriesCreated           prometheus.Counter
-	seriesRemoved           prometheus.Counter
-	seriesNotFound          prometheus.Counter
-	chunks                  prometheus.Gauge
-	chunksCreated           prometheus.Counter
-	chunksRemoved           prometheus.Counter
-	gcDuration              prometheus.Summary
-	minTime                 prometheus.GaugeFunc
-	maxTime                 prometheus.GaugeFunc
-	samplesAppended         prometheus.Counter
-	walTruncateDuration     prometheus.Summary
-	walCorruptionsTotal     prometheus.Counter
-	headTruncateFail        prometheus.Counter
-	headTruncateTotal       prometheus.Counter
-	checkpointDeleteFail    prometheus.Counter
-	checkpointDeleteTotal   prometheus.Counter
-	checkpointCreationFail  prometheus.Counter
-	checkpointCreationTotal prometheus.Counter
+	activeAppenders          prometheus.Gauge
+	series                   prometheus.GaugeFunc
+	seriesCreated            prometheus.Counter
+	seriesRemoved            prometheus.Counter
+	seriesNotFound           prometheus.Counter
+	chunks                   prometheus.Gauge
+	chunksCreated            prometheus.Counter
+	chunksRemoved            prometheus.Counter
+	gcDuration               prometheus.Summary
+	minTime                  prometheus.GaugeFunc
+	maxTime                  prometheus.GaugeFunc
+	samplesAppended          prometheus.Counter
+	walTruncateDuration      prometheus.Summary
+	walCorruptionsTotal      prometheus.Counter
+	headTruncateFail         prometheus.Counter
+	headTruncateTotal        prometheus.Counter
+	checkpointDeleteFail     prometheus.Counter
+	checkpointDeleteTotal    prometheus.Counter
+	checkpointCreationFail   prometheus.Counter
+	checkpointCreationTotal  prometheus.Counter
+	mmapChunkCorruptionTotal prometheus.Counter
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -215,6 +216,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "prometheus_tsdb_checkpoint_creations_total",
 		Help: "Total number of checkpoint creations attempted.",
 	})
+	m.mmapChunkCorruptionTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_mmap_chunk_corruptions_total",
+		Help: "Total number of m-mapped chunk corruption.",
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -238,6 +243,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointDeleteTotal,
 			m.checkpointCreationFail,
 			m.checkpointCreationTotal,
+			m.mmapChunkCorruptionTotal,
 		)
 	}
 	return m
@@ -639,6 +645,7 @@ func (h *Head) Init(minValidTime int64) error {
 	level.Info(h.logger).Log("msg", "m-mapping the on-disk chunks")
 	if err := h.loadMmappedChunks(refSeries, multiRef); err != nil {
 		level.Error(h.logger).Log("msg", "loading on-disk chunks failed", "err", err)
+		h.metrics.mmapChunkCorruptionTotal.Inc()
 		// Repair is best effort here. If it fails, data will be recovered from WAL.
 		// Hence we wont lose any data (given WAL is not corrupt).
 		// TODO(codesome): add test for this repair.

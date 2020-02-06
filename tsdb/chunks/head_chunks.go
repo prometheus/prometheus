@@ -42,6 +42,13 @@ const (
 )
 
 var (
+	// DefaultHeadChunkSegmentTime is the default chunks segment time range.
+	// Assuming a general scrape interval of 15s, a chunk with 120 samples would
+	// be cut every 30m, so anything <30m will cause lots of empty files. And keeping
+	// it exactly 30m also has a chance of having empty files as its near that border.
+	// Hence keeping it a little more than 30m, i.e. 40m.
+	DefaultHeadChunkSegmentTime = 40 * int64(time.Minute/time.Millisecond)
+
 	// ErrHeadReadWriterClosed returned by any method indicates
 	// that the HeadReadWriter was closed.
 	ErrHeadReadWriterClosed = errors.New("HeadReadWriter closed")
@@ -78,12 +85,6 @@ type HeadReadWriter struct {
 }
 
 const (
-	// DefaultHeadChunkSegmentTime is the default chunks segment time range.
-	// Assuming a general scrape interval of 15s, a chunk with 120 samples would
-	// be cut every 30m, so anything <30m will cause lots of empty files. And keeping
-	// it exactly 30m also has a chance of having empty files as its near that border.
-	// Hence keeping it a little more than 30m, i.e. 40m.
-	DefaultHeadChunkSegmentTime = 40 * time.Minute
 	// HeadSegmentHeaderSize is the total size of the header for the segment file.
 	HeadSegmentHeaderSize = SegmentHeaderSize + 16
 	// HeaderMintOffset is the offset where the first byte of MinT for segment file exists.
@@ -101,7 +102,7 @@ func NewHeadReadWriter(dir string, pool chunkenc.Pool) (*HeadReadWriter, error) 
 	return newHeadReadWriter(dir, DefaultHeadChunkSegmentTime, pool)
 }
 
-func newHeadReadWriter(dir string, segmentTime time.Duration, pool chunkenc.Pool) (*HeadReadWriter, error) {
+func newHeadReadWriter(dir string, segmentTime int64, pool chunkenc.Pool) (*HeadReadWriter, error) {
 	if segmentTime <= 0 {
 		segmentTime = DefaultHeadChunkSegmentTime
 	}
@@ -117,7 +118,7 @@ func newHeadReadWriter(dir string, segmentTime time.Duration, pool chunkenc.Pool
 	hrw := &HeadReadWriter{
 		dirFile:     dirFile,
 		n:           0,
-		segmentTime: segmentTime.Milliseconds(),
+		segmentTime: segmentTime,
 		pool:        pool,
 		quit:        make(chan struct{}),
 	}
@@ -271,7 +272,7 @@ func (w *HeadReadWriter) IterateAllChunks(f func(seriesRef, chunkRef uint64, min
 				return &CorruptionErr{
 					Dir:     w.dirFile.Name(),
 					Segment: seq,
-					Err:     errors.Errorf("segment doesn't include enough bytes to read the chunk header - required:%v, available:%v", idx+25, sliceLen),
+					Err:     errors.Errorf("segment doesn't include enough bytes to read the chunk header - required:%v, available:%v", idx+35, sliceLen),
 				}
 			}
 
@@ -297,6 +298,14 @@ func (w *HeadReadWriter) IterateAllChunks(f func(seriesRef, chunkRef uint64, min
 			// Skip the data.
 			dataLen, n := binary.Uvarint(bs.Range(idx, idx+MaxChunkLengthFieldSize))
 			idx += n + int(dataLen)
+		}
+		if idx > sliceLen {
+			// It should be equal to the slice length. Else it means the last chunks had less bytes.
+			return &CorruptionErr{
+				Dir:     w.dirFile.Name(),
+				Segment: seq,
+				Err:     errors.Errorf("segment doesn't include enough bytes to read the last chunk data - required:%v, available:%v", idx, sliceLen),
+			}
 		}
 	}
 
