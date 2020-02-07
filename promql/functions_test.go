@@ -38,15 +38,13 @@ func TestDeriv(t *testing.T) {
 	}
 	engine := NewEngine(opts)
 
-	a, err := storage.Appender()
-	testutil.Ok(t, err)
+	a := storage.Appender()
 
 	metric := labels.FromStrings("__name__", "foo")
 	a.Add(metric, 1493712816939, 1.0)
 	a.Add(metric, 1493712846939, 1.0)
 
-	err = a.Commit()
-	testutil.Ok(t, err)
+	testutil.Ok(t, a.Commit())
 
 	query, err := engine.NewInstantQuery(storage, "deriv(foo[30m])", timestamp.Time(1493712846939))
 	testutil.Ok(t, err)

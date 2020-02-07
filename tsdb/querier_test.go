@@ -1343,8 +1343,7 @@ func TestDeletedIterator_WithSeek(t *testing.T) {
 	}
 
 	cases := []struct {
-		r    tombstones.Intervals
-		seek int64
+		r tombstones.Intervals
 	}{
 		{r: tombstones.Intervals{{Mint: 1, Maxt: 20}}},
 		{r: tombstones.Intervals{{Mint: 1, Maxt: 10}, {Mint: 12, Maxt: 20}, {Mint: 21, Maxt: 23}, {Mint: 25, Maxt: 30}}},

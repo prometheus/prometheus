@@ -75,9 +75,11 @@ type Appender interface {
 // Iterator is a simple iterator that can only get the next value.
 // Iterator iterates over the samples of a time series.
 type Iterator interface {
-	// Seek advances the iterator forward to the sample with the timestamp t or first value after t.
-	// Seek has no effect if requested timestamp is the same or lower than the current iterator position.
-	// Seek returns false if there is no such sample with the timestamp equal or larger than t.
+	// Next advances the iterator by one.
+	Next() bool
+	// Seek advances the iterator forward to the first sample with the timestamp equal or greater than t.
+	// If current sample found by previous `Next` or `Seek` operation already has this property, Seek has no effect.
+	// Seek returns true, if such sample exists, false otherwise.
 	// Iterator is exhausted when the Seek returns false.
 	// TODO(bwplotka): Verify above statements on all implementations with unit test.
 	Seek(t int64) bool
@@ -85,9 +87,8 @@ type Iterator interface {
 	// At returns (math.MinInt64, 0.0) before the iterator has advanced.
 	// TODO(bwplotka): Verify above statement on all implementations with unit test.
 	At() (int64, float64)
-	// Next advances the iterator by one.
-	Next() bool
 	// Err returns the current error.
+	// Err can return undefined value before the iterator has advanced.
 	Err() error
 }
 

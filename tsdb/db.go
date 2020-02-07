@@ -350,7 +350,8 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 		context.Background(),
 		nil,
 		db.logger,
-		ExponentialBlockRanges(time.Duration(DefaultOptions().MinBlockDuration).Milliseconds(), 3, 5), chunkenc.NewPool(),
+		ExponentialBlockRanges(int64(time.Duration(DefaultOptions().MinBlockDuration))/1e6, 3, 5),
+		chunkenc.NewPool(),
 	)
 	if err != nil {
 		return errors.Wrap(err, "create leveled compactor")
@@ -363,7 +364,7 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 
 // Querier loads the wal and returns a new querier over the data partition for the given time range.
 // Current implementation doesn't support multiple Queriers.
-func (db *DBReadOnly) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
+func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	select {
 	case <-db.closed:
 		return nil, ErrClosed
@@ -424,7 +425,7 @@ func (db *DBReadOnly) Querier(_ context.Context, mint, maxt int64) (storage.Quer
 		head:   head,
 	}
 
-	return dbWritable.Querier(context.TODO(), mint, maxt)
+	return dbWritable.Querier(ctx, mint, maxt)
 }
 
 // Blocks returns a slice of block readers for persisted blocks.
@@ -503,7 +504,7 @@ func (db *DBReadOnly) Close() error {
 	return merr.Err()
 }
 
-// Open returns a new DB in the given directory. If options are empty, default DefaultOptions will be used.
+// Open returns a new DB in the given directory. If options are empty, DefaultOptions will be used.
 func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db *DB, err error) {
 	var rngs []int64
 	opts, rngs = validateOpts(opts, nil)
