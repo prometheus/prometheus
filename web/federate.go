@@ -98,7 +98,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets, nil)
+	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	it := storage.NewBuffer(int64(h.lookbackDelta / 1e6))
 	for set.Next() {
 		s := set.At()

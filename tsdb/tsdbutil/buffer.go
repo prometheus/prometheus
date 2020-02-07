@@ -15,25 +15,13 @@ package tsdbutil
 
 import (
 	"math"
-)
 
-// SeriesIterator iterates over the data of a time series.
-type SeriesIterator interface {
-	// Seek advances the iterator forward to the given timestamp.
-	// If there's no value exactly at t, it advances to the first value
-	// after t.
-	Seek(t int64) bool
-	// At returns the current timestamp/value pair.
-	At() (t int64, v float64)
-	// Next advances the iterator by one.
-	Next() bool
-	// Err returns the current error.
-	Err() error
-}
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+)
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.
 type BufferedSeriesIterator struct {
-	it  SeriesIterator
+	it  chunkenc.Iterator
 	buf *sampleRing
 
 	lastTime int64
@@ -41,7 +29,7 @@ type BufferedSeriesIterator struct {
 
 // NewBuffer returns a new iterator that buffers the values within the time range
 // of the current element and the duration of delta before.
-func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
+func NewBuffer(it chunkenc.Iterator, delta int64) *BufferedSeriesIterator {
 	return &BufferedSeriesIterator{
 		it:       it,
 		buf:      newSampleRing(delta, 16),
@@ -56,7 +44,7 @@ func (b *BufferedSeriesIterator) PeekBack() (t int64, v float64, ok bool) {
 }
 
 // Buffer returns an iterator over the buffered data.
-func (b *BufferedSeriesIterator) Buffer() SeriesIterator {
+func (b *BufferedSeriesIterator) Buffer() chunkenc.Iterator {
 	return b.buf.iterator()
 }
 
@@ -145,7 +133,7 @@ func (r *sampleRing) reset() {
 	r.f = 0
 }
 
-func (r *sampleRing) iterator() SeriesIterator {
+func (r *sampleRing) iterator() chunkenc.Iterator {
 	return &sampleRingIterator{r: r, i: -1}
 }
 

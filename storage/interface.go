@@ -39,6 +39,7 @@ type Appendable interface {
 
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe. Storage implements storage.SampleAppender.
+// TODO(bwplotka): Add ChunkQueryable to Storage in next PR.
 type Storage interface {
 	Queryable
 	Appendable
@@ -51,19 +52,40 @@ type Storage interface {
 }
 
 // A Queryable handles queries against a storage.
+// Use it when you need to have access to all samples without chunk encoding abstraction e.g promQL
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
 
-// Querier provides querying access over time series data of a fixed
-// time range.
+// Querier provides querying access over time series data of a fixed time range.
 type Querier interface {
+	baseQuerier
+
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
 	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (SeriesSet, Warnings, error)
+}
 
+// A ChunkQueryable handles queries against a storage.
+// Use it when you need to have access to samples in encoded format.
+type ChunkQueryable interface {
+	// ChunkQuerier returns a new ChunkQuerier on the storage.
+	ChunkQuerier(ctx context.Context, mint, maxt int64) (ChunkQuerier, Warnings, error)
+}
+
+// ChunkQuerier provides querying access over time series data of a fixed time range.
+type ChunkQuerier interface {
+	baseQuerier
+
+	// Select returns a set of series that matches the given label matchers.
+	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
+	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
+	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (ChunkSeriesSet, Warnings, error)
+}
+
+type baseQuerier interface {
 	// LabelValues returns all potential values for a label name.
 	// It is not safe to use the strings beyond the lifefime of the querier.
 	LabelValues(name string) ([]string, Warnings, error)
@@ -149,19 +171,43 @@ func (s errSeriesSet) Next() bool { return false }
 func (s errSeriesSet) At() Series { return nil }
 func (s errSeriesSet) Err() error { return s.err }
 
-// Series represents a single time series.
+// Series exposes a single time series and allows iterating over samples.
 type Series interface {
-	// Labels returns the complete set of labels identifying the series.
-	Labels() labels.Labels
+	Labeled
+	SampleIteratable
+}
 
+// ChunkSeriesSet contains a set of chunked series.
+type ChunkSeriesSet interface {
+	Next() bool
+	At() ChunkSeries
+	Err() error
+}
+
+// ChunkSeries exposes a single time series and allows iterating over chunks.
+type ChunkSeries interface {
+	Labeled
+	ChunkIteratable
+}
+
+// Labeled represents the item that have labels e.g. time series.
+type Labeled interface {
+	// Labels returns the complete set of labels. For series it means all labels identifying the series.
+	Labels() labels.Labels
+}
+
+type SampleIteratable interface {
 	// Iterator returns a new iterator of the data of the series.
 	Iterator() chunkenc.Iterator
 }
 
-// ChunkSeriesSet exposes the chunks and intervals of a series instead of the
-// actual series itself.
-// TODO(bwplotka): Move it to Series like Iterator that iterates over chunks and avoiding loading all of them at once.
-type ChunkSeriesSet interface {
+type ChunkIteratable interface {
+	// ChunkIterator returns a new iterator that iterates over non-overlapping chunks of the series.
+	Iterator() chunks.Iterator
+}
+
+// TODO(bwplotka): Remove in next Pr.
+type DeprecatedChunkSeriesSet interface {
 	Next() bool
 	At() (labels.Labels, []chunks.Meta, tombstones.Intervals)
 	Err() error

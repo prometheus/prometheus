@@ -648,7 +648,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	var (
-		set         storage.ChunkSeriesSet
+		set         storage.DeprecatedChunkSeriesSet
 		symbols     index.StringIter
 		closers     = []io.Closer{}
 		overlapping bool
@@ -915,7 +915,7 @@ func (c *compactionSeriesSet) At() (labels.Labels, []chunks.Meta, tombstones.Int
 }
 
 type compactionMerger struct {
-	a, b storage.ChunkSeriesSet
+	a, b storage.DeprecatedChunkSeriesSet
 
 	aok, bok  bool
 	l         labels.Labels
@@ -923,7 +923,8 @@ type compactionMerger struct {
 	intervals tombstones.Intervals
 }
 
-func newCompactionMerger(a, b storage.ChunkSeriesSet) (*compactionMerger, error) {
+// TODO(bwplotka): Move to storage mergers.
+func newCompactionMerger(a, b storage.DeprecatedChunkSeriesSet) (*compactionMerger, error) {
 	c := &compactionMerger{
 		a: a,
 		b: b,
