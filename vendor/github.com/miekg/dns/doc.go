@@ -83,7 +83,7 @@ with:
 
 	in, err := dns.Exchange(m1, "127.0.0.1:53")
 
-When this functions returns you will get dns message. A dns message consists
+When this functions returns you will get DNS message. A DNS message consists
 out of four sections.
 The question section: in.Question, the answer section: in.Answer,
 the authority section: in.Ns and the additional section: in.Extra.
@@ -221,7 +221,7 @@ RFC 6895 sets aside a range of type codes for private use. This range is 65,280
 - 65,534 (0xFF00 - 0xFFFE). When experimenting with new Resource Records these
 can be used, before requesting an official type code from IANA.
 
-See https://miek.nl/2014/September/21/idn-and-private-rr-in-go-dns/ for more
+See https://miek.nl/2014/september/21/idn-and-private-rr-in-go-dns/ for more
 information.
 
 EDNS0
@@ -238,9 +238,8 @@ Basic use pattern for creating an (empty) OPT RR:
 
 The rdata of an OPT RR consists out of a slice of EDNS0 (RFC 6891) interfaces.
 Currently only a few have been standardized: EDNS0_NSID (RFC 5001) and
-EDNS0_SUBNET (draft-vandergaast-edns-client-subnet-02). Note that these options
-may be combined in an OPT RR. Basic use pattern for a server to check if (and
-which) options are set:
+EDNS0_SUBNET (RFC 7871). Note that these options may be combined in an OPT RR.
+Basic use pattern for a server to check if (and which) options are set:
 
 	// o is a dns.OPT
 	for _, s := range o.Option {

@@ -110,6 +110,8 @@ func NewHTTPClient(conf HTTPConfig) (Client, error) {
 	}
 	if conf.TLSConfig != nil {
 		tr.TLSClientConfig = conf.TLSConfig
+		// Make sure to preserve the InsecureSkipVerify setting from the config.
+		tr.TLSClientConfig.InsecureSkipVerify = conf.InsecureSkipVerify
 	}
 	return &client{
 		url:       *u,

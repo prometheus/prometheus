@@ -197,7 +197,7 @@ func (m *Metrics) filterLabels(labels []Label) []Label {
 	if labels == nil {
 		return nil
 	}
-	toReturn := labels[:0]
+	toReturn := []Label{}
 	for _, label := range labels {
 		if m.labelIsAllowed(&label) {
 			toReturn = append(toReturn, label)

@@ -54,6 +54,13 @@ type Intention struct {
 	// or modified.
 	CreatedAt, UpdatedAt time.Time
 
+	// Hash of the contents of the intention
+	//
+	// This is needed mainly for replication purposes. When replicating from
+	// one DC to another keeping the content Hash will allow us to detect
+	// content changes more efficiently than checking every single field
+	Hash []byte
+
 	CreateIndex uint64
 	ModifyIndex uint64
 }

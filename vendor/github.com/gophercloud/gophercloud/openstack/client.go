@@ -187,16 +187,53 @@ func v3auth(client *gophercloud.ProviderClient, endpoint string, opts tokens3.Au
 		v3Client.Endpoint = endpoint
 	}
 
-	result := tokens3.Create(v3Client, opts)
+	var catalog *tokens3.ServiceCatalog
 
-	err = client.SetTokenAndAuthResult(result)
-	if err != nil {
-		return err
+	var tokenID string
+	// passthroughToken allows to passthrough the token without a scope
+	var passthroughToken bool
+	switch v := opts.(type) {
+	case *gophercloud.AuthOptions:
+		tokenID = v.TokenID
+		passthroughToken = (v.Scope == nil || *v.Scope == gophercloud.AuthScope{})
+	case *tokens3.AuthOptions:
+		tokenID = v.TokenID
+		passthroughToken = (v.Scope == tokens3.Scope{})
 	}
 
-	catalog, err := result.ExtractServiceCatalog()
-	if err != nil {
-		return err
+	if tokenID != "" && passthroughToken {
+		// passing through the token ID without requesting a new scope
+		if opts.CanReauth() {
+			return fmt.Errorf("cannot use AllowReauth, when the token ID is defined and auth scope is not set")
+		}
+
+		v3Client.SetToken(tokenID)
+		result := tokens3.Get(v3Client, tokenID)
+		if result.Err != nil {
+			return result.Err
+		}
+
+		err = client.SetTokenAndAuthResult(result)
+		if err != nil {
+			return err
+		}
+
+		catalog, err = result.ExtractServiceCatalog()
+		if err != nil {
+			return err
+		}
+	} else {
+		result := tokens3.Create(v3Client, opts)
+
+		err = client.SetTokenAndAuthResult(result)
+		if err != nil {
+			return err
+		}
+
+		catalog, err = result.ExtractServiceCatalog()
+		if err != nil {
+			return err
+		}
 	}
 
 	if opts.CanReauth() {

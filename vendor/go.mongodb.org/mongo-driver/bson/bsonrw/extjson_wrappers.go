@@ -180,7 +180,13 @@ func (ejv *extJSONValue) parseDBPointer() (ns string, oid primitive.ObjectID, er
 	return ns, oid, nil
 }
 
-const rfc3339Milli = "2006-01-02T15:04:05.999Z07:00"
+const (
+	rfc3339Milli = "2006-01-02T15:04:05.999Z07:00"
+)
+
+var (
+	timeFormats = []string{rfc3339Milli, "2006-01-02T15:04:05.999Z0700"}
+)
 
 func (ejv *extJSONValue) parseDateTime() (int64, error) {
 	switch ejv.t {
@@ -198,7 +204,15 @@ func (ejv *extJSONValue) parseDateTime() (int64, error) {
 }
 
 func parseDatetimeString(data string) (int64, error) {
-	t, err := time.Parse(rfc3339Milli, data)
+	var t time.Time
+	var err error
+	// try acceptable time formats until one matches
+	for _, format := range timeFormats {
+		t, err = time.Parse(format, data)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return 0, fmt.Errorf("invalid $date value string: %s", data)
 	}

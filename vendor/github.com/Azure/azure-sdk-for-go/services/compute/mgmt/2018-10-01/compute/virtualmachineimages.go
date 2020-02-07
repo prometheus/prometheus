@@ -35,7 +35,9 @@ func NewVirtualMachineImagesClient(subscriptionID string) VirtualMachineImagesCl
 	return NewVirtualMachineImagesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewVirtualMachineImagesClientWithBaseURI creates an instance of the VirtualMachineImagesClient client.
+// NewVirtualMachineImagesClientWithBaseURI creates an instance of the VirtualMachineImagesClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewVirtualMachineImagesClientWithBaseURI(baseURI string, subscriptionID string) VirtualMachineImagesClient {
 	return VirtualMachineImagesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -106,8 +108,8 @@ func (client VirtualMachineImagesClient) GetPreparer(ctx context.Context, locati
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineImagesClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -197,8 +199,8 @@ func (client VirtualMachineImagesClient) ListPreparer(ctx context.Context, locat
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineImagesClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -274,8 +276,8 @@ func (client VirtualMachineImagesClient) ListOffersPreparer(ctx context.Context,
 // ListOffersSender sends the ListOffers request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineImagesClient) ListOffersSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListOffersResponder handles the response to the ListOffers request. The method always
@@ -349,8 +351,8 @@ func (client VirtualMachineImagesClient) ListPublishersPreparer(ctx context.Cont
 // ListPublishersSender sends the ListPublishers request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineImagesClient) ListPublishersSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListPublishersResponder handles the response to the ListPublishers request. The method always
@@ -428,8 +430,8 @@ func (client VirtualMachineImagesClient) ListSkusPreparer(ctx context.Context, l
 // ListSkusSender sends the ListSkus request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineImagesClient) ListSkusSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListSkusResponder handles the response to the ListSkus request. The method always

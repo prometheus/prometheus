@@ -89,7 +89,7 @@ type QueryOptions struct {
 	RequireConsistent bool
 
 	// UseCache requests that the agent cache results locally. See
-	// https://www.consul.io/api/index.html#agent-caching for more details on the
+	// https://www.consul.io/api/features/caching.html for more details on the
 	// semantics.
 	UseCache bool
 
@@ -99,14 +99,14 @@ type QueryOptions struct {
 	// returned. Clients that wish to allow for stale results on error can set
 	// StaleIfError to a longer duration to change this behavior. It is ignored
 	// if the endpoint supports background refresh caching. See
-	// https://www.consul.io/api/index.html#agent-caching for more details.
+	// https://www.consul.io/api/features/caching.html for more details.
 	MaxAge time.Duration
 
 	// StaleIfError specifies how stale the client will accept a cached response
 	// if the servers are unavailable to fetch a fresh one. Only makes sense when
 	// UseCache is true and MaxAge is set to a lower, non-zero value. It is
 	// ignored if the endpoint supports background refresh caching. See
-	// https://www.consul.io/api/index.html#agent-caching for more details.
+	// https://www.consul.io/api/features/caching.html for more details.
 	StaleIfError time.Duration
 
 	// WaitIndex is used to enable a blocking query. Waits
@@ -142,6 +142,10 @@ type QueryOptions struct {
 	// relayed back to the sender through N other random nodes. Must be
 	// a value from 0 to 5 (inclusive).
 	RelayFactor uint8
+
+	// LocalOnly is used in keyring list operation to force the keyring
+	// query to only hit local servers (no WAN traffic).
+	LocalOnly bool
 
 	// Connect filters prepared query execution to only include Connect-capable
 	// services. This currently affects prepared query execution.
@@ -655,6 +659,9 @@ func (r *request) setQueryOptions(q *QueryOptions) {
 	if q.RelayFactor != 0 {
 		r.params.Set("relay-factor", strconv.Itoa(int(q.RelayFactor)))
 	}
+	if q.LocalOnly {
+		r.params.Set("local-only", fmt.Sprintf("%t", q.LocalOnly))
+	}
 	if q.Connect {
 		r.params.Set("connect", "true")
 	}
@@ -672,6 +679,7 @@ func (r *request) setQueryOptions(q *QueryOptions) {
 			r.header.Set("Cache-Control", strings.Join(cc, ", "))
 		}
 	}
+
 	r.ctx = q.ctx
 }
 

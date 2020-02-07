@@ -36,7 +36,8 @@ func NewGalleryImagesClient(subscriptionID string) GalleryImagesClient {
 	return NewGalleryImagesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewGalleryImagesClientWithBaseURI creates an instance of the GalleryImagesClient client.
+// NewGalleryImagesClientWithBaseURI creates an instance of the GalleryImagesClient client using a custom endpoint.
+// Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewGalleryImagesClientWithBaseURI(baseURI string, subscriptionID string) GalleryImagesClient {
 	return GalleryImagesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -114,9 +115,9 @@ func (client GalleryImagesClient) CreateOrUpdatePreparer(ctx context.Context, re
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client GalleryImagesClient) CreateOrUpdateSender(req *http.Request) (future GalleryImagesCreateOrUpdateFuture, err error) {
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = autorest.SendWithSender(client, req, sd...)
 	if err != nil {
 		return
 	}
@@ -193,9 +194,9 @@ func (client GalleryImagesClient) DeletePreparer(ctx context.Context, resourceGr
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client GalleryImagesClient) DeleteSender(req *http.Request) (future GalleryImagesDeleteFuture, err error) {
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = autorest.SendWithSender(client, req, sd...)
 	if err != nil {
 		return
 	}
@@ -277,8 +278,8 @@ func (client GalleryImagesClient) GetPreparer(ctx context.Context, resourceGroup
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client GalleryImagesClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -355,8 +356,8 @@ func (client GalleryImagesClient) ListByGalleryPreparer(ctx context.Context, res
 // ListByGallerySender sends the ListByGallery request. The method will close the
 // http.Response Body if it receives an error.
 func (client GalleryImagesClient) ListByGallerySender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListByGalleryResponder handles the response to the ListByGallery request. The method always

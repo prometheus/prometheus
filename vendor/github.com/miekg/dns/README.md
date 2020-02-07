@@ -94,8 +94,8 @@ DNS Authors 2012-
 
 # Building
 
-Building is done with the `go` tool. If you have setup your GOPATH correctly, the following should
-work:
+This library uses Go modules and uses semantic versioning. Building is done with the `go` tool, so
+the following should work:
 
     go get github.com/miekg/dns
     go build github.com/miekg/dns
@@ -127,6 +127,7 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * 2915 - NAPTR record
 * 2929 - DNS IANA Considerations
 * 3110 - RSASHA1 DNS keys
+* 3123 - APL record
 * 3225 - DO bit (DNSSEC OK)
 * 340{1,2,3} - NAPTR record
 * 3445 - Limiting the scope of (DNS)KEY

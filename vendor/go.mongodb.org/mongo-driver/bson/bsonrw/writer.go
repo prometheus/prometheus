@@ -55,6 +55,12 @@ type ValueWriter interface {
 	WriteUndefined() error
 }
 
+// ValueWriterFlusher is a superset of ValueWriter that exposes functionality to flush to the underlying buffer.
+type ValueWriterFlusher interface {
+	ValueWriter
+	Flush() error
+}
+
 // BytesWriter is the interface used to write BSON bytes to a ValueWriter.
 // This interface is meant to be a superset of ValueWriter, so that types that
 // implement ValueWriter may also implement this interface.
