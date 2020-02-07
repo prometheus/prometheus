@@ -3,6 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import App from './App';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import { isPresent } from './utils';
 
 // Declared/defined in public/index.html, value replaced by Prometheus when serving bundle.
 declare const GLOBAL_PATH_PREFIX: string;
@@ -10,7 +11,7 @@ declare const GLOBAL_CONSOLES_LINK: string;
 
 let prefix = GLOBAL_PATH_PREFIX;
 let consolesLink = GLOBAL_CONSOLES_LINK;
-if (GLOBAL_PATH_PREFIX === 'PATH_PREFIX_PLACEHOLDER' || GLOBAL_PATH_PREFIX === '/') {
+if (GLOBAL_PATH_PREFIX === 'PATH_PREFIX_PLACEHOLDER' || GLOBAL_PATH_PREFIX === '/' || !isPresent(GLOBAL_PATH_PREFIX)) {
   // Either we are running the app outside of Prometheus, so the placeholder value in
   // the index.html didn't get replaced, or we have a '/' prefix, which we also need to
   // normalize to '' to make concatenations work (prefixes like '/foo/bar/' already get
@@ -18,7 +19,11 @@ if (GLOBAL_PATH_PREFIX === 'PATH_PREFIX_PLACEHOLDER' || GLOBAL_PATH_PREFIX === '
   prefix = '';
 }
 
-if (GLOBAL_CONSOLES_LINK === 'CONSOLES_LINK_PLACEHOLDER' || GLOBAL_CONSOLES_LINK === '') {
+if (
+  GLOBAL_CONSOLES_LINK === 'CONSOLES_LINK_PLACEHOLDER' ||
+  GLOBAL_CONSOLES_LINK === '' ||
+  !isPresent(GLOBAL_CONSOLES_LINK)
+) {
   consolesLink = '';
 }
 
