@@ -806,7 +806,7 @@ var expectedErrors = []struct {
 		errMsg:   "role",
 	}, {
 		filename: "kubernetes_selectors_endpoints.bad.yml",
-		errMsg:   "endpoints role supports only pod, service and endpoints selectors",
+		errMsg:   "endpoints role supports only pod, service, endpoints selectors",
 	}, {
 		filename: "kubernetes_selectors_ingress.bad.yml",
 		errMsg:   "ingress role supports only ingress selectors",
@@ -822,6 +822,12 @@ var expectedErrors = []struct {
 	}, {
 		filename: "kubernetes_namespace_discovery.bad.yml",
 		errMsg:   "field foo not found in type kubernetes.plain",
+	}, {
+		filename: "kubernetes_selectors_duplicated_role.bad.yml",
+		errMsg:   "duplicated selector role: pod",
+	}, {
+		filename: "kubernetes_selectors_incorrect_selector.bad.yml",
+		errMsg:   "invalid selector: 'metadata.status-Running'; can't understand 'metadata.status-Running'",
 	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
