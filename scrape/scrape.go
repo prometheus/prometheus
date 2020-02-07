@@ -649,7 +649,7 @@ type scrapeCache struct {
 	seriesCur  map[uint64]labels.Labels
 	seriesPrev map[uint64]labels.Labels
 
-	metaMtx  sync.Mutex
+	metaMtx  sync.RWMutex
 	metadata map[string]*metaEntry
 }
 
@@ -677,9 +677,9 @@ func newScrapeCache() *scrapeCache {
 }
 
 func (c *scrapeCache) iterDone(flushCache bool) {
-	c.metaMtx.Lock()
+	c.metaMtx.RLock()
 	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
-	c.metaMtx.Unlock()
+	c.metaMtx.RUnlock()
 
 	if flushCache {
 		c.successfulCount = count
@@ -773,6 +773,7 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
 
 func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
@@ -782,11 +783,11 @@ func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 	e.typ = t
 	e.lastIter = c.iter
 
-	c.metaMtx.Unlock()
 }
 
 func (c *scrapeCache) setHelp(metric, help []byte) {
 	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
@@ -798,11 +799,11 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 	}
 	e.lastIter = c.iter
 
-	c.metaMtx.Unlock()
 }
 
 func (c *scrapeCache) setUnit(metric, unit []byte) {
 	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
@@ -813,13 +814,11 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 		e.unit = string(unit)
 	}
 	e.lastIter = c.iter
-
-	c.metaMtx.Unlock()
 }
 
 func (c *scrapeCache) GetMetadata(metric string) (MetricMetadata, bool) {
-	c.metaMtx.Lock()
-	defer c.metaMtx.Unlock()
+	c.metaMtx.RLock()
+	defer c.metaMtx.RUnlock()
 
 	m, ok := c.metadata[metric]
 	if !ok {
@@ -834,8 +833,8 @@ func (c *scrapeCache) GetMetadata(metric string) (MetricMetadata, bool) {
 }
 
 func (c *scrapeCache) ListMetadata() []MetricMetadata {
-	c.metaMtx.Lock()
-	defer c.metaMtx.Unlock()
+	c.metaMtx.RLock()
+	defer c.metaMtx.RUnlock()
 
 	res := make([]MetricMetadata, 0, len(c.metadata))
 
@@ -852,8 +851,8 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 
 // MetadataSize returns the size of the metadata cache.
 func (c *scrapeCache) SizeMetadata() (s int) {
-	c.metaMtx.Lock()
-	defer c.metaMtx.Unlock()
+	c.metaMtx.RLock()
+	defer c.metaMtx.RUnlock()
 	for _, e := range c.metadata {
 		s += e.size()
 	}
@@ -863,8 +862,8 @@ func (c *scrapeCache) SizeMetadata() (s int) {
 
 // MetadataLen returns the number of metadata entries in the cache.
 func (c *scrapeCache) LengthMetadata() int {
-	c.metaMtx.Lock()
-	defer c.metaMtx.Unlock()
+	c.metaMtx.RLock()
+	defer c.metaMtx.RUnlock()
 
 	return len(c.metadata)
 }
