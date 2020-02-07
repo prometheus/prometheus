@@ -1115,7 +1115,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		for i, s := range selVS.Series {
 			points = points[:0]
 			it.Reset(s.Iterator())
-			ss := Series{
+			ss := storage.Series{
 				// For all range vector functions, the only change to the
 				// output labels is dropping the metric name so just do
 				// it once here.
@@ -1196,7 +1196,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			}
 
 			return Matrix{
-				Series{
+				storage.Series{
 					Metric: createLabelsForAbsentFunction(e.Args[0]),
 					Points: newp,
 				},
@@ -1275,8 +1275,8 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		mat := make(Matrix, 0, len(e.Series))
 		it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
 		for i, s := range e.Series {
-			it.Reset(s.Iterator())
-			ss := Series{
+			it.Reset(s.SampleIterator())
+			ss := storage.Series{
 				Metric: e.Series[i].Labels(),
 				Points: getPointSlice(numSteps),
 			}
@@ -1440,7 +1440,7 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) Matrix {
 			ev.error(err)
 		}
 		it.Reset(s.Iterator())
-		ss := Series{
+		ss := storage.Series{
 			Metric: series[i].Labels(),
 		}
 

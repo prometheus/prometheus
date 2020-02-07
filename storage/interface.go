@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
 // The errors exposed.
@@ -54,17 +53,10 @@ type Storage interface {
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
+	ChunkedQuerier(ctx context.Context, mint, maxt int64) (ChunkedQuerier, error)
 }
 
-// Querier provides querying access over time series data of a fixed
-// time range.
-type Querier interface {
-	// Select returns a set of series that matches the given label matchers.
-	Select(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
-
-	// SelectSorted returns a sorted set of series that matches the given label matchers.
-	SelectSorted(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
-
+type baseQuerier interface {
 	// LabelValues returns all potential values for a label name.
 	// It is not safe to use the strings beyond the lifefime of the querier.
 	LabelValues(name string) ([]string, Warnings, error)
@@ -74,6 +66,30 @@ type Querier interface {
 
 	// Close releases the resources of the Querier.
 	Close() error
+}
+
+// Querier provides querying access over time series' samples of a fixed
+// time range.
+type Querier interface {
+	baseQuerier
+
+	// Select returns a set of series that matches the given label matchers.
+	Select(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
+
+	// SelectSorted returns a sorted set of series that matches the given label matchers.
+	SelectSorted(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
+}
+
+// ChunkedQuerier provides querying access over time series' chunks of a fixed
+// time range.
+type ChunkedQuerier interface {
+	baseQuerier
+
+	// Select returns a set of series that matches the given label matchers.
+	Select(*SelectParams, ...*labels.Matcher) (ChunkedSeriesSet, Warnings, error)
+
+	// SelectSorted returns a sorted set of series that matches the given label matchers.
+	SelectSorted(*SelectParams, ...*labels.Matcher) (ChunkedSeriesSet, Warnings, error)
 }
 
 // SelectParams specifies parameters passed to data selections.
@@ -124,13 +140,6 @@ type Appender interface {
 	Rollback() error
 }
 
-// SeriesSet contains a set of series.
-type SeriesSet interface {
-	Next() bool
-	At() Series
-	Err() error
-}
-
 var emptySeriesSet = errSeriesSet{}
 
 // EmptySeriesSet returns a series set that's always empty.
@@ -146,22 +155,48 @@ func (s errSeriesSet) Next() bool { return false }
 func (s errSeriesSet) At() Series { return nil }
 func (s errSeriesSet) Err() error { return s.err }
 
-// Series represents a single time series.
-type Series interface {
-	// Labels returns the complete set of labels identifying the series.
-	Labels() labels.Labels
+// SeriesSet contains a set of series.
+type SeriesSet interface {
+	Next() bool
+	At() Series
+	Err() error
+}
 
-	// Iterator returns a new iterator of the data of the series.
+// ChunkedSeriesSet contains a set of chunked series.
+type ChunkedSeriesSet interface {
+	Next() bool
+	At() ChunkedSeries
+	Err() error
+}
+
+// Labeled represents the item that have labels e.g. time series.
+type Labeled interface {
+	// Labels returns the complete set of labels. For series it means all labels identifying the series.
+	Labels() labels.Labels
+}
+
+// Series exposes a single time series and allows iterating over samples.
+type Series interface {
+	Labeled
+	SampleIteratable
+}
+
+// Series exposes a single time series and allows iterating over chunks.
+type ChunkedSeries interface {
+	Labeled
+	ChunkedIteratable
+}
+
+// TODO(bwplotka): Remove this and use Series instead, once overlapped interfaces are supported (Go1.14).
+type SampleIteratable interface {
+	// } returns a new iterator of the data of the series.
 	Iterator() chunkenc.Iterator
 }
 
-// ChunkSeriesSet exposes the chunks and intervals of a series instead of the
-// actual series itself.
-// TODO(bwplotka): Move it to Series like Iterator that iterates over chunks and avoiding loading all of them at once.
-type ChunkSeriesSet interface {
-	Next() bool
-	At() (labels.Labels, []chunks.Meta, tombstones.Intervals)
-	Err() error
+// TODO(bwplotka): Remove this and use ChunkedSeries instead, once overlapped interfaces are supported (Go1.14).
+type ChunkedIteratable interface {
+	// Iterator returns a new iterator that iterates over non-overlapping chunks of the series.
+	Iterator() chunks.Iterator
 }
 
 type Warnings []error

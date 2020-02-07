@@ -19,7 +19,6 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -121,44 +120,6 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestConcreteSeriesSet(t *testing.T) {
-	series1 := &concreteSeries{
-		labels:  labels.FromStrings("foo", "bar"),
-		samples: []prompb.Sample{{Value: 1, Timestamp: 2}},
-	}
-	series2 := &concreteSeries{
-		labels:  labels.FromStrings("foo", "baz"),
-		samples: []prompb.Sample{{Value: 3, Timestamp: 4}},
-	}
-	c := &concreteSeriesSet{
-		series: []storage.Series{series1, series2},
-	}
-	testutil.Assert(t, c.Next(), "Expected Next() to be true.")
-	testutil.Equals(t, series1, c.At(), "Unexpected series returned.")
-	testutil.Assert(t, c.Next(), "Expected Next() to be true.")
-	testutil.Equals(t, series2, c.At(), "Unexpected series returned.")
-	testutil.Assert(t, !c.Next(), "Expected Next() to be false.")
-}
-
-func TestConcreteSeriesClonesLabels(t *testing.T) {
-	lbls := labels.Labels{
-		labels.Label{Name: "a", Value: "b"},
-		labels.Label{Name: "c", Value: "d"},
-	}
-	cs := concreteSeries{
-		labels: labels.New(lbls...),
-	}
-
-	gotLabels := cs.Labels()
-	testutil.Equals(t, lbls, gotLabels)
-
-	gotLabels[0].Value = "foo"
-	gotLabels[1].Value = "bar"
-
-	gotLabels = cs.Labels()
-	testutil.Equals(t, lbls, gotLabels)
 }
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {

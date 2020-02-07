@@ -804,7 +804,7 @@ func TestDelete_e2e(t *testing.T) {
 				smpls = deletedSamples(smpls, del.drange)
 				// Only append those series for which samples exist as mockSeriesSet
 				// doesn't skip series with no samples.
-				// TODO: But sometimes SeriesSet returns an empty SeriesIterator
+				// TODO: But sometimes SeriesSet returns an empty chunkenc.Iterator
 				if len(smpls) > 0 {
 					matchedSeries = append(matchedSeries, newSeries(
 						m.Map(),

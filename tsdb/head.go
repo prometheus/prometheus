@@ -1751,6 +1751,58 @@ func (s *memSeries) cut(mint int64) *memChunk {
 	return c
 }
 
+// chunkRewrite re-writes the chunks which overlaps with deleted ranges
+// and removes the samples in the deleted ranges.
+// Chunks is deleted if no samples are left at the end.
+func (h *Head) chunkRewrite(ref uint64, dranges Intervals) (err error) {
+	if len(dranges) == 0 {
+		return nil
+	}
+
+	ms := h.series.getByID(ref)
+	ms.Lock()
+	defer ms.Unlock()
+	if len(ms.chunks) == 0 {
+		return nil
+	}
+
+	metas := ms.chunksMetas()
+	mint, maxt := metas[0].MinTime, metas[len(metas)-1].MaxTime
+	it := newChunkSeriesIterator(metas, dranges, mint, maxt)
+
+	ms.reset()
+	for it.Next() {
+		t, v := it.At()
+		ok, _ := ms.append(t, v)
+		if !ok {
+			level.Warn(h.logger).Log("msg", "failed to add sample during delete")
+		}
+	}
+
+	return nil
+}
+
+func (s *memSeries) chunksMetas() []chunks.Meta {
+	metas := make([]chunks.Meta, 0, len(s.chunks))
+	for _, chk := range s.chunks {
+		metas = append(metas, chunks.Meta{Chunk: chk.chunk, MinTime: chk.minTime, MaxTime: chk.maxTime})
+	}
+	return metas
+}
+
+// reset re-initialises all the variable in the memSeries except 'lset', 'ref',
+// and 'chunkRange', like how it would appear after 'newMemSeries(...)'.
+func (s *memSeries) reset() {
+	s.chunks = nil
+	s.headChunk = nil
+	s.firstChunkID = 0
+	s.nextAt = math.MinInt64
+	// This is to make sure iterator.At without advancing returns default values.
+	s.sampleBuf = [4]sample{{math.MinInt64, 0}, {math.MinInt64, 0}, {math.MinInt64, 0}, {math.MinInt64, 0}}
+	s.pendingCommit = false
+	s.app = nil
+}
+
 // appendable checks whether the given sample is valid for appending to the series.
 func (s *memSeries) appendable(t int64, v float64) error {
 	c := s.head()

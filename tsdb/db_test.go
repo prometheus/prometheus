@@ -80,7 +80,7 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 		series := ss.At()
 
 		samples := []tsdbutil.Sample{}
-		it := series.Iterator()
+		it := series.SampleIterator()
 		for it.Next() {
 			t, v := it.At()
 			samples = append(samples, sample{t: t, v: v})

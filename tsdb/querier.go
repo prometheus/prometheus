@@ -15,8 +15,20 @@ package tsdb
 
 import (
 	"sort"
+
+	"math"
+	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -722,249 +734,6 @@ func lookupChunkSeries(sorted bool, ir IndexReader, tr tombstones.Reader, ms ...
 	}, nil
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
-	return s.lset, s.chks, s.intervals
-}
-
-func (s *baseChunkSeries) Err() error { return s.err }
-
-func (s *baseChunkSeries) Next() bool {
-	var (
-		lset     = make(labels.Labels, len(s.lset))
-		chkMetas = make([]chunks.Meta, len(s.chks))
-		err      error
-	)
-
-	for s.p.Next() {
-		ref := s.p.At()
-		if err := s.index.Series(ref, &lset, &chkMetas); err != nil {
-			// Postings may be stale. Skip if no underlying series exists.
-			if errors.Cause(err) == ErrNotFound {
-				continue
-			}
-			s.err = err
-			return false
-		}
-
-		s.lset = lset
-		s.chks = chkMetas
-		s.intervals, err = s.tombstones.Get(s.p.At())
-		if err != nil {
-			s.err = errors.Wrap(err, "get tombstones")
-			return false
-		}
-
-		if len(s.intervals) > 0 {
-			// Only those chunks that are not entirely deleted.
-			chks := make([]chunks.Meta, 0, len(s.chks))
-			for _, chk := range s.chks {
-				if !(tombstones.Interval{Mint: chk.MinTime, Maxt: chk.MaxTime}.IsSubrange(s.intervals)) {
-					chks = append(chks, chk)
-				}
-			}
-
-			s.chks = chks
-		}
-
-		return true
-	}
-	if err := s.p.Err(); err != nil {
-		s.err = err
-	}
-	return false
-}
-
-// populatedChunkSeries loads chunk data from a store for a set of series
-// with known chunk references. It filters out chunks that do not fit the
-// given time range.
-type populatedChunkSeries struct {
-	set        storage.ChunkSeriesSet
-	chunks     ChunkReader
-	mint, maxt int64
-
-	err       error
-	chks      []chunks.Meta
-	lset      labels.Labels
-	intervals tombstones.Intervals
-}
-
-func (s *populatedChunkSeries) At() (labels.Labels, []chunks.Meta, tombstones.Intervals) {
-	return s.lset, s.chks, s.intervals
-}
-
-func (s *populatedChunkSeries) Err() error { return s.err }
-
-func (s *populatedChunkSeries) Next() bool {
-	for s.set.Next() {
-		lset, chks, dranges := s.set.At()
-
-		for len(chks) > 0 {
-			if chks[0].MaxTime >= s.mint {
-				break
-			}
-			chks = chks[1:]
-		}
-
-		// This is to delete in place while iterating.
-		for i, rlen := 0, len(chks); i < rlen; i++ {
-			j := i - (rlen - len(chks))
-			c := &chks[j]
-
-			// Break out at the first chunk that has no overlap with mint, maxt.
-			if c.MinTime > s.maxt {
-				chks = chks[:j]
-				break
-			}
-
-			c.Chunk, s.err = s.chunks.Chunk(c.Ref)
-			if s.err != nil {
-				// This means that the chunk has be garbage collected. Remove it from the list.
-				if s.err == ErrNotFound {
-					s.err = nil
-					// Delete in-place.
-					s.chks = append(chks[:j], chks[j+1:]...)
-				}
-				return false
-			}
-		}
-
-		if len(chks) == 0 {
-			continue
-		}
-
-		s.lset = lset
-		s.chks = chks
-		s.intervals = dranges
-
-		return true
-	}
-	if err := s.set.Err(); err != nil {
-		s.err = err
-	}
-	return false
-}
-
-// blockSeriesSet is a set of series from an inverted index query.
-type blockSeriesSet struct {
-	set storage.ChunkSeriesSet
-	err error
-	cur storage.Series
-
-	mint, maxt int64
-}
-
-func (s *blockSeriesSet) Next() bool {
-	for s.set.Next() {
-		lset, chunks, dranges := s.set.At()
-		s.cur = &chunkSeries{
-			labels: lset,
-			chunks: chunks,
-			mint:   s.mint,
-			maxt:   s.maxt,
-
-			intervals: dranges,
-		}
-		return true
-	}
-	if s.set.Err() != nil {
-		s.err = s.set.Err()
-	}
-	return false
-}
-
-func (s *blockSeriesSet) At() storage.Series { return s.cur }
-func (s *blockSeriesSet) Err() error         { return s.err }
-
-// chunkSeries is a series that is backed by a sequence of chunks holding
-// time series data.
-type chunkSeries struct {
-	labels labels.Labels
-	chunks []chunks.Meta // in-order chunk refs
-
-	mint, maxt int64
-
-	intervals tombstones.Intervals
-}
-
-func (s *chunkSeries) Labels() labels.Labels {
-	return s.labels
-}
-
-func (s *chunkSeries) Iterator() chunkenc.Iterator {
-	return newChunkSeriesIterator(s.chunks, s.intervals, s.mint, s.maxt)
-}
-
-// chainedSeries implements a series for a list of time-sorted series.
-// They all must have the same labels.
-type chainedSeries struct {
-	series []storage.Series
-}
-
-func (s *chainedSeries) Labels() labels.Labels {
-	return s.series[0].Labels()
-}
-
-func (s *chainedSeries) Iterator() chunkenc.Iterator {
-	return newChainedSeriesIterator(s.series...)
-}
-
-// chainedSeriesIterator implements a series iterator over a list
-// of time-sorted, non-overlapping iterators.
-type chainedSeriesIterator struct {
-	series []storage.Series // series in time order
-
-	i   int
-	cur chunkenc.Iterator
-}
-
-func newChainedSeriesIterator(s ...storage.Series) *chainedSeriesIterator {
-	return &chainedSeriesIterator{
-		series: s,
-		i:      0,
-		cur:    s[0].Iterator(),
-	}
-}
-
-func (it *chainedSeriesIterator) Seek(t int64) bool {
-	// We just scan the chained series sequentially as they are already
-	// pre-selected by relevant time and should be accessed sequentially anyway.
-	for i, s := range it.series[it.i:] {
-		cur := s.Iterator()
-		if !cur.Seek(t) {
-			continue
-		}
-		it.cur = cur
-		it.i += i
-		return true
-	}
-	return false
-}
-
-func (it *chainedSeriesIterator) Next() bool {
-	if it.cur.Next() {
-		return true
-	}
-	if err := it.cur.Err(); err != nil {
-		return false
-	}
-	if it.i == len(it.series)-1 {
-		return false
-	}
-
-	it.i++
-	it.cur = it.series[it.i].Iterator()
-
-	return it.Next()
-}
-
-func (it *chainedSeriesIterator) At() (t int64, v float64) {
-	return it.cur.At()
-}
-
-func (it *chainedSeriesIterator) Err() error {
-	return it.cur.Err()
-}
-
 // verticalChainedSeries implements a series for a list of time-sorted, time-overlapping series.
 // They all must have the same labels.
 type verticalChainedSeries struct {
@@ -977,6 +746,10 @@ func (s *verticalChainedSeries) Labels() labels.Labels {
 
 func (s *verticalChainedSeries) Iterator() chunkenc.Iterator {
 	return newVerticalMergeSeriesIterator(s.series...)
+}
+
+func (s *verticalChainedSeries) ChunkIterator() ChunkIterator {
+	return newVerticalMergeChunkIterator(s.series...)
 }
 
 // verticalMergeSeriesIterator implements a series iterator over a list
@@ -994,23 +767,33 @@ func newVerticalMergeSeriesIterator(s ...storage.Series) chunkenc.Iterator {
 		return s[0].Iterator()
 	} else if len(s) == 2 {
 		return &verticalMergeSeriesIterator{
-			a: s[0].Iterator(),
-			b: s[1].Iterator(),
+			a:    s[0].Iterator(),
+			b:    s[1].Iterator(),
+			curT: math.MinInt64,
 		}
 	}
 	return &verticalMergeSeriesIterator{
-		a: s[0].Iterator(),
-		b: newVerticalMergeSeriesIterator(s[1:]...),
+		a:    s[0].Iterator(),
+		b:    newVerticalMergeSeriesIterator(s[1:]...),
+		curT: math.MinInt64,
 	}
 }
 
 func (it *verticalMergeSeriesIterator) Seek(t int64) bool {
+	if it.initialized && it.curT >= t {
+		return true
+	}
+
 	it.aok, it.bok = it.a.Seek(t), it.b.Seek(t)
 	it.initialized = true
 	return it.Next()
 }
 
 func (it *verticalMergeSeriesIterator) Next() bool {
+	if it.Err() != nil {
+		return false
+	}
+
 	if !it.initialized {
 		it.aok = it.a.Next()
 		it.bok = it.b.Next()
@@ -1053,6 +836,145 @@ func (it *verticalMergeSeriesIterator) At() (t int64, v float64) {
 }
 
 func (it *verticalMergeSeriesIterator) Err() error {
+	if it.a.Err() != nil {
+		return it.a.Err()
+	}
+	return it.b.Err()
+}
+
+// verticalMergeChunkIterator implements a ChunkIterator over a list
+// of time-sorted, time-overlapping chunk iterators for the same labels (same series).
+// Any overlap in chunks will be merged using verticalMergeSeriesIterator.
+type verticalMergeChunkIterator struct {
+	a, b                  storage.ChunkIterator
+	aok, bok, initialized bool
+
+	curMeta chunks.Meta
+	err     error
+
+	aReuseIter, bReuseIter chunkenc.Iterator
+}
+
+func newVerticalMergeChunkIterator(s ...storage.Series) storage.ChunkIterator {
+	if len(s) == 1 {
+		return s[0].ChunkIterator()
+	} else if len(s) == 2 {
+		return &verticalMergeChunkIterator{
+			a: s[0].ChunkIterator(),
+			b: s[1].ChunkIterator(),
+		}
+	}
+	return &verticalMergeChunkIterator{
+		a: s[0].ChunkIterator(),
+		b: newVerticalMergeChunkIterator(s[1:]...),
+	}
+}
+
+func (it *verticalMergeChunkIterator) Next() bool {
+	if it.Err() != nil {
+		return false
+	}
+
+	if !it.initialized {
+		it.aok = it.a.Next()
+		it.bok = it.b.Next()
+		it.initialized = true
+	}
+
+	if !it.aok && !it.bok {
+		return false
+	}
+
+	if !it.aok {
+		it.curMeta = it.b.At()
+		it.bok = it.b.Next()
+		return true
+	}
+	if !it.bok {
+		it.curMeta = it.a.At()
+		it.aok = it.a.Next()
+		return true
+	}
+
+	aCurMeta := it.a.At()
+	bCurMeta := it.b.At()
+
+	if aCurMeta.MaxTime < bCurMeta.MinTime {
+		it.curMeta = aCurMeta
+		it.aok = it.a.Next()
+		return true
+	}
+
+	if bCurMeta.MaxTime < aCurMeta.MinTime {
+		it.curMeta = bCurMeta
+		it.bok = it.b.Next()
+		return true
+	}
+
+	it.curMeta, it.err = mergeOverlappingChunks(aCurMeta, bCurMeta, it.aReuseIter, it.bReuseIter)
+	if it.err != nil {
+		return false
+	}
+
+	it.aok = it.a.Next()
+	it.bok = it.b.Next()
+	return true
+}
+
+// TODO: https://github.com/prometheus/tsdb/issues/670
+func mergeOverlappingChunks(a, b chunks.Meta, aReuseIter, bReuseIter chunkenc.Iterator) (chunks.Meta, error) {
+	chk := chunkenc.NewXORChunk()
+	app, err := chk.Appender()
+	if err != nil {
+		return chunks.Meta{}, err
+	}
+	seriesIter := &verticalMergeSeriesIterator{
+		a: a.Chunk.Iterator(aReuseIter),
+		b: b.Chunk.Iterator(bReuseIter),
+	}
+
+	mint := int64(math.MaxInt64)
+	maxt := int64(math.MinInt64)
+
+	// TODO: This can end up being up to 240 samples per chunk, so we need to have a case to split to two.
+	for seriesIter.Next() {
+		t, v := seriesIter.At()
+		app.Append(t, v)
+
+		maxt = t
+		if mint == math.MaxInt64 {
+			mint = t
+		}
+	}
+	if err := seriesIter.Err(); err != nil {
+		return chunks.Meta{}, err
+	}
+
+	return chunks.Meta{
+		MinTime: mint,
+		MaxTime: maxt,
+		Chunk:   chk,
+	}, nil
+}
+
+//func (it *verticalMergeChunkIterator) Seek(t int64) bool {
+//	if it.initialized && it.curMeta.MaxTime >= t {
+//		return true
+//	}
+//
+//	it.aok, it.bok = it.a.Seek(t), it.b.Seek(t)
+//	it.initialized = true
+//	return it.Next()
+//}
+
+func (it *verticalMergeChunkIterator) At() chunks.Meta {
+	return it.curMeta
+}
+
+func (it *verticalMergeChunkIterator) Err() error {
+	if it.err != nil {
+		return it.err
+	}
 	if it.a.Err() != nil {
 		return it.a.Err()
 	}
@@ -1102,31 +1024,45 @@ func (it *chunkSeriesIterator) resetCurIterator() {
 	it.cur = it.bufDelIter
 }
 
-func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
-	if t > it.maxt {
+func (it *chunkSeriesIterator) Seek(t int64) bool {
+	if it.Err() != nil || it.i > len(it.chunks)-1 {
 		return false
 	}
 
-	// Seek to the first valid value after t.
+	if t > it.maxt {
+		// Exhaust iterator.
+		it.i = len(it.chunks)
+		return false
+	}
+
 	if t < it.mint {
 		t = it.mint
 	}
 
+	currI := it.i
 	for ; it.chunks[it.i].MaxTime < t; it.i++ {
 		if it.i == len(it.chunks)-1 {
+			// Exhaust iterator.
+			it.i = len(it.chunks)
 			return false
 		}
 	}
 
-	it.resetCurIterator()
-
-	for it.cur.Next() {
-		t0, _ := it.cur.At()
-		if t0 >= t {
-			return true
-		}
+	// Don't reset the iterator unless we've moved on to a different chunk.
+	if currI != it.i {
+		it.resetCurIterator()
 	}
-	return false
+
+	tc, _ := it.cur.At()
+	for t > tc {
+		if !it.cur.Next() {
+			// Exhaust iterator.
+			it.i = len(it.chunks)
+			return false
+		}
+		tc, _ = it.cur.At()
+	}
+	return true
 }
 
 func (it *chunkSeriesIterator) At() (t int64, v float64) {
@@ -1134,6 +1070,10 @@ func (it *chunkSeriesIterator) At() (t int64, v float64) {
 }
 
 func (it *chunkSeriesIterator) Next() bool {
+	if it.Err() != nil || it.i > len(it.chunks)-1 {
+		return false
+	}
+
 	if it.cur.Next() {
 		t, _ := it.cur.At()
 
@@ -1142,22 +1082,17 @@ func (it *chunkSeriesIterator) Next() bool {
 				return false
 			}
 			t, _ = it.At()
-
-			return t <= it.maxt
 		}
-		if t > it.maxt {
-			return false
-		}
-		return true
+		return t <= it.maxt
 	}
 	if err := it.cur.Err(); err != nil {
 		return false
 	}
-	if it.i == len(it.chunks)-1 {
+	it.i++
+	if it.i == len(it.chunks) {
 		return false
 	}
 
-	it.i++
 	it.resetCurIterator()
 
 	return it.Next()
@@ -1208,3 +1143,105 @@ Outer:
 }
 
 func (it *deletedIterator) Err() error { return it.it.Err() }
+
+type errSeriesSet struct {
+	err error
+}
+
+func (s errSeriesSet) Next() bool         { return false }
+func (s errSeriesSet) At() storage.Series { return nil }
+func (s errSeriesSet) Err() error         { return s.err }
+
+type chunkIterator struct {
+	chunks []chunks.Meta // series in time order
+	idx    int
+}
+
+func newChunkIterator(chunks []chunks.Meta) *chunkIterator {
+	return &chunkIterator{
+		chunks: chunks,
+		idx:    -1,
+	}
+}
+
+func (it *chunkIterator) At() chunks.Meta {
+	if it.idx == -1 {
+		return chunks.Meta{}
+	}
+	return it.chunks[it.idx]
+}
+
+func (it *chunkIterator) Next() bool {
+	it.idx++
+	return it.idx < len(it.chunks)
+}
+
+func (it *chunkIterator) Seek(t int64) bool {
+	if it.idx >= len(it.chunks) {
+		return false
+	}
+
+	if it.idx == -1 && !it.Next() {
+		return false
+	}
+
+	// Do binary search between current position and end.
+	pos := sort.Search(len(it.chunks)-it.idx, func(i int) bool {
+		return t <= it.chunks[i+it.idx].MaxTime
+	})
+	it.idx += pos
+
+	return it.idx < len(it.chunks)
+}
+
+func (it *chunkIterator) Err() error { return nil }
+
+// chainedChunkIterator implements flat iteration for chunks iterated over a list
+// of time-sorted, non-overlapping iterators for each series.
+type chainedChunkIterator struct {
+	chain []storage.ChunkIterator // chunk iterators for each series in time order
+	i     int
+	err   error
+}
+
+func (c *chainedChunkIterator) Seek(t int64) bool {
+	if c.Err() != nil {
+		return false
+	}
+
+	for c.i < len(c.chain) {
+		if c.chain[c.i].Seek(t) {
+			return true
+		}
+		if err := c.chain[c.i].Err(); err != nil {
+			c.err = err
+			return false
+		}
+		c.i++
+	}
+	return false
+}
+
+func (c *chainedChunkIterator) Next() bool {
+	if c.Err() != nil {
+		return false
+	}
+
+	for c.i < len(c.chain) {
+		if c.chain[c.i].Next() {
+			return true
+		}
+		if err := c.chain[c.i].Err(); err != nil {
+			c.err = err
+			return false
+		}
+		c.i++
+	}
+	return false
+}
+
+func (c *chainedChunkIterator) At() chunks.Meta {
+	return c.chain[c.i].At()
+}
+
+func (c *chainedChunkIterator) Err() error { return c.err }

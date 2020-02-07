@@ -20,6 +20,8 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -52,169 +54,276 @@ func TestMergeTwoStringSlices(t *testing.T) {
 	}
 }
 
-func TestMergeSeriesSet(t *testing.T) {
+func TestChainedMergeSeriesSet(t *testing.T) {
 	for _, tc := range []struct {
 		input    []SeriesSet
 		expected SeriesSet
 	}{
 		{
-			input:    []SeriesSet{newMockSeriesSet()},
-			expected: newMockSeriesSet(),
+			input:    []SeriesSet{NewMockSeriesSet()},
+			expected: NewMockSeriesSet(),
 		},
-
 		{
-			input: []SeriesSet{newMockSeriesSet(
-				newMockSeries(labels.FromStrings("bar", "baz"), []sample{{1, 1}, {2, 2}}),
-				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, 0}, {1, 1}}),
+			input: []SeriesSet{NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
+				NewTestSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
 			)},
-			expected: newMockSeriesSet(
-				newMockSeries(labels.FromStrings("bar", "baz"), []sample{{1, 1}, {2, 2}}),
-				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, 0}, {1, 1}}),
-			),
-		},
-
-		{
-			input: []SeriesSet{newMockSeriesSet(
-				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, 0}, {1, 1}}),
-			), newMockSeriesSet(
-				newMockSeries(labels.FromStrings("bar", "baz"), []sample{{1, 1}, {2, 2}}),
-			)},
-			expected: newMockSeriesSet(
-				newMockSeries(labels.FromStrings("bar", "baz"), []sample{{1, 1}, {2, 2}}),
-				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, 0}, {1, 1}}),
-			),
-		},
-
-		{
-			input: []SeriesSet{newMockSeriesSet(
-				newMockSeries(labels.FromStrings("bar", "baz"), []sample{{1, 1}, {2, 2}}),
-				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, 0}, {1, 1}}),
-			), newMockSeriesSet(
-				newMockSeries(labels.FromStrings("bar", "baz"), []sample{{3, 3}, {4, 4}}),
-				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{2, 2}, {3, 3}}),
-			)},
-			expected: newMockSeriesSet(
-				newMockSeries(labels.FromStrings("bar", "baz"), []sample{{1, 1}, {2, 2}, {3, 3}, {4, 4}}),
-				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, 0}, {1, 1}, {2, 2}, {3, 3}}),
+			expected: NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
+				NewTestSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
 			),
 		},
 		{
-			input: []SeriesSet{newMockSeriesSet(
-				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, math.NaN()}}),
-			), newMockSeriesSet(
-				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, math.NaN()}}),
+			input: []SeriesSet{NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
+			), NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
 			)},
-			expected: newMockSeriesSet(
-				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, math.NaN()}}),
+			expected: NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
+				NewTestSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
+			),
+		},
+		{
+			input: []SeriesSet{NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}}, []tsdbutil.Sample{sample{6, 6}}),
+				NewTestSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
+			), NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
+				NewTestSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{3, 3}}, []tsdbutil.Sample{sample{4, 4}}),
+			)},
+			expected: NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("bar", "baz"),
+					[]tsdbutil.Sample{sample{1, 1}, sample{2, 2}},
+					[]tsdbutil.Sample{sample{3, 3}},
+					[]tsdbutil.Sample{sample{5, 5}},
+					[]tsdbutil.Sample{sample{6, 6}},
+				),
+				NewTestSeries(labels.FromStrings("foo", "bar"),
+					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
+					[]tsdbutil.Sample{sample{2, 2}},
+					[]tsdbutil.Sample{sample{3, 3}},
+					[]tsdbutil.Sample{sample{4, 4}},
+				),
+			),
+		},
+		{
+			input: []SeriesSet{NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, math.NaN()}}),
+			), NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{1, 1}}),
+			)},
+			expected: NewMockSeriesSet(
+				NewTestSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, math.NaN()}}, []tsdbutil.Sample{sample{1, 1}}),
 			),
 		},
 	} {
-		merged := NewMergeSeriesSet(tc.input, nil)
-		for merged.Next() {
-			testutil.Assert(t, tc.expected.Next(), "Expected Next() to be true")
-			actualSeries := merged.At()
-			expectedSeries := tc.expected.At()
-			testutil.Equals(t, expectedSeries.Labels(), actualSeries.Labels())
-			testutil.Equals(t, drainSamples(expectedSeries.Iterator()), drainSamples(actualSeries.Iterator()))
-		}
-		testutil.Assert(t, !tc.expected.Next(), "Expected Next() to be false")
+		t.Run("", func(t *testing.T) {
+			merged := NewChainedMergeSeriesSet(tc.input, nil)
+			for merged.Next() {
+				testutil.Assert(t, tc.expected.Next(), "Expected Next() to be true")
+				actualSeries := merged.At()
+				expectedSeries := tc.expected.At()
+				testutil.Equals(t, expectedSeries.Labels(), actualSeries.Labels())
+
+				expSmpl, expErr := ExpandSamples(expectedSeries.SampleIterator())
+				actSmpl, actErr := ExpandSamples(actualSeries.SampleIterator())
+				testutil.Equals(t, expErr, actErr)
+				testutil.Equals(t, expSmpl, actSmpl)
+
+				expChks, expErr := ExpandChunks(expectedSeries.ChunkIterator())
+				actChks, actErr := ExpandChunks(actualSeries.ChunkIterator())
+				testutil.Equals(t, expErr, actErr)
+				testutil.Equals(t, expChks, actChks)
+
+			}
+			testutil.Ok(t, merged.Err())
+			testutil.Assert(t, !tc.expected.Next(), "Expected Next() to be false")
+		})
 	}
 }
 
-func TestMergeIterator(t *testing.T) {
+func TestChainSampleIterator(t *testing.T) {
 	for _, tc := range []struct {
 		input    []chunkenc.Iterator
-		expected []sample
+		expected []tsdbutil.Sample
 	}{
 		{
 			input: []chunkenc.Iterator{
-				newListSeriesIterator([]sample{{0, 0}, {1, 1}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{0, 0}, sample{1, 1}}),
 			},
-			expected: []sample{{0, 0}, {1, 1}},
+			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
 		},
 		{
 			input: []chunkenc.Iterator{
-				newListSeriesIterator([]sample{{0, 0}, {1, 1}}),
-				newListSeriesIterator([]sample{{2, 2}, {3, 3}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{0, 0}, sample{1, 1}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{2, 2}, sample{3, 3}}),
 			},
-			expected: []sample{{0, 0}, {1, 1}, {2, 2}, {3, 3}},
+			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}},
 		},
 		{
 			input: []chunkenc.Iterator{
-				newListSeriesIterator([]sample{{0, 0}, {3, 3}}),
-				newListSeriesIterator([]sample{{1, 1}, {4, 4}}),
-				newListSeriesIterator([]sample{{2, 2}, {5, 5}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{0, 0}, sample{3, 3}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{1, 1}, sample{4, 4}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{2, 2}, sample{5, 5}}),
 			},
-			expected: []sample{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}},
+			expected: []tsdbutil.Sample{
+				sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5}},
 		},
+		// Overlap.
 		{
 			input: []chunkenc.Iterator{
-				newListSeriesIterator([]sample{{0, 0}, {1, 1}}),
-				newListSeriesIterator([]sample{{0, 0}, {2, 2}}),
-				newListSeriesIterator([]sample{{2, 2}, {3, 3}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{0, 0}, sample{1, 1}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{0, 0}, sample{2, 2}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{2, 2}, sample{3, 3}}),
+				NewSampleIterator(tsdbutil.SampleSlice{}),
+				NewSampleIterator(tsdbutil.SampleSlice{}),
+				NewSampleIterator(tsdbutil.SampleSlice{}),
 			},
-			expected: []sample{{0, 0}, {1, 1}, {2, 2}, {3, 3}},
+			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}},
 		},
 	} {
-		merged := newMergeIterator(tc.input)
-		actual := drainSamples(merged)
+		merged := newChainSampleIterator(tc.input)
+		actual, err := ExpandSamples(merged)
+		testutil.Ok(t, err)
 		testutil.Equals(t, tc.expected, actual)
 	}
 }
 
-func TestMergeIteratorSeek(t *testing.T) {
+func TestChainSampleIteratorSeek(t *testing.T) {
 	for _, tc := range []struct {
 		input    []chunkenc.Iterator
 		seek     int64
-		expected []sample
+		expected []tsdbutil.Sample
 	}{
 		{
 			input: []chunkenc.Iterator{
-				newListSeriesIterator([]sample{{0, 0}, {1, 1}, {2, 2}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
 			},
 			seek:     1,
-			expected: []sample{{1, 1}, {2, 2}},
+			expected: []tsdbutil.Sample{sample{1, 1}, sample{2, 2}},
 		},
 		{
 			input: []chunkenc.Iterator{
-				newListSeriesIterator([]sample{{0, 0}, {1, 1}}),
-				newListSeriesIterator([]sample{{2, 2}, {3, 3}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{0, 0}, sample{1, 1}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{2, 2}, sample{3, 3}}),
 			},
 			seek:     2,
-			expected: []sample{{2, 2}, {3, 3}},
+			expected: []tsdbutil.Sample{sample{2, 2}, sample{3, 3}},
 		},
 		{
 			input: []chunkenc.Iterator{
-				newListSeriesIterator([]sample{{0, 0}, {3, 3}}),
-				newListSeriesIterator([]sample{{1, 1}, {4, 4}}),
-				newListSeriesIterator([]sample{{2, 2}, {5, 5}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{0, 0}, sample{3, 3}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{1, 1}, sample{4, 4}}),
+				NewSampleIterator(tsdbutil.SampleSlice{sample{2, 2}, sample{5, 5}}),
 			},
 			seek:     2,
-			expected: []sample{{2, 2}, {3, 3}, {4, 4}, {5, 5}},
+			expected: []tsdbutil.Sample{sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5}},
 		},
 	} {
-		merged := newMergeIterator(tc.input)
-		actual := []sample{}
+		merged := newChainSampleIterator(tc.input)
+		actual := []tsdbutil.Sample{}
 		if merged.Seek(tc.seek) {
 			t, v := merged.At()
 			actual = append(actual, sample{t, v})
 		}
-		actual = append(actual, drainSamples(merged)...)
+		s, err := ExpandSamples(merged)
+		testutil.Ok(t, err)
+		actual = append(actual, s...)
 		testutil.Equals(t, tc.expected, actual)
 	}
 }
 
-func drainSamples(iter chunkenc.Iterator) []sample {
-	result := []sample{}
-	for iter.Next() {
-		t, v := iter.At()
-		// NaNs can't be compared normally, so substitute for another value.
-		if math.IsNaN(v) {
-			v = -42
-		}
-		result = append(result, sample{t, v})
+func TestChainChunkIterator(t *testing.T) {
+	for _, tc := range []struct {
+		input    []chunks.Iterator
+		expected []chunks.Meta
+	}{
+		{
+			input: []chunks.Iterator{
+				NewChunksIterator(tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
+				)),
+			},
+			expected: []chunks.Meta{tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
+			)},
+		},
+		{
+			input: []chunks.Iterator{
+				NewChunksIterator(tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
+				)),
+				NewChunksIterator(tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{2, 2}, sample{3, 3}},
+				)),
+			},
+			expected: []chunks.Meta{tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
+			), tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{2, 2}, sample{3, 3}},
+			)},
+		},
+		{
+			input: []chunks.Iterator{
+				NewChunksIterator(tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{0, 0}, sample{3, 3}},
+				)),
+				NewChunksIterator(tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{1, 1}, sample{4, 4}},
+				)),
+				NewChunksIterator(tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{2, 2}, sample{5, 5}},
+				)),
+			},
+			expected: []chunks.Meta{tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{0, 0}, sample{3, 3}},
+			), tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{1, 1}, sample{4, 4}},
+			), tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{2, 2}, sample{5, 5}},
+			)},
+		},
+		{
+			// Overlap
+			input: []chunks.Iterator{
+				NewChunksIterator(tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
+				)),
+				NewChunksIterator(tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{0, 0}, sample{2, 2}},
+				)),
+				NewChunksIterator(tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{2, 2}, sample{3, 3}},
+				)),
+				NewChunksIterator(tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{0, 0}, sample{5, 5}},
+				), tsdbutil.ChunkFromSamples(
+					[]tsdbutil.Sample{sample{1, 1}, sample{t: 4, v: 4}},
+				)),
+				NewChunksIterator(),
+				NewChunksIterator(),
+			},
+			expected: []chunks.Meta{tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
+			), tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{0, 0}, sample{2, 2}},
+			), tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{0, 0}, sample{5, 5}},
+			), tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{1, 1}, sample{t: 4, v: 4}},
+			), tsdbutil.ChunkFromSamples(
+				[]tsdbutil.Sample{sample{2, 2}, sample{3, 3}},
+			)},
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			merged := newChainChunkIterator(tc.input)
+			actual, err := ExpandChunks(merged)
+			testutil.Ok(t, err)
+			testutil.Equals(t, tc.expected, actual)
+		})
 	}
-	return result
 }
 
 type mockSeriesSet struct {
@@ -222,7 +331,7 @@ type mockSeriesSet struct {
 	series []Series
 }
 
-func newMockSeriesSet(series ...Series) SeriesSet {
+func NewMockSeriesSet(series ...Series) SeriesSet {
 	return &mockSeriesSet{
 		idx:    -1,
 		series: series,
@@ -242,19 +351,19 @@ func (m *mockSeriesSet) Err() error {
 	return nil
 }
 
-var result []sample
+var result []tsdbutil.Sample
 
 func makeSeriesSet(numSeries, numSamples int) SeriesSet {
 	series := []Series{}
 	for j := 0; j < numSeries; j++ {
 		labels := labels.Labels{{Name: "foo", Value: fmt.Sprintf("bar%d", j)}}
-		samples := []sample{}
+		samples := []tsdbutil.Sample{}
 		for k := 0; k < numSamples; k++ {
 			samples = append(samples, sample{t: int64(k), v: float64(k)})
 		}
-		series = append(series, newMockSeries(labels, samples))
+		series = append(series, NewTestSeries(labels, samples))
 	}
-	return newMockSeriesSet(series...)
+	return NewMockSeriesSet(series...)
 }
 
 func makeMergeSeriesSet(numSeriesSets, numSeries, numSamples int) SeriesSet {
@@ -262,13 +371,15 @@ func makeMergeSeriesSet(numSeriesSets, numSeries, numSamples int) SeriesSet {
 	for i := 0; i < numSeriesSets; i++ {
 		seriesSets = append(seriesSets, makeSeriesSet(numSeries, numSamples))
 	}
-	return NewMergeSeriesSet(seriesSets, nil)
+	return NewChainedMergeSeriesSet(seriesSets, nil)
 }
 
 func benchmarkDrain(seriesSet SeriesSet, b *testing.B) {
+	var err error
 	for n := 0; n < b.N; n++ {
 		for seriesSet.Next() {
-			result = drainSamples(seriesSet.At().Iterator())
+			result, err = ExpandSamples(seriesSet.At().SampleIterator())
+			testutil.Ok(b, err)
 		}
 	}
 }

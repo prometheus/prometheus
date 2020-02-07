@@ -32,7 +32,7 @@ func (noopQuerier) SelectSorted(*SelectParams, ...*labels.Matcher) (SeriesSet, W
 	return NoopSeriesSet(), nil, nil
 }
 
-func (noopQuerier) LabelValues(name string) ([]string, Warnings, error) {
+func (noopQuerier) LabelValues(string) ([]string, Warnings, error) {
 	return nil, nil, nil
 }
 
@@ -41,6 +41,33 @@ func (noopQuerier) LabelNames() ([]string, Warnings, error) {
 }
 
 func (noopQuerier) Close() error {
+	return nil
+}
+
+type noopChunkedQuerier struct{}
+
+// NoopChunkedQuerier is a ChunkedQuerier that does nothing.
+func NoopChunkedQuerier() ChunkedQuerier {
+	return noopChunkedQuerier{}
+}
+
+func (noopChunkedQuerier) Select(*SelectParams, ...*labels.Matcher) (ChunkedSeriesSet, Warnings, error) {
+	return NoopChunkedSeriesSet(), nil, nil
+}
+
+func (noopChunkedQuerier) SelectSorted(*SelectParams, ...*labels.Matcher) (ChunkedSeriesSet, Warnings, error) {
+	return NoopChunkedSeriesSet(), nil, nil
+}
+
+func (noopChunkedQuerier) LabelValues(string) ([]string, Warnings, error) {
+	return nil, nil, nil
+}
+
+func (noopChunkedQuerier) LabelNames() ([]string, Warnings, error) {
+	return nil, nil, nil
+}
+
+func (noopChunkedQuerier) Close() error {
 	return nil
 }
 
@@ -56,3 +83,16 @@ func (noopSeriesSet) Next() bool { return false }
 func (noopSeriesSet) At() Series { return nil }
 
 func (noopSeriesSet) Err() error { return nil }
+
+type noopChunkedSeriesSet struct{}
+
+// NoopChunkedSeriesSet is a ChunkedSeriesSet that does nothing.
+func NoopChunkedSeriesSet() ChunkedSeriesSet {
+	return noopChunkedSeriesSet{}
+}
+
+func (noopChunkedSeriesSet) Next() bool { return false }
+
+func (noopChunkedSeriesSet) At() ChunkedSeries { return nil }
+
+func (noopChunkedSeriesSet) Err() error { return nil }

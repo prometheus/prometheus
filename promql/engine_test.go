@@ -783,7 +783,7 @@ load 10s
 			MaxSamples: 3,
 			Result: Result{
 				nil,
-				Matrix{Series{
+				Matrix{storage.Series{
 					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric")},
 				},
