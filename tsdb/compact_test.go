@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -1085,5 +1086,102 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			testutil.Ok(t, err)
 			testutil.Equals(t, expBlocks, len(actBlocks)-1, "block count should be the same as before the compaction") // -1 to exclude the corrupted block.
 		})
+	}
+}
+
+func TestBlockChunkSeriesSet(t *testing.T) {
+	type refdSeries struct {
+		lset   labels.Labels
+		chunks []chunks.Meta
+
+		ref uint64
+	}
+
+	cases := []struct {
+		series []refdSeries
+		// Postings should be in the sorted order of the series
+		postings []uint64
+
+		expIdxs []int
+	}{
+		{
+			series: []refdSeries{
+				{
+					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}}...),
+					chunks: []chunks.Meta{
+						{Ref: 29}, {Ref: 45}, {Ref: 245}, {Ref: 123}, {Ref: 4232}, {Ref: 5344},
+						{Ref: 121},
+					},
+					ref: 12,
+				},
+				{
+					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
+					chunks: []chunks.Meta{
+						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
+					},
+					ref: 10,
+				},
+				{
+					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
+					chunks: []chunks.Meta{{Ref: 8282}},
+					ref:    1,
+				},
+				{
+					lset: labels.New([]labels.Label{{Name: "b", Value: "b"}}...),
+					chunks: []chunks.Meta{
+						{Ref: 829}, {Ref: 239}, {Ref: 2349}, {Ref: 659}, {Ref: 269},
+					},
+					ref: 108,
+				},
+			},
+			postings: []uint64{12, 13, 10, 108}, // 13 doesn't exist and should just be skipped over.
+			expIdxs:  []int{0, 1, 3},
+		},
+		{
+			series: []refdSeries{
+				{
+					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
+					chunks: []chunks.Meta{
+						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
+					},
+					ref: 10,
+				},
+				{
+					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
+					chunks: []chunks.Meta{{Ref: 8282}},
+					ref:    3,
+				},
+			},
+			postings: []uint64{},
+			expIdxs:  []int{},
+		},
+	}
+
+	for _, tc := range cases {
+		mi := newMockIndex()
+		for _, s := range tc.series {
+			testutil.Ok(t, mi.AddSeries(s.ref, s.lset, s.chunks...))
+		}
+
+		bcs := &blockChunkSeriesSet{
+			p:          index.NewListPostings(tc.postings),
+			index:      mi,
+			tombstones: tombstones.NewMemTombstones(),
+		}
+
+		i := 0
+		for bcs.Next() {
+			// TODO
+			////	lset, chks, _ := bcs.At()
+			//
+			//idx := tc.expIdxs[i]
+			//
+			//testutil.Equals(t, tc.series[idx].lset, lset)
+			//testutil.Equals(t, tc.series[idx].chunks, chks)
+			//
+			//i++
+		}
+		testutil.Equals(t, len(tc.expIdxs), i)
+		testutil.Ok(t, bcs.Err())
 	}
 }

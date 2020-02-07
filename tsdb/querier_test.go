@@ -61,7 +61,6 @@ func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 }
 
 func TestMergedSeriesSet(t *testing.T) {
-
 	cases := []struct {
 		// The input sets in order (samples in series in b are strictly
 		// after those in a).
@@ -72,87 +71,94 @@ func TestMergedSeriesSet(t *testing.T) {
 	}{
 		{
 			a: newMockSeriesSet([]storage.Series{
-				newSeries(map[string]string{
-					"a": "a",
-				}, []tsdbutil.Sample{
-					sample{t: 1, v: 1},
-				}),
+				storage.NewTestSeries(
+					labels.Labels{{"a", "a"}},
+					[]tsdbutil.Sample{
+						sample{t: 1, v: 1},
+					}),
 			}),
 			b: newMockSeriesSet([]storage.Series{
-				newSeries(map[string]string{
-					"a": "a",
-				}, []tsdbutil.Sample{
-					sample{t: 2, v: 2},
-				}),
-				newSeries(map[string]string{
-					"b": "b",
-				}, []tsdbutil.Sample{
-					sample{t: 1, v: 1},
-				}),
+				storage.NewTestSeries(
+					labels.Labels{{"a", "a"}},
+					[]tsdbutil.Sample{
+						sample{t: 2, v: 2},
+					}),
+				storage.NewTestSeries(
+					labels.Labels{{"b", "b"}},
+					[]tsdbutil.Sample{
+						sample{t: 1, v: 1},
+					}),
 			}),
 			exp: newMockSeriesSet([]storage.Series{
-				newSeries(map[string]string{
-					"a": "a",
-				}, []tsdbutil.Sample{
-					sample{t: 1, v: 1},
-					sample{t: 2, v: 2},
-				}),
-				newSeries(map[string]string{
-					"b": "b",
-				}, []tsdbutil.Sample{
-					sample{t: 1, v: 1},
-				}),
+				storage.NewTestSeries(
+					labels.Labels{{"a", "a"}},
+					[]tsdbutil.Sample{
+						sample{t: 1, v: 1},
+						sample{t: 2, v: 2},
+					}),
+				storage.NewTestSeries(
+					labels.Labels{{"b", "b"}},
+					[]tsdbutil.Sample{
+						sample{t: 1, v: 1},
+					}),
 			}),
 		},
 		{
 			a: newMockSeriesSet([]storage.Series{
-				newSeries(map[string]string{
-					"handler":  "prometheus",
-					"instance": "127.0.0.1:9090",
-				}, []tsdbutil.Sample{
-					sample{t: 1, v: 1},
-				}),
-				newSeries(map[string]string{
-					"handler":  "prometheus",
-					"instance": "localhost:9090",
-				}, []tsdbutil.Sample{
-					sample{t: 1, v: 2},
-				}),
+				storage.NewTestSeries(
+					labels.Labels{
+						{"handler", "prometheus"},
+						{"instance", "127.0.0.1:9090"},
+					}, []tsdbutil.Sample{
+						sample{t: 1, v: 1},
+					}),
+				storage.NewTestSeries(
+					labels.Labels{
+						{"handler", "prometheus"},
+						{"instance", "localhost:9090"},
+					}, []tsdbutil.Sample{
+						sample{t: 1, v: 2},
+					}),
 			}),
 			b: newMockSeriesSet([]storage.Series{
-				newSeries(map[string]string{
-					"handler":  "prometheus",
-					"instance": "127.0.0.1:9090",
-				}, []tsdbutil.Sample{
-					sample{t: 2, v: 1},
-				}),
-				newSeries(map[string]string{
-					"handler":  "query",
-					"instance": "localhost:9090",
-				}, []tsdbutil.Sample{
-					sample{t: 2, v: 2},
-				}),
+				storage.NewTestSeries(
+					labels.Labels{
+						{"handler", "prometheus"},
+						{"instance", "127.0.0.1:9090"},
+					}, []tsdbutil.Sample{
+						sample{t: 2, v: 1},
+					}),
+				storage.NewTestSeries(
+					labels.Labels{
+						{"handler", "query"},
+						{"instance", "localhost:9090"},
+					}, []tsdbutil.Sample{
+						sample{t: 2, v: 2},
+					}),
 			}),
 			exp: newMockSeriesSet([]storage.Series{
-				newSeries(map[string]string{
-					"handler":  "prometheus",
-					"instance": "127.0.0.1:9090",
-				}, []tsdbutil.Sample{
-					sample{t: 1, v: 1},
-					sample{t: 2, v: 1},
-				}),
-				newSeries(map[string]string{
-					"handler":  "prometheus",
-					"instance": "localhost:9090",
-				}, []tsdbutil.Sample{
-					sample{t: 1, v: 2},
-				}),
-				newSeries(map[string]string{
-					"handler":  "query",
-					"instance": "localhost:9090",
-				}, []tsdbutil.Sample{
-					sample{t: 2, v: 2},
-				}),
+				storage.NewTestSeries(
+					labels.Labels{
+						{"handler", "prometheus"},
+						{"instance", "127.0.0.1:9090"},
+					}, []tsdbutil.Sample{
+						sample{t: 1, v: 1},
+						sample{t: 2, v: 1},
+					}),
+				storage.NewTestSeries(
+					labels.Labels{
+						{"handler", "prometheus"},
+						{"instance", "localhost:9090"},
+					}, []tsdbutil.Sample{
+						sample{t: 1, v: 2},
+					}),
+				storage.NewTestSeries(
+					labels.Labels{
+						{"handler", "query"},
+						{"instance", "localhost:9090"},
+					}, []tsdbutil.Sample{
+						sample{t: 2, v: 2},
+					}),
 			}),
 		},
 	}
@@ -260,13 +266,6 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 }
 
 func TestBlockQuerier(t *testing.T) {
-	newSeries := func(l map[string]string, s []tsdbutil.Sample) storage.Series {
-		return &mockSeries{
-			labels:   func() labels.Labels { return labels.FromMap(l) },
-			iterator: func() chunkenc.Iterator { return newListSeriesIterator(s) },
-		}
-	}
-
 	type query struct {
 		mint, maxt int64
 		ms         []*labels.Matcher
@@ -345,15 +344,10 @@ func TestBlockQuerier(t *testing.T) {
 				maxt: 6,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
 				exp: newMockSeriesSet([]storage.Series{
-					newSeries(map[string]string{
-						"a": "a",
-					},
+					storage.NewTestSeries(labels.Labels{{"a", "a"}},
 						[]tsdbutil.Sample{sample{2, 3}, sample{3, 4}, sample{5, 2}, sample{6, 3}},
 					),
-					newSeries(map[string]string{
-						"a": "a",
-						"b": "b",
-					},
+					storage.NewTestSeries(labels.Labels{{"a", "a"}, {"b", "b"}},
 						[]tsdbutil.Sample{sample{2, 2}, sample{3, 3}, sample{5, 3}, sample{6, 6}},
 					),
 				}),
@@ -399,13 +393,6 @@ Outer:
 }
 
 func TestBlockQuerierDelete(t *testing.T) {
-	newSeries := func(l map[string]string, s []tsdbutil.Sample) storage.Series {
-		return &mockSeries{
-			labels:   func() labels.Labels { return labels.FromMap(l) },
-			iterator: func() chunkenc.Iterator { return newListSeriesIterator(s) },
-		}
-	}
-
 	type query struct {
 		mint, maxt int64
 		ms         []*labels.Matcher
@@ -461,9 +448,9 @@ func TestBlockQuerierDelete(t *testing.T) {
 			},
 		},
 		tombstones: tombstones.NewTestMemTombstones([]tombstones.Intervals{
-			tombstones.Intervals{{Mint: 1, Maxt: 3}},
-			tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 6, Maxt: 10}},
-			tombstones.Intervals{{Mint: 6, Maxt: 10}},
+			{{Mint: 1, Maxt: 3}},
+			{{Mint: 1, Maxt: 3}, {Mint: 6, Maxt: 10}},
+			{{Mint: 6, Maxt: 10}},
 		}),
 		queries: []query{
 			{
@@ -471,15 +458,12 @@ func TestBlockQuerierDelete(t *testing.T) {
 				maxt: 7,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
 				exp: newMockSeriesSet([]storage.Series{
-					newSeries(map[string]string{
-						"a": "a",
-					},
+					storage.NewTestSeries(
+						labels.Labels{{"a", "a"}},
 						[]tsdbutil.Sample{sample{5, 2}, sample{6, 3}, sample{7, 4}},
 					),
-					newSeries(map[string]string{
-						"a": "a",
-						"b": "b",
-					},
+					storage.NewTestSeries(
+						labels.Labels{{"a", "a"}, {"b", "b"}},
 						[]tsdbutil.Sample{sample{4, 15}, sample{5, 3}},
 					),
 				}),
@@ -489,15 +473,12 @@ func TestBlockQuerierDelete(t *testing.T) {
 				maxt: 7,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "b", "b")},
 				exp: newMockSeriesSet([]storage.Series{
-					newSeries(map[string]string{
-						"a": "a",
-						"b": "b",
-					},
+					storage.NewTestSeries(
+						labels.Labels{{"a", "a"}, {"b", "b"}},
 						[]tsdbutil.Sample{sample{4, 15}, sample{5, 3}},
 					),
-					newSeries(map[string]string{
-						"b": "b",
-					},
+					storage.NewTestSeries(
+						labels.Labels{{"b", "b"}},
 						[]tsdbutil.Sample{sample{2, 2}, sample{3, 6}, sample{5, 1}},
 					),
 				}),
@@ -507,10 +488,8 @@ func TestBlockQuerierDelete(t *testing.T) {
 				maxt: 4,
 				ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
 				exp: newMockSeriesSet([]storage.Series{
-					newSeries(map[string]string{
-						"a": "a",
-						"b": "b",
-					},
+					storage.NewTestSeries(
+						labels.Labels{{"a", "a"}, {"b", "b"}},
 						[]tsdbutil.Sample{sample{4, 15}},
 					),
 				}),
@@ -561,158 +540,65 @@ Outer:
 	}
 }
 
-func TestBaseChunkSeries(t *testing.T) {
-	type refdSeries struct {
-		lset   labels.Labels
-		chunks []chunks.Meta
+type iteratorCase struct {
+	a, b, c, expected []tsdbutil.Sample
 
-		ref uint64
-	}
+	// Only relevant for some iterators that filters by min and max time.
+	mint, maxt int64
 
-	cases := []struct {
-		series []refdSeries
-		// Postings should be in the sorted order of the series
-		postings []uint64
-
-		expIdxs []int
-	}{
-		{
-			series: []refdSeries{
-				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}}...),
-					chunks: []chunks.Meta{
-						{Ref: 29}, {Ref: 45}, {Ref: 245}, {Ref: 123}, {Ref: 4232}, {Ref: 5344},
-						{Ref: 121},
-					},
-					ref: 12,
-				},
-				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
-					chunks: []chunks.Meta{
-						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
-					},
-					ref: 10,
-				},
-				{
-					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
-					chunks: []chunks.Meta{{Ref: 8282}},
-					ref:    1,
-				},
-				{
-					lset: labels.New([]labels.Label{{Name: "b", Value: "b"}}...),
-					chunks: []chunks.Meta{
-						{Ref: 829}, {Ref: 239}, {Ref: 2349}, {Ref: 659}, {Ref: 269},
-					},
-					ref: 108,
-				},
-			},
-			postings: []uint64{12, 13, 10, 108}, // 13 doesn't exist and should just be skipped over.
-			expIdxs:  []int{0, 1, 3},
-		},
-		{
-			series: []refdSeries{
-				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
-					chunks: []chunks.Meta{
-						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
-					},
-					ref: 10,
-				},
-				{
-					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
-					chunks: []chunks.Meta{{Ref: 8282}},
-					ref:    3,
-				},
-			},
-			postings: []uint64{},
-			expIdxs:  []int{},
-		},
-	}
-
-	for _, tc := range cases {
-		mi := newMockIndex()
-		for _, s := range tc.series {
-			testutil.Ok(t, mi.AddSeries(s.ref, s.lset, s.chunks...))
-		}
-
-		bcs := &baseChunkSeries{
-			p:          index.NewListPostings(tc.postings),
-			index:      mi,
-			tombstones: tombstones.NewMemTombstones(),
-		}
-
-		i := 0
-		for bcs.Next() {
-			lset, chks, _ := bcs.At()
-
-			idx := tc.expIdxs[i]
-
-			testutil.Equals(t, tc.series[idx].lset, lset)
-			testutil.Equals(t, tc.series[idx].chunks, chks)
-
-			i++
-		}
-		testutil.Equals(t, len(tc.expIdxs), i)
-		testutil.Ok(t, bcs.Err())
-	}
+	// Seek being zero means do not test seek.
+	seek        int64
+	seekSuccess bool
 }
 
-type itSeries struct {
-	si chunkenc.Iterator
+func (tc iteratorCase) test(t *testing.T, it chunkenc.Iterator) {
+	tv, v := it.At()
+	testutil.Equals(t, int64(math.MinInt64), tv)
+	testutil.Equals(t, float64(0), v)
+
+	var r []tsdbutil.Sample
+	if tc.seek != 0 {
+		testutil.Equals(t, tc.seekSuccess, it.Seek(tc.seek))
+		testutil.Equals(t, tc.seekSuccess, it.Seek(tc.seek)) // Next one should be noop.
+
+		if tc.seekSuccess {
+			// After successful seek iterator is ready. Grab the value.
+			t, v := it.At()
+			r = append(r, sample{t: t, v: v})
+		}
+	}
+	expandedResult, err := expandSeriesIterator(it)
+	testutil.Ok(t, err)
+
+	r = append(r, expandedResult...)
+	testutil.Equals(t, tc.expected, r)
 }
 
-func (s itSeries) Iterator() chunkenc.Iterator { return s.si }
-func (s itSeries) Labels() labels.Labels       { return labels.Labels{} }
-
-func TestSeriesIterator(t *testing.T) {
-	itcases := []struct {
-		a, b, c []tsdbutil.Sample
-		exp     []tsdbutil.Sample
-
-		mint, maxt int64
-	}{
+func TestSeriesIterators(t *testing.T) {
+	cases := []iteratorCase{
 		{
-			a: []tsdbutil.Sample{},
-			b: []tsdbutil.Sample{},
-			c: []tsdbutil.Sample{},
-
-			exp: []tsdbutil.Sample{},
-
+			a:    []tsdbutil.Sample{},
+			b:    []tsdbutil.Sample{},
+			c:    []tsdbutil.Sample{},
 			mint: math.MinInt64,
 			maxt: math.MaxInt64,
+
+			expected: nil,
 		},
 		{
 			a: []tsdbutil.Sample{
-				sample{1, 2},
-				sample{2, 3},
-				sample{3, 5},
-				sample{6, 1},
+				sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
 			},
 			b: []tsdbutil.Sample{},
 			c: []tsdbutil.Sample{
 				sample{7, 89}, sample{9, 8},
 			},
-
-			exp: []tsdbutil.Sample{
-				sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1}, sample{7, 89}, sample{9, 8},
-			},
 			mint: math.MinInt64,
 			maxt: math.MaxInt64,
-		},
-		{
-			a: []tsdbutil.Sample{},
-			b: []tsdbutil.Sample{
-				sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
-			},
-			c: []tsdbutil.Sample{
-				sample{7, 89}, sample{9, 8},
-			},
 
-			exp: []tsdbutil.Sample{
+			expected: []tsdbutil.Sample{
 				sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1}, sample{7, 89}, sample{9, 8},
 			},
-			mint: 2,
-			maxt: 8,
 		},
 		{
 			a: []tsdbutil.Sample{
@@ -724,32 +610,22 @@ func TestSeriesIterator(t *testing.T) {
 			c: []tsdbutil.Sample{
 				sample{10, 22}, sample{203, 3493},
 			},
+			mint: math.MinInt64,
+			maxt: math.MaxInt64,
 
-			exp: []tsdbutil.Sample{
+			expected: []tsdbutil.Sample{
 				sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1}, sample{7, 89}, sample{9, 8}, sample{10, 22}, sample{203, 3493},
 			},
-			mint: 6,
-			maxt: 10,
 		},
-	}
-
-	seekcases := []struct {
-		a, b, c []tsdbutil.Sample
-
-		seek    int64
-		success bool
-		exp     []tsdbutil.Sample
-
-		mint, maxt int64
-	}{
+		// Seek cases.
 		{
-			a: []tsdbutil.Sample{},
-			b: []tsdbutil.Sample{},
-			c: []tsdbutil.Sample{},
+			a:    []tsdbutil.Sample{},
+			b:    []tsdbutil.Sample{},
+			c:    []tsdbutil.Sample{},
+			seek: 1,
 
-			seek:    0,
-			success: false,
-			exp:     nil,
+			seekSuccess: false,
+			expected:    nil,
 		},
 		{
 			a: []tsdbutil.Sample{
@@ -759,12 +635,12 @@ func TestSeriesIterator(t *testing.T) {
 			c: []tsdbutil.Sample{
 				sample{7, 89}, sample{9, 8},
 			},
+			seek: 10,
+			mint: math.MinInt64,
+			maxt: math.MaxInt64,
 
-			seek:    10,
-			success: false,
-			exp:     nil,
-			mint:    math.MinInt64,
-			maxt:    math.MaxInt64,
+			seekSuccess: false,
+			expected:    nil,
 		},
 		{
 			a: []tsdbutil.Sample{},
@@ -774,14 +650,14 @@ func TestSeriesIterator(t *testing.T) {
 			c: []tsdbutil.Sample{
 				sample{7, 89}, sample{9, 8},
 			},
+			seek: 2,
+			mint: math.MinInt64,
+			maxt: math.MaxInt64,
 
-			seek:    2,
-			success: true,
-			exp: []tsdbutil.Sample{
+			seekSuccess: true,
+			expected: []tsdbutil.Sample{
 				sample{3, 5}, sample{6, 1}, sample{7, 89}, sample{9, 8},
 			},
-			mint: 5,
-			maxt: 8,
 		},
 		{
 			a: []tsdbutil.Sample{
@@ -793,14 +669,14 @@ func TestSeriesIterator(t *testing.T) {
 			c: []tsdbutil.Sample{
 				sample{10, 22}, sample{203, 3493},
 			},
+			seek: 10,
+			mint: math.MinInt64,
+			maxt: math.MaxInt64,
 
-			seek:    10,
-			success: true,
-			exp: []tsdbutil.Sample{
+			seekSuccess: true,
+			expected: []tsdbutil.Sample{
 				sample{10, 22}, sample{203, 3493},
 			},
-			mint: 10,
-			maxt: 203,
 		},
 		{
 			a: []tsdbutil.Sample{
@@ -812,133 +688,169 @@ func TestSeriesIterator(t *testing.T) {
 			c: []tsdbutil.Sample{
 				sample{10, 22}, sample{203, 3493},
 			},
+			seek: 203,
+			mint: math.MinInt64,
+			maxt: math.MaxInt64,
 
-			seek:    203,
-			success: true,
-			exp: []tsdbutil.Sample{
+			seekSuccess: true,
+			expected: []tsdbutil.Sample{
 				sample{203, 3493},
 			},
-			mint: 7,
-			maxt: 203,
+		},
+		{
+			a: []tsdbutil.Sample{
+				sample{6, 1},
+			},
+			b: []tsdbutil.Sample{
+				sample{9, 8},
+			},
+			c: []tsdbutil.Sample{
+				sample{10, 22}, sample{203, 3493},
+			},
+			seek: -120,
+			mint: math.MinInt64,
+			maxt: math.MaxInt64,
+
+			seekSuccess: true,
+			expected: []tsdbutil.Sample{
+				sample{6, 1}, sample{9, 8}, sample{10, 22}, sample{203, 3493},
+			},
 		},
 	}
 
-	t.Run("Chunk", func(t *testing.T) {
-		for _, tc := range itcases {
-			chkMetas := []chunks.Meta{
-				tsdbutil.ChunkFromSamples(tc.a),
-				tsdbutil.ChunkFromSamples(tc.b),
-				tsdbutil.ChunkFromSamples(tc.c),
-			}
-			res := newChunkSeriesIterator(chkMetas, nil, tc.mint, tc.maxt)
-
-			smplValid := make([]tsdbutil.Sample, 0)
-			for _, s := range tc.exp {
-				if s.T() >= tc.mint && s.T() <= tc.maxt {
-					smplValid = append(smplValid, tsdbutil.Sample(s))
-				}
-			}
-			exp := newListSeriesIterator(smplValid)
-
-			smplExp, errExp := expandSeriesIterator(exp)
-			smplRes, errRes := expandSeriesIterator(res)
-
-			testutil.Equals(t, errExp, errRes)
-			testutil.Equals(t, smplExp, smplRes)
+	// To make sure we can properly test things, listSeriesIterator has to work properly as well, even if created
+	// for testing purposes.
+	t.Run("TestList", func(t *testing.T) {
+		for i, tc := range cases {
+			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+				tc.test(t, newListSeriesIterator(append(append(append([]tsdbutil.Sample{}, tc.a...), tc.b...), tc.c...)))
+			})
 		}
+	})
 
-		t.Run("Seek", func(t *testing.T) {
-			extra := []struct {
-				a, b, c []tsdbutil.Sample
+	t.Run("Chunk", func(t *testing.T) {
+		// Only chunk implements time filtering, so add those cases here only.
+		limitedMinMaxtCases := []iteratorCase{
+			{
+				a:    []tsdbutil.Sample{},
+				b:    []tsdbutil.Sample{},
+				c:    []tsdbutil.Sample{},
+				mint: 20,
+				maxt: 21,
 
-				seek    int64
-				success bool
-				exp     []tsdbutil.Sample
-
-				mint, maxt int64
-			}{
-				{
-					a: []tsdbutil.Sample{
-						sample{6, 1},
-					},
-					b: []tsdbutil.Sample{
-						sample{9, 8},
-					},
-					c: []tsdbutil.Sample{
-						sample{10, 22}, sample{203, 3493},
-					},
-
-					seek:    203,
-					success: false,
-					exp:     nil,
-					mint:    2,
-					maxt:    202,
+				expected: nil,
+			},
+			{
+				a: []tsdbutil.Sample{
+					sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
 				},
-				{
-					a: []tsdbutil.Sample{
-						sample{6, 1},
-					},
-					b: []tsdbutil.Sample{
-						sample{9, 8},
-					},
-					c: []tsdbutil.Sample{
-						sample{10, 22}, sample{203, 3493},
-					},
-
-					seek:    5,
-					success: true,
-					exp:     []tsdbutil.Sample{sample{10, 22}},
-					mint:    10,
-					maxt:    202,
+				b: []tsdbutil.Sample{},
+				c: []tsdbutil.Sample{
+					sample{7, 89}, sample{9, 8},
 				},
-			}
+				mint: 2,
+				maxt: 8,
 
-			seekcases2 := append(seekcases, extra...)
+				expected: []tsdbutil.Sample{
+					sample{2, 3}, sample{3, 5}, sample{6, 1}, sample{7, 89},
+				},
+			},
+			{
+				a: []tsdbutil.Sample{
+					sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
+				},
+				b: []tsdbutil.Sample{
+					sample{7, 89}, sample{9, 8},
+				},
+				c: []tsdbutil.Sample{
+					sample{10, 22}, sample{203, 3493},
+				},
+				mint: 3,
+				maxt: math.MaxInt64,
 
-			for _, tc := range seekcases2 {
+				expected: []tsdbutil.Sample{
+					sample{3, 5}, sample{6, 1}, sample{7, 89}, sample{9, 8}, sample{10, 22}, sample{203, 3493},
+				},
+			},
+			{
+				a: []tsdbutil.Sample{
+					sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
+				},
+				b: []tsdbutil.Sample{
+					sample{7, 89}, sample{9, 8},
+				},
+				c: []tsdbutil.Sample{
+					sample{10, 22}, sample{203, 3493},
+				},
+				mint: 6,
+				maxt: 10,
+
+				expected: []tsdbutil.Sample{
+					sample{6, 1}, sample{7, 89}, sample{9, 8}, sample{10, 22},
+				},
+			},
+			// Same with seek.
+			{
+				a: []tsdbutil.Sample{
+					sample{6, 1},
+				},
+				b: []tsdbutil.Sample{
+					sample{9, 8},
+				},
+				c: []tsdbutil.Sample{
+					sample{10, 22}, sample{203, 3493},
+				},
+				seek: 203,
+				mint: 2,
+				maxt: 202,
+
+				seekSuccess: false,
+				expected:    nil,
+			},
+			{
+				a: []tsdbutil.Sample{
+					sample{6, 1},
+				},
+				b: []tsdbutil.Sample{
+					sample{9, 8},
+				},
+				c: []tsdbutil.Sample{
+					sample{10, 22}, sample{203, 3493},
+				},
+				seek: 5,
+				mint: 10,
+				maxt: 202,
+
+				seekSuccess: true,
+				expected:    []tsdbutil.Sample{sample{10, 22}},
+			},
+		}
+		for i, tc := range append(cases, limitedMinMaxtCases...) {
+			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
 				chkMetas := []chunks.Meta{
 					tsdbutil.ChunkFromSamples(tc.a),
 					tsdbutil.ChunkFromSamples(tc.b),
 					tsdbutil.ChunkFromSamples(tc.c),
 				}
-				res := newChunkSeriesIterator(chkMetas, nil, tc.mint, tc.maxt)
-
-				smplValid := make([]tsdbutil.Sample, 0)
-				for _, s := range tc.exp {
-					if s.T() >= tc.mint && s.T() <= tc.maxt {
-						smplValid = append(smplValid, tsdbutil.Sample(s))
-					}
-				}
-				exp := newListSeriesIterator(smplValid)
-
-				testutil.Equals(t, tc.success, res.Seek(tc.seek))
-
-				if tc.success {
-					// Init the list and then proceed to check.
-					remaining := exp.Next()
-					testutil.Assert(t, remaining == true, "")
-
-					for remaining {
-						sExp, eExp := exp.At()
-						sRes, eRes := res.At()
-						testutil.Equals(t, eExp, eRes)
-						testutil.Equals(t, sExp, sRes)
-
-						remaining = exp.Next()
-						testutil.Equals(t, remaining, res.Next())
-					}
-				}
-			}
-		})
+				tc.test(t, newChunkSeriesIterator(chkMetas, nil, tc.mint, tc.maxt))
+			})
+		}
 	})
 
 	t.Run("Chain", func(t *testing.T) {
+		for i, tc := range cases {
+			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+				a, b, c := itSeries{si: newListSeriesIterator(tc.a)},
+					itSeries{si: newListSeriesIterator(tc.b)},
+					itSeries{si: newListSeriesIterator(tc.c)}
+				tc.test(t, newChainedSeriesIterator(a, b, c))
+			})
+		}
+	})
+
+	t.Run("Vertical", func(t *testing.T) {
 		// Extra cases for overlapping series.
-		itcasesExtra := []struct {
-			a, b, c    []tsdbutil.Sample
-			exp        []tsdbutil.Sample
-			mint, maxt int64
-		}{
+		overlappingCases := []iteratorCase{
 			{
 				a: []tsdbutil.Sample{
 					sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
@@ -949,12 +861,12 @@ func TestSeriesIterator(t *testing.T) {
 				c: []tsdbutil.Sample{
 					sample{2, 33}, sample{4, 44}, sample{10, 3},
 				},
-
-				exp: []tsdbutil.Sample{
-					sample{1, 2}, sample{2, 33}, sample{3, 5}, sample{4, 44}, sample{5, 49}, sample{6, 1}, sample{7, 89}, sample{9, 8}, sample{10, 3},
-				},
 				mint: math.MinInt64,
 				maxt: math.MaxInt64,
+
+				expected: []tsdbutil.Sample{
+					sample{1, 2}, sample{2, 33}, sample{3, 5}, sample{4, 44}, sample{5, 49}, sample{6, 1}, sample{7, 89}, sample{9, 8}, sample{10, 3},
+				},
 			},
 			{
 				a: []tsdbutil.Sample{
@@ -964,83 +876,305 @@ func TestSeriesIterator(t *testing.T) {
 				c: []tsdbutil.Sample{
 					sample{1, 23}, sample{2, 342}, sample{3, 25}, sample{6, 11},
 				},
-
-				exp: []tsdbutil.Sample{
-					sample{1, 23}, sample{2, 342}, sample{3, 25}, sample{6, 11}, sample{9, 5}, sample{13, 1},
-				},
 				mint: math.MinInt64,
 				maxt: math.MaxInt64,
+
+				expected: []tsdbutil.Sample{
+					sample{1, 23}, sample{2, 342}, sample{3, 25}, sample{6, 11}, sample{9, 5}, sample{13, 1},
+				},
 			},
 		}
-
-		for _, tc := range itcases {
-			a, b, c := itSeries{newListSeriesIterator(tc.a)},
-				itSeries{newListSeriesIterator(tc.b)},
-				itSeries{newListSeriesIterator(tc.c)}
-
-			res := newChainedSeriesIterator(a, b, c)
-			exp := newListSeriesIterator([]tsdbutil.Sample(tc.exp))
-
-			smplExp, errExp := expandSeriesIterator(exp)
-			smplRes, errRes := expandSeriesIterator(res)
-
-			testutil.Equals(t, errExp, errRes)
-			testutil.Equals(t, smplExp, smplRes)
+		for i, tc := range append(cases, overlappingCases...) {
+			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+				a, b, c :=
+					itSeries{si: newListSeriesIterator(tc.a)},
+					itSeries{si: newListSeriesIterator(tc.b)},
+					itSeries{si: newListSeriesIterator(tc.c)}
+				tc.test(t, newVerticalMergeSeriesIterator(a, b, c))
+			})
 		}
+	})
+}
 
-		for _, tc := range append(itcases, itcasesExtra...) {
-			a, b, c := itSeries{newListSeriesIterator(tc.a)},
-				itSeries{newListSeriesIterator(tc.b)},
-				itSeries{newListSeriesIterator(tc.c)}
+type chunkIteratorCase struct {
+	a, b, c, expected []chunks.Meta
 
-			res := newVerticalMergeSeriesIterator(a, b, c)
-			exp := newListSeriesIterator([]tsdbutil.Sample(tc.exp))
+	// Seek being zero means do not test seek.
+	seek        int64
+	seekSuccess bool
+}
 
-			smplExp, errExp := expandSeriesIterator(exp)
-			smplRes, errRes := expandSeriesIterator(res)
+func (tc chunkIteratorCase) test(t *testing.T, it ChunkIterator) {
+	testutil.Equals(t, chunks.Meta{}, it.At())
+	var r []chunks.Meta
+	if tc.seek != 0 {
+		testutil.Equals(t, tc.seekSuccess, it.Seek(tc.seek))
+		testutil.Equals(t, tc.seekSuccess, it.Seek(tc.seek)) // Next one should be noop.
 
-			testutil.Equals(t, errExp, errRes)
-			testutil.Equals(t, smplExp, smplRes)
+		if tc.seekSuccess {
+			// After successful seek iterator is ready. Grab the value.
+			r = append(r, it.At())
 		}
+	}
+	expandedResult, err := expandChunkIterator(it)
+	testutil.Ok(t, err)
 
-		t.Run("Seek", func(t *testing.T) {
-			for _, tc := range seekcases {
-				ress := []chunkenc.Iterator{
-					newChainedSeriesIterator(
-						itSeries{newListSeriesIterator(tc.a)},
-						itSeries{newListSeriesIterator(tc.b)},
-						itSeries{newListSeriesIterator(tc.c)},
-					),
-					newVerticalMergeSeriesIterator(
-						itSeries{newListSeriesIterator(tc.a)},
-						itSeries{newListSeriesIterator(tc.b)},
-						itSeries{newListSeriesIterator(tc.c)},
-					),
-				}
+	r = append(r, expandedResult...)
+	testutil.Equals(t, tc.expected, r)
+}
 
-				for _, res := range ress {
-					exp := newListSeriesIterator(tc.exp)
+func TestChunkIterators(t *testing.T) {
+	cases := []chunkIteratorCase{
+		{
+			a: []chunks.Meta{},
+			b: []chunks.Meta{},
+			c: []chunks.Meta{},
 
-					testutil.Equals(t, tc.success, res.Seek(tc.seek))
+			expected: nil,
+		},
+		{
+			a: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
+				}),
+			},
+			b: []chunks.Meta{},
+			c: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{7, 89}, sample{9, 8},
+				}),
+			},
 
-					if tc.success {
-						// Init the list and then proceed to check.
-						remaining := exp.Next()
-						testutil.Assert(t, remaining == true, "")
+			expected: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
+				}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{7, 89}, sample{9, 8},
+				}),
+			},
+		},
+		{
+			a: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
+				}),
+			},
+			b: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{7, 89}, sample{9, 8},
+				}),
+			},
+			c: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{10, 22}, sample{203, 3493},
+				}),
+			},
 
-						for remaining {
-							sExp, eExp := exp.At()
-							sRes, eRes := res.At()
-							testutil.Equals(t, eExp, eRes)
-							testutil.Equals(t, sExp, sRes)
+			//		t.Run("Seek", func(t *testing.T) {
+			//			for _, tc := range seekcases {
+			//				ress := []chunkenc.Iterator{
+			//					newChainedSeriesIterator(
+			//						itSeries{newListSeriesIterator(tc.a)},
+			//						itSeries{newListSeriesIterator(tc.b)},
+			//						itSeries{newListSeriesIterator(tc.c)},
+			//					),
+			//					newVerticalMergeSeriesIterator(
+			//						itSeries{newListSeriesIterator(tc.a)},
+			//						itSeries{newListSeriesIterator(tc.b)},
+			//						itSeries{newListSeriesIterator(tc.c)},
+			//					),
+			//				}
+			//=======
+			expected: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
+				}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{7, 89}, sample{9, 8},
+				}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{10, 22}, sample{203, 3493},
+				}),
+			},
+		},
+		// Seek cases.
+		{
+			a:    []chunks.Meta{},
+			b:    []chunks.Meta{},
+			c:    []chunks.Meta{},
+			seek: 1,
 
-							remaining = exp.Next()
-							testutil.Equals(t, remaining, res.Next())
-						}
-					}
-				}
-			}
-		})
+			seekSuccess: false,
+			expected:    nil,
+		},
+		{
+			a: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{2, 3},
+				}),
+			},
+			b: []chunks.Meta{},
+			c: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{7, 89}, sample{9, 8},
+				}),
+			},
+			seek: 10,
+
+			seekSuccess: false,
+			expected:    nil,
+		},
+		{
+			a: []chunks.Meta{},
+			b: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 2}, sample{3, 5}, sample{6, 1},
+				}),
+			},
+			c: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{7, 89}, sample{9, 8},
+				}),
+			},
+			seek: 2,
+
+			seekSuccess: true,
+			expected: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 2}, sample{3, 5}, sample{6, 1},
+				}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{7, 89}, sample{9, 8},
+				}),
+			},
+		},
+		{
+			a: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{6, 1},
+				}),
+			},
+			b: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{9, 8},
+				}),
+			},
+			c: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{10, 22}, sample{203, 3493},
+				}),
+			},
+			seek: 10,
+
+			seekSuccess: true,
+			expected: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{10, 22}, sample{203, 3493},
+				}),
+			},
+		},
+		{
+			a: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{6, 1},
+				}),
+			},
+			b: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{9, 8},
+				}),
+			},
+			c: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{10, 22}, sample{203, 3493},
+				}),
+			},
+			seek: 203,
+
+			seekSuccess: true,
+			expected: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{10, 22}, sample{203, 3493},
+				}),
+			},
+		},
+	}
+
+	t.Run("Simple", func(t *testing.T) {
+		for i, tc := range cases {
+			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+				tc.test(t, newChunkIterator(append(append(append([]chunks.Meta{}, tc.a...), tc.b...), tc.c...)))
+			})
+		}
+	})
+
+	t.Run("Chained", func(t *testing.T) {
+		for i, tc := range cases {
+			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+				tc.test(t, &chainedChunkIterator{chain: []ChunkIterator{
+					newChunkIterator(tc.a),
+					newChunkIterator(tc.b),
+					newChunkIterator(tc.c),
+				}})
+			})
+		}
+	})
+
+	t.Run("Vertical", func(t *testing.T) {
+		overlappingCases := []chunkIteratorCase{
+			{
+				a: []chunks.Meta{
+					tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+						sample{1, 2}, sample{2, 3}, sample{3, 5}, sample{6, 1},
+					}),
+				},
+				b: []chunks.Meta{
+					tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+						sample{5, 49}, sample{7, 89}, sample{9, 8},
+					}),
+				},
+				c: []chunks.Meta{
+					tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+						sample{2, 33}, sample{4, 44}, sample{10, 3},
+					}),
+				},
+
+				expected: []chunks.Meta{
+					tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+						sample{1, 2}, sample{2, 33}, sample{3, 5}, sample{4, 44}, sample{5, 49}, sample{6, 1}, sample{7, 89}, sample{9, 8}, sample{10, 3},
+					}),
+				},
+			},
+			{
+				a: []chunks.Meta{
+					tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+						sample{1, 2}, sample{2, 3}, sample{9, 5}, sample{13, 1},
+					}),
+				},
+				b: []chunks.Meta{},
+				c: []chunks.Meta{
+					tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+						sample{1, 23}, sample{2, 342}, sample{3, 25}, sample{6, 11},
+					}),
+				},
+
+				expected: []chunks.Meta{
+					tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+						sample{1, 23}, sample{2, 342}, sample{3, 25}, sample{6, 11}, sample{9, 5}, sample{13, 1},
+					}),
+				},
+			},
+		}
+		for i, tc := range append(cases, overlappingCases...) {
+			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+				a, b, c :=
+					itSeries{sc: newChunkIterator(tc.a)},
+					itSeries{sc: newChunkIterator(tc.b)},
+					itSeries{sc: newChunkIterator(tc.c)}
+				tc.test(t, newVerticalMergeChunkIterator(a, b, c))
+			})
+		}
 	})
 }
 
@@ -1053,8 +1187,9 @@ func TestChunkSeriesIterator_DoubleSeek(t *testing.T) {
 	}
 
 	res := newChunkSeriesIterator(chkMetas, nil, 2, 8)
-	testutil.Assert(t, res.Seek(1) == true, "")
-	testutil.Assert(t, res.Seek(2) == true, "")
+	testutil.Assert(t, res.Seek(1), "")
+	testutil.Assert(t, res.Seek(2), "")
+	testutil.Assert(t, res.Seek(2), "")
 	ts, v := res.At()
 	testutil.Equals(t, int64(2), ts)
 	testutil.Equals(t, float64(2), v)
@@ -1071,15 +1206,28 @@ func TestChunkSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 
 	it := newChunkSeriesIterator(metas, nil, 1, 7)
 
-	testutil.Assert(t, it.Next() == true, "")
+	testutil.Assert(t, it.Next(), "")
 	ts, v := it.At()
 	testutil.Equals(t, int64(1), ts)
 	testutil.Equals(t, float64(2), v)
 
-	testutil.Assert(t, it.Seek(4) == true, "")
+	testutil.Assert(t, it.Seek(4), "")
 	ts, v = it.At()
 	testutil.Equals(t, int64(5), ts)
 	testutil.Equals(t, float64(6), v)
+}
+
+// Calling Seek() with a time between [mint, maxt] after the iterator had
+// already passed the end would incorrectly return true.
+func TestChunkSeriesIterator_SeekWithMinTime(t *testing.T) {
+	metas := []chunks.Meta{
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 6}, sample{5, 6}, sample{7, 8}}),
+	}
+
+	it := newChunkSeriesIterator(metas, nil, 2, 5)
+	testutil.Assert(t, it.Seek(6) == false, "")
+	// A second, within bounds Seek() used to succeed. Make sure it also returns false.
+	testutil.Assert(t, it.Seek(3) == false, "")
 }
 
 // Regression when calling Next() with a time bounded to fit within two samples.
@@ -1510,56 +1658,6 @@ func (m mockIndex) LabelNames() ([]string, error) {
 	}
 	sort.Strings(l)
 	return l, nil
-}
-
-type mockSeries struct {
-	labels   func() labels.Labels
-	iterator func() chunkenc.Iterator
-}
-
-func newSeries(l map[string]string, s []tsdbutil.Sample) storage.Series {
-	return &mockSeries{
-		labels:   func() labels.Labels { return labels.FromMap(l) },
-		iterator: func() chunkenc.Iterator { return newListSeriesIterator(s) },
-	}
-}
-func (m *mockSeries) Labels() labels.Labels       { return m.labels() }
-func (m *mockSeries) Iterator() chunkenc.Iterator { return m.iterator() }
-
-type listSeriesIterator struct {
-	list []tsdbutil.Sample
-	idx  int
-}
-
-func newListSeriesIterator(list []tsdbutil.Sample) *listSeriesIterator {
-	return &listSeriesIterator{list: list, idx: -1}
-}
-
-func (it *listSeriesIterator) At() (int64, float64) {
-	s := it.list[it.idx]
-	return s.T(), s.V()
-}
-
-func (it *listSeriesIterator) Next() bool {
-	it.idx++
-	return it.idx < len(it.list)
-}
-
-func (it *listSeriesIterator) Seek(t int64) bool {
-	if it.idx == -1 {
-		it.idx = 0
-	}
-	// Do binary search between current position and end.
-	it.idx = sort.Search(len(it.list)-it.idx, func(i int) bool {
-		s := it.list[i+it.idx]
-		return s.T() >= t
-	})
-
-	return it.idx < len(it.list)
-}
-
-func (it *listSeriesIterator) Err() error {
-	return nil
 }
 
 func BenchmarkQueryIterator(b *testing.B) {

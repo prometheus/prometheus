@@ -67,6 +67,20 @@ type Meta struct {
 	MinTime, MaxTime int64
 }
 
+// Iterator iterates over the chunk of a time series.
+type Iterator interface {
+	//// Seek advances the iterator forward to the given timestamp.
+	//// It advances to the chunk with min time at t or first chunk with min time after t.
+	//Seek(t int64) bool
+	// At returns the current meta.
+	// It depends on implementation if the chunk is populated or not.
+	At() Meta
+	// Next advances the iterator by one.
+	Next() bool
+	// Err returns optional error if Next is false.
+	Err() error
+}
+
 // writeHash writes the chunk encoding and raw data into the provided hash.
 func (cm *Meta) writeHash(h hash.Hash, buf []byte) error {
 	buf = append(buf[:0], byte(cm.Chunk.Encoding()))
@@ -242,84 +256,85 @@ func (w *Writer) write(b []byte) error {
 	return err
 }
 
-// MergeOverlappingChunks removes the samples whose timestamp is overlapping.
-// The last appearing sample is retained in case there is overlapping.
-// This assumes that `chks []Meta` is sorted w.r.t. MinTime.
-func MergeOverlappingChunks(chks []Meta) ([]Meta, error) {
-	if len(chks) < 2 {
-		return chks, nil
-	}
-	newChks := make([]Meta, 0, len(chks)) // Will contain the merged chunks.
-	newChks = append(newChks, chks[0])
-	last := 0
-	for _, c := range chks[1:] {
-		// We need to check only the last chunk in newChks.
-		// Reason: (1) newChks[last-1].MaxTime < newChks[last].MinTime (non overlapping)
-		//         (2) As chks are sorted w.r.t. MinTime, newChks[last].MinTime < c.MinTime.
-		// So never overlaps with newChks[last-1] or anything before that.
-		if c.MinTime > newChks[last].MaxTime {
-			newChks = append(newChks, c)
-			last++
-			continue
-		}
-		nc := &newChks[last]
-		if c.MaxTime > nc.MaxTime {
-			nc.MaxTime = c.MaxTime
-		}
-		chk, err := MergeChunks(nc.Chunk, c.Chunk)
-		if err != nil {
-			return nil, err
-		}
-		nc.Chunk = chk
-	}
-
-	return newChks, nil
-}
-
-// MergeChunks vertically merges a and b, i.e., if there is any sample
-// with same timestamp in both a and b, the sample in a is discarded.
-func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
-	newChunk := chunkenc.NewXORChunk()
-	app, err := newChunk.Appender()
-	if err != nil {
-		return nil, err
-	}
-	ait := a.Iterator(nil)
-	bit := b.Iterator(nil)
-	aok, bok := ait.Next(), bit.Next()
-	for aok && bok {
-		at, av := ait.At()
-		bt, bv := bit.At()
-		if at < bt {
-			app.Append(at, av)
-			aok = ait.Next()
-		} else if bt < at {
-			app.Append(bt, bv)
-			bok = bit.Next()
-		} else {
-			app.Append(bt, bv)
-			aok = ait.Next()
-			bok = bit.Next()
-		}
-	}
-	for aok {
-		at, av := ait.At()
-		app.Append(at, av)
-		aok = ait.Next()
-	}
-	for bok {
-		bt, bv := bit.At()
-		app.Append(bt, bv)
-		bok = bit.Next()
-	}
-	if ait.Err() != nil {
-		return nil, ait.Err()
-	}
-	if bit.Err() != nil {
-		return nil, bit.Err()
-	}
-	return newChunk, nil
-}
+//
+//// MergeOverlappingChunks removes the samples whose timestamp is overlapping.
+//// The last appearing sample is retained in case there is overlapping.
+//// This assumes that `chks []Meta` is sorted w.r.t. MinTime.
+//func MergeOverlappingChunks(chks []Meta) ([]Meta, error) {
+//	if len(chks) < 2 {
+//		return chks, nil
+//	}
+//	newChks := make([]Meta, 0, len(chks)) // Will contain the merged chunks.
+//	newChks = append(newChks, chks[0])
+//	last := 0
+//	for _, c := range chks[1:] {
+//		// We need to check only the last chunk in newChks.
+//		// Reason: (1) newChks[last-1].MaxTime < newChks[last].MinTime (non overlapping)
+//		//         (2) As chks are sorted w.r.t. MinTime, newChks[last].MinTime < c.MinTime.
+//		// So never overlaps with newChks[last-1] or anything before that.
+//		if c.MinTime > newChks[last].MaxTime {
+//			newChks = append(newChks, c)
+//			last++
+//			continue
+//		}
+//		nc := &newChks[last]
+//		if c.MaxTime > nc.MaxTime {
+//			nc.MaxTime = c.MaxTime
+//		}
+//		chk, err := MergeChunks(nc.Chunk, c.Chunk)
+//		if err != nil {
+//			return nil, err
+//		}
+//		nc.Chunk = chk
+//	}
+//
+//	return newChks, nil
+//}
+//
+//// MergeChunks vertically merges a and b, i.e., if there is any sample
+//// with same timestamp in both a and b, the sample in a is discarded.
+//func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
+//	newChunk := chunkenc.NewXORChunk()
+//	app, err := newChunk.Appender()
+//	if err != nil {
+//		return nil, err
+//	}
+//	ait := a.Iterator(nil)
+//	bit := b.Iterator(nil)
+//	aok, bok := ait.Next(), bit.Next()
+//	for aok && bok {
+//		at, av := ait.At()
+//		bt, bv := bit.At()
+//		if at < bt {
+//			app.Append(at, av)
+//			aok = ait.Next()
+//		} else if bt < at {
+//			app.Append(bt, bv)
+//			bok = bit.Next()
+//		} else {
+//			app.Append(bt, bv)
+//			aok = ait.Next()
+//			bok = bit.Next()
+//		}
+//	}
+//	for aok {
+//		at, av := ait.At()
+//		app.Append(at, av)
+//		aok = ait.Next()
+//	}
+//	for bok {
+//		bt, bv := bit.At()
+//		app.Append(bt, bv)
+//		bok = bit.Next()
+//	}
+//	if ait.Err() != nil {
+//		return nil, ait.Err()
+//	}
+//	if bit.Err() != nil {
+//		return nil, bit.Err()
+//	}
+//	return newChunk, nil
+//}
 
 // WriteChunks writes as many chunks as possible to the current segment,
 // cuts a new segment when the current segment is full and
