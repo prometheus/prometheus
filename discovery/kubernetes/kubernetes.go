@@ -28,6 +28,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
@@ -127,28 +128,68 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
 			return errors.Errorf("pod role supports only pod selectors")
 		}
+		err = validateSelectors(c.Selectors.Pod)
+		if err != nil {
+			return err
+		}
 	case "service":
 		if len(c.Selectors.Pod.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
 			return errors.Errorf("service role supports only service selectors")
+		}
+		err = validateSelectors(c.Selectors.Service)
+		if err != nil {
+			return err
 		}
 	case "endpoints":
 		if len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
 			return errors.Errorf("endpoints role supports only pod, service and endpoints selectors")
 		}
+		err = validateSelectors(c.Selectors.Pod)
+		if err != nil {
+			return err
+		}
+		err = validateSelectors(c.Selectors.Service)
+		if err != nil {
+			return err
+		}
+		err = validateSelectors(c.Selectors.Endpoints)
+		if err != nil {
+			return err
+		}
 	case "node":
 		if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Pod.Field) > 0 {
 			return errors.Errorf("node role supports only node selectors")
+		}
+		err = validateSelectors(c.Selectors.Node)
+		if err != nil {
+			return err
 		}
 	case "ingress":
 		if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Node.Field) > 0 || len(c.Selectors.Pod.Field) > 0 {
 			return errors.Errorf("ingress role supports only ingress selectors")
 		}
+		err = validateSelectors(c.Selectors.Ingress)
+		if err != nil {
+			return err
+		}
 	default:
 		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
+	}
+	_, err = fields.ParseSelector(c.Selectors.Service.Field)
+	if err != nil {
+		return err
 	}
 	return nil
 }
 
+func validateSelectors(rsc ResourceSelectorConfig) error {
+	_, err := fields.ParseSelector(rsc.Field)
+	if err != nil {
+		return err
+	}
+	_, err = fields.ParseSelector(rsc.Label)
+	return err
+}
 // NamespaceDiscovery is the configuration for discovering
 // Kubernetes namespaces.
 type NamespaceDiscovery struct {

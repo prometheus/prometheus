@@ -860,6 +860,13 @@ namespaces:
 # and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible 
 # filters that can be used. Endpoints role supports pod, service and endpoints selectors, other roles
 # only support selectors matching the role itself (e.g. node role can only contain node selectors).
+
+# Note: When making decision about using field/label selector make sure that this 
+# is the best approach - it will prevent Prometheus from reusing single list/watch
+# for all scrape configs. This might result in a bigger load on the Kubernetes API,
+# because per each selector combination there will be additional LIST/WATCH. On the other hand,
+# if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
+# Decision, if selectors should be used or not depends on the particular situation.
 selectors:
   <role>:
     [ label: <string> ]
