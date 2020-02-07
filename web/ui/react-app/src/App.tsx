@@ -7,11 +7,11 @@ import { Router, Redirect } from '@reach/router';
 import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList } from './pages';
 import PathPrefixProps from './types/PathPrefixProps';
 
-interface ConsolesLinkProps {
+interface AppConsolesLink {
   consolesLink: string | null;
 }
 
-const App: FC<PathPrefixProps & ConsolesLinkProps> = ({ pathPrefix, consolesLink }) => {
+const App: FC<PathPrefixProps & AppConsolesLink> = ({ pathPrefix, consolesLink }) => {
   return (
     <>
       <Navigation pathPrefix={pathPrefix} consolesLink={consolesLink} />
