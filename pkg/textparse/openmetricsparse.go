@@ -90,7 +90,6 @@ type OpenMetricsParser struct {
 	hasTS   bool
 	start   int
 	offsets []int
-	prev    token
 
 	eOffsets      []int
 	exemplar      []byte
@@ -233,19 +232,14 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 	p.exemplarVal = 0
 	p.hasExemplarTs = false
 
-	t := p.nextToken()
-	defer func() { p.prev = t }()
-	switch t {
+	switch t := p.nextToken(); t {
 	case tEofWord:
 		if t := p.nextToken(); t != tEOF {
 			return EntryInvalid, errors.New("unexpected data after # EOF")
 		}
 		return EntryInvalid, io.EOF
 	case tEOF:
-		if p.prev != tEofWord {
-			return EntryInvalid, errors.New("data does not end with # EOF")
-		}
-		return EntryInvalid, io.EOF
+		return EntryInvalid, errors.New("data does not end with # EOF")
 	case tHelp, tType, tUnit:
 		switch t := p.nextToken(); t {
 		case tMName:
