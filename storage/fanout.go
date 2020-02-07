@@ -242,6 +242,12 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 	var warnings Warnings
 
 	var priErr error = nil
+	type queryResult struct {
+		qr          Querier
+		set         SeriesSet
+		wrn         Warnings
+		selectError error
+	}
 	queryResultChan := make(chan *queryResult)
 	for _, querier := range q.queriers {
 		go func(qr Querier) {
@@ -276,13 +282,6 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 		return nil, nil, priErr
 	}
 	return NewMergeSeriesSet(seriesSets, q), warnings, nil
-}
-
-type queryResult struct {
-	qr          Querier
-	set         SeriesSet
-	wrn         Warnings
-	selectError error
 }
 
 // LabelValues returns all potential values for a label name.
