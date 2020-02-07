@@ -14,7 +14,11 @@ import {
 } from 'reactstrap';
 import PathPrefixProps from './types/PathPrefixProps';
 
-const Navigation: FC<PathPrefixProps> = ({ pathPrefix, consolesLink }) => {
+interface ConsolesLinkProps {
+  consolesLink: string | null;
+}
+
+const Navigation: FC<PathPrefixProps & ConsolesLinkProps> = ({ pathPrefix, consolesLink }) => {
   const [isOpen, setIsOpen] = useState(false);
   const toggle = () => setIsOpen(!isOpen);
   return (

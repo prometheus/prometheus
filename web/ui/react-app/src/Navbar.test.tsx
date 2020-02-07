@@ -3,8 +3,8 @@ import { shallow } from 'enzyme';
 import Navigation from './Navbar';
 import { NavItem, NavLink } from 'reactstrap';
 
-describe('Navbar should contains console Link', () => {
-  it('with non-empty consoleslinks', () => {
+describe('Navbar should contain console Link', () => {
+  it('with non-empty consoleslink', () => {
     const app = shallow(<Navigation pathPrefix="/path/prefix" consolesLink="/path/consoles" />);
     expect(
       app.contains(
@@ -16,8 +16,8 @@ describe('Navbar should contains console Link', () => {
   });
 });
 
-describe('Navbar should not contains consoles link', () => {
-  it('with empty string in consolesLinks ', () => {
+describe('Navbar should not contain consoles link', () => {
+  it('with empty string in consolesLink', () => {
     const app = shallow(<Navigation pathPrefix="/path/prefix" consolesLink="" />);
     expect(
       app.contains(
