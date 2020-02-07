@@ -18,7 +18,6 @@ import (
 	"context"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -242,17 +241,13 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
 	var warnings Warnings
 
-	wg := sync.WaitGroup{}
-	wg.Add(len(q.queriers))
-	queryResultChan := make(chan *queryResult, len(q.queriers))
+	queryResultChan := make(chan *queryResult)
 	for _, querier := range q.queriers {
 		go func(qr Querier) {
-			defer wg.Done()
 			set, wrn, err := qr.SelectSorted(params, matchers...)
 			queryResultChan <- &queryResult{qr: qr, set: set, wrn: wrn, selectError: err}
 		}(querier)
 	}
-	wg.Wait()
 	for i := 0; i < len(q.queriers); i++ {
 		qryResult := <-queryResultChan
 		q.setQuerierMap[qryResult.set] = qryResult.qr
