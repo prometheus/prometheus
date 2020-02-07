@@ -241,15 +241,23 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
 	var warnings Warnings
 
+	var priErr error = nil
 	queryResultChan := make(chan *queryResult)
 	for _, querier := range q.queriers {
 		go func(qr Querier) {
+			if priErr != nil {
+				queryResultChan <- &queryResult{qr: qr, set: nil, wrn: nil, selectError: nil}
+				return
+			}
 			set, wrn, err := qr.SelectSorted(params, matchers...)
 			queryResultChan <- &queryResult{qr: qr, set: set, wrn: wrn, selectError: err}
 		}(querier)
 	}
 	for i := 0; i < len(q.queriers); i++ {
 		qryResult := <-queryResultChan
+		if priErr != nil {
+			continue
+		}
 		q.setQuerierMap[qryResult.set] = qryResult.qr
 		if qryResult.wrn != nil {
 			warnings = append(warnings, qryResult.wrn...)
@@ -260,9 +268,12 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 			if qryResult.qr != q.primaryQuerier {
 				warnings = append(warnings, qryResult.selectError)
 			} else {
-				return nil, nil, qryResult.selectError
+				priErr = qryResult.selectError
 			}
 		}
+	}
+	if priErr != nil {
+		return nil, nil, priErr
 	}
 	return NewMergeSeriesSet(seriesSets, q), warnings, nil
 }
