@@ -29,9 +29,9 @@ const Navigation: FC<PathPrefixProps & NavbarProps> = ({ pathPrefix, consolesLin
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
         <Nav className="ml-0" navbar>
-          {consolesLink !== '' && (
+          {consolesLink !== null && (
             <NavItem>
-              <NavLink href={`${consolesLink}`}>Consoles</NavLink>
+              <NavLink href={consolesLink}>Consoles</NavLink>
             </NavItem>
           )}
           <NavItem>
