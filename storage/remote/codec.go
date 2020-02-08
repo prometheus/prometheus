@@ -112,11 +112,11 @@ func optMatcher(matchers []*prompb.LabelMatcher) {
 	for _, m := range matchers {
 		switch m.Type {
 		case prompb.LabelMatcher_RE:
-			if isRegexString(m.Value) {
+			if !isRegexString(m.Value) {
 				m.Type = prompb.LabelMatcher_EQ
 			}
 		case prompb.LabelMatcher_NRE:
-			if isRegexString(m.Value) {
+			if !isRegexString(m.Value) {
 				m.Type = prompb.LabelMatcher_NEQ
 			}
 		}
@@ -125,7 +125,7 @@ func optMatcher(matchers []*prompb.LabelMatcher) {
 
 //from tsdb querier.go
 func isRegexString(pattern string) bool {
-	for i := 4; i < len(pattern)-2; i++ {
+	for i := 0; i < len(pattern); i++ {
 		if isRegexMetaCharacter(pattern[i]) {
 			return true
 		}
