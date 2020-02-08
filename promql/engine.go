@@ -438,7 +438,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 				params["start"] = formatDate(eq.Start)
 				params["end"] = formatDate(eq.End)
 				// The step provided by the user is in seconds.
-				params["step"] = durationMilliseconds(eq.Interval) / 1000
+				params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
 			}
 			f := []interface{}{"params", params}
 			if err != nil {
