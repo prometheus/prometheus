@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -84,6 +85,7 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 	if err != nil {
 		return nil, err
 	}
+	optMatcher(ms)
 
 	var rp *prompb.ReadHints
 	if p != nil {
@@ -104,6 +106,36 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 		Matchers:         ms,
 		Hints:            rp,
 	}, nil
+}
+
+func optMatcher(matchers []*prompb.LabelMatcher) {
+	for _, m := range matchers {
+		switch m.Type {
+		case prompb.LabelMatcher_RE:
+			if isRegexString(m.Value) {
+				m.Type = prompb.LabelMatcher_EQ
+			}
+		case prompb.LabelMatcher_NRE:
+			if isRegexString(m.Value) {
+				m.Type = prompb.LabelMatcher_NEQ
+			}
+		}
+	}
+}
+
+func isRegexString(text string) bool {
+	if !strings.Contains(text, ".*") &&
+		!strings.Contains(text, "^") &&
+		!strings.Contains(text, "?") &&
+		!strings.Contains(text, "$") &&
+		!strings.Contains(text, "-") &&
+		!strings.Contains(text, ".+") &&
+		!strings.Contains(text, "?") &&
+		!strings.Contains(text, "\\") &&
+		!strings.Contains(text, "|") {
+		return true
+	}
+	return false
 }
 
 // ToQueryResult builds a QueryResult proto.
