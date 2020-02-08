@@ -132,6 +132,11 @@ func isRegexString(text string) bool {
 		!strings.Contains(text, ".+") &&
 		!strings.Contains(text, "?") &&
 		!strings.Contains(text, "\\") &&
+		!strings.Contains(text, "[") &&
+		!strings.Contains(text, "]") &&
+		!strings.Contains(text, "{") &&
+		!strings.Contains(text, "}") &&
+		!strings.Contains(text, "*") &&
 		!strings.Contains(text, "|") {
 		return true
 	}
