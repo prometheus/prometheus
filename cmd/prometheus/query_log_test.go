@@ -152,6 +152,8 @@ func (p *queryLogTest) validateLastQuery(t *testing.T, ql []queryLogLine) {
 	switch p.origin {
 	case apiOrigin:
 		testutil.Equals(t, 5, q.Params.Step)
+		testutil.Equals(t, "1970-01-01T00:00:00.000Z", q.Params.Start)
+		testutil.Equals(t, "1970-01-01T01:00:00.000Z", q.Params.End)
 	default:
 		testutil.Equals(t, 0, q.Params.Step)
 	}
@@ -362,6 +364,8 @@ type queryLogLine struct {
 	Params struct {
 		Query string `json:"query"`
 		Step  int    `json:"step"`
+		Start string `json:"start"`
+		End   string `json:"end"`
 	} `json:"params"`
 	Request struct {
 		Path     string `json:"path"`
