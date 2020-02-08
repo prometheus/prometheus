@@ -19,7 +19,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sort"
-	"strings"
+	"unicode/utf8"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -123,27 +123,28 @@ func optMatcher(matchers []*prompb.LabelMatcher) {
 	}
 }
 
-func isRegexString(text string) bool {
-	if !strings.Contains(text, ".*") &&
-		!strings.Contains(text, "^") &&
-		!strings.Contains(text, "?") &&
-		!strings.Contains(text, "$") &&
-		!strings.Contains(text, "-") &&
-		!strings.Contains(text, ".+") &&
-		!strings.Contains(text, "?") &&
-		!strings.Contains(text, "\\") &&
-		!strings.Contains(text, "[") &&
-		!strings.Contains(text, "]") &&
-		!strings.Contains(text, "{") &&
-		!strings.Contains(text, "}") &&
-		!strings.Contains(text, "*") &&
-		!strings.Contains(text, "|") {
-		return true
+//from tsdb querier.go
+func isRegexString(pattern string) bool {
+	for i := 4; i < len(pattern)-2; i++ {
+		if isRegexMetaCharacter(pattern[i]) {
+			return true
+		}
 	}
 	return false
 }
 
-// ToQueryResult builds a QueryResult proto.
+var regexMetaCharacterBytes [16]byte
+
+func isRegexMetaCharacter(b byte) bool {
+	return b < utf8.RuneSelf && regexMetaCharacterBytes[b%16]&(1<<(b/16)) != 0
+}
+
+func init() {
+	for _, b := range []byte(`.+*?()|[]{}^$`) {
+		regexMetaCharacterBytes[b%16] |= 1 << (b / 16)
+	}
+}
+
 func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, error) {
 	numSamples := 0
 	resp := &prompb.QueryResult{}
