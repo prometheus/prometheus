@@ -297,6 +297,11 @@ func New(logger log.Logger, o *Options) *Handler {
 			return *h.config
 		},
 		o.Flags,
+		api_v1.Options{
+			Address: o.ListenAddress,
+			Host:    o.ExternalURL.Host,
+			Scheme:  o.ExternalURL.Scheme,
+		},
 		h.testReady,
 		func() api_v1.TSDBAdmin {
 			return h.options.TSDB()

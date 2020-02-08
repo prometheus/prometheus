@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -175,6 +176,7 @@ type API struct {
 	config                func() config.Config
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
+	option                Options
 
 	db                        func() TSDBAdmin
 	enableAdmin               bool
@@ -200,6 +202,7 @@ func NewAPI(
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
+	option Options,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() TSDBAdmin,
 	enableAdmin bool,
@@ -212,6 +215,8 @@ func NewAPI(
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 ) *API {
+	fmt.Println("options are ")
+	fmt.Println(option)
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
@@ -222,6 +227,7 @@ func NewAPI(
 		config:                    configFunc,
 		flagsMap:                  flagsMap,
 		ready:                     readyFunc,
+		option:                    option,
 		db:                        db,
 		enableAdmin:               enableAdmin,
 		rulesRetriever:            rr,
@@ -583,6 +589,7 @@ type Target struct {
 
 	ScrapePool string `json:"scrapePool"`
 	ScrapeURL  string `json:"scrapeUrl"`
+	GlobalURL  string `json:"globalUrl"`
 
 	LastError          string              `json:"lastError"`
 	LastScrape         time.Time           `json:"lastScrape"`
@@ -600,6 +607,43 @@ type DroppedTarget struct {
 type TargetDiscovery struct {
 	ActiveTargets  []*Target        `json:"activeTargets"`
 	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
+}
+
+// Options contains fields for globalURl required in local targets.
+type Options struct {
+	Address string
+	Host    string
+	Scheme  string
+}
+
+func getGlobalURL(u *url.URL, opts Options) (*url.URL, error) {
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		return u, err
+	}
+
+	for _, lhr := range []string{"127.0.0.1", "localhost"} {
+		if host == lhr {
+			_, ownPort, err := net.SplitHostPort(opts.Address)
+			if err != nil {
+				return u, err
+			}
+
+			if port == ownPort {
+				u.Scheme = opts.Scheme
+				u.Host = opts.Host
+			} else {
+				host, _, err := net.SplitHostPort(opts.Host)
+				if err != nil {
+					return u, err
+				}
+				u.Host = host + ":" + port
+			}
+			break
+		}
+	}
+
+	return u, nil
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
@@ -641,12 +685,22 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 					lastErrStr = lastErr.Error()
 				}
 
+				globalURL, err := getGlobalURL(target.URL(), api.option)
+
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
-					DiscoveredLabels:   target.DiscoveredLabels().Map(),
-					Labels:             target.Labels().Map(),
-					ScrapePool:         key,
-					ScrapeURL:          target.URL().String(),
-					LastError:          lastErrStr,
+					DiscoveredLabels: target.DiscoveredLabels().Map(),
+					Labels:           target.Labels().Map(),
+					ScrapePool:       key,
+					ScrapeURL:        target.URL().String(),
+					GlobalURL:        globalURL.String(),
+					LastError: func() string {
+						if err == nil && lastErrStr == "" {
+							return ""
+						} else if err != nil {
+							return errors.Wrapf(err, lastErrStr).Error()
+						}
+						return lastErrStr
+					}(),
 					LastScrape:         target.LastScrape(),
 					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
 					Health:             target.Health(),

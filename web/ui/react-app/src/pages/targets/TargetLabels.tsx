@@ -1,6 +1,5 @@
 import React, { FC, Fragment, useState } from 'react';
 import { Badge, Tooltip } from 'reactstrap';
-import 'css.escape';
 import styles from './TargetLabels.module.css';
 
 interface Labels {
