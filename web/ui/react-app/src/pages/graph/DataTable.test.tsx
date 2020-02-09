@@ -113,6 +113,35 @@ describe('DataTable', () => {
     });
   });
 
+  describe('when resultType is vector and size is more than maximum limit of formatting', () => {
+    const dataTableProps: QueryResult = {
+      data: {
+        resultType: 'vector',
+        result: Array.from(Array(1001).keys()).map(i => {
+          return {
+            metric: {
+              __name__: `metric_name_${i}`,
+              label1: 'value_1',
+              labeln: 'value_n',
+            },
+            value: [1572098246.599, `${i}`],
+          };
+        }),
+      },
+    };
+    const dataTable = shallow(<DataTable {...dataTableProps} />);
+
+    it('renders a warning', () => {
+      const alerts = dataTable.find(Alert);
+      expect(
+        alerts
+          .first()
+          .render()
+          .text()
+      ).toEqual('Notice: Showing more than 1000 series, turning off label formatting for performance reasons.');
+    });
+  });
+
   describe('when result type is a matrix', () => {
     const dataTableProps: QueryResult = {
       data: {
