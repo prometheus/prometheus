@@ -210,3 +210,65 @@ func TestNegotiateResponseType(t *testing.T) {
 	testutil.NotOk(t, err, "expected error due to not supported requested response types")
 	testutil.Equals(t, "server does not support any of the requested response types: [20]; supported: map[SAMPLES:{} STREAMED_XOR_CHUNKS:{}]", err.Error())
 }
+
+func TestOptMatcher(t *testing.T) {
+
+	tests := []struct {
+		provided *prompb.LabelMatcher
+		expected *prompb.LabelMatcher
+	}{
+		{
+			provided: &prompb.LabelMatcher{
+				Type:  prompb.LabelMatcher_RE,
+				Name:  "Instance1",
+				Value: "buy2.*",
+			},
+			expected: &prompb.LabelMatcher{
+				Type:  prompb.LabelMatcher_RE,
+				Name:  "Instance1",
+				Value: "buy2.*",
+			},
+		},
+		{
+			provided: &prompb.LabelMatcher{
+				Type:  prompb.LabelMatcher_RE,
+				Name:  "Instance2",
+				Value: "buy2shop",
+			},
+			expected: &prompb.LabelMatcher{
+				Type:  prompb.LabelMatcher_EQ,
+				Name:  "Instance2",
+				Value: "buy2shop",
+			},
+		},
+		{
+			provided: &prompb.LabelMatcher{
+				Type:  prompb.LabelMatcher_RE,
+				Name:  "Instance3",
+				Value: "buy2|itemcenter2",
+			},
+			expected: &prompb.LabelMatcher{
+				Type:  prompb.LabelMatcher_RE,
+				Name:  "Instance3",
+				Value: "buy2|itemcenter2",
+			},
+		},
+		{
+			provided: &prompb.LabelMatcher{
+				Type:  prompb.LabelMatcher_RE,
+				Name:  "Instance4",
+				Value: "buy2",
+			},
+			expected: &prompb.LabelMatcher{
+				Type:  prompb.LabelMatcher_EQ,
+				Name:  "Instance4",
+				Value: "buy2",
+			},
+		},
+	}
+
+	for i, test := range tests {
+		optMatcher([]*prompb.LabelMatcher{test.provided})
+		testutil.Equals(t, test.provided, test.expected, "unexpected LabelMatcher for test case %d", i)
+	}
+}
