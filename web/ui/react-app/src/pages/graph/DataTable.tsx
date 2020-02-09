@@ -56,8 +56,10 @@ const DataTable: FC<QueryResult> = ({ data }) => {
     return <Alert color="secondary">Empty query result</Alert>;
   }
 
+  const maxFormattableSize = 1000;
   let rows: ReactNode[] = [];
   let limited = false;
+  const doFormat = data.result.length <= maxFormattableSize;
   switch (data.resultType) {
     case 'vector':
       rows = (limitSeries(data.result) as InstantSample[]).map(
@@ -65,7 +67,7 @@ const DataTable: FC<QueryResult> = ({ data }) => {
           return (
             <tr key={index}>
               <td>
-                <SeriesName labels={s.metric} format={false} />
+                <SeriesName labels={s.metric} format={doFormat} />
               </td>
               <td>{s.value[1]}</td>
             </tr>
@@ -84,7 +86,7 @@ const DataTable: FC<QueryResult> = ({ data }) => {
         return (
           <tr style={{ whiteSpace: 'pre' }} key={index}>
             <td>
-              <SeriesName labels={s.metric} format={false} />
+              <SeriesName labels={s.metric} format={doFormat} />
             </td>
             <td>{valueText}</td>
           </tr>
@@ -117,6 +119,12 @@ const DataTable: FC<QueryResult> = ({ data }) => {
       {limited && (
         <Alert color="danger">
           <strong>Warning:</strong> Fetched {data.result.length} metrics, only displaying first {rows.length}.
+        </Alert>
+      )}
+      {!doFormat && (
+        <Alert color="secondary">
+          <strong>Notice:</strong> Showing more than {maxFormattableSize} series, turning off label formatting for
+          performance reasons.
         </Alert>
       )}
       <Table hover size="sm" className="data-table">
