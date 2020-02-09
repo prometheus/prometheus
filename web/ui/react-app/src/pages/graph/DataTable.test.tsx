@@ -103,8 +103,8 @@ describe('DataTable', () => {
     });
 
     it('renders a warning', () => {
-      const alert = dataTable.find(Alert);
-      expect(alert.render().text()).toEqual('Warning: Fetched 10001 metrics, only displaying first 10000.');
+      const alerts = dataTable.find(Alert);
+      expect(alerts.first().render().text()).toEqual('Warning: Fetched 10001 metrics, only displaying first 10000.');
     });
   });
 
