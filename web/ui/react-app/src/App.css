@@ -156,6 +156,7 @@ button.execute-btn {
   align-items: center;
   padding: 0 5px;
   border-radius: 3px;
+  flex-wrap: wrap;
 }
 
 .legend-swatch {
@@ -244,7 +245,7 @@ button.execute-btn {
 
 .rule_cell {
   white-space: pre-wrap;
-  background-color: #F5F5F5;
+  background-color: #f5f5f5;
   display: block;
   font-family: monospace;
 }
