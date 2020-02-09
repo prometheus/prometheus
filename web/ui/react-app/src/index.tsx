@@ -10,7 +10,8 @@ declare const GLOBAL_PATH_PREFIX: string;
 declare const GLOBAL_CONSOLES_LINK: string;
 
 let prefix = GLOBAL_PATH_PREFIX;
-let consolesLink = GLOBAL_CONSOLES_LINK;
+let consolesLink: string | null = GLOBAL_CONSOLES_LINK;
+
 if (GLOBAL_PATH_PREFIX === 'PATH_PREFIX_PLACEHOLDER' || GLOBAL_PATH_PREFIX === '/' || !isPresent(GLOBAL_PATH_PREFIX)) {
   // Either we are running the app outside of Prometheus, so the placeholder value in
   // the index.html didn't get replaced, or we have a '/' prefix, which we also need to
@@ -24,7 +25,7 @@ if (
   GLOBAL_CONSOLES_LINK === '' ||
   !isPresent(GLOBAL_CONSOLES_LINK)
 ) {
-  consolesLink = '';
+  consolesLink = null;
 }
 
 ReactDOM.render(<App pathPrefix={prefix} consolesLink={consolesLink} />, document.getElementById('root'));
