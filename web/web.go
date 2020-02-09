@@ -179,6 +179,7 @@ type Handler struct {
 	scrapeManager *scrape.Manager
 	ruleManager   *rules.Manager
 	queryEngine   *promql.Engine
+	lookbackDelta time.Duration
 	context       context.Context
 	tsdb          func() *tsdb.DB
 	storage       storage.Storage
@@ -219,6 +220,7 @@ type Options struct {
 	TSDBCfg       prometheus_tsdb.Options
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
+	LookbackDelta time.Duration
 	ScrapeManager *scrape.Manager
 	RuleManager   *rules.Manager
 	Notifier      *notifier.Manager
@@ -281,6 +283,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		scrapeManager: o.ScrapeManager,
 		ruleManager:   o.RuleManager,
 		queryEngine:   o.QueryEngine,
+		lookbackDelta: o.LookbackDelta,
 		tsdb:          o.TSDB,
 		storage:       o.Storage,
 		notifier:      o.Notifier,

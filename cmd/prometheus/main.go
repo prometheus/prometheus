@@ -236,7 +236,7 @@ func main() {
 	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager.").
 		Default("10s").SetValue(&cfg.notifierTimeout)
 
-	a.Flag("query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations.").
+	a.Flag("query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations and federation.").
 		Default("5m").SetValue(&cfg.lookbackDelta)
 
 	a.Flag("query.timeout", "Maximum time a query may take before being aborted.").
@@ -321,7 +321,6 @@ func main() {
 		}
 	}
 
-	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
 	promql.SetDefaultEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
 
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
@@ -360,6 +359,7 @@ func main() {
 			MaxSamples:         cfg.queryMaxSamples,
 			Timeout:            time.Duration(cfg.queryTimeout),
 			ActiveQueryTracker: promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
+			LookbackDelta:      time.Duration(cfg.lookbackDelta),
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -387,6 +387,7 @@ func main() {
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
 	cfg.web.TSDBCfg = cfg.tsdb
+	cfg.web.LookbackDelta = time.Duration(cfg.lookbackDelta)
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,
