@@ -411,10 +411,9 @@ func (cmd clearCmd) String() string {
 // is reached, evaluation errors do not terminate execution.
 func (t *Test) Run() error {
 	for _, cmd := range t.cmds {
-		err := t.exec(cmd)
 		// TODO(fabxc): aggregate command errors, yield diffs for result
 		// comparison errors.
-		if err != nil {
+		if err := t.exec(cmd); err != nil {
 			return err
 		}
 	}
@@ -443,6 +442,7 @@ func (t *Test) exec(tc testCommand) error {
 		if err != nil {
 			return err
 		}
+		defer q.Close()
 		res := q.Exec(t.context)
 		if res.Err != nil {
 			if cmd.fail {
@@ -450,7 +450,6 @@ func (t *Test) exec(tc testCommand) error {
 			}
 			return errors.Wrapf(res.Err, "error evaluating query %q (line %d)", cmd.expr, cmd.line)
 		}
-		defer q.Close()
 		if res.Err == nil && cmd.fail {
 			return errors.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 		}

@@ -88,7 +88,7 @@ type Iterator interface {
 	// TODO(bwplotka): Verify above statement on all implementations with unit test.
 	At() (int64, float64)
 	// Err returns the current error.
-	// Err can return undefined value before the iterator has advanced.
+	// Err can return undefined value before calling `Next` or `Seek`.
 	Err() error
 }
 
