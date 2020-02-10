@@ -64,6 +64,7 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB, close func()
 
 	// Do not close the test database by default as it will deadlock on test failures.
 	return db, func() {
+		testutil.Ok(t, db.Close())
 		testutil.Ok(t, os.RemoveAll(tmpdir))
 	}
 }

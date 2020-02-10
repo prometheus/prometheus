@@ -221,7 +221,6 @@ func StreamChunkedReadResponses(
 			if len(chks) == 0 {
 				break
 			}
-
 			b, err := proto.Marshal(&prompb.ChunkedReadResponse{
 				ChunkedSeries: []*prompb.ChunkedSeries{
 					{

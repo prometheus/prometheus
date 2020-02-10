@@ -1189,9 +1189,17 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		for i, query := range req.Queries {
 			err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, selectParams *storage.SelectParams, filteredMatchers []*labels.Matcher) error {
 				// The streaming API provides sorted series.
-				set, _, err := querier.SelectSorted(selectParams, filteredMatchers...)
+				set, ws, err := querier.SelectSorted(selectParams, filteredMatchers...)
 				if err != nil {
 					return err
+				}
+
+				if len(ws) > 0 {
+					msg := ""
+					for _, w := range ws {
+						msg += w.Error() + ";"
+					}
+					level.Warn(api.logger).Log("remote read warnings", "warnings", msg)
 				}
 
 				return remote.StreamChunkedReadResponses(
@@ -1305,7 +1313,6 @@ func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, extern
 			level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
 		}
 	}()
-
 	return seriesHandleFn(querier, selectParams, filteredMatchers)
 }
 
