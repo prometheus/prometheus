@@ -895,10 +895,10 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 // This is needed for unit tests that rely on
 // checking state before and after a compaction.
 func TestDisableAutoCompactions(t *testing.T) {
-	db, delete := openTestDB(t, nil, nil)
+	db, closeFn := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		delete()
+		closeFn()
 	}()
 
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
@@ -1052,10 +1052,10 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 	for title, bootStrap := range tests {
 		t.Run(title, func(t *testing.T) {
-			db, delete := openTestDB(t, nil, []int64{1, 100})
+			db, closeFn := openTestDB(t, nil, []int64{1, 100})
 			defer func() {
 				testutil.Ok(t, db.Close())
-				delete()
+				closeFn()
 			}()
 			db.DisableCompactions()
 
