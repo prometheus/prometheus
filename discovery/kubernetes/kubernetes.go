@@ -130,13 +130,6 @@ func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) er
 func init() {
 	prometheus.MustRegister(eventCount)
 
-	// Initialize metric vectors.
-	for _, role := range []string{"endpoints", "node", "pod", "service", "ingress"} {
-		for _, evt := range []string{"add", "delete", "update"} {
-			eventCount.WithLabelValues(role, evt)
-		}
-	}
-
 	var (
 		clientGoRequestMetricAdapterInstance     = clientGoRequestMetricAdapter{}
 		clientGoWorkqueueMetricsProviderInstance = clientGoWorkqueueMetricsProvider{}
@@ -200,6 +193,8 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	}
 
 	kcfg.UserAgent = "Prometheus/discovery"
+	kcfg.AcceptContentTypes = "application/vnd.kubernetes.protobuf,application/json"
+	kcfg.ContentType = "application/vnd.kubernetes.protobuf"
 
 	c, err := kubernetes.NewForConfig(kcfg)
 	if err != nil {
