@@ -2713,13 +2713,13 @@ func TestTimeMetrics(t *testing.T) {
 
 	// Check initial values.
 	testutil.Ok(t, db.metrics.minTime.Write(metrics))
-	testutil.Equals(t, float64(model.Latest)/1000, metrics.Gauge.GetValue())
+	testutil.Equals(t, float64(math.MaxInt64)/1000, metrics.Gauge.GetValue())
 
 	testutil.Ok(t, db.metrics.headMinTime.Write(metrics))
-	testutil.Equals(t, float64(model.Latest)/1000, metrics.Gauge.GetValue())
+	testutil.Equals(t, float64(math.MaxInt64)/1000, metrics.Gauge.GetValue())
 
 	testutil.Ok(t, db.metrics.headMaxTime.Write(metrics))
-	testutil.Equals(t, float64(model.Earliest)/1000, metrics.Gauge.GetValue())
+	testutil.Equals(t, float64(math.MinInt64)/1000, metrics.Gauge.GetValue())
 
 	app := db.Appender()
 
@@ -2730,12 +2730,12 @@ func TestTimeMetrics(t *testing.T) {
 
 	// Check after adding some samples.
 	testutil.Ok(t, db.metrics.minTime.Write(metrics))
-	testutil.Equals(t, 0.001, metrics.Gauge.GetValue())
+	testutil.Equals(t, 0.0, metrics.Gauge.GetValue())
 
 	testutil.Ok(t, db.metrics.headMinTime.Write(metrics))
-	testutil.Equals(t, 0.001, metrics.Gauge.GetValue())
+	testutil.Equals(t, 0.0, metrics.Gauge.GetValue())
 
 	testutil.Ok(t, db.metrics.headMaxTime.Write(metrics))
-	testutil.Equals(t, 0.003, metrics.Gauge.GetValue())
+	testutil.Equals(t, 0.0, metrics.Gauge.GetValue())
 
 }
