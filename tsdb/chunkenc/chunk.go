@@ -81,11 +81,9 @@ type Iterator interface {
 	// If current sample found by previous `Next` or `Seek` operation already has this property, Seek has no effect.
 	// Seek returns true, if such sample exists, false otherwise.
 	// Iterator is exhausted when the Seek returns false.
-	// TODO(bwplotka): Verify above statements on all implementations with unit test.
 	Seek(t int64) bool
 	// At returns the current timestamp/value pair.
-	// At returns (math.MinInt64, 0.0) before the iterator has advanced.
-	// TODO(bwplotka): Verify above statement on all implementations with unit test.
+	// Before the iterator has advanced At behaviour is unspecified.
 	At() (int64, float64)
 	// Err returns the current error. It should be used only after iterator is
 	// exhausted, so `Next` or `Seek` returns false.
