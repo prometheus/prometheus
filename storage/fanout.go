@@ -257,14 +257,10 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 	}
 	for i := 0; i < len(q.queriers); i++ {
 		qryResult := <-queryResultChan
+		q.setQuerierMap[qryResult.set] = qryResult.qr
 		if qryResult.wrn != nil {
 			warnings = append(warnings, qryResult.wrn...)
 		}
-		if priErr != nil {
-			continue
-		}
-		q.setQuerierMap[qryResult.set] = qryResult.qr
-
 		if qryResult.selectError != nil {
 			q.failedQueriers[qryResult.qr] = struct{}{}
 			// If the error source isn't the primary querier, return the error as a warning and continue.
