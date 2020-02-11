@@ -88,7 +88,7 @@ func testChunk(t *testing.T, c Chunk) {
 	testutil.Ok(t, it2.Err())
 	testutil.Equals(t, exp, res2)
 
-	// 3. Test Iterator Seek.
+	// 3. Test iterator Seek.
 	mid := len(exp) / 2
 
 	it3 := c.Iterator(nil)

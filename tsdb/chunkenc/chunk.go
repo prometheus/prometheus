@@ -87,8 +87,8 @@ type Iterator interface {
 	// At returns (math.MinInt64, 0.0) before the iterator has advanced.
 	// TODO(bwplotka): Verify above statement on all implementations with unit test.
 	At() (int64, float64)
-	// Err returns the current error.
-	// Err can return undefined value before calling `Next` or `Seek`.
+	// Err returns the current error. It should be used only after iterator is
+	// exhausted, so `Next` or `Seek` returns false.
 	Err() error
 }
 

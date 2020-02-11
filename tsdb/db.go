@@ -29,13 +29,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -46,9 +44,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Default duration of a block in milliseconds - 2h.
 const (
-	DefaultBlockDuration = int64(2 * 60 * 60 * 1000) // 2h in miliseconds.
+	// Default duration of a block in milliseconds.
+	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
 )
 
 var (
@@ -61,13 +59,14 @@ var (
 func DefaultOptions() *Options {
 	return &Options{
 		WALSegmentSize:         wal.DefaultSegmentSize,
-		RetentionDuration:      15 * 24 * model.Duration(time.Hour),
-		MinBlockDuration:       model.Duration(time.Duration(DefaultBlockDuration) * time.Millisecond),
-		MaxBlockDuration:       model.Duration(time.Duration(DefaultBlockDuration) * time.Millisecond),
+		RetentionDuration:      int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:       DefaultBlockDuration,
+		MaxBlockDuration:       DefaultBlockDuration,
 		NoLockfile:             false,
 		AllowOverlappingBlocks: false,
 		WALCompression:         false,
 		StripeSize:             DefaultStripeSize,
+		ConvertTimeToSecondsFn: func(i int64) float64 { return float64(i / 1000) },
 	}
 }
 
@@ -77,17 +76,19 @@ type Options struct {
 	// WALSegmentSize = 0, segment size is default size.
 	// WALSegmentSize > 0, segment size is WALSegmentSize.
 	// WALSegmentSize < 0, wal is disabled.
-	WALSegmentSize units.Base2Bytes
+	WALSegmentSize int
 
 	// Duration of persisted data to keep.
-	RetentionDuration model.Duration
+	// Unit agnostic as long as unit is consistent with MinBlockDuration and MaxBlockDuration.
+	// Typically it is in milliseconds.
+	RetentionDuration int64
 
 	// Maximum number of bytes in blocks to be retained.
 	// 0 or less means disabled.
 	// NOTE: For proper storage calculations need to consider
 	// the size of the WAL folder which is not added when calculating
 	// the current size of the database.
-	MaxBytes units.Base2Bytes
+	MaxBytes int64
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
@@ -104,10 +105,17 @@ type Options struct {
 
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
-	MinBlockDuration model.Duration
+	// Unit agnostic as long as unit is consistent with RetentionDuration and MaxBlockDuration.
+	// Typically it is in milliseconds.
+	MinBlockDuration int64
 
 	// The maximum timestamp range of compacted blocks.
-	MaxBlockDuration model.Duration
+	// Unit agnostic as long as unit is consistent with MinBlockDuration and RetentionDuration.
+	// Typically it is in milliseconds.
+	MaxBlockDuration int64
+
+	// ConvertTimeToSecondsFn function is used for time based values to convert to seconds for metric purposes.
+	ConvertTimeToSecondsFn func(int64) float64
 }
 
 // DB handles reads and writes of time series falling into
@@ -163,7 +171,7 @@ type dbMetrics struct {
 	headMinTime          prometheus.GaugeFunc
 }
 
-func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
+func newDBMetrics(db *DB, r prometheus.Registerer, convToSecondsFn func(int64) float64) *dbMetrics {
 	m := &dbMetrics{}
 
 	m.loadedBlocks = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -238,28 +246,26 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_size_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
 	})
+
+	// Unit agnostic metrics.
 	m.minTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_lowest_timestamp_seconds",
 		Help: "Lowest timestamp value stored in the database.",
 	}, func() float64 {
 		bb := db.Blocks()
 		if len(bb) == 0 {
-			return float64(db.Head().MinTime()) / 1000
+			return convToSecondsFn(db.Head().MinTime())
 		}
-		return float64(db.Blocks()[0].Meta().MinTime) / 1000
+		return convToSecondsFn(db.Blocks()[0].Meta().MinTime)
 	})
 	m.headMinTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_min_time_seconds",
 		Help: "Minimum time bound of the head block.",
-	}, func() float64 {
-		return float64(db.Head().MinTime()) / 1000
-	})
+	}, func() float64 { return convToSecondsFn(db.Head().MinTime()) })
 	m.headMaxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_max_time_seconds",
 		Help: "Maximum timestamp of the head block.",
-	}, func() float64 {
-		return float64(db.Head().MaxTime()) / 1000
-	})
+	}, func() float64 { return convToSecondsFn(db.Head().MaxTime()) })
 	if r != nil {
 		r.MustRegister(
 			m.loadedBlocks,
@@ -350,7 +356,7 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 		context.Background(),
 		nil,
 		db.logger,
-		ExponentialBlockRanges(int64(time.Duration(DefaultOptions().MinBlockDuration))/1e6, 3, 5),
+		ExponentialBlockRanges(DefaultOptions().MinBlockDuration, 3, 5),
 		chunkenc.NewPool(),
 	)
 	if err != nil {
@@ -520,7 +526,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	}
 
 	if opts.MinBlockDuration <= 0 {
-		opts.MinBlockDuration = model.Duration(time.Duration(DefaultBlockDuration) * time.Millisecond)
+		opts.MinBlockDuration = DefaultBlockDuration
 	}
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
 		opts.MaxBlockDuration = opts.MinBlockDuration
@@ -529,7 +535,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if len(rngs) == 0 {
 		// Start with smallest block duration and create exponential buckets until the exceed the
 		// configured maximum block duration.
-		rngs = ExponentialBlockRanges(int64(time.Duration(opts.MinBlockDuration).Seconds()*1000), 10, 3)
+		rngs = ExponentialBlockRanges(opts.MinBlockDuration, 10, 3)
 	}
 	return opts, rngs
 }
@@ -543,7 +549,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	for i, v := range rngs {
-		if v > int64(time.Duration(opts.MaxBlockDuration).Seconds()*1000) {
+		if v > opts.MaxBlockDuration {
 			rngs = rngs[:i]
 			break
 		}
@@ -568,7 +574,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		autoCompact: true,
 		chunkPool:   chunkenc.NewPool(),
 	}
-	db.metrics = newDBMetrics(db, r)
+	db.metrics = newDBMetrics(db, r, opts.ConvertTimeToSecondsFn)
 
 	maxBytes := opts.MaxBytes
 	if maxBytes < 0 {
@@ -602,7 +608,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if opts.WALSegmentSize >= 0 {
 		// Wal is set to a custom size.
 		if opts.WALSegmentSize > 0 {
-			segmentSize = int(opts.WALSegmentSize)
+			segmentSize = opts.WALSegmentSize
 		}
 		wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
 		if err != nil {
@@ -1013,7 +1019,7 @@ func (db *DB) beyondTimeRetention(blocks []*Block) (deletable map[ulid.ULID]*Blo
 	for i, block := range blocks {
 		// The difference between the first block and this block is larger than
 		// the retention period so any blocks after that are added as deletable.
-		if i > 0 && blocks[0].Meta().MaxTime-block.Meta().MaxTime > (int64(db.opts.RetentionDuration)/int64(time.Millisecond)) {
+		if i > 0 && blocks[0].Meta().MaxTime-block.Meta().MaxTime > db.opts.RetentionDuration {
 			for _, b := range blocks[i:] {
 				deletable[b.meta.ULID] = b
 			}
@@ -1525,7 +1531,7 @@ func (s *ReadyStorage) StartTime() (int64, error) {
 		return startTime + s.startTimeMargin, nil
 	}
 
-	return int64(model.Latest), ErrNotReady
+	return math.MaxInt64, ErrNotReady
 }
 
 // Querier implements the Storage interface.

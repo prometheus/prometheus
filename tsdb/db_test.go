@@ -30,7 +30,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -864,7 +863,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 	for segmentSize, testFunc := range tests {
 		t.Run(fmt.Sprintf("WALSegmentSize %d test", segmentSize), func(t *testing.T) {
 			opts := DefaultOptions()
-			opts.WALSegmentSize = units.Base2Bytes(segmentSize)
+			opts.WALSegmentSize = segmentSize
 			db, closeFn := openTestDB(t, opts, nil)
 			defer closeFn()
 
@@ -1083,7 +1082,7 @@ func TestTimeRetention(t *testing.T) {
 	testutil.Ok(t, db.reload())                       // Reload the db to register the new blocks.
 	testutil.Equals(t, len(blocks), len(db.Blocks())) // Ensure all blocks are registered.
 
-	db.opts.RetentionDuration = model.Duration(time.Duration(blocks[2].MaxTime-blocks[1].MinTime) * time.Millisecond)
+	db.opts.RetentionDuration = blocks[2].MaxTime - blocks[1].MinTime
 	testutil.Ok(t, db.reload())
 
 	expBlocks := blocks[1:]
@@ -1163,8 +1162,8 @@ func TestSizeRetention(t *testing.T) {
 	// Check total size, total count and check that the oldest block was deleted.
 	firstBlockSize := db.Blocks()[0].Size()
 	sizeLimit := actSize - firstBlockSize
-	db.opts.MaxBytes = units.Base2Bytes(sizeLimit) // Set the new db size limit one block smaller that the actual size.
-	testutil.Ok(t, db.reload())                    // Reload the db to register the new db size.
+	db.opts.MaxBytes = sizeLimit // Set the new db size limit one block smaller that the actual size.
+	testutil.Ok(t, db.reload())  // Reload the db to register the new db size.
 
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
@@ -1197,7 +1196,7 @@ func TestSizeRetentionMetric(t *testing.T) {
 
 	for _, c := range cases {
 		db, closeFn := openTestDB(t, &Options{
-			MaxBytes: units.Base2Bytes(c.maxBytes),
+			MaxBytes: c.maxBytes,
 		}, []int64{100})
 		defer func() {
 			testutil.Ok(t, db.Close())

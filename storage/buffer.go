@@ -33,7 +33,7 @@ type BufferedSeriesIterator struct {
 // of the current element and the duration of delta before, initialized with an
 // empty iterator. Use Reset() to set an actual iterator to be buffered.
 func NewBuffer(delta int64) *BufferedSeriesIterator {
-	return NewBufferIterator(&NoopSeriesIt, delta)
+	return NewBufferIterator(chunkenc.NewNopIterator(), delta)
 }
 
 // NewBufferIterator returns a new iterator that buffers the values within the

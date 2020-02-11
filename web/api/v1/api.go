@@ -1189,17 +1189,10 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		for i, query := range req.Queries {
 			err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, selectParams *storage.SelectParams, filteredMatchers []*labels.Matcher) error {
 				// The streaming API provides sorted series.
-				set, ws, err := querier.SelectSorted(selectParams, filteredMatchers...)
+				// TODO(bwplotka): Handle warnings via query log.
+				set, _, err := querier.SelectSorted(selectParams, filteredMatchers...)
 				if err != nil {
 					return err
-				}
-
-				if len(ws) > 0 {
-					msg := ""
-					for _, w := range ws {
-						msg += w.Error() + ";"
-					}
-					level.Warn(api.logger).Log("remote read warnings", "warnings", msg)
 				}
 
 				return remote.StreamChunkedReadResponses(

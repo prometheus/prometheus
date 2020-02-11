@@ -33,7 +33,7 @@ var (
 
 // Appendable allows creating appenders.
 type Appendable interface {
-	// Appender returns a new appender against the storage.
+	// Appender returns a new appender for the storage.
 	Appender() Appender
 }
 
@@ -120,6 +120,7 @@ type Appender interface {
 	Commit() error
 
 	// Rollback rolls back all modifications made in the appender so far.
+	// Appender has to be discarded after rollback.
 	Rollback() error
 }
 

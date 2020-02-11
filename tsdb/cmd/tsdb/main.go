@@ -33,7 +33,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -178,8 +177,8 @@ func (b *writeBenchmark) run() error {
 	l := log.With(b.logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 
 	st, err := tsdb.Open(dir, l, nil, &tsdb.Options{
-		RetentionDuration: 15 * 24 * model.Duration(time.Hour),
-		MinBlockDuration:  2 * model.Duration(time.Hour),
+		RetentionDuration: int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:  int64(2 * time.Hour / time.Millisecond),
 	})
 	if err != nil {
 		return err

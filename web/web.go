@@ -38,6 +38,7 @@ import (
 	template_text "text/template"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
@@ -208,11 +209,41 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
+// TSDBOptions is tsdb.Option version with defined units.
+// This is required as tsdb.Option fields are unit agnostic (time).
+type TSDBOptions struct {
+	WALSegmentSize         units.Base2Bytes
+	RetentionDuration      model.Duration
+	MaxBytes               units.Base2Bytes
+	NoLockfile             bool
+	AllowOverlappingBlocks bool
+	WALCompression         bool
+	StripeSize             int
+	MinBlockDuration       model.Duration
+	MaxBlockDuration       model.Duration
+}
+
+func (opts TSDBOptions) ToTSDBOptions() tsdb.Options {
+	return tsdb.Options{
+		WALSegmentSize:         int(opts.WALSegmentSize),
+		RetentionDuration:      int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
+		MaxBytes:               int64(opts.MaxBytes),
+		NoLockfile:             opts.NoLockfile,
+		AllowOverlappingBlocks: opts.AllowOverlappingBlocks,
+		WALCompression:         opts.WALCompression,
+		StripeSize:             opts.StripeSize,
+		MinBlockDuration:       int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
+		MaxBlockDuration:       int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
+
+		ConvertTimeToSecondsFn: func(i int64) float64 { return float64(i / 1000) },
+	}
+}
+
 // Options for the web Handler.
 type Options struct {
 	Context       context.Context
 	TSDB          func() *tsdb.DB
-	TSDBCfg       tsdb.Options
+	TSDBCfg       TSDBOptions
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
 	LookbackDelta time.Duration
