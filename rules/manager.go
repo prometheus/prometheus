@@ -330,17 +330,19 @@ func (g *Group) run(ctx context.Context) {
 			return
 		}
 		go func(now time.Time) {
+			for _, rule := range g.seriesInPreviousEval {
+				for _, r := range rule {
+					g.staleSeries = append(g.staleSeries, r)
+				}
+			}
+			// That can be garbage collected at this point.
+			g.seriesInPreviousEval = nil
 			// Wait for 2 intervals to give the opportunity to renamed rules
 			// to insert new series in the tsdb. At this point if there is a
 			// renamed rule, it should already be started.
 			select {
 			case <-g.managerDone:
 			case <-time.After(2 * g.interval):
-				for _, rule := range g.seriesInPreviousEval {
-					for _, s := range rule {
-						g.staleSeries = append(g.staleSeries, s)
-					}
-				}
 				g.cleanupStaleSeries(now)
 			}
 		}(time.Now())
