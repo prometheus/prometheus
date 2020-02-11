@@ -190,6 +190,7 @@ func validateSelectors(rsc ResourceSelectorConfig) error {
 	_, err = fields.ParseSelector(rsc.Label)
 	return err
 }
+
 // NamespaceDiscovery is the configuration for discovering
 // Kubernetes namespaces.
 type NamespaceDiscovery struct {
