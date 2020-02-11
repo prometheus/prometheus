@@ -251,23 +251,20 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 	queryResultChan := make(chan *queryResult)
 	for _, querier := range q.queriers {
 		go func(qr Querier) {
-			if priErr != nil {
-				queryResultChan <- &queryResult{qr: qr, set: nil, wrn: nil, selectError: nil}
-				return
-			}
 			set, wrn, err := qr.SelectSorted(params, matchers...)
 			queryResultChan <- &queryResult{qr: qr, set: set, wrn: wrn, selectError: err}
 		}(querier)
 	}
 	for i := 0; i < len(q.queriers); i++ {
 		qryResult := <-queryResultChan
+		if qryResult.wrn != nil {
+			warnings = append(warnings, qryResult.wrn...)
+		}
 		if priErr != nil {
 			continue
 		}
 		q.setQuerierMap[qryResult.set] = qryResult.qr
-		if qryResult.wrn != nil {
-			warnings = append(warnings, qryResult.wrn...)
-		}
+
 		if qryResult.selectError != nil {
 			q.failedQueriers[qryResult.qr] = struct{}{}
 			// If the error source isn't the primary querier, return the error as a warning and continue.
