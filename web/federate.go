@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/fanout"
 )
 
 var (
@@ -100,7 +101,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets, nil)
+	set := fanout.NewMergeSeriesSet(sets, nil)
 	it := storage.NewBuffer(int64(h.lookbackDelta / 1e6))
 	for set.Next() {
 		s := set.At()
