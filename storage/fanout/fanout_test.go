@@ -391,18 +391,6 @@ func newMockSeries(lset labels.Labels, samples []sample) storage.Series {
 func (m *mockSeries) Labels() labels.Labels            { return m.labels() }
 func (m *mockSeries) Iterator() storage.SeriesIterator { return m.iterator() }
 
-type mockSeriesIterator struct {
-	seek func(int64) bool
-	at   func() (int64, float64)
-	next func() bool
-	err  func() error
-}
-
-func (m *mockSeriesIterator) Seek(t int64) bool    { return m.seek(t) }
-func (m *mockSeriesIterator) At() (int64, float64) { return m.at() }
-func (m *mockSeriesIterator) Next() bool           { return m.next() }
-func (m *mockSeriesIterator) Err() error           { return m.err() }
-
 type listSeriesIterator struct {
 	list []sample
 	idx  int
