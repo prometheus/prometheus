@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -31,10 +31,8 @@ func TestSelectSorted(t *testing.T) {
 
 	inputTotalSize := 0
 
-	//0: build test data
 	priStorage := teststorage.New(t)
 	defer priStorage.Close()
-	// A time series that has two samples and then goes stale.
 	app1, _ := priStorage.Appender()
 	app1.Add(inputLabel, 0, 0)
 	inputTotalSize++
@@ -47,7 +45,6 @@ func TestSelectSorted(t *testing.T) {
 
 	remoteStorage1 := teststorage.New(t)
 	defer remoteStorage1.Close()
-	// A time series that has two samples and then goes stale.
 	app2, _ := remoteStorage1.Appender()
 	app2.Add(inputLabel, 3000, 3)
 	inputTotalSize++
@@ -61,7 +58,6 @@ func TestSelectSorted(t *testing.T) {
 	remoteStorage2 := teststorage.New(t)
 	defer remoteStorage2.Close()
 
-	// A time series that has two samples and then goes stale.
 	app3, _ := remoteStorage2.Appender()
 	app3.Add(inputLabel, 6000, 6)
 	inputTotalSize++
@@ -82,11 +78,9 @@ func TestSelectSorted(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
 	testutil.Ok(t, err)
 
-	//1:  test querier.SelectSorted function
 	seriesSet, _, err := querier.SelectSorted(nil, matcher)
 	testutil.Ok(t, err)
 
-	//2: parse querier.SelectSorted result
 	result := make(map[int64]float64)
 	var labelsResult labels.Labels
 	for seriesSet.Next() {
@@ -100,7 +94,6 @@ func TestSelectSorted(t *testing.T) {
 		}
 	}
 
-	//3: run test
 	testutil.Equals(t, labelsResult, outputLabel)
 	testutil.Equals(t, inputTotalSize, len(result))
 
