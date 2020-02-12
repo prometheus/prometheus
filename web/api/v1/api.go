@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/fanout"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -558,7 +559,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets, nil)
+	set := fanout.NewMergeSeriesSet(sets, nil)
 	metrics := []labels.Labels{}
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
