@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/fanout"
 )
 
 // String constants for instrumentation.
@@ -145,7 +146,7 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 		}
 		queriers = append(queriers, q)
 	}
-	return storage.NewMergeQuerier(nil, queriers), nil
+	return fanout.NewMergeQuerier(nil, queriers), nil
 }
 
 // Appender implements storage.Storage.
