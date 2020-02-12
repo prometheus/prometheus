@@ -83,6 +83,10 @@ var (
 		[]string{"endpoint", "call"},
 	)
 
+	// Initialize metric vectors.
+	servicesRPCDuraion = rpcDuration.WithLabelValues("catalog", "services")
+	serviceRPCDuraion  = rpcDuration.WithLabelValues("catalog", "service")
+
 	// DefaultSDConfig is the default Consul SD configuration.
 	DefaultSDConfig = SDConfig{
 		TagSeparator:    ",",
@@ -141,10 +145,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 func init() {
 	prometheus.MustRegister(rpcFailuresCount)
 	prometheus.MustRegister(rpcDuration)
-
-	// Initialize metric vectors.
-	rpcDuration.WithLabelValues("catalog", "service")
-	rpcDuration.WithLabelValues("catalog", "services")
 }
 
 // Discovery retrieves target information from a Consul server
@@ -355,7 +355,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 	}
 	srvs, meta, err := catalog.Services(opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	rpcDuration.WithLabelValues("catalog", "services").Observe(elapsed.Seconds())
+	servicesRPCDuraion.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
@@ -470,7 +470,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 	}
 	nodes, meta, err := catalog.ServiceMultipleTags(srv.name, srv.tags, opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	rpcDuration.WithLabelValues("catalog", "service").Observe(elapsed.Seconds())
+	serviceRPCDuraion.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {

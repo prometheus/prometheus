@@ -825,8 +825,8 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 			if nPending > 0 {
 				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending samples", "samples", nPending, "shard", shardNum)
 				s.sendSamples(ctx, pendingSamples[:nPending], &buf)
-				nPending = 0
 				s.qm.pendingSamplesMetric.Sub(float64(nPending))
+				nPending = 0
 			}
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}

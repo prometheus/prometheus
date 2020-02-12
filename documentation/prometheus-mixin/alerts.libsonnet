@@ -187,7 +187,7 @@
             },
             annotations: {
               summary: 'Prometheus fails to send samples to remote storage.',
-              description: 'Prometheus %(prometheusName)s failed to send {{ printf "%%.1f" $value }}%% of the samples to queue {{$labels.queue}}.' % $._config,
+              description: 'Prometheus %(prometheusName)s failed to send {{ printf "%%.1f" $value }}%% of the samples to {{ if $labels.queue }}{{ $labels.queue }}{{ else }}{{ $labels.url }}{{ end }}.' % $._config,
             },
           },
           {
@@ -208,7 +208,7 @@
             },
             annotations: {
               summary: 'Prometheus remote write is behind.',
-              description: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind for queue {{$labels.queue}}.' % $._config,
+              description: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind for {{ if $labels.queue }}{{ $labels.queue }}{{ else }}{{ $labels.url }}{{ end }}.' % $._config,
             },
           },
           {

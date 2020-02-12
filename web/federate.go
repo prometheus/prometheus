@@ -63,7 +63,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var (
-		mint   = timestamp.FromTime(h.now().Time().Add(-promql.LookbackDelta))
+		mint   = timestamp.FromTime(h.now().Time().Add(-h.lookbackDelta))
 		maxt   = timestamp.FromTime(h.now().Time())
 		format = expfmt.Negotiate(req.Header)
 		enc    = expfmt.NewEncoder(w, format)
@@ -101,7 +101,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	set := storage.NewMergeSeriesSet(sets, nil)
-	it := storage.NewBuffer(int64(promql.LookbackDelta / 1e6))
+	it := storage.NewBuffer(int64(h.lookbackDelta / 1e6))
 	for set.Next() {
 		s := set.At()
 
