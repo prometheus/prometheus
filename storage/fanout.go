@@ -270,6 +270,7 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 				priErr = qryResult.selectError
 			}
 		}
+		seriesSets = append(seriesSets, qryResult.set)
 	}
 	if priErr != nil {
 		return nil, nil, priErr
