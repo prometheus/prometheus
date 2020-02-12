@@ -372,7 +372,6 @@ func BenchmarkMergeSeriesSet(b *testing.B) {
 	}
 }
 
-
 type mockSeries struct {
 	labels   func() labels.Labels
 	iterator func() storage.SeriesIterator
@@ -389,9 +388,8 @@ func newMockSeries(lset labels.Labels, samples []sample) storage.Series {
 	}
 }
 
-func (m *mockSeries) Labels() labels.Labels    { return m.labels() }
+func (m *mockSeries) Labels() labels.Labels            { return m.labels() }
 func (m *mockSeries) Iterator() storage.SeriesIterator { return m.iterator() }
-
 
 type mockSeriesIterator struct {
 	seek func(int64) bool
@@ -440,7 +438,6 @@ func (it *listSeriesIterator) Seek(t int64) bool {
 func (it *listSeriesIterator) Err() error {
 	return nil
 }
-
 
 type sample struct {
 	t int64
