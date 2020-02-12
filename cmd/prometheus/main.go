@@ -54,7 +54,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/fanout"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -336,7 +336,7 @@ func main() {
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline))
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
+		fanoutStorage = fanout.NewFanout(logger, localStorage, remoteStorage)
 	)
 
 	var (

@@ -11,11 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package fanout
 
 import (
 	"container/heap"
 	"context"
+	"github.com/prometheus/prometheus/storage"
 	"sort"
 	"strings"
 
@@ -29,13 +30,13 @@ import (
 type fanout struct {
 	logger log.Logger
 
-	primary     Storage
-	secondaries []Storage
+	primary     storage.Storage
+	secondaries []storage.Storage
 }
 
 // NewFanout returns a new fan-out Storage, which proxies reads and writes
 // through to multiple underlying storages.
-func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Storage {
+func NewFanout(logger log.Logger, primary storage.Storage, secondaries ...storage.Storage) storage.Storage {
 	return &fanout{
 		logger:      logger,
 		primary:     primary,
@@ -64,8 +65,8 @@ func (f *fanout) StartTime() (int64, error) {
 	return firstTime, nil
 }
 
-func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
-	queriers := make([]Querier, 0, 1+len(f.secondaries))
+func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	queriers := make([]storage.Querier, 0, 1+len(f.secondaries))
 
 	// Add primary querier
 	primaryQuerier, err := f.primary.Querier(ctx, mint, maxt)
@@ -87,13 +88,13 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	return NewMergeQuerier(primaryQuerier, queriers), nil
 }
 
-func (f *fanout) Appender() (Appender, error) {
+func (f *fanout) Appender() (storage.Appender, error) {
 	primary, err := f.primary.Appender()
 	if err != nil {
 		return nil, err
 	}
 
-	secondaries := make([]Appender, 0, len(f.secondaries))
+	secondaries := make([]storage.Appender, 0, len(f.secondaries))
 	for _, storage := range f.secondaries {
 		appender, err := storage.Appender()
 		if err != nil {
@@ -128,8 +129,8 @@ func (f *fanout) Close() error {
 type fanoutAppender struct {
 	logger log.Logger
 
-	primary     Appender
-	secondaries []Appender
+	primary     storage.Appender
+	secondaries []storage.Appender
 }
 
 func (f *fanoutAppender) Add(l labels.Labels, t int64, v float64) (uint64, error) {
@@ -190,31 +191,31 @@ func (f *fanoutAppender) Rollback() (err error) {
 
 // mergeQuerier implements Querier.
 type mergeQuerier struct {
-	primaryQuerier Querier
-	queriers       []Querier
+	primaryQuerier storage.Querier
+	queriers       []storage.Querier
 
-	failedQueriers map[Querier]struct{}
-	setQuerierMap  map[SeriesSet]Querier
+	failedQueriers map[storage.Querier]struct{}
+	setQuerierMap  map[storage.SeriesSet]storage.Querier
 }
 
 // NewMergeQuerier returns a new Querier that merges results of input queriers.
 // NB NewMergeQuerier will return NoopQuerier if no queriers are passed to it,
 // and will filter NoopQueriers from its arguments, in order to reduce overhead
 // when only one querier is passed.
-func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
-	filtered := make([]Querier, 0, len(queriers))
+func NewMergeQuerier(primaryQuerier storage.Querier, queriers []storage.Querier) storage.Querier {
+	filtered := make([]storage.Querier, 0, len(queriers))
 	for _, querier := range queriers {
-		if querier != NoopQuerier() {
+		if querier != storage.NoopQuerier() {
 			filtered = append(filtered, querier)
 		}
 	}
 
-	setQuerierMap := make(map[SeriesSet]Querier)
-	failedQueriers := make(map[Querier]struct{})
+	setQuerierMap := make(map[storage.SeriesSet]storage.Querier)
+	failedQueriers := make(map[storage.Querier]struct{})
 
 	switch len(filtered) {
 	case 0:
-		return NoopQuerier()
+		return storage.NoopQuerier()
 	case 1:
 		return filtered[0]
 	default:
@@ -228,7 +229,7 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 }
 
 // Select returns a set of series that matches the given label matchers.
-func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
+func (q *mergeQuerier) Select(params *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	if len(q.queriers) != 1 {
 		// We need to sort for NewMergeSeriesSet to work.
 		return q.SelectSorted(params, matchers...)
@@ -237,20 +238,20 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 }
 
 // SelectSorted returns a set of sorted series that matches the given label matchers.
-func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
-	seriesSets := make([]SeriesSet, 0, len(q.queriers))
-	var warnings Warnings
+func (q *mergeQuerier) SelectSorted(params *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	seriesSets := make([]storage.SeriesSet, 0, len(q.queriers))
+	var warnings storage.Warnings
 
 	var priErr error = nil
 	type queryResult struct {
-		qr          Querier
-		set         SeriesSet
-		wrn         Warnings
+		qr          storage.Querier
+		set         storage.SeriesSet
+		wrn         storage.Warnings
 		selectError error
 	}
 	queryResultChan := make(chan *queryResult)
 	for _, querier := range q.queriers {
-		go func(qr Querier) {
+		go func(qr storage.Querier) {
 			set, wrn, err := qr.SelectSorted(params, matchers...)
 			queryResultChan <- &queryResult{qr: qr, set: set, wrn: wrn, selectError: err}
 		}(querier)
@@ -279,9 +280,9 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 }
 
 // LabelValues returns all potential values for a label name.
-func (q *mergeQuerier) LabelValues(name string) ([]string, Warnings, error) {
+func (q *mergeQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
 	var results [][]string
-	var warnings Warnings
+	var warnings storage.Warnings
 	for _, querier := range q.queriers {
 		values, wrn, err := querier.LabelValues(name)
 
@@ -303,7 +304,7 @@ func (q *mergeQuerier) LabelValues(name string) ([]string, Warnings, error) {
 	return mergeStringSlices(results), warnings, nil
 }
 
-func (q *mergeQuerier) IsFailedSet(set SeriesSet) bool {
+func (q *mergeQuerier) IsFailedSet(set storage.SeriesSet) bool {
 	_, isFailedQuerier := q.failedQueriers[q.setQuerierMap[set]]
 	return isFailedQuerier
 }
@@ -348,9 +349,9 @@ func mergeTwoStringSlices(a, b []string) []string {
 }
 
 // LabelNames returns all the unique label names present in the block in sorted order.
-func (q *mergeQuerier) LabelNames() ([]string, Warnings, error) {
+func (q *mergeQuerier) LabelNames() ([]string, storage.Warnings, error) {
 	labelNamesMap := make(map[string]struct{})
-	var warnings Warnings
+	var warnings storage.Warnings
 	for _, b := range q.queriers {
 		names, wrn, err := b.LabelNames()
 		if wrn != nil {
@@ -396,9 +397,9 @@ func (q *mergeQuerier) Close() error {
 // mergeSeriesSet implements SeriesSet
 type mergeSeriesSet struct {
 	currentLabels labels.Labels
-	currentSets   []SeriesSet
+	currentSets   []storage.SeriesSet
 	heap          seriesSetHeap
-	sets          []SeriesSet
+	sets          []storage.SeriesSet
 
 	querier *mergeQuerier
 }
@@ -407,7 +408,7 @@ type mergeSeriesSet struct {
 // series returned by the input series sets when iterating.
 // Each input series set must return its series in labels order, otherwise
 // merged series set will be incorrect.
-func NewMergeSeriesSet(sets []SeriesSet, querier *mergeQuerier) SeriesSet {
+func NewMergeSeriesSet(sets []storage.SeriesSet, querier *mergeQuerier) storage.SeriesSet {
 	if len(sets) == 1 {
 		return sets[0]
 	}
@@ -451,7 +452,7 @@ func (c *mergeSeriesSet) Next() bool {
 		c.currentSets = nil
 		c.currentLabels = c.heap[0].At().Labels()
 		for len(c.heap) > 0 && labels.Equal(c.currentLabels, c.heap[0].At().Labels()) {
-			set := heap.Pop(&c.heap).(SeriesSet)
+			set := heap.Pop(&c.heap).(storage.SeriesSet)
 			if c.querier != nil && c.querier.IsFailedSet(set) {
 				continue
 			}
@@ -467,11 +468,11 @@ func (c *mergeSeriesSet) Next() bool {
 	return true
 }
 
-func (c *mergeSeriesSet) At() Series {
+func (c *mergeSeriesSet) At() storage.Series {
 	if len(c.currentSets) == 1 {
 		return c.currentSets[0].At()
 	}
-	series := []Series{}
+	series := []storage.Series{}
 	for _, seriesSet := range c.currentSets {
 		series = append(series, seriesSet.At())
 	}
@@ -490,7 +491,7 @@ func (c *mergeSeriesSet) Err() error {
 	return nil
 }
 
-type seriesSetHeap []SeriesSet
+type seriesSetHeap []storage.SeriesSet
 
 func (h seriesSetHeap) Len() int      { return len(h) }
 func (h seriesSetHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
@@ -501,7 +502,7 @@ func (h seriesSetHeap) Less(i, j int) bool {
 }
 
 func (h *seriesSetHeap) Push(x interface{}) {
-	*h = append(*h, x.(SeriesSet))
+	*h = append(*h, x.(storage.SeriesSet))
 }
 
 func (h *seriesSetHeap) Pop() interface{} {
@@ -514,15 +515,15 @@ func (h *seriesSetHeap) Pop() interface{} {
 
 type mergeSeries struct {
 	labels labels.Labels
-	series []Series
+	series []storage.Series
 }
 
 func (m *mergeSeries) Labels() labels.Labels {
 	return m.labels
 }
 
-func (m *mergeSeries) Iterator() SeriesIterator {
-	iterators := make([]SeriesIterator, 0, len(m.series))
+func (m *mergeSeries) Iterator() storage.SeriesIterator {
+	iterators := make([]storage.SeriesIterator, 0, len(m.series))
 	for _, s := range m.series {
 		iterators = append(iterators, s.Iterator())
 	}
@@ -530,11 +531,11 @@ func (m *mergeSeries) Iterator() SeriesIterator {
 }
 
 type mergeIterator struct {
-	iterators []SeriesIterator
+	iterators []storage.SeriesIterator
 	h         seriesIteratorHeap
 }
 
-func newMergeIterator(iterators []SeriesIterator) SeriesIterator {
+func newMergeIterator(iterators []storage.SeriesIterator) storage.SeriesIterator {
 	return &mergeIterator{
 		iterators: iterators,
 		h:         nil,
@@ -581,7 +582,7 @@ func (c *mergeIterator) Next() bool {
 			break
 		}
 
-		iter := heap.Pop(&c.h).(SeriesIterator)
+		iter := heap.Pop(&c.h).(storage.SeriesIterator)
 		if iter.Next() {
 			heap.Push(&c.h, iter)
 		}
@@ -599,7 +600,7 @@ func (c *mergeIterator) Err() error {
 	return nil
 }
 
-type seriesIteratorHeap []SeriesIterator
+type seriesIteratorHeap []storage.SeriesIterator
 
 func (h seriesIteratorHeap) Len() int      { return len(h) }
 func (h seriesIteratorHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
@@ -611,7 +612,7 @@ func (h seriesIteratorHeap) Less(i, j int) bool {
 }
 
 func (h *seriesIteratorHeap) Push(x interface{}) {
-	*h = append(*h, x.(SeriesIterator))
+	*h = append(*h, x.(storage.SeriesIterator))
 }
 
 func (h *seriesIteratorHeap) Pop() interface{} {

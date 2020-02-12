@@ -18,7 +18,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -187,25 +186,6 @@ func (m *mockSeriesIterator) Seek(t int64) bool    { return m.seek(t) }
 func (m *mockSeriesIterator) At() (int64, float64) { return m.at() }
 func (m *mockSeriesIterator) Next() bool           { return m.next() }
 func (m *mockSeriesIterator) Err() error           { return m.err() }
-
-type mockSeries struct {
-	labels   func() labels.Labels
-	iterator func() SeriesIterator
-}
-
-func newMockSeries(lset labels.Labels, samples []sample) Series {
-	return &mockSeries{
-		labels: func() labels.Labels {
-			return lset
-		},
-		iterator: func() SeriesIterator {
-			return newListSeriesIterator(samples)
-		},
-	}
-}
-
-func (m *mockSeries) Labels() labels.Labels    { return m.labels() }
-func (m *mockSeries) Iterator() SeriesIterator { return m.iterator() }
 
 type listSeriesIterator struct {
 	list []sample
