@@ -92,7 +92,7 @@ type SDConfig struct {
 	Role               Role                         `yaml:"role"`
 	HTTPClientConfig   config_util.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery           `yaml:"namespaces,omitempty"`
-	Selectors          RoleSelectorConfig           `yaml:"selectors,omitempty"`
+	Selectors          []ResourceSelectorConfigRaw           `yaml:"selectors,omitempty"`
 }
 
 type RoleSelectorConfig struct {
@@ -101,6 +101,12 @@ type RoleSelectorConfig struct {
 	Service   ResourceSelectorConfig `yaml:"service,omitempty"`
 	Endpoints ResourceSelectorConfig `yaml:"endpoints,omitempty"`
 	Ingress   ResourceSelectorConfig `yaml:"ingress,omitempty"`
+}
+
+type ResourceSelectorConfigRaw struct {
+	Role  Role   `yaml:"role,omitempty"`
+	Label string `yaml:"label,omitempty"`
+	Field string `yaml:"field,omitempty"`
 }
 
 type ResourceSelectorConfig struct {
@@ -125,64 +131,63 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	switch c.Role {
 	case "pod":
-		if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
-			return errors.Errorf("pod role supports only pod selectors")
-		}
-		err = validateSelectors(c.Selectors.Pod)
-		if err != nil {
-			return err
+		for _, selector := range c.Selectors {
+			if selector.Role != RolePod && selector.Field != "" {
+				return errors.Errorf("pod role supports only pod selectors")
+			}
+				err = validateSelectors(selector)
+				if err != nil {
+					return err
+				}
 		}
 	case "service":
-		if len(c.Selectors.Pod.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
-			return errors.Errorf("service role supports only service selectors")
-		}
-		err = validateSelectors(c.Selectors.Service)
-		if err != nil {
-			return err
+		for _, selector := range c.Selectors {
+			if selector.Role != RoleService && selector.Field != "" {
+				return errors.Errorf("service role supports only service selectors")
+			}
+				err = validateSelectors(selector)
+				if err != nil {
+					return err
+				}
 		}
 	case "endpoints":
-		if len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Node.Field) > 0 {
-			return errors.Errorf("endpoints role supports only pod, service and endpoints selectors")
-		}
-		err = validateSelectors(c.Selectors.Pod)
-		if err != nil {
-			return err
-		}
-		err = validateSelectors(c.Selectors.Service)
-		if err != nil {
-			return err
-		}
-		err = validateSelectors(c.Selectors.Endpoints)
-		if err != nil {
-			return err
+		for _, selector := range c.Selectors {
+			if selector.Role != RoleEndpoint && selector.Role != RolePod && selector.Role != RoleService && selector.Field != "" {
+				return errors.Errorf("endpoints role supports only pod, service and endpoints selectors")
+			}
+				err = validateSelectors(selector)
+				if err != nil {
+					return err
+
+			}
 		}
 	case "node":
-		if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Ingress.Field) > 0 || len(c.Selectors.Pod.Field) > 0 {
-			return errors.Errorf("node role supports only node selectors")
-		}
-		err = validateSelectors(c.Selectors.Node)
-		if err != nil {
-			return err
+		for _, selector := range c.Selectors {
+			if selector.Role != RoleNode && selector.Field != "" {
+				return errors.Errorf("node role supports only node selectors")
+			}
+				err = validateSelectors(selector)
+				if err != nil {
+					return err
+				}
 		}
 	case "ingress":
-		if len(c.Selectors.Service.Field) > 0 || len(c.Selectors.Endpoints.Field) > 0 || len(c.Selectors.Node.Field) > 0 || len(c.Selectors.Pod.Field) > 0 {
-			return errors.Errorf("ingress role supports only ingress selectors")
-		}
-		err = validateSelectors(c.Selectors.Ingress)
-		if err != nil {
-			return err
+		for _, selector := range c.Selectors {
+			if selector.Role != RoleIngress && selector.Field != "" {
+				return errors.Errorf("ingress role supports only ingress selectors")
+			}
+				err = validateSelectors(selector)
+				if err != nil {
+					return err
+			}
 		}
 	default:
 		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
 	}
-	_, err = fields.ParseSelector(c.Selectors.Service.Field)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
-func validateSelectors(rsc ResourceSelectorConfig) error {
+func validateSelectors(rsc ResourceSelectorConfigRaw) error {
 	_, err := fields.ParseSelector(rsc.Field)
 	if err != nil {
 		return err
@@ -289,8 +294,32 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		role:               conf.Role,
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discoverer, 0),
-		selectors:          conf.Selectors,
+		selectors:          mapSelector(conf.Selectors),
 	}, nil
+}
+
+func mapSelector(rawSelector []ResourceSelectorConfigRaw) RoleSelectorConfig {
+	rs := RoleSelectorConfig{}
+	for _, resourceSelectorRaw := range rawSelector {
+		switch resourceSelectorRaw.Role {
+		case RoleEndpoint:
+			rs.Endpoints.Field = resourceSelectorRaw.Field
+			rs.Endpoints.Label = resourceSelectorRaw.Label
+		case RoleIngress:
+			rs.Ingress.Field = resourceSelectorRaw.Field
+			rs.Ingress.Label = resourceSelectorRaw.Label
+		case RoleNode:
+			rs.Node.Field = resourceSelectorRaw.Field
+			rs.Node.Label = resourceSelectorRaw.Label
+		case RolePod:
+			rs.Pod.Field = resourceSelectorRaw.Field
+			rs.Pod.Label = resourceSelectorRaw.Label
+		case RoleService:
+			rs.Service.Field = resourceSelectorRaw.Field
+			rs.Service.Label = resourceSelectorRaw.Label
+		}
+	}
+	return rs
 }
 
 const resyncPeriod = 10 * time.Minute

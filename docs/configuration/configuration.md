@@ -867,10 +867,10 @@ namespaces:
 # because per each selector combination there will be additional LIST/WATCH. On the other hand,
 # if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
 # Decision, if selectors should be used or not depends on the particular situation.
-selectors:
-  <role>:
+[ selectors:
+  [ role: <string>  
     [ label: <string> ]
-    [ field: <string> ]
+    [ field: <string> ] ]]
 ```
 
 Where `<role>` must be `endpoints`, `service`, `pod`, `node`, or
