@@ -1,4 +1,4 @@
-## 2.16.0-rc.1 / 2020-02-10
+## 2.16.0 / 2020-02-13
 
 * [FEATURE] React UI: Support local timezone on /graph #6692
 * [FEATURE] PromQL: add absent_over_time query function #6490
