@@ -344,7 +344,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 // entire list of services.
 func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64, services map[string]func()) {
 	catalog := d.client.Catalog()
-	level.Debug(d.logger).Log("msg", "Watching services", "tags", d.watchedTags)
+	level.Debug(d.logger).Log("msg", "Watching services", "tags", strings.Join(d.watchedTags, ","))
 
 	t0 := time.Now()
 	opts := &consul.QueryOptions{
@@ -459,7 +459,7 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 
 // Get updates for a service.
 func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, catalog *consul.Catalog, lastIndex *uint64) {
-	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tags", srv.tags)
+	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tags", strings.Join(srv.tags, ","))
 
 	t0 := time.Now()
 	opts := &consul.QueryOptions{
@@ -481,7 +481,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 	}
 
 	if err != nil {
-		level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "tags", srv.tags, "err", err)
+		level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "tags", strings.Join(srv.tags, ","), "err", err)
 		rpcFailuresCount.Inc()
 		time.Sleep(retryInterval)
 		return
