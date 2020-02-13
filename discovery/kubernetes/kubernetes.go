@@ -92,7 +92,7 @@ type SDConfig struct {
 	Role               Role                         `yaml:"role"`
 	HTTPClientConfig   config_util.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery           `yaml:"namespaces,omitempty"`
-	Selectors          []ResourceSelectorConfigRaw           `yaml:"selectors,omitempty"`
+	Selectors          []ResourceSelectorConfigRaw  `yaml:"selectors,omitempty"`
 }
 
 type RoleSelectorConfig struct {
@@ -135,29 +135,29 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			if selector.Role != RolePod && selector.Field != "" {
 				return errors.Errorf("pod role supports only pod selectors")
 			}
-				err = validateSelectors(selector)
-				if err != nil {
-					return err
-				}
+			err = validateSelectors(selector)
+			if err != nil {
+				return err
+			}
 		}
 	case "service":
 		for _, selector := range c.Selectors {
 			if selector.Role != RoleService && selector.Field != "" {
 				return errors.Errorf("service role supports only service selectors")
 			}
-				err = validateSelectors(selector)
-				if err != nil {
-					return err
-				}
+			err = validateSelectors(selector)
+			if err != nil {
+				return err
+			}
 		}
 	case "endpoints":
 		for _, selector := range c.Selectors {
 			if selector.Role != RoleEndpoint && selector.Role != RolePod && selector.Role != RoleService && selector.Field != "" {
 				return errors.Errorf("endpoints role supports only pod, service and endpoints selectors")
 			}
-				err = validateSelectors(selector)
-				if err != nil {
-					return err
+			err = validateSelectors(selector)
+			if err != nil {
+				return err
 
 			}
 		}
@@ -166,19 +166,19 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			if selector.Role != RoleNode && selector.Field != "" {
 				return errors.Errorf("node role supports only node selectors")
 			}
-				err = validateSelectors(selector)
-				if err != nil {
-					return err
-				}
+			err = validateSelectors(selector)
+			if err != nil {
+				return err
+			}
 		}
 	case "ingress":
 		for _, selector := range c.Selectors {
 			if selector.Role != RoleIngress && selector.Field != "" {
 				return errors.Errorf("ingress role supports only ingress selectors")
 			}
-				err = validateSelectors(selector)
-				if err != nil {
-					return err
+			err = validateSelectors(selector)
+			if err != nil {
+				return err
 			}
 		}
 	default:
