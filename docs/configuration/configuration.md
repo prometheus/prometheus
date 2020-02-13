@@ -868,7 +868,7 @@ namespaces:
 # if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
 # Decision, if selectors should be used or not depends on the particular situation.
 [ selectors:
-  [ - role: <string>  
+  [ - role: <role>  
     [ label: <string> ]
     [ field: <string> ] ]]
 ```
