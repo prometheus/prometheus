@@ -215,8 +215,6 @@ func NewAPI(
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 ) *API {
-	fmt.Println("options are ")
-	fmt.Println(option)
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
