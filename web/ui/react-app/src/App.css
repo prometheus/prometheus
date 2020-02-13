@@ -153,17 +153,20 @@ button.execute-btn {
 .legend-item {
   cursor: pointer;
   display: flex;
-  align-items: center;
   padding: 0 5px;
   border-radius: 3px;
+  line-height: 1.7;
+}
+.legend-item div {
+  flex-wrap: wrap;
 }
 
 .legend-swatch {
-  width: 7px;
+  min-width: 7px;
   height: 7px;
   outline-offset: 1px;
   outline: 1.5px solid #ccc;
-  margin: 2px 8px 2px 0;
+  margin: 6px 8px 2px 0;
   display: inline-block;
 }
 
@@ -244,7 +247,7 @@ button.execute-btn {
 
 .rule_cell {
   white-space: pre-wrap;
-  background-color: #F5F5F5;
+  background-color: #f5f5f5;
   display: block;
   font-family: monospace;
 }
