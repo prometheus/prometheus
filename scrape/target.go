@@ -75,6 +75,7 @@ func (t *Target) String() string {
 	return t.URL().String()
 }
 
+// MetricMetadataStore represents a storage for metadata.
 type MetricMetadataStore interface {
 	ListMetadata() []MetricMetadata
 	GetMetadata(metric string) (MetricMetadata, bool)

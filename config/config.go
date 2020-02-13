@@ -119,6 +119,10 @@ var (
 		// Backoff times for retrying a batch of samples on recoverable errors.
 		MinBackoff: model.Duration(30 * time.Millisecond),
 		MaxBackoff: model.Duration(100 * time.Millisecond),
+
+		// Send metric metadata to remote write at the same interval we scrape.
+		SendMetadata:         true,
+		MetadataSendInterval: model.Duration(15 * time.Second),
 	}
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
@@ -621,6 +625,12 @@ type QueueConfig struct {
 	// On recoverable errors, backoff exponentially.
 	MinBackoff model.Duration `yaml:"min_backoff,omitempty"`
 	MaxBackoff model.Duration `yaml:"max_backoff,omitempty"`
+
+	// SendMetadata controls whenever we send metric metadata to remote storage.
+	SendMetadata bool `yaml:"send_metadata"`
+
+	// MetadataSendInterval how frequently we send metric metadata by default.
+	MetadataSendInterval model.Duration `yaml:"metadata_send_interval"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.
