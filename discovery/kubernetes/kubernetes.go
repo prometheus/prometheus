@@ -95,12 +95,12 @@ type SDConfig struct {
 	Selectors          []ResourceSelectorConfigRaw  `yaml:"selectors,omitempty"`
 }
 
-type RoleSelectorConfig struct {
-	Node      ResourceSelectorConfig `yaml:"node,omitempty"`
-	Pod       ResourceSelectorConfig `yaml:"pod,omitempty"`
-	Service   ResourceSelectorConfig `yaml:"service,omitempty"`
-	Endpoints ResourceSelectorConfig `yaml:"endpoints,omitempty"`
-	Ingress   ResourceSelectorConfig `yaml:"ingress,omitempty"`
+type roleSelectorConfig struct {
+	node      resourceSelectorConfig
+	pod       resourceSelectorConfig
+	service   resourceSelectorConfig
+	endpoints resourceSelectorConfig
+	ingress   resourceSelectorConfig
 }
 
 type ResourceSelectorConfigRaw struct {
@@ -109,9 +109,9 @@ type ResourceSelectorConfigRaw struct {
 	Field string `yaml:"field,omitempty"`
 }
 
-type ResourceSelectorConfig struct {
-	Label string `yaml:"label,omitempty"`
-	Field string `yaml:"field,omitempty"`
+type resourceSelectorConfig struct {
+	label string
+	field string
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -135,21 +135,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			if selector.Role != RolePod && selector.Field != "" {
 				return errors.Errorf("pod role supports only pod selectors")
 			}
-
-			err = validateSelectors(selector)
-			if err != nil {
-				return err
-			}
 		}
 	case "service":
 		for _, selector := range c.Selectors {
 			if selector.Role != RoleService && selector.Field != "" {
 				return errors.Errorf("service role supports only service selectors")
-			}
-
-			err = validateSelectors(selector)
-			if err != nil {
-				return err
 			}
 		}
 	case "endpoints":
@@ -157,21 +147,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			if selector.Role != RoleEndpoint && selector.Role != RolePod && selector.Role != RoleService && selector.Field != "" {
 				return errors.Errorf("endpoints role supports only pod, service and endpoints selectors")
 			}
-
-			err = validateSelectors(selector)
-			if err != nil {
-				return err
-			}
 		}
 	case "node":
 		for _, selector := range c.Selectors {
 			if selector.Role != RoleNode && selector.Field != "" {
 				return errors.Errorf("node role supports only node selectors")
-			}
-
-			err = validateSelectors(selector)
-			if err != nil {
-				return err
 			}
 		}
 	case "ingress":
@@ -179,21 +159,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			if selector.Role != RoleIngress && selector.Field != "" {
 				return errors.Errorf("ingress role supports only ingress selectors")
 			}
-
-			err = validateSelectors(selector)
-			if err != nil {
-				return err
-			}
 		}
 	default:
-		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
+		return errors.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, node or ingress", c.Role)
 	}
-	foundSelectorRoles := make(map[Role]bool)
+	foundSelectorRoles := make(map[Role]struct{})
 	for _, selector := range c.Selectors {
-		if foundSelectorRoles[selector.Role] {
+		if _, ok := foundSelectorRoles[selector.Role]; ok {
 			return errors.Errorf("duplicated selector role: %s", selector.Role)
 		}
-		foundSelectorRoles[selector.Role] = true
+		foundSelectorRoles[selector.Role] = struct{}{}
+		err := validateSelectors(selector)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -254,7 +233,7 @@ type Discovery struct {
 	logger             log.Logger
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discoverer
-	selectors          RoleSelectorConfig
+	selectors          roleSelectorConfig
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -309,25 +288,25 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	}, nil
 }
 
-func mapSelector(rawSelector []ResourceSelectorConfigRaw) RoleSelectorConfig {
-	rs := RoleSelectorConfig{}
+func mapSelector(rawSelector []ResourceSelectorConfigRaw) roleSelectorConfig {
+	rs := roleSelectorConfig{}
 	for _, resourceSelectorRaw := range rawSelector {
 		switch resourceSelectorRaw.Role {
 		case RoleEndpoint:
-			rs.Endpoints.Field = resourceSelectorRaw.Field
-			rs.Endpoints.Label = resourceSelectorRaw.Label
+			rs.endpoints.field = resourceSelectorRaw.Field
+			rs.endpoints.label = resourceSelectorRaw.Label
 		case RoleIngress:
-			rs.Ingress.Field = resourceSelectorRaw.Field
-			rs.Ingress.Label = resourceSelectorRaw.Label
+			rs.ingress.field = resourceSelectorRaw.Field
+			rs.ingress.label = resourceSelectorRaw.Label
 		case RoleNode:
-			rs.Node.Field = resourceSelectorRaw.Field
-			rs.Node.Label = resourceSelectorRaw.Label
+			rs.node.field = resourceSelectorRaw.Field
+			rs.node.label = resourceSelectorRaw.Label
 		case RolePod:
-			rs.Pod.Field = resourceSelectorRaw.Field
-			rs.Pod.Label = resourceSelectorRaw.Label
+			rs.pod.field = resourceSelectorRaw.Field
+			rs.pod.label = resourceSelectorRaw.Label
 		case RoleService:
-			rs.Service.Field = resourceSelectorRaw.Field
-			rs.Service.Label = resourceSelectorRaw.Label
+			rs.service.field = resourceSelectorRaw.Field
+			rs.service.label = resourceSelectorRaw.Label
 		}
 	}
 	return rs
@@ -346,39 +325,39 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			e := d.client.CoreV1().Endpoints(namespace)
 			elw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.selectors.Endpoints.Field
-					options.LabelSelector = d.selectors.Endpoints.Label
+					options.FieldSelector = d.selectors.endpoints.field
+					options.LabelSelector = d.selectors.endpoints.label
 					return e.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.selectors.Endpoints.Field
-					options.LabelSelector = d.selectors.Endpoints.Label
+					options.FieldSelector = d.selectors.endpoints.field
+					options.LabelSelector = d.selectors.endpoints.label
 					return e.Watch(options)
 				},
 			}
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.selectors.Service.Field
-					options.LabelSelector = d.selectors.Service.Label
+					options.FieldSelector = d.selectors.service.field
+					options.LabelSelector = d.selectors.service.label
 					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.selectors.Service.Field
-					options.LabelSelector = d.selectors.Service.Label
+					options.FieldSelector = d.selectors.service.field
+					options.LabelSelector = d.selectors.service.label
 					return s.Watch(options)
 				},
 			}
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.selectors.Pod.Field
-					options.LabelSelector = d.selectors.Pod.Label
+					options.FieldSelector = d.selectors.pod.field
+					options.LabelSelector = d.selectors.pod.label
 					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.selectors.Pod.Field
-					options.LabelSelector = d.selectors.Pod.Label
+					options.FieldSelector = d.selectors.pod.field
+					options.LabelSelector = d.selectors.pod.label
 					return p.Watch(options)
 				},
 			}
@@ -398,13 +377,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.selectors.Pod.Field
-					options.LabelSelector = d.selectors.Pod.Label
+					options.FieldSelector = d.selectors.pod.field
+					options.LabelSelector = d.selectors.pod.label
 					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.selectors.Pod.Field
-					options.LabelSelector = d.selectors.Pod.Label
+					options.FieldSelector = d.selectors.pod.field
+					options.LabelSelector = d.selectors.pod.label
 					return p.Watch(options)
 				},
 			}
@@ -420,13 +399,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.selectors.Service.Field
-					options.LabelSelector = d.selectors.Service.Label
+					options.FieldSelector = d.selectors.service.field
+					options.LabelSelector = d.selectors.service.label
 					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.selectors.Service.Field
-					options.LabelSelector = d.selectors.Service.Label
+					options.FieldSelector = d.selectors.service.field
+					options.LabelSelector = d.selectors.service.label
 					return s.Watch(options)
 				},
 			}
@@ -442,13 +421,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			i := d.client.ExtensionsV1beta1().Ingresses(namespace)
 			ilw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.selectors.Ingress.Field
-					options.LabelSelector = d.selectors.Ingress.Label
+					options.FieldSelector = d.selectors.ingress.field
+					options.LabelSelector = d.selectors.ingress.label
 					return i.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.selectors.Ingress.Field
-					options.LabelSelector = d.selectors.Ingress.Label
+					options.FieldSelector = d.selectors.ingress.field
+					options.LabelSelector = d.selectors.ingress.label
 					return i.Watch(options)
 				},
 			}
@@ -462,13 +441,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	case RoleNode:
 		nlw := &cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				options.FieldSelector = d.selectors.Node.Field
-				options.LabelSelector = d.selectors.Node.Label
+				options.FieldSelector = d.selectors.node.field
+				options.LabelSelector = d.selectors.node.label
 				return d.client.CoreV1().Nodes().List(options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				options.FieldSelector = d.selectors.Node.Field
-				options.LabelSelector = d.selectors.Node.Label
+				options.FieldSelector = d.selectors.node.field
+				options.LabelSelector = d.selectors.node.label
 				return d.client.CoreV1().Nodes().Watch(options)
 			},
 		}
