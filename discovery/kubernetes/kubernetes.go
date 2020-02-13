@@ -16,6 +16,7 @@ package kubernetes
 import (
 	"context"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,24 +93,24 @@ type SDConfig struct {
 	Role               Role                         `yaml:"role"`
 	HTTPClientConfig   config_util.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery           `yaml:"namespaces,omitempty"`
-	Selectors          []ResourceSelectorConfigRaw  `yaml:"selectors,omitempty"`
+	Selectors          []SelectorConfig             `yaml:"selectors,omitempty"`
 }
 
-type roleSelectorConfig struct {
-	node      resourceSelectorConfig
-	pod       resourceSelectorConfig
-	service   resourceSelectorConfig
-	endpoints resourceSelectorConfig
-	ingress   resourceSelectorConfig
+type roleSelector struct {
+	node      resourceSelector
+	pod       resourceSelector
+	service   resourceSelector
+	endpoints resourceSelector
+	ingress   resourceSelector
 }
 
-type ResourceSelectorConfigRaw struct {
+type SelectorConfig struct {
 	Role  Role   `yaml:"role,omitempty"`
 	Label string `yaml:"label,omitempty"`
 	Field string `yaml:"field,omitempty"`
 }
 
-type resourceSelectorConfig struct {
+type resourceSelector struct {
 	label string
 	field string
 }
@@ -129,61 +130,47 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config_util.HTTPClientConfig{}) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
-	switch c.Role {
-	case "pod":
-		for _, selector := range c.Selectors {
-			if selector.Role != RolePod && selector.Field != "" {
-				return errors.Errorf("pod role supports only pod selectors")
-			}
-		}
-	case "service":
-		for _, selector := range c.Selectors {
-			if selector.Role != RoleService && selector.Field != "" {
-				return errors.Errorf("service role supports only service selectors")
-			}
-		}
-	case "endpoints":
-		for _, selector := range c.Selectors {
-			if selector.Role != RoleEndpoint && selector.Role != RolePod && selector.Role != RoleService && selector.Field != "" {
-				return errors.Errorf("endpoints role supports only pod, service and endpoints selectors")
-			}
-		}
-	case "node":
-		for _, selector := range c.Selectors {
-			if selector.Role != RoleNode && selector.Field != "" {
-				return errors.Errorf("node role supports only node selectors")
-			}
-		}
-	case "ingress":
-		for _, selector := range c.Selectors {
-			if selector.Role != RoleIngress && selector.Field != "" {
-				return errors.Errorf("ingress role supports only ingress selectors")
-			}
-		}
-	default:
-		return errors.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, node or ingress", c.Role)
-	}
+
 	foundSelectorRoles := make(map[Role]struct{})
+	allowedSelectors := map[Role][]string{
+		RolePod:      {string(RolePod)},
+		RoleService:  {string(RoleService)},
+		RoleEndpoint: {string(RolePod), string(RoleService), string(RoleEndpoint)},
+		RoleNode:     {string(RoleNode)},
+		RoleIngress:  {string(RoleIngress)},
+	}
+
 	for _, selector := range c.Selectors {
 		if _, ok := foundSelectorRoles[selector.Role]; ok {
 			return errors.Errorf("duplicated selector role: %s", selector.Role)
 		}
 		foundSelectorRoles[selector.Role] = struct{}{}
-		err := validateSelectors(selector)
+
+		if _, ok := allowedSelectors[c.Role]; !ok {
+			return errors.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, node or ingress", c.Role)
+		}
+		var allowed bool
+		for _, role := range allowedSelectors[c.Role] {
+			if role == string(selector.Role) {
+				allowed = true
+				break
+			}
+		}
+
+		if !allowed {
+			return errors.Errorf("%s role supports only %s selectors", c.Role, strings.Join(allowedSelectors[c.Role], ", "))
+		}
+
+		_, err := fields.ParseSelector(selector.Field)
+		if err != nil {
+			return err
+		}
+		_, err = fields.ParseSelector(selector.Label)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func validateSelectors(rsc ResourceSelectorConfigRaw) error {
-	_, err := fields.ParseSelector(rsc.Field)
-	if err != nil {
-		return err
-	}
-	_, err = fields.ParseSelector(rsc.Label)
-	return err
 }
 
 // NamespaceDiscovery is the configuration for discovering
@@ -233,7 +220,7 @@ type Discovery struct {
 	logger             log.Logger
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discoverer
-	selectors          roleSelectorConfig
+	selectors          roleSelector
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -288,8 +275,8 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	}, nil
 }
 
-func mapSelector(rawSelector []ResourceSelectorConfigRaw) roleSelectorConfig {
-	rs := roleSelectorConfig{}
+func mapSelector(rawSelector []SelectorConfig) roleSelector {
+	rs := roleSelector{}
 	for _, resourceSelectorRaw := range rawSelector {
 		switch resourceSelectorRaw.Role {
 		case RoleEndpoint:

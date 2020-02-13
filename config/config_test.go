@@ -806,7 +806,7 @@ var expectedErrors = []struct {
 		errMsg:   "role",
 	}, {
 		filename: "kubernetes_selectors_endpoints.bad.yml",
-		errMsg:   "endpoints role supports only pod, service and endpoints selectors",
+		errMsg:   "endpoints role supports only pod, service, endpoints selectors",
 	}, {
 		filename: "kubernetes_selectors_ingress.bad.yml",
 		errMsg:   "ingress role supports only ingress selectors",
