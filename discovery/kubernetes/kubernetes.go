@@ -129,7 +129,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config_util.HTTPClientConfig{}) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
-	foundSelectorRoles := make(map[Role]bool)
 	switch c.Role {
 	case "pod":
 		for _, selector := range c.Selectors {
@@ -137,7 +136,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 				return errors.Errorf("pod role supports only pod selectors")
 			}
 
-			err = validateSelectors(selector, foundSelectorRoles)
+			err = validateSelectors(selector)
 			if err != nil {
 				return err
 			}
@@ -148,7 +147,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 				return errors.Errorf("service role supports only service selectors")
 			}
 
-			err = validateSelectors(selector, foundSelectorRoles)
+			err = validateSelectors(selector)
 			if err != nil {
 				return err
 			}
@@ -159,7 +158,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 				return errors.Errorf("endpoints role supports only pod, service and endpoints selectors")
 			}
 
-			err = validateSelectors(selector, foundSelectorRoles)
+			err = validateSelectors(selector)
 			if err != nil {
 				return err
 			}
@@ -170,7 +169,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 				return errors.Errorf("node role supports only node selectors")
 			}
 
-			err = validateSelectors(selector, foundSelectorRoles)
+			err = validateSelectors(selector)
 			if err != nil {
 				return err
 			}
@@ -181,7 +180,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 				return errors.Errorf("ingress role supports only ingress selectors")
 			}
 
-			err = validateSelectors(selector, foundSelectorRoles)
+			err = validateSelectors(selector)
 			if err != nil {
 				return err
 			}
@@ -189,28 +188,23 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	default:
 		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
 	}
+	foundSelectorRoles := make(map[Role]bool)
+	for _, selector := range c.Selectors {
+		if foundSelectorRoles[selector.Role] {
+			return errors.Errorf("duplicated selector role: %s", selector.Role)
+		}
+		foundSelectorRoles[selector.Role] = true
+	}
 	return nil
 }
 
-func validateSelectors(rsc ResourceSelectorConfigRaw, foundSelectorRoles map[Role]bool) error {
+func validateSelectors(rsc ResourceSelectorConfigRaw) error {
 	_, err := fields.ParseSelector(rsc.Field)
 	if err != nil {
 		return err
 	}
 	_, err = fields.ParseSelector(rsc.Label)
-	if err != nil {
-		return err
-	}
-	err = validateNoDuplicateSelectors(rsc.Role, foundSelectorRoles)
 	return err
-}
-
-func validateNoDuplicateSelectors(r Role, foundSelectorRoles map[Role]bool) error {
-	if foundSelectorRoles[r] {
-		return errors.Errorf("duplicated selector role: %s", r)
-	}
-	foundSelectorRoles[r] = true
-	return nil
 }
 
 // NamespaceDiscovery is the configuration for discovering
