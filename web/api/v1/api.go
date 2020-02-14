@@ -176,7 +176,7 @@ type API struct {
 	config                func() config.Config
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
-	option                Options
+	option                GlobalURLOptions
 
 	db                        func() TSDBAdmin
 	enableAdmin               bool
@@ -202,7 +202,7 @@ func NewAPI(
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
-	option Options,
+	option GlobalURLOptions,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() TSDBAdmin,
 	enableAdmin bool,
@@ -607,14 +607,14 @@ type TargetDiscovery struct {
 	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
 }
 
-// Options contains fields for globalURl required in local targets.
-type Options struct {
-	Address string
-	Host    string
-	Scheme  string
+// GlobalURLOptions contains fields used for deriving the global URL for local targets.
+type GlobalURLOptions struct {
+	ListenAddress string
+	Host          string
+	Scheme        string
 }
 
-func getGlobalURL(u *url.URL, opts Options) (*url.URL, error) {
+func getGlobalURL(u *url.URL, opts GlobalURLOptions) (*url.URL, error) {
 	host, port, err := net.SplitHostPort(u.Host)
 	if err != nil {
 		return u, err
@@ -622,7 +622,7 @@ func getGlobalURL(u *url.URL, opts Options) (*url.URL, error) {
 
 	for _, lhr := range []string{"127.0.0.1", "localhost"} {
 		if host == lhr {
-			_, ownPort, err := net.SplitHostPort(opts.Address)
+			_, ownPort, err := net.SplitHostPort(opts.ListenAddress)
 			if err != nil {
 				return u, err
 			}

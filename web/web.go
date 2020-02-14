@@ -289,9 +289,6 @@ func New(logger log.Logger, o *Options) *Handler {
 
 		ready: 0,
 	}
-	fmt.Println(o.ListenAddress)
-	fmt.Println(o.ExternalURL.Host)
-	fmt.Println(o.ExternalURL.Scheme)
 
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
 		func() config.Config {
@@ -300,8 +297,8 @@ func New(logger log.Logger, o *Options) *Handler {
 			return *h.config
 		},
 		o.Flags,
-		api_v1.Options{
-			Address: o.ListenAddress,
+		api_v1.GlobalURLOptions{
+			ListenAddress: o.ListenAddress,
 			Host:    o.ExternalURL.Host,
 			Scheme:  o.ExternalURL.Scheme,
 		},
