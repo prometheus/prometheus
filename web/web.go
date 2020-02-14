@@ -299,8 +299,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Flags,
 		api_v1.GlobalURLOptions{
 			ListenAddress: o.ListenAddress,
-			Host:    o.ExternalURL.Host,
-			Scheme:  o.ExternalURL.Scheme,
+			Host:          o.ExternalURL.Host,
+			Scheme:        o.ExternalURL.Scheme,
 		},
 		h.testReady,
 		func() api_v1.TSDBAdmin {
