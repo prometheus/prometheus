@@ -123,6 +123,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+	if c.Role == "" {
+		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
+	}
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
 		return err
