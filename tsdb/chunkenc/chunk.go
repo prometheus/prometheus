@@ -86,7 +86,7 @@ type Iterator interface {
 	// Before the iterator has advanced At behaviour is unspecified.
 	At() (int64, float64)
 	// Err returns the current error. It should be used only after iterator is
-	// exhausted, so `Next` or `Seek` returns false.
+	// exhausted, that is `Next` or `Seek` returns false.
 	Err() error
 }
 

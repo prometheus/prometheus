@@ -234,8 +234,6 @@ func (opts TSDBOptions) ToTSDBOptions() tsdb.Options {
 		StripeSize:             opts.StripeSize,
 		MinBlockDuration:       int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:       int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
-
-		ConvertTimeToSecondsFn: func(i int64) float64 { return float64(i / 1000) },
 	}
 }
 

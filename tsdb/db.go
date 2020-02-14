@@ -66,7 +66,6 @@ func DefaultOptions() *Options {
 		AllowOverlappingBlocks: false,
 		WALCompression:         false,
 		StripeSize:             DefaultStripeSize,
-		ConvertTimeToSecondsFn: func(i int64) float64 { return float64(i / 1000) },
 	}
 }
 
@@ -113,9 +112,6 @@ type Options struct {
 	// Unit agnostic as long as unit is consistent with MinBlockDuration and RetentionDuration.
 	// Typically it is in milliseconds.
 	MaxBlockDuration int64
-
-	// ConvertTimeToSecondsFn function is used for time based values to convert to seconds for metric purposes.
-	ConvertTimeToSecondsFn func(int64) float64
 }
 
 // DB handles reads and writes of time series falling into
@@ -166,12 +162,9 @@ type dbMetrics struct {
 	tombCleanTimer       prometheus.Histogram
 	blocksBytes          prometheus.Gauge
 	maxBytes             prometheus.Gauge
-	minTime              prometheus.GaugeFunc
-	headMaxTime          prometheus.GaugeFunc
-	headMinTime          prometheus.GaugeFunc
 }
 
-func newDBMetrics(db *DB, r prometheus.Registerer, convToSecondsFn func(int64) float64) *dbMetrics {
+func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	m := &dbMetrics{}
 
 	m.loadedBlocks = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -247,25 +240,6 @@ func newDBMetrics(db *DB, r prometheus.Registerer, convToSecondsFn func(int64) f
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
 	})
 
-	// Unit agnostic metrics.
-	m.minTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_lowest_timestamp_seconds",
-		Help: "Lowest timestamp value stored in the database.",
-	}, func() float64 {
-		bb := db.Blocks()
-		if len(bb) == 0 {
-			return convToSecondsFn(db.Head().MinTime())
-		}
-		return convToSecondsFn(db.Blocks()[0].Meta().MinTime)
-	})
-	m.headMinTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_head_min_time_seconds",
-		Help: "Minimum time bound of the head block.",
-	}, func() float64 { return convToSecondsFn(db.Head().MinTime()) })
-	m.headMaxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_head_max_time_seconds",
-		Help: "Maximum timestamp of the head block.",
-	}, func() float64 { return convToSecondsFn(db.Head().MaxTime()) })
 	if r != nil {
 		r.MustRegister(
 			m.loadedBlocks,
@@ -281,9 +255,6 @@ func newDBMetrics(db *DB, r prometheus.Registerer, convToSecondsFn func(int64) f
 			m.tombCleanTimer,
 			m.blocksBytes,
 			m.maxBytes,
-			m.minTime,
-			m.headMaxTime,
-			m.headMinTime,
 		)
 	}
 	return m
@@ -574,7 +545,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		autoCompact: true,
 		chunkPool:   chunkenc.NewPool(),
 	}
-	db.metrics = newDBMetrics(db, r, opts.ConvertTimeToSecondsFn)
+	db.metrics = newDBMetrics(db, r)
 
 	maxBytes := opts.MaxBytes
 	if maxBytes < 0 {

@@ -666,15 +666,16 @@ func main() {
 						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
 					}
 				}
-				db, err := tsdb.Open(
+				db, err := openDBWithMetrics(
 					cfg.localStoragePath,
-					log.With(logger, "component", "tsdb"),
+					logger,
 					prometheus.DefaultRegisterer,
 					&opts,
 				)
 				if err != nil {
 					return errors.Wrapf(err, "opening storage failed")
 				}
+
 				level.Info(logger).Log("fs_type", prom_runtime.Statfs(cfg.localStoragePath))
 				level.Info(logger).Log("msg", "TSDB started")
 				level.Debug(logger).Log("msg", "TSDB options",
@@ -743,6 +744,40 @@ func main() {
 		os.Exit(1)
 	}
 	level.Info(logger).Log("msg", "See you next time!")
+}
+
+func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer, opts *tsdb.Options) (*tsdb.DB, error) {
+	db, err := tsdb.Open(
+		dir,
+		log.With(logger, "component", "tsdb"),
+		reg,
+		opts,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	reg.MustRegister(
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_lowest_timestamp_seconds",
+			Help: "Lowest timestamp value stored in the database.",
+		}, func() float64 {
+			bb := db.Blocks()
+			if len(bb) == 0 {
+				return float64(db.Head().MinTime() / 1000)
+			}
+			return float64(db.Blocks()[0].Meta().MinTime / 1000)
+		}), prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_min_time_seconds",
+			Help: "Minimum time bound of the head block.",
+		}, func() float64 { return float64(db.Head().MinTime() / 1000) }),
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_max_time_seconds",
+			Help: "Maximum timestamp of the head block.",
+		}, func() float64 { return float64(db.Head().MaxTime() / 1000) }),
+	)
+
+	return db, nil
 }
 
 func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config) error) (err error) {

@@ -35,8 +35,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -2700,42 +2698,4 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 		wg.Wait()
 	}
 	testutil.Ok(t, r.Close())
-}
-
-func TestTimeMetrics(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
-	defer func() {
-		testutil.Ok(t, db.Close())
-		closeFn()
-	}()
-
-	metrics := &dto.Metric{}
-
-	// Check initial values.
-	testutil.Ok(t, db.metrics.minTime.Write(metrics))
-	testutil.Equals(t, float64(math.MaxInt64)/1000, metrics.Gauge.GetValue())
-
-	testutil.Ok(t, db.metrics.headMinTime.Write(metrics))
-	testutil.Equals(t, float64(math.MaxInt64)/1000, metrics.Gauge.GetValue())
-
-	testutil.Ok(t, db.metrics.headMaxTime.Write(metrics))
-	testutil.Equals(t, float64(math.MinInt64)/1000, metrics.Gauge.GetValue())
-
-	app := db.Appender()
-
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1, 1)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2, 1)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 3, 1)
-	testutil.Ok(t, app.Commit())
-
-	// Check after adding some samples.
-	testutil.Ok(t, db.metrics.minTime.Write(metrics))
-	testutil.Equals(t, 0.0, metrics.Gauge.GetValue())
-
-	testutil.Ok(t, db.metrics.headMinTime.Write(metrics))
-	testutil.Equals(t, 0.0, metrics.Gauge.GetValue())
-
-	testutil.Ok(t, db.metrics.headMaxTime.Write(metrics))
-	testutil.Equals(t, 0.0, metrics.Gauge.GetValue())
-
 }
