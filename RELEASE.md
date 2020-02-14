@@ -46,8 +46,6 @@ We use [Semantic Versioning](https://semver.org/).
 
 We maintain a separate branch for each minor release, named `release-<major>.<minor>`, e.g. `release-1.1`, `release-2.0`.
 
-For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
-
 The usual flow is to merge new features and changes into the master branch and to merge bug fixes into the latest release branch. Bug fixes are then merged into master from the latest release branch. The master branch should always contain all commits from the latest release branch. As long as master hasn't deviated from the release branch, new commits can also go to master, followed by merging master back into the release branch.
 
 If a bug fix got accidentally merged into master after non-bug-fix changes in master, the bug-fix commits have to be cherry-picked into the release branch, which then have to be merged back into master. Try to avoid that situation.
@@ -84,9 +82,9 @@ Create a new release branch.
 For a patch release, work in the branch of the minor release you want to patch. So for 2.16.1, create a new branch off of 2.16.0.
 
 For a new major or minor release, create the corresponding release branch based on the master branch.
-** Note: ** this means that for a release candidate you should also create the non-release candidate branch (2.16.0 vs 2.16.0-rc.0) and merge the RC versions into it as you go.
+** Note: ** this means that for a release candidate you should create the non-release candidate branch (release-2.16) and merge the RC versions (ex: cut-v2.16.0-rc.0) into it as you go.
 
-Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to the changelog in particular.
+Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to the changelog in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
 
 Note that `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
 
@@ -120,7 +118,7 @@ Finally, wait for the build step for the tag to finish. The point here is to wai
 
 ### 3. Wrapping up
 
-For release candidate versions, run the benchmark for 3 days using the `/benchmark x.y.z` command, `x.y.z` being the latest stable patch release of the previous minor release series.
+For release candidate versions, run the benchmark for 3 days using the `/prombench vX.Y.Z` command, `vX.Y.Z` being the latest stable patch release's tag of the previous minor release series, such as `v2.15.2`
 
 If the release has happened in the latest release branch, merge the changes into master.
 
