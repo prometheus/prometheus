@@ -748,36 +748,45 @@ func (h *Head) initTime(t int64) (initialized bool) {
 	return true
 }
 
-type rangeHead struct {
+type RangeHead struct {
 	head       *Head
 	mint, maxt int64
 }
 
-func (h *rangeHead) Index() (IndexReader, error) {
+// NewRangeHead returns a *rangeHead.
+func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
+	return &RangeHead{
+		head: head,
+		mint: mint,
+		maxt: maxt,
+	}
+}
+
+func (h *RangeHead) Index() (IndexReader, error) {
 	return h.head.indexRange(h.mint, h.maxt), nil
 }
 
-func (h *rangeHead) Chunks() (ChunkReader, error) {
+func (h *RangeHead) Chunks() (ChunkReader, error) {
 	return h.head.chunksRange(h.mint, h.maxt), nil
 }
 
-func (h *rangeHead) Tombstones() (tombstones.Reader, error) {
+func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
 	return h.head.tombstones, nil
 }
 
-func (h *rangeHead) MinTime() int64 {
+func (h *RangeHead) MinTime() int64 {
 	return h.mint
 }
 
-func (h *rangeHead) MaxTime() int64 {
+func (h *RangeHead) MaxTime() int64 {
 	return h.maxt
 }
 
-func (h *rangeHead) NumSeries() uint64 {
+func (h *RangeHead) NumSeries() uint64 {
 	return h.head.NumSeries()
 }
 
-func (h *rangeHead) Meta() BlockMeta {
+func (h *RangeHead) Meta() BlockMeta {
 	return BlockMeta{
 		MinTime: h.MinTime(),
 		MaxTime: h.MaxTime(),
