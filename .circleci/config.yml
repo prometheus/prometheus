@@ -18,6 +18,23 @@ executors:
       - image: fuzzitdev/golang:1.12.7-buster
 
 jobs:
+  build:
+    machine:
+      enabled: true
+    steps:
+    - checkout
+    - run:
+        command: make promu
+    - run:
+        command: promu crossbuild -v --crossbuild-jobs=2 --binary-jobs=2
+    - persist_to_workspace:
+        paths:
+        - .build
+        root: .
+    - store_artifacts:
+        destination: /build
+        path: .build
+
   test:
     executor: golang
 

@@ -236,11 +236,8 @@ common-docker-manifest:
 promu: $(PROMU)
 
 $(PROMU):
-	$(eval PROMU_TMP := $(shell mktemp -d))
-	curl -s -L $(PROMU_URL) | tar -xvzf - -C $(PROMU_TMP)
-	mkdir -p $(FIRST_GOPATH)/bin
-	cp $(PROMU_TMP)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(FIRST_GOPATH)/bin/promu
-	rm -r $(PROMU_TMP)
+	TMP=$(shell mktemp -d)
+	cd $(TMP) && git clone https://github.com/sylr/promu.git && cd promu && git checkout 25567c5 && $(GO) install .
 
 .PHONY: proto
 proto:

@@ -4,6 +4,8 @@
 /*.yml
 *.exe
 
+.build
+
 /prometheus
 /promtool
 /tsdb/tsdb
