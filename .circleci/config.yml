@@ -35,7 +35,7 @@ jobs:
     - run:
         name: install node & yarn
         command: |
-          rm -f $(grep -r -l packagecloud /etc/apt/sources.list.d) $(grep -r -l dl.google.com /etc/apt/sources.list.d)
+          sudo rm -f $(grep -r -l packagecloud /etc/apt/sources.list.d) $(grep -r -l dl.google.com /etc/apt/sources.list.d)
           curl -sL https://deb.nodesource.com/setup_10.x | sudo bash -
           curl -sL https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
           echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
