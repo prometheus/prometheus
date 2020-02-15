@@ -33,6 +33,11 @@ jobs:
           sudo tar -C /usr/local -xzf go${GOVERSION}.linux-amd64.tar.gz
           rm -f go${GOVERSION}.linux-amd64.tar.gz
     - run:
+        name: install node
+        command: |
+          curl -sL https://deb.nodesource.com/setup_10.x | sudo bash -
+          sudo apt install nodejs
+    - run:
         command: make promu
     - restore_cache:
         keys:
