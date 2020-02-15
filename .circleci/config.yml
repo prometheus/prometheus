@@ -36,7 +36,8 @@ jobs:
         name: install node
         command: |
           curl -sL https://deb.nodesource.com/setup_10.x | sudo bash -
-          sudo apt install nodejs
+          sudo apt-get update
+          sudo apt-get install -y nodejs yarn
     - run:
         command: make promu
     - restore_cache:
