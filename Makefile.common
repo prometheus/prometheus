@@ -236,8 +236,7 @@ common-docker-manifest:
 promu: $(PROMU)
 
 $(PROMU):
-	TMP=$(shell mktemp -d)
-	cd $(TMP) && git clone https://github.com/sylr/promu.git && cd promu && git checkout 25567c5 && $(GO) install .
+	cd \$(mktemp -d) && git clone https://github.com/sylr/promu.git && cd promu && git checkout 25567c5 && $(GO) install .
 
 .PHONY: proto
 proto:
