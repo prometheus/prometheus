@@ -105,7 +105,7 @@ func (p *queryLogTest) query(t *testing.T) {
 	switch p.origin {
 	case apiOrigin:
 		r, err := http.Get(fmt.Sprintf(
-			"http://%s:%d%s/api/v1/query?query=%s",
+			"http://%s:%d%s/api/v1/query_range?step=5&start=0&end=3600&query=%s",
 			p.host,
 			p.port,
 			p.prefix,
@@ -148,7 +148,15 @@ func (p *queryLogTest) queryString() string {
 func (p *queryLogTest) validateLastQuery(t *testing.T, ql []queryLogLine) {
 	q := ql[len(ql)-1]
 	testutil.Equals(t, p.queryString(), q.Params.Query)
-	testutil.Equals(t, 0, q.Params.Step)
+
+	switch p.origin {
+	case apiOrigin:
+		testutil.Equals(t, 5, q.Params.Step)
+		testutil.Equals(t, "1970-01-01T00:00:00.000Z", q.Params.Start)
+		testutil.Equals(t, "1970-01-01T01:00:00.000Z", q.Params.End)
+	default:
+		testutil.Equals(t, 0, q.Params.Step)
+	}
 
 	if p.origin != ruleOrigin {
 		host := p.host
@@ -160,7 +168,7 @@ func (p *queryLogTest) validateLastQuery(t *testing.T, ql []queryLogLine) {
 
 	switch p.origin {
 	case apiOrigin:
-		testutil.Equals(t, p.prefix+"/api/v1/query", q.Request.Path)
+		testutil.Equals(t, p.prefix+"/api/v1/query_range", q.Request.Path)
 	case consoleOrigin:
 		testutil.Equals(t, p.prefix+"/consoles/test.html", q.Request.Path)
 	case ruleOrigin:
@@ -356,6 +364,8 @@ type queryLogLine struct {
 	Params struct {
 		Query string `json:"query"`
 		Step  int    `json:"step"`
+		Start string `json:"start"`
+		End   string `json:"end"`
 	} `json:"params"`
 	Request struct {
 		Path     string `json:"path"`

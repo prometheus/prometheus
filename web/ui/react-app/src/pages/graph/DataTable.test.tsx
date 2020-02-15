@@ -103,8 +103,42 @@ describe('DataTable', () => {
     });
 
     it('renders a warning', () => {
-      const alert = dataTable.find(Alert);
-      expect(alert.render().text()).toEqual('Warning: Fetched 10001 metrics, only displaying first 10000.');
+      const alerts = dataTable.find(Alert);
+      expect(
+        alerts
+          .first()
+          .render()
+          .text()
+      ).toEqual('Warning: Fetched 10001 metrics, only displaying first 10000.');
+    });
+  });
+
+  describe('when resultType is vector and size is more than maximum limit of formatting', () => {
+    const dataTableProps: QueryResult = {
+      data: {
+        resultType: 'vector',
+        result: Array.from(Array(1001).keys()).map(i => {
+          return {
+            metric: {
+              __name__: `metric_name_${i}`,
+              label1: 'value_1',
+              labeln: 'value_n',
+            },
+            value: [1572098246.599, `${i}`],
+          };
+        }),
+      },
+    };
+    const dataTable = shallow(<DataTable {...dataTableProps} />);
+
+    it('renders a warning', () => {
+      const alerts = dataTable.find(Alert);
+      expect(
+        alerts
+          .first()
+          .render()
+          .text()
+      ).toEqual('Notice: Showing more than 1000 series, turning off label formatting for performance reasons.');
     });
   });
 

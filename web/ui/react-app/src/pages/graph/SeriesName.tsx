@@ -28,12 +28,12 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
     }
 
     return (
-      <>
+      <div>
         <span className="legend-metric-name">{labels!.__name__ || ''}</span>
         <span className="legend-label-brace">{'{'}</span>
         {labelNodes}
         <span className="legend-label-brace">{'}'}</span>
-      </>
+      </div>
     );
   };
 

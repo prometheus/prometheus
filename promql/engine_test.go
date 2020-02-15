@@ -257,18 +257,12 @@ func (*paramCheckerQuerier) Close() error                                    { r
 
 func TestParamsSetCorrectly(t *testing.T) {
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+		Logger:        nil,
+		Reg:           nil,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Second,
 	}
-
-	// Set the lookback to be smaller and reset at the end.
-	currLookback := LookbackDelta
-	LookbackDelta = 5 * time.Second
-	defer func() {
-		LookbackDelta = currLookback
-	}()
 
 	cases := []struct {
 		query string
