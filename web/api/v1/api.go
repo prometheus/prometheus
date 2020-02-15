@@ -82,7 +82,7 @@ const (
 
 var (
 	LocalhostRepresentations = []string{"127.0.0.1", "localhost"}
-	remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
+	remoteReadQueries        = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "remote_read_queries",
@@ -228,7 +228,7 @@ func NewAPI(
 		config:                    configFunc,
 		flagsMap:                  flagsMap,
 		ready:                     readyFunc,
-		globalURLOptions:                    option,
+		globalURLOptions:          option,
 		db:                        db,
 		enableAdmin:               enableAdmin,
 		rulesRetriever:            rr,

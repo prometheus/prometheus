@@ -70,9 +70,8 @@ import (
 	"github.com/prometheus/prometheus/web/ui"
 )
 
-
 // Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
-var	reactRouterPaths = []string{
+var reactRouterPaths = []string{
 	"/",
 	"/alerts",
 	"/config",
@@ -85,7 +84,6 @@ var	reactRouterPaths = []string{
 	"/tsdb-status",
 	"/version",
 }
-
 
 // withStackTrace logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
