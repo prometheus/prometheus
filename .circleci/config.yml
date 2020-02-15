@@ -41,8 +41,6 @@ jobs:
           echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
           curl -sL https://deb.nodesource.com/setup_10.x | sudo bash -
           sudo apt-get install -y nodejs yarn
-          which node
-          node -v
     - run:
         command: make promu
     - restore_cache:
@@ -52,7 +50,7 @@ jobs:
     - run:
         command: make build
     - run:
-        command: promu crossbuild -v --crossbuild-jobs=1 --binary-jobs=2
+        command: promu crossbuild -v --crossbuild-jobs=1 --binary-jobs=1
     - save_cache:
         key: v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         paths:
