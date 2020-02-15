@@ -19,6 +19,8 @@ executors:
 
 jobs:
   build:
+    environment:
+      GOVERSION: 1.13.8
     machine:
       enabled: true
     steps:
@@ -125,7 +127,7 @@ workflows:
         filters:
           tags:
             only: /.*/
-    - prometheus/build:
+    - build:
         name: build
         filters:
           tags:
