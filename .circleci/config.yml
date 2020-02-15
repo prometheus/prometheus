@@ -35,7 +35,7 @@ jobs:
     - run:
         command: make promu
     - run:
-        command: promu crossbuild -v --crossbuild-jobs=2 --binary-jobs=2
+        command: promu crossbuild -v --crossbuild-jobs=1 --binary-jobs=2
     - persist_to_workspace:
         paths:
         - .build
