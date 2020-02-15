@@ -80,12 +80,15 @@ const (
 	errorNotFound    errorType = "not_found"
 )
 
-var remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
-	Namespace: namespace,
-	Subsystem: subsystem,
-	Name:      "remote_read_queries",
-	Help:      "The current number of remote read queries being executed or waiting.",
-})
+var (
+	LocalhostRepresentations = []string{"127.0.0.1", "localhost"}
+	remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "remote_read_queries",
+		Help:      "The current number of remote read queries being executed or waiting.",
+	})
+)
 
 type apiError struct {
 	typ errorType
@@ -176,7 +179,7 @@ type API struct {
 	config                func() config.Config
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
-	option                GlobalURLOptions
+	globalURLOptions      GlobalURLOptions
 
 	db                        func() TSDBAdmin
 	enableAdmin               bool
@@ -225,7 +228,7 @@ func NewAPI(
 		config:                    configFunc,
 		flagsMap:                  flagsMap,
 		ready:                     readyFunc,
-		option:                    option,
+		globalURLOptions:                    option,
 		db:                        db,
 		enableAdmin:               enableAdmin,
 		rulesRetriever:            rr,
@@ -620,7 +623,7 @@ func getGlobalURL(u *url.URL, opts GlobalURLOptions) (*url.URL, error) {
 		return u, err
 	}
 
-	for _, lhr := range []string{"127.0.0.1", "localhost"} {
+	for _, lhr := range LocalhostRepresentations {
 		if host == lhr {
 			_, ownPort, err := net.SplitHostPort(opts.ListenAddress)
 			if err != nil {
@@ -683,7 +686,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 					lastErrStr = lastErr.Error()
 				}
 
-				globalURL, err := getGlobalURL(target.URL(), api.option)
+				globalURL, err := getGlobalURL(target.URL(), api.globalURLOptions)
 
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
 					DiscoveredLabels: target.DiscoveredLabels().Map(),
