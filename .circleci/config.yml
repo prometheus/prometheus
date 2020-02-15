@@ -34,8 +34,18 @@ jobs:
           rm -f go${GOVERSION}.linux-amd64.tar.gz
     - run:
         command: make promu
+    - restore_cache:
+        keys:
+        - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        - v1-npm-deps-
+    - run:
+        command: make build
     - run:
         command: promu crossbuild -v --crossbuild-jobs=1 --binary-jobs=2
+    - save_cache:
+        key: v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        paths:
+        - web/ui/react-app/node_modules
     - persist_to_workspace:
         paths:
         - .build
