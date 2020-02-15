@@ -64,12 +64,31 @@ jobs:
         path: .build
 
   test:
-    executor: golang
-
+    environment:
+      GOVERSION: 1.13.8
+    machine:
+      enabled: true
     steps:
-    - prometheus/setup_environment
-    - go/load-cache:
-        key: v1
+    - checkout
+    - run:
+        name: install go
+        command: |
+          sudo rm -rf /usr/local/go
+          wget https://dl.google.com/go/go${GOVERSION}.linux-amd64.tar.gz
+          sudo tar -C /usr/local -xzf go${GOVERSION}.linux-amd64.tar.gz
+          rm -f go${GOVERSION}.linux-amd64.tar.gz
+          go env
+    - run:
+        name: install node & yarn
+        command: |
+          sudo rm -rf /opt/circleci/.nvm/versions/node
+          sudo rm -f $(grep -r -l packagecloud /etc/apt/sources.list.d) $(grep -r -l dl.google.com /etc/apt/sources.list.d)
+          curl -sL https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
+          echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
+          curl -sL https://deb.nodesource.com/setup_10.x | sudo bash -
+          sudo apt-get install -y nodejs yarn
+    - run:
+        command: make promu
     - restore_cache:
         keys:
         - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
@@ -86,16 +105,11 @@ jobs:
           GOOPTS: "-p 2"
           GOMAXPROCS: "2"
     - prometheus/check_proto
-    - prometheus/store_artifact:
-        file: prometheus
-    - prometheus/store_artifact:
-        file: promtool
-    - go/save-cache:
-        key: v1
     - save_cache:
         key: v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         paths:
         - web/ui/react-app/node_modules
+
   test_windows:
     executor: win/default
     working_directory: /go/src/github.com/prometheus/prometheus
