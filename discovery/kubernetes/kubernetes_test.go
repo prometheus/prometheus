@@ -158,6 +158,7 @@ type hasSynced interface {
 var _ hasSynced = &Discovery{}
 var _ hasSynced = &Node{}
 var _ hasSynced = &Endpoints{}
+var _ hasSynced = &EndpointSlice{}
 var _ hasSynced = &Ingress{}
 var _ hasSynced = &Pod{}
 var _ hasSynced = &Service{}
@@ -181,6 +182,10 @@ func (n *Node) hasSynced() bool {
 
 func (e *Endpoints) hasSynced() bool {
 	return e.endpointsInf.HasSynced() && e.serviceInf.HasSynced() && e.podInf.HasSynced()
+}
+
+func (e *EndpointSlice) hasSynced() bool {
+	return e.endpointSliceInf.HasSynced() && e.serviceInf.HasSynced() && e.podInf.HasSynced()
 }
 
 func (i *Ingress) hasSynced() bool {
