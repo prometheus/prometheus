@@ -55,6 +55,22 @@ type ListOpts struct {
 	// TenantID lists servers for a particular tenant.
 	// Setting "AllTenants = true" is required.
 	TenantID string `q:"tenant_id"`
+
+	// This requires the client to be set to microversion 2.26 or later.
+	// Tags filters on specific server tags. All tags must be present for the server.
+	Tags string `q:"tags"`
+
+	// This requires the client to be set to microversion 2.26 or later.
+	// TagsAny filters on specific server tags. At least one of the tags must be present for the server.
+	TagsAny string `q:"tags-any"`
+
+	// This requires the client to be set to microversion 2.26 or later.
+	// NotTags filters on specific server tags. All tags must be absent for the server.
+	NotTags string `q:"not-tags"`
+
+	// This requires the client to be set to microversion 2.26 or later.
+	// NotTagsAny filters on specific server tags. At least one of the tags must be absent for the server.
+	NotTagsAny string `q:"not-tags-any"`
 }
 
 // ToServerListQuery formats a ListOpts into a query string.

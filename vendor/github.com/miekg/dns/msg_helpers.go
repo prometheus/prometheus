@@ -265,24 +265,36 @@ func unpackString(msg []byte, off int) (string, int, error) {
 		return "", off, &Error{err: "overflow unpacking txt"}
 	}
 	l := int(msg[off])
-	if off+l+1 > len(msg) {
+	off++
+	if off+l > len(msg) {
 		return "", off, &Error{err: "overflow unpacking txt"}
 	}
 	var s strings.Builder
-	s.Grow(l)
-	for _, b := range msg[off+1 : off+1+l] {
+	consumed := 0
+	for i, b := range msg[off : off+l] {
 		switch {
 		case b == '"' || b == '\\':
+			if consumed == 0 {
+				s.Grow(l * 2)
+			}
+			s.Write(msg[off+consumed : off+i])
 			s.WriteByte('\\')
 			s.WriteByte(b)
+			consumed = i + 1
 		case b < ' ' || b > '~': // unprintable
+			if consumed == 0 {
+				s.Grow(l * 2)
+			}
+			s.Write(msg[off+consumed : off+i])
 			s.WriteString(escapeByte(b))
-		default:
-			s.WriteByte(b)
+			consumed = i + 1
 		}
 	}
-	off += 1 + l
-	return s.String(), off, nil
+	if consumed == 0 { // no escaping needed
+		return string(msg[off : off+l]), off + l, nil
+	}
+	s.Write(msg[off+consumed : off+l])
+	return s.String(), off + l, nil
 }
 
 func packString(s string, msg []byte, off int) (int, error) {
@@ -428,6 +440,13 @@ Option:
 		off += int(optlen)
 	case EDNS0COOKIE:
 		e := new(EDNS0_COOKIE)
+		if err := e.unpack(msg[off : off+int(optlen)]); err != nil {
+			return nil, len(msg), err
+		}
+		edns = append(edns, e)
+		off += int(optlen)
+	case EDNS0EXPIRE:
+		e := new(EDNS0_EXPIRE)
 		if err := e.unpack(msg[off : off+int(optlen)]); err != nil {
 			return nil, len(msg), err
 		}
@@ -668,4 +687,124 @@ func packDataDomainNames(names []string, msg []byte, off int, compression compre
 		}
 	}
 	return off, nil
+}
+
+func packDataApl(data []APLPrefix, msg []byte, off int) (int, error) {
+	var err error
+	for i := range data {
+		off, err = packDataAplPrefix(&data[i], msg, off)
+		if err != nil {
+			return len(msg), err
+		}
+	}
+	return off, nil
+}
+
+func packDataAplPrefix(p *APLPrefix, msg []byte, off int) (int, error) {
+	if len(p.Network.IP) != len(p.Network.Mask) {
+		return len(msg), &Error{err: "address and mask lengths don't match"}
+	}
+
+	var err error
+	prefix, _ := p.Network.Mask.Size()
+	addr := p.Network.IP.Mask(p.Network.Mask)[:(prefix+7)/8]
+
+	switch len(p.Network.IP) {
+	case net.IPv4len:
+		off, err = packUint16(1, msg, off)
+	case net.IPv6len:
+		off, err = packUint16(2, msg, off)
+	default:
+		err = &Error{err: "unrecognized address family"}
+	}
+	if err != nil {
+		return len(msg), err
+	}
+
+	off, err = packUint8(uint8(prefix), msg, off)
+	if err != nil {
+		return len(msg), err
+	}
+
+	var n uint8
+	if p.Negation {
+		n = 0x80
+	}
+	adflen := uint8(len(addr)) & 0x7f
+	off, err = packUint8(n|adflen, msg, off)
+	if err != nil {
+		return len(msg), err
+	}
+
+	if off+len(addr) > len(msg) {
+		return len(msg), &Error{err: "overflow packing APL prefix"}
+	}
+	off += copy(msg[off:], addr)
+
+	return off, nil
+}
+
+func unpackDataApl(msg []byte, off int) ([]APLPrefix, int, error) {
+	var result []APLPrefix
+	for off < len(msg) {
+		prefix, end, err := unpackDataAplPrefix(msg, off)
+		if err != nil {
+			return nil, len(msg), err
+		}
+		off = end
+		result = append(result, prefix)
+	}
+	return result, off, nil
+}
+
+func unpackDataAplPrefix(msg []byte, off int) (APLPrefix, int, error) {
+	family, off, err := unpackUint16(msg, off)
+	if err != nil {
+		return APLPrefix{}, len(msg), &Error{err: "overflow unpacking APL prefix"}
+	}
+	prefix, off, err := unpackUint8(msg, off)
+	if err != nil {
+		return APLPrefix{}, len(msg), &Error{err: "overflow unpacking APL prefix"}
+	}
+	nlen, off, err := unpackUint8(msg, off)
+	if err != nil {
+		return APLPrefix{}, len(msg), &Error{err: "overflow unpacking APL prefix"}
+	}
+
+	var ip []byte
+	switch family {
+	case 1:
+		ip = make([]byte, net.IPv4len)
+	case 2:
+		ip = make([]byte, net.IPv6len)
+	default:
+		return APLPrefix{}, len(msg), &Error{err: "unrecognized APL address family"}
+	}
+	if int(prefix) > 8*len(ip) {
+		return APLPrefix{}, len(msg), &Error{err: "APL prefix too long"}
+	}
+
+	afdlen := int(nlen & 0x7f)
+	if (int(prefix)+7)/8 != afdlen {
+		return APLPrefix{}, len(msg), &Error{err: "invalid APL address length"}
+	}
+	if off+afdlen > len(msg) {
+		return APLPrefix{}, len(msg), &Error{err: "overflow unpacking APL address"}
+	}
+	off += copy(ip, msg[off:off+afdlen])
+	if prefix%8 > 0 {
+		last := ip[afdlen-1]
+		zero := uint8(0xff) >> (prefix % 8)
+		if last&zero > 0 {
+			return APLPrefix{}, len(msg), &Error{err: "extra APL address bits"}
+		}
+	}
+
+	return APLPrefix{
+		Negation: (nlen & 0x80) != 0,
+		Network: net.IPNet{
+			IP:   ip,
+			Mask: net.CIDRMask(int(prefix), 8*len(ip)),
+		},
+	}, off, nil
 }

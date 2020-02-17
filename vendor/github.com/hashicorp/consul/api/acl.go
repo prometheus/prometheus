@@ -18,14 +18,13 @@ const (
 	ACLManagementType = "management"
 )
 
-type ACLTokenPolicyLink struct {
+type ACLLink struct {
 	ID   string
 	Name string
 }
-type ACLTokenRoleLink struct {
-	ID   string
-	Name string
-}
+
+type ACLTokenPolicyLink = ACLLink
+type ACLTokenRoleLink = ACLLink
 
 // ACLToken represents an ACL Token
 type ACLToken struct {
@@ -46,6 +45,10 @@ type ACLToken struct {
 	// DEPRECATED (ACL-Legacy-Compat)
 	// Rules will only be present for legacy tokens returned via the new APIs
 	Rules string `json:",omitempty"`
+
+	// Namespace is the namespace the ACLToken is associated with.
+	// Namespaces is a Consul Enterprise feature.
+	Namespace string `json:",omitempty"`
 }
 
 type ACLTokenListEntry struct {
@@ -61,6 +64,10 @@ type ACLTokenListEntry struct {
 	CreateTime        time.Time
 	Hash              []byte
 	Legacy            bool
+
+	// Namespace is the namespace the ACLTokenListEntry is associated with.
+	// Namespacing is a Consul Enterprise feature.
+	Namespace string `json:",omitempty"`
 }
 
 // ACLEntry is used to represent a legacy ACL token
@@ -105,6 +112,10 @@ type ACLPolicy struct {
 	Hash        []byte
 	CreateIndex uint64
 	ModifyIndex uint64
+
+	// Namespace is the namespace the ACLPolicy is associated with.
+	// Namespacing is a Consul Enterprise feature.
+	Namespace string `json:",omitempty"`
 }
 
 type ACLPolicyListEntry struct {
@@ -115,12 +126,13 @@ type ACLPolicyListEntry struct {
 	Hash        []byte
 	CreateIndex uint64
 	ModifyIndex uint64
+
+	// Namespace is the namespace the ACLPolicyListEntry is associated with.
+	// Namespacing is a Consul Enterprise feature.
+	Namespace string `json:",omitempty"`
 }
 
-type ACLRolePolicyLink struct {
-	ID   string
-	Name string
-}
+type ACLRolePolicyLink = ACLLink
 
 // ACLRole represents an ACL Role.
 type ACLRole struct {
@@ -132,6 +144,10 @@ type ACLRole struct {
 	Hash              []byte
 	CreateIndex       uint64
 	ModifyIndex       uint64
+
+	// Namespace is the namespace the ACLRole is associated with.
+	// Namespacing is a Consul Enterprise feature.
+	Namespace string `json:",omitempty"`
 }
 
 // BindingRuleBindType is the type of binding rule mechanism used.
@@ -155,6 +171,10 @@ type ACLBindingRule struct {
 
 	CreateIndex uint64
 	ModifyIndex uint64
+
+	// Namespace is the namespace the ACLBindingRule is associated with.
+	// Namespacing is a Consul Enterprise feature.
+	Namespace string `json:",omitempty"`
 }
 
 type ACLAuthMethod struct {
@@ -169,6 +189,10 @@ type ACLAuthMethod struct {
 
 	CreateIndex uint64
 	ModifyIndex uint64
+
+	// Namespace is the namespace the ACLAuthMethod is associated with.
+	// Namespacing is a Consul Enterprise feature.
+	Namespace string `json:",omitempty"`
 }
 
 type ACLAuthMethodListEntry struct {
@@ -177,6 +201,10 @@ type ACLAuthMethodListEntry struct {
 	Description string
 	CreateIndex uint64
 	ModifyIndex uint64
+
+	// Namespace is the namespace the ACLAuthMethodListEntry is associated with.
+	// Namespacing is a Consul Enterprise feature.
+	Namespace string `json:",omitempty"`
 }
 
 // ParseKubernetesAuthMethodConfig takes a raw config map and returns a parsed

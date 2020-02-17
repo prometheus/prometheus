@@ -52,6 +52,23 @@ func (r1 *ANY) isDuplicate(_r2 RR) bool {
 	return true
 }
 
+func (r1 *APL) isDuplicate(_r2 RR) bool {
+	r2, ok := _r2.(*APL)
+	if !ok {
+		return false
+	}
+	_ = r2
+	if len(r1.Prefixes) != len(r2.Prefixes) {
+		return false
+	}
+	for i := 0; i < len(r1.Prefixes); i++ {
+		if !r1.Prefixes[i].equals(&r2.Prefixes[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 func (r1 *AVC) isDuplicate(_r2 RR) bool {
 	r2, ok := _r2.(*AVC)
 	if !ok {

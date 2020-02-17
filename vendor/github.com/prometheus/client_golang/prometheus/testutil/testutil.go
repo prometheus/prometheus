@@ -108,6 +108,33 @@ func ToFloat64(c prometheus.Collector) float64 {
 	panic(fmt.Errorf("collected a non-gauge/counter/untyped metric: %s", pb))
 }
 
+// CollectAndCount collects all Metrics from the provided Collector and returns their number.
+//
+// This can be used to assert the number of metrics collected by a given collector after certain operations.
+//
+// This function is only for testing purposes, and even for testing, other approaches
+// are often more appropriate (see this package's documentation).
+func CollectAndCount(c prometheus.Collector) int {
+	var (
+		mCount int
+		mChan  = make(chan prometheus.Metric)
+		done   = make(chan struct{})
+	)
+
+	go func() {
+		for range mChan {
+			mCount++
+		}
+		close(done)
+	}()
+
+	c.Collect(mChan)
+	close(mChan)
+	<-done
+
+	return mCount
+}
+
 // CollectAndCompare registers the provided Collector with a newly created
 // pedantic Registry. It then does the same as GatherAndCompare, gathering the
 // metrics from the pedantic Registry.

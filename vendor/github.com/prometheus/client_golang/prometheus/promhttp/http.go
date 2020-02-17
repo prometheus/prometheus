@@ -144,7 +144,12 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) http.Handler {
 			}
 		}
 
-		contentType := expfmt.Negotiate(req.Header)
+		var contentType expfmt.Format
+		if opts.EnableOpenMetrics {
+			contentType = expfmt.NegotiateIncludingOpenMetrics(req.Header)
+		} else {
+			contentType = expfmt.Negotiate(req.Header)
+		}
 		header := rsp.Header()
 		header.Set(contentTypeHeader, string(contentType))
 
@@ -163,22 +168,38 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) http.Handler {
 		enc := expfmt.NewEncoder(w, contentType)
 
 		var lastErr error
+
+		// handleError handles the error according to opts.ErrorHandling
+		// and returns true if we have to abort after the handling.
+		handleError := func(err error) bool {
+			if err == nil {
+				return false
+			}
+			lastErr = err
+			if opts.ErrorLog != nil {
+				opts.ErrorLog.Println("error encoding and sending metric family:", err)
+			}
+			errCnt.WithLabelValues("encoding").Inc()
+			switch opts.ErrorHandling {
+			case PanicOnError:
+				panic(err)
+			case HTTPErrorOnError:
+				httpError(rsp, err)
+				return true
+			}
+			// Do nothing in all other cases, including ContinueOnError.
+			return false
+		}
+
 		for _, mf := range mfs {
-			if err := enc.Encode(mf); err != nil {
-				lastErr = err
-				if opts.ErrorLog != nil {
-					opts.ErrorLog.Println("error encoding and sending metric family:", err)
-				}
-				errCnt.WithLabelValues("encoding").Inc()
-				switch opts.ErrorHandling {
-				case PanicOnError:
-					panic(err)
-				case ContinueOnError:
-					// Handled later.
-				case HTTPErrorOnError:
-					httpError(rsp, err)
-					return
-				}
+			if handleError(enc.Encode(mf)) {
+				return
+			}
+		}
+		if closer, ok := enc.(expfmt.Closer); ok {
+			// This in particular takes care of the final "# EOF\n" line for OpenMetrics.
+			if handleError(closer.Close()) {
+				return
 			}
 		}
 
@@ -318,6 +339,16 @@ type HandlerOpts struct {
 	// away). Until the implementation is improved, it is recommended to
 	// implement a separate timeout in potentially slow Collectors.
 	Timeout time.Duration
+	// If true, the experimental OpenMetrics encoding is added to the
+	// possible options during content negotiation. Note that Prometheus
+	// 2.5.0+ will negotiate OpenMetrics as first priority. OpenMetrics is
+	// the only way to transmit exemplars. However, the move to OpenMetrics
+	// is not completely transparent. Most notably, the values of "quantile"
+	// labels of Summaries and "le" labels of Histograms are formatted with
+	// a trailing ".0" if they would otherwise look like integer numbers
+	// (which changes the identity of the resulting series on the Prometheus
+	// server).
+	EnableOpenMetrics bool
 }
 
 // gzipAccepted returns whether the client will accept gzip-encoded content.

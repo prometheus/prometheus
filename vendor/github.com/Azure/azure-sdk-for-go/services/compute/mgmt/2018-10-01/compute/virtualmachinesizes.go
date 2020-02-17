@@ -36,7 +36,9 @@ func NewVirtualMachineSizesClient(subscriptionID string) VirtualMachineSizesClie
 	return NewVirtualMachineSizesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewVirtualMachineSizesClientWithBaseURI creates an instance of the VirtualMachineSizesClient client.
+// NewVirtualMachineSizesClientWithBaseURI creates an instance of the VirtualMachineSizesClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewVirtualMachineSizesClientWithBaseURI(baseURI string, subscriptionID string) VirtualMachineSizesClient {
 	return VirtualMachineSizesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -106,8 +108,8 @@ func (client VirtualMachineSizesClient) ListPreparer(ctx context.Context, locati
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineSizesClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListResponder handles the response to the List request. The method always

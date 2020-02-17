@@ -144,7 +144,7 @@ func (e ErrCode) toError() error {
 	if err, ok := errCodeToError[e]; ok {
 		return err
 	}
-	return errors.New(fmt.Sprintf("unknown error: %v", e))
+	return fmt.Errorf("unknown error: %v", e)
 }
 
 const (

@@ -40,7 +40,8 @@ jobs:
           # likely to get OOMed and killed.
           GOOPTS: "-p 2"
           GOMAXPROCS: "2"
-    - prometheus/check_proto
+    - prometheus/check_proto:
+        version: "3.11.4"
     - prometheus/store_artifact:
         file: prometheus
     - prometheus/store_artifact:

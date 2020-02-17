@@ -84,7 +84,7 @@ func (c *Coordinate) Update(coord *CoordinateEntry, q *WriteOptions) (*WriteMeta
 	return wm, nil
 }
 
-// Node is used to return the coordinates of a single in the LAN pool.
+// Node is used to return the coordinates of a single node in the LAN pool.
 func (c *Coordinate) Node(node string, q *QueryOptions) ([]*CoordinateEntry, *QueryMeta, error) {
 	r := c.c.newRequest("GET", "/v1/coordinate/node/"+node)
 	r.setQueryOptions(q)
