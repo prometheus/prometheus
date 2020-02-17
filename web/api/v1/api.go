@@ -205,7 +205,7 @@ func NewAPI(
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
-	option GlobalURLOptions,
+	globalURLOptions GlobalURLOptions,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() TSDBAdmin,
 	enableAdmin bool,
@@ -228,7 +228,7 @@ func NewAPI(
 		config:                    configFunc,
 		flagsMap:                  flagsMap,
 		ready:                     readyFunc,
-		globalURLOptions:          option,
+		globalURLOptions:          globalURLOptions,
 		db:                        db,
 		enableAdmin:               enableAdmin,
 		rulesRetriever:            rr,
@@ -631,9 +631,20 @@ func getGlobalURL(u *url.URL, opts GlobalURLOptions) (*url.URL, error) {
 			}
 
 			if port == ownPort {
+				// Only in the case where the target is on localhost and its port is
+				// the same as the one we're listening on, we know for sure that
+				// we're monitoring our own process and that we need to change the
+				// scheme, hostname, and port to the externally reachable ones as
+				// well. We shouldn't need to touch the path at all, since if a
+				// path prefix is defined, the path under which we scrape ourselves
+				// should already contain the prefix.
 				u.Scheme = opts.Scheme
 				u.Host = opts.Host
 			} else {
+				// Otherwise, we only know that localhost is not reachable
+				// externally, so we replace only the hostname by the one in the
+				// external URL. It could be the wrong hostname for the service on
+				// this port, but it's still the best possible guess.
 				host, _, err := net.SplitHostPort(opts.Host)
 				if err != nil {
 					return u, err

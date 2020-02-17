@@ -402,7 +402,6 @@ func TestDebugHandler(t *testing.T) {
 				Scheme: "http",
 			},
 		}
-		fmt.Println("opts is ", opts)
 		handler := New(nil, opts)
 		handler.Ready()
 
