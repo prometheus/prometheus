@@ -1154,7 +1154,7 @@ func TestQueryLogger_basic(t *testing.T) {
 		testutil.Ok(t, res.Err)
 	}
 
-	// Query works without query log initalized.
+	// Query works without query log initialized.
 	queryExec()
 
 	f1 := NewFakeQueryLogger()

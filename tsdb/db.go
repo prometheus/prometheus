@@ -91,7 +91,7 @@ type Options struct {
 	// WALCompression will turn on Snappy compression for records on the WAL.
 	WALCompression bool
 
-	// StripeSize is the size in entries of the series hash map. Reducing the size will save memory but impact perfomance.
+	// StripeSize is the size in entries of the series hash map. Reducing the size will save memory but impact performance.
 	StripeSize int
 }
 
