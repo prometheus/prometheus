@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -79,12 +80,15 @@ const (
 	errorNotFound    errorType = "not_found"
 )
 
-var remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
-	Namespace: namespace,
-	Subsystem: subsystem,
-	Name:      "remote_read_queries",
-	Help:      "The current number of remote read queries being executed or waiting.",
-})
+var (
+	LocalhostRepresentations = []string{"127.0.0.1", "localhost"}
+	remoteReadQueries        = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "remote_read_queries",
+		Help:      "The current number of remote read queries being executed or waiting.",
+	})
+)
 
 type apiError struct {
 	typ errorType
@@ -175,6 +179,7 @@ type API struct {
 	config                func() config.Config
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
+	globalURLOptions      GlobalURLOptions
 
 	db                        func() TSDBAdmin
 	enableAdmin               bool
@@ -200,6 +205,7 @@ func NewAPI(
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
+	globalURLOptions GlobalURLOptions,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() TSDBAdmin,
 	enableAdmin bool,
@@ -222,6 +228,7 @@ func NewAPI(
 		config:                    configFunc,
 		flagsMap:                  flagsMap,
 		ready:                     readyFunc,
+		globalURLOptions:          globalURLOptions,
 		db:                        db,
 		enableAdmin:               enableAdmin,
 		rulesRetriever:            rr,
@@ -583,6 +590,7 @@ type Target struct {
 
 	ScrapePool string `json:"scrapePool"`
 	ScrapeURL  string `json:"scrapeUrl"`
+	GlobalURL  string `json:"globalUrl"`
 
 	LastError          string              `json:"lastError"`
 	LastScrape         time.Time           `json:"lastScrape"`
@@ -600,6 +608,54 @@ type DroppedTarget struct {
 type TargetDiscovery struct {
 	ActiveTargets  []*Target        `json:"activeTargets"`
 	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
+}
+
+// GlobalURLOptions contains fields used for deriving the global URL for local targets.
+type GlobalURLOptions struct {
+	ListenAddress string
+	Host          string
+	Scheme        string
+}
+
+func getGlobalURL(u *url.URL, opts GlobalURLOptions) (*url.URL, error) {
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		return u, err
+	}
+
+	for _, lhr := range LocalhostRepresentations {
+		if host == lhr {
+			_, ownPort, err := net.SplitHostPort(opts.ListenAddress)
+			if err != nil {
+				return u, err
+			}
+
+			if port == ownPort {
+				// Only in the case where the target is on localhost and its port is
+				// the same as the one we're listening on, we know for sure that
+				// we're monitoring our own process and that we need to change the
+				// scheme, hostname, and port to the externally reachable ones as
+				// well. We shouldn't need to touch the path at all, since if a
+				// path prefix is defined, the path under which we scrape ourselves
+				// should already contain the prefix.
+				u.Scheme = opts.Scheme
+				u.Host = opts.Host
+			} else {
+				// Otherwise, we only know that localhost is not reachable
+				// externally, so we replace only the hostname by the one in the
+				// external URL. It could be the wrong hostname for the service on
+				// this port, but it's still the best possible guess.
+				host, _, err := net.SplitHostPort(opts.Host)
+				if err != nil {
+					return u, err
+				}
+				u.Host = host + ":" + port
+			}
+			break
+		}
+	}
+
+	return u, nil
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
@@ -641,12 +697,22 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 					lastErrStr = lastErr.Error()
 				}
 
+				globalURL, err := getGlobalURL(target.URL(), api.globalURLOptions)
+
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
-					DiscoveredLabels:   target.DiscoveredLabels().Map(),
-					Labels:             target.Labels().Map(),
-					ScrapePool:         key,
-					ScrapeURL:          target.URL().String(),
-					LastError:          lastErrStr,
+					DiscoveredLabels: target.DiscoveredLabels().Map(),
+					Labels:           target.Labels().Map(),
+					ScrapePool:       key,
+					ScrapeURL:        target.URL().String(),
+					GlobalURL:        globalURL.String(),
+					LastError: func() string {
+						if err == nil && lastErrStr == "" {
+							return ""
+						} else if err != nil {
+							return errors.Wrapf(err, lastErrStr).Error()
+						}
+						return lastErrStr
+					}(),
 					LastScrape:         target.LastScrape(),
 					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
 					Health:             target.Health(),

@@ -70,24 +70,20 @@ import (
 	"github.com/prometheus/prometheus/web/ui"
 )
 
-var (
-	localhostRepresentations = []string{"127.0.0.1", "localhost"}
-
-	// Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
-	reactRouterPaths = []string{
-		"/",
-		"/alerts",
-		"/config",
-		"/flags",
-		"/graph",
-		"/rules",
-		"/service-discovery",
-		"/status",
-		"/targets",
-		"/tsdb-status",
-		"/version",
-	}
-)
+// Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
+var reactRouterPaths = []string{
+	"/",
+	"/alerts",
+	"/config",
+	"/flags",
+	"/graph",
+	"/rules",
+	"/service-discovery",
+	"/status",
+	"/targets",
+	"/tsdb-status",
+	"/version",
+}
 
 // withStackTrace logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
@@ -300,6 +296,11 @@ func New(logger log.Logger, o *Options) *Handler {
 			return *h.config
 		},
 		o.Flags,
+		api_v1.GlobalURLOptions{
+			ListenAddress: o.ListenAddress,
+			Host:          o.ExternalURL.Host,
+			Scheme:        o.ExternalURL.Scheme,
+		},
 		h.testReady,
 		func() api_v1.TSDBAdmin {
 			return h.options.TSDB()
@@ -973,7 +974,7 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			if err != nil {
 				return u
 			}
-			for _, lhr := range localhostRepresentations {
+			for _, lhr := range api_v1.LocalhostRepresentations {
 				if host == lhr {
 					_, ownPort, err := net.SplitHostPort(opts.ListenAddress)
 					if err != nil {

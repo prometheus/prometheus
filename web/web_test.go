@@ -305,7 +305,11 @@ func TestRoutePrefix(t *testing.T) {
 		Notifier:       nil,
 		RoutePrefix:    "/prometheus",
 		EnableAdminAPI: true,
-		TSDB:           func() *libtsdb.DB { return db },
+		ExternalURL: &url.URL{
+			Host:   "localhost.localdomain:9090",
+			Scheme: "http",
+		},
+		TSDB: func() *libtsdb.DB { return db },
 	}
 
 	opts.Flags = map[string]string{}
@@ -391,7 +395,12 @@ func TestDebugHandler(t *testing.T) {
 		{"/foo", "/bar/debug/pprof/goroutine", 404},
 	} {
 		opts := &Options{
-			RoutePrefix: tc.prefix,
+			RoutePrefix:   tc.prefix,
+			ListenAddress: "somehost:9090",
+			ExternalURL: &url.URL{
+				Host:   "localhost.localdomain:9090",
+				Scheme: "http",
+			},
 		}
 		handler := New(nil, opts)
 		handler.Ready()
@@ -411,7 +420,14 @@ func TestDebugHandler(t *testing.T) {
 func TestHTTPMetrics(t *testing.T) {
 	t.Parallel()
 
-	handler := New(nil, &Options{RoutePrefix: "/"})
+	handler := New(nil, &Options{
+		RoutePrefix:   "/",
+		ListenAddress: "somehost:9090",
+		ExternalURL: &url.URL{
+			Host:   "localhost.localdomain:9090",
+			Scheme: "http",
+		},
+	})
 	getReady := func() int {
 		t.Helper()
 		w := httptest.NewRecorder()
