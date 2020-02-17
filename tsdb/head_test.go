@@ -1408,5 +1408,127 @@ func TestHeadSeriesWithTimeBoundaries(t *testing.T) {
 		testutil.Equals(t, c.samplesCount, samplesCount, "test samples %d", i)
 		q.Close()
 	}
+}
 
+func TestMemSeriesIsolation(t *testing.T) {
+	// Put a series, select it. GC it and then access it.
+	hb, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer hb.Close()
+
+	lastValue := func(maxWriteId uint64) int {
+		idx, err := hb.Index()
+		testutil.Ok(t, err)
+
+		iso := hb.iso.State()
+		iso.maxWriteID = maxWriteId
+
+		querier := &blockQuerier{
+			mint:       0,
+			maxt:       10000,
+			index:      idx,
+			chunks:     hb.chunksRange(math.MinInt64, math.MaxInt64, iso),
+			tombstones: emptyTombstoneReader,
+		}
+
+		testutil.Ok(t, err)
+		defer querier.Close()
+
+		ss, err := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+		testutil.Ok(t, err)
+
+		seriesSet := readSeriesSet(t, ss)
+		for _, series := range seriesSet {
+			return int(series[len(series)-1].v)
+		}
+		return -1
+	}
+
+	i := 0
+	for ; i <= 1000; i++ {
+		var app Appender
+		// To initialise bounds.
+		if hb.MinTime() == math.MinInt64 {
+			app = &initAppender{head: hb, writeID: uint64(i), cleanupWriteIDsBelow: 0}
+		} else {
+			app = hb.appender(uint64(i), 0)
+		}
+
+		_, err := app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+		testutil.Ok(t, err, "Failed to add sample")
+		testutil.Ok(t, app.Commit(), "Unexpected error committing appender")
+	}
+
+	// Test simple cases in different chunks when no writeId cleanup has been performed.
+	testutil.Equals(t, 10, lastValue(10))
+	testutil.Equals(t, 130, lastValue(130))
+	testutil.Equals(t, 160, lastValue(160))
+	testutil.Equals(t, 240, lastValue(240))
+	testutil.Equals(t, 500, lastValue(500))
+	testutil.Equals(t, 750, lastValue(750))
+	testutil.Equals(t, 995, lastValue(995))
+	testutil.Equals(t, 999, lastValue(999))
+
+	// Cleanup writeIds below 500.
+	app := hb.appender(uint64(i), 500)
+	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	testutil.Ok(t, err, "Failed to add sample")
+	testutil.Ok(t, app.Commit(), "Unexpected error committing appender")
+	i++
+
+	// We should not get queries with a maxWriteId below 500 after the cleanup,
+	// but they only take the remaining writeIds into account.
+	testutil.Equals(t, 499, lastValue(10))
+	testutil.Equals(t, 499, lastValue(130))
+	testutil.Equals(t, 499, lastValue(160))
+	testutil.Equals(t, 499, lastValue(240))
+	testutil.Equals(t, 500, lastValue(500))
+	testutil.Equals(t, 995, lastValue(995))
+	testutil.Equals(t, 999, lastValue(999))
+
+	// Cleanup writeIds below 1000, which means the sample buffer is
+	// the only thing with writeIds.
+	app = hb.appender(uint64(i), 1000)
+	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	testutil.Ok(t, err, "Failed to add sample")
+	testutil.Ok(t, app.Commit(), "Unexpected error committing appender")
+	i++
+	testutil.Equals(t, 999, lastValue(998))
+	testutil.Equals(t, 999, lastValue(999))
+	testutil.Equals(t, 1000, lastValue(1000))
+	testutil.Equals(t, 1001, lastValue(1001))
+	testutil.Equals(t, 1002, lastValue(1002))
+	testutil.Equals(t, 1002, lastValue(1003))
+}
+
+func TestHead_Truncate_WriteIDs(t *testing.T) {
+	h, err := NewHead(nil, nil, nil, 1000)
+	testutil.Ok(t, err)
+	defer h.Close()
+
+	h.initTime(0)
+
+	s1, _ := h.getOrCreate(1, labels.FromStrings("a", "1", "b", "1"))
+
+	chk := chunkenc.NewXORChunk()
+	app, err := chk.Appender()
+	testutil.Ok(t, err)
+
+	app.Append(1, 0)
+	app.Append(2, 0)
+	app.Append(3, 0)
+
+	s1.chunks = []*memChunk{
+		{minTime: 0, maxTime: 999, chunk: chk},
+		{minTime: 1000, maxTime: 1999, chunk: chk},
+	}
+
+	s1.txs.txIDs = []uint64{2, 3, 4, 5, 0, 0, 0, 1}
+	s1.txs.txIDFirst = 7
+	s1.txs.txIDCount = 5
+
+	testutil.Ok(t, h.Truncate(1000))
+	testutil.Equals(t, []uint64{3, 4, 5, 0}, s1.txs.txIDs)
+	testutil.Equals(t, 0, s1.txs.txIDFirst)
+	testutil.Equals(t, 3, s1.txs.txIDCount)
 }

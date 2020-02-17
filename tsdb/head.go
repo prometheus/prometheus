@@ -81,18 +81,18 @@ type Head struct {
 
 	symMtx  sync.RWMutex
 	symbols map[string]struct{}
-	values  map[string]stringset // label names to possible values
+	values  map[string]stringset // Label names to possible values.
 
 	deletedMtx sync.Mutex
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
-	postings *index.MemPostings // postings lists for terms
+	postings *index.MemPostings // Postings lists for terms.
 
 	tombstones *tombstones.MemTombstones
 
 	cardinalityMutex      sync.Mutex
-	cardinalityCache      *index.PostingsStats // posting stats cache which will expire after 30sec
-	lastPostingsStatsCall time.Duration        // last posting stats call (PostingsCardinalityStats()) time for caching
+	cardinalityCache      *index.PostingsStats // Posting stats cache which will expire after 30sec.
+	lastPostingsStatsCall time.Duration        // Last posting stats call (PostingsCardinalityStats()) time for caching.
 }
 
 type headMetrics struct {
