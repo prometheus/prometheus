@@ -38,7 +38,6 @@ import (
 	template_text "text/template"
 	"time"
 
-	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
@@ -52,6 +51,7 @@ import (
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
 	"github.com/prometheus/prometheus/tsdb"
+	tsdbconfig "github.com/prometheus/prometheus/tsdb/config"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/soheilhy/cmux"
 	"golang.org/x/net/netutil"
@@ -209,39 +209,11 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
-// TSDBOptions is tsdb.Option version with defined units.
-// This is required as tsdb.Option fields are unit agnostic (time).
-type TSDBOptions struct {
-	WALSegmentSize         units.Base2Bytes
-	RetentionDuration      model.Duration
-	MaxBytes               units.Base2Bytes
-	NoLockfile             bool
-	AllowOverlappingBlocks bool
-	WALCompression         bool
-	StripeSize             int
-	MinBlockDuration       model.Duration
-	MaxBlockDuration       model.Duration
-}
-
-func (opts TSDBOptions) ToTSDBOptions() tsdb.Options {
-	return tsdb.Options{
-		WALSegmentSize:         int(opts.WALSegmentSize),
-		RetentionDuration:      int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
-		MaxBytes:               int64(opts.MaxBytes),
-		NoLockfile:             opts.NoLockfile,
-		AllowOverlappingBlocks: opts.AllowOverlappingBlocks,
-		WALCompression:         opts.WALCompression,
-		StripeSize:             opts.StripeSize,
-		MinBlockDuration:       int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
-		MaxBlockDuration:       int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
-	}
-}
-
 // Options for the web Handler.
 type Options struct {
 	Context       context.Context
 	TSDB          func() *tsdb.DB
-	TSDBCfg       TSDBOptions
+	TSDBCfg       tsdbconfig.Options
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
 	LookbackDelta time.Duration

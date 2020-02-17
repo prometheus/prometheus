@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/version"
+	tsdbconfig "github.com/prometheus/prometheus/tsdb/config"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
@@ -106,7 +107,7 @@ func main() {
 		outageTolerance     model.Duration
 		resendDelay         model.Duration
 		web                 web.Options
-		tsdb                web.TSDBOptions
+		tsdb                tsdbconfig.Options
 		lookbackDelta       model.Duration
 		webTimeout          model.Duration
 		queryTimeout        model.Duration
