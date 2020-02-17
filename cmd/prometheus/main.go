@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
@@ -49,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
@@ -335,7 +337,7 @@ func main() {
 	level.Info(logger).Log("vm_limits", prom_runtime.VmLimits())
 
 	var (
-		localStorage  = &tsdb.ReadyStorage{}
+		localStorage  = &readyStorage{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline))
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
@@ -889,4 +891,89 @@ func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 			s.Send(res...)
 		}
 	}
+}
+
+// readyStorage implements the Storage interface while allowing to set the actual
+// storage at a later point in time.
+type readyStorage struct {
+	mtx             sync.RWMutex
+	db              *tsdb.DB
+	startTimeMargin int64
+}
+
+// Set the storage.
+func (s *readyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	s.db = db
+	s.startTimeMargin = startTimeMargin
+}
+
+// Get the storage.
+func (s *readyStorage) Get() *tsdb.DB {
+	if x := s.get(); x != nil {
+		return x
+	}
+	return nil
+}
+
+func (s *readyStorage) get() *tsdb.DB {
+	s.mtx.RLock()
+	x := s.db
+	s.mtx.RUnlock()
+	return x
+}
+
+// StartTime implements the Storage interface.
+func (s *readyStorage) StartTime() (int64, error) {
+	if x := s.get(); x != nil {
+		var startTime int64
+
+		if len(x.Blocks()) > 0 {
+			startTime = x.Blocks()[0].Meta().MinTime
+		} else {
+			startTime = time.Now().Unix() * 1000
+		}
+		// Add a safety margin as it may take a few minutes for everything to spin up.
+		return startTime + s.startTimeMargin, nil
+	}
+
+	return math.MaxInt64, tsdb.ErrNotReady
+}
+
+// Querier implements the Storage interface.
+func (s *readyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	if x := s.get(); x != nil {
+		return x.Querier(ctx, mint, maxt)
+	}
+	return nil, tsdb.ErrNotReady
+}
+
+// Appender implements the Storage interface.
+func (s *readyStorage) Appender() storage.Appender {
+	if x := s.get(); x != nil {
+		return x.Appender()
+	}
+	return notReadyAppender{}
+}
+
+type notReadyAppender struct{}
+
+func (n notReadyAppender) Add(l labels.Labels, t int64, v float64) (uint64, error) {
+	return 0, tsdb.ErrNotReady
+}
+
+func (n notReadyAppender) AddFast(ref uint64, t int64, v float64) error { return tsdb.ErrNotReady }
+
+func (n notReadyAppender) Commit() error { return tsdb.ErrNotReady }
+
+func (n notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
+
+// Close implements the Storage interface.
+func (s *readyStorage) Close() error {
+	if x := s.Get(); x != nil {
+		return x.Close()
+	}
+	return nil
 }

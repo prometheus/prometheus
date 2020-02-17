@@ -28,7 +28,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
@@ -106,7 +105,7 @@ func TestReadyAndHealthy(t *testing.T) {
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
-		Storage:        &tsdb.ReadyStorage{},
+		Storage:        nil,
 		QueryEngine:    nil,
 		ScrapeManager:  &scrape.Manager{},
 		RuleManager:    &rules.Manager{},
@@ -297,7 +296,7 @@ func TestRoutePrefix(t *testing.T) {
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
-		Storage:        &tsdb.ReadyStorage{},
+		Storage:        nil,
 		QueryEngine:    nil,
 		ScrapeManager:  nil,
 		RuleManager:    nil,
