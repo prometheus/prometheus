@@ -27,9 +27,9 @@ import (
 
 func TestHeadReadWriter_WriteChunk(t *testing.T) {
 	hrw, close := testHeadReadWriter(t)
-	defer close()
 	defer func() {
 		testutil.Ok(t, hrw.Close())
+		close()
 	}()
 
 	expectedBytes := []byte{}
@@ -90,9 +90,9 @@ func TestHeadReadWriter_WriteChunk(t *testing.T) {
 
 func TestHeadReadWriter_ReadChunk(t *testing.T) {
 	hrw, close := testHeadReadWriter(t)
-	defer close()
 	defer func() {
 		testutil.Ok(t, hrw.Close())
+		close()
 	}()
 
 	type expectedDataType struct {
@@ -202,9 +202,9 @@ func TestHeadReadWriter_IterateChunks(t *testing.T) {
 
 func TestHeadReadWriter_Truncate(t *testing.T) {
 	hrw, close := testHeadReadWriter(t)
-	defer close()
 	defer func() {
 		testutil.Ok(t, hrw.Close())
+		close()
 	}()
 
 	var timeToTruncate int64

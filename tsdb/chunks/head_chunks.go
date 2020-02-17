@@ -73,7 +73,7 @@ type HeadReadWriter struct {
 	inBufferChunks      [inBufferShards]map[uint64]chunkenc.Chunk
 	inBufferChunksLocks [inBufferShards]sync.RWMutex
 
-	// Reader
+	// Reader.
 	bs map[int]ByteSlice
 	cs map[int]io.Closer // Closers for resources behind the byte slices.
 
