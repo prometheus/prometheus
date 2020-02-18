@@ -32,6 +32,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
@@ -41,7 +42,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/version"
-	tsdbconfig "github.com/prometheus/prometheus/tsdb/config"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
@@ -109,7 +109,7 @@ func main() {
 		outageTolerance     model.Duration
 		resendDelay         model.Duration
 		web                 web.Options
-		tsdb                tsdbconfig.Options
+		tsdb                tsdbOptions
 		lookbackDelta       model.Duration
 		webTimeout          model.Duration
 		queryTimeout        model.Duration
@@ -384,12 +384,13 @@ func main() {
 
 	cfg.web.Context = ctxWeb
 	cfg.web.TSDB = localStorage.Get
+	cfg.web.TSDBRetentionDuration = cfg.tsdb.RetentionDuration
+	cfg.web.TSDBMaxBytes = cfg.tsdb.MaxBytes
 	cfg.web.Storage = fanoutStorage
 	cfg.web.QueryEngine = queryEngine
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
-	cfg.web.TSDBCfg = cfg.tsdb
 	cfg.web.LookbackDelta = time.Duration(cfg.lookbackDelta)
 
 	cfg.web.Version = &web.PrometheusVersion{
@@ -976,4 +977,32 @@ func (s *readyStorage) Close() error {
 		return x.Close()
 	}
 	return nil
+}
+
+// tsdbOptions is tsdb.Option version with defined units.
+// This is required as tsdb.Option fields are unit agnostic (time).
+type tsdbOptions struct {
+	WALSegmentSize         units.Base2Bytes
+	RetentionDuration      model.Duration
+	MaxBytes               units.Base2Bytes
+	NoLockfile             bool
+	AllowOverlappingBlocks bool
+	WALCompression         bool
+	StripeSize             int
+	MinBlockDuration       model.Duration
+	MaxBlockDuration       model.Duration
+}
+
+func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
+	return tsdb.Options{
+		WALSegmentSize:         int(opts.WALSegmentSize),
+		RetentionDuration:      int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
+		MaxBytes:               int64(opts.MaxBytes),
+		NoLockfile:             opts.NoLockfile,
+		AllowOverlappingBlocks: opts.AllowOverlappingBlocks,
+		WALCompression:         opts.WALCompression,
+		StripeSize:             opts.StripeSize,
+		MinBlockDuration:       int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
+		MaxBlockDuration:       int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
+	}
 }

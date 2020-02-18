@@ -38,6 +38,7 @@ import (
 	template_text "text/template"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
@@ -51,7 +52,6 @@ import (
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
 	"github.com/prometheus/prometheus/tsdb"
-	tsdbconfig "github.com/prometheus/prometheus/tsdb/config"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/soheilhy/cmux"
 	"golang.org/x/net/netutil"
@@ -211,17 +211,18 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 
 // Options for the web Handler.
 type Options struct {
-	Context       context.Context
-	TSDB          func() *tsdb.DB
-	TSDBCfg       tsdbconfig.Options
-	Storage       storage.Storage
-	QueryEngine   *promql.Engine
-	LookbackDelta time.Duration
-	ScrapeManager *scrape.Manager
-	RuleManager   *rules.Manager
-	Notifier      *notifier.Manager
-	Version       *PrometheusVersion
-	Flags         map[string]string
+	Context               context.Context
+	TSDB                  func() *tsdb.DB
+	TSDBRetentionDuration model.Duration
+	TSDBMaxBytes          units.Base2Bytes
+	Storage               storage.Storage
+	QueryEngine           *promql.Engine
+	LookbackDelta         time.Duration
+	ScrapeManager         *scrape.Manager
+	RuleManager           *rules.Manager
+	Notifier              *notifier.Manager
+	Version               *PrometheusVersion
+	Flags                 map[string]string
 
 	ListenAddress              string
 	CORSOrigin                 *regexp.Regexp
@@ -757,14 +758,14 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		GODEBUG:        os.Getenv("GODEBUG"),
 	}
 
-	if h.options.TSDBCfg.RetentionDuration != 0 {
-		status.StorageRetention = h.options.TSDBCfg.RetentionDuration.String()
+	if h.options.TSDBRetentionDuration != 0 {
+		status.StorageRetention = h.options.TSDBRetentionDuration.String()
 	}
-	if h.options.TSDBCfg.MaxBytes != 0 {
+	if h.options.TSDBMaxBytes != 0 {
 		if status.StorageRetention != "" {
 			status.StorageRetention = status.StorageRetention + " or "
 		}
-		status.StorageRetention = status.StorageRetention + h.options.TSDBCfg.MaxBytes.String()
+		status.StorageRetention = status.StorageRetention + h.options.TSDBMaxBytes.String()
 	}
 
 	metrics, err := h.gatherer.Gather()
@@ -807,14 +808,14 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 		GODEBUG:        os.Getenv("GODEBUG"),
 	}
 
-	if h.options.TSDBCfg.RetentionDuration != 0 {
-		status.StorageRetention = h.options.TSDBCfg.RetentionDuration.String()
+	if h.options.TSDBRetentionDuration != 0 {
+		status.StorageRetention = h.options.TSDBRetentionDuration.String()
 	}
-	if h.options.TSDBCfg.MaxBytes != 0 {
+	if h.options.TSDBMaxBytes != 0 {
 		if status.StorageRetention != "" {
 			status.StorageRetention = status.StorageRetention + " or "
 		}
-		status.StorageRetention = status.StorageRetention + h.options.TSDBCfg.MaxBytes.String()
+		status.StorageRetention = status.StorageRetention + h.options.TSDBMaxBytes.String()
 	}
 
 	metrics, err := h.gatherer.Gather()
