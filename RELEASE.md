@@ -77,12 +77,9 @@ later follow-up.
 
 ### 1. Prepare your release
 
-Create a new release branch.
+For a new major or minor release, create the corresponding release branch based on the master branch. Note that a new a new release branch in `origin` is only necessary if there is not already one for this <major>.<minor> version. For example if we're releasing 2.17.0 and the previous stable release is 2.16.0 we need to create a `release-2.17` branch. Patch release don't require their own `release-<major>.<minor>.<patch>, and the same for release candidate versions.
 
-For a patch release, work in the branch of the minor release you want to patch. So for 2.16.1, create a new branch off of 2.16.0.
-
-For a new major or minor release, create the corresponding release branch based on the master branch.
-** Note: ** this means that for a release candidate you should create the non-release candidate branch (release-2.16) and merge the RC versions (ex: cut-v2.16.0-rc.0) into it as you go.
+For a patch release or release candidate any changes should be merged into the previously mentioned release branch. So for `2.16.1` or `2.16.0-rc.1` create a new branch off of `release-2.16` and open a PR with the necessary bug/regression fix.
 
 Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to the changelog in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
 
@@ -114,11 +111,11 @@ Signing a tag with a GPG key is appreciated, but in case you can't add a GPG key
 Once a tag is created, the release process through CircleCI will be triggered for this tag and Circle CI will draft the GitHub release using the `prombot` account.
 
 Finally, wait for the build step for the tag to finish. The point here is to wait for tarballs to be uploaded to the Github release and the container images to be pushed to the Docker Hub and Quay.io. Once that has happened, click _Publish release_, which will make the release publicly visible and create a GitHub notification.
-** Note: ** for a release candidate version the _This is a pre-release_ box when drafting the release in the Github UI.
+** Note: ** for a release candidate version ensure the _This is a pre-release_ box is checked when drafting the release in the Github UI. The CI job should take care of this but it's a good idea to double check before clicking _Publish release_.`
 
 ### 3. Wrapping up
 
-For release candidate versions, run the benchmark for 3 days using the `/prombench vX.Y.Z` command, `vX.Y.Z` being the latest stable patch release's tag of the previous minor release series, such as `v2.15.2`
+For release candidate versions (`v2.16.0-rc.0`), run the benchmark for 3 days using the `/prombench vX.Y.Z` command, `vX.Y.Z` being the latest stable patch release's tag of the previous minor release series, such as `v2.15.2`.
 
 If the release has happened in the latest release branch, merge the changes into master.
 
