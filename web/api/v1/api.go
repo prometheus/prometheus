@@ -484,6 +484,30 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 	if !model.LabelNameRE.MatchString(name) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
+
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
+	}
+
+	if len(r.Form["match[]"]) > 0 {
+		res := api.series(r)
+		if res.err != nil {
+			return apiFuncResult{nil, &apiError{errorExec, res.err}, nil, nil}
+		}
+		result := make(map[string][]string)
+		switch data := res.data.(type) {
+			case []labels.Labels:
+				for _, labels := range data {
+					label := labels.Get(name)
+					if len(label) > 0 && result[label] == nil {
+						result[name] = append(result[name], label)
+						result[label] = result[name] // Prevent duplicates.
+					}
+				}
+				return apiFuncResult{result[name], nil, res.warnings, nil}
+		}
+	}
+
 	q, err := api.Queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
