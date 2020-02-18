@@ -1113,7 +1113,7 @@ loop:
 		ce, ok := sl.cache.get(yoloString(met))
 		if ok {
 			if exemplarExists && isExemplarApp {
-				err = exemplarApp.AddFastWithExemplar(ce.lset, e, ce.ref, t, v)
+				err = exemplarApp.AddFastWithExemplar(e, ce.ref, t, v)
 			} else {
 				err = app.AddFast(ce.ref, t, v)
 			}

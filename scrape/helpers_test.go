@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -87,3 +88,108 @@ func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64
 
 func (a *collectResultAppender) Commit() error   { return nil }
 func (a *collectResultAppender) Rollback() error { return nil }
+
+type sampleWithExemplar struct {
+	sample
+	e exemplar.Exemplar
+}
+
+// collectResultExemplarAppender records all samples that were added through the appender.
+// It can be used as its zero value or be backed by another appender it writes samples through.
+type collectResultExemplarAppender struct {
+	next   storage.ExemplarAppender
+	result []sampleWithExemplar
+
+	mapper map[uint64]labels.Labels
+}
+
+func (a *collectResultExemplarAppender) AddFast(ref uint64, t int64, v float64) error {
+	if a.next == nil {
+		return storage.ErrNotFound
+	}
+
+	err := a.next.AddFast(ref, t, v)
+	if err != nil {
+		return err
+	}
+	a.result = append(a.result, sampleWithExemplar{
+		sample: sample{
+			metric: a.mapper[ref],
+			t:      t,
+			v:      v,
+		},
+	})
+	return err
+}
+
+func (a *collectResultExemplarAppender) Add(m labels.Labels, t int64, v float64) (uint64, error) {
+	a.result = append(a.result, sampleWithExemplar{
+		sample: sample{
+			metric: m,
+			t:      t,
+			v:      v,
+		},
+	})
+	if a.next == nil {
+		return 0, nil
+	}
+
+	if a.mapper == nil {
+		a.mapper = map[uint64]labels.Labels{}
+	}
+
+	ref, err := a.next.Add(m, t, v)
+	if err != nil {
+		return 0, err
+	}
+	a.mapper[ref] = m
+	return ref, nil
+}
+
+func (a *collectResultExemplarAppender) AddFastWithExemplar(e exemplar.Exemplar, ref uint64, t int64, v float64) error {
+	if a.next == nil {
+		return storage.ErrNotFound
+	}
+
+	err := a.next.AddFast(ref, t, v)
+	if err != nil {
+		return err
+	}
+	a.result = append(a.result, sampleWithExemplar{
+		sample: sample{
+			metric: a.mapper[ref],
+			t:      t,
+			v:      v,
+		},
+		e: e,
+	})
+	return err
+}
+
+func (a *collectResultExemplarAppender) AddWithExemplar(m labels.Labels, e exemplar.Exemplar, t int64, v float64) (uint64, error) {
+	a.result = append(a.result, sampleWithExemplar{
+		sample: sample{
+			metric: m,
+			t:      t,
+			v:      v,
+		},
+		e: e,
+	})
+	if a.next == nil {
+		return 0, nil
+	}
+
+	if a.mapper == nil {
+		a.mapper = map[uint64]labels.Labels{}
+	}
+
+	ref, err := a.next.Add(m, t, v)
+	if err != nil {
+		return 0, err
+	}
+	a.mapper[ref] = m
+	return ref, nil
+}
+
+func (a *collectResultExemplarAppender) Commit() error   { return nil }
+func (a *collectResultExemplarAppender) Rollback() error { return nil }

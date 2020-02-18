@@ -35,6 +35,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/pkg/textparse"
@@ -1193,6 +1194,88 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 		},
 	}
 	testutil.Equals(t, want, app.result, "Appended samples not as expected")
+}
+
+func TestScrapeLoopAppendExemplar(t *testing.T) {
+	tests := []struct {
+		title           string
+		scrapeLabels    string
+		discoveryLabels []string
+		expLset         labels.Labels
+		expValue        float64
+		exemplar        exemplar.Exemplar
+	}{
+		{
+			title:           "Metric without exemplars",
+			scrapeLabels:    "metric_total{n=\"1\"} 0\n# EOF",
+			discoveryLabels: []string{"n", "2"},
+			expLset:         labels.FromStrings("__name__", "metric_total", "exported_n", "1", "n", "2"),
+			expValue:        0,
+			exemplar:        exemplar.Exemplar{},
+		}, {
+			title:           "Metric with exemplars",
+			scrapeLabels:    "metric_total{n=\"1\"} 0 # {a=\"abc\"} 1.0\n# EOF",
+			discoveryLabels: []string{"n", "2"},
+			expLset:         labels.FromStrings("__name__", "metric_total", "exported_n", "1", "n", "2"),
+			expValue:        0,
+			exemplar:        exemplar.Exemplar{Labels: labels.FromStrings("a", "abc"), Value: 1},
+		}, {
+			title:           "Metric with exemplars and TS",
+			scrapeLabels:    "metric_total{n=\"1\"} 0 # {a=\"abc\"} 1.0 10000\n# EOF",
+			discoveryLabels: []string{"n", "2"},
+			expLset:         labels.FromStrings("__name__", "metric_total", "exported_n", "1", "n", "2"),
+			expValue:        0,
+			exemplar:        exemplar.Exemplar{Labels: labels.FromStrings("a", "abc"), Value: 1, Ts: 10000000, HasTs: true},
+		},
+	}
+
+	for _, test := range tests {
+		app := &collectResultExemplarAppender{}
+
+		discoveryLabels := &Target{
+			labels: labels.FromStrings(test.discoveryLabels...),
+		}
+
+		sl := newScrapeLoop(context.Background(),
+			nil, nil, nil,
+			func(l labels.Labels) labels.Labels {
+				return mutateSampleLabels(l, discoveryLabels, false, nil)
+			},
+			func(l labels.Labels) labels.Labels {
+				return mutateReportSampleLabels(l, discoveryLabels)
+			},
+			func() storage.Appender { return app },
+			nil,
+			0,
+			true,
+		)
+
+		now := time.Now()
+
+		_, _, _, err := sl.append([]byte(test.scrapeLabels), "application/openmetrics-text", now)
+		testutil.Ok(t, err)
+
+		expected := []sampleWithExemplar{
+			{
+				sample: sample{
+					metric: test.expLset,
+					t:      timestamp.FromTime(now),
+					v:      test.expValue,
+				},
+				e: test.exemplar,
+			},
+		}
+
+		// When the expected value is NaN
+		// DeepEqual will report NaNs as being different,
+		// so replace it with the expected one.
+		if test.expValue == float64(value.NormalNaN) {
+			app.result[0].v = expected[0].v
+		}
+
+		t.Logf("Test:%s", test.title)
+		testutil.Equals(t, expected, app.result)
+	}
 }
 
 func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
