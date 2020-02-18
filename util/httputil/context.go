@@ -31,7 +31,7 @@ func ContextWithPath(ctx context.Context, path string) context.Context {
 	return context.WithValue(ctx, pathParam, path)
 }
 
-// ContextFromRequest returns a new context from a requests with identifiers of
+// ContextFromRequest returns a new context with identifiers of
 // the request to be used later when logging the query.
 func ContextFromRequest(ctx context.Context, r *http.Request) context.Context {
 	reqCtxVal := map[string]string{
