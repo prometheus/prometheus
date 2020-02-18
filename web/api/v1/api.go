@@ -513,6 +513,10 @@ func selectSeriesByMatchers(q storage.Querier, matcherSets [][]*labels.Matcher) 
 }
 
 func (api *API) labelValues(r *http.Request) apiFuncResult {
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
+	}
+
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
 
@@ -520,27 +524,44 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 
-	if err := r.ParseForm(); err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
-	}
-
 	if len(r.Form["match[]"]) > 0 {
-		res := api.series(r)
-		if res.err != nil {
-			return apiFuncResult{nil, &apiError{errorExec, res.err}, nil, nil}
+		start, err := parseTimeParam(r, "start", minTime)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
+
+		end, err := parseTimeParam(r, "end", maxTime)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+
+		selector, err := promql.ParseMetricSelector(r.FormValue("match[]"))
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+
+		q, err := api.Queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
+		defer q.Close()
+
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+		}
+
+		matches, err, warnings := selectSeriesByMatchers(q, [][]*labels.Matcher{selector})
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+		}
+
+		series := storage.NewMergeSeriesSet(matches, nil)
 		result := make(map[string][]string)
-		switch data := res.data.(type) {
-			case []labels.Labels:
-				for _, labels := range data {
-					label := labels.Get(name)
-					if len(label) > 0 && result[label] == nil {
-						result[name] = append(result[name], label)
-						result[label] = result[name] // Prevent duplicates.
-					}
-				}
-				return apiFuncResult{result[name], nil, res.warnings, nil}
+		for series.Next() {
+			label := series.At().Labels().Get(name)
+			if label != "" && result[label] == nil {
+				result[name] = append(result[name], label)
+				result[label] = result[name] // Prevent from adding same label value twice.
+			}
 		}
+		return apiFuncResult{result[name], nil, warnings, nil}
 	}
 
 	q, err := api.Queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
@@ -559,6 +580,7 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 
 	return apiFuncResult{vals, nil, warnings, closer}
 }
+
 
 func (api *API) series(r *http.Request) apiFuncResult {
 	if err := r.ParseForm(); err != nil {
