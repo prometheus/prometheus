@@ -477,6 +477,41 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
+var (
+	minTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
+	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
+
+	minTimeFormatted = minTime.Format(time.RFC3339Nano)
+	maxTimeFormatted = maxTime.Format(time.RFC3339Nano)
+)
+
+func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (time.Time, error) {
+	val := r.FormValue(paramName)
+	if val != "" {
+		result, err := parseTime(val)
+		if err != nil {
+			return result, errors.Wrapf(err, "Invalid parameter '%s'", paramName)
+		}
+		return result, nil
+	}
+	return defaultValue, nil
+}
+
+func selectSeriesByMatchers(q storage.Querier, matcherSets [][]*labels.Matcher) ([]storage.SeriesSet, error, storage.Warnings) {
+	var sets []storage.SeriesSet
+	var warnings storage.Warnings
+	for _, mset := range matcherSets {
+		s, wrn, err := q.Select(nil, mset...)
+		warnings = append(warnings, wrn...)
+		if err != nil {
+			return nil, err, warnings
+		}
+		sets = append(sets, s)
+	}
+
+	return sets, nil, nil
+}
+
 func (api *API) labelValues(r *http.Request) apiFuncResult {
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
@@ -525,14 +560,6 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 	return apiFuncResult{vals, nil, warnings, closer}
 }
 
-var (
-	minTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
-	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
-
-	minTimeFormatted = minTime.Format(time.RFC3339Nano)
-	maxTimeFormatted = maxTime.Format(time.RFC3339Nano)
-)
-
 func (api *API) series(r *http.Request) apiFuncResult {
 	if err := r.ParseForm(); err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
@@ -541,26 +568,13 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
 	}
 
-	var start time.Time
-	if t := r.FormValue("start"); t != "" {
-		var err error
-		start, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		start = minTime
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-
-	var end time.Time
-	if t := r.FormValue("end"); t != "" {
-		var err error
-		end, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		end = maxTime
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	var matcherSets [][]*labels.Matcher
@@ -578,15 +592,9 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	}
 	defer q.Close()
 
-	var sets []storage.SeriesSet
-	var warnings storage.Warnings
-	for _, mset := range matcherSets {
-		s, wrn, err := q.Select(nil, mset...) //TODO
-		warnings = append(warnings, wrn...)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
-		}
-		sets = append(sets, s)
+	sets, err, warnings := selectSeriesByMatchers(q, matcherSets)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
 
 	set := storage.NewMergeSeriesSet(sets, nil)
@@ -1349,26 +1357,13 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
 	}
 
-	var start time.Time
-	if t := r.FormValue("start"); t != "" {
-		var err error
-		start, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		start = minTime
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-
-	var end time.Time
-	if t := r.FormValue("end"); t != "" {
-		var err error
-		end, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		end = maxTime
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	for _, s := range r.Form["match[]"] {
