@@ -20,16 +20,16 @@ import (
 
 type nopAppendable struct{}
 
-func (a nopAppendable) Appender() (storage.Appender, error) {
-	return nopAppender{}, nil
+func (a nopAppendable) Appender() storage.Appender {
+	return nopAppender{}
 }
 
 type nopAppender struct{}
 
-func (a nopAppender) Add(labels.Labels, int64, float64) (uint64, error)   { return 0, nil }
-func (a nopAppender) AddFast(labels.Labels, uint64, int64, float64) error { return nil }
-func (a nopAppender) Commit() error                                       { return nil }
-func (a nopAppender) Rollback() error                                     { return nil }
+func (a nopAppender) Add(labels.Labels, int64, float64) (uint64, error) { return 0, nil }
+func (a nopAppender) AddFast(uint64, int64, float64) error              { return nil }
+func (a nopAppender) Commit() error                                     { return nil }
+func (a nopAppender) Rollback() error                                   { return nil }
 
 type sample struct {
 	metric labels.Labels
@@ -42,18 +42,21 @@ type sample struct {
 type collectResultAppender struct {
 	next   storage.Appender
 	result []sample
+
+	mapper map[uint64]labels.Labels
 }
 
-func (a *collectResultAppender) AddFast(m labels.Labels, ref uint64, t int64, v float64) error {
+func (a *collectResultAppender) AddFast(ref uint64, t int64, v float64) error {
 	if a.next == nil {
 		return storage.ErrNotFound
 	}
-	err := a.next.AddFast(m, ref, t, v)
+
+	err := a.next.AddFast(ref, t, v)
 	if err != nil {
 		return err
 	}
 	a.result = append(a.result, sample{
-		metric: m,
+		metric: a.mapper[ref],
 		t:      t,
 		v:      v,
 	})
@@ -69,7 +72,17 @@ func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64
 	if a.next == nil {
 		return 0, nil
 	}
-	return a.next.Add(m, t, v)
+
+	if a.mapper == nil {
+		a.mapper = map[uint64]labels.Labels{}
+	}
+
+	ref, err := a.next.Add(m, t, v)
+	if err != nil {
+		return 0, err
+	}
+	a.mapper[ref] = m
+	return ref, nil
 }
 
 func (a *collectResultAppender) Commit() error   { return nil }

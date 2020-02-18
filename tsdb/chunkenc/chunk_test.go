@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"reflect"
 	"testing"
 
 	"github.com/prometheus/prometheus/util/testutil"
@@ -35,19 +34,15 @@ func TestChunk(t *testing.T) {
 		t.Run(fmt.Sprintf("%v", enc), func(t *testing.T) {
 			for range make([]struct{}, 1) {
 				c := nc()
-				if err := testChunk(c); err != nil {
-					t.Fatal(err)
-				}
+				testChunk(t, c)
 			}
 		})
 	}
 }
 
-func testChunk(c Chunk) error {
+func testChunk(t *testing.T, c Chunk) {
 	app, err := c.Appender()
-	if err != nil {
-		return err
-	}
+	testutil.Ok(t, err)
 
 	var exp []pair
 	var (
@@ -56,7 +51,6 @@ func testChunk(c Chunk) error {
 	)
 	for i := 0; i < 300; i++ {
 		ts += int64(rand.Intn(10000) + 1)
-		// v = rand.Float64()
 		if i%2 == 0 {
 			v += float64(rand.Intn(1000000))
 		} else {
@@ -67,29 +61,52 @@ func testChunk(c Chunk) error {
 		// appending to a partially filled chunk.
 		if i%10 == 0 {
 			app, err = c.Appender()
-			if err != nil {
-				return err
-			}
+			testutil.Ok(t, err)
 		}
 
 		app.Append(ts, v)
 		exp = append(exp, pair{t: ts, v: v})
-		// fmt.Println("appended", len(c.Bytes()), c.Bytes())
 	}
 
-	it := c.Iterator(nil)
-	var res []pair
-	for it.Next() {
-		ts, v := it.At()
-		res = append(res, pair{t: ts, v: v})
+	// 1. Expand iterator in simple case.
+	it1 := c.Iterator(nil)
+	var res1 []pair
+	for it1.Next() {
+		ts, v := it1.At()
+		res1 = append(res1, pair{t: ts, v: v})
 	}
-	if it.Err() != nil {
-		return it.Err()
+	testutil.Ok(t, it1.Err())
+	testutil.Equals(t, exp, res1)
+
+	// 2. Expand second iterator while reusing first one.
+	it2 := c.Iterator(it1)
+	var res2 []pair
+	for it2.Next() {
+		ts, v := it2.At()
+		res2 = append(res2, pair{t: ts, v: v})
 	}
-	if !reflect.DeepEqual(exp, res) {
-		return fmt.Errorf("unexpected result\n\ngot: %v\n\nexp: %v", res, exp)
+	testutil.Ok(t, it2.Err())
+	testutil.Equals(t, exp, res2)
+
+	// 3. Test iterator Seek.
+	mid := len(exp) / 2
+
+	it3 := c.Iterator(nil)
+	var res3 []pair
+	testutil.Equals(t, true, it3.Seek(exp[mid].t))
+	// Below ones should not matter.
+	testutil.Equals(t, true, it3.Seek(exp[mid].t))
+	testutil.Equals(t, true, it3.Seek(exp[mid].t))
+	ts, v = it3.At()
+	res3 = append(res3, pair{t: ts, v: v})
+
+	for it3.Next() {
+		ts, v := it3.At()
+		res3 = append(res3, pair{t: ts, v: v})
 	}
-	return nil
+	testutil.Ok(t, it3.Err())
+	testutil.Equals(t, exp[mid:], res3)
+	testutil.Equals(t, false, it3.Seek(exp[len(exp)-1].t+1))
 }
 
 func benchmarkIterator(b *testing.B, newChunk func() Chunk) {

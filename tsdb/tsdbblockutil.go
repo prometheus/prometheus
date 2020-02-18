@@ -65,7 +65,7 @@ func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger l
 		return "", err
 	}
 
-	compactor, err := NewLeveledCompactor(context.Background(), nil, logger, DefaultOptions.BlockRanges, nil)
+	compactor, err := NewLeveledCompactor(context.Background(), nil, logger, ExponentialBlockRanges(DefaultBlockDuration, 3, 5), nil)
 	if err != nil {
 		return "", err
 	}

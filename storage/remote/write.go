@@ -183,10 +183,10 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 }
 
 // Appender implements storage.Storage.
-func (rws *WriteStorage) Appender() (storage.Appender, error) {
+func (rws *WriteStorage) Appender() storage.Appender {
 	return &timestampTracker{
 		writeStorage: rws,
-	}, nil
+	}
 }
 
 // Close closes the WriteStorage.
@@ -206,7 +206,7 @@ type timestampTracker struct {
 }
 
 // Add implements storage.Appender.
-func (t *timestampTracker) Add(_ labels.Labels, ts int64, v float64) (uint64, error) {
+func (t *timestampTracker) Add(_ labels.Labels, ts int64, _ float64) (uint64, error) {
 	t.samples++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
@@ -215,8 +215,8 @@ func (t *timestampTracker) Add(_ labels.Labels, ts int64, v float64) (uint64, er
 }
 
 // AddFast implements storage.Appender.
-func (t *timestampTracker) AddFast(l labels.Labels, _ uint64, ts int64, v float64) error {
-	_, err := t.Add(l, ts, v)
+func (t *timestampTracker) AddFast(_ uint64, ts int64, v float64) error {
+	_, err := t.Add(nil, ts, v)
 	return err
 }
 

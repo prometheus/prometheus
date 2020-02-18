@@ -100,13 +100,8 @@ func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-// Appendable returns an Appender.
-type Appendable interface {
-	Appender() (storage.Appender, error)
-}
-
 // NewManager is the Manager constructor
-func NewManager(logger log.Logger, app Appendable) *Manager {
+func NewManager(logger log.Logger, app storage.Appendable) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -127,7 +122,7 @@ func NewManager(logger log.Logger, app Appendable) *Manager {
 // when receiving new target groups form the discovery manager.
 type Manager struct {
 	logger    log.Logger
-	append    Appendable
+	append    storage.Appendable
 	graceShut chan struct{}
 
 	jitterSeed    uint64     // Global jitterSeed seed is used to spread scrape workload across HA setup.

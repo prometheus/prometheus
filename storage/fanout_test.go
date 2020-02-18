@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -122,24 +123,24 @@ func TestMergeSeriesSet(t *testing.T) {
 
 func TestMergeIterator(t *testing.T) {
 	for _, tc := range []struct {
-		input    []SeriesIterator
+		input    []chunkenc.Iterator
 		expected []sample
 	}{
 		{
-			input: []SeriesIterator{
+			input: []chunkenc.Iterator{
 				newListSeriesIterator([]sample{{0, 0}, {1, 1}}),
 			},
 			expected: []sample{{0, 0}, {1, 1}},
 		},
 		{
-			input: []SeriesIterator{
+			input: []chunkenc.Iterator{
 				newListSeriesIterator([]sample{{0, 0}, {1, 1}}),
 				newListSeriesIterator([]sample{{2, 2}, {3, 3}}),
 			},
 			expected: []sample{{0, 0}, {1, 1}, {2, 2}, {3, 3}},
 		},
 		{
-			input: []SeriesIterator{
+			input: []chunkenc.Iterator{
 				newListSeriesIterator([]sample{{0, 0}, {3, 3}}),
 				newListSeriesIterator([]sample{{1, 1}, {4, 4}}),
 				newListSeriesIterator([]sample{{2, 2}, {5, 5}}),
@@ -147,7 +148,7 @@ func TestMergeIterator(t *testing.T) {
 			expected: []sample{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}},
 		},
 		{
-			input: []SeriesIterator{
+			input: []chunkenc.Iterator{
 				newListSeriesIterator([]sample{{0, 0}, {1, 1}}),
 				newListSeriesIterator([]sample{{0, 0}, {2, 2}}),
 				newListSeriesIterator([]sample{{2, 2}, {3, 3}}),
@@ -163,19 +164,19 @@ func TestMergeIterator(t *testing.T) {
 
 func TestMergeIteratorSeek(t *testing.T) {
 	for _, tc := range []struct {
-		input    []SeriesIterator
+		input    []chunkenc.Iterator
 		seek     int64
 		expected []sample
 	}{
 		{
-			input: []SeriesIterator{
+			input: []chunkenc.Iterator{
 				newListSeriesIterator([]sample{{0, 0}, {1, 1}, {2, 2}}),
 			},
 			seek:     1,
 			expected: []sample{{1, 1}, {2, 2}},
 		},
 		{
-			input: []SeriesIterator{
+			input: []chunkenc.Iterator{
 				newListSeriesIterator([]sample{{0, 0}, {1, 1}}),
 				newListSeriesIterator([]sample{{2, 2}, {3, 3}}),
 			},
@@ -183,7 +184,7 @@ func TestMergeIteratorSeek(t *testing.T) {
 			expected: []sample{{2, 2}, {3, 3}},
 		},
 		{
-			input: []SeriesIterator{
+			input: []chunkenc.Iterator{
 				newListSeriesIterator([]sample{{0, 0}, {3, 3}}),
 				newListSeriesIterator([]sample{{1, 1}, {4, 4}}),
 				newListSeriesIterator([]sample{{2, 2}, {5, 5}}),
@@ -203,7 +204,7 @@ func TestMergeIteratorSeek(t *testing.T) {
 	}
 }
 
-func drainSamples(iter SeriesIterator) []sample {
+func drainSamples(iter chunkenc.Iterator) []sample {
 	result := []sample{}
 	for iter.Next() {
 		t, v := iter.At()

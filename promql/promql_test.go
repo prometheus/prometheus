@@ -28,8 +28,7 @@ func TestEvaluations(t *testing.T) {
 		test, err := newTestFromFile(t, fn)
 		testutil.Ok(t, err)
 
-		err = test.Run()
-		testutil.Ok(t, err)
+		testutil.Ok(t, test.Run())
 
 		test.Close()
 	}

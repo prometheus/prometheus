@@ -15,6 +15,7 @@ package storage
 
 import (
 	"context"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -33,7 +34,7 @@ func TestSelectSorted(t *testing.T) {
 
 	priStorage := teststorage.New(t)
 	defer priStorage.Close()
-	app1, _ := priStorage.Appender()
+	app1 := priStorage.Appender()
 	app1.Add(inputLabel, 0, 0)
 	inputTotalSize++
 	app1.Add(inputLabel, 1000, 1)
@@ -45,7 +46,7 @@ func TestSelectSorted(t *testing.T) {
 
 	remoteStorage1 := teststorage.New(t)
 	defer remoteStorage1.Close()
-	app2, _ := remoteStorage1.Appender()
+	app2 := remoteStorage1.Appender()
 	app2.Add(inputLabel, 3000, 3)
 	inputTotalSize++
 	app2.Add(inputLabel, 4000, 4)
@@ -58,7 +59,7 @@ func TestSelectSorted(t *testing.T) {
 	remoteStorage2 := teststorage.New(t)
 	defer remoteStorage2.Close()
 
-	app3, _ := remoteStorage2.Appender()
+	app3 := remoteStorage2.Appender()
 	app3.Add(inputLabel, 6000, 6)
 	inputTotalSize++
 	app3.Add(inputLabel, 7000, 7)

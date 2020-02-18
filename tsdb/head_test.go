@@ -28,6 +28,7 @@ import (
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -542,7 +543,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				testutil.Ok(t, reloadedHead.Init(0))
 
 				// Compare the query results for both heads - before and after the reload.
-				expSeriesSet := newMockSeriesSet([]Series{
+				expSeriesSet := newMockSeriesSet([]storage.Series{
 					newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
 						ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
 						for _, s := range c.smplsExp {
@@ -555,8 +556,9 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, h := range []*Head{head, reloadedHead} {
 					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
 					testutil.Ok(t, err)
-					actSeriesSet, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
+					actSeriesSet, ws, err := q.Select(nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, err)
+					testutil.Equals(t, 0, len(ws))
 
 					for {
 						eok, rok := expSeriesSet.Next(), actSeriesSet.Next()
@@ -601,8 +603,9 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	// Test the series returns no samples. The series is cleared only after compaction.
 	q, err := NewBlockQuerier(hb, 0, 100000)
 	testutil.Ok(t, err)
-	res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	res, ws, err := q.Select(nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 	testutil.Assert(t, res.Next(), "series is not present")
 	s := res.At()
 	it := s.Iterator()
@@ -615,8 +618,9 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 	q, err = NewBlockQuerier(hb, 0, 100000)
 	testutil.Ok(t, err)
-	res, err = q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	res, ws, err = q.Select(nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 	testutil.Assert(t, res.Next(), "series don't exist")
 	exps := res.At()
 	it = exps.Iterator()
@@ -790,10 +794,11 @@ func TestDelete_e2e(t *testing.T) {
 			q, err := NewBlockQuerier(hb, 0, 100000)
 			testutil.Ok(t, err)
 			defer q.Close()
-			ss, err := q.SelectSorted(del.ms...)
+			ss, ws, err := q.SelectSorted(nil, del.ms...)
 			testutil.Ok(t, err)
+			testutil.Equals(t, 0, len(ws))
 			// Build the mockSeriesSet.
-			matchedSeries := make([]Series, 0, len(matched))
+			matchedSeries := make([]storage.Series, 0, len(matched))
 			for _, m := range matched {
 				smpls := seriesMap[m.String()]
 				smpls = deletedSamples(smpls, del.drange)
@@ -1077,8 +1082,9 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer q.Close()
 
-	ss, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
+	ss, ws, err := q.Select(nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 
 	testutil.Equals(t, true, ss.Next())
 }
@@ -1104,8 +1110,9 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer q.Close()
 
-	ss, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
+	ss, ws, err := q.Select(nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 
 	testutil.Equals(t, false, ss.Next())
 
@@ -1227,7 +1234,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 
 				// Open the db to trigger a repair.
 				{
-					db, err := Open(dir, nil, nil, DefaultOptions)
+					db, err := Open(dir, nil, nil, DefaultOptions())
 					testutil.Ok(t, err)
 					defer func() {
 						testutil.Ok(t, db.Close())

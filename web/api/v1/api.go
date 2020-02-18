@@ -1189,6 +1189,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		for i, query := range req.Queries {
 			err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, selectParams *storage.SelectParams, filteredMatchers []*labels.Matcher) error {
 				// The streaming API provides sorted series.
+				// TODO(bwplotka): Handle warnings via query log.
 				set, _, err := querier.SelectSorted(selectParams, filteredMatchers...)
 				if err != nil {
 					return err
@@ -1305,7 +1306,6 @@ func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, extern
 			level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
 		}
 	}()
-
 	return seriesHandleFn(querier, selectParams, filteredMatchers)
 }
 
