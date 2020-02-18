@@ -470,7 +470,7 @@ func lv(s string) model.LabelValue {
 	return model.LabelValue(s)
 }
 
-func send(ctx context.Context, l log.Logger, role Role, ch chan<- []*targetgroup.Group, tg *targetgroup.Group) {
+func send(ctx context.Context, ch chan<- []*targetgroup.Group, tg *targetgroup.Group) {
 	if tg == nil {
 		return
 	}
