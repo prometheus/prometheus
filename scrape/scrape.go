@@ -1104,15 +1104,23 @@ loop:
 			t = *tp
 		}
 
-		var e exemplar.Exemplar
-		exemplarExists := p.Exemplar(&e)
+		var (
+			e              exemplar.Exemplar
+			exemplarExists = false
+		)
+
+		// Only read the exemplar if this is an exemplar appender.
+		if isExemplarApp {
+			exemplarExists = p.Exemplar(&e)
+		}
 
 		if sl.cache.getDropped(yoloString(met)) {
 			continue
 		}
 		ce, ok := sl.cache.get(yoloString(met))
 		if ok {
-			if exemplarExists && isExemplarApp {
+			// If an exemplar exists then call the appropriate exemplar method.
+			if exemplarExists {
 				err = exemplarApp.AddFastWithExemplar(e, ce.ref, t, v)
 			} else {
 				err = app.AddFast(ce.ref, t, v)
@@ -1166,7 +1174,8 @@ loop:
 			}
 
 			var ref uint64
-			if exemplarExists && isExemplarApp {
+			// If an exemplar exists then call the appropriate exemplar method.
+			if exemplarExists {
 				ref, err = exemplarApp.AddWithExemplar(lset, e, t, v)
 			} else {
 				ref, err = app.Add(lset, t, v)
