@@ -200,7 +200,7 @@ func (ls Labels) Has(name string) bool {
 	return false
 }
 
-// HasDuplicateLabels returns whether ls has duplicate label names.
+// HasDuplicateLabelNames returns whether ls has duplicate label names.
 // It assumes that the labelset is sorted.
 func (ls Labels) HasDuplicateLabelNames() (string, bool) {
 	for i, l := range ls {
