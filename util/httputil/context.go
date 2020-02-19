@@ -34,23 +34,20 @@ func ContextWithPath(ctx context.Context, path string) context.Context {
 // ContextFromRequest returns a new context with identifiers of
 // the request to be used later when logging the query.
 func ContextFromRequest(ctx context.Context, r *http.Request) context.Context {
-	reqCtxVal := map[string]string{
-		"method": r.Method,
+	var ip string
+	if r.RemoteAddr != "" {
+		// r.RemoteAddr has no defined format, so don't return error if we cannot split it into IP:Port.
+		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
 	}
-
-	// r.RemoteAddr has no defined format, so don't return error if we cannot split it into IP:Port.
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-	if ip != "" {
-		reqCtxVal["clientIP"] = ip
-	}
-
 	var path string
 	if v := ctx.Value(pathParam); v != nil {
 		path = v.(string)
-		reqCtxVal["path"] = path
 	}
-
 	return promql.NewOriginContext(ctx, map[string]interface{}{
-		"httpRequest": reqCtxVal,
+		"httpRequest": map[string]string{
+			"clientIP": ip,
+			"method":   r.Method,
+			"path":     path,
+		},
 	})
 }
