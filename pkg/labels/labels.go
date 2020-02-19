@@ -301,16 +301,14 @@ func Compare(a, b Labels) int {
 		if a[i].Name != b[i].Name {
 			if a[i].Name < b[i].Name {
 				return -1
-			} else {
-				return 1
 			}
+			return 1
 		}
 		if a[i].Value != b[i].Value {
 			if a[i].Value < b[i].Value {
 				return -1
-			} else {
-				return 1
 			}
+			return 1
 		}
 	}
 	// If all labels so far were in common, the set with fewer labels comes first.
