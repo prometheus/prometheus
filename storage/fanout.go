@@ -24,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 type fanout struct {
@@ -87,25 +88,17 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	return NewMergeQuerier(primaryQuerier, queriers), nil
 }
 
-func (f *fanout) Appender() (Appender, error) {
-	primary, err := f.primary.Appender()
-	if err != nil {
-		return nil, err
-	}
-
+func (f *fanout) Appender() Appender {
+	primary := f.primary.Appender()
 	secondaries := make([]Appender, 0, len(f.secondaries))
 	for _, storage := range f.secondaries {
-		appender, err := storage.Appender()
-		if err != nil {
-			return nil, err
-		}
-		secondaries = append(secondaries, appender)
+		secondaries = append(secondaries, storage.Appender())
 	}
 	return &fanoutAppender{
 		logger:      f.logger,
 		primary:     primary,
 		secondaries: secondaries,
-	}, nil
+	}
 }
 
 // Close closes the storage and all its underlying resources.
@@ -146,13 +139,13 @@ func (f *fanoutAppender) Add(l labels.Labels, t int64, v float64) (uint64, error
 	return ref, nil
 }
 
-func (f *fanoutAppender) AddFast(l labels.Labels, ref uint64, t int64, v float64) error {
-	if err := f.primary.AddFast(l, ref, t, v); err != nil {
+func (f *fanoutAppender) AddFast(ref uint64, t int64, v float64) error {
+	if err := f.primary.AddFast(ref, t, v); err != nil {
 		return err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.Add(l, t, v); err != nil {
+		if err := appender.AddFast(ref, t, v); err != nil {
 			return err
 		}
 	}
@@ -521,8 +514,8 @@ func (m *mergeSeries) Labels() labels.Labels {
 	return m.labels
 }
 
-func (m *mergeSeries) Iterator() SeriesIterator {
-	iterators := make([]SeriesIterator, 0, len(m.series))
+func (m *mergeSeries) Iterator() chunkenc.Iterator {
+	iterators := make([]chunkenc.Iterator, 0, len(m.series))
 	for _, s := range m.series {
 		iterators = append(iterators, s.Iterator())
 	}
@@ -530,11 +523,11 @@ func (m *mergeSeries) Iterator() SeriesIterator {
 }
 
 type mergeIterator struct {
-	iterators []SeriesIterator
+	iterators []chunkenc.Iterator
 	h         seriesIteratorHeap
 }
 
-func newMergeIterator(iterators []SeriesIterator) SeriesIterator {
+func newMergeIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
 	return &mergeIterator{
 		iterators: iterators,
 		h:         nil,
@@ -581,7 +574,7 @@ func (c *mergeIterator) Next() bool {
 			break
 		}
 
-		iter := heap.Pop(&c.h).(SeriesIterator)
+		iter := heap.Pop(&c.h).(chunkenc.Iterator)
 		if iter.Next() {
 			heap.Push(&c.h, iter)
 		}
@@ -599,7 +592,7 @@ func (c *mergeIterator) Err() error {
 	return nil
 }
 
-type seriesIteratorHeap []SeriesIterator
+type seriesIteratorHeap []chunkenc.Iterator
 
 func (h seriesIteratorHeap) Len() int      { return len(h) }
 func (h seriesIteratorHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
@@ -611,7 +604,7 @@ func (h seriesIteratorHeap) Less(i, j int) bool {
 }
 
 func (h *seriesIteratorHeap) Push(x interface{}) {
-	*h = append(*h, x.(SeriesIterator))
+	*h = append(*h, x.(chunkenc.Iterator))
 }
 
 func (h *seriesIteratorHeap) Pop() interface{} {

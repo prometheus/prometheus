@@ -644,8 +644,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app, err := s.Appender()
-	testutil.Ok(t, err)
+	app := s.Appender()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
@@ -788,8 +787,7 @@ func TestScrapeLoopCache(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	sapp, err := s.Appender()
-	testutil.Ok(t, err)
+	sapp := s.Appender()
 
 	appender := &collectResultAppender{next: sapp}
 	var (
@@ -866,8 +864,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	sapp, err := s.Appender()
-	testutil.Ok(t, err)
+	sapp := s.Appender()
 
 	appender := &collectResultAppender{next: sapp}
 	var (
@@ -1092,8 +1089,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app, err := s.Appender()
-	testutil.Ok(t, err)
+	app := s.Appender()
 
 	capp := &collectResultAppender{next: app}
 
@@ -1108,7 +1104,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1`), "", now)
+	_, _, _, err := sl.append([]byte(`metric_a{a="1",b="1"} 1`), "", now)
 	testutil.Ok(t, err)
 
 	_, _, _, err = sl.append([]byte(`metric_a{b="1",a="1"} 2`), "", now.Add(time.Minute))
@@ -1273,8 +1269,8 @@ func (app *errorAppender) Add(lset labels.Labels, t int64, v float64) (uint64, e
 	}
 }
 
-func (app *errorAppender) AddFast(lset labels.Labels, ref uint64, t int64, v float64) error {
-	return app.collectResultAppender.AddFast(lset, ref, t, v)
+func (app *errorAppender) AddFast(ref uint64, t int64, v float64) error {
+	return app.collectResultAppender.AddFast(ref, t, v)
 }
 
 func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T) {
@@ -1498,8 +1494,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app, err := s.Appender()
-	testutil.Ok(t, err)
+	app := s.Appender()
 
 	capp := &collectResultAppender{next: app}
 
@@ -1513,7 +1508,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1 0`), "", now)
+	_, _, _, err := sl.append([]byte(`metric_a{a="1",b="1"} 1 0`), "", now)
 	testutil.Ok(t, err)
 
 	want := []sample{
@@ -1530,8 +1525,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app, err := s.Appender()
-	testutil.Ok(t, err)
+	app := s.Appender()
 
 	capp := &collectResultAppender{next: app}
 
@@ -1545,7 +1539,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, _, err = sl.append([]byte(`metric_a{a="1",b="1"} 1 0`), "", now)
+	_, _, _, err := sl.append([]byte(`metric_a{a="1",b="1"} 1 0`), "", now)
 	testutil.Ok(t, err)
 
 	want := []sample{
@@ -1562,8 +1556,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app, err := s.Appender()
-	testutil.Ok(t, err)
+	app := s.Appender()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
@@ -1579,7 +1572,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	defer cancel()
 
 	// We add a good and a bad metric to check that both are discarded.
-	_, _, _, err = sl.append([]byte("test_metric{le=\"500\"} 1\ntest_metric{le=\"600\",le=\"700\"} 1\n"), "", time.Time{})
+	_, _, _, err := sl.append([]byte("test_metric{le=\"500\"} 1\ntest_metric{le=\"600\",le=\"700\"} 1\n"), "", time.Time{})
 	testutil.NotOk(t, err)
 
 	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)

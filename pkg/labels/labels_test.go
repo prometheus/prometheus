@@ -175,3 +175,82 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 		testutil.Equals(t, c.LabelName, l, "test %d: incorrect label name", i)
 	}
 }
+
+func TestLabels_WithoutEmpty(t *testing.T) {
+	tests := []struct {
+		input    Labels
+		expected Labels
+	}{
+		{
+			input: Labels{
+				{
+					Name:  "__name__",
+					Value: "test",
+				},
+				{
+					Name: "foo",
+				},
+				{
+					Name:  "hostname",
+					Value: "localhost",
+				},
+				{
+					Name: "bar",
+				},
+				{
+					Name:  "job",
+					Value: "check",
+				},
+			},
+			expected: Labels{
+				{
+					Name:  "__name__",
+					Value: "test",
+				},
+				{
+					Name:  "hostname",
+					Value: "localhost",
+				},
+				{
+					Name:  "job",
+					Value: "check",
+				},
+			},
+		},
+		{
+			input: Labels{
+				{
+					Name:  "__name__",
+					Value: "test",
+				},
+				{
+					Name:  "hostname",
+					Value: "localhost",
+				},
+				{
+					Name:  "job",
+					Value: "check",
+				},
+			},
+			expected: Labels{
+				{
+					Name:  "__name__",
+					Value: "test",
+				},
+				{
+					Name:  "hostname",
+					Value: "localhost",
+				},
+				{
+					Name:  "job",
+					Value: "check",
+				},
+			},
+		},
+	}
+
+	for i, test := range tests {
+		got := test.input.WithoutEmpty()
+		testutil.Equals(t, test.expected, got, "unexpected labelset for test case %d", i)
+	}
+}

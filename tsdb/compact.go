@@ -30,6 +30,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -649,7 +650,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	var (
-		set         ChunkSeriesSet
+		set         storage.ChunkSeriesSet
 		symbols     index.StringIter
 		closers     = []io.Closer{}
 		overlapping bool
@@ -916,7 +917,7 @@ func (c *compactionSeriesSet) At() (labels.Labels, []chunks.Meta, tombstones.Int
 }
 
 type compactionMerger struct {
-	a, b ChunkSeriesSet
+	a, b storage.ChunkSeriesSet
 
 	aok, bok  bool
 	l         labels.Labels
@@ -924,7 +925,7 @@ type compactionMerger struct {
 	intervals tombstones.Intervals
 }
 
-func newCompactionMerger(a, b ChunkSeriesSet) (*compactionMerger, error) {
+func newCompactionMerger(a, b storage.ChunkSeriesSet) (*compactionMerger, error) {
 	c := &compactionMerger{
 		a: a,
 		b: b,

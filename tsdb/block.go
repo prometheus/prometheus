@@ -124,12 +124,6 @@ type BlockReader interface {
 	Meta() BlockMeta
 }
 
-// Appendable defines an entity to which data can be appended.
-type Appendable interface {
-	// Appender returns a new Appender against an underlying store.
-	Appender() Appender
-}
-
 // BlockMeta provides meta information about a block.
 type BlockMeta struct {
 	// Unique identifier for the block and its contents. Changes on compaction.

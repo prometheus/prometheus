@@ -20,6 +20,9 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -257,7 +260,7 @@ func (ss *StorageSeries) Labels() labels.Labels {
 }
 
 // Iterator returns a new iterator of the data of the series.
-func (ss *StorageSeries) Iterator() storage.SeriesIterator {
+func (ss *StorageSeries) Iterator() chunkenc.Iterator {
 	return newStorageSeriesIterator(ss.series)
 }
 

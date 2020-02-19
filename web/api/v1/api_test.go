@@ -827,8 +827,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						GlobalURL:          "http://localhost:9115/probe?target=example.com",
 						Health:             "down",
-						LastError:          "failed",
+						LastError:          "failed: missing port in address",
 						LastScrape:         scrapeStart,
 						LastScrapeDuration: 0.1,
 					},
@@ -839,6 +840,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
+						GlobalURL:          "http://example.com:8080/metrics",
 						Health:             "up",
 						LastError:          "",
 						LastScrape:         scrapeStart,
@@ -871,8 +873,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						GlobalURL:          "http://localhost:9115/probe?target=example.com",
 						Health:             "down",
-						LastError:          "failed",
+						LastError:          "failed: missing port in address",
 						LastScrape:         scrapeStart,
 						LastScrapeDuration: 0.1,
 					},
@@ -883,6 +886,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
+						GlobalURL:          "http://example.com:8080/metrics",
 						Health:             "up",
 						LastError:          "",
 						LastScrape:         scrapeStart,
@@ -915,8 +919,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						GlobalURL:          "http://localhost:9115/probe?target=example.com",
 						Health:             "down",
-						LastError:          "failed",
+						LastError:          "failed: missing port in address",
 						LastScrape:         scrapeStart,
 						LastScrapeDuration: 0.1,
 					},
@@ -927,6 +932,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
+						GlobalURL:          "http://example.com:8080/metrics",
 						Health:             "up",
 						LastError:          "",
 						LastScrape:         scrapeStart,
@@ -1708,10 +1714,20 @@ func TestStreamReadEndpoint(t *testing.T) {
 	matcher3, err := labels.NewMatcher(labels.MatchEqual, "foo", "bar1")
 	testutil.Ok(t, err)
 
-	query1, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
+	query1, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{
+		Step:  1,
+		Func:  "avg",
+		Start: 0,
+		End:   14400001,
+	})
 	testutil.Ok(t, err)
 
-	query2, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectParams{Step: 0, Func: "avg"})
+	query2, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectParams{
+		Step:  1,
+		Func:  "avg",
+		Start: 0,
+		End:   14400001,
+	})
 	testutil.Ok(t, err)
 
 	req := &prompb.ReadRequest{

@@ -149,7 +149,7 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 }
 
 // Appender implements storage.Storage.
-func (s *Storage) Appender() (storage.Appender, error) {
+func (s *Storage) Appender() storage.Appender {
 	return s.rws.Appender()
 }
 
