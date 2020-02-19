@@ -485,16 +485,16 @@ var (
 	maxTimeFormatted = maxTime.Format(time.RFC3339Nano)
 )
 
-func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (time.Time, error) {
+func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (int64, error) {
 	val := r.FormValue(paramName)
 	if val != "" {
 		result, err := parseTime(val)
 		if err != nil {
-			return result, errors.Wrapf(err, "Invalid parameter '%s'", paramName)
+			return math.MaxInt64, errors.Wrapf(err, "Invalid parameter '%s'", paramName)
 		}
-		return result, nil
+		return timestamp.FromTime(result), nil
 	}
-	return defaultValue, nil
+	return timestamp.FromTime(defaultValue), nil
 }
 
 func selectSeriesByMatchers(q storage.Querier, matcherSets [][]*labels.Matcher) ([]storage.SeriesSet, error, storage.Warnings) {
@@ -540,19 +540,19 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 
-		q, err := api.Queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
+		q, err := api.Queryable.Querier(ctx, start, end)
 		defer q.Close()
 
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 		}
 
-		matches, err, warnings := selectSeriesByMatchers(q, [][]*labels.Matcher{selector})
+		sets, err, warnings := selectSeriesByMatchers(q, [][]*labels.Matcher{selector})
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 		}
 
-		series := storage.NewMergeSeriesSet(matches, nil)
+		series := storage.NewMergeSeriesSet(sets, nil)
 		result := make(map[string][]string)
 		for series.Next() {
 			label := series.At().Labels().Get(name)
@@ -608,7 +608,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(r.Context(), start, end)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
@@ -1394,7 +1394,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 
-		if err := db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
+		if err := db.Delete(start, end, matchers...); err != nil {
 			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 		}
 	}
