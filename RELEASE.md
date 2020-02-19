@@ -46,6 +46,8 @@ We use [Semantic Versioning](https://semver.org/).
 
 We maintain a separate branch for each minor release, named `release-<major>.<minor>`, e.g. `release-1.1`, `release-2.0`.
 
+Note that branch protection kicks in automatically for any branches whose name starts with `release-`. Never use names starting with `release-` for branches that are not release branches.
+
 The usual flow is to merge new features and changes into the master branch and to merge bug fixes into the latest release branch. Bug fixes are then merged into master from the latest release branch. The master branch should always contain all commits from the latest release branch. As long as master hasn't deviated from the release branch, new commits can also go to master, followed by merging master back into the release branch.
 
 If a bug fix got accidentally merged into master after non-bug-fix changes in master, the bug-fix commits have to be cherry-picked into the release branch, which then have to be merged back into master. Try to avoid that situation.
@@ -77,9 +79,9 @@ later follow-up.
 
 ### 1. Prepare your release
 
-For a new major or minor release, create the corresponding release branch based on the master branch. Note that a new a new release branch in `origin` is only necessary if there is not already one for this <major>.<minor> version. For example if we're releasing 2.17.0 and the previous stable release is 2.16.0 we need to create a `release-2.17` branch. Patch release don't require their own `release-<major>.<minor>.<patch>, and the same for release candidate versions.
+At the start of a new major or minor release cycle create the corresponding release branch based on the master branch. For example if we're releasing `2.17.0` and the previous stable release is `2.16.0` we need to create a `release-2.17` branch. Note that all releases are handled in protected release branches, see the above `Branch management and versioning` section. Release candidates and patch releases for any given major or minor release happen in the same `release-<major>.<minor>` branch. Do not create `release-<version>` for patch or release candidate releases.
 
-For a patch release or release candidate any changes should be merged into the previously mentioned release branch. So for `2.16.1` or `2.16.0-rc.1` create a new branch off of `release-2.16` and open a PR with the necessary bug/regression fix.
+Changes for a patch release or release candidate should be merged into the previously mentioned release branch via pull request.
 
 Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to the changelog in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
 
@@ -122,3 +124,5 @@ If the release has happened in the latest release branch, merge the changes into
 To update the docs, a PR needs to be created to `prometheus/docs`. See [this PR](https://github.com/prometheus/docs/pull/952/files) for inspiration (note: only actually merge this for final releases, not for pre-releases like a release candidate).
 
 Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration.
+
+Finally, open a PR in the docs repo to
