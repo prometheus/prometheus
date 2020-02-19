@@ -98,9 +98,7 @@ Entries in the `CHANGELOG.md` are meant to be in this order:
 
 ### 2. Draft the new release
 
-Tag the new release with a tag named `v<major>.<minor>.<patch>`, e.g. `v2.1.3`. Note the `v` prefix.
-
-You can do the tagging on the commandline:
+Tag the new release via the following commands:
 
 ```bash
 $ tag=$(< VERSION)
@@ -124,5 +122,3 @@ If the release has happened in the latest release branch, merge the changes into
 To update the docs, a PR needs to be created to `prometheus/docs`. See [this PR](https://github.com/prometheus/docs/pull/952/files) for inspiration (note: only actually merge this for final releases, not for pre-releases like a release candidate).
 
 Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration.
-
-Finally, open a PR in the docs repo to
