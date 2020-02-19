@@ -25,7 +25,7 @@ jobs:
         CLUSTER_NAME: prombench
         ZONE: europe-west3-a
         DOMAIN_NAME: prombench.prometheus.io
-        TEST_INFRA_REPO: https://github.com/prometheus/prombench.git
+        TEST_INFRA_REPO: https://github.com/prometheus/test-infra.git
         GITHUB_ORG: prometheus
         GITHUB_REPO: prometheus
         PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
@@ -82,7 +82,7 @@ jobs:
         PROJECT_ID: macro-mile-203600
         CLUSTER_NAME: prombench
         ZONE: europe-west3-a
-        TEST_INFRA_REPO: https://github.com/prometheus/prombench.git
+        TEST_INFRA_REPO: https://github.com/prometheus/test-infra.git
         PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
       with:
         args: >-
@@ -137,7 +137,7 @@ jobs:
         CLUSTER_NAME: prombench
         ZONE: europe-west3-a
         DOMAIN_NAME: prombench.prometheus.io
-        TEST_INFRA_REPO: https://github.com/prometheus/prombench.git
+        TEST_INFRA_REPO: https://github.com/prometheus/test-infra.git
         GITHUB_ORG: prometheus
         GITHUB_REPO: prometheus
         PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
