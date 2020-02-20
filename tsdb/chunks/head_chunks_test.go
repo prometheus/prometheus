@@ -34,7 +34,8 @@ func TestHeadReadWriter_WriteChunk(t *testing.T) {
 
 	expectedBytes := []byte{}
 	numChunks := 2000
-	nextChunkOffset := uint64(HeadSegmentHeaderSize + 24)
+	nextChunkOffset := uint64(HeadChunkFileHeaderSize + SeriesRefSize + 2*MintMaxtSize)
+	chkCRC32 := newCRC32()
 
 	var buf [8]byte
 	for i := 0; i < numChunks; i++ {
@@ -42,34 +43,49 @@ func TestHeadReadWriter_WriteChunk(t *testing.T) {
 		mint := int64(i*1000 + 1)
 		maxt := int64((i + 1) * 1000)
 		chunk := randomChunk(t)
+		chkCRC32.Reset()
 
-		chunkRef, err := hrw.WriteChunk(seriesRef, mint, maxt, chunk)
+		chkRef, err := hrw.WriteChunk(seriesRef, mint, maxt, chunk)
 		testutil.Ok(t, err)
-		testutil.Equals(t, hrw.chunkRef(1, nextChunkOffset), chunkRef)
+		testutil.Equals(t, chunkRef(1, nextChunkOffset), chkRef)
 
 		// Calculating expected bytes written on disk.
 		binary.BigEndian.PutUint64(buf[:], seriesRef)
-		expectedBytes = append(expectedBytes, buf[:8]...)
+		expectedBytes = append(expectedBytes, buf[:SeriesRefSize]...)
+		_, err = chkCRC32.Write(buf[:SeriesRefSize])
+		testutil.Ok(t, err)
 
 		binary.BigEndian.PutUint64(buf[:], uint64(mint))
-		expectedBytes = append(expectedBytes, buf[:8]...)
+		expectedBytes = append(expectedBytes, buf[:MintMaxtSize]...)
+		_, err = chkCRC32.Write(buf[:MintMaxtSize])
+		testutil.Ok(t, err)
 
 		binary.BigEndian.PutUint64(buf[:], uint64(maxt))
-		expectedBytes = append(expectedBytes, buf[:8]...)
+		expectedBytes = append(expectedBytes, buf[:MintMaxtSize]...)
+		_, err = chkCRC32.Write(buf[:MintMaxtSize])
+		testutil.Ok(t, err)
 
 		expectedBytes = append(expectedBytes, byte(chunk.Encoding()))
+		_, err = chkCRC32.Write([]byte{byte(chunk.Encoding())})
+		testutil.Ok(t, err)
 
 		n := binary.PutUvarint(buf[:], uint64(len(chunk.Bytes())))
 		expectedBytes = append(expectedBytes, buf[:n]...)
+		_, err = chkCRC32.Write(buf[:n])
+		testutil.Ok(t, err)
 
 		expectedBytes = append(expectedBytes, chunk.Bytes()...)
+		_, err = chkCRC32.Write(chunk.Bytes())
+		testutil.Ok(t, err)
 
-		// += encoding + chunk data len + chunk data + seriesRef,mint,maxt of next chunk.
-		nextChunkOffset += 1 + uint64(n) + uint64(len(chunk.Bytes())) + 24
+		expectedBytes = append(expectedBytes, chkCRC32.Sum(nil)...)
+
+		// += encoding + chunk data len + chunk data + CRC + seriesRef,mint,maxt of next chunk.
+		nextChunkOffset += 1 + uint64(n) + uint64(len(chunk.Bytes())) + CRCSize + SeriesRefSize + 2*MintMaxtSize
 	}
 	testutil.Ok(t, hrw.flushBuffer())
 
-	testutil.Assert(t, len(hrw.bs) == 1 && len(hrw.cs) == 1, "expected only 1 mmapped file, got %d", len(hrw.bs))
+	testutil.Assert(t, len(hrw.mmappedChunkFiles) == 1 && len(hrw.closers) == 1, "expected only 1 mmapped file, got %d", len(hrw.mmappedChunkFiles))
 
 	fileName := hrw.curFile.Name()
 	actualBytes, err := ioutil.ReadFile(fileName)
@@ -85,7 +101,7 @@ func TestHeadReadWriter_WriteChunk(t *testing.T) {
 	testutil.Assert(t, maxt == 0, "expected maxt = 0 for an active file")
 
 	// Remaining chunk data.
-	testutil.Equals(t, expectedBytes, actualBytes[HeadSegmentHeaderSize:])
+	testutil.Equals(t, expectedBytes, actualBytes[HeadChunkFileHeaderSize:])
 }
 
 func TestHeadReadWriter_ReadChunk(t *testing.T) {
@@ -141,7 +157,7 @@ func TestHeadReadWriter_ReadChunk(t *testing.T) {
 
 func TestHeadReadWriter_IterateChunks(t *testing.T) {
 	hrw, close := testHeadReadWriter(t)
-	defer func(h *HeadReadWriter) {
+	defer func(h *ChunkDiskMapper) {
 		testutil.Ok(t, h.Close())
 		close()
 	}(hrw)
@@ -173,10 +189,10 @@ func TestHeadReadWriter_IterateChunks(t *testing.T) {
 		})
 	}
 
-	dir := hrw.dirFile.Name()
+	dir := hrw.dir.Name()
 	testutil.Ok(t, hrw.Close())
 
-	hrw, err := NewHeadReadWriter(dir, chunkenc.NewPool())
+	hrw, err := NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
@@ -228,45 +244,45 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	}
 
 	// Verify the number of segments.
-	files, err := ioutil.ReadDir(hrw.dirFile.Name())
+	files, err := ioutil.ReadDir(hrw.dir.Name())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 5, len(files))
-	testutil.Equals(t, 5, len(hrw.bs))
-	testutil.Equals(t, 5, len(hrw.cs))
+	testutil.Equals(t, 5, len(hrw.mmappedChunkFiles))
+	testutil.Equals(t, 5, len(hrw.closers))
 
 	// Truncating files.
 	testutil.Ok(t, hrw.Truncate(timeToTruncate))
 
 	// Verifying the truncated files.
-	files, err = ioutil.ReadDir(hrw.dirFile.Name())
+	files, err = ioutil.ReadDir(hrw.dir.Name())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 3, len(files))
-	testutil.Equals(t, 3, len(hrw.bs))
-	testutil.Equals(t, 3, len(hrw.cs))
+	testutil.Equals(t, 3, len(hrw.mmappedChunkFiles))
+	testutil.Equals(t, 3, len(hrw.closers))
 
-	_, ok := hrw.bs[3]
+	_, ok := hrw.mmappedChunkFiles[3]
 	testutil.Equals(t, true, ok)
-	_, ok = hrw.bs[4]
+	_, ok = hrw.mmappedChunkFiles[4]
 	testutil.Equals(t, true, ok)
-	_, ok = hrw.bs[5]
+	_, ok = hrw.mmappedChunkFiles[5]
 	testutil.Equals(t, true, ok)
 
 	// Truncating till current time should not delete the current active file.
 	testutil.Ok(t, hrw.Truncate(time.Now().UnixNano()/1e6))
 
-	files, err = ioutil.ReadDir(hrw.dirFile.Name())
+	files, err = ioutil.ReadDir(hrw.dir.Name())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, len(files))
-	testutil.Equals(t, 1, len(hrw.bs))
-	testutil.Equals(t, 1, len(hrw.cs))
-	_, ok = hrw.bs[5]
+	testutil.Equals(t, 1, len(hrw.mmappedChunkFiles))
+	testutil.Equals(t, 1, len(hrw.closers))
+	_, ok = hrw.mmappedChunkFiles[5]
 	testutil.Equals(t, true, ok)
 }
 
-func testHeadReadWriter(t *testing.T) (hrw *HeadReadWriter, close func()) {
+func testHeadReadWriter(t *testing.T) (hrw *ChunkDiskMapper, close func()) {
 	tmpdir, err := ioutil.TempDir("", "data")
 	testutil.Ok(t, err)
-	hrw, err = NewHeadReadWriter(tmpdir, chunkenc.NewPool())
+	hrw, err = NewChunkDiskMapper(tmpdir, chunkenc.NewPool())
 	testutil.Ok(t, err)
 	return hrw, func() {
 		testutil.Ok(t, os.RemoveAll(tmpdir))
