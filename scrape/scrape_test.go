@@ -432,7 +432,6 @@ func TestScrapeLoopStop(t *testing.T) {
 		scraper  = &testScraper{}
 		app      = func() storage.Appender { return appender }
 	)
-	defer close(signal)
 
 	sl := newScrapeLoop(context.Background(),
 		scraper,
@@ -498,7 +497,6 @@ func TestScrapeLoopRun(t *testing.T) {
 		scraper = &testScraper{}
 		app     = func() storage.Appender { return &nopAppender{} }
 	)
-	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
@@ -679,7 +677,6 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		scraper = &testScraper{}
 		app     = func() storage.Appender { return appender }
 	)
-	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
@@ -734,7 +731,6 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		app        = func() storage.Appender { return appender }
 		numScrapes = 0
 	)
-	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
@@ -795,7 +791,6 @@ func TestScrapeLoopCache(t *testing.T) {
 		scraper = &testScraper{}
 		app     = func() storage.Appender { return appender }
 	)
-	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
@@ -872,7 +867,6 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 		scraper = &testScraper{}
 		app     = func() storage.Appender { return appender }
 	)
-	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
