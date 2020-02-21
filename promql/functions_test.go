@@ -74,7 +74,7 @@ func TestFunctionList(t *testing.T) {
 		_, ok := FunctionCalls[i]
 
 		if !ok {
-			panic(fmt.Sprintf("function %s exists in promql package, but not in parser package", i))
+			panic(fmt.Sprintf("function %s exists in parser package, but not in promql package", i))
 		}
 
 	}
