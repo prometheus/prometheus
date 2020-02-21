@@ -15,8 +15,8 @@ package rulefmt
 
 import (
 	"context"
-	"io/ioutil"
 	"strings"
+	templ "text/template"
 	"time"
 
 	"github.com/pkg/errors"
@@ -273,9 +273,18 @@ func Parse(content []byte) (*RuleGroups, []error) {
 	return &groups, groups.Validate(node)
 }
 
+func expandTemplates(file string) ([]byte, error) {
+	tmp, err := templ.ParseFiles(file)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return []byte(tmp.Root.String()), nil
+}
+
 // ParseFile reads and parses rules from a file.
 func ParseFile(file string) (*RuleGroups, []error) {
-	b, err := ioutil.ReadFile(file)
+	b, err := expandTemplates(file)
 	if err != nil {
 		return nil, []error{errors.Wrap(err, file)}
 	}
