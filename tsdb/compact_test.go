@@ -456,10 +456,10 @@ func metaRange(name string, mint, maxt int64, stats *BlockStats) dirMeta {
 
 type erringBReader struct{}
 
-func (erringBReader) Index() (IndexReader, error)            { return nil, errors.New("index") }
-func (erringBReader) Chunks() (ChunkReader, error)           { return nil, errors.New("chunks") }
-func (erringBReader) Tombstones() (tombstones.Reader, error) { return nil, errors.New("tombstones") }
-func (erringBReader) Meta() BlockMeta                        { return BlockMeta{} }
+func (erringBReader) Index(int64, int64) (IndexReader, error) { return nil, errors.New("index") }
+func (erringBReader) Chunks() (ChunkReader, error)            { return nil, errors.New("chunks") }
+func (erringBReader) Tombstones() (tombstones.Reader, error)  { return nil, errors.New("tombstones") }
+func (erringBReader) Meta() BlockMeta                         { return BlockMeta{} }
 
 type nopChunkWriter struct{}
 
@@ -652,7 +652,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			expErr:         errors.New("found chunk with minTime: 10 maxTime: 30 outside of compacted minTime: 0 maxTime: 20"),
 		},
 		{
-			// Introduced by https://github.com/prometheus/prometheus/tsdb/issues/347.
+			// Introduced by https://github.com/prometheus/tsdb/issues/347.
 			title: "Populate from single block containing extra chunk",
 			inputSeriesSamples: [][]seriesSamples{
 				{
@@ -692,7 +692,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			},
 		},
 		{
-			// Introduced by https://github.com/prometheus/prometheus/tsdb/pull/539.
+			// Introduced by https://github.com/prometheus/tsdb/pull/539.
 			title: "Populate from three blocks that the last two are overlapping.",
 			inputSeriesSamples: [][]seriesSamples{
 				{
