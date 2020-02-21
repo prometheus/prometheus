@@ -225,7 +225,12 @@ describe('Graph', () => {
               endTime: 1572128598,
               resolution: 28,
             },
-            data: { result: [{ values: [], metric: {} }, { values: [], metric: {} }] },
+            data: {
+              result: [
+                { values: [], metric: {} },
+                { values: [], metric: {} },
+              ],
+            },
           } as any)}
         />
       );
@@ -251,7 +256,12 @@ describe('Graph', () => {
               endTime: 1572128598,
               resolution: 28,
             },
-            data: { result: [{ values: [], metric: {} }, { values: [], metric: {} }] },
+            data: {
+              result: [
+                { values: [], metric: {} },
+                { values: [], metric: {} },
+              ],
+            },
           } as any)}
         />
       );
