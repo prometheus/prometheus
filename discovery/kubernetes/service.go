@@ -114,7 +114,7 @@ func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		return true
 	}
 	if !exists {
-		send(ctx, s.logger, RoleService, ch, &targetgroup.Group{Source: serviceSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, ch, &targetgroup.Group{Source: serviceSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToService(o)
@@ -122,7 +122,7 @@ func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		level.Error(s.logger).Log("msg", "converting to Service object failed", "err", err)
 		return true
 	}
-	send(ctx, s.logger, RoleService, ch, s.buildService(eps))
+	send(ctx, ch, s.buildService(eps))
 	return true
 }
 

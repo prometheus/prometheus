@@ -118,7 +118,7 @@ func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool
 		return true
 	}
 	if !exists {
-		send(ctx, n.logger, RoleNode, ch, &targetgroup.Group{Source: nodeSourceFromName(name)})
+		send(ctx, ch, &targetgroup.Group{Source: nodeSourceFromName(name)})
 		return true
 	}
 	node, err := convertToNode(o)
@@ -126,7 +126,7 @@ func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool
 		level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
 		return true
 	}
-	send(ctx, n.logger, RoleNode, ch, n.buildNode(node))
+	send(ctx, ch, n.buildNode(node))
 	return true
 }
 
