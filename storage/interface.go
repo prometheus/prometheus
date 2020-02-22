@@ -157,7 +157,7 @@ type Series interface {
 
 // ChunkSeriesSet exposes the chunks and intervals of a series instead of the
 // actual series itself.
-// TODO(bwplotka): Move it to Series liike Iterator that iterates over chunks and avoiding loading all of them at once.
+// TODO(bwplotka): Move it to Series like Iterator that iterates over chunks and avoiding loading all of them at once.
 type ChunkSeriesSet interface {
 	Next() bool
 	At() (labels.Labels, []chunks.Meta, tombstones.Intervals)
