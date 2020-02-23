@@ -497,14 +497,14 @@ func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (
 	return timestamp.FromTime(defaultValue), nil
 }
 
-func selectSeriesByMatchers(q storage.Querier, matcherSets [][]*labels.Matcher) ([]storage.SeriesSet, error, storage.Warnings) {
+func selectSeriesByMatchers(q storage.Querier, matcherSets [][]*labels.Matcher) ([]storage.SeriesSet, storage.Warnings, error) {
 	var sets []storage.SeriesSet
 	var warnings storage.Warnings
 	for _, mset := range matcherSets {
 		s, wrn, err := q.Select(nil, mset...)
 		warnings = append(warnings, wrn...)
 		if err != nil {
-			return nil, err, warnings
+			return nil, warnings, err
 		}
 		sets = append(sets, s)
 	}
@@ -547,7 +547,7 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 			return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 		}
 
-		sets, err, warnings := selectSeriesByMatchers(q, [][]*labels.Matcher{selector})
+		sets, warnings, err := selectSeriesByMatchers(q, [][]*labels.Matcher{selector})
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 		}
@@ -614,7 +614,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	}
 	defer q.Close()
 
-	sets, err, warnings := selectSeriesByMatchers(q, matcherSets)
+	sets, warnings, err := selectSeriesByMatchers(q, matcherSets)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
