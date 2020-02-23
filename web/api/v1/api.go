@@ -317,18 +317,10 @@ func (api *API) options(r *http.Request) apiFuncResult {
 }
 
 func (api *API) query(r *http.Request) apiFuncResult {
-	var ts time.Time
-	if t := r.FormValue("time"); t != "" {
-		var err error
-		ts, err = parseTime(t)
-		if err != nil {
-			err = errors.Wrapf(err, "invalid parameter 'time'")
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		ts = api.now()
+	_, ts, err := parseTimeParam(r, "time", api.now())
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-
 	ctx := r.Context()
 	if to := r.FormValue("timeout"); to != "" {
 		var cancel context.CancelFunc
@@ -372,14 +364,12 @@ func (api *API) query(r *http.Request) apiFuncResult {
 }
 
 func (api *API) queryRange(r *http.Request) apiFuncResult {
-	start, err := parseTime(r.FormValue("start"))
+	_, start, err := parseTimeParam(r, "start", minTime)
 	if err != nil {
-		err = errors.Wrapf(err, "invalid parameter 'start'")
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-	end, err := parseTime(r.FormValue("end"))
+	_, end, err := parseTimeParam(r, "end", maxTime)
 	if err != nil {
-		err = errors.Wrapf(err, "invalid parameter 'end'")
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 	if end.Before(start) {
@@ -517,26 +507,13 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
 	}
 
-	var start time.Time
-	if t := r.FormValue("start"); t != "" {
-		var err error
-		start, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		start = minTime
+	start, _, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-
-	var end time.Time
-	if t := r.FormValue("end"); t != "" {
-		var err error
-		end, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		end = maxTime
+	end, _, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	var matcherSets [][]*labels.Matcher
@@ -548,7 +525,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(r.Context(), start, end)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
@@ -1325,26 +1302,13 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
 	}
 
-	var start time.Time
-	if t := r.FormValue("start"); t != "" {
-		var err error
-		start, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		start = minTime
+	start, _, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-
-	var end time.Time
-	if t := r.FormValue("end"); t != "" {
-		var err error
-		end, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		end = maxTime
+	end, _, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	for _, s := range r.Form["match[]"] {
@@ -1353,7 +1317,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 
-		if err := db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
+		if err := db.Delete(start, end, matchers...); err != nil {
 			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 		}
 	}
@@ -1477,6 +1441,18 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	if n, err := w.Write(b); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
+}
+
+func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (int64, time.Time, error) {
+	val := r.FormValue(paramName)
+	if val != "" {
+		result, err := parseTime(val)
+		if err != nil {
+			return -1, time.Time{}, errors.Wrapf(err, "Invalid parameters '%s'", paramName)
+		}
+		return timestamp.FromTime(result), result, nil
+	}
+	return timestamp.FromTime(defaultValue), defaultValue, nil
 }
 
 func parseTime(s string) (time.Time, error) {

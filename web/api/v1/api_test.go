@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
 
+	errPkg "github.com/pkg/errors"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -2168,6 +2169,87 @@ func TestRespondError(t *testing.T) {
 	}
 	if !reflect.DeepEqual(&res, exp) {
 		t.Fatalf("Expected response \n%v\n but got \n%v\n", res, exp)
+	}
+}
+func TestParseTimeParam(t *testing.T) {
+	type resultType struct{
+		asInt int64;
+		asTime time.Time;
+		asError func() error;
+	}
+	ts, _ := parseTime("1582468023986")
+	var tests = []struct{
+		paramName string;
+		paramValue string;
+		defaultValue time.Time;
+		result resultType;
+	}{
+		{// When data is valid
+			paramName: "start",
+			paramValue: "1582468023986",
+			defaultValue: minTime,
+			result: resultType{
+				asInt: 1582468023986000,
+				asTime: ts,
+				asError: nil,
+			},
+		},
+		{// When data is empty string
+			paramName: "end",
+			paramValue: "",
+			defaultValue: maxTime,
+			result: resultType{
+				asInt: timestamp.FromTime(maxTime),
+				asTime: maxTime,
+				asError: nil,
+			},
+		},
+		{// When data is not valid
+			paramName: "foo",
+			paramValue: "baz",
+			defaultValue: maxTime,
+			result: resultType{
+				asInt: -1,
+				asTime: time.Time{},
+				asError: func () error {
+					_, err := parseTime("baz")
+					return errPkg.Wrapf(err, "Invalid parameters '%s'", "foo")
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		req, err := http.NewRequest("GET", "localhost:42/foo?" + test.paramName + "=" + test.paramValue, nil)
+		if err != nil {
+			panic(err)
+		}
+		result := test.result
+		asInt, asTime, err := parseTimeParam(req, test.paramName, test.defaultValue)
+		if err != nil && err.Error() != result.asError().Error() {
+			t.Log(err.Error(), result.asError().Error())
+			t.Errorf(`
+				Expected error message doesn't match the one from the result.
+					Expected: %s.
+					Actual: %s`,
+					result.asError().Error(), err.Error(),
+			)
+		} else {
+			if asInt != result.asInt {
+				t.Errorf(`
+					int64 as return value: %s not parsed correctly.
+						Expected: %d.
+						Actual: %d`,
+						test.paramValue, result.asInt, asInt,
+				)
+			}
+			if !asTime.Equal(result.asTime) {
+				t.Errorf(`
+					Time as return value: %s not parsed correctly. Expected %s. Actual %s`,
+					test.paramValue, result.asTime, asTime,
+				)
+			}
+		}
+
 	}
 }
 
