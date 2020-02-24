@@ -1041,6 +1041,8 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		}, e.Param, e.Expr)
 
 	case *parser.Call:
+		call := FunctionCalls[e.Func.Name]
+
 		if e.Func.Name == "timestamp" {
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given
@@ -1048,12 +1050,10 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			vs, ok := e.Args[0].(*parser.VectorSelector)
 			if ok {
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
-					return funcTimestamp([]parser.Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh)
+					return call([]parser.Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh)
 				})
 			}
 		}
-
-		call := FunctionCalls[e.Func.Name]
 
 		// Check if the function has a matrix argument.
 		var matrixArgIndex int
