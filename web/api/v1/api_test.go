@@ -2173,7 +2173,6 @@ func TestRespondError(t *testing.T) {
 }
 func TestParseTimeParam(t *testing.T) {
 	type resultType struct{
-		asInt int64;
 		asTime time.Time;
 		asError func() error;
 	}
@@ -2189,7 +2188,6 @@ func TestParseTimeParam(t *testing.T) {
 			paramValue: "1582468023986",
 			defaultValue: minTime,
 			result: resultType{
-				asInt: 1582468023986000,
 				asTime: ts,
 				asError: nil,
 			},
@@ -2199,7 +2197,6 @@ func TestParseTimeParam(t *testing.T) {
 			paramValue: "",
 			defaultValue: maxTime,
 			result: resultType{
-				asInt: timestamp.FromTime(maxTime),
 				asTime: maxTime,
 				asError: nil,
 			},
@@ -2209,7 +2206,6 @@ func TestParseTimeParam(t *testing.T) {
 			paramValue: "baz",
 			defaultValue: maxTime,
 			result: resultType{
-				asInt: -1,
 				asTime: time.Time{},
 				asError: func () error {
 					_, err := parseTime("baz")
@@ -2224,7 +2220,7 @@ func TestParseTimeParam(t *testing.T) {
 			panic(err)
 		}
 		result := test.result
-		asInt, asTime, err := parseTimeParam(req, test.paramName, test.defaultValue)
+		asTime, err := parseTimeParam(req, test.paramName, test.defaultValue)
 		if err != nil && err.Error() != result.asError().Error() {
 			t.Log(err.Error(), result.asError().Error())
 			t.Errorf(`
@@ -2234,14 +2230,6 @@ func TestParseTimeParam(t *testing.T) {
 					result.asError().Error(), err.Error(),
 			)
 		} else {
-			if asInt != result.asInt {
-				t.Errorf(`
-					int64 as return value: %s not parsed correctly.
-						Expected: %d.
-						Actual: %d`,
-						test.paramValue, result.asInt, asInt,
-				)
-			}
 			if !asTime.Equal(result.asTime) {
 				t.Errorf(`
 					Time as return value: %s not parsed correctly. Expected %s. Actual %s`,
