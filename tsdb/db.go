@@ -112,6 +112,9 @@ type Options struct {
 	// Unit agnostic as long as unit is consistent with MinBlockDuration and RetentionDuration.
 	// Typically it is in milliseconds.
 	MaxBlockDuration int64
+
+	// The entropy generator used to generate block IDs (ULID).
+	Entropy io.Reader
 }
 
 // DB handles reads and writes of time series falling into
@@ -329,6 +332,7 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 		db.logger,
 		ExponentialBlockRanges(DefaultOptions().MinBlockDuration, 3, 5),
 		chunkenc.NewPool(),
+		nil,
 	)
 	if err != nil {
 		return errors.Wrap(err, "create leveled compactor")
@@ -566,7 +570,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, err = NewLeveledCompactor(ctx, r, l, rngs, db.chunkPool)
+	db.compactor, err = NewLeveledCompactor(ctx, r, l, rngs, db.chunkPool, db.opts.Entropy)
 	if err != nil {
 		cancel()
 		return nil, errors.Wrap(err, "create leveled compactor")

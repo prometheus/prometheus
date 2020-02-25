@@ -251,7 +251,7 @@ func TestBlockSize(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Equals(t, expAfterDelete, actAfterDelete, "after a delete reported block size doesn't match actual disk size")
 
-		c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil)
+		c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil)
 		testutil.Ok(t, err)
 		blockDirAfterCompact, err := c.Compact(tmpdir, []string{blockInit.Dir()}, nil)
 		testutil.Ok(t, err)
@@ -309,7 +309,7 @@ func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 }
 
 func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
-	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil)
+	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, nil)
 	testutil.Ok(tb, err)
 
 	testutil.Ok(tb, os.MkdirAll(dir, 0777))

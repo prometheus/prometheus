@@ -15,10 +15,10 @@ package tsdb
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -80,6 +80,7 @@ type LeveledCompactor struct {
 	logger    log.Logger
 	ranges    []int64
 	chunkPool chunkenc.Pool
+	entropy   io.Reader
 	ctx       context.Context
 }
 
@@ -144,12 +145,15 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 // NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool) (*LeveledCompactor, error) {
+func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, entropy io.Reader) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.Errorf("at least one range must be provided")
 	}
 	if pool == nil {
 		pool = chunkenc.NewPool()
+	}
+	if entropy == nil {
+		entropy = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
 	if l == nil {
 		l = log.NewNopLogger()
@@ -159,6 +163,7 @@ func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Log
 		chunkPool: pool,
 		logger:    l,
 		metrics:   newCompactorMetrics(r),
+		entropy:   entropy,
 		ctx:       ctx,
 	}, nil
 }
@@ -413,7 +418,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		uids = append(uids, meta.ULID.String())
 	}
 
-	uid = ulid.MustNew(ulid.Now(), rand.Reader)
+	uid = ulid.MustNew(ulid.Now(), c.entropy)
 
 	meta := compactBlockMetas(uid, metas...)
 	err = c.write(dest, meta, blocks...)
@@ -467,7 +472,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
 	start := time.Now()
 
-	uid := ulid.MustNew(ulid.Now(), rand.Reader)
+	uid := ulid.MustNew(ulid.Now(), c.entropy)
 
 	meta := &BlockMeta{
 		ULID:    uid,

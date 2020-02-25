@@ -156,7 +156,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 		},
 	}
 
-	c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{50}, nil)
+	c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{50}, nil, nil)
 	testutil.Ok(t, err)
 
 	c.plan(metas)
@@ -170,7 +170,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		180,
 		540,
 		1620,
-	}, nil)
+	}, nil, nil)
 	testutil.Ok(t, err)
 
 	cases := map[string]struct {
@@ -379,7 +379,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 		240,
 		720,
 		2160,
-	}, nil)
+	}, nil, nil)
 	testutil.Ok(t, err)
 
 	cases := []struct {
@@ -429,7 +429,7 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 		240,
 		720,
 		2160,
-	}, nil)
+	}, nil, nil)
 	testutil.Ok(t, err)
 
 	tmpdir, err := ioutil.TempDir("", "test")
@@ -747,7 +747,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 				blocks = append(blocks, &mockBReader{ir: ir, cr: cr, mint: mint, maxt: maxt})
 			}
 
-			c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{0}, nil)
+			c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{0}, nil, nil)
 			testutil.Ok(t, err)
 
 			meta := &BlockMeta{
@@ -847,7 +847,7 @@ func BenchmarkCompaction(b *testing.B) {
 				blockDirs = append(blockDirs, block.Dir())
 			}
 
-			c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil)
+			c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil)
 			testutil.Ok(b, err)
 
 			b.ResetTimer()
