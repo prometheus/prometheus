@@ -31,12 +31,13 @@ func ContextWithPath(ctx context.Context, path string) context.Context {
 	return context.WithValue(ctx, pathParam, path)
 }
 
-// ContextFromRequest returns a new context from a requests with identifiers of
+// ContextFromRequest returns a new context with identifiers of
 // the request to be used later when logging the query.
-func ContextFromRequest(ctx context.Context, r *http.Request) (context.Context, error) {
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return ctx, err
+func ContextFromRequest(ctx context.Context, r *http.Request) context.Context {
+	var ip string
+	if r.RemoteAddr != "" {
+		// r.RemoteAddr has no defined format, so don't return error if we cannot split it into IP:Port.
+		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
 	}
 	var path string
 	if v := ctx.Value(pathParam); v != nil {
@@ -48,5 +49,5 @@ func ContextFromRequest(ctx context.Context, r *http.Request) (context.Context, 
 			"method":   r.Method,
 			"path":     path,
 		},
-	}), nil
+	})
 }

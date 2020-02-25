@@ -653,11 +653,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, err = httputil.ContextFromRequest(ctx, r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	ctx = httputil.ContextFromRequest(ctx, r)
 
 	// Provide URL parameters as a map for easy use. Advanced users may have need for
 	// parameters beyond the first, so provide RawParams.

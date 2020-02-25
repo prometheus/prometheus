@@ -348,10 +348,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	ctx, err = httputil.ContextFromRequest(ctx, r)
-	if err != nil {
-		return apiFuncResult{nil, returnAPIError(err), nil, nil}
-	}
+	ctx = httputil.ContextFromRequest(ctx, r)
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
@@ -423,10 +420,7 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	ctx, err = httputil.ContextFromRequest(ctx, r)
-	if err != nil {
-		return apiFuncResult{nil, returnAPIError(err), nil, nil}
-	}
+	ctx = httputil.ContextFromRequest(ctx, r)
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
