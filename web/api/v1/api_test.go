@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -189,11 +190,11 @@ type rulesRetrieverMock struct {
 }
 
 func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
-	expr1, err := promql.ParseExpr(`absent(test_metric3) != 1`)
+	expr1, err := parser.ParseExpr(`absent(test_metric3) != 1`)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
-	expr2, err := promql.ParseExpr(`up == 1`)
+	expr2, err := parser.ParseExpr(`up == 1`)
 	if err != nil {
 		m.testing.Fatalf("Unable to parse alert expression: %s", err)
 	}
@@ -251,7 +252,7 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 		r = append(r, alertrule)
 	}
 
-	recordingExpr, err := promql.ParseExpr(`vector(1)`)
+	recordingExpr, err := parser.ParseExpr(`vector(1)`)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
@@ -552,7 +553,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"time":  []string{"123.4"},
 			},
 			response: &queryData{
-				ResultType: promql.ValueTypeScalar,
+				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 2,
 					T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
@@ -566,7 +567,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"time":  []string{"1970-01-01T00:02:03Z"},
 			},
 			response: &queryData{
-				ResultType: promql.ValueTypeScalar,
+				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
 					T: timestamp.FromTime(start.Add(123 * time.Second)),
@@ -580,7 +581,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"time":  []string{"1970-01-01T01:02:03+01:00"},
 			},
 			response: &queryData{
-				ResultType: promql.ValueTypeScalar,
+				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
 					T: timestamp.FromTime(start.Add(123 * time.Second)),
@@ -593,7 +594,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"query": []string{"0.333"},
 			},
 			response: &queryData{
-				ResultType: promql.ValueTypeScalar,
+				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
 					T: timestamp.FromTime(api.now()),
@@ -609,7 +610,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"step":  []string{"1"},
 			},
 			response: &queryData{
-				ResultType: promql.ValueTypeMatrix,
+				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
 						Points: []promql.Point{
@@ -2318,7 +2319,7 @@ func TestRespond(t *testing.T) {
 	}{
 		{
 			response: &queryData{
-				ResultType: promql.ValueTypeMatrix,
+				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
 						Points: []promql.Point{{V: 1, T: 1000}},
@@ -2464,7 +2465,7 @@ func BenchmarkRespond(b *testing.B) {
 		points = append(points, promql.Point{V: float64(i * 1000000), T: int64(i)})
 	}
 	response := &queryData{
-		ResultType: promql.ValueTypeMatrix,
+		ResultType: parser.ValueTypeMatrix,
 		Result: promql.Matrix{
 			promql.Series{
 				Points: points,
