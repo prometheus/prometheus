@@ -10,7 +10,9 @@ const getKeyEvent = (key: string): React.KeyboardEvent<HTMLInputElement> =>
   ({
     key,
     nativeEvent: {},
-    preventDefault: () => {},
+    preventDefault: () => {
+      // Do nothing.
+    },
   } as React.KeyboardEvent<HTMLInputElement>);
 
 describe('ExpressionInput', () => {
@@ -21,8 +23,12 @@ describe('ExpressionInput', () => {
       'Query History': [],
       'Metric Names': metricNames,
     },
-    executeQuery: (): void => {},
-    onExpressionChange: (): void => {},
+    executeQuery: (): void => {
+      // Do nothing.
+    },
+    onExpressionChange: (): void => {
+      // Do nothing.
+    },
     loading: false,
   };
 
