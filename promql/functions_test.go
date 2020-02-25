@@ -60,18 +60,14 @@ func TestDeriv(t *testing.T) {
 }
 
 func TestFunctionList(t *testing.T) {
-	// Test that Functions and parser.Functions list the same functions
+	// Test that Functions and parser.Functions list the same functions.
 	for i := range FunctionCalls {
 		_, ok := parser.Functions[i]
-		if !ok {
-			panic(fmt.Sprintf("function %s exists in promql package, but not in parser package", i))
-		}
+		testutil.Assert(t, ok, fmt.Sprintf("function %s exists in promql package, but not in parser package", i))
 	}
 
 	for i := range parser.Functions {
 		_, ok := FunctionCalls[i]
-		if !ok {
-			panic(fmt.Sprintf("function %s exists in parser package, but not in promql package", i))
-		}
+		testutil.Assert(t, ok, (fmt.Sprintf("function %s exists in parser package, but not in promql package", i)))
 	}
 }
