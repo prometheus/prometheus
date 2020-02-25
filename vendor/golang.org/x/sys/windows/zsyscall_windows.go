@@ -44,6 +44,7 @@ var (
 	moduser32   = NewLazySystemDLL("user32.dll")
 	modole32    = NewLazySystemDLL("ole32.dll")
 	modntdll    = NewLazySystemDLL("ntdll.dll")
+	modpsapi    = NewLazySystemDLL("psapi.dll")
 	modws2_32   = NewLazySystemDLL("ws2_32.dll")
 	moddnsapi   = NewLazySystemDLL("dnsapi.dll")
 	modiphlpapi = NewLazySystemDLL("iphlpapi.dll")
@@ -247,10 +248,17 @@ var (
 	procCoTaskMemFree                                        = modole32.NewProc("CoTaskMemFree")
 	procRtlGetVersion                                        = modntdll.NewProc("RtlGetVersion")
 	procRtlGetNtVersionNumbers                               = modntdll.NewProc("RtlGetNtVersionNumbers")
+	procGetProcessPreferredUILanguages                       = modkernel32.NewProc("GetProcessPreferredUILanguages")
+	procGetThreadPreferredUILanguages                        = modkernel32.NewProc("GetThreadPreferredUILanguages")
+	procGetUserPreferredUILanguages                          = modkernel32.NewProc("GetUserPreferredUILanguages")
+	procGetSystemPreferredUILanguages                        = modkernel32.NewProc("GetSystemPreferredUILanguages")
+	procEnumProcesses                                        = modpsapi.NewProc("EnumProcesses")
 	procWSAStartup                                           = modws2_32.NewProc("WSAStartup")
 	procWSACleanup                                           = modws2_32.NewProc("WSACleanup")
 	procWSAIoctl                                             = modws2_32.NewProc("WSAIoctl")
 	procsocket                                               = modws2_32.NewProc("socket")
+	procsendto                                               = modws2_32.NewProc("sendto")
+	procrecvfrom                                             = modws2_32.NewProc("recvfrom")
 	procsetsockopt                                           = modws2_32.NewProc("setsockopt")
 	procgetsockopt                                           = modws2_32.NewProc("getsockopt")
 	procbind                                                 = modws2_32.NewProc("bind")
@@ -2758,6 +2766,70 @@ func rtlGetNtVersionNumbers(majorVersion *uint32, minorVersion *uint32, buildNum
 	return
 }
 
+func getProcessPreferredUILanguages(flags uint32, numLanguages *uint32, buf *uint16, bufSize *uint32) (err error) {
+	r1, _, e1 := syscall.Syscall6(procGetProcessPreferredUILanguages.Addr(), 4, uintptr(flags), uintptr(unsafe.Pointer(numLanguages)), uintptr(unsafe.Pointer(buf)), uintptr(unsafe.Pointer(bufSize)), 0, 0)
+	if r1 == 0 {
+		if e1 != 0 {
+			err = errnoErr(e1)
+		} else {
+			err = syscall.EINVAL
+		}
+	}
+	return
+}
+
+func getThreadPreferredUILanguages(flags uint32, numLanguages *uint32, buf *uint16, bufSize *uint32) (err error) {
+	r1, _, e1 := syscall.Syscall6(procGetThreadPreferredUILanguages.Addr(), 4, uintptr(flags), uintptr(unsafe.Pointer(numLanguages)), uintptr(unsafe.Pointer(buf)), uintptr(unsafe.Pointer(bufSize)), 0, 0)
+	if r1 == 0 {
+		if e1 != 0 {
+			err = errnoErr(e1)
+		} else {
+			err = syscall.EINVAL
+		}
+	}
+	return
+}
+
+func getUserPreferredUILanguages(flags uint32, numLanguages *uint32, buf *uint16, bufSize *uint32) (err error) {
+	r1, _, e1 := syscall.Syscall6(procGetUserPreferredUILanguages.Addr(), 4, uintptr(flags), uintptr(unsafe.Pointer(numLanguages)), uintptr(unsafe.Pointer(buf)), uintptr(unsafe.Pointer(bufSize)), 0, 0)
+	if r1 == 0 {
+		if e1 != 0 {
+			err = errnoErr(e1)
+		} else {
+			err = syscall.EINVAL
+		}
+	}
+	return
+}
+
+func getSystemPreferredUILanguages(flags uint32, numLanguages *uint32, buf *uint16, bufSize *uint32) (err error) {
+	r1, _, e1 := syscall.Syscall6(procGetSystemPreferredUILanguages.Addr(), 4, uintptr(flags), uintptr(unsafe.Pointer(numLanguages)), uintptr(unsafe.Pointer(buf)), uintptr(unsafe.Pointer(bufSize)), 0, 0)
+	if r1 == 0 {
+		if e1 != 0 {
+			err = errnoErr(e1)
+		} else {
+			err = syscall.EINVAL
+		}
+	}
+	return
+}
+
+func EnumProcesses(processIds []uint32, bytesReturned *uint32) (err error) {
+	var _p0 *uint32
+	if len(processIds) > 0 {
+		_p0 = &processIds[0]
+	}
+	r1, _, e1 := syscall.Syscall(procEnumProcesses.Addr(), 3, uintptr(unsafe.Pointer(_p0)), uintptr(len(processIds)), uintptr(unsafe.Pointer(bytesReturned)))
+	if r1 == 0 {
+		if e1 != 0 {
+			err = errnoErr(e1)
+		} else {
+			err = syscall.EINVAL
+		}
+	}
+	return
+}
+
 func WSAStartup(verreq uint32, data *WSAData) (sockerr error) {
 	r0, _, _ := syscall.Syscall(procWSAStartup.Addr(), 2, uintptr(verreq), uintptr(unsafe.Pointer(data)), 0)
 	if r0 != 0 {
@@ -2794,6 +2866,39 @@ func socket(af int32, typ int32, protocol int32) (handle Handle, err error) {
 	r0, _, e1 := syscall.Syscall(procsocket.Addr(), 3, uintptr(af), uintptr(typ), uintptr(protocol))
 	handle = Handle(r0)
 	if handle == InvalidHandle {
+		if e1 != 0 {
+			err = errnoErr(e1)
+		} else {
+			err = syscall.EINVAL
+		}
+	}
+	return
+}
+
+func sendto(s Handle, buf []byte, flags int32, to unsafe.Pointer, tolen int32) (err error) {
+	var _p0 *byte
+	if len(buf) > 0 {
+		_p0 = &buf[0]
+	}
+	r1, _, e1 := syscall.Syscall6(procsendto.Addr(), 6, uintptr(s), uintptr(unsafe.Pointer(_p0)), uintptr(len(buf)), uintptr(flags), uintptr(to), uintptr(tolen))
+	if r1 == socket_error {
+		if e1 != 0 {
+			err = errnoErr(e1)
+		} else {
+			err = syscall.EINVAL
+		}
+	}
+	return
+}
+
+func recvfrom(s Handle, buf []byte, flags int32, from *RawSockaddrAny, fromlen *int32) (n int32, err error) {
+	var _p0 *byte
+	if len(buf) > 0 {
+		_p0 = &buf[0]
+	}
+	r0, _, e1 := syscall.Syscall6(procrecvfrom.Addr(), 6, uintptr(s), uintptr(unsafe.Pointer(_p0)), uintptr(len(buf)), uintptr(flags), uintptr(unsafe.Pointer(from)), uintptr(unsafe.Pointer(fromlen)))
+	n = int32(r0)
+	if n == -1 {
 		if e1 != 0 {
 			err = errnoErr(e1)
 		} else {

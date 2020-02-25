@@ -7,6 +7,8 @@ go_library(
     srcs = [
         "doc.go",
         "generator.go",
+        "helpers.go",
+        "helpers_go111_old.go",
         "template.go",
         "types.go",
     ],
@@ -18,10 +20,13 @@ go_library(
         "//protoc-gen-swagger/options:go_default_library",
         "@com_github_golang_glog//:go_default_library",
         "@com_github_golang_protobuf//descriptor:go_default_library_gen",
+        "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
         "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//protoc-gen-go/generator:go_default_library_gen",
         "@io_bazel_rules_go//proto/wkt:any_go_proto",
         "@io_bazel_rules_go//proto/wkt:compiler_plugin_go_proto",
         "@io_bazel_rules_go//proto/wkt:descriptor_go_proto",
+        "@io_bazel_rules_go//proto/wkt:struct_go_proto",
     ],
 )
 
@@ -38,5 +43,6 @@ go_test(
         "@io_bazel_rules_go//proto/wkt:any_go_proto",
         "@io_bazel_rules_go//proto/wkt:compiler_plugin_go_proto",
         "@io_bazel_rules_go//proto/wkt:descriptor_go_proto",
+        "@io_bazel_rules_go//proto/wkt:struct_go_proto",
     ],
 )

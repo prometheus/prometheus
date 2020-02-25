@@ -35,7 +35,8 @@ func NewRouteFiltersClient(subscriptionID string) RouteFiltersClient {
 	return NewRouteFiltersClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewRouteFiltersClientWithBaseURI creates an instance of the RouteFiltersClient client.
+// NewRouteFiltersClientWithBaseURI creates an instance of the RouteFiltersClient client using a custom endpoint.  Use
+// this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewRouteFiltersClientWithBaseURI(baseURI string, subscriptionID string) RouteFiltersClient {
 	return RouteFiltersClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -84,6 +85,7 @@ func (client RouteFiltersClient) CreateOrUpdatePreparer(ctx context.Context, res
 		"api-version": APIVersion,
 	}
 
+	routeFilterParameters.Etag = nil
 	preparer := autorest.CreatePreparer(
 		autorest.AsContentType("application/json; charset=utf-8"),
 		autorest.AsPut(),
@@ -97,9 +99,9 @@ func (client RouteFiltersClient) CreateOrUpdatePreparer(ctx context.Context, res
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client RouteFiltersClient) CreateOrUpdateSender(req *http.Request) (future RouteFiltersCreateOrUpdateFuture, err error) {
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = autorest.SendWithSender(client, req, sd...)
 	if err != nil {
 		return
 	}
@@ -174,9 +176,9 @@ func (client RouteFiltersClient) DeletePreparer(ctx context.Context, resourceGro
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client RouteFiltersClient) DeleteSender(req *http.Request) (future RouteFiltersDeleteFuture, err error) {
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = autorest.SendWithSender(client, req, sd...)
 	if err != nil {
 		return
 	}
@@ -260,8 +262,8 @@ func (client RouteFiltersClient) GetPreparer(ctx context.Context, resourceGroupN
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client RouteFiltersClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -333,8 +335,8 @@ func (client RouteFiltersClient) ListPreparer(ctx context.Context) (*http.Reques
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client RouteFiltersClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -446,8 +448,8 @@ func (client RouteFiltersClient) ListByResourceGroupPreparer(ctx context.Context
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client RouteFiltersClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -544,6 +546,9 @@ func (client RouteFiltersClient) UpdatePreparer(ctx context.Context, resourceGro
 		"api-version": APIVersion,
 	}
 
+	routeFilterParameters.Name = nil
+	routeFilterParameters.Etag = nil
+	routeFilterParameters.Type = nil
 	preparer := autorest.CreatePreparer(
 		autorest.AsContentType("application/json; charset=utf-8"),
 		autorest.AsPatch(),
@@ -557,9 +562,9 @@ func (client RouteFiltersClient) UpdatePreparer(ctx context.Context, resourceGro
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client RouteFiltersClient) UpdateSender(req *http.Request) (future RouteFiltersUpdateFuture, err error) {
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = autorest.SendWithSender(client, req, sd...)
 	if err != nil {
 		return
 	}

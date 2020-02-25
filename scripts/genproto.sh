@@ -10,8 +10,8 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 	exit 255
 fi
 
-if ! [[ $(protoc --version) =~ "3.5.1" ]]; then
-	echo "could not find protoc 3.5.1, is it installed + in PATH?"
+if ! [[ $(protoc --version) =~ "3.11.4" ]]; then
+	echo "could not find protoc 3.11.4, is it installed + in PATH?"
 	exit 255
 fi
 
@@ -52,8 +52,9 @@ for dir in ${DIRS}; do
 		sed -i.bak -E 's/import _ \"github.com\/gogo\/protobuf\/gogoproto\"//g' -- *.pb.go
 		sed -i.bak -E 's/import _ \"google\/protobuf\"//g' -- *.pb.go
 		sed -i.bak -E 's/\t_ \"google\/protobuf\"//g' -- *.pb.go
+		sed -i.bak -E 's/golang\/protobuf\/descriptor/gogo\/protobuf\/protoc-gen-gogo\/descriptor/g' -- *.go
 		sed -i.bak -E 's/golang\/protobuf/gogo\/protobuf/g' -- *.go
 		rm -f -- *.bak
-		goimports -w ./*.pb.go
+		goimports -w ./*.go
 	popd
 done

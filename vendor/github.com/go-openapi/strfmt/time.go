@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,14 +16,16 @@ package strfmt
 
 import (
 	"database/sql/driver"
+	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+
+	"go.mongodb.org/mongo-driver/bson/bsontype"
 )
 
 func init() {
@@ -165,26 +167,51 @@ func (t *DateTime) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalBSON renders the DateTime as a BSON document
 func (t DateTime) MarshalBSON() ([]byte, error) {
-	return bson.Marshal(bson.M{"data": t.String()})
+	return bson.Marshal(bson.M{"data": t})
 }
 
+// UnmarshalBSON reads the DateTime from a BSON document
 func (t *DateTime) UnmarshalBSON(data []byte) error {
-	var m bson.M
-	if err := bson.Unmarshal(data, &m); err != nil {
+	var obj struct {
+		Data DateTime
+	}
+
+	if err := bson.Unmarshal(data, &obj); err != nil {
 		return err
 	}
 
-	if data, ok := m["data"].(string); ok {
-		rd, err := ParseDateTime(data)
-		if err != nil {
-			return err
-		}
-		*t = rd
-		return nil
-	}
+	*t = obj.Data
 
-	return errors.New("couldn't unmarshal bson bytes value as Date")
+	return nil
+}
+
+// MarshalBSONValue is an interface implemented by types that can marshal themselves
+// into a BSON document represented as bytes. The bytes returned must be a valid
+// BSON document if the error is nil.
+// Marshals a DateTime as a bsontype.DateTime, an int64 representing
+// milliseconds since epoch.
+func (t DateTime) MarshalBSONValue() (bsontype.Type, []byte, error) {
+	// UnixNano cannot be used, the result of calling UnixNano on the zero
+	// Time is undefined.
+	i64 := time.Time(t).Unix() * 1000
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf, uint64(i64))
+
+	return bsontype.DateTime, buf, nil
+}
+
+// UnmarshalBSONValue is an interface implemented by types that can unmarshal a
+// BSON value representation of themselves. The BSON bytes and type can be
+// assumed to be valid. UnmarshalBSONValue must copy the BSON value bytes if it
+// wishes to retain the data after returning.
+func (t *DateTime) UnmarshalBSONValue(tpe bsontype.Type, data []byte) error {
+	i64 := int64(binary.LittleEndian.Uint64(data))
+	// TODO: Use bsonprim.DateTime.Time() method
+	*t = DateTime(time.Unix(i64/1000, i64%1000*1000000))
+
+	return nil
 }
 
 // DeepCopyInto copies the receiver and writes its value into out.
@@ -200,4 +227,33 @@ func (t *DateTime) DeepCopy() *DateTime {
 	out := new(DateTime)
 	t.DeepCopyInto(out)
 	return out
+}
+
+// GobEncode implements the gob.GobEncoder interface.
+func (t DateTime) GobEncode() ([]byte, error) {
+	return t.MarshalBinary()
+}
+
+// GobDecode implements the gob.GobDecoder interface.
+func (t *DateTime) GobDecode(data []byte) error {
+	return t.UnmarshalBinary(data)
+}
+
+// MarshalBinary implements the encoding.BinaryMarshaler interface.
+func (t DateTime) MarshalBinary() ([]byte, error) {
+	return time.Time(t).MarshalBinary()
+}
+
+// UnmarshalBinary implements the encoding.BinaryUnmarshaler interface.
+func (t *DateTime) UnmarshalBinary(data []byte) error {
+	var original time.Time
+
+	err := original.UnmarshalBinary(data)
+	if err != nil {
+		return err
+	}
+
+	*t = DateTime(original)
+
+	return nil
 }

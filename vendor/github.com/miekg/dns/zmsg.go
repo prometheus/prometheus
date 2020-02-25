@@ -36,6 +36,14 @@ func (rr *ANY) pack(msg []byte, off int, compression compressionMap, compress bo
 	return off, nil
 }
 
+func (rr *APL) pack(msg []byte, off int, compression compressionMap, compress bool) (off1 int, err error) {
+	off, err = packDataApl(rr.Prefixes, msg, off)
+	if err != nil {
+		return off, err
+	}
+	return off, nil
+}
+
 func (rr *AVC) pack(msg []byte, off int, compression compressionMap, compress bool) (off1 int, err error) {
 	off, err = packStringTxt(rr.Txt, msg, off)
 	if err != nil {
@@ -1124,6 +1132,17 @@ func (rr *ANY) unpack(msg []byte, off int) (off1 int, err error) {
 	rdStart := off
 	_ = rdStart
 
+	return off, nil
+}
+
+func (rr *APL) unpack(msg []byte, off int) (off1 int, err error) {
+	rdStart := off
+	_ = rdStart
+
+	rr.Prefixes, off, err = unpackDataApl(msg, off)
+	if err != nil {
+		return off, err
+	}
 	return off, nil
 }
 

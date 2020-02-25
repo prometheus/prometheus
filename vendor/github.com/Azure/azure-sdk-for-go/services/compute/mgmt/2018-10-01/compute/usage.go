@@ -36,7 +36,8 @@ func NewUsageClient(subscriptionID string) UsageClient {
 	return NewUsageClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewUsageClientWithBaseURI creates an instance of the UsageClient client.
+// NewUsageClientWithBaseURI creates an instance of the UsageClient client using a custom endpoint.  Use this when
+// interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewUsageClientWithBaseURI(baseURI string, subscriptionID string) UsageClient {
 	return UsageClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -107,8 +108,8 @@ func (client UsageClient) ListPreparer(ctx context.Context, location string) (*h
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client UsageClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListResponder handles the response to the List request. The method always

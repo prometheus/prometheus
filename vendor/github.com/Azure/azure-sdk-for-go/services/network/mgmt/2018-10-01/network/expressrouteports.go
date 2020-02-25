@@ -35,7 +35,9 @@ func NewExpressRoutePortsClient(subscriptionID string) ExpressRoutePortsClient {
 	return NewExpressRoutePortsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewExpressRoutePortsClientWithBaseURI creates an instance of the ExpressRoutePortsClient client.
+// NewExpressRoutePortsClientWithBaseURI creates an instance of the ExpressRoutePortsClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewExpressRoutePortsClientWithBaseURI(baseURI string, subscriptionID string) ExpressRoutePortsClient {
 	return ExpressRoutePortsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -84,6 +86,7 @@ func (client ExpressRoutePortsClient) CreateOrUpdatePreparer(ctx context.Context
 		"api-version": APIVersion,
 	}
 
+	parameters.Etag = nil
 	preparer := autorest.CreatePreparer(
 		autorest.AsContentType("application/json; charset=utf-8"),
 		autorest.AsPut(),
@@ -97,9 +100,9 @@ func (client ExpressRoutePortsClient) CreateOrUpdatePreparer(ctx context.Context
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRoutePortsClient) CreateOrUpdateSender(req *http.Request) (future ExpressRoutePortsCreateOrUpdateFuture, err error) {
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = autorest.SendWithSender(client, req, sd...)
 	if err != nil {
 		return
 	}
@@ -174,9 +177,9 @@ func (client ExpressRoutePortsClient) DeletePreparer(ctx context.Context, resour
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRoutePortsClient) DeleteSender(req *http.Request) (future ExpressRoutePortsDeleteFuture, err error) {
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = autorest.SendWithSender(client, req, sd...)
 	if err != nil {
 		return
 	}
@@ -256,8 +259,8 @@ func (client ExpressRoutePortsClient) GetPreparer(ctx context.Context, resourceG
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRoutePortsClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -329,8 +332,8 @@ func (client ExpressRoutePortsClient) ListPreparer(ctx context.Context) (*http.R
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRoutePortsClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -442,8 +445,8 @@ func (client ExpressRoutePortsClient) ListByResourceGroupPreparer(ctx context.Co
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRoutePortsClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
+	return autorest.SendWithSender(client, req, sd...)
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -553,9 +556,9 @@ func (client ExpressRoutePortsClient) UpdateTagsPreparer(ctx context.Context, re
 // UpdateTagsSender sends the UpdateTags request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRoutePortsClient) UpdateTagsSender(req *http.Request) (future ExpressRoutePortsUpdateTagsFuture, err error) {
+	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = autorest.SendWithSender(client, req, sd...)
 	if err != nil {
 		return
 	}
