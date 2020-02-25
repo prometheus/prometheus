@@ -15,10 +15,10 @@ package tsdb
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -413,8 +413,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		uids = append(uids, meta.ULID.String())
 	}
 
-	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	uid = ulid.MustNew(ulid.Now(), entropy)
+	uid = ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := compactBlockMetas(uid, metas...)
 	err = c.write(dest, meta, blocks...)
@@ -468,8 +467,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
 	start := time.Now()
 
-	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	uid := ulid.MustNew(ulid.Now(), entropy)
+	uid := ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := &BlockMeta{
 		ULID:    uid,
