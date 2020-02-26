@@ -103,7 +103,7 @@
            <th>Current Min Time</th>
         </tr>
         <tr>
-          <td scope="row">{{ .NumSeries}}</th>
+          <td scope="row">{{ .NumSeries}}</td>
           <td>{{.ChunkCount}}</td>  
           <td>{{ .MaxTime}}</td>
           <td>{{ .MinTime}}</td>
@@ -120,7 +120,7 @@
         </tr>
         {{ range .Stats.CardinalityLabelStats }}
         <tr>
-          <td scope="row">{{.Name}}</th>
+          <td scope="row">{{.Name}}</td>
           <td>{{.Count}}</td>  
         </tr>
         {{end}}
@@ -135,7 +135,7 @@
           </tr>
           {{ range .Stats.CardinalityMetricsStats }}
           <tr>
-            <td scope="row">{{.Name}}</th>
+            <td scope="row">{{.Name}}</td>
             <td>{{.Count}}</td>  
           </tr>
           {{end}}
@@ -150,7 +150,7 @@
             </tr>
             {{ range .Stats.LabelValueStats }}
             <tr>
-              <td scope="row">{{.Name}}</th>
+              <td scope="row">{{.Name}}</td>
               <td>{{.Count}}</td>  
             </tr>
             {{end}}
@@ -165,7 +165,7 @@
               </tr>
               {{ range .Stats.LabelValuePairsStats }}
               <tr>
-                <td scope="row">{{.Name}}</th>
+                <td scope="row">{{.Name}}</td>
                 <td>{{.Count}}</td>  
               </tr>
               {{end}}
