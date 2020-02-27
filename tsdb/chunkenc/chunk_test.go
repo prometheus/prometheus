@@ -247,6 +247,7 @@ func TestXor(t *testing.T) {
 		testutil.Ok(t, it.Err())
 	}
 
+	testutil.Equals(t, len(samples), len(res))
 	for i := 0; i < len(samples); i++ {
 		s := samples[i]
 		r := res[i]
