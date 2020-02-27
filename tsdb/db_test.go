@@ -353,12 +353,12 @@ func TestAmendDatapointCausesError(t *testing.T) {
 	}()
 
 	app := db.Appender()
-	_, err := app.Add(labels.Labels{}, 0, 0)
+	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 0)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
 	app = db.Appender()
-	_, err = app.Add(labels.Labels{}, 0, 1)
+	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
 	testutil.Equals(t, ErrAmendSample, err)
 	testutil.Ok(t, app.Rollback())
 }
@@ -371,12 +371,12 @@ func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 	}()
 
 	app := db.Appender()
-	_, err := app.Add(labels.Labels{}, 0, math.NaN())
+	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
 	app = db.Appender()
-	_, err = app.Add(labels.Labels{}, 0, math.NaN())
+	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
 	testutil.Ok(t, err)
 }
 
@@ -388,13 +388,26 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 	}()
 
 	app := db.Appender()
-	_, err := app.Add(labels.Labels{}, 0, math.Float64frombits(0x7ff0000000000001))
+	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000001))
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
 	app = db.Appender()
-	_, err = app.Add(labels.Labels{}, 0, math.Float64frombits(0x7ff0000000000002))
+	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000002))
 	testutil.Equals(t, ErrAmendSample, err)
+}
+
+func TestEmptyLabelsetCausesError(t *testing.T) {
+	db, closeFn := openTestDB(t, nil, nil)
+	defer func() {
+		testutil.Ok(t, db.Close())
+		closeFn()
+	}()
+
+	app := db.Appender()
+	_, err := app.Add(labels.Labels{}, 0, 0)
+	testutil.NotOk(t, err)
+	testutil.Equals(t, "empty labelset: invalid sample", err.Error())
 }
 
 func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
