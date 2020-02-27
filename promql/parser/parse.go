@@ -220,7 +220,7 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 	return labels, values, err
 }
 
-// addParseErrf formats the error and and appends it to the list of parsing errors.
+// addParseErrf formats the error and appends it to the list of parsing errors.
 func (p *parser) addParseErrf(positionRange PositionRange, format string, args ...interface{}) {
 	p.addParseErr(positionRange, errors.Errorf(format, args...))
 }
