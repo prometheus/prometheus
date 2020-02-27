@@ -250,7 +250,7 @@ func TestXor(t *testing.T) {
 	for i := 0; i < len(samples); i++ {
 		s := samples[i]
 		r := res[i]
-		testutil.Equals(t, s.t, r.t, "test compact timestamp fail ,delta of delta", s, r)
-		testutil.Equals(t, s.v, r.v, "test compact value fail ,xor", s, r)
+		testutil.Equals(t, s.t, r.t, "test compact timestamp fail (delta of delta)")
+		testutil.Equals(t, s.v, r.v, "test compact value fail (xor)")
 	}
 }
