@@ -11,8 +11,6 @@ require (
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d
 	github.com/aws/aws-sdk-go v1.29.4
 	github.com/cespare/xxhash v1.1.0
-	github.com/dgryski/go-sip13 v0.0.0-20190329191031-25c5027a8c7b
-	github.com/edsrzf/mmap-go v1.0.0
 	github.com/go-kit/kit v0.10.0
 	github.com/go-logfmt/logfmt v0.5.0
 	github.com/go-openapi/strfmt v0.19.4
@@ -28,7 +26,6 @@ require (
 	github.com/miekg/dns v1.1.27
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/oklog/run v1.1.0
-	github.com/oklog/ulid v1.3.1
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20190519235532-cf7a6c988dc9
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/pkg/errors v0.9.1
@@ -36,14 +33,15 @@ require (
 	github.com/prometheus/client_golang v1.4.1
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.9.1
+	github.com/prometheus/prometheus/promql v0.0.0-00010101000000-000000000000
+	github.com/prometheus/prometheus/tsdb v0.0.0-00010101000000-000000000000
 	github.com/samuel/go-zookeeper v0.0.0-20190923202752-2cc03de413da
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/shurcooL/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
 	github.com/soheilhy/cmux v0.1.4
 	golang.org/x/net v0.0.0-20200202094626-16171245cfb2
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
-	golang.org/x/sys v0.0.0-20200212091648-12a6c2dcc1e4
+	golang.org/x/sys v0.0.0-20200223170610-d5e6a3e2c0ae
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 	golang.org/x/tools v0.0.0-20200212150539-ea181f53ac56
 	google.golang.org/api v0.17.0
@@ -59,4 +57,9 @@ require (
 	k8s.io/klog v1.0.0
 )
 
-replace k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
+replace (
+	github.com/prometheus/prometheus => ./
+	github.com/prometheus/prometheus/promql => ./promql
+	github.com/prometheus/prometheus/tsdb => ./tsdb
+	k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
+)
