@@ -224,8 +224,8 @@ func TestXor(t *testing.T) {
 	num := 10
 	var samples []pair
 	for i := 0; i < num; i++ {
-		timestamp += int64(1000)
-		v += float64(100)
+		timestamp += 1000
+		v += 100
 		samples = append(samples, pair{t: timestamp, v: v})
 	}
 
@@ -236,7 +236,7 @@ func TestXor(t *testing.T) {
 		a.Append(p.t, p.v)
 	}
 
-	res := make([]pair, num)
+	res := make([]pair, 0)
 	var it Iterator
 	it = chunk.Iterator(it)
 	for it.Next() {
