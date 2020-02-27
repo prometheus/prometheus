@@ -655,9 +655,14 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 	// the variable.
 	var evalRange time.Duration
 
+	// Keeps track of running Select() processes
+	var wg sync.WaitGroup
+
+	// Error that might occur during series population subprocesses
+	var selectErr error
+	var selectErrMu sync.Mutex
+
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		var set storage.SeriesSet
-		var wrn storage.Warnings
 		params := &storage.SelectParams{
 			Start: timestamp.FromTime(s.Start),
 			End:   timestamp.FromTime(s.End),
@@ -692,19 +697,57 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 				params.End = params.End - offsetMilliseconds
 			}
 
-			set, wrn, err = querier.Select(params, n.LabelMatchers...)
-			warnings = append(warnings, wrn...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
-			}
-			n.UnexpandedSeriesSet = set
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				// Make sure all nonsynchronized variables are local.
+				var wrn storage.Warnings
+				var set storage.SeriesSet
+				var err error
+
+				selectErrMu.Lock()
+				err = selectErr
+				selectErrMu.Unlock()
+
+				// Skip running the select process if an earlier process already
+				// failed.
+				if err != nil {
+					return
+				}
+
+				set, wrn, err = querier.Select(params, n.LabelMatchers...)
+
+				selectErrMu.Lock()
+				warnings = append(warnings, wrn...)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+
+					// Only return the first selection error.
+					if selectErr == nil {
+						selectErr = err
+					}
+				}
+				selectErrMu.Unlock()
+
+				// Each Node is only accessed by one goroutine, so this is threadsafe.
+				n.UnexpandedSeriesSet = set
+			}()
 
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
 		return nil
 	})
+
+	wg.Wait()
+
+	// Re
+	selectErrMu.Lock()
+	err = selectErr
+	selectErrMu.Unlock()
+
 	return querier, warnings, err
 }
 
