@@ -231,14 +231,12 @@ func TestXor(t *testing.T) {
 
 	chunk := NewXORChunk()
 	a, err := chunk.Appender()
-	if err != nil {
-		t.Fatalf("get appender: %s", err)
-	}
+	testutil.Ok(t, err)
 	for _, p := range samples {
 		a.Append(p.t, p.v)
 	}
 
-	res := make([]pair, 0)
+	res := make([]pair, num)
 	var it Iterator
 	it = chunk.Iterator(it)
 	for it.Next() {
@@ -252,11 +250,7 @@ func TestXor(t *testing.T) {
 	for i := 0; i < len(samples); i++ {
 		s := samples[i]
 		r := res[i]
-		if s.t != r.t {
-			t.Fatal("test compact timestamp fail ,delta of delta", s, r)
-		}
-		if s.v != r.v {
-			t.Fatal("test compact value fail ,xor", s, r)
-		}
+		testutil.Equals(t, s.t, r.t, "test compact timestamp fail ,delta of delta", s, r)
+		testutil.Equals(t, s.v, r.v, "test compact value fail ,xor", s, r)
 	}
 }
