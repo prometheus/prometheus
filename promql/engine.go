@@ -73,6 +73,7 @@ type engineMetrics struct {
 	currentQueries       prometheus.Gauge
 	maxConcurrentQueries prometheus.Gauge
 	queryLogEnabled      prometheus.Gauge
+	querySamples         prometheus.Gauge
 	queryLogFailures     prometheus.Counter
 	queryQueueTime       prometheus.Summary
 	queryPrepareTime     prometheus.Summary
@@ -266,6 +267,12 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:      "queries_concurrent_max",
 			Help:      "The max number of concurrent queries.",
 		}),
+		querySamples: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "query_involved_samples",
+			Help:      "The number of samples involved in a query operation.",
+		}),
 		queryQueueTime: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
 			Subsystem:   subsystem,
@@ -317,6 +324,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		opts.Reg.MustRegister(
 			metrics.currentQueries,
 			metrics.maxConcurrentQueries,
+			metrics.querySamples,
 			metrics.queryLogEnabled,
 			metrics.queryLogFailures,
 			metrics.queryQueueTime,
@@ -550,6 +558,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		if err != nil {
 			return nil, warnings, err
 		}
+		ng.metrics.querySamples.Set(float64(evaluator.currentSamples))
 
 		evalSpanTimer.Finish()
 
@@ -615,6 +624,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
 	sort.Sort(mat)
 	sortSpanTimer.Finish()
+
+	ng.metrics.querySamples.Set(float64(evaluator.currentSamples))
 
 	return mat, warnings, nil
 }

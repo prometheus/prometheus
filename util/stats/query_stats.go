@@ -30,6 +30,7 @@ const (
 	ResultSortTime
 	QueryPreparationTime
 	InnerEvalTime
+	InvolvedSamples
 	ExecQueueTime
 	ExecTotalTime
 )
@@ -45,6 +46,8 @@ func (s QueryTiming) String() string {
 		return "Query preparation time"
 	case InnerEvalTime:
 		return "Inner eval time"
+	case InvolvedSamples:
+		return "Involved samples"
 	case ExecQueueTime:
 		return "Exec queue wait time"
 	case ExecTotalTime:
@@ -65,6 +68,8 @@ func (s QueryTiming) SpanOperation() string {
 		return "promqlPrepare"
 	case InnerEvalTime:
 		return "promqlInnerEval"
+	case InvolvedSamples:
+		return "promqlInvolvedSamples"
 	case ExecQueueTime:
 		return "promqlExecQueue"
 	case ExecTotalTime:
@@ -82,6 +87,7 @@ type queryTimings struct {
 	InnerEvalTime        float64 `json:"innerEvalTime"`
 	ExecQueueTime        float64 `json:"execQueueTime"`
 	ExecTotalTime        float64 `json:"execTotalTime"`
+	InvolvedSamples      int     `json:"involvedSamples"`
 }
 
 // QueryStats currently only holding query timings.
@@ -104,6 +110,8 @@ func NewQueryStats(tg *QueryTimers) *QueryStats {
 			qt.QueryPreparationTime = timer.Duration()
 		case InnerEvalTime:
 			qt.InnerEvalTime = timer.Duration()
+		case InvolvedSamples:
+			qt.InvolvedSamples = 0
 		case ExecQueueTime:
 			qt.ExecQueueTime = timer.Duration()
 		case ExecTotalTime:
