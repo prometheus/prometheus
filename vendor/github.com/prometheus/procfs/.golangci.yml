@@ -1,4 +1,0 @@
-linters:
-  enable:
-  - staticcheck
-  - govet

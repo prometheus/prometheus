@@ -62,11 +62,11 @@ jobs:
     - run:
         shell: bash
         command: |
-          (cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
-          go test -mod=vendor -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
+          (cd web/ui && GOOS= GOARCH= go generate)
+          go test -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
         environment:
           GOGC: "20"
-          GOOPTS: "-p 2 -mod=vendor"
+          GOOPTS: "-p 2"
   fuzzit_regression:
     executor: fuzzit
     working_directory: /go/src/github.com/prometheus/prometheus

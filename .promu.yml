@@ -13,7 +13,7 @@ build:
     - module: github.com/prometheus/prometheus/tsdb/v2/cmd/tsdb
       name: tsdb
       path: ./tsdb/cmd/tsdb
-    flags: -mod=vendor -a -tags netgo,builtinassets
+    flags: -a -tags netgo,builtinassets
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}
         -X github.com/prometheus/common/version.Revision={{.Revision}}
