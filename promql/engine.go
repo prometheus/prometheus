@@ -655,12 +655,14 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 	// the variable.
 	var evalRange time.Duration
 
-	// Keeps track of running Select() processes
-	var wg sync.WaitGroup
-
 	// Error that might occur during series population subprocesses
 	var selectErr error
-	var selectErrMu sync.Mutex
+	var selectMu sync.Mutex
+
+	var subprocesses int64
+	maxSubprocesses := int64(runtime.NumCPU())
+
+	processFinished := sync.NewCond(&selectMu)
 
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		params := &storage.SelectParams{
@@ -697,29 +699,32 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 				params.End = params.End - offsetMilliseconds
 			}
 
-			wg.Add(1)
+			selectMu.Lock()
+			defer selectMu.Unlock()
 
+			// Wait until there are less running goroutines than CPUs
+			for subprocesses >= maxSubprocesses {
+				processFinished.Wait()
+			}
+
+			// Do not start a new subprocess if a old one already failed
+			if selectErr != nil {
+				return selectErr
+			}
+
+			// Start the next select subprocess.
+			subprocesses += 1
 			go func() {
-				defer wg.Done()
-
 				// Make sure all nonsynchronized variables are local.
 				var wrn storage.Warnings
 				var set storage.SeriesSet
 				var err error
 
-				selectErrMu.Lock()
-				err = selectErr
-				selectErrMu.Unlock()
-
-				// Skip running the select process if an earlier process already
-				// failed.
-				if err != nil {
-					return
-				}
-
 				set, wrn, err = querier.Select(params, n.LabelMatchers...)
 
-				selectErrMu.Lock()
+				selectMu.Lock()
+				defer selectMu.Unlock()
+
 				warnings = append(warnings, wrn...)
 				if err != nil {
 					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
@@ -729,10 +734,13 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 						selectErr = err
 					}
 				}
-				selectErrMu.Unlock()
 
 				// Each Node is only accessed by one goroutine, so this is threadsafe.
 				n.UnexpandedSeriesSet = set
+
+				subprocesses -= 1
+
+				processFinished.Signal()
 			}()
 
 		case *parser.MatrixSelector:
@@ -741,12 +749,13 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *pa
 		return nil
 	})
 
-	wg.Wait()
+	// Wait until all subprocesses have finished.
+	selectMu.Lock()
+	defer selectMu.Unlock()
 
-	// Re
-	selectErrMu.Lock()
-	err = selectErr
-	selectErrMu.Unlock()
+	for subprocesses > 0 {
+		processFinished.Wait()
+	}
 
 	return querier, warnings, err
 }
