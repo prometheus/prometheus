@@ -236,7 +236,7 @@ func TestXor(t *testing.T) {
 		a.Append(p.t, p.v)
 	}
 
-	res := make([]pair, 0)
+	res := make([]pair, 0, num)
 	var it Iterator
 	it = chunk.Iterator(it)
 	for it.Next() {
