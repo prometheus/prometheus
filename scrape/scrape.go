@@ -1154,6 +1154,11 @@ loop:
 				continue
 			}
 
+			if !lset.Has(labels.MetricName) {
+				app.Rollback()
+				return total, added, seriesAdded, errors.New("metric names are mandatory")
+			}
+
 			var ref uint64
 			ref, err = app.Add(lset, t, v)
 			switch err {
