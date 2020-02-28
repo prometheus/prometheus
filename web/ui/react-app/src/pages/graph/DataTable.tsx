@@ -80,7 +80,7 @@ const DataTable: FC<QueryResult> = ({ data }) => {
       rows = (limitSeries(data.result) as RangeSamples[]).map((s, index) => {
         const valueText = s.values
           .map(v => {
-            return [1] + ' @' + v[0];
+            return v[1] + ' @' + v[0];
           })
           .join('\n');
         return (
