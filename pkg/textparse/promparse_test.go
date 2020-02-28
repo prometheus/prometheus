@@ -265,6 +265,10 @@ func TestPromParseErrors(t *testing.T) {
 			input: "foo 0 1_2\n",
 			err:   "expected next entry after timestamp, got \"MNAME\"",
 		},
+		{
+			input: `{a="ok"} 1`,
+			err:   `"INVALID" is not a valid start token`,
+		},
 	}
 
 	for i, c := range cases {
