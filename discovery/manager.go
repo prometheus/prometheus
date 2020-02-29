@@ -293,11 +293,11 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	if _, ok := m.targets[poolKey]; !ok {
+		m.targets[poolKey] = make(map[string]*targetgroup.Group)
+	}
 	for _, tg := range tgs {
 		if tg != nil { // Some Discoverers send nil target group so need to check for it to avoid panics.
-			if _, ok := m.targets[poolKey]; !ok {
-				m.targets[poolKey] = make(map[string]*targetgroup.Group)
-			}
 			m.targets[poolKey][tg.Source] = tg
 		}
 	}
