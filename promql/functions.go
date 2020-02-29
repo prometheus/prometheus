@@ -196,7 +196,7 @@ func instantValue(vals []parser.Value, out Vector, isRate bool) Vector {
 // The argument "s" is the set of computed smoothed values.
 // The argument "b" is the set of computed trend factors.
 // The argument "d" is the set of raw input values.
-func calcTrendValue(i int, sf, tf, s0, s1, b float64) float64 {
+func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 	if i == 0 {
 		return b
 	}
@@ -249,7 +249,7 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		x = sf * samples.Points[i].V
 
 		// Scale the last smoothed value with the trend at this point.
-		b = calcTrendValue(i-1, sf, tf, s0, s1, b)
+		b = calcTrendValue(i-1, tf, s0, s1, b)
 		y = (1 - sf) * (s1 + b)
 
 		s0, s1 = s1, x+y
