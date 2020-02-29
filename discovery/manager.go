@@ -293,13 +293,18 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	if _, ok := m.targets[poolKey]; !ok {
+		m.targets[poolKey] = make(map[string]*targetgroup.Group)
+	}
+	var c int
 	for _, tg := range tgs {
 		if tg != nil { // Some Discoverers send nil target group so need to check for it to avoid panics.
-			if _, ok := m.targets[poolKey]; !ok {
-				m.targets[poolKey] = make(map[string]*targetgroup.Group)
-			}
 			m.targets[poolKey][tg.Source] = tg
+			c++
 		}
+	}
+	if len(m.targets[poolKey]) != c {
+		level.Debug(m.logger).Log("msg", "duplicate sources found", "discovered", len(m.targets[poolKey]), "unique", c)
 	}
 }
 
