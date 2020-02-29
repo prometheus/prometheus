@@ -298,6 +298,10 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 			if _, ok := m.targets[poolKey]; !ok {
 				m.targets[poolKey] = make(map[string]*targetgroup.Group)
 			}
+			oldTg, ok := m.targets[poolKey][tg.Source]
+			if ok {
+				level.Debug(m.logger).Log("msg", "updateGroup Duplicate source", "source", tg.Source, "targets", tg.Targets, "oldTarget.targets", oldTg.Targets)
+			}
 			m.targets[poolKey][tg.Source] = tg
 		}
 	}
