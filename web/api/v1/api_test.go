@@ -2172,42 +2172,42 @@ func TestRespondError(t *testing.T) {
 	}
 }
 func TestParseTimeParam(t *testing.T) {
-	type resultType struct{
-		asTime time.Time;
-		asError func() error;
+	type resultType struct {
+		asTime  time.Time
+		asError func() error
 	}
 	ts, _ := parseTime("1582468023986")
-	var tests = []struct{
-		paramName string;
-		paramValue string;
-		defaultValue time.Time;
-		result resultType;
+	var tests = []struct {
+		paramName    string
+		paramValue   string
+		defaultValue time.Time
+		result       resultType
 	}{
-		{// When data is valid
-			paramName: "start",
-			paramValue: "1582468023986",
+		{ // When data is valid
+			paramName:    "start",
+			paramValue:   "1582468023986",
 			defaultValue: minTime,
 			result: resultType{
-				asTime: ts,
+				asTime:  ts,
 				asError: nil,
 			},
 		},
-		{// When data is empty string
-			paramName: "end",
-			paramValue: "",
+		{ // When data is empty string
+			paramName:    "end",
+			paramValue:   "",
 			defaultValue: maxTime,
 			result: resultType{
-				asTime: maxTime,
+				asTime:  maxTime,
 				asError: nil,
 			},
 		},
-		{// When data is not valid
-			paramName: "foo",
-			paramValue: "baz",
+		{ // When data is not valid
+			paramName:    "foo",
+			paramValue:   "baz",
 			defaultValue: maxTime,
 			result: resultType{
 				asTime: time.Time{},
-				asError: func () error {
+				asError: func() error {
 					_, err := parseTime("baz")
 					return errPkg.Wrapf(err, "Invalid parameters '%s'", "foo")
 				},
@@ -2215,7 +2215,7 @@ func TestParseTimeParam(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		req, err := http.NewRequest("GET", "localhost:42/foo?" + test.paramName + "=" + test.paramValue, nil)
+		req, err := http.NewRequest("GET", "localhost:42/foo?"+test.paramName+"="+test.paramValue, nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2227,7 +2227,7 @@ func TestParseTimeParam(t *testing.T) {
 				Expected error message doesn't match the one from the result.
 					Expected: %s.
 					Actual: %s`,
-					result.asError().Error(), err.Error(),
+				result.asError().Error(), err.Error(),
 			)
 		} else {
 			if !asTime.Equal(result.asTime) {
