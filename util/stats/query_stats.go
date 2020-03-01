@@ -82,7 +82,6 @@ type queryTimings struct {
 	InnerEvalTime        float64 `json:"innerEvalTime"`
 	ExecQueueTime        float64 `json:"execQueueTime"`
 	ExecTotalTime        float64 `json:"execTotalTime"`
-	InvolvedSamples      int     `json:"involvedSamples"`
 }
 
 type querySamples struct {
@@ -99,7 +98,7 @@ type QueryStats struct {
 
 // NewQueryStats makes a QueryStats struct with all QueryTimings found in the
 // given TimerGroup.
-func NewQueryStats(tg *QueryTimers, ts *QuerySamples) *QueryStats {
+func NewQueryStats(tg *QueryTimers, sp *QuerySamples) *QueryStats {
 	var (
 		qt      queryTimings
 		samples querySamples
@@ -122,11 +121,11 @@ func NewQueryStats(tg *QueryTimers, ts *QuerySamples) *QueryStats {
 		}
 	}
 
-	if ts != nil {
+	if sp != nil {
 		samples = querySamples{
-			EvaluatorCount: ts.EvaluatorCount,
-			PeakSamples:    ts.PeakSamples,
-			TotalSamples:   ts.TotalSamples,
+			EvaluatorCount: sp.EvaluatorCount,
+			PeakSamples:    sp.PeakSamples,
+			TotalSamples:   sp.TotalSamples,
 		}
 	}
 
