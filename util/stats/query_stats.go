@@ -185,7 +185,7 @@ func (qs *QuerySamples) ObserveSamples(samples int) {
 		qs.PeakSamples = samples
 	}
 	qs.TotalSamples += samples
-	qs.EvaluatorCount ++
+	qs.EvaluatorCount++
 }
 
 func NewQueryTimers() *QueryTimers {
