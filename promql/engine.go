@@ -236,7 +236,6 @@ type EngineOpts struct {
 type Engine struct {
 	logger             log.Logger
 	metrics            *engineMetrics
-	stats              *stats.QuerySamples
 	timeout            time.Duration
 	maxSamplesPerQuery int
 	activeQueryTracker *ActiveQueryTracker

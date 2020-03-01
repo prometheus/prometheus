@@ -74,12 +74,6 @@ func (s QueryTiming) SpanOperation() string {
 	}
 }
 
-// queryStats provides a type for samples and timings.
-type queryStats struct {
-	timings queryTimings `json:"timings"`
-	samples querySamples `json:"samples"`
-}
-
 // queryTimings with all query timers mapped to durations.
 type queryTimings struct {
 	EvalTotalTime        float64 `json:"evalTotalTime"`

@@ -48,7 +48,7 @@ func TestQueryStatsWithTimers(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	timer.Stop()
 
-	qs := NewQueryStats(qt)
+	qs := NewQueryStats(qt, nil)
 	actual, err := json.Marshal(qs)
 	if err != nil {
 		t.Fatalf("Unexpected error during serialization: %v", err)
@@ -69,7 +69,7 @@ func TestQueryStatsWithSpanTimers(t *testing.T) {
 	qst, _ := qt.GetSpanTimer(ctx, ExecQueueTime, prometheus.NewSummary(prometheus.SummaryOpts{}))
 	time.Sleep(5 * time.Millisecond)
 	qst.Finish()
-	qs := NewQueryStats(qt)
+	qs := NewQueryStats(qt, nil)
 	actual, err := json.Marshal(qs)
 	if err != nil {
 		t.Fatalf("Unexpected error during serialization: %v", err)
