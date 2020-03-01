@@ -110,7 +110,8 @@ func (i *isolation) State() *isolationState {
 	return isoState
 }
 
-// newAppendID increments the transaction counter and returns a new transaction ID.
+// newAppendID increments the transaction counter and returns a new transaction
+// ID. The first ID returned is 1.
 func (i *isolation) newAppendID() uint64 {
 	i.appendMtx.Lock()
 	defer i.appendMtx.Unlock()

@@ -1847,7 +1847,8 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
-// the appendID for isolation.
+// the appendID for isolation. (The appendID can be zero, which results in no
+// isolation for this append.)
 func (s *memSeries) append(t int64, v float64, appendID uint64) (success, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
@@ -1885,7 +1886,9 @@ func (s *memSeries) append(t int64, v float64, appendID uint64) (success, chunkC
 	s.sampleBuf[2] = s.sampleBuf[3]
 	s.sampleBuf[3] = sample{t: t, v: v}
 
-	s.txs.add(appendID)
+	if appendID > 0 {
+		s.txs.add(appendID)
+	}
 
 	return true, chunkCreated
 }

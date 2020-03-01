@@ -1558,7 +1558,7 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 	_, err = app1.Add(labels.FromStrings("foo", "bar"), 0, 0)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app1.Commit())
-	testutil.Equals(t, uint64(1), hb.iso.lowWatermark())
+	testutil.Equals(t, uint64(1), hb.iso.lowWatermark(), "Low watermark should by 1 after 1st append.")
 
 	app1 = hb.Appender()
 	_, err = app1.Add(labels.FromStrings("foo", "bar"), 1, 1)
@@ -1579,4 +1579,18 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 
 	is.Close()
 	testutil.Equals(t, uint64(3), hb.iso.lowWatermark(), "After read has finished (iso state closed), low watermark should jump to three.")
+}
+
+func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
+	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer h.Close()
+
+	h.initTime(0)
+
+	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
+
+	ok, _ := s.append(0, 0, 0)
+	testutil.Assert(t, ok, "Series append failed.")
+	testutil.Equals(t, 0, s.txs.txIDCount, "Series should not have an appendID after append with appendID=0.")
 }
