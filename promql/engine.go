@@ -540,7 +540,6 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if err != nil {
 		return nil, warnings, err
 	}
-	var currentSamples int
 
 	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
 	// Instant evaluation. This is executed as a range evaluation with one step.
@@ -562,11 +561,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			return nil, warnings, err
 		}
 
-		if currentSamples = evaluator.currentSamples; currentSamples > query.sampleStats.PeakSamples {
-			query.sampleStats.PeakSamples = currentSamples
-		}
-		query.sampleStats.TotalSamples += evaluator.currentSamples
-		query.sampleStats.EvaluatorCount++
+		query.sampleStats.ObserveSamples(evaluator.currentSamples)
 
 		evalSpanTimer.Finish()
 
@@ -618,11 +613,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 	evalSpanTimer.Finish()
 
-	if currentSamples = evaluator.currentSamples; currentSamples > query.sampleStats.PeakSamples {
-		query.sampleStats.PeakSamples = currentSamples
-	}
-	query.sampleStats.TotalSamples += evaluator.currentSamples
-	query.sampleStats.EvaluatorCount++
+	query.sampleStats.ObserveSamples(evaluator.currentSamples)
 
 	mat, ok := val.(Matrix)
 	if !ok {

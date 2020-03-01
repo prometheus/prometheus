@@ -178,6 +178,16 @@ type Stats struct {
 	SampleStats QuerySamples
 }
 
+// ObserveSamples observes the samples through which the query
+// is passed and modifies the stats accordingly.
+func (qs *QuerySamples) ObserveSamples(samples int) {
+	if samples > qs.PeakSamples {
+		qs.PeakSamples = samples
+	}
+	qs.TotalSamples += samples
+	qs.EvaluatorCount ++
+}
+
 func NewQueryTimers() *QueryTimers {
 	return &QueryTimers{NewTimerGroup()}
 }
