@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	yaml "gopkg.in/yaml.v2"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -293,7 +294,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 					if a.ExpLabels == nil {
 						a.ExpLabels = make(map[string]string)
 					}
-					a.ExpLabels[labels.AlertName] = testcase.Alertname
+					a.ExpLabels[model.AlertNameLabel] = testcase.Alertname
 
 					expAlerts = append(expAlerts, labelAndAnnotation{
 						Labels:      labels.FromMap(a.ExpLabels),

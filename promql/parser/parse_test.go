@@ -2538,51 +2538,51 @@ var testSeries = []struct {
 		expectedValues: newSeq(-1, 2, 3),
 	}, {
 		input:          `my_metric 1 2 3`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric"),
 		expectedValues: newSeq(1, 2, 3),
 	}, {
 		input:          `my_metric{} 1 2 3`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric"),
 		expectedValues: newSeq(1, 2, 3),
 	}, {
 		input:          `my_metric{a="b"} 1 2 3`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 2, 3),
 	}, {
 		input:          `my_metric{a="b"} 1 2 3-10x4`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 2, 3, -7, -17, -27, -37),
 	}, {
 		input:          `my_metric{a="b"} 1 2 3-0x4`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 2, 3, 3, 3, 3, 3),
 	}, {
 		input:          `my_metric{a="b"} 1 3 _ 5 _x4`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 3, none, 5, none, none, none, none),
 	}, {
 		input: `my_metric{a="b"} 1 3 _ 5 _a4`,
 		fail:  true,
 	}, {
 		input:          `my_metric{a="b"} 1 -1`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, -1),
 	}, {
 		input:          `my_metric{a="b"} 1 +1`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 1),
 	}, {
 		input:          `my_metric{a="b"} 1 -1 -3-10x4 7 9 +5`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, -1, -3, -13, -23, -33, -43, 7, 9, 5),
 	}, {
 		input:          `my_metric{a="b"} 1 +1 +4 -6 -2 8`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 1, 4, -6, -2, 8),
 	}, {
 		// Trailing spaces should be correctly handles.
 		input:          `my_metric{a="b"} 1 2 3    `,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedMetric: labels.FromStrings(model.MetricNameLabel, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 2, 3),
 	}, {
 		input: `my_metric{a="b"} -3-3 -3`,

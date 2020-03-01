@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -83,7 +84,7 @@ func TestTemplateExpansion(t *testing.T) {
 			text: "{{ query \"metric{instance='a'}\" | first | value }}",
 			queryResult: promql.Vector{
 				{
-					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Metric: labels.FromStrings(model.MetricNameLabel, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
 				}},
 			output: "11",
@@ -94,7 +95,7 @@ func TestTemplateExpansion(t *testing.T) {
 
 			queryResult: promql.Vector{
 				{
-					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Metric: labels.FromStrings(model.MetricNameLabel, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
 				}},
 			output: "a",
@@ -104,7 +105,7 @@ func TestTemplateExpansion(t *testing.T) {
 			text: "{{ query \"metric{instance='a'}\" | first | label \"foo\" }}",
 			queryResult: promql.Vector{
 				{
-					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Metric: labels.FromStrings(model.MetricNameLabel, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
 				}},
 			output: "",
@@ -114,7 +115,7 @@ func TestTemplateExpansion(t *testing.T) {
 			text: "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
 			queryResult: promql.Vector{
 				{
-					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Metric: labels.FromStrings(model.MetricNameLabel, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
 				}},
 			output: "",
@@ -123,7 +124,7 @@ func TestTemplateExpansion(t *testing.T) {
 			text: "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
 			queryResult: promql.Vector{
 				{
-					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Metric: labels.FromStrings(model.MetricNameLabel, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
 				}},
 			output: "",
@@ -134,10 +135,10 @@ func TestTemplateExpansion(t *testing.T) {
 			text: "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
 			queryResult: promql.Vector{
 				{
-					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Metric: labels.FromStrings(model.MetricNameLabel, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
 				}, {
-					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "b"),
+					Metric: labels.FromStrings(model.MetricNameLabel, "metric", "instance", "b"),
 					Point:  promql.Point{T: 0, V: 21},
 				}},
 			output: "a:11: b:21: ",
