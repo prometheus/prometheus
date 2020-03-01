@@ -120,7 +120,8 @@ func main() {
 		prometheusURL   string
 		corsRegexString string
 
-		promlogConfig promlog.Config
+		promlogConfig    promlog.Config
+		scrapeReloadTime model.Duration
 	}{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
@@ -251,6 +252,9 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	a.Flag("scrape.reload.time", "How often to reload in scrape").
+		Default("5s").PlaceHolder("<duration>").SetValue(&cfg.scrapeReloadTime)
+
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	_, err := a.Parse(os.Args[1:])
@@ -354,7 +358,7 @@ func main() {
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
 		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
 
-		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage, time.Duration(cfg.scrapeReloadTime))
 
 		opts = promql.EngineOpts{
 			Logger:             log.With(logger, "component", "query engine"),
@@ -619,7 +623,7 @@ func main() {
 				select {
 				case <-dbOpen:
 					break
-				// In case a shutdown is initiated before the dbOpen is released
+					// In case a shutdown is initiated before the dbOpen is released
 				case <-cancel:
 					reloadReady.Close()
 					return nil

@@ -101,7 +101,7 @@ func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 // NewManager is the Manager constructor
-func NewManager(logger log.Logger, app storage.Appendable) *Manager {
+func NewManager(logger log.Logger, app storage.Appendable, reloadRateDuration time.Duration) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -112,6 +112,7 @@ func NewManager(logger log.Logger, app storage.Appendable) *Manager {
 		scrapePools:   make(map[string]*scrapePool),
 		graceShut:     make(chan struct{}),
 		triggerReload: make(chan struct{}, 1),
+		reloadRate:    reloadRateDuration,
 	}
 	targetMetadataCache.registerManager(m)
 
@@ -132,6 +133,7 @@ type Manager struct {
 	targetSets    map[string][]*targetgroup.Group
 
 	triggerReload chan struct{}
+	reloadRate    time.Duration
 }
 
 // Run receives and saves target set updates and triggers the scraping loops reloading.
@@ -155,7 +157,7 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 }
 
 func (m *Manager) reloader() {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(m.reloadRate)
 	defer ticker.Stop()
 
 	for {
