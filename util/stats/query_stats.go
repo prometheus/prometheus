@@ -30,7 +30,6 @@ const (
 	ResultSortTime
 	QueryPreparationTime
 	InnerEvalTime
-	InvolvedSamples
 	ExecQueueTime
 	ExecTotalTime
 )
@@ -46,8 +45,6 @@ func (s QueryTiming) String() string {
 		return "Query preparation time"
 	case InnerEvalTime:
 		return "Inner eval time"
-	case InvolvedSamples:
-		return "Involved samples"
 	case ExecQueueTime:
 		return "Exec queue wait time"
 	case ExecTotalTime:
@@ -68,8 +65,6 @@ func (s QueryTiming) SpanOperation() string {
 		return "promqlPrepare"
 	case InnerEvalTime:
 		return "promqlInnerEval"
-	case InvolvedSamples:
-		return "promqlInvolvedSamples"
 	case ExecQueueTime:
 		return "promqlExecQueue"
 	case ExecTotalTime:
@@ -77,6 +72,12 @@ func (s QueryTiming) SpanOperation() string {
 	default:
 		return "Unknown query timing"
 	}
+}
+
+// queryStats provides a type for samples and timings.
+type queryStats struct {
+	timings queryTimings `json:"timings"`
+	samples querySamples `json:"samples"`
 }
 
 // queryTimings with all query timers mapped to durations.
@@ -90,15 +91,25 @@ type queryTimings struct {
 	InvolvedSamples      int     `json:"involvedSamples"`
 }
 
+type querySamples struct {
+	TotalSamples	int `json:"totalSamples"`
+	PeakSamples		int `json:"peakSamples"`
+	EvaluatorCount	int `json:"evaluatorCount"`
+}
+
 // QueryStats currently only holding query timings.
 type QueryStats struct {
 	Timings queryTimings `json:"timings,omitempty"`
+	Samples querySamples `json:"samples,omitempty"`
 }
 
 // NewQueryStats makes a QueryStats struct with all QueryTimings found in the
 // given TimerGroup.
-func NewQueryStats(tg *QueryTimers) *QueryStats {
-	var qt queryTimings
+func NewQueryStats(tg *QueryTimers, ts *QuerySamples) *QueryStats {
+	var (
+		qt queryTimings
+		samples querySamples
+	)
 
 	for s, timer := range tg.TimerGroup.timers {
 		switch s {
@@ -110,8 +121,6 @@ func NewQueryStats(tg *QueryTimers) *QueryStats {
 			qt.QueryPreparationTime = timer.Duration()
 		case InnerEvalTime:
 			qt.InnerEvalTime = timer.Duration()
-		case InvolvedSamples:
-			qt.InvolvedSamples = 0
 		case ExecQueueTime:
 			qt.ExecQueueTime = timer.Duration()
 		case ExecTotalTime:
@@ -119,7 +128,15 @@ func NewQueryStats(tg *QueryTimers) *QueryStats {
 		}
 	}
 
-	qs := QueryStats{Timings: qt}
+	if ts != nil {
+		samples = querySamples{
+			EvaluatorCount: ts.EvaluatorCount,
+			PeakSamples: ts.PeakSamples,
+			TotalSamples: ts.TotalSamples,
+		}
+	}
+
+	qs := QueryStats{Timings: qt, Samples: samples}
 	return &qs
 }
 
@@ -156,8 +173,23 @@ type QueryTimers struct {
 	*TimerGroup
 }
 
+type QuerySamples struct {
+	EvaluatorCount int
+	PeakSamples int
+	TotalSamples int
+}
+
+type Stats struct {
+	TimerStats	QueryTimers
+	SampleStats QuerySamples
+}
+
 func NewQueryTimers() *QueryTimers {
 	return &QueryTimers{NewTimerGroup()}
+}
+
+func NewQuerySamples() *QuerySamples {
+	return &QuerySamples{}
 }
 
 func (qs *QueryTimers) GetSpanTimer(ctx context.Context, qt QueryTiming, observers ...prometheus.Observer) (*SpanTimer, context.Context) {

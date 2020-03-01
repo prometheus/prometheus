@@ -73,7 +73,6 @@ type engineMetrics struct {
 	currentQueries       prometheus.Gauge
 	maxConcurrentQueries prometheus.Gauge
 	queryLogEnabled      prometheus.Gauge
-	querySamples         prometheus.Gauge
 	queryLogFailures     prometheus.Counter
 	queryQueueTime       prometheus.Summary
 	queryPrepareTime     prometheus.Summary
@@ -129,6 +128,8 @@ type Query interface {
 	Statement() Statement
 	// Stats returns statistics about the lifetime of the query.
 	Stats() *stats.QueryTimers
+	// SampleStats returns sample statistics about the lifetime of the query.
+	SampleStats() *stats.QuerySamples
 	// Cancel signals that a running query execution should be aborted.
 	Cancel()
 }
@@ -143,6 +144,8 @@ type query struct {
 	stmt Statement
 	// Timer stats for the query execution.
 	stats *stats.QueryTimers
+	// Sample stats for the query execution.
+	sampleStats *stats.QuerySamples
 	// Result matrix for reuse.
 	matrix Matrix
 	// Cancellation function for the query.
@@ -164,6 +167,11 @@ func (q *query) Statement() Statement {
 // Stats implements the Query interface.
 func (q *query) Stats() *stats.QueryTimers {
 	return q.stats
+}
+
+// SampleStats implements the Query interface.
+func (q *query) SampleStats() *stats.QuerySamples {
+	return q.sampleStats
 }
 
 // Cancel implements the Query interface.
@@ -228,6 +236,7 @@ type EngineOpts struct {
 type Engine struct {
 	logger             log.Logger
 	metrics            *engineMetrics
+	stats 				*stats.QuerySamples
 	timeout            time.Duration
 	maxSamplesPerQuery int
 	activeQueryTracker *ActiveQueryTracker
@@ -266,12 +275,6 @@ func NewEngine(opts EngineOpts) *Engine {
 			Subsystem: subsystem,
 			Name:      "queries_concurrent_max",
 			Help:      "The max number of concurrent queries.",
-		}),
-		querySamples: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "query_involved_samples",
-			Help:      "The number of samples involved in a query operation.",
 		}),
 		queryQueueTime: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
@@ -324,7 +327,6 @@ func NewEngine(opts EngineOpts) *Engine {
 		opts.Reg.MustRegister(
 			metrics.currentQueries,
 			metrics.maxConcurrentQueries,
-			metrics.querySamples,
 			metrics.queryLogEnabled,
 			metrics.queryLogFailures,
 			metrics.queryQueueTime,
@@ -406,6 +408,7 @@ func (ng *Engine) newQuery(q storage.Queryable, expr Expr, start, end time.Time,
 		stmt:      es,
 		ng:        ng,
 		stats:     stats.NewQueryTimers(),
+		sampleStats: stats.NewQuerySamples(),
 		queryable: q,
 	}
 	return qry
@@ -461,7 +464,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v Value, w storage.Warnin
 			if err != nil {
 				f = append(f, "error", err)
 			}
-			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
+			f = append(f, "stats", stats.NewQueryStats(q.Stats(), q.SampleStats()))
 			if origin := ctx.Value(queryOrigin); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)
@@ -538,6 +541,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if err != nil {
 		return nil, warnings, err
 	}
+	var currentSamples int
 
 	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
 	// Instant evaluation. This is executed as a range evaluation with one step.
@@ -558,7 +562,12 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		if err != nil {
 			return nil, warnings, err
 		}
-		ng.metrics.querySamples.Set(float64(evaluator.currentSamples))
+
+		if currentSamples = evaluator.currentSamples; currentSamples > query.sampleStats.PeakSamples {
+			query.sampleStats.PeakSamples = currentSamples
+		}
+		query.sampleStats.TotalSamples += evaluator.currentSamples
+		query.sampleStats.EvaluatorCount ++
 
 		evalSpanTimer.Finish()
 
@@ -610,6 +619,12 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 	evalSpanTimer.Finish()
 
+	if currentSamples = evaluator.currentSamples; currentSamples > query.sampleStats.PeakSamples {
+		query.sampleStats.PeakSamples = currentSamples
+	}
+	query.sampleStats.TotalSamples += evaluator.currentSamples
+	query.sampleStats.EvaluatorCount ++
+
 	mat, ok := val.(Matrix)
 	if !ok {
 		panic(errors.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
@@ -624,8 +639,6 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
 	sort.Sort(mat)
 	sortSpanTimer.Finish()
-
-	ng.metrics.querySamples.Set(float64(evaluator.currentSamples))
 
 	return mat, warnings, nil
 }
