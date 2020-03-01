@@ -708,7 +708,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 			sset, err, _ := q.Select(nil, matchers...)
 			if err != nil {
 				level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(), "stage", "Select", "err", err)
+					model.AlertNameLabel, alertRule.Name(), "stage", "Select", "err", err)
 				return
 			}
 
@@ -738,7 +738,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 			}
 			if it.Err() != nil {
 				level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
+					model.AlertNameLabel, alertRule.Name(), "stage", "Iterator", "err", it.Err())
 				return
 			}
 			if value.IsStaleNaN(v) { // Alert was not active.
@@ -779,7 +779,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 			a.ActiveAt = restoredActiveAt
 			level.Debug(g.logger).Log("msg", "'for' state restored",
-				labels.AlertName, alertRule.Name(), "restored_time", a.ActiveAt.Format(time.RFC850),
+				model.AlertNameLabel, alertRule.Name(), "restored_time", a.ActiveAt.Format(time.RFC850),
 				"labels", a.Labels.String())
 
 		})

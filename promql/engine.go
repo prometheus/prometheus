@@ -1724,7 +1724,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	lb := labels.NewBuilder(lhs)
 
 	if shouldDropMetricName(op) {
-		lb.Del(labels.MetricName)
+		lb.Del(model.MetricNameLabel)
 	}
 
 	if matching.Card == parser.CardOneToOne {
@@ -1791,7 +1791,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 }
 
 func dropMetricName(l labels.Labels) labels.Labels {
-	return labels.NewBuilder(l).Del(labels.MetricName).Labels()
+	return labels.NewBuilder(l).Del(model.MetricNameLabel).Labels()
 }
 
 // scalarBinop evaluates a binary operation between two Scalars.
@@ -1924,7 +1924,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			if without {
 				lb.Reset(metric)
 				lb.Del(grouping...)
-				lb.Del(labels.MetricName)
+				lb.Del(model.MetricNameLabel)
 				m = lb.Labels()
 			} else {
 				m = make(labels.Labels, 0, len(grouping))

@@ -28,6 +28,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -211,7 +212,7 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 	s := string(p.series)
 
 	*l = append(*l, labels.Label{
-		Name:  labels.MetricName,
+		Name:  model.MetricNameLabel,
 		Value: s[:p.offsets[0]-p.start],
 	})
 

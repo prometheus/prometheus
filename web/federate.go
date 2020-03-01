@@ -170,7 +170,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				// This is also important to protect against nameless metrics.
 				continue
 			}
-			if l.Name == labels.MetricName {
+			if l.Name == model.MetricNameLabel {
 				nameSeen = true
 				if l.Value == lastMetricName {
 					// We already have the name in the current MetricFamily,
@@ -237,7 +237,7 @@ func (vec byName) Len() int      { return len(vec) }
 func (vec byName) Swap(i, j int) { vec[i], vec[j] = vec[j], vec[i] }
 
 func (vec byName) Less(i, j int) bool {
-	ni := vec[i].Metric.Get(labels.MetricName)
-	nj := vec[j].Metric.Get(labels.MetricName)
+	ni := vec[i].Metric.Get(model.MetricNameLabel)
+	nj := vec[j].Metric.Get(model.MetricNameLabel)
 	return ni < nj
 }

@@ -23,6 +23,7 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
@@ -86,7 +87,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 		lb := labels.NewBuilder(sample.Metric)
 
-		lb.Set(labels.MetricName, rule.name)
+		lb.Set(model.MetricNameLabel, rule.name)
 
 		for _, l := range rule.labels {
 			lb.Set(l.Name, l.Value)

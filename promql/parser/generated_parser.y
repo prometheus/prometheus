@@ -20,6 +20,7 @@ import (
         "strconv"
         "time"
 
+	"github.com/prometheus/common/model"
         "github.com/prometheus/prometheus/pkg/labels"
         "github.com/prometheus/prometheus/pkg/value"
 )
@@ -526,7 +527,7 @@ label_matcher   : IDENTIFIER match_op STRING
  */
 
 metric          : metric_identifier label_set
-                        { $$ = append($2, labels.Label{Name: labels.MetricName, Value: $1.Val}); sort.Sort($$) }
+                        { $$ = append($2, labels.Label{Name: model.MetricNameLabel, Value: $1.Val}); sort.Sort($$) }
                 | label_set
                         {$$ = $1}
                 ;

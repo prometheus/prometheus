@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 )
@@ -1310,7 +1311,7 @@ yydefault:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line generated_parser.y:529
 		{
-			yyVAL.labels = append(yyDollar[2].labels, labels.Label{Name: labels.MetricName, Value: yyDollar[1].item.Val})
+			yyVAL.labels = append(yyDollar[2].labels, labels.Label{Name: model.MetricNameLabel, Value: yyDollar[1].item.Val})
 			sort.Sort(yyVAL.labels)
 		}
 	case 88:

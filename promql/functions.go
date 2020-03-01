@@ -620,7 +620,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		mb, ok := enh.signatureToMetricWithBuckets[hash]
 		if !ok {
 			el.Metric = labels.NewBuilder(el.Metric).
-				Del(labels.BucketLabel, labels.MetricName).
+				Del(model.BucketLabel, model.MetricNameLabel).
 				Labels()
 
 			mb = &metricWithBuckets{el.Metric, nil}
@@ -995,7 +995,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 
 	empty := []string{}
 	for _, ma := range lm {
-		if ma.Name == labels.MetricName {
+		if ma.Name == model.MetricNameLabel {
 			continue
 		}
 		if ma.Type == labels.MatchEqual && !m.Has(ma.Name) {

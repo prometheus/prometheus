@@ -24,7 +24,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -355,7 +354,7 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node
 
 func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	if vs.Name != "" {
-		nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, vs.Name)
+		nameMatcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, vs.Name)
 		if err != nil {
 			panic(err) // Must not happen with labels.MatchEqual
 		}
@@ -587,7 +586,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			// set outside the braces. This checks if the name has already been set
 			// previously
 			for _, m := range n.LabelMatchers[0 : len(n.LabelMatchers)-1] {
-				if m != nil && m.Name == labels.MetricName {
+				if m != nil && m.Name == model.MetricNameLabel {
 					p.addParseErrf(n.PositionRange(), "metric name must not be set twice: %q or %q", n.Name, m.Value)
 				}
 			}

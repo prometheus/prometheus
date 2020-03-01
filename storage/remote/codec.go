@@ -437,7 +437,7 @@ func (c *concreteSeriesIterator) Err() error {
 // also making sure that there are no labels with duplicate names
 func validateLabelsAndMetricName(ls labels.Labels) error {
 	for i, l := range ls {
-		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
+		if l.Name == model.MetricNameLabel && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return errors.Errorf("invalid metric name: %v", l.Value)
 		}
 		if !model.LabelName(l.Name).IsValid() {

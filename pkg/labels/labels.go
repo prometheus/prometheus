@@ -20,17 +20,10 @@ import (
 	"strconv"
 
 	"github.com/cespare/xxhash"
+	"github.com/prometheus/common/model"
 )
 
 const sep = '\xff'
-
-// Well-known label names used by Prometheus components.
-const (
-	MetricName   = "__name__"
-	AlertName    = "alertname"
-	BucketLabel  = "le"
-	InstanceName = "instance"
-)
 
 // Label is a key/value pair of strings.
 type Label struct {
@@ -108,7 +101,7 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 	}
 
 	for _, v := range ls {
-		if _, ok := nameSet[v.Name]; on == ok && (on || v.Name != MetricName) {
+		if _, ok := nameSet[v.Name]; on == ok && (on || v.Name != model.MetricNameLabel) {
 			matchedLabels = append(matchedLabels, v)
 		}
 	}
@@ -161,7 +154,7 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 		for j < len(names) && names[j] < ls[i].Name {
 			j++
 		}
-		if ls[i].Name == MetricName || (j < len(names) && ls[i].Name == names[j]) {
+		if ls[i].Name == model.MetricNameLabel || (j < len(names) && ls[i].Name == names[j]) {
 			continue
 		}
 		b = append(b, ls[i].Name...)

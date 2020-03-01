@@ -228,8 +228,8 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 		lb.Set(l.Name, l.Value)
 	}
 
-	lb.Set(labels.MetricName, alertMetricName)
-	lb.Set(labels.AlertName, r.name)
+	lb.Set(model.MetricNameLabel, alertMetricName)
+	lb.Set(model.AlertNameLabel, r.name)
 	lb.Set(alertStateLabel, alert.State.String())
 
 	s := promql.Sample{
@@ -247,8 +247,8 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 		lb.Set(l.Name, l.Value)
 	}
 
-	lb.Set(labels.MetricName, alertForStateMetricName)
-	lb.Set(labels.AlertName, r.name)
+	lb.Set(model.MetricNameLabel, alertForStateMetricName)
+	lb.Set(model.AlertNameLabel, r.name)
 
 	s := promql.Sample{
 		Metric: lb.Labels(),
@@ -347,12 +347,12 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			return result
 		}
 
-		lb := labels.NewBuilder(smpl.Metric).Del(labels.MetricName)
+		lb := labels.NewBuilder(smpl.Metric).Del(model.MetricNameLabel)
 
 		for _, l := range r.labels {
 			lb.Set(l.Name, expand(l.Value))
 		}
-		lb.Set(labels.AlertName, r.Name())
+		lb.Set(model.AlertNameLabel, r.Name())
 
 		annotations := make(labels.Labels, 0, len(r.annotations))
 		for _, a := range r.annotations {

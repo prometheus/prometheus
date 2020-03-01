@@ -75,7 +75,7 @@ type Alert struct {
 
 // Name returns the name of the alert. It is equivalent to the "alertname" label.
 func (a *Alert) Name() string {
-	return a.Labels.Get(labels.AlertName)
+	return a.Labels.Get(model.AlertNameLabel)
 }
 
 // Hash returns a hash over the alert. It is equivalent to the alert labels hash.
