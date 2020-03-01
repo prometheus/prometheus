@@ -92,9 +92,9 @@ type queryTimings struct {
 }
 
 type querySamples struct {
-	TotalSamples	int `json:"totalSamples"`
-	PeakSamples		int `json:"peakSamples"`
-	EvaluatorCount	int `json:"evaluatorCount"`
+	TotalSamples   int `json:"totalSamples"`
+	PeakSamples    int `json:"peakSamples"`
+	EvaluatorCount int `json:"evaluatorCount"`
 }
 
 // QueryStats currently only holding query timings.
@@ -107,7 +107,7 @@ type QueryStats struct {
 // given TimerGroup.
 func NewQueryStats(tg *QueryTimers, ts *QuerySamples) *QueryStats {
 	var (
-		qt queryTimings
+		qt      queryTimings
 		samples querySamples
 	)
 
@@ -131,8 +131,8 @@ func NewQueryStats(tg *QueryTimers, ts *QuerySamples) *QueryStats {
 	if ts != nil {
 		samples = querySamples{
 			EvaluatorCount: ts.EvaluatorCount,
-			PeakSamples: ts.PeakSamples,
-			TotalSamples: ts.TotalSamples,
+			PeakSamples:    ts.PeakSamples,
+			TotalSamples:   ts.TotalSamples,
 		}
 	}
 
@@ -175,12 +175,12 @@ type QueryTimers struct {
 
 type QuerySamples struct {
 	EvaluatorCount int
-	PeakSamples int
-	TotalSamples int
+	PeakSamples    int
+	TotalSamples   int
 }
 
 type Stats struct {
-	TimerStats	QueryTimers
+	TimerStats  QueryTimers
 	SampleStats QuerySamples
 }
 

@@ -236,7 +236,7 @@ type EngineOpts struct {
 type Engine struct {
 	logger             log.Logger
 	metrics            *engineMetrics
-	stats 				*stats.QuerySamples
+	stats              *stats.QuerySamples
 	timeout            time.Duration
 	maxSamplesPerQuery int
 	activeQueryTracker *ActiveQueryTracker
@@ -405,11 +405,11 @@ func (ng *Engine) newQuery(q storage.Queryable, expr Expr, start, end time.Time,
 		Interval: interval,
 	}
 	qry := &query{
-		stmt:      es,
-		ng:        ng,
-		stats:     stats.NewQueryTimers(),
+		stmt:        es,
+		ng:          ng,
+		stats:       stats.NewQueryTimers(),
 		sampleStats: stats.NewQuerySamples(),
-		queryable: q,
+		queryable:   q,
 	}
 	return qry
 }
@@ -567,7 +567,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			query.sampleStats.PeakSamples = currentSamples
 		}
 		query.sampleStats.TotalSamples += evaluator.currentSamples
-		query.sampleStats.EvaluatorCount ++
+		query.sampleStats.EvaluatorCount++
 
 		evalSpanTimer.Finish()
 
@@ -623,7 +623,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		query.sampleStats.PeakSamples = currentSamples
 	}
 	query.sampleStats.TotalSamples += evaluator.currentSamples
-	query.sampleStats.EvaluatorCount ++
+	query.sampleStats.EvaluatorCount++
 
 	mat, ok := val.(Matrix)
 	if !ok {
