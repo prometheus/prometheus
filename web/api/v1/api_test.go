@@ -2183,7 +2183,7 @@ func TestParseTimeParam(t *testing.T) {
 		defaultValue time.Time
 		result       resultType
 	}{
-		{ // When data is valid
+		{ // When data is valid.
 			paramName:    "start",
 			paramValue:   "1582468023986",
 			defaultValue: minTime,
@@ -2192,7 +2192,7 @@ func TestParseTimeParam(t *testing.T) {
 				asError: nil,
 			},
 		},
-		{ // When data is empty string
+		{ // When data is empty string.
 			paramName:    "end",
 			paramValue:   "",
 			defaultValue: maxTime,
@@ -2201,7 +2201,7 @@ func TestParseTimeParam(t *testing.T) {
 				asError: nil,
 			},
 		},
-		{ // When data is not valid
+		{ // When data is not valid.
 			paramName:    "foo",
 			paramValue:   "baz",
 			defaultValue: maxTime,
