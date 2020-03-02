@@ -1452,7 +1452,7 @@ func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (
 	}
 	result, err := parseTime(val)
 	if err != nil {
-		return time.Time{}, errors.Wrapf(err, "Invalid parameters '%s'", paramName)
+		return time.Time{}, errors.Wrapf(err, "Invalid time value for '%s'", paramName)
 	}
 	return result, nil
 }
