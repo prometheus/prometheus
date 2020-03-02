@@ -222,7 +222,7 @@ func (p *queryLogTest) configuration() string {
 	}
 }
 
-// exactQueryCount returns wheter we can match an exact query count. False on
+// exactQueryCount returns whether we can match an exact query count. False on
 // recording rules are they are regular time intervals.
 func (p *queryLogTest) exactQueryCount() bool {
 	return p.origin != ruleOrigin
