@@ -1587,6 +1587,41 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	testutil.Equals(t, false, series.Next(), "more than one series found in tsdb")
 }
 
+func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
+	s := teststorage.New(t)
+	defer s.Close()
+
+	app := s.Appender()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx,
+		&testScraper{},
+		nil, nil,
+		func(l labels.Labels) labels.Labels {
+			if l.Has("drop") {
+				return labels.Labels{}
+			}
+			return l
+		},
+		nopMutator,
+		func() storage.Appender { return app },
+		nil,
+		0,
+		true,
+	)
+	defer cancel()
+
+	_, _, _, err := sl.append([]byte("nok 1\nnok2{drop=\"drop\"} 1\n"), "", time.Time{})
+	testutil.NotOk(t, err)
+	testutil.Equals(t, errNameLabelMandatory, err)
+
+	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
+	testutil.Ok(t, err)
+	series, _, err := q.Select(&storage.SelectParams{}, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+	testutil.Ok(t, err)
+	testutil.Equals(t, false, series.Next(), "series found in tsdb")
+}
+
 func TestReusableConfig(t *testing.T) {
 	variants := []*config.ScrapeConfig{
 		&config.ScrapeConfig{

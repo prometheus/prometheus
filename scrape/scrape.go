@@ -47,6 +47,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+var errNameLabelMandatory = fmt.Errorf("missing metric name (%s label)", labels.MetricName)
+
 var (
 	targetIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -1152,6 +1154,11 @@ loop:
 			if lset == nil {
 				sl.cache.addDropped(mets)
 				continue
+			}
+
+			if !lset.Has(labels.MetricName) {
+				err = errNameLabelMandatory
+				break loop
 			}
 
 			var ref uint64

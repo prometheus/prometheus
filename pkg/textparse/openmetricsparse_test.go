@@ -498,6 +498,10 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			input: `custom_metric_total 1 # {aa=\"\xff\"} 9.0`,
 			err:   "expected label value, got \"INVALID\"",
 		},
+		{
+			input: `{b="c",} 1`,
+			err:   `"INVALID" "{" is not a valid start token`,
+		},
 	}
 
 	for i, c := range cases {

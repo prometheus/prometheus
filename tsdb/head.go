@@ -957,6 +957,10 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 	// Ensure no empty labels have gotten through.
 	lset = lset.WithoutEmpty()
 
+	if len(lset) == 0 {
+		return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
+	}
+
 	if l, dup := lset.HasDuplicateLabelNames(); dup {
 		return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
 	}
