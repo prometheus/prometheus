@@ -193,6 +193,7 @@ func instantValue(vals []parser.Value, out Vector, isRate bool) Vector {
 
 // Calculate the trend value at the given index i in raw data d.
 // This is somewhat analogous to the slope of the trend at the given index.
+// The argument "tf" is the trend factor argument.
 // The argument "s0" is the set of computed smoothed values.
 // The argument "s1" is the set of computed trend factors.
 // The argument "b" is the set of raw input values.
