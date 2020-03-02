@@ -590,6 +590,13 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			app := g.opts.Appendable.Appender()
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
+			defer func() {
+				if err := app.Commit(); err != nil {
+					level.Warn(g.logger).Log("msg", "rule sample appending failed", "err", err)
+					return
+				}
+				g.seriesInPreviousEval[i] = seriesReturned
+			}()
 			for _, s := range vector {
 				if _, err := app.Add(s.Metric, s.T, s.V); err != nil {
 					switch err {
@@ -626,11 +633,6 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 						level.Warn(g.logger).Log("msg", "adding stale sample failed", "sample", metric, "err", err)
 					}
 				}
-			}
-			if err := app.Commit(); err != nil {
-				level.Warn(g.logger).Log("msg", "rule sample appending failed", "err", err)
-			} else {
-				g.seriesInPreviousEval[i] = seriesReturned
 			}
 		}(i, rule)
 	}
