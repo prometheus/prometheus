@@ -2209,7 +2209,7 @@ func TestParseTimeParam(t *testing.T) {
 				asTime: time.Time{},
 				asError: func() error {
 					_, err := parseTime("baz")
-					return errPkg.Wrapf(err, "Invalid parameters '%s'", "foo")
+					return errPkg.Wrapf(err, "Invalid time value for '%s'", "foo")
 				},
 			},
 		},
