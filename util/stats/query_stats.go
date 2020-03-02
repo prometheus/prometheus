@@ -85,8 +85,8 @@ type queryTimings struct {
 }
 
 type querySamples struct {
-	TotalSamples   int `json:"totalSamples"`
-	PeakSamples    int `json:"peakSamples"`
+	TotalSamples int `json:"totalSamples"`
+	PeakSamples  int `json:"peakSamples"`
 }
 
 // QueryStats currently only holding query timings.
@@ -122,8 +122,8 @@ func NewQueryStats(tg *QueryTimers, sp *QuerySamples) *QueryStats {
 
 	if sp != nil {
 		samples = querySamples{
-			PeakSamples:    sp.PeakSamples,
-			TotalSamples:   sp.TotalSamples,
+			PeakSamples:  sp.PeakSamples,
+			TotalSamples: sp.TotalSamples,
 		}
 	}
 
