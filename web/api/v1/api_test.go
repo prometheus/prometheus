@@ -2230,7 +2230,6 @@ func TestParseTimeParam(t *testing.T) {
 		} else {
 			testutil.Assert(t, asTime.Equal(result.asTime), "time as return value: %s not parsed correctly. Expected %s. Actual %s", test.paramValue, result.asTime, asTime)
 		}
-
 	}
 }
 
