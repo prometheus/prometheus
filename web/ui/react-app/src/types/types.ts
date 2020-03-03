@@ -18,7 +18,6 @@ export interface BaseRule {
   lastError?: string;
   evaluationTime: string;
   lastEvaluation: string;
-  type: 'alerting' | 'recording';
 }
 
 export interface AlertingRule extends BaseRule {
@@ -26,7 +25,11 @@ export interface AlertingRule extends BaseRule {
   duration: number;
   state: RuleState;
   annotations: Record<string, string>;
+  type: 'alerting';
 }
 
-export type RecordingRule = BaseRule;
+export interface RecordingRule extends BaseRule {
+  type: 'recording';
+}
+
 export type Rule = RecordingRule | AlertingRule;

@@ -2,7 +2,6 @@ import moment from 'moment-timezone';
 
 import { PanelOptions, PanelType, PanelDefaultOptions } from '../pages/graph/Panel';
 import { PanelMeta } from '../pages/graph/PanelList';
-import { AlertingRule, Rule } from '../types/types';
 
 export const generateID = () => {
   return `_${Math.random()
@@ -209,8 +208,4 @@ export const mapObjEntries = <T, key extends keyof T, Z>(
 
 export const callAll = (...fns: Array<(...args: any) => void>) => (...args: any) => {
   fns.filter(Boolean).forEach(fn => fn(...args));
-};
-
-export const isAlertingRule = (rule: Rule): rule is AlertingRule => {
-  return rule.type === 'alerting';
 };

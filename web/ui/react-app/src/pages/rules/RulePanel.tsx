@@ -1,7 +1,7 @@
 import React, { FC, CSSProperties, Fragment } from 'react';
 import { Rule } from '../../types/types';
 import { Link } from '@reach/router';
-import { createExpressionLink, mapObjEntries, isAlertingRule, formatRange } from '../../utils';
+import { createExpressionLink, mapObjEntries, formatRange } from '../../utils';
 
 interface RulePanelProps {
   rule: Rule;
@@ -17,12 +17,12 @@ export const RulePanel: FC<RulePanelProps> = ({ rule, styles = {}, tag }) => {
     <Tag {...(tag ? { style } : {})}>
       <pre className="m-0" style={tag ? undefined : style}>
         <code>
-          {isAlertingRule(rule) ? 'alert: ' : 'record: '}
+          {rule.type === 'alerting' ? 'alert: ' : 'record: '}
           <Link to={createExpressionLink(`ALERTS{alertname="${name.replace(/"/g, '\\"')}"}`)}>{name}</Link>
           <div>
             expr: <Link to={createExpressionLink(query)}>{query}</Link>
           </div>
-          {isAlertingRule(rule) && rule.duration > 0 && <div>for: {formatRange(rule.duration)}</div>}
+          {rule.type === 'alerting' && rule.duration > 0 && <div>for: {formatRange(rule.duration)}</div>}
           {labels && (
             <>
               labels:
@@ -33,7 +33,7 @@ export const RulePanel: FC<RulePanelProps> = ({ rule, styles = {}, tag }) => {
               ))}
             </>
           )}
-          {isAlertingRule(rule) && rule.annotations && (
+          {rule.type === 'alerting' && rule.annotations && (
             <>
               annotations:
               {mapObjEntries(rule.annotations, ([key, value]) => (
