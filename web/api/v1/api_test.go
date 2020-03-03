@@ -2219,26 +2219,16 @@ func TestParseTimeParam(t *testing.T) {
 	}
 	for _, test := range tests {
 		req, err := http.NewRequest("GET", "localhost:42/foo?"+test.paramName+"="+test.paramValue, nil)
-		if err != nil {
-			panic(err)
-		}
+
+		testutil.Ok(t, err)
+
 		result := test.result
 		asTime, err := parseTimeParam(req, test.paramName, test.defaultValue)
-		if err != nil && err.Error() != result.asError().Error() {
-			t.Log(err.Error(), result.asError().Error())
-			t.Errorf(`
-				Expected error message doesn't match the one from the result.
-					Expected: %s.
-					Actual: %s`,
-				result.asError().Error(), err.Error(),
-			)
+
+		if err != nil {
+			testutil.ErrorEqual(t, result.asError(), err)
 		} else {
-			if !asTime.Equal(result.asTime) {
-				t.Errorf(`
-					Time as return value: %s not parsed correctly. Expected %s. Actual %s`,
-					test.paramValue, result.asTime, asTime,
-				)
-			}
+			testutil.Assert(t, asTime.Equal(result.asTime), "time as return value: %s not parsed correctly. Expected %s. Actual %s", test.paramValue, result.asTime, asTime)
 		}
 
 	}
