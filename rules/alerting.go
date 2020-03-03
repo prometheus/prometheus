@@ -441,6 +441,11 @@ func (r *AlertingRule) State() AlertState {
 	return maxState
 }
 
+// IsHealthUnknown returns true if health of an alert is unknown
+func (r *AlertingRule) IsHealthUnknown() bool {
+	return r.Health() == HealthUnknown
+}
+
 // ActiveAlerts returns a slice of active alerts.
 func (r *AlertingRule) ActiveAlerts() []*Alert {
 	var res []*Alert
