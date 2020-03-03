@@ -1907,11 +1907,11 @@ func (s *memSeries) cleanupAppendIDsBelow(bound uint64) {
 // chunk, its current timestamp and the upper bound up to which we insert data.
 // It assumes that the time range is 1/4 full.
 func computeChunkEndTime(start, cur, max int64) int64 {
-	a := (max - start) / ((cur - start + 1) * 4)
-	if a == 0 {
+	expTimeRange := ((cur - start + 1) * 4) // For a full chunk.
+	if (max - start) < expTimeRange {
 		return max
 	}
-	return start + (max-start)/a
+	return start + expTimeRange
 }
 
 func (s *memSeries) iterator(id int, isoState *isolationState, it chunkenc.Iterator) chunkenc.Iterator {
