@@ -2176,8 +2176,8 @@ func TestParseTimeParam(t *testing.T) {
 		asTime  time.Time
 		asError func() error
 	}
-	ts, err := parseTime("1582468023986")
 
+	ts, err := parseTime("1582468023986")
 	testutil.Ok(t, err)
 
 	var tests = []struct {
@@ -2217,9 +2217,9 @@ func TestParseTimeParam(t *testing.T) {
 			},
 		},
 	}
+
 	for _, test := range tests {
 		req, err := http.NewRequest("GET", "localhost:42/foo?"+test.paramName+"="+test.paramValue, nil)
-
 		testutil.Ok(t, err)
 
 		result := test.result
