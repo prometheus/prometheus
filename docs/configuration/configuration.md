@@ -428,6 +428,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_ec2_availability_zone`: the availability zone in which the instance is running
 * `__meta_ec2_instance_id`: the EC2 instance ID
+* `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
 * `__meta_ec2_instance_state`: the state of the EC2 instance
 * `__meta_ec2_instance_type`: the type of the EC2 instance
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
