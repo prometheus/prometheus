@@ -588,6 +588,7 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
+	start := time.Now()
 	// Backfill the checkpoint first if it exists.
 	dir, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
 	if err != nil && err != record.ErrNotFound {
@@ -637,6 +638,8 @@ func (h *Head) Init(minValidTime int64) error {
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
 	}
+
+	level.Info(h.logger).Log("msg", "WAL replay completed", "duration", time.Since(start).String())
 
 	return nil
 }
