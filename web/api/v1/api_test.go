@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -41,7 +40,7 @@ import (
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
 
-	errPkg "github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -2171,12 +2170,16 @@ func TestRespondError(t *testing.T) {
 		t.Fatalf("Expected response \n%v\n but got \n%v\n", res, exp)
 	}
 }
+
 func TestParseTimeParam(t *testing.T) {
 	type resultType struct {
 		asTime  time.Time
 		asError func() error
 	}
-	ts, _ := parseTime("1582468023986")
+	ts, err := parseTime("1582468023986")
+
+	testutil.Ok(t, err)
+
 	var tests = []struct {
 		paramName    string
 		paramValue   string
@@ -2209,7 +2212,7 @@ func TestParseTimeParam(t *testing.T) {
 				asTime: time.Time{},
 				asError: func() error {
 					_, err := parseTime("baz")
-					return errPkg.Wrapf(err, "Invalid time value for '%s'", "foo")
+					return errors.Wrapf(err, "Invalid time value for '%s'", "foo")
 				},
 			},
 		},
