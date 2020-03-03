@@ -4,7 +4,7 @@ import { Alert, Table, Badge } from 'reactstrap';
 import { formatRelative, humanizeDuration, isPresent } from '../../utils';
 import { now } from 'moment';
 import { RulePanel } from './RulePanel';
-import { BaseRule } from '../../types/types';
+import { Rule } from '../../types/types';
 
 export interface RuleGroup<T> {
   name: string;
@@ -16,7 +16,7 @@ export interface RuleGroup<T> {
 }
 
 export interface RulesGroups {
-  groups: RuleGroup<BaseRule>[];
+  groups: RuleGroup<Rule>[];
 }
 
 export const badgeColorMap: Record<'ok' | 'err' | 'unknown', 'success' | 'danger' | 'warning'> = {
