@@ -289,6 +289,10 @@ func TestEndpoints(t *testing.T) {
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
 			test_metric2{foo="boo"} 1+0x100
+			test_metric3{le="+Inf", foo="bar"} 0+0x1
+			test_metric3{le="10", foo="baz"} 0+0x2
+			test_metric3{le="20"} 0+0x3
+			test_metric3{le="30"} 0+0x4
 	`)
 	testutil.Ok(t, err)
 	defer suite.Close()
@@ -1441,6 +1445,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				response: []string{
 					"test_metric1",
 					"test_metric2",
+					"test_metric3",
 				},
 			},
 			{
@@ -1450,6 +1455,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 				response: []string{
 					"bar",
+					"baz",
 					"boo",
 				},
 			},
@@ -1464,7 +1470,60 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			// Label names.
 			{
 				endpoint: api.labelNames,
-				response: []string{"__name__", "foo"},
+				response: []string{"__name__", "foo", "le"},
+			},
+			// Labels with matcher.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "le",
+				},
+				query: url.Values{
+					"match[]": []string{"test_metric3"},
+				},
+				response: []string{"+Inf", "10", "20", "30"},
+				sorter: func(m interface{}) {
+					sort.Slice(m.([]string), func(i, j int) bool {
+						s := m.([]string)
+						return s[i] < s[j]
+					})
+				},
+			},
+			// Labels with matcher for range.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "le",
+				},
+				query: url.Values{
+					"match[]": []string{"test_metric3"},
+					"start": []string{"120"},
+				},
+				response: []string{"10", "20", "30"},
+				sorter: func(m interface{}) {
+					sort.Slice(m.([]string), func(i, j int) bool {
+						s := m.([]string)
+						return s[i] < s[j]
+					})
+				},
+			},
+			// Labels with matcher for range. asdf
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "le",
+				},
+				query: url.Values{
+					"match[]": []string{"test_metric3"},
+					"start": []string{"240"},
+				},
+				response: []string{"30"},
+				sorter: func(m interface{}) {
+					sort.Slice(m.([]string), func(i, j int) bool {
+						s := m.([]string)
+						return s[i] < s[j]
+					})
+				},
 			},
 		}...)
 	}
