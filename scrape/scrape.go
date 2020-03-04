@@ -1058,16 +1058,22 @@ func (sl *scrapeLoop) getCache() *scrapeCache {
 	return sl.cache
 }
 
+type appendErrors struct {
+	numOutOfOrder  int
+	numDuplicates  int
+	numOutOfBounds int
+}
+
 func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	var (
 		app            = sl.appender()
 		p              = textparse.New(b, contentType)
 		defTime        = timestamp.FromTime(ts)
-		numOutOfOrder  = 0
-		numDuplicates  = 0
-		numOutOfBounds = 0
+		appErrs        = appendErrors{}
+		sampleLimitErr error
+		sampleAdded    bool
+		breakLoop      bool
 	)
-	var sampleLimitErr error
 
 	defer func() {
 		if err != nil {
@@ -1120,40 +1126,14 @@ loop:
 			continue
 		}
 		ce, ok := sl.cache.get(yoloString(met))
+
+		var tempSampleLimitErr error
+
 		if ok {
-			switch err = app.AddFast(ce.ref, t, v); errors.Cause(err) {
-			case nil:
-				if tp == nil {
-					sl.cache.trackStaleness(ce.hash, ce.lset)
-				}
-			case storage.ErrNotFound:
-				ok = false
-			case storage.ErrOutOfOrderSample:
-				numOutOfOrder++
-				level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
-				targetScrapeSampleOutOfOrder.Inc()
-				continue
-			case storage.ErrDuplicateSampleForTimestamp:
-				numDuplicates++
-				level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
-				targetScrapeSampleDuplicate.Inc()
-				continue
-			case storage.ErrOutOfBounds:
-				numOutOfBounds++
-				level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
-				targetScrapeSampleOutOfBounds.Inc()
-				continue
-			case errSampleLimit:
-				// Keep on parsing output if we hit the limit, so we report the correct
-				// total number of samples scraped.
-				sampleLimitErr = err
-				added++
-				continue
-			default:
-				break loop
-			}
-		}
-		if !ok {
+			err = app.AddFast(ce.ref, t, v)
+			// call new check error function here
+			sampleAdded, breakLoop, tempSampleLimitErr = sl.checkAddError(ce, met, tp, err, appErrs)
+		} else {
 			var lset labels.Labels
 
 			mets := p.Metric(&lset)
@@ -1176,32 +1156,9 @@ loop:
 
 			var ref uint64
 			ref, err = app.Add(lset, t, v)
-			switch errors.Cause(err) {
-			case nil:
-			case storage.ErrOutOfOrderSample:
-				err = nil
-				numOutOfOrder++
-				level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
-				targetScrapeSampleOutOfOrder.Inc()
-				continue
-			case storage.ErrDuplicateSampleForTimestamp:
-				err = nil
-				numDuplicates++
-				level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
-				targetScrapeSampleDuplicate.Inc()
-				continue
-			case storage.ErrOutOfBounds:
-				err = nil
-				numOutOfBounds++
-				level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
-				targetScrapeSampleOutOfBounds.Inc()
-				continue
-			case errSampleLimit:
-				sampleLimitErr = err
-				added++
-				continue
-			default:
-				level.Debug(sl.l).Log("msg", "unexpected error", "series", string(met), "err", err)
+			// call new check error function here
+			sampleAdded, breakLoop, tempSampleLimitErr = sl.checkAddError(nil, met, tp, err, appErrs)
+			if breakLoop {
 				break loop
 			}
 			if tp == nil {
@@ -1209,9 +1166,24 @@ loop:
 				sl.cache.trackStaleness(hash, lset)
 			}
 			sl.cache.addRef(mets, ref, lset, hash)
-			seriesAdded++
+			if sampleAdded && sampleLimitErr == nil {
+				seriesAdded++
+			}
 		}
-		added++
+
+		if breakLoop {
+			break loop
+		}
+
+		if tempSampleLimitErr != nil {
+			sampleLimitErr = tempSampleLimitErr
+		}
+
+		// Match the previous behaviour, increment added even if there's a sampleLimitErr.
+		if sampleAdded || sampleLimitErr != nil {
+			fmt.Println("incrementing added")
+			added++
+		}
 	}
 	if sampleLimitErr != nil {
 		if err == nil {
@@ -1220,14 +1192,14 @@ loop:
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
 		targetScrapeSampleLimit.Inc()
 	}
-	if numOutOfOrder > 0 {
-		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order samples", "num_dropped", numOutOfOrder)
+	if appErrs.numOutOfOrder > 0 {
+		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order samples", "num_dropped", appErrs.numOutOfOrder)
 	}
-	if numDuplicates > 0 {
-		level.Warn(sl.l).Log("msg", "Error on ingesting samples with different value but same timestamp", "num_dropped", numDuplicates)
+	if appErrs.numDuplicates > 0 {
+		level.Warn(sl.l).Log("msg", "Error on ingesting samples with different value but same timestamp", "num_dropped", appErrs.numDuplicates)
 	}
-	if numOutOfBounds > 0 {
-		level.Warn(sl.l).Log("msg", "Error on ingesting samples that are too old or are too far into the future", "num_dropped", numOutOfBounds)
+	if appErrs.numOutOfBounds > 0 {
+		level.Warn(sl.l).Log("msg", "Error on ingesting samples that are too old or are too far into the future", "num_dropped", appErrs.numOutOfBounds)
 	}
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
@@ -1247,6 +1219,41 @@ loop:
 
 func yoloString(b []byte) string {
 	return *((*string)(unsafe.Pointer(&b)))
+}
+
+// Adds samples to the appender, checking the error, and then returns the # of samples added,
+// whether the caller should continue to process more samples, and any sample limit errors.
+func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, appErrs appendErrors) (added, exit bool, sampleLimitErr error) {
+	switch errors.Cause(err) {
+	case nil:
+		if tp == nil && ce != nil {
+			sl.cache.trackStaleness(ce.hash, ce.lset)
+		}
+		return true, false, nil
+	case storage.ErrNotFound:
+		return false, true, nil
+	case storage.ErrOutOfOrderSample:
+		appErrs.numOutOfOrder++
+		level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
+		targetScrapeSampleOutOfOrder.Inc()
+		return false, false, nil
+	case storage.ErrDuplicateSampleForTimestamp:
+		appErrs.numDuplicates++
+		level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
+		targetScrapeSampleDuplicate.Inc()
+		return false, false, nil
+	case storage.ErrOutOfBounds:
+		appErrs.numOutOfBounds++
+		level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
+		targetScrapeSampleOutOfBounds.Inc()
+		return false, false, nil
+	case errSampleLimit:
+		// Keep on parsing output if we hit the limit, so we report the correct
+		// total number of samples scraped.
+		return false, false, err
+	default:
+		return false, true, nil
+	}
 }
 
 // The constants are suffixed with the invalid \xff unicode rune to avoid collisions
