@@ -18,7 +18,7 @@ jobs:
         "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$LAST_COMMIT_SHA"
     - name: Run make deploy to start test
       id: make_deploy
-      uses: docker://prombench/prombench:2.0.2
+      uses: docker://prominfra/prombench:master
       env:
         AUTH_FILE: ${{ secrets.PROMBENCH_GKE_AUTH }}
         PROJECT_ID: macro-mile-203600
@@ -76,7 +76,7 @@ jobs:
         "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$LAST_COMMIT_SHA"
     - name: Run make clean to stop test
       id: make_clean
-      uses: docker://prombench/prombench:2.0.2
+      uses: docker://prominfra/prombench:master
       env:
         AUTH_FILE: ${{ secrets.PROMBENCH_GKE_AUTH }}
         PROJECT_ID: macro-mile-203600
@@ -130,7 +130,7 @@ jobs:
         "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$LAST_COMMIT_SHA"
     - name: Run make clean then make deploy to restart test
       id: make_restart
-      uses: docker://prombench/prombench:2.0.2
+      uses: docker://prominfra/prombench:master
       env:
         AUTH_FILE: ${{ secrets.PROMBENCH_GKE_AUTH }}
         PROJECT_ID: macro-mile-203600
