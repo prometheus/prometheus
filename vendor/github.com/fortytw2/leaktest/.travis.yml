@@ -1,0 +1,16 @@
+language: go
+go:
+ - 1.8
+ - 1.9
+ - "1.10"
+ - "1.11"
+ - tip
+
+script:
+ - go test -v -race -parallel 5 -coverprofile=coverage.txt -covermode=atomic ./
+ - go test github.com/fortytw2/leaktest -run ^TestEmptyLeak$
+
+before_install:
+  - pip install --user codecov
+after_success:
+  - codecov

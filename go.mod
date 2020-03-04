@@ -13,6 +13,7 @@ require (
 	github.com/cespare/xxhash v1.1.0
 	github.com/dgryski/go-sip13 v0.0.0-20190329191031-25c5027a8c7b
 	github.com/edsrzf/mmap-go v1.0.0
+	github.com/fortytw2/leaktest v1.3.0
 	github.com/go-kit/kit v0.10.0
 	github.com/go-logfmt/logfmt v0.5.0
 	github.com/go-openapi/strfmt v0.19.4

@@ -15,7 +15,9 @@ package storage
 
 import (
 	"context"
+	"time"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -97,5 +99,67 @@ func TestSelectSorted(t *testing.T) {
 
 	testutil.Equals(t, labelsResult, outputLabel)
 	testutil.Equals(t, inputTotalSize, len(result))
+
+}
+
+func TestSelectSortedGoroutineLeakDetector(t *testing.T) {
+
+	inputLabel := labels.FromStrings(model.MetricNameLabel, "a")
+
+	inputTotalSize := 0
+
+	priStorage := teststorage.New(t)
+	defer priStorage.Close()
+	app1 := priStorage.Appender()
+	app1.Add(inputLabel, 0, 0)
+	inputTotalSize++
+	app1.Add(inputLabel, 1000, 1)
+	inputTotalSize++
+	app1.Add(inputLabel, 2000, 2)
+	inputTotalSize++
+	err := app1.Commit()
+	testutil.Ok(t, err)
+
+	remoteStorage1 := teststorage.New(t)
+	defer remoteStorage1.Close()
+	app2 := remoteStorage1.Appender()
+	app2.Add(inputLabel, 3000, 3)
+	inputTotalSize++
+	app2.Add(inputLabel, 4000, 4)
+	inputTotalSize++
+	app2.Add(inputLabel, 5000, 5)
+	inputTotalSize++
+	err = app2.Commit()
+	testutil.Ok(t, err)
+
+	remoteStorage2 := teststorage.New(t)
+	defer remoteStorage2.Close()
+
+	app3 := remoteStorage2.Appender()
+	app3.Add(inputLabel, 6000, 6)
+	inputTotalSize++
+	app3.Add(inputLabel, 7000, 7)
+	inputTotalSize++
+	app3.Add(inputLabel, 8000, 8)
+	inputTotalSize++
+
+	err = app3.Commit()
+	testutil.Ok(t, err)
+
+	fanoutStorage := storage.NewFanout(nil, priStorage, remoteStorage1, remoteStorage2)
+
+	fanoutQuerier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
+	testutil.Ok(t, err)
+	defer fanoutQuerier.Close()
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
+	testutil.Ok(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	defer leaktest.CheckContext(ctx, t)()
+
+	_, _, err = fanoutQuerier.SelectSorted(nil, matcher)
+	testutil.Ok(t, err)
 
 }
