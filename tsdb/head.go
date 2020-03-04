@@ -1045,6 +1045,7 @@ func (a *headAppender) Commit() error {
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.putAppendBuffer(a.samples)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
+	defer a.head.iso.closeAppend(a.appendID)
 
 	if err := a.log(); err != nil {
 		return errors.Wrap(err, "write to WAL")
@@ -1071,7 +1072,6 @@ func (a *headAppender) Commit() error {
 
 	a.head.metrics.samplesAppended.Add(float64(total))
 	a.head.updateMinMaxTime(a.mint, a.maxt)
-	a.head.iso.closeAppend(a.appendID)
 
 	return nil
 }
