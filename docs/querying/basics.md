@@ -118,6 +118,14 @@ The following expression selects all metrics that have a name starting with `job
 
     {__name__=~"job:.*"}
 
+The metric name must not be one of the keywords `bool`, `on`, `ignoring`, `group_left` and `group_right`. The following expression is illegal:
+
+    on{} # Bad!
+
+A workaround for this restriction is to use the `__name__` label:
+
+    {__name__="on"} # Good!
+
 All regular expressions in Prometheus use [RE2
 syntax](https://github.com/google/re2/wiki/Syntax).
 
