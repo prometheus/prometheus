@@ -2125,6 +2125,18 @@ var testExpr = []struct {
 		input:  "a>b()",
 		fail:   true,
 		errMsg: `unknown function`,
+	}, {
+		input:  "rate(avg)",
+		fail:   true,
+		errMsg: `unexpected ")"`,
+	}, {
+		input:  "sum(sum)",
+		fail:   true,
+		errMsg: `unexpected ")"`,
+	}, {
+		input:  "a + sum",
+		fail:   true,
+		errMsg: `unexpected end of input`,
 	},
 	// String quoting and escape sequence interpretation tests.
 	{

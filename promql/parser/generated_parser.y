@@ -199,7 +199,10 @@ aggregate_expr  : aggregate_op aggregate_modifier function_call_body
                 | aggregate_op function_call_body
                         { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
                 | aggregate_op error
-                        { yylex.(*parser).unexpected("aggregation",""); $$ = nil }
+                        { 
+                        yylex.(*parser).unexpected("aggregation",""); 
+                        $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, Expressions{})
+                        }
                 ;
 
 aggregate_modifier:
