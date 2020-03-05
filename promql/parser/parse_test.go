@@ -565,6 +565,32 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{Card: CardOneToOne},
 		},
 	}, {
+		input: "foo * sum",
+		expected: &BinaryExpr{
+			Op: MUL,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "sum",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "sum"),
+				},
+				PosRange: PositionRange{
+					Start: 6,
+					End:   9,
+				},
+			},
+			VectorMatching: &VectorMatching{Card: CardOneToOne},
+		},
+	}, {
 		input: "foo == 1",
 		expected: &BinaryExpr{
 			Op: EQL,
@@ -1305,6 +1331,19 @@ var testExpr = []struct {
 			Offset: 0,
 			LabelMatchers: []*labels.Matcher{
 				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   3,
+			},
+		},
+	}, {
+		input: "min",
+		expected: &VectorSelector{
+			Name:   "min",
+			Offset: 0,
+			LabelMatchers: []*labels.Matcher{
+				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "min"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
