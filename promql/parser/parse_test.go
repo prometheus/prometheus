@@ -1930,7 +1930,7 @@ var testExpr = []struct {
 	}, {
 		input:  `sum some_metric by (test)`,
 		fail:   true,
-		errMsg: "unexpected identifier \"some_metric\" in aggregation",
+		errMsg: "unexpected identifier \"some_metric\"",
 	}, {
 		input:  `sum (some_metric) by test`,
 		fail:   true,
@@ -1946,7 +1946,7 @@ var testExpr = []struct {
 	}, {
 		input:  "MIN keep_common (some_metric)",
 		fail:   true,
-		errMsg: "1:5: parse error: unexpected identifier \"keep_common\" in aggregation",
+		errMsg: "1:5: parse error: unexpected identifier \"keep_common\"",
 	}, {
 		input:  "MIN (some_metric) keep_common",
 		fail:   true,
