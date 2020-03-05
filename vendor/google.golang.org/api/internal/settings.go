@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"crypto/tls"
 	"errors"
 	"net/http"
 
@@ -18,6 +19,7 @@ import (
 // Google API service.
 type DialSettings struct {
 	Endpoint          string
+	DefaultEndpoint   string
 	Scopes            []string
 	TokenSource       oauth2.TokenSource
 	Credentials       *google.Credentials
@@ -33,6 +35,7 @@ type DialSettings struct {
 	GRPCConnPoolSize  int
 	NoAuth            bool
 	TelemetryDisabled bool
+	ClientCertSource  func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 
 	// Google API system parameters. For more information please read:
 	// https://cloud.google.com/apis/docs/system-parameters
@@ -89,6 +92,12 @@ func (ds *DialSettings) Validate() error {
 	}
 	if ds.HTTPClient != nil && ds.RequestReason != "" {
 		return errors.New("WithHTTPClient is incompatible with RequestReason")
+	}
+	if ds.HTTPClient != nil && ds.ClientCertSource != nil {
+		return errors.New("WithHTTPClient is incompatible with WithClientCertSource")
+	}
+	if ds.ClientCertSource != nil && (ds.GRPCConn != nil || ds.GRPCConnPool != nil || ds.GRPCConnPoolSize != 0 || ds.GRPCDialOpts != nil) {
+		return errors.New("WithClientCertSource is currently only supported for HTTP. gRPC settings are incompatible")
 	}
 
 	return nil

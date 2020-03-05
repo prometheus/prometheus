@@ -124,7 +124,9 @@ func init() {
 	proto.RegisterType((*HttpBody)(nil), "google.api.HttpBody")
 }
 
-func init() { proto.RegisterFile("google/api/httpbody.proto", fileDescriptor_09ea2ecaa32a0070) }
+func init() {
+	proto.RegisterFile("google/api/httpbody.proto", fileDescriptor_09ea2ecaa32a0070)
+}
 
 var fileDescriptor_09ea2ecaa32a0070 = []byte{
 	// 229 bytes of a gzipped FileDescriptorProto

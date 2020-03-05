@@ -403,7 +403,9 @@ func init() {
 	proto.RegisterExtension(E_Resource)
 }
 
-func init() { proto.RegisterFile("google/api/resource.proto", fileDescriptor_465e9122405d1bb5) }
+func init() {
+	proto.RegisterFile("google/api/resource.proto", fileDescriptor_465e9122405d1bb5)
+}
 
 var fileDescriptor_465e9122405d1bb5 = []byte{
 	// 490 bytes of a gzipped FileDescriptorProto

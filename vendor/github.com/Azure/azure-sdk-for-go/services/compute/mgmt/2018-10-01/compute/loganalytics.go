@@ -104,9 +104,8 @@ func (client LogAnalyticsClient) ExportRequestRateByIntervalPreparer(ctx context
 // ExportRequestRateByIntervalSender sends the ExportRequestRateByInterval request. The method will close the
 // http.Response Body if it receives an error.
 func (client LogAnalyticsClient) ExportRequestRateByIntervalSender(req *http.Request) (future LogAnalyticsExportRequestRateByIntervalFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -189,9 +188,8 @@ func (client LogAnalyticsClient) ExportThrottledRequestsPreparer(ctx context.Con
 // ExportThrottledRequestsSender sends the ExportThrottledRequests request. The method will close the
 // http.Response Body if it receives an error.
 func (client LogAnalyticsClient) ExportThrottledRequestsSender(req *http.Request) (future LogAnalyticsExportThrottledRequestsFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}

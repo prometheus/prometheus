@@ -64,8 +64,8 @@ go_test(
     ],
     embed = [":go_default_library"],
     deps = [
-        "//examples/proto/examplepb:go_default_library",
         "//internal:go_default_library",
+        "//runtime/internal/examplepb:go_default_library",
         "//utilities:go_default_library",
         "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
         "@com_github_golang_protobuf//proto:go_default_library",

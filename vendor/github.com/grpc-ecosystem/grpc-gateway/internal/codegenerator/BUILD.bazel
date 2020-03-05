@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//:generators"])
+package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "go_default_library",
@@ -8,7 +8,7 @@ go_library(
         "doc.go",
         "parse_req.go",
     ],
-    importpath = "github.com/grpc-ecosystem/grpc-gateway/codegenerator",
+    importpath = "github.com/grpc-ecosystem/grpc-gateway/internal/codegenerator",
     deps = [
         "@com_github_golang_protobuf//proto:go_default_library",
         "@io_bazel_rules_go//proto/wkt:compiler_plugin_go_proto",

@@ -130,6 +130,7 @@ const (
 	epSeries          = apiPrefix + "/series"
 	epTargets         = apiPrefix + "/targets"
 	epTargetsMetadata = apiPrefix + "/targets/metadata"
+	epMetadata        = apiPrefix + "/metadata"
 	epRules           = apiPrefix + "/rules"
 	epSnapshot        = apiPrefix + "/admin/tsdb/snapshot"
 	epDeleteSeries    = apiPrefix + "/admin/tsdb/delete_series"
@@ -248,6 +249,8 @@ type API interface {
 	Targets(ctx context.Context) (TargetsResult, error)
 	// TargetsMetadata returns metadata about metrics currently scraped by the target.
 	TargetsMetadata(ctx context.Context, matchTarget string, metric string, limit string) ([]MetricMetadata, error)
+	// Metadata returns metadata about metrics currently scraped by the metric name.
+	Metadata(ctx context.Context, metric string, limit string) (map[string][]Metadata, error)
 }
 
 // AlertsResult contains the result from querying the alerts endpoint.
@@ -357,13 +360,20 @@ type DroppedTarget struct {
 	DiscoveredLabels map[string]string `json:"discoveredLabels"`
 }
 
-// MetricMetadata models the metadata of a metric.
+// MetricMetadata models the metadata of a metric with its scrape target and name.
 type MetricMetadata struct {
 	Target map[string]string `json:"target"`
 	Metric string            `json:"metric,omitempty"`
 	Type   MetricType        `json:"type"`
 	Help   string            `json:"help"`
 	Unit   string            `json:"unit"`
+}
+
+// Metadata models the metadata of a metric.
+type Metadata struct {
+	Type MetricType `json:"type"`
+	Help string     `json:"help"`
+	Unit string     `json:"unit"`
 }
 
 // queryResult contains result data for a query.
@@ -799,6 +809,29 @@ func (h *httpAPI) TargetsMetadata(ctx context.Context, matchTarget string, metri
 	}
 
 	var res []MetricMetadata
+	return res, json.Unmarshal(body, &res)
+}
+
+func (h *httpAPI) Metadata(ctx context.Context, metric string, limit string) (map[string][]Metadata, error) {
+	u := h.client.URL(epMetadata, nil)
+	q := u.Query()
+
+	q.Set("metric", metric)
+	q.Set("limit", limit)
+
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	_, body, _, err := h.client.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var res map[string][]Metadata
 	return res, json.Unmarshal(body, &res)
 }
 

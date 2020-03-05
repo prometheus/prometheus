@@ -17,9 +17,24 @@ import (
 
 var valuesKeyRegexp = regexp.MustCompile("^(.*)\\[(.*)\\]$")
 
-// PopulateQueryParameters populates "values" into "msg".
-// A value is ignored if its key starts with one of the elements in "filter".
+var currentQueryParser QueryParameterParser = &defaultQueryParser{}
+
+// QueryParameterParser defines interface for all query parameter parsers
+type QueryParameterParser interface {
+	Parse(msg proto.Message, values url.Values, filter *utilities.DoubleArray) error
+}
+
+// PopulateQueryParameters parses query parameters
+// into "msg" using current query parser
 func PopulateQueryParameters(msg proto.Message, values url.Values, filter *utilities.DoubleArray) error {
+	return currentQueryParser.Parse(msg, values, filter)
+}
+
+type defaultQueryParser struct{}
+
+// Parse populates "values" into "msg".
+// A value is ignored if its key starts with one of the elements in "filter".
+func (*defaultQueryParser) Parse(msg proto.Message, values url.Values, filter *utilities.DoubleArray) error {
 	for key, values := range values {
 		match := valuesKeyRegexp.FindStringSubmatch(key)
 		if len(match) == 3 {

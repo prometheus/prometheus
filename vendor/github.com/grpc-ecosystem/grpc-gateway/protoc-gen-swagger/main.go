@@ -9,9 +9,9 @@ import (
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
 	plugin "github.com/golang/protobuf/protoc-gen-go/plugin"
-	"github.com/grpc-ecosystem/grpc-gateway/codegenerator"
+	"github.com/grpc-ecosystem/grpc-gateway/internal/codegenerator"
 	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor"
-	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/genswagger"
+	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/internal/genswagger"
 )
 
 var (
@@ -28,6 +28,7 @@ var (
 	includePackageInTags       = flag.Bool("include_package_in_tags", false, "if unset, the gRPC service name is added to the `Tags` field of each operation. if set and the `package` directive is shown in the proto file, the package name will be prepended to the service name")
 	useFQNForSwaggerName       = flag.Bool("fqn_for_swagger_name", false, "if set, the object's swagger names will use the fully qualify name from the proto definition (ie my.package.MyMessage.MyInnerMessage")
 	useGoTemplate              = flag.Bool("use_go_templates", false, "if set, you can use Go templates in protofile comments")
+	disableDefaultErrors       = flag.Bool("disable_default_errors", false, "if set, disables generation of default errors. This is useful if you have defined custom error handling")
 )
 
 // Variables set by goreleaser at build time
@@ -80,6 +81,7 @@ func main() {
 	reg.SetIncludePackageInTags(*includePackageInTags)
 	reg.SetUseFQNForSwaggerName(*useFQNForSwaggerName)
 	reg.SetUseGoTemplate(*useGoTemplate)
+	reg.SetDisableDefaultErrors(*disableDefaultErrors)
 	if err := reg.SetRepeatedPathParamSeparator(*repeatedPathParamSeparator); err != nil {
 		emitError(err)
 		return

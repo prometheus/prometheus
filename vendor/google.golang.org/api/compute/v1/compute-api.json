@@ -29,7 +29,7 @@
   "description": "Creates and runs virtual machines on Google Cloud Platform.",
   "discoveryVersion": "v1",
   "documentationLink": "https://developers.google.com/compute/docs/reference/latest/",
-  "etag": "\"u9GIe6H63LSGq-9_t39K2Zx_EAc/3FZRKSfbBjRvlDtywlwqTRdFKKQ\"",
+  "etag": "\"u9GIe6H63LSGq-9_t39K2Zx_EAc/EY8qO1qgq3_GlknPbJK6n90kLMc\"",
   "icons": {
     "x16": "https://www.google.com/images/icons/product/compute_engine-16.png",
     "x32": "https://www.google.com/images/icons/product/compute_engine-32.png"
@@ -5014,6 +5014,48 @@
             "https://www.googleapis.com/auth/cloud-platform",
             "https://www.googleapis.com/auth/compute",
             "https://www.googleapis.com/auth/compute.readonly"
+          ]
+        },
+        "applyUpdatesToInstances": {
+          "description": "Apply changes to selected instances on the managed instance group. This method can be used to apply new overrides and/or new versions.",
+          "httpMethod": "POST",
+          "id": "compute.instanceGroupManagers.applyUpdatesToInstances",
+          "parameterOrder": [
+            "project",
+            "zone",
+            "instanceGroupManager"
+          ],
+          "parameters": {
+            "instanceGroupManager": {
+              "description": "The name of the managed instance group, should conform to RFC1035.",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            },
+            "project": {
+              "description": "Project ID for this request.",
+              "location": "path",
+              "pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+              "required": true,
+              "type": "string"
+            },
+            "zone": {
+              "description": "The name of the zone where the managed instance group is located. Should conform to RFC1035.",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/applyUpdatesToInstances",
+          "request": {
+            "$ref": "InstanceGroupManagersApplyUpdatesRequest"
+          },
+          "response": {
+            "$ref": "Operation"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/compute"
           ]
         },
         "createInstances": {
@@ -13718,6 +13760,48 @@
             "https://www.googleapis.com/auth/compute"
           ]
         },
+        "applyUpdatesToInstances": {
+          "description": "Apply updates to selected instances the managed instance group.",
+          "httpMethod": "POST",
+          "id": "compute.regionInstanceGroupManagers.applyUpdatesToInstances",
+          "parameterOrder": [
+            "project",
+            "region",
+            "instanceGroupManager"
+          ],
+          "parameters": {
+            "instanceGroupManager": {
+              "description": "The name of the managed instance group, should conform to RFC1035.",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            },
+            "project": {
+              "description": "Project ID for this request.",
+              "location": "path",
+              "pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+              "required": true,
+              "type": "string"
+            },
+            "region": {
+              "description": "Name of the region scoping this request, should conform to RFC1035.",
+              "location": "path",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/applyUpdatesToInstances",
+          "request": {
+            "$ref": "RegionInstanceGroupManagersApplyUpdatesRequest"
+          },
+          "response": {
+            "$ref": "Operation"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/compute"
+          ]
+        },
         "createInstances": {
           "description": "Creates instances with per-instance configs in this regional managed instance group. Instances are created using the current instance template. The create instances operation is marked DONE if the createInstances request is successful. The underlying actions take additional time. You must separately verify the status of the creating or actions with the listmanagedinstances method.",
           "httpMethod": "POST",
@@ -22356,7 +22440,7 @@
       }
     }
   },
-  "revision": "20200104",
+  "revision": "20200120",
   "rootUrl": "https://compute.googleapis.com/",
   "schemas": {
     "AcceleratorConfig": {
@@ -24487,9 +24571,17 @@
           ],
           "type": "string"
         },
+        "logConfig": {
+          "$ref": "BackendServiceLogConfig",
+          "description": "This field denotes the logging options for the load balancer traffic served by this backend service. If logging is enabled, logs will be exported to Stackdriver."
+        },
         "name": {
           "description": "Name of the resource. Provided by the client when the resource is created. The name must be 1-63 characters long, and comply with RFC1035. Specifically, the name must be 1-63 characters long and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])?` which means the first character must be a lowercase letter, and all following characters must be a dash, lowercase letter, or digit, except the last character, which cannot be a dash.",
           "pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+          "type": "string"
+        },
+        "network": {
+          "description": "The URL of the network to which this backend service belongs. This field can only be spcified when the load balancing scheme is set to INTERNAL.",
           "type": "string"
         },
         "outlierDetection": {
@@ -24849,6 +24941,22 @@
             }
           },
           "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "BackendServiceLogConfig": {
+      "description": "The available logging options for the load balancer traffic served by this backend service.",
+      "id": "BackendServiceLogConfig",
+      "properties": {
+        "enable": {
+          "description": "This field denotes whether to enable logging for the load balancer traffic served by this backend service.",
+          "type": "boolean"
+        },
+        "sampleRate": {
+          "description": "This field can only be specified if logging is enabled for this backend service. The value of the field must be in [0, 1]. This configures the sampling rate of requests to the load balancer where 1.0 means all logged requests are reported and 0.0 means no logged requests are reported. The default value is 1.0.",
+          "format": "float",
+          "type": "number"
         }
       },
       "type": "object"
@@ -26886,23 +26994,23 @@
       "type": "object"
     },
     "Expr": {
-      "description": "Represents an expression text. Example:\n\ntitle: \"User account presence\" description: \"Determines whether the request has a user account\" expression: \"size(request.user) \u003e 0\"",
+      "description": "Represents a textual expression in the Common Expression Language (CEL) syntax. CEL is a C-like expression language. The syntax and semantics of CEL are documented at https://github.com/google/cel-spec.\n\nExample (Comparison):\n\ntitle: \"Summary size limit\" description: \"Determines if a summary is less than 100 chars\" expression: \"document.summary.size() \u003c 100\"\n\nExample (Equality):\n\ntitle: \"Requestor is owner\" description: \"Determines if requestor is the document owner\" expression: \"document.owner == request.auth.claims.email\"\n\nExample (Logic):\n\ntitle: \"Public documents\" description: \"Determine whether the document should be publicly visible\" expression: \"document.type != 'private' \u0026\u0026 document.type != 'internal'\"\n\nExample (Data Manipulation):\n\ntitle: \"Notification string\" description: \"Create a notification string with a timestamp.\" expression: \"'New message received at ' + string(document.create_time)\"\n\nThe exact variables and functions that may be referenced within an expression are determined by the service that evaluates it. See the service documentation for additional information.",
       "id": "Expr",
       "properties": {
         "description": {
-          "description": "An optional description of the expression. This is a longer text which describes the expression, e.g. when hovered over it in a UI.",
+          "description": "Optional. Description of the expression. This is a longer text which describes the expression, e.g. when hovered over it in a UI.",
           "type": "string"
         },
         "expression": {
-          "description": "Textual representation of an expression in Common Expression Language syntax.\n\nThe application context of the containing message determines which well-known feature set of CEL is supported.",
+          "description": "Textual representation of an expression in Common Expression Language syntax.",
           "type": "string"
         },
         "location": {
-          "description": "An optional string indicating the location of the expression for error reporting, e.g. a file name and a position in the file.",
+          "description": "Optional. String indicating the location of the expression for error reporting, e.g. a file name and a position in the file.",
           "type": "string"
         },
         "title": {
-          "description": "An optional title for the expression, i.e. a short string describing its purpose. This can be used e.g. in UIs which allow to enter the expression.",
+          "description": "Optional. Title for the expression, i.e. a short string describing its purpose. This can be used e.g. in UIs which allow to enter the expression.",
           "type": "string"
         }
       },
@@ -28631,11 +28739,11 @@
           "type": "string"
         },
         "ipAddress": {
-          "description": "The IP address represented by this resource.",
+          "description": "A forwarding rule IP address assigned to this instance.",
           "type": "string"
         },
         "port": {
-          "description": "The port on the instance.",
+          "description": "The named port of the instance group, not necessarily the port that is health-checked.",
           "format": "int32",
           "type": "integer"
         }
@@ -28807,10 +28915,10 @@
         },
         "rangeMatch": {
           "$ref": "Int64RangeMatch",
-          "description": "The header value must be an integer and its value must be in the range specified in rangeMatch. If the header does not contain an integer, number or is empty, the match fails.\nFor example for a range [-5, 0]  \n- -3 will match. \n- 0 will not match. \n- 0.25 will not match. \n- -3someString will not match.  \nOnly one of exactMatch, prefixMatch, suffixMatch, regexMatch, presentMatch or rangeMatch must be set."
+          "description": "The header value must be an integer and its value must be in the range specified in rangeMatch. If the header does not contain an integer, number or is empty, the match fails.\nFor example for a range [-5, 0]  \n- -3 will match. \n- 0 will not match. \n- 0.25 will not match. \n- -3someString will not match.  \nOnly one of exactMatch, prefixMatch, suffixMatch, regexMatch, presentMatch or rangeMatch must be set.\nNote that rangeMatch is not supported for Loadbalancers that have their loadBalancingScheme set to EXTERNAL."
         },
         "regexMatch": {
-          "description": "The value of the header must match the regualar expression specified in regexMatch. For regular expression grammar, please see:  en.cppreference.com/w/cpp/regex/ecmascript \nFor matching against a port specified in the HTTP request, use a headerMatch with headerName set to PORT and a regular expression that satisfies the RFC2616 Host header's port specifier.\nOnly one of exactMatch, prefixMatch, suffixMatch, regexMatch, presentMatch or rangeMatch must be set.",
+          "description": "The value of the header must match the regular expression specified in regexMatch. For regular expression grammar, please see:  en.cppreference.com/w/cpp/regex/ecmascript \nFor matching against a port specified in the HTTP request, use a headerMatch with headerName set to PORT and a regular expression that satisfies the RFC2616 Host header's port specifier.\nOnly one of exactMatch, prefixMatch, suffixMatch, regexMatch, presentMatch or rangeMatch must be set.\nNote that regexMatch only applies to Loadbalancers that have their loadBalancingScheme set to INTERNAL_SELF_MANAGED.",
           "type": "string"
         },
         "suffixMatch": {
@@ -29035,7 +29143,7 @@
           "type": "boolean"
         },
         "regexMatch": {
-          "description": "The queryParameterMatch matches if the value of the parameter matches the regular expression specified by regexMatch. For the regular expression grammar, please see en.cppreference.com/w/cpp/regex/ecmascript \nOnly one of presentMatch, exactMatch or regexMatch must be set.",
+          "description": "The queryParameterMatch matches if the value of the parameter matches the regular expression specified by regexMatch. For the regular expression grammar, please see en.cppreference.com/w/cpp/regex/ecmascript \nOnly one of presentMatch, exactMatch or regexMatch must be set.\nNote that regexMatch only applies when the loadBalancingScheme is set to INTERNAL_SELF_MANAGED.",
           "type": "string"
         }
       },
@@ -29222,7 +29330,7 @@
           "type": "array"
         },
         "regexMatch": {
-          "description": "For satisfying the matchRule condition, the path of the request must satisfy the regular expression specified in regexMatch after removing any query parameters and anchor supplied with the original URL. For regular expression grammar please see en.cppreference.com/w/cpp/regex/ecmascript \nOnly one of prefixMatch, fullPathMatch or regexMatch must be specified.",
+          "description": "For satisfying the matchRule condition, the path of the request must satisfy the regular expression specified in regexMatch after removing any query parameters and anchor supplied with the original URL. For regular expression grammar please see en.cppreference.com/w/cpp/regex/ecmascript \nOnly one of prefixMatch, fullPathMatch or regexMatch must be specified.\nNote that regexMatch only applies to Loadbalancers that have their loadBalancingScheme set to INTERNAL_SELF_MANAGED.",
           "type": "string"
         }
       },
@@ -30398,7 +30506,7 @@
               "compute.regionInstanceGroupManagers.insert"
             ]
           },
-          "description": "The target number of running instances for this managed instance group. Deleting or abandoning instances reduces this number. Resizing the group changes this number.",
+          "description": "The target number of running instances for this managed instance group. You can reduce this number by using the instanceGroupManager deleteInstances or abandonInstances methods. Resizing the group also changes this number.",
           "format": "int32",
           "type": "integer"
         },
@@ -30812,6 +30920,44 @@
             "type": "string"
           },
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "InstanceGroupManagersApplyUpdatesRequest": {
+      "description": "InstanceGroupManagers.applyUpdatesToInstances",
+      "id": "InstanceGroupManagersApplyUpdatesRequest",
+      "properties": {
+        "instances": {
+          "description": "The list of URLs of one or more instances for which you want to apply updates. Each URL can be a full URL or a partial URL, such as zones/[ZONE]/instances/[INSTANCE_NAME].",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "minimalAction": {
+          "description": "The minimal action that you want to perform on each instance during the update:  \n- REPLACE: At minimum, delete the instance and create it again. \n- RESTART: Stop the instance and start it again. \n- REFRESH: Do not stop the instance. \n- NONE: Do not disrupt the instance at all.  By default, the minimum action is NONE. If your update requires a more disruptive action than you set with this flag, the necessary action is performed to execute the update.",
+          "enum": [
+            "REPLACE",
+            "RESTART"
+          ],
+          "enumDescriptions": [
+            "",
+            ""
+          ],
+          "type": "string"
+        },
+        "mostDisruptiveAllowedAction": {
+          "description": "The most disruptive action that you want to perform on each instance during the update:  \n- REPLACE: Delete the instance and create it again. \n- RESTART: Stop the instance and start it again. \n- REFRESH: Do not stop the instance. \n- NONE: Do not disrupt the instance at all.  By default, the most disruptive allowed action is REPLACE. If your update requires a more disruptive action than you set with this flag, the update request will fail.",
+          "enum": [
+            "REPLACE",
+            "RESTART"
+          ],
+          "enumDescriptions": [
+            "",
+            ""
+          ],
+          "type": "string"
         }
       },
       "type": "object"
@@ -37686,7 +37832,7 @@
           "type": "array"
         },
         "routeRules": {
-          "description": "The list of HTTP route rules. Use this list instead of pathRules when advanced route matching and routing actions are desired. routeRules are evaluated in order of priority, from the lowest to highest number.\nWithin a given pathMatcher, only one of pathRules or routeRules must be set.\nrouteRules are not supported in UrlMaps intended for External Load balancers.",
+          "description": "The list of HTTP route rules. Use this list instead of pathRules when advanced route matching and routing actions are desired. routeRules are evaluated in order of priority, from the lowest to highest number.\nWithin a given pathMatcher, you can set only one of pathRules or routeRules.",
           "items": {
             "$ref": "HttpRouteRule"
           },
@@ -37950,6 +38096,7 @@
             "COMMITMENTS",
             "COMMITTED_C2_CPUS",
             "COMMITTED_CPUS",
+            "COMMITTED_LICENSES",
             "COMMITTED_LOCAL_SSD_TOTAL_GB",
             "COMMITTED_N2D_CPUS",
             "COMMITTED_N2_CPUS",
@@ -38031,6 +38178,7 @@
             "VPN_TUNNELS"
           ],
           "enumDescriptions": [
+            "",
             "",
             "",
             "",
@@ -38712,6 +38860,44 @@
             "type": "string"
           },
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "RegionInstanceGroupManagersApplyUpdatesRequest": {
+      "description": "InstanceGroupManagers.applyUpdatesToInstances",
+      "id": "RegionInstanceGroupManagersApplyUpdatesRequest",
+      "properties": {
+        "instances": {
+          "description": "The list of URLs of one or more instances for which you want to apply updates. Each URL can be a full URL or a partial URL, such as zones/[ZONE]/instances/[INSTANCE_NAME].",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "minimalAction": {
+          "description": "The minimal action that you want to perform on each instance during the update:  \n- REPLACE: At minimum, delete the instance and create it again. \n- RESTART: Stop the instance and start it again. \n- REFRESH: Do not stop the instance. \n- NONE: Do not disrupt the instance at all.  By default, the minimum action is NONE. If your update requires a more disruptive action than you set with this flag, the necessary action is performed to execute the update.",
+          "enum": [
+            "REPLACE",
+            "RESTART"
+          ],
+          "enumDescriptions": [
+            "",
+            ""
+          ],
+          "type": "string"
+        },
+        "mostDisruptiveAllowedAction": {
+          "description": "The most disruptive action that you want to perform on each instance during the update:  \n- REPLACE: Delete the instance and create it again. \n- RESTART: Stop the instance and start it again. \n- REFRESH: Do not stop the instance. \n- NONE: Do not disrupt the instance at all.  By default, the most disruptive allowed action is REPLACE. If your update requires a more disruptive action than you set with this flag, the update request will fail.",
+          "enum": [
+            "REPLACE",
+            "RESTART"
+          ],
+          "enumDescriptions": [
+            "",
+            ""
+          ],
+          "type": "string"
         }
       },
       "type": "object"
@@ -41768,6 +41954,10 @@
         "config": {
           "$ref": "SecurityPolicyRuleMatcherConfig",
           "description": "The configuration options available when specifying versioned_expr. This field must be specified if versioned_expr is specified and cannot be specified if versioned_expr is not specified."
+        },
+        "expr": {
+          "$ref": "Expr",
+          "description": "User defined CEVAL expression. A CEVAL expression is used to specify match criteria such as origin.ip, source.region_code and contents in the request header."
         },
         "versionedExpr": {
           "description": "Preconfigured versioned expression. If this field is specified, config must also be specified. Available preconfigured expressions along with their requirements are: SRC_IPS_V1 - must specify the corresponding src_ip_range field in config.",

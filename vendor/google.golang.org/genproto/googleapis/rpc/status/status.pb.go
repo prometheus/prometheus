@@ -94,7 +94,9 @@ func init() {
 	proto.RegisterType((*Status)(nil), "google.rpc.Status")
 }
 
-func init() { proto.RegisterFile("google/rpc/status.proto", fileDescriptor_24d244abaf643bfe) }
+func init() {
+	proto.RegisterFile("google/rpc/status.proto", fileDescriptor_24d244abaf643bfe)
+}
 
 var fileDescriptor_24d244abaf643bfe = []byte{
 	// 212 bytes of a gzipped FileDescriptorProto

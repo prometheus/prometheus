@@ -264,7 +264,9 @@ func init() {
 	proto.RegisterType((*FieldMask)(nil), "google.protobuf.FieldMask")
 }
 
-func init() { proto.RegisterFile("google/protobuf/field_mask.proto", fileDescriptor_5158202634f0da48) }
+func init() {
+	proto.RegisterFile("google/protobuf/field_mask.proto", fileDescriptor_5158202634f0da48)
+}
 
 var fileDescriptor_5158202634f0da48 = []byte{
 	// 175 bytes of a gzipped FileDescriptorProto
