@@ -103,3 +103,149 @@ func TestExprString(t *testing.T) {
 		testutil.Equals(t, expr.String(), exp)
 	}
 }
+
+func TestTree(t *testing.T) {
+	// A list of valid expressions that are expected to be
+	// returned as out when calling String(). If out is empty the output
+	// is expected to equal the input.
+	inputs := []struct {
+		in, out string
+	}{
+		{
+			in: `sum by() (task:errors:rate10s{job="s"})`,
+			out: ` |---- AggregateExpr :: sum(task:errors:rate10s{job="s"})
+ · · · |---- VectorSelector :: task:errors:rate10s{job="s"}
+`,
+		},
+		{
+			in: `sum by(code) (task:errors:rate10s{job="s"})`,
+			out: ` |---- AggregateExpr :: sum by(code) (task:errors:rate10s{job="s"})
+ · · · |---- VectorSelector :: task:errors:rate10s{job="s"}
+`,
+		},
+		{
+			in: `sum without() (task:errors:rate10s{job="s"})`,
+			out: ` |---- AggregateExpr :: sum without() (task:errors:rate10s{job="s"})
+ · · · |---- VectorSelector :: task:errors:rate10s{job="s"}
+`,
+		},
+		{
+			in: `sum without(instance) (task:errors:rate10s{job="s"})`,
+			out: ` |---- AggregateExpr :: sum without(instance) (task:errors:rate10s{job="s"})
+ · · · |---- VectorSelector :: task:errors:rate10s{job="s"}
+`,
+		},
+		{
+			in: `topk(5, task:errors:rate10s{job="s"})`,
+			out: ` |---- AggregateExpr :: topk(5, task:errors:rate10s{job="s"})
+ · · · |---- VectorSelector :: task:errors:rate10s{job="s"}
+ · · · |---- NumberLiteral :: 5
+`,
+		},
+		{
+			in: `count_values("value", task:errors:rate10s{job="s"})`,
+			out: ` |---- AggregateExpr :: count_values("value", task:errors:rate10s{job="s"})
+ · · · |---- VectorSelector :: task:errors:rate10s{job="s"}
+ · · · |---- StringLiteral :: "value"
+`,
+		},
+		{
+			in: `a - on() c`,
+			out: ` |---- BinaryExpr :: a - on() c
+ · · · |---- VectorSelector :: a
+ · · · |---- VectorSelector :: c
+`,
+		},
+		{
+			in: `a - on(b) c`,
+			out: ` |---- BinaryExpr :: a - on(b) c
+ · · · |---- VectorSelector :: a
+ · · · |---- VectorSelector :: c
+`,
+		},
+		{
+			in: `a - on(b) group_left(x) c`,
+			out: ` |---- BinaryExpr :: a - on(b) group_left(x) c
+ · · · |---- VectorSelector :: a
+ · · · |---- VectorSelector :: c
+`,
+		},
+		{
+			in: `a - on(b) group_left(x, y) c`,
+			out: ` |---- BinaryExpr :: a - on(b) group_left(x, y) c
+ · · · |---- VectorSelector :: a
+ · · · |---- VectorSelector :: c
+`,
+		},
+		{
+			in: `a - on(b) group_left c`,
+			out: ` |---- BinaryExpr :: a - on(b) group_left() c
+ · · · |---- VectorSelector :: a
+ · · · |---- VectorSelector :: c
+`,
+		},
+		{
+			in: `a - on(b) group_left() (c)`,
+			out: ` |---- BinaryExpr :: a - on(b) group_left() (c)
+ · · · |---- VectorSelector :: a
+ · · · |---- ParenExpr :: (c)
+ · · · · · · |---- VectorSelector :: c
+`,
+		},
+		{
+			in: `a - ignoring(b) c`,
+			out: ` |---- BinaryExpr :: a - ignoring(b) c
+ · · · |---- VectorSelector :: a
+ · · · |---- VectorSelector :: c
+`,
+		},
+		{
+			in: `a - ignoring() c`,
+			out: ` |---- BinaryExpr :: a - c
+ · · · |---- VectorSelector :: a
+ · · · |---- VectorSelector :: c
+`,
+		},
+		{
+			in: `up > bool 0`,
+			out: ` |---- BinaryExpr :: up > bool 0
+ · · · |---- VectorSelector :: up
+ · · · |---- NumberLiteral :: 0
+`,
+		},
+		{
+			in: `a offset 1m`,
+			out: ` |---- VectorSelector :: a offset 1m
+`,
+		},
+		{
+			in: `a{c="d"}[5m] offset 1m`,
+			out: ` |---- MatrixSelector :: a{c="d"}[5m] offset 1m
+ · · · |---- VectorSelector :: a{c="d"} offset 1m
+`,
+		},
+		{
+			in: `a[5m] offset 1m`,
+			out: ` |---- MatrixSelector :: a[5m] offset 1m
+ · · · |---- VectorSelector :: a offset 1m
+`,
+		},
+		{
+			in: `a[1h:5m] offset 1m`,
+			out: ` |---- SubqueryExpr :: a[1h:5m] offset 1m
+ · · · |---- VectorSelector :: a
+`,
+		},
+		{
+			in: `{__name__="a"}`,
+			out: ` |---- VectorSelector :: {__name__="a"}
+`,
+		},
+	}
+
+	for _, test := range inputs {
+		expr, err := ParseExpr(test.in)
+		testutil.Ok(t, err)
+		testutil.Equals(t, Tree(expr), test.out)
+	}
+}
