@@ -1072,7 +1072,6 @@ func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total,
 		appErrs        = appendErrors{}
 		sampleLimitErr error
 		sampleAdded    bool
-		breakLoop      bool
 	)
 
 	defer func() {
@@ -1129,8 +1128,13 @@ loop:
 
 		if ok {
 			err = app.AddFast(ce.ref, t, v)
-			sampleAdded, breakLoop = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, appErrs)
-		} else {
+			sampleAdded, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, appErrs)
+			// In theory this should never happen.
+			if err == storage.ErrNotFound {
+				ok = false
+			}
+		}
+		if !ok {
 			var lset labels.Labels
 
 			mets := p.Metric(&lset)
@@ -1154,10 +1158,14 @@ loop:
 			var ref uint64
 			ref, err = app.Add(lset, t, v)
 			// call new check error function here
-			sampleAdded, breakLoop = sl.checkAddError(nil, met, tp, err, &sampleLimitErr, appErrs)
-			if breakLoop {
+			sampleAdded, err = sl.checkAddError(nil, met, tp, err, &sampleLimitErr, appErrs)
+			if err != nil {
+				if err != storage.ErrNotFound {
+					level.Debug(sl.l).Log("msg", "unexpected error", "series", string(met), "err", err)
+				}
 				break loop
 			}
+
 			if tp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
@@ -1166,10 +1174,6 @@ loop:
 			if sampleAdded && sampleLimitErr == nil {
 				seriesAdded++
 			}
-		}
-
-		if breakLoop {
-			break loop
 		}
 
 		// Match the previous behaviour, increment added even if there's a sampleLimitErr.
@@ -1215,37 +1219,38 @@ func yoloString(b []byte) string {
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
 // whether the caller should continue to process more samples, and any sample limit errors.
-func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, appErrs appendErrors) (added, exit bool, sampleLimitErr error) {
+
+func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr *error, appErrs appendErrors) (bool, error) {
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
 			sl.cache.trackStaleness(ce.hash, ce.lset)
 		}
-		return true, false
+		return true, nil
 	case storage.ErrNotFound:
-		return false, true
+		return false, storage.ErrNotFound
 	case storage.ErrOutOfOrderSample:
 		appErrs.numOutOfOrder++
 		level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
 		targetScrapeSampleOutOfOrder.Inc()
-		return false, false
+		return false, nil
 	case storage.ErrDuplicateSampleForTimestamp:
 		appErrs.numDuplicates++
 		level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
 		targetScrapeSampleDuplicate.Inc()
-		return false, false
+		return false, nil
 	case storage.ErrOutOfBounds:
 		appErrs.numOutOfBounds++
 		level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
 		targetScrapeSampleOutOfBounds.Inc()
-		return false, false
+		return false, nil
 	case errSampleLimit:
 		// Keep on parsing output if we hit the limit, so we report the correct
 		// total number of samples scraped.
 		*sampleLimitErr = err
-		return false, false
+		return false, nil
 	default:
-		return false, true
+		return false, err
 	}
 }
 
