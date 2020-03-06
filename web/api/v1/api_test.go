@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -41,6 +40,7 @@ import (
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -2169,6 +2169,68 @@ func TestRespondError(t *testing.T) {
 	}
 	if !reflect.DeepEqual(&res, exp) {
 		t.Fatalf("Expected response \n%v\n but got \n%v\n", res, exp)
+	}
+}
+
+func TestParseTimeParam(t *testing.T) {
+	type resultType struct {
+		asTime  time.Time
+		asError func() error
+	}
+
+	ts, err := parseTime("1582468023986")
+	testutil.Ok(t, err)
+
+	var tests = []struct {
+		paramName    string
+		paramValue   string
+		defaultValue time.Time
+		result       resultType
+	}{
+		{ // When data is valid.
+			paramName:    "start",
+			paramValue:   "1582468023986",
+			defaultValue: minTime,
+			result: resultType{
+				asTime:  ts,
+				asError: nil,
+			},
+		},
+		{ // When data is empty string.
+			paramName:    "end",
+			paramValue:   "",
+			defaultValue: maxTime,
+			result: resultType{
+				asTime:  maxTime,
+				asError: nil,
+			},
+		},
+		{ // When data is not valid.
+			paramName:    "foo",
+			paramValue:   "baz",
+			defaultValue: maxTime,
+			result: resultType{
+				asTime: time.Time{},
+				asError: func() error {
+					_, err := parseTime("baz")
+					return errors.Wrapf(err, "Invalid time value for '%s'", "foo")
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		req, err := http.NewRequest("GET", "localhost:42/foo?"+test.paramName+"="+test.paramValue, nil)
+		testutil.Ok(t, err)
+
+		result := test.result
+		asTime, err := parseTimeParam(req, test.paramName, test.defaultValue)
+
+		if err != nil {
+			testutil.ErrorEqual(t, result.asError(), err)
+		} else {
+			testutil.Assert(t, asTime.Equal(result.asTime), "time as return value: %s not parsed correctly. Expected %s. Actual %s", test.paramValue, result.asTime, asTime)
+		}
 	}
 }
 
