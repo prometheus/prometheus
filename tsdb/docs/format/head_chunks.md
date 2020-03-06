@@ -34,6 +34,8 @@ among all the chunks that it holds.
 
 # Chunk
 
+Unlike chunks in the on-disk blocks, here we additionally store series reference that the chunks belongs to and the mint/maxt of the chunks. This is because we don't have an index associated with these chunks, hence these meta information are used while replaying the chunks.
+
 ```
 ┌─────────────────────┬───────────────────────┬───────────────────────┬───────────────────┬───────────────┬──────────────┬────────────────┐
 | series ref <8 byte> | mint <8 byte, uint64> | maxt <8 byte, uint64> | encoding <1 byte> | len <uvarint> | data <bytes> │ CRC32 <4 byte> │

@@ -20,7 +20,6 @@ import (
 	"hash"
 	"io"
 	"io/ioutil"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -41,7 +40,7 @@ const (
 	MagicHeadChunks = 0x0130BC91
 
 	headChunksFormatV1 = 1
-	writeBufferSize    = 2 * 1024 * 1024 // 2 MiB.
+	writeBufferSize    = 4 * 1024 * 1024 // 4 MiB.
 )
 
 var (
@@ -69,32 +68,34 @@ func (e *corruptionErr) Error() string {
 }
 
 // ChunkDiskMapper is for writing the Head block chunks to the disk
-// and access chunks via an mmapped file.
+// and access chunks via mmapped file.
 type ChunkDiskMapper struct {
-	// Writer.
-	dir     *os.File
-	curFile *os.File // File being written to.
+	/// Writer.
+	dir *os.File
 
-	curFileMint     int64 // In milliseconds.
-	curFileMaxt     int64 // In milliseconds.
-	curFileSequence int
-	n               int64 // Bytes written in current open file.
-	maxFileMs       int64
+	curFile         *os.File // File being written to.
+	curFileSequence int      // Index of current open file being appended to.
+	curFileMint     int64    // Current file's mint. Used to check for a chunk crossing the max file time range.
+	curFileMaxt     int64    // Maxt of all chunks written to current file. This is written to the file when the file is closed.
+	curFileNumBytes int64    // Bytes written in current open file.
+	maxFileMs       int64    // Max time range (curFileMaxt-curFileMint) for a file.
 
-	writeBuf     [8]byte
+	writeBuf     [MaxHeadChunkMetaSize]byte
 	wbuf         *bufio.Writer
 	crc32        hash.Hash
 	writePathMtx sync.RWMutex
 
-	// Reader.
+	/// Reader.
 	// The int key in the map is the file number on the disk.
 	mmappedChunkFiles map[int]ByteSlice
 	closers           map[int]io.Closer // Closers for resources behind the byte slices.
-	pool              chunkenc.Pool
 	readPathMtx       sync.RWMutex
-	chunkBuffer       *chunkBuffer
+	pool              chunkenc.Pool
 
-	size   int64 // The total size of bytes in the reader.
+	// Writer and Reader.
+	chunkBuffer *chunkBuffer
+
+	size   int64 // The total size of bytes in the closed files.
 	closed bool
 }
 
@@ -110,8 +111,7 @@ const (
 	// HeaderMaxtOffset is the offset where the first byte of MaxT for head chunk file exists.
 	HeaderMaxtOffset = HeaderMintOffset + MintMaxtSize
 	// MaxHeadChunkFileSize is the max size of a head chunk file.
-	// Setting size to the max int32 as setting it to max int64 crashes 64 systems too.
-	MaxHeadChunkFileSize = math.MaxInt32
+	MaxHeadChunkFileSize = 1 * 1024 * 1024 * 1024 // 1 GiB.
 	// CRCSize is the size of crc32 sum on disk.
 	CRCSize = 4
 	// MaxHeadChunkMetaSize is the max size of an mmapped chunks minus the chunks data.
@@ -146,27 +146,31 @@ func newChunkDiskMapper(dir string, maxFileDuration int64, pool chunkenc.Pool) (
 		chunkBuffer: newChunkBuffer(),
 	}
 
+	if m.pool == nil {
+		m.pool = chunkenc.NewPool()
+	}
+
 	return m, m.openMMapFiles()
 }
 
 func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
-	bs := map[int]ByteSlice{}
-	cs := map[int]io.Closer{}
+	cdm.mmappedChunkFiles = map[int]ByteSlice{}
+	cdm.closers = map[int]io.Closer{}
 	defer func() {
 		if returnErr != nil {
 			var merr tsdb_errors.MultiError
 			merr.Add(returnErr)
-			merr.Add(closeAllFromMap(cs))
+			merr.Add(closeAllFromMap(cdm.closers))
 			returnErr = merr.Err()
+
+			cdm.mmappedChunkFiles = nil
+			cdm.closers = nil
 		}
 	}()
 
 	files, err := listChunkFiles(cdm.dir.Name())
 	if err != nil {
 		return err
-	}
-	if cdm.pool == nil {
-		cdm.pool = chunkenc.NewPool()
 	}
 
 	chkFileIndices := make([]int, 0, len(files))
@@ -175,13 +179,11 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		if err != nil {
 			return errors.Wrap(err, "mmap files")
 		}
-		cs[seq] = f
-		bs[seq] = realByteSlice(f.Bytes())
+		cdm.closers[seq] = f
+		cdm.mmappedChunkFiles[seq] = realByteSlice(f.Bytes())
 		chkFileIndices = append(chkFileIndices, seq)
 	}
 
-	cdm.mmappedChunkFiles = bs
-	cdm.closers = cs
 	cdm.size = 0
 
 	// Check for gaps in the files.
@@ -214,21 +216,9 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		maxt := binary.BigEndian.Uint64(b.Range(HeaderMaxtOffset, HeaderMaxtOffset+MintMaxtSize))
 		if maxt == 0 {
 			// This is possible if Prometheus crashes and the maxt was unwritten to the
-			// last head chunk file. As a safe buffer, we set the maxt to mint + 1.5 times head chunk file time range.
-			f, err := os.OpenFile(files[i], os.O_WRONLY|os.O_CREATE, 0666)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				var merr tsdb_errors.MultiError
-				merr.Add(returnErr)
-				merr.Add(f.Close())
-				returnErr = merr.Err()
-			}()
-			mint := binary.BigEndian.Uint64(b.Range(HeaderMintOffset, HeaderMintOffset+MintMaxtSize))
-			binary.BigEndian.PutUint64(cdm.writeBuf[:], mint+(uint64(cdm.maxFileMs)*3/2))
-			if _, err := f.WriteAt(cdm.writeBuf[:MintMaxtSize], HeaderMaxtOffset); err != nil {
-				return err
+			// last head chunk file.
+			if err := cdm.repairFileMaxt(files[i], b); err != nil {
+				return errors.Wrap(err, "repair file maxt")
 			}
 		}
 
@@ -236,6 +226,23 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	}
 
 	return nil
+}
+
+func (cdm *ChunkDiskMapper) repairFileMaxt(fileName string, b ByteSlice) error {
+	f, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		return err
+	}
+
+	// As a safe buffer, we set the maxt to mint + 1.5 times head chunk file time range.
+	mint := binary.BigEndian.Uint64(b.Range(HeaderMintOffset, HeaderMintOffset+MintMaxtSize))
+	binary.BigEndian.PutUint64(cdm.writeBuf[:], mint+(uint64(cdm.maxFileMs)*3/2))
+	_, err = f.WriteAt(cdm.writeBuf[:MintMaxtSize], HeaderMaxtOffset)
+
+	var merr tsdb_errors.MultiError
+	merr.Add(err)
+	merr.Add(f.Close())
+	return merr.Err()
 }
 
 func listChunkFiles(dir string) (map[int]string, error) {
@@ -279,43 +286,36 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 	}
 
 	cdm.crc32.Reset()
-	binary.BigEndian.PutUint64(cdm.writeBuf[:], seriesRef)
-	if err := cdm.writeWithCRC32(cdm.writeBuf[:SeriesRefSize]); err != nil {
-		return 0, err
-	}
+	bytesWritten := 0
 
-	binary.BigEndian.PutUint64(cdm.writeBuf[:], uint64(mint))
-	if err := cdm.writeWithCRC32(cdm.writeBuf[:MintMaxtSize]); err != nil {
-		return 0, err
-	}
-
-	binary.BigEndian.PutUint64(cdm.writeBuf[:], uint64(maxt))
-	if err := cdm.writeWithCRC32(cdm.writeBuf[:MintMaxtSize]); err != nil {
-		return 0, err
-	}
-
-	// The reference is set to the head chunk file index and the offset where
-	// the data starts for this chunk.
-	//
 	// The upper 4 bytes are for the head chunk file index and
 	// the lower 4 bytes are for the head chunk file offset where to start reading this chunk.
-	chkRef = chunkRef(uint64(cdm.curFileSequence), uint64(cdm.n))
+	chkRef = chunkRef(uint64(cdm.curFileSequence), uint64(cdm.curFileNumBytes))
 
-	cdm.writeBuf[0] = byte(chk.Encoding())
-	if err := cdm.writeWithCRC32(cdm.writeBuf[:1]); err != nil {
+	binary.BigEndian.PutUint64(cdm.writeBuf[bytesWritten:], seriesRef)
+	bytesWritten += SeriesRefSize
+
+	binary.BigEndian.PutUint64(cdm.writeBuf[bytesWritten:], uint64(mint))
+	bytesWritten += MintMaxtSize
+
+	binary.BigEndian.PutUint64(cdm.writeBuf[bytesWritten:], uint64(maxt))
+	bytesWritten += MintMaxtSize
+
+	cdm.writeBuf[bytesWritten] = byte(chk.Encoding())
+	bytesWritten += ChunkEncodingSize
+
+	n := binary.PutUvarint(cdm.writeBuf[bytesWritten:], uint64(len(chk.Bytes())))
+	bytesWritten += n
+
+	if err := cdm.writeAndAppendToCRC32(cdm.writeBuf[:bytesWritten]); err != nil {
 		return 0, err
 	}
 
-	n := binary.PutUvarint(cdm.writeBuf[:], uint64(len(chk.Bytes())))
-	if err := cdm.writeWithCRC32(cdm.writeBuf[:n]); err != nil {
+	if err := cdm.writeAndAppendToCRC32(chk.Bytes()); err != nil {
 		return 0, err
 	}
 
-	if err := cdm.writeWithCRC32(chk.Bytes()); err != nil {
-		return 0, err
-	}
-
-	if err := cdm.write(cdm.crc32.Sum(cdm.writeBuf[:0])); err != nil {
+	if err := cdm.writeCRC32(); err != nil {
 		return 0, err
 	}
 
@@ -325,7 +325,7 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 
 	if mint < cdm.curFileMint {
 		cdm.curFileMint = mint
-		// As this wont happen a whole lot of time, we don't wait
+		// As this won't happen a whole lot of time, we don't wait
 		// for a new head chunk file to be cut to write it off.
 		binary.BigEndian.PutUint64(cdm.writeBuf[:], uint64(mint))
 		if _, err := cdm.curFile.WriteAt(cdm.writeBuf[:MintMaxtSize], HeaderMintOffset); err != nil {
@@ -350,10 +350,13 @@ func chunkRef(seq, offset uint64) (chunkRef uint64) {
 	return (seq << 32) | offset
 }
 
+// shouldCutNewFile decides the cutting of a new file based on time and size retention.
+// Size retention: because depending on the system architecture, there is a limit on how big of a file we can m-map.
+// Time retention: so that we can delete old chunks with some time guarantee in low load environments.
 func (cdm *ChunkDiskMapper) shouldCutNewFile(chunkSize int, maxt int64) bool {
-	return cdm.n == 0 || // First head chunk file.
-		(maxt-cdm.curFileMint > cdm.maxFileMs && cdm.n > HeadChunkFileHeaderSize) || // Time duration reached for the existing file.
-		cdm.n+int64(chunkSize+MaxHeadChunkMetaSize) >= MaxHeadChunkFileSize // Exceeds the max head chunk file size.
+	return cdm.curFileNumBytes == 0 || // First head chunk file.
+		(maxt-cdm.curFileMint > cdm.maxFileMs && cdm.curFileNumBytes > HeadChunkFileHeaderSize) || // Time duration reached for the existing file.
+		cdm.curFileNumBytes+int64(chunkSize+MaxHeadChunkMetaSize) > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
 }
 
 func (cdm *ChunkDiskMapper) cut(mint int64) (returnErr error) {
@@ -377,8 +380,8 @@ func (cdm *ChunkDiskMapper) cut(mint int64) (returnErr error) {
 		}
 	}()
 
-	cdm.size += cdm.n
-	atomic.StoreInt64(&cdm.n, int64(n))
+	cdm.size += cdm.curFileNumBytes
+	atomic.StoreInt64(&cdm.curFileNumBytes, int64(n))
 	oldSeq := cdm.curFileSequence
 	cdm.curFileSequence = seq
 
@@ -391,7 +394,7 @@ func (cdm *ChunkDiskMapper) cut(mint int64) (returnErr error) {
 	if _, err := f.Write(cdm.writeBuf[:MintMaxtSize]); err != nil {
 		return err
 	}
-	atomic.AddInt64(&cdm.n, 16)
+	atomic.AddInt64(&cdm.curFileNumBytes, 16)
 
 	oldFile := cdm.curFile
 
@@ -458,16 +461,20 @@ func (cdm *ChunkDiskMapper) finalizeCurFile() error {
 
 func (cdm *ChunkDiskMapper) write(b []byte) error {
 	n, err := cdm.wbuf.Write(b)
-	atomic.AddInt64(&cdm.n, int64(n))
+	atomic.AddInt64(&cdm.curFileNumBytes, int64(n))
 	return err
 }
 
-func (cdm *ChunkDiskMapper) writeWithCRC32(b []byte) error {
+func (cdm *ChunkDiskMapper) writeAndAppendToCRC32(b []byte) error {
 	if err := cdm.write(b); err != nil {
 		return err
 	}
 	_, err := cdm.crc32.Write(b)
 	return err
+}
+
+func (cdm *ChunkDiskMapper) writeCRC32() error {
+	return cdm.write(cdm.crc32.Sum(cdm.writeBuf[:0]))
 }
 
 // flushBuffer flushes the current in-memory chunks.
@@ -488,8 +495,9 @@ func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		// These contain the head chunk file index.
 		sgmIndex = int(ref >> 32)
 		// Get the lower 4 bytes.
-		// These contain the head chunk file offset where the encoding for this chunk starts.
-		chkStart = int((ref << 32) >> 32)
+		// These contain the head chunk file offset where the chunk starts.
+		// We skip the series ref and the mint/maxt beforehand.
+		chkStart = int((ref<<32)>>32) + SeriesRefSize + (2 * MintMaxtSize)
 		chkCRC32 = newCRC32()
 	)
 
@@ -561,24 +569,26 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 	chkCRC32 := newCRC32()
 
 	// Iterate files in ascending order.
-	seqs := make([]int, 0, len(cdm.mmappedChunkFiles))
+	segIDs := make([]int, 0, len(cdm.mmappedChunkFiles))
 	for seg := range cdm.mmappedChunkFiles {
-		seqs = append(seqs, seg)
+		segIDs = append(segIDs, seg)
 	}
-	sort.Ints(seqs)
-	for _, seq := range seqs {
-		bs := cdm.mmappedChunkFiles[seq]
+	sort.Ints(segIDs)
+	for _, segID := range segIDs {
+		bs := cdm.mmappedChunkFiles[segID]
 		sliceLen := bs.Len()
 		idx := HeadChunkFileHeaderSize
 		for idx < sliceLen {
 			if sliceLen-idx < MaxHeadChunkMetaSize {
 				return &corruptionErr{
 					Dir:       cdm.dir.Name(),
-					FileIndex: seq,
-					Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk header - required:%v, available:%v, file:%d", idx+MaxHeadChunkMetaSize, sliceLen, seq),
+					FileIndex: segID,
+					Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk header - required:%v, available:%v, file:%d", idx+MaxHeadChunkMetaSize, sliceLen, segID),
 				}
 			}
 			chkCRC32.Reset()
+			chunkRef := chunkRef(uint64(segID), uint64(idx))
+
 			startIdx := idx
 			seriesRef := binary.BigEndian.Uint64(bs.Range(idx, idx+SeriesRefSize))
 			idx += SeriesRefSize
@@ -588,8 +598,6 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 
 			maxt := int64(binary.BigEndian.Uint64(bs.Range(idx, idx+MintMaxtSize)))
 			idx += MintMaxtSize
-
-			chunkRef := chunkRef(uint64(seq), uint64(idx))
 
 			idx += ChunkEncodingSize // Skip encoding.
 			// Skip the data.
@@ -601,8 +609,8 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 			if idx+CRCSize > sliceLen {
 				return &corruptionErr{
 					Dir:       cdm.dir.Name(),
-					FileIndex: seq,
-					Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk header - required:%v, available:%v, file:%d", idx+CRCSize, sliceLen, seq),
+					FileIndex: segID,
+					Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk header - required:%v, available:%v, file:%d", idx+CRCSize, sliceLen, segID),
 				}
 			}
 
@@ -614,7 +622,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 			if act := chkCRC32.Sum(nil); !bytes.Equal(act, sum) {
 				return &corruptionErr{
 					Dir:       cdm.dir.Name(),
-					FileIndex: seq,
+					FileIndex: segID,
 					Err:       errors.Errorf("checksum mismatch expected:%x, actual:%x", sum, act),
 				}
 			}
@@ -630,8 +638,8 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 			// It should be equal to the slice length.
 			return &corruptionErr{
 				Dir:       cdm.dir.Name(),
-				FileIndex: seq,
-				Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the last chunk data - required:%v, available:%v, file:%d", idx, sliceLen, seq),
+				FileIndex: segID,
+				Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the last chunk data - required:%v, available:%v, file:%d", idx, sliceLen, segID),
 			}
 		}
 	}
@@ -642,14 +650,22 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 // Truncate deletes the head chunk files which are strictly below the mint.
 // mint should be in milliseconds.
 func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
-	var removedFiles []int
-
 	cdm.readPathMtx.RLock()
-	for seq, bs := range cdm.mmappedChunkFiles {
+
+	// Sort the file indices, else if truncation fails in between,
+	// it can lead to unsequential files as the map is not sorted.
+	chkFileIndices := make([]int, 0, len(cdm.mmappedChunkFiles))
+	for seq := range cdm.mmappedChunkFiles {
+		chkFileIndices = append(chkFileIndices, seq)
+	}
+	sort.Ints(chkFileIndices)
+
+	var removedFiles []int
+	for _, seq := range chkFileIndices {
 		if seq == cdm.curFileSequence {
 			continue
 		}
-		b := bs.Range(HeaderMaxtOffset, HeaderMaxtOffset+MintMaxtSize)
+		b := cdm.mmappedChunkFiles[seq].Range(HeaderMaxtOffset, HeaderMaxtOffset+MintMaxtSize)
 		maxt := binary.BigEndian.Uint64(b)
 		if int64(maxt) < mint {
 			removedFiles = append(removedFiles, seq)
@@ -704,10 +720,12 @@ func (cdm *ChunkDiskMapper) Repair(originalErr error) error {
 
 // Size returns the size of the chunk files.
 func (cdm *ChunkDiskMapper) Size() int64 {
-	n := atomic.LoadInt64(&cdm.n)
+	n := atomic.LoadInt64(&cdm.curFileNumBytes)
 	return cdm.size + n
 }
 
+// Close closes all the open files in ChunkDiskMapper.
+// It is not longer safe to access chunks from this struct after calling Close.
 func (cdm *ChunkDiskMapper) Close() error {
 	// 'WriteChunk' locks writePathMtx first and then readPathMtx for cutting head chunk file.
 	// The lock order should not be reversed here else it can cause deadlocks.
