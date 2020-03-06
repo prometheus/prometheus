@@ -2167,15 +2167,52 @@ var testExpr = []struct {
 	}, {
 		input:  "rate(avg)",
 		fail:   true,
-		errMsg: `unexpected ")"`,
+		errMsg: `expected type range vector`,
 	}, {
-		input:  "sum(sum)",
-		fail:   true,
-		errMsg: `unexpected ")"`,
+		input: "sum(sum)",
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				Name: "sum",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "sum"),
+				},
+				PosRange: PositionRange{
+					Start: 4,
+					End:   7,
+				},
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   8,
+			},
+		},
 	}, {
-		input:  "a + sum",
-		fail:   true,
-		errMsg: `unexpected end of input`,
+		input: "a + sum",
+		expected: &BinaryExpr{
+			Op: ADD,
+			LHS: &VectorSelector{
+				Name: "a",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "a"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   1,
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "sum",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "sum"),
+				},
+				PosRange: PositionRange{
+					Start: 4,
+					End:   7,
+				},
+			},
+			VectorMatching: &VectorMatching{},
+		},
 	},
 	// String quoting and escape sequence interpretation tests.
 	{
