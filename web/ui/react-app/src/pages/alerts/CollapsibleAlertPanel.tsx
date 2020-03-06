@@ -1,7 +1,7 @@
 import React, { FC, useState, Fragment } from 'react';
 import { Link } from '@reach/router';
 import { Alert, Collapse, Table, Badge } from 'reactstrap';
-import { RuleStatus } from './AlertContents';
+import { RuleStatus, RuleHealthStatus } from './AlertContents';
 import { Rule } from '../../types/types';
 import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -12,10 +12,13 @@ interface CollapsibleAlertPanelProps {
   showAnnotations: boolean;
 }
 
-const alertColors: RuleStatus<string> = {
+const alertColors: RuleStatus<string> & RuleHealthStatus<string> = {
   firing: 'danger',
   pending: 'warning',
   inactive: 'success',
+  unknown: 'primary',
+  err: 'danger',
+  ok: 'success',
 };
 
 const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnotations }) => {
@@ -23,9 +26,15 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
 
   return (
     <>
-      <Alert fade={false} onClick={() => toggle(!open)} color={alertColors[rule.state]} style={{ cursor: 'pointer' }}>
+      <Alert
+        fade={false}
+        onClick={() => toggle(!open)}
+        color={alertColors[rule.health === 'ok' ? rule.state : rule.health]}
+        style={{ cursor: 'pointer' }}
+      >
         <FontAwesomeIcon icon={open ? faChevronDown : faChevronRight} fixedWidth />
-        <strong>{rule.name}</strong> ({`${rule.alerts.length} active`})
+        <strong>{rule.name}</strong> ({rule.alerts.length} active){rule.health === 'unknown' ? ' (unknown)' : ''}
+        {rule.health === 'err' ? ' (failing)' : ''}
       </Alert>
       <Collapse isOpen={open} className="mb-2">
         <pre style={{ background: '#f5f5f5', padding: 15 }}>

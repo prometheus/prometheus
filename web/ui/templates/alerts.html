@@ -34,7 +34,7 @@
         {{range .AlertingRules}}
           {{$activeAlerts := .ActiveAlerts}}
           {{$isHealthUnknown := .IsHealthUnknown}}
-          <tr class="{{if not $isHealthUnknown}} {{index $alertStateToRowClass .State}} {{end}} alert_header">
+          <tr class="{{if not $isHealthUnknown}} alert-{{index $alertStateToRowClass .State}} {{end}} alert alert_header">
             <td><i class="icon-chevron-down"></i> <b>{{.Name}}</b>
               {{if $isHealthUnknown}} (unknown) {{else}} ({{len $activeAlerts}} active) {{end}}
             </td>
