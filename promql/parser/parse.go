@@ -544,6 +544,11 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 
 		for i, arg := range n.Args {
 			if i >= len(n.Func.ArgTypes) {
+				if n.Func.Variadic == 0 {
+					// This is not a vararg function so we should not check the
+					// type of the extra arguments.
+					break
+				}
 				i = len(n.Func.ArgTypes) - 1
 			}
 			p.expectType(arg, n.Func.ArgTypes[i], fmt.Sprintf("call to function %q", n.Func.Name))
