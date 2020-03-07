@@ -303,7 +303,7 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 	if len(blockReaders) > 0 {
 		maxBlockTime = blockReaders[len(blockReaders)-1].Meta().MaxTime
 	}
-	w, err := wal.Open(db.logger, nil, filepath.Join(db.dir, "wal"))
+	w, err := wal.Open(db.logger, filepath.Join(db.dir, "wal"))
 	if err != nil {
 		return err
 	}
@@ -371,7 +371,7 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 
 	// Also add the WAL if the current blocks don't cover the requests time range.
 	if maxBlockTime <= maxt {
-		w, err := wal.Open(db.logger, nil, filepath.Join(db.dir, "wal"))
+		w, err := wal.Open(db.logger, filepath.Join(db.dir, "wal"))
 		if err != nil {
 			return nil, err
 		}

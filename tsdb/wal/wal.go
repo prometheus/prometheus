@@ -293,7 +293,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 }
 
 // Open an existing WAL.
-func Open(logger log.Logger, reg prometheus.Registerer, dir string) (*WAL, error) {
+func Open(logger log.Logger, dir string) (*WAL, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
