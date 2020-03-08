@@ -2131,9 +2131,21 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "expected 1 argument(s) in call to \"floor\", got 2",
 	}, {
+		input:  "floor(some_metric, 1)",
+		fail:   true,
+		errMsg: "expected 1 argument(s) in call to \"floor\", got 2",
+	}, {
 		input:  "floor(1)",
 		fail:   true,
 		errMsg: "expected type instant vector in call to function \"floor\", got scalar",
+	}, {
+		input:  "hour(some_metric, some_metric, some_metric)",
+		fail:   true,
+		errMsg: "expected at most 1 argument(s) in call to \"hour\", got 3",
+	}, {
+		input:  "time(some_metric)",
+		fail:   true,
+		errMsg: "expected 0 argument(s) in call to \"time\", got 1",
 	}, {
 		input:  "non_existent_function_far_bar()",
 		fail:   true,
