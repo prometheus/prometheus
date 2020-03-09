@@ -214,22 +214,18 @@ func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
 			p.mtx.Lock()
 
 			found := false
-			for _, id := range p.m[n][l] {
-				if _, ok := deleted[id]; ok {
-					found = true
-					break
-				}
-			}
-			if !found {
-				p.mtx.Unlock()
-				continue
-			}
 			repl := make([]uint64, 0, len(p.m[n][l]))
 
 			for _, id := range p.m[n][l] {
 				if _, ok := deleted[id]; !ok {
 					repl = append(repl, id)
+				} else {
+					found = true
 				}
+			}
+			if !found {
+				p.mtx.Unlock()
+				continue
 			}
 			if len(repl) > 0 {
 				p.m[n][l] = repl
