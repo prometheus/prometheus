@@ -97,9 +97,8 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) CancelPreparer(ctx con
 // CancelSender sends the Cancel request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineScaleSetRollingUpgradesClient) CancelSender(req *http.Request) (future VirtualMachineScaleSetRollingUpgradesCancelFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -179,8 +178,7 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) GetLatestPreparer(ctx 
 // GetLatestSender sends the GetLatest request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineScaleSetRollingUpgradesClient) GetLatestSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetLatestResponder handles the response to the GetLatest request. The method always
@@ -252,9 +250,8 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) StartExtensionUpgradeP
 // StartExtensionUpgradeSender sends the StartExtensionUpgrade request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineScaleSetRollingUpgradesClient) StartExtensionUpgradeSender(req *http.Request) (future VirtualMachineScaleSetRollingUpgradesStartExtensionUpgradeFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -329,9 +326,8 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) StartOSUpgradePreparer
 // StartOSUpgradeSender sends the StartOSUpgrade request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineScaleSetRollingUpgradesClient) StartOSUpgradeSender(req *http.Request) (future VirtualMachineScaleSetRollingUpgradesStartOSUpgradeFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}

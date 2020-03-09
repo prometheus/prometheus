@@ -99,9 +99,8 @@ func (client InterfaceEndpointsClient) CreateOrUpdatePreparer(ctx context.Contex
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceEndpointsClient) CreateOrUpdateSender(req *http.Request) (future InterfaceEndpointsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -176,9 +175,8 @@ func (client InterfaceEndpointsClient) DeletePreparer(ctx context.Context, resou
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceEndpointsClient) DeleteSender(req *http.Request) (future InterfaceEndpointsDeleteFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -262,8 +260,7 @@ func (client InterfaceEndpointsClient) GetPreparer(ctx context.Context, resource
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceEndpointsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -338,8 +335,7 @@ func (client InterfaceEndpointsClient) ListPreparer(ctx context.Context, resourc
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceEndpointsClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -448,8 +444,7 @@ func (client InterfaceEndpointsClient) ListBySubscriptionPreparer(ctx context.Co
 // ListBySubscriptionSender sends the ListBySubscription request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceEndpointsClient) ListBySubscriptionSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListBySubscriptionResponder handles the response to the ListBySubscription request. The method always

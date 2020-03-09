@@ -599,7 +599,9 @@ func init() {
 	proto.RegisterType((*CustomHttpPattern)(nil), "google.api.CustomHttpPattern")
 }
 
-func init() { proto.RegisterFile("google/api/http.proto", fileDescriptor_ff9994be407cdcc9) }
+func init() {
+	proto.RegisterFile("google/api/http.proto", fileDescriptor_ff9994be407cdcc9)
+}
 
 var fileDescriptor_ff9994be407cdcc9 = []byte{
 	// 419 bytes of a gzipped FileDescriptorProto

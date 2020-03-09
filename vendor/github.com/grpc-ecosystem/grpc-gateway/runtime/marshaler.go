@@ -19,6 +19,13 @@ type Marshaler interface {
 	ContentType() string
 }
 
+// Marshalers that implement contentTypeMarshaler will have their ContentTypeFromMessage method called
+// to set the Content-Type header on the response
+type contentTypeMarshaler interface {
+	// ContentTypeFromMessage returns the Content-Type this marshaler produces from the provided message
+	ContentTypeFromMessage(v interface{}) string
+}
+
 // Decoder decodes a byte sequence
 type Decoder interface {
 	Decode(v interface{}) error

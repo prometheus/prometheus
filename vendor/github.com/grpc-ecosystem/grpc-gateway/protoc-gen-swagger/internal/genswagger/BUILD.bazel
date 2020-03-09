@@ -12,7 +12,7 @@ go_library(
         "template.go",
         "types.go",
     ],
-    importpath = "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/genswagger",
+    importpath = "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/internal/genswagger",
     deps = [
         "//internal:go_default_library",
         "//protoc-gen-grpc-gateway/descriptor:go_default_library",
@@ -36,8 +36,8 @@ go_test(
     srcs = ["template_test.go"],
     embed = [":go_default_library"],
     deps = [
+        "//internal/httprule:go_default_library",
         "//protoc-gen-grpc-gateway/descriptor:go_default_library",
-        "//protoc-gen-grpc-gateway/httprule:go_default_library",
         "//protoc-gen-swagger/options:go_default_library",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@io_bazel_rules_go//proto/wkt:any_go_proto",

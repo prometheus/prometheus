@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//:generators"])
+package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "go_default_library",
@@ -9,7 +9,7 @@ go_library(
         "parse.go",
         "types.go",
     ],
-    importpath = "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/httprule",
+    importpath = "github.com/grpc-ecosystem/grpc-gateway/internal/httprule",
     deps = [
         "//utilities:go_default_library",
         "@com_github_golang_glog//:go_default_library",

@@ -100,9 +100,8 @@ func (client ExpressRouteCrossConnectionsClient) CreateOrUpdatePreparer(ctx cont
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionsClient) CreateOrUpdateSender(req *http.Request) (future ExpressRouteCrossConnectionsCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -183,8 +182,7 @@ func (client ExpressRouteCrossConnectionsClient) GetPreparer(ctx context.Context
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionsClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -256,8 +254,7 @@ func (client ExpressRouteCrossConnectionsClient) ListPreparer(ctx context.Contex
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionsClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -369,9 +366,8 @@ func (client ExpressRouteCrossConnectionsClient) ListArpTablePreparer(ctx contex
 // ListArpTableSender sends the ListArpTable request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionsClient) ListArpTableSender(req *http.Request) (future ExpressRouteCrossConnectionsListArpTableFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -451,8 +447,7 @@ func (client ExpressRouteCrossConnectionsClient) ListByResourceGroupPreparer(ctx
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionsClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -564,9 +559,8 @@ func (client ExpressRouteCrossConnectionsClient) ListRoutesTablePreparer(ctx con
 // ListRoutesTableSender sends the ListRoutesTable request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionsClient) ListRoutesTableSender(req *http.Request) (future ExpressRouteCrossConnectionsListRoutesTableFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -646,9 +640,8 @@ func (client ExpressRouteCrossConnectionsClient) ListRoutesTableSummaryPreparer(
 // ListRoutesTableSummarySender sends the ListRoutesTableSummary request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionsClient) ListRoutesTableSummarySender(req *http.Request) (future ExpressRouteCrossConnectionsListRoutesTableSummaryFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -726,9 +719,8 @@ func (client ExpressRouteCrossConnectionsClient) UpdateTagsPreparer(ctx context.
 // UpdateTagsSender sends the UpdateTags request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRouteCrossConnectionsClient) UpdateTagsSender(req *http.Request) (future ExpressRouteCrossConnectionsUpdateTagsFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}

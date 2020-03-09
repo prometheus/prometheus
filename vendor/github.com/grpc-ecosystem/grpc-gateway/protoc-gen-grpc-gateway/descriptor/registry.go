@@ -75,6 +75,10 @@ type Registry struct {
 	// useGoTemplate determines whether you want to use GO templates
 	// in your protofile comments
 	useGoTemplate bool
+
+	// disableDefaultErrors disables the generation of the default error types.
+	// This is useful for users who have defined custom error handling.
+	disableDefaultErrors bool
 }
 
 type repeatedFieldSeparator struct {
@@ -458,6 +462,16 @@ func (r *Registry) SetUseGoTemplate(use bool) {
 // GetUseGoTemplate returns useGoTemplate
 func (r *Registry) GetUseGoTemplate() bool {
 	return r.useGoTemplate
+}
+
+// SetDisableDefaultErrors sets disableDefaultErrors
+func (r *Registry) SetDisableDefaultErrors(use bool) {
+	r.disableDefaultErrors = use
+}
+
+// GetDisableDefaultErrors returns disableDefaultErrors
+func (r *Registry) GetDisableDefaultErrors() bool {
+	return r.disableDefaultErrors
 }
 
 // sanitizePackageName replaces unallowed character in package name

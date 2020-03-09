@@ -11,11 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package promauto provides constructors for the usual Prometheus metrics that
-// return them already registered with the global registry
-// (prometheus.DefaultRegisterer). This allows very compact code, avoiding any
-// references to the registry altogether, but all the constructors in this
-// package will panic if the registration fails.
+// Package promauto provides alternative constructors for the fundamental
+// Prometheus metric types and their …Vec and …Func variants. The difference to
+// their counterparts in the prometheus package is that the promauto
+// constructors return Collectors that are already registered with a
+// registry. There are two sets of constructors. The constructors in the first
+// set are top-level functions, while the constructors in the other set are
+// methods of the Factory type. The top-level function return Collectors
+// registered with the global registry (prometheus.DefaultRegisterer), while the
+// methods return Collectors registered with the registry the Factory was
+// constructed with. All constructors panic if the registration fails.
 //
 // The following example is a complete program to create a histogram of normally
 // distributed random numbers from the math/rand package:
@@ -79,51 +84,78 @@
 //      	http.ListenAndServe(":1971", nil)
 //      }
 //
+// A Factory is created with the With(prometheus.Registerer) function, which
+// enables two usage pattern. With(prometheus.Registerer) can be called once per
+// line:
+//
+//        var (
+//        	reg           = prometheus.NewRegistry()
+//        	randomNumbers = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+//        		Name:    "random_numbers",
+//        		Help:    "A histogram of normally distributed random numbers.",
+//        		Buckets: prometheus.LinearBuckets(-3, .1, 61),
+//        	})
+//        	requestCount = promauto.With(reg).NewCounterVec(
+//        		prometheus.CounterOpts{
+//        			Name: "http_requests_total",
+//        			Help: "Total number of HTTP requests by status code end method.",
+//        		},
+//        		[]string{"code", "method"},
+//        	)
+//        )
+//
+// Or it can be used to create a Factory once to be used multiple times:
+//
+//        var (
+//        	reg           = prometheus.NewRegistry()
+//        	factory       = promauto.With(reg)
+//        	randomNumbers = factory.NewHistogram(prometheus.HistogramOpts{
+//        		Name:    "random_numbers",
+//        		Help:    "A histogram of normally distributed random numbers.",
+//        		Buckets: prometheus.LinearBuckets(-3, .1, 61),
+//        	})
+//        	requestCount = factory.NewCounterVec(
+//        		prometheus.CounterOpts{
+//        			Name: "http_requests_total",
+//        			Help: "Total number of HTTP requests by status code end method.",
+//        		},
+//        		[]string{"code", "method"},
+//        	)
+//        )
+//
 // This appears very handy. So why are these constructors locked away in a
-// separate package? There are two caveats:
+// separate package?
 //
-// First, in more complex programs, global state is often quite problematic.
-// That's the reason why the metrics constructors in the prometheus package do
-// not interact with the global prometheus.DefaultRegisterer on their own. You
-// are free to use the Register or MustRegister functions to register them with
-// the global prometheus.DefaultRegisterer, but you could as well choose a local
-// Registerer (usually created with prometheus.NewRegistry, but there are other
-// scenarios, e.g. testing).
+// The main problem is that registration may fail, e.g. if a metric inconsistent
+// with the newly to be registered one is already registered. Therefore, the
+// Register method in the prometheus.Registerer interface returns an error, and
+// the same is the case for the top-level prometheus.Register function that
+// registers with the global registry. The prometheus package also provides
+// MustRegister versions for both. They panic if the registration fails, and
+// they clearly call this out by using the Must… idiom. Panicking is a bit
+// problematic here because it doesn't just happen on input provided by the
+// caller that is invalid on its own. Things are a bit more subtle here: Metric
+// creation and registration tend to be spread widely over the codebase. It can
+// easily happen that an incompatible metric is added to an unrelated part of
+// the code, and suddenly code that used to work perfectly fine starts to panic
+// (provided that the registration of the newly added metric happens before the
+// registration of the previously existing metric). This may come as an even
+// bigger surprise with the global registry, where simply importing another
+// package can trigger a panic (if the newly imported package registers metrics
+// in its init function). At least, in the prometheus package, creation of
+// metrics and other collectors is separate from registration. You first create
+// the metric, and then you decide explicitly if you want to register it with a
+// local or the global registry, and if you want to handle the error or risk a
+// panic. With the constructors in the promauto package, registration is
+// automatic, and if it fails, it will always panic. Furthermore, the
+// constructors will often be called in the var section of a file, which means
+// that panicking will happen as a side effect of merely importing a package.
 //
-// The second issue is that registration may fail, e.g. if a metric inconsistent
-// with the newly to be registered one is already registered. But how to signal
-// and handle a panic in the automatic registration with the default registry?
-// The only way is panicking. While panicking on invalid input provided by the
-// programmer is certainly fine, things are a bit more subtle in this case: You
-// might just add another package to the program, and that package (in its init
-// function) happens to register a metric with the same name as your code. Now,
-// all of a sudden, either your code or the code of the newly imported package
-// panics, depending on initialization order, without any opportunity to handle
-// the case gracefully. Even worse is a scenario where registration happens
-// later during the runtime (e.g. upon loading some kind of plugin), where the
-// panic could be triggered long after the code has been deployed to
-// production. A possibility to panic should be explicitly called out by the
-// Must… idiom, cf. prometheus.MustRegister. But adding a separate set of
-// constructors in the prometheus package called MustRegisterNewCounterVec or
-// similar would be quite unwieldy. Adding an extra MustRegister method to each
-// metric, returning the registered metric, would result in nice code for those
-// using the method, but would pollute every single metric interface for
-// everybody avoiding the global registry.
+// A separate package allows conservative users to entirely ignore it. And
+// whoever wants to use it, will do so explicitly, with an opportunity to read
+// this warning.
 //
-// To address both issues, the problematic auto-registering and possibly
-// panicking constructors are all in this package with a clear warning
-// ahead. And whoever cares about avoiding global state and possibly panicking
-// function calls can simply ignore the existence of the promauto package
-// altogether.
-//
-// A final note: There is a similar case in the net/http package of the standard
-// library. It has DefaultServeMux as a global instance of ServeMux, and the
-// Handle function acts on it, panicking if a handler for the same pattern has
-// already been registered. However, one might argue that the whole HTTP routing
-// is usually set up closely together in the same package or file, while
-// Prometheus metrics tend to be spread widely over the codebase, increasing the
-// chance of surprising registration failures. Furthermore, the use of global
-// state in net/http has been criticized widely, and some avoid it altogether.
+// Enjoy promauto responsibly!
 package promauto
 
 import "github.com/prometheus/client_golang/prometheus"
@@ -132,9 +164,7 @@ import "github.com/prometheus/client_golang/prometheus"
 // but it automatically registers the Counter with the
 // prometheus.DefaultRegisterer. If the registration fails, NewCounter panics.
 func NewCounter(opts prometheus.CounterOpts) prometheus.Counter {
-	c := prometheus.NewCounter(opts)
-	prometheus.MustRegister(c)
-	return c
+	return With(prometheus.DefaultRegisterer).NewCounter(opts)
 }
 
 // NewCounterVec works like the function of the same name in the prometheus
@@ -142,9 +172,7 @@ func NewCounter(opts prometheus.CounterOpts) prometheus.Counter {
 // prometheus.DefaultRegisterer. If the registration fails, NewCounterVec
 // panics.
 func NewCounterVec(opts prometheus.CounterOpts, labelNames []string) *prometheus.CounterVec {
-	c := prometheus.NewCounterVec(opts, labelNames)
-	prometheus.MustRegister(c)
-	return c
+	return With(prometheus.DefaultRegisterer).NewCounterVec(opts, labelNames)
 }
 
 // NewCounterFunc works like the function of the same name in the prometheus
@@ -152,45 +180,35 @@ func NewCounterVec(opts prometheus.CounterOpts, labelNames []string) *prometheus
 // prometheus.DefaultRegisterer. If the registration fails, NewCounterFunc
 // panics.
 func NewCounterFunc(opts prometheus.CounterOpts, function func() float64) prometheus.CounterFunc {
-	g := prometheus.NewCounterFunc(opts, function)
-	prometheus.MustRegister(g)
-	return g
+	return With(prometheus.DefaultRegisterer).NewCounterFunc(opts, function)
 }
 
 // NewGauge works like the function of the same name in the prometheus package
 // but it automatically registers the Gauge with the
 // prometheus.DefaultRegisterer. If the registration fails, NewGauge panics.
 func NewGauge(opts prometheus.GaugeOpts) prometheus.Gauge {
-	g := prometheus.NewGauge(opts)
-	prometheus.MustRegister(g)
-	return g
+	return With(prometheus.DefaultRegisterer).NewGauge(opts)
 }
 
 // NewGaugeVec works like the function of the same name in the prometheus
 // package but it automatically registers the GaugeVec with the
 // prometheus.DefaultRegisterer. If the registration fails, NewGaugeVec panics.
 func NewGaugeVec(opts prometheus.GaugeOpts, labelNames []string) *prometheus.GaugeVec {
-	g := prometheus.NewGaugeVec(opts, labelNames)
-	prometheus.MustRegister(g)
-	return g
+	return With(prometheus.DefaultRegisterer).NewGaugeVec(opts, labelNames)
 }
 
 // NewGaugeFunc works like the function of the same name in the prometheus
 // package but it automatically registers the GaugeFunc with the
 // prometheus.DefaultRegisterer. If the registration fails, NewGaugeFunc panics.
 func NewGaugeFunc(opts prometheus.GaugeOpts, function func() float64) prometheus.GaugeFunc {
-	g := prometheus.NewGaugeFunc(opts, function)
-	prometheus.MustRegister(g)
-	return g
+	return With(prometheus.DefaultRegisterer).NewGaugeFunc(opts, function)
 }
 
 // NewSummary works like the function of the same name in the prometheus package
 // but it automatically registers the Summary with the
 // prometheus.DefaultRegisterer. If the registration fails, NewSummary panics.
 func NewSummary(opts prometheus.SummaryOpts) prometheus.Summary {
-	s := prometheus.NewSummary(opts)
-	prometheus.MustRegister(s)
-	return s
+	return With(prometheus.DefaultRegisterer).NewSummary(opts)
 }
 
 // NewSummaryVec works like the function of the same name in the prometheus
@@ -198,18 +216,14 @@ func NewSummary(opts prometheus.SummaryOpts) prometheus.Summary {
 // prometheus.DefaultRegisterer. If the registration fails, NewSummaryVec
 // panics.
 func NewSummaryVec(opts prometheus.SummaryOpts, labelNames []string) *prometheus.SummaryVec {
-	s := prometheus.NewSummaryVec(opts, labelNames)
-	prometheus.MustRegister(s)
-	return s
+	return With(prometheus.DefaultRegisterer).NewSummaryVec(opts, labelNames)
 }
 
 // NewHistogram works like the function of the same name in the prometheus
 // package but it automatically registers the Histogram with the
 // prometheus.DefaultRegisterer. If the registration fails, NewHistogram panics.
 func NewHistogram(opts prometheus.HistogramOpts) prometheus.Histogram {
-	h := prometheus.NewHistogram(opts)
-	prometheus.MustRegister(h)
-	return h
+	return With(prometheus.DefaultRegisterer).NewHistogram(opts)
 }
 
 // NewHistogramVec works like the function of the same name in the prometheus
@@ -217,7 +231,144 @@ func NewHistogram(opts prometheus.HistogramOpts) prometheus.Histogram {
 // prometheus.DefaultRegisterer. If the registration fails, NewHistogramVec
 // panics.
 func NewHistogramVec(opts prometheus.HistogramOpts, labelNames []string) *prometheus.HistogramVec {
-	h := prometheus.NewHistogramVec(opts, labelNames)
-	prometheus.MustRegister(h)
+	return With(prometheus.DefaultRegisterer).NewHistogramVec(opts, labelNames)
+}
+
+// NewUntypedFunc works like the function of the same name in the prometheus
+// package but it automatically registers the UntypedFunc with the
+// prometheus.DefaultRegisterer. If the registration fails, NewUntypedFunc
+// panics.
+func NewUntypedFunc(opts prometheus.UntypedOpts, function func() float64) prometheus.UntypedFunc {
+	return With(prometheus.DefaultRegisterer).NewUntypedFunc(opts, function)
+}
+
+// Factory provides factory methods to create Collectors that are automatically
+// registered with a Registerer. Create a Factory with the With function,
+// providing a Registerer to auto-register created Collectors with. The zero
+// value of a Factory creates Collectors that are not registered with any
+// Registerer. All methods of the Factory panic if the registration fails.
+type Factory struct {
+	r prometheus.Registerer
+}
+
+// With creates a Factory using the provided Registerer for registration of the
+// created Collectors.
+func With(r prometheus.Registerer) Factory { return Factory{r} }
+
+// NewCounter works like the function of the same name in the prometheus package
+// but it automatically registers the Counter with the Factory's Registerer.
+func (f Factory) NewCounter(opts prometheus.CounterOpts) prometheus.Counter {
+	c := prometheus.NewCounter(opts)
+	if f.r != nil {
+		f.r.MustRegister(c)
+	}
+	return c
+}
+
+// NewCounterVec works like the function of the same name in the prometheus
+// package but it automatically registers the CounterVec with the Factory's
+// Registerer.
+func (f Factory) NewCounterVec(opts prometheus.CounterOpts, labelNames []string) *prometheus.CounterVec {
+	c := prometheus.NewCounterVec(opts, labelNames)
+	if f.r != nil {
+		f.r.MustRegister(c)
+	}
+	return c
+}
+
+// NewCounterFunc works like the function of the same name in the prometheus
+// package but it automatically registers the CounterFunc with the Factory's
+// Registerer.
+func (f Factory) NewCounterFunc(opts prometheus.CounterOpts, function func() float64) prometheus.CounterFunc {
+	c := prometheus.NewCounterFunc(opts, function)
+	if f.r != nil {
+		f.r.MustRegister(c)
+	}
+	return c
+}
+
+// NewGauge works like the function of the same name in the prometheus package
+// but it automatically registers the Gauge with the Factory's Registerer.
+func (f Factory) NewGauge(opts prometheus.GaugeOpts) prometheus.Gauge {
+	g := prometheus.NewGauge(opts)
+	if f.r != nil {
+		f.r.MustRegister(g)
+	}
+	return g
+}
+
+// NewGaugeVec works like the function of the same name in the prometheus
+// package but it automatically registers the GaugeVec with the Factory's
+// Registerer.
+func (f Factory) NewGaugeVec(opts prometheus.GaugeOpts, labelNames []string) *prometheus.GaugeVec {
+	g := prometheus.NewGaugeVec(opts, labelNames)
+	if f.r != nil {
+		f.r.MustRegister(g)
+	}
+	return g
+}
+
+// NewGaugeFunc works like the function of the same name in the prometheus
+// package but it automatically registers the GaugeFunc with the Factory's
+// Registerer.
+func (f Factory) NewGaugeFunc(opts prometheus.GaugeOpts, function func() float64) prometheus.GaugeFunc {
+	g := prometheus.NewGaugeFunc(opts, function)
+	if f.r != nil {
+		f.r.MustRegister(g)
+	}
+	return g
+}
+
+// NewSummary works like the function of the same name in the prometheus package
+// but it automatically registers the Summary with the Factory's Registerer.
+func (f Factory) NewSummary(opts prometheus.SummaryOpts) prometheus.Summary {
+	s := prometheus.NewSummary(opts)
+	if f.r != nil {
+		f.r.MustRegister(s)
+	}
+	return s
+}
+
+// NewSummaryVec works like the function of the same name in the prometheus
+// package but it automatically registers the SummaryVec with the Factory's
+// Registerer.
+func (f Factory) NewSummaryVec(opts prometheus.SummaryOpts, labelNames []string) *prometheus.SummaryVec {
+	s := prometheus.NewSummaryVec(opts, labelNames)
+	if f.r != nil {
+		f.r.MustRegister(s)
+	}
+	return s
+}
+
+// NewHistogram works like the function of the same name in the prometheus
+// package but it automatically registers the Histogram with the Factory's
+// Registerer.
+func (f Factory) NewHistogram(opts prometheus.HistogramOpts) prometheus.Histogram {
+	h := prometheus.NewHistogram(opts)
+	if f.r != nil {
+		f.r.MustRegister(h)
+	}
 	return h
+}
+
+// NewHistogramVec works like the function of the same name in the prometheus
+// package but it automatically registers the HistogramVec with the Factory's
+// Registerer.
+func (f Factory) NewHistogramVec(opts prometheus.HistogramOpts, labelNames []string) *prometheus.HistogramVec {
+	h := prometheus.NewHistogramVec(opts, labelNames)
+	if f.r != nil {
+		f.r.MustRegister(h)
+	}
+	return h
+}
+
+// NewUntypedFunc works like the function of the same name in the prometheus
+// package but it automatically registers the UntypedFunc with the Factory's
+// Registerer.
+func (f Factory) NewUntypedFunc(opts prometheus.UntypedOpts, function func() float64) prometheus.UntypedFunc {
+	u := prometheus.NewUntypedFunc(opts, function)
+	if f.r != nil {
+		f.r.MustRegister(u)
+	}
+	return u
 }
