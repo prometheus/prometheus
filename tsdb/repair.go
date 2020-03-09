@@ -41,7 +41,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		return errors.Wrapf(err, "block dir: %q", d)
 	}
 
-	tmpFiles := make([]string, 0, len(dir))
+	tmpFiles := make([]string, 0, len(dirs))
 	defer func() {
 		for _, tmp := range tmpFiles {
 			if err := os.RemoveAll(tmp); err != nil {
