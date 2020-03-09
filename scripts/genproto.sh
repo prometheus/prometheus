@@ -18,9 +18,13 @@ fi
 echo "installing plugins"
 GO111MODULE=on go mod download
 
-INSTALL_PKGS="golang.org/x/tools/cmd/goimports github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
+INSTALL_PKGS="golang.org/x/tools/cmd/goimports@v0.0.0-20200305205014-bc073721adb6
+github.com/gogo/protobuf/protoc-gen-gogofast@v1.3.1
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway@v1.14.1
+github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger@v1.14.1"
+
 for pkg in ${INSTALL_PKGS}; do
-    GO111MODULE=on go install -mod=vendor "$pkg"
+    GO111MODULE=on go get "$pkg"
 done
 
 PROM_ROOT="${PWD}"

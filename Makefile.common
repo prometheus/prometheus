@@ -42,11 +42,6 @@ ifeq (, $(PRE_GO_111))
 	ifneq (,$(wildcard go.mod))
 		# Enforce Go modules support just in case the directory is inside GOPATH (and for Travis CI).
 		GO111MODULE := on
-
-		ifneq (,$(wildcard vendor))
-			# Always use the local vendor/ directory to satisfy the dependencies.
-			GOOPTS := $(GOOPTS) -mod=vendor
-		endif
 	endif
 else
 	ifneq (,$(wildcard go.mod))
@@ -200,13 +195,7 @@ else
 ifdef GO111MODULE
 	@echo ">> running check for unused/missing packages in go.mod"
 	GO111MODULE=$(GO111MODULE) $(GO) mod tidy
-ifeq (,$(wildcard vendor))
 	@git diff --exit-code -- go.sum go.mod
-else
-	@echo ">> running check for unused packages in vendor/"
-	GO111MODULE=$(GO111MODULE) $(GO) mod vendor
-	@git diff --exit-code -- go.sum go.mod vendor/
-endif
 endif
 endif
 
