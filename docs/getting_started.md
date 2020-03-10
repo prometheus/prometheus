@@ -86,7 +86,7 @@ http://localhost:9090/graph and choose the "Console" view within the "Graph" tab
 As you can gather from [localhost:9090/metrics](http://localhost:9090/metrics),
 one metric that Prometheus exports about itself is called
 `prometheus_target_interval_length_seconds` (the actual amount of time between
-target scrapes). Go ahead and enter this into the expression console and then click **Execute**:
+target scrapes). Go ahead and enter this into the expression console and then click "Execute":
 
 ```
 prometheus_target_interval_length_seconds
