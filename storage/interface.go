@@ -116,7 +116,10 @@ type Appender interface {
 	// faster than adding a sample by providing its full label set.
 	AddFast(ref uint64, t int64, v float64) error
 
-	// Commit submits the collected samples and purges the batch.
+	// Commit submits the collected samples and purges the batch. If Commit
+	// returns a non-nil error, it also rolls back all modifications made in
+	// the appender so far, as Rollback would do. In any case, an Appender
+	// must not be used anymore after Commit has been called.
 	Commit() error
 
 	// Rollback rolls back all modifications made in the appender so far.

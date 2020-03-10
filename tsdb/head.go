@@ -1042,14 +1042,16 @@ func (a *headAppender) log() error {
 }
 
 func (a *headAppender) Commit() error {
+	if err := a.log(); err != nil {
+		//nolint: errcheck
+		a.Rollback() // Most likely the same error will happen again.
+		return errors.Wrap(err, "write to WAL")
+	}
+
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.putAppendBuffer(a.samples)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
 	defer a.head.iso.closeAppend(a.appendID)
-
-	if err := a.log(); err != nil {
-		return errors.Wrap(err, "write to WAL")
-	}
 
 	total := len(a.samples)
 	var series *memSeries
@@ -1088,6 +1090,7 @@ func (a *headAppender) Rollback() error {
 	}
 	a.head.putAppendBuffer(a.samples)
 	a.samples = nil
+	a.head.putSeriesBuffer(a.sampleSeries)
 	a.head.iso.closeAppend(a.appendID)
 
 	// Series are created in the head memory regardless of rollback. Thus we have
