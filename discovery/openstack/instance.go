@@ -53,16 +53,17 @@ type InstanceDiscovery struct {
 	logger     log.Logger
 	port       int
 	allTenants bool
+	apiVersion string
 }
 
 // NewInstanceDiscovery returns a new instance discovery.
 func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, allTenants bool, l log.Logger) *InstanceDiscovery {
+	port int, region string, allTenants bool, apiVersion string, l log.Logger) *InstanceDiscovery {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
 	return &InstanceDiscovery{provider: provider, authOpts: opts,
-		region: region, port: port, allTenants: allTenants, logger: l}
+		region: region, port: port, allTenants: allTenants, apiVersion: apiVersion, logger: l}
 }
 
 type floatingIPKey struct {
@@ -82,6 +83,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	if err != nil {
 		return nil, errors.Wrap(err, "could not create OpenStack compute session")
 	}
+	client.Microversion = i.apiVersion
 
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-floating-ips

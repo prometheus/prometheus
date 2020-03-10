@@ -55,6 +55,7 @@ type SDConfig struct {
 	Port                        int                   `yaml:"port"`
 	AllTenants                  bool                  `yaml:"all_tenants,omitempty"`
 	TLSConfig                   config_util.TLSConfig `yaml:"tls_config,omitempty"`
+	ApiVersion                  string                `yaml:"api_version"`
 }
 
 // Role is the role of the target in OpenStack.
@@ -163,9 +164,9 @@ func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {
 	}
 	switch conf.Role {
 	case OpenStackRoleHypervisor:
-		return newHypervisorDiscovery(client, &opts, conf.Port, conf.Region, l), nil
+		return newHypervisorDiscovery(client, &opts, conf.Port, conf.Region, conf.ApiVersion, l), nil
 	case OpenStackRoleInstance:
-		return newInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, l), nil
+		return newInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, conf.ApiVersion, l), nil
 	}
 	return nil, errors.New("unknown OpenStack discovery role")
 }

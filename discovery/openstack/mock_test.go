@@ -190,7 +190,7 @@ const hypervisorListBody = `
             "service": {
                 "host": "nc14.cloud.com",
                 "disabled_reason": null,
-                "id": 16
+                "id": "b027b100-3ea8-4843-804b-b4edc2d4029d"
             },
             "vcpus_used": 18,
             "hypervisor_type": "QEMU",
@@ -209,14 +209,14 @@ const hypervisorListBody = `
             "disk_available_least": 304,
             "local_gb": 399,
             "free_ram_mb": 72420,
-            "id": 1
+            "id": "45bf0f54-7d29-4345-88d9-1e28e917c4f6"
         },
         {
             "status": "enabled",
             "service": {
                 "host": "cc13.cloud.com",
                 "disabled_reason": null,
-                "id": 17
+                "id": "be08b9c5-eeb9-4f1e-9ed9-d91c0fe67608"
             },
             "vcpus_used": 1,
             "hypervisor_type": "QEMU",
@@ -235,7 +235,7 @@ const hypervisorListBody = `
             "disk_available_least": 384,
             "local_gb": 399,
             "free_ram_mb": 93924,
-            "id": 721
+            "id": "7d1fdea5-e111-40bf-8cce-4231aab6586a"
         }
     ]
 }`

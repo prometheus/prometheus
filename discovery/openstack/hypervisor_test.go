@@ -35,7 +35,6 @@ func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
 	s.Mock.Setup()
 
 	s.Mock.HandleHypervisorListSuccessfully()
-
 	s.Mock.HandleVersionsSuccessfully()
 	s.Mock.HandleAuthSuccessfully()
 }
@@ -48,6 +47,7 @@ func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (refresher, erro
 		DomainName:       "12345",
 		Region:           "RegionOne",
 		Role:             "hypervisor",
+		ApiVersion:       "2.53",
 	}
 	return newRefresher(&conf, nil)
 }
@@ -74,6 +74,7 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 		"__meta_openstack_hypervisor_host_ip":  "172.16.70.14",
 		"__meta_openstack_hypervisor_state":    "up",
 		"__meta_openstack_hypervisor_status":   "enabled",
+		"__meta_openstack_hypervisor_id":       "45bf0f54-7d29-4345-88d9-1e28e917c4f6",
 	} {
 		testutil.Equals(t, model.LabelValue(v), tg.Targets[0][model.LabelName(l)])
 	}
@@ -85,6 +86,7 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 		"__meta_openstack_hypervisor_host_ip":  "172.16.70.13",
 		"__meta_openstack_hypervisor_state":    "up",
 		"__meta_openstack_hypervisor_status":   "enabled",
+		"__meta_openstack_hypervisor_id":       "7d1fdea5-e111-40bf-8cce-4231aab6586a",
 	} {
 		testutil.Equals(t, model.LabelValue(v), tg.Targets[1][model.LabelName(l)])
 	}
