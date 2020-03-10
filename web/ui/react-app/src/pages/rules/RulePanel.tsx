@@ -18,7 +18,13 @@ export const RulePanel: FC<RulePanelProps> = ({ rule, styles = {}, tag }) => {
       <pre className="m-0" style={tag ? undefined : style}>
         <code>
           {rule.type === 'alerting' ? 'alert: ' : 'record: '}
-          <Link to={createExpressionLink(`ALERTS{alertname="${name.replace(/"/g, '\\"')}"}`)}>{name}</Link>
+          <Link
+            to={createExpressionLink(
+              rule.type === 'alerting' ? `ALERTS{alertname="${name.replace(/"/g, '\\"')}"}` : name.replace(/"/g, '\\"')
+            )}
+          >
+            {name}
+          </Link>
           <div>
             expr: <Link to={createExpressionLink(query)}>{query}</Link>
           </div>
