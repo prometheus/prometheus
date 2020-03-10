@@ -791,7 +791,10 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 		select {
 		case <-ctx.Done():
 			return
+		default:
+		}
 
+		select {
 		case sample, ok := <-queue:
 			if !ok {
 				if nPending > 0 {
