@@ -30,6 +30,7 @@ import (
 )
 
 const (
+	openstackLabelHypervisorID       = openstackLabelPrefix + "hypervisor_id"
 	openstackLabelHypervisorHostIP   = openstackLabelPrefix + "hypervisor_host_ip"
 	openstackLabelHypervisorHostName = openstackLabelPrefix + "hypervisor_hostname"
 	openstackLabelHypervisorStatus   = openstackLabelPrefix + "hypervisor_status"
@@ -81,6 +82,7 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 			labels := model.LabelSet{}
 			addr := net.JoinHostPort(hypervisor.HostIP, fmt.Sprintf("%d", h.port))
 			labels[model.AddressLabel] = model.LabelValue(addr)
+			labels[openstackLabelHypervisorID] = model.LabelValue(hypervisor.ID)
 			labels[openstackLabelHypervisorHostName] = model.LabelValue(hypervisor.HypervisorHostname)
 			labels[openstackLabelHypervisorHostIP] = model.LabelValue(hypervisor.HostIP)
 			labels[openstackLabelHypervisorStatus] = model.LabelValue(hypervisor.Status)
