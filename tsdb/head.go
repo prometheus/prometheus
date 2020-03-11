@@ -40,7 +40,7 @@ import (
 
 var (
 	// ErrNotFound is returned if a looked up resource was not found.
-	ErrNotFound = errors.Errorf("not found")
+	ErrNotFound = errors.New("not found")
 
 	// ErrOutOfOrderSample is returned if an appended sample has a
 	// timestamp smaller than the most recent sample.
