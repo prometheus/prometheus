@@ -1,4 +1,4 @@
-## 2.17.0-rc.0 / 2020-03-11
+## 2.17.0-rc.0 / 2020-03-12
 
 This release implements isolation in TSDB. API queries and recording rules are
 guaranteed to only see full scrapes and full recording rules. This comes with a
