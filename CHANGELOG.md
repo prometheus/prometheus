@@ -13,7 +13,7 @@ some increase in memory usage, CPU usage, or query latency.
 * [ENHANCEMENT] TSDB: Improve query performance for queries that partially hit the head #6676
 * [ENHANCEMENT] Consul SD: Expose service health as meta label #5313
 * [ENHANCEMENT] EC2 SD: Expose EC2 instance lifecycle as meta label #6914
-* [ENHANCEMENT] Kubernetes SD: Add service type metadata to K8s service role #6496 #6684
+* [ENHANCEMENT] Kubernetes SD: Expose service type as meta label for K8s service role #6684
 * [ENHANCEMENT] Kubernetes SD: Expose label_selector and field_selector #6807
 * [ENHANCEMENT] Openstack SD: Expose hypervisor id as meta label #6962
 * [BUGFIX] PromQL: Do not escape HTML-like chars in query log #6834 #6795
