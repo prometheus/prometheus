@@ -293,6 +293,21 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		tombstones: tombstones.NewMemTombstones(),
 		iso:        newIsolation(),
 		deleted:    map[uint64]int{},
+		appendPool: sync.Pool{
+			New: func() interface{} {
+				return make([]record.RefSample, 0, 512)
+			},
+		},
+		seriesPool: sync.Pool{
+			New: func() interface{} {
+				return make([]*memSeries, 0, 512)
+			},
+		},
+		bytesPool: sync.Pool{
+			New: func() interface{} {
+				return make([]byte, 0, 8192)
+			},
+		},
 	}
 	h.metrics = newHeadMetrics(h, r)
 
@@ -902,11 +917,7 @@ func max(a, b int64) int64 {
 }
 
 func (h *Head) getAppendBuffer() []record.RefSample {
-	b := h.appendPool.Get()
-	if b == nil {
-		return make([]record.RefSample, 0, 512)
-	}
-	return b.([]record.RefSample)
+	return h.appendPool.Get().([]record.RefSample)
 }
 
 func (h *Head) putAppendBuffer(b []record.RefSample) {
@@ -915,11 +926,7 @@ func (h *Head) putAppendBuffer(b []record.RefSample) {
 }
 
 func (h *Head) getSeriesBuffer() []*memSeries {
-	b := h.seriesPool.Get()
-	if b == nil {
-		return make([]*memSeries, 0, 512)
-	}
-	return b.([]*memSeries)
+	return h.seriesPool.Get().([]*memSeries)
 }
 
 func (h *Head) putSeriesBuffer(b []*memSeries) {
@@ -928,11 +935,7 @@ func (h *Head) putSeriesBuffer(b []*memSeries) {
 }
 
 func (h *Head) getBytesBuffer() []byte {
-	b := h.bytesPool.Get()
-	if b == nil {
-		return make([]byte, 0, 1024)
-	}
-	return b.([]byte)
+	return h.bytesPool.Get().([]byte)
 }
 
 func (h *Head) putBytesBuffer(b []byte) {
