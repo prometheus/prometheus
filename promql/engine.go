@@ -152,9 +152,9 @@ type query struct {
 	ng *Engine
 }
 
-type queryCtx int
+type queryCtx string
 
-var queryOrigin queryCtx
+const queryOrigin queryCtx = "origin"
 
 // Statement implements the Query interface.
 func (q *query) Statement() parser.Statement {
