@@ -21,9 +21,9 @@ import (
 	"github.com/prometheus/prometheus/promql"
 )
 
-type ctxParam int
+type ctxParam string
 
-var pathParam ctxParam
+const pathParam ctxParam = "path"
 
 // ContextWithPath returns a new context with the given path to be used later
 // when logging the query.
