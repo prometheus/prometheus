@@ -8,6 +8,7 @@ some increase in memory usage, CPU usage, or query latency.
 * [FEATURE] TSDB: Support isolation #6841
 * [ENHANCEMENT] PromQL: Allow more keywords as metric names #6933
 * [ENHANCEMENT] React UI: Add normalization of localhost URLs in targets page #6794
+* [ENHANCEMENT] Remote read: Read from remote storage concurrently #6770
 * [ENHANCEMENT] Rules: Mark deleted rule series as stale after a reload #6745
 * [ENHANCEMENT] Scrape: Log scrape append failures as debug rather than warn #6852
 * [ENHANCEMENT] TSDB: Improve query performance for queries that partially hit the head #6676
