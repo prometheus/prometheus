@@ -1,3 +1,27 @@
+## 2.17.0-rc.0 / 2020-03-11
+
+This release implements isolation in TSDB. API queries and recording rules are
+guaranteed to only see full scrapes and full recording rules. This comes with a
+certain overhead in resource usage. Depending on the situation, there might be a
+noticeable increase in memory usage, CPU usage, or query latency.
+
+* [ENHANCEMENT] PromQL: Allow more keywords as metric names #6933
+* [ENHANCEMENT] React UI: Add normalization of localhost URLs in targets page #6794
+* [ENHANCEMENT] Rules: Mark deleted rule series as stale after a reload #6745
+* [ENHANCEMENT] Scrape: Log scrape append failures as debug rather than warn #6852
+* [ENHANCEMENT] TSDB: Support isolation #6841
+* [ENHANCEMENT] TSDB: Log WAL replay duration #6922
+* [ENHANCEMENT] TSDB: Improve query performance for queries that partially hit the head #6676
+* [ENHANCEMENT] Consul SD: Add health label to metrics #5313
+* [ENHANCEMENT] EC2 SD: Expose EC2 instance lifecycle as label #6914
+* [ENHANCEMENT] Kubernetes SD: Add service type metadata to K8s service role #6496 #6684
+* [ENHANCEMENT] Kubernetes SD: Expose label_selector and field_selector #6807
+* [ENHANCEMENT] Openstack SD: Add openstack_hypervisor_id meta label #6962
+* [BUGFIX] PromQL: Do not escape HTML-like chars in query log #6834 #6795
+* [BUGFIX] React UI: Fix data table matrix values #6896
+* [BUGFIX] React UI: Fix new targets page not loading when using non-ASCII characters #6892
+* [BUGFIX] Scrape: Prevent removal of metric names upon relabeling #6891
+
 ## 2.16.0 / 2020-02-13
 
 * [FEATURE] React UI: Support local timezone on /graph #6692
