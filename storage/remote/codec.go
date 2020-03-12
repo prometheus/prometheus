@@ -79,22 +79,22 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 }
 
 // ToQuery builds a Query proto.
-func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams) (*prompb.Query, error) {
+func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHints) (*prompb.Query, error) {
 	ms, err := toLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
 
 	var rp *prompb.ReadHints
-	if p != nil {
+	if hints != nil {
 		rp = &prompb.ReadHints{
-			StepMs:   p.Step,
-			Func:     p.Func,
-			StartMs:  p.Start,
-			EndMs:    p.End,
-			Grouping: p.Grouping,
-			By:       p.By,
-			RangeMs:  p.Range,
+			StartMs:  hints.Start,
+			EndMs:    hints.End,
+			StepMs:   hints.Step,
+			Func:     hints.Func,
+			Grouping: hints.Grouping,
+			By:       hints.By,
+			RangeMs:  hints.Range,
 		}
 	}
 
@@ -145,7 +145,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 }
 
 // FromQueryResult unpacks and sorts a QueryResult proto.
-func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
+func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
 		labels := labelProtosToLabels(ts.Labels)
@@ -158,7 +158,10 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 			samples: ts.Samples,
 		})
 	}
-	sort.Sort(byLabel(series))
+
+	if sortSeries {
+		sort.Sort(byLabel(series))
+	}
 	return &concreteSeriesSet{
 		series: series,
 	}
