@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -147,12 +146,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					var ss storage.SeriesSet
-					if sorted {
-						ss, _, err = q.SelectSorted(nil, matcher)
-					} else {
-						ss, _, err = q.Select(nil, matcher)
-					}
+					ss, _, err := q.Select(sorted, nil, matcher)
 					testutil.Ok(b, err)
 					for ss.Next() {
 					}
