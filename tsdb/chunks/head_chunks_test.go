@@ -35,7 +35,6 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	expectedBytes := []byte{}
 	nextChunkOffset := uint64(HeadChunkFileHeaderSize)
 	chkCRC32 := newCRC32()
-	expMint, expMaxt := uint64(1), uint64(0)
 
 	type expectedDataType struct {
 		seriesRef, chunkRef uint64
@@ -67,7 +66,6 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 			// Calculating expected bytes written on disk for first file.
 
 			firstFileName = hrw.curFile.Name()
-			expMaxt = uint64(maxt)
 			testutil.Equals(t, chunkRef(1, nextChunkOffset), chkRef)
 
 			chkCRC32.Reset()
@@ -116,11 +114,6 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	testutil.Equals(t, MagicHeadChunks, int(binary.BigEndian.Uint32(actualBytes[0:MagicChunksSize])))
 	testutil.Equals(t, chunksFormatV1, int(actualBytes[MagicChunksSize]))
 
-	mint := binary.BigEndian.Uint64(actualBytes[HeaderMintOffset : HeaderMintOffset+8])
-	maxt := binary.BigEndian.Uint64(actualBytes[HeaderMaxtOffset : HeaderMaxtOffset+8])
-	testutil.Equals(t, expMint, mint)
-	testutil.Equals(t, expMaxt, maxt)
-
 	// Remaining chunk data.
 	testutil.Equals(t, expectedBytes, actualBytes[HeadChunkFileHeaderSize:])
 
@@ -136,9 +129,6 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	testutil.Ok(t, hrw.Close())
 	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, hrw.Close())
-	}()
 
 	idx := 0
 	err = hrw.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64) error {
@@ -169,12 +159,16 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 		close()
 	}()
 
-	var timeToTruncate int64
+	testutil.Assert(t, !hrw.fileMaxtSet, "")
+	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64) error { return nil }))
+	testutil.Assert(t, hrw.fileMaxtSet, "")
 
 	timeRange := 0
 	fileTimeStep := 100
-	// Cut 5 segments.
-	for i := 1; i <= 5; i++ {
+	totalFiles, after1stTruncation, after2ndTruncation := 7, 5, 3
+	var timeToTruncate, timeToTruncateAfterRestart int64
+
+	cutFile := func(i int) {
 		testutil.Ok(t, hrw.cut(int64(timeRange)))
 
 		mint := timeRange + 1                // Just after the the new file cut.
@@ -184,48 +178,71 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 		_, err := hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t))
 		testutil.Ok(t, err)
 
-		if i == 3 {
-			// Truncate the segment files before the 3rd segment.
+		if i == totalFiles-after1stTruncation+1 {
+			// Truncate the segment files before the 5th segment.
 			timeToTruncate = int64(mint)
+		} else if i == totalFiles-after2ndTruncation+1 {
+			// Truncate the segment files before the 3rd segment after restart.
+			timeToTruncateAfterRestart = int64(mint)
 		}
 
 		timeRange += fileTimeStep
 	}
 
+	// Cut segments.
+	for i := 1; i <= totalFiles; i++ {
+		cutFile(i)
+	}
+
+	// Verifying the the remaining files.
+	verifyRemainingFiles := func(remainingFiles int) {
+		t.Helper()
+
+		files, err := ioutil.ReadDir(hrw.dir.Name())
+		testutil.Ok(t, err)
+		testutil.Equals(t, remainingFiles, len(files))
+		testutil.Equals(t, remainingFiles, len(hrw.mmappedChunkFiles))
+		testutil.Equals(t, remainingFiles, len(hrw.closers))
+
+		for i := 1; i <= totalFiles; i++ {
+			_, ok := hrw.mmappedChunkFiles[i]
+			if i < totalFiles-remainingFiles+1 {
+				testutil.Equals(t, false, ok)
+			} else {
+				testutil.Equals(t, true, ok)
+			}
+		}
+	}
+
 	// Verify the number of segments.
-	files, err := ioutil.ReadDir(hrw.dir.Name())
-	testutil.Ok(t, err)
-	testutil.Equals(t, 5, len(files))
-	testutil.Equals(t, 5, len(hrw.mmappedChunkFiles))
-	testutil.Equals(t, 5, len(hrw.closers))
+	verifyRemainingFiles(totalFiles)
 
 	// Truncating files.
 	testutil.Ok(t, hrw.Truncate(timeToTruncate))
+	verifyRemainingFiles(after1stTruncation)
 
-	// Verifying the truncated files.
-	files, err = ioutil.ReadDir(hrw.dir.Name())
+	dir := hrw.dir.Name()
+	testutil.Ok(t, hrw.Close())
+
+	// Restarted.
+	var err error
+	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
-	testutil.Equals(t, 3, len(files))
-	testutil.Equals(t, 3, len(hrw.mmappedChunkFiles))
-	testutil.Equals(t, 3, len(hrw.closers))
 
-	_, ok := hrw.mmappedChunkFiles[3]
-	testutil.Equals(t, true, ok)
-	_, ok = hrw.mmappedChunkFiles[4]
-	testutil.Equals(t, true, ok)
-	_, ok = hrw.mmappedChunkFiles[5]
-	testutil.Equals(t, true, ok)
+	testutil.Assert(t, !hrw.fileMaxtSet, "")
+	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64) error { return nil }))
+	testutil.Assert(t, hrw.fileMaxtSet, "")
 
+	// Truncating files after restart.
+	testutil.Ok(t, hrw.Truncate(timeToTruncateAfterRestart))
+	verifyRemainingFiles(after2ndTruncation)
+
+	// Add another file to have an active file.
+	totalFiles++
+	cutFile(totalFiles)
 	// Truncating till current time should not delete the current active file.
 	testutil.Ok(t, hrw.Truncate(time.Now().UnixNano()/1e6))
-
-	files, err = ioutil.ReadDir(hrw.dir.Name())
-	testutil.Ok(t, err)
-	testutil.Equals(t, 1, len(files))
-	testutil.Equals(t, 1, len(hrw.mmappedChunkFiles))
-	testutil.Equals(t, 1, len(hrw.closers))
-	_, ok = hrw.mmappedChunkFiles[5]
-	testutil.Equals(t, true, ok)
+	verifyRemainingFiles(1)
 }
 
 func testHeadReadWriter(t *testing.T) (hrw *ChunkDiskMapper, close func()) {
