@@ -1762,7 +1762,9 @@ func newMemSeries(lset labels.Labels, id uint64, chunkRange int64) *memSeries {
 }
 
 func (s *memSeries) minTime() int64 {
-	if len(s.chunks) == 0 {
+	// TODO(beorn7): s.chunks[0] == nil has been observed in the wild but it
+	// is not clear if its occurrence is regular or a bug.
+	if len(s.chunks) == 0 || s.chunks[0] == nil {
 		return math.MinInt64
 	}
 	return s.chunks[0].minTime
