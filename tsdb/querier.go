@@ -98,7 +98,7 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*lab
 	for i, b := range q.blocks {
 		// Sorting Head series is slow, and unneeded when only the
 		// Head is being queried. Sorting blocks is a noop.
-		// Still we have to sort if blocks > 1 as Merged Series requires.
+		// Still we have to sort if blocks > 1 as MergedSeriesSet requires it.
 		s, w, err := b.Select(true, hints, ms...)
 		ws = append(ws, w...)
 		if err != nil {

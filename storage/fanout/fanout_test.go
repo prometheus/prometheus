@@ -79,7 +79,7 @@ func TestSelectSorted(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
 	testutil.Ok(t, err)
 
-	seriesSet, _, err := querier.Select(false, nil, matcher)
+	seriesSet, _, err := querier.Select(true, nil, matcher)
 	testutil.Ok(t, err)
 
 	result := make(map[int64]float64)
