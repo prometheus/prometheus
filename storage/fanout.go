@@ -262,6 +262,7 @@ func (q *mergeQuerier) SelectSorted(params *SelectParams, matchers ...*labels.Ma
 			} else {
 				priErr = qryResult.selectError
 			}
+			continue
 		}
 		seriesSets = append(seriesSets, qryResult.set)
 	}
