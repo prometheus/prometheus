@@ -90,15 +90,15 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*lab
 		return storage.EmptySeriesSet(), nil, nil
 	}
 	if len(q.blocks) == 1 {
+		// Sorting Head series is slow, and unneeded when only the
+		// Head is being queried.
 		return q.blocks[0].Select(sortSeries, hints, ms...)
 	}
 
 	ss := make([]storage.SeriesSet, len(q.blocks))
 	var ws storage.Warnings
 	for i, b := range q.blocks {
-		// Sorting Head series is slow, and unneeded when only the
-		// Head is being queried. Sorting blocks is a noop.
-		// Still we have to sort if blocks > 1 as MergedSeriesSet requires it.
+		// We have to sort if blocks > 1 as MergedSeriesSet requires it.
 		s, w, err := b.Select(true, hints, ms...)
 		ws = append(ws, w...)
 		if err != nil {
