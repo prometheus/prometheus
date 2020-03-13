@@ -2592,6 +2592,16 @@ func TestParseExpressions(t *testing.T) {
 		} else {
 			testutil.NotOk(t, err)
 			testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
+
+			errorList, ok := err.(ParseErrors)
+
+			testutil.Assert(t, ok, "unexpected error type")
+
+			for _, e := range errorList {
+				testutil.Assert(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
+				testutil.Assert(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
+				testutil.Assert(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
+			}
 		}
 	}
 }
