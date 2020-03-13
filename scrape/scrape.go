@@ -1069,6 +1069,19 @@ func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total,
 	)
 	var sampleLimitErr error
 
+	defer func() {
+		if err != nil {
+			app.Rollback()
+			return
+		}
+		if err = app.Commit(); err != nil {
+			return
+		}
+		// Only perform cache cleaning if the scrape was not empty.
+		// An empty scrape (usually) is used to indicate a failed scrape.
+		sl.cache.iterDone(len(b) > 0)
+	}()
+
 loop:
 	for {
 		var et textparse.Entry
@@ -1229,19 +1242,7 @@ loop:
 			return err == nil
 		})
 	}
-	if err != nil {
-		app.Rollback()
-		return total, added, seriesAdded, err
-	}
-	if err := app.Commit(); err != nil {
-		return total, added, seriesAdded, err
-	}
-
-	// Only perform cache cleaning if the scrape was not empty.
-	// An empty scrape (usually) is used to indicate a failed scrape.
-	sl.cache.iterDone(len(b) > 0)
-
-	return total, added, seriesAdded, nil
+	return
 }
 
 func yoloString(b []byte) string {
@@ -1258,67 +1259,71 @@ const (
 	scrapeSeriesAddedMetricName  = "scrape_series_added" + "\xff"
 )
 
-func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, appended, seriesAdded int, err error) error {
-	sl.scraper.Report(start, duration, err)
+func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, appended, seriesAdded int, scrapeErr error) (err error) {
+	sl.scraper.Report(start, duration, scrapeErr)
 
 	ts := timestamp.FromTime(start)
 
 	var health float64
-	if err == nil {
+	if scrapeErr == nil {
 		health = 1
 	}
 	app := sl.appender()
+	defer func() {
+		if err != nil {
+			app.Rollback()
+			return
+		}
+		err = app.Commit()
+	}()
 
-	if err := sl.addReportSample(app, scrapeHealthMetricName, ts, health); err != nil {
-		app.Rollback()
-		return err
+	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, health); err != nil {
+		return
 	}
-	if err := sl.addReportSample(app, scrapeDurationMetricName, ts, duration.Seconds()); err != nil {
-		app.Rollback()
-		return err
+	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, duration.Seconds()); err != nil {
+		return
 	}
-	if err := sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped)); err != nil {
-		app.Rollback()
-		return err
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped)); err != nil {
+		return
 	}
-	if err := sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(appended)); err != nil {
-		app.Rollback()
-		return err
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(appended)); err != nil {
+		return
 	}
-	if err := sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
-		app.Rollback()
-		return err
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
+		return
 	}
-	return app.Commit()
+	return
 }
 
-func (sl *scrapeLoop) reportStale(start time.Time) error {
+func (sl *scrapeLoop) reportStale(start time.Time) (err error) {
 	ts := timestamp.FromTime(start)
 	app := sl.appender()
+	defer func() {
+		if err != nil {
+			app.Rollback()
+			return
+		}
+		err = app.Commit()
+	}()
 
 	stale := math.Float64frombits(value.StaleNaN)
 
-	if err := sl.addReportSample(app, scrapeHealthMetricName, ts, stale); err != nil {
-		app.Rollback()
-		return err
+	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, stale); err != nil {
+		return
 	}
-	if err := sl.addReportSample(app, scrapeDurationMetricName, ts, stale); err != nil {
-		app.Rollback()
-		return err
+	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, stale); err != nil {
+		return
 	}
-	if err := sl.addReportSample(app, scrapeSamplesMetricName, ts, stale); err != nil {
-		app.Rollback()
-		return err
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, stale); err != nil {
+		return
 	}
-	if err := sl.addReportSample(app, samplesPostRelabelMetricName, ts, stale); err != nil {
-		app.Rollback()
-		return err
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, stale); err != nil {
+		return
 	}
-	if err := sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale); err != nil {
-		app.Rollback()
-		return err
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale); err != nil {
+		return
 	}
-	return app.Commit()
+	return
 }
 
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v float64) error {
