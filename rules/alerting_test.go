@@ -101,7 +101,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 				Metric: labels.FromStrings(
 					"__name__", "ALERTS",
 					"alertname", "HTTPRequestRateLow",
-					"alertstate", "pending",
+					"alertstate", "firing",
 					"instance", "0",
 					"job", "app-server",
 					"severity", "critical",
@@ -117,7 +117,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 					"alertstate", "firing",
 					"instance", "0",
 					"job", "app-server",
-					"severity", "critical",
+					"severity", "warning",
 				),
 				Point: promql.Point{V: 1},
 			},
