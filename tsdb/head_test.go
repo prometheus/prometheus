@@ -565,7 +565,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, h := range []*Head{head, reloadedHead} {
 					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
 					testutil.Ok(t, err)
-					actSeriesSet, ws, err := q.Select(nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
+					actSeriesSet, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, err)
 					testutil.Equals(t, 0, len(ws))
 
@@ -612,7 +612,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	// Test the series returns no samples. The series is cleared only after compaction.
 	q, err := NewBlockQuerier(hb, 0, 100000)
 	testutil.Ok(t, err)
-	res, ws, err := q.Select(nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	res, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Ok(t, err)
 	testutil.Equals(t, 0, len(ws))
 	testutil.Assert(t, res.Next(), "series is not present")
@@ -627,7 +627,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 	q, err = NewBlockQuerier(hb, 0, 100000)
 	testutil.Ok(t, err)
-	res, ws, err = q.Select(nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	res, ws, err = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Ok(t, err)
 	testutil.Equals(t, 0, len(ws))
 	testutil.Assert(t, res.Next(), "series don't exist")
@@ -803,7 +803,7 @@ func TestDelete_e2e(t *testing.T) {
 			q, err := NewBlockQuerier(hb, 0, 100000)
 			testutil.Ok(t, err)
 			defer q.Close()
-			ss, ws, err := q.SelectSorted(nil, del.ms...)
+			ss, ws, err := q.Select(true, nil, del.ms...)
 			testutil.Ok(t, err)
 			testutil.Equals(t, 0, len(ws))
 			// Build the mockSeriesSet.
@@ -1091,7 +1091,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer q.Close()
 
-	ss, ws, err := q.Select(nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
+	ss, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	testutil.Ok(t, err)
 	testutil.Equals(t, 0, len(ws))
 
@@ -1119,7 +1119,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer q.Close()
 
-	ss, ws, err := q.Select(nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
+	ss, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	testutil.Ok(t, err)
 	testutil.Equals(t, 0, len(ws))
 
@@ -1403,7 +1403,7 @@ func TestHeadSeriesWithTimeBoundaries(t *testing.T) {
 
 		seriesCount := 0
 		samplesCount := 0
-		ss, _, err := q.Select(nil, matcher)
+		ss, _, err := q.Select(false, nil, matcher)
 		testutil.Ok(t, err)
 		for ss.Next() {
 			i := ss.At().Iterator()
@@ -1443,7 +1443,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 		testutil.Ok(t, err)
 		defer querier.Close()
 
-		ss, _, err := querier.Select(nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		ss, _, err := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 		testutil.Ok(t, err)
 
 		_, seriesSet, err := expandSeriesSet(ss)

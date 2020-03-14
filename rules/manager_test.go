@@ -512,8 +512,8 @@ func TestForStateRestore(t *testing.T) {
 }
 
 func TestStaleness(t *testing.T) {
-	storage := teststorage.New(t)
-	defer storage.Close()
+	st := teststorage.New(t)
+	defer st.Close()
 	engineOpts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -522,9 +522,9 @@ func TestStaleness(t *testing.T) {
 	}
 	engine := promql.NewEngine(engineOpts)
 	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Appendable: storage,
-		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, st),
+		Appendable: st,
+		TSDB:       st,
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
 	}
@@ -541,7 +541,7 @@ func TestStaleness(t *testing.T) {
 	})
 
 	// A time series that has two samples and then goes stale.
-	app := storage.Appender()
+	app := st.Appender()
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
@@ -556,14 +556,14 @@ func TestStaleness(t *testing.T) {
 	group.Eval(ctx, time.Unix(1, 0))
 	group.Eval(ctx, time.Unix(2, 0))
 
-	querier, err := storage.Querier(context.Background(), 0, 2000)
+	querier, err := st.Querier(context.Background(), 0, 2000)
 	testutil.Ok(t, err)
 	defer querier.Close()
 
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
 	testutil.Ok(t, err)
 
-	set, _, err := querier.Select(nil, matcher)
+	set, _, err := querier.Select(false, nil, matcher)
 	testutil.Ok(t, err)
 
 	samples, err := readSeriesSet(set)
@@ -658,8 +658,8 @@ func TestCopyState(t *testing.T) {
 }
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
-	storage := teststorage.New(t)
-	defer storage.Close()
+	st := teststorage.New(t)
+	defer st.Close()
 	oldGroup := &Group{
 		rules: []Rule{
 			NewRecordingRule("rule1", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
@@ -672,21 +672,21 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 		rules:                []Rule{},
 		seriesInPreviousEval: []map[string]labels.Labels{},
 		opts: &ManagerOptions{
-			Appendable: storage,
+			Appendable: st,
 		},
 	}
 	newGroup.CopyState(oldGroup)
 
 	newGroup.Eval(context.Background(), time.Unix(0, 0))
 
-	querier, err := storage.Querier(context.Background(), 0, 2000)
+	querier, err := st.Querier(context.Background(), 0, 2000)
 	testutil.Ok(t, err)
 	defer querier.Close()
 
 	matcher, err := labels.NewMatcher(labels.MatchEqual, "l1", "v1")
 	testutil.Ok(t, err)
 
-	set, _, err := querier.Select(nil, matcher)
+	set, _, err := querier.Select(false, nil, matcher)
 	testutil.Ok(t, err)
 
 	samples, err := readSeriesSet(set)
@@ -704,8 +704,8 @@ func TestUpdate(t *testing.T) {
 	expected := map[string]labels.Labels{
 		"test": labels.FromStrings("name", "value"),
 	}
-	storage := teststorage.New(t)
-	defer storage.Close()
+	st := teststorage.New(t)
+	defer st.Close()
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -714,9 +714,9 @@ func TestUpdate(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: storage,
-		TSDB:       storage,
-		QueryFunc:  EngineQueryFunc(engine, storage),
+		Appendable: st,
+		TSDB:       st,
+		QueryFunc:  EngineQueryFunc(engine, st),
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
 	})
@@ -1096,16 +1096,16 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 	testutil.Equals(t, 0, countStaleNaN(t, storage), "invalid count of staleness markers after stopping the engine")
 }
 
-func countStaleNaN(t *testing.T, storage storage.Storage) int {
+func countStaleNaN(t *testing.T, st storage.Storage) int {
 	var c int
-	querier, err := storage.Querier(context.Background(), 0, time.Now().Unix()*1000)
+	querier, err := st.Querier(context.Background(), 0, time.Now().Unix()*1000)
 	testutil.Ok(t, err)
 	defer querier.Close()
 
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
 	testutil.Ok(t, err)
 
-	set, _, err := querier.Select(nil, matcher)
+	set, _, err := querier.Select(false, nil, matcher)
 	testutil.Ok(t, err)
 
 	samples, err := readSeriesSet(set)

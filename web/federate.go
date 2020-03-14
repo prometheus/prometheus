@@ -81,14 +81,11 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	vec := make(promql.Vector, 0, 8000)
 
-	params := &storage.SelectParams{
-		Start: mint,
-		End:   maxt,
-	}
+	hints := &storage.SelectHints{Start: mint, End: maxt}
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s, wrns, err := q.Select(params, mset...)
+		s, wrns, err := q.Select(false, hints, mset...)
 		if wrns != nil {
 			level.Debug(h.logger).Log("msg", "federation select returned warnings", "warnings", wrns)
 			federationWarnings.Add(float64(len(wrns)))

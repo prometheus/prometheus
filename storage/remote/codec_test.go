@@ -178,7 +178,7 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 		},
 	}
 
-	series := FromQueryResult(&res)
+	series := FromQueryResult(false, &res)
 
 	errSeries, isErrSeriesSet := series.(errSeriesSet)
 
