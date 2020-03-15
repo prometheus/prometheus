@@ -1829,8 +1829,6 @@ func (s *memSeries) appendable(t int64, v float64) error {
 }
 
 func (s *memSeries) chunk(id int) *memChunk {
-	s.RLock()
-	defer s.RUnlock()
 	ix := id - s.firstChunkID
 	if ix < 0 || ix >= len(s.chunks) {
 		return nil
