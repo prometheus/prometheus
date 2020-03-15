@@ -3,7 +3,8 @@ import { Badge } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../components/Checkbox';
 import { isPresent } from '../../utils';
-import { Rule } from '../../types/types';
+import { AlertingRule } from '../../types/types';
+import { RuleGroup } from '../rules/RulesContent';
 
 export type RuleState = keyof RuleStatus<any>;
 
@@ -14,7 +15,7 @@ export interface RuleStatus<T> {
 }
 
 export interface AlertsProps {
-  groups?: RuleGroup[];
+  groups?: RuleGroup<AlertingRule>[];
   statsCount: RuleStatus<number>;
 }
 
@@ -24,13 +25,6 @@ export interface Alert {
   value: string;
   annotations: Record<string, string>;
   activeAt: string;
-}
-
-interface RuleGroup {
-  name: string;
-  file: string;
-  rules: Rule[];
-  interval: number;
 }
 
 const stateColorTuples: Array<[RuleState, 'success' | 'warning' | 'danger']> = [
@@ -101,11 +95,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   );
 };
 
-interface GroupInfoProps {
-  rules: Rule[];
-}
-
-export const GroupInfo: FC<GroupInfoProps> = ({ rules, children }) => {
+export const GroupInfo: FC<{ rules: AlertingRule[] }> = ({ rules, children }) => {
   const statesCounter = rules.reduce<any>(
     (acc, r) => {
       return {

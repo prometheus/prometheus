@@ -1,130 +1,82 @@
-import React, { FC } from 'react';
+import React, { FC, Fragment } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import { APIResponse } from '../../hooks/useFetch';
 import { Alert, Table, Badge } from 'reactstrap';
-import { Link } from '@reach/router';
-import { formatRelative, createExpressionLink, humanizeDuration } from '../../utils';
-import { Rule } from '../../types/types';
+import { formatRelative, humanizeDuration, isPresent } from '../../utils';
 import { now } from 'moment';
+import { RulePanel } from './RulePanel';
+import { Rule } from '../../types/types';
 
-interface RulesContentProps {
-  response: APIResponse<RulesMap>;
-}
-
-interface RuleGroup {
+export interface RuleGroup<T> {
   name: string;
   file: string;
-  rules: Rule[];
+  rules: T[];
+  interval: number;
   evaluationTime: string;
   lastEvaluation: string;
 }
 
-export interface RulesMap {
-  groups: RuleGroup[];
+export interface RulesGroups {
+  groups: RuleGroup<Rule>[];
 }
 
-const GraphExpressionLink: FC<{ expr: string; title: string }> = props => {
-  return (
-    <>
-      <strong>{props.title}:</strong> <Link to={createExpressionLink(props.expr)}>{props.expr}</Link>
-      <br />
-    </>
-  );
+export const badgeColorMap: Record<'ok' | 'err' | 'unknown', 'success' | 'danger' | 'warning'> = {
+  ok: 'success',
+  err: 'danger',
+  unknown: 'warning',
 };
 
-export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ response }) => {
-  const getBadgeColor = (state: string) => {
-    switch (state) {
-      case 'ok':
-        return 'success';
-
-      case 'err':
-        return 'danger';
-
-      case 'unknown':
-        return 'warning';
-    }
-  };
-
-  if (response.data) {
-    const groups: RuleGroup[] = response.data.groups;
-    return (
-      <>
-        <h2>Rules</h2>
-        <Table bordered>
-          {groups.map((g, i) => {
-            return (
-              <React.Fragment key={i}>
-                <thead>
-                  <tr>
-                    <td colSpan={3}>
-                      <a href={'#' + g.name}>
-                        <h2 id={g.name}>{g.name}</h2>
-                      </a>
-                    </td>
-                    <td>
-                      <h2>{formatRelative(g.lastEvaluation, now())} ago</h2>
-                    </td>
-                    <td>
-                      <h2>{humanizeDuration(parseFloat(g.evaluationTime) * 1000)}</h2>
-                    </td>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="font-weight-bold">
-                    <td>Rule</td>
-                    <td>State</td>
-                    <td>Error</td>
-                    <td>Last Evaluation</td>
-                    <td>Evaluation Time</td>
-                  </tr>
-                  {g.rules.map((r, i) => {
-                    return (
-                      <tr key={i}>
-                        {r.alerts ? (
-                          <td className="rule-cell">
-                            <GraphExpressionLink title="alert" expr={r.name} />
-                            <GraphExpressionLink title="expr" expr={r.query} />
-                            <div>
-                              <strong>labels:</strong>
-                              {Object.entries(r.labels).map(([key, value]) => (
-                                <div className="ml-4" key={key}>
-                                  {key}: {value}
-                                </div>
-                              ))}
-                            </div>
-                            <div>
-                              <strong>annotations:</strong>
-                              {Object.entries(r.annotations).map(([key, value]) => (
-                                <div className="ml-4" key={key}>
-                                  {key}: {value}
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        ) : (
-                          <td className="rule-cell">
-                            <GraphExpressionLink title="record" expr={r.name} />
-                            <GraphExpressionLink title="expr" expr={r.query} />
-                          </td>
-                        )}
-                        <td>
-                          <Badge color={getBadgeColor(r.health)}>{r.health.toUpperCase()}</Badge>
-                        </td>
-                        <td>{r.lastError ? <Alert color="danger">{r.lastError}</Alert> : null}</td>
-                        <td>{formatRelative(r.lastEvaluation, now())} ago</td>
-                        <td>{humanizeDuration(parseFloat(r.evaluationTime) * 1000)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </React.Fragment>
-            );
-          })}
-        </Table>
-      </>
-    );
-  }
-
-  return null;
+export const RulesContent: FC<RouteComponentProps & RulesGroups> = ({ groups }) => {
+  return (
+    <>
+      <h2>Rules</h2>
+      <Table bordered>
+        {groups.map(group => {
+          const { name: groupName, lastEvaluation, evaluationTime } = group;
+          return (
+            <Fragment key={groupName}>
+              <thead>
+                <tr>
+                  <td colSpan={3}>
+                    <a href={`#${groupName}`}>
+                      <h2 id={groupName}>{groupName}</h2>
+                    </a>
+                  </td>
+                  <td>
+                    <h2>{formatRelative(lastEvaluation, now())} ago</h2>
+                  </td>
+                  <td>
+                    <h2>{humanizeDuration(parseFloat(evaluationTime) * 1000)}</h2>
+                  </td>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="font-weight-bold">
+                  <td>Rule</td>
+                  <td>State</td>
+                  <td>Error</td>
+                  <td>Last Evaluation</td>
+                  <td>Evaluation Time</td>
+                </tr>
+                {group.rules.map((rule, i) => {
+                  return (
+                    <tr key={i}>
+                      <RulePanel tag="td" rule={rule} />
+                      <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                        <Badge className="p-2 px-4 text-uppercase" color={badgeColorMap[rule.health]}>
+                          {rule.health}
+                        </Badge>
+                      </td>
+                      <td>{isPresent(rule.lastError) && <Alert color="danger">{rule.lastError}</Alert>}</td>
+                      <td>{formatRelative(rule.lastEvaluation, now())} ago</td>
+                      <td>{humanizeDuration(parseFloat(rule.evaluationTime) * 1000)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Fragment>
+          );
+        })}
+      </Table>
+    </>
+  );
 };
