@@ -1116,7 +1116,9 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	for p.Next() {
 		series := h.series.getByID(p.At())
 
+		series.RLock()
 		t0, t1 := series.minTime(), series.maxTime()
+		series.RUnlock()
 		if t0 == math.MinInt64 || t1 == math.MinInt64 {
 			continue
 		}
@@ -1424,9 +1426,11 @@ func (h *headIndexReader) Postings(name string, values ...string) (index.Posting
 				level.Debug(h.head.logger).Log("msg", "looked up series not found")
 				continue
 			}
+			s.RLock()
 			if s.minTime() <= h.maxt && s.maxTime() >= h.mint {
 				filtered = append(filtered, p.At())
 			}
+			s.RUnlock()
 		}
 		if p.Err() != nil {
 			return nil, p.Err()
@@ -1733,12 +1737,11 @@ func (s sample) V() float64 {
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
-	sync.Mutex
+	sync.RWMutex
 
 	ref          uint64
 	lset         labels.Labels
 	chunks       []*memChunk
-	chunksLock   sync.RWMutex
 	headChunk    *memChunk
 	chunkRange   int64
 	firstChunkID int
@@ -1764,8 +1767,6 @@ func newMemSeries(lset labels.Labels, id uint64, chunkRange int64) *memSeries {
 }
 
 func (s *memSeries) minTime() int64 {
-	s.chunksLock.RLock()
-	defer s.chunksLock.RUnlock()
 	if len(s.chunks) == 0 {
 		return math.MinInt64
 	}
@@ -1773,8 +1774,6 @@ func (s *memSeries) minTime() int64 {
 }
 
 func (s *memSeries) maxTime() int64 {
-	s.chunksLock.RLock()
-	defer s.chunksLock.RUnlock()
 	c := s.head()
 	if c == nil {
 		return math.MinInt64
@@ -1788,7 +1787,6 @@ func (s *memSeries) cut(mint int64) *memChunk {
 		minTime: mint,
 		maxTime: math.MinInt64,
 	}
-	// This method is called by append, which has the lock.
 	s.chunks = append(s.chunks, c)
 	s.headChunk = c
 
@@ -1831,8 +1829,8 @@ func (s *memSeries) appendable(t int64, v float64) error {
 }
 
 func (s *memSeries) chunk(id int) *memChunk {
-	s.chunksLock.RLock()
-	defer s.chunksLock.RUnlock()
+	s.RLock()
+	defer s.RUnlock()
 	ix := id - s.firstChunkID
 	if ix < 0 || ix >= len(s.chunks) {
 		return nil
@@ -1847,8 +1845,6 @@ func (s *memSeries) chunkID(pos int) int {
 // truncateChunksBefore removes all chunks from the series that have not timestamp
 // at or after mint. Chunk IDs remain unchanged.
 func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
-	s.chunksLock.Lock()
-	defer s.chunksLock.Unlock()
 	var k int
 	for i, c := range s.chunks {
 		if c.maxTime >= mint {
@@ -1871,8 +1867,6 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 func (s *memSeries) append(t int64, v float64, appendID uint64) (success, chunkCreated bool) {
-	s.chunksLock.Lock()
-	defer s.chunksLock.Unlock()
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
 	// the time range within which we have to decompress all samples.
