@@ -121,7 +121,7 @@ new format. For example:
 $ promtool update rules example.rules
 ```
 
-Note that you will need to use promtool from 2.0, not 1.8.
+You will need to use `promtool` from [Prometheus 2.5](https://github.com/prometheus/prometheus/releases/tag/v2.5.0) as later versions no longer contain the above subcommand.
 
 ## Storage
 
