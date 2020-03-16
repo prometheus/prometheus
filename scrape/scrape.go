@@ -1121,7 +1121,7 @@ loop:
 		}
 		ce, ok := sl.cache.get(yoloString(met))
 		if ok {
-			switch err = app.AddFast(ce.ref, t, v); err {
+			switch err = app.AddFast(ce.ref, t, v); errors.Cause(err) {
 			case nil:
 				if tp == nil {
 					sl.cache.trackStaleness(ce.hash, ce.lset)
@@ -1176,7 +1176,7 @@ loop:
 
 			var ref uint64
 			ref, err = app.Add(lset, t, v)
-			switch err {
+			switch errors.Cause(err) {
 			case nil:
 			case storage.ErrOutOfOrderSample:
 				err = nil
@@ -1233,7 +1233,7 @@ loop:
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
 			_, err = app.Add(lset, defTime, math.Float64frombits(value.StaleNaN))
-			switch err {
+			switch errors.Cause(err) {
 			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 				// Do not count these in logging, as this is expected if a target
 				// goes away and comes back again with a new scrape loop.
@@ -1330,7 +1330,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	ce, ok := sl.cache.get(s)
 	if ok {
 		err := app.AddFast(ce.ref, t, v)
-		switch err {
+		switch errors.Cause(err) {
 		case nil:
 			return nil
 		case storage.ErrNotFound:
@@ -1354,7 +1354,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	lset = sl.reportSampleMutator(lset)
 
 	ref, err := app.Add(lset, t, v)
-	switch err {
+	switch errors.Cause(err) {
 	case nil:
 		sl.cache.addRef(s, ref, lset, hash)
 		return nil

@@ -1807,3 +1807,35 @@ func TestReuseScrapeCache(t *testing.T) {
 		}
 	}
 }
+
+func TestScrapeAddFast(t *testing.T) {
+	s := teststorage.New(t)
+	defer s.Close()
+
+	app := s.Appender()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx,
+		&testScraper{},
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		func() storage.Appender { return app },
+		nil,
+		0,
+		true,
+	)
+	defer cancel()
+
+	_, _, _, err := sl.append([]byte("up 1\n"), "", time.Time{})
+	testutil.Ok(t, err)
+
+	// Poison the cache. There is just one entry, and one series in the
+	// storage. Changing the ref will create a 'not found' error.
+	for _, v := range sl.getCache().series {
+		v.ref++
+	}
+
+	_, _, _, err = sl.append([]byte("up 1\n"), "", time.Time{}.Add(time.Second))
+	testutil.Ok(t, err)
+}
