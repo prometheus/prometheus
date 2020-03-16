@@ -1116,7 +1116,9 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	for p.Next() {
 		series := h.series.getByID(p.At())
 
+		series.RLock()
 		t0, t1 := series.minTime(), series.maxTime()
+		series.RUnlock()
 		if t0 == math.MinInt64 || t1 == math.MinInt64 {
 			continue
 		}
@@ -1424,9 +1426,11 @@ func (h *headIndexReader) Postings(name string, values ...string) (index.Posting
 				level.Debug(h.head.logger).Log("msg", "looked up series not found")
 				continue
 			}
+			s.RLock()
 			if s.minTime() <= h.maxt && s.maxTime() >= h.mint {
 				filtered = append(filtered, p.At())
 			}
+			s.RUnlock()
 		}
 		if p.Err() != nil {
 			return nil, p.Err()
@@ -1733,7 +1737,7 @@ func (s sample) V() float64 {
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
-	sync.Mutex
+	sync.RWMutex
 
 	ref          uint64
 	lset         labels.Labels

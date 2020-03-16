@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -1336,6 +1337,7 @@ func TestHeadSeriesWithTimeBoundaries(t *testing.T) {
 	h, err := NewHead(nil, nil, nil, 15, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer h.Close()
+	testutil.Ok(t, h.Init(0))
 	app := h.Appender()
 
 	s1, err := app.Add(labels.FromStrings("foo1", "bar"), 2, 0)
@@ -1593,4 +1595,43 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 	ok, _ := s.append(0, 0, 0)
 	testutil.Assert(t, ok, "Series append failed.")
 	testutil.Equals(t, 0, s.txs.txIDCount, "Series should not have an appendID after append with appendID=0.")
+}
+
+func TestHeadSeriesChunkRace(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		testHeadSeriesChunkRace(t)
+	}
+}
+
+func testHeadSeriesChunkRace(t *testing.T) {
+	h, err := NewHead(nil, nil, nil, 30, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer h.Close()
+	testutil.Ok(t, h.Init(0))
+	app := h.Appender()
+
+	s2, err := app.Add(labels.FromStrings("foo2", "bar"), 5, 0)
+	testutil.Ok(t, err)
+	for ts := int64(6); ts < 11; ts++ {
+		err = app.AddFast(s2, ts, 0)
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, app.Commit())
+
+	var wg sync.WaitGroup
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "", "")
+	q, err := NewBlockQuerier(h, 18, 22)
+	testutil.Ok(t, err)
+	defer q.Close()
+
+	wg.Add(1)
+	go func() {
+		h.updateMinMaxTime(20, 25)
+		h.gc()
+		wg.Done()
+	}()
+	ss, _, err := q.Select(nil, matcher)
+	testutil.Ok(t, err)
+	testutil.Ok(t, ss.Err())
+	wg.Wait()
 }
