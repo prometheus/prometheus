@@ -315,10 +315,15 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 
 	for _, m := range ms {
 		if m.Type == labels.MatchRegexp && (m.Value == ".*" || m.Value == "^.*$") && len(ms) > 1 {
-			// Ignore this matcher completely. This matches anything, so it's a no-op.
+			// Ignore this matcher completely. This matches any value, including no value, so it's a no-op.
 			// It's safe to ignore, because there must be some matcher matching non-empty string.
 			// Some tests only use single label=~".*" matcher, and for those, we include the length condition.
 			continue
+		}
+
+		// NOT matching any value = match nothing. We can shortcut this easily.
+		if m.Type == labels.MatchNotRegexp && (m.Value == ".*" || m.Value == "^.*$") {
+			return index.EmptyPostings(), nil
 		}
 
 		if labelMustBeSet[m.Name] {
