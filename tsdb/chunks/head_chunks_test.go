@@ -43,10 +43,10 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	}
 	expectedData := []expectedDataType{}
 
-	var buf [8]byte
+	var buf [MaxHeadChunkMetaSize]byte
 	totalChunks := 0
 	var firstFileName string
-	for hrw.curFileSequence < 3 || hrw.wbuf.Buffered() == 0 {
+	for hrw.curFileSequence < 3 || hrw.chkWriter.Buffered() == 0 {
 		for i := 0; i < 100; i++ {
 			seriesRef, chkRef, mint, maxt, chunk := createChunk(t, totalChunks, hrw)
 			totalChunks++
@@ -64,35 +64,26 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 			}
 
 			// Calculating expected bytes written on disk for first file.
-
 			firstFileName = hrw.curFile.Name()
 			testutil.Equals(t, chunkRef(1, nextChunkOffset), chkRef)
 
+			bytesWritten := 0
 			chkCRC32.Reset()
-			binary.BigEndian.PutUint64(buf[:], seriesRef)
-			expectedBytes = append(expectedBytes, buf[:SeriesRefSize]...)
-			_, err := chkCRC32.Write(buf[:SeriesRefSize])
-			testutil.Ok(t, err)
 
-			binary.BigEndian.PutUint64(buf[:], uint64(mint))
-			expectedBytes = append(expectedBytes, buf[:MintMaxtSize]...)
-			_, err = chkCRC32.Write(buf[:MintMaxtSize])
-			testutil.Ok(t, err)
+			binary.BigEndian.PutUint64(buf[bytesWritten:], seriesRef)
+			bytesWritten += SeriesRefSize
+			binary.BigEndian.PutUint64(buf[bytesWritten:], uint64(mint))
+			bytesWritten += MintMaxtSize
+			binary.BigEndian.PutUint64(buf[bytesWritten:], uint64(maxt))
+			bytesWritten += MintMaxtSize
+			buf[bytesWritten] = byte(chunk.Encoding())
+			bytesWritten += ChunkEncodingSize
+			n := binary.PutUvarint(buf[bytesWritten:], uint64(len(chunk.Bytes())))
+			bytesWritten += n
 
-			binary.BigEndian.PutUint64(buf[:], uint64(maxt))
-			expectedBytes = append(expectedBytes, buf[:MintMaxtSize]...)
-			_, err = chkCRC32.Write(buf[:MintMaxtSize])
+			expectedBytes = append(expectedBytes, buf[:bytesWritten]...)
+			_, err := chkCRC32.Write(buf[:bytesWritten])
 			testutil.Ok(t, err)
-
-			expectedBytes = append(expectedBytes, byte(chunk.Encoding()))
-			_, err = chkCRC32.Write([]byte{byte(chunk.Encoding())})
-			testutil.Ok(t, err)
-
-			n := binary.PutUvarint(buf[:], uint64(len(chunk.Bytes())))
-			expectedBytes = append(expectedBytes, buf[:n]...)
-			_, err = chkCRC32.Write(buf[:n])
-			testutil.Ok(t, err)
-
 			expectedBytes = append(expectedBytes, chunk.Bytes()...)
 			_, err = chkCRC32.Write(chunk.Bytes())
 			testutil.Ok(t, err)
@@ -104,7 +95,7 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 		}
 	}
 
-	/// Checking on-disk bytes for the first file.
+	// Checking on-disk bytes for the first file.
 	testutil.Assert(t, len(hrw.mmappedChunkFiles) == 3 && len(hrw.closers) == 3, "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
 
 	actualBytes, err := ioutil.ReadFile(firstFileName)
@@ -117,14 +108,14 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	// Remaining chunk data.
 	testutil.Equals(t, expectedBytes, actualBytes[HeadChunkFileHeaderSize:])
 
-	/// Testing reading of chunks.
+	// Testing reading of chunks.
 	for _, exp := range expectedData {
 		actChunk, err := hrw.Chunk(exp.chunkRef)
 		testutil.Ok(t, err)
 		testutil.Equals(t, exp.chunk.Bytes(), actChunk.Bytes())
 	}
 
-	/// Testing IterateAllChunks method.
+	// Testing IterateAllChunks method.
 	dir := hrw.dir.Name()
 	testutil.Ok(t, hrw.Close())
 	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool())
