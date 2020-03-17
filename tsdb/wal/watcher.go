@@ -66,7 +66,7 @@ type Watcher struct {
 	walDir         string
 	lastCheckpoint string
 	metrics        *WatcherMetrics
-	readerMetrics  *liveReaderMetrics
+	readerMetrics  *LiveReaderMetrics
 
 	startTime      time.Time
 	startTimestamp int64 // the start time as a Prometheus timestamp
@@ -135,7 +135,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(reg prometheus.Registerer, metrics *WatcherMetrics, logger log.Logger, name string, writer WriteTo, walDir string) *Watcher {
+func NewWatcher(reg prometheus.Registerer, metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, walDir string) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -143,7 +143,7 @@ func NewWatcher(reg prometheus.Registerer, metrics *WatcherMetrics, logger log.L
 		logger:        logger,
 		writer:        writer,
 		metrics:       metrics,
-		readerMetrics: NewLiveReaderMetrics(reg),
+		readerMetrics: readerMetrics,
 		walDir:        path.Join(walDir, "wal"),
 		name:          name,
 		quit:          make(chan struct{}),
@@ -179,11 +179,13 @@ func (w *Watcher) Stop() {
 	<-w.done
 
 	// Records read metric has series and samples.
-	w.metrics.recordsRead.DeleteLabelValues(w.name, "series")
-	w.metrics.recordsRead.DeleteLabelValues(w.name, "samples")
-	w.metrics.recordDecodeFails.DeleteLabelValues(w.name)
-	w.metrics.samplesSentPreTailing.DeleteLabelValues(w.name)
-	w.metrics.currentSegment.DeleteLabelValues(w.name)
+	if w.metrics != nil {
+		w.metrics.recordsRead.DeleteLabelValues(w.name, "series")
+		w.metrics.recordsRead.DeleteLabelValues(w.name, "samples")
+		w.metrics.recordDecodeFails.DeleteLabelValues(w.name)
+		w.metrics.samplesSentPreTailing.DeleteLabelValues(w.name)
+		w.metrics.currentSegment.DeleteLabelValues(w.name)
+	}
 
 	level.Info(w.logger).Log("msg", "WAL watcher stopped", "queue", w.name)
 }

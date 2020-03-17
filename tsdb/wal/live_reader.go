@@ -28,14 +28,14 @@ import (
 )
 
 // liveReaderMetrics holds all metrics exposed by the LiveReader.
-type liveReaderMetrics struct {
+type LiveReaderMetrics struct {
 	readerCorruptionErrors *prometheus.CounterVec
 }
 
 // NewLiveReaderMetrics instantiates, registers and returns metrics to be injected
 // at LiveReader instantiation.
-func NewLiveReaderMetrics(reg prometheus.Registerer) *liveReaderMetrics {
-	m := &liveReaderMetrics{
+func NewLiveReaderMetrics(reg prometheus.Registerer) *LiveReaderMetrics {
+	m := &LiveReaderMetrics{
 		readerCorruptionErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_wal_reader_corruption_errors_total",
 			Help: "Errors encountered when reading the WAL.",
@@ -51,7 +51,7 @@ func NewLiveReaderMetrics(reg prometheus.Registerer) *liveReaderMetrics {
 }
 
 // NewLiveReader returns a new live reader.
-func NewLiveReader(logger log.Logger, metrics *liveReaderMetrics, r io.Reader) *LiveReader {
+func NewLiveReader(logger log.Logger, metrics *LiveReaderMetrics, r io.Reader) *LiveReader {
 	lr := &LiveReader{
 		logger:  logger,
 		rdr:     r,
@@ -89,7 +89,7 @@ type LiveReader struct {
 	// NB the non-ive Reader implementation allows for this.
 	permissive bool
 
-	metrics *liveReaderMetrics
+	metrics *LiveReaderMetrics
 }
 
 // Err returns any errors encountered reading the WAL.  io.EOFs are not terminal
