@@ -313,11 +313,12 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 		}
 	}
 
+	all := false
+
 	for _, m := range ms {
-		if m.Type == labels.MatchRegexp && (m.Value == ".*" || m.Value == "^.*$") && len(ms) > 1 {
-			// Ignore this matcher completely. This matches any value, including no value, so it's a no-op.
-			// It's safe to ignore, because there must be some matcher matching non-empty string.
-			// Some tests only use single label=~".*" matcher, and for those, we include the length condition.
+		if m.Type == labels.MatchRegexp && (m.Value == ".*" || m.Value == "^.*$") {
+			// This matches all values, including no value. If it is the only matcher, it will return all postings.
+			all = true
 			continue
 		}
 
@@ -377,8 +378,14 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 		}
 	}
 
-	// If there's nothing to subtract from, add in everything and remove the notIts later.
-	if len(its) == 0 && len(notIts) != 0 {
+	// When doing substraction, add in everything and remove the notIts later.
+	if len(notIts) > 0 {
+		all = true
+	}
+
+	// Only include all, if there are no other included postings. If there are, intersection would only
+	// select those anyway.
+	if len(its) == 0 && all {
 		k, v := index.AllPostingsKey()
 		allPostings, err := ix.Postings(k, v)
 		if err != nil {
