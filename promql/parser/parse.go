@@ -608,6 +608,16 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			}
 		}
 
+		// remove label matchers doing regex match on ".*" -- that matches everything, incl. nothing, so it's a no-op
+		for ix := 0; ix < len(n.LabelMatchers); ix++ {
+			m := n.LabelMatchers[ix]
+			if m.Type == labels.MatchRegexp && m.Value == ".*" {
+				// There must be some other matcher matching non-empty string as well,
+				// so we cannot end up in a situation that this was the last matcher and it was just removed.
+				n.LabelMatchers = append(n.LabelMatchers[:ix], n.LabelMatchers[ix+1:]...)
+			}
+		}
+
 	case *NumberLiteral, *StringLiteral:
 		// Nothing to do for terminals.
 

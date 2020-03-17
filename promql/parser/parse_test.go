@@ -2576,6 +2576,18 @@ var testExpr = []struct {
 		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
 		fail:   true,
 		errMsg: `1:1: parse error: subquery is only allowed on instant vector, got matrix in "(foo + bar{nm=\"val\"})[5m:][10m:5s]" instead`,
+	}, {
+		input: `hello{label=~".*"}`,
+		expected: &VectorSelector{
+			Name: "hello",
+			LabelMatchers: []*labels.Matcher{
+				mustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "hello"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   18,
+			},
+		},
 	},
 }
 
