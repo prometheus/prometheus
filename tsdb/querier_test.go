@@ -2048,9 +2048,42 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "2.5"),
 			},
 		},
+		// Test shortcut for n=~".*" and i=~"^.*$"
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", ".*"), labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		// Test shortcut for n=~"^.*$"
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^.*$"), labels.MustNewMatcher(labels.MatchEqual, "i", "a")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+			},
+		},
 		// Test shortcut for i!~".*"
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
+			exp:      []labels.Labels{},
+		},
+		// Test shortcut for n!~"^.*$",  i!~".*". First one triggers empty result.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "^.*$"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
+			exp:      []labels.Labels{},
+		},
+		// Test shortcut i!~".*"
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", ".*"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
+			exp:      []labels.Labels{},
+		},
+		// Test shortcut i!~"^.*$"
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^.*$")},
 			exp:      []labels.Labels{},
 		},
 		{
