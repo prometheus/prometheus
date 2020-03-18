@@ -1,4 +1,4 @@
-## 2.17.0-rc.1 / 2020-03-16
+## 2.17.0-rc.2 / 2020-03-18
 
 This release implements isolation in TSDB. API queries and recording rules are
 guaranteed to only see full scrapes and full recording rules. This comes with a
@@ -21,6 +21,7 @@ some increase in memory usage, CPU usage, or query latency.
 * [BUGFIX] React UI: Fix data table matrix values #6896
 * [BUGFIX] React UI: Fix new targets page not loading when using non-ASCII characters #6892
 * [BUGFIX] Scrape: Prevent removal of metric names upon relabeling #6891
+* [BUGFIX] Scrape: Fix 'superfluous response.WriteHeader call' errors when scrape fails under some circonstances #6986
 
 ## 2.16.0 / 2020-02-13
 
