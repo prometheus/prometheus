@@ -62,6 +62,18 @@ func TestLastCheckpoint(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, filepath.Join(dir, "checkpoint.1000"), s)
 	testutil.Equals(t, 1000, k)
+
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.99999999"), 0777))
+	s, k, err = LastCheckpoint(dir)
+	testutil.Ok(t, err)
+	testutil.Equals(t, filepath.Join(dir, "checkpoint.99999999"), s)
+	testutil.Equals(t, 99999999, k)
+
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000000"), 0777))
+	s, k, err = LastCheckpoint(dir)
+	testutil.Ok(t, err)
+	testutil.Equals(t, filepath.Join(dir, "checkpoint.100000000"), s)
+	testutil.Equals(t, 100000000, k)
 }
 
 func TestDeleteCheckpoints(t *testing.T) {
@@ -83,6 +95,16 @@ func TestDeleteCheckpoints(t *testing.T) {
 	files, err := fileutil.ReadDir(dir)
 	testutil.Ok(t, err)
 	testutil.Equals(t, []string{"checkpoint.02", "checkpoint.03"}, files)
+
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.99999999"), 0777))
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000000"), 0777))
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000001"), 0777))
+
+	testutil.Ok(t, DeleteCheckpoints(dir, 100000000))
+
+	files, err = fileutil.ReadDir(dir)
+	testutil.Ok(t, err)
+	testutil.Equals(t, []string{"checkpoint.100000000", "checkpoint.100000001"}, files)
 }
 
 func TestCheckpoint(t *testing.T) {
@@ -159,9 +181,9 @@ func TestCheckpoint(t *testing.T) {
 			files, err := fileutil.ReadDir(dir)
 			testutil.Ok(t, err)
 			testutil.Equals(t, 1, len(files))
-			testutil.Equals(t, "checkpoint.000106", files[0])
+			testutil.Equals(t, "checkpoint.00000106", files[0])
 
-			sr, err := NewSegmentsReader(filepath.Join(dir, "checkpoint.000106"))
+			sr, err := NewSegmentsReader(filepath.Join(dir, "checkpoint.00000106"))
 			testutil.Ok(t, err)
 			defer sr.Close()
 
