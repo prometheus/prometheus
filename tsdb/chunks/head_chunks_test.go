@@ -106,7 +106,13 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	testutil.Equals(t, chunksFormatV1, int(actualBytes[MagicChunksSize]))
 
 	// Remaining chunk data.
-	testutil.Equals(t, expectedBytes, actualBytes[HeadChunkFileHeaderSize:])
+	fileEnd := HeadChunkFileHeaderSize + len(expectedBytes)
+	testutil.Equals(t, expectedBytes, actualBytes[HeadChunkFileHeaderSize:fileEnd])
+
+	// Test for the next chunk header to be all 0s. That marks the end of the file.
+	for _, b := range actualBytes[fileEnd : fileEnd+MaxHeadChunkMetaSize] {
+		testutil.Equals(t, byte(0), b)
+	}
 
 	// Testing reading of chunks.
 	for _, exp := range expectedData {
@@ -139,7 +145,7 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 		return nil
 	})
 	testutil.Ok(t, err)
-	testutil.Equals(t, idx, len(expectedData))
+	testutil.Equals(t, len(expectedData), idx)
 
 }
 

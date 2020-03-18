@@ -337,7 +337,7 @@ func (cdm *ChunkDiskMapper) cut(mint int64) (returnErr error) {
 		return err
 	}
 
-	n, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, 0)
+	n, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, int64(MaxHeadChunkFileSize))
 	if err != nil {
 		return err
 	}
@@ -512,9 +512,15 @@ func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 // and runs the provided function on each chunk. It returns on the first error encountered.
 // NOTE: This method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
-func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, mint, maxt int64) error) error {
+func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, mint, maxt int64) error) (err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
+
+	defer func() {
+		if err == nil {
+			cdm.fileMaxtSet = true
+		}
+	}()
 
 	chkCRC32 := newCRC32()
 
@@ -533,6 +539,17 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 		idx := HeadChunkFileHeaderSize
 		for idx < fileEnd {
 			if fileEnd-idx < MaxHeadChunkMetaSize {
+				// Check for all 0s which marks the end of the file.
+				allZeros := true
+				for _, b := range mmapFile.byteSlice.Range(idx, fileEnd) {
+					if b != byte(0) {
+						allZeros = false
+						break
+					}
+				}
+				if allZeros {
+					break
+				}
 				return &corruptionErr{
 					Dir:       cdm.dir.Name(),
 					FileIndex: segID,
@@ -549,6 +566,15 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 			idx += MintMaxtSize
 			maxt := int64(binary.BigEndian.Uint64(mmapFile.byteSlice.Range(idx, idx+MintMaxtSize)))
 			idx += MintMaxtSize
+
+			// We preallocate file to help with m-mapping (especially windows systems).
+			// As series ref always starts from 1, we assume it being 0 to be the end of the actual file data.
+			// We are not considering possible file corruption that can cause it to be 0.
+			// Additionally we are checking mint and maxt just to be sure.
+			if seriesRef == 0 && mint == 0 && maxt == 0 {
+				break
+			}
+
 			idx += ChunkEncodingSize // Skip encoding.
 			dataLen, n := binary.Uvarint(mmapFile.byteSlice.Range(idx, idx+MaxChunkLengthFieldSize))
 			idx += n + int(dataLen) // Skip the data.
@@ -595,8 +621,6 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 			}
 		}
 	}
-
-	cdm.fileMaxtSet = true
 
 	return nil
 }
