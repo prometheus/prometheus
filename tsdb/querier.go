@@ -378,7 +378,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 		}
 	}
 
-	// When doing substraction, add in everything and remove the notIts later.
+	// When doing subtraction, add in everything and remove the notIts later.
 	if len(notIts) > 0 {
 		all = true
 	}
