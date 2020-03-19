@@ -618,7 +618,6 @@ func main() {
 			func() error {
 				select {
 				case <-dbOpen:
-					break
 				// In case a shutdown is initiated before the dbOpen is released
 				case <-cancel:
 					reloadReady.Close()
