@@ -1842,3 +1842,39 @@ func TestScrapeAddFast(t *testing.T) {
 	_, _, _, err = sl.append([]byte("up 1\n"), "", time.Time{}.Add(time.Second))
 	testutil.Ok(t, err)
 }
+
+func TestReuseCacheRace(t *testing.T) {
+	var (
+		app = &nopAppendable{}
+		cfg = &config.ScrapeConfig{
+			JobName:        "Prometheus",
+			ScrapeTimeout:  model.Duration(5 * time.Second),
+			ScrapeInterval: model.Duration(5 * time.Second),
+			MetricsPath:    "/metrics",
+		}
+		sp, _ = newScrapePool(cfg, app, 0, nil)
+		t1    = &Target{
+			discoveredLabels: labels.Labels{
+				labels.Label{
+					Name:  "labelNew",
+					Value: "nameNew",
+				},
+			},
+		}
+	)
+	sp.sync([]*Target{t1})
+
+	start := time.Now()
+	for i := uint(1); i > 0; i++ {
+		if time.Since(start) > 5*time.Second {
+			break
+		}
+		sp.reload(&config.ScrapeConfig{
+			JobName:        "Prometheus",
+			ScrapeTimeout:  model.Duration(1 * time.Millisecond),
+			ScrapeInterval: model.Duration(1 * time.Millisecond),
+			MetricsPath:    "/metrics",
+			SampleLimit:    i,
+		})
+	}
+}
