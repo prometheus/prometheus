@@ -77,7 +77,7 @@ type IndexReader interface {
 
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
-	// Returns ErrNotFound if the ref does not resolve to a known series.
+	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
 
 	// LabelNames returns all the unique label names present in the index in sorted order.

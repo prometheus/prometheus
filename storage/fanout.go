@@ -260,6 +260,7 @@ func (q *mergeQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*
 			} else {
 				priErr = qryResult.selectError
 			}
+			continue
 		}
 		seriesSets = append(seriesSets, qryResult.set)
 	}

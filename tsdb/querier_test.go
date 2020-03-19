@@ -1491,7 +1491,7 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
-		return ErrNotFound
+		return storage.ErrNotFound
 	}
 	*lset = append((*lset)[:0], s.l...)
 	*chks = append((*chks)[:0], s.chunks...)
