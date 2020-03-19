@@ -131,7 +131,7 @@ func TestFanoutErrors(t *testing.T) {
 		defer querier.Close()
 
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
-		ss, warnings, err := querier.SelectSorted(nil, matcher)
+		ss, warnings, err := querier.Select(true, nil, matcher)
 		testutil.Equals(t, tc.err, err)
 		testutil.Equals(t, tc.warnings, warnings)
 
@@ -169,11 +169,7 @@ func (errStorage) Close() error {
 
 type errQuerier struct{}
 
-func (errQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	return nil, nil, errSelect
-}
-
-func (errQuerier) SelectSorted(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	return nil, nil, errSelect
 }
 
