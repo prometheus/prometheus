@@ -141,6 +141,9 @@ func (l *testLoop) run(interval, timeout time.Duration, errc chan<- error) {
 	l.startFunc(interval, timeout, errc)
 }
 
+func (l *testLoop) disableStalenessMarkers() {
+}
+
 func (l *testLoop) stop() {
 	l.stopFunc()
 }
