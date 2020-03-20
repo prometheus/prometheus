@@ -16,6 +16,7 @@ package v1
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"math/rand"
 	"net"
@@ -27,11 +28,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -71,7 +75,6 @@ const (
 type errorType string
 
 const (
-	errorNone        errorType = ""
 	errorTimeout     errorType = "timeout"
 	errorCanceled    errorType = "canceled"
 	errorExec        errorType = "execution"
@@ -172,6 +175,9 @@ type TSDBAdminStats interface {
 // them using the provided storage and query engine.
 type API struct {
 	Queryable   storage.SampleAndChunkQueryable
+	Appendable  storage.Appendable
+	refs        map[string]uint64
+	refsLock    *sync.RWMutex
 	QueryEngine *promql.Engine
 
 	targetRetriever       func(context.Context) TargetRetriever
@@ -226,7 +232,10 @@ func NewAPI(
 ) *API {
 	return &API{
 		QueryEngine:           qe,
+		refs:                  make(map[string]uint64),
+		refsLock:              &sync.RWMutex{},
 		Queryable:             q,
+		Appendable:            q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
@@ -309,6 +318,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
+	r.Post("/write", api.ready(http.HandlerFunc(api.remoteWrite)))
 
 	r.Get("/alerts", wrap(api.alerts))
 	r.Get("/rules", wrap(api.rules))
@@ -667,7 +677,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "match[]")
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(end.Add(time.Minute*-5)), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
@@ -1494,6 +1504,84 @@ func (api *API) remoteReadStreamedXORChunks(ctx context.Context, w http.Response
 			return
 		}
 	}
+}
+
+func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
+	compressed, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		level.Error(api.logger).Log("msg", "Read error", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		level.Error(api.logger).Log("msg", "Decode error", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var req prompb.WriteRequest
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		level.Error(api.logger).Log("msg", "Unmarshal error", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	err = api.write(&req)
+	if err != nil {
+		level.Error(api.logger).Log("msg", "Api write", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (api *API) write(req *prompb.WriteRequest) error {
+	var err error = nil
+	app := api.Appendable.Appender()
+	defer func() { //TODO:clear api.refs cache
+		if err != nil {
+			app.Rollback()
+			return
+		}
+		if err = app.Commit(); err != nil {
+			return
+		}
+	}()
+	for _, ts := range req.Timeseries {
+		tsLabels := make(labels.Labels, 0, len(ts.Labels))
+		for _, l := range ts.Labels {
+			tsLabels = append(tsLabels, labels.Label{Name: l.Name, Value: l.Value})
+		}
+		sort.Sort(tsLabels)
+		tsLabelsKey := tsLabels.String()
+		for _, s := range ts.Samples {
+			api.refsLock.RLock()
+			ref, ok := api.refs[tsLabelsKey]
+			api.refsLock.RUnlock()
+			if ok {
+				err = app.AddFast(ref, s.Timestamp, s.Value)
+				if err != nil && strings.Contains(err.Error(), "unknown series") {
+					//
+				} else {
+					switch err {
+					case nil:
+					case storage.ErrOutOfOrderSample:
+						//level.Error(api.logger).Log("msg", "AddFast fail .Out of order sample", "err", err, "series", tsLabelsKey, "Timestamp", s.Timestamp, "Value", s.Value)
+					default:
+						level.Error(api.logger).Log("msg", "AddFast fail .unexpected error", "err", err, "series", tsLabelsKey, "Timestamp", s.Timestamp, "Value", s.Value)
+						return err
+					}
+					continue
+				}
+			}
+			ref, err = app.Add(tsLabels, s.Timestamp, s.Value)
+			if err != nil {
+				return err
+			}
+			api.refsLock.Lock()
+			api.refs[tsLabelsKey] = ref
+			api.refsLock.Unlock()
+		}
+	}
+	return nil
 }
 
 // filterExtLabelsFromMatchers change equality matchers which match external labels
