@@ -622,6 +622,8 @@ func (w *WAL) log(rec []byte, final bool) error {
 		if len(w.snappyBuf) < len(rec) {
 			rec = w.snappyBuf
 			compressed = true
+		} else {
+			level.Warn(w.logger).Log("msg", "record compress ignored")
 		}
 	}
 
