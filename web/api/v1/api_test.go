@@ -1931,7 +1931,7 @@ func TestSampledWriteEndpoint(t *testing.T) {
 
 	api := &API{
 		Appendable: suite.Storage(),
-		refs:       make(map[string]uint64, 0),
+		refs:       make(map[string]uint64),
 	}
 	err = api.write(req)
 	testutil.Ok(t, err)
