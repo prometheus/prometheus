@@ -1811,7 +1811,7 @@ func testHeadSeriesChunkRace(t *testing.T) {
 		h.gc()
 		wg.Done()
 	}()
-	ss, _, err := q.Select(true, nil, matcher)
+	ss, _, err := q.Select(false, nil, matcher)
 	testutil.Ok(t, err)
 	testutil.Ok(t, ss.Err())
 	wg.Wait()
