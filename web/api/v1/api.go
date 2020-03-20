@@ -1262,7 +1262,7 @@ func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (api *API) write(req *prompb.WriteRequest) (error) {
+func (api *API) write(req *prompb.WriteRequest) error {
 	var err error = nil
 	app := api.Appendable.Appender()
 	defer func() { //TODO:clear api.refs cache
@@ -1277,7 +1277,7 @@ func (api *API) write(req *prompb.WriteRequest) (error) {
 	for _, ts := range req.Timeseries {
 		tsLabels := make(labels.Labels, 0, len(ts.Labels))
 		for _, l := range ts.Labels {
-			tsLabels = append(tsLabels, labels.Label{Name: l.Name, Value: l.Value,})
+			tsLabels = append(tsLabels, labels.Label{Name: l.Name, Value: l.Value})
 		}
 		sort.Sort(tsLabels)
 		tsLabelsKey := tsLabels.String()
