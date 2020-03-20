@@ -28,13 +28,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/storage/tsdb"
-	libtsdb "github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -97,7 +95,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	testutil.Ok(t, err)
 
 	defer os.RemoveAll(dbDir)
-	db, err := libtsdb.Open(dbDir, nil, nil, nil)
+	db, err := tsdb.Open(dbDir, nil, nil, nil)
 
 	testutil.Ok(t, err)
 
@@ -106,14 +104,14 @@ func TestReadyAndHealthy(t *testing.T) {
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
-		Storage:        &tsdb.ReadyStorage{},
+		Storage:        nil,
 		QueryEngine:    nil,
 		ScrapeManager:  &scrape.Manager{},
 		RuleManager:    &rules.Manager{},
 		Notifier:       nil,
 		RoutePrefix:    "/",
 		EnableAdminAPI: true,
-		TSDB:           func() *libtsdb.DB { return db },
+		TSDB:           func() *tsdb.DB { return db },
 		ExternalURL: &url.URL{
 			Scheme: "http",
 			Host:   "localhost:9090",
@@ -287,7 +285,7 @@ func TestRoutePrefix(t *testing.T) {
 
 	defer os.RemoveAll(dbDir)
 
-	db, err := libtsdb.Open(dbDir, nil, nil, nil)
+	db, err := tsdb.Open(dbDir, nil, nil, nil)
 
 	testutil.Ok(t, err)
 
@@ -296,14 +294,18 @@ func TestRoutePrefix(t *testing.T) {
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
-		Storage:        &tsdb.ReadyStorage{},
+		Storage:        nil,
 		QueryEngine:    nil,
 		ScrapeManager:  nil,
 		RuleManager:    nil,
 		Notifier:       nil,
 		RoutePrefix:    "/prometheus",
 		EnableAdminAPI: true,
-		TSDB:           func() *libtsdb.DB { return db },
+		ExternalURL: &url.URL{
+			Host:   "localhost.localdomain:9090",
+			Scheme: "http",
+		},
+		TSDB: func() *tsdb.DB { return db },
 	}
 
 	opts.Flags = map[string]string{}
@@ -389,7 +391,12 @@ func TestDebugHandler(t *testing.T) {
 		{"/foo", "/bar/debug/pprof/goroutine", 404},
 	} {
 		opts := &Options{
-			RoutePrefix: tc.prefix,
+			RoutePrefix:   tc.prefix,
+			ListenAddress: "somehost:9090",
+			ExternalURL: &url.URL{
+				Host:   "localhost.localdomain:9090",
+				Scheme: "http",
+			},
 		}
 		handler := New(nil, opts)
 		handler.Ready()
@@ -407,7 +414,14 @@ func TestDebugHandler(t *testing.T) {
 }
 
 func TestHTTPMetrics(t *testing.T) {
-	handler := New(nil, &Options{RoutePrefix: "/"})
+	handler := New(nil, &Options{
+		RoutePrefix:   "/",
+		ListenAddress: "somehost:9090",
+		ExternalURL: &url.URL{
+			Host:   "localhost.localdomain:9090",
+			Scheme: "http",
+		},
+	})
 	getReady := func() int {
 		t.Helper()
 		w := httptest.NewRecorder()

@@ -71,6 +71,14 @@ type Registry struct {
 	// allowColonFinalSegments determines whether colons are permitted
 	// in the final segment of a path.
 	allowColonFinalSegments bool
+
+	// useGoTemplate determines whether you want to use GO templates
+	// in your protofile comments
+	useGoTemplate bool
+
+	// disableDefaultErrors disables the generation of the default error types.
+	// This is useful for users who have defined custom error handling.
+	disableDefaultErrors bool
 }
 
 type repeatedFieldSeparator struct {
@@ -444,6 +452,26 @@ func (r *Registry) GetUseFQNForSwaggerName() bool {
 // GetMergeFileName return the target merge swagger file name
 func (r *Registry) GetMergeFileName() string {
 	return r.mergeFileName
+}
+
+// SetUseGoTemplate sets useGoTemplate
+func (r *Registry) SetUseGoTemplate(use bool) {
+	r.useGoTemplate = use
+}
+
+// GetUseGoTemplate returns useGoTemplate
+func (r *Registry) GetUseGoTemplate() bool {
+	return r.useGoTemplate
+}
+
+// SetDisableDefaultErrors sets disableDefaultErrors
+func (r *Registry) SetDisableDefaultErrors(use bool) {
+	r.disableDefaultErrors = use
+}
+
+// GetDisableDefaultErrors returns disableDefaultErrors
+func (r *Registry) GetDisableDefaultErrors() bool {
+	return r.disableDefaultErrors
 }
 
 // sanitizePackageName replaces unallowed character in package name

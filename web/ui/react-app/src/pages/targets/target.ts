@@ -7,6 +7,7 @@ export interface Target {
   labels: Labels;
   scrapePool: string;
   scrapeUrl: string;
+  globalUrl: string;
   lastError: string;
   lastScrape: string;
   lastScrapeDuration: number;

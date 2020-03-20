@@ -55,7 +55,9 @@ func init() {
 	proto.RegisterExtension(E_OauthScopes)
 }
 
-func init() { proto.RegisterFile("google/api/client.proto", fileDescriptor_78f2c6f7c3a942c1) }
+func init() {
+	proto.RegisterFile("google/api/client.proto", fileDescriptor_78f2c6f7c3a942c1)
+}
 
 var fileDescriptor_78f2c6f7c3a942c1 = []byte{
 	// 262 bytes of a gzipped FileDescriptorProto

@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -248,9 +249,9 @@ func TestHead_ReadWAL(t *testing.T) {
 				testutil.Ok(t, c.Err())
 				return x
 			}
-			testutil.Equals(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil, head.chunkReadWriter)))
-			testutil.Equals(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil, head.chunkReadWriter)))
-			testutil.Equals(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0, nil, head.chunkReadWriter)))
+			testutil.Equals(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil, head.chunkReadWriter, nil)))
+			testutil.Equals(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil, head.chunkReadWriter, nil)))
+			testutil.Equals(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0, nil, head.chunkReadWriter, nil)))
 		})
 	}
 }
@@ -301,13 +302,17 @@ func TestHead_WALMultiRef(t *testing.T) {
 }
 
 func TestHead_Truncate(t *testing.T) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	dir, err := ioutil.TempDir("", "test_truncate")
 	testutil.Ok(t, err)
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(chunkDir))
+		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
+	w, err := wal.New(nil, nil, dir, false)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, w, 1000, dir, nil, DefaultStripeSize)
+
 	testutil.Ok(t, err)
 	defer h.Close()
 
@@ -389,7 +394,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 	// This is usually taken from the Head, but passing manually here.
-	chunkReadWriter, err := chunks.NewHeadReadWriter(dir, chunkenc.NewPool())
+	chunkReadWriter, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
 
 	// Initialise the global pool.
@@ -402,7 +407,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	s := newMemSeries(labels.FromStrings("a", "b"), 1, 2000)
 
 	for i := 0; i < 4000; i += 5 {
-		ok, _ := s.append(int64(i), float64(i), chunkReadWriter)
+		ok, _ := s.append(int64(i), float64(i), 0, chunkReadWriter)
 		testutil.Assert(t, ok == true, "sample append failed")
 	}
 
@@ -427,11 +432,11 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 
 	// Validate that the series' sample buffer is applied correctly to the last chunk
 	// after truncation.
-	it1 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkReadWriter)
+	it1 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkReadWriter, nil)
 	_, ok := it1.(*memSafeIterator)
 	testutil.Assert(t, ok == true, "")
 
-	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)-1), nil, chunkReadWriter)
+	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkReadWriter, nil)
 	_, ok = it2.(*memSafeIterator)
 	testutil.Assert(t, ok == false, "non-last chunk incorrectly wrapped with sample buffer")
 }
@@ -573,7 +578,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				testutil.Ok(t, reloadedHead.Init(0))
 
 				// Compare the query results for both heads - before and after the reload.
-				expSeriesSet := newMockSeriesSet([]Series{
+				expSeriesSet := newMockSeriesSet([]storage.Series{
 					newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
 						ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
 						for _, s := range c.smplsExp {
@@ -586,8 +591,9 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, h := range []*Head{head, reloadedHead} {
 					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
 					testutil.Ok(t, err)
-					actSeriesSet, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
+					actSeriesSet, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, err)
+					testutil.Equals(t, 0, len(ws))
 
 					for {
 						eok, rok := expSeriesSet.Next(), actSeriesSet.Next()
@@ -638,8 +644,9 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	// Test the series returns no samples. The series is cleared only after compaction.
 	q, err := NewBlockQuerier(hb, 0, 100000)
 	testutil.Ok(t, err)
-	res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	res, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 	testutil.Assert(t, res.Next(), "series is not present")
 	s := res.At()
 	it := s.Iterator()
@@ -652,8 +659,9 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 	q, err = NewBlockQuerier(hb, 0, 100000)
 	testutil.Ok(t, err)
-	res, err = q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	res, ws, err = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 	testutil.Assert(t, res.Next(), "series don't exist")
 	exps := res.At()
 	it = exps.Iterator()
@@ -830,10 +838,11 @@ func TestDelete_e2e(t *testing.T) {
 			q, err := NewBlockQuerier(hb, 0, 100000)
 			testutil.Ok(t, err)
 			defer q.Close()
-			ss, err := q.SelectSorted(del.ms...)
+			ss, ws, err := q.Select(true, nil, del.ms...)
 			testutil.Ok(t, err)
+			testutil.Equals(t, 0, len(ws))
 			// Build the mockSeriesSet.
-			matchedSeries := make([]Series, 0, len(matched))
+			matchedSeries := make([]storage.Series, 0, len(matched))
 			for _, m := range matched {
 				smpls := seriesMap[m.String()]
 				smpls = deletedSamples(smpls, del.drange)
@@ -957,7 +966,7 @@ func TestMemSeries_append(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 	// This is usually taken from the Head, but passing manually here.
-	chunkReadWriter, err := chunks.NewHeadReadWriter(dir, chunkenc.NewPool())
+	chunkReadWriter, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
 
 	s := newMemSeries(labels.Labels{}, 1, 500)
@@ -965,19 +974,19 @@ func TestMemSeries_append(t *testing.T) {
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
 	// New chunk must correctly be cut at 1000.
-	ok, chunkCreated := s.append(998, 1, chunkReadWriter)
+	ok, chunkCreated := s.append(998, 1, 0, chunkReadWriter)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, chunkCreated, "first sample created chunk")
 
-	ok, chunkCreated = s.append(999, 2, chunkReadWriter)
+	ok, chunkCreated = s.append(999, 2, 0, chunkReadWriter)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, !chunkCreated, "second sample should use same chunk")
 
-	ok, chunkCreated = s.append(1000, 3, chunkReadWriter)
+	ok, chunkCreated = s.append(1000, 3, 0, chunkReadWriter)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, chunkCreated, "expected new chunk on boundary")
 
-	ok, chunkCreated = s.append(1001, 4, chunkReadWriter)
+	ok, chunkCreated = s.append(1001, 4, 0, chunkReadWriter)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, !chunkCreated, "second sample should use same chunk")
 
@@ -988,7 +997,7 @@ func TestMemSeries_append(t *testing.T) {
 	// Fill the range [1000,2000) with many samples. Intermediate chunks should be cut
 	// at approximately 120 samples per chunk.
 	for i := 1; i < 1000; i++ {
-		ok, _ := s.append(1001+int64(i), float64(i), chunkReadWriter)
+		ok, _ := s.append(1001+int64(i), float64(i), 0, chunkReadWriter)
 		testutil.Assert(t, ok, "append failed")
 	}
 
@@ -1019,18 +1028,18 @@ func TestGCChunkAccess(t *testing.T) {
 	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
 
 	// Appending 2 samples for the first chunk.
-	ok, chunkCreated := s.append(0, 0, h.chunkReadWriter)
+	ok, chunkCreated := s.append(0, 0, 0, h.chunkReadWriter)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(999, 999, h.chunkReadWriter)
+	ok, chunkCreated = s.append(999, 999, 0, h.chunkReadWriter)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, !chunkCreated, "chunks was created")
 
 	// A new chunks should be created here as it's beyond the chunk range.
-	ok, chunkCreated = s.append(1000, 1000, h.chunkReadWriter)
+	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkReadWriter)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(1999, 1999, h.chunkReadWriter)
+	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkReadWriter)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, !chunkCreated, "chunks was created")
 
@@ -1046,7 +1055,7 @@ func TestGCChunkAccess(t *testing.T) {
 	}}, lset)
 	testutil.Equals(t, 2, len(chunks))
 
-	cr := h.chunksRange(0, 1500)
+	cr := h.chunksRange(0, 1500, nil)
 	_, err = cr.Chunk(chunks[0].Ref)
 	testutil.Ok(t, err)
 	_, err = cr.Chunk(chunks[1].Ref)
@@ -1055,7 +1064,7 @@ func TestGCChunkAccess(t *testing.T) {
 	testutil.Ok(t, h.Truncate(1500)) // Remove a chunk.
 
 	_, err = cr.Chunk(chunks[0].Ref)
-	testutil.Equals(t, ErrNotFound, err)
+	testutil.Equals(t, storage.ErrNotFound, err)
 	_, err = cr.Chunk(chunks[1].Ref)
 	testutil.Ok(t, err)
 }
@@ -1077,18 +1086,18 @@ func TestGCSeriesAccess(t *testing.T) {
 	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
 
 	// Appending 2 samples for the first chunk.
-	ok, chunkCreated := s.append(0, 0, h.chunkReadWriter)
+	ok, chunkCreated := s.append(0, 0, 0, h.chunkReadWriter)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(999, 999, h.chunkReadWriter)
+	ok, chunkCreated = s.append(999, 999, 0, h.chunkReadWriter)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, !chunkCreated, "chunks was created")
 
 	// A new chunks should be created here as it's beyond the chunk range.
-	ok, chunkCreated = s.append(1000, 1000, h.chunkReadWriter)
+	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkReadWriter)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(1999, 1999, h.chunkReadWriter)
+	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkReadWriter)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, !chunkCreated, "chunks was created")
 
@@ -1104,7 +1113,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	}}, lset)
 	testutil.Equals(t, 2, len(chunks))
 
-	cr := h.chunksRange(0, 2000)
+	cr := h.chunksRange(0, 2000, nil)
 	_, err = cr.Chunk(chunks[0].Ref)
 	testutil.Ok(t, err)
 	_, err = cr.Chunk(chunks[1].Ref)
@@ -1115,9 +1124,9 @@ func TestGCSeriesAccess(t *testing.T) {
 	testutil.Equals(t, (*memSeries)(nil), h.series.getByID(1))
 
 	_, err = cr.Chunk(chunks[0].Ref)
-	testutil.Equals(t, ErrNotFound, err)
+	testutil.Equals(t, storage.ErrNotFound, err)
 	_, err = cr.Chunk(chunks[1].Ref)
-	testutil.Equals(t, ErrNotFound, err)
+	testutil.Equals(t, storage.ErrNotFound, err)
 }
 
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
@@ -1133,7 +1142,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 
 	h.initTime(0)
 
-	app := h.appender()
+	app := h.appender(0, 0)
 	lset := labels.FromStrings("a", "1")
 	_, err = app.Add(lset, 2100, 1)
 	testutil.Ok(t, err)
@@ -1147,8 +1156,9 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer q.Close()
 
-	ss, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
+	ss, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 
 	testutil.Equals(t, true, ss.Next())
 }
@@ -1166,7 +1176,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 
 	h.initTime(0)
 
-	app := h.appender()
+	app := h.appender(0, 0)
 	lset := labels.FromStrings("a", "1")
 	_, err = app.Add(lset, 2100, 1)
 	testutil.Ok(t, err)
@@ -1180,8 +1190,9 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer q.Close()
 
-	ss, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
+	ss, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 
 	testutil.Equals(t, false, ss.Next())
 
@@ -1303,7 +1314,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 
 				// Open the db to trigger a repair.
 				{
-					db, err := Open(dir, nil, nil, DefaultOptions)
+					db, err := Open(dir, nil, nil, DefaultOptions())
 					testutil.Ok(t, err)
 					defer func() {
 						testutil.Ok(t, db.Close())
@@ -1337,15 +1348,14 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 
-	const blockRange = 1000
-	walDir := filepath.Join(dir, "wal")
+	const blockRange = 9 * chunks.DefaultHeadChunkFileMaxTimeRange / 2 // to hold 4 chunks per segment.
 
+	walDir := filepath.Join(dir, "wal")
 	// Fill the chunk segments and corrupt it.
 	{
 		w, err := wal.New(nil, nil, walDir, false)
 		testutil.Ok(t, err)
 
-		chunks.DefaultHeadChunkSegmentTime = int64(blockRange * 4.5) // to hold 4 chunks per segment.
 		h, err := NewHead(nil, nil, w, blockRange, w.Dir(), nil, DefaultStripeSize)
 		testutil.Ok(t, err)
 		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))
@@ -1356,10 +1366,10 @@ func TestHeadReadWriterRepair(t *testing.T) {
 
 		// Create 22 chunks. Hence 6 segment files in total.
 		for i := 0; i < 22; i++ {
-			ok, chunkCreated := s.append(int64(i*blockRange), float64(i*blockRange), h.chunkReadWriter)
+			ok, chunkCreated := s.append(int64(i*int(blockRange)), float64(i*int(blockRange)), 0, h.chunkReadWriter)
 			testutil.Assert(t, ok, "series append failed")
 			testutil.Assert(t, chunkCreated, "chunk was not created")
-			ok, chunkCreated = s.append(int64(i*blockRange)+blockRange-1, float64(i*blockRange), h.chunkReadWriter)
+			ok, chunkCreated = s.append(int64(i*int(blockRange))+blockRange-1, float64(i*int(blockRange)), 0, h.chunkReadWriter)
 			testutil.Assert(t, ok, "series append failed")
 			testutil.Assert(t, !chunkCreated, "chunk was created")
 		}
@@ -1377,7 +1387,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 
 	// Open the db to trigger a repair.
 	{
-		db, err := Open(dir, nil, nil, DefaultOptions)
+		db, err := Open(dir, nil, nil, DefaultOptions())
 		testutil.Ok(t, err)
 		defer func() {
 			testutil.Ok(t, db.Close())
@@ -1454,4 +1464,355 @@ func TestAddDuplicateLabelName(t *testing.T) {
 	add(labels.Labels{{Name: "a", Value: "c"}, {Name: "a", Value: "b"}}, "a")
 	add(labels.Labels{{Name: "a", Value: "c"}, {Name: "a", Value: "c"}}, "a")
 	add(labels.Labels{{Name: "__name__", Value: "up"}, {Name: "job", Value: "prometheus"}, {Name: "le", Value: "500"}, {Name: "le", Value: "400"}, {Name: "unit", Value: "s"}}, "le")
+}
+
+func TestHeadSeriesWithTimeBoundaries(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, wlog, 15, wlog.Dir(), nil, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer h.Close()
+	testutil.Ok(t, h.Init(0))
+	app := h.Appender()
+
+	s1, err := app.Add(labels.FromStrings("foo1", "bar"), 2, 0)
+	testutil.Ok(t, err)
+	for ts := int64(3); ts < 13; ts++ {
+		err = app.AddFast(s1, ts, 0)
+		testutil.Ok(t, err)
+	}
+	s2, err := app.Add(labels.FromStrings("foo2", "bar"), 5, 0)
+	testutil.Ok(t, err)
+	for ts := int64(6); ts < 11; ts++ {
+		err = app.AddFast(s2, ts, 0)
+		testutil.Ok(t, err)
+	}
+	s3, err := app.Add(labels.FromStrings("foo3", "bar"), 5, 0)
+	testutil.Ok(t, err)
+	err = app.AddFast(s3, 6, 0)
+	testutil.Ok(t, err)
+	_, err = app.Add(labels.FromStrings("foo4", "bar"), 9, 0)
+	testutil.Ok(t, err)
+
+	testutil.Ok(t, app.Commit())
+
+	cases := []struct {
+		mint         int64
+		maxt         int64
+		seriesCount  int
+		samplesCount int
+	}{
+		// foo1 ..00000000000..
+		// foo2 .....000000....
+		// foo3 .....00........
+		// foo4 .........0.....
+		{mint: 0, maxt: 0, seriesCount: 0, samplesCount: 0},
+		{mint: 0, maxt: 1, seriesCount: 0, samplesCount: 0},
+		{mint: 0, maxt: 2, seriesCount: 1, samplesCount: 1},
+		{mint: 2, maxt: 2, seriesCount: 1, samplesCount: 1},
+		{mint: 0, maxt: 4, seriesCount: 1, samplesCount: 3},
+		{mint: 0, maxt: 5, seriesCount: 3, samplesCount: 6},
+		{mint: 0, maxt: 6, seriesCount: 3, samplesCount: 9},
+		{mint: 0, maxt: 7, seriesCount: 3, samplesCount: 11},
+		{mint: 0, maxt: 8, seriesCount: 3, samplesCount: 13},
+		{mint: 0, maxt: 9, seriesCount: 4, samplesCount: 16},
+		{mint: 0, maxt: 10, seriesCount: 4, samplesCount: 18},
+		{mint: 0, maxt: 11, seriesCount: 4, samplesCount: 19},
+		{mint: 0, maxt: 12, seriesCount: 4, samplesCount: 20},
+		{mint: 0, maxt: 13, seriesCount: 4, samplesCount: 20},
+		{mint: 0, maxt: 14, seriesCount: 4, samplesCount: 20},
+		{mint: 2, maxt: 14, seriesCount: 4, samplesCount: 20},
+		{mint: 3, maxt: 14, seriesCount: 4, samplesCount: 19},
+		{mint: 4, maxt: 14, seriesCount: 4, samplesCount: 18},
+		{mint: 8, maxt: 9, seriesCount: 3, samplesCount: 5},
+		{mint: 9, maxt: 9, seriesCount: 3, samplesCount: 3},
+		{mint: 6, maxt: 9, seriesCount: 4, samplesCount: 10},
+		{mint: 11, maxt: 11, seriesCount: 1, samplesCount: 1},
+		{mint: 11, maxt: 12, seriesCount: 1, samplesCount: 2},
+		{mint: 11, maxt: 14, seriesCount: 1, samplesCount: 2},
+		{mint: 12, maxt: 14, seriesCount: 1, samplesCount: 1},
+	}
+
+	for i, c := range cases {
+		matcher := labels.MustNewMatcher(labels.MatchEqual, "", "")
+		q, err := NewBlockQuerier(h, c.mint, c.maxt)
+		testutil.Ok(t, err)
+
+		seriesCount := 0
+		samplesCount := 0
+		ss, _, err := q.Select(false, nil, matcher)
+		testutil.Ok(t, err)
+		for ss.Next() {
+			i := ss.At().Iterator()
+			for i.Next() {
+				samplesCount++
+			}
+			seriesCount++
+		}
+		testutil.Ok(t, ss.Err())
+		testutil.Equals(t, c.seriesCount, seriesCount, "test series %d", i)
+		testutil.Equals(t, c.samplesCount, samplesCount, "test samples %d", i)
+		q.Close()
+	}
+}
+
+func TestMemSeriesIsolation(t *testing.T) {
+	// Put a series, select it. GC it and then access it.
+	dir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
+	testutil.Ok(t, err)
+
+	hb, err := NewHead(nil, nil, wlog, 1000, wlog.Dir(), nil, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer hb.Close()
+
+	lastValue := func(maxAppendID uint64) int {
+		idx, err := hb.Index(hb.MinTime(), hb.MaxTime())
+		testutil.Ok(t, err)
+
+		iso := hb.iso.State()
+		iso.maxAppendID = maxAppendID
+
+		querier := &blockQuerier{
+			mint:       0,
+			maxt:       10000,
+			index:      idx,
+			chunks:     hb.chunksRange(math.MinInt64, math.MaxInt64, iso),
+			tombstones: tombstones.NewMemTombstones(),
+		}
+
+		testutil.Ok(t, err)
+		defer querier.Close()
+
+		ss, _, err := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		testutil.Ok(t, err)
+
+		_, seriesSet, err := expandSeriesSet(ss)
+		testutil.Ok(t, err)
+		for _, series := range seriesSet {
+			return int(series[len(series)-1].v)
+		}
+		return -1
+	}
+
+	i := 0
+	for ; i <= 1000; i++ {
+		var app storage.Appender
+		// To initialize bounds.
+		if hb.MinTime() == math.MaxInt64 {
+			app = &initAppender{head: hb, appendID: uint64(i), cleanupAppendIDsBelow: 0}
+		} else {
+			app = hb.appender(uint64(i), 0)
+		}
+
+		_, err := app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+	}
+
+	// Test simple cases in different chunks when no appendID cleanup has been performed.
+	testutil.Equals(t, 10, lastValue(10))
+	testutil.Equals(t, 130, lastValue(130))
+	testutil.Equals(t, 160, lastValue(160))
+	testutil.Equals(t, 240, lastValue(240))
+	testutil.Equals(t, 500, lastValue(500))
+	testutil.Equals(t, 750, lastValue(750))
+	testutil.Equals(t, 995, lastValue(995))
+	testutil.Equals(t, 999, lastValue(999))
+
+	// Cleanup appendIDs below 500.
+	app := hb.appender(uint64(i), 500)
+	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	i++
+
+	// We should not get queries with a maxAppendID below 500 after the cleanup,
+	// but they only take the remaining appendIDs into account.
+	testutil.Equals(t, 499, lastValue(10))
+	testutil.Equals(t, 499, lastValue(130))
+	testutil.Equals(t, 499, lastValue(160))
+	testutil.Equals(t, 499, lastValue(240))
+	testutil.Equals(t, 500, lastValue(500))
+	testutil.Equals(t, 995, lastValue(995))
+	testutil.Equals(t, 999, lastValue(999))
+
+	// Cleanup appendIDs below 1000, which means the sample buffer is
+	// the only thing with appendIDs.
+	app = hb.appender(uint64(i), 1000)
+	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	testutil.Equals(t, 999, lastValue(998))
+	testutil.Equals(t, 999, lastValue(999))
+	testutil.Equals(t, 1000, lastValue(1000))
+	testutil.Equals(t, 1001, lastValue(1001))
+	testutil.Equals(t, 1002, lastValue(1002))
+	testutil.Equals(t, 1002, lastValue(1003))
+
+	i++
+	// Cleanup appendIDs below 1001, but with a rollback.
+	app = hb.appender(uint64(i), 1001)
+	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Rollback())
+	testutil.Equals(t, 1000, lastValue(999))
+	testutil.Equals(t, 1000, lastValue(1000))
+	testutil.Equals(t, 1001, lastValue(1001))
+	testutil.Equals(t, 1002, lastValue(1002))
+	testutil.Equals(t, 1002, lastValue(1003))
+}
+
+func TestIsolationRollback(t *testing.T) {
+	// Rollback after a failed append and test if the low watermark has progressed anyway.
+	dir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
+	testutil.Ok(t, err)
+
+	hb, err := NewHead(nil, nil, wlog, 1000, wlog.Dir(), nil, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer hb.Close()
+
+	app := hb.Appender()
+	_, err = app.Add(labels.FromStrings("foo", "bar"), 0, 0)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	testutil.Equals(t, uint64(1), hb.iso.lowWatermark())
+
+	app = hb.Appender()
+	_, err = app.Add(labels.FromStrings("foo", "bar"), 1, 1)
+	testutil.Ok(t, err)
+	_, err = app.Add(labels.FromStrings("foo", "bar", "foo", "baz"), 2, 2)
+	testutil.NotOk(t, err)
+	testutil.Ok(t, app.Rollback())
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark())
+
+	app = hb.Appender()
+	_, err = app.Add(labels.FromStrings("foo", "bar"), 3, 3)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	testutil.Equals(t, uint64(3), hb.iso.lowWatermark(), "Low watermark should proceed to 3 even if append #2 was rolled back.")
+}
+
+func TestIsolationLowWatermarkMonotonous(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
+	testutil.Ok(t, err)
+
+	hb, err := NewHead(nil, nil, wlog, 1000, wlog.Dir(), nil, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer hb.Close()
+
+	app1 := hb.Appender()
+	_, err = app1.Add(labels.FromStrings("foo", "bar"), 0, 0)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app1.Commit())
+	testutil.Equals(t, uint64(1), hb.iso.lowWatermark(), "Low watermark should by 1 after 1st append.")
+
+	app1 = hb.Appender()
+	_, err = app1.Add(labels.FromStrings("foo", "bar"), 1, 1)
+	testutil.Ok(t, err)
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should be two, even if append is not commited yet.")
+
+	app2 := hb.Appender()
+	_, err = app2.Add(labels.FromStrings("foo", "baz"), 1, 1)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app2.Commit())
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should stay two because app1 is not commited yet.")
+
+	is := hb.iso.State()
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "After simulated read (iso state retrieved), low watermark should stay at 2.")
+
+	testutil.Ok(t, app1.Commit())
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Even after app1 is commited, low watermark should stay at 2 because read is still ongoing.")
+
+	is.Close()
+	testutil.Equals(t, uint64(3), hb.iso.lowWatermark(), "After read has finished (iso state closed), low watermark should jump to three.")
+}
+
+func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, wlog, 1000, wlog.Dir(), nil, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer h.Close()
+
+	h.initTime(0)
+
+	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
+
+	ok, _ := s.append(0, 0, 0, h.chunkReadWriter)
+	testutil.Assert(t, ok, "Series append failed.")
+	testutil.Equals(t, 0, s.txs.txIDCount, "Series should not have an appendID after append with appendID=0.")
+}
+
+func TestHeadSeriesChunkRace(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		testHeadSeriesChunkRace(t)
+	}
+}
+
+func testHeadSeriesChunkRace(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, wlog, 30, wlog.Dir(), nil, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer h.Close()
+	testutil.Ok(t, h.Init(0))
+	app := h.Appender()
+
+	s2, err := app.Add(labels.FromStrings("foo2", "bar"), 5, 0)
+	testutil.Ok(t, err)
+	for ts := int64(6); ts < 11; ts++ {
+		err = app.AddFast(s2, ts, 0)
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, app.Commit())
+
+	var wg sync.WaitGroup
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "", "")
+	q, err := NewBlockQuerier(h, 18, 22)
+	testutil.Ok(t, err)
+	defer q.Close()
+
+	wg.Add(1)
+	go func() {
+		h.updateMinMaxTime(20, 25)
+		h.gc()
+		wg.Done()
+	}()
+	ss, _, err := q.Select(true, nil, matcher)
+	testutil.Ok(t, err)
+	testutil.Ok(t, ss.Err())
+	wg.Wait()
 }

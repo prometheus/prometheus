@@ -6,22 +6,29 @@ type MsgAcceptFunc func(dh Header) MsgAcceptAction
 
 // DefaultMsgAcceptFunc checks the request and will reject if:
 //
-// * isn't a request (don't respond in that case).
+// * isn't a request (don't respond in that case)
+//
 // * opcode isn't OpcodeQuery or OpcodeNotify
+//
 // * Zero bit isn't zero
+//
 // * has more than 1 question in the question section
+//
 // * has more than 1 RR in the Answer section
+//
 // * has more than 0 RRs in the Authority section
+//
 // * has more than 2 RRs in the Additional section
+//
 var DefaultMsgAcceptFunc MsgAcceptFunc = defaultMsgAcceptFunc
 
 // MsgAcceptAction represents the action to be taken.
 type MsgAcceptAction int
 
 const (
-	MsgAccept         MsgAcceptAction = iota // Accept the message
-	MsgReject                                // Reject the message with a RcodeFormatError
-	MsgIgnore                                // Ignore the error and send nothing back.
+	MsgAccept               MsgAcceptAction = iota // Accept the message
+	MsgReject                                      // Reject the message with a RcodeFormatError
+	MsgIgnore                                      // Ignore the error and send nothing back.
 	MsgRejectNotImplemented                        // Reject the message with a RcodeNotImplemented
 )
 

@@ -69,6 +69,15 @@ else
 	GO_BUILD_PLATFORM ?= $(GOHOSTOS)-$(GOHOSTARCH)
 endif
 
+GOTEST := $(GO) test
+GOTEST_DIR :=
+ifneq ($(CIRCLE_JOB),)
+ifneq ($(shell which gotestsum),)
+	GOTEST_DIR := test-results
+	GOTEST := gotestsum --junitfile $(GOTEST_DIR)/unit-tests.xml --
+endif
+endif
+
 PROMU_VERSION ?= 0.5.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
 
@@ -142,14 +151,17 @@ else
 endif
 
 .PHONY: common-test-short
-common-test-short:
+common-test-short: $(GOTEST_DIR)
 	@echo ">> running short tests"
-	GO111MODULE=$(GO111MODULE) $(GO) test -short $(GOOPTS) $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GOTEST) -short $(GOOPTS) $(pkgs)
 
 .PHONY: common-test
-common-test:
+common-test: $(GOTEST_DIR)
 	@echo ">> running all tests"
-	GO111MODULE=$(GO111MODULE) $(GO) test $(test-flags) $(GOOPTS) $(pkgs)
+	GO111MODULE=$(GO111MODULE) $(GOTEST) $(test-flags) $(GOOPTS) $(pkgs)
+
+$(GOTEST_DIR):
+	@mkdir -p $@
 
 .PHONY: common-format
 common-format:

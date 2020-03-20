@@ -15,11 +15,13 @@ package storage
 
 import (
 	"math"
+
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.
 type BufferedSeriesIterator struct {
-	it    SeriesIterator
+	it    chunkenc.Iterator
 	buf   *sampleRing
 	delta int64
 
@@ -31,12 +33,12 @@ type BufferedSeriesIterator struct {
 // of the current element and the duration of delta before, initialized with an
 // empty iterator. Use Reset() to set an actual iterator to be buffered.
 func NewBuffer(delta int64) *BufferedSeriesIterator {
-	return NewBufferIterator(&NoopSeriesIt, delta)
+	return NewBufferIterator(chunkenc.NewNopIterator(), delta)
 }
 
 // NewBufferIterator returns a new iterator that buffers the values within the
 // time range of the current element and the duration of delta before.
-func NewBufferIterator(it SeriesIterator, delta int64) *BufferedSeriesIterator {
+func NewBufferIterator(it chunkenc.Iterator, delta int64) *BufferedSeriesIterator {
 	bit := &BufferedSeriesIterator{
 		buf:   newSampleRing(delta, 16),
 		delta: delta,
@@ -48,7 +50,7 @@ func NewBufferIterator(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 
 // Reset re-uses the buffer with a new iterator, resetting the buffered time
 // delta to its original value.
-func (b *BufferedSeriesIterator) Reset(it SeriesIterator) {
+func (b *BufferedSeriesIterator) Reset(it chunkenc.Iterator) {
 	b.it = it
 	b.lastTime = math.MinInt64
 	b.ok = true
@@ -70,7 +72,7 @@ func (b *BufferedSeriesIterator) PeekBack(n int) (t int64, v float64, ok bool) {
 
 // Buffer returns an iterator over the buffered data. Invalidates previously
 // returned iterators.
-func (b *BufferedSeriesIterator) Buffer() SeriesIterator {
+func (b *BufferedSeriesIterator) Buffer() chunkenc.Iterator {
 	return b.buf.iterator()
 }
 
@@ -159,7 +161,7 @@ func (r *sampleRing) reset() {
 }
 
 // Returns the current iterator. Invalidates previously returned iterators.
-func (r *sampleRing) iterator() SeriesIterator {
+func (r *sampleRing) iterator() chunkenc.Iterator {
 	r.it.r = r
 	r.it.i = -1
 	return &r.it

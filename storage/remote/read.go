@@ -57,16 +57,9 @@ type querier struct {
 	client     *Client
 }
 
-// Select implements storage.Querier and uses the given matchers to read series
-// sets from the Client.
-func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	return q.SelectSorted(p, matchers...)
-}
-
-// SelectSorted implements storage.Querier and uses the given matchers to read series
-// sets from the Client.
-func (q *querier) SelectSorted(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	query, err := ToQuery(q.mint, q.maxt, matchers, p)
+// Select implements storage.Querier and uses the given matchers to read series sets from the Client.
+func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	query, err := ToQuery(q.mint, q.maxt, matchers, hints)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -80,12 +73,11 @@ func (q *querier) SelectSorted(p *storage.SelectParams, matchers ...*labels.Matc
 		return nil, nil, fmt.Errorf("remote_read: %v", err)
 	}
 
-	// FromQueryResult sorts.
-	return FromQueryResult(res), nil, nil
+	return FromQueryResult(sortSeries, res), nil, nil
 }
 
 // LabelValues implements storage.Querier and is a noop.
-func (q *querier) LabelValues(name string) ([]string, storage.Warnings, error) {
+func (q *querier) LabelValues(string) ([]string, storage.Warnings, error) {
 	// TODO implement?
 	return nil, nil, nil
 }
@@ -124,9 +116,9 @@ type externalLabelsQuerier struct {
 // Select adds equality matchers for all external labels to the list of matchers
 // before calling the wrapped storage.Queryable. The added external labels are
 // removed from the returned series sets.
-func (q externalLabelsQuerier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q externalLabelsQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	m, added := q.addExternalLabels(matchers)
-	s, warnings, err := q.Querier.Select(p, m...)
+	s, warnings, err := q.Querier.Select(sortSeries, hints, m...)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -177,7 +169,7 @@ type requiredMatchersQuerier struct {
 
 // Select returns a NoopSeriesSet if the given matchers don't match the label
 // set of the requiredMatchersQuerier. Otherwise it'll call the wrapped querier.
-func (q requiredMatchersQuerier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q requiredMatchersQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	ms := q.requiredMatchers
 	for _, m := range matchers {
 		for i, r := range ms {
@@ -193,7 +185,7 @@ func (q requiredMatchersQuerier) Select(p *storage.SelectParams, matchers ...*la
 	if len(ms) > 0 {
 		return storage.NoopSeriesSet(), nil, nil
 	}
-	return q.Querier.Select(p, matchers...)
+	return q.Querier.Select(sortSeries, hints, matchers...)
 }
 
 // addExternalLabels adds matchers for each external label. External labels

@@ -175,3 +175,281 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 		testutil.Equals(t, c.LabelName, l, "test %d: incorrect label name", i)
 	}
 }
+
+func TestLabels_WithoutEmpty(t *testing.T) {
+	tests := []struct {
+		input    Labels
+		expected Labels
+	}{
+		{
+			input: Labels{
+				{
+					Name:  "__name__",
+					Value: "test",
+				},
+				{
+					Name: "foo",
+				},
+				{
+					Name:  "hostname",
+					Value: "localhost",
+				},
+				{
+					Name: "bar",
+				},
+				{
+					Name:  "job",
+					Value: "check",
+				},
+			},
+			expected: Labels{
+				{
+					Name:  "__name__",
+					Value: "test",
+				},
+				{
+					Name:  "hostname",
+					Value: "localhost",
+				},
+				{
+					Name:  "job",
+					Value: "check",
+				},
+			},
+		},
+		{
+			input: Labels{
+				{
+					Name:  "__name__",
+					Value: "test",
+				},
+				{
+					Name:  "hostname",
+					Value: "localhost",
+				},
+				{
+					Name:  "job",
+					Value: "check",
+				},
+			},
+			expected: Labels{
+				{
+					Name:  "__name__",
+					Value: "test",
+				},
+				{
+					Name:  "hostname",
+					Value: "localhost",
+				},
+				{
+					Name:  "job",
+					Value: "check",
+				},
+			},
+		},
+	}
+
+	for i, test := range tests {
+		got := test.input.WithoutEmpty()
+		testutil.Equals(t, test.expected, got, "unexpected labelset for test case %d", i)
+	}
+}
+
+func TestLabels_Equal(t *testing.T) {
+	labels := Labels{
+		{
+			Name:  "aaa",
+			Value: "111",
+		},
+		{
+			Name:  "bbb",
+			Value: "222",
+		},
+	}
+
+	tests := []struct {
+		compared Labels
+		expected bool
+	}{
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "111",
+				},
+				{
+					Name:  "bbb",
+					Value: "222",
+				},
+				{
+					Name:  "ccc",
+					Value: "333",
+				},
+			},
+			expected: false,
+		},
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "111",
+				},
+				{
+					Name:  "bar",
+					Value: "222",
+				},
+			},
+			expected: false,
+		},
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "111",
+				},
+				{
+					Name:  "bbb",
+					Value: "233",
+				},
+			},
+			expected: false,
+		},
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "111",
+				},
+				{
+					Name:  "bbb",
+					Value: "222",
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for i, test := range tests {
+		got := Equal(labels, test.compared)
+		testutil.Equals(t, test.expected, got, "unexpected comparison result for test case %d", i)
+	}
+}
+
+func TestLabels_Compare(t *testing.T) {
+	labels := Labels{
+		{
+			Name:  "aaa",
+			Value: "111",
+		},
+		{
+			Name:  "bbb",
+			Value: "222",
+		},
+	}
+
+	tests := []struct {
+		compared Labels
+		expected int
+	}{
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "110",
+				},
+				{
+					Name:  "bbb",
+					Value: "222",
+				},
+			},
+			expected: 1,
+		},
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "111",
+				},
+				{
+					Name:  "bbb",
+					Value: "233",
+				},
+			},
+			expected: -1,
+		},
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "111",
+				},
+				{
+					Name:  "bar",
+					Value: "222",
+				},
+			},
+			expected: 1,
+		},
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "111",
+				},
+				{
+					Name:  "bbc",
+					Value: "222",
+				},
+			},
+			expected: -1,
+		},
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "111",
+				},
+			},
+			expected: 1,
+		},
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "111",
+				},
+				{
+					Name:  "bbb",
+					Value: "222",
+				},
+				{
+					Name:  "ccc",
+					Value: "333",
+				},
+				{
+					Name:  "ddd",
+					Value: "444",
+				},
+			},
+			expected: -2,
+		},
+		{
+			compared: Labels{
+				{
+					Name:  "aaa",
+					Value: "111",
+				},
+				{
+					Name:  "bbb",
+					Value: "222",
+				},
+			},
+			expected: 0,
+		},
+	}
+
+	for i, test := range tests {
+		got := Compare(labels, test.compared)
+		testutil.Equals(t, test.expected, got, "unexpected comparison result for test case %d", i)
+	}
+}

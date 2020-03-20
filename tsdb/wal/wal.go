@@ -190,7 +190,7 @@ type walMetrics struct {
 	writesFailed    prometheus.Counter
 }
 
-func newWALMetrics(w *WAL, r prometheus.Registerer) *walMetrics {
+func newWALMetrics(r prometheus.Registerer) *walMetrics {
 	m := &walMetrics{}
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -264,7 +264,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		stopc:       make(chan chan struct{}),
 		compress:    compress,
 	}
-	w.metrics = newWALMetrics(w, reg)
+	w.metrics = newWALMetrics(reg)
 
 	_, last, err := w.Segments()
 	if err != nil {
@@ -293,7 +293,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 }
 
 // Open an existing WAL.
-func Open(logger log.Logger, reg prometheus.Registerer, dir string) (*WAL, error) {
+func Open(logger log.Logger, dir string) (*WAL, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}

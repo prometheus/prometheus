@@ -190,7 +190,7 @@ func (w *Writer) cut() error {
 		return err
 	}
 
-	n, f, _, err := cutSegmentFile(w.dirFile, chunksFormatV1, w.segmentSize)
+	n, f, _, err := cutSegmentFile(w.dirFile, MagicChunks, chunksFormatV1, w.segmentSize)
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ func (w *Writer) cut() error {
 	return nil
 }
 
-func cutSegmentFile(dirFile *os.File, chunksFormat byte, segmentSize int64) (headerSize int, newFile *os.File, seq int, err error) {
+func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64) (headerSize int, newFile *os.File, seq int, err error) {
 	p, seq, err := nextSequenceFile(dirFile.Name())
 	if err != nil {
 		return 0, nil, 0, err
@@ -215,8 +215,8 @@ func cutSegmentFile(dirFile *os.File, chunksFormat byte, segmentSize int64) (hea
 	if err != nil {
 		return 0, nil, 0, err
 	}
-	if segmentSize > 0 {
-		if err = fileutil.Preallocate(f, segmentSize, true); err != nil {
+	if allocSize > 0 {
+		if err = fileutil.Preallocate(f, allocSize, true); err != nil {
 			return 0, nil, 0, err
 		}
 	}
@@ -226,7 +226,7 @@ func cutSegmentFile(dirFile *os.File, chunksFormat byte, segmentSize int64) (hea
 
 	// Write header metadata for new file.
 	metab := make([]byte, SegmentHeaderSize)
-	binary.BigEndian.PutUint32(metab[:MagicChunksSize], MagicChunks)
+	binary.BigEndian.PutUint32(metab[:MagicChunksSize], magicNumber)
 	metab[4] = chunksFormat
 
 	n, err := f.Write(metab)

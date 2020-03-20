@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -41,6 +40,7 @@ import (
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -189,11 +190,11 @@ type rulesRetrieverMock struct {
 }
 
 func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
-	expr1, err := promql.ParseExpr(`absent(test_metric3) != 1`)
+	expr1, err := parser.ParseExpr(`absent(test_metric3) != 1`)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
-	expr2, err := promql.ParseExpr(`up == 1`)
+	expr2, err := parser.ParseExpr(`up == 1`)
 	if err != nil {
 		m.testing.Fatalf("Unable to parse alert expression: %s", err)
 	}
@@ -251,14 +252,21 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 		r = append(r, alertrule)
 	}
 
-	recordingExpr, err := promql.ParseExpr(`vector(1)`)
+	recordingExpr, err := parser.ParseExpr(`vector(1)`)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
 	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
 	r = append(r, recordingRule)
 
-	group := rules.NewGroup("grp", "/path/to/file", time.Second, r, false, opts)
+	group := rules.NewGroup(rules.GroupOptions{
+		Name:          "grp",
+		File:          "/path/to/file",
+		Interval:      time.Second,
+		Rules:         r,
+		ShouldRestore: false,
+		Opts:          opts,
+	})
 	return []*rules.Group{group}
 }
 
@@ -480,9 +488,9 @@ func setupRemote(s storage.Storage) *httptest.Server {
 				return
 			}
 
-			var selectParams *storage.SelectParams
+			var hints *storage.SelectHints
 			if query.Hints != nil {
-				selectParams = &storage.SelectParams{
+				hints = &storage.SelectHints{
 					Start: query.Hints.StartMs,
 					End:   query.Hints.EndMs,
 					Step:  query.Hints.StepMs,
@@ -497,7 +505,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			}
 			defer querier.Close()
 
-			set, _, err := querier.Select(selectParams, matchers...)
+			set, _, err := querier.Select(false, hints, matchers...)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -545,7 +553,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"time":  []string{"123.4"},
 			},
 			response: &queryData{
-				ResultType: promql.ValueTypeScalar,
+				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 2,
 					T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
@@ -559,7 +567,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"time":  []string{"1970-01-01T00:02:03Z"},
 			},
 			response: &queryData{
-				ResultType: promql.ValueTypeScalar,
+				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
 					T: timestamp.FromTime(start.Add(123 * time.Second)),
@@ -573,7 +581,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"time":  []string{"1970-01-01T01:02:03+01:00"},
 			},
 			response: &queryData{
-				ResultType: promql.ValueTypeScalar,
+				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
 					T: timestamp.FromTime(start.Add(123 * time.Second)),
@@ -586,7 +594,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"query": []string{"0.333"},
 			},
 			response: &queryData{
-				ResultType: promql.ValueTypeScalar,
+				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
 					T: timestamp.FromTime(api.now()),
@@ -602,7 +610,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"step":  []string{"1"},
 			},
 			response: &queryData{
-				ResultType: promql.ValueTypeMatrix,
+				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
 						Points: []promql.Point{
@@ -819,8 +827,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						GlobalURL:          "http://localhost:9115/probe?target=example.com",
 						Health:             "down",
-						LastError:          "failed",
+						LastError:          "failed: missing port in address",
 						LastScrape:         scrapeStart,
 						LastScrapeDuration: 0.1,
 					},
@@ -831,6 +840,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
+						GlobalURL:          "http://example.com:8080/metrics",
 						Health:             "up",
 						LastError:          "",
 						LastScrape:         scrapeStart,
@@ -863,8 +873,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						GlobalURL:          "http://localhost:9115/probe?target=example.com",
 						Health:             "down",
-						LastError:          "failed",
+						LastError:          "failed: missing port in address",
 						LastScrape:         scrapeStart,
 						LastScrapeDuration: 0.1,
 					},
@@ -875,6 +886,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
+						GlobalURL:          "http://example.com:8080/metrics",
 						Health:             "up",
 						LastError:          "",
 						LastScrape:         scrapeStart,
@@ -907,8 +919,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
+						GlobalURL:          "http://localhost:9115/probe?target=example.com",
 						Health:             "down",
-						LastError:          "failed",
+						LastError:          "failed: missing port in address",
 						LastScrape:         scrapeStart,
 						LastScrapeDuration: 0.1,
 					},
@@ -919,6 +932,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						},
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
+						GlobalURL:          "http://example.com:8080/metrics",
 						Health:             "up",
 						LastError:          "",
 						LastScrape:         scrapeStart,
@@ -1601,7 +1615,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
 	testutil.Ok(t, err)
 
-	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
+	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
 	testutil.Ok(t, err)
 
 	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
@@ -1700,10 +1714,20 @@ func TestStreamReadEndpoint(t *testing.T) {
 	matcher3, err := labels.NewMatcher(labels.MatchEqual, "foo", "bar1")
 	testutil.Ok(t, err)
 
-	query1, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
+	query1, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{
+		Step:  1,
+		Func:  "avg",
+		Start: 0,
+		End:   14400001,
+	})
 	testutil.Ok(t, err)
 
-	query2, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectParams{Step: 0, Func: "avg"})
+	query2, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectHints{
+		Step:  1,
+		Func:  "avg",
+		Start: 0,
+		End:   14400001,
+	})
 	testutil.Ok(t, err)
 
 	req := &prompb.ReadRequest{
@@ -2148,6 +2172,68 @@ func TestRespondError(t *testing.T) {
 	}
 }
 
+func TestParseTimeParam(t *testing.T) {
+	type resultType struct {
+		asTime  time.Time
+		asError func() error
+	}
+
+	ts, err := parseTime("1582468023986")
+	testutil.Ok(t, err)
+
+	var tests = []struct {
+		paramName    string
+		paramValue   string
+		defaultValue time.Time
+		result       resultType
+	}{
+		{ // When data is valid.
+			paramName:    "start",
+			paramValue:   "1582468023986",
+			defaultValue: minTime,
+			result: resultType{
+				asTime:  ts,
+				asError: nil,
+			},
+		},
+		{ // When data is empty string.
+			paramName:    "end",
+			paramValue:   "",
+			defaultValue: maxTime,
+			result: resultType{
+				asTime:  maxTime,
+				asError: nil,
+			},
+		},
+		{ // When data is not valid.
+			paramName:    "foo",
+			paramValue:   "baz",
+			defaultValue: maxTime,
+			result: resultType{
+				asTime: time.Time{},
+				asError: func() error {
+					_, err := parseTime("baz")
+					return errors.Wrapf(err, "Invalid time value for '%s'", "foo")
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		req, err := http.NewRequest("GET", "localhost:42/foo?"+test.paramName+"="+test.paramValue, nil)
+		testutil.Ok(t, err)
+
+		result := test.result
+		asTime, err := parseTimeParam(req, test.paramName, test.defaultValue)
+
+		if err != nil {
+			testutil.ErrorEqual(t, result.asError(), err)
+		} else {
+			testutil.Assert(t, asTime.Equal(result.asTime), "time as return value: %s not parsed correctly. Expected %s. Actual %s", test.paramValue, result.asTime, asTime)
+		}
+	}
+}
+
 func TestParseTime(t *testing.T) {
 	ts, err := time.Parse(time.RFC3339Nano, "2015-06-03T13:21:58.555Z")
 	if err != nil {
@@ -2295,7 +2381,7 @@ func TestRespond(t *testing.T) {
 	}{
 		{
 			response: &queryData{
-				ResultType: promql.ValueTypeMatrix,
+				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
 						Points: []promql.Point{{V: 1, T: 1000}},
@@ -2441,7 +2527,7 @@ func BenchmarkRespond(b *testing.B) {
 		points = append(points, promql.Point{V: float64(i * 1000000), T: int64(i)})
 	}
 	response := &queryData{
-		ResultType: promql.ValueTypeMatrix,
+		ResultType: parser.ValueTypeMatrix,
 		Result: promql.Matrix{
 			promql.Series{
 				Points: points,

@@ -456,10 +456,10 @@ func metaRange(name string, mint, maxt int64, stats *BlockStats) dirMeta {
 
 type erringBReader struct{}
 
-func (erringBReader) Index() (IndexReader, error)            { return nil, errors.New("index") }
-func (erringBReader) Chunks() (ChunkReader, error)           { return nil, errors.New("chunks") }
-func (erringBReader) Tombstones() (tombstones.Reader, error) { return nil, errors.New("tombstones") }
-func (erringBReader) Meta() BlockMeta                        { return BlockMeta{} }
+func (erringBReader) Index(int64, int64) (IndexReader, error) { return nil, errors.New("index") }
+func (erringBReader) Chunks() (ChunkReader, error)            { return nil, errors.New("chunks") }
+func (erringBReader) Tombstones() (tombstones.Reader, error)  { return nil, errors.New("tombstones") }
+func (erringBReader) Meta() BlockMeta                         { return BlockMeta{} }
 
 type nopChunkWriter struct{}
 
@@ -652,7 +652,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			expErr:         errors.New("found chunk with minTime: 10 maxTime: 30 outside of compacted minTime: 0 maxTime: 20"),
 		},
 		{
-			// Introduced by https://github.com/prometheus/prometheus/tsdb/issues/347.
+			// Introduced by https://github.com/prometheus/tsdb/issues/347.
 			title: "Populate from single block containing extra chunk",
 			inputSeriesSamples: [][]seriesSamples{
 				{
@@ -692,7 +692,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			},
 		},
 		{
-			// Introduced by https://github.com/prometheus/prometheus/tsdb/pull/539.
+			// Introduced by https://github.com/prometheus/tsdb/pull/539.
 			title: "Populate from three blocks that the last two are overlapping.",
 			inputSeriesSamples: [][]seriesSamples{
 				{
@@ -900,13 +900,13 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 // This is needed for unit tests that rely on
 // checking state before and after a compaction.
 func TestDisableAutoCompactions(t *testing.T) {
-	db, delete := openTestDB(t, nil)
+	db, closeFn := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		delete()
+		closeFn()
 	}()
 
-	blockRange := DefaultOptions.BlockRanges[0]
+	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
 	label := labels.FromStrings("foo", "bar")
 
 	// Trigger a compaction to check that it was skipped and
@@ -976,7 +976,7 @@ func TestCancelCompactions(t *testing.T) {
 	// Measure the compaction time without interrupting it.
 	var timeCompactionUninterrupted time.Duration
 	{
-		db, err := Open(tmpdir, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
+		db, err := open(tmpdir, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000})
 		testutil.Ok(t, err)
 		testutil.Equals(t, 3, len(db.Blocks()), "initial block count mismatch")
 		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
@@ -996,7 +996,7 @@ func TestCancelCompactions(t *testing.T) {
 	}
 	// Measure the compaction time when closing the db in the middle of compaction.
 	{
-		db, err := Open(tmpdirCopy, log.NewNopLogger(), nil, &Options{BlockRanges: []int64{1, 2000}})
+		db, err := open(tmpdirCopy, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000})
 		testutil.Ok(t, err)
 		testutil.Equals(t, 3, len(db.Blocks()), "initial block count mismatch")
 		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
@@ -1022,10 +1022,9 @@ func TestCancelCompactions(t *testing.T) {
 // TestDeleteCompactionBlockAfterFailedReload ensures that a failed reload immediately after a compaction
 // deletes the resulting block to avoid creatings blocks with the same time range.
 func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
-
 	tests := map[string]func(*DB) int{
 		"Test Head Compaction": func(db *DB) int {
-			rangeToTriggerCompaction := db.opts.BlockRanges[0]/2*3 - 1
+			rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 - 1
 			defaultLabel := labels.FromStrings("foo", "bar")
 
 			// Add some data to the head that is enough to trigger a compaction.
@@ -1058,12 +1057,10 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 	for title, bootStrap := range tests {
 		t.Run(title, func(t *testing.T) {
-			db, delete := openTestDB(t, &Options{
-				BlockRanges: []int64{1, 100},
-			})
+			db, closeFn := openTestDB(t, nil, []int64{1, 100})
 			defer func() {
 				testutil.Ok(t, db.Close())
-				delete()
+				closeFn()
 			}()
 			db.DisableCompactions()
 

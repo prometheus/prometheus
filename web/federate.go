@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -54,7 +55,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var matcherSets [][]*labels.Matcher
 	for _, s := range req.Form["match[]"] {
-		matchers, err := promql.ParseMetricSelector(s)
+		matchers, err := parser.ParseMetricSelector(s)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -80,14 +81,11 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	vec := make(promql.Vector, 0, 8000)
 
-	params := &storage.SelectParams{
-		Start: mint,
-		End:   maxt,
-	}
+	hints := &storage.SelectHints{Start: mint, End: maxt}
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s, wrns, err := q.Select(params, mset...)
+		s, wrns, err := q.Select(false, hints, mset...)
 		if wrns != nil {
 			level.Debug(h.logger).Log("msg", "federation select returned warnings", "warnings", wrns)
 			federationWarnings.Add(float64(len(wrns)))

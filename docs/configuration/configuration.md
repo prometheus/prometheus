@@ -428,6 +428,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_ec2_availability_zone`: the availability zone in which the instance is running
 * `__meta_ec2_instance_id`: the EC2 instance ID
+* `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
 * `__meta_ec2_instance_state`: the state of the EC2 instance
 * `__meta_ec2_instance_type`: the type of the EC2 instance
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
@@ -498,6 +499,7 @@ address defaults to the `host_ip` attribute of the hypervisor.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_openstack_hypervisor_host_ip`: the hypervisor node's IP address.
+* `__meta_openstack_hypervisor_id`: the hypervisor node's ID.
 * `__meta_openstack_hypervisor_name`: the hypervisor node's name.
 * `__meta_openstack_hypervisor_state`: the hypervisor node's state.
 * `__meta_openstack_hypervisor_status`: the hypervisor node's status.
@@ -743,6 +745,7 @@ Available meta labels:
 * `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
 * `__meta_kubernetes_service_port_protocol`: Protocol of the service port for the target.
+* `__meta_kubernetes_service_type`: The type of the service.
 
 #### `pod`
 
@@ -854,6 +857,23 @@ tls_config:
 namespaces:
   names:
     [ - <string> ]
+
+# Optional label and field selectors to limit the discovery process to a subset of available resources. 
+# See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
+# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible 
+# filters that can be used. Endpoints role supports pod, service and endpoints selectors, other roles
+# only support selectors matching the role itself (e.g. node role can only contain node selectors).
+
+# Note: When making decision about using field/label selector make sure that this 
+# is the best approach - it will prevent Prometheus from reusing single list/watch
+# for all scrape configs. This might result in a bigger load on the Kubernetes API,
+# because per each selector combination there will be additional LIST/WATCH. On the other hand,
+# if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
+# Decision, if selectors should be used or not depends on the particular situation.
+[ selectors:
+  [ - role: <role>  
+    [ label: <string> ]
+    [ field: <string> ] ]]
 ```
 
 Where `<role>` must be `endpoints`, `service`, `pod`, `node`, or

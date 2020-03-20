@@ -37,22 +37,23 @@ import (
 )
 
 const (
-	ec2Label                = model.MetaLabelPrefix + "ec2_"
-	ec2LabelAZ              = ec2Label + "availability_zone"
-	ec2LabelInstanceID      = ec2Label + "instance_id"
-	ec2LabelInstanceState   = ec2Label + "instance_state"
-	ec2LabelInstanceType    = ec2Label + "instance_type"
-	ec2LabelOwnerID         = ec2Label + "owner_id"
-	ec2LabelPlatform        = ec2Label + "platform"
-	ec2LabelPublicDNS       = ec2Label + "public_dns_name"
-	ec2LabelPublicIP        = ec2Label + "public_ip"
-	ec2LabelPrivateDNS      = ec2Label + "private_dns_name"
-	ec2LabelPrivateIP       = ec2Label + "private_ip"
-	ec2LabelPrimarySubnetID = ec2Label + "primary_subnet_id"
-	ec2LabelSubnetID        = ec2Label + "subnet_id"
-	ec2LabelTag             = ec2Label + "tag_"
-	ec2LabelVPCID           = ec2Label + "vpc_id"
-	subnetSeparator         = ","
+	ec2Label                  = model.MetaLabelPrefix + "ec2_"
+	ec2LabelAZ                = ec2Label + "availability_zone"
+	ec2LabelInstanceID        = ec2Label + "instance_id"
+	ec2LabelInstanceState     = ec2Label + "instance_state"
+	ec2LabelInstanceType      = ec2Label + "instance_type"
+	ec2LabelInstanceLifecycle = ec2Label + "instance_lifecycle"
+	ec2LabelOwnerID           = ec2Label + "owner_id"
+	ec2LabelPlatform          = ec2Label + "platform"
+	ec2LabelPublicDNS         = ec2Label + "public_dns_name"
+	ec2LabelPublicIP          = ec2Label + "public_ip"
+	ec2LabelPrivateDNS        = ec2Label + "private_dns_name"
+	ec2LabelPrivateIP         = ec2Label + "private_ip"
+	ec2LabelPrimarySubnetID   = ec2Label + "primary_subnet_id"
+	ec2LabelSubnetID          = ec2Label + "subnet_id"
+	ec2LabelTag               = ec2Label + "tag_"
+	ec2LabelVPCID             = ec2Label + "vpc_id"
+	subnetSeparator           = ","
 )
 
 // DefaultSDConfig is the default EC2 SD configuration.
@@ -213,6 +214,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
 				labels[ec2LabelInstanceState] = model.LabelValue(*inst.State.Name)
 				labels[ec2LabelInstanceType] = model.LabelValue(*inst.InstanceType)
+
+				if inst.InstanceLifecycle != nil {
+					labels[ec2LabelInstanceLifecycle] = model.LabelValue(*inst.InstanceLifecycle)
+				}
 
 				if inst.VpcId != nil {
 					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)

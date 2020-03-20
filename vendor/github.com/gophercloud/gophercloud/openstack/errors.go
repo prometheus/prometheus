@@ -4,8 +4,6 @@ import (
 	"fmt"
 
 	"github.com/gophercloud/gophercloud"
-	tokens2 "github.com/gophercloud/gophercloud/openstack/identity/v2/tokens"
-	tokens3 "github.com/gophercloud/gophercloud/openstack/identity/v3/tokens"
 )
 
 // ErrEndpointNotFound is the error when no suitable endpoint can be found
@@ -22,28 +20,6 @@ type ErrInvalidAvailabilityProvided struct{ gophercloud.ErrInvalidInput }
 
 func (e ErrInvalidAvailabilityProvided) Error() string {
 	return fmt.Sprintf("Unexpected availability in endpoint query: %s", e.Value)
-}
-
-// ErrMultipleMatchingEndpointsV2 is the error when more than one endpoint
-// for the given options is found in the v2 catalog
-type ErrMultipleMatchingEndpointsV2 struct {
-	gophercloud.BaseError
-	Endpoints []tokens2.Endpoint
-}
-
-func (e ErrMultipleMatchingEndpointsV2) Error() string {
-	return fmt.Sprintf("Discovered %d matching endpoints: %#v", len(e.Endpoints), e.Endpoints)
-}
-
-// ErrMultipleMatchingEndpointsV3 is the error when more than one endpoint
-// for the given options is found in the v3 catalog
-type ErrMultipleMatchingEndpointsV3 struct {
-	gophercloud.BaseError
-	Endpoints []tokens3.Endpoint
-}
-
-func (e ErrMultipleMatchingEndpointsV3) Error() string {
-	return fmt.Sprintf("Discovered %d matching endpoints: %#v", len(e.Endpoints), e.Endpoints)
 }
 
 // ErrNoAuthURL is the error when the OS_AUTH_URL environment variable is not

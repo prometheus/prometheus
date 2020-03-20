@@ -79,22 +79,22 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 }
 
 // ToQuery builds a Query proto.
-func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams) (*prompb.Query, error) {
+func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHints) (*prompb.Query, error) {
 	ms, err := toLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
 
 	var rp *prompb.ReadHints
-	if p != nil {
+	if hints != nil {
 		rp = &prompb.ReadHints{
-			StepMs:   p.Step,
-			Func:     p.Func,
-			StartMs:  p.Start,
-			EndMs:    p.End,
-			Grouping: p.Grouping,
-			By:       p.By,
-			RangeMs:  p.Range,
+			StartMs:  hints.Start,
+			EndMs:    hints.End,
+			StepMs:   hints.Step,
+			Func:     hints.Func,
+			Grouping: hints.Grouping,
+			By:       hints.By,
+			RangeMs:  hints.Range,
 		}
 	}
 
@@ -145,7 +145,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 }
 
 // FromQueryResult unpacks and sorts a QueryResult proto.
-func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
+func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
 		labels := labelProtosToLabels(ts.Labels)
@@ -158,7 +158,10 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 			samples: ts.Samples,
 		})
 	}
-	sort.Sort(byLabel(series))
+
+	if sortSeries {
+		sort.Sort(byLabel(series))
+	}
 	return &concreteSeriesSet{
 		series: series,
 	}
@@ -221,7 +224,6 @@ func StreamChunkedReadResponses(
 			if len(chks) == 0 {
 				break
 			}
-
 			b, err := proto.Marshal(&prompb.ChunkedReadResponse{
 				ChunkedSeries: []*prompb.ChunkedSeries{
 					{
@@ -254,7 +256,7 @@ func StreamChunkedReadResponses(
 }
 
 // encodeChunks expects iterator to be ready to use (aka iter.Next() called before invoking).
-func encodeChunks(iter storage.SeriesIterator, chks []prompb.Chunk, frameBytesLeft int) ([]prompb.Chunk, error) {
+func encodeChunks(iter chunkenc.Iterator, chks []prompb.Chunk, frameBytesLeft int) ([]prompb.Chunk, error) {
 	const maxSamplesInChunk = 120
 
 	var (
@@ -392,7 +394,7 @@ func (c *concreteSeries) Labels() labels.Labels {
 	return labels.New(c.labels...)
 }
 
-func (c *concreteSeries) Iterator() storage.SeriesIterator {
+func (c *concreteSeries) Iterator() chunkenc.Iterator {
 	return newConcreteSeriersIterator(c)
 }
 
@@ -402,7 +404,7 @@ type concreteSeriesIterator struct {
 	series *concreteSeries
 }
 
-func newConcreteSeriersIterator(series *concreteSeries) storage.SeriesIterator {
+func newConcreteSeriersIterator(series *concreteSeries) chunkenc.Iterator {
 	return &concreteSeriesIterator{
 		cur:    -1,
 		series: series,

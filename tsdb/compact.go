@@ -15,10 +15,10 @@ package tsdb
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,6 +30,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -412,8 +413,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		uids = append(uids, meta.ULID.String())
 	}
 
-	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	uid = ulid.MustNew(ulid.Now(), entropy)
+	uid = ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := compactBlockMetas(uid, metas...)
 	err = c.write(dest, meta, blocks...)
@@ -467,8 +467,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
 	start := time.Now()
 
-	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	uid := ulid.MustNew(ulid.Now(), entropy)
+	uid := ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := &BlockMeta{
 		ULID:    uid,
@@ -649,7 +648,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	var (
-		set         ChunkSeriesSet
+		set         storage.ChunkSeriesSet
 		symbols     index.StringIter
 		closers     = []io.Closer{}
 		overlapping bool
@@ -682,7 +681,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 		}
 
-		indexr, err := b.Index()
+		indexr, err := b.Index(math.MinInt64, globalMaxt)
 		if err != nil {
 			return errors.Wrapf(err, "open index reader for block %s", b)
 		}
@@ -916,7 +915,7 @@ func (c *compactionSeriesSet) At() (labels.Labels, []chunks.Meta, tombstones.Int
 }
 
 type compactionMerger struct {
-	a, b ChunkSeriesSet
+	a, b storage.ChunkSeriesSet
 
 	aok, bok  bool
 	l         labels.Labels
@@ -924,7 +923,7 @@ type compactionMerger struct {
 	intervals tombstones.Intervals
 }
 
-func newCompactionMerger(a, b ChunkSeriesSet) (*compactionMerger, error) {
+func newCompactionMerger(a, b storage.ChunkSeriesSet) (*compactionMerger, error) {
 	c := &compactionMerger{
 		a: a,
 		b: b,

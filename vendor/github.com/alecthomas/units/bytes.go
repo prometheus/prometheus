@@ -27,6 +27,7 @@ var (
 
 // ParseBase2Bytes supports both iB and B in base-2 multipliers. That is, KB
 // and KiB are both 1024.
+// However "kB", which is the correct SI spelling of 1000 Bytes, is rejected.
 func ParseBase2Bytes(s string) (Base2Bytes, error) {
 	n, err := ParseUnit(s, bytesUnitMap)
 	if err != nil {
@@ -68,12 +69,13 @@ func ParseMetricBytes(s string) (MetricBytes, error) {
 	return MetricBytes(n), err
 }
 
+// TODO: represents 1000B as uppercase "KB", while SI standard requires "kB".
 func (m MetricBytes) String() string {
 	return ToString(int64(m), 1000, "B", "B")
 }
 
 // ParseStrictBytes supports both iB and B suffixes for base 2 and metric,
-// respectively. That is, KiB represents 1024 and KB represents 1000.
+// respectively. That is, KiB represents 1024 and kB, KB represent 1000.
 func ParseStrictBytes(s string) (int64, error) {
 	n, err := ParseUnit(s, bytesUnitMap)
 	if err != nil {

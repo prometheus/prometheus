@@ -92,6 +92,23 @@ func (e ErrUnexpectedResponseCode) Error() string {
 	return e.choseErrString()
 }
 
+// GetStatusCode returns the actual status code of the error.
+func (e ErrUnexpectedResponseCode) GetStatusCode() int {
+	return e.Actual
+}
+
+// StatusCodeError is a convenience interface to easily allow access to the
+// status code field of the various ErrDefault* types.
+//
+// By using this interface, you only have to make a single type cast of
+// the returned error to err.(StatusCodeError) and then call GetStatusCode()
+// instead of having a large switch statement checking for each of the
+// ErrDefault* types.
+type StatusCodeError interface {
+	Error() string
+	GetStatusCode() int
+}
+
 // ErrDefault400 is the default error type returned on a 400 HTTP response code.
 type ErrDefault400 struct {
 	ErrUnexpectedResponseCode

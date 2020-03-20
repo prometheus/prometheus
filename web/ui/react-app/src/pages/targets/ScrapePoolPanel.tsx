@@ -49,6 +49,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
                 labels,
                 scrapePool,
                 scrapeUrl,
+                globalUrl,
                 lastError,
                 lastScrape,
                 lastScrapeDuration,
@@ -59,7 +60,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
               return (
                 <tr key={scrapeUrl}>
                   <td className={styles.endpoint}>
-                    <EndpointLink endpoint={scrapeUrl} />
+                    <EndpointLink endpoint={scrapeUrl} globalUrl={globalUrl} />
                   </td>
                   <td className={styles.state}>
                     <Badge color={color}>{health.toUpperCase()}</Badge>

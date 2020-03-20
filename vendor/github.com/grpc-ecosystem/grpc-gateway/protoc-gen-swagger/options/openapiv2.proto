@@ -5,6 +5,7 @@ package grpc.gateway.protoc_gen_swagger.options;
 option go_package = "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options";
 
 import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
 
 // `Swagger` is a representation of OpenAPI v2 specification's Swagger object.
 //
@@ -45,6 +46,7 @@ message Swagger {
   // service objects into OpenAPI v2 Tag objects.
   reserved 13;
   ExternalDocumentation external_docs = 14;
+  map<string, google.protobuf.Value> extensions = 15;
 }
 
 // `Operation` is a representation of OpenAPI v2 specification's Operation object.
@@ -66,6 +68,7 @@ message Operation {
   repeated string schemes = 10;
   bool deprecated = 11;
   repeated SecurityRequirement security = 12;
+  map<string, google.protobuf.Value> extensions = 13;
 }
 
 // `Response` is a representation of OpenAPI v2 specification's Response object.
@@ -81,8 +84,10 @@ message Response {
   Schema schema = 2;
   // field 3 is reserved for 'headers'.
   reserved 3;
-  // field 3 is reserved for 'example'.
-  reserved 4;
+  // `Examples` gives per-mimetype response examples.
+  // See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#example-object
+  map<string, string> examples = 4;
+  map<string, google.protobuf.Value> extensions = 5;
 }
 
 // `Info` is a representation of OpenAPI v2 specification's Info object.
@@ -97,6 +102,7 @@ message Info {
   Contact contact = 4;
   License license = 5;
   string version = 6;
+  map<string, google.protobuf.Value> extensions = 7;
 }
 
 // `Contact` is a representation of OpenAPI v2 specification's Contact object.
@@ -334,6 +340,7 @@ message SecurityScheme {
   //
   // Valid for oauth2.
   Scopes scopes = 8;
+  map<string, google.protobuf.Value> extensions = 9;
 }
 
 // `SecurityRequirement` is a representation of OpenAPI v2 specification's

@@ -255,12 +255,16 @@ func fourLetterWord(server, command string, timeout time.Duration) ([]byte, erro
 	// once the command has been processed, but better safe than sorry
 	defer conn.Close()
 
-	conn.SetWriteDeadline(time.Now().Add(timeout))
+	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, err
+	}
 	_, err = conn.Write([]byte(command))
 	if err != nil {
 		return nil, err
 	}
 
-	conn.SetReadDeadline(time.Now().Add(timeout))
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, err
+	}
 	return ioutil.ReadAll(conn)
 }

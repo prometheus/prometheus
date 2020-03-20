@@ -11,7 +11,9 @@ describe('TimeInput', () => {
     time: 1572102237932,
     range: 60 * 60 * 7,
     placeholder: 'time input',
-    onChangeTime: (): void => {},
+    onChangeTime: (): void => {
+      // Do nothing.
+    },
   };
   const timeInput = shallow(<TimeInput {...timeInputProps} />);
   it('renders the string "scalar"', () => {

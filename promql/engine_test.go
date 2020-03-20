@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/kit/log"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -174,15 +175,12 @@ type errQuerier struct {
 	err error
 }
 
-func (q *errQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	return errSeriesSet{err: q.err}, nil, q.err
 }
-func (q *errQuerier) SelectSorted(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	return errSeriesSet{err: q.err}, nil, q.err
-}
-func (*errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) { return nil, nil, nil }
-func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)             { return nil, nil, nil }
-func (*errQuerier) Close() error                                                { return nil }
+func (*errQuerier) LabelValues(string) ([]string, storage.Warnings, error) { return nil, nil, nil }
+func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)        { return nil, nil, nil }
+func (*errQuerier) Close() error                                           { return nil }
 
 // errSeriesSet implements storage.SeriesSet which always returns error.
 type errSeriesSet struct {
@@ -223,9 +221,9 @@ func TestQueryError(t *testing.T) {
 	testutil.Equals(t, errStorage, res.Err)
 }
 
-// paramCheckerQuerier implements storage.Querier which checks the start and end times
-// in params.
-type paramCheckerQuerier struct {
+// hintCheckerQuerier implements storage.Querier which checks the start and end times
+// in hints.
+type hintCheckerQuerier struct {
 	start    int64
 	end      int64
 	grouping []string
@@ -236,10 +234,7 @@ type paramCheckerQuerier struct {
 	t *testing.T
 }
 
-func (q *paramCheckerQuerier) Select(sp *storage.SelectParams, m ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	return q.SelectSorted(sp, m...)
-}
-func (q *paramCheckerQuerier) SelectSorted(sp *storage.SelectParams, _ ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q *hintCheckerQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	testutil.Equals(q.t, q.start, sp.Start)
 	testutil.Equals(q.t, q.end, sp.End)
 	testutil.Equals(q.t, q.grouping, sp.Grouping)
@@ -249,11 +244,11 @@ func (q *paramCheckerQuerier) SelectSorted(sp *storage.SelectParams, _ ...*label
 
 	return errSeriesSet{err: nil}, nil, nil
 }
-func (*paramCheckerQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+func (*hintCheckerQuerier) LabelValues(string) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }
-func (*paramCheckerQuerier) LabelNames() ([]string, storage.Warnings, error) { return nil, nil, nil }
-func (*paramCheckerQuerier) Close() error                                    { return nil }
+func (*hintCheckerQuerier) LabelNames() ([]string, storage.Warnings, error) { return nil, nil, nil }
+func (*hintCheckerQuerier) Close() error                                    { return nil }
 
 func TestParamsSetCorrectly(t *testing.T) {
 	opts := EngineOpts{
@@ -434,7 +429,7 @@ func TestParamsSetCorrectly(t *testing.T) {
 	for _, tc := range cases {
 		engine := NewEngine(opts)
 		queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-			return &paramCheckerQuerier{start: tc.paramStart * 1000, end: tc.paramEnd * 1000, grouping: tc.paramGrouping, by: tc.paramBy, selRange: tc.paramRange, function: tc.paramFunc, t: t}, nil
+			return &hintCheckerQuerier{start: tc.paramStart * 1000, end: tc.paramEnd * 1000, grouping: tc.paramGrouping, by: tc.paramBy, selRange: tc.paramRange, function: tc.paramFunc, t: t}, nil
 		})
 
 		var (
@@ -522,7 +517,7 @@ load 10s
 
 	cases := []struct {
 		Query       string
-		Result      Value
+		Result      parser.Value
 		Start       time.Time
 		End         time.Time
 		Interval    time.Duration
@@ -1154,7 +1149,7 @@ func TestQueryLogger_basic(t *testing.T) {
 		testutil.Ok(t, res.Err)
 	}
 
-	// Query works without query log initalized.
+	// Query works without query log initialized.
 	queryExec()
 
 	f1 := NewFakeQueryLogger()

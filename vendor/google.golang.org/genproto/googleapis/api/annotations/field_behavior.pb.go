@@ -96,7 +96,9 @@ func init() {
 	proto.RegisterExtension(E_FieldBehavior)
 }
 
-func init() { proto.RegisterFile("google/api/field_behavior.proto", fileDescriptor_4648f18fd5079967) }
+func init() {
+	proto.RegisterFile("google/api/field_behavior.proto", fileDescriptor_4648f18fd5079967)
+}
 
 var fileDescriptor_4648f18fd5079967 = []byte{
 	// 303 bytes of a gzipped FileDescriptorProto

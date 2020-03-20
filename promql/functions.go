@@ -25,34 +25,28 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// Function represents a function of the expression language and is
-// used by function nodes.
-type Function struct {
-	Name       string
-	ArgTypes   []ValueType
-	Variadic   int
-	ReturnType ValueType
-
-	// vals is a list of the evaluated arguments for the function call.
-	//    For range vectors it will be a Matrix with one series, instant vectors a
-	//    Vector, scalars a Vector with one series whose value is the scalar
-	//    value,and nil for strings.
-	// args are the original arguments to the function, where you can access
-	//    matrixSelectors, vectorSelectors, and StringLiterals.
-	// enh.out is a pre-allocated empty vector that you may use to accumulate
-	//    output before returning it. The vectors in vals should not be returned.a
-	// Range vector functions need only return a vector with the right value,
-	//     the metric and timestamp are not needed.
-	// Instant vector functions need only return a vector with the right values and
-	//     metrics, the timestamp are not needed.
-	// Scalar results should be returned as the value of a sample in a Vector.
-	Call func(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
-}
+// FunctionCall is the type of a PromQL function implementation
+//
+// vals is a list of the evaluated arguments for the function call.
+//    For range vectors it will be a Matrix with one series, instant vectors a
+//    Vector, scalars a Vector with one series whose value is the scalar
+//    value,and nil for strings.
+// args are the original arguments to the function, where you can access
+//    matrixSelectors, vectorSelectors, and StringLiterals.
+// enh.out is a pre-allocated empty vector that you may use to accumulate
+//    output before returning it. The vectors in vals should not be returned.a
+// Range vector functions need only return a vector with the right value,
+//     the metric and timestamp are not needed.
+// Instant vector functions need only return a vector with the right values and
+//     metrics, the timestamp are not needed.
+// Scalar results should be returned as the value of a sample in a Vector.
+type FunctionCall func(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector
 
 // === time() float64 ===
-func funcTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return Vector{Sample{Point: Point{
 		V: float64(enh.ts) / 1000,
 	}}}
@@ -62,9 +56,9 @@ func funcTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(vals []Value, args Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
-	ms := args[0].(*MatrixSelector)
-	vs := ms.VectorSelector.(*VectorSelector)
+func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
+	ms := args[0].(*parser.MatrixSelector)
+	vs := ms.VectorSelector.(*parser.VectorSelector)
 
 	var (
 		samples    = vals[0].(Matrix)[0]
@@ -137,32 +131,32 @@ func extrapolatedRate(vals []Value, args Expressions, enh *EvalNodeHelper, isCou
 	})
 }
 
-// === delta(Matrix ValueTypeMatrix) Vector ===
-func funcDelta(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === delta(Matrix parser.ValueTypeMatrix) Vector ===
+func funcDelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return extrapolatedRate(vals, args, enh, false, false)
 }
 
-// === rate(node ValueTypeMatrix) Vector ===
-func funcRate(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === rate(node parser.ValueTypeMatrix) Vector ===
+func funcRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return extrapolatedRate(vals, args, enh, true, true)
 }
 
-// === increase(node ValueTypeMatrix) Vector ===
-func funcIncrease(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === increase(node parser.ValueTypeMatrix) Vector ===
+func funcIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return extrapolatedRate(vals, args, enh, true, false)
 }
 
-// === irate(node ValueTypeMatrix) Vector ===
-func funcIrate(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === irate(node parser.ValueTypeMatrix) Vector ===
+func funcIrate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return instantValue(vals, enh.out, true)
 }
 
 // === idelta(node model.ValMatrix) Vector ===
-func funcIdelta(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcIdelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return instantValue(vals, enh.out, false)
 }
 
-func instantValue(vals []Value, out Vector, isRate bool) Vector {
+func instantValue(vals []parser.Value, out Vector, isRate bool) Vector {
 	samples := vals[0].(Matrix)[0]
 	// No sense in trying to compute a rate without at least two points. Drop
 	// this Vector element.
@@ -199,10 +193,11 @@ func instantValue(vals []Value, out Vector, isRate bool) Vector {
 
 // Calculate the trend value at the given index i in raw data d.
 // This is somewhat analogous to the slope of the trend at the given index.
-// The argument "s" is the set of computed smoothed values.
-// The argument "b" is the set of computed trend factors.
-// The argument "d" is the set of raw input values.
-func calcTrendValue(i int, sf, tf, s0, s1, b float64) float64 {
+// The argument "tf" is the trend factor.
+// The argument "s0" is the computed smoothed value.
+// The argument "s1" is the computed trend factor.
+// The argument "b" is the raw input value.
+func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 	if i == 0 {
 		return b
 	}
@@ -218,7 +213,7 @@ func calcTrendValue(i int, sf, tf, s0, s1, b float64) float64 {
 // data. A lower smoothing factor increases the influence of historical data. The trend factor (0 < tf < 1) affects
 // how trends in historical data will affect the current data. A higher trend factor increases the influence.
 // of trends. Algorithm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing".
-func funcHoltWinters(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
 
 	// The smoothing factor argument.
@@ -255,7 +250,7 @@ func funcHoltWinters(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
 		x = sf * samples.Points[i].V
 
 		// Scale the last smoothed value with the trend at this point.
-		b = calcTrendValue(i-1, sf, tf, s0, s1, b)
+		b = calcTrendValue(i-1, tf, s0, s1, b)
 		y = (1 - sf) * (s1 + b)
 
 		s0, s1 = s1, x+y
@@ -266,8 +261,8 @@ func funcHoltWinters(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
 	})
 }
 
-// === sort(node ValueTypeVector) Vector ===
-func funcSort(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === sort(node parser.ValueTypeVector) Vector ===
+func funcSort(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	// NaN should sort to the bottom, so take descending sort with NaN first and
 	// reverse it.
 	byValueSorter := vectorByReverseValueHeap(vals[0].(Vector))
@@ -275,8 +270,8 @@ func funcSort(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return Vector(byValueSorter)
 }
 
-// === sortDesc(node ValueTypeVector) Vector ===
-func funcSortDesc(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === sortDesc(node parser.ValueTypeVector) Vector ===
+func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	// NaN should sort to the bottom, so take ascending sort with NaN first and
 	// reverse it.
 	byValueSorter := vectorByValueHeap(vals[0].(Vector))
@@ -284,8 +279,8 @@ func funcSortDesc(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return Vector(byValueSorter)
 }
 
-// === clamp_max(Vector ValueTypeVector, max Scalar) Vector ===
-func funcClampMax(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === clamp_max(Vector parser.ValueTypeVector, max Scalar) Vector ===
+func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	max := vals[1].(Vector)[0].Point.V
 	for _, el := range vec {
@@ -297,8 +292,8 @@ func funcClampMax(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return enh.out
 }
 
-// === clamp_min(Vector ValueTypeVector, min Scalar) Vector ===
-func funcClampMin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === clamp_min(Vector parser.ValueTypeVector, min Scalar) Vector ===
+func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	min := vals[1].(Vector)[0].Point.V
 	for _, el := range vec {
@@ -310,8 +305,8 @@ func funcClampMin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return enh.out
 }
 
-// === round(Vector ValueTypeVector, toNearest=1 Scalar) Vector ===
-func funcRound(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === round(Vector parser.ValueTypeVector, toNearest=1 Scalar) Vector ===
+func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	// round returns a number rounded to toNearest.
 	// Ties are solved by rounding up.
@@ -332,8 +327,8 @@ func funcRound(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return enh.out
 }
 
-// === Scalar(node ValueTypeVector) Scalar ===
-func funcScalar(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === Scalar(node parser.ValueTypeVector) Scalar ===
+func funcScalar(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	v := vals[0].(Vector)
 	if len(v) != 1 {
 		return append(enh.out, Sample{
@@ -345,7 +340,7 @@ func funcScalar(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	})
 }
 
-func aggrOverTime(vals []Value, enh *EvalNodeHelper, aggrFn func([]Point) float64) Vector {
+func aggrOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func([]Point) float64) Vector {
 	el := vals[0].(Matrix)[0]
 
 	return append(enh.out, Sample{
@@ -353,8 +348,8 @@ func aggrOverTime(vals []Value, enh *EvalNodeHelper, aggrFn func([]Point) float6
 	})
 }
 
-// === avg_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcAvgOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === avg_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		var mean, count float64
 		for _, v := range values {
@@ -365,16 +360,16 @@ func funcAvgOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
 	})
 }
 
-// === count_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcCountOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === count_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcCountOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		return float64(len(values))
 	})
 }
 
-// === floor(Vector ValueTypeVector) Vector ===
-// === max_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcMaxOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === floor(Vector parser.ValueTypeVector) Vector ===
+// === max_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		max := values[0].V
 		for _, v := range values {
@@ -386,8 +381,8 @@ func funcMaxOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
 	})
 }
 
-// === min_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcMinOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === min_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		min := values[0].V
 		for _, v := range values {
@@ -399,8 +394,8 @@ func funcMinOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
 	})
 }
 
-// === sum_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcSumOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === sum_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		var sum float64
 		for _, v := range values {
@@ -410,8 +405,8 @@ func funcSumOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
 	})
 }
 
-// === quantile_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcQuantileOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === quantile_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	el := vals[1].(Matrix)[0]
 
@@ -424,8 +419,8 @@ func funcQuantileOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) V
 	})
 }
 
-// === stddev_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcStddevOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === stddev_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		var aux, count, mean float64
 		for _, v := range values {
@@ -438,8 +433,8 @@ func funcStddevOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vec
 	})
 }
 
-// === stdvar_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcStdvarOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === stdvar_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		var aux, count, mean float64
 		for _, v := range values {
@@ -452,8 +447,8 @@ func funcStdvarOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vec
 	})
 }
 
-// === absent(Vector ValueTypeVector) Vector ===
-func funcAbsent(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === absent(Vector parser.ValueTypeVector) Vector ===
+func funcAbsent(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	if len(vals[0].(Vector)) > 0 {
 		return enh.out
 	}
@@ -464,19 +459,19 @@ func funcAbsent(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 		})
 }
 
-// === absent_over_time(Vector ValueTypeMatrix) Vector ===
+// === absent_over_time(Vector parser.ValueTypeMatrix) Vector ===
 // As this function has a matrix as argument, it does not get all the Series.
 // This function will return 1 if the matrix has at least one element.
 // Due to engine optimization, this function is only called when this condition is true.
 // Then, the engine post-processes the results to get the expected output.
-func funcAbsentOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcAbsentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return append(enh.out,
 		Sample{
 			Point: Point{V: 1},
 		})
 }
 
-func simpleFunc(vals []Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
+func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
 		enh.out = append(enh.out, Sample{
 			Metric: enh.dropMetricName(el.Metric),
@@ -486,48 +481,48 @@ func simpleFunc(vals []Value, enh *EvalNodeHelper, f func(float64) float64) Vect
 	return enh.out
 }
 
-// === abs(Vector ValueTypeVector) Vector ===
-func funcAbs(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === abs(Vector parser.ValueTypeVector) Vector ===
+func funcAbs(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, math.Abs)
 }
 
-// === ceil(Vector ValueTypeVector) Vector ===
-func funcCeil(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === ceil(Vector parser.ValueTypeVector) Vector ===
+func funcCeil(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, math.Ceil)
 }
 
-// === floor(Vector ValueTypeVector) Vector ===
-func funcFloor(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === floor(Vector parser.ValueTypeVector) Vector ===
+func funcFloor(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, math.Floor)
 }
 
-// === exp(Vector ValueTypeVector) Vector ===
-func funcExp(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === exp(Vector parser.ValueTypeVector) Vector ===
+func funcExp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, math.Exp)
 }
 
 // === sqrt(Vector VectorNode) Vector ===
-func funcSqrt(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcSqrt(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, math.Sqrt)
 }
 
-// === ln(Vector ValueTypeVector) Vector ===
-func funcLn(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === ln(Vector parser.ValueTypeVector) Vector ===
+func funcLn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, math.Log)
 }
 
-// === log2(Vector ValueTypeVector) Vector ===
-func funcLog2(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === log2(Vector parser.ValueTypeVector) Vector ===
+func funcLog2(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, math.Log2)
 }
 
-// === log10(Vector ValueTypeVector) Vector ===
-func funcLog10(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === log10(Vector parser.ValueTypeVector) Vector ===
+func funcLog10(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, math.Log10)
 }
 
-// === timestamp(Vector ValueTypeVector) Vector ===
-func funcTimestamp(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === timestamp(Vector parser.ValueTypeVector) Vector ===
+func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	for _, el := range vec {
 		enh.out = append(enh.out, Sample{
@@ -563,8 +558,8 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 	return slope, intercept
 }
 
-// === deriv(node ValueTypeMatrix) Vector ===
-func funcDeriv(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === deriv(node parser.ValueTypeMatrix) Vector ===
+func funcDeriv(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
 
 	// No sense in trying to compute a derivative without at least two points.
@@ -582,8 +577,8 @@ func funcDeriv(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	})
 }
 
-// === predict_linear(node ValueTypeMatrix, k ValueTypeScalar) Vector ===
-func funcPredictLinear(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === predict_linear(node parser.ValueTypeMatrix, k parser.ValueTypeScalar) Vector ===
+func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
 	duration := vals[1].(Vector)[0].V
 
@@ -599,8 +594,8 @@ func funcPredictLinear(vals []Value, args Expressions, enh *EvalNodeHelper) Vect
 	})
 }
 
-// === histogram_quantile(k ValueTypeScalar, Vector ValueTypeVector) Vector ===
-func funcHistogramQuantile(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === histogram_quantile(k parser.ValueTypeScalar, Vector parser.ValueTypeVector) Vector ===
+func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
 	sigf := enh.signatureFunc(false, excludedLabels...)
@@ -647,8 +642,8 @@ func funcHistogramQuantile(vals []Value, args Expressions, enh *EvalNodeHelper) 
 	return enh.out
 }
 
-// === resets(Matrix ValueTypeMatrix) Vector ===
-func funcResets(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === resets(Matrix parser.ValueTypeMatrix) Vector ===
+func funcResets(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
 
 	resets := 0
@@ -666,8 +661,8 @@ func funcResets(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	})
 }
 
-// === changes(Matrix ValueTypeMatrix) Vector ===
-func funcChanges(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === changes(Matrix parser.ValueTypeMatrix) Vector ===
+func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
 
 	changes := 0
@@ -685,14 +680,14 @@ func funcChanges(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	})
 }
 
-// === label_replace(Vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString) Vector ===
-func funcLabelReplace(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+// === label_replace(Vector parser.ValueTypeVector, dst_label, replacement, src_labelname, regex parser.ValueTypeString) Vector ===
+func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector   = vals[0].(Vector)
-		dst      = args[1].(*StringLiteral).Val
-		repl     = args[2].(*StringLiteral).Val
-		src      = args[3].(*StringLiteral).Val
-		regexStr = args[4].(*StringLiteral).Val
+		dst      = args[1].(*parser.StringLiteral).Val
+		repl     = args[2].(*parser.StringLiteral).Val
+		src      = args[3].(*parser.StringLiteral).Val
+		regexStr = args[4].(*parser.StringLiteral).Val
 	)
 
 	if enh.regex == nil {
@@ -740,7 +735,7 @@ func funcLabelReplace(vals []Value, args Expressions, enh *EvalNodeHelper) Vecto
 }
 
 // === Vector(s Scalar) Vector ===
-func funcVector(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return append(enh.out,
 		Sample{
 			Metric: labels.Labels{},
@@ -749,11 +744,11 @@ func funcVector(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 }
 
 // === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
-func funcLabelJoin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector    = vals[0].(Vector)
-		dst       = args[1].(*StringLiteral).Val
-		sep       = args[2].(*StringLiteral).Val
+		dst       = args[1].(*parser.StringLiteral).Val
+		sep       = args[2].(*parser.StringLiteral).Val
 		srcLabels = make([]string, len(args)-3)
 	)
 
@@ -762,7 +757,7 @@ func funcLabelJoin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	}
 
 	for i := 3; i < len(args); i++ {
-		src := args[i].(*StringLiteral).Val
+		src := args[i].(*parser.StringLiteral).Val
 		if !model.LabelName(src).IsValid() {
 			panic(errors.Errorf("invalid source label name in label_join(): %s", src))
 		}
@@ -807,7 +802,7 @@ func funcLabelJoin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 }
 
 // Common code for date related functions.
-func dateWrapper(vals []Value, enh *EvalNodeHelper, f func(time.Time) float64) Vector {
+func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) float64) Vector {
 	if len(vals) == 0 {
 		return append(enh.out,
 			Sample{
@@ -827,353 +822,103 @@ func dateWrapper(vals []Value, enh *EvalNodeHelper, f func(time.Time) float64) V
 }
 
 // === days_in_month(v Vector) Scalar ===
-func funcDaysInMonth(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcDaysInMonth(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
 	})
 }
 
 // === day_of_month(v Vector) Scalar ===
-func funcDayOfMonth(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcDayOfMonth(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Day())
 	})
 }
 
 // === day_of_week(v Vector) Scalar ===
-func funcDayOfWeek(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcDayOfWeek(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Weekday())
 	})
 }
 
 // === hour(v Vector) Scalar ===
-func funcHour(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcHour(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Hour())
 	})
 }
 
 // === minute(v Vector) Scalar ===
-func funcMinute(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcMinute(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Minute())
 	})
 }
 
 // === month(v Vector) Scalar ===
-func funcMonth(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcMonth(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Month())
 	})
 }
 
 // === year(v Vector) Scalar ===
-func funcYear(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Year())
 	})
 }
 
 // Functions is a list of all functions supported by PromQL, including their types.
-var Functions = map[string]*Function{
-	"abs": {
-		Name:       "abs",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcAbs,
-	},
-	"absent": {
-		Name:       "absent",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcAbsent,
-	},
-	"absent_over_time": {
-		Name:       "absent_over_time",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcAbsentOverTime,
-	},
-	"avg_over_time": {
-		Name:       "avg_over_time",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcAvgOverTime,
-	},
-	"ceil": {
-		Name:       "ceil",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcCeil,
-	},
-	"changes": {
-		Name:       "changes",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcChanges,
-	},
-	"clamp_max": {
-		Name:       "clamp_max",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
-		ReturnType: ValueTypeVector,
-		Call:       funcClampMax,
-	},
-	"clamp_min": {
-		Name:       "clamp_min",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
-		ReturnType: ValueTypeVector,
-		Call:       funcClampMin,
-	},
-	"count_over_time": {
-		Name:       "count_over_time",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcCountOverTime,
-	},
-	"days_in_month": {
-		Name:       "days_in_month",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
-		ReturnType: ValueTypeVector,
-		Call:       funcDaysInMonth,
-	},
-	"day_of_month": {
-		Name:       "day_of_month",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
-		ReturnType: ValueTypeVector,
-		Call:       funcDayOfMonth,
-	},
-	"day_of_week": {
-		Name:       "day_of_week",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
-		ReturnType: ValueTypeVector,
-		Call:       funcDayOfWeek,
-	},
-	"delta": {
-		Name:       "delta",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcDelta,
-	},
-	"deriv": {
-		Name:       "deriv",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcDeriv,
-	},
-	"exp": {
-		Name:       "exp",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcExp,
-	},
-	"floor": {
-		Name:       "floor",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcFloor,
-	},
-	"histogram_quantile": {
-		Name:       "histogram_quantile",
-		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcHistogramQuantile,
-	},
-	"holt_winters": {
-		Name:       "holt_winters",
-		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
-		ReturnType: ValueTypeVector,
-		Call:       funcHoltWinters,
-	},
-	"hour": {
-		Name:       "hour",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
-		ReturnType: ValueTypeVector,
-		Call:       funcHour,
-	},
-	"idelta": {
-		Name:       "idelta",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcIdelta,
-	},
-	"increase": {
-		Name:       "increase",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcIncrease,
-	},
-	"irate": {
-		Name:       "irate",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcIrate,
-	},
-	"label_replace": {
-		Name:       "label_replace",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString, ValueTypeString, ValueTypeString},
-		ReturnType: ValueTypeVector,
-		Call:       funcLabelReplace,
-	},
-	"label_join": {
-		Name:       "label_join",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString, ValueTypeString},
-		Variadic:   -1,
-		ReturnType: ValueTypeVector,
-		Call:       funcLabelJoin,
-	},
-	"ln": {
-		Name:       "ln",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcLn,
-	},
-	"log10": {
-		Name:       "log10",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcLog10,
-	},
-	"log2": {
-		Name:       "log2",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcLog2,
-	},
-	"max_over_time": {
-		Name:       "max_over_time",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcMaxOverTime,
-	},
-	"min_over_time": {
-		Name:       "min_over_time",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcMinOverTime,
-	},
-	"minute": {
-		Name:       "minute",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
-		ReturnType: ValueTypeVector,
-		Call:       funcMinute,
-	},
-	"month": {
-		Name:       "month",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
-		ReturnType: ValueTypeVector,
-		Call:       funcMonth,
-	},
-	"predict_linear": {
-		Name:       "predict_linear",
-		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
-		ReturnType: ValueTypeVector,
-		Call:       funcPredictLinear,
-	},
-	"quantile_over_time": {
-		Name:       "quantile_over_time",
-		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcQuantileOverTime,
-	},
-	"rate": {
-		Name:       "rate",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcRate,
-	},
-	"resets": {
-		Name:       "resets",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcResets,
-	},
-	"round": {
-		Name:       "round",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
-		Variadic:   1,
-		ReturnType: ValueTypeVector,
-		Call:       funcRound,
-	},
-	"scalar": {
-		Name:       "scalar",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeScalar,
-		Call:       funcScalar,
-	},
-	"sort": {
-		Name:       "sort",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcSort,
-	},
-	"sort_desc": {
-		Name:       "sort_desc",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcSortDesc,
-	},
-	"sqrt": {
-		Name:       "sqrt",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcSqrt,
-	},
-	"stddev_over_time": {
-		Name:       "stddev_over_time",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcStddevOverTime,
-	},
-	"stdvar_over_time": {
-		Name:       "stdvar_over_time",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcStdvarOverTime,
-	},
-	"sum_over_time": {
-		Name:       "sum_over_time",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-		Call:       funcSumOverTime,
-	},
-	"time": {
-		Name:       "time",
-		ArgTypes:   []ValueType{},
-		ReturnType: ValueTypeScalar,
-		Call:       funcTime,
-	},
-	"timestamp": {
-		Name:       "timestamp",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcTimestamp,
-	},
-	"vector": {
-		Name:       "vector",
-		ArgTypes:   []ValueType{ValueTypeScalar},
-		ReturnType: ValueTypeVector,
-		Call:       funcVector,
-	},
-	"year": {
-		Name:       "year",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
-		ReturnType: ValueTypeVector,
-		Call:       funcYear,
-	},
-}
-
-// getFunction returns a predefined Function object for the given name.
-func getFunction(name string) (*Function, bool) {
-	function, ok := Functions[name]
-	return function, ok
+var FunctionCalls = map[string]FunctionCall{
+	"abs":                funcAbs,
+	"absent":             funcAbsent,
+	"absent_over_time":   funcAbsentOverTime,
+	"avg_over_time":      funcAvgOverTime,
+	"ceil":               funcCeil,
+	"changes":            funcChanges,
+	"clamp_max":          funcClampMax,
+	"clamp_min":          funcClampMin,
+	"count_over_time":    funcCountOverTime,
+	"days_in_month":      funcDaysInMonth,
+	"day_of_month":       funcDayOfMonth,
+	"day_of_week":        funcDayOfWeek,
+	"delta":              funcDelta,
+	"deriv":              funcDeriv,
+	"exp":                funcExp,
+	"floor":              funcFloor,
+	"histogram_quantile": funcHistogramQuantile,
+	"holt_winters":       funcHoltWinters,
+	"hour":               funcHour,
+	"idelta":             funcIdelta,
+	"increase":           funcIncrease,
+	"irate":              funcIrate,
+	"label_replace":      funcLabelReplace,
+	"label_join":         funcLabelJoin,
+	"ln":                 funcLn,
+	"log10":              funcLog10,
+	"log2":               funcLog2,
+	"max_over_time":      funcMaxOverTime,
+	"min_over_time":      funcMinOverTime,
+	"minute":             funcMinute,
+	"month":              funcMonth,
+	"predict_linear":     funcPredictLinear,
+	"quantile_over_time": funcQuantileOverTime,
+	"rate":               funcRate,
+	"resets":             funcResets,
+	"round":              funcRound,
+	"scalar":             funcScalar,
+	"sort":               funcSort,
+	"sort_desc":          funcSortDesc,
+	"sqrt":               funcSqrt,
+	"stddev_over_time":   funcStddevOverTime,
+	"stdvar_over_time":   funcStdvarOverTime,
+	"sum_over_time":      funcSumOverTime,
+	"time":               funcTime,
+	"timestamp":          funcTimestamp,
+	"vector":             funcVector,
+	"year":               funcYear,
 }
 
 type vectorByValueHeap Vector
@@ -1236,15 +981,15 @@ func (s *vectorByReverseValueHeap) Pop() interface{} {
 
 // createLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
 // in a given expression. It is used in the absent functions.
-func createLabelsForAbsentFunction(expr Expr) labels.Labels {
+func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	m := labels.Labels{}
 
 	var lm []*labels.Matcher
 	switch n := expr.(type) {
-	case *VectorSelector:
+	case *parser.VectorSelector:
 		lm = n.LabelMatchers
-	case *MatrixSelector:
-		lm = n.VectorSelector.(*VectorSelector).LabelMatchers
+	case *parser.MatrixSelector:
+		lm = n.VectorSelector.(*parser.VectorSelector).LabelMatchers
 	default:
 		return m
 	}

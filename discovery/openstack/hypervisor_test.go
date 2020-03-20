@@ -35,7 +35,6 @@ func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
 	s.Mock.Setup()
 
 	s.Mock.HandleHypervisorListSuccessfully()
-
 	s.Mock.HandleVersionsSuccessfully()
 	s.Mock.HandleAuthSuccessfully()
 }
@@ -74,6 +73,7 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 		"__meta_openstack_hypervisor_host_ip":  "172.16.70.14",
 		"__meta_openstack_hypervisor_state":    "up",
 		"__meta_openstack_hypervisor_status":   "enabled",
+		"__meta_openstack_hypervisor_id":       "1",
 	} {
 		testutil.Equals(t, model.LabelValue(v), tg.Targets[0][model.LabelName(l)])
 	}
@@ -85,6 +85,7 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 		"__meta_openstack_hypervisor_host_ip":  "172.16.70.13",
 		"__meta_openstack_hypervisor_state":    "up",
 		"__meta_openstack_hypervisor_status":   "enabled",
+		"__meta_openstack_hypervisor_id":       "721",
 	} {
 		testutil.Equals(t, model.LabelValue(v), tg.Targets[1][model.LabelName(l)])
 	}

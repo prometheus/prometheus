@@ -709,6 +709,19 @@ func TestKubernetesEmptyAPIServer(t *testing.T) {
 	testutil.Ok(t, err)
 }
 
+func TestKubernetesSelectors(t *testing.T) {
+	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml")
+	testutil.Ok(t, err)
+}
+
 var expectedErrors = []struct {
 	filename string
 	errMsg   string
@@ -792,8 +805,29 @@ var expectedErrors = []struct {
 		filename: "kubernetes_role.bad.yml",
 		errMsg:   "role",
 	}, {
+		filename: "kubernetes_selectors_endpoints.bad.yml",
+		errMsg:   "endpoints role supports only pod, service, endpoints selectors",
+	}, {
+		filename: "kubernetes_selectors_ingress.bad.yml",
+		errMsg:   "ingress role supports only ingress selectors",
+	}, {
+		filename: "kubernetes_selectors_node.bad.yml",
+		errMsg:   "node role supports only node selectors",
+	}, {
+		filename: "kubernetes_selectors_pod.bad.yml",
+		errMsg:   "pod role supports only pod selectors",
+	}, {
+		filename: "kubernetes_selectors_service.bad.yml",
+		errMsg:   "service role supports only service selectors",
+	}, {
 		filename: "kubernetes_namespace_discovery.bad.yml",
 		errMsg:   "field foo not found in type kubernetes.plain",
+	}, {
+		filename: "kubernetes_selectors_duplicated_role.bad.yml",
+		errMsg:   "duplicated selector role: pod",
+	}, {
+		filename: "kubernetes_selectors_incorrect_selector.bad.yml",
+		errMsg:   "invalid selector: 'metadata.status-Running'; can't understand 'metadata.status-Running'",
 	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",

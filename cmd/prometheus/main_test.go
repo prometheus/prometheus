@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +25,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/rules"
@@ -231,4 +235,72 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 			t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
 		}
 	}
+}
+
+func TestTimeMetrics(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "time_metrics_e2e")
+	testutil.Ok(t, err)
+
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(tmpDir))
+	}()
+
+	reg := prometheus.NewRegistry()
+	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil)
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, db.Close())
+	}()
+
+	// Check initial values.
+	testutil.Equals(t, map[string]float64{
+		"prometheus_tsdb_lowest_timestamp_seconds": float64(math.MaxInt64) / 1000,
+		"prometheus_tsdb_head_min_time_seconds":    float64(math.MaxInt64) / 1000,
+		"prometheus_tsdb_head_max_time_seconds":    float64(math.MinInt64) / 1000,
+	}, getCurrentGaugeValuesFor(t, reg,
+		"prometheus_tsdb_lowest_timestamp_seconds",
+		"prometheus_tsdb_head_min_time_seconds",
+		"prometheus_tsdb_head_max_time_seconds",
+	))
+
+	app := db.Appender()
+	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 1)
+	testutil.Ok(t, err)
+	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, 1)
+	testutil.Ok(t, err)
+	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 3000, 1)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+
+	testutil.Equals(t, map[string]float64{
+		"prometheus_tsdb_lowest_timestamp_seconds": 1.0,
+		"prometheus_tsdb_head_min_time_seconds":    1.0,
+		"prometheus_tsdb_head_max_time_seconds":    3.0,
+	}, getCurrentGaugeValuesFor(t, reg,
+		"prometheus_tsdb_lowest_timestamp_seconds",
+		"prometheus_tsdb_head_min_time_seconds",
+		"prometheus_tsdb_head_max_time_seconds",
+	))
+}
+
+func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames ...string) map[string]float64 {
+	f, err := reg.Gather()
+	testutil.Ok(t, err)
+
+	res := make(map[string]float64, len(metricNames))
+	for _, g := range f {
+		for _, m := range metricNames {
+			if g.GetName() != m {
+				continue
+			}
+
+			testutil.Equals(t, 1, len(g.GetMetric()))
+			if _, ok := res[m]; ok {
+				t.Error("expected only one metric family for", m)
+				t.FailNow()
+			}
+			res[m] = *g.GetMetric()[0].GetGauge().Value
+		}
+	}
+	return res
 }
